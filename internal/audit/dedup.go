@@ -14,6 +14,7 @@ import (
 const (
 	typeDenied     = "authz.denied"
 	typeRejected   = "token.rejected"
+	typeRegistry   = EventRegistryTokenDenied
 	typeDownloaded = "artifact.downloaded"
 )
 
@@ -133,6 +134,10 @@ func summary(w *openWindow, now time.Time) (row, bool) {
 // authz.denied: per principal, action, repository and path; an anonymous caller
 // per client address (one scanner probing many paths collapses into one key).
 // token.rejected: per token ID, or per client address when the token is unknown.
+// auth.registry_token.denied: per client address, endpoint, reason and form of the
+// credential, with the window of token.rejected, so a summary never folds a
+// principal_disabled or an invalid_token under a harmless credentials_required
+// (R-OCI-034, Q-OCI-53).
 func (d *deduper) rule(ev Event) (time.Duration, string) {
 	switch ev.Type {
 	case typeDenied:
@@ -147,6 +152,9 @@ func (d *deduper) rule(ev Event) (time.Duration, string) {
 			return d.rejection, "r\x00addr\x00" + ev.Source.ClientAddr
 		}
 		return d.rejection, "r\x00" + id
+	case typeRegistry:
+		return d.rejection, "g\x00" + ev.Source.ClientAddr + "\x00" + ev.Endpoint + "\x00" + ev.Reason + "\x00" +
+			detailString(ev.Details, "credential")
 	}
 	return 0, ""
 }

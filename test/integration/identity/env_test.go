@@ -281,6 +281,8 @@ type replicaOpts struct {
 	auditDB bool
 	// now replaces the clock of the token service (a replica whose clock is wrong).
 	now func() time.Time
+	// dbOpts are further options of the replica's pools (a statement tracer).
+	dbOpts []postgres.Option
 }
 
 // replica is one in-process replica: pools, change log, caches and the identity
@@ -335,7 +337,7 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	var err error
-	r.db, err = postgres.Open(ctx, e.cfg, name, "web", quiet)
+	r.db, err = postgres.Open(ctx, e.cfg, name, "web", quiet, o.dbOpts...)
 	if err != nil {
 		t.Fatalf("Open(%s): %v", name, err)
 	}

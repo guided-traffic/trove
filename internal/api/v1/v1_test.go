@@ -487,7 +487,7 @@ func TestVersionRouting(t *testing.T) {
 func TestRouteTable(t *testing.T) {
 	t.Run("R-HA-041 the API routes pass the route-table rules", func(t *testing.T) {
 		s := newSetup(t, nil, nil)
-		if v := httpserver.CheckRouteTable(s.router.Patterns(), nil); len(v) != 0 {
+		if v := httpserver.CheckRouteTable(s.router.Patterns(), nil, nil); len(v) != 0 {
 			t.Fatalf("violations: %v", v)
 		}
 	})

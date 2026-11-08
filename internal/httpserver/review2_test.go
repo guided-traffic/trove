@@ -112,7 +112,7 @@ func TestSurfaceFamilies(t *testing.T) {
 			"/api/{format}/{repoKey}/{rest...}", "GET /api/{format}/{repo}/", "/api/{rest...}",
 			"/{x}/-/npm/v1/oidc/{rest...}", "POST /-/{a}/v1/oidc/{rest...}",
 		} {
-			if v := CheckRouteTable([]string{p}, nil); len(v) == 0 {
+			if v := CheckRouteTable([]string{p}, nil, nil); len(v) == 0 {
 				t.Errorf("%q passed", p)
 			}
 		}
@@ -124,7 +124,7 @@ func TestSurfaceFamilies(t *testing.T) {
 			"GET /api/v1/system/ping", "POST /api/v1/auth/oidc/token", "POST /-/npm/v1/oidc/token/exchange/package/{name...}",
 			"/api/maven/{repoKey}/{path...}",
 		}
-		if v := CheckRouteTable(ps, nil); len(v) != 0 {
+		if v := CheckRouteTable(ps, nil, nil); len(v) != 0 {
 			t.Fatalf("violations: %v", v)
 		}
 	})

@@ -152,6 +152,10 @@ func layerTable() []layerRule {
 		// The replica's standing connection to the main installation (handshake, feed, reachability).
 		{"internal/bastion/link", layerDomain},
 
+		// The vocabulary the dispatcher and the registry root share about a request below /v2/ (Q-OCI-56): the standard
+		// library and internal/qname only, so the dispatcher needs neither the registry root nor the authentication stage.
+		{"internal/api/registry/route", layerLeaf},
+
 		{"internal/httpserver", layerEdge},
 		{"internal/api", layerEdge},
 		{"internal/webui", layerEdge},

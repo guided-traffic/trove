@@ -97,7 +97,24 @@ func (s *Service) Check(ctx context.Context, raw string, req Request) (Info, err
 		s.count(ctx, req)
 		return Info{}, ErrUnknown
 	}
-	hash := Hash(raw)
+	return s.checkHash(ctx, Hash(raw), typ, req)
+}
+
+// CheckSecretHash is [Service.Check] from step 2 on, for a credential that names a token by the SHA-256 of its secret
+// and that the caller authenticated otherwise: a registry token, whose MAC the authentication stage verified and which
+// carries the hash of the trove token it was issued for (R-OCI-005, ADR-163). It answers from the same cache under the
+// same freshness gate, with the same throttle and the same rejection events, so a revocation of the trove token stops
+// the registry token within the bound of R-AUTH-023. A Bastion token or an unknown type is unknown without a lookup.
+func (s *Service) CheckSecretHash(ctx context.Context, hash [32]byte, typ Type, req Request) (Info, error) {
+	if Prefix(typ) == "" || typ == TypeBST {
+		s.count(ctx, req)
+		return Info{}, ErrUnknown
+	}
+	return s.checkHash(ctx, hash, typ, req)
+}
+
+// checkHash is steps 2 to 4 of R-AUTH-023 for a token of a known type.
+func (s *Service) checkHash(ctx context.Context, hash [32]byte, typ Type, req Request) (Info, error) {
 	gateOpen := s.o.Gate.Open()
 	if gateOpen {
 		if ct, ok := s.tokens.Get(hash); ok {

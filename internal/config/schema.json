@@ -353,7 +353,7 @@
               "properties": {
                 "enabled": {
                   "default": true,
-                  "description": "Off breaks NuGet restore and _auth users; Basic with a password is impossible regardless.",
+                  "description": "Off breaks NuGet restore, _auth users and every OCI registry client (Docker, Podman, containerd: the token service takes the trove token as Basic or as the password of the OAuth 2.0 form, Q-OCI-57); Basic with a password is impossible regardless.",
                   "type": "boolean",
                   "x-trove-env": "TROVE_AUTH_CLIENTS_BASIC_ENABLED"
                 }
@@ -2740,7 +2740,7 @@
       "properties": {
         "token_lifetime": {
           "default": "5m",
-          "description": "Lifetime of a registry token (R-OCI-005); never beyond the expiry of the trove token it was issued for. A longer lifetime keeps a revoked permission alive longer (the bound of R-AUTH-023 applies to the trove token, not to this one).",
+          "description": "Lifetime of a registry token (R-OCI-005); never beyond the expiry of the trove token it was issued for. A longer lifetime widens the window in which a leaked registry token is usable while its trove token stays valid (H-595). Revoking the trove token or disabling its owner ends its registry tokens within auth.revocation_bound, and every request is decided again on the current grants.",
           "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
           "type": "string",
           "x-trove-env": "TROVE_OCI_TOKEN_LIFETIME",

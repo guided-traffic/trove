@@ -195,6 +195,7 @@ checked every earlier decision against them:
 | [ADR-159](#adr-159--the-data-state-the-format-contract-carries-says-whether-the-ecosystem-has-synced-since-the-last-restore) | The data state the format contract carries says whether the ecosystem has synced since the last restore | Decided by the development agent — owner review at the walkthrough |
 | [ADR-160](#adr-160--the-catalog-says-which-formats-always-verify-the-announced-digest) | The catalog says which formats always verify the announced digest | Decided by the development agent — owner review at the walkthrough |
 | [ADR-161](#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions) | The format contract gains the registry root, the upstream handshake, HEAD revalidation and upload sessions | Decided by the development agent — owner review at the walkthrough |
+| [ADR-163](#adr-163--registry-tokens-are-bound-to-their-trove-token-by-the-hash-of-its-secret-and-verified-through-the-token-cache) | Registry tokens are bound to their trove token by the hash of its secret and verified through the token cache | Decided by the development agent — owner review at the walkthrough |
 | [ADR-165](#adr-165--the-remote-engine-carries-out-the-formats-token-handshake-and-head-revalidation) | The remote engine carries out the format's token handshake and HEAD revalidation | Decided by the development agent — owner review at the walkthrough |
 | [ADR-125](#adr-125--gnu-make-and-one-pin-file-for-every-tool) | GNU Make and one pin file for every tool | Decided by the development agent — owner review at the walkthrough |
 | [ADR-126](#adr-126--problem-details-with-a-relative-type-a-requestid-member-and-named-error-codes) | Problem details with a relative type, a requestId member and named error codes | Decided by the development agent — owner review at the walkthrough |
@@ -3161,7 +3162,7 @@ Ownership narrows both further ([ADR-056](#adr-056--package-ownership-is-decided
 **Alternatives considered.** `annotate` for dist-tags and deprecation: the earlier npm mapping,
 decided against ([Q-NPM-9](spec/formats/npm.md#q-npm-9--annotate-or-deploy-for-dist-tags-and-deprecation)).
 
-**Spec:** [R-AUTHZ-006](spec/authorization.md#r-authz-006--repository-actions), [R-AUTHZ-007](spec/authorization.md#r-authz-007--action-map-for-npm-and-nuget-operations), [R-NPM-016](spec/formats/npm.md#r-npm-016--dist-tags-and-the-latest-rule), [R-NPM-018](spec/formats/npm.md#r-npm-018--deprecate-and-undeprecate); decided:
+**Spec:** [R-AUTHZ-006](spec/authorization.md#r-authz-006--repository-actions), [R-AUTHZ-007](spec/authorization.md#r-authz-007--action-map-for-npm-nuget-and-oci-operations), [R-NPM-016](spec/formats/npm.md#r-npm-016--dist-tags-and-the-latest-rule), [R-NPM-018](spec/formats/npm.md#r-npm-018--deprecate-and-undeprecate); decided:
 [Q-NPM-9](spec/formats/npm.md#q-npm-9--annotate-or-deploy-for-dist-tags-and-deprecation).
 
 ### ADR-053 · Virtual repositories: endpoint gate plus member rights
@@ -6134,6 +6135,44 @@ format); a field `Refusal.Base` (a new member for a fact the catalog holds); a b
 
 **Spec:** [spec/formats/oci.md](spec/formats/oci.md) Q-OCI-3, Q-OCI-4, Q-OCI-12, Q-OCI-13, Q-OCI-16, Q-OCI-24 to Q-OCI-34; [spec/architecture.md](spec/architecture.md) R-ARCH-008, R-ARCH-009; [spec/storage.md](spec/storage.md) R-STOR-011.
 
+### ADR-163 · Registry tokens are bound to their trove token by the hash of its secret and verified through the token cache
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** The OCI registry uses the token flow of the distribution specification (Q-OCI-5): a client exchanges its trove token at
+`/v2/_token` for a short-lived registry token and presents that on every request below `/v2/`. R-OCI-005 requires the registry token to
+be self-contained, verified without the database on its own, and stopped by a revocation of the trove token within the bound of
+R-AUTH-023. trove's tokens so far are reference tokens only (R-AUTH-022), resolved through a cache keyed by the SHA-256 of the secret.
+
+**Decision.** A registry token is `trv_rgt_` + base64url(`1:<key id>:<claims as JSON>`) + `.` + base64url(HMAC-SHA-256), with the MAC
+key derived by HKDF-SHA-256 from each key of the stored-secret key ring with info `trove registry token v1`; the key ID precedes the
+claims so the MAC is checked before anything is parsed (Q-OCI-54). The claims name the trove token that requested it by its ID, its
+type and the SHA-256 of its secret (Q-OCI-50). The authentication stage verifies the MAC, the expiry and the endpoint without any
+lookup and then asks the token cache of R-AUTH-023 with the hash (`token.Service.CheckSecretHash`), with the endpoint's token types and
+bindings as for the trove token itself. The token service at `/v2/_token` is not authenticated by the chain; it hands the one presented
+credential to the stage (`auth.Stage.AuthenticateTokenRequest`, Q-OCI-51) and grants per scope entry by the coarse check, asked as a
+question without an audit event (Q-OCI-55). Claims that span more than `oci.token_lifetime` or are issued more than a minute ahead
+are refused. One enforcement point (`registry.Enforcer`) is the only way to mount a handler below `/v2/` - `Mount` registers the
+routes and wraps the handler in one call, and the route table admits only its patterns - and checks the grant on the route the
+dispatcher's own match names, refusing a registry token on any other (Q-OCI-56). The key ring gains `Derive(info, size)`, which returns the derived keys of every key of the
+ring and never the key files themselves.
+
+**Consequences.** The registry token's revocation bound, freshness gate, throttle and rejection events are the trove token's by
+construction, and a client that logs in with its trove token fills the cache entry its registry tokens use. The hash of the trove token
+travels in every registry token; it allows no guess of the secret, and it makes a holder of the key ring need that hash as well as the
+ring to forge (H-579). A registry token is a bearer credential within its lifetime and grant (H-595). The chain's request log of a token
+request records the anonymous principal unless the composition root records the caller the token service authenticated.
+
+**Alternatives considered.** An ID in the claims with a second cache keyed by ID (a fifth auth cache, a query per replica that the
+trove token's own lookup already paid, and a forgery that needs only an ID every listing shows); reference registry tokens stored per
+issue (a database write on the hottest route, Q-OCI-5 (d)); a JWT (header-driven algorithms for a token only trove reads).
+
+**Revisit condition:** the hash must be kept from the clients that hold registry tokens, or another party must verify registry tokens.
+
+**Spec:** [spec/formats/oci.md](spec/formats/oci.md) R-OCI-004, R-OCI-005, R-OCI-006, R-OCI-034, Q-OCI-50 to Q-OCI-57;
+[spec/identity-and-authentication.md](spec/identity-and-authentication.md) R-AUTH-001, R-AUTH-002, R-AUTH-022, R-AUTH-023, R-AUTH-041;
+[spec/authorization.md](spec/authorization.md) R-AUTHZ-007; [spec/architecture.md](spec/architecture.md) R-ARCH-021.
+
 ### ADR-167 · The pinned tools of a CI job come from a verified cache, not from a live release download
 
 **Status:** Decided by the development agent — owner review at the walkthrough.
@@ -7056,6 +7095,14 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-OCI-32](spec/formats/oci.md#q-oci-32--a-link-names-its-source-by-repository-name-and-path-and-the-host-resolves-it) | How does a link name its source? | (a) `SourceRef{Repo, Path}`; the host resolves the repository by name, through the members of a virtual one, and checks the item | [ADR-161](#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions) |
 | [Q-OCI-33](spec/formats/oci.md#q-oci-33--a-manifest-the-journal-replay-withheld-is-refused-by-the-serve-check-from-facts-read-with-the-item-and-an-administrator-reinstates-it) | How is a withheld manifest refused, and how does it come back? | (a) The serve-facts kind `oci_local` in the one statement of the lookup; the replay withholds, `trove admin oci reinstate` reinstates; a push of the digest is refused meanwhile | [ADR-161](#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions) |
 | [Q-OCI-34](spec/formats/oci.md#q-oci-34--the-rows-of-a-remote-manifest-are-tied-to-its-alias-item) | What owns the rows of a remote manifest? | (a) The alias item `<name>/_manifests/<digest>`; tag documents own none | — |
+| [Q-OCI-50](spec/formats/oci.md#q-oci-50--a-registry-token-names-its-trove-token-by-the-sha-256-of-its-secret-and-is-verified-through-the-token-cache) | How does a registry token name the trove token it was issued for, and how is that token's state checked? | (a) By its ID, type and the SHA-256 of its secret; verified through the token cache of R-AUTH-023 with the hash | [ADR-163](#adr-163--registry-tokens-are-bound-to-their-trove-token-by-the-hash-of-its-secret-and-verified-through-the-token-cache) |
+| [Q-OCI-51](spec/formats/oci.md#q-oci-51--the-token-service-presents-the-credential-of-a-token-request-to-the-authentication-stage-itself) | Who authenticates the credential of a token request, in the `GET` and the `POST` form? | (a) The chain does not; the token service hands the one presented credential to the stage (`AuthenticateTokenRequest`) | [ADR-163](#adr-163--registry-tokens-are-bound-to-their-trove-token-by-the-hash-of-its-secret-and-verified-through-the-token-cache) |
+| [Q-OCI-52](spec/formats/oci.md#q-oci-52--a-malformed-token-request-answers-400-in-the-distribution-shape-and-the-oauth-20-shape-at-once) | Which body does a malformed token request get? | (a) One object with the distribution error list and the OAuth 2.0 members `error` and `error_description` | — |
+| [Q-OCI-53](spec/formats/oci.md#q-oci-53--authregistry_tokendenied-is-an-access-event-deduplicated-per-client-address-endpoint-reason-and-credential) | How is a refused token request recorded? | (a) An asynchronous event with the endpoint in its column, deduplicated per client address, endpoint, reason and credential within `audit.token_rejection_dedup_window` | — |
+| [Q-OCI-54](spec/formats/oci.md#q-oci-54--the-key-id-stands-before-the-claims-in-the-payload-so-the-mac-is-checked-before-anything-is-parsed) | Where does a registry token name its key? | (a) Before the claims: `1:<key id>:<claims>`, so the MAC is checked before the JSON is parsed | [ADR-163](#adr-163--registry-tokens-are-bound-to-their-trove-token-by-the-hash-of-its-secret-and-verified-through-the-token-cache) |
+| [Q-OCI-55](spec/formats/oci.md#q-oci-55--the-grant-asks-the-decision-point-as-a-question-with-the-image-name-as-the-package) | How does the token service ask the decision point? | (a) The listing form of the decision per entry and action, with the image name as the package, writing no audit event | [ADR-163](#adr-163--registry-tokens-are-bound-to-their-trove-token-by-the-hash-of-its-secret-and-verified-through-the-token-cache) |
+| [Q-OCI-56](spec/formats/oci.md#q-oci-56--one-enforcement-point-in-front-of-v2-checks-a-registry-tokens-grant-and-fails-closed) | Where is a registry token's grant enforced below `/v2/`? | (a) One enforcement point that is the only way to mount below `/v2/` (one call registers the routes and wraps the handler; the route table admits no other `/v2/` pattern), deciding on the dispatcher's own match; an unknown route, an unreadable address or an unmappable action is 401 `insufficient_scope` with its own code; a walk through the whole handler with real registry tokens | [ADR-163](#adr-163--registry-tokens-are-bound-to-their-trove-token-by-the-hash-of-its-secret-and-verified-through-the-token-cache) |
+| [Q-OCI-57](spec/formats/oci.md#q-oci-57--the-password-of-the-oauth-20-form-is-a-basic-presentation-and-follows-authclientsbasicenabled) | Does `auth.clients.basic.enabled: false` refuse the password of the OAuth 2.0 form? | (a) Yes: the form is a Basic presentation; no registry client gets a token with Basic off | — |
 | [Q-OCI-80](spec/formats/oci.md#q-oci-80--the-token-cache-is-read-after-the-challenge-and-a-rejected-cached-token-is-replaced-once) | When does the engine read its token cache, and what does it do with a rejected token? | (a) After the challenge named the key; a rejected cached token is dropped and one fresh handshake runs. Superseded by Q-OCI-82 | [ADR-165](#adr-165--the-remote-engine-carries-out-the-formats-token-handshake-and-head-revalidation) |
 | [Q-OCI-81](spec/formats/oci.md#q-oci-81--a-head-that-is-not-a-2xx-is-the-engines-answer-and-a-2xx-that-is-not-unchanged-is-a-get) | What does the engine do with the answer to a revalidation request? | (a) A 2xx goes to the format's `Unchanged`; every other status follows the rules of a conditional `GET` | [ADR-165](#adr-165--the-remote-engine-carries-out-the-formats-token-handshake-and-head-revalidation) |
 | [Q-OCI-82](spec/formats/oci.md#q-oci-82--the-engine-asks-the-format-before-a-request-with-the-last-challenge-so-only-the-first-request-of-a-replica-is-challenged) | When does the engine ask the format for a token? | (b) Before a request, with the last challenge remembered per repository and configuration version; the format takes the scope from the request and only realm and service from the challenge | [ADR-165](#adr-165--the-remote-engine-carries-out-the-formats-token-handshake-and-head-revalidation) |

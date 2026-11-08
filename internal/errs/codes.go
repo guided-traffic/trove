@@ -543,6 +543,10 @@ const (
 	CodeOCISizeInvalid = "oci_size_invalid"
 	// CodeOCIUnsupported: UNSUPPORTED.
 	CodeOCIUnsupported = "oci_unsupported"
+	// CodeOCIInsufficientScope: UNAUTHORIZED with error="insufficient_scope" in the challenge, the refusal of the enforcement
+	// point of a registry token's grant (R-OCI-005, Q-OCI-56); a code of its own, so logs and metrics tell it from a rejected
+	// credential.
+	CodeOCIInsufficientScope = "oci_insufficient_scope"
 )
 
 // CodeNuGetInvalidUpstreamDocument is the 502 of a document a NuGet upstream served that is not
@@ -858,6 +862,7 @@ var registry = []CodeInfo{
 	{CodeOCIManifestBlobUnknown, Invalid, "OCI manifest references an unknown blob", "The manifest names a config, a layer or a manifest that the repository does not hold under this image name."},
 	{CodeOCISizeInvalid, TooLarge, "OCI content too large", "The manifest, the blob or the repository's quota exceeds a size limit."},
 	{CodeOCIUnsupported, Invalid, "OCI operation not offered", "The repository does not offer the operation: a write to a remote repository or to a virtual repository without a deployment target, or a parameter trove does not support."},
+	{CodeOCIInsufficientScope, Unauthenticated, "OCI registry token lacks the scope", "The registry token does not grant what the request needs on this image name; the challenge names the scope to ask the token service for."},
 	// >>> M3 nuget
 	{CodeNuGetInvalidPackage, Invalid, "Invalid NuGet package", "The .nupkg is not a package trove accepts: not a ZIP archive, a name or entry the archive rules refuse, a missing or repeated .nuspec at the root, a limit of nuget.archive exceeded, or a .nuspec that is not well-formed or declares a DOCTYPE. The detail names the rule."},
 	{CodeNuGetInvalidVersion, Invalid, "Invalid NuGet version", "The version is not a NuGet version trove accepts: one to four numeric parts, an optional pre-release and build metadata, at most 255 bytes as given and normalized."},

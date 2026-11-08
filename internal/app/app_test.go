@@ -273,7 +273,7 @@ func TestListeners(t *testing.T) {
 				t.Errorf("%s: %d %s", p, code, hdr.Get("Content-Type"))
 			}
 		}
-		if v := httpserver.CheckRouteTable(h.app.router.Patterns(), nil); len(v) != 0 {
+		if v := httpserver.CheckRouteTable(h.app.router.Patterns(), nil, nil); len(v) != 0 {
 			t.Fatalf("route table violations: %v", v)
 		}
 	})

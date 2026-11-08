@@ -1,6 +1,10 @@
 package archtest
 
-import "strings"
+import (
+	"slices"
+	"sort"
+	"strings"
+)
 
 // importBan forbids an import everywhere except in the listed packages.
 type importBan struct {
@@ -72,7 +76,13 @@ type moduleBan struct {
 	rule      string
 	from      string   // module-relative package prefix
 	forbidden []string // module-relative package prefixes
-	why       string
+	// exact are module-relative packages forbidden by their exact path, not their subtree: a leaf below a forbidden
+	// package stays importable.
+	exact []string
+	// transitive extends the ban from the direct imports of the packages below from to everything they depend on inside the
+	// module, so an allowed import cannot bring a forbidden package along.
+	transitive bool
+	why        string
 }
 
 func moduleBans() []moduleBan {
@@ -113,26 +123,65 @@ func moduleBans() []moduleBan {
 			rule: "R-ARCH-002", from: "internal/formathost", forbidden: []string{"internal/formatdata"},
 			why: "the data port of a format is bound by the composition root; the host reaches it only through Host.FormatData (Q-ARCH-193)",
 		},
+		{
+			rule: "R-ARCH-002", from: "internal/api/dispatch", transitive: true,
+			exact:     []string{"internal/auth", "internal/api/registry"},
+			forbidden: []string{"internal/auth/session", "internal/auth/registrytoken", "internal/auth/oidc"},
+			why: "the dispatcher's match below /v2/ is shared with the registry's enforcement point through the leaf internal/api/registry/route; " +
+				"the dispatcher depends on neither the registry root nor the authentication stage, so the registry root may import it without a cycle (Q-OCI-56)",
+		},
 	}
 }
 
-// CheckModuleBans implements the boundaries of moduleBans over the package graph.
+// CheckModuleBans implements the boundaries of moduleBans over the package graph. A transitive ban follows the module's
+// imports of the given packages; a package outside the given set ends the walk.
 func CheckModuleBans(module string, pkgs []Package) []Violation {
+	imports := map[string][]string{}
+	for _, p := range pkgs {
+		for _, imp := range p.Imports {
+			if target := rel(module, imp); target != imp {
+				imports[p.Rel] = append(imports[p.Rel], target)
+			}
+		}
+	}
 	var out []Violation
 	for _, p := range pkgs {
 		for _, ban := range moduleBans() {
 			if !under(p.Rel, ban.from) {
 				continue
 			}
-			for _, imp := range p.Imports {
-				target := rel(module, imp)
-				if target != imp && underAny(target, ban.forbidden) {
+			for _, target := range reached(imports, p.Rel, ban.transitive) {
+				if underAny(target, ban.forbidden) || slices.Contains(ban.exact, target) {
 					out = append(out, Violation{Rule: ban.rule, From: p.Rel, To: target, Detail: ban.why})
 				}
 			}
 		}
 	}
 	sortViolations(out)
+	return out
+}
+
+// reached returns the module packages from imports directly, or, with transitive, every one it depends on, sorted.
+func reached(imports map[string][]string, from string, transitive bool) []string {
+	if !transitive {
+		return imports[from]
+	}
+	seen := map[string]bool{}
+	queue := append([]string(nil), imports[from]...)
+	for len(queue) > 0 {
+		next := queue[0]
+		queue = queue[1:]
+		if seen[next] || next == from {
+			continue
+		}
+		seen[next] = true
+		queue = append(queue, imports[next]...)
+	}
+	out := make([]string, 0, len(seen))
+	for p := range seen {
+		out = append(out, p)
+	}
+	sort.Strings(out)
 	return out
 }
 

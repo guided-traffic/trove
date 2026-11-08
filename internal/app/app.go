@@ -566,7 +566,10 @@ func (a *App) startClient() error {
 				return fmt.Errorf("route table of endpoint %s: %w", rt.cfg.Name, err)
 			}
 		}
-		if v := httpserver.CheckRouteTable(router.Patterns(), nil); len(v) > 0 {
+		// Below /v2/ the route table admits only what was mounted through the enforcement point of the registry tokens'
+		// grants (Q-OCI-56): a handler mounted around it cannot start. Below /.well-known/ it admits the discovery documents
+		// formats register for a bound host (R-EP-006); no format registers one yet.
+		if v := httpserver.CheckRouteTable(router.Patterns(), rt.registry.Patterns(), nil); len(v) > 0 {
 			return fmt.Errorf("route table of endpoint %s: %s", rt.cfg.Name, v[0])
 		}
 		if v := httpserver.CheckSurface(router.Patterns(), rt.ep); len(v) > 0 {

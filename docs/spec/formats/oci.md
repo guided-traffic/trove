@@ -165,11 +165,21 @@ The registry uses the token flow of the Docker registry token authentication spe
    `scope="repository:<full name>:<actions>"` naming what the request needs, so the client asks for the right token.
 2. The client calls `GET <base>/v2/_token?service=<host>&scope=…` with `Authorization: Basic base64(<user>:<trove token>)`, or
    without credentials for an anonymous token. `POST /v2/_token` with the form fields `grant_type=password`, `username`,
-   `password`, `service`, `scope` and `client_id` (the OAuth 2.0 form that containerd tries first) is answered the same way; a
-   `grant_type` of `refresh_token` answers 400 `unsupported_grant_type`.
+   `password`, `service`, `scope` and `client_id` (the OAuth 2.0 form that containerd tries first) is answered the same way. A
+   `POST` carries its credential in the form only: a form without `grant_type` or without `password`, a form that is not
+   `application/x-www-form-urlencoded` or larger than 16 KiB, and a `POST` with an `Authorization` header as well answer 400
+   `invalid_request`; a `grant_type` other than `password` (`refresh_token` among them) answers 400 `unsupported_grant_type`.
+   A `service` other than `<host>` answers 400 `invalid_request`. A 400 of the token service carries the error list of
+   R-OCI-008 with the code `UNSUPPORTED` and, in the same object, the members `error` and `error_description` of
+   [RFC 6749](https://www.rfc-editor.org/rfc/rfc6749) §5.2 (Q-OCI-52).
 3. The token service authenticates the credential through the authentication stage of R-AUTH-001 (the Basic user name is
    recorded and ignored, INV-8): an invalid one answers 401 `UNAUTHORIZED` with `WWW-Authenticate: Basic realm="trove"`;
-   none yields the anonymous principal where the endpoint allows anonymous requests (R-AUTH-037, R-EP-010), else 401.
+   none yields the anonymous principal where the endpoint allows anonymous requests (R-AUTH-037, R-EP-010), else 401. The
+   chain does not authenticate `/v2/_token`: the token service presents the one credential of the request, the
+   `Authorization` header or the form's password, to the stage itself, which applies every rule of R-AUTH-001 and of the
+   endpoint to it (Q-OCI-51). A registry token is no credential of the token service, so a registry token cannot renew itself.
+   The form's password is a Basic presentation of the trove token: with `auth.clients.basic.enabled: false` the token service
+   refuses it like a `GET` with `Basic`, and no registry client gets a token (Q-OCI-57).
 4. It grants per scope entry the actions the caller may perform (R-OCI-006) and answers 200 with
    `{"token": "<registry token>", "access_token": "<the same>", "expires_in": <seconds>, "issued_at": "<RFC 3339>"}`. A
    partial or empty grant is not an error. No refresh token is issued, whatever `offline_token` says, so Docker stores the
@@ -212,25 +222,38 @@ A registry token is a short-lived, self-contained credential that trove issues a
 principal's access; it never widens it.
 
 - **Content.** Version, the key ID of the key that signed it, the principal (kind and ID; the anonymous principal has no ID),
-  the ID of the trove token that authenticated the token request (none for anonymous), the endpoint, the issue and expiry
-  times, and the grant: at most 16 entries of qualified repository, image name and actions (`pull`, `push`, `delete`), or the
-  catalog entry.
-- **Form.** `trv_rgt_` + base64url(payload) + `.` + base64url(HMAC-SHA-256(key, `trv_rgt_` + payload)), at most 4 KiB. The key
-  is derived with HKDF-SHA-256 from a key of the stored-secret key ring with info `trove registry token v1` (R-ARCH-021): the
-  active key signs, every key of the ring verifies, so a rotation of the ring needs no new secret and old tokens end with their
-  lifetime. The token is not a reference token (R-AUTH-022): it is never stored, and the scanner pattern of R-AUTH-022 does not
-  match it.
+  the trove token that authenticated the token request, named by its ID, its type and the SHA-256 of its secret (none for
+  anonymous; Q-OCI-50), the endpoint, the issue and expiry times, and the grant: at most 16 entries of qualified repository,
+  image name and actions (`pull`, `push`, `delete`), and the catalog entry.
+- **Form.** `trv_rgt_` + base64url(payload) + `.` + base64url(HMAC-SHA-256(key, `trv_rgt_` + base64url(payload))), at most
+  4 KiB, base64url without padding ([RFC 4648](https://www.rfc-editor.org/rfc/rfc4648) §5). The payload is `1:<key id>:<claims
+  as JSON>`: the key ID stands before the claims, so the verifier finds the key and checks the MAC before it parses anything
+  the client sent (Q-OCI-54). The key is derived with HKDF-SHA-256 from a key of the stored-secret key ring with info `trove
+  registry token v1` (R-ARCH-021): the active key signs, every key of the ring verifies, so a rotation of the ring needs no new
+  secret and old tokens end with their lifetime or with the removal of their key from the ring. A grant that does not fit in
+  4 KiB is refused with 400 `invalid_request`, never cut. The token is not a reference token (R-AUTH-022): it is never stored,
+  and the scanner pattern of R-AUTH-022 does not match it.
 - **Lifetime.** `oci.token_lifetime` (# default (proposed) `300s`, range 60 s to 3600 s), never beyond the expiry of the token
   that authenticated the request. `expires_in` says it.
 - **Verification** happens in the authentication stage (R-AUTH-001) and never touches PostgreSQL on its own: the MAC with the
   named key, the expiry, the endpoint of the request (R-EP-002), and then the state of the token that authenticated the token
-  request through the token cache of R-AUTH-023 (revoked, expired, owner disabled answer 401 `UNAUTHORIZED`), so a revocation
-  stops its registry tokens within the bound that holds for the token itself. An anonymous registry token is accepted while
-  the endpoint allows anonymous requests.
+  request through the token cache of R-AUTH-023, by the hash the registry token carries (step 2 of R-AUTH-023; revoked,
+  expired, owner disabled answer 401 `UNAUTHORIZED`), so a revocation stops its registry tokens within the bound that holds for
+  the token itself. The endpoint's token types and bindings (R-EP-010) apply to that token as if it were presented itself. An
+  anonymous registry token is accepted while the endpoint and the runtime switch allow anonymous requests (R-AUTH-037).
 - **Use.** A request carrying a registry token is a request of its principal with the token's credential scope (R-AUTH-024)
   and the grant as a further ceiling: the route's action on the request's repository and image name must be in the grant
   (R-OCI-004 for the answer otherwise), and then the decision point decides as for every request (R-AUTHZ-015). A grant is
-  therefore never a permission of its own.
+  therefore never a permission of its own. One enforcement point checks the grant in front of every handler below `/v2/`:
+  mounting through it is the only way to put a handler there (the route table admits no other `/v2/` pattern, R-ARCH-005),
+  and it learns the route of a request from the dispatcher's own match. A registry token on a route without an entry, on an
+  address the match cannot read, or on a route whose action no token action maps answers 401 `insufficient_scope` (error
+  code `oci_insufficient_scope`), so a route that is not registered fails closed. The version check passes any registry
+  token, on `/v2/` itself only. The cache view of a remote repository (`<key>~cache`) is granted and checked under its base
+  repository, and the source of a cross-repository mount needs `pull` there, action by action (Q-OCI-56).
+- **Lifetime of the claims.** A token whose claims span more than `oci.token_lifetime`, or whose issue time lies more than one
+  minute ahead of the verifying replica's clock, is refused like a forged one, so even claims signed with the key ring verify for
+  at most the configured lifetime.
 - Logs redact the whole value, as for every `Authorization` header (R-AUTH-001); the request log records the principal and the
   ID of the authenticating token.
 
@@ -267,6 +290,8 @@ The coordinate of every request is the repository, the image name as the package
 - **How the token service grants.** For each scope entry it runs the coarse check of the route kind on the named repository
   (R-ARCH-008: may the caller do this action anywhere in the repository, with the name as package when the repository's
   patterns or the caller's grants are per package): `pull` → `read`, `push` → `deploy`, `delete` → `delete`, `*` → all three.
+  It asks it as a question on the request's index that writes no audit event (Q-OCI-55): a grant that leaves an entry out is
+  no refusal, and the request that later needs the action is decided and audited on its own.
   A repository that does not exist, is not of the format or is hidden from the caller grants nothing and is not reported
   (Q-OCI-6). `registry:catalog:*` is granted to every authenticated caller and to anonymous where the endpoint allows anonymous
   requests; what the catalog lists is decided per name (R-OCI-017).
@@ -992,8 +1017,11 @@ Priority: **P1** · Covers: trove-only
 
 - Writes record the authorization events of R-AUTHZ-029 like every format (`authz.write.allowed` with `deploy`, `overwrite` or
   `delete`; a remote fill with `populate`). Tag moves are writes with `overwrite`.
-- The token service writes `auth.registry_token.denied` for a failed authentication (rate-limited like every authentication
-  failure, R-AUTH-038) and no event per issued token; issued tokens are counted.
+- The token service writes `auth.registry_token.denied` for a token request the authentication stage refused with 401, as an
+  access event with the endpoint in its column, deduplicated per client address, endpoint, reason and form of the credential
+  within `audit.token_rejection_dedup_window` (R-OPS-015), and no event per issued token; issued tokens are counted. A rejected
+  credential also counts in the failed-credential throttle of R-AUTH-038, like every authentication failure; a request without
+  a credential does not (Q-OCI-53).
 
 | Metric | Type | Labels | Meaning |
 |---|---|---|---|
@@ -1234,8 +1262,9 @@ R-ARCH-009 by `TestR_ARCH_008_TheWrittenContractEqualsTheCode`):
 |---|---|---|
 | [README.md](../README.md) | INV-5: the key grammar; INV-6: `/v2/` served by the format `oci`, `_catalog` and `_token` at the registry root | Q-OCI-3, Q-OCI-4 |
 | [architecture.md](../architecture.md) | R-ARCH-005: the `/v2/` row and the route-table rule admit the format's prefix and the core's three root routes; R-ARCH-008: `ProtocolBasePath` may be `/v2/{project}/{key}/` for the one format that declares the registry root, `Refusal.Registry` and the link builder render the base path, the optional remote interfaces `Authenticator` and `Revalidator`, `discover.Upstream.Artifact`, `catalog.Facts.DefaultCredentialHosts`, `SetupData.ImagePrefix`; R-ARCH-009: the upload-session port of the host; R-ARCH-032: the state rows of R-OCI-032 | Q-OCI-4, Q-OCI-12, Q-OCI-13, Q-OCI-16 |
-| [identity-and-authentication.md](../identity-and-authentication.md) | R-AUTH-001: the registry token as a credential of the `Authorization` header on `/v2/`, and no session cookie there; R-AUTH-002: the `/v2/` row of the challenge table; R-AUTH-022: the registry token, its form and that it is not a reference token; R-AUTH-041: the event `auth.registry_token.denied` | Q-OCI-5 |
-| [authorization.md](../authorization.md) | R-AUTHZ-007: the OCI table of R-OCI-006; R-AUTHZ-026: the project key grammar | Q-OCI-3, Q-OCI-6 |
+| [identity-and-authentication.md](../identity-and-authentication.md) | R-AUTH-001: the registry token as a credential of the `Authorization` header on `/v2/`, no session cookie there, `/v2/_token` among the routes whose credential the handler presents; R-AUTH-002: the `/v2/` rows of the challenge table; R-AUTH-022: the registry token, its form and that it is not a reference token; R-AUTH-023: a registry token enters the validation at step 2 with the hash it carries; R-AUTH-033: the Basic switch covers the token service; R-AUTH-041: the event `auth.registry_token.denied` (made with the token service) | Q-OCI-5, Q-OCI-50, Q-OCI-51, Q-OCI-53, Q-OCI-57 |
+| [authorization.md](../authorization.md) | R-AUTHZ-007: the OCI table of R-OCI-006 (made with the token service); R-AUTHZ-026: the project key grammar | Q-OCI-3, Q-OCI-6 |
+| [operations-and-observability.md](../operations-and-observability.md) | R-OPS-015: `auth.registry_token.denied` deduplicated like `token.rejected`; the event registry's row of `auth.registry_token.denied`; the metric `trove_oci_registry_tokens_total` (made with the token service) | Q-OCI-53 |
 | [repositories-and-proxy.md](../repositories-and-proxy.md) | R-REPO-002: the key grammar; R-REPO-033: the token handshake's credential rule; R-REPO-050: `<format>.mirror` kept for an Owner without `repositories:write-config`, OCI among the formats that can mirror; R-REPO-051: versions are counted per version, not per item; R-REPO-054: the quota header is read by its integer before `;` | Q-OCI-3, Q-OCI-13, Q-OCI-16, Q-OCI-22 |
 | [storage.md](../storage.md) | R-STOR-011: status built, with the OCI page as its first user; the session row gains the repository the client addressed and a binding the format names (the OCI image name), both checked on every request | Q-OCI-12 |
 | [endpoints.md](../endpoints.md) | R-EP-007: the Docker Engine mirror points at R-OCI-029 | — |
@@ -1270,8 +1299,10 @@ R-ARCH-009 by `TestR_ARCH_008_TheWrittenContractEqualsTheCode`):
   that leaks from a client's debug log is worth minutes and those actions; it never widens what its principal may do, because
   every request is decided again (R-OCI-005).
 - **Registry tokens are self-contained** and verified without the database. Their MAC key is derived from the stored-secret key
-  ring, so whoever holds a key of the ring can mint registry tokens for any principal; that is the same trust the ring already
-  carries for sealed upstream credentials ([H-579](#h-579--a-holder-of-the-stored-secret-key-ring-can-mint-registry-tokens)).
+  ring, so whoever holds a key of the ring and the hash of a live trove token can mint registry tokens for that token's
+  principal; that is the same trust the ring already carries for sealed upstream credentials
+  ([H-579](#h-579--a-holder-of-the-stored-secret-key-ring-can-mint-registry-tokens)). A stolen registry token is usable from
+  anywhere for its lifetime within its grant ([H-595](../../security/oci-registry.md#h-595--a-registry-token-is-a-bearer-credential-for-its-whole-lifetime)).
 - **Revocation** of the trove token behind a registry token takes effect within the bound of R-AUTH-023, not at the registry
   token's expiry, because verification reads the authenticating token's state.
 - **No automatic cross-mount.** A mount names its source and needs `read` there; without `from` nothing is mounted, so the
@@ -1867,6 +1898,162 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied in the spec:** [R-OCI-007](#r-oci-007--storage-layout-packages-and-the-formats-tables), [R-OCI-022](#r-oci-022--remote-repository-manifests-by-tag-and-by-digest).
 
+### Q-OCI-50 · A registry token names its trove token by the SHA-256 of its secret and is verified through the token cache
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The claims name the authenticating trove token by its ID, its type and the SHA-256 of its secret; verification asks the token cache of R-AUTH-023 with the hash, exactly as for the trove token presented itself (chosen) | One cache, one freshness gate, one invalidation, one throttle and one rejection event for both credentials | The revocation bound of the registry token is the trove token's by construction; a client that logs in with the trove token fills the entry its registry tokens use, so a pull costs no extra query; a holder of the key ring needs a live token's hash to forge (H-579) | The hash travels in every registry token; it allows no guess of the secret (256 bits, R-AUTH-023) and is what the database holds |
+| (b) The claims name the trove token by its ID only; a second cache keyed by ID and a query by ID | The content R-OCI-005 first listed | Nothing but an ID in the token | A fifth auth cache with its own fill, invalidation and gate; a query per replica and cache period that the trove token's own lookup already paid; a ring holder forges with an ID that every listing and audit event shows |
+| (c) The claims name the trove token by its ID; every request reads its row | No cache | Simplest | A database read on the hottest route, against R-AUTH-023 and R-OCI-005 |
+
+**Choice:** (a).
+
+**Rationale:** the registry token is the trove token narrowed by a grant and a lifetime, so it should be checked by the same steps;
+reusing the cache key makes the revocation bound and the throttle identical rather than parallel. The development agent would revisit it
+if the hash of a token had to be kept from the clients that hold its registry tokens (an encrypted payload would then carry it).
+
+**Applied in the spec:** [R-OCI-005](#r-oci-005--registry-tokens), [H-579](#h-579--a-holder-of-the-stored-secret-key-ring-can-mint-registry-tokens);
+R-AUTH-022 and R-AUTH-023 in [identity-and-authentication.md](../identity-and-authentication.md); ADR-163.
+
+### Q-OCI-51 · The token service presents the credential of a token request to the authentication stage itself
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `/v2/_token` is a route whose credential the chain does not evaluate; the token service takes the one credential of the request (the `Authorization` header of a `GET`, the password of the form of a `POST`) and hands it to the stage (`AuthenticateTokenRequest`), which applies every rule of R-AUTH-001 and of the endpoint (chosen) | One path for both request forms; the stage stays the one place that checks a credential; the handler never reads a secret, it holds an opaque value whose hash binds the registry token | The form of a `POST` needs no body read in the stage | The chain's request log records the token request as anonymous unless the composition root records the caller the token service authenticated; a rate-limit class keyed by principal counts every token request in the bucket of its address, because the chain sees it as anonymous |
+| (b) The chain authenticates the `GET` as every route; the handler re-reads the header to bind the token | No new stage entry point | The chain logs the caller | The handler parses a credential (against R-AUTH-001), and a `POST` on an endpoint without anonymous requests is refused before its form is read |
+| (c) The stage reads the form of a `POST /v2/_token` | Everything in the chain | One authentication per request | A body read before the rate limits of step 7 and before routing |
+
+**Choice:** (a).
+
+**Rationale:** the token service is a credential exchange like the CI exchange (R-AUTH-001 "Exchange endpoints"), and handing the
+presented value to the stage keeps the rules of the endpoint, the throttle and the metrics in one place for both request forms. A
+registry token is refused there by the syntax step of a trove token, so it cannot renew itself. The development agent would revisit it
+if a client sends its credential in another field of the form.
+
+**Applied in the spec:** [R-OCI-004](#r-oci-004--authentication-challenge-and-token-service); R-AUTH-001 in
+[identity-and-authentication.md](../identity-and-authentication.md).
+
+### Q-OCI-52 · A malformed token request answers 400 in the distribution shape and the OAuth 2.0 shape at once
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One JSON object with the error list of R-OCI-008 (code `UNSUPPORTED`, the OAuth code first in the message) and the members `error` and `error_description` of RFC 6749 §5.2 (chosen) | Every error below `/v2/` keeps the body of R-OCI-003, and a client of the OAuth form reads its member | Both readers find what they parse; no client breaks on an unknown member | Two encodings of one refusal |
+| (b) The error list of R-OCI-008 only | One shape below `/v2/` | Uniform | The codes `invalid_request` and `unsupported_grant_type` that R-OCI-004 names have no place |
+| (c) The OAuth 2.0 body only | The form's own standard | RFC conformant | Breaks R-OCI-003 for one route |
+
+**Choice:** (a).
+
+**Rationale:** the token endpoint speaks two protocols; a body that satisfies both costs one member more. containerd falls back to a `GET`
+on a 400 whatever the body says, so the body is read by people and tools. The development agent would revisit it if a client refuses an
+object that carries both.
+
+**Applied in the spec:** [R-OCI-004](#r-oci-004--authentication-challenge-and-token-service).
+
+### Q-OCI-53 · `auth.registry_token.denied` is an access event deduplicated per client address, endpoint, reason and credential
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An asynchronous event per 401 of the token service with the endpoint in the event's column, deduplicated per replica, client address, endpoint, reason and form of the credential within `audit.token_rejection_dedup_window`; a rejected credential counts in the failed-credential throttle (chosen) | A client that loops on a wrong password writes one event and one summary per window and replica | Bounded volume whatever the request rate (at most three reasons times five forms per address and endpoint); a summary never folds an `invalid_token` or a `principal_disabled` under a harmless `credentials_required`, and a disabled owner's attempts, which write no `token.rejected`, keep a trail of their own | Up to n first events per window and key with n replicas (R-OPS-015) |
+| (a') The same, keyed on the client address only | One key per address | Fewest rows | The first event's reason and form stand for the whole window: stuffing after a harmless refusal is hidden |
+| (b) One event per refusal | Every attempt recorded | Complete | An anonymous caller fills the audit table at the throttle's rate |
+| (c) A log record only, as `auth.credential.rejected` | No row | No volume | A login loop of a registry client leaves no trace in the trail |
+
+**Choice:** (a).
+
+**Rationale:** the deduplication of R-OPS-015 already bounds the token rejections; the token service's refusals are the same kind of
+signal, and the key must keep apart what an investigation tells apart. The development agent would revisit it if the per-replica
+summaries turn out too coarse for an investigation.
+
+**Applied in the spec:** [R-OCI-034](#r-oci-034--audit-events-and-metrics); R-AUTH-041 in
+[identity-and-authentication.md](../identity-and-authentication.md); R-OPS-015 in [operations-and-observability.md](../operations-and-observability.md).
+
+### Q-OCI-54 · The key ID stands before the claims in the payload, so the MAC is checked before anything is parsed
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) payload = `1:<key id>:<claims as JSON>`; the MAC covers `trv_rgt_` + base64url(payload) as received (chosen) | The verifier reads the version and the key ID by two cuts, checks the MAC with the named key and parses the JSON only when it is authentic | No parser runs on forged input; no canonical form of the claims is needed | A form of its own instead of a JWT |
+| (b) The key ID inside the JSON | One encoding | Plain | The JSON of every forged token is parsed before its MAC is known |
+| (c) Every key of the ring is tried | No key ID | Simple | A forged token costs one MAC per key; an error cannot say which key |
+| (d) A JWT (JWS compact) | A known format | Libraries | Header-driven algorithm choice and the JWS pitfalls for a token only trove reads |
+
+**Choice:** (a).
+
+**Rationale:** authenticate before parse is the cheapest defence against crafted input on the hottest route. The development agent would
+revisit it if another party had to verify registry tokens.
+
+**Applied in the spec:** [R-OCI-005](#r-oci-005--registry-tokens).
+
+### Q-OCI-55 · The grant asks the decision point as a question with the image name as the package
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Per scope entry and action, the listing form of the decision (`PathsAllowed`) on the request's index with the image name as the package and the request kind of the action (read: metadata; deploy and delete: write); no audit event (chosen) | The coarse check of R-OCI-006, with the token scope, the endpoint ceiling and the anonymous switch | No `authz.denied` for an action the client merely asked for; anonymous callers are decided like any other | Read is asked on metadata, so a holder of `content:metadata-read` alone gets `pull` and is refused per artifact request |
+| (b) `DecideOn` per entry | The request's decision | Exact | Writes `authz.denied` for every scope a client asks for and is not granted |
+| (c) The check API of R-AUTHZ-023 (`CheckOn`) | A question without audit | Built for it | Refuses an anonymous subject, so anonymous tokens would grant nothing |
+
+**Choice:** (a).
+
+**Rationale:** a grant is a ceiling that must not be stricter than the request's own decision (Q-OCI-6), and a question must not be
+audited as a refusal. The development agent would revisit it if the decision point gains a question form for one coordinate.
+
+**Applied in the spec:** [R-OCI-006](#r-oci-006--permissions-per-operation).
+
+### Q-OCI-56 · One enforcement point in front of /v2/ checks a registry token's grant and fails closed
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `registry.Enforcer` is the only way to mount below `/v2/`: `Mount(router, pattern, handler, routes...)` registers the routes a handler serves (kind, coarse-check action, an example request) and puts the handler behind the check in one call; the start-up route-table check admits exactly the patterns mounted through it; the route of a request is the dispatcher's own match (`dispatch.Dispatcher.RegistryTarget`, as the stage shares `APIKeyRoute`); a registry token on a route without an entry, on an address the match cannot read, or on a route whose action has no token action answers 401 `insufficient_scope` with the code `oci_insufficient_scope`; exactly one version check, `GET` or `HEAD` of `/v2/`, which passes on `/v2/` only; `registrytest.Walk` proves it through the endpoint's whole handler with real registry tokens (chosen) | One place decides the ceiling for every route, before any handler, and nothing below `/v2/` can be mounted around it | A route that forgets its entry is refused instead of handing the registry token its trove token's full power; a handler mounted around the enforcer stops the start-up; one match cannot disagree with itself; the walk sees what a client sees: the stage, the conversion and the enforcer | The registry root mounts through an API of the registry package rather than the router directly |
+| (a') The same with a separate `Register` and `Wrap` and a resolver of the caller's choice | Fewer constraints on the mount | Flexible | A handler that is registered but not wrapped, or wrapped with a second matcher that disagrees with the dispatcher, defeats the check; the walk cannot tell |
+| (b) Each route calls `Allows` itself | The check where the route is | No table | A route that forgets the call grants everything the trove token may do; the catalog, the tags list, the upload sessions and the mount's source are each a place to forget it |
+| (c) The grant in `authz.Subject`, decided by the decision point | No new component | The decision point sees everything | A missing scope becomes 403 instead of the 401 `insufficient_scope` clients act on; `authz.denied` for every scope a client did not ask for; the catalog's per-name filtering would have to know the grant |
+
+**Choice:** (a).
+
+**Rationale:** the grant is a ceiling the decision point does not see, so it needs its own single point of enforcement, which must
+fail closed for what it does not know and must not be avoidable by the way a handler is mounted. The cache view is granted under the
+base repository because the dispatcher decides and serves it on the remote repository itself. `registrytest.Walk` checks that the
+registered names are exactly the format's routes and the three core routes, that every `/v2/` pattern of the router was mounted
+through the enforcer, that the dispatcher matches each example to its own route, that a real empty-grant token is refused on every
+route but the version check, and, per repository route, that every token action but the route's is refused and exactly the route's
+passes. The development agent would revisit it if a route below `/v2/` needs a ceiling the table cannot express (more than one image
+name per request besides the mount's source, which `Enforcer.Also` checks action by action).
+
+**Applied in the spec:** [R-OCI-005](#r-oci-005--registry-tokens); R-ARCH-005 in [architecture.md](../architecture.md); ADR-163.
+
+### Q-OCI-57 · The password of the OAuth 2.0 form is a Basic presentation and follows `auth.clients.basic.enabled`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The form's password counts as Basic: with `auth.clients.basic.enabled: false` the token service refuses it, as it refuses a `GET` with `Basic` (chosen) | One switch for every presentation of a token as a password | The switch means what it says; an operator who turned Basic off for a reason does not find a second road | No registry client gets a token with Basic off (Docker and Podman send Basic on `GET`, containerd posts the form and falls back to Basic) |
+| (b) The form is exempt from the switch | The form is a credential of its own | containerd works with Basic off | Docker and Podman still fail; a switch with an exception nobody expects |
+| (c) The token service ignores the switch altogether | The registry always works | Every client works | The switch no longer turns off Basic presentation everywhere (IAM-036) |
+
+**Choice:** (a).
+
+**Rationale:** exempting only the form would make one client work and leave the two most common ones broken, at the price of a switch
+that no longer covers every password presentation. The registry clients are named in the switch's description, the configuration
+reference and the Basic switch of R-AUTH-033. The development agent would revisit it if an installation needs the registry with Basic
+off (a client that presents the trove token as `Bearer` at the token service, which the stage accepts, would be the road).
+
+**Applied in the spec:** [R-OCI-004](#r-oci-004--authentication-challenge-and-token-service); the Basic switch of R-AUTH-033 in
+[identity-and-authentication.md](../identity-and-authentication.md).
+
 ### Q-OCI-80 · The token cache is read after the challenge, and a rejected cached token is replaced once
 
 Status: **Superseded by [Q-OCI-82](#q-oci-82--the-engine-asks-the-format-before-a-request-with-the-last-challenge-so-only-the-first-request-of-a-replica-is-challenged)** (decided by the development agent; the owner reviews it at the walkthrough). The text below is what was decided first.
@@ -1957,11 +2144,14 @@ challenged.
 ### H-579 · A holder of the stored-secret key ring can mint registry tokens
 
 The registry token service (R-OCI-005, built in T-16) derives its MAC key from the stored-secret key ring of R-ARCH-021. Whoever
-holds a key file of the ring can compute a valid registry token for any principal and any repository the principal could be granted,
-for up to `oci.token_lifetime` per token, without trove recording a token request. The decision point still decides each request and
-verification still reads the state of the named authenticating token, so a forged token cannot exceed the principal's own grants and
-must name a live token ID. Live once the format is built; real for an operator or attacker with read access to the key ring Secret,
-which already opens every sealed upstream credential.
+holds a key file of the ring can mint registry tokens at will, for any repository a principal could be granted, while the named trove
+token is live, without trove recording a token request; each minted token verifies for at most `oci.token_lifetime` and is refused
+when its issue time lies more than a minute ahead of the verifying replica's clock. The decision point still decides each request and
+verification still reads the state of the named authenticating token through the token cache, so a forged token cannot exceed the
+principal's own grants and must name a live trove token by the SHA-256 of its secret (Q-OCI-50): the forger needs that hash too, from
+the database (`api_token.secret_sha256`) or from a registry token issued for it, and the token's ID alone is not enough. Live once the
+registry root mounts `/v2/` (the token service and the verification are built); real for an operator or attacker with read access to
+the key ring Secret and to one of those hashes, who already opens every sealed upstream credential with the ring.
 
 ### H-580 · Untagged manifests accumulate until a retention policy removes them
 

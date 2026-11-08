@@ -54,6 +54,9 @@ type KeyRing struct {
 	aeads  map[string]cipher.AEAD
 	active string
 	fpKey  []byte // HKDF-derived fingerprint key
+	// raw are the key files' bytes by key ID, the input keying material of [KeyRing.Derive]. They never leave the
+	// package: a caller gets derived keys only.
+	raw map[string][]byte
 }
 
 // Load reads the key files named by cfg. A missing or unreadable file, a file
@@ -103,6 +106,7 @@ func Load(cfg config.Secrets) (*KeyRing, error) {
 		return nil, fmt.Errorf("secrets: derive fingerprint key: %w", err)
 	}
 	r.fpKey = fp
+	r.raw = raw
 	return r, nil
 }
 
@@ -313,6 +317,54 @@ func (r *KeyRing) Fingerprint(value []byte) []byte {
 	h := hmac.New(sha256.New, r.fpKey)
 	h.Write(value)
 	return h.Sum(nil)
+}
+
+// DerivedKeys are keys derived with HKDF-SHA-256 from every key of a ring for one purpose ([KeyRing.Derive]): one key per
+// key ID of the ring, and the ID of the active key. They are immutable and safe for concurrent use, and they render no key
+// material when logged.
+type DerivedKeys struct {
+	active string
+	keys   map[string][]byte
+}
+
+// Active returns the ID of the ring's active key and the key derived from it: the key that signs or seals new values.
+func (d *DerivedKeys) Active() (id string, key []byte) { return d.active, d.keys[d.active] }
+
+// Key returns the key derived from the ring's key id, false when the ring holds no such key.
+func (d *DerivedKeys) Key(id string) ([]byte, bool) {
+	k, ok := d.keys[id]
+	return k, ok
+}
+
+// String and LogValue render key IDs only.
+func (d *DerivedKeys) String() string { return fmt.Sprintf("derived{active=%s}", d.active) }
+
+// LogValue implements slog.LogValuer.
+func (d *DerivedKeys) LogValue() slog.Value {
+	return slog.GroupValue(slog.String("active_key_id", d.active))
+}
+
+// Derive returns a key of size bytes for every key of the ring, derived with HKDF-SHA-256 (RFC 5869, no salt) and the
+// purpose as info, so that a purpose never uses a key of the ring directly and two purposes never share a key (R-ARCH-021:
+// the content URLs use "trove content-url v1", the registry tokens "trove registry token v1"). The active key's derivation
+// signs; every key's derivation verifies, so a rotation of the ring needs no new secret for the purpose. info must be
+// non-empty and size between 16 and 64 bytes.
+func (r *KeyRing) Derive(info string, size int) (*DerivedKeys, error) {
+	if info == "" || info == fingerprintInfo {
+		return nil, fmt.Errorf("secrets: derive: the purpose %q is empty or reserved", info)
+	}
+	if size < 16 || size > 64 {
+		return nil, fmt.Errorf("secrets: derive: a derived key has 16 to 64 bytes, not %d", size)
+	}
+	d := &DerivedKeys{active: r.active, keys: make(map[string][]byte, len(r.raw))}
+	for id, ikm := range r.raw {
+		k, err := hkdf.Key(sha256.New, ikm, nil, info, size)
+		if err != nil {
+			return nil, fmt.Errorf("secrets: derive the key of %q for %q: %w", id, info, err)
+		}
+		d.keys[id] = k
+	}
+	return d, nil
 }
 
 // canaryColumn is the column of the secret_key_canary table (R-ARCH-021). It is

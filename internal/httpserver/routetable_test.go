@@ -11,7 +11,7 @@ func TestRouteTable(t *testing.T) {
 	noop := func(http.ResponseWriter, *http.Request) {}
 
 	t.Run("R-HA-041 the fixed rows alone pass", func(t *testing.T) {
-		if v := CheckRouteTable(NewClientRouter().Patterns(), nil); len(v) != 0 {
+		if v := CheckRouteTable(NewClientRouter().Patterns(), nil, nil); len(v) != 0 {
 			t.Fatalf("violations: %v", v)
 		}
 	})
@@ -24,7 +24,7 @@ func TestRouteTable(t *testing.T) {
 		} {
 			r.HandleFunc(p, noop)
 		}
-		if v := CheckRouteTable(r.Patterns(), nil); len(v) != 0 {
+		if v := CheckRouteTable(r.Patterns(), nil, nil); len(v) != 0 {
 			t.Fatalf("violations: %v", v)
 		}
 	})
@@ -32,18 +32,18 @@ func TestRouteTable(t *testing.T) {
 	t.Run("R-HA-041 a fixture plug-in that registers GET /v2/x fails the test and passes again once removed", func(t *testing.T) {
 		r := NewClientRouter()
 		r.HandleFunc("GET /v2/x", noop) // ServeMux accepts it: /v2/x does not conflict with anything
-		v := CheckRouteTable(r.Patterns(), nil)
+		v := CheckRouteTable(r.Patterns(), nil, nil)
 		if len(v) != 1 || !strings.Contains(v[0], "GET /v2/x") {
 			t.Fatalf("violations: %v", v)
 		}
-		if v := CheckRouteTable(NewClientRouter().Patterns(), nil); len(v) != 0 {
+		if v := CheckRouteTable(NewClientRouter().Patterns(), nil, nil); len(v) != 0 {
 			t.Fatalf("after removing the fixture: %v", v)
 		}
 	})
 
 	t.Run("R-HA-041 every spelling below /v2 is caught, whatever method or host prefix", func(t *testing.T) {
 		for _, p := range []string{"/v2", "/v2/", "GET /v2/x", "/v2/{name...}", "PUT example.com/v2/x", "example.com/v2/", "HEAD /v2/{name}/manifests/{ref}"} {
-			if v := CheckRouteTable([]string{p}, nil); len(v) != 1 {
+			if v := CheckRouteTable([]string{p}, nil, nil); len(v) != 1 {
 				t.Errorf("%q: violations %v", p, v)
 			}
 		}
@@ -51,20 +51,36 @@ func TestRouteTable(t *testing.T) {
 
 	t.Run("R-HA-041 a wildcard as the first segment is caught because it matches below /v2/", func(t *testing.T) {
 		for _, p := range []string{"/{seg}/x", "GET /{seg}", "/{rest...}", "POST host.example/{a}/b"} {
-			if v := CheckRouteTable([]string{p}, nil); len(v) != 1 {
+			if v := CheckRouteTable([]string{p}, nil, nil); len(v) != 1 {
 				t.Errorf("%q: violations %v", p, v)
 			}
 		}
 	})
 
 	t.Run("R-HA-041 the OCI format's own patterns are exempt", func(t *testing.T) {
-		if v := CheckRouteTable([]string{"/v2/", "GET /v2/{name...}"}, []string{"/v2/", "GET /v2/{name...}"}); len(v) != 0 {
+		if v := CheckRouteTable([]string{"/v2/", "GET /v2/{name...}"}, []string{"/v2/", "GET /v2/{name...}"}, nil); len(v) != 0 {
 			t.Fatalf("violations: %v", v)
 		}
 	})
 
+	t.Run("R-EP-006 each exemption list holds only below its own prefix", func(t *testing.T) {
+		wk := "/.well-known/terraform.json"
+		if v := CheckRouteTable([]string{wk}, []string{wk}, nil); len(v) != 1 {
+			t.Fatalf("a discovery document exempted as a registry pattern: %v", v)
+		}
+		if v := CheckRouteTable([]string{"GET /v2/{name...}"}, nil, []string{"GET /v2/{name...}"}); len(v) != 1 {
+			t.Fatalf("a registry pattern exempted as a host-root pattern: %v", v)
+		}
+		if v := CheckRouteTable([]string{"/{seg}/x"}, []string{"/{seg}/x"}, []string{"/{seg}/x"}); len(v) != 1 {
+			t.Fatalf("a wildcard first segment exempted by a list: %v", v)
+		}
+		if v := CheckRouteTable([]string{"GET /v2/{name...}", wk}, []string{"GET /v2/{name...}"}, []string{wk}); len(v) != 0 {
+			t.Fatalf("both lists together: %v", v)
+		}
+	})
+
 	t.Run("R-HA-041 names that merely start with v2 are not reserved", func(t *testing.T) {
-		if v := CheckRouteTable([]string{"/v2x/", "/v20/y", "/api/v2/"}, nil); len(v) != 0 {
+		if v := CheckRouteTable([]string{"/v2x/", "/v20/y", "/api/v2/"}, nil, nil); len(v) != 0 {
 			t.Fatalf("violations: %v", v)
 		}
 	})

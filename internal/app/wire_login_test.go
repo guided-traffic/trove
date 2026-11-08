@@ -30,7 +30,7 @@ func TestLoginRoutes(t *testing.T) {
 
 	t.Run("R-AUTH-005 R-EP-005 the login routes pass the route-table and surface checks of the default endpoint", func(t *testing.T) {
 		r := router(t, config.SurfaceUI, config.SurfaceAPI, config.SurfacePackages, config.SurfaceFiles)
-		if v := httpserver.CheckRouteTable(r.Patterns(), nil); len(v) > 0 {
+		if v := httpserver.CheckRouteTable(r.Patterns(), nil, nil); len(v) > 0 {
 			t.Fatalf("CheckRouteTable: %v", v)
 		}
 		for _, p := range routes {

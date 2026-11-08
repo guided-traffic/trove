@@ -95,13 +95,19 @@ The stage MUST select the credential in this order and MUST evaluate only the fi
 2. **`Authorization` header.** Either `Bearer <token>` ([RFC 6750](https://www.rfc-editor.org/rfc/rfc6750)
    §2.1) or `Basic base64(<any username>:<token>)`
    ([RFC 7617](https://www.rfc-editor.org/rfc/rfc7617)). The Basic username is recorded for
-   diagnostics and is otherwise ignored (INV-8).
+   diagnostics and is otherwise ignored (INV-8). On the routes below `/v2/` a `Bearer` value with the
+   prefix `trv_rgt_` is a registry token of the OCI token service ([formats/oci.md](formats/oci.md)
+   R-OCI-005): the stage verifies its MAC, its expiry and its endpoint without any lookup, and then the
+   trove token it was issued for exactly as if that token were presented, with the endpoint's rules
+   (R-AUTH-023, R-EP-010). Everywhere else, and as a Basic password, `trv_rgt_` is no trove token and
+   is rejected without a lookup.
 3. **Session cookie** `__Host-trv_session` (Q-AUTH-2). It is accepted on `/api/v1/…` for every
    method, with the CSRF rules of R-AUTH-012. On `/files/…` it is accepted for `GET` and `HEAD`, and for `PUT` and
    `DELETE` under the same CSRF rules, because the UI's deploy dialog and item actions use them
    ([api-and-ui.md](api-and-ui.md) R-API-006, R-UI-012). On `/api/<format>/…` it is accepted for
    `GET` and `HEAD` only, and never on an API-key endpoint, whatever its method (Q-AUTH-187).
-   Everywhere else it is ignored, and so is it on
+   Everywhere else it is ignored, below `/v2/` for every method included (registry clients hold no
+   session, [formats/oci.md](formats/oci.md) R-OCI-004), and so is it on
    `GET /api/v1/auth/login-options`, which the sign-in screen reads (Q-AUTH-177).
 4. **No credential.** The request becomes anonymous if R-AUTH-037 allows it; otherwise it is
    unauthenticated.
@@ -111,8 +117,9 @@ Normative rules:
 - If the selected credential is invalid (malformed, unknown, expired, revoked, or belonging to a
   disabled principal), the request MUST be rejected with 401 (R-AUTH-002). It MUST NOT fall
   through to a lower-ranked source or to anonymous.
-- `Bearer` and Basic credentials MUST be trove tokens (R-AUTH-022). Any other value MUST be
-  rejected without a database lookup. This covers identity-provider access tokens and ID tokens,
+- `Bearer` and Basic credentials MUST be trove tokens (R-AUTH-022), or, as `Bearer` below `/v2/`, registry
+  tokens (item 2). Any other value MUST be rejected without a database lookup; so MUST a registry token
+  whose MAC, expiry or endpoint does not verify. This covers identity-provider access tokens and ID tokens,
   JWTs in general, and passwords, including the break-glass password. There is one extension
   point: when [gitlab-ci-oidc.md](gitlab-ci-oidc.md)'s optional job-token fallback is enabled,
   the stage hands a Basic credential whose username is `gitlab-ci-token` to that verifier.
@@ -132,6 +139,11 @@ Normative rules:
     `POST /-/npm/v1/oidc/token/exchange/package/{name}`, and below every npm registry URL,
     `POST /api/npm/{projectKey}/{repoKey}/-/npm/v1/oidc/token/exchange/package/{name}`
     ([formats/npm.md](formats/npm.md) R-NPM-022, Q-NPM-1).
+
+  - from P1, the token service of the OCI registry, `GET` and `POST /v2/_token`
+    ([formats/oci.md](formats/oci.md) R-OCI-004, Q-OCI-51): its input is a trove token, which the
+    token service presents to this stage itself from the `Authorization` header or from the password
+    of the OAuth 2.0 form, so the stage applies every rule of this requirement to it.
 
   That ID token is not a credential for this stage, and the endpoints themselves are
   unauthenticated. The npm routes receive it as `Authorization: Bearer <ID token>`, the header npm,
@@ -181,7 +193,8 @@ Priority: **MVP** · Covers: TOK-033, TOK-034, PKG-NPM-007, PKG-NUGET-016
 | Endpoint family | `WWW-Authenticate` |
 |---|---|
 | `/api/v1/…` | `Bearer realm="trove"`, plus `error="invalid_token"` when a token was presented and rejected ([RFC 6750](https://www.rfc-editor.org/rfc/rfc6750) §3) |
-| `/api/<format>/…`, `/files/…` | `Basic realm="trove"`. Format pages may add challenges, for example the OCI token-service challenge. The npm endpoints MUST NOT include the token `otp` (PKG-NPM-012 is not implemented). |
+| `/api/<format>/…`, `/files/…` | `Basic realm="trove"`. Format pages may add challenges. The npm endpoints MUST NOT include the token `otp` (PKG-NPM-012 is not implemented). |
+| `/v2/…` (P1, [formats/oci.md](formats/oci.md) R-OCI-004) | `Bearer realm="<base>/v2/_token",service="<host>"`, plus `scope="repository:<name>:<actions>"` on a repository route and `error="invalid_token"` for a rejected credential; the token service `/v2/_token` itself answers `Basic realm="trove"` |
 | Every other route, and every request that carries Fetch Metadata headers (`Sec-Fetch-Mode` or `Sec-Fetch-Dest`) | `Bearer realm="trove"`: a browser answers a Basic challenge with its native login dialog instead of trove's sign-in screen, and package clients send no Fetch Metadata (Q-AUTH-173) |
 
 - The error body carries one `code`:
@@ -1740,7 +1753,11 @@ token    = body + checksum                                         // always 57 
 
 **Reference tokens (TOK-004).** Every trove token is what the catalog calls a reference token:
 an opaque string that is resolved through the database on every uncached request (R-AUTH-023).
-There is no second, self-contained form (TOK-003 is P2). Consequences:
+There is no second, self-contained form of a trove token (TOK-003 is P2). The registry token of the OCI
+token service (`trv_rgt_`, P1, [formats/oci.md](formats/oci.md) R-OCI-005) is no token type of this
+table: it is a short-lived, MAC-signed narrowing of the trove token that requested it, named after that
+token by the SHA-256 of its secret, never stored, verified through the cache of R-AUTH-023, and not
+matched by the scanner pattern above. Consequences for the trove tokens:
 
 - The create request has no "also issue a reference token" option; the one token it returns is
   the reference.
@@ -1782,7 +1799,9 @@ bits of entropy, a salt or a slow hash adds nothing, and a single indexed lookup
    matches. Failure gives 401 with no database access.
 2. The replica's token cache (below), keyed by the hash. On a miss, or while the freshness gate
    below bypasses the cache, the failed-credential throttle of R-AUTH-038 is checked first, then
-   `SELECT … FROM api_token WHERE secret_sha256 = $1`, joined with the owner's status.
+   `SELECT … FROM api_token WHERE secret_sha256 = $1`, joined with the owner's status. A registry
+   token (P1, [formats/oci.md](formats/oci.md) R-OCI-005) enters here, once its MAC verified, with the
+   hash and the type it carries, so a revocation stops it within the bound below.
 3. The token is rejected unless all of the following hold:
    - `revoked_at IS NULL`;
    - `expires_at IS NULL OR expires_at > now()`;
@@ -2651,9 +2670,11 @@ under the rules of this table.
 | Anonymous | Gets 401 |
 
 **Basic switch.** `auth.clients.basic.enabled` turns off Basic token presentation everywhere
-(IAM-036, ADMAPI-055). This breaks NuGet restore and `_auth` users, so the default is on and
-the settings response warns when it is off. Basic with a password is impossible regardless
-(R-AUTH-014).
+(IAM-036, ADMAPI-055). This breaks NuGet restore and `_auth` users, and (P1) every OCI registry
+client: the token service takes the trove token as Basic or as the password of the OAuth 2.0 form,
+which counts as a Basic presentation, so Docker, Podman and containerd get no registry token
+([formats/oci.md](formats/oci.md) R-OCI-004, Q-OCI-57). The default is on, and the settings response
+warns when it is off. Basic with a password is impossible regardless (R-AUTH-014).
 
 Configuration:
 
@@ -3347,6 +3368,7 @@ or authorization codes.
 | `auth.logout`, `auth.session.ended` (admin, evicted, principal disabled) | R-AUTH-010, R-AUTH-013 | yes; idle and absolute expiry are not recorded |
 | `auth.csrf_failed` | R-AUTH-012 | yes, at most one per session and minute on each replica; a log-volume bound, not a count |
 | `auth.credential.rejected` | R-AUTH-001 for malformed or unknown credentials | log stream and metric only, because of volume |
+| `auth.registry_token.denied` | the OCI token service (P1, [formats/oci.md](formats/oci.md) R-OCI-034) for a token request the stage refused with 401: `reason` (`invalid_token`, `credentials_required`, `principal_disabled`), `credential` (`basic`, `bearer`, `form`, `none`, `unreadable`); the endpoint in the event's column | yes, asynchronous, deduplicated per client address, endpoint, reason and credential within `audit.token_rejection_dedup_window` (Q-OCI-53); no event per issued registry token |
 | `token.rejected` | R-AUTH-023 for a revoked or expired token whose row exists | yes, at most one per token and hour in the whole cluster (R-AUTH-023 step 4); signals a leak or a stale client |
 | `token.created`, `token.rotated`, `token.revoked`, `token.expiring` | R-AUTH-027 to R-AUTH-032 | yes |
 | `user.created`, `user.updated`, `user.renamed`, `user.rename_conflict`, `user.disabled`, `user.enabled`, `user.deleted`, `user.dormancy_warning` | R-AUTH-007, R-AUTH-016, R-AUTH-021, R-AUTH-039 | yes; `details.source` is `jit`, `admin`, `scim`, `dormancy` or `admin-cli` |

@@ -278,6 +278,36 @@ WP0 ──┬─ WP1 ─────────────┐
   and the 409 `DENIED` of a push of a withheld digest; a remote's manifest rows are removed by the hook with the alias item
   `<name>/_manifests/<digest>` (WP8); a hook's cascade follows the event's reason once the trash can exists.
 
+## WP2 as built
+
+- Registry tokens (`internal/auth/registrytoken`): the form with the key ID before the claims (Q-OCI-54), the binding to the trove token
+  by ID, type and the SHA-256 of its secret, verified through the token cache (Q-OCI-50, ADR-163), HKDF keys from the key ring
+  (`secrets.KeyRing.Derive`), the configured lifetime and the issue time checked at verification, the scope grammar (a cache view under
+  its base repository), the challenge text, the metric. The stage accepts `Bearer trv_rgt_` below `/v2/` only (escaped and unescaped
+  path) and never the session cookie there; both token paths share `Stage.accept`; `/v2/_token` is not authenticated by the chain, the
+  token service presents its credential through `Stage.AuthenticateTokenRequest` (Q-OCI-51); the form follows the Basic switch
+  (Q-OCI-57). `internal/api/registry`: the token service (400 in both shapes, Q-OCI-52; `auth.registry_token.denied` deduplicated per
+  address, endpoint, reason and credential, Q-OCI-53), the grant decision (`Grantor`, `ActionOf`, Q-OCI-55) and the enforcement point
+  `Enforcer` - `Mount` the only way below `/v2/`, the route table admitting only its patterns, the dispatcher's own match
+  (`Dispatcher.RegistryTarget`), the code `oci_insufficient_scope` - with `registrytest.Walk` through the whole handler (Q-OCI-56). Gap H-595 (bearer for the lifetime); H-579 narrowed (the forger needs a live
+  token's hash, and a minted token verifies for at most the configured lifetime).
+- Left to WP3: the steps in [docs/developer/oci.md](../developer/oci.md#registry-tokens-and-the-token-service) - the enforcer per
+  endpoint in `rt.registry`, every `/v2/` handler through `Mount`, the dispatcher's `/v2/` handler routing by `RegistryTarget`, the walk
+  through the app's handler, the token service's route and wiring (the concrete `*auth.Stage`,
+  `credentialRules`, `withMinEpoch`, `recordPrincipal`), `Bound` restricted to repositories of the format, the stage's `RegistryScope`,
+  the version check's own challenge for a request without a credential. Left to WP1/WP3/WP5: the upload-session contract in the
+  developer page (every session call checks repository, image name and principal). Left to WP5: `enforcer.Also` for the mount's
+  source. Left to WP13: `TestR_AUTHZ_007_OCIActionMap`. The test names of the token service carry no R-OCI ID (the IDs are in
+  comments); WP3 names R-OCI-004/005/006/029/034 in its tests once `/v2/` is mounted and the grant check runs.
+- Touched outside the owned files: `internal/auth/auth.go` (`Credential.Registry`), `internal/auth/token/validate.go`
+  (`CheckSecretHash`), `internal/secrets/keyring.go` (`Derive`), `internal/httpserver/principal.go` (`RegistryGrant`),
+  `internal/app/{m1_convert,wire_identity,areas,wire_endpoints,app}.go`, `internal/api/dispatch/registry_target.go` (new),
+  `internal/httpserver/routetable.go` (`PatternPath` exported; `CheckRouteTable` takes the registry's and the host-root patterns as two
+  lists), `internal/archtest/{imports,layers}.go` (the dispatcher's transitive ban, the leaf `internal/api/registry/route`),
+  `internal/errs/codes.go` (`oci_insufficient_scope`), `internal/audit/{events_registry_token,dedup}.go`,
+  `internal/config/{oci,auth_identity}.go` and `schema.json` (descriptions), `test/integration/identity/env_test.go`
+  (`replicaOpts.dbOpts`).
+
 ## WP6 as built (the remote engine's handshake and revalidation)
 
 - The engine calls `Authenticator` and `Revalidator` (ADR-165): `proxy.Authenticator`/`proxy.Revalidator` are the engine's views,

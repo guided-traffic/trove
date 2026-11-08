@@ -386,8 +386,10 @@ missing file). Once the files area is merged, the same assertions run against it
 `trove.endpoint` and `trove.endpointsConfig` (and `values.schema.json`), and regenerate the schema with `go generate
 ./internal/config/...`.
 
-**A format that needs a host root.** Register its literal bound-host patterns through the exempt list of
-`CheckRouteTable`, read `httpserver.RootRepository(ctx)`, and fix the repository from it before authorization.
+**A format that needs a host root.** Register its literal discovery-document patterns below `/.well-known/` and pass them
+as the host-root list of `CheckRouteTable` (its third parameter; the second is the registry's patterns below `/v2/`, which
+only `registry.Enforcer.Mount` produces, and each list exempts only below its own prefix), read
+`httpserver.RootRepository(ctx)`, and fix the repository from it before authorization.
 
 **A content route (files, a format).** Take the subject with `edge.SubjectFrom(r)` and decide with it, so the endpoint's
 ceiling applies without the route naming it; never build or edit a `Subject` (the architecture test refuses it). Take the

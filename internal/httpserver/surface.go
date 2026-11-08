@@ -25,7 +25,7 @@ func FamilyOf(pattern string) string {
 	if pattern == RootPattern {
 		return config.SurfaceUI
 	}
-	return familyOfPath(patternPath(pattern))
+	return familyOfPath(PatternPath(pattern))
 }
 
 // FamilyOfPath is [FamilyOf] for a request path, which unlike a pattern may

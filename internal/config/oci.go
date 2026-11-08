@@ -6,7 +6,7 @@ import "time"
 // period of the sweep of unreferenced blobs. The per-repository settings of the format (oci.mirror) are in the repository
 // document, not here. The upload sessions the registry uses are storage.uploads (R-STOR-011).
 type OCI struct {
-	TokenLifetime         time.Duration `yaml:"token_lifetime" default:"300s" validate:"min=60s,max=3600s" doc:"Lifetime of a registry token (R-OCI-005); never beyond the expiry of the trove token it was issued for. A longer lifetime keeps a revoked permission alive longer (the bound of R-AUTH-023 applies to the trove token, not to this one)."`
+	TokenLifetime         time.Duration `yaml:"token_lifetime" default:"300s" validate:"min=60s,max=3600s" doc:"Lifetime of a registry token (R-OCI-005); never beyond the expiry of the trove token it was issued for. A longer lifetime widens the window in which a leaked registry token is usable while its trove token stays valid (H-595). Revoking the trove token or disabling its owner ends its registry tokens within auth.revocation_bound, and every request is decided again on the current grants."`
 	UnreferencedBlobGrace time.Duration `yaml:"unreferenced_blob_grace" default:"24h" validate:"min=1m" doc:"Age a blob of an image name must have before the sweep removes it for being referenced by no manifest of the name (R-OCI-019); must exceed storage.uploads.session_max_age, so a blob pushed before its manifest is never taken."`
 }
 

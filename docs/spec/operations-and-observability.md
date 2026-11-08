@@ -1600,7 +1600,9 @@ Audit events are stored in PostgreSQL and copied to the log stream (INV-16).
 - **Deduplication without updates.** Audit rows are never updated (Q-OPS-4). `authz.denied` is
   deduplicated per replica, principal, action, repository and path within
   `audit.denial_dedup_window`. `token.rejected` is deduplicated per replica and token ID within
-  `audit.token_rejection_dedup_window`.
+  `audit.token_rejection_dedup_window`, and `auth.registry_token.denied` per replica, client
+  address, endpoint, reason and form of the credential within the same window
+  ([formats/oci.md](formats/oci.md) R-OCI-034, Q-OCI-53).
   - The first occurrence is written at once, with `details.count` = 1.
   - Further occurrences within the window are counted in memory. When the window closes they are
     written as one summary event, with `details.count` = the number of repeats and
@@ -1829,6 +1831,7 @@ asynchronous. "Hook" marks events that webhooks may select (R-OPS-037).
 | `auth.logout` | A | — | Session ended by the user | `session_id` |
 | `ci.exchange.succeeded`, `.denied`, `.replayed`, `.repeated` | T, A, A, A | — | A CI token exchange (INV-10): issued, refused, a used single-use `jti`, a `jti` exchanged more often than `ci.replay.warn_after_exchanges`; the full table is [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-020 (it replaces the earlier `auth.ci_exchange_denied`) | `issuer`, `reason`, `token_id`, `mappings`, the claim snapshot after verification |
 | `token.rejected` | A | — | A well-formed trove token (valid checksum) was unknown, revoked or expired | `token_id` if known, `token_type`, `reason`, `count`, `repeat_of` (summaries only) |
+| `auth.registry_token.denied` | A | — | The OCI token service refused a token request with 401 ([formats/oci.md](formats/oci.md) R-OCI-034); the endpoint in the event's column; deduplicated per client address, endpoint, reason and credential | `reason`, `credential`, `count`, `repeat_of` (summaries only) |
 | `token.created` | T | — | Any trove token was issued, including CI exchanges | `token_type`, `scope`, `expires_at`, `ci_mapping`, `ci_claims` |
 | `token.revoked` | T | — | A token was revoked | `token_type`, `revoked_by` |
 | `auth.session.ended` | T | — | An administrator ended another user's session (`details.reason` `admin`) | `session_id`, `reason` |

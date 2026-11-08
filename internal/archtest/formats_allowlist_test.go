@@ -83,6 +83,28 @@ func TestDispatcherAndHostBans(t *testing.T) {
 			pkg("internal/formathost", "internal/api/edge", "internal/packages", "internal/items"),
 		}))
 	})
+	t.Run("R-ARCH-002 the dispatcher depending on the authentication stage or the registry root, also through another package, is named", func(t *testing.T) {
+		pkgs := []Package{
+			pkg("internal/api/dispatch", "internal/api/edge", "internal/api/registry/route", "internal/api/registry"),
+			pkg("internal/api/registry", "internal/auth", "internal/api/registry/route"),
+			pkg("internal/auth", "internal/auth/session"),
+			pkg("internal/api/edge", "internal/auth/principal"),
+		}
+		vs := CheckModuleBans(mod, pkgs)
+		wantEdge(t, vs, "R-ARCH-002", "internal/api/dispatch", "internal/api/registry")
+		wantEdge(t, vs, "R-ARCH-002", "internal/api/dispatch", "internal/auth")
+		wantEdge(t, vs, "R-ARCH-002", "internal/api/dispatch", "internal/auth/session")
+		wantClean(t, CheckModuleBans(mod, []Package{
+			pkg("internal/api/dispatch", "internal/api/edge", "internal/api/registry/route"),
+			pkg("internal/api/edge", "internal/auth/principal", "internal/authz"),
+			pkg("internal/api/registry/route", "internal/qname"),
+		}))
+		if l, ok := layerOf("internal/api/registry/route"); !ok || l != layerLeaf {
+			t.Fatalf("internal/api/registry/route: %v %v", l, ok)
+		}
+		wantEdge(t, CheckLayers(mod, []Package{pkg("internal/api/registry/route", "internal/api/registry")}),
+			"R-ARCH-002", "internal/api/registry/route", "internal/api/registry")
+	})
 	t.Run("R-ARCH-002 the new packages have layers", func(t *testing.T) {
 		if l, ok := layerOf("internal/packages"); !ok || l != layerDomain {
 			t.Fatalf("internal/packages: %v %v", l, ok)

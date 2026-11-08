@@ -21,9 +21,11 @@ const ReservedOCIPrefix = "/v2"
 // it answers 404 through the catch-all.
 const ReservedWellKnownPrefix = "/.well-known"
 
-// patternPath returns the path part of a ServeMux pattern: it drops the optional
-// method and the optional host.
-func patternPath(pattern string) string {
+// PatternPath returns the path part of a ServeMux pattern: it drops the optional
+// method and the optional host. It is the one parser of a pattern's path: the
+// route-table rules, the surface filter and the registry's enforcement point read
+// patterns through it.
+func PatternPath(pattern string) string {
 	rest := pattern
 	if i := strings.IndexAny(rest, " \t"); i >= 0 {
 		rest = strings.TrimLeft(rest[i:], " \t")
@@ -37,29 +39,36 @@ func patternPath(pattern string) string {
 // CheckRouteTable returns the violations of the route-table rules of R-ARCH-005
 // and R-HA-041 over the patterns of the client listener:
 //
-//   - no pattern other than the OCI format's (ociPatterns) has a path that is
-//     /v2 or starts with /v2/, whatever its method or host prefix;
+//   - no pattern other than the OCI format's has a path that is /v2 or starts with
+//     /v2/, whatever its method or host prefix; the OCI format's are exactly
+//     registryPatterns, the patterns mounted through the enforcement point of the
+//     registry tokens' grants (registry.Enforcer.Patterns, Q-OCI-56);
 //   - no pattern other than the catch-all and GET /{$} has a wildcard as its
 //     first path segment, because /{seg}/… matches below /v2/ too.
 //
-// R-EP-006 adds the same rule for /.well-known/: only a format's own host-root
-// patterns (also passed as ociPatterns, the format-registered exemptions) may
-// lie below it.
+// R-EP-006 adds the same rule for /.well-known/: only the host-root patterns a
+// format registers for its discovery documents (hostRootPatterns) may lie below it.
+// Each list exempts only below its own prefix: a registry pattern outside /v2/ or a
+// host-root pattern outside /.well-known/ is checked like any other.
 //
 // ServeMux's own conflict check does not replace this: a more specific pattern
 // such as /v2/x does not conflict with /v2/ and would register without a panic.
-func CheckRouteTable(patterns, ociPatterns []string) []string {
+func CheckRouteTable(patterns, registryPatterns, hostRootPatterns []string) []string {
 	var out []string
 	for _, p := range patterns {
-		if p == CatchAllPattern || p == RootPattern || slices.Contains(ociPatterns, p) {
+		if p == CatchAllPattern || p == RootPattern {
 			continue
 		}
-		path := patternPath(p)
-		if path == ReservedOCIPrefix || strings.HasPrefix(path, ReservedOCIPrefix+"/") {
+		path := PatternPath(p)
+		if below(path, ReservedOCIPrefix) && slices.Contains(registryPatterns, p) ||
+			below(path, ReservedWellKnownPrefix) && slices.Contains(hostRootPatterns, p) {
+			continue
+		}
+		if below(path, ReservedOCIPrefix) {
 			out = append(out, fmt.Sprintf("%q lies below %s/, which is reserved for the OCI format (R-HA-041)", p, ReservedOCIPrefix))
 			continue
 		}
-		if path == ReservedWellKnownPrefix || strings.HasPrefix(path, ReservedWellKnownPrefix+"/") {
+		if below(path, ReservedWellKnownPrefix) {
 			out = append(out, fmt.Sprintf("%q lies below %s/, which is reserved for discovery documents of formats (R-EP-006)", p, ReservedWellKnownPrefix))
 			continue
 		}
@@ -75,6 +84,9 @@ func CheckRouteTable(patterns, ociPatterns []string) []string {
 	}
 	return out
 }
+
+// below reports whether path is prefix or lies below prefix + "/".
+func below(path, prefix string) bool { return path == prefix || strings.HasPrefix(path, prefix+"/") }
 
 // familyProbes are concrete paths of the management API and of the token
 // exchange. The surface filter works on registered patterns, not on request

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/auth/principal"
+	"github.com/guided-traffic/trove/internal/auth/registrytoken"
 	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/ci/claims"
@@ -42,6 +43,11 @@ type Credential struct {
 	ExpiresAt     *time.Time
 	Scope         *scope.Scope // nil: no ceiling (sessions)
 	BasicUsername string
+	// Registry is the grant of a registry token (R-OCI-005): the further ceiling the route's action must be within on the
+	// routes below /v2/. Nil for every other credential. With a registry token, Method is MethodBearer, TokenID, TokenType
+	// and Scope are those of the trove token it was issued for (nothing for an anonymous one), and ExpiresAt is the registry
+	// token's expiry.
+	Registry *registrytoken.Grant
 }
 
 // Result is what the stage yields for an authenticated or anonymous request. A

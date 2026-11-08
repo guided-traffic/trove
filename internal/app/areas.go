@@ -9,6 +9,7 @@ import (
 	"github.com/guided-traffic/trove/internal/auth"
 	"github.com/guided-traffic/trove/internal/auth/oidc"
 	"github.com/guided-traffic/trove/internal/auth/principal"
+	"github.com/guided-traffic/trove/internal/auth/registrytoken"
 	"github.com/guided-traffic/trove/internal/auth/session"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/authz"
@@ -185,6 +186,9 @@ type loginArea struct {
 type authArea struct {
 	stage     auth.Authenticator
 	publicOps map[string]bool
+	// registry signs and verifies the registry tokens of the OCI token service (R-OCI-005); the stage verifies with it,
+	// the token service of the registry root issues with it. Nil in the shell, which serves no registry.
+	registry *registrytoken.Signer
 }
 
 // shellArea is the authentication stage of the shell profile over an empty token

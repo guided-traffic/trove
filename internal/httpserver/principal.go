@@ -5,6 +5,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/ci/claims"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // This file holds the seam between the authentication stage (R-ARCH-005 step 6)
@@ -98,6 +99,44 @@ type Credential struct {
 	// BasicUsername is the username of a Basic credential, recorded for
 	// diagnostics and otherwise ignored (R-AUTH-001).
 	BasicUsername string
+	// Registry is the grant of a registry token (R-OCI-005), nil for every other
+	// credential: a further ceiling below /v2/ that the registry root checks before
+	// the decision point. With it, TokenID, TokenType and Scope are those of the
+	// trove token the registry token was issued for (none for an anonymous one).
+	Registry *RegistryGrant
+}
+
+// RegistryGrant is the grant of a registry token as the edge carries it: at most
+// 16 entries of an image name of a repository with the actions of the distribution
+// token protocol, and the catalog (R-OCI-005, R-OCI-006). It never grants anything:
+// the decision point decides every request again.
+type RegistryGrant struct {
+	Entries []RegistryEntry
+	// Catalog is the grant registry:catalog:* (R-OCI-017).
+	Catalog bool
+}
+
+// RegistryEntry is one entry of a [RegistryGrant]: the repository and the image
+// name as the client addressed them, and the actions.
+type RegistryEntry struct {
+	Repo               qname.Repo
+	Name               string
+	Pull, Push, Delete bool
+}
+
+// Allows reports whether the grant holds the token action ("pull", "push" or
+// "delete") on the image name of the repository. A nil grant holds nothing.
+func (g *RegistryGrant) Allows(repo qname.Repo, name, action string) bool {
+	if g == nil {
+		return false
+	}
+	for _, e := range g.Entries {
+		if e.Repo == repo && e.Name == name &&
+			(action == "pull" && e.Pull || action == "push" && e.Push || action == "delete" && e.Delete) {
+			return true
+		}
+	}
+	return false
 }
 
 // Principal is the authenticated caller, or the anonymous one. It is the seam

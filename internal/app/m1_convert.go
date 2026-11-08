@@ -2,6 +2,7 @@ package app
 
 import (
 	"github.com/guided-traffic/trove/internal/auth"
+	"github.com/guided-traffic/trove/internal/auth/registrytoken"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/httpserver"
@@ -35,7 +36,14 @@ func endpointRules(rt *endpointRuntime) auth.EndpointRules {
 // and states only, never a token value or a hash.
 func principalFromResult(r auth.Result) httpserver.Principal {
 	if r.Anonymous {
-		return httpserver.AnonymousPrincipal()
+		p := httpserver.AnonymousPrincipal()
+		if r.Credential.Registry != nil {
+			// An anonymous registry token: anonymous, with its grant as a further ceiling (R-OCI-005).
+			p.Credential = httpserver.Credential{
+				Method: httpserver.AuthMethod(r.Credential.Method), ExpiresAt: r.Credential.ExpiresAt, Registry: registryGrant(r.Credential.Registry),
+			}
+		}
+		return p
 	}
 	p := httpserver.Principal{
 		Kind: httpserver.PrincipalKind(r.Principal.Kind),
@@ -49,6 +57,7 @@ func principalFromResult(r auth.Result) httpserver.Principal {
 			TokenType:     httpserver.TokenType(r.Credential.TokenType),
 			BasicUsername: r.Credential.BasicUsername,
 			Scope:         r.Credential.Scope,
+			Registry:      registryGrant(r.Credential.Registry),
 		},
 	}
 	for _, g := range r.Groups {
@@ -60,4 +69,19 @@ func principalFromResult(r auth.Result) httpserver.Principal {
 		p.Mappings = append([]string(nil), r.CI.Mappings...)
 	}
 	return p
+}
+
+// registryGrant converts the grant of a registry token to the edge's value (R-OCI-005); nil stays nil.
+func registryGrant(g *registrytoken.Grant) *httpserver.RegistryGrant {
+	if g == nil {
+		return nil
+	}
+	out := &httpserver.RegistryGrant{Catalog: g.Catalog}
+	for _, e := range g.Entries {
+		out.Entries = append(out.Entries, httpserver.RegistryEntry{
+			Repo: e.Repo, Name: e.Name,
+			Pull: e.Actions.Has(registrytoken.Pull), Push: e.Actions.Has(registrytoken.Push), Delete: e.Actions.Has(registrytoken.Delete),
+		})
+	}
+	return out
 }

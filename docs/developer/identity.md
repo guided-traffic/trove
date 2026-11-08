@@ -25,6 +25,7 @@ the decisions of this area are Q-AUTH-18 to Q-AUTH-22 and Q-AUTH-41 to Q-AUTH-48
 | [internal/auth](../../internal/auth) | The stage (`Stage`, implements `Authenticator`), the failure limiter interface and its per-replica implementation |
 | [internal/auth/principal](../../internal/auth/principal) | The principal table: read side with cache (`PGStore`), write side (`Manager`), the login seam (`PGProvisioner`), the change payloads (`Change`), the freshness gate (`Gate`, `Flights`), the identity metrics (`Metrics`) |
 | [internal/auth/token](../../internal/auth/token) | Token format, scopes, lifetime policy, `Service` (create, rotate, revoke, list, validate with cache), `SettingsStore` (runtime settings), the two scheduled tasks |
+| [internal/auth/registrytoken](../../internal/auth/registrytoken) | The registry token of the OCI token service (R-OCI-005): form, HKDF keys from the key ring, scope grammar, grant, challenge text, metrics; see [oci.md](oci.md#registry-tokens-and-the-token-service) |
 | [internal/avatar](../../internal/avatar) | The user avatar (R-API-055): `Processor.Process` turns an upload into a 256 x 256 PNG, `Store` keeps it in the blob store and `user_avatars` |
 | [internal/audit/events_identity.go](../../internal/audit/events_identity.go) | The identity event types with their data schemas and journal flags |
 | [internal/audit/events_bastion.go](../../internal/audit/events_bastion.go) | `bastion.created`, `bastion.updated`, `bastion.disabled`, `bastion.enabled`, `bastion.deleted`; the disable and the deletion carry the journal entry (Q-BAS-145) |
@@ -37,8 +38,8 @@ the decisions of this area are Q-AUTH-18 to Q-AUTH-22 and Q-AUTH-41 to Q-AUTH-48
 
 | File | Responsibility |
 |---|---|
-| `auth.go` | The contract: `Authenticator`, `Result`, `Credential`, `EndpointRules` (with `PublicRoute` and `APIKeyRoute`), `HeaderAPIKey` |
-| `stage.go` | `Stage.Authenticate`: credential selection and precedence (the API key first on the routes that declare it), endpoint rules, anonymous, challenges, error mapping |
+| `auth.go` | The contract: `Authenticator`, `Result`, `Credential` (with `Registry`, the grant of a registry token), `EndpointRules` (with `PublicRoute` and `APIKeyRoute`), `HeaderAPIKey` |
+| `stage.go` | `Stage.Authenticate`: credential selection and precedence (the API key first on the routes that declare it), endpoint rules, anonymous, challenges (the registry's below `/v2/`), error mapping; `byRegistryToken` (a `Bearer trv_rgt_` below `/v2/`, R-OCI-005); `AuthenticateTokenRequest` with `Presented`, `PresentedFrom`, `PresentedForm` for the OCI token service, whose route `/v2/_token` the chain does not authenticate (Q-OCI-51) |
 | `limiter.go` | `FailureLimiter` (the narrow limiter interface), `LocalLimiter`, the per-request throttle |
 
 ### internal/auth/principal
@@ -68,7 +69,7 @@ the decisions of this area are Q-AUTH-18 to Q-AUTH-22 and Q-AUTH-41 to Q-AUTH-48
 | `lifetime.go` | `resolveLifetime` (R-AUTH-026) |
 | `service.go` | `Service`: `Create`, `Get`, `List` (`ListFilter.Line` narrows it to one token and its line: the tokens derived from it or from its rotation predecessors), the record types; `CreateRequest.Delegated` (an Owner of the project, without an administrator capability, issues the token of a project service account: no `system` item, `admin: false`, 422 `invalid_scope`; not self-rotatable, 422 `validation_failed` at `/selfRotatable`, Q-AUTH-192; both in `checkDelegated`; never non-expiring, capped at the SAT maximum, Q-AUTH-190); `token.created` and `token.revoked` carry the owner's `project`; `insert` with `lineageCheck` (locks the parent and the rotated token with their `derived_from` chains and decides on what it finds then) |
 | `rotate.go`, `revoke.go` | `Rotate` (the successor keeps the lineage, Q-AUTH-89), `Revoke`, `RevokeByValue`, `RevokeAll`; `revokeTree` locks the tree before the cascade; `DescendsFrom` (whether a token's `derived_from` chain leads to another or to one of its rotation predecessors, the line of a narrowed token in the token API, Q-AUTH-199) |
-| `validate.go` | `Service.Check`/`Validate`: the validation path, the cache `auth_tokens`, `token.rejected`; the type `bst` is refused here as unknown before the cache and the table (R-BAS-005) |
+| `validate.go` | `Service.Check`/`Validate`: the validation path, the cache `auth_tokens`, `token.rejected`; the type `bst` is refused here as unknown before the cache and the table (R-BAS-005); `CheckSecretHash`, the same path from the cache on for a registry token's binding (R-OCI-005) |
 | `bastion.go` | The Bastion token (type `bst`, R-BAS-004): `CreateBastion`/`CreateBastionTx` (the lifetime rule of `auth.tokens.bst`, the limit per registration under the owner lock), `RevokeBastionToken`, `RevokeAllOfBastionTx` (deleting a registration), `AuthenticateBastion` (the validation of the interface, through the cache `auth_tokens` and `BastionTokenBySecret`) |
 | `settings.go` | `SettingsStore`: cache `auth_settings`, `Effective`, `Update` (R-AUTH-040); the journal entry of `settings.auth.changed` carries `anonymousAccess` and both runtime maxima before and after, `null` for the YAML value (Q-AUTH-207) |
 | `journal_replay.go` | The replay of the token events; `replaySettings` replays `settings.auth.changed` part by part: the anonymous switch (`switchOrder`) and each maximum (`maxOrder`, a total order with `null` the longest, so it never suspends), lowering by `IdentityLowerPATMax` and `IdentityLowerSATMax`, which also take a default above the new maximum down to it |

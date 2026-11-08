@@ -77,7 +77,7 @@ type AuthClients struct {
 
 // AuthClientBasic switches Basic presentation of a token.
 type AuthClientBasic struct {
-	Enabled bool `yaml:"enabled" default:"true" doc:"Off breaks NuGet restore and _auth users; Basic with a password is impossible regardless."`
+	Enabled bool `yaml:"enabled" default:"true" doc:"Off breaks NuGet restore, _auth users and every OCI registry client (Docker, Podman, containerd: the token service takes the trove token as Basic or as the password of the OAuth 2.0 form, Q-OCI-57); Basic with a password is impossible regardless."`
 }
 
 // AuthRateLimit holds the brute-force limits of R-AUTH-038.

@@ -11,6 +11,7 @@ import (
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/auth"
 	"github.com/guided-traffic/trove/internal/auth/principal"
+	"github.com/guided-traffic/trove/internal/auth/registrytoken"
 	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/auth/session"
 	"github.com/guided-traffic/trove/internal/auth/token"
@@ -198,6 +199,15 @@ func (a *App) wireAuth(_ context.Context, id identityArea, lim limitsArea, ss se
 	if ss.store != nil {
 		sessions = ss.store
 	}
+	// The registry tokens of the OCI token service are signed with keys derived from the key ring (R-OCI-005, R-ARCH-021).
+	// A replica always has its ring (wireKeys stops the start-up without one); an area built alone in a test has none, and
+	// its stage refuses every registry token.
+	var signer *registrytoken.Signer
+	if ring := part[keysArea](a.parts).ring; ring != nil {
+		if signer, err = registrytoken.NewSigner(ring, a.cfg.OCI.TokenLifetime); err != nil {
+			return authArea{}, err
+		}
+	}
 	stage := auth.New(auth.Options{
 		Tokens: id.tokens, Sessions: sessions, Principals: id.principals, Settings: id.settings, Limiter: lim.failures,
 		ExemptCIDRs: cfg.RateLimit.ExemptPrefixes(), ClientAddr: clientAddr, BasicEnabled: cfg.Clients.Basic.Enabled,
@@ -205,8 +215,29 @@ func (a *App) wireAuth(_ context.Context, id identityArea, lim limitsArea, ss se
 		// The token service validates and records the last use; it is checked above.
 		Uses:    id.tokens,
 		Metrics: id.metrics, Log: a.log.With("component", "auth"),
+		// The registry root adds RegistryScope, the scope of its route's challenge, when it mounts /v2/.
+		Registry: signer, RegistryRealm: registryRealm,
 	})
-	return authArea{stage: stage, publicOps: publicOps}, nil
+	return authArea{stage: stage, publicOps: publicOps, registry: signer}, nil
+}
+
+// credentialRules are the rules the authentication stage applies on an endpoint (R-EP-010): the endpoint's own and the
+// answers of the router and the dispatcher it asks. The chain's stage and the token service of the registry
+// (auth.Stage.AuthenticateTokenRequest, wired with the mount of /v2/) take the same rules.
+func (a *App) credentialRules(rt *endpointRuntime) auth.EndpointRules {
+	rules := endpointRules(rt)
+	rules.PublicRoute = a.publicRoute(rt)
+	// A route of a family this process does not serve is not always open: it is decided like an unknown path (Q-ARCH-302).
+	rules.Served = func(r *http.Request) bool { return rt.ep.ServesRequest(r.URL.Path) }
+	rules.APIKeyRoute = a.apiKeyRoute()
+	rules.Refused = a.credentialRefused(rt)
+	return rules
+}
+
+// registryRealm is the realm and the service of the registry's challenge for a request (R-OCI-004 step 1): the token
+// service under the request's response base URL, which the chain resolved from the endpoint and the host (R-EP-003).
+func registryRealm(r *http.Request) (realm, service string) {
+	return registrytoken.Realm(httpserver.InfoFrom(r.Context()).BaseURL)
 }
 
 // wireShell is the shell area: the same stage over an empty token store, so the
@@ -378,12 +409,7 @@ func (a *App) authenticate(rt *endpointRuntime) func(*http.Request) (httpserver.
 // authentication (authenticate) does, and the check of the Bastion interface runs a caller's credential through
 // it on behalf of the registration, whose request the log line stays (R-BAS-008, R-BAS-011, Q-BAS-119).
 func (a *App) credentialStage(rt *endpointRuntime) func(*http.Request) (httpserver.Principal, error) {
-	rules := endpointRules(rt)
-	rules.PublicRoute = a.publicRoute(rt)
-	// A route of a family this process does not serve is not always open: it is decided like an unknown path (Q-ARCH-302).
-	rules.Served = func(r *http.Request) bool { return rt.ep.ServesRequest(r.URL.Path) }
-	rules.APIKeyRoute = a.apiKeyRoute()
-	rules.Refused = a.credentialRefused(rt)
+	rules := a.credentialRules(rt)
 	stage := a.authStage().stage
 	return withMinEpoch(func(r *http.Request) (httpserver.Principal, error) {
 		res, err := stage.Authenticate(r, rules)

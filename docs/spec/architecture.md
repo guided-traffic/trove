@@ -785,7 +785,10 @@ authorization declarations are looked up by the matched `http.Request.Pattern`
     registered under `/v2/`, and those paths answer the `404` problem.
     - A route-table test in `internal/httpserver` fails when any registered client-listener pattern
       other than the OCI format's has a path that is `/v2` or starts with `/v2/`, whatever its
-      method or host prefix (`GET /v2/x`, `/v2/{name...}`). It also fails when a pattern other than
+      method or host prefix (`GET /v2/x`, `/v2/{name...}`). The OCI format's patterns are exactly the ones
+      mounted through the enforcement point of the registry tokens' grants (`registry.Enforcer.Mount`,
+      [formats/oci.md](formats/oci.md) Q-OCI-56): the start-up check takes them as its only exemptions, so a
+      handler mounted below `/v2/` around the enforcement point stops the start-up. It also fails when a pattern other than
       the catch-all for "anything else" and `GET /{$}` has a wildcard as its first path segment
       (`/{seg}/…`), because such a pattern matches below `/v2/` as well.
     - ServeMux's start-up conflict check does not replace this test. A more specific pattern such as

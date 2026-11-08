@@ -442,13 +442,13 @@ func TestEndpointSurface(t *testing.T) {
 			e := endpointFixture(t, s, name)
 			r := NewEndpointRouter(e)
 			register(r)
-			if v := CheckRouteTable(r.Patterns(), nil); len(v) != 0 {
+			if v := CheckRouteTable(r.Patterns(), nil, nil); len(v) != 0 {
 				t.Errorf("%s: %v", name, v)
 			}
 			bad := NewEndpointRouter(e)
 			bad.HandleFunc("GET /v2/x", noop)
 			bad.HandleFunc("GET /api/npm/{projectKey}/{repoKey}/x", noop)
-			if v := CheckRouteTable(bad.Patterns(), nil); len(v) != 1 {
+			if v := CheckRouteTable(bad.Patterns(), nil, nil); len(v) != 1 {
 				t.Errorf("%s: a /v2/ fixture gives %v", name, v)
 			}
 		}
@@ -459,20 +459,20 @@ func TestEndpointSurface(t *testing.T) {
 			e := endpointFixture(t, s, name)
 			r := NewEndpointRouter(e)
 			r.HandleFunc("GET /.well-known/x", noop)
-			v := CheckRouteTable(r.Patterns(), nil)
+			v := CheckRouteTable(r.Patterns(), nil, nil)
 			if len(v) != 1 || !strings.Contains(v[0], "/.well-known/x") {
 				t.Errorf("%s: violations %v", name, v)
 			}
 			// removing the fixture passes again
-			if v := CheckRouteTable(NewEndpointRouter(e).Patterns(), nil); len(v) != 0 {
+			if v := CheckRouteTable(NewEndpointRouter(e).Patterns(), nil, nil); len(v) != 0 {
 				t.Errorf("%s after removing: %v", name, v)
 			}
 		}
-		if v := CheckRouteTable([]string{"/.well-known/terraform.json"}, []string{"/.well-known/terraform.json"}); len(v) != 0 {
+		if v := CheckRouteTable([]string{"/.well-known/terraform.json"}, nil, []string{"/.well-known/terraform.json"}); len(v) != 0 {
 			t.Errorf("a format's own pattern is exempt: %v", v)
 		}
 		for _, p := range []string{"/.well-known", "/.well-known/", "GET example.com/.well-known/x"} {
-			if v := CheckRouteTable([]string{p}, nil); len(v) != 1 {
+			if v := CheckRouteTable([]string{p}, nil, nil); len(v) != 1 {
 				t.Errorf("%q: %v", p, v)
 			}
 		}

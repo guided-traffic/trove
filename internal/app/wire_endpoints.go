@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/guided-traffic/trove/internal/api/registry"
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/httpserver"
@@ -20,6 +21,9 @@ type endpointRuntime struct {
 	tls    *httpserver.ListenerTLS
 	router *httpserver.Router
 	srv    *httpserver.Server
+	// registry is the enforcement point of the registry tokens' grants below /v2/ (Q-OCI-56), set by the mount of /v2/: the
+	// route table admits exactly the /v2/ patterns mounted through it, and none while it is nil.
+	registry *registry.Enforcer
 }
 
 // servesEndpoint reports whether this process opens the listener of an endpoint

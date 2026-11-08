@@ -448,7 +448,7 @@ Acceptance criteria:
 - With `delete` but not `deploy` on `npm-internal`, `npm unpublish @acme/ui@1.0.0` succeeds and
   `npm publish` answers 403.
 
-### R-AUTHZ-007 · Action map for npm and NuGet operations
+### R-AUTHZ-007 · Action map for npm, NuGet and OCI operations
 Priority: **MVP** · Covers: PKG-NUGET-019, PKG-NUGET-022, PKG-NPM-015, PKG-NPM-019, PKG-NPM-021
 
 The format plug-in turns each protocol request into a coordinate and its required actions. This
@@ -496,6 +496,25 @@ NuGet:
 | Symbol package push | ID | `deploy` | yes |
 
 The NuGet API key header carries a credential (INV-8) and plays no further part in authorization.
+
+OCI (P1; the coordinate is the repository, the image name as the package and, for a tag, the tag as the version; protocol details on
+[formats/oci.md](formats/oci.md) R-OCI-006). The last column is the action of the distribution token protocol a registry token must
+grant for the operation: the token service grants it by the coarse check of the row's action, and the grant is a ceiling only, every
+request is decided again (R-OCI-005, Q-OCI-6):
+
+| Client operation | Coordinate | Actions | Ownership | Token scope action |
+|---|---|---|---|---|
+| Version check `/v2/` | none | a valid credential, or none (answered 401) | — | — |
+| Catalog | repository level; results filtered per name | `read` | — | `registry:catalog:*` |
+| Manifest or blob `GET`/`HEAD`, tags list, referrers | name (and tag) | `read`; a remote fill also its `cacheFillAction` (R-AUTHZ-008) | — | `pull` |
+| Start, continue, finish, query or cancel a blob upload | name | `deploy` | yes | `push` |
+| Mount a blob from another name | target name; source repository and name | `deploy` on the target, `read` on the source | yes (target) | `push` on the target, `pull` on the source |
+| Push a manifest by digest, or under a tag that does not exist or already points at the same digest | name, tag | `deploy`; for the first version of the name in the repository also the shadowing check | yes | `push` |
+| Push a manifest under a tag that points at another digest | name, tag | `deploy` and `overwrite` | yes | `push` |
+| `DELETE` a tag, a manifest or a blob | name | `delete` | yes | `delete` |
+
+The per-row test of the OCI table is `TestR_AUTHZ_007_OCIActionMap`, with the integration tests of the format; a row the format does not
+serve yet answers its `501` until the handler of the row is built.
 
 **Per-format notes and tests (E3.4).** Every row of the two tables has one test per format, or a note below, each
 holding a principal with exactly the action of the row (plus `read`, which a client needs to see

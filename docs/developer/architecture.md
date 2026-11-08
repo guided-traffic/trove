@@ -180,8 +180,9 @@ do not see is a cache that grows after the admission (H-539): that is the heap g
 Every route of a listener is registered through `httpserver.Router`. The generated API operations, the
 UI and later the format dispatcher all use `Router.Handle`, so `Router.Patterns()` is the whole route
 table. At start-up the composition root runs two checks over it: `Document.CheckRoutes` (API routes and
-`api/openapi.yaml` agree in both directions) and `httpserver.CheckRouteTable` (nothing but the OCI format
-below `/v2/`, no wildcard first segment, R-HA-041). A violation stops start-up and names the pattern. Every endpoint has its own router and the checks run over each: `CheckSurface`
+`api/openapi.yaml` agree in both directions) and `httpserver.CheckRouteTable` (below `/v2/` nothing but the patterns mounted
+through the registry's enforcement point, below `/.well-known/` nothing but the host-root patterns a format registers, no
+wildcard first segment, R-HA-041, R-EP-006). A violation stops start-up and names the pattern. Every endpoint has its own router and the checks run over each: `CheckSurface`
 (no route of a family outside the endpoint's surface) and `CheckRouteTable`, which now also reserves `/.well-known/`
 (R-EP-006). The `Document.CheckRoutes` comparison runs for the endpoints that serve `api`.
 
