@@ -952,7 +952,7 @@ phase 7, so that the failure suite covers the background sync too. Its engine wa
 Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · spec: [ha-and-helm.md](../spec/ha-and-helm.md), [backup-and-restore.md](../spec/backup-and-restore.md)
 
 **High availability**
-- 🟡 Failure suite: pod crash, PostgreSQL switchover and failover, Valkey failover and outage, S3 outage, node loss.
+- 🟢 Failure suite: pod crash, PostgreSQL switchover and failover, Valkey failover and outage, S3 outage, node loss.
   Built 2026-11-06 in the set `ha-suite` (nightly leg `e2e-npm (ha-suite)`), under the npm load: the PostgreSQL primary force-deleted
   (301 `npm ci`, 0 failed, k6 18,146 requests without a failure) and the Valkey primary force-deleted (`/readyz` 200 throughout)
   passed on kind; the object-store outage of 30 s and of 5 min with a replica deleted, and node loss (`docker stop` of a kind node)
@@ -970,7 +970,7 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   cannot, never `500` and never `404` (also through a virtual repository for a caller who may not fill); a fill that cannot restore it
   backs off for 5 minutes; the read marks the blob, `TroveBlobMissing` fires, and the mark heals once the object is back (a read asks the
   store again once per blob and 30 s) (Q-REPO-202 to Q-REPO-206, Q-STOR-151 to Q-STOR-153, `TestR_STOR_027_*`, `TestR_HA_024_*`)
-  (`TestNPMHACrash`, `TestNPMHA`, `TestNPMHAClosing`, `TestE13Failover`). The dispatched nightly run 42461514664 (2026-11-08, release v0.26.0) passed `e2e-npm (ha-suite)` whole, with no reset at the client forwarder (F-70 closed); the stall of F-66 is open until a scheduled run passes the set
+  (`TestNPMHACrash`, `TestNPMHA`, `TestNPMHAClosing`, `TestE13Failover`). The dispatched nightly run 42461514664 (2026-11-08, release v0.26.0) passed `e2e-npm (ha-suite)` whole, with no reset at the client forwarder (F-70 closed); the stall of F-66 did not recur in the dispatched runs 42338478182 and 42461514664 and is closed as not reproduced
 - 🟢 Node drain under npm and NuGet load with zero failed requests; the NuGet load (`TestNuGetHA`) and R-ARCH-024's drain
   criterion move here from phase 4 ([Q-NUGET-73](../spec/formats/nuget.md#q-nuget-73--the-nuget-part-of-the-drain-test-moves-to-phase-7-with-the-other-long-legs)). `TestNuGetHA` (set `nuget-ha`, nightly leg `e2e-nuget (nuget-ha)`
   on the large class, Q-HA-100 to Q-HA-102, Q-NUGET-111) passed on kind on 2026-11-06: drain variant A under the whole load of R-HA-059,
@@ -1027,7 +1027,7 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   Both fixes passed the whole set on the dev cluster (25 min 51 s), and the frozen node with the lease's holder on it
   progressed again after 2 min 7 s; released in v0.20.1. The set `mirror` runs its install-time ratio on `large` since
   [Q-REPO-211](../spec/repositories-and-proxy.md#q-repo-211--the-nightly-install-time-ratio-of-clients-first-runs-on-the-large-class)
-  (F-63; 96 % in the dispatched nightly run 42226311597, 131 % in 42258656348, now a product finding). The set `mirror-long` passed whole
+  (F-63: 96 % in the dispatched nightly run 42226311597, 131 % in 42258656348; after the slot split of Q-REPO-235, 97 % in 42461514664, F-63 closed). The set `mirror-long` passed whole
   in the dispatched nightly run 42258656348 (release v0.20.2)
 - 🟢 The Bastion under the failure suite: a Bastion replica drained and lost, the main installation unreachable and
   failing over, a rolling upgrade of either side. Built 2026-11-06 in the set `bastion-long` (Q-BAS-141 to Q-BAS-144) and green on the
@@ -1059,7 +1059,7 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   (Q-HA-125). The store is released in v0.20.2 (the review's fixes included: rows kept by content, every read verified, Q-UI-142,
   Q-UI-143); a UI change that alters the bundle must be released after it. The set `upgrade` with the test across two bundles passed
   in the dispatched nightly run 42258656348
-- 🟡 Performance targets met in two nightly runs in a row. Worked on 2026-11-06 (F-43): the findings page of a pattern grant decides each
+- 🟢 Performance targets measured every night (owner, 2026-11-08: no "two runs in a row" gate during the alpha; a missed bound is a finding, F-43). Worked on 2026-11-06 (F-43): the findings page of a pattern grant decides each
   package once (V-7b), a publish's evaluation makes two round trips instead of eight (V-4), the advisory import's statements reach rows by
   their primary key and the `ecosystem` columns carry no planner statistics (V-1, F-57), and the perf jobs run after the kind legs
   (Q-ARCH-325). The dispatched nightly run 42211913572 met ten of the eleven values of R-VULN-028 (V-1 1.01 min, V-4 3.18 ms, V-7b 112 ms);

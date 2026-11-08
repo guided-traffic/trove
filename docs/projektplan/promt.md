@@ -88,6 +88,7 @@ Hard rules, also for every subagent (put them into every subagent prompt):
    unavoidable, run them with `isolation: "worktree"` and merge their branches afterwards.
 4. Resume rule: for a 🟡 phase, compare the checklist with the code and with `git log` since the
    last tag, keep what is done and tested, and plan only the rest.
+During the alpha the owner wants features (2026-11-08): no done criterion of a phase, an item or a finding waits for N green runs in a row; a red long leg is a finding with its cause, a finding whose last reading is green is closed with it, and the registries of section 10 are planned and built instead of waiting on confirmations.
 5. Open findings: plan every finding of [section 8](#8--open-findings), and every task of
    [section 9](#9--owner-review-of-2026-11-06-tasks-and-open-questions) in its order, as a work package of this run,
    in front of the phase's own packages. The registries of [section 10](#10--owner-tasks-of-2026-11-07-the-next-registries)
@@ -248,79 +249,6 @@ Found on 2026-11-08 by the security audit of the F-72 fix, reading a replay hand
   when a genuine entry cannot be shadowed by a forged earlier one for the same version (e.g. the replay keeps every journaled digest of a
   version reserved, or refuses a reservation whose digest differs from another entry's), with a test.
 
-Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
-
-### Product
-
-- **F-66 · The object-store outage of 30 s under the npm load stalls the `packages` replicas since this run's changes** (confirmed from
-  the job log of the dispatched nightly run 42258656348, leg `e2e-npm (ha-suite)`, release v0.20.2; cause not established).
-  `TestHASuite_ObjectStoreOutage` (30 s): `/readyz` of both `packages` pods answered non-200 11 and 2 times and `/healthz` 10 and 2 times
-  during the outage, and 2,094 k6 requests failed other than as a tarball `503`, the first ones `request_timeout` after 45 s, all
-  starting within 0.6 s (17:19:05.0 to 17:19:05.6); every npm command passed (188, 0 failed), the uploads were refused before the body.
-  In the dispatched nightly run 42211913572 (release v0.19.5) the same subtest had no non-200 `/readyz` or `/healthz` at all. The 300 s
-  outage, node loss and both primary losses behaved as before. Changed between the two runs on the object store's paths: the read of a
-  lost object and the recheck of a `missing` mark (F-62, Q-STOR-151, Q-STOR-153), the shared UI asset store (F-58, not on `packages`),
-  the lease sessions' `idle_session_timeout` (F-65). Read from the run's artifact `e2e-npm-cluster-state-ha-suite`, the
-  edge's access log and the job log (2026-11-07): the pods' logs do not hold the window (`2hqv7` and `bqtrr`, the pods that
-  stalled, were killed by their liveness probe at about 17:20 and replaced, the 5 min subtest deleted another, and the kubelet's
-  current log file of `t8gpz`, the one that came through, starts at 17:34), so the cause is **not named yet**. What is
-  known: the store was back at 17:18:27 (the last tarball `503` of the outage), blobs were served again 1.0 s after the return, and
-  the edge's connect time to all three pods (Tc, the TLS handshake included) rose from 12 ms to 0.5 s at 17:18:40 and to 2 s at
-  17:19:10 while the request rate was a quarter of the minute before the outage, with the time to the response headers (Tr) staying
-  at 0.1 to 0.3 s; k6's tarballs then took 20 to 30 s to transfer (the cluster's own npm clients 2 s); the probes of both pods timed
-  out (`context deadline exceeded`, not a `503`) from 17:19:05, six failures in 10 s periods end in the kill at about 17:20:05; the
-  uploads of the test were accepted only 84 s after the return. That is a stall of the process or of its node, beginning with the
-  store's return, not a check that waits on the object store (`/healthz` and `/readyz` answer from cached results and a stuck
-  watched loop would answer `503` at once). Read in the code between v0.19.5 and v0.20.2 and found no wait on the store in a
-  probe, a blocking call under a database transaction, or a per-request cost that grew (`blob.Store.Open`, `RecheckMissing`,
-  `items.Store.Usable`, `proxy` lost-item paths, `virtual` walk, the lease sessions' `idle_session_timeout`, which only the lease
-  connections carry; the shared UI asset store is wired on `api`, `web` and `all` only, `TestR_ARCH_001_RoleTableIsData`). No
-  fix is written for a cause that is not shown. The next nightly names it: the monitor of the fault tests now keeps what it
-  saw (`test/e2e/monitor_test.go`): the first four non-200 answers of every pod with their status and body (the failing
-  check, or the transport error) in the job log, and the log of each failing pod (`kubectl logs --timestamps`, since a minute
-  before the load) each fifteenth failing sample and at the end, with the previous instance of a restarted pod, in the artifact
-  `e2e-artifacts-ha-suite` under `podlogs-<fault>/`; the stuck-loop goroutine dump of `/healthz` (R-OPS-001) is in those logs.
-  Still missing and to be added with the next reading if the logs do not name it: the pods' CPU throttling (`cpu.stat`) and
-  memory (`/metrics` `go_memstats`, `trove_http_in_flight`) at the time. Done when the cause is named and fixed and the set
-  passes in a nightly run.
-  The dispatched nightly run 42338478182 (2026-11-07, release v0.22.0, `sets=ha-suite`, runner class `large`) passed the whole set,
-  `TestHASuite_ObjectStoreOutage` included (30 s and 5 min, no replica unready), with the monitor that keeps a failing pod's
-  logs; it did not reproduce the stall. Done when the scheduled nightly runs pass the set too (then removed as not reproduced),
-  or a recurrence names the cause through the kept logs. The dispatched nightly run 42461514664 (2026-11-08, release v0.26.0) passed `ha-suite` whole again.
-
-- **F-63 · `TestMirror_R_REPO_055_ClientsFirst/npm` missed its install-time bound in the scheduled nightly run 42194413882** (confirmed from
-  the run's pod logs, 2026-11-06, release v0.19.4). `npm ci` with a pass running took 161 % of the best install without it (22.6 s against
-  14.0 s, the bound 120 %, R-REPO-055, Q-REPO-197). Cause: the leg ran on a GitHub-hosted runner (4 vCPUs for the cluster, both stubs and the
-  clients); the upstream fetches took 122 ms at the median with and without a pass, and what grew in the two slow pairs was trove's own work around
-  them (storing and answering: 12 to 26 s against 82 s summed over 707 tarballs), the pass's CPU taken from the installs. The overlap with another
-  run that was suspected first does not apply to that class (each hosted job has its own VM). Fixed in CI: the nightly row `mirror` runs on
-  `large` since [Q-REPO-211](../spec/repositories-and-proxy.md#q-repo-211--the-nightly-install-time-ratio-of-clients-first-runs-on-the-large-class).
-  The dispatched nightly run 42226311597 (2026-11-06, `large`) passed it: 96 % (pairs 90 %, 133 %, 96 %; the open requests within the
-  bound, the pre-emptions grew); one pair of three above the bound on `large` too, so the scheduled nightly run is the second reading.
-  The dispatched nightly run 42258656348 (release v0.20.2, `large`) missed it: 131 % (pairs 16.4/16.8 s, 14.3/19.5 s, 12.8/12.7 s), so by
-  Q-REPO-211 this is a product finding now: the pass slows the installs on a 16-CPU runner too. Next: split the phases as Q-REPO-211 did,
-  from that run's artifact `e2e-mirror-cluster-state-mirror`. Done when the cause is named and the bound holds.
-  Split on 2026-11-07 (the pod logs of 42258656348 and 42194413882, joined by `trace_id`): the upstream fetches did not change (tarball
-  p50 122 ms in all six installs, every attempt the first, no shedding, no queue timeout); the extra time is in the cache commit's last
-  transaction (item link, proxy entry, audit row, commit), whose median rose from about 10 ms to about 90 ms in windows of 3 to 4 s on all
-  three `packages` replicas at once (load1 of 42258656348: commit sum 23.1 s against 11.0 s idle), so the stall sits in a shared dependency
-  (the primary, its disk or standby, or the host), and it appears without a pass too, smaller. The fetch slot is held through that commit
-  (`fetcher.run` releases after `inSlot`, which includes `Items.Commit`, `internal/proxy/fetch.go`), so a slow commit lowers the whole
-  install's throughput (9 client slots for 15 requests in flight; 50 down to 21 to 26 requests/s in the window). The estimator compares
-  the median loaded install with the best idle install of any pair (131 % in 42258656348; its pairs alone 103 %, 136 %, 99 %); a loaded
-  install more than 30 % slower than its own pair's baseline happened in pair 1 in 7 of 19 runs, in pair 0 never. Readings: large
-  96 %, 131 %, 98 % (42356771989); hosted 161 %, 163 % and twelve at 99 to 104 %. Not named: why the commit stalls and why a pass makes
-  it likelier; the artifacts hold no database, disk or CPU measurement and no log of the pass (the cluster state is taken after the
-  profile is switched back).
-  Built on 2026-11-08: a fetch returns the repository's share of its slot once the upstream exchange ends and keeps the replica's slot
-  through the commit ([Q-REPO-235](../spec/repositories-and-proxy.md#q-repo-235--the-repositorys-share-of-a-fetch-slot-ends-with-the-upstream-exchange-the-replicas-slot-with-the-fetch)),
-  `slot_wait_ms` on upstream records, `trove_db_slow_queries_total` and the optional statement histogram labelled by query name and
-  transaction verb (Q-OPS-188), and the clients-first subtest records the database's waits, the standby's lag, the nodes' and the
-  runner's pressure, the test's steps and, on a miss, the cluster logs while the mirror profile is installed (Q-REPO-236). Next: the
-  nightly `mirror` reading names the stall from these records; done when the cause is named and the bound holds.
-  The dispatched nightly run 42461514664 (2026-11-08, `large`, release v0.26.0) met the bound: 97 % (pairs 92 %, 98 %, 94 %), the
-  pre-emption subtest 0 -> 2 and the pairs +4; F-63 is closed once a scheduled nightly run confirms it.
-
 Found on 2026-11-04 while cutting trove into task areas (phase 6a):
 
 ### Tests and tools
@@ -411,7 +339,7 @@ Found on 2026-11-03 while building phase 6:
   each (repository, package) once: 160 ms to 59 ms interleaved at the run's shape, and V-7b p99 75 to 148 ms in five whole runs on the
   integration stack (load 5 to 25). V-4: a publish's evaluation made 8 sequential round trips of 0.42 to 0.70 ms; it makes 2 now
   (`q.Pipeline`): V-4 p99 4.6 ms (median 1.32 ms) in the last whole run at load 8 to 13, 5.8 ms in the run before; the margin is thin. The
-  perf jobs of the nightly run after its kind legs since Q-ARCH-325. Done when two nightly runs in a row meet all nine, or a decision
+  perf jobs of the nightly run after its kind legs since Q-ARCH-325. Done when a nightly run meets all nine (owner, 2026-11-08: no "N runs in a row" gates during the alpha), or a decision
   revises V-4 with the measured floor (Q-VULN-82 names the next step). V-1 met its statement timeout under load: the advisory
   group statement was planned as a sequential scan and read the aliases index's pending list in full; fixed with Q-VULN-90 and Q-VULN-91
   (V-1 1.45 min on the integration stack, the whole run passed, V-5b 1.036 transactions against 1).
@@ -447,47 +375,6 @@ Found on 2026-11-03 while closing phase 5:
 
 ### Tests and tools
 
-- **F-37 · `TestE14Drain` failed in run 41575195688 on a PostgreSQL failover that the runner's load caused, before the drain**
-  (confirmed from the job's artifacts; not reproduced). The refusal was not a request a trove pod served and not the drain:
-  `driver probe` (`e14_drain_test.go:237`, which comes before `drain.sh`) is a peer that opens its own pool to
-  `trove-db-rw` (`test/e2e/cmd/driver/main.go`), and the service had no ready endpoint (`connection refused`). The
-  artifact `e2e-cluster-state-push` shows why: from about 04:13:50 the probes of both PostgreSQL pods timed out
-  (`Client.Timeout exceeded`, `context deadline exceeded`), the primary `trove-db-1` was killed by its liveness probe, and
-  CloudNativePG initiated the failover (`FailingOver`, `PodDisruptionBudget trove-db-primary: NoPods`) at about 04:16:20,
-  the moment of the refusal. The drained node (`worker2`) held a web and a worker pod, not a PostgreSQL pod. A local
-  `make e2e SET=drain` under 30 busy processes and a 200-run integration loop passed (176 s), so the defect is not in
-  trove or in the drain. The load was the self-hosted runners' CPU, shared with the dispatched nightly run 41575201390. The
-  same run's `integration (shard a)` failed on a DNS error (`EAI_AGAIN`), the runner's network. Open as a runner capacity
-  matter: done when `e2e on kind (push)` runs next to a nightly run without PostgreSQL probe timeouts in
-  `events-trove.txt` of the cluster-state artifact (more CPU for the runners or runner labels that keep the two apart);
-  a probe-timeout setting in `deploy/dev/postgres.yaml` would hide the starvation and is not the fix.
-  Checked on 2026-11-06: none of the 26 Test and Release runs since 2026-11-05 (42035411725 to 42207790533) overlapped a nightly run
-  in time (each nightly run since 42126196109 was created 27 to 78 s after the Test and Release run before it ended, or after it), so
-  the criterion has no run to read yet; `e2e on kind (push)` passed in every completed run (on `large`, once on a GitHub-hosted
-  runner in 42035411725), and no run has an `e2e-cluster-state-push` artifact. The two workflows share the runner class `large`
-  (`e2e on kind (push)`; the nightly `e2e`, `e2e-npm`, `npm-ha-soak`, `e2e-nuget`, `latency`, `vuln-perf` and `mirror-long`), and their
-  concurrency groups are per workflow, so nothing but timing keeps them apart.
-- **F-40 · The scheduled nightly run 41611487424 was red in `failover` and `ci-ha` on the runner's DNS, not on a test** (read).
-  Both jobs failed in their artifact upload step: `ci-ha` with `getaddrinfo EAI_AGAIN` for the artifact service after its test
-  step passed, `failover` in the step "Upload the go test -json report", whose log is no longer retrievable (`BlobNotFound`), so
-  its test result is unconfirmed. `npm-ha` in the same run was F-38 (closed with the phase 7 item on 2026-11-06). The same DNS error is part of F-37. Test and Release run
-  41637173366 lost `e2e-nuget on kind (nuget)` the same way, in "Set up job", when the runner could not download
-  `docker/login-action`. Machine-level (the self-hosted runners' network and resolver). Done when two scheduled nightly runs pass their upload steps, or the `failover` test is shown
-  red in a run whose log is kept, which makes it a test finding of its own.
-  The dispatched nightly run 41657499686 (2026-11-03, phase 6) was red in five legs on the same machine level: `ci-ha` and
-  `bastion-long` before any test, on a chart repository unreachable over IPv6 (`dial tcp [2606:50c0:8001::153]:443`) and an
-  interrupted pull of `mcr.microsoft.com/dotnet/sdk`; the logs of `npm-ha`, `npm-ha-soak` and `bastion` are not retrievable
-  (`BlobNotFound`). The Bastion's long legs have therefore not run in CI yet.
-  The dispatched nightly run 41739280012 (2026-11-04) lost `e2e-bastion (bastion)` the same way, on an interrupted pull of
-  `mcr.microsoft.com/dotnet/sdk:9.0.320` and `getaddrinfo EAI_AGAIN`.
-  The scheduled nightly run 42002617340 (2026-11-05, GitHub-hosted runner) lost `e2e-bastion (bastion)` after 11 minutes inside the
-  step `make e2e SET=bastion`: no step after it has a conclusion and the job's log is not retrievable (`BlobNotFound`), so the
-  runner was lost, not a test; `bastion-long` passed in the same run. The job's check-run annotation (read on 2026-11-06) names the
-  cause: `System.IO.IOException: No space left on device` for the runner's own diagnostics log, so the hosted runner's disk filled
-  during the set.
-  Checked on 2026-11-06: of the scheduled runs since this finding, 41804996351 (2026-11-04) and 42194413882 (2026-11-06, 53 upload
-  steps) passed every upload step, and 42002617340 between them did not run the upload steps of `e2e-bastion (bastion)` (above). Read
-  as two scheduled runs in a row, the criterion is not met yet: the next scheduled run decides.
 - **F-36 · The issuer double's fixtures were recorded on a local GitLab 19.0.1-ee, not on the owner's instance**
   (confirmed). The owner's GitLab (namespace `gitlab` of his cluster) cannot create projects: the web service dials Gitaly
   under a name its certificate does not carry. Machine-level for the owner (his GitOps repository). Done when, after the
@@ -520,16 +407,6 @@ tasks come before the phase's own work packages (step 2, item 5), in this order;
 
 The owner answered every open question of the review on 2026-11-06; a new question during the run is asked one at a time, with
 options and a recommendation, and what depends on it is not built before the answer.
-
-### Housekeeping of the review session
-
-- **T-15 · Housekeeping left of the project model run (2026-11-07).** Done on 2026-11-07 with the owner's answers: the agent
-  worktrees under `.claude/worktrees/` (273) and every local branch but `main` deleted, the remote branches `project-model` and
-  `ui-review` deleted with the worktree `/Users/hfi/repos/trove-ui-review`, the Go build cache emptied; the browser profile of T-14 was
-  already gone. Left, ask the owner first: the owner's installation on `wds18-k8s-main` was reset on 2026-11-07 for v0.22.0's changed
-  migrations (database `trove` dropped and recreated, Valkey flushed, the owner's permission), so its S3 bucket still holds the blobs
-  of the dropped database, which no garbage collection reaches (empty it except `ui-assets/` once the owner agrees); the unused Docker
-  images of the machine (68 GB on 2026-11-07; the owner did not answer, so they stay).
 
 ## 10 · Owner tasks of 2026-11-07: the next registries
 
