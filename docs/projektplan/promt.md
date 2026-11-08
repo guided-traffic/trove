@@ -56,12 +56,26 @@ Hard rules, also for every subagent (put them into every subagent prompt):
    trove has no users and no installations: change APIs, URLs, configuration, schema and stored formats the way that
    is technically best, with no deprecations, aliases, fallbacks or migration paths; a changed migration needs a fresh
    database, which is acceptable until then.
+10. **Parallel from the first hour: features and findings side by side (owner, 2026-11-08).** A run works with many agents at
+   once. Every work package of a feature (the registries of
+   [section 10](#10--owner-tasks-of-2026-11-07-the-next-registries)), or a smaller cut of it, gets an agent and a branch (worktree) of
+   its own; every open finding of [section 8](#8--open-findings) gets an agent of its own as well; they all start in the first hour
+   and run in parallel, each through plan, build and check (section 10's working mode). Findings are never worked off first for
+   hours with the features squeezed in at the end, and features never push findings aside: a finding is fixed in the run, or, when
+   it cannot be fixed yet, documented with its cause, evidence and next step so that nothing slips through. A run never waits for a
+   nightly run or a CI confirmation: it pushes, watches the runs per job in the background, fixes a red job at once and keeps
+   building. During the alpha no criterion waits for N green runs in a row; a red long leg is a finding with its cause, and a
+   finding whose last reading is green is closed with it. The run of 2026-11-07/08 worked sequentially — eight hours of findings,
+   then the Docker registry at the end ([section 11](#11--run-record)) — which this rule forbids.
 
 ## 1 · Find the next phase
 
 1. `git status` must be clean; then `git pull --rebase origin main`.
-2. Open [BETA.md](BETA.md), table **Where we are**. The current phase is the first row whose status
-   is not 🟢. A row at 🟡 means a phase that an earlier run started: resume it (step 2, item 4).
+2. During the alpha (rule 10) a run works on two fronts at once: the first open task of
+   [section 10](#10--owner-tasks-of-2026-11-07-the-next-registries) (T-16 Docker, then T-17 APT; its status line says where an
+   earlier run stopped), cut into work packages with an agent and a branch each, and every open finding of section 8 with an agent
+   each. The open items of BETA.md phase 7 are findings of the same kind. Outside the alpha: open [BETA.md](BETA.md), table
+   **Where we are**; the current phase is the first row whose status is not 🟢, and a row at 🟡 is resumed (step 2, item 4).
 3. If every row of BETA.md is 🟢, open [FULL.md](FULL.md) and take the first unit that is not 🟢,
    in document order: block A as one phase; in block B each format (F0, F1, …) is one phase; in
    block C each milestone (M6, M7, …) is one phase; in block D one table row is one phase; in block
@@ -69,7 +83,7 @@ Hard rules, also for every subagent (put them into every subagent prompt):
 4. Release numbers are not planned and not recorded: the pipeline releases (step 6), and BETA.md and FULL.md
    track only what is built (owner, 2026-11-02).
 5. If `Test and Release` on `main` is red (`gh run list --workflow "Test and Release" --branch main --limit 5`),
-   repairing it is the first task of this run. A red leg of `HA and Performance (nightly)`
+   repairing it is the first task of this run, done by an agent beside the feature work, not instead of it. A red leg of `HA and Performance (nightly)`
    (`gh run list --workflow "HA and Performance (nightly)" --limit 3`) is not: it becomes an open finding in
    [section 8](#8--open-findings), unless the phase's own exit criteria are that leg.
 6. Tell the owner in two or three German sentences which phase and what it delivers, then continue
@@ -88,11 +102,11 @@ Hard rules, also for every subagent (put them into every subagent prompt):
    unavoidable, run them with `isolation: "worktree"` and merge their branches afterwards.
 4. Resume rule: for a 🟡 phase, compare the checklist with the code and with `git log` since the
    last tag, keep what is done and tested, and plan only the rest.
-During the alpha the owner wants features (2026-11-08): no done criterion of a phase, an item or a finding waits for N green runs in a row; a red long leg is a finding with its cause, a finding whose last reading is green is closed with it, and the registries of section 10 are planned and built instead of waiting on confirmations.
-5. Open findings: plan every finding of [section 8](#8--open-findings), and every task of
-   [section 9](#9--owner-review-of-2026-11-06-tasks-and-open-questions) in its order, as a work package of this run,
-   in front of the phase's own packages. The registries of [section 10](#10--owner-tasks-of-2026-11-07-the-next-registries)
-   are the next phases, ahead of the next unit of FULL.md. Before fixing one, reproduce it (a failing test first); a
+5. Open findings ([section 8](#8--open-findings)) and the tasks of
+   [section 9](#9--owner-review-of-2026-11-06-tasks-and-open-questions): each gets an agent of its own in this run, started in the
+   first hour beside the feature's packages (rule 10), never queued in front of them and never left out. A finding the run cannot
+   fix is updated in section 8 with what was found (cause, evidence, the next step), so no finding is forgotten. The registries of
+   [section 10](#10--owner-tasks-of-2026-11-07-the-next-registries) are the next phases, ahead of the next unit of FULL.md. Before fixing one, reproduce it (a failing test first); a
    finding that does not reproduce is removed with a one-line reason in the commit message. Remove each
    finding from section 8 in the commit that fixes it.
 6. Set the phase row and the started items to 🟡 in BETA.md or FULL.md.
@@ -172,8 +186,8 @@ The phase is done only when all of the following hold:
 ## 5 · Push and get the pipeline green
 
 1. `git push origin main`.
-2. Wait for every workflow run the push triggered: `gh run list --branch main --limit 10`, then
-   `gh run watch <run-id> --exit-status` for each.
+2. Watch every workflow run the push triggered in the background, job by job (`gh api repos/guided-traffic/trove/actions/runs/<id>/jobs`
+   every 60 s), and keep building meanwhile; never sit idle on a run (rule 10).
 3. On failure: `gh run view <run-id> --log-failed`, let `voltagent-qa-sec:debugger` or the fitting
    specialist find the cause, fix it, commit, push, and wait again. Repeat until every run is
    green.
@@ -448,7 +462,9 @@ separate agents; no agent checks its own work.
   Not merged to main on purpose: migration 00056 tightens the key grammar of every repository and project key (Q-OCI-3) and stops at
   the first key that breaks it. Checked on 2026-11-08 on the owner's installation (read-only, schema `trove`): no repository, project,
   principal, policy or CI-mapping name breaks the new CHECKs (0 repositories, 1 project `test`), so `t16-oci` may go to main.
-  Next, in this order: (1) rebase `t16-oci` (ca928052) onto main. Main has migrations 00052 and 00053, ADR-159 and ADR-160 (F-76
+  Next, in this order: (1) a fresh agent rebased `t16-oci` onto main on 2026-11-08 and, if every check passed, pushed it squashed as
+  the branch `t16-oci-rebased` (one `feat(oci)` commit on top of main): check it and fast-forward main to it; if that branch does not
+  exist, rebase `t16-oci` (ca928052) onto main yourself. Main has migrations 00052 and 00053, ADR-159 and ADR-160 (F-76
   added `catalog.Facts.ChecksumAlwaysVerified`: merge it with ADR-161's contract additions and regenerate the contract file), and the
   jsonb RawMessage override of sqlc (regenerate `q/`); keep 00054 to 00056, ADR-161, the Q-OCI numbers and H-579, H-580 unless main
   took one; squash into one `feat(oci)` commit and bring it to main without a force push. (2) Wave 1 of the cut in parallel: WP1
@@ -462,4 +478,26 @@ separate agents; no agent checks its own work.
   indexes for a remote, flat repositories, and what a full mirror covers (suites, components, architectures, sources or not, the
   bounds of R-REPO-051/052). Tests per step 3: integration and e2e with `apt-get update` and `apt-get install` in Debian and Ubuntu
   containers through local, remote in both modes and virtual repositories, signature verification on the client included.
+
+## 11 · Run record
+
+What a run did, in short, so the next run starts where it stopped. The plan items, findings and decisions carry the details.
+
+**Run of 2026-11-07/08** (releases v0.25.1 to v0.26.0).
+
+- Built: the findings F-71 (a narrowed token no longer acts on its owner's account or other tokens), F-72 and F-74 (every narrowing
+  and every block the evaluation sets is journaled and replayed fail-closed), F-73 (one oversized OSV record no longer stops an
+  ecosystem's import; the owner's npm advisory data is back from v0.25.3), F-63 (the slot split of Q-REPO-235; the install-time bound
+  held at 97 %), F-76 and F-77 (npm verifies every tarball against its strongest digest); E5.7 (the security pages of the whole
+  beta), E5.8 (each release is installed by digest and smoke-tested; the SBOM comes from the pinned syft), E5.13 (the vulnerability
+  blocks through drain variants B to E, the pooler profile, the restore drill), with three product defects found on the way (jsonb
+  through a transaction-mode pooler, a policy update replayed as suspended, the restore Jobs without their CA volume).
+- Started late: T-16, the Docker registry: spec and WP0 (contracts, schema, format stub) built and reviewed on the branch `t16-oci`,
+  not yet on main. T-17 (APT) not started.
+- Broke: v0.25.1 has no image and no chart (the build's RUN steps had no DNS on a per-run docker network; fixed in v0.25.2).
+- Where the time went: the run worked sequentially. For about eight hours it took the findings one after the other through
+  planning, building and three or four review rounds, merged six parallel worktrees and waited for Test and Release, the release
+  runs and a dispatched nightly run; the Docker registry started only at the end. The owner's verdict: features and findings run in
+  parallel from the first hour, an agent and a branch per feature package and an agent per finding (rule 10). The next run starts
+  T-16's wave 1 and an agent for each open finding together in its first hour.
 
