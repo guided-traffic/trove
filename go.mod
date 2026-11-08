@@ -24,6 +24,7 @@ require (
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_model v0.6.3
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
+	github.com/ulikunitz/xz v0.5.17
 	github.com/valkey-io/valkey-go v1.0.79
 	github.com/yuin/goldmark v1.8.7
 	go.opentelemetry.io/otel v1.47.0

@@ -10,6 +10,7 @@ import (
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/cluster"
+	debdata "github.com/guided-traffic/trove/internal/formatdata/deb"
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
@@ -212,7 +213,7 @@ type resealDeps struct {
 // (R-ARCH-021, R-OPS-019): no schedule, and the trigger refuses it while the key
 // rings of the live replicas are incompatible (internal/api/v1). The job reseals
 // every value of the sealed-column registry that is not under the active key. The
-// only sealed column today is the repository secrets: the job walks it in batches
+// sealed columns are the repository secrets and the private keys of the Debian signing keys: the job walks each in batches
 // of one transaction each and fails when a value could not be opened (a key the
 // ring lacks, a moved or damaged value); a column registered later without a walk
 // of its own fails the job permanently and names it. The handler finds the
@@ -223,7 +224,7 @@ func (a *App) registerSecretsReencrypt(r *jobs.Registry) {
 		Queue: "maintenance", DedupMode: jobs.Exclusive, MaxAttempts: 3,
 		Handler: a.reseal.handler("key ring", func(ctx context.Context, d resealDeps, run *jobs.Run) error {
 			for _, col := range secrets.Columns() {
-				if col.String() != repository.RepositorySecrets.String() {
+				if c := col.String(); c != repository.RepositorySecrets.String() && c != debdata.SigningKeys.String() {
 					return jobs.Permanent(fmt.Errorf("re-encryption of %s is not implemented yet", col))
 				}
 			}
@@ -231,6 +232,13 @@ func (a *App) registerSecretsReencrypt(r *jobs.Registry) {
 			if err != nil {
 				return err
 			}
+			keys, err := debdata.ResealSigningKeys(ctx, d.db, d.ring, 0)
+			if err != nil {
+				return err
+			}
+			res.Resealed += keys.Resealed
+			res.Current += keys.Current
+			res.Failed += keys.Failed
 			if err := run.SetResult(map[string]int64{"columns": int64(len(secrets.Columns())), "resealed": res.Resealed, "current": res.Current, "failed": res.Failed}); err != nil {
 				return err
 			}

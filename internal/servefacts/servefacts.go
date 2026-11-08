@@ -26,6 +26,12 @@ const (
 	// names the image name (Package); the digest is the item's own blob, so a tag item and a manifest item of one digest read the
 	// same rows.
 	OCILocal Kind = "oci_local"
+	// DebLocal is the withheld mark of a package file in a local Debian repository (deb_tombstones, R-DEB-032, Q-ARCH-381). The mark
+	// is read for the item's own path, so the key's Package is the name of the file's package and decides nothing in the lookup.
+	DebLocal Kind = "deb_local"
+	// DebRemote is the SHA-256 and the size that the newest parsed index of a remote Debian repository lists for the item's path
+	// (deb_remote_entries, R-DEB-022, Q-ARCH-381).
+	DebRemote Kind = "deb_remote"
 )
 
 // Key names the rows to read: a kind and the package and version, in the spelling the format's own queries use.
@@ -51,16 +57,26 @@ type NPMRemoteFacts struct {
 	ServeRemoved bool
 }
 
+// DebRemoteFacts are the columns of the Debian remote kind: whether a parsed index lists the path and, when it does, the digest and
+// size the newest parsed index gives it. The remote adapter's [formats.FactsGate] decides on them (R-DEB-022).
+type DebRemoteFacts struct {
+	Known  bool
+	SHA256 [32]byte
+	Size   int64
+}
+
 // Facts are the rows read for a key. Key is zero when nothing was read.
 type Facts struct {
 	Key Key
-	// Tombstoned: the version has a tombstone (NPMLocal, NuGetLocal), or the manifest of the item is withheld (OCILocal).
+	// Tombstoned: the version has a tombstone (NPMLocal, NuGetLocal), the manifest of the item is withheld (OCILocal), or the package file of the item is withheld (DebLocal).
 	Tombstoned bool
 	// OCIManifest: the repository holds the row of the manifest the item's blob is, under the key's image name (OCILocal).
 	OCIManifest bool
 	// Stored and Listed: the repository holds a live NuGet row for the version, and it is listed (NuGetLocal).
 	Stored, Listed bool
 	NPMRemote      NPMRemoteFacts
+	// DebRemote is what the newest parsed index of a remote Debian repository lists for the path (DebRemote).
+	DebRemote DebRemoteFacts
 	// Refreshed is set by an artifact gate that asked the upstream after the item was looked up (a revalidation of the package
 	// document): everything read with the item, the item, its cache entry and the scanning's verdict, is older than the answer
 	// and the caller reads it again before it serves.

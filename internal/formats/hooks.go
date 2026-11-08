@@ -39,6 +39,8 @@ type (
 	ServeFacts          = servefacts.Facts
 	ServeKind           = servefacts.Kind
 	ServeNPMRemoteFacts = servefacts.NPMRemoteFacts
+	// ServeDebRemoteFacts are the columns of the Debian remote kind (R-DEB-022).
+	ServeDebRemoteFacts = servefacts.DebRemoteFacts
 )
 
 // The kinds of rows the item lookup reads for a [ServeKey].
@@ -47,6 +49,10 @@ const (
 	ServeNPMRemote  = servefacts.NPMRemote
 	ServeNuGetLocal = servefacts.NuGetLocal
 	ServeOCILocal   = servefacts.OCILocal
+	// ServeDebLocal is the withheld mark of a package file in a local Debian repository (R-DEB-032); ServeDebRemote the digest and
+	// size a parsed index announces for a remote path (R-DEB-022).
+	ServeDebLocal  = servefacts.DebLocal
+	ServeDebRemote = servefacts.DebRemote
 )
 
 // ServeFactsKeyer is an optional interface of a [Format] whose ServeCheck reads rows besides the item: ServeFactsKey names,

@@ -187,7 +187,7 @@ SELECT i.id, i.repo_id, i.path, i.parent_path, i.kind, i.blob_sha256, i.size, i.
        COALESCE(blk.advisory_id, '')::text AS block_advisory_id,
        COALESCE(blk.kind, '')::text AS block_kind,
        COALESCE(blk.status, '')::text AS block_status,
-       (CASE WHEN $1::text IN ('npm_local', 'npm_remote', 'nuget_local', 'oci_local') THEN $1::text ELSE '' END)::text AS fact_kind,
+       (CASE WHEN $1::text IN ('npm_local', 'npm_remote', 'nuget_local', 'oci_local', 'deb_local', 'deb_remote') THEN $1::text ELSE '' END)::text AS fact_kind,
        (CASE $1::text
             WHEN 'npm_local' THEN EXISTS (
                 SELECT 1 FROM npm_tombstones t
@@ -198,10 +198,16 @@ SELECT i.id, i.repo_id, i.path, i.parent_path, i.kind, i.blob_sha256, i.size, i.
             WHEN 'oci_local' THEN EXISTS (
                 SELECT 1 FROM oci_tombstones t
                  WHERE t.repo_id = i.repo_id AND t.name = $2::text AND t.digest = i.blob_sha256)
+            WHEN 'deb_local' THEN EXISTS (
+                SELECT 1 FROM deb_tombstones t
+                 WHERE t.repo_id = i.repo_id AND t.path = i.path)
             ELSE false END)::boolean AS fact_tombstoned,
        ($1::text = 'oci_local' AND EXISTS (
             SELECT 1 FROM oci_manifests m
              WHERE m.repo_id = i.repo_id AND m.name = $2::text AND m.digest = i.blob_sha256))::boolean AS fact_oci_manifest,
+       (dbr.size IS NOT NULL)::boolean AS fact_deb_remote_known,
+       COALESCE(dbr.sha256, ''::bytea)::bytea AS fact_deb_remote_sha256,
+       COALESCE(dbr.size, 0)::bigint AS fact_deb_remote_size,
        (ngv.listed IS NOT NULL)::boolean AS fact_nuget_stored,
        COALESCE(ngv.listed, false)::boolean AS fact_nuget_listed,
        COALESCE(nf.known, false)::boolean AS fact_npm_known,
@@ -228,6 +234,13 @@ SELECT i.id, i.repo_id, i.path, i.parent_path, i.kind, i.blob_sha256, i.size, i.
            AND (f.status = 'blocked' OR (f.kind = 'malicious' AND $7::boolean))
          ORDER BY (f.kind = 'malicious' AND $7::boolean) DESC, f.severity_rank DESC, f.advisory_id
          LIMIT 1) AS blk ON true
+  LEFT JOIN LATERAL (
+        SELECT e.sha256, e.size
+          FROM deb_remote_entries e
+          JOIN deb_remote_indexes x ON x.repo_id = e.repo_id AND x.dir = e.dir AND x.path = e.index_path
+         WHERE $1::text = 'deb_remote' AND e.repo_id = i.repo_id AND e.path = i.path
+         ORDER BY x.parsed_at DESC, x.dir, x.path
+         LIMIT 1) AS dbr ON true
   LEFT JOIN LATERAL (
         SELECT nv.listed
           FROM packages p
@@ -302,6 +315,9 @@ type GetLiveItemRow struct {
 	FactKind            string
 	FactTombstoned      bool
 	FactOciManifest     bool
+	FactDebRemoteKnown  bool
+	FactDebRemoteSha256 []byte
+	FactDebRemoteSize   int64
 	FactNugetStored     bool
 	FactNugetListed     bool
 	FactNpmKnown        bool
@@ -333,7 +349,9 @@ type GetLiveItemRow struct {
 // remote version are the statements NPMTombstoned, NuGetServeState and NPMRemoteTarballFacts, which the check still runs
 // itself when the facts were not read for its key. For an OCI repository (oci_local) the tombstone and the manifest row are those of
 // the image name facts_package and of the digest the item's blob is. entry_probe asks whether the cache entry of a remote repository's artifact
-// exists at the item's path (variant entry_variant) and is not marked gone: the remote hit is the item and its entry.
+// exists at the item's path (variant entry_variant) and is not marked gone: the remote hit is the item and its entry. For a Debian
+// repository deb_local reads the withheld mark of the item's path (deb_tombstones, R-DEB-032) and deb_remote the SHA-256 and size that
+// the newest parsed index lists for the item's path (deb_remote_entries, R-DEB-022); both ignore facts_package.
 func (q *Queries) GetLiveItem(ctx context.Context, arg GetLiveItemParams) ([]GetLiveItemRow, error) {
 	rows, err := q.db.Query(ctx, getLiveItem,
 		arg.FactsKind,
@@ -387,6 +405,9 @@ func (q *Queries) GetLiveItem(ctx context.Context, arg GetLiveItemParams) ([]Get
 			&i.FactKind,
 			&i.FactTombstoned,
 			&i.FactOciManifest,
+			&i.FactDebRemoteKnown,
+			&i.FactDebRemoteSha256,
+			&i.FactDebRemoteSize,
 			&i.FactNugetStored,
 			&i.FactNugetListed,
 			&i.FactNpmKnown,

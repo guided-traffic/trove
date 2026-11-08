@@ -4225,6 +4225,209 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/deb/signing-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List the signing keys of a Debian repository
+         * @description The keys of a local or virtual Debian repository in every state with their fingerprint, algorithm, size, the key's own
+         *     creation time, state, origin, times and public certificate (R-DEB-015). A private key is never part of an answer. Needs
+         *     `read` on the repository. A remote repository answers `400 not_applicable`.
+         */
+        get: operations["listDebSigningKeys"];
+        put?: never;
+        /**
+         * Create the next signing key of a Debian repository
+         * @description Creates the next key (R-DEB-017): `{"generate": true}` makes trove generate an EdDSALegacy key, `{"privateKey": "<armored>",
+         *     "passphrase": "…"}` imports one whose clients already trust it (R-DEB-015). From the next build every suite is signed by the
+         *     primary and the next key. `409` while a next key exists, `409 deb_key_in_use` for a fingerprint known in any state, `422
+         *     deb_key_unsupported` for a key the import rules refuse. Needs `manage` on the repository.
+         */
+        post: operations["createDebSigningKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/deb/signing-keys/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Make the next signing key the primary one
+         * @description Promotes the next key and retires the old primary: it stops signing, leaves `signing-key.asc` and its private key is erased
+         *     (R-DEB-017). Writes the journaled event `deb.signing_key.promoted`. `409 deb_no_next_key` without a next key. A client that
+         *     never replaced its keyring file fails `apt-get update` from then on. Needs `manage` on the repository.
+         */
+        post: operations["promoteDebSigningKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/deb/signing-keys/{fingerprint}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
+                /** @description The v4 fingerprint of a Debian signing key, upper-case hexadecimal (R-DEB-015). */
+                fingerprint: components["parameters"]["DebFingerprint"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Retire the next signing key, or confirm the retirement of a withheld one
+         * @description Retires the next key before a promotion, or confirms the retirement of a key the journal replay withheld (R-DEB-032); the
+         *     private key is erased and the journaled event `deb.signing_key.retired` is written. The primary key answers `409
+         *     deb_key_state`. Needs `manage` on the repository.
+         */
+        delete: operations["retireDebSigningKey"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/deb/signing-keys/{fingerprint}/reinstate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
+                /** @description The v4 fingerprint of a Debian signing key, upper-case hexadecimal (R-DEB-015). */
+                fingerprint: components["parameters"]["DebFingerprint"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Return a withheld signing key to the repository
+         * @description Returns a key the journal replay withheld (R-DEB-032): to `primary` when the repository has none, else to `next` when it has
+         *     none, else `409 deb_key_state`. Writes `deb.signing_key.reinstated`. Needs `manage` on the repository.
+         */
+        post: operations["reinstateDebSigningKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/deb/coordinates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replace the suites and components a package file is listed in
+         * @description Replaces the coordinates of a stored package file (R-DEB-009): an added coordinate needs `deploy`, a removed one `delete`,
+         *     both with ownership of the package. An empty list answers `422 invalid_value` (a file without coordinates is deleted
+         *     instead); more than 64 suites, 32 components or 32 coordinates `422 out_of_range`. A removed coordinate is journaled
+         *     (`deb.coordinates.removed`) and a restore removes it again. The answer is the upload answer of R-DEB-006.
+         */
+        put: operations["putDebCoordinates"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/deb/index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read the state of the indexes of a Debian repository
+         * @description Each suite's state (R-DEB-014): the `changeSeq` an upload answered with, the `publishedSeq` the published generation was built
+         *     from, the generation, the release date, the keys that signed it and, for a failed build, the reason. With `waitFor`
+         *     (`<suite>:<changeSeq>[,…]`) the answer waits until every named suite's `publishedSeq` reaches its value or `deb.index_wait_max`
+         *     has passed, and reports the state either way. The wait holds no transaction. Needs `read` on the repository.
+         */
+        get: operations["getDebIndexState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/reindex": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rebuild the derived metadata of a repository
+         * @description A full build of the repository's derived metadata from the rows (R-REPO-016): for a Debian repository every suite is rebuilt,
+         *     suites without files are dropped and rows of items that no longer exist are removed; for a virtual repository the members are
+         *     read again. A reindex while an automatic build waits upgrades that job to a full build and answers `202` with it; a reindex
+         *     that meets a waiting or running reindex answers `409 reindex_running` naming the job. A format without a job-built index
+         *     answers `405 not_applicable`. Needs `manage` on the repository.
+         */
+        post: operations["reindexRepository"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -6434,12 +6637,12 @@ export interface components {
          *     any difference; no list of formats per class is kept by hand anywhere.
          * @enum {string}
          */
-        FormatName: "generic" | "npm" | "nuget" | "oci";
+        FormatName: "deb" | "generic" | "npm" | "nuget" | "oci";
         /**
          * @description The formats whose classes contain `local`. The create form offers these for a local repository.
          * @enum {string}
          */
-        LocalFormatName: "generic" | "npm" | "nuget" | "oci";
+        LocalFormatName: "deb" | "generic" | "npm" | "nuget" | "oci";
         /**
          * @description The formats whose classes contain `remote`. The create form offers these for a remote repository.
          * @enum {string}
@@ -6500,6 +6703,7 @@ export interface components {
             npm?: components["schemas"]["NpmSettings"];
             nuget?: components["schemas"]["NugetSettings"];
             oci?: components["schemas"]["OciSettings"];
+            deb?: components["schemas"]["DebSettings"];
             vulnerabilities?: components["schemas"]["VulnerabilitySettings"];
             /** @enum {string} */
             readonly lifecycle?: "active" | "deleting";
@@ -8502,6 +8706,188 @@ export interface components {
             restoredFrom: components["schemas"]["BackupRestoredFrom"] | null;
             manualRun: components["schemas"]["BackupManualRun"];
         };
+        /**
+         * @description The settings of the Debian (APT) format, the `deb` member of a repository document (R-REPO-004, R-DEB-008, R-DEB-024). The
+         *     document of the format's JSON Schema is `settingsSchema` of `GET /api/v1/formats`; `TestR_ARCH_008_DebSettingsSchemaEqualsTheOpenAPIMember`
+         *     fails on any difference between the two. A setting that does not apply to the class of the repository answers 422
+         *     `not_applicable`: `architectures`, `compression`, `origin` and `label` are for local and virtual repositories, `suites` and
+         *     `components` for virtual ones, `upstreamKeys` and `mirror` for remote ones. An omitted setting takes its default. A change
+         *     of `architectures`, `compression`, `origin`, `label`, `suites` or `components` raises the `changeSeq` of every suite of the
+         *     repository, so the next build reflects it. The repository document reads back the read-only `upstreamKeyFingerprints` of a
+         *     remote's keys beside it.
+         */
+        DebSettings: {
+            /**
+             * @description Local and virtual. Architectures every suite's indexes are built for; a local repository adds the architectures of its stored files. `all` is not listed.
+             * @default [
+             *       "amd64",
+             *       "arm64"
+             *     ]
+             */
+            architectures: string[];
+            /**
+             * @description Local and virtual. Index variants built besides gzip, which is always built.
+             * @default []
+             */
+            compression: "xz"[];
+            /**
+             * @description Local and virtual. The `Origin` field of every `Release`; printable ASCII without `:`, 1 to 64 characters.
+             * @default trove
+             */
+            origin: string;
+            /** @description Local and virtual. The `Label` field of every `Release`; the repository key while it is not set. */
+            label?: string;
+            /**
+             * @description Virtual. Suites served besides those of the local members.
+             * @default []
+             */
+            suites: string[];
+            /**
+             * @description Virtual. Components merged.
+             * @default [
+             *       "main"
+             *     ]
+             */
+            components: string[];
+            /**
+             * @description Remote. ASCII-armored OpenPGP public keys of the upstream, one block of 1 to 32 certificates and at most 256 KiB: the
+             *     remote verifies the signatures of its upstream's release documents against them (R-DEB-020). `null` leaves the remote
+             *     unverified; a mirror and a member of a virtual repository need them (`422 deb_upstream_keys_required`).
+             * @default null
+             */
+            upstreamKeys: string | null;
+            /** @description Remote, read-only. The v4 fingerprints of the certificates in `upstreamKeys`, so that an operator can compare them through a second channel (R-DEB-020). */
+            readonly upstreamKeyFingerprints?: string[];
+            /**
+             * @description Remote (R-DEB-024, Q-DEB-17). What a mirror of an APT archive keeps; present in both modes and effective in mode `mirror`.
+             *     A caller without `repositories:write-config` on the project cannot change it on a mirror (R-REPO-050, `422 mirror_restricted`).
+             */
+            mirror?: {
+                /**
+                 * @description Suites (below `dists/`) to mirror; required in mode `mirror` (`422 deb_mirror_suites_required`).
+                 * @default []
+                 */
+                suites: string[];
+                /**
+                 * @description Components whose indexes and package files are kept.
+                 * @default [
+                 *       "main"
+                 *     ]
+                 */
+                components: string[];
+                /**
+                 * @description Architectures whose `Packages` indexes and package files are kept; `all` is always kept and not listed.
+                 * @default [
+                 *       "amd64"
+                 *     ]
+                 */
+                architectures: string[];
+                /**
+                 * @description Languages of `i18n/Translation-<language>` kept.
+                 * @default [
+                 *       "en"
+                 *     ]
+                 */
+                translations: string[];
+                /**
+                 * @description Whether `Sources` indexes and source package files are kept.
+                 * @default false
+                 */
+                sources: boolean;
+            };
+        };
+        /** @description A signing key of a local or virtual Debian repository (R-DEB-015). The private key is never part of an answer. */
+        DebSigningKey: {
+            /** @description The v4 fingerprint, upper-case hexadecimal. */
+            fingerprint: string;
+            /**
+             * @description The OpenPGP public-key algorithm, RSA (1) or EdDSALegacy (22) over Ed25519.
+             * @enum {integer}
+             */
+            algorithm: 1 | 22;
+            bits: number;
+            /**
+             * Format: date-time
+             * @description The key's own creation time, one hour before the transaction that created it for a generated key (Q-DEB-30).
+             */
+            keyCreatedAt: string;
+            /**
+             * Format: date-time
+             * @description The creation time of the key's earliest valid binding self-signature; signatures wait for it (Q-DEB-40).
+             */
+            boundSince: string;
+            /** @enum {string} */
+            state: "primary" | "next" | "withheld" | "retired";
+            /** @enum {string} */
+            origin: "generated" | "imported";
+            /** @description The ASCII-armored certificate. */
+            publicKey: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            promotedAt?: string | null;
+            /** Format: date-time */
+            withheldAt?: string | null;
+            /** Format: date-time */
+            retiredAt?: string | null;
+        };
+        DebSigningKeyList: {
+            keys: components["schemas"]["DebSigningKey"][];
+        };
+        /**
+         * @description Either `generate: true`, or `privateKey` with the optional `passphrase` of an ASCII-armored secret key to import (R-DEB-015).
+         *     The passphrase is used once and never stored. The import accepts EdDSALegacy over Ed25519 and RSA of at least 3072 bits
+         *     without an expiry, created no later than the request, with no signing subkeys.
+         */
+        DebSigningKeyCreate: {
+            generate?: boolean;
+            privateKey?: string;
+            passphrase?: string;
+        };
+        DebCoordinate: {
+            distribution: string;
+            component: string;
+        };
+        DebCoordinatesRequest: {
+            /** @description The canonical pool path of the stored package file. */
+            path: string;
+            coordinates: components["schemas"]["DebCoordinate"][];
+        };
+        /** @description The answer of an upload and of a change of coordinates (R-DEB-006, R-DEB-009). */
+        DebPackageAnswer: {
+            path: string;
+            package: string;
+            version: string;
+            architecture: string;
+            sha256: string;
+            coordinates: components["schemas"]["DebCoordinate"][];
+            /** @description The suites the file is listed in, with the numbers a client waits on (`waitFor` of the index state, R-DEB-014). */
+            index: {
+                distribution: string;
+                /** Format: int64 */
+                changeSeq: number;
+                /** Format: int64 */
+                publishedSeq: number;
+            }[];
+        };
+        DebIndexState: {
+            suites: {
+                distribution: string;
+                /** Format: int64 */
+                changeSeq: number;
+                /** Format: int64 */
+                publishedSeq: number;
+                /** Format: int64 */
+                generation: number;
+                /** Format: date-time */
+                releaseDate?: string | null;
+                /** @enum {string} */
+                state: "pending" | "current" | "failed";
+                /** @description Why the last build failed (`no_signing_key`, `member_unverified: <key>`, ...), while the state is `failed`. */
+                reason?: string | null;
+                signedBy?: string[];
+            }[];
+        };
     };
     responses: {
         /** @description The operation belongs to the Bastion work and is not built in this release yet (`bastion_not_implemented`). */
@@ -8525,6 +8911,15 @@ export interface components {
         };
         /** @description The Bastion token is invalid, revoked, expired, of the wrong type or its registration is disabled (`bastion_token_invalid`, R-BAS-008). */
         BastionTokenInvalid: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description The operation belongs to the Debian (APT) format and is not built in this release yet (`deb_not_implemented`). */
+        DebNotImplemented: {
             headers: {
                 [name: string]: unknown;
             };
@@ -8678,6 +9073,8 @@ export interface components {
         ProjectKey: string;
         /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
         RepoKey: string;
+        /** @description The v4 fingerprint of a Debian signing key, upper-case hexadecimal (R-DEB-015). */
+        DebFingerprint: string;
         /**
          * @description The Bastion's interface version (R-BAS-009). Required on every request of a Bastion: a request without it, or with
          *     another version, is answered `400 bastion_interface_mismatch` before the operation runs. It is declared optional
@@ -17955,6 +18352,304 @@ export interface operations {
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listDebSigningKeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The keys. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DebSigningKeyList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["DebNotImplemented"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    createDebSigningKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DebSigningKeyCreate"];
+            };
+        };
+        responses: {
+            /** @description The next key. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DebSigningKey"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["DebNotImplemented"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    promoteDebSigningKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new primary key. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DebSigningKey"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["DebNotImplemented"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    retireDebSigningKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
+                /** @description The v4 fingerprint of a Debian signing key, upper-case hexadecimal (R-DEB-015). */
+                fingerprint: components["parameters"]["DebFingerprint"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The key is retired. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["DebNotImplemented"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    reinstateDebSigningKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
+                /** @description The v4 fingerprint of a Debian signing key, upper-case hexadecimal (R-DEB-015). */
+                fingerprint: components["parameters"]["DebFingerprint"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The key in its new state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DebSigningKey"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["DebNotImplemented"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    putDebCoordinates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DebCoordinatesRequest"];
+            };
+        };
+        responses: {
+            /** @description The file with its coordinates and the suites whose index it changed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DebPackageAnswer"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["DebNotImplemented"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getDebIndexState: {
+        parameters: {
+            query?: {
+                /** @description Suites and the `changeSeq` to wait for, `<suite>:<changeSeq>`, separated by commas (R-DEB-014). */
+                waitFor?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The state of each suite. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DebIndexState"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["DebNotImplemented"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    reindexRepository: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The rebuild is queued. */
+            202: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobReferenceEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description The format of the repository has no job-built index (`not_applicable`). */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["DebNotImplemented"];
             503: components["responses"]["Unavailable"];
         };
     };

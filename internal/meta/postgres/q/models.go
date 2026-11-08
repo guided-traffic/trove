@@ -372,6 +372,110 @@ type ClusterEpoch struct {
 	ChangedAt pgtype.Timestamptz
 }
 
+type DebBinary struct {
+	ItemID       int64
+	RepoID       int64
+	Package      string
+	Version      string
+	Architecture string
+	Source       string
+	Control      string
+}
+
+type DebCoordinate struct {
+	ItemID    int64
+	RepoID    int64
+	Suite     string
+	Component string
+}
+
+type DebGeneration struct {
+	RepoID       int64
+	Suite        string
+	Generation   int64
+	BuiltSeq     int64
+	PublishedAt  pgtype.Timestamptz
+	SupersededAt pgtype.Timestamptz
+	Files        json.RawMessage
+	SignedBy     []string
+}
+
+type DebRemoteEntry struct {
+	RepoID       int64
+	Dir          string
+	IndexPath    string
+	Package      string
+	Version      string
+	Architecture string
+	Path         string
+	Sha256       []byte
+	Size         int64
+}
+
+type DebRemoteIndex struct {
+	RepoID   int64
+	Dir      string
+	Path     string
+	Sha256   []byte
+	Entries  int32
+	Skipped  int32
+	ParsedAt pgtype.Timestamptz
+}
+
+type DebRemoteRelease struct {
+	RepoID      int64
+	Dir         string
+	Document    string
+	Sha256      []byte
+	ReleaseDate pgtype.Timestamptz
+	ByHash      pgtype.Bool
+	VerifiedBy  pgtype.Text
+	FloorDate   pgtype.Timestamptz
+	StoredAt    pgtype.Timestamptz
+}
+
+type DebSigningKey struct {
+	ID          pgtype.UUID
+	RepoID      int64
+	Fingerprint string
+	Algorithm   int16
+	Bits        int32
+	KeyCreated  pgtype.Timestamptz
+	BoundSince  pgtype.Timestamptz
+	State       string
+	Origin      string
+	PublicKey   string
+	PrivateKey  pgtype.Text
+	CreatedAt   pgtype.Timestamptz
+	CreatedBy   pgtype.UUID
+	PromotedAt  pgtype.Timestamptz
+	WithheldAt  pgtype.Timestamptz
+	RetiredAt   pgtype.Timestamptz
+	RetiredBy   pgtype.UUID
+}
+
+type DebSuite struct {
+	RepoID      int64
+	Suite       string
+	ChangeSeq   int64
+	BuiltSeq    int64
+	Generation  int64
+	ReleaseDate pgtype.Timestamptz
+	PublishedAt pgtype.Timestamptz
+	State       string
+	Reason      pgtype.Text
+	Inputs      json.RawMessage
+	CheckedAt   pgtype.Timestamptz
+}
+
+type DebTombstone struct {
+	RepoID     int64
+	Path       string
+	Sha256     []byte
+	WithheldAt pgtype.Timestamptz
+	DeletedBy  pgtype.UUID
+}
+
 type EndpointExposureRule struct {
 	ID          pgtype.UUID
 	Endpoint    string

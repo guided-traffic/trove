@@ -1,6 +1,7 @@
 package virtual_test
 
 import (
+	"context"
 	"errors"
 	"slices"
 	"testing"
@@ -288,4 +289,69 @@ func containsAny(s string, subs ...string) bool {
 		}
 	}
 	return false
+}
+
+// nameServers answers the check of a format without a package document: by the pair, never by a probe of a document.
+type nameServers struct {
+	answer func(x virtual.Exposure) virtual.ProbeResult
+	asked  []string
+}
+
+func (n *nameServers) ServesName(_ context.Context, _ virtual.Caller, x virtual.Exposure, name string) (virtual.ProbeResult, error) {
+	n.asked = append(n.asked, x.Virtual.Name.String()+" "+x.Remote.Name.String()+" "+name)
+	return n.answer(x), nil
+}
+
+// A format without a package document asks its name server once per pair of a virtual repository and a remote member, in the scope of the
+// virtual repository (Q-REPO-270), and never reads or probes a document.
+func TestNameServersAnswerTheCheckOfAFormatWithoutADocument(t *testing.T) {
+	check := func(t *testing.T, w *world, names virtual.NameServers) (virtual.ShadowOutcome, error) {
+		t.Helper()
+		r, err := virtual.New(virtual.Options{Router: w.router, Decider: w.authz, Locals: w.rows, Remotes: w.remote, Names: names})
+		if err != nil {
+			t.Fatal(err)
+		}
+		idx, _ := w.authz.Begin(t.Context(), ciBot, qr("npm-local"), qr("npm-all"))
+		return r.ShadowCheck(t.Context(), virtual.Caller{Subject: ciBot, Index: idx}, local, "acme-tool", "")
+	}
+	t.Run("a pair is asked once per virtual repository and a served name is refused", func(t *testing.T) {
+		w := shadowWorld(t)
+		ops := vt.VirtualRepo(6, "npm-ops", 7200, nil, local, remote)
+		w.router.Exposure["npm-local"] = []repository.Exposure{{Virtual: w.v, Remote: remote}, {Virtual: ops, Remote: remote}}
+		ns := &nameServers{answer: func(x virtual.Exposure) virtual.ProbeResult {
+			if x.Virtual.Name.Key == "npm-ops" {
+				return virtual.ProbeResult{Outcome: virtual.Served}
+			}
+			return virtual.ProbeResult{Outcome: virtual.NotServed}
+		}}
+		out, err := check(t, w, ns)
+		if err != nil || out.Proceed || out.Code != errs.CodeShadowsRemotePackage || len(ns.asked) != 2 || len(out.Shadowed) != 1 {
+			t.Fatalf("out %+v err %v asked %v", out, err, ns.asked)
+		}
+		if len(w.remote.Calls()) != 0 {
+			t.Errorf("a document was read or probed: %v", w.remote.Calls())
+		}
+	})
+	t.Run("a name no scope serves proceeds", func(t *testing.T) {
+		w := shadowWorld(t)
+		out, err := check(t, w, &nameServers{answer: func(virtual.Exposure) virtual.ProbeResult { return virtual.ProbeResult{Outcome: virtual.NotServed} }})
+		if err != nil || !out.Proceed {
+			t.Fatalf("out %+v err %v", out, err)
+		}
+	})
+	t.Run("an unsettled scope is undetermined and refuses a caller without manage", func(t *testing.T) {
+		w := shadowWorld(t)
+		out, err := check(t, w, &nameServers{answer: func(virtual.Exposure) virtual.ProbeResult {
+			return virtual.ProbeResult{Outcome: virtual.Undetermined, RetryAfter: 5 * time.Second}
+		}})
+		if err != nil || out.Proceed || out.Code != errs.CodeShadowCheckUnavailable || out.RetryAfter != 5*time.Second {
+			t.Fatalf("out %+v err %v", out, err)
+		}
+	})
+	t.Run("an engine without name servers is undetermined", func(t *testing.T) {
+		out, err := check(t, shadowWorld(t), nil)
+		if err != nil || out.Proceed || out.Code != errs.CodeShadowCheckUnavailable {
+			t.Fatalf("out %+v err %v", out, err)
+		}
+	})
 }

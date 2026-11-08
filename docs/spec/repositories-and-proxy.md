@@ -200,7 +200,10 @@ Priority: **MVP** · Covers: REPO-006
   NuGet); and, for formats with package names, the
   canonical path of a package's package document, the document whose existence upstream stands for
   the package's existence (npm: the package document `n`; NuGet: the version list
-  `{lower_id}/index.json`). R-REPO-029 and R-REPO-048 use that path.
+  `{lower_id}/index.json`). R-REPO-029 and R-REPO-048 use that path. A format whose upstream has no document per package
+  (an APT archive lists its packages in repository-wide indexes) reports no package document, and its remote adapter then
+  names a `NameServer` that answers R-REPO-048 from the rows of the indexes the remote holds, in the scope of the virtual
+  repository whose exposure the check decides ([Q-REPO-270](#q-repo-270--a-format-without-a-package-document-answers-the-shadowing-check-from-its-index-rows-in-the-scope-of-the-virtual-repository), [formats/debian.md](formats/debian.md) R-DEB-023).
 - The MVP formats are `npm` and `nuget`, each with all three classes (INV-14).
 - For every package-protocol and `/files/` request the plug-in MUST produce a request descriptor:
   canonical path; request kind; normalized package name and version where the request concerns a
@@ -517,6 +520,10 @@ Priority: **MVP** · Covers: REPO-053, RMT-002, API-052
 
 - Create is never an upsert. Configuration, relational rows, sealed secrets and the audit event are
   written in one transaction.
+- A format's data port may add rows in that transaction: the repository service runs the creation hook the composition root
+  registered for the format, after the repository row and before the audit event, and its error rolls the creation back (a Debian
+  local or virtual repository gets its first signing key this way, [formats/debian.md](formats/debian.md) R-DEB-015,
+  [Q-REPO-273](#q-repo-273--a-formats-data-port-adds-rows-in-the-transaction-that-creates-its-repository)).
 - The repository belongs to the project of the path from the transaction that creates it; a `project` member in the
   body that names another project answers 422 `validation_failed` with `immutable` at `/project`. A virtual repository's
   members and deploy target are bare keys of the same project (R-REPO-017, R-REPO-021).
@@ -7854,6 +7861,71 @@ for that wait to show in the publish latency; the narrower key would then be a r
 ([claims.sql](../../internal/meta/postgres/queries/claims.sql)). Tests: `TestAutoClaimConcurrentPublishes`
 (`test/integration/repository`). A manual claims write takes the configuration lock too, as its first statement and so in the same
 order (F-108; `PutClaims` in [claims.go](../../internal/repository/claims.go), test `TestAutoClaimAndManualClaimOfOneName`).
+
+### Q-REPO-270 · A format without a package document answers the shadowing check from its index rows, in the scope of the virtual repository
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the shadowing check of R-REPO-048 asks whether a remote member already serves a package name, by the stored package document or one
+probe of it. An APT archive has no document per package: its packages are listed in repository-wide indexes, and which of them a client sees
+depends on the suites, components and architectures of the virtual repository it reads through.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An optional `NameServer` on the remote adapter, asked per pair of a virtual repository and a remote member, with the virtual repository's scope (chosen) | `NameServer.ServesName(h, NameQuery{Remote, Via, ViaSettings, Name})` reads the parsed rows in that scope; `known` false means a suite of the scope is not settled yet | The answer is exact for the scope; a name that exists only in a component the virtual repository does not serve does not block an upload; no probe of an upstream that has no document | The check asks per pair and not once per remote; the contract grows by an optional interface |
+| (b) Probe an index file as the package document | One GET of a `Packages` file | No new interface | The index is megabytes, names every package, and says nothing about the scope |
+| (c) Treat a format without a document as having no shadowing | `PackageDocumentPath` reports false and the check passes | Nothing to build | Dependency confusion through a virtual repository (R-REPO-023) is open for the format |
+
+**Choice:** (a).
+
+**Rationale:** the check stays fail-closed: an undetermined scope is 503 `shadow_check_unavailable` for a caller without `manage`, with the
+fetch and parse of what settles it enqueued. The development agent would revisit it if a second format without package documents needed a
+different question.
+
+**Applied in the spec:** R-REPO-003, R-REPO-048 (the Debian work package edits its text), [formats/debian.md](formats/debian.md) R-DEB-023. Code:
+`formats.NameServer`, `formats.RemoteCaps.Names`, `virtual.NameServers` (`Options.Names`), `formathost.NewNameServers`.
+
+### Q-REPO-272 · A job run of a remote repository gets an upstream outside a mirror pass
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the Debian format fetches a remote's release documents and index files from jobs that no client request and no mirror pass runs: the
+parse of a remote's indexes (R-DEB-023) and the build of a virtual repository that merges its members' releases (R-DEB-026). They need the
+egress, credential, background share (R-REPO-055) and throttling (R-REPO-054) rules of a pass, without a pass, its fence or its window.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Host.BackgroundUpstream(ctx, repo)` returns a `discover.Upstream` for one job run (chosen) | The same interface a lister reads in a pass; `Document` and `Artifact` behave as they do for a pass | One vocabulary for a pass and a job; the rules of R-REPO-054 and R-REPO-055 apply without a copy | The host grows a method |
+| (b) The job builds its own client | Each job its HTTP client | No host change | Egress, credential and throttling rules are then copied |
+
+**Choice:** (a). The method is declared with the contract of the Debian format and answers `not_implemented` until the work package of the
+background fetches builds it.
+
+**Rationale:** the development agent would revisit it if a job needed to move the circuit of a repository, which a pass's outcomes do not.
+
+**Applied in the spec:** R-REPO-055 (the background share also covers these runs; the Debian work package edits its text). Code:
+[background_upstream.go](../../internal/formathost/background_upstream.go).
+
+### Q-REPO-273 · A format's data port adds rows in the transaction that creates its repository
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: every Debian local and virtual repository has a signing key from the transaction that creates it (R-DEB-015); a repository without
+one would answer its first request with an unsigned index or fail it. The key is a row of the format's own table.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A creation hook the composition root registers per format, run by the repository service inside the creating transaction (chosen) | `repository.RegisterCreateHook(format, fn)`; `fn(ctx, tx, repo, class)`; an error rolls the creation back | No window without a key; the repository package imports no format; the contract of the format is untouched | A seam in the repository service |
+| (b) The first build creates the key | Lazy | No hook | `signing-key.asc` and the first sources line have nothing to trust until a build; two builds may race to create it |
+| (c) A job after the creation | Asynchronous | No hook | The same window as (b) |
+
+**Choice:** (a).
+
+**Rationale:** the hook is a seam of the repository service and not of the format contract, so it needs no ADR of the contract. The development
+agent would revisit it if the architecture review prefers (b); the deviation is then recorded on [formats/debian.md](formats/debian.md) and
+`signing-key.asc` answers 404 until the first build.
+
+**Applied in the spec:** R-REPO-009 (above). Code: [create_hooks.go](../../internal/repository/create_hooks.go), `Service.CreateTx`.
 
 ### Q-REPO-280 · The upstream test reads a Bearer challenge of a handshake format as reachable
 

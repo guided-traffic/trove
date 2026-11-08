@@ -80,6 +80,7 @@ func itemFrom(repoKey qname.Repo, key servefacts.Key, r q.GetLiveItemRow) Item {
 				Known: r.FactNpmKnown, Listed: r.FactNpmListed, Integrity: r.FactNpmIntegrity, Shasum: r.FactNpmShasum,
 				DocStored: r.FactNpmDocStored, DocCurrent: r.FactNpmDocCurrent, DocGoneUs: r.FactNpmGoneUs, ServeRemoved: r.FactNpmServeRemoved,
 			},
+			DebRemote: debRemoteFacts(r),
 		}
 	}
 	if r.BlockFindingID != "" {
@@ -116,4 +117,11 @@ func Root(key qname.Repo, created, updated time.Time) Item {
 		Repository: key, Kind: KindFolder, Explicit: true,
 		CreatedAt: created.UTC(), ModifiedAt: updated.UTC(), UpdatedAt: updated.UTC(),
 	}
+}
+
+// debRemoteFacts reads the columns of the deb_remote kind: the digest and size the newest parsed index lists for the item's path.
+func debRemoteFacts(r q.GetLiveItemRow) servefacts.DebRemoteFacts {
+	f := servefacts.DebRemoteFacts{Known: r.FactDebRemoteKnown, Size: r.FactDebRemoteSize}
+	copy(f.SHA256[:], r.FactDebRemoteSha256)
+	return f
 }

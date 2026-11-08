@@ -212,9 +212,11 @@ func (r *resolver) ShadowCheck(ctx context.Context, rq *formats.Request, name st
 		}
 	}
 	doc, has := f.PackageDocumentPath(name)
-	if !has {
+	if !has && r.caps(formats.ID(rq.Repo.Format)).Names == nil {
 		return formats.ShadowOutcome{Proceed: true}, nil
 	}
+	// A format without a package document and with a NameServer is checked per pair of the exposure set in the scope of the
+	// virtual repository (an empty document path, R-REPO-048, Q-REPO-270).
 	out, err := r.e.ShadowCheck(ctx, callerOf(rq), local, name, doc.Path)
 	if err != nil {
 		return formats.ShadowOutcome{}, err

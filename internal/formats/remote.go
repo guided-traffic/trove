@@ -236,6 +236,23 @@ type Revalidator interface {
 	Unchanged(p Path, stored RemoteDocument, resp *http.Response) bool
 }
 
+// NameServer is the optional interface of a [RemoteAdapter] whose upstream has no document per package: the shadowing check of
+// repositories-and-proxy.md R-REPO-048 asks it instead of probing a package document (ADR-172, Q-REPO-270, Q-DEB-37). It reads the
+// rows of the indexes the remote repository holds through h, in the scope of the virtual repository whose exposure the check decides.
+// known is false when an index of that scope is not parsed yet; the format then enqueues its parse.
+type NameServer interface {
+	ServesName(ctx context.Context, h Host, q NameQuery) (served, known bool, err error)
+}
+
+// NameQuery names the remote member, the virtual repository through which it would serve the name (its reference and its format
+// settings, from which the format reads the suites, components and architectures it serves) and the normalized name.
+type NameQuery struct {
+	Remote      RepoRef
+	Via         RepoRef
+	ViaSettings json.RawMessage
+	Name        string
+}
+
 // RemoteCaps are the optional interfaces a format's remote adapter implements, as Register found them.
 // A field is nil for a capability the adapter does not have.
 type RemoteCaps struct {
@@ -253,6 +270,9 @@ type RemoteCaps struct {
 	Stood StoodChallengeReader
 	// Revalidate is the adapter's own revalidation request; nil for the engine's conditional GET (R-OCI-022).
 	Revalidate Revalidator
+	// Names answers the shadowing check of a format without a package document from the rows of the remote's indexes (Q-DEB-37);
+	// nil for a format whose upstream has a document per package.
+	Names NameServer
 }
 
 // RemoteCapabilities returns the capabilities Register recorded for a format; the zero value for an ID that

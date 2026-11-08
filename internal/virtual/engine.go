@@ -36,6 +36,9 @@ type Options struct {
 	// treated as one that cannot be asked, which a request answers with 502 and the explanation
 	// with `offline`.
 	Remotes Remotes
+	// Names answers the shadowing check for a format without a package document (R-REPO-048, Q-REPO-270); nil makes the check
+	// undetermined for such a format.
+	Names NameServers
 	// Caches registers the merged-metadata cache (CacheMerged); nil keeps none.
 	Caches *cache.Registry
 	// CacheBytes is proxy.merged_metadata_cache_bytes; 0 turns the cache off.

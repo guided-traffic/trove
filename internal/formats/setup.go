@@ -10,7 +10,7 @@ type Client struct {
 	Versions []string
 }
 
-// SetupTemplate is one client setup snippet (api-and-ui.md R-API-033).
+// SetupTemplate is one client setup snippet (api-and-ui.md R-API-030).
 type SetupTemplate struct {
 	// ID is stable: "npm.npmrc.configure".
 	ID     string

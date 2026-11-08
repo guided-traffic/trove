@@ -8,6 +8,7 @@ package main
 import (
 	_ "github.com/guided-traffic/trove/internal/blob"
 	_ "github.com/guided-traffic/trove/internal/cluster"
+	_ "github.com/guided-traffic/trove/internal/formatdata/deb"
 	_ "github.com/guided-traffic/trove/internal/formatdata/nuget"
 	_ "github.com/guided-traffic/trove/internal/formatdata/oci"
 	_ "github.com/guided-traffic/trove/internal/jobs"

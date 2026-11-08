@@ -551,6 +551,61 @@ const (
 	CodeOCIInsufficientScope = "oci_insufficient_scope"
 )
 
+// Codes of the Debian (APT) format (R-DEB-005) and of generated items and reindexing, which it is the first format to need
+// (R-STOR-018, R-REPO-016).
+const (
+	// CodeDebDistributionRequired: deb_distribution_required (Invalid).
+	CodeDebDistributionRequired = "deb_distribution_required"
+	// CodeDebInvalidCoordinate: deb_invalid_coordinate (Invalid).
+	CodeDebInvalidCoordinate = "deb_invalid_coordinate"
+	// CodeDebInvalidFileName: deb_invalid_file_name (Invalid).
+	CodeDebInvalidFileName = "deb_invalid_file_name"
+	// CodeDebMembersUnreadable: deb_members_unreadable (Forbidden).
+	CodeDebMembersUnreadable = "deb_members_unreadable"
+	// CodeDebNotInRelease: deb_not_in_release (NotFound).
+	CodeDebNotInRelease = "deb_not_in_release"
+	// CodeDebNoUpstreamKeys: deb_no_upstream_keys (NotFound).
+	CodeDebNoUpstreamKeys = "deb_no_upstream_keys"
+	// CodeDebVersionExists: deb_version_exists (Conflict).
+	CodeDebVersionExists = "deb_version_exists"
+	// CodeDebFilenameConflict: deb_filename_conflict (Conflict).
+	CodeDebFilenameConflict = "deb_filename_conflict"
+	// CodeDebWithheld: deb_withheld (Conflict).
+	CodeDebWithheld = "deb_withheld"
+	// CodeDebNoNextKey: deb_no_next_key (Conflict).
+	CodeDebNoNextKey = "deb_no_next_key"
+	// CodeDebKeyInUse: deb_key_in_use (Conflict).
+	CodeDebKeyInUse = "deb_key_in_use"
+	// CodeDebKeyState: deb_key_state (Conflict).
+	CodeDebKeyState = "deb_key_state"
+	// CodeDebInvalidArchive: deb_invalid_archive (Unprocessable).
+	CodeDebInvalidArchive = "deb_invalid_archive"
+	// CodeDebInvalidControl: deb_invalid_control (Unprocessable).
+	CodeDebInvalidControl = "deb_invalid_control"
+	// CodeDebUnsupportedCompression: deb_unsupported_compression (Unprocessable).
+	CodeDebUnsupportedCompression = "deb_unsupported_compression"
+	// CodeDebKeyUnsupported: deb_key_unsupported (Unprocessable).
+	CodeDebKeyUnsupported = "deb_key_unsupported"
+	// CodeDebUpstreamKeysRequired: deb_upstream_keys_required (Unprocessable).
+	CodeDebUpstreamKeysRequired = "deb_upstream_keys_required"
+	// CodeDebMemberUnverified: deb_member_unverified (Unprocessable).
+	CodeDebMemberUnverified = "deb_member_unverified"
+	// CodeDebMirrorSuitesRequired: deb_mirror_suites_required (Unprocessable).
+	CodeDebMirrorSuitesRequired = "deb_mirror_suites_required"
+	// CodeDebNotImplemented: deb_not_implemented (NotImplemented).
+	CodeDebNotImplemented = "deb_not_implemented"
+	// CodeDebUpstreamSignatureInvalid: deb_upstream_signature_invalid (UpstreamFailed).
+	CodeDebUpstreamSignatureInvalid = "deb_upstream_signature_invalid"
+	// CodeDebReleaseInvalid: deb_release_invalid (UpstreamFailed).
+	CodeDebReleaseInvalid = "deb_release_invalid"
+	// CodeDebIndexMismatch: deb_index_mismatch (UpstreamFailed).
+	CodeDebIndexMismatch = "deb_index_mismatch"
+	// CodeGeneratedItem: generated_item (Conflict).
+	CodeGeneratedItem = "generated_item"
+	// CodeReindexRunning: reindex_running (Conflict).
+	CodeReindexRunning = "reindex_running"
+)
+
 // CodeNuGetInvalidUpstreamDocument is the 502 of a document a NuGet upstream served that is not
 // the document its path promises (R-NUGET-015): a version list, a registration index or a page
 // that does not parse. The previous entry stays.
@@ -865,6 +920,31 @@ var registry = []CodeInfo{
 	{CodeOCISizeInvalid, TooLarge, "OCI content too large", "The manifest, the blob or the repository's quota exceeds a size limit."},
 	{CodeOCIUnsupported, Invalid, "OCI operation not offered", "The repository does not offer the operation: a write to a remote repository or to a virtual repository without a deployment target, or a parameter trove does not support."},
 	{CodeOCIInsufficientScope, Unauthenticated, "OCI registry token lacks the scope", "The registry token does not grant what the request needs on this image name; the challenge names the scope to ask the token service for."},
+	{CodeDebDistributionRequired, Invalid, "Debian distribution required", "An upload to a Debian repository names at least one distribution (suite) with the distribution parameter."},
+	{CodeDebInvalidCoordinate, Invalid, "Invalid Debian coordinate", "A distribution or component is outside the grammar ^[a-z0-9][a-z0-9._+-]{0,63}$, or a request names more than 16 of them."},
+	{CodeDebInvalidFileName, Invalid, "Invalid Debian file name", "The file name of an upload must end in .deb; trove names the stored file itself."},
+	{CodeDebMembersUnreadable, Forbidden, "Debian members unreadable", "The index of a virtual Debian repository is one for every caller, so reading it needs read without package restriction on every member."},
+	{CodeDebNotInRelease, NotFound, "Not in the stored Release", "The path is not listed by the stored release document of the remote repository's suite."},
+	{CodeDebNoUpstreamKeys, NotFound, "No upstream keys", "The remote Debian repository has no deb.upstreamKeys, so it has no public keys to serve."},
+	{CodeDebVersionExists, Conflict, "Debian package version exists", "The package, version and architecture are stored with other bytes. A package file is immutable: delete the file first, or upload the changed package under a new version."},
+	{CodeDebFilenameConflict, Conflict, "Debian file name conflict", "Another version of the package has the same file name (versions that differ only by their epoch)."},
+	{CodeDebWithheld, Conflict, "Debian package withheld", "A restore's replay withheld these bytes because their deletion was journaled; an administrator reinstates them first."},
+	{CodeDebNoNextKey, Conflict, "No next signing key", "The repository has no next signing key to promote."},
+	{CodeDebKeyInUse, Conflict, "Signing key known", "The fingerprint is known to a repository in some state; a key is never imported twice."},
+	{CodeDebKeyState, Conflict, "Signing key state", "The operation does not apply to a key in this state."},
+	{CodeDebInvalidArchive, Unprocessable, "Invalid Debian package archive", "The upload is not an ar archive in the layout of deb(5), or a bound of the archive is crossed."},
+	{CodeDebInvalidControl, Unprocessable, "Invalid Debian control file", "The control file breaks the strict syntax trove copies into its indexes, or a required field is missing or outside its grammar. The detail names the field."},
+	{CodeDebUnsupportedCompression, Unprocessable, "Unsupported control archive compression", "The control archive is compressed with a method other than none, gzip, xz or zstd."},
+	{CodeDebKeyUnsupported, Unprocessable, "Unsupported signing key", "The key is not an unprotected or passphrase-protected EdDSALegacy (Ed25519) or RSA key of at least 3072 bits that can sign, has no expiry, was not created in the future and has no signing subkeys."},
+	{CodeDebUpstreamKeysRequired, Unprocessable, "Upstream keys required", "A mirror, and a remote that is a member of a virtual repository, needs deb.upstreamKeys."},
+	{CodeDebMemberUnverified, Unprocessable, "Debian member unverified", "A remote Debian repository without deb.upstreamKeys cannot be a member of a virtual repository."},
+	{CodeDebMirrorSuitesRequired, Unprocessable, "Mirror suites required", "A remote Debian repository in mode mirror names the suites to mirror in deb.mirror.suites."},
+	{CodeDebNotImplemented, NotImplemented, "Debian operation not implemented", "The operation is part of the Debian repository protocol and is not served by this build of trove yet."},
+	{CodeDebUpstreamSignatureInvalid, UpstreamFailed, "Upstream signature invalid", "The upstream's release document is not signed by a key of deb.upstreamKeys that was valid then and now."},
+	{CodeDebReleaseInvalid, UpstreamFailed, "Invalid upstream release", "The upstream's release document is malformed, too old, dated too far ahead or beyond a bound."},
+	{CodeDebIndexMismatch, UpstreamFailed, "Index does not match the release", "The index file the upstream served does not have the hash and size the stored release names."},
+	{CodeGeneratedItem, Conflict, "Generated item", "The item is generated by trove from the repository's rows; it is never written, deleted, copied or moved by a client."},
+	{CodeReindexRunning, Conflict, "Reindex running", "A rebuild of the repository's derived metadata is queued or running; the detail names the job."},
 	// >>> M3 nuget
 	{CodeNuGetInvalidPackage, Invalid, "Invalid NuGet package", "The .nupkg is not a package trove accepts: not a ZIP archive, a name or entry the archive rules refuse, a missing or repeated .nuspec at the root, a limit of nuget.archive exceeded, or a .nuspec that is not well-formed or declares a DOCTYPE. The detail names the rule."},
 	{CodeNuGetInvalidVersion, Invalid, "Invalid NuGet version", "The version is not a NuGet version trove accepts: one to four numeric parts, an optional pre-release and build metadata, at most 255 bytes as given and normalized."},

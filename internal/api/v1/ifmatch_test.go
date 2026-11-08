@@ -13,6 +13,7 @@ import (
 // ifMatchExempt are the PUT and PATCH operations that take no If-Match, with the
 // reason R-API-012 gives: the edit is a delta, binds one pair, or is file content.
 var ifMatchExempt = map[string]string{
+	"putDebCoordinates": "replaces the coordinates of a file addressed by its path; the file's bytes never change and the numbers a client waits on are the answer's (R-DEB-006, R-DEB-009)",
 	"patchUserGroups":   "membership delta (R-API-012)",
 	"patchGroupMembers": "membership delta (R-API-012)",
 	"bindRole":          "binds one pair (R-API-012)",

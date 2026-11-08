@@ -1,6 +1,8 @@
 # Debian and Ubuntu APT repositories
 
-Status: specification — not implemented (phase T-17, FULL.md block D row "Debian / APT repositories"): local, remote (modes
+Status: specification — the contracts are built (phase T-17, WP0: the format `deb` registers with its local class, its routes answer 501
+`deb_not_implemented`, the schema, settings and API are declared); the classes are built by the work packages of
+[apt-work-packages.md](../../projektplan/apt-work-packages.md) (FULL.md block D row "Debian / APT repositories"): local, remote (modes
 `pullThrough` and `mirror`) and virtual repositories for `apt` and `apt-get` on Debian and Ubuntu
 
 This page specifies how trove serves APT repositories: the format `deb` for local, remote and virtual repositories in the
@@ -175,12 +177,12 @@ Priority: **P2** · Covers: PKG-DEB-002, PKG-DEB-013
 
 | Path below `<repo URL>` | Classes | Route kind | Content |
 |---|---|---|---|
-| `dists/<suite>/InRelease` | all | local, virtual: `Computed`; remote: `Metadata` | the `Release` text with inline signatures (R-DEB-016, R-DEB-019) |
-| `dists/<suite>/Release`, `dists/<suite>/Release.gpg` | all | as above | the unsigned `Release` and its detached signatures |
-| `dists/<suite>/<component>/binary-<arch>/Packages.gz`, `….xz` | local, virtual | `Computed` | the index of the suite, component and architecture (R-DEB-011) |
-| `dists/<suite>/<…>/by-hash/SHA256/<hex>` | all | local, virtual: `Computed`; remote: `Download` | an index file by its SHA-256 (R-DEB-012, R-DEB-021) |
+| `dists/<suite>/InRelease` | all | `Metadata` | the `Release` text with inline signatures (R-DEB-016, R-DEB-019) |
+| `dists/<suite>/Release`, `dists/<suite>/Release.gpg` | all | `Metadata` | the unsigned `Release` and its detached signatures |
+| `dists/<suite>/<component>/binary-<arch>/Packages.gz`, `….xz` | local, virtual | `Metadata` | the index of the suite, component and architecture (R-DEB-011) |
+| `dists/<suite>/<…>/by-hash/SHA256/<hex>` | all | `Download` | an index file by its SHA-256 (R-DEB-012, R-DEB-021) |
 | any other path below `dists/<suite>/` | remote | `Metadata` | an index file the stored release lists, a pdiff patch below a `*.diff/` directory, else 404 (R-DEB-021) |
-| `pool/<…>` | local, remote | `Download` | package files; in a local repository at the canonical path of R-DEB-008 |
+| `pool/<…>` | all | `Download` | package files; in a local repository at the canonical path of R-DEB-008; a virtual repository resolves it by the artifact tiers (R-DEB-027) |
 | `members/<memberKey>/<path>` | virtual | `Download` | a package file of a member, by the member's path (R-DEB-025, R-DEB-027) |
 | `<dir>/InRelease`, `<dir>/Release`, `<dir>/Release.gpg` outside `dists/` | remote | `Metadata` | the release documents of a flat repository whose source line names `<dir>/` as its suite; `<dir>` may be empty (the root, `./`) (Q-DEB-23, Q-DEB-39) |
 | `<dir>/<index name>` outside `dists/`, where the file name is an index name: `Packages`, `Sources`, `Contents-<arch>`, `Translation-<lang>`, `Index` of a `*.diff/` directory, each optionally with `.gz`, `.xz`, `.bz2`, `.lzma` or `.zst` | remote | `Metadata` | an index file of a flat repository (R-DEB-021) |
@@ -202,7 +204,10 @@ Priority: **P2** · Covers: PKG-DEB-002, PKG-DEB-013
   repository address is `.`, and the format reads a leading `./` as the root flat directory. Any other dot or empty segment
   answers 400 `invalid_path` (Q-DEB-39, Q-ARCH-385).
 - Local and virtual repositories answer 404 for any path below `dists/` that is not a file of their published generation; no
-  path below `dists/` is ever an upload target (R-ARCH-012).
+  path below `dists/` is ever an upload target (R-ARCH-012). The route table has one route per path shape, not one per class
+  (`deb.dists.get`, `deb.dists.by_hash`, `deb.pool.get`), because the format's `Match` is blind to the class of the repository and two
+  routes that overlap in path would match one request twice; the decision "not a file of the generation" is the handler's
+  (Q-DEB-45).
 - Release documents and index files of a local or virtual repository are generated items (R-DEB-010); package files are items
   of the upload pipeline; a remote's files are cache entries (R-REPO-025).
 
@@ -262,7 +267,7 @@ APT shows the status line of a failed request and does not read bodies; other to
 | 404 | `deb_not_in_release`, `deb_no_upstream_keys` | a remote index path the stored release does not list (R-DEB-021); `signing-key.asc` of a remote without keys (R-DEB-018) |
 | 405 | `no_deploy_target` | an upload through a virtual repository without a deploy target (R-DEB-028) |
 | 409 | `deb_version_exists`, `deb_filename_conflict`, `deb_withheld`, `generated_item`, `deb_no_next_key`, `deb_key_in_use`, `deb_key_state`, `reindex_running` | R-DEB-006, R-DEB-013, R-DEB-014, R-DEB-015, R-DEB-017, R-DEB-032 |
-| 413 | `content_too_large` | a bound of R-DEB-034 |
+| 413 | `payload_too_large` | a bound of R-DEB-034 (the code of the bounded readers, `untrusted.TooLarge`, Q-DEB-44) |
 | 422 | `deb_invalid_archive`, `deb_invalid_control`, `deb_unsupported_compression`, `deb_key_unsupported`, `deb_upstream_keys_required`, `deb_member_unverified`, `deb_mirror_suites_required` | R-DEB-007, R-DEB-015, R-DEB-020, R-DEB-024 |
 | 501 | `deb_not_implemented` | a route whose work package is not built yet (the skeleton of WP0) |
 | 502 | `deb_upstream_signature_invalid`, `deb_release_invalid`, `deb_index_mismatch`, `upstream_integrity_mismatch`, `upstream_digest_missing` | R-DEB-019 to R-DEB-022 |
@@ -726,7 +731,8 @@ Priority: **P2** · Covers: PKG-DEB-018, PKG-DEB-019
   strips an expiry before the import makes GnuPG write a fresh self-signature).
 - **Where the private key lives.** In PostgreSQL, sealed with the stored-secret key ring of
   [architecture.md](../architecture.md) R-ARCH-021 (AES-256-GCM, bound to its row and column), in `deb_signing_keys.private_key`,
-  registered in the sealed-column registry, so `trove admin secrets status`, the start-up canary and `secrets-reencrypt` cover it.
+  registered in the sealed-column registry, so `trove admin secrets status`, the start-up canary and `secrets-reencrypt` cover it
+  (the walk is `ResealSigningKeys`, built with the migration, so registering the column never stops a key-ring rotation).
   It is opened only by the index build (R-DEB-010) and by the self-certification at generation or import, in memory, for the
   signing call. It is never written anywhere else: not to a log, to Valkey, to a replica's disk, to an API answer or to the
   configuration export (R-OPS-032 exports no key at all). No API signs data a caller chooses: trove is no signing oracle.
@@ -2539,6 +2545,69 @@ ask for a one-step way.
 
 **Applied in the spec:** R-DEB-025, R-DEB-029 (troubleshooting).
 
+### Q-DEB-44 · The 413 of a crossed bound carries the code `payload_too_large`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-DEB-005 listed `content_too_large` for a bound of R-DEB-034. The bounded readers of `internal/formats/untrusted` (R-ARCH-028)
+answer 413 with the registered code `payload_too_large`, and no code `content_too_large` exists.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `payload_too_large` (chosen) | The format's table names the code the readers raise | One code for every format; the tests that hold the readers hold the format | The page's first wording changes |
+| (b) A second code `deb_content_too_large` | The format wraps the readers' error | The code names the format | Every reader's error is rewritten for one format, and clients of other formats see another code for the same bound |
+
+**Choice:** (a).
+
+**Rationale:** the code is the contract of the bound, not of the format. The development agent would revisit it if the format needed to tell
+a crossed bound of a package from a crossed bound of an index.
+
+**Applied in the spec:** R-DEB-005. Code: `internal/formats/untrusted` (`TooLarge`), `internal/formats/deb/errors.go`.
+
+### Q-DEB-45 · One route per path shape, with the class decided by the handler
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-DEB-003 gave the same path different kinds per class (a release document is `Computed` for a local repository and `Metadata` for
+a remote one) and different suite grammars (a remote's suite may hold slashes, `stable/updates`). The format's `Match(method, path)`
+does not know the class of the repository, and `formats.MatchRoutes` fails a request that two routes accept; the dispatcher checks the
+class of the matched route afterwards (405 for a class that does not serve it).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One route per path shape for all classes; unified kinds; the handler decides what a class serves (chosen) | `deb.dists.get` (`Metadata`), `deb.dists.by_hash` (`Download`), `deb.pool.get` (`Download`), `deb.signing_key.get` (`Computed`); the remote-only routes (flat repositories) and the local-only ones (upload, delete) have disjoint paths | No ambiguity in any class combination; the kit's ambiguity check holds the table for the full format | A local repository's 404 for `Packages.bz2` is the handler's and no longer the router's |
+| (b) Extend `Match` with the class | The contract grows by a parameter | Strict per-class tables | A change of the frozen contract (ADR-141) for one format |
+| (c) Prefix the remote's routes | `remote/dists/...` | Disjoint paths | Not what APT requests |
+
+**Choice:** (a). The kind of a release document or index is `Metadata` for every class (rendered from rows or fetched, both are what that
+kind means), of a by-hash file `Download` (immutable content addressed by its hash, in every class). `pool/` is served by every class,
+which R-DEB-027 needs for a virtual repository.
+
+**Rationale:** the headers and the cache behaviour R-DEB-005 gives each file do not depend on the route kind. The development agent would
+revisit it if the dispatcher learned to match by class.
+
+**Applied in the spec:** R-DEB-003. Code: `internal/formats/deb/routes.go`.
+
+### Q-DEB-46 · A Debian version names its file only through the local class, so the skeleton has no `VersionPather`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the decision point decides a version on the path of its file as well as on the package document's (Q-AUTHZ-255), through the
+optional `VersionPather`. A Debian package has no document, and a version has one file per architecture below the pool directory of its
+source package: `VersionPath(name, version)` cannot name a path from the package and version alone.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The skeleton has none; the local class decides it with its package screens (chosen) | The kit's fixture holds no pool path of the form `<package>_<version>_<arch>.<ext>` until then; [H-720](#h-720--a-path-pattern-that-hides-a-package-file-does-not-hide-its-version-from-the-package-screens) states the gap | No wrong answer is frozen into the contract of the format; the skeleton has no version rows to list | A gap until the local class lands |
+| (b) A guessed path (`pool/<p>/<name>/<name>_<version>_all.deb`) | A path that is right for nothing but `all` files with source = package | The kit is satisfied | A pattern that hides the real file would not hide the version |
+| (c) A second optional interface that names every file of a version | The contract grows | Exact | A contract change before a second format needs it |
+
+**Choice:** (a).
+
+**Rationale:** the work package of the local class chooses between (c) and a rule that reads the stored files of a version through the
+data port (`Find`), with the architecture reviewer; the development agent would revisit this choice when it does.
+
+**Applied in the spec:** none until the local class lands. Code: the fixture of `internal/formats/deb/conformance_test.go`.
 ### Q-DEB-70 · The stub's test keys have a fixed creation date, not "an hour back"
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with
@@ -2702,3 +2771,11 @@ rows (R-BAK-008), so the first release a remote stores afterwards is taken as it
 served before. A virtual repository still refuses it by its own record (R-DEB-025), and each client's APT keeps its newer list
 (verified), but a pull-through client that never saw the newer release and a mirror pass accept it. Live once the remote class is
 built; real for restores without remote caches while an upstream mirror serves an old release.
+
+### H-720 · A path pattern that hides a package file does not hide its version from the package screens
+
+The decision point decides a version on the path of its file (Q-AUTHZ-255), through the optional `VersionPather`, and a Debian format
+cannot name that path from a package and a version (Q-DEB-46). Until the local class gives the format a rule, a grant whose path
+patterns hide `pool/…` from a principal does not hide the versions of the packages stored there from that principal's package screens
+and version lists. The file stays hidden: the pool route is decided on the path. Dormant today: the skeleton stores no package and
+has no screen; real once the local class lists versions, until its work package closes the gap.

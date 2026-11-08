@@ -130,6 +130,10 @@ type Fixture struct {
 	NoRevision map[string]string
 	// Names are the sample package names of check 10.
 	Names []NameCase
+	// NoDocument is the reason a format has no package document: its upstream has none per package (an APT archive), so
+	// PackageDocumentPath reports ok false for every name, and check 10 holds the names to their normalization alone. The decision
+	// point then decides a package on the paths of its files (R-REPO-003, Q-REPO-270). Empty: the format has a document per name.
+	NoDocument string
 	// View is the fixture of check 11: sample versions and a package to seed.
 	View *ViewFixture
 	// OptionNames are literal client option names a setup template may spell

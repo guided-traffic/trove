@@ -374,8 +374,8 @@ func (s kitScope) MayRead(_ qname.Repo, pkg, version string) bool {
 		return true
 	}
 	read := []formats.Action{formats.ActionRead}
-	doc, ok := s.h.f.PackageDocumentPath(pkg)
-	if !ok || allow(formats.Target{Package: pkg, Path: doc.Path, Actions: read}) != nil {
+	// A format without a package document (an APT archive) decides a package on the paths of its files alone.
+	if doc, ok := s.h.f.PackageDocumentPath(pkg); ok && allow(formats.Target{Package: pkg, Path: doc.Path, Actions: read}) != nil {
 		return false
 	}
 	vp := formats.CapabilitiesOf(s.h.f).VersionPath

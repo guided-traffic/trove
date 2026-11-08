@@ -446,7 +446,7 @@ Normative rules:
   1. Edge: `httpserver`, `api/v1`, `api/edge`, `api/dispatch`, `webui`, `formats` (the contract and the format handlers), `formathost`.
   2. Domain: `repository`, `files`, `items`, `packages`, `proxy`, `virtual`, `formatdata`, `authz`, `auth`, `jobs`, `audit`, `backup`, `journal`.
   3. Infrastructure: `meta/postgres`, `blob` (the store and its spool; the S3 client is `blob/s3`), `cluster`, `outbound`, `secrets`.
-  4. Leaf: `config`, `errs`, `buildinfo`, `observability`, `cache`, `meta`, `backup/tables`, `backup/target` (the port of the backup target, Q-BAK-15), `tlsfiles`, `formats/catalog`, `formats/nuget/id`, `formats/nuget/version`, `formats/nuget/nupkg`, `formats/nuget/nuspec`, `formats/npm/semver` (the version order and the dist-tag rule, shared by the format and its data port's journal replay, R-NPM-047), `formats/<id>/rows`, `auth/scope`, `auth/jws` (the compact-JWS verifier the login and the CI exchange share, Q-CI-19), `ci/reason`, `ci/claims`, `ci/subject` (the pure parts of the CI federation, Q-CI-21). Every layer may import them, and they import only each other.
+  4. Leaf: `config`, `errs`, `buildinfo`, `observability`, `cache`, `meta`, `backup/tables`, `backup/target` (the port of the backup target, Q-BAK-15), `tlsfiles`, `formats/catalog`, `formats/nuget/id`, `formats/nuget/version`, `formats/nuget/nupkg`, `formats/nuget/nuspec`, `formats/deb/control`, `formats/deb/debfile`, `formats/deb/version`, `formats/deb/index` (the Debian rule libraries: the deb822 parser and writer, the package archive reader, dpkg's version order and the index renderers, shared by the format, its data port and its jobs, Q-ARCH-383), `formats/npm/semver` (the version order and the dist-tag rule, shared by the format and its data port's journal replay, R-NPM-047), `formats/<id>/rows`, `auth/scope`, `auth/jws` (the compact-JWS verifier the login and the CI exchange share, Q-CI-19), `ci/reason`, `ci/claims`, `ci/subject` (the pure parts of the CI federation, Q-CI-21). Every layer may import them, and they import only each other.
      `formats/<id>/rows` is the values of a format's data port, shared by the format and `formatdata/<id>` (Q-ARCH-193). It is a leaf by rule, not by a
      list entry: archtest's `layerOf` gives every `internal/formats/<id>/rows` the leaf layer, and `CheckLayers` fails it when it imports anything but `errs` and
      the standard library (npm and NuGet each have one).
@@ -1264,7 +1264,7 @@ type Format interface {
 	// (Q-API-166). It runs no SQL; Validate refuses a view without package names.
 	View() ViewAdapter
 
-	// SetupTemplates returns the client setup templates (text/template) used by api-and-ui.md R-API-033.
+	// SetupTemplates returns the client setup templates (text/template) used by api-and-ui.md R-API-030.
 	SetupTemplates() []SetupTemplate
 	// Guide returns the format's guide (api-and-ui.md R-UI-049, R-API-053): what a repository of each class is
 	// and how each client uses it, as Markdown templates over GuideData. A format with clients covers every class
@@ -1511,6 +1511,23 @@ type Revalidator interface {
 	Unchanged(p Path, stored RemoteDocument, resp *http.Response) bool
 }
 
+// NameServer: an optional interface of a RemoteAdapter whose upstream has no document per package (an APT archive): the shadowing
+// check of repositories-and-proxy.md R-REPO-048 asks it instead of probing a package document (ADR-172, Q-REPO-270, Q-DEB-37). It reads
+// the rows of the indexes the remote repository holds through h, in the scope of the virtual repository whose exposure the check
+// decides. known is false when an index of that scope is not parsed yet; the format then enqueues its parse.
+type NameServer interface {
+	ServesName(ctx context.Context, h Host, q NameQuery) (served, known bool, err error)
+}
+
+// NameQuery names the remote member, the virtual repository through which it would serve the name (its reference and its format
+// settings, from which the format reads the suites, components and architectures it serves) and the normalized name.
+type NameQuery struct {
+	Remote      RepoRef
+	Via         RepoRef
+	ViaSettings json.RawMessage
+	Name        string
+}
+
 // RemoteCaps are the optional interfaces Register found on a format's remote adapter; a field is nil for one the
 // adapter lacks. They are the Remote field of Capabilities, and RemoteCapabilities returns them by format ID.
 type RemoteCaps struct {
@@ -1521,6 +1538,7 @@ type RemoteCaps struct {
 	Auth       Authenticator // the token handshake with the upstream; nil for a format whose upstreams authenticate by the credential alone
 	Stood      StoodChallengeReader // the reading of a 401 that stood after the handshake; nil for none
 	Revalidate Revalidator   // the format's own revalidation request; nil for the engine's conditional GET
+	Names      NameServer    // the shadowing check from the rows of the remote's indexes, for a format without a package document; nil otherwise
 }
 
 func RemoteCapabilities(id ID) RemoteCaps
@@ -1618,8 +1636,10 @@ type VersionPather interface {
 // ItemRef.Facts; ServeCheck computes the same key and decides on the facts only when they were read for it
 // (ServeFacts.For), so a route that did not pass the key stays correct and costs its own query. The types are those of the
 // leaf package internal/servefacts: ServeKey{Kind, Package, Version} with the kinds ServeNPMLocal (the tombstone of a local
-// npm version), ServeNPMRemote (the facts of a remote npm tarball, ServeNPMRemoteFacts) and ServeNuGetLocal (the version row
-// and the tombstone of a local NuGet version); ServeKind is the type of a kind. Every kind is the rows of one statement the
+// npm version), ServeNPMRemote (the facts of a remote npm tarball, ServeNPMRemoteFacts), ServeNuGetLocal (the version row
+// and the tombstone of a local NuGet version), ServeDebLocal (the withheld mark of a package file of a local Debian repository,
+// Q-ARCH-381) and ServeDebRemote (the SHA-256 and size the newest parsed index of a remote Debian repository lists for a path,
+// ServeDebRemoteFacts, Q-ARCH-381); ServeKind is the type of a kind. Every kind is the rows of one statement the
 // check ran before (NPMTombstoned, NPMRemoteTarballFacts, NuGetServeState).
 type ServeFactsKeyer interface {
 	ServeFactsKey(repo RepoRef, p Path) ServeKey
@@ -1852,8 +1872,8 @@ R-ARCH-025 says which changes keep the version (Q-ARCH-280).
 **Optional behaviour.** `Format` holds what every format answers. A behaviour that only some formats have, or that
 the core cannot call yet, is an optional interface of this package, found by `CapabilitiesOf` when the format registers
 and recorded in the registry (`CapabilitiesFor`); the core never asks the format value (the architecture test allows
-that assertion in `CapabilitiesOf` alone). Today there are eleven: `ItemsRestorer`, `RemovalLocker`, `ServeFactsKeyer` (`Capabilities.ServeFacts`, Q-ARCH-291) and `ViewSizer` (`Capabilities.ViewSizer`, [ADR-177](../decisions.md#adr-177--the-format-contract-gains-the-optional-viewsizer-for-the-size-of-a-version-that-is-not-the-sum-of-its-files)) on the format, `Discoverer`,
-`FillInspector`, `MirrorLister`, `Authenticator`, `Revalidator` and `FactsGate` on its remote adapter (`Capabilities.Remote`, Q-ARCH-267, Q-ARCH-268, Q-ARCH-284,
+that assertion in `CapabilitiesOf` alone). Today there are twelve: `ItemsRestorer`, `RemovalLocker`, `ServeFactsKeyer` (`Capabilities.ServeFacts`, Q-ARCH-291) and `ViewSizer` (`Capabilities.ViewSizer`, [ADR-177](../decisions.md#adr-177--the-format-contract-gains-the-optional-viewsizer-for-the-size-of-a-version-that-is-not-the-sum-of-its-files)) on the format, `Discoverer`,
+`FillInspector`, `MirrorLister`, `Authenticator`, `Revalidator`, `FactsGate` and `NameServer` (`RemoteCaps.Names`, [ADR-172](../decisions.md#adr-172--the-format-contract-gains-the-remote-name-index-and-the-serve-facts-kinds-deb_local-and-deb_remote)) on its remote adapter (`Capabilities.Remote`, Q-ARCH-267, Q-ARCH-268, Q-ARCH-284,
 [ADR-161](../decisions.md#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions)), and
 `VulnerabilityAdapter` on the format (`Capabilities.Vulnerability`, R-VULN-009,
 [ADR-150](../decisions.md#adr-150--the-format-contract-gains-the-optional-vulnerability-adapter)). `MirrorLister` also
@@ -9679,6 +9699,68 @@ it if a second prefix needs the same protection (`/.well-known/` has its own exe
 
 **Applied in the spec:** the `/v2/` row and the route-table test of R-ARCH-005 above. Code: `httpserver.CheckRouter`, `CheckRouteTable`
 ([routetable.go](../../internal/httpserver/routetable.go)), `Router.HandleRegistryUncleaned`.
+
+### Q-ARCH-381 · The item lookup reads the withheld mark of a Debian package file and the digest a Debian remote's parsed index announces
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a download costs one PostgreSQL statement (R-ARCH-027). Two checks of the Debian format decide on rows besides the item: the
+serve check of a local repository refuses a package file the journal replay withheld (R-DEB-032), and the artifact gate of a remote
+repository verifies a fill against the digest a parsed index lists for the path (R-DEB-022). Asked in a statement of their own, each
+would add a statement to the hottest route.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Two serve-facts kinds, `deb_local` and `deb_remote`, read in the lookup's statement (chosen) | `servefacts.DebLocal` reads `deb_tombstones` for the item's path; `servefacts.DebRemote` reads the SHA-256 and size of the newest parsed index entry for the item's path (`DebRemoteFacts`); the format names the key (`ServeFactsKeyer`) and decides on `ItemRef.Facts` when they were read for it | One statement, no state between requests (R-ARCH-032), the same mechanism as npm, NuGet and OCI; a route that passes no key stays correct | The shared statement carries two more kinds |
+| (b) Ask the data port in `ServeCheck` and the gate | One query per check | No change of the lookup | A second statement on every package download, which R-ARCH-027 forbids |
+| (c) Keep the withheld marks and parsed entries in a per-replica cache | A cache | No statement | State between requests that a restore, a reinstate or a new release must invalidate (R-ARCH-032, R-ARCH-018) |
+
+**Choice:** (a).
+
+**Rationale:** the key is the item's own path for both kinds, so the statement needs no parameter besides the kind; the mark and the
+entry are as current as the item. The development agent would revisit it if a third kind of the Debian format needed rows in the lookup.
+
+**Applied in the spec:** R-ARCH-008 (`ServeDebLocal`, `ServeDebRemote`, `ServeDebRemoteFacts`), R-ARCH-027. Code: `internal/servefacts`,
+`internal/meta/postgres/queries/files.sql` (`GetLiveItem`), `internal/items/item.go`, `internal/formats/hooks.go`,
+`internal/formats/deb/servecheck.go`.
+
+### Q-ARCH-382 · The Debian package archive and its compressions are read by bounded readers of `untrusted`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a `.deb` is an `ar` archive whose control archive is compressed with gzip, xz or Zstandard (R-DEB-007), and an upstream's index
+may be xz (R-DEB-023). R-ARCH-028 gives every untrusted input one bounded reader in `internal/formats/untrusted`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `untrusted.NewAr`, `NewXZReader` and `NewZstdReader`, each bounded by `Limits` and failing instead of cutting (chosen) | The readers live in the leaf beside the tar, ZIP, JSON and XML readers; the xz module (`github.com/ulikunitz/xz`) and the Zstandard decoder (`github.com/klauspost/compress`, already a dependency) are only read through them | One place for the bounds; a decompression bomb ends in 413 (the advisory CVE-2021-29482 is of that class) | The leaf imports two modules |
+| (b) The format reads the compressions itself | Each format its bounds | No change of the leaf | The bound of R-ARCH-028 is then a convention instead of a package |
+
+**Choice:** (a).
+
+**Rationale:** the readers are the only importers of the xz module, so a bound cannot be forgotten. `NewAr` is declared and answers
+`not_implemented` until the package-file libraries are built (apt-work-packages.md, WP1); the xz and Zstandard readers are built.
+
+**Applied in the spec:** R-ARCH-028 (the readers), R-DEB-034. Code: `internal/formats/untrusted/{ar,xz,zstd}.go`.
+
+### Q-ARCH-383 · The Debian rule libraries are leaves
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the deb822 parser and writer, the package archive reader, dpkg's version order and the index renderers are used by the format
+(edge), by its data port and its jobs (domain), and by the virtual merge. Layers allow a lower layer to import only lower ones
+(R-ARCH-002).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `formats/deb/{control,debfile,version,index}` are leaves by list entry, with `formats/deb/rows` a leaf by rule (chosen) | They import only `errs`, `formats/untrusted`, the standard library and each other | One parser for the format, the port and the jobs, as for NuGet (`id`, `version`, `nupkg`, `nuspec`) | Four more entries in the layer table |
+| (b) Put them in the format package | One package | No new entries | The data port and the jobs may not import the format, so each would need a copy |
+
+**Choice:** (a).
+
+**Rationale:** the same reason as NuGet's rule libraries. The OpenPGP library (`internal/openpgp`) is a leaf of its own, recorded with its package.
+
+**Applied in the spec:** R-ARCH-002 (the leaf list above). Code: `internal/archtest/layers.go`.
 
 ### Q-ARCH-403 · The stall deadline runs only while bytes are expected from the peer
 

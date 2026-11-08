@@ -852,6 +852,16 @@ func (r *run) names() {
 				continue
 			}
 			p, ok := r.f.PackageDocumentPath(n)
+			if r.fx.NoDocument != "" {
+				if ok {
+					r.failf("PackageDocumentPath(%q) answers %q and the fixture says the format has no package document (%s)", n, p.Path, r.fx.NoDocument)
+				}
+				if i > 0 && n != norm {
+					r.failf("the spellings %q and %q are given as one name and normalize to %q and %q", nc.Spellings[0], sp, norm, n)
+				}
+				norm = n
+				continue
+			}
 			if !ok {
 				r.failf("PackageDocumentPath(%q) answers no path for a format with package names", n)
 				continue

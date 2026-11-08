@@ -491,6 +491,19 @@ refuses (`docker-`, `a.-b`, `web-`) stops the migration; the operator renames or
 added `NOT VALID` and validated with `VALIDATE CONSTRAINT`, which lets reads and writes through. The statements the data port reads are in
 [oci.sql](../../internal/meta/postgres/queries/oci.sql); `test/integration/postgres/oci_test.go` pins the tables, the phases and both grammars at the database.
 
+## Debian tables (00060 to 00062)
+
+Three expand migrations of phase T-17 ([deb.md](deb.md)); the numbers are the next free ones, because the runner needs numbers without a gap.
+Every table is export class `data`, registered in [tables_deb.go](../../internal/formatdata/deb/tables_deb.go).
+
+| Table | Migration | What it holds |
+|---|---|---|
+| `deb_suites`, `deb_binaries`, `deb_coordinates`, `deb_generations`, `deb_tombstones` | [00060_deb](../../internal/meta/postgres/migrations/00060_deb.sql) | The suites of a local or virtual repository with `change_seq` and `built_seq` (revision columns), a row per stored package file with its normalized control paragraph, the suites and components a file is listed in, the published and retained generations, and the marks of package files the journal replay withheld (R-DEB-008, R-DEB-032). No blob column: the items hold the blobs |
+| `deb_signing_keys` | [00061_deb_signing_keys](../../internal/meta/postgres/migrations/00061_deb_signing_keys.sql) | The signing keys of a repository: one `primary` and one `next` at most (partial unique indexes), the fingerprint unique in every state, `private_key` sealed with the stored-secret key ring (the sealed column `formatdata/deb.SigningKeys`, row key `id`) and NULL exactly in state `retired` (R-DEB-015) |
+| `deb_remote_releases`, `deb_remote_indexes`, `deb_remote_entries` | [00062_deb_remote](../../internal/meta/postgres/migrations/00062_deb_remote.sql) | A remote's stored release documents with the verdict of their verification, its parsed indexes and their entries; cache rows (R-DEB-023). `GetLiveItem` reads the digest of `deb_remote_entries` for the kind `deb_remote` and the mark of `deb_tombstones` for `deb_local` ([files.sql](../../internal/meta/postgres/queries/files.sql)) |
+
+`test/integration/postgres/deb_test.go` pins the tables, the phases, the constraints and the item lookup's facts.
+
 ## Session withdrawal (00059)
 
 [00059_session_withdrawal](../../internal/meta/postgres/migrations/00059_session_withdrawal.sql) is an expand step that adds

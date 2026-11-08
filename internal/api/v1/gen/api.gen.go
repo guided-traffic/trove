@@ -829,6 +829,102 @@ func (e ClientSnippetTab) Valid() bool {
 	}
 }
 
+// Defines values for DebIndexStateSuitesState.
+const (
+	DebIndexStateSuitesStateCurrent DebIndexStateSuitesState = "current"
+	DebIndexStateSuitesStateFailed  DebIndexStateSuitesState = "failed"
+	DebIndexStateSuitesStatePending DebIndexStateSuitesState = "pending"
+)
+
+// Valid indicates whether the value is a known member of the DebIndexStateSuitesState enum.
+func (e DebIndexStateSuitesState) Valid() bool {
+	switch e {
+	case DebIndexStateSuitesStateCurrent:
+		return true
+	case DebIndexStateSuitesStateFailed:
+		return true
+	case DebIndexStateSuitesStatePending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DebSettingsCompression.
+const (
+	Xz DebSettingsCompression = "xz"
+)
+
+// Valid indicates whether the value is a known member of the DebSettingsCompression enum.
+func (e DebSettingsCompression) Valid() bool {
+	switch e {
+	case Xz:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DebSigningKeyAlgorithm.
+const (
+	N1  DebSigningKeyAlgorithm = 1
+	N22 DebSigningKeyAlgorithm = 22
+)
+
+// Valid indicates whether the value is a known member of the DebSigningKeyAlgorithm enum.
+func (e DebSigningKeyAlgorithm) Valid() bool {
+	switch e {
+	case N1:
+		return true
+	case N22:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DebSigningKeyOrigin.
+const (
+	Generated DebSigningKeyOrigin = "generated"
+	Imported  DebSigningKeyOrigin = "imported"
+)
+
+// Valid indicates whether the value is a known member of the DebSigningKeyOrigin enum.
+func (e DebSigningKeyOrigin) Valid() bool {
+	switch e {
+	case Generated:
+		return true
+	case Imported:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DebSigningKeyState.
+const (
+	Next     DebSigningKeyState = "next"
+	Primary  DebSigningKeyState = "primary"
+	Retired  DebSigningKeyState = "retired"
+	Withheld DebSigningKeyState = "withheld"
+)
+
+// Valid indicates whether the value is a known member of the DebSigningKeyState enum.
+func (e DebSigningKeyState) Valid() bool {
+	switch e {
+	case Next:
+		return true
+	case Primary:
+		return true
+	case Retired:
+		return true
+	case Withheld:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for EncryptionKeyCanary.
 const (
 	EncryptionKeyCanaryAbsent EncryptionKeyCanary = "absent"
@@ -1041,6 +1137,7 @@ func (e FormatDescriptorPatternSubject) Valid() bool {
 
 // Defines values for FormatName.
 const (
+	FormatNameDeb     FormatName = "deb"
 	FormatNameGeneric FormatName = "generic"
 	FormatNameNpm     FormatName = "npm"
 	FormatNameNuget   FormatName = "nuget"
@@ -1050,6 +1147,8 @@ const (
 // Valid indicates whether the value is a known member of the FormatName enum.
 func (e FormatName) Valid() bool {
 	switch e {
+	case FormatNameDeb:
+		return true
 	case FormatNameGeneric:
 		return true
 	case FormatNameNpm:
@@ -1335,6 +1434,7 @@ func (e JobState) Valid() bool {
 
 // Defines values for LocalFormatName.
 const (
+	LocalFormatNameDeb     LocalFormatName = "deb"
 	LocalFormatNameGeneric LocalFormatName = "generic"
 	LocalFormatNameNpm     LocalFormatName = "npm"
 	LocalFormatNameNuget   LocalFormatName = "nuget"
@@ -1344,6 +1444,8 @@ const (
 // Valid indicates whether the value is a known member of the LocalFormatName enum.
 func (e LocalFormatName) Valid() bool {
 	switch e {
+	case LocalFormatNameDeb:
+		return true
 	case LocalFormatNameGeneric:
 		return true
 	case LocalFormatNameNpm:
@@ -5265,6 +5367,162 @@ type DatabaseFacts struct {
 	SupportedSchemaVersions []int                `json:"supportedSchemaVersions"`
 }
 
+// DebCoordinate defines model for DebCoordinate.
+type DebCoordinate struct {
+	Component    string `json:"component"`
+	Distribution string `json:"distribution"`
+}
+
+// DebCoordinatesRequest defines model for DebCoordinatesRequest.
+type DebCoordinatesRequest struct {
+	Coordinates []DebCoordinate `json:"coordinates"`
+
+	// Path The canonical pool path of the stored package file.
+	Path string `json:"path"`
+}
+
+// DebIndexState defines model for DebIndexState.
+type DebIndexState struct {
+	Suites []struct {
+		ChangeSeq    int64  `json:"changeSeq"`
+		Distribution string `json:"distribution"`
+		Generation   int64  `json:"generation"`
+		PublishedSeq int64  `json:"publishedSeq"`
+
+		// Reason Why the last build failed (`no_signing_key`, `member_unverified: <key>`, ...), while the state is `failed`.
+		Reason      *string                  `json:"reason,omitempty"`
+		ReleaseDate *time.Time               `json:"releaseDate,omitempty"`
+		SignedBy    *[]string                `json:"signedBy,omitempty"`
+		State       DebIndexStateSuitesState `json:"state"`
+	} `json:"suites"`
+}
+
+// DebIndexStateSuitesState defines model for DebIndexState.Suites.State.
+type DebIndexStateSuitesState string
+
+// DebPackageAnswer The answer of an upload and of a change of coordinates (R-DEB-006, R-DEB-009).
+type DebPackageAnswer struct {
+	Architecture string          `json:"architecture"`
+	Coordinates  []DebCoordinate `json:"coordinates"`
+
+	// Index The suites the file is listed in, with the numbers a client waits on (`waitFor` of the index state, R-DEB-014).
+	Index []struct {
+		ChangeSeq    int64  `json:"changeSeq"`
+		Distribution string `json:"distribution"`
+		PublishedSeq int64  `json:"publishedSeq"`
+	} `json:"index"`
+	Package string `json:"package"`
+	Path    string `json:"path"`
+	Sha256  string `json:"sha256"`
+	Version string `json:"version"`
+}
+
+// DebSettings The settings of the Debian (APT) format, the `deb` member of a repository document (R-REPO-004, R-DEB-008, R-DEB-024). The
+// document of the format's JSON Schema is `settingsSchema` of `GET /api/v1/formats`; `TestR_ARCH_008_DebSettingsSchemaEqualsTheOpenAPIMember`
+// fails on any difference between the two. A setting that does not apply to the class of the repository answers 422
+// `not_applicable`: `architectures`, `compression`, `origin` and `label` are for local and virtual repositories, `suites` and
+// `components` for virtual ones, `upstreamKeys` and `mirror` for remote ones. An omitted setting takes its default. A change
+// of `architectures`, `compression`, `origin`, `label`, `suites` or `components` raises the `changeSeq` of every suite of the
+// repository, so the next build reflects it. The repository document reads back the read-only `upstreamKeyFingerprints` of a
+// remote's keys beside it.
+type DebSettings struct {
+	// Architectures Local and virtual. Architectures every suite's indexes are built for; a local repository adds the architectures of its stored files. `all` is not listed.
+	Architectures *[]string `json:"architectures,omitempty"`
+
+	// Components Virtual. Components merged.
+	Components *[]string `json:"components,omitempty"`
+
+	// Compression Local and virtual. Index variants built besides gzip, which is always built.
+	Compression *[]DebSettingsCompression `json:"compression,omitempty"`
+
+	// Label Local and virtual. The `Label` field of every `Release`; the repository key while it is not set.
+	Label *string `json:"label,omitempty"`
+
+	// Mirror Remote (R-DEB-024, Q-DEB-17). What a mirror of an APT archive keeps; present in both modes and effective in mode `mirror`.
+	// A caller without `repositories:write-config` on the project cannot change it on a mirror (R-REPO-050, `422 mirror_restricted`).
+	Mirror *struct {
+		// Architectures Architectures whose `Packages` indexes and package files are kept; `all` is always kept and not listed.
+		Architectures *[]string `json:"architectures,omitempty"`
+
+		// Components Components whose indexes and package files are kept.
+		Components *[]string `json:"components,omitempty"`
+
+		// Sources Whether `Sources` indexes and source package files are kept.
+		Sources *bool `json:"sources,omitempty"`
+
+		// Suites Suites (below `dists/`) to mirror; required in mode `mirror` (`422 deb_mirror_suites_required`).
+		Suites *[]string `json:"suites,omitempty"`
+
+		// Translations Languages of `i18n/Translation-<language>` kept.
+		Translations *[]string `json:"translations,omitempty"`
+	} `json:"mirror,omitempty"`
+
+	// Origin Local and virtual. The `Origin` field of every `Release`; printable ASCII without `:`, 1 to 64 characters.
+	Origin *string `json:"origin,omitempty"`
+
+	// Suites Virtual. Suites served besides those of the local members.
+	Suites *[]string `json:"suites,omitempty"`
+
+	// UpstreamKeyFingerprints Remote, read-only. The v4 fingerprints of the certificates in `upstreamKeys`, so that an operator can compare them through a second channel (R-DEB-020).
+	UpstreamKeyFingerprints *[]string `json:"upstreamKeyFingerprints,omitempty"`
+
+	// UpstreamKeys Remote. ASCII-armored OpenPGP public keys of the upstream, one block of 1 to 32 certificates and at most 256 KiB: the
+	// remote verifies the signatures of its upstream's release documents against them (R-DEB-020). `null` leaves the remote
+	// unverified; a mirror and a member of a virtual repository need them (`422 deb_upstream_keys_required`).
+	UpstreamKeys *string `json:"upstreamKeys,omitempty"`
+}
+
+// DebSettingsCompression defines model for DebSettings.Compression.
+type DebSettingsCompression string
+
+// DebSigningKey A signing key of a local or virtual Debian repository (R-DEB-015). The private key is never part of an answer.
+type DebSigningKey struct {
+	// Algorithm The OpenPGP public-key algorithm, RSA (1) or EdDSALegacy (22) over Ed25519.
+	Algorithm DebSigningKeyAlgorithm `json:"algorithm"`
+	Bits      int                    `json:"bits"`
+
+	// BoundSince The creation time of the key's earliest valid binding self-signature; signatures wait for it (Q-DEB-40).
+	BoundSince time.Time `json:"boundSince"`
+	CreatedAt  time.Time `json:"createdAt"`
+
+	// Fingerprint The v4 fingerprint, upper-case hexadecimal.
+	Fingerprint string `json:"fingerprint"`
+
+	// KeyCreatedAt The key's own creation time, one hour before the transaction that created it for a generated key (Q-DEB-30).
+	KeyCreatedAt time.Time           `json:"keyCreatedAt"`
+	Origin       DebSigningKeyOrigin `json:"origin"`
+	PromotedAt   *time.Time          `json:"promotedAt,omitempty"`
+
+	// PublicKey The ASCII-armored certificate.
+	PublicKey  string             `json:"publicKey"`
+	RetiredAt  *time.Time         `json:"retiredAt,omitempty"`
+	State      DebSigningKeyState `json:"state"`
+	WithheldAt *time.Time         `json:"withheldAt,omitempty"`
+}
+
+// DebSigningKeyAlgorithm The OpenPGP public-key algorithm, RSA (1) or EdDSALegacy (22) over Ed25519.
+type DebSigningKeyAlgorithm int
+
+// DebSigningKeyOrigin defines model for DebSigningKey.Origin.
+type DebSigningKeyOrigin string
+
+// DebSigningKeyState defines model for DebSigningKey.State.
+type DebSigningKeyState string
+
+// DebSigningKeyCreate Either `generate: true`, or `privateKey` with the optional `passphrase` of an ASCII-armored secret key to import (R-DEB-015).
+// The passphrase is used once and never stored. The import accepts EdDSALegacy over Ed25519 and RSA of at least 3072 bits
+// without an expiry, created no later than the request, with no signing subkeys.
+type DebSigningKeyCreate struct {
+	Generate   *bool   `json:"generate,omitempty"`
+	Passphrase *string `json:"passphrase,omitempty"`
+	PrivateKey *string `json:"privateKey,omitempty"`
+}
+
+// DebSigningKeyList defines model for DebSigningKeyList.
+type DebSigningKeyList struct {
+	Keys []DebSigningKey `json:"keys"`
+}
+
 // Digests defines model for Digests.
 type Digests struct {
 	Md5    *string `json:"md5,omitempty"`
@@ -7160,11 +7418,21 @@ type Repository struct {
 	AdminNotes *string `json:"adminNotes,omitempty"`
 
 	// Class Fixed at creation.
-	Class           RepositoryClass `json:"class"`
-	CreatedAt       *time.Time      `json:"createdAt,omitempty"`
-	Description     *string         `json:"description,omitempty"`
-	Disabled        *bool           `json:"disabled,omitempty"`
-	ExcludePatterns *[]string       `json:"excludePatterns,omitempty"`
+	Class     RepositoryClass `json:"class"`
+	CreatedAt *time.Time      `json:"createdAt,omitempty"`
+
+	// Deb The settings of the Debian (APT) format, the `deb` member of a repository document (R-REPO-004, R-DEB-008, R-DEB-024). The
+	// document of the format's JSON Schema is `settingsSchema` of `GET /api/v1/formats`; `TestR_ARCH_008_DebSettingsSchemaEqualsTheOpenAPIMember`
+	// fails on any difference between the two. A setting that does not apply to the class of the repository answers 422
+	// `not_applicable`: `architectures`, `compression`, `origin` and `label` are for local and virtual repositories, `suites` and
+	// `components` for virtual ones, `upstreamKeys` and `mirror` for remote ones. An omitted setting takes its default. A change
+	// of `architectures`, `compression`, `origin`, `label`, `suites` or `components` raises the `changeSeq` of every suite of the
+	// repository, so the next build reflects it. The repository document reads back the read-only `upstreamKeyFingerprints` of a
+	// remote's keys beside it.
+	Deb             *DebSettings `json:"deb,omitempty"`
+	Description     *string      `json:"description,omitempty"`
+	Disabled        *bool        `json:"disabled,omitempty"`
+	ExcludePatterns *[]string    `json:"excludePatterns,omitempty"`
 
 	// Format Fixed at creation; the names of `GET /api/v1/formats`.
 	Format          string                   `json:"format"`
@@ -8489,6 +8757,9 @@ type BastionInterface = int
 // Cursor defines model for Cursor.
 type Cursor = string
 
+// DebFingerprint defines model for DebFingerprint.
+type DebFingerprint = string
+
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = string
 
@@ -8533,6 +8804,9 @@ type BastionTokenInvalid = Problem
 
 // Conflict RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type Conflict = Problem
+
+// DebNotImplemented RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
+type DebNotImplemented = Problem
 
 // Forbidden RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type Forbidden = Problem
@@ -9329,6 +9603,12 @@ type GetClientSetupParams struct {
 // GetClientSetupParamsCredentials defines parameters for GetClientSetup.
 type GetClientSetupParamsCredentials string
 
+// GetDebIndexStateParams defines parameters for GetDebIndexState.
+type GetDebIndexStateParams struct {
+	// WaitFor Suites and the `changeSeq` to wait for, `<suite>:<changeSeq>`, separated by commas (R-DEB-014).
+	WaitFor *string `form:"waitFor,omitempty" json:"waitFor,omitempty"`
+}
+
 // GetRepositoryGuideParams defines parameters for GetRepositoryGuide.
 type GetRepositoryGuideParams struct {
 	// Client One of the format's `clients` (`GET /api/v1/formats`); another value answers `400 malformed_request`.
@@ -9365,6 +9645,12 @@ type AddPackageOwnerParams struct {
 type RemovePackageOwnerParams struct {
 	// Release Release the name when the owner is its last one.
 	Release *bool `form:"release,omitempty" json:"release,omitempty"`
+}
+
+// ReindexRepositoryParams defines parameters for ReindexRepository.
+type ReindexRepositoryParams struct {
+	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
 }
 
 // GetRepositoryResolutionParams defines parameters for GetRepositoryResolution.
@@ -9993,6 +10279,12 @@ type InvalidateRepositoryCacheJSONRequestBody = CacheInvalidateRequest
 // PutRepositoryClaimsJSONRequestBody defines body for PutRepositoryClaims for application/json ContentType.
 type PutRepositoryClaimsJSONRequestBody = RepositoryClaimsInput
 
+// PutDebCoordinatesJSONRequestBody defines body for PutDebCoordinates for application/json ContentType.
+type PutDebCoordinatesJSONRequestBody = DebCoordinatesRequest
+
+// CreateDebSigningKeyJSONRequestBody defines body for CreateDebSigningKey for application/json ContentType.
+type CreateDebSigningKeyJSONRequestBody = DebSigningKeyCreate
+
 // RunRepositoryMirrorJSONRequestBody defines body for RunRepositoryMirror for application/json ContentType.
 type RunRepositoryMirrorJSONRequestBody = MirrorRunRequest
 
@@ -10530,6 +10822,27 @@ type ServerInterface interface {
 	// GetClientSetup Client setup snippets of a repository
 	// (GET /api/v1/projects/{projectKey}/repositories/{repoKey}/client-setup)
 	GetClientSetup(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string, params GetClientSetupParams)
+	// PutDebCoordinates Replace the suites and components a package file is listed in
+	// (PUT /api/v1/projects/{projectKey}/repositories/{repoKey}/deb/coordinates)
+	PutDebCoordinates(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey RepoKey)
+	// GetDebIndexState Read the state of the indexes of a Debian repository
+	// (GET /api/v1/projects/{projectKey}/repositories/{repoKey}/deb/index)
+	GetDebIndexState(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey RepoKey, params GetDebIndexStateParams)
+	// ListDebSigningKeys List the signing keys of a Debian repository
+	// (GET /api/v1/projects/{projectKey}/repositories/{repoKey}/deb/signing-keys)
+	ListDebSigningKeys(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey RepoKey)
+	// CreateDebSigningKey Create the next signing key of a Debian repository
+	// (POST /api/v1/projects/{projectKey}/repositories/{repoKey}/deb/signing-keys)
+	CreateDebSigningKey(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey RepoKey)
+	// PromoteDebSigningKey Make the next signing key the primary one
+	// (POST /api/v1/projects/{projectKey}/repositories/{repoKey}/deb/signing-keys/promote)
+	PromoteDebSigningKey(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey RepoKey)
+	// RetireDebSigningKey Retire the next signing key, or confirm the retirement of a withheld one
+	// (DELETE /api/v1/projects/{projectKey}/repositories/{repoKey}/deb/signing-keys/{fingerprint})
+	RetireDebSigningKey(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey RepoKey, fingerprint DebFingerprint)
+	// ReinstateDebSigningKey Return a withheld signing key to the repository
+	// (POST /api/v1/projects/{projectKey}/repositories/{repoKey}/deb/signing-keys/{fingerprint}/reinstate)
+	ReinstateDebSigningKey(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey RepoKey, fingerprint DebFingerprint)
 	// GetRepositoryGuide The guide of a repository for one client
 	// (GET /api/v1/projects/{projectKey}/repositories/{repoKey}/guide)
 	GetRepositoryGuide(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string, params GetRepositoryGuideParams)
@@ -10557,6 +10870,9 @@ type ServerInterface interface {
 	// RemovePackageOwner Remove an owner, or release the name with its last owner
 	// (DELETE /api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners/{owner})
 	RemovePackageOwner(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string, packageName string, owner string, params RemovePackageOwnerParams)
+	// ReindexRepository Rebuild the derived metadata of a repository
+	// (POST /api/v1/projects/{projectKey}/repositories/{repoKey}/reindex)
+	ReindexRepository(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey RepoKey, params ReindexRepositoryParams)
 	// GetRepositoryResolution Explain how a virtual repository resolves a client path
 	// (GET /api/v1/projects/{projectKey}/repositories/{repoKey}/resolution)
 	GetRepositoryResolution(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string, params GetRepositoryResolutionParams)
@@ -16638,6 +16954,285 @@ func (siw *ServerInterfaceWrapper) GetClientSetup(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// PutDebCoordinates operation middleware
+func (siw *ServerInterfaceWrapper) PutDebCoordinates(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey RepoKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutDebCoordinates(w, r, projectKey, repoKey)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetDebIndexState operation middleware
+func (siw *ServerInterfaceWrapper) GetDebIndexState(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey RepoKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetDebIndexStateParams
+
+	// ------------- Optional query parameter "waitFor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "waitFor", r.URL.Query(), &params.WaitFor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "waitFor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "waitFor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetDebIndexState(w, r, projectKey, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListDebSigningKeys operation middleware
+func (siw *ServerInterfaceWrapper) ListDebSigningKeys(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey RepoKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListDebSigningKeys(w, r, projectKey, repoKey)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateDebSigningKey operation middleware
+func (siw *ServerInterfaceWrapper) CreateDebSigningKey(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey RepoKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateDebSigningKey(w, r, projectKey, repoKey)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PromoteDebSigningKey operation middleware
+func (siw *ServerInterfaceWrapper) PromoteDebSigningKey(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey RepoKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PromoteDebSigningKey(w, r, projectKey, repoKey)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RetireDebSigningKey operation middleware
+func (siw *ServerInterfaceWrapper) RetireDebSigningKey(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey RepoKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "fingerprint" -------------
+	var fingerprint DebFingerprint
+
+	err = runtime.BindStyledParameterWithOptions("simple", "fingerprint", r.PathValue("fingerprint"), &fingerprint, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "fingerprint", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RetireDebSigningKey(w, r, projectKey, repoKey, fingerprint)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReinstateDebSigningKey operation middleware
+func (siw *ServerInterfaceWrapper) ReinstateDebSigningKey(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey RepoKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "fingerprint" -------------
+	var fingerprint DebFingerprint
+
+	err = runtime.BindStyledParameterWithOptions("simple", "fingerprint", r.PathValue("fingerprint"), &fingerprint, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "fingerprint", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReinstateDebSigningKey(w, r, projectKey, repoKey, fingerprint)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetRepositoryGuide operation middleware
 func (siw *ServerInterfaceWrapper) GetRepositoryGuide(w http.ResponseWriter, r *http.Request) {
 
@@ -17092,6 +17687,65 @@ func (siw *ServerInterfaceWrapper) RemovePackageOwner(w http.ResponseWriter, r *
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RemovePackageOwner(w, r, projectKey, repoKey, packageName, owner, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReindexRepository operation middleware
+func (siw *ServerInterfaceWrapper) ReindexRepository(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey RepoKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReindexRepositoryParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReindexRepository(w, r, projectKey, repoKey, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -21319,6 +21973,14 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/backups", wrapper.ListBackupRuns)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/backups/summary", wrapper.GetBackupSummary)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/backups/{runId}", wrapper.GetBackupRun)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/deb/signing-keys", wrapper.ListDebSigningKeys)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/deb/signing-keys", wrapper.CreateDebSigningKey)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/deb/signing-keys/promote", wrapper.PromoteDebSigningKey)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/deb/signing-keys/{fingerprint}", wrapper.RetireDebSigningKey)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/deb/signing-keys/{fingerprint}/reinstate", wrapper.ReinstateDebSigningKey)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/deb/coordinates", wrapper.PutDebCoordinates)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/deb/index", wrapper.GetDebIndexState)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/reindex", wrapper.ReindexRepository)
 
 	return m
 }

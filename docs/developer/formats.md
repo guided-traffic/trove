@@ -354,6 +354,7 @@ The fixture ([kit.go](../../internal/formats/formattest/kit.go)) holds what only
 | `Changes` | 9 | A `ChangeCase` per storage hook and per `Upload`, `Delete` or `Admin` route; `Do` drives the host (`h.Serve`, `h.Ingest().Commit`, `h.Remove`, `h.Restore`). The kit records the hooks each case ran (`h.HooksRun()`) |
 | `NoRevision` | 9 | A route of those kinds that changes no package row, or a hook (`OnCommit`, `OnItemsRemoved`, `OnItemsRestored`) no change can drive, with the reason |
 | `Names` | 10 | Spellings of one package name: they must normalize to one name and lead to one document path |
+| `NoDocument` | 10 | The reason a format has no package document (an APT archive: its upstream has none per package, Q-REPO-270): `PackageDocumentPath` must then report no path for every sample name, and the names are held to their normalization alone |
 | `OptionNames` | 8 | Literal client option names a template may spell although they contain `token`, `password` or `_auth` |
 | `Skip` | all | The checks that do not apply, each with the reason |
 

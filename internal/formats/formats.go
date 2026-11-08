@@ -143,7 +143,7 @@ type Format interface {
 	// reads what the generic rows do not hold and orders the versions.
 	View() ViewAdapter
 
-	// SetupTemplates are the client setup snippets (R-API-033).
+	// SetupTemplates are the client setup snippets (R-API-030).
 	SetupTemplates() []SetupTemplate
 	// Guide is the format's guide: what a repository of each class is and how each
 	// client uses it (R-UI-049). A format with clients covers every class and client
@@ -292,6 +292,7 @@ func CapabilitiesOf(f Format) Capabilities {
 		c.Remote.Auth, _ = ra.(Authenticator)
 		c.Remote.Stood, _ = ra.(StoodChallengeReader)
 		c.Remote.Revalidate, _ = ra.(Revalidator)
+		c.Remote.Names, _ = ra.(NameServer)
 	}
 	return c
 }

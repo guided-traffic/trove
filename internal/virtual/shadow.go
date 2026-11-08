@@ -53,6 +53,13 @@ func (o ShadowOutcome) Err(pkg string) error {
 		errs.WithExtension("package", pkg), errs.WithExtension("virtualRepositories", o.Virtuals))
 }
 
+// NameServers answers the shadowing check for a format without a package document (R-REPO-048, Q-REPO-270): it asks the remote member
+// whether it serves the name in the scope of the virtual repository of the pair x, from the rows of the indexes the remote holds
+// (the format's NameServer). Undetermined says the scope is not settled yet; the format enqueues what settles it.
+type NameServers interface {
+	ServesName(ctx context.Context, c Caller, x Exposure, name string) (ProbeResult, error)
+}
+
 // shadowResult is what one remote repository of the exposure set answered.
 type shadowResult struct {
 	outcome ProbeOutcome
@@ -68,7 +75,8 @@ type shadowResult struct {
 // The check does nothing when the local repository already holds a version or a claim of its own
 // covers the name. Otherwise it asks each remote repository of the exposure set once, however many
 // virtual repositories contain it: stored state first (a stored document that is not gone serves the
-// name), then the engine's probe. A negative entry is never read, and nothing is stored: a probe
+// name), then the engine's probe. A docPath of "" is a format without a package document: the pair is then asked of Options.Names in
+// the scope of its virtual repository (Q-REPO-270), once per pair of the exposure set. A negative entry is never read, and nothing is stored: a probe
 // that stored the document would advertise versions on behalf of a publisher who need not hold the
 // cache-fill action.
 func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.Repository, name, docPath string) (ShadowOutcome, error) {
@@ -93,13 +101,25 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 		return proceed, nil
 	}
 
+	// A package document is asked of each remote once; a name server is asked of each pair, because the scope is the virtual
+	// repository's (Q-REPO-270).
 	var remotes []Exposure
 	seen := map[string]bool{}
 	for _, x := range set {
-		if !seen[x.Remote.Name.String()] {
-			seen[x.Remote.Name.String()] = true
+		k := x.Remote.Name.String()
+		if docPath == "" {
+			k += " via " + x.Virtual.Name.String()
+		}
+		if !seen[k] {
+			seen[k] = true
 			remotes = append(remotes, x)
 		}
+	}
+	key := func(x Exposure) string {
+		if docPath == "" {
+			return x.Remote.Name.String() + " via " + x.Virtual.Name.String()
+		}
+		return x.Remote.Name.String()
 	}
 	results := make(map[string]*shadowResult, len(remotes))
 	var wg sync.WaitGroup
@@ -110,7 +130,7 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 			defer wg.Done()
 			res := r.serves(ctx, c, x, name, docPath)
 			mu.Lock()
-			results[x.Remote.Name.String()] = &res
+			results[key(x)] = &res
 			mu.Unlock()
 		}()
 	}
@@ -119,7 +139,7 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 	var served, undetermined bool
 	var retry time.Duration
 	for _, x := range remotes {
-		res := results[x.Remote.Name.String()]
+		res := results[key(x)]
 		if res.err != nil {
 			return ShadowOutcome{}, res.err
 		}
@@ -142,7 +162,7 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 	switch {
 	case served:
 		for _, x := range set {
-			if results[x.Remote.Name.String()].outcome == Served {
+			if results[key(x)].outcome == Served {
 				out.Shadowed = append(out.Shadowed, x)
 			}
 		}
@@ -173,6 +193,19 @@ type Exposure = repository.Exposure
 
 // serves decides whether one remote repository serves the name (R-REPO-048 "Whether R serves n").
 func (r *Resolver) serves(ctx context.Context, c Caller, x Exposure, name, docPath string) shadowResult {
+	if docPath == "" {
+		if r.o.Names == nil {
+			return shadowResult{outcome: Undetermined}
+		}
+		pr, err := r.o.Names.ServesName(ctx, c, x, name)
+		if err != nil {
+			if ctx.Err() != nil {
+				return shadowResult{err: ctx.Err()}
+			}
+			return shadowResult{outcome: Undetermined}
+		}
+		return shadowResult{outcome: pr.Outcome, retry: pr.RetryAfter}
+	}
 	if r.o.Remotes == nil {
 		// Without the remote engine nothing can be asked, and an unreachable upstream fails closed.
 		return shadowResult{outcome: Undetermined}

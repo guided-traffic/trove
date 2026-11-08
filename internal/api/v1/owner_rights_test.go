@@ -22,6 +22,8 @@ var ownerRightsOperations = []string{
 // x-trove-owner-rights, each with what bounds a token whose scope does not inherit its owner's rights there instead. A new
 // such operation either declares the attribute or is added here with its reason, read in its handler.
 var ownerRightsExempt = map[string]string{
+	"putDebCoordinates": "decides deploy for every added coordinate and delete for every removed one on the file's package, with the request's " +
+		"subject and scope, through the decision point (R-DEB-004, R-DEB-009)",
 	"addPackageOwner": "the ownership service decides on the request's subject: manage on the name and content:bypass through the " +
 		"decision point with the scope, and the owner path for a token that does not inherit only where its scope lists manage on " +
 		"the name (scopeReachesName, Q-AUTHZ-240)",

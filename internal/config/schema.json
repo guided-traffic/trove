@@ -2094,6 +2094,44 @@
       ],
       "type": "object"
     },
+    "deb": {
+      "additionalProperties": false,
+      "properties": {
+        "by_hash_keep": {
+          "default": "1h",
+          "description": "How long the files of a superseded index generation stay served by hash, so a client that read InRelease before a build can still fetch the index files it names (R-DEB-012); at least three generations are kept in any case.",
+          "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+          "type": "string",
+          "x-trove-env": "TROVE_DEB_BY_HASH_KEEP",
+          "x-trove-type": "duration"
+        },
+        "index_delay": {
+          "default": "2s",
+          "description": "Time a change of a suite waits before the build of its indexes starts, so a burst of uploads is one build (R-DEB-010). The delay bound of an upload to its published index is this value plus 5 s (jobs.poll_interval more while Valkey is unavailable). At least 1 s, because a Release Date and a signature time trail the database clock by a minute and a build per second is the most a suite can publish (Q-DEB-30).",
+          "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+          "type": "string",
+          "x-trove-env": "TROVE_DEB_INDEX_DELAY",
+          "x-trove-type": "duration"
+        },
+        "index_wait_max": {
+          "default": "30s",
+          "description": "The longest wait of an index state read with waitFor (R-DEB-014); a longer request answers with the state it has reached.",
+          "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+          "type": "string",
+          "x-trove-env": "TROVE_DEB_INDEX_WAIT_MAX",
+          "x-trove-type": "duration"
+        },
+        "virtual_index_interval": {
+          "default": "1m",
+          "description": "Least time between two builds of a virtual repository's indexes that a local member's publication triggers (R-DEB-026); a change of the members or the settings builds without this delay.",
+          "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+          "type": "string",
+          "x-trove-env": "TROVE_DEB_VIRTUAL_INDEX_INTERVAL",
+          "x-trove-type": "duration"
+        }
+      },
+      "type": "object"
+    },
     "health": {
       "additionalProperties": false,
       "properties": {

@@ -9,7 +9,12 @@ import (
 
 // handlerPending are the journaled events whose replay handler is not built yet, each with the gap that says so. The list
 // keeps itself honest: an event that has a handler must leave it.
-var handlerPending = map[string]string{}
+var handlerPending = map[string]string{
+	"deb.package.deleted":      "the replay of a Debian deletion is built with the local class (T-17 WP3, R-DEB-032); nothing emits the event before that",
+	"deb.coordinates.removed":  "the replay of removed coordinates is built with the local class (T-17 WP3, R-DEB-032); nothing emits the event before that",
+	"deb.signing_key.promoted": "the replay of a key promotion is built with the signing keys (T-17 WP2, R-DEB-032); nothing emits the event before that",
+	"deb.signing_key.retired":  "the replay of a key retirement is built with the signing keys (T-17 WP2, R-DEB-032); nothing emits the event before that",
+}
 
 // TestR_HA_054_EveryJournaledEventHasAReplayHandler: the trove binary, which runs both replays (`trove backup restore`,
 // `trove admin post-restore`), holds a replay handler for every event the audit registry flags for the revocation journal.

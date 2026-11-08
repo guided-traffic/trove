@@ -453,7 +453,57 @@ The re-check of the revision (1cbf0b22) found all 27 resolved and six further po
 Also from the re-check, recorded as verified on debian.md: `sqv` and `gpgv` read the module's algorithm-22 signatures (single,
 co-signed, detached) on Debian 13, Debian 12, Ubuntu 24.04 and Ubuntu 22.04; `circl` v1.6.3 is BSD-3-Clause.
 
-## 9 · WP2 (library) and WP5 as built
+## 9 · WP0 as built (2026-11-08)
+
+WP0 is built on the base 081bd9ae by the builder of the run of 2026-11-08 (evening). What it holds, what differs from section 2 and what the
+next packages must know:
+
+**Built.** The contract additions (`NameServer`, `NameQuery`, `RemoteCaps.Names`, the serve-facts kinds `deb_local` and `deb_remote` with
+`ServeDebRemoteFacts`; `internal/formats/testdata/contract.txt`, the contract blocks of R-ARCH-008); `items.Publisher`, `GeneratedFile`,
+`ErrSuperseded` with a `Store.Publish` stub; `Host.BackgroundUpstream` as a stub; `repository.RegisterCreateHook` and its call in the creation
+transaction (`create_hooks.go`; nothing is bound, WP2 binds the Debian hook); the virtual engine's `NameServers` (`virtual.Options.Names`,
+`formathost.NewNameServers`, undetermined until WP6) and the shadowing check's call for a format without a package document; the data port of
+`internal/formats/deb` (eight group files, `rows`) and its composition in `internal/formatdata/deb` (one stub file per group, `tables_deb.go`,
+`jobs.go`, `build.go`, `remote_parse.go`, `refresh.go` with `RegisterRefreshHook`); the migrations; the `deb.*` configuration keys; the OpenAPI
+operations, schemas and the generated Go and TypeScript clients (the handlers answer 501, or 503 on a replica without a database:
+`api/v1/deb_keys.go` (WP2), `deb_coordinates.go` (WP3), `deb_index.go` and `reindex.go` (WP4), `deb_stub.go` goes with the last of them); the audit
+events (four journaled, listed in `cmd/trove/journal_handlers_test.go` as pending); `untrusted.{ar,xz,zstd}`; the format with its local class, route
+table, grammars, `Classify`, errors, settings schema, serve check and skeleton `Inspect`; the layer entries of `formats/deb/{control,debfile,version,index}`;
+ADR-170 to ADR-172, Q-ARCH-381 to Q-ARCH-383, Q-REPO-270, Q-REPO-272, Q-REPO-273, Q-STOR-180, Q-STOR-182, Q-DEB-44 to Q-DEB-46, H-720.
+
+**Deviations from section 2, decided by the development agent for this run.**
+
+- No `internal/openpgp` and no OpenPGP module or `circl` in `go.mod`: the APT remote builder builds the library in parallel against the API of 2.2.
+  The data port and `rows` carry keys as plain data. Only `github.com/ulikunitz/xz` v0.5.17 is added, imported by `untrusted/xz.go`. The layer
+  entry of `internal/openpgp` is that builder's.
+- No `test/debstub/`; the remote builder builds it.
+- **Migration numbers 00060 to 00062, not 00070 to 00072.** The runner refuses numbers with a gap (`parseSteps`: "numbers must run 1..N without a
+  gap"), so the migrations take the next free numbers on the base. The development agent renumbers them when another run's migrations land first
+  (rename the three files, the comment in `docs/developer/database.md`, the references in `docs/developer/deb.md`).
+- `DebMirrorSettings` is not a schema of its own: `deb.mirror` is described inline in `DebSettings`, because the registered-schema equality test
+  compares the nested properties. The read-only `upstreamKeyFingerprints` is a `readOnly` property of `DebSettings`, which the equality test leaves out.
+- The routes are one per path shape and not one per class (Q-DEB-45): `Match` is class-blind. `deb.dists.get` is `Metadata`, `deb.dists.by_hash` is
+  `Download` for every class, and `deb.pool.get` serves the virtual class too.
+- The 413 code is `payload_too_large` (Q-DEB-44). The sentence "a build never reads a package file" and every other rule of the spec are unchanged.
+- The format declares **no client**, hence no setup templates and no guide: the configure snippet needs the project key for the key file name
+  (`/etc/apt/keyrings/trove-<projectKey>-<repoKey>.asc`) and `SetupData` has none. WP3 adds `SetupData.Project` (an addition to the contract and to
+  the three places that build `SetupData`: `api/v1/guide_api.go`, `packages_api.go`, the kit), the client `apt`, `setup_local.go` and `guide_local.go`.
+- `secrets-reencrypt` walks `deb_signing_keys.private_key` already (`formatdata/deb/reseal.go`, `queries/deb_reseal.sql`, the handler in
+  `app/wire_api.go`): registering a sealed column without a walk would have failed the key-ring rotation permanently. WP2 extends `reseal.go` if it
+  changes the column; `TestSecretsReencryptTask` now expects two columns.
+- The conformance kit gained `Fixture.NoDocument` (a format without a package document) and no longer requires a document path for `MayRead`.
+- The fixture of the kit holds no pool path of the form `<package>_<version>_<arch>.<ext>` until WP3 gives the format a rule for the file of a version
+  (Q-DEB-46, H-720); the `VersionPather` of the local class is WP3's first design decision.
+
+**What the next packages find.** WP1 replaces `untrusted/ar.go` (`NewAr` and the methods of `ArReader` answer `not_implemented`) and creates the leaves
+`control`, `debfile`, `version`, `index`; `Inspect` is `inspect.go` (WP3). WP2 binds `repository.RegisterCreateHook("deb", …)` in the composition root
+with `KeyStore.CreateFirstKey`, replaces `keys_store.go` and `api/v1/deb_keys.go`. WP4 replaces `build.go`, `build_store.go`, `Store.Publish`,
+`api/v1/deb_index.go`, `reindex.go` and implements `refresh.go` beyond the hooks. WP6 owns the `NameServers` bridge (`formathost/name_servers.go`),
+the part `debUpstreamKeysRemoved` of `repository.narrowed` (the parts are free strings in the audit schema: add the constant and the narrowing to
+`internal/repository/narrowed.go`), and the purger of the three remote tables for a restore without remote caches (`internal/backup/fixup`, R-BAK-008).
+`handlers_*.go` register the handler of a route with `registerHandler(routeName, build)`; a class joins with a `class_*.go` file and `registerClass`.
+
+## 10 · WP2 (library) and WP5 as built
 
 Built on 2026-11-08, stage 1 of the APT remote feature, from base 081bd9ae and independent of WP0. The page
 [docs/developer/deb.md](../developer/deb.md) describes both parts; the decisions are Q-DEB-70 to Q-DEB-73 in debian.md.

@@ -11,12 +11,14 @@ import (
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/files"
+	debdata "github.com/guided-traffic/trove/internal/formatdata/deb"
 	"github.com/guided-traffic/trove/internal/formatdata/npm"
 	nugetdata "github.com/guided-traffic/trove/internal/formatdata/nuget"
 	ocidata "github.com/guided-traffic/trove/internal/formatdata/oci"
 	"github.com/guided-traffic/trove/internal/formathost"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/catalog"
+	debformat "github.com/guided-traffic/trove/internal/formats/deb"
 	npmformat "github.com/guided-traffic/trove/internal/formats/npm"
 	nugetformat "github.com/guided-traffic/trove/internal/formats/nuget"
 	ociformat "github.com/guided-traffic/trove/internal/formats/oci"
@@ -137,6 +139,7 @@ func (a *App) registerFormatJobs(r *jobs.Registry) {
 		spec.Schedule, spec.Disabled = t.Schedule, !t.Enabled
 	}
 	r.RegisterTask(ocidata.SweepJobKind, spec)
+	debdata.RegisterJobs(r)
 }
 
 // formatsArea is what the hooks and the seam are made of. The seam reads the Host
@@ -165,6 +168,10 @@ type formatHostArea struct {
 // offers it (Q-NUGET-74); the PostgreSQL store must, or the scan pages by offset again.
 var _ nugetformat.Scanner = (*nugetdata.Store)(nil)
 
+// The PostgreSQL store implements the Debian data port the format declares (D-1): the format cannot be checked against the store from
+// either package, because neither imports the other.
+var _ debformat.Store = (*debdata.Store)(nil)
+
 func formatPorts(db meta.Runner, rec audit.Recorder, blobs *blob.Store, queue nugetdata.Jobs) (map[formats.ID]any, error) {
 	st, err := npm.New(npm.Options{
 		DB: db, Recorder: rec, Source: httpserver.SourceFrom,
@@ -187,7 +194,14 @@ func formatPorts(db meta.Runner, rec audit.Recorder, blobs *blob.Store, queue nu
 	if err != nil {
 		return nil, fmt.Errorf("formats: oci data port: %w", err)
 	}
-	return map[formats.ID]any{npmformat.ID: st, nugetformat.ID: nuget, ociformat.ID: oci}, nil
+	deb, err := debdata.New(debdata.Options{
+		DB: db, Recorder: rec, Source: httpserver.SourceFrom,
+		Actor: func(ctx context.Context) audit.Actor { return edge.ActorFrom(httpserver.PrincipalFrom(ctx)) },
+	})
+	if err != nil {
+		return nil, fmt.Errorf("formats: deb data port: %w", err)
+	}
+	return map[formats.ID]any{npmformat.ID: st, nugetformat.ID: nuget, ociformat.ID: oci, debformat.ID: deb}, nil
 }
 
 // bindFormatPorts binds the ports and checks them against the formats: a format that

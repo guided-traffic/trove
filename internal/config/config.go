@@ -45,6 +45,8 @@ type Config struct {
 	NuGet NuGet `yaml:"nuget"`
 	// The OCI registry (oci.go).
 	OCI OCI `yaml:"oci"`
+	// The Debian (APT) format's index timing (deb.go).
+	Deb Deb `yaml:"deb"`
 
 	// The M4 section: the GitLab CI OIDC federation (ci.go).
 	CI CI `yaml:"ci"`

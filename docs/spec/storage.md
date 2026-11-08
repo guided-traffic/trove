@@ -160,6 +160,16 @@ The tables below are the storage core. Other pages add tables and columns throug
 - Trashed items stay in `items` with `trashed_at` set; they are still references, so their blobs
   survive until the trash can is emptied (R-STOR-022). The path uniqueness index covers only
   untrashed rows, so a path can be trashed several times and redeployed.
+- A local repository, and a virtual repository of a format whose indexes a job builds (the Debian format, R-ARCH-012 item 2), holds
+  **generated items**: package-less items with `items.generated` set, written only by the publication port described below and
+  never by a client. A virtual repository holds them in its own `items`, which is the exception to "a virtual repository stores no
+  content" that Q-STOR-180 records; they count toward its usage and carry no package or version.
+- The **publication port** (`items.Publisher`, [Q-STOR-182](#q-stor-182--generated-items-are-published-through-one-port-blobs-first-then-one-transaction)) writes the
+  files of a generation: it stores every file's blob first, outside any transaction (R-STOR-005), then runs one transaction that
+  upserts a generated item per file (an identical blob changes nothing but `modified_at`, which the caller sets, so two generations never
+  share a `Last-Modified`), deletes the generated items it is told to remove, and runs the caller's own writes with the transaction. A
+  commit that reports it was superseded rolls everything back; the stored blobs are left to garbage collection. Quota admission does
+  not apply (Q-STOR-181).
 - `packages` and `package_versions` are filled by format plug-ins in the commit transaction;
   `items.version_id` links files to their version and `package_versions.lead_item_id` names the
   lead item.
@@ -4924,6 +4934,48 @@ Status: **Decided by the development agent** — selected from the options below
 **Rationale:** the cap is the bound where the work is created, and the immediate removal keeps a start-and-cancel loop from growing the table at all, which the run alone could not (it removes at a rate, an attacker starts at another). What the cap does not bound is a caller that starts sessions and leaves them open: each holds a place for `session_ttl` (4 h), so one principal blocks itself, and, for an **anonymous** caller, every anonymous caller of the repository, with 100 starts per 4 h (H-590, H-592). A CI job is keyed on its token (`Subject.TokenID`: each exchange issues one), so the sessions of one token do not fill the cap of another token under the same mapping; a job can hold several tokens (several id_tokens), and an issuer that does not make an id_token single-use lets one be exchanged several times, so the token is a finer key than the mapping and not a guarantee of one cap per job. A shorter idle time for sessions that never received a byte was considered and not taken: a caller that sends one byte per session keeps it at `session_ttl` anyway, and the extra key would be a second knob for the same exposure. The index on `(repo_id, COALESCE(principal_id, all-zero uuid))` serves the count (`IS NOT DISTINCT FROM` cannot use an index; a session without a principal is the all-zero uuid for the count), and `(state, last_activity_at)` serves the listing in order; `TestR_STOR_011_TheCapCountAndTheCleaningListingUseTheirIndexes` runs `EXPLAIN` over 60,000 rows and requires both indexes and no sort. The locks of a start are taken in one order, a key share on the addressed repository (a virtual one whose configuration may be updated at the same time locks its row and then its members) before the lock on the target row, so a start through a virtual repository and the update of its configuration never wait for each other in a cycle (`TestR_STOR_011_AStartThroughAVirtualRepositoryDoesNotDeadlockWithItsConfigurationUpdate`); an advisory lock is not used (R-ARCH-017). The development agent would revisit a global cap, or a per-endpoint one for anonymous callers, if H-590 or H-592 shows up in a real installation.
 
 **Applied:** R-STOR-011 (configuration, *Expiry*), `internal/uploads/service.go` (`Start`, `endAndRemove`), `internal/uploads/finalize.go` (`complete`), `internal/formathost/uploads.go` (`scopeOf`), `internal/meta/postgres/queries/uploads.sql` (`UploadLockRepository`, `UploadInsertSession`, `UploadListAborted`, `UploadListDone`, `UploadDeleteCleanedBulk`, `UploadMarkCleaned`, `UploadBumpActivity`), migration 00058, `internal/blob/gc_uploads.go` (`cleanSessions`, `inBudget`), `internal/config/storage.go`. Tests: `TestR_STOR_011_AStartAboveTheCapOfOpenSessionsIsRefused`, `TestR_STOR_011_ConcurrentStartsNeverExceedTheCapOfOpenSessions`, `TestR_STOR_011_AnAbortThatRemovedTheObjectsDeletesTheRowAndOneThatDidNotLeavesItForTheRun`, `TestR_STOR_011_ASessionOfACIJobIsKeyedOnItsToken`.
+
+### Q-STOR-180 · A virtual repository of a format with a job-built index holds the generated items of its indexes
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the Debian format builds the indexes of a local and of a virtual repository by a job, as signed snapshots served by hash
+(ADR-170). A virtual repository merges its members' indexes into one for every caller and signs it with its own key (R-DEB-025), so
+the merged files are its own and cannot be rendered per request.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The virtual repository holds generated items in its own `items` (chosen) | Package-less items, written by the publication port; served on the format's routes; counted in usage | Every replica serves the same bytes; by-hash retention and `If-Modified-Since` work as for a local repository; one mechanism for both classes | A virtual repository holds content, the one exception to its definition |
+| (b) A per-replica cache of the merged index | Render on demand | No stored content | Replicas could sign and serve different bytes; an index of tens of megabytes per request (R-DEB-026) |
+| (c) Store the merged files in the format's tables | A blob reference outside `items` | No change of the item rules | A second reference rule for garbage collection (R-STOR-003 rule 1) |
+
+**Choice:** (a).
+
+**Rationale:** a virtual repository accepts generated items from the publication port and from nothing else (apt-work-packages.md, WP8). The
+development agent would revisit it if a second format needed a stored merged document.
+
+**Applied in the spec:** R-STOR-003 (above), R-STOR-028 (the summary lists a virtual repository that holds generated items; built with the virtual class).
+
+### Q-STOR-182 · Generated items are published through one port: blobs first, then one transaction
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a generation of an index is several files (the release documents, the indexes, their by-hash copies) that a client must see
+together or not at all, and the same job writes rows beside them (the generation record, the suite's published numbers).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `items.Publisher.Publish(repo, files, remove, commit)` (chosen) | Blobs are stored outside any transaction; one transaction upserts the items, removes what is given up and runs `commit` with the transaction for the caller's rows; `ErrSuperseded` from `commit` rolls everything back | A reader sees a previous generation or the new one; a build of an older snapshot never replaces a newer generation; no format writes items on its own | The port is a new entry of the item store |
+| (b) The format uses the commit protocol per file | One transaction per file | Existing code | A reader could see a mixture of two generations |
+| (c) A staging prefix and a rename | Two-phase | No new port | Items have no rename that is atomic across paths |
+
+**Choice:** (a). `modified_at` of every item of a generation is the `Release` date the caller passes, so two generations never share a
+`Last-Modified` and a client's `If-Modified-Since` never gets a stale 304 (R-STOR-012).
+
+**Rationale:** the port is declared with the contract of the Debian format and answers `not_implemented` until its work package builds it for
+both classes. The development agent would revisit it if a second job-built format wanted a different atomicity.
+
+**Applied in the spec:** R-STOR-003 (above), [formats/debian.md](formats/debian.md) R-DEB-010. Code: [publish.go](../../internal/items/publish.go).
 
 ### Q-STOR-190 · The delete job decides every batch again, on what the subject that asked holds then
 

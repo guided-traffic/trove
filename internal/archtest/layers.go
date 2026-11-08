@@ -11,7 +11,7 @@ import (
 type layer int
 
 const (
-	layerLeaf   layer = iota // config, errs, buildinfo, qname, observability, cache, meta, backup/tables, backup/target, tlsfiles, formats/catalog, formats/untrusted, servefacts, formats/nuget/{id,version,nupkg,nuspec}, formats/<id>/rows, auth/scope, ci/{reason,claims,subject}, auth/jws, vuln/{advisory,match,osv,metrics}, mirror/discover, docs/manual: usable from every layer
+	layerLeaf   layer = iota // config, errs, buildinfo, qname, observability, cache, meta, backup/tables, backup/target, tlsfiles, formats/catalog, formats/untrusted, servefacts, formats/nuget/{id,version,nupkg,nuspec}, formats/deb/{control,debfile,version,index}, formats/<id>/rows, auth/scope, ci/{reason,claims,subject}, auth/jws, vuln/{advisory,match,osv,metrics}, mirror/discover, docs/manual: usable from every layer
 	layerInfra               // meta/postgres, blob, cluster, outbound, secrets
 	layerDomain              // repository, proxy, virtual, formatdata, authz, project, auth, jobs, audit, backup, manual, mirror
 	layerEdge                // httpserver, api/v1, webui, formats
@@ -87,6 +87,14 @@ func layerTable() []layerRule {
 		// port (domain) apply one dist-tag rule: the restore's journal replay withholds a version and moves the tags off it
 		// (R-NPM-016, R-NPM-047).
 		{"internal/formats/npm/semver", layerLeaf},
+		// The Debian rule libraries import only errs, internal/formats/untrusted, the standard library and each other: the deb822
+		// parser and writer (control), the package archive reader (debfile), dpkg's version order (version) and the index renderers
+		// (index). They are leaves so that the format (edge), its data port and its jobs share one parser (R-DEB-002, R-DEB-007,
+		// R-DEB-011, Q-ARCH-383). The values of the data port are internal/formats/deb/rows, a leaf by the rule below.
+		{"internal/formats/deb/control", layerLeaf},
+		{"internal/formats/deb/debfile", layerLeaf},
+		{"internal/formats/deb/version", layerLeaf},
+		{"internal/formats/deb/index", layerLeaf},
 		{"internal/auth/scope", layerLeaf},
 		// The CI federation's pure parts (R-CI-004, R-CI-010 to R-CI-014): reason names, the claim engine
 		// and the subject-token validation import only the standard library and each other, so that the

@@ -233,6 +233,11 @@ formats.Merged: field CacheStatus string
 formats.Merged: field MergeFingerprint [32]byte
 formats.Merged: field Partial bool
 formats.MirrorLister: alias discover.Lister
+formats.NameQuery: field Name string
+formats.NameQuery: field Remote RepoRef
+formats.NameQuery: field Via RepoRef
+formats.NameQuery: field ViaSettings json.RawMessage
+formats.NameServer: method ServesName(context.Context, Host, NameQuery) (bool, bool, error)
 formats.NewVersion: field Attributes json.RawMessage
 formats.NewVersion: field CreatedBy string
 formats.NewVersion: field DisplayVersion string
@@ -318,6 +323,7 @@ formats.RemoteCaps: field Discovery Discoverer
 formats.RemoteCaps: field Fill FillInspector
 formats.RemoteCaps: field Gate FactsGate
 formats.RemoteCaps: field Mirror MirrorLister
+formats.RemoteCaps: field Names NameServer
 formats.RemoteCaps: field Revalidate Revalidator
 formats.RemoteCaps: field Stood StoodChallengeReader
 formats.RemoteContext: field Discovery any
@@ -410,6 +416,7 @@ formats.RouteKind: method String() string
 formats.RouteKind: method Valid() bool
 formats.RouteKind: method WrapsContent() bool
 formats.RouteKind: type uint8
+formats.ServeDebRemoteFacts: alias servefacts.DebRemoteFacts
 formats.ServeFacts: alias servefacts.Facts
 formats.ServeFactsKeyer: method ServeFactsKey(RepoRef, Path) ServeKey
 formats.ServeKey: alias servefacts.Key
@@ -597,6 +604,8 @@ formats.ReadNone: value ReadShape = iota (place 0 of its group)
 formats.ReadRows: value = (repeated, place 2 of its group)
 formats.Remote: value = catalog.Remote
 formats.Revalidated: value = (repeated, place 1 of its group)
+formats.ServeDebLocal: value = servefacts.DebLocal
+formats.ServeDebRemote: value = servefacts.DebRemote
 formats.ServeMayRevalidate: value = (repeated, place 1 of its group)
 formats.ServeNPMLocal: value = servefacts.NPMLocal
 formats.ServeNPMRemote: value = servefacts.NPMRemote

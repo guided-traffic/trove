@@ -311,6 +311,11 @@ nuget:
 oci:
   token_lifetime: 300s           # default; 60s to 3600s, the lifetime of a registry token (R-OCI-005)
   unreferenced_blob_grace: 24h     # default; at least 1m and above storage.uploads.session_max_age, the age before the sweep removes an unreferenced blob (R-OCI-019)
+deb:
+  index_delay: 2s                  # default; 1s to 60s, the wait after the first change of a suite before its build starts (R-DEB-010)
+  virtual_index_interval: 60s      # default; 10s to 1h, the least time between two builds of a virtual repository that a local member's publication triggers (R-DEB-026)
+  by_hash_keep: 1h                 # default; 10m to 168h, how long the files of a superseded index generation stay served by hash (R-DEB-012)
+  index_wait_max: 30s              # default; 1s to 120s, the longest wait of an index state read with waitFor (R-DEB-014)
 ui:
   readme:
     max_source_bytes: 512KiB         # default; 1KiB to 16MiB, a longer README is cut and flagged (R-UI-008)

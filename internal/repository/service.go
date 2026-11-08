@@ -290,6 +290,10 @@ func (s *Service) CreateTx(ctx context.Context, tx meta.Tx, c Caller, project st
 	if err != nil {
 		return Stored{}, err
 	}
+	// The rows a format's data port adds in the creating transaction (Q-REPO-273): a Debian repository's first signing key.
+	if err := runCreateHooks(ctx, tx, CreatedRepo{ID: rows[0].ID, Name: qname.Repo{Project: project, Key: d.Key}, Format: d.Format}, string(d.Class)); err != nil {
+		return Stored{}, err
+	}
 	if err := s.afterWrite(ctx, tx, c, EventCreated, out.Repository, []string{"key", "class", "format"}); err != nil {
 		return Stored{}, err
 	}

@@ -1,4 +1,98 @@
-# Debian (APT) repositories: the OpenPGP library and the counting stub archive
+# Debian (APT) repositories
+
+The Debian format (`internal/formats/deb`) serves APT repositories for Debian, Ubuntu and every archive in the Debian repository format.
+This page describes the part that is built: the skeleton of phase T-17 ("WP0, contracts"): the contract additions, the ports, the schema, the
+configuration keys, the API document and a format that registers with its local class and answers `501 deb_not_implemented` until the
+work packages fill it. The specification is [formats/debian.md](../spec/formats/debian.md); the plan and the cut into work packages are
+[apt-work-packages.md](../projektplan/apt-work-packages.md); the decisions for the contract are
+[ADR-170](../decisions.md#adr-170--apt-indexes-are-built-by-a-job-and-published-through-the-item-stores-publication-port-as-generated-items-also-in-virtual-repositories),
+[ADR-171](../decisions.md#adr-171--every-debian-local-and-virtual-repository-has-its-own-eddsalegacy-signing-key-generated-by-trove-and-sealed-with-the-stored-secret-key-ring-rotation-by-a-co-signing-next-key-the-journal-withholds-keys-and-never-erases-them)
+and [ADR-172](../decisions.md#adr-172--the-format-contract-gains-the-remote-name-index-and-the-serve-facts-kinds-deb_local-and-deb_remote).
+
+## What has to be in your head first
+
+- **One format, `deb`, for Debian and Ubuntu** (Q-DEB-1), at `/api/deb/<projectKey>/<repoKey>/`. An APT source names that URL and a suite; APT
+  appends `dists/<suite>/…` for indexes and the `Filename` of an index entry for package files.
+- **Indexes are generated items, built by a job.** `deb-index` renders, compresses and signs the indexes of a suite from one snapshot and
+  publishes them through `items.Publisher` as package-less generated items, so every replica serves the same signed bytes (ADR-170). Nothing of this
+  is built yet: the port ([publish.go](../../internal/items/publish.go)) and the job handler ([build.go](../../internal/formatdata/deb/build.go))
+  answer `not_implemented`.
+- **A key belongs to one repository** (ADR-171). The private key is the sealed column `deb_signing_keys.private_key`; `secrets-reencrypt`
+  walks it already ([reseal.go](../../internal/formatdata/deb/reseal.go)), so registering the column never stops a key-ring rotation.
+- **The format has no package document.** `PackageDocumentPath` reports `ok` false; a remote answers the shadowing check from its parsed index rows
+  through the optional `NameServer` (ADR-172, Q-REPO-270). The conformance kit takes this with `Fixture.NoDocument`.
+- **One route per path shape, not per class** (Q-DEB-45): `Match` does not know the class of the repository, so `deb.dists.get`, `deb.dists.by_hash`
+  and `deb.pool.get` serve every class and the handler decides what a class serves.
+- **Keys cross the port as plain data** (armored bytes, fingerprints, times); the contracts import no OpenPGP library.
+
+## The routes
+
+[routes.go](../../internal/formats/deb/routes.go) is the whole table of R-DEB-003, written once; a work package registers the handler of a route by its
+name ([handlers.go](../../internal/formats/deb/handlers.go), `registerHandler` in an `init`), and a route without one answers 501.
+
+| Route | Method | Classes | Kind | Path |
+|---|---|---|---|---|
+| `deb.dists.get` | GET | all | Metadata | `dists/<suite>/…`: release documents, indexes, and for a remote any other file of any suite name |
+| `deb.dists.by_hash` | GET | all | Download | `dists/<suite>/<dir>/by-hash/SHA256/<hex>` |
+| `deb.pool.get` | GET | all | Download | `pool/…` |
+| `deb.pool.delete` | DELETE | local | Delete | `pool/…` |
+| `deb.members.get` | GET | virtual | Download | `members/<memberKey>/…` |
+| `deb.flat.release`, `deb.flat.index`, `deb.flat.file` | GET | remote | Metadata, Metadata, Download | a flat repository outside `dists/`, `pool/`, `members/` and `upload/`; a leading `./` is the root |
+| `deb.signing_key.get` | GET | all | Computed | `signing-key.asc` |
+| `deb.upload.put` | PUT | local | Upload | `upload/<file>` |
+
+A route of a class the format has not registered is left out of `Format.Routes()`. A class registers in a `class_*.go` file (`registerClass` in an `init`,
+[format.go](../../internal/formats/deb/format.go)); only [class_local.go](../../internal/formats/deb/class_local.go) exists.
+
+## Files
+
+| File | Responsibility |
+|---|---|
+| [format.go](../../internal/formats/deb/format.go) | `Format`, `Descriptor`, `New`, the registry of classes (`registerClass`) |
+| [class_local.go](../../internal/formats/deb/class_local.go) | Registers the local class; `class_remote.go` and `class_virtual.go` are created by their packages |
+| [names.go](../../internal/formats/deb/names.go) | The grammars of R-DEB-002 (`ValidPackage`, `ValidVersion`, `ValidArchitecture`, `ValidSuite`) and the package-name rule |
+| [paths.go](../../internal/formats/deb/paths.go) | The pool layout (`PoolPath`, `PoolPrefix`, `PackagesPath`, `ByHashPath`), `Classify`, `IsIndexName`; `PackageDocumentPath` reports no document |
+| [routes.go](../../internal/formats/deb/routes.go) | The route table and its matchers; `Match` reads a leading `./` as the flat root (Q-DEB-39) |
+| [handlers.go](../../internal/formats/deb/handlers.go) | The registry of handlers by route name and the 501 default |
+| [errors.go](../../internal/formats/deb/errors.go) | `WriteError`: the problem details of R-ARCH-023 with the codes of R-DEB-005 |
+| [settings.go](../../internal/formats/deb/settings.go), [settings.schema.json](../../internal/formats/deb/settings.schema.json) | The `deb` member of a repository document (R-DEB-008, R-DEB-024), its schema and `SettingsOf` with the defaults |
+| [servecheck.go](../../internal/formats/deb/servecheck.go) | `ServeCheck` (a withheld package file is 404) and `ServeFactsKey`: `deb_local` for a pool path of a local repository, `deb_remote` for a file of a remote |
+| [inspect.go](../../internal/formats/deb/inspect.go) | The skeleton `Inspect`: input that is no `ar` archive is 422 `deb_invalid_archive`; the reading of the package is the local class's |
+| [store.go](../../internal/formats/deb/store.go), `store_*.go` | The data port: `Store` embeds one group per package (`LocalStore`, `KeyStore`, `BuildStore`, `RemoteStore`, `MirrorStore`, `VirtualStore`, `ViewStore`, `JournalStore`) |
+| [rows](../../internal/formats/deb/rows/rows.go) | The values that cross the port (a leaf) |
+| [../formatdata/deb](../../internal/formatdata/deb/port.go) | The implementation: `port.go` composes one stub per group (`local_store.go`, `keys_store.go`, `build_store.go`, `remote_store.go`, `mirror_store.go`, `virtual_store.go`, `view_store.go`, `journal_store.go`), `tables_deb.go` registers the tables, the revision columns and the sealed column, `jobs.go` the kinds and the task, `build.go`, `remote_parse.go`, `refresh.go` the handlers (stubs), `reseal.go` the key-ring walk |
+| [untrusted/{ar,xz,zstd}.go](../../internal/formats/untrusted/ar.go) | `NewAr` (declared, answers `not_implemented`), `NewXZReader` and `NewZstdReader` (bounded, failing instead of cutting; Q-ARCH-382) |
+| [servefacts](../../internal/servefacts/servefacts.go), `files.sql` | The kinds `deb_local` and `deb_remote` and the columns the item lookup returns for them (Q-ARCH-381) |
+| [items/publish.go](../../internal/items/publish.go) | `Publisher`, `GeneratedFile`, `ErrSuperseded`; `Store.Publish` answers `not_implemented` |
+| [formathost/background_upstream.go](../../internal/formathost/background_upstream.go), [name_servers.go](../../internal/formathost/name_servers.go) | `Host.BackgroundUpstream` (declared; Q-REPO-272) and the virtual engine's `NameServers` (undetermined until the remote class lands; Q-REPO-270) |
+| [repository/create_hooks.go](../../internal/repository/create_hooks.go) | `RegisterCreateHook`: rows of a format's port in the transaction that creates its repository (Q-REPO-273); nothing is bound yet |
+| [api/v1/deb_*.go](../../internal/api/v1/deb_keys.go), [reindex.go](../../internal/api/v1/reindex.go), [deb_stub.go](../../internal/api/v1/deb_stub.go) | The handlers of the management operations: 501, or 503 on a replica without a database |
+| [audit/events_deb.go](../../internal/audit/events_deb.go) | The audit events; four are journaled |
+
+## Tables, migrations and the sealed column
+
+Migrations [00060_deb](../../internal/meta/postgres/migrations/00060_deb.sql), [00061_deb_signing_keys](../../internal/meta/postgres/migrations/00061_deb_signing_keys.sql)
+and [00062_deb_remote](../../internal/meta/postgres/migrations/00062_deb_remote.sql) are expand steps; every table is export class `data`
+([tables_deb.go](../../internal/formatdata/deb/tables_deb.go)). The three remote tables are cache rows; the purge that a restore without remote caches
+needs is the remote class's work (R-BAK-008, H-630). `test/integration/postgres/deb_test.go` pins the constraints, the registrations and the item lookup's
+facts; `deb_reseal_test.go` pins the key-ring walk.
+
+## Configuration
+
+`deb.index_delay` (2s, 1s to 60s), `deb.virtual_index_interval` (60s, 10s to 1h), `deb.by_hash_keep` (1h, 10m to 168h) and `deb.index_wait_max`
+(30s, 1s to 120s); [internal/config/deb.go](../../internal/config/deb.go) and [configuration.md](configuration.md). The per-repository settings are the
+`deb` member of the repository document.
+
+## What is built and what is not
+
+Built: everything above. Not built, by work package of [apt-work-packages.md](../projektplan/apt-work-packages.md): the package-file and deb822 libraries
+(WP1), the OpenPGP library, the signing keys and their API (WP2, built beside this skeleton by another builder), the upload, the local class's reads,
+deletion, coordinates, screens, setup and guide (WP3), the index builder and the publication port (WP4), the stub archive (WP5), the remote class (WP6),
+the mirror (WP7), the virtual class (WP8), the background upstream (WP13), the tests and the e2e sets (WP9, WP10), the UI (WP11) and the final
+documentation (WP12). The format declares no client yet, so it has no setup snippets and no guide; they come with the local class together with the
+`Project` the snippets need for the key file name.
+
+## The OpenPGP library and the counting stub archive (stage 1 of the remote side)
 
 The Debian format is built in stages (task T-17, [work packages](../projektplan/apt-work-packages.md), spec
 [formats/debian.md](../spec/formats/debian.md)). This page holds what stage 1 added: the OpenPGP leaf package
@@ -11,7 +105,7 @@ its data port and its key store are described here when they land.
 | The generator of installable `.deb` files | [test/debstub/debgen](../../test/debstub/debgen) | R-DEB-035 |
 | The counting stub archive | [test/debstub](../../test/debstub) | R-DEB-035 |
 
-## internal/openpgp
+### internal/openpgp
 
 The only importer of `github.com/ProtonMail/go-crypto` (pinned once in [go.mod](../../go.mod), with `github.com/cloudflare/circl`
 that it requires); the counting stub also imports it, on purpose (below). The package is a leaf in the
@@ -74,7 +168,7 @@ either; an imported key whose only self-signature is 30 s old, signing 29 s afte
 the missing key. Not done in this stage: the rotation table through trove's HTTP path (WP10), the key store, API and creation hook
 (WP2's next stage).
 
-## test/debstub: the counting stub archive
+### test/debstub: the counting stub archive
 
 A deterministic APT archive that is not trove: it serves generated content over TLS only, counts every request, and fails on
 command. Everything is generated in code (no recorded third-party data); two starts produce the same package, `Packages` and
@@ -98,7 +192,7 @@ every document it serves with trove's verifier.
 | [cmd/debstub](../../test/debstub/cmd/debstub), [Containerfile](../../test/debstub/Containerfile) | the binary and the image (`make deb-stub-image`, tag `DEB_STUB_IMAGE`, default `trove-e2e-debstub:dev`) |
 | [deploy/dev/debstub.yaml](../../deploy/dev/debstub.yaml) | the manifest for kind: Service `debstub`, a certificate of the dev CA, the control token in Secret `trove-debstub`; no step of the e2e harness applies it yet |
 
-### What it serves
+#### What it serves
 
 All below one host.
 
@@ -131,7 +225,7 @@ changed `Packages` gets a pdiff: `Packages.diff/Index` (`SHA256-Current`, `-Hist
 generation, an `ed` script that appends the new paragraph (`Packages.diff/<date>.gz`, also by hash). `ResetAll` returns every
 archive to its first generation.
 
-### The test keys
+#### The test keys
 
 Fixed seeds, algorithm 22, version 4; the certificate is reproducible (a test pins the fingerprints). Created on fixed dates and
 not "an hour back" (Q-DEB-70).
@@ -146,7 +240,7 @@ not "an hour back" (Q-DEB-70).
 `Server.Keyring("a", "b")`, `GET /-/stub/keyring?names=a,b` and `debstub keyring a` give the armored certificates for
 `deb.upstreamKeys`. trove refuses `d` as a configured key (it is expired); a verifier test hands its certificate over directly.
 
-### The switches (`Mode`, `POST /-/stub/mode`, R-DEB-035)
+#### The switches (`Mode`, `POST /-/stub/mode`, R-DEB-035)
 
 | Field | Effect |
 |---|---|
@@ -169,7 +263,7 @@ not "an hour back" (Q-DEB-70).
 `Throttle` (`POST /-/stub/throttle`) answers the n-th request, a run of them or all requests for a period with `429`, `429-date`,
 `503`, `503-slowdown`, `403-quota` or `429-quota` (the answers the mirror recognizes, R-REPO-054, R-REPO-059), per class.
 
-### Counters and the control API
+#### Counters and the control API
 
 `Counts()` keeps one entry per method, host, path as written, query and conditionality, with the kind (class) and the statuses; a
 cut answer counts under `0`. Helpers: `Requests`, `OfKind`, `Prefixed`, `Conditional`, `Delivered`, `NotModified`. `Inflight()` is
@@ -180,7 +274,7 @@ not exist; control requests are not counted): `GET counts`, `GET inflight`, `POS
 `GET|POST throttle`, `GET archives`, `POST generation {"archive"}`, `GET release?archive=`, `GET keys`, `GET keyring?names=`,
 `GET files`.
 
-### Running it
+#### Running it
 
 ```sh
 go run ./test/debstub/cmd/debstub serve -self-signed localhost,127.0.0.1 -ca-out /tmp/ca.crt -listen 127.0.0.1:8443

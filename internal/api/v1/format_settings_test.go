@@ -32,6 +32,13 @@ func TestR_ARCH_008_OciSettingsSchemaEqualsTheOpenAPIMember(t *testing.T) {
 	settingsSchemaEqualsOpenAPI(t, "oci", "OciSettings")
 }
 
+// TestR_ARCH_008_DebSettingsSchemaEqualsTheOpenAPIMember is the same comparison for the deb
+// member (R-DEB-008, R-DEB-024). The read-only members of the OpenAPI schema (the fingerprints
+// of the upstream keys) are answers and no settings, so the registered schema does not list them.
+func TestR_ARCH_008_DebSettingsSchemaEqualsTheOpenAPIMember(t *testing.T) {
+	settingsSchemaEqualsOpenAPI(t, "deb", "DebSettings")
+}
+
 func settingsSchemaEqualsOpenAPI(t *testing.T, format, schema string) {
 	t.Helper()
 	type property struct {
@@ -39,6 +46,7 @@ func settingsSchemaEqualsOpenAPI(t *testing.T, format, schema string) {
 		Enum       []string            `json:"enum" yaml:"enum"`
 		Default    any                 `json:"default" yaml:"default"`
 		Pattern    string              `json:"pattern" yaml:"pattern"`
+		ReadOnly   bool                `json:"readOnly" yaml:"readOnly"`
 		Properties map[string]property `json:"properties" yaml:"properties"`
 	}
 	type object struct {
@@ -68,6 +76,11 @@ func settingsSchemaEqualsOpenAPI(t *testing.T, format, schema string) {
 	var documented object
 	if err := node.Decode(&documented); err != nil {
 		t.Fatal(err)
+	}
+	for name, p := range documented.Properties {
+		if p.ReadOnly {
+			delete(documented.Properties, name)
+		}
 	}
 	if registered.AdditionalProperties != false || documented.AdditionalProperties != false {
 		t.Errorf("additionalProperties: registered %v, documented %v, both must be false", registered.AdditionalProperties, documented.AdditionalProperties)
