@@ -42,7 +42,7 @@ func (s *Server) Validate(r *Report) {
 			r.Add("listen", "%q is not a host:port address", h)
 		}
 	}
-	if s.Listen == s.OpsListen {
+	if s.Listen == s.OpsListen && !kernelPort(s.Listen) {
 		r.Add("ops_listen", "must differ from listen")
 	}
 	if s.BaseURL != "" {

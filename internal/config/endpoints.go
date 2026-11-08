@@ -270,6 +270,13 @@ func dedupe(in []string) []string {
 	return out
 }
 
+// kernelPort reports whether addr names port 0: the kernel picks a free port at bind time, so two listeners given it never share
+// one (the port-sharing rules of R-EP-001 and ops_listen skip it alike).
+func kernelPort(addr string) bool {
+	_, port, err := net.SplitHostPort(addr)
+	return err == nil && port == "0"
+}
+
 // originHost returns the lower-cased host of an origin without its port; empty
 // when raw is not a URL.
 func originHost(raw string) string {

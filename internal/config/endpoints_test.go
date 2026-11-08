@@ -115,6 +115,16 @@ func TestEndpoints(t *testing.T) {
 		}
 	})
 
+	t.Run("R-EP-001 port 0 lets the kernel choose, so listeners given it never share a port", func(t *testing.T) {
+		if _, err := loadEndpoints(t, "server:\n  listen: \"127.0.0.1:0\"\n  ops_listen: \"127.0.0.1:0\"\n  endpoints:\n    customers:\n      listen: \"127.0.0.1:0\"\n      base_url: https://p.example.com\n"); err != nil {
+			t.Fatalf("err = %v", err)
+		}
+		_, err := loadEndpoints(t, "server:\n  listen: \":9001\"\n  ops_listen: \":9001\"\n")
+		if err == nil || !strings.Contains(err.Error(), "server.ops_listen must differ from listen") {
+			t.Fatalf("err = %v", err)
+		}
+	})
+
 	t.Run("R-EP-001 names are bounded in syntax and count", func(t *testing.T) {
 		_, err := loadEndpoints(t, "server:\n  endpoints:\n    Customers:\n      listen: \":8443\"\n      base_url: https://p.example.com\n")
 		if err == nil || !strings.Contains(err.Error(), "server.endpoints.Customers name must match") {
