@@ -265,11 +265,9 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   while the body arrived"; passes alone). The test asserts that no database transaction stays open longer than 1 s while
   the body of a slow publish arrives. Done when the cause is found: a transaction the publish really holds during the
   body (a product defect), or an unrelated transaction of the shared stack the test counts (a test defect).
-- **F-103 · Two audit events of one repository update can sort in either order** (seen on CI, Test and Release
-  42507255713, integration shard a). `TestCreateReadUpdate/R-REPO-011_…` expected `repository.updated` before
-  `repository.narrowed` and read them the other way round; the events are listed by `occurred_at, id`. Suspected: both carry
-  the same time and the identifier decides. Done when the order of one operation's events is either guaranteed and tested,
-  or not promised and no test assumes it.
+- **F-102 · `TestR_BAS_014_ThousandWritesToOnePathCauseOneProbe` failed once under host load** (seen once, by the WP5
+  builder; passes alone and three times in a row). Done when the cause is found and fixed.
+>>>>>>> 52121250 (wip: F-103)
 - **F-95 · One Angular unit test failed once in 1,080, its name not recorded** (seen once, by the F-86 builder on a loaded
   host; the second run and the reviewer's run passed all 1,080). Done when the failing test is identified and its cause
   fixed; until then a recurrence is reported with the test's name and output.

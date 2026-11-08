@@ -177,3 +177,28 @@ func TestR_OPS_017_ExportRange(t *testing.T) {
 		})
 	}
 }
+
+// The events of one operation share the transaction's occurred_at, so their order in the listing and the export is
+// the order of their IDs (R-OPS-017): IDs created in one millisecond sort in creation order.
+func TestR_OPS_017_IDsOfOneProcessSortInCreationOrder(t *testing.T) {
+	at := time.Date(2026, 10, 29, 12, 0, 0, 5_000_000, time.UTC)
+	idStream.mu.Lock()
+	idStream.ms, idStream.counter = 0, 0 // other tests built IDs for clocks of their own
+	idStream.mu.Unlock()
+	prev := newID(at)
+	for i := 0; i < 20000; i++ {
+		next := newID(at)
+		if next <= prev {
+			t.Fatalf("id %d (%s) does not sort after its predecessor (%s)", i, next, prev)
+		}
+		got, ok := idTime(next)
+		if !ok || got.Before(at) || got.After(at.Add(time.Minute)) {
+			t.Fatalf("id %s carries %v, asked for %v", next, got, at)
+		}
+		prev = next
+	}
+	old := at.Add(-time.Hour)
+	if got, ok := idTime(newID(old)); !ok || !got.Equal(old) {
+		t.Errorf("an event of an hour ago carries %v, want %v", got, old)
+	}
+}

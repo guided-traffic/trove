@@ -1625,6 +1625,11 @@ Audit events are stored in PostgreSQL and copied to the log stream (INV-16).
   `artifact.downloaded` events. The request log holds them in every case.
 - **Allow decisions.** Every authorization decision can be traced (INV-9). With the `authz`
   component at `debug` level, allow decisions are logged, though never stored as audit events.
+- **Order of the events of one operation.** The events a transaction records carry the same `occurred_at`
+  (the transaction's `now()`), so the order the listing and the export show them in is the order of their `id`.
+  Within one replica the IDs are strictly increasing in creation order (Q-OPS-62): the events of one operation
+  appear in the order the producer recorded them. Events of different replicas, or recorded more than one second
+  apart from their ID's time, carry no promised order.
 - **Change details.** For an update, `details.changes` lists the changed fields as
   `{"field": "<path in the API representation>", "from": …, "to": …}`. A secret field appears only
   as `{"field": "…", "change": "set" | "changed" | "cleared"}`.
@@ -5444,6 +5449,29 @@ Status: **Decided by the development agent** — selected from the options below
 **Rationale:** each follows R-OPS-017 where it is explicit and keeps a long export from holding a transaction. The development agent would revisit the cut export if a client library cannot tell an aborted chunked answer from a complete one.
 
 **Applied in the spec:** R-OPS-017: the capability is written `audit:read`.
+
+### Q-OPS-62 · The order of the audit events of one operation
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+An update that narrows a repository records `repository.updated` and `repository.narrowed` in one transaction. Both take the
+transaction's `now()` as `occurred_at`, and the listing and the export order by `(occurred_at, id)`. The ID was a UUIDv7 with 12
+random bits after the millisecond, so two events built in the same millisecond sorted in either order: an operator's listing
+showed the pair reversed about once in two, and an integration test that expects `updated` before `narrowed` failed on CI (F-103).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The test finds events by action | Order is not promised | No product change | The listing shows an operation's events in a random order; R-OPS-017 promises an order by `(occurred_at, id)` and an operator reads a trail as a sequence |
+| (b) A sequence column | Order by a database sequence | Order across replicas | A schema change on the partitioned table and a hot sequence for every event |
+| (c) Monotonic IDs per process (chosen) | The 12 bits after the millisecond are a counter (RFC 9562, method 1), started at random below 2,048 for each millisecond | No schema change; the ID stays a UUIDv7 that carries its time; one transaction runs on one replica, so its events are ordered | Order across replicas is not promised; a counter spent within one millisecond moves the stream to the next millisecond |
+
+**Choice:** (c) (`internal/audit/uuid.go`).
+
+**Rationale:** the events of one operation come from one replica and one transaction, which is exactly what a process-wide
+counter orders. An ID whose time lies up to a few milliseconds past the request stays far inside the hour `Get` reads around it.
+The development agent would revisit it (b) if a listing must order events of different replicas.
+
+**Applied in the spec:** R-OPS-015 (order of the events of one operation).
 
 ### Q-OPS-91 · Login secrets in request URLs
 

@@ -23,7 +23,7 @@ its event types here.
 | [row.go](../../internal/audit/row.go) | `Event` to table row: validation, truncation, UUID and address handling, the error sentinels |
 | [logcopy.go](../../internal/audit/logcopy.go) | the `log: audit` record |
 | [store.go](../../internal/audit/store.go) | `Store`: `Query`, `Get`, `Maintain`, `PartitionsReady`, `Prepare`, `SyncRetention`, `CheckExportRange` |
-| [uuid.go](../../internal/audit/uuid.go) | UUIDv7 for event IDs and the time they carry |
+| [uuid.go](../../internal/audit/uuid.go) | UUIDv7 for event IDs and the time they carry; the 12 bits after the millisecond are a per-process counter, so the events of one transaction (same `occurred_at`) sort in creation order (Q-OPS-62) |
 | [../api/v1/audit_api.go](../../internal/api/v1/audit_api.go), [../api/v1/audit_source.go](../../internal/api/v1/audit_source.go) | The three management operations; the recorder wrapper that adds the request's source |
 | [../meta/postgres/queries/audit.sql](../../internal/meta/postgres/queries/audit.sql) | every statement; generated code in `q/audit.sql.go` |
 | [../meta/postgres/audit.go](../../internal/meta/postgres/audit.go) | `IsDataError`, `IsPrivilegeError`, and the migrate runner's retention write |
