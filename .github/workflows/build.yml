@@ -60,22 +60,23 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
 
-      # The SBOM generator (below) is served from a registry container on a docker network of this run. The builder runs on
-      # that network, so it reaches the registry by its name, and no build step of the image shares the runner's network
-      # namespace. The registry speaks plain HTTP, allowed for that one host.
-      - name: Create the docker network of the SBOM generator
+      # The SBOM generator (below) is served from a registry container of this run on Docker's default bridge network, reached
+      # by its IP. The builder stays on the default bridge network too, with no network option: a builder on a user-defined
+      # network resolves names through 127.0.0.11, which the network namespaces of BuildKit's RUN steps cannot use (release
+      # v0.25.1, run 42433259845: `go mod download` could not resolve proxy.golang.org). The registry speaks plain HTTP,
+      # allowed for that one address.
+      - name: Start the registry of the SBOM generator
         id: sbom_net
         run: |
           set -euo pipefail
-          echo "network=$(tools/sbom-generator/registry.sh network)" >> "$GITHUB_OUTPUT"
-          echo "host=$(tools/sbom-generator/registry.sh host)" >> "$GITHUB_OUTPUT"
+          host="$(tools/sbom-generator/registry.sh start)"
+          echo "host=${host}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         id: buildx
         uses: docker/setup-buildx-action@v4
         with:
           version: ${{ env.BUILDX_VERSION }}
-          driver-opts: network=${{ steps.sbom_net.outputs.network }}
           buildkitd-config-inline: |
             [registry."${{ steps.sbom_net.outputs.host }}"]
               http = true
@@ -164,14 +165,9 @@ jobs:
           # Pushed by digest and without a tag: no tag moves before the SBOM attestations are asserted (the next steps).
           outputs: type=image,name=guidedtraffic/trove,push-by-digest=true,name-canonical=true,push=true,annotation-index.org.opencontainers.image.description=trove
 
-      # The builder is on the run's network, which can only be removed after it.
-      - name: Remove the SBOM generator registry, its builder and its network
+      - name: Remove the SBOM generator registry
         if: always()
-        env:
-          BUILDER: ${{ steps.buildx.outputs.name }}
-        run: |
-          docker buildx rm -f "$BUILDER" || true
-          tools/sbom-generator/registry.sh down
+        run: tools/sbom-generator/registry.sh down
 
       # BuildKit writes the attestations with the image, so they can be read only after the push. The image is pushed by digest
       # without a tag: a failure here moves no tag, and release-helm-gh (needs: build) publishes no chart. The pre-release

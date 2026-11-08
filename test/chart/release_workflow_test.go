@@ -157,9 +157,14 @@ func TestR_HA_047_TheTokensHoldWhatTheJobsUse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// the release builder never shares the runner's network namespace (Q-HA-166)
-	if regexp.MustCompile(`(?m)^[^#\n]*network=host`).Match(raw) {
-		t.Error("build.yml uses network=host: the builder runs on the docker network of the run")
+	// The release builder takes no network option: host would put every RUN step into the runner's network namespace, and a
+	// user-defined network gives it Docker's embedded resolver at 127.0.0.11, which the RUN steps of BuildKit cannot use (release
+	// v0.25.1 failed on `go mod download`, Q-HA-166).
+	if m := regexp.MustCompile(`(?m)^[^#\n]*network=\S+`).FindString(string(raw)); m != "" {
+		t.Errorf("build.yml sets a network for the builder (%s): the builder stays on the default bridge network", strings.TrimSpace(m))
+	}
+	if !regexp.MustCompile(`(?m)^\s*\[registry\."\$\{\{ steps\.sbom_net\.outputs\.host \}\}"\]\n\s*http = true`).Match(raw) {
+		t.Error("build.yml does not mark the address of the generator registry as plain HTTP for the builder")
 	}
 }
 

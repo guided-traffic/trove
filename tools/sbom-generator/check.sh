@@ -4,7 +4,7 @@
 # pushed to a public registry) and asserts that both attestations name the pinned syft. A syft bump that breaks the
 # generator fails here, in a pull request or push run, and never in a release.
 #
-# Needs Docker with buildx and jq. Uses a docker network, a registry container and a buildx builder of its own, all
+# Needs Docker with buildx and jq. Uses a registry container and a buildx builder of its own on Docker's default bridge network, both
 # removed at the end.
 set -euo pipefail
 
@@ -24,18 +24,19 @@ cleanup() {
 }
 trap cleanup EXIT
 
-net="$("$here/registry.sh" network)"
+"$here/registry.sh" start >/dev/null
 "$here/registry.sh" buildkitd-config > "$tmp/buildkitd.toml"
-docker buildx create --name "$builder" --driver docker-container --driver-opt "network=$net" \
-  --buildkitd-config "$tmp/buildkitd.toml" --bootstrap >/dev/null
+docker buildx create --name "$builder" --driver docker-container --buildkitd-config "$tmp/buildkitd.toml" --bootstrap >/dev/null
 export BUILDX_BUILDER="$builder"
 
 ref="$("$here/registry.sh" up)"
 echo "generator: $ref"
 
-# A file and a base image, no RUN: the image needs no emulation to build.
+# A base image, a file and a RUN step that resolves a public name the release build needs (the Go module proxy): a builder
+# whose RUN steps cannot resolve names fails here, as release v0.25.1 did. The RUN step runs under emulation on a foreign
+# architecture, as the generator does.
 mkdir "$tmp/app"
-printf 'FROM %s\nCOPY hello /hello\n' "$SBOM_GENERATOR_SHELL_IMAGE" > "$tmp/app/Containerfile"
+printf 'FROM %s\nCOPY hello /hello\nRUN ["/bin/busybox", "nslookup", "proxy.golang.org"]\n' "$SBOM_GENERATOR_SHELL_IMAGE" > "$tmp/app/Containerfile"
 echo hello > "$tmp/app/hello"
 docker buildx build --platform linux/amd64,linux/arm64 --provenance=true --sbom="generator=$ref" \
   -f "$tmp/app/Containerfile" --output "type=oci,dest=$tmp/app.tar" "$tmp/app" >&2
