@@ -256,6 +256,11 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   tier exercises the real automatic claim (the unit host fakes it, the files fixture stubs it). Done when the check and
   the insert are serialised and a test with two concurrent first publishes proves one claim.
 
+- **F-104 · The Bastion counts a replayed 404 as refused but a fresh one not** (read by the review of F-102). A kept 404
+  answer replayed from the probe cache raises `trove_bastion_refused_total{reason="read_only"}`, while the probe path that
+  first saw the 404 counts only 403s. Done when one 404 is counted the same whether fresh or replayed, as the metric's
+  definition says.
+
 ### Tests and tools
 
 - **F-103 · Two audit events of one repository update can sort in either order** (seen on CI, Test and Release
