@@ -163,7 +163,7 @@ func newFixture(t *testing.T, anonymous bool) *fixture {
 			{Project: "web", Key: "npm-local"}: {Format: "npm", Lifecycle: repository.Active},
 		},
 		Metrics: metrics, Audit: f.rec, WriteError: writeError,
-		Bound:    func(*http.Request) (qname.Repo, bool) { return f.bound, !f.bound.IsZero() },
+		Bound:    func(*http.Request) (qname.Repo, bool, error) { return f.bound, !f.bound.IsZero(), nil },
 		Endpoint: func(*http.Request) string { return "default" },
 		Now:      func() time.Time { return t0 },
 	})

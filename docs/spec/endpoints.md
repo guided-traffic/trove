@@ -388,7 +388,7 @@ An endpoint serves only the route families of its `surface`:
 | `ui` | `/ui/…`, `GET /{$}`, `/auth/…` (browser sign-in, session, logout) | on | not allowed (Q-EP-13) |
 | `api` | `/api/v1/…` except the CI exchange | on | off by default |
 | `ci_exchange` | `POST /api/v1/auth/oidc/token`; from P1 the npm trusted-publishing exchange at the host root and below every registry URL ([formats/npm.md](formats/npm.md) R-NPM-022) | on | off by default |
-| `packages` | `/api/<format>/<projectKey>/<repoKey>/…` other than the exchange routes, the format host-root routes other than the exchange (`/v2/` once OCI exists), and host-root bindings (R-EP-006) | on | on by default |
+| `packages` | `/api/<format>/<projectKey>/<repoKey>/…` other than the exchange routes, the format host-root routes other than the exchange (`/v2/`, the registry root of the OCI format), and host-root bindings (R-EP-006) | on | on by default |
 | `files` | `/files/…` | on | off by default |
 
 - Each endpoint's ServeMux registers only the routes of its families. A path of a family the
@@ -472,7 +472,7 @@ The MVP builds the mechanism; no MVP format uses it (Q-EP-6). R-EP-007 lists its
   qualified name (a bare key, a pattern, a project or repository key outside its syntax, INV-5)
   stops startup and names the key. Whether the repository exists is decided per request, because
   repositories live in PostgreSQL: a binding to a repository that does not exist, or whose format
-  serves no bound-host route, behaves as no binding; a repository moved to another project
+  serves no bound-host route, behaves as no binding (the dispatcher reads it per request, [Q-EP-80](#q-ep-80--a-bindings-repository-is-read-per-request-by-one-function-of-the-dispatcher)); a repository moved to another project
   ([repositories-and-proxy.md](repositories-and-proxy.md#r-repo-060--move-a-repository-to-another-project))
   is no longer bound until the value names its new address.
 - **Request context.** Middleware step 5 places the binding of the effective host in the request
@@ -507,7 +507,7 @@ Priority: **P1** · Covers: HA-027, PKG-DOCKER-007
 The format pages own the protocols; this requirement fixes that they reach host roots through
 R-EP-006 and through nothing else.
 
-- **Docker Engine mirror (OCI format, F4).** On a host bound to an OCI repository R, `/v2/…` is the
+- **Docker Engine mirror (OCI format, F4; [formats/oci.md](formats/oci.md) R-OCI-029).** On a host bound to an OCI repository R, `/v2/…` is the
   distribution API of R, with the image name taken as sent: `GET /v2/library/alpine/manifests/3`
   reads `library/alpine` in R. A Docker Engine configured with
   `registry-mirrors: ["https://mirror.example.com"]` pulls through R. The token challenge's realm
@@ -530,7 +530,7 @@ Acceptance criteria (when the formats exist):
   `alpine:3`, and the counting upstream records one manifest request.
 - With `wildcard_host: "*.registry.example.com"` and no `host_roots` entry for it,
   `docker pull docker-all.registry.example.com/alpine:3` binds no repository: `GET /v2/library/alpine/manifests/3`
-  there answers the `404` problem.
+  there answers `404` `NAME_UNKNOWN` (the unbound path has no repository segment).
 - `terraform init` of a module `tf.example.com/acme/net/aws` resolves through the discovery
   document of the host bound to `web/terraform-modules`.
 
@@ -2490,6 +2490,32 @@ range still fails closed. The development agent would revisit this when a format
 can decide containment, then for that format only.
 **Applied:** R-EP-020 (comparator rules 3 and 4, both acceptance criteria); `exposureNarrower` in
 `internal/authz/journal_replay_exposure.go`; `TestR_EP_020_TheComparator`, `TestR_EP_020_ExposureEntriesReplayIntoTheRestoredDatabase`.
+
+### Q-EP-80 · A binding's repository is read per request by one function of the dispatcher
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-EP-006 says a binding to a repository that does not exist, or whose format serves no bound-host route, behaves as no
+binding, and that this is decided per request because repositories live in PostgreSQL. Middleware step 5 places the configured
+binding in the request context without looking anything up. The OCI registry root has three readers of the binding: the match of
+`/v2/` (which repository and which image a path means), the token service's scope grammar (a scope on a bound host names the image
+alone) and the catalog.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One function of the dispatcher, `Dispatcher.BoundRepository(r)`, reads the binding from the context and asks the repository reader whether the repository exists and is of the format that declares the registry root; the three readers call it (chosen) | A binding counts only for a repository of the format, decided in one place | A token's scopes, the address of the request that uses it and the names of the catalog cannot name different repositories; the reader is an in-memory snapshot, so the lookup costs no statement | A failed lookup (not "not found") is an error the callers must carry: the match refuses, a handler answers it |
+| (b) Validate the bindings at start-up | Stop or warn about a binding to a missing or foreign repository | No lookup per request | Repositories live in PostgreSQL and change at run time; R-EP-006 says per request |
+| (c) Every reader checks on its own | Three lookups | No shared function | The readers can disagree, which is the defect the registry's enforcement point exists to prevent |
+
+**Choice:** (a). A repository that is being deleted or is disabled stays bound: the request then answers that repository's own 404
+and does not fall back to the unbound meaning of the path. A failed lookup refuses a registry token (the match is false) and answers
+the request with the error.
+
+**Rationale:** the binding decides which repository a registry token's grant is checked on, so it is read once and the same way by
+everything that uses it. The development agent would revisit it if a lookup per bound request shows up in a profile (the snapshot
+could carry the format of the bound repository).
+
+**Applied in the spec:** R-EP-006, R-EP-007; [formats/oci.md](formats/oci.md) R-OCI-029.
 
 ## What this does not cover
 

@@ -291,14 +291,13 @@ WP0 ──┬─ WP1 ─────────────┐
   `Enforcer` - `Mount` the only way below `/v2/`, the route table admitting only its patterns, the dispatcher's own match
   (`Dispatcher.RegistryTarget`), the code `oci_insufficient_scope` - with `registrytest.Walk` through the whole handler (Q-OCI-56). Gap H-595 (bearer for the lifetime); H-579 narrowed (the forger needs a live
   token's hash, and a minted token verifies for at most the configured lifetime).
-- Left to WP3: the steps in [docs/developer/oci.md](../developer/oci.md#registry-tokens-and-the-token-service) - the enforcer per
-  endpoint in `rt.registry`, every `/v2/` handler through `Mount`, the dispatcher's `/v2/` handler routing by `RegistryTarget`, the walk
-  through the app's handler, the token service's route and wiring (the concrete `*auth.Stage`,
-  `credentialRules`, `withMinEpoch`, `recordPrincipal`), `Bound` restricted to repositories of the format, the stage's `RegistryScope`,
-  the version check's own challenge for a request without a credential. Left to WP1/WP3/WP5: the upload-session contract in the
-  developer page (every session call checks repository, image name and principal). Left to WP5: `enforcer.Also` for the mount's
-  source. Left to WP13: `TestR_AUTHZ_007_OCIActionMap`. The test names of the token service carry no R-OCI ID (the IDs are in
-  comments); WP3 names R-OCI-004/005/006/029/034 in its tests once `/v2/` is mounted and the grant check runs.
+- Left to WP3 (done, see "WP3 as built"): the enforcer per endpoint in `rt.registry`, every `/v2/` handler through `Mount`, the
+  dispatcher's `/v2/` handler routing by the enforcement point's match, the walk through the app's handler, the token service's route
+  and wiring, `Bound` restricted to repositories of the format, the stage's `RegistryScope`, the version check's own challenge. Left to
+  WP1/WP3/WP5: the upload-session contract in the developer page (every session call checks repository, image name and principal).
+  The mount's source is checked by the enforcer since WP3 (Q-OCI-102); what is left is the replacement of the copy `ociMountSource` by
+  `ociformat.MountSource` and the integration mount test, by whichever of WP3/WP5 merges second. Left to WP13: `TestR_AUTHZ_007_OCIActionMap`.
+  The tests of the token service name their R-OCI requirement in a comment.
 - Touched outside the owned files: `internal/auth/auth.go` (`Credential.Registry`), `internal/auth/token/validate.go`
   (`CheckSecretHash`), `internal/secrets/keyring.go` (`Derive`), `internal/httpserver/principal.go` (`RegistryGrant`),
   `internal/app/{m1_convert,wire_identity,areas,wire_endpoints,app}.go`, `internal/api/dispatch/registry_target.go` (new),
@@ -331,6 +330,37 @@ WP0 ──┬─ WP1 ─────────────┐
 - Aligned with WP4a (merged): the tag order is WP4a's `tagorder` (Q-OCI-64, the package view); the tags list is in byte order and does not use it.
   `store_removal.go` holds `RemoveManifest` and `ReferencedBy`; `registryError` maps a conflict to `409 DENIED`; the conformance fixture and the
   twin carry the list and delete side (`store_twin_test.go` adds methods to WP4a's `twin`).
+## WP3 as built (the registry root and its dispatch)
+
+- Everything below `/v2/` is two patterns on one handler, `/v2` and `/v2/{rest...}`, mounted by `registry.Register` through the enforcement point
+  (`internal/api/registry/register.go`, `wire_registry.go`). The dispatcher's `RegistryHandler` matches with `registryMatch` - the
+  function `RegistryTarget` is a reduction of, so the enforcement point and the handler cannot read a path differently - and serves the
+  route the match names: the version check, the catalog and the token service through their handlers, every repository route through
+  `serveRoute`, the tail of the `/api/<format>/` path, shared (Q-OCI-100, ADR-173). A bound host is read by `BoundRepository`, only for
+  a repository of the format, by the match, the token service and the catalog (Q-EP-80).
+- The route table (`httpserver.CheckRouter`, Q-ARCH-390) probes every pattern in a scratch mux, refuses a `HandleUncleaned` prefix at or
+  below `/v2` (`HandleRegistryUncleaned` is the enforcement point's), the prefixes that enclose `/v2/` and a fallback handler.
+- The version check (200 `{}`, its own 401 challenge for an anonymous caller without a registry token), the catalog (readable names
+  in byte order over repositories, `n`, `last`, `Link`, bound host, package-scoped grants; the page is the data port's `CatalogNames`),
+  the 404 `NAME_UNKNOWN` shapes, `Docker-Distribution-API-Version` on every answer of the dispatcher's handler and of the format's error
+  shape for the chain's refusals below `/v2/`.
+- `registrytest.Walk` runs against the real app handler of the default endpoint and of a bound-host endpoint
+  (`test/integration/registry`), with registry tokens from the token service, its own expectation (the format's `Match`) and the served
+  route read from the replica's `trove_http_requests_total{handler}`.
+- Gaps H-648 (the catalog reads names it does not list), H-649 (the catalog grant is not narrowed by the other entries), H-650 (token
+  requests count in the bucket of the client address). Round 2 (after WP1 and WP4): the catalog is bound to the data port
+  (`var _ registry.CatalogStore = (*ocidata.Store)(nil)`), a request is matched once (a memo in the request's context), `Mount` takes
+  several patterns (`/v2` and `/v2/{rest...}`, so a bare `/v2` is the version check and H-651 is gone), literal pattern segments are
+  unescaped before the below-`/v2` test, the router refuses a duplicate uncleaned prefix and an archtest rule limits
+  `HandleRegistryUncleaned` to `internal/api/registry`, the challenge names a scope only for a valid image name, a failed binding lookup
+  is a 503 for a registry token too; the integration tests push (blobs seeded, the upload routes are WP5's), pull, list and log in
+  through `/v2/`. The registry root's integration tests keep an `R-OCI-…` ID in the name only where they prove its acceptance criteria through `/v2/` (R-OCI-003, 004, 005, 017); R-OCI-001 and R-OCI-029 are in comments. Round 3: `EndpointFacts.Bound` is set from the match, the enforcer's strip drops the parsed form and logs, uncleaned prefixes are unescaped, the WP1/WP4 test renames of round 2 are reverted.
+- Touched outside the owned files: `internal/api/registry/{token,enforce,registrytest/walk}.go` (WP2's: `Bound` returns an error and is
+  mandatory, `Mount` registers the uncleaned prefix, `Target` replaced by `Scope`, the walk's fields), their
+  tests (the `Bound` signature, the walk's fields; the names are unchanged), `internal/app/{app,wire_identity,wire_endpoints}.go` (`registryMetrics`, `RegistryScope`, `EndpointHandler`,
+  `EndpointRouter`, `RegistryEnforcer`), `internal/httpserver/{router,routetable}.go`, `internal/api/registry/route/route.go` (the
+  version header), `docs/decisions.md`, `docs/spec/{README,architecture,endpoints}.md`.
+- `registry.CatalogStore` is the interface of `Store.CatalogNames`; `*ocidata.Store` satisfies it (compile-time assertion in `wire_registry.go`).
 
 ## WP6 as built (the remote engine's handshake and revalidation)
 

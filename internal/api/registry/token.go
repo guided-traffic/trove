@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/api/edge"
+	"github.com/guided-traffic/trove/internal/api/registry/route"
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth"
 	"github.com/guided-traffic/trove/internal/auth/registrytoken"
@@ -29,8 +30,8 @@ const maxFormBytes = 16 << 10
 
 // APIVersionHeader and APIVersion are the header every response below /v2/ carries (R-OCI-003).
 const (
-	APIVersionHeader = "Docker-Distribution-API-Version"
-	APIVersion       = "registry/2.0"
+	APIVersionHeader = route.APIVersionHeader
+	APIVersion       = route.APIVersion
 )
 
 // TokenOptions configure [NewToken].
@@ -57,9 +58,11 @@ type TokenOptions struct {
 	Audit audit.Recorder
 	// WriteError renders an error in the format's shape (R-OCI-003, the format's WriteError).
 	WriteError func(http.ResponseWriter, *http.Request, error)
-	// Bound returns the repository the request's host root is bound to (R-OCI-029, R-EP-006), false for an unbound host.
-	// Nil reads httpserver.RequestInfo.RootRepository.
-	Bound func(*http.Request) (qname.Repo, bool)
+	// Bound returns the repository the request's host root is bound to (R-OCI-029, R-EP-006), false for an unbound host and
+	// for a binding to a repository that does not exist or is not of the format. It is the dispatcher's own function
+	// (dispatch.Dispatcher.BoundRepository), the one the match of /v2/ reads, so the scopes of a token and the address of the
+	// request that uses it name the same repository. The error is a failed lookup.
+	Bound func(*http.Request) (qname.Repo, bool, error)
 	// Endpoint names the endpoint the request arrived on (R-EP-002); nil reads the chain's endpoint. The stage verifies a
 	// registry token against the same name.
 	Endpoint func(*http.Request) string
@@ -77,8 +80,8 @@ type Token struct {
 // NewToken creates the token service.
 func NewToken(o TokenOptions) (*Token, error) {
 	switch {
-	case o.Authenticate == nil, o.Signer == nil, o.Decider == nil, o.Repos == nil, o.WriteError == nil, o.ValidName == nil:
-		return nil, errors.New("registry: the token service needs an authentication stage, a signer, a decision point, a repository reader, an error writer and the name grammar")
+	case o.Authenticate == nil, o.Signer == nil, o.Decider == nil, o.Repos == nil, o.WriteError == nil, o.ValidName == nil, o.Bound == nil:
+		return nil, errors.New("registry: the token service needs an authentication stage, a signer, a decision point, a repository reader, an error writer, the name grammar and the bound-host function")
 	case o.Format == "":
 		return nil, errors.New("registry: the token service needs the format of the registry")
 	}
@@ -90,12 +93,6 @@ func NewToken(o TokenOptions) (*Token, error) {
 	}
 	if o.Audit == nil {
 		o.Audit = audit.Nop{}
-	}
-	if o.Bound == nil {
-		o.Bound = func(r *http.Request) (qname.Repo, bool) {
-			repo := httpserver.InfoFrom(r.Context()).RootRepository
-			return repo, !repo.IsZero()
-		}
 	}
 	if o.Endpoint == nil {
 		o.Endpoint = func(r *http.Request) string { return httpserver.EndpointFrom(r.Context()).Name() }
@@ -130,7 +127,11 @@ func (h *Token) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.refuse(w, r, err)
 		return
 	}
-	bound, ok := h.o.Bound(r)
+	bound, ok, err := h.o.Bound(r)
+	if err != nil {
+		h.o.WriteError(w, r, err)
+		return
+	}
 	if !ok {
 		bound = qname.Repo{}
 	}

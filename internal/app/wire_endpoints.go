@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"slices"
 	"strings"
@@ -21,9 +22,11 @@ type endpointRuntime struct {
 	tls    *httpserver.ListenerTLS
 	router *httpserver.Router
 	srv    *httpserver.Server
-	// registry is the enforcement point of the registry tokens' grants below /v2/ (Q-OCI-56), set by the mount of /v2/: the
+	// registry is the enforcement point of the registry tokens' grants below /v2/ (Q-OCI-56), set by the mount of /v2/ (wire_registry.go): the
 	// route table admits exactly the /v2/ patterns mounted through it, and none while it is nil.
 	registry *registry.Enforcer
+	// handler is the endpoint's whole handler (the chain around the router), kept for EndpointHandler.
+	handler http.Handler
 }
 
 // servesEndpoint reports whether this process opens the listener of an endpoint
@@ -170,7 +173,7 @@ func (a *App) startEndpoint(rt *endpointRuntime, router *httpserver.Router) erro
 	if err := srv.Bind(); err != nil {
 		return fmt.Errorf("endpoint %s: %w", rt.cfg.Name, err)
 	}
-	rt.router, rt.srv = router, srv
+	rt.router, rt.srv, rt.handler = router, srv, handler
 	a.tele.metrics.EndpointListenerUp(rt.cfg.Name, true)
 	a.bg.Add(1)
 	go func() {

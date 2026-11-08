@@ -538,6 +538,27 @@ func TestEndpointConstruction(t *testing.T) {
 	})
 }
 
+func TestRegistryUncleaned(t *testing.T) {
+	t.Run("R-HA-041 HandleRegistryUncleaned outside internal/api/registry is found, also as a method value", func(t *testing.T) {
+		pkgs, err := LoadTyped(fixtureDir(t, "registryuncleaned"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := map[string]bool{}
+		for _, v := range CheckRegistryUncleaned("example.test/fix", pkgs) {
+			got[v.From] = true
+		}
+		for _, want := range []string{"internal/webish/bad.go", "internal/webish2/value.go"} {
+			if !got[want] {
+				t.Errorf("%s not named: %v", want, got)
+			}
+		}
+		if len(got) != 2 {
+			t.Errorf("named %v; internal/api/registry, internal/httpserver and a caller of HandleUncleaned are fine", got)
+		}
+	})
+}
+
 func TestSubjectConstruction(t *testing.T) {
 	t.Run("R-EP-013 a subject built or edited outside internal/authz and internal/api/edge is found through literals, new, aliases, zero values and field assignments", func(t *testing.T) {
 		dir := fixtureDir(t, "subject")
@@ -640,6 +661,14 @@ func TestRealTree(t *testing.T) {
 			t.Fatal(err)
 		}
 		wantClean(t, CheckEndpointConstruction(module, pkgs))
+	})
+	t.Run("R-HA-041 only internal/api/registry registers an uncleaned prefix below /v2/", func(t *testing.T) {
+		root, module, _ := realTree(t)
+		pkgs, err := LoadTyped(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantClean(t, CheckRegistryUncleaned(module, pkgs))
 	})
 	t.Run("R-EP-013 only internal/authz and internal/api/edge build an authz.Subject", func(t *testing.T) {
 		root, module, _ := realTree(t)

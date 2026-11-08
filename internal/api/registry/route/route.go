@@ -5,9 +5,18 @@
 package route
 
 import (
+	"context"
 	"net/http"
+	"sync"
 
 	"github.com/guided-traffic/trove/internal/qname"
+)
+
+// APIVersionHeader and APIVersion are the header every response below /v2/ carries (R-OCI-003): Docker clients read it to
+// recognise a version 2 registry.
+const (
+	APIVersionHeader = "Docker-Distribution-API-Version"
+	APIVersion       = "registry/2.0"
 )
 
 // The names of the core routes below /v2/ (R-OCI-003); the dispatcher's match resolves them.
@@ -37,4 +46,44 @@ type Target struct {
 // which route serves a request. ok false for a request that reaches no route.
 type Matcher interface {
 	RegistryTarget(r *http.Request) (Target, bool)
+}
+
+// ErrMatcher is a [Matcher] that also says why a request reaches no route: the error is the one the handler writes (a missing
+// repository, an unclean path, a failed lookup of the bound repository). The enforcement point answers a failed lookup
+// (errs.Unavailable) as the handler does, instead of as a missing scope.
+type ErrMatcher interface {
+	Matcher
+	RegistryMatch(r *http.Request) (Target, error)
+}
+
+// Memo holds the match of one request, so that the enforcement point and the handler behind it read the request once: the
+// enforcement point puts an empty memo into the request's context before it checks, and the dispatcher's match fills it on the
+// first call and returns the same answer on the second. A binding that changes between two reads cannot make the grant be checked
+// on one repository and the request be served on another.
+type Memo struct {
+	once sync.Once
+	v    any
+	err  error
+}
+
+// Do runs f once and returns its result to every caller.
+func (m *Memo) Do(f func() (any, error)) (any, error) {
+	m.once.Do(func() { m.v, m.err = f() })
+	return m.v, m.err
+}
+
+type memoKey struct{}
+
+// WithMemo returns the request with an empty memo in its context, unless it carries one.
+func WithMemo(r *http.Request) *http.Request {
+	if MemoFrom(r.Context()) != nil {
+		return r
+	}
+	return r.WithContext(context.WithValue(r.Context(), memoKey{}, &Memo{}))
+}
+
+// MemoFrom returns the request's memo, nil for a request that has none.
+func MemoFrom(ctx context.Context) *Memo {
+	m, _ := ctx.Value(memoKey{}).(*Memo)
+	return m
 }

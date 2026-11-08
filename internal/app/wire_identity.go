@@ -215,8 +215,8 @@ func (a *App) wireAuth(_ context.Context, id identityArea, lim limitsArea, ss se
 		// The token service validates and records the last use; it is checked above.
 		Uses:    id.tokens,
 		Metrics: id.metrics, Log: a.log.With("component", "auth"),
-		// The registry root adds RegistryScope, the scope of its route's challenge, when it mounts /v2/.
-		Registry: signer, RegistryRealm: registryRealm,
+		// The scope of a route's challenge below /v2/ is the endpoint's enforcement point's (wire_registry.go).
+		Registry: signer, RegistryRealm: registryRealm, RegistryScope: a.registryScope,
 	})
 	return authArea{stage: stage, publicOps: publicOps, registry: signer}, nil
 }

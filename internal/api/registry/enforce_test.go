@@ -32,8 +32,7 @@ import (
 	"github.com/guided-traffic/trove/internal/secrets"
 )
 
-// R-OCI-005 ("Use", the grant as a ceiling below /v2/): named in the test name by WP3 once /v2/ is mounted and the grant
-// check runs. The tests below build the mount the way the registry root does - the dispatcher's own match, every route of the
+// R-OCI-005 ("Use", the grant as a ceiling below /v2/). The tests below build the mount the way the registry root does - the dispatcher's own match, every route of the
 // OCI format and the core routes mounted through the enforcer - and put the real authentication stage with a real signer in
 // front of the router, so a registry token travels in the Authorization header as in production.
 
@@ -87,7 +86,9 @@ type mount struct {
 	enforcer *registry.Enforcer
 	handler  http.Handler
 	mint     func(registrytoken.Grant) string
-	ociNames []string
+	oci      formats.Format
+	// served is the route the stand-in handler saw last, by the matcher the mount was built with.
+	served string
 }
 
 func writeError(w http.ResponseWriter, _ *http.Request, err error) {
@@ -125,10 +126,18 @@ func newMount(t *testing.T, matcher route.Matcher, skip string) *mount {
 	if oci == nil {
 		t.Fatal("no registry-root format is registered")
 	}
-	m := &mount{router: httpserver.NewClientRouter(), enforcer: e}
+	m := &mount{router: httpserver.NewClientRouter(), enforcer: e, oci: oci}
+	// The stand-in of the handlers records which route the match names for the request it serves, as the dispatcher's handler
+	// would serve by that same match.
+	recording := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		m.served = ""
+		if t, ok := matcher.RegistryTarget(r); ok {
+			m.served = t.Route
+		}
+		w.WriteHeader(http.StatusOK)
+	})
 	var routes []formats.Route
 	for _, rt := range oci.Routes() {
-		m.ociNames = append(m.ociNames, rt.Name)
 		if rt.Name != skip {
 			routes = append(routes, rt)
 		}
@@ -139,11 +148,12 @@ func newMount(t *testing.T, matcher route.Matcher, skip string) *mount {
 			t.Fatal(err)
 		}
 	}
-	must(e.Mount(m.router, "/v2/{project}/{key}/{rest...}", ok200, registry.RepositoryRoutes(routes, exampleBase)...))
-	must(e.Mount(m.router, "GET /v2/{$}", ok200, registry.Route{Name: route.NameVersion, Kind: registry.RouteVersion, Method: "GET", Example: "/v2/"}))
-	must(e.Mount(m.router, "GET /v2/_catalog", ok200, registry.Route{Name: route.NameCatalog, Kind: registry.RouteCatalog, Method: "GET", Example: "/v2/_catalog"}))
+	must(e.Mount(m.router, []string{"/v2/{project}/{key}/{rest...}"}, recording, registry.RepositoryRoutes(routes, exampleBase)...))
+	must(e.Mount(m.router, []string{"GET /v2/{$}", "GET /v2"}, recording, registry.Route{Name: route.NameVersion, Kind: registry.RouteVersion, Method: "GET", Example: "/v2/"}))
+	must(e.Mount(m.router, []string{"GET /v2/_catalog"}, recording, registry.Route{Name: route.NameCatalog, Kind: registry.RouteCatalog, Method: "GET", Example: "/v2/_catalog"}))
 	// The token service refuses a registry token as its credential; its stand-in here does the same.
-	must(e.Mount(m.router, "/v2/_token", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	must(e.Mount(m.router, []string{"/v2/_token"}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		recording.ServeHTTP(httptest.NewRecorder(), r)
 		w.Header().Set("WWW-Authenticate", `Basic realm="trove"`)
 		w.WriteHeader(http.StatusUnauthorized)
 	}), registry.Route{Name: route.NameToken, Kind: registry.RouteToken, Method: "GET", Example: "/v2/_token"}))
@@ -209,7 +219,14 @@ func newSigner(t *testing.T) *registrytoken.Signer {
 }
 
 func (m *mount) walk() registrytest.Walk {
-	return registrytest.Walk{Enforcer: m.enforcer, Handler: m.handler, Patterns: m.router.Patterns(), FormatRoutes: m.ociNames, Mint: m.mint}
+	return registrytest.Walk{
+		Enforcer: m.enforcer, Handler: m.handler, Patterns: m.router.Patterns(), Format: m.oci, Repo: local, Mint: m.mint,
+		Served: func(do func()) string {
+			m.served = ""
+			do()
+			return m.served
+		},
+	}
 }
 
 // send sends a request with a registry token of the grant and returns the status, the challenge and the error code.
@@ -241,6 +258,7 @@ func (f *failures) has(part string) bool {
 	return false
 }
 
+// R-OCI-005, unit level: the end-to-end proof is in test/integration/registry.
 func TestTheEnforcementPointThroughTheWholeHandler(t *testing.T) {
 	m := newMount(t, nil, "")
 	t.Run("the walk passes: every route mounted, matched to itself, refused for an empty grant, opened by exactly its action", func(t *testing.T) {
@@ -260,7 +278,7 @@ func TestTheEnforcementPointThroughTheWholeHandler(t *testing.T) {
 			t.Fatal("without an enforcer a /v2/ pattern passed the route table")
 		}
 		f := &failures{TB: t}
-		registrytest.Walk{Enforcer: m.enforcer, Handler: m.handler, Patterns: m.router.Patterns(), FormatRoutes: m.ociNames, Mint: m.mint}.Run(f)
+		m.walk().Run(f)
 		if !f.has(`"GET /v2/sneaky" below /v2/ was not mounted`) {
 			t.Fatalf("the walk missed a pattern mounted around the enforcer: %v", f.msgs)
 		}
@@ -315,6 +333,7 @@ func (l lying) RegistryTarget(r *http.Request) (route.Target, bool) {
 	return l.inner.RegistryTarget(r)
 }
 
+// R-OCI-005, unit level: the end-to-end proof is in test/integration/registry.
 func TestTheWalkCatchesAWrongMount(t *testing.T) {
 	disp, err := dispatch.New(dispatch.Options{Host: stubHost{}, Decider: stubDecider{}, Repos: stubRepos{}})
 	if err != nil {
@@ -337,7 +356,7 @@ func TestTheWalkCatchesAWrongMount(t *testing.T) {
 		}}, "")
 		f := &failures{TB: t}
 		m.walk().Run(f)
-		if !f.has(`matches route "oci.manifest.get.tag" (ok true), not oci.manifest.put`) {
+		if !f.has(`a grant of exactly push is refused`) {
 			t.Fatalf("%v", f.msgs)
 		}
 	})
@@ -354,6 +373,7 @@ func TestTheWalkCatchesAWrongMount(t *testing.T) {
 	})
 }
 
+// R-OCI-005, unit level: the end-to-end proof is in test/integration/registry.
 func TestMountRefusesWhatItCannotEnforce(t *testing.T) {
 	disp, err := dispatch.New(dispatch.Options{Host: stubHost{}, Decider: stubDecider{}, Repos: stubRepos{}})
 	if err != nil {
@@ -379,19 +399,19 @@ func TestMountRefusesWhatItCannotEnforce(t *testing.T) {
 		"version renamed":      {"/v2/{$}", []registry.Route{{Name: "ping", Kind: registry.RouteVersion, Method: "GET", Example: "/v2/"}}},
 	} {
 		e, _ := registry.NewEnforcer(registry.EnforcerOptions{Matcher: disp, WriteError: writeError})
-		if err := e.Mount(httpserver.NewClientRouter(), c.pattern, ok200, c.routes...); err == nil {
+		if err := e.Mount(httpserver.NewClientRouter(), []string{c.pattern}, ok200, c.routes...); err == nil {
 			t.Errorf("%s: mounted", name)
 		}
 	}
 	e, _ := registry.NewEnforcer(registry.EnforcerOptions{Matcher: disp, WriteError: writeError})
 	r := httpserver.NewClientRouter()
-	if err := e.Mount(r, "GET /v2/{$}", ok200, version); err != nil {
+	if err := e.Mount(r, []string{"GET /v2/{$}"}, ok200, version); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.Mount(r, "HEAD /v2/{$}", ok200, registry.Route{Name: route.NameVersion, Kind: registry.RouteVersion, Method: "HEAD", Example: "/v2/"}); err == nil {
+	if err := e.Mount(r, []string{"HEAD /v2/{$}"}, ok200, registry.Route{Name: route.NameVersion, Kind: registry.RouteVersion, Method: "HEAD", Example: "/v2/"}); err == nil {
 		t.Error("a second version check was mounted")
 	}
-	if err := e.Mount(r, "GET /v2/{$}", ok200, repo); err == nil {
+	if err := e.Mount(r, []string{"GET /v2/{$}"}, ok200, repo); err == nil {
 		t.Error("a pattern was mounted twice")
 	}
 	if len(e.Patterns()) != 1 {
@@ -402,6 +422,7 @@ func TestMountRefusesWhatItCannotEnforce(t *testing.T) {
 	}
 }
 
+// R-OCI-006, unit level: the end-to-end proof is in test/integration/registry.
 func TestAlsoChecksTheMountsSourceActionByAction(t *testing.T) {
 	m := newMount(t, nil, "")
 	check := func(g registrytoken.Grant, source route.Target, a registrytoken.Actions) error {

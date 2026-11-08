@@ -128,10 +128,16 @@ func TestE1_14_CustomerEndpoint(t *testing.T) {
 				if want.Status != 404 {
 					t.Fatalf("%d %s", want.Status, want.Body)
 				}
-				for _, p := range []string{"/ui/", "/", "/auth/oidc/corp/start", "/api/v1/system/ping", "/api/v1/endpoints", "/v2/", "/.well-known/x"} {
+				// /v2/ is not in the list: the customers endpoint serves packages, so the registry root answers there (R-OCI-003); an
+				// endpoint without packages answers it as an unknown path (test/integration/registry).
+				for _, p := range []string{"/ui/", "/", "/auth/oidc/corp/start", "/api/v1/system/ping", "/api/v1/endpoints", "/.well-known/x"} {
 					if a := e.onCustomers(r, p, e.acmeSAT); a.Status != 404 || a.Problem(t) != want.Problem(t) {
 						t.Errorf("%s: %d %s, want %s", p, a.Status, a.Body, want.Body)
 					}
+				}
+				// The registry root answers there instead: the version check with the bound token (R-OCI-003).
+				if a := e.onCustomers(r, "/v2/", e.acmeSAT); a.Status != 200 || string(a.Body) != "{}" || a.Header.Get("Docker-Distribution-API-Version") != "registry/2.0" {
+					t.Errorf("/v2/ with the bound SAT: %d %v %s", a.Status, a.Header, a.Body)
 				}
 			})
 

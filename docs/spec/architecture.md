@@ -746,7 +746,7 @@ authorization declarations are looked up by the matched `http.Request.Pattern`
 | `/auth/` | Browser login flow ([identity-and-authentication.md](identity-and-authentication.md)) |
 | `/ui/` | Embedded UI (R-ARCH-004) |
 | `POST /-/npm/v1/oidc/token/exchange/package/{name...}` | npm plug-in: trusted-publishing token exchange at the host root ([formats/npm.md](formats/npm.md) R-NPM-022, P1; Q-NPM-1) |
-| `/v2/` | Reserved for the OCI format ([ha-and-helm.md](ha-and-helm.md) R-HA-041, Q-HA-4). `404` until the OCI format exists: no pattern is registered here yet, so `/v2/` and every path below it fall through to the last row. No other pattern may start with `/v2/` (route-table test below). |
+| `/v2/{rest...}` (every method), registered once, only on an endpoint whose surface holds `packages` | The OCI registry root ([formats/oci.md](formats/oci.md) R-OCI-001, R-OCI-003, Q-OCI-100; [ha-and-helm.md](ha-and-helm.md) R-HA-041, Q-HA-4): the format dispatcher's handler for everything below `/v2/`, mounted through the enforcement point of the registry tokens' grants (`internal/api/registry`, `registry.Register`). It matches the request itself and serves the version check, the catalog, the token service or a repository route of the format, so a path reaches the route its match names and no other. No other pattern may start with `/v2/` (route-table test below). |
 | `/.well-known/` | Reserved for discovery documents at the host root, the first being Terraform's on a host bound to one repository (P1; [endpoints.md](endpoints.md) R-EP-006). `404` until a format registers one; no other pattern may start with `/.well-known/` (route-table test below). |
 | `GET /{$}` | `302` to `/ui/`; only on an endpoint whose surface holds `ui` ([endpoints.md](endpoints.md) R-EP-005) |
 | anything else | `404` problem (R-ARCH-023) |
@@ -783,8 +783,10 @@ authorization declarations are looked up by the matched `http.Request.Pattern`
     registry URL ([formats/npm.md](formats/npm.md) R-NPM-027).
   - **OCI** ([ha-and-helm.md](ha-and-helm.md) Q-HA-4, R-HA-041). `/v2/` and everything below it
     belong to the OCI distribution API, with the project key and the repository key as the first two path
-    segments after `/v2/`. The reservation is MVP; the OCI format itself is P1. Until it exists, nothing is
-    registered under `/v2/`, and those paths answer the `404` problem.
+    segments after `/v2/` (on a host bound to a repository, the image name, [formats/oci.md](formats/oci.md) R-OCI-029).
+    The reservation is MVP; the registry root is the pattern `/v2/{rest...}` of the row above. On an endpoint that serves no
+    `packages` family, or a replica without the format host, nothing is registered under `/v2/`, and those paths answer the `404`
+    problem.
     - A route-table test in `internal/httpserver` fails when any registered client-listener pattern
       other than the OCI format's has a path that is `/v2` or starts with `/v2/`, whatever its
       method or host prefix (`GET /v2/x`, `/v2/{name...}`). The OCI format's patterns are exactly the ones
@@ -799,6 +801,14 @@ authorization declarations are looked up by the matched `http.Request.Pattern`
     - The test reads the patterns from the one wrapper through which `internal/httpserver` registers
       every client-listener route, the generated `/api/v1/` operations and the format plug-ins'
       host-root routes included. A route registered on the ServeMux around that wrapper is a defect.
+    - The test also checks what a router serves besides its patterns (`httpserver.CheckRouter`, Q-ARCH-390). It puts every
+      pattern that is not exempt into a scratch ServeMux and fails when the mux serves `/v2`, `/v2/`, `/v2/_token`,
+      `/v2/_catalog` or `/v2/a/b/c/manifests/x` for any method and with the pattern's own host (ServeMux unescapes the literal
+      segments of a pattern, so `/v%32/{rest...}` serves `/v2/…`, and `example.com/` serves every path of the host). A prefix of
+      `Router.HandleUncleaned` that is `/v2` or lies below it panics at registration, as does an uncleaned prefix registered twice (the first match wins, so a second could shadow the enforcement point's), the literal segments of every pattern are unescaped before the test below `/v2/` (`httpserver.LiteralPatternPath`, so `GET /v%32/web/…` is judged as `/v2/web/…`), an architecture rule (`archtest.CheckRegistryUncleaned`) allows `HandleRegistryUncleaned` in `internal/api/registry` only, and a prefix at or below `/v2/`, or one that
+      encloses it, is admitted only when it is one the enforcement point registered itself (`Router.HandleRegistryUncleaned`,
+      `Enforcer.UncleanedPrefixes`). A fallback handler (`Router.SetFallback`) on a client router fails the test: it would answer
+      `/v2/` for the paths no pattern claims.
   - No host-root route is served on the content host (`server.content_base_url`, R-ARCH-029).
   - The route-table test applies the same rule to `/.well-known/` and runs over the ServeMux of
     every endpoint ([endpoints.md](endpoints.md) R-EP-002, R-EP-006).
@@ -948,9 +958,11 @@ Acceptance criteria:
   with a problem body. From P1, `POST /-/npm/v1/oidc/token/exchange/package/@acme%2Fui` with a
   GitLab ID token as `Bearer` reaches the npm exchange handler instead of being rejected with `401`
   by the authentication step.
-- Until the OCI format exists, `GET /v2/` and `GET /v2/web/docker-all/manifests/latest` answer `404`
-  with a problem body. The route-table test fails on a fixture plug-in that registers
-  `GET /v2/x` as a host-root route, and passes again once the fixture is removed.
+- `GET /v2/` and `GET /v2/web/docker-all/manifests/latest` are served by the registry root below the single pattern
+  `/v2/{rest...}` (a request without a credential gets the registry's `401`, not the router's `404`); on an endpoint without the
+  `packages` family they answer the `404` problem. The route-table test fails on a fixture plug-in that registers
+  `GET /v2/x` as a host-root route, on one that registers `/v%32/{rest...}`, on a `HandleUncleaned("/v2/")` and on a fallback
+  handler, and passes again once the fixture is removed.
 - With a further endpoint configured (R-EP-001), `:8080` and the endpoint's port each answer with
   their own route families, and a request whose host is not one of the further endpoint's hosts
   answers `421` there ([endpoints.md](endpoints.md) R-EP-002, R-EP-003, R-EP-005).
@@ -9548,6 +9560,30 @@ R-ARCH-032 lists every kind of per-replica state, and a package-level map is ref
 sharing. The development agent would revisit it if a registry rates the token requests of a cluster that has many replicas.
 
 **Applied in the spec:** the R-ARCH-032 table and the contract block of R-ARCH-008 (Q-OCI-82). Code: `registerTokens` in [authenticator.go](../../internal/proxy/authenticator.go).
+
+### Q-ARCH-390 · The route table checks what a router serves besides its patterns
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the route-table rule of R-ARCH-005 compared the text of the patterns. The router has three more ways to serve a path: the
+pattern text itself (ServeMux unescapes the literal segments of a pattern and matches a host-only pattern against every path of its
+host), the prefixes of `HandleUncleaned` (consulted before the mux) and the fallback handler. The registry root's enforcement point
+(Q-OCI-56) is only as strong as the route table's promise that nothing else serves `/v2/`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Probe each pattern in a scratch mux; `HandleUncleaned` refuses a prefix at or below `/v2`; a registry-only registration for the enforcement point; the check lists the uncleaned prefixes and the fallback (chosen) | The check asks the mux what it would serve | Closes the escaped spelling, the host-only pattern and both side doors; no new vocabulary for formats | A pattern the mux refuses is reported at its registration |
+| (b) Extend the text rules (decode escapes, parse hosts) | The check reimplements the mux's matching | No scratch mux | A second matcher that has to track ServeMux |
+| (c) Leave the side doors to review | Only the patterns are checked | Nothing to build | A `HandleUncleaned("/v2/", h)` bypasses the enforcement point and the walk |
+
+**Choice:** (a).
+
+**Rationale:** the scratch mux is the same matcher that serves the request, so the check cannot disagree with it. The Bastion's router
+registers a fallback and `HandleUncleaned("/")` for its own space and is not checked by this test. The development agent would revisit
+it if a second prefix needs the same protection (`/.well-known/` has its own exemption list).
+
+**Applied in the spec:** the `/v2/` row and the route-table test of R-ARCH-005 above. Code: `httpserver.CheckRouter`, `CheckRouteTable`
+([routetable.go](../../internal/httpserver/routetable.go)), `Router.HandleRegistryUncleaned`.
 
 ## What this does not cover
 

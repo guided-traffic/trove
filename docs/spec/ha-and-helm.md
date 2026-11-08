@@ -5033,8 +5033,9 @@ is not possible, so the OCI format needs `/v2/` on the client listener. INV-6 re
 the OCI distribution API (Q-HA-4): no other route may use it, from the MVP on, so the OCI format
 can be added later without moving anything.
 
-- **The reservation is MVP; the routing below is P1.** Until the OCI format exists, `/v2/` and
-  everything below it answer `404` through the listener's "anything else" row
+- **The reservation is MVP; the routing below is P1.** The OCI registry root is the one pattern
+  `/v2/{rest...}` ([formats/oci.md](formats/oci.md) R-OCI-003); on an endpoint without the `packages` family,
+  `/v2/` and everything below it answer `404` through the listener's "anything else" row
   ([architecture.md](architecture.md) R-ARCH-005). A route-table test fails when any registered
   client-listener pattern other than the OCI format's starts with `/v2/`. ServeMux's own conflict
   check is not enough, because a more specific pattern such as `/v2/x` does not conflict with

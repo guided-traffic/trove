@@ -10,6 +10,9 @@
 // own [formats.Format.WriteError], including the refusals of the chain's stages
 // (Q-ARCH-214, errors.go).
 //
+// The registry root below /v2/ is served by [Dispatcher.RegistryHandler] (registry.go) through the same checks after its own match
+// (registry_target.go), which the enforcement point of the registry tokens' grants asks as well.
+//
 // It is an edge package: it imports the shared conversions of internal/api/edge, never
 // the management API, and talks to the host through [formats.Host] only.
 package dispatch
@@ -66,8 +69,8 @@ type Dispatcher struct {
 }
 
 // New creates the dispatcher over the formats that have routes below /api/<id>/. The format that declares the registry root has
-// its routes below /v2/<project>/<key>/ ([catalog.Facts.RegistryRoot]); the mount of that prefix is the registry root's work
-// package, and until it exists such a format is served nowhere: its address is not /api/<id>/, so it must not answer there.
+// its routes below /v2/<project>/<key>/ ([catalog.Facts.RegistryRoot]): it is served by [Dispatcher.RegistryHandler], which the
+// registry root mounts below /v2/, and not at /api/<id>/, so it must not answer there.
 func New(o Options) (*Dispatcher, error) {
 	switch {
 	case o.Host == nil:
@@ -196,6 +199,30 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(err)
 		return
 	}
+	d.serveRoute(w, r, f, key, cacheView, routed{route: route, params: params, escaped: rest, cleaned: cleaned})
+}
+
+// routed is a request after the match: the route, its parameters and the path below the repository segment, escaped as
+// received and cleaned.
+type routed struct {
+	route   *formats.Route
+	params  formats.Params
+	escaped string
+	cleaned repository.Cleaned
+	// bound is true when the match read the request on a host bound to the addressed repository (R-OCI-029): the registry
+	// root's match says it, a request below /api/<format>/ never is. It becomes EndpointFacts.Bound, so a format and the host's
+	// link builder read the address the way the match and the enforcement point did, and never from the raw binding.
+	bound bool
+}
+
+// serveRoute is the request path of R-ARCH-011 from the label of the matched route on: the Bastion's marking, the coarse
+// check, the repository's lifecycle and class, the format's handler. The prefix /api/<format>/ and the registry root /v2/
+// both end here, so a request is decided and served by one code path whatever its address. r carries the refusal context.
+func (d *Dispatcher) serveRoute(w http.ResponseWriter, r *http.Request, f formats.Format, key qname.Repo, cacheView bool, m routed) {
+	route, params, rest, cleaned := m.route, m.params, m.escaped, m.cleaned
+	id := string(f.Descriptor().ID)
+	fail := func(err error) { f.WriteError(w, r, err) }
+	ctx := r.Context()
 	if d.o.Label != nil {
 		d.o.Label(ctx, route.Name)
 	}
@@ -242,7 +269,7 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	rq := &formats.Request{
 		Request: r, Repo: &repo, Route: route, Params: params, Path: cleaned, Escaped: rest,
-		Subject: acc.Subject, Index: acc.Index(), Endpoint: d.endpointFacts(r, acc, key),
+		Subject: acc.Subject, Index: acc.Index(), Endpoint: d.endpointFacts(r, acc, key, m.bound),
 		Host: d.o.Host, Log: httpserver.Logger(ctx), CacheView: cacheView,
 	}
 	defer d.o.Host.Begin(rq)()
@@ -331,8 +358,8 @@ func routeMatcher(r formats.Route) func(string) (formats.Params, bool) {
 // endpointFacts derives what a format reads of the request's endpoint from the
 // listener's endpoint and the request's index, never from request data (C-17,
 // Q-EP-20 (b)).
-func (d *Dispatcher) endpointFacts(r *http.Request, acc *edge.Access, key qname.Repo) formats.EndpointFacts {
-	facts := formats.EndpointFacts{Name: acc.Subject.Endpoint, CacheFill: true}
+func (d *Dispatcher) endpointFacts(r *http.Request, acc *edge.Access, key qname.Repo, bound bool) formats.EndpointFacts {
+	facts := formats.EndpointFacts{Name: acc.Subject.Endpoint, CacheFill: true, Bound: bound}
 	if ep := httpserver.EndpointFrom(r.Context()); ep != nil {
 		facts.Rules = ep.ExposureMode() == config.ExposureRules
 		facts.CacheFill = ep.CacheFill()

@@ -1,10 +1,11 @@
 # OCI registry: the token service and registry tokens
 
-Status: built (phase T-16, work package of the token service): the registry token, its keys, its verification in the authentication
-stage, the scope grammar, the grant, the token service at `/v2/_token` and the enforcement point of the grant below `/v2/`. Not built
-yet: the mount of `/v2/` that puts the enforcement point and the token service on a route, the registry root's own routes (the version
-check, the catalog, the challenge's scope per route) and the handlers of the repository routes. Until the registry root mounts `/v2/` no
-request reaches the token service and no registry token is presented; this page describes the mechanisms that will then run.
+Status: built (phase T-16, work packages of the token service and of the registry root): the registry token, its keys, its
+verification in the authentication stage, the scope grammar, the grant, the token service at `/v2/_token`, the enforcement point of the
+grant below `/v2/`, and the mount of `/v2/` that puts them on a route: the two patterns on one handler, the dispatcher's handler, the version check, the
+catalog, the bound host, the challenge's scope per route and the route-table checks. Not built yet: the handlers of the repository
+routes (the OCI format answers 501 until their work packages land) and the catalog's page in the format's data port (the catalog answers
+501 until it exists).
 
 Perspective: what a container client presents to the registry, what the token service gives it in return, what a registry token can do
 and for how long, which key signs it, and what a stolen one is worth. The trove tokens themselves are on
@@ -12,7 +13,9 @@ and for how long, which key signs it, and what a stolen one is worth. The trove 
 on [data-and-secret-flow.md](data-and-secret-flow.md). The requirements are R-OCI-004 to R-OCI-006 and R-OCI-034 in
 [spec/formats/oci.md](../spec/formats/oci.md); the code is [internal/auth/registrytoken](../../internal/auth/registrytoken), the stage
 [internal/auth/stage.go](../../internal/auth/stage.go), the token service [internal/api/registry/token.go](../../internal/api/registry/token.go)
-and the enforcement point [internal/api/registry/enforce.go](../../internal/api/registry/enforce.go).
+the enforcement point [internal/api/registry/enforce.go](../../internal/api/registry/enforce.go), and the mount
+[register.go](../../internal/api/registry/register.go) with the dispatcher's handler
+[registry.go](../../internal/api/dispatch/registry.go).
 
 ## What a client presents where
 
@@ -98,14 +101,24 @@ The grant is a ceiling the decision point does not see, so one place enforces it
 Q-OCI-56), and nothing can be mounted below `/v2/` around it:
 
 - **One way to mount.** `Enforcer.Mount(router, pattern, handler, routes...)` registers the routes a handler serves and puts the handler
-  behind the check in one call. The start-up check of the route table (`httpserver.CheckRouteTable`, R-ARCH-005) takes the enforcer's
-  `Patterns` as its only exemptions below `/v2/` ([app.go](../../internal/app/app.go) `startClient`), so a handler registered on the
-  router directly, or before the enforcer exists, stops the start-up. Its exemptions below `/.well-known/` are a list of their own,
-  so neither list opens the other prefix.
-- **One match.** Which route a request reaches is the dispatcher's own match (`dispatch.Dispatcher.RegistryTarget`,
-  [registry_target.go](../../internal/api/dispatch/registry_target.go)), the same function the dispatcher routes by, so the route whose
-  action is checked is the route that serves the request. The vocabulary both share is the leaf `internal/api/registry/route`, and an
-  architecture rule keeps the dispatcher from depending on the registry root or the authentication stage.
+  behind the check in one call; for a subtree pattern it also registers the prefix for the paths ServeMux would redirect
+  (`Router.HandleRegistryUncleaned`). The start-up check of the route table (`httpserver.CheckRouter`, R-ARCH-005, Q-ARCH-390) takes the
+  enforcer's `Patterns` and `UncleanedPrefixes` as its only exemptions below `/v2/` ([app.go](../../internal/app/app.go) `startClient`),
+  so a handler registered on the router directly, or before the enforcer exists, stops the start-up. It also probes every other
+  pattern in a scratch ServeMux (the escaped spelling `/v%32/{rest...}`, a host-only pattern), refuses a `HandleUncleaned` prefix at
+  or below `/v2` (it panics at registration) or one that encloses it, and refuses a fallback handler. Its exemptions below
+  `/.well-known/` are a list of their own, so neither list opens the other prefix. The literal segments of a pattern are unescaped
+  before the test (`LiteralPatternPath`), the probe adds the pattern's own method, the router refuses an uncleaned prefix registered
+  twice (the first match wins, so a second one could shadow the enforcer's), and an architecture rule (`CheckRegistryUncleaned`)
+  allows `HandleRegistryUncleaned` in `internal/api/registry` only.
+- **One match.** Which route a request reaches is the dispatcher's own match, `dispatch.Dispatcher.registryMatch`
+  ([registry_target.go](../../internal/api/dispatch/registry_target.go)), and the enforcement point and the dispatcher's `/v2/`
+  handler both go through it: `RegistryTarget` is that match reduced to the target the grant is checked on, and the handler serves
+  the route the same function names. The request is matched once: `Enforcer`'s wrapper puts a memo into the request's context before
+  it checks and the handler reuses the answer, so the bound-host lookup runs once and cannot differ between the check and the service.
+  There is no second parse that could read the bound host, the cache suffix or the method
+  differently. The vocabulary both share is the leaf `internal/api/registry/route`, and an architecture rule keeps the dispatcher
+  from depending on the registry root or the authentication stage.
 - **Fail closed.** For a request that carries a registry token it answers 401 with `error="insufficient_scope"`, the scope to ask for
   and the code `oci_insufficient_scope` (so logs and metrics tell it from a rejected credential) when the route has no entry or the match
   cannot read the address; when a repository route's action has no token action (such a route also cannot be mounted); when the grant
@@ -117,12 +130,36 @@ Q-OCI-56), and nothing can be mounted below `/v2/` around it:
 
 The version check passes any registry token on `/v2/` itself. A request with a trove token presented directly, or without a credential,
 is the decision point's alone. `Enforcer.Also` checks a further coordinate, the source of a cross-repository mount, action by action, with
-a cache view as its base repository. `registrytest.Walk` ([walk.go](../../internal/api/registry/registrytest/walk.go)) proves the wiring
-through the endpoint's whole handler with registry tokens minted by the signer in the `Authorization` header: the registered names are
-exactly the format's routes and the three core routes, every `/v2/` pattern of the router was mounted through the enforcer, the
-dispatcher matches each route's example to that route, an empty grant is refused everywhere but at the version check and the token
-service, and per repository route every token action but the route's is refused while exactly the route's passes. Then the decision point
-decides every request again (R-AUTHZ-015).
+a cache view as its base repository. `registrytest.Walk` ([walk.go](../../internal/api/registry/registrytest/walk.go)) proves the wiring through the endpoint's whole handler
+with registry tokens in the `Authorization` header (the integration test mints them at the token service, so the proof includes it):
+the registered names are exactly the format's routes and the three core routes, every `/v2/` pattern of the router was mounted through
+the enforcer, the format's own `Match` of each route's example names that route, the route that served an example request (the
+dispatcher's label of the request) is that route, an empty grant is refused everywhere but at the version check and the token service,
+and per repository route every token action but the route's is refused while exactly the route's passes. With `Bound` set it runs the
+same on a host bound to a repository, so the target is resolved inside the chain, where the host stage places the binding. Then the
+decision point decides every request again (R-AUTHZ-015).
+
+## The mount of /v2/
+
+- **One handler, one match.** Everything below `/v2/` is the patterns `/v2` and `/v2/{rest...}` on one handler ([register.go](../../internal/api/registry/register.go),
+  Q-OCI-100). The handler matches the request itself and serves the route the match names, so the escaped spelling of a core route
+  (`/v2/%5Fcatalog`) reaches no handler its match did not name. A registry token on a path that matches no route is refused by the
+  enforcement point; a direct trove token or no credential meets the handler's 404 `NAME_UNKNOWN`.
+- **The same 404 for what does not exist and what the caller cannot see** (R-AUTHZ-016, R-OCI-001): a path with fewer than three
+  segments, a project or repository that does not exist, one of another format and one the decision point hides answer the same body
+  (`TestNameUnknownIsTheSameForWhatDoesNotExistAndWhatTheCallerCannotSee` compares the bytes). The decision point is asked
+  before the repository is looked up.
+- **The version check** answers 401 with the challenge to a caller that is anonymous and carries no registry token; the stage lets such
+  a caller through where anonymous access is on, so the handler builds the challenge itself ([ping.go](../../internal/api/registry/ping.go)).
+  An invalid credential never arrives there.
+- **A bound host** (R-OCI-029): the binding counts only for a repository of the format, read per request by
+  `Dispatcher.BoundRepository`, which the match, the token service and the catalog all call (Q-EP-80). A binding to a repository of
+  another format or a missing one behaves as no binding, for the token service's scope grammar too, so a token minted on such a host
+  names full names, and the match reads full names. A failed lookup answers the request with the error (503 for `Unavailable`); a registry token gets the same 503 from the enforcement point, not a missing scope. The challenge's scope for a bound host tells an unauthenticated caller whether the host's bound repository exists and is of the format (the scope names the image only then): a minor existence signal of the host's own configuration.
+- **The catalog** ([catalog.go](../../internal/api/registry/catalog.go), Q-OCI-101) lists names after the decision point has said they
+  are readable, one name at a time; a hidden repository and a hidden name appear nowhere, not in the order, not in the `Link`.
+- **The token service's caller** is recorded for the request log (`recordPrincipal` in [wire_registry.go](../../internal/app/wire_registry.go)),
+  and the minimum epoch header is read after the stage accepted the credential (`withMinEpoch`).
 
 ## Revocation and lifetime
 
@@ -160,6 +197,17 @@ pattern ([redact.go](../../internal/observability/redact.go)) cuts the claims of
 the pattern stops at the dot, so the 43 characters of the MAC stay in the line. The MAC is worthless without the claims it signs
 (`TestTheLogScrubberHidesARegistryToken`).
 
+## Tests
+
+| Test | What it pins |
+|---|---|
+| `TestImagesArePushedAndPulledThroughV2`, `TestR_OCI_004_TheLoginSequencesOfDockerAndContainerd`, `TestR_OCI_004_AnonymousPullThroughV2AndPushWithoutLoginFails`, `TestLinksOnABoundHostAreTheShortForm`, `TestR_OCI_005_RemovingTheDeployGrantStopsThePush`, `TestPathScopedGrantsAreDecidedPerImageOnV2` ([flows_test.go](../../test/integration/registry/flows_test.go)) | Push (blobs seeded), pull, tags, the raw-write 409, the login sequences of Docker and containerd, the refusal after the deploy grant is removed, the per-image decision of the handlers with a package-scoped token |
+| `TestR_OCI_005_TheWalkThroughTheRealHandler` ([registry_test.go](../../test/integration/registry/registry_test.go)) | The walk through the real handler of the default endpoint and of a bound-host endpoint, with registry tokens from the token service; the route table holds the one pattern |
+| `TestTheRouteServedIsTheRouteMatched` ([registry_test.go](../../internal/api/dispatch/registry_test.go)) | For every request of a list, the route the handler labels is the route `RegistryTarget` names, and a request the match refuses reaches none |
+| `TestRouteTableProbesWhatThePatternServes`, `TestRouteTableChecksTheWaysAroundThePatterns` ([routecheck_test.go](../../internal/httpserver/routecheck_test.go)) | The probe of the patterns, the uncleaned prefixes, the fallback |
+| `TestABoundHostIsTheDistributionAPIOfItsRepository` (both packages) | The bound host fixes the repository; a binding to another format or a missing repository is no binding; the token service and the challenge name the image without a prefix |
+| `TestR_OCI_017_TheCatalogListsWhatTheCallerMayRead`, `TestTheCatalogPagesOverRepositoriesInByteOrder` | The catalog on the real decision point with a package-scoped token, and the paging over repositories |
+
 ## What this does not cover
 
 The gaps of the spec pages whose mechanism this page describes:
@@ -173,7 +221,7 @@ the token service that issues it ([token.go](../../internal/api/registry/token.g
 
 Subject: every registry token, of every principal and the anonymous one; the repositories and actions of its grant.
 
-Dormant until the registry root mounts `/v2/`; live from then on. A registry token is bound to an endpoint, a principal, a trove token and
+Live since the registry root mounts `/v2/`. A registry token is bound to an endpoint, a principal, a trove token and
 a grant, not to the client that requested it: whoever holds it can present it from any address until it expires or its trove token is
 revoked. Docker and containerd keep it in memory, but a client's debug log, a proxy that records `Authorization` headers or a crash dump
 can carry it.
@@ -182,3 +230,49 @@ What makes it real: a leaked registry token of a principal with `push` or `delet
 default, up to 3600 s) its holder can do what the grant names and the principal may still do, without the trove token. Revoking the trove
 token ends it within the revocation bound; nothing ends one registry token alone, and a lower `oci.token_lifetime` is the lever for a
 shorter window.
+
+### H-648 · The catalog reads names it does not list for a caller whose grants hide most of them
+
+Stage: the catalog handler ([catalog.go](../../internal/api/registry/catalog.go)) over the data port's page of names.
+
+Subject: any caller that may read at least one repository of the format, including a registry token with `registry:catalog:*` and an
+anonymous caller where anonymous access is on and a grant covers a repository.
+
+Live. A page is bounded by `n` (at most 1,000) in what it returns, not in what it reads: the handler fetches 500 names of a repository
+at a time and decides each, so a caller whose grants (a package pattern, a narrow token scope) admit one name in a repository of a
+million reads the million names, in pages of 500, for one answer. The decision per name is in memory; the reads are statements on the
+index of the repository's manifest names.
+
+What makes it real: a repository with very many image names and a caller with a narrow package grant that asks for the catalog in a
+loop. The request is subject to the rate limits of its class (R-ARCH-005 step 7), the statement timeout bounds each read, and nothing
+bounds the number of reads of one request.
+
+### H-649 · A registry token with the catalog grant lists names beyond the other entries of its grant
+
+Stage: the catalog handler and the enforcement point's check of `registry:catalog:*`.
+
+Subject: the holder of a registry token whose grant has `registry:catalog:*` and pull entries for fewer images than the trove token may
+read.
+
+Live. The grant is a ceiling for the routes that name an image; for the catalog the ceiling is the route itself, and the names are
+those the trove token's principal may read (R-OCI-017). A registry token requested for one image and the catalog therefore lists every
+image the principal can read, though it cannot pull them with that token.
+
+What makes it real: a registry token handed to a component that should see one image (a build step) and a principal who reads many.
+The token cannot read the images it lists, only learn their names; a scope on the trove token itself narrows the list.
+
+### H-650 · Token requests count in the bucket of the client address, whatever the principal's rate-limit class
+
+Stage: the chain's rate-limit stage and the token service, which authenticates its credential itself (Q-OCI-51).
+
+Subject: a rate-limit class keyed by principal on an endpoint that serves the registry; every client of the token service behind one
+address.
+
+Live. The chain does not authenticate `/v2/_token`, so the rate-limit stage sees every token request as anonymous and counts it in the
+bucket of the client address. A class that limits by principal limits the other routes of the registry per principal and the token
+requests per address: many clients behind one NAT or one proxy share the bucket, and one principal's loop of token requests uses the
+bucket of everyone behind its address. The throttle of failed credentials (R-AUTH-038) still counts a wrong secret against the address.
+
+What makes it real: a CI farm behind one egress address that pulls with many service accounts, on an endpoint whose class is tuned for
+per-principal limits.
+

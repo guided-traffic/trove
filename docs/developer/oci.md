@@ -16,8 +16,10 @@ The registry tokens and the token service ([Registry tokens and the token servic
   The format declares `catalog.Facts.RegistryRoot`, so its `ProtocolBasePath` is `catalog.RegistryRootBasePath`
   (`/v2/{project}/{key}/`), and at most one format may declare it. The three repository-less routes below `/v2/` (the version check, the
   catalog, the token endpoint) belong to the core, not to the format (Q-OCI-4).
-- **The dispatcher does not mount a registry-root format.** `dispatch.New` skips it, so `/api/oci/…` answers nothing; the mount of
-  `/v2/` is a work package of its own, and until it exists the format's routes are reached by the conformance kit only.
+- **The dispatcher serves a registry-root format at `/v2/`, not at `/api/oci/`.** `dispatch.New` skips it for the `/api/<format>/`
+  prefixes, so `/api/oci/…` answers nothing; `Dispatcher.RegistryHandler` serves it below the one pattern `/v2/{rest...}` that
+  `registry.Register` mounts through the enforcement point (Q-OCI-100). Every read of a `/v2/` path goes through the dispatcher's
+  `registryMatch`.
 - **Keys are OCI name components.** Every repository key and project key, for every format, follows the component grammar of the
   distribution specification (Q-OCI-3): [qname.go](../../internal/qname/qname.go) `ValidKey` and `ValidProjectKey`, the database
   checks of migration 00056, the OpenAPI patterns and the UI patterns. `TestR_REPO_002_TheKeyGrammarsEqualTheirRegularExpressions` compares the
@@ -184,50 +186,62 @@ What has to be in your head:
 | [stage.go](../../internal/auth/stage.go) | `byRegistryToken`, `anonymousRegistry`, `accept` (shared with `byToken`), `AuthenticateTokenRequest`, `Presented` (renders its kind only); the registry challenge below `/v2/` (`Options.RegistryRealm`, `Options.RegistryScope`); no session cookie below `/v2/` |
 | [api/registry/token.go](../../internal/api/registry/token.go) | `Token` (`NewToken`, `TokenOptions`): reads the `GET` and the `POST` form, checks `service`, authenticates through the hook, grants, signs, answers; the 400 body of Q-OCI-52; `auth.registry_token.denied` and the metric |
 | [api/registry/grantor.go](../../internal/api/registry/grantor.go) | `Grantor.Grant` over an `Asker` (`*edge.Access`) and a repository reader: the coarse check per entry and action, then only repositories of the format that are served; `ActionOf` |
-| [api/registry/enforce.go](../../internal/api/registry/enforce.go) | `Enforcer` (`NewEnforcer`, `Mount`, `Routes`, `Patterns`, `Target`, `Check`, `Also`), `Route`, `RouteKind`, `RepositoryRoutes`: the enforcement point of Q-OCI-56 |
+| [api/registry/enforce.go](../../internal/api/registry/enforce.go) | `Enforcer` (`NewEnforcer`, `Mount`, `Routes`, `Patterns`, `UncleanedPrefixes`, `Scope`, `Check`, `Also`), `Route`, `RouteKind`, `RepositoryRoutes`: the enforcement point of Q-OCI-56; `Mount` also registers the uncleaned prefix of a subtree pattern; `Scope` is the stage's `RegistryScope` |
 | [api/registry/route/route.go](../../internal/api/registry/route/route.go) | The leaf the dispatcher and the registry root share: `Target`, `Matcher`, the core route names `NameVersion`, `NameCatalog`, `NameToken`; standard library and `qname` only, so the dispatcher depends on neither the registry root nor the authentication stage (archtest `moduleBans`, transitive) |
-| [api/registry/registrytest/walk.go](../../internal/api/registry/registrytest/walk.go) | `Walk.Run`: the proof through the endpoint's whole handler, with minted registry tokens |
-| [api/dispatch/registry_target.go](../../internal/api/dispatch/registry_target.go) | `Dispatcher.RegistryTarget`: the dispatcher's one match below `/v2/` (core routes, the format's `Match`, the cache view, the bound host) |
+| [api/registry/register.go](../../internal/api/registry/register.go) | `Register`, `RegisterOptions`, `Pattern` (`/v2/{rest...}`), `BarePattern` (`/v2`), `ExampleRepo`: mounts the dispatcher's handler for everything below `/v2/` through the enforcer with every route of the format and the three core routes, and the format's error shape for `/v2/` |
+| [api/registry/ping.go](../../internal/api/registry/ping.go), [challenge.go](../../internal/api/registry/challenge.go) | `NewVersion`: `GET` and `HEAD` of `/v2/` (200 `{}`; 401 with its own challenge for an anonymous caller without a registry token, Q-OCI-20); `Challenge`: that refusal |
+| [api/registry/catalog.go](../../internal/api/registry/catalog.go) | `Catalog` (`NewCatalog`, `CatalogOptions`, `CatalogStore`): the readable repositories in the order of their name prefix, names from the data port's `CatalogNames` in pages of 500, each decided with the listing form of the decision point, `n`/`last`/`Link` (Q-OCI-101) |
+| [api/registry/registrytest/walk.go](../../internal/api/registry/registrytest/walk.go) | `Walk.Run`: the proof through the endpoint's whole handler, with minted registry tokens; its own expectation from the format's `Match`, the served route from the `Served` probe, `Bound` for a bound-host endpoint |
+| [api/dispatch/registry_target.go](../../internal/api/dispatch/registry_target.go) | `registryMatch`: the dispatcher's one match below `/v2/` (core routes, the format's `Match`, the cache view, the bound host, the clean path) returning the target, the format, the route and its parameters; `RegistryTarget` is it reduced to the target; `BoundRepository`: the binding of the host root, for a repository of the format only (Q-EP-80); `RegistryFormat` |
+| [api/dispatch/registry.go](../../internal/api/dispatch/registry.go) | `RegistryHandler(CoreRoutes)`: the one handler of everything below `/v2/`; matches with `registryMatch`, calls the core handler the match names or `serveRoute` (the tail of the `/api/<format>/` path: Bastion marking, coarse check, repository lifecycle and class, handler) |
+| [httpserver/routetable.go](../../internal/httpserver/routetable.go), [router.go](../../internal/httpserver/router.go) | `CheckRouter` (patterns, probe of each pattern in a scratch mux, uncleaned prefixes, fallback), `HandleUncleaned` (panics at or below `/v2`), `HandleRegistryUncleaned`, `UncleanedPrefixes`, `HasFallback` |
+| [app/wire_registry.go](../../internal/app/wire_registry.go) | `registerRegistry` (per endpoint: enforcer, token service, version check, catalog, `Register`; sets `rt.registry`), `registryTokenAuth` (the stage for the token service with `withMinEpoch` and `recordPrincipal`), `registryScope` (the stage's `RegistryScope`), `registryTokenMetrics` (once for all endpoints) |
 | [app.go](../../internal/app/app.go), [wire_endpoints.go](../../internal/app/wire_endpoints.go) | `endpointRuntime.registry`; the route-table check admits exactly its patterns below `/v2/` (the second list of `CheckRouteTable`; the third, the formats' host-root patterns below `/.well-known/`, is empty until a format registers a discovery document) |
 | [events_registry_token.go](../../internal/audit/events_registry_token.go), [dedup.go](../../internal/audit/dedup.go) | The event and its deduplication per client address, endpoint, reason and credential |
 | [m1_convert.go](../../internal/app/m1_convert.go) | `registryGrant`: `auth.Credential.Registry` to `httpserver.Credential.Registry` (`RegistryGrant.Allows`), for anonymous registry tokens too |
 | [wire_identity.go](../../internal/app/wire_identity.go) | `wireAuth` builds the `Signer` from the key ring and `oci.token_lifetime` and gives it and `registryRealm` to the stage; `authArea.registry` holds the signer for the token service; `credentialRules(rt)` are the endpoint's rules for the chain's stage and the token service |
 
-**For the mount of `/v2/` (the registry root's work package).** The token service and the enforcement point are built without a route.
-Mounting them needs:
+**The mount of `/v2/` (built by the registry root's work package).** [wire_registry.go](../../internal/app/wire_registry.go) does, per
+endpoint whose surface holds `packages` and on a replica with a format host:
 
-1. **The enforcement point.** One `registry.NewEnforcer(registry.EnforcerOptions{Matcher: disp, WriteError: ...})` per endpoint, with
-   the format's `WriteError` and the dispatcher itself as the `Matcher`: `dispatch.Dispatcher.RegistryTarget` is the dispatcher's own
-   match, which its `/v2/` handler must route by too (one match, as `APIKeyRoute` shares the dispatcher's match with the stage). Set
-   `rt.registry` to it: the start-up route-table check of `startClient` admits exactly `rt.registry.Patterns()` below `/v2/` and none
-   while it is nil. Mount every handler below `/v2/` with `enforcer.Mount(router, pattern, handler, routes...)` - never with
-   `router.Handle` - in one call per pattern: the repository routes with `registry.RepositoryRoutes(format.Routes(),
-   "/v2/web/docker-local/")` (every route of the format, its action and its first example), the version check as
-   `Route{Name: route.NameVersion, Kind: registry.RouteVersion, Method: "GET", Example: "/v2/"}` (exactly one, `GET` or `HEAD`
-   of `/v2/`), the catalog as `route.NameCatalog`/`RouteCatalog`, the token service as `route.NameToken`/`RouteToken`. The mount's handler
-   calls `enforcer.Also(r, source, registrytoken.Pull)` for the source of a cross-repository mount (each action is checked on its own;
-   a source key with `~cache` is its base repository).
-2. **The walk.** The mount's test calls `registrytest.Walk{Enforcer, Handler, Patterns, FormatRoutes, Mint, Prepare}.Run(t)` with the
-   endpoint's whole handler (the chain, so the stage runs), `router.Patterns()`, the names of every route of the format, and a `Mint`
-   that signs a registry token with the auth area's signer for a live trove token of the test (its ID, type and the SHA-256 of its
-   secret). It fails for a route of the format that is not mounted, a `/v2/` pattern around the enforcer, an example the dispatcher matches
-   to another route, a route an empty grant passes, and a route that a grant of every other action passes or a grant of exactly its
-   action does not.
-3. **The token service.** `registry.NewToken(registry.TokenOptions{...})` per endpoint, with `Signer: part[authArea](a.parts).registry`
-   (the one source of the lifetime, `oci.token_lifetime`), the authz engine as `Decider`, the repository reader, `Format: "oci"`,
-   `ValidName: oci.ValidName`, one `registrytoken.NewMetrics(a.tele.metrics.Registry())` shared by every endpoint, the audit recorder, the
-   format's `WriteError`, and `Authenticate`. `authArea.stage` is the `auth.Authenticator` interface, so `Authenticate` needs the concrete
-   `*auth.Stage` (a type assertion on `a.authStage().stage`, or a narrow interface with `AuthenticateTokenRequest`). Build it like
-   `credentialStage`: `a.credentialRules(rt)`, `principalFromResult`, wrapped in `withMinEpoch`, and `recordPrincipal`, so the request log
-   names the caller the token service authenticated.
-4. **`Bound`** of the token service and the bound host in `RegistryTarget`: the bound host's repository only when it is of the format
-   (R-EP-006: a binding to another repository behaves as no binding); both read `RequestInfo.RootRepository` as it is today.
-5. **`Options.RegistryScope`** of the stage: the scope entry of the request's route from the dispatcher's match, as `APIKeyRoute` is.
-6. **The version check** answers 401 with the challenge when `p.Anonymous && p.Credential.Registry == nil` (R-OCI-003, Q-OCI-20): the
-   stage passes a request without a credential as anonymous where anonymous requests are allowed, so the handler builds that challenge
-   itself (`registrytoken.Challenge(realm, service, "", "")` with `registrytoken.Realm` of the base URL).
-7. **Rate limits.** The chain sees every token request as anonymous, so a rate-limit class keyed by principal counts token requests in
-   the bucket of the client address (Q-OCI-51).
+1. **One enforcer** (`registry.NewEnforcer` with the dispatcher as the `Matcher` and the format's `WriteError`), set as `rt.registry`; the
+   start-up check `httpserver.CheckRouter` admits exactly `rt.registry.Patterns()` and `UncleanedPrefixes()` below `/v2/` and none
+   while it is nil (an endpoint without `packages` has none).
+2. **Two patterns, one handler** (`registry.Register`): `/v2` and `/v2/{rest...}`, every method, mounted with `enforcer.Mount(router, patterns, h, routes...)` together with every route of the
+   format (`RepositoryRoutes(format.Routes(), "/v2/web/docker-local/")`: its name, action and first example) and the three core routes
+   (`route.NameVersion` as `GET /v2/`, `NameCatalog`, `NameToken`). The handler is `Dispatcher.RegistryHandler`: it calls `registryMatch`
+   once and serves what that names. Do not add a further pattern below `/v2/` (the route table refuses it) and do not parse a
+   `/v2/` path anywhere else: a new reader of the path calls `registryMatch` (or `RegistryTarget`), never `Format.Match` on its own.
+3. **The token service** (`registry.NewToken`): `Signer` from the auth area, the decision point, the repository reader, `Format: "oci"`,
+   `ValidName`, the shared metrics (`registryTokenMetrics`), the audit recorder, the format's `WriteError`, `Bound: disp.BoundRepository`
+   and `Authenticate: registryTokenAuth` (`AuthenticateTokenRequest` with `credentialRules(rt)` inside `withMinEpoch`, then
+   `recordPrincipal`, so the request log names the caller). `Bound` is mandatory: the token service has no default that reads the
+   context.
+4. **The stage's scope**: `auth.Options.RegistryScope = a.registryScope`, which asks the enforcer of the request's endpoint
+   (`Enforcer.Scope`): `repository:<name>:<action>` for a repository route, `registry:catalog:*` for the catalog, none for the rest.
+5. **The version check** is the handler's own 401 for an anonymous request without a registry token (the stage lets it through where
+   anonymous access is on); **the catalog** takes the data port's page by a type assertion to `registry.CatalogStore` (`*ocidata.Store` satisfies it, checked at
+   compile time in `wire_registry.go`; start-up fails if the port does not).
+6. **The route table**: the check runs per endpoint in `startClient` after the registry is mounted.
+
+The source of a cross-repository mount is checked by the enforcer, not by the handler: `EnforcerOptions.MountRoute`/`MountSource` make it
+drop `mount` and `from` from a registry token's `oci.upload.start` request that lacks pull on the source, so the handler's own fallback
+(202 and a session) answers (Q-OCI-102). What is left: whichever of the registry root and the upload handlers merges second replaces the
+copy `ociMountSource` in `wire_registry.go` with `ociformat.MountSource` and adds the integration mount test with a positive control
+(pull on the source: 201) and the bound-host case (pull only on `(bound, p/k/img)`, `from=p/k/img`: no link from `p/k`).
+`Format.Match` and the OCI route handlers are WP4's; the catalog's page is `Store.CatalogNames` of the data port. A registry request on
+a bound host reaches the handler with `Endpoint.Bound` set from the match (`routed.bound`), never from the raw binding.
+
+Rate limits: the chain sees every token request as anonymous, so a rate-limit class keyed by principal counts token requests in the
+bucket of the client address (Q-OCI-51, H-650).
+
+**The walk (the end-to-end proof).** `registrytest.Walk{Enforcer, Handler, Patterns, Format, Repo, Mint, Prepare, Served, Bound}.Run(t)`
+with the endpoint's whole handler. The integration test ([registry_test.go](../../test/integration/registry/registry_test.go)) uses
+`App.EndpointHandler`, `EndpointRouter` and `RegistryEnforcer`, mints tokens at the token service with a real trove token, and reads
+which route served a request from the `trove_http_requests_total{handler=…}` series the replica counts (the dispatcher's label).
+`Bound` makes the walk one of a bound-host endpoint. It fails for a route of the format that is not mounted, a `/v2/` pattern around
+the enforcer, an example whose route the format's `Match` names differently or another route serves, a route an empty grant passes, and
+a route that a grant of every other action passes or a grant of exactly its action does not.
 
 **The upload-session contract (WP1, WP3, WP5).** The enforcement point checks a registry token's grant against the image name of the
 path. An upload session is continued (`PATCH`), finished (`PUT`), queried (`GET`) and cancelled (`DELETE`) by its ID under that path, so
@@ -312,12 +326,18 @@ claim and no clean-up, and `errors.Is(err, blob.ErrFault)`; a hook may block to 
 | [registrytoken/*_test.go](../../internal/auth/registrytoken) | `TestRegistryTokenForm` (round trip, every character flipped, expiry, another endpoint, another key, unknown key, malformed values, the scanner pattern), `TestRegistryTokenClaimsRules` (with the configured lifetime and the issue time ahead), `TestR_ARCH_021_RegistryTokenKeyRingRotation`, `TestScopeGrammar` (with the cache view), `TestChallenge` (with no base URL), `TestGrantAllows`, `TestTokenServiceMetrics`, `TestTheLogScrubberHidesARegistryToken` |
 | [stage_registry_test.go](../../internal/auth/stage_registry_test.go) | The stage: a registry token below `/v2/` only, as `Bearer` only and not on an escaped path, refusals without a token lookup, a revoked trove token, a claims mismatch (ID, owner, type), the endpoint's token types, bindings and `principal_disabled` (`TestR_EP_011_TheTroveTokensRulesReachItsRegistryToken`), a forged token counted by the throttle (`TestR_AUTH_038_…`), anonymous registry tokens, no session cookie below `/v2/`, the challenge, `AuthenticateTokenRequest`, `Presented` never printing its secret (`TestR_AUTH_001_…`) |
 | [api/registry/*_test.go](../../internal/api/registry) | The token service (`TestTokenService`, `TestTokenServiceForm`: `GET` and `POST` with containerd's content type, the grant of read and deploy, the lifetime cap, the trove token that expires within the second, 400 in both shapes, the grant beyond 4 KiB, 405, the catalog, the cache view, a bound host; the `service` check; anonymous with and without anonymous requests; the event with its endpoint column and the metric; the request never printing its credential), `TestGrantIsTheCoarseCheck`, `TestActionOf`, the enforcement point through a whole handler with the real stage, signer, dispatcher and OCI routes (`TestTheEnforcementPointThroughTheWholeHandler` with `Walk`, the route table, the cache view, the own error code; `TestTheWalkCatchesAWrongMount`: a route left out, a matcher that resolves a push to the pull route, the version check off `/v2/`; `TestMountRefusesWhatItCannotEnforce`; `TestAlsoChecksTheMountsSourceActionByAction`); `TestTheRegistryMatchIsTheDispatchers` in [dispatch](../../internal/api/dispatch/registry_target_test.go) |
+| [api/dispatch/registry_test.go](../../internal/api/dispatch/registry_test.go) | The registry handler with the real OCI format and fakes: the 404 `NAME_UNKNOWN` shapes (`TestAPathThatNamesNoReadableRepositoryIsNameUnknown`), the unclean path before the decision point, a core route served by its match only (the escaped spellings reach none), `TestTheRouteServedIsTheRouteMatched` (the label equals `RegistryTarget` for a list of requests), the bound host (`TestEndpointFactsBoundIsTheMatchsReading`: `Endpoint.Bound` comes from the match; `TestABoundHostIsTheDistributionAPIOfItsRepository`: a repository of another format or a missing one is no binding, a failed lookup), 405 for a class |
+| [api/registry/root_test.go](../../internal/api/registry/root_test.go) | The version check per credential, the catalog's paging over repositories in byte order with fakes (`n`, `last`, bound, virtual, 501), `Enforcer.Scope`, `Register` |
+| [httpserver/routecheck_test.go](../../internal/httpserver/routecheck_test.go) | `CheckRouteTable`'s probe (`/v%32/{rest...}`, host-only patterns), `HandleUncleaned` and `HandleRegistryUncleaned`, `CheckRouter`'s uncleaned prefixes and fallback |
+| [test/integration/registry](../../test/integration/registry) | Against the stack with a full replica and a bound-host endpoint: the walk through the real handler on both endpoints, the version check, the 404 shapes (hidden and missing give the same bytes), the bound host, the catalog on the real decision point with a package-scoped token and a stand-in for the data port |
 | [registrytoken_test.go](../../test/integration/identity/registrytoken_test.go) | Against the stack, two replicas with Valkey running and stopped (`TestRegistryTokensAgainstTheRealStores`): a token issued on one works on the other, a forged, tampered, expired or foreign token runs no statement (a tracer on the replica's pools counts the statements of the marked request, with a positive control), a revoked PAT stops its registry token within the bound; `TestAnonymousRegistryTokenAgainstTheRealStores` with and without `auth.anonymous` and after the switch is turned off; `TestR_ARCH_021_RegistryTokenKeyRingRotationAcrossReplicas` |
 | [dedup_registry_test.go](../../internal/audit/dedup_registry_test.go) | `auth.registry_token.denied` collapses per address, endpoint, reason and credential |
 
 The skeleton tests of WP0 carry no `R-OCI-…` in their names; the tests of the work packages that build behaviour do ([coverage.md](coverage.md)).
-The tests of the token service name their R-OCI requirement in a comment until the registry root names it in the test name once `/v2/` is mounted
-and the grant check runs; the R-ARCH, R-AUTH and R-EP requirements they prove are in their names. The upload sessions name R-STOR-011 and R-OCI-032.
+The tests of the registry root carry an R-OCI ID in their names only where they prove its acceptance criteria through `/v2/`
+(`TestR_OCI_003_…`, `TestR_OCI_004_…`, `TestR_OCI_005_…`, `TestR_OCI_017_…` in test/integration/registry); R-OCI-001 and R-OCI-029 are in
+comments there, the criteria needing the upload routes, the virtual repository and the remote class. The unit tests of the registry root name
+their requirement in a comment. The tests of the other work packages keep the names they were built with.
 
 ## What is built and what is not
 
@@ -332,12 +352,14 @@ the withheld-digest refusal, the package view and the tag order.
 
 Built: the manifest parser, the pulls and pushes and the package view (WP4a); the tags list, referrers, deletes, the sweep, the replay, reinstate,
 the setup snippets and the guide (WP4b); the registry token and its token service (R-OCI-004 to R-OCI-006, R-OCI-034 for the token service); the port of
-the upload sessions (R-STOR-011), which the upload handlers will call.
+the upload sessions (R-STOR-011).
 
-Not built here (each is a work package of T-16): the mount of `/v2/` and the core routes (R-OCI-001, R-OCI-003, R-OCI-017; the catalog's page per repository
-is `Store.CatalogNames`) with the route of the token service and the grant check before the decision point, the upload routes (R-OCI-011, R-OCI-012), the remote
-and virtual classes and the mirror. The edits that belong to the mount stay open
-with it: the `/v2/` row and the route-table rule of R-ARCH-005 and INV-6 in [spec/README.md](../spec/README.md).
+Built by the registry root's work package: the mount of `/v2/` (one pattern, the dispatcher's handler, the enforcement point, the route
+table's checks), the version check, the catalog over the data port's `CatalogNames`, the bound host and the 404 shapes (R-OCI-001 mount,
+R-OCI-003, R-OCI-017, R-OCI-029).
+
+Not built here (each is a work package of T-16): the upload routes' remaining handlers (R-OCI-011, R-OCI-012) where WP5 has not landed, the remote
+and virtual classes and the mirror, the package screens' remaining parts.
 
 ## The counting stub registry
 

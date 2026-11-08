@@ -19,6 +19,7 @@ import (
 	docsmanual "github.com/guided-traffic/trove/docs/manual"
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/audit"
+	"github.com/guided-traffic/trove/internal/auth/registrytoken"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/backup/tables"
@@ -166,6 +167,8 @@ type App struct {
 	ociSweep    late[*ocidata.Sweeper]
 	shipper     late[journal.Shipper]
 	checkBucket late[platform.Bucket]
+	// registryMetrics are the counters of the registry token service, shared by every endpoint (wire_registry.go).
+	registryMetrics *registrytoken.Metrics
 }
 
 // Run runs one replica of a role until ctx ends, then shuts down in the order of
@@ -558,6 +561,10 @@ func (a *App) startClient() error {
 		if err := a.registerFormats(router); err != nil {
 			return err
 		}
+		// The registry root below /v2/ (wire_registry.go); it sets rt.registry, which the route table check below reads.
+		if err := a.registerRegistry(rt, router); err != nil {
+			return err
+		}
 		router.Handle(webui.MountPath, ui)
 		if a.o.Extra != nil {
 			a.o.Extra(router)
@@ -574,7 +581,7 @@ func (a *App) startClient() error {
 		// Below /v2/ the route table admits only what was mounted through the enforcement point of the registry tokens'
 		// grants (Q-OCI-56): a handler mounted around it cannot start. Below /.well-known/ it admits the discovery documents
 		// formats register for a bound host (R-EP-006); no format registers one yet.
-		if v := httpserver.CheckRouteTable(router.Patterns(), rt.registry.Patterns(), nil); len(v) > 0 {
+		if v := httpserver.CheckRouter(router, rt.registry.Patterns(), rt.registry.UncleanedPrefixes(), nil); len(v) > 0 {
 			return fmt.Errorf("route table of endpoint %s: %s", rt.cfg.Name, v[0])
 		}
 		if v := httpserver.CheckSurface(router.Patterns(), rt.ep); len(v) > 0 {

@@ -87,6 +87,9 @@ first two path segments after `/v2/`, the project key and the repository key, ex
   (R-OCI-003). A path below `/v2/` with fewer than three segments after `/v2/`, or whose project or repository segment does
   not name a readable repository of the format, answers 404 with code `NAME_UNKNOWN`, the same for a project or repository
   that does not exist and one the caller cannot see (R-AUTHZ-016).
+- A path with an empty segment or a `.` or `..` segment below `/v2/` (`a//b`, `a/../b`) answers 400 `NAME_INVALID` before the
+  decision point is asked, in the registry's shape and not with the router's redirect; the repository segments themselves are
+  matched on the escaped path, so a `%` in a project or repository key names no repository (404 `NAME_UNKNOWN`).
 - Raw file access (`/files/<projectKey>/<repoKey>/<path>`, INV-6) reads the storage layout of R-OCI-007; a raw deploy into an
   OCI repository answers 409, as for every format that is not served at `/files/` ([architecture.md](../architecture.md)
   Q-ARCH-223, the NuGet case is Q-NUGET-13), so manifests and tags are only written through the protocol. A raw delete runs the
@@ -143,9 +146,15 @@ Priority: **P1** · Covers: PKG-DOCKER-012, PKG-DOCKER-016, PKG-DOCKER-022
 - Every error below `/v2/` has the OCI body `{"errors":[{"code":…,"message":…,"detail":…}]}` with the codes of the
   distribution specification (R-OCI-008), including the refusals of the middleware chain (`401` of step 6, `429` of step 7,
   `503 server_busy` of step 4; R-ARCH-005, Q-ARCH-214).
-- The routes of this table are registered by the core on every endpoint whose surface holds `packages` (R-EP-005); they are
-  the only patterns under `/v2/` besides the format's repository prefix, and the route-table test of R-ARCH-005 admits exactly
-  these (Q-OCI-4).
+- Everything below `/v2/` is served below two patterns of the router on one handler, `/v2` and `/v2/{rest...}`, which the core
+  registers on every endpoint whose surface holds `packages` (R-EP-005) through the enforcement point of the registry tokens' grants
+  (Q-OCI-56). The
+  dispatcher's handler for it matches the request itself, with the function the enforcement point asks too, and serves the
+  route that match names: the three routes of this table through their handlers, every other path through the repository
+  routes of the format. They are the only patterns under `/v2/`, and the route-table test of R-ARCH-005 admits exactly these two
+  (Q-OCI-4, Q-OCI-100, Q-ARCH-390).
+- The version check and the catalog answer `GET` and `HEAD`; another method is 405 `UNSUPPORTED` with `Allow: GET, HEAD`. `/v2`
+  without the slash is the version check as well (the second pattern), not a redirect.
 - Names starting with `_` cannot be project keys (R-OCI-002), so `_catalog` and `_token` never collide with a repository
   address.
 
@@ -154,6 +163,10 @@ Acceptance criteria:
 - `curl -si <base>/v2/` answers 401 with `WWW-Authenticate: Bearer realm="<base>/v2/_token",service="<host>"` and
   `Docker-Distribution-API-Version: registry/2.0`; `curl -si -u x:$TOKEN <base>/v2/` answers 200 with `{}`.
 - The route-table test fails on a fixture plug-in that registers `GET /v2/x`, and passes with the OCI format registered.
+- `GET /v2/%5Fcatalog` and `GET /v2/_catalog/` answer 404 `NAME_UNKNOWN`; they reach no core route, whatever the router does with
+  an escaped literal.
+- With anonymous access on, `curl -si <base>/v2/` answers the same 401 from the version check's own handler, and the anonymous
+  registry token of the token service opens it (Q-OCI-20).
 
 ### R-OCI-004 · Authentication challenge and token service
 Priority: **P1** · Covers: PKG-DOCKER-011, PKG-DOCKER-012, PKG-DOCKER-015, PKG-DOCKER-052, PKG-OCI-005
@@ -509,6 +522,10 @@ Priority: **P1** · Covers: PKG-DOCKER-019, PKG-OCI-006
   (on a bound host: a name of the bound repository) creates `<name>/_blobs/<digest>` from the source's item and answers 201,
   when the caller may `read` the source name and the source holds the blob; otherwise it opens an upload session and answers
   202, saying nothing about whether the source exists (Q-OCI-12).
+- A request that carries a registry token (R-OCI-005) also needs `pull` on the source name in the token's grant: the enforcement
+  point checks it before the handler runs and, when the grant lacks it, removes `mount` and `from` from the request, so the handler
+  opens a session and answers 202 as it does for a source the caller may not read (Q-OCI-102). A direct trove token is checked by the
+  handler alone.
 - The source may be any repository of the format on the same installation the caller can read, a remote's cache included;
   through a virtual source the member resolution of R-OCI-027 applies, without an upstream request.
 - `mount` without `from` opens a session and answers 202: there is no automatic mount, because it would tell a caller that a
@@ -519,6 +536,8 @@ Acceptance criteria:
 - With `read` on `web/docker-local/base` and `deploy` on `web/team-local/app`, a mount of the base layer answers 201 and
   `GET /v2/web/team-local/app/blobs/<d>` answers 200; without `read` on the source it answers 202.
 - `mount` without `from` for a blob the installation holds answers 202.
+- With a registry token that grants `push` on `web/team-local/app` and no `pull` on `web/docker-local/base`, the same mount answers
+  202 and links nothing (the unit test of the enforcement point proves the strip; the end-to-end case waits for the mount handler).
 
 ### R-OCI-013 · Pushing manifests and tags
 Priority: **P1** · Covers: PKG-DOCKER-020, PKG-DOCKER-021, PKG-DOCKER-026, PKG-DOCKER-027, PKG-OCI-007, PKG-OCI-008
@@ -647,12 +666,23 @@ Priority: **P1** · Covers: PKG-DOCKER-003, PKG-DOCKER-022
 - The data port gives the registry root one page per repository: the image names that hold a manifest row, in byte order after a
   cursor (Q-OCI-75); the root merges the pages of the repositories the caller may read and decides each name.
 - On a bound host the catalog lists the names of the bound repository only, without the prefix.
-- A registry token needs the `registry:catalog:*` grant; a direct trove token needs nothing more than its read grants.
+- A registry token needs the `registry:catalog:*` grant; a direct trove token needs nothing more than its read grants. The grant
+  opens the route and nothing more: the names are those the caller's trove token may read, not only those the token's other
+  scope entries name (H-649).
+- `last` is the full name the previous page ended with (on a bound host the name without the prefix) and need not exist; `n` is
+  a non-negative integer, 0 is an empty list, a value above 1,000 is 1,000, and anything else is 400 `UNSUPPORTED`. The
+  repositories are walked in the order of their name prefix `<projectKey>/<repoKey>/`, so the names of all repositories come in
+  byte order as a whole. The `Link` is `</v2/_catalog?last=<last name>&n=<n>>; rel="next"` and is present only when a further
+  readable name exists. The names of one repository come from the format's data port in pages (`CatalogNames`, the image names
+  that hold a manifest); each name is decided on its own, so a grant scoped to a package pattern lists exactly the names it
+  matches (Q-OCI-101).
 
 Acceptance criteria:
 
 - A caller with `read` on `web/docker-local` only gets `web/docker-local/app` and no name of `web/team-local`; anonymous with no
   anonymous grant gets an empty list.
+- A token whose scope grants `read` on `web/docker-local` for the packages `team/*` lists `web/docker-local/team/app` and no other
+  name; with `n=1` the answer carries a `Link` whose `last` is that name, and following it ends without a `Link`.
 
 ### R-OCI-018 · Deletion
 Priority: **P1** · Covers: PKG-DOCKER-025, PKG-DOCKER-031, PKG-OCI-006, PKG-OCI-012
@@ -943,7 +973,11 @@ Priority: **P1** · Covers: PKG-DOCKER-005, PKG-DOCKER-008
   prefix (R-EP-007). A Docker Engine with `registry-mirrors: ["https://mirror.example.com"]` pulls Docker Hub images through R.
 - The format declares `/v2/` as its bound-host prefix; the core's dispatcher fixes the repository from the binding and runs
   authorization and exposure on it exactly as for an unbound address.
-- A binding to a repository that does not exist or is not of the format behaves as no binding (R-EP-006).
+- A binding to a repository that does not exist or is not of the format behaves as no binding (R-EP-006): the dispatcher reads
+  it per request, through the repository reader, in one function (`BoundRepository`) that the match of `/v2/`, the token
+  service's scope grammar and the catalog all call, so the address of a request, the scopes of its token and the names of its
+  catalog never name different repositories. On such a host the path keeps its unbound meaning (`/v2/<projectKey>/<repoKey>/…`).
+  A repository that is being deleted or is disabled stays bound and answers its own 404 (Q-EP-80).
 
 Acceptance criteria:
 
@@ -951,6 +985,8 @@ Acceptance criteria:
   stub records one manifest request (R-EP-007).
 - On `mirror.example.com`, `GET /v2/web/docker-hub/library/alpine/manifests/3` reads the name `web/docker-hub/library/alpine` in
   R and answers 404 `NAME_UNKNOWN`.
+- With `host_roots: {plain.example.com: web/files}` (a generic repository), `GET /v2/library/alpine/manifests/3` on
+  `plain.example.com` answers 404 `NAME_UNKNOWN` and `GET /v2/web/docker-local/app/manifests/1` there reaches `web/docker-local`.
 
 ### R-OCI-030 · Client setup snippets and guide
 Priority: **P1** · Covers: PKG-DOCKER-011, PKG-DOCKER-013, PKG-DOCKER-015, PKG-DOCKER-046, PKG-OCI-013, PKG-OCI-014, PKG-OCI-019
@@ -2462,3 +2498,74 @@ the OCI hook (a removed manifest takes its tags and referrers) is not decided fo
 hook today, and when one does it acts as the system, not as a caller whose grant could be exceeded. That the delete job decides on the
 subject's groups, scope and CI grants as of the request (a withdrawn membership, a revoked token or a disabled principal does not narrow
 a running job) is a finding of the items-delete job for every format, F-84 in the project plan, not part of this gap.
+
+### Q-OCI-100 · Everything below `/v2/` is one handler and one match, on the patterns `/v2` and `/v2/{rest...}`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OCI-003 said the core registers the three root routes as patterns of their own besides the format's repository prefix.
+`http.ServeMux` unescapes the literal segments of a pattern, so a pattern `/v2/_catalog` also serves the escaped path
+`/v2/%5Fcatalog`, which the dispatcher's match (Q-OCI-56) reads as no core route. The enforcement point decides a registry token's
+grant on that match, so the same request would be served by a handler its match never named.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The patterns `/v2` and `/v2/{rest...}`, every method, on one handler; the dispatcher's handler matches the request with the function the enforcement point asks and serves the route that match names (chosen) | The router sends every path below `/v2/` to one handler | The route that is checked is the route that serves, by construction; no escaped spelling reaches a handler the match did not name; one pattern for the route table to admit | The 405 of a method a pattern does not offer is written by the handlers, not by the router |
+| (b) A pattern per core route and a subtree pattern for the repositories (the wording of R-OCI-003 before this decision) | The router dispatches the core routes | Each handler is mounted where it is named | Two matchers (the router's and the dispatcher's) for the same path; the escaped spelling above |
+| (c) As (b), with the core handlers checking their own path | A handler repeats the match | Smaller change | A third copy of the match |
+
+**Choice:** (a). The version check, the catalog and the token service answer their own methods (405 with `Allow`), the format's
+`Match` answers the rest.
+
+**Rationale:** the grant of a registry token is checked on the match, so serving by the match closes the gap structurally instead of by
+a test that lists escaped spellings. The development agent would revisit it if a route below `/v2/` needs the router's own method
+handling (a `HEAD` rule, a host-specific pattern).
+
+**Applied in the spec:** R-OCI-001, R-OCI-003; [architecture.md](../architecture.md) R-ARCH-005 (Q-ARCH-390). The registry root is
+`registry.Register`; the handler is `dispatch.Dispatcher.RegistryHandler`.
+
+### Q-OCI-101 · The catalog merges the pages of the readable repositories and decides each name
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Walk the readable repositories in the order of their name prefix, take each repository's names from the data port in pages after the cursor, decide every name with the listing form of the decision point, stop one name after the page (chosen) | The cursor is the last full name | A page is one index range per repository; byte order without sorting a merged set; the package-scoped grant of Q-OCI-19 is applied per name; no state between pages | A caller whose grants hide most names makes the catalog read many names for one page (H-648) |
+| (b) Read every name of every readable repository, filter and sort in memory | One pass | Simple | Memory proportional to the installation, on a route anyone with a token may call |
+| (c) A catalog table kept up to date by the writes | Constant-time pages | A new table and a second source of truth for the names | A write path to keep in step (R-OCI-007) |
+
+**Choice:** (a). A name the caller may not read is not counted and not shown. A registry token needs `registry:catalog:*` (the
+enforcement point checks it) and is not narrowed further by its other entries (H-649). A virtual repository is not expanded
+(Q-OCI-19); a repository of another format, a disabled one and one being deleted are not listed. The OCI data port offers the page (`CatalogNames`); the composition root refuses to start without it.
+
+**Rationale:** it keeps the memory per request bounded by the page and the fetch size, and the cost is the filtering. The development
+agent would revisit it if the amplification of H-648 shows up in a measurement.
+
+**Applied in the spec:** R-OCI-017.
+
+### Q-OCI-102 · The pull check on a mount's source is made by the enforcement point and answers as an unreadable source
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OCI-006 says the source of a cross-repository mount needs `pull` on the source name. A registry token's grant is a ceiling
+that only the enforcement point (`registry.Enforcer`) can read; the format may not import it. R-OCI-012 says a source the caller may
+not read answers like a source that does not exist: 202 and a new session, so that a mount tells nothing about other repositories.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The enforcement point drops `mount` and `from` from a registry token's request of `oci.upload.start` when the grant lacks pull on the source; the handler then opens an ordinary session (chosen) | The refusal is the handler's own fallback | Same 202 as an unreadable or missing source, so no existence signal; the format needs no knowledge of grants | The enforcement point knows one route by name and the format's parser of `from` |
+| (b) 401 `insufficient_scope` naming `pull` on the source | The usual refusal of the enforcement point | Uniform; the client is told what is missing | The token service never grants `pull` on a source the caller cannot read, so the retry cannot succeed and the push fails, where 202 lets the client upload the layer itself, as the distribution specification allows |
+| (c) The format asks the grant through a host method | The format decides | One place per format | A format would import the grant, or the host would grow a method for one format |
+
+**Choice:** (a). `EnforcerOptions.MountRoute` and `MountSource` are set by the composition root. `MountSource` is the format's parser of
+`from` (a bound host reads it as an image name of the bound repository, a repository key with the cache suffix names its base
+repository); the code uses the copy `ociMountSource` in [wire_registry.go](../../../internal/app/wire_registry.go) until the work
+package of the uploads merges, and whichever of the two merges second replaces it with `ociformat.MountSource` and deletes the copy. A
+`from` that names no image is left to the handler, which treats it as no mount. The enforcement point strips the two parameters, drops
+the parsed form of the request and logs the stripped mount at debug level with the trove token's ID and the source.
+
+**Rationale:** the answer to a mount must not depend on whether the source exists or what the token holds, and a failed push would
+make the client's layer upload impossible. The development agent would revisit it if a second format has a mount of its own.
+
+**Applied in the spec:** R-OCI-006 (the source needs `pull`, checked as above), R-OCI-012 (the strip, in the bullet on registry tokens and
+the acceptance criterion).

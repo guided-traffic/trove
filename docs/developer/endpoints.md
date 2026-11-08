@@ -102,7 +102,7 @@ The effective TLS block of a further endpoint is `server.tls` with the endpoint'
 | [internal/httpserver/router.go](../../internal/httpserver/router.go) | `NewEndpointRouter(e)`: registers only the routes of the surface; `Dropped()` |
 | [internal/httpserver/clientaddr.go](../../internal/httpserver/clientaddr.go) | `ForEndpoint`: effective host, host check, response base URL, binding (`Resolver.resolveHost`) |
 | [internal/httpserver/chain.go](../../internal/httpserver/chain.go) | `Chain.Endpoint`, `Chain.Events`; the 421 answer in `addrStage` |
-| [internal/httpserver/routetable.go](../../internal/httpserver/routetable.go) | `CheckRouteTable`, now also reserving `/.well-known/` |
+| [internal/httpserver/routetable.go](../../internal/httpserver/routetable.go) | `CheckRouteTable`, now also reserving `/.well-known/`; `CheckRouter` adds the probe of `/v2/`, the uncleaned prefixes and the fallback |
 | [internal/app/wire_endpoints.go](../../internal/app/wire_endpoints.go) | Which endpoints this process serves, per-endpoint TLS, chain and listener, `EndpointAddr` |
 | [internal/app/m1_convert.go](../../internal/app/m1_convert.go) | `endpointRules`: the configured credential rules of an endpoint for the authentication stage (R-EP-010) |
 | [internal/app/wire_exposure.go](../../internal/app/wire_exposure.go) | `exposureCeiling` (the modes for the decision point), `wireEndpoints` (rule service, inert-rule warning, rate-limit classes), `endpointStage` (stage 7 per endpoint), `credentialRefused` (metric and `token.rejected`), `endpointServices`, `Authorizer` |
@@ -387,8 +387,8 @@ missing file). Once the files area is merged, the same assertions run against it
 ./internal/config/...`.
 
 **A format that needs a host root.** Register its literal discovery-document patterns below `/.well-known/` and pass them
-as the host-root list of `CheckRouteTable` (its third parameter; the second is the registry's patterns below `/v2/`, which
-only `registry.Enforcer.Mount` produces, and each list exempts only below its own prefix), read
+as the host-root list of `CheckRouter` (its fourth parameter; the second and third are the registry's patterns and uncleaned
+prefixes below `/v2/`, which only `registry.Enforcer.Mount` produces, and each list exempts only below its own prefix), read
 `httpserver.RootRepository(ctx)`, and fix the repository from it before authorization.
 
 **A content route (files, a format).** Take the subject with `edge.SubjectFrom(r)` and decide with it, so the endpoint's

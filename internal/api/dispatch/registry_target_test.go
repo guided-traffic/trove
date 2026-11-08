@@ -10,10 +10,11 @@ import (
 	_ "github.com/guided-traffic/trove/internal/formats/all" // registers the OCI format, whose routes the match reads
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/qname"
+	"github.com/guided-traffic/trove/internal/repository"
 )
 
 // The dispatcher's match below /v2/ is the one the enforcement point of the registry tokens' grants asks (Q-OCI-56).
-// R-OCI-005 ("Use"): named in the test name by the mount of /v2/ once it runs.
+// R-OCI-005, unit level: the end-to-end proof is in test/integration/registry.
 func TestTheRegistryMatchIsTheDispatchers(t *testing.T) {
 	r := newRig(t)
 	d, err := New(Options{Host: fakeHost{begun: &r.calls}, Decider: r.decider, Repos: r.repos})
@@ -23,6 +24,7 @@ func TestTheRegistryMatchIsTheDispatchers(t *testing.T) {
 	digest := "sha256:" + strings.Repeat("ab", 32)
 	local := qname.Repo{Project: "web", Key: "docker-local"}
 	hub := qname.Repo{Project: "web", Key: "docker-hub"}
+	r.repos.byKey[hub] = repository.Repository{ID: "9", Name: hub, Class: repository.Remote, Format: "oci"}
 	for _, c := range []struct {
 		method, path string
 		bound        qname.Repo

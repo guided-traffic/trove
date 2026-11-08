@@ -201,6 +201,7 @@ checked every earlier decision against them:
 | [ADR-165](#adr-165--the-remote-engine-carries-out-the-formats-token-handshake-and-head-revalidation) | The remote engine carries out the format's token handshake and HEAD revalidation | Decided by the development agent — owner review at the walkthrough |
 | [ADR-168](#adr-168--the-oci-data-port-reads-and-removes-for-the-deletion-the-sweep-and-the-replay) | The OCI data port reads and removes for the deletion, the sweep and the replay | Decided by the development agent — owner review at the walkthrough |
 | [ADR-169](#adr-169--the-catalog-carries-the-package-document-path-and-the-conformance-kit-holds-every-format-to-the-paths-it-authorizes) | The catalog carries the package-document path, and the conformance kit holds every format to the paths it authorizes | Decided by the development agent — owner review at the walkthrough |
+| [ADR-173](#adr-173--the-registry-root-is-one-pattern-one-handler-and-one-match) | The registry root is one pattern, one handler and one match | Decided by the development agent — owner review at the walkthrough |
 | [ADR-125](#adr-125--gnu-make-and-one-pin-file-for-every-tool) | GNU Make and one pin file for every tool | Decided by the development agent — owner review at the walkthrough |
 | [ADR-126](#adr-126--problem-details-with-a-relative-type-a-requestid-member-and-named-error-codes) | Problem details with a relative type, a requestId member and named error codes | Decided by the development agent — owner review at the walkthrough |
 | [ADR-127](#adr-127--transport-encryption-on-every-connection-troves-listeners-included) | Transport encryption on every connection, trove's listeners included (INV-20) | Accepted (owner constraint) |
@@ -6427,6 +6428,41 @@ files has to be decided per file (H-586).
 [spec/architecture.md](spec/architecture.md) R-ARCH-010; [spec/formats/npm.md](spec/formats/npm.md) Q-NPM-80;
 [spec/formats/nuget.md](spec/formats/nuget.md) Q-NUGET-113.
 
+### ADR-173 · The registry root is one pattern, one handler and one match
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** The enforcement point of the registry tokens' grants (ADR-163, Q-OCI-56) decides a request on the dispatcher's match and
+promises that nothing below `/v2/` is served around it. `http.ServeMux` unescapes the literal segments of a pattern, so a pattern
+`/v2/_catalog` also serves `/v2/%5Fcatalog`, which the match reads as no core route; a router also serves paths through its
+`HandleUncleaned` prefixes and its fallback, which the route table did not list; and a host bound to a repository (R-EP-006) changes
+what a path means without any lookup that the token service and the match share.
+
+**Decision.** Everything below `/v2/` is served on one handler below the patterns `/v2` and `/v2/{rest...}`, mounted through the enforcement point
+(`registry.Register`). The dispatcher's handler for it (`Dispatcher.RegistryHandler`) matches the request with `registryMatch`, the
+function `RegistryTarget` also reduces to the enforcement point's target, and serves the route that match names: the version check,
+the catalog and the token service through their handlers, every repository route through the code path of `/api/<format>/`
+(`serveRoute`). The route table checks, besides the text of the patterns, a probe of each pattern in a scratch mux, the uncleaned
+prefixes (`HandleUncleaned` panics at or below `/v2`, the enforcement point registers its own prefix with
+`HandleRegistryUncleaned`) and the fallback (Q-ARCH-390). A binding of a host root counts for a repository of the format only,
+read per request by `Dispatcher.BoundRepository`, which the match, the token service and the catalog all call (Q-EP-80).
+`registrytest.Walk` keeps its own expectation (the format's `Match` of each example) and compares it with the route that served the
+request, through the endpoint's real handler.
+
+**Consequences.** A path reaches the route its match names and no other, by construction. The 405 of a method a route does not offer is
+written by the handler (`Allow` in the registry's shape), not by the router. A bare `/v2` is the version check too (a second pattern on the same handler). The request is matched once: the enforcement point puts
+a memo of the match into the request's context and the handler reuses it, so a binding that changes in between cannot make the grant be
+checked on one repository and the request served on another (W3-2). A failed lookup of the bound repository refuses a registry token and answers the request with the error.
+
+**Alternatives considered.** A pattern per core route besides a subtree for the repositories (two matchers, the escaped spelling); the
+core handlers checking their own path (a third copy of the match); extending the text rules to decode escapes and parse hosts (a
+second matcher that tracks ServeMux).
+
+**Revisit condition:** a route below `/v2/` needs the router's method handling, or a second prefix needs the same protection.
+
+**Spec:** [spec/formats/oci.md](spec/formats/oci.md) R-OCI-001, R-OCI-003, R-OCI-017, R-OCI-029, Q-OCI-100, Q-OCI-101;
+[spec/architecture.md](spec/architecture.md) R-ARCH-005, Q-ARCH-390; [spec/endpoints.md](spec/endpoints.md) R-EP-006, R-EP-007, Q-EP-80.
+
 ## Decisions by the development agent
 
 The development agent selected each of these decisions from the options documented in the
@@ -6630,6 +6666,7 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-ARCH-355](spec/architecture.md#q-arch-355--how-do-the-ci-jobs-get-their-pinned-tools-without-a-live-release-asset-download-per-job) | How do the CI jobs get their pinned tools, without a live release-asset download per job? | (c) a repo-owned install per pinned tool, and a cache of the chart archives of `make dev-up`: a verified archive cached under `.bin`, a bounded retry, the digest of `tools/versions.env` (chosen, applied to Docker Buildx and the chart pulls' retry) | [ADR-167](decisions.md#adr-167--the-pinned-tools-of-a-ci-job-come-from-a-verified-cache-not-from-a-live-release-download) |
 | [Q-ARCH-356](spec/architecture.md#q-arch-356--how-do-ci-jobs-download-github-release-assets-while-the-release-host-is-degraded) | How do CI jobs download GitHub release assets while the release host is degraded? | (d) the release URL on github.com with the job's token in a request that does not follow redirects, the redirect fetched without it, through `tools/github-download.sh` (chosen) | — |
 | [Q-ARCH-350](spec/architecture.md#q-arch-350--the-tokens-of-upstream-handshakes-are-a-registered-per-replica-cache-never-stored) | Where do the tokens of upstream handshakes live? | (a) A registered per-replica cache `proxy_upstream_tokens`; never in PostgreSQL or Valkey | [ADR-165](#adr-165--the-remote-engine-carries-out-the-formats-token-handshake-and-head-revalidation) |
+| [Q-ARCH-390](spec/architecture.md#q-arch-390--the-route-table-checks-what-a-router-serves-besides-its-patterns) | What does the route table check besides the text of the patterns? | (a) A probe of each pattern in a scratch mux, the uncleaned prefixes (`HandleUncleaned` refuses `/v2`, the enforcement point registers its own) and the fallback | [ADR-173](#adr-173--the-registry-root-is-one-pattern-one-handler-and-one-match) |
 | [Q-REPO-1](spec/repositories-and-proxy.md#q-repo-1--who-specifies-the-stored-secret-mechanism-iam-045) | Which page specifies the stored-secret mechanism? | (b) architecture.md's R-ARCH-021, for every stored secret; repository secrets only use it | [ADR-032](#adr-032--stored-secrets-are-sealed-under-a-key-ring-the-operator-supplies) |
 | [Q-REPO-2](spec/repositories-and-proxy.md#q-repo-2--lower-bound-of-the-metadata-period) | Lower bound of the metadata period? | (a) `0` is allowed and means revalidate on every request; no minimum. Revisited 2026-10-28, choice unchanged | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving) |
 | [Q-REPO-3](spec/repositories-and-proxy.md#q-repo-3--generic-default-when-the-upstream-removes-a-cached-document) | Generic default when the upstream removes a cached document? | (b) mark the package gone; its documents and cached artifacts answer 404 until the upstream serves it again | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving), [ADR-069](#adr-069--versions-removed-upstream-are-hidden-by-default) |
@@ -7330,6 +7367,9 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-OCI-80](spec/formats/oci.md#q-oci-80--the-token-cache-is-read-after-the-challenge-and-a-rejected-cached-token-is-replaced-once) | When does the engine read its token cache, and what does it do with a rejected token? | (a) After the challenge named the key; a rejected cached token is dropped and one fresh handshake runs. Superseded by Q-OCI-82 | [ADR-165](#adr-165--the-remote-engine-carries-out-the-formats-token-handshake-and-head-revalidation) |
 | [Q-OCI-81](spec/formats/oci.md#q-oci-81--a-head-that-is-not-a-2xx-is-the-engines-answer-and-a-2xx-that-is-not-unchanged-is-a-get) | What does the engine do with the answer to a revalidation request? | (a) A 2xx goes to the format's `Unchanged`; every other status follows the rules of a conditional `GET` | [ADR-165](#adr-165--the-remote-engine-carries-out-the-formats-token-handshake-and-head-revalidation) |
 | [Q-OCI-82](spec/formats/oci.md#q-oci-82--the-engine-asks-the-format-before-a-request-with-the-last-challenge-so-only-the-first-request-of-a-replica-is-challenged) | When does the engine ask the format for a token? | (b) Before a request, with the last challenge remembered per repository and configuration version; the format takes the scope from the request and only realm and service from the challenge | [ADR-165](#adr-165--the-remote-engine-carries-out-the-formats-token-handshake-and-head-revalidation) |
+| [Q-OCI-100](spec/formats/oci.md#q-oci-100--everything-below-v2-is-one-handler-and-one-match-on-the-patterns-v2-and-v2rest) | How is everything below `/v2/` routed? | (a) The patterns `/v2` and `/v2/{rest...}`; the dispatcher's handler matches the request with the function the enforcement point asks and serves the route that match names | [ADR-173](#adr-173--the-registry-root-is-one-pattern-one-handler-and-one-match) |
+| [Q-OCI-101](spec/formats/oci.md#q-oci-101--the-catalog-merges-the-pages-of-the-readable-repositories-and-decides-each-name) | How does the catalog page over repositories and decide names? | (a) Walk the readable repositories in the order of their name prefix, take names from the data port in pages, decide every name with the listing form of the decision point | — |
+| [Q-OCI-102](spec/formats/oci.md#q-oci-102--the-pull-check-on-a-mounts-source-is-made-by-the-enforcement-point-and-answers-as-an-unreadable-source) | Who checks the registry token's pull on a mount's source, and how does a refusal answer? | (a) The enforcement point drops `mount` and `from`, so the handler opens a session (202), as for an unreadable source | [ADR-173](#adr-173--the-registry-root-is-one-pattern-one-handler-and-one-match) |
 | [Q-GENERIC-1](spec/formats/generic.md#q-generic-1--the-format-is-generic-flat-paths-and-the-descriptor-lists-only-implemented-classes) | Is the format `generic` with flat paths, and which classes does the descriptor list? | (a) the implemented classes only | — |
 | [Q-GENERIC-2](spec/formats/generic.md#q-generic-2--path-limits-of-the-generic-format) | Path limits of the generic format? | (a) 4096 bytes per path, 255 bytes per segment, valid UTF-8 | — |
 | [Q-GENERIC-3](spec/formats/generic.md#q-generic-3--a-path-is-a-file-or-a-folder-not-both) | May a path be a file and a folder at once? | (a) refuse with 409 `path_conflict` | — |
@@ -7826,6 +7866,7 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-EP-77](spec/endpoints.md#q-ep-77--how-replay-identifies-an-exposure-rule-and-what-a-missing-foreign-or-already-narrowed-rule-reports) | How does replay identify an exposure rule, and what does a missing, foreign or already narrowed rule report? | (b) by endpoint and name, acting only on the entry's rule ID and repository ID; a missing rule's deletion and an update already reflected are `already in effect` | [ADR-158](#adr-158--a-journal-object-is-an-envelope-around-the-producers-entry-and-replay-is-a-registry-of-handlers) |
 | [Q-EP-78](spec/endpoints.md#q-ep-78--a-journaled-exposure-state-that-does-not-read-or-that-the-api-would-refuse-suspends-the-rule) | What does replay do with an exposure state it cannot read? | (c) it proves nothing, so the update rule suspends the rule; a state reads only as the rule service writes it and the API would accept it | [ADR-158](#adr-158--a-journal-object-is-an-envelope-around-the-producers-entry-and-replay-is-a-registry-of-handlers) |
 | [Q-EP-79](spec/endpoints.md#q-ep-79--the-exposure-comparator-proves-no-range-or-glob-containment-and-the-two-criteria-that-assumed-it-are-restated) | Does the exposure comparator prove range or glob containment? | (a) no; a moved range or a wider replacement glob is suspended, and the two criteria of R-EP-020 that assumed otherwise are restated | [ADR-158](#adr-158--a-journal-object-is-an-envelope-around-the-producers-entry-and-replay-is-a-registry-of-handlers) |
+| [Q-EP-80](spec/endpoints.md#q-ep-80--a-bindings-repository-is-read-per-request-by-one-function-of-the-dispatcher) | Who decides that a binding to a repository of another format behaves as no binding? | (a) One function of the dispatcher, per request, called by the match, the token service and the catalog | [ADR-173](#adr-173--the-registry-root-is-one-pattern-one-handler-and-one-match) |
 | [Q-VULN-1](spec/vulnerability-scanning.md#q-vuln-1--scanner-and-advisory-data-source) | Which scanner and which advisory data source? | (d) hybrid: the OSV archives of the served ecosystems mirrored into PostgreSQL and matched by trove for package formats now; an image analyser (Trivy in client mode the candidate) with the OCI format | [ADR-132](#adr-132--advisories-mirrored-from-osv-and-matched-inside-trove-by-package-identity) |
 | [Q-VULN-2](spec/vulnerability-scanning.md#q-vuln-2--where-scan-state-lives) | Where does scan state live? | (a) PostgreSQL for the advisory mirror and the findings | [ADR-133](#adr-133--scan-state-lives-in-postgresql-a-re-fetchable-advisory-mirror-and-backed-up-findings) |
 | [Q-VULN-3](spec/vulnerability-scanning.md#q-vuln-3--which-stored-versions-public-advisories-apply-to) | Which stored versions do public advisories apply to? | (b) remotes with a recognised upstream and local names no claim covers; `matchPublicAdvisories` per repository; a match on a claimed name is an alert | [ADR-135](#adr-135--public-advisories-never-apply-to-claimed-internal-names) |

@@ -192,9 +192,26 @@ func TestEndpoints(t *testing.T) {
 	})
 
 	t.Run("R-EP-005 R-EP-010 the customers endpoint answers a request without a credential with the same 401 on every path, the UI, the API, the management API and the reserved /v2/ and /.well-known/ included", func(t *testing.T) {
-		var want string
+		var want, wantDetail, wantOCI string
 		for _, p := range []string{"/does-not-exist", "/ui/", "/", "/auth/oidc/corp/start", "/api/v1/system/ping", "/api/v1/system/info", "/api/v1/system/replicas", "/api/v1/openapi.json", "/files/generic-local/x", "/v2/", "/v2/docker-all/manifests/latest", "/.well-known/terraform.json"} {
 			code, body := endpointGet(t, ca, custAddr, "packages.trove.localhost", "packages.trove.localhost", p)
+			if strings.HasPrefix(p, "/v2/") {
+				// Below /v2/ the refusal of the chain is in the registry's shape (R-OCI-003): the same refusal, in the body
+				// of the distribution specification, the same for every path below it.
+				var oci struct {
+					Errors []struct{ Code, Message string }
+				}
+				_ = json.Unmarshal([]byte(body), &oci)
+				if code != refused || len(oci.Errors) != 1 || oci.Errors[0].Code != "UNAUTHORIZED" || oci.Errors[0].Message != wantDetail {
+					t.Errorf("%s: %d %s, want the registry's shape of %q", p, code, body, wantDetail)
+				}
+				if wantOCI == "" {
+					wantOCI = body
+				} else if body != wantOCI {
+					t.Errorf("%s: body %s differs from the other registry paths' %s", p, body, wantOCI)
+				}
+				continue
+			}
 			var pr map[string]any
 			_ = json.Unmarshal([]byte(body), &pr)
 			delete(pr, "instance")
@@ -205,6 +222,7 @@ func TestEndpoints(t *testing.T) {
 			}
 			if want == "" {
 				want = string(b)
+				wantDetail, _ = pr["detail"].(string)
 			} else if string(b) != want {
 				t.Errorf("%s: body %s differs from the unknown path's %s", p, b, want)
 			}

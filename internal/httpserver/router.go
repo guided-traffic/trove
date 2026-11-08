@@ -229,8 +229,28 @@ func (r *Router) Dropped() []string {
 // tried; a handler whose specification answers them itself (/files/ answers 400
 // invalid_path, R-GENERIC-002) registers here as well as with Handle. The prefix
 // belongs to a route family and is dropped on an endpoint that does not serve
-// it, like a pattern. It is not a pattern of the route table.
+// it, like a pattern. It is not a pattern of the route table, so it refuses what
+// the route table protects: a prefix at or below /v2 panics, as a conflicting
+// pattern does. Below /v2/ only the registry's enforcement point serves the
+// uncleaned paths ([Router.HandleRegistryUncleaned], R-HA-041, Q-OCI-101).
 func (r *Router) HandleUncleaned(prefix string, h http.Handler) {
+	if belowRegistry(prefix) {
+		panic("httpserver: HandleUncleaned(" + prefix + ") lies below " + ReservedOCIPrefix + "/, which only the registry's enforcement point serves")
+	}
+	r.handleUncleaned(prefix, h)
+}
+
+// HandleRegistryUncleaned is [Router.HandleUncleaned] for a prefix at or below /v2: the uncleaned paths of the registry root.
+// Only registry.Enforcer.Mount calls it, with the handler it wrapped; the route table's check lists the prefixes registered
+// here ([Router.UncleanedPrefixes]) and admits exactly the enforcer's. A prefix outside /v2 panics.
+func (r *Router) HandleRegistryUncleaned(prefix string, h http.Handler) {
+	if !belowRegistry(prefix) {
+		panic("httpserver: HandleRegistryUncleaned(" + prefix + ") lies outside " + ReservedOCIPrefix + "/")
+	}
+	r.handleUncleaned(prefix, h)
+}
+
+func (r *Router) handleUncleaned(prefix string, h http.Handler) {
 	if r.allow != nil && !r.allow(prefix) {
 		return
 	}
@@ -240,9 +260,46 @@ func (r *Router) HandleUncleaned(prefix string, h http.Handler) {
 	if p := r.uncleaned.Load(); p != nil {
 		cur = *p
 	}
+	// The first prefix that matches wins (uncleanedHandler), so a second registration of one prefix could shadow the first,
+	// and the route table's check admits a prefix by its string: a duplicate is refused, as a conflicting pattern is.
+	if slices.ContainsFunc(cur, func(rt uncleanedRoute) bool { return rt.prefix == prefix }) {
+		panic("httpserver: the uncleaned prefix " + prefix + " is registered twice")
+	}
 	next := append(slices.Clone(cur), uncleanedRoute{prefix: prefix, h: h})
 	r.uncleaned.Store(&next)
 }
+
+// belowRegistry reports whether an uncleaned prefix is /v2 or lies below /v2/.
+// The prefix is judged as ServeMux compares paths, with its escapes undone ("/v%32/" is "/v2/", R-HA-041).
+func belowRegistry(prefix string) bool {
+	return below(strings.TrimSuffix(literalPrefix(prefix), "/"), ReservedOCIPrefix)
+}
+
+// literalPrefix unescapes an uncleaned prefix; a prefix that does not unescape is judged as written.
+func literalPrefix(prefix string) string {
+	if u, err := url.PathUnescape(prefix); err == nil {
+		return u
+	}
+	return prefix
+}
+
+// UncleanedPrefixes returns the prefixes registered with HandleUncleaned and HandleRegistryUncleaned: the route table's check
+// reads them, because they serve requests that no pattern of [Router.Patterns] claims.
+func (r *Router) UncleanedPrefixes() []string {
+	routes := r.uncleaned.Load()
+	if routes == nil {
+		return nil
+	}
+	out := make([]string, 0, len(*routes))
+	for _, rt := range *routes {
+		out = append(out, rt.prefix)
+	}
+	return out
+}
+
+// HasFallback reports whether a handler of its own answers the requests no route claims ([Router.SetFallback]): such a
+// handler serves paths no pattern names, so the route table's check refuses it on a router that serves /v2/.
+func (r *Router) HasFallback() bool { return r.custom.Load() != nil }
 
 // uncleanedHandler returns the handler registered with HandleUncleaned for the
 // request, nil when the path is clean or no prefix matches.
