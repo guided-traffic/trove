@@ -353,7 +353,9 @@ they call `pre.Require()` themselves, where a resource behind the generated wrap
 6. **Tests.** Fill an `apitest.Resource` and call `apitest.RunContract` with a `Do` that spreads requests over replicas: it
    checks pagination (`limit=1` walk, `invalid_cursor`), ETag with `If-Match`, merge patch and idempotency keys on your
    resource (E1.6). Wrap the handler in `apitest.Validator.Handler` so every answer is validated against the document, and
-   assert `Uncovered(...)` is empty for your operations.
+   assert `Uncovered(...)` is empty for your operations. The read-back right after a create repeats a `GET` that is
+   answered `503 authz_stale` with `Retry-After` for up to 30 s and logs each repeat (Q-API-238); every other call and every
+   other status is the answer at once.
 
 ## Contract tests and response validation
 

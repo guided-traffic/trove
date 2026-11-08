@@ -9,7 +9,17 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
+
+// staleBudget bounds the repeats of a read-back that is answered 503 authz_stale. A replica that has not
+// confirmed its authorization state within its own wait (database.retry.max_elapsed, 30 s by default) is
+// stalled, not slow; a client that waited that long again has seen the answer twice over, so the 503 is then
+// the result. A variable so the helper's own tests can shorten it.
+var staleBudget = 30 * time.Second
+
+// staleMinWait is the least pause before a read repeats after 503 authz_stale, for a Retry-After of 0.
+const staleMinWait = 50 * time.Millisecond
 
 // Resource describes one collection for the contract tests of the API
 // conventions (exit criterion E1.6): cursor pagination, ETag with If-Match,
@@ -74,6 +84,45 @@ func (a answer) json(t testing.TB) map[string]any {
 		t.Fatalf("answer %d is not a JSON object: %v\n%s", a.status, err, a.body)
 	}
 	return m
+}
+
+// readBack is the GET that follows a create, on the URL the create named. The create has answered, so the
+// resource exists; the replica that answers the GET may not yet have confirmed its authorization state for a
+// repository it has just learned of (R-ARCH-011 step 2). When it cannot within its wait it answers 503
+// authz_stale with Retry-After, which tells a client to repeat the request (R-AUTHZ-028), and this method does:
+// after the Retry-After of the answer (50 ms for 0) and until staleBudget is spent, then the 503 is the answer.
+// Every other status and every other 503 is the answer at once. Each repeat is logged, so a suite in which
+// every read-back needed one is visible in the output and not only slow.
+func (s *suite) readBack(t testing.TB, url string) answer {
+	t.Helper()
+	start := time.Now()
+	for attempt := 1; ; attempt++ {
+		a := s.res.call(t, "GET", url, nil)
+		if !a.isStale() {
+			return a
+		}
+		wait := staleMinWait
+		if secs, err := strconv.Atoi(a.header.Get("Retry-After")); err == nil && secs > 0 {
+			wait = time.Duration(secs) * time.Second
+		}
+		if time.Since(start)+wait > staleBudget {
+			return a
+		}
+		t.Logf("read-back of %s answered %d authz_stale on replica %q (attempt %d); repeating after %s, %s waited so far",
+			url, a.status, a.header.Get("X-Trove-Replica"), attempt, wait, time.Since(start).Round(time.Millisecond))
+		time.Sleep(wait)
+	}
+}
+
+// isStale reports whether the answer is the 503 of an authorization state a replica could not confirm.
+func (a answer) isStale() bool {
+	if a.status != http.StatusServiceUnavailable || a.header.Get("Retry-After") == "" {
+		return false
+	}
+	var p struct {
+		Code string `json:"code"`
+	}
+	return json.Unmarshal(a.body, &p) == nil && p.Code == "authz_stale"
 }
 
 func (r Resource) call(t testing.TB, method, url string, body any, hdr ...string) answer {
@@ -149,7 +198,7 @@ func (s *suite) create(t *testing.T) (key, url string, rep map[string]any, etag 
 	}
 	key = s.res.Key(a.json(t))
 	url = s.res.Collection + "/" + key
-	g := s.res.call(t, "GET", url, nil)
+	g := s.readBack(t, url)
 	if g.status != 200 {
 		t.Fatalf("GET %s answered %d\n%s", url, g.status, g.body)
 	}
@@ -187,8 +236,11 @@ func (s *suite) testCreate(t *testing.T) {
 		t.Fatalf("%d\n%s", a.status, a.body)
 	}
 	loc := a.header.Get("Location")
-	if loc == "" || s.res.call(t, "GET", loc, nil).status != 200 {
-		t.Fatalf("Location %q does not name the resource", loc)
+	if loc == "" {
+		t.Fatal("the create answered no Location")
+	}
+	if g := s.readBack(t, loc); g.status != 200 {
+		t.Fatalf("GET %s (the Location of the create) answered %d, replica %q\n%s", loc, g.status, g.header.Get("X-Trove-Replica"), g.body)
 	}
 }
 
@@ -401,7 +453,7 @@ func (s *suite) testIdempotency(t *testing.T) {
 		}
 	}
 	wantProblem(t, res.call(t, "POST", res.Collection, res.Create(s.next()), "Idempotency-Key", key), 422, "idempotency_key_reused")
-	if g := res.call(t, "GET", res.Collection+"/"+res.Key(first.json(t)), nil); g.status != 200 {
+	if g := s.readBack(t, res.Collection+"/"+res.Key(first.json(t))); g.status != 200 {
 		t.Fatalf("the resource of the first request: %d", g.status)
 	}
 }

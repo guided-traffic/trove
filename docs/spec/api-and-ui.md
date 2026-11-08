@@ -272,7 +272,10 @@ Priority: **MVP** · Covers: API-001, ADMAPI-002
 
 Acceptance criteria:
 
-- A create answers 201 whose `Location` header equals the URL on which a subsequent GET succeeds.
+- A create answers 201 whose `Location` header equals the URL on which a subsequent GET succeeds, on any replica. A replica
+  that cannot confirm its authorization state within its wait answers that GET `503` `authz_stale` with `Retry-After`
+  (R-AUTHZ-028), and the GET succeeds once it is repeated as the header says; it never answers `404`
+  ([Q-API-238](#q-api-238--the-read-after-a-create-honours-retry-after-of-an-unconfirmed-authorization-state)).
 - `GET /api/v1/projects/web/repositories/npm-local/items?path=a/../b` answers 400 `invalid_path`.
 - `POST /api/v1/projects/web/repositories` with key `batch-create` answers 422 `reserved_name`.
 
@@ -9173,6 +9176,28 @@ would list them).
 
 **Applied:** `hasScopedVariant`, `clientHasScopedVariant` and the check in `clientSetup` ([setup_snippets.go](../../internal/api/v1/setup_snippets.go), [packages_api.go](../../internal/api/v1/packages_api.go)); the description of `scope` in [openapi.yaml](../../api/openapi.yaml); R-API-030 above;
 [packages.md](../developer/packages.md); `TestR_API_030_OnlyAConfigureTemplateThatReadsTheVariantComesTwice`, `TestR_API_030_TheScopedVariantIsDetectedInEveryTemplateConstruct`, `TestR_API_030_ClientSetupRefusesWhatItCannotAnswer`, and the fixture test `TestR_API_030_RenderedSnippetIdsMatchTheUIFixture`, which renders every format with a scope.
+
+### Q-API-238 · The read after a create honours Retry-After of an unconfirmed authorization state
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: finding F-90. `TestRepositoryResourceContract` (two replicas, every request sent to the other replica than the one before) failed once on a host with a load of 50 to 70 on 20 cores: the `GET` on the `Location` of a create answered not 200. Reproduced on the base commit with `-count=60` and 16 to 24 busy processes added (one failure in 54 runs, the first create of a fresh pair of replicas): the answer was `503 authz_stale`, "The authorization state of this replica could not be confirmed; retry", from the replica that had not created the repository, while its readiness checks for the database and the object store were timing out. It was not a `404` and not a stale body, so the repository itself was visible: R-API-052's rule that a management read comes from PostgreSQL held, and the catch-up of the grant index (R-ARCH-011 step 2, `Engine.CatchUp`) did what it is specified to do when it cannot finish in its budget, which the integration stack sets to `database.retry.max_elapsed` = 2 s (`test/integration/testenv/stack.go`; 30 s by default). Not measured: how long the index build took on that run.
+
+On this sequence two bounded answers exist. `503 authz_stale` with `Retry-After` comes from the catch-up of the grant index when its budget ends. `503 unavailable` with `Retry-After: 1` comes from the repository reader (`SnapshotReader.lookup`) when `repositories.lookup_wait` (5 s) ends before the change-log poll answered. Outside this sequence `authz_stale` means something else: the replica's change-log poll has stalled for longer than the staleness bound of R-AUTHZ-028 and the index cannot be confirmed.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The read-back after a create repeats a `503 authz_stale` with `Retry-After`, for at most 30 s (chosen) | Only the `GET` that `create()` and the Location check send right after a create; only that code with a `Retry-After`; every other call of the contract answers at once | States the promise as the spec makes it, where the spec makes it (a repository the replica has just learned of); a stalled replica anywhere else in the suite still fails at its first `503`; each repeat is logged, so a suite that needs one for every create shows it; no timing bound of the product moves | The read-back waits where it used to fail, so a host slower than the budget shows as a log line and a long test, not a red one |
+| (a2) The same repeat for every `GET` of `RunContract` | Five callers (api, authz, endpoints, identity, transfer) | One place | Outside the catch-up, `authz_stale` is a stalled poll, a real fault that the repeat would absorb in the traversal, ETag and patch tests |
+| (a3) Also repeat `503 unavailable` | Covers the reader's lookup wait | The other form of F-90 would be absorbed too | `unavailable` is the generic code of every outage (database, object store, Valkey); repeating it would hide real ones. It is not repeated, so F-90 can recur in this form: a read-back that finds the reader's 5 s wait spent fails with that `503` |
+| (b) Raise `database.retry.max_elapsed` of the stack | The replica waits longer for the index | Smallest edit | Moves a bound to fit the host and hides the cause (a build that needs more than 2 s) behind a larger number; the 2 s is what makes the test see a slow build at all |
+| (c) Make the create wait until every replica's grant index holds the repository | The `201` answers later | Removes the `503` for this sequence | The creating replica cannot know the other replicas; a poll of all of them is a coordination mechanism the spec does not have (R-ARCH-018 is pull-based), and it would still not cover a build that fails on the other replica |
+| (d) Run the test again until it passes | — | None | Hides a real defect |
+
+**Choice:** (a). `suite.readBack` in `internal/api/v1/apitest/contract.go` sends the read-back again after the `Retry-After` of a `503` with the problem code `authz_stale` (50 ms when it is 0), until 30 s have passed, and logs every repeat with the status, `X-Trove-Replica`, the attempt number and the time waited; the `503` is then the answer. The bound is a client's: a replica that has not confirmed its state within its own wait (30 s by default) is stalled, so a client that has waited as long again has seen the answer twice. `call` does not repeat anything. The failure message of the Location check carries the status, the replica and the body. `TestReadBackIsRepeatedAfterRetryAfterOfAnUnconfirmedState`, `TestReadBackRepeatsOnlyAStaleAnswerWithRetryAfter`, `TestReadBackEndsWithTheAnswerOfAReplicaThatNeverConfirms` and `TestOtherCallsOfTheContractAreNotRepeated` pin the helper. The promise that a fresh repository is usable on the other replica at once, with no repeat, stays pinned by `test/integration/transfer/repository_api_test.go`.
+
+**Rationale:** the product already keeps its promise (no `404` for a new repository, a body read from PostgreSQL); what a loaded host changes is whether the grant index of the answering replica is confirmed within 2 s, and the specified answer to "not yet" is a retryable `503`. The repeat is limited to the one place where the spec says a replica may legitimately not be ready. F-90 can still recur as `503 unavailable` (option a3). The development agent revisits this when the replica's catch-up is found to need more than the stack's 2 s on an idle host (then the build, not the test, is the finding), when the repeat is logged for most creates of a run, or when a client of the product other than the contract helper meets the `503` on this sequence in practice.
+**Applied:** R-API-004 (acceptance criterion); `internal/api/v1/apitest/contract.go` (`readBack`, `staleBudget`), `internal/api/v1/apitest/call_test.go`; [http-api.md](../developer/http-api.md) (the tests step of the extension checklist).
 
 ## What this does not cover
 

@@ -293,10 +293,6 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   clients, the conformance suite (R-OCI-035), the e2e runs or the restore drill; the coverage report derives "implemented"
   from those names. Done when each OCI test name carries only an ID it proves, with a requirement-specific reason for every
   ID moved into a comment.
-- **F-90 · A GET on the `Location` of a fresh create did not answer 200** (seen once). The transfer area's
-  `TestRepositoryResourceContract/…R-API-004…Location…` (`contract.go:191`) failed on a loaded host and passed on one rerun;
-  the GET's answer was not logged. Suspected, not verified: the GET landed on a replica that had not yet seen the new
-  resource. Done when the cause is found and fixed, product or test, with a test that would have failed.
 
 Found on 2026-11-03 while closing phase 5:
 
