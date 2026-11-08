@@ -9,13 +9,13 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 491 of 765 spec requirements are implemented: a passing test names them and no
+**Status.** 492 of 765 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 773 specified (350 of them implemented), 1,466 open.
+**Totals.** 2,239 catalog features on 60 pages: 773 specified (352 of them implemented), 1,466 open.
 765 spec requirements: 603 cover catalog features, 162 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
@@ -29,14 +29,14 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Repositories](#repositories-repo) | `REPO` | 68 | 24 of 24 | 41 | 27 | 29 |
 | [Remote repositories](#remote-repositories-rmt) | `RMT` | 49 | 18 of 18 | 31 | 18 | 25 |
 | [Replication, federation and multi-site topology](#replication-federation-and-multi-site-topology-repl) | `REPL` | 72 | – | 0 | 72 | 0 |
-| [Artifact management](#artifact-management-art) | `ART` | 53 | 10 of 10 | 32 | 21 | 12 |
+| [Artifact management](#artifact-management-art) | `ART` | 53 | 10 of 10 | 32 | 21 | 13 |
 | [Search and query language](#search-and-query-language-srch) | `SRCH` | 64 | – | 3 | 61 | 0 |
 | [Builds and CI integration](#builds-and-ci-integration-bld) | `BLD` | 49 | – | 0 | 49 | 0 |
 | [Identity and access](#identity-and-access-iam) | `IAM` | 69 | 24 of 24 | 35 | 34 | 30 |
 | [Authentication providers and human login](#authentication-providers-and-human-login-authn) | `AUTHN` | 44 | 13 of 13 | 18 | 26 | 10 |
 | [Access tokens](#access-tokens-tok) | `TOK` | 48 | 24 of 24 | 27 | 21 | 25 |
 | [OIDC federation for CI systems](#oidc-federation-for-ci-systems-cioidc) | `CIOIDC` | 40 | 20 of 20 | 31 | 9 | 14 |
-| [Storage and blob providers](#storage-and-blob-providers-stor) | `STOR` | 41 | 12 of 12 | 21 | 20 | 12 |
+| [Storage and blob providers](#storage-and-blob-providers-stor) | `STOR` | 41 | 12 of 12 | 21 | 20 | 13 |
 | [Retention, cleanup and archiving](#retention-cleanup-and-archiving-ret) | `RET` | 42 | – | 26 | 16 | 0 |
 | [High availability and deployment](#high-availability-and-deployment-ha) | `HA` | 79 | 49 of 49 | 61 | 18 | 35 |
 | [Operations, monitoring and configuration](#operations-monitoring-and-configuration-ops) | `OPS` | 100 | 17 of 17 | 43 | 57 | 26 |
@@ -319,14 +319,14 @@ Catalog page: [replication-and-federation.md](../features/replication-and-federa
 Catalog page: [artifacts.md](../features/artifacts.md) · specified by priority: MVP 10 of 10 · P1 20 of 20 · P2 2 of 22 · Out of scope 0 of 1
 
 <details>
-<summary>53 features: 32 specified, 21 open, 12 implemented</summary>
+<summary>53 features: 32 specified, 21 open, 13 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
 | ART-001 | Items, artifacts and packages | MVP | implemented | [R-STOR-003](../spec/storage.md) (implemented), [R-STOR-016](../spec/storage.md) (implemented) |
 | ART-002 | Deploy a single artifact or create a folder | MVP | implemented | [R-ARCH-014](../spec/architecture.md) (implemented), [R-STOR-007](../spec/storage.md) (implemented) |
 | ART-003 | Properties attached at deploy time (matrix parameters) | P1 | specified | [R-STOR-009](../spec/storage.md) |
-| ART-004 | Deploy by checksum | P1 | specified | [R-STOR-008](../spec/storage.md) |
+| ART-004 | Deploy by checksum | P1 | implemented | [R-STOR-008](../spec/storage.md) (implemented) |
 | ART-005 | Deploy an archive and extract it on arrival | P2 | open | – |
 | ART-006 | Deploy dialog in the UI | P1 | specified | [R-NPM-036](../spec/formats/npm.md) |
 | ART-007 | Multi-part upload of large files through object storage | P2 | open | – |
@@ -770,13 +770,13 @@ Catalog page: [oidc-ci-integration.md](../features/oidc-ci-integration.md) · sp
 Catalog page: [storage-and-blobs.md](../features/storage-and-blobs.md) · specified by priority: MVP 12 of 12 · P1 7 of 7 · P2 2 of 20 · Later 0 of 1 · Out of scope 0 of 1
 
 <details>
-<summary>41 features: 21 specified, 20 open, 12 implemented</summary>
+<summary>41 features: 21 specified, 20 open, 13 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
 | STOR-001 | Content-addressed binary storage with deduplication | MVP | implemented | [R-ARCH-009](../spec/architecture.md) (implemented), [R-ARCH-011](../spec/architecture.md) (implemented), [R-STOR-001](../spec/storage.md) (implemented), [R-STOR-003](../spec/storage.md) (implemented), [R-STOR-004](../spec/storage.md) (implemented), [R-STOR-005](../spec/storage.md) (implemented) |
 | STOR-002 | Reference-only copy, move and delete | MVP | specified | [R-ARCH-009](../spec/architecture.md) (implemented), [R-STOR-003](../spec/storage.md) (implemented), [R-STOR-005](../spec/storage.md) (implemented), [R-STOR-018](../spec/storage.md) (implemented), [R-STOR-019](../spec/storage.md) |
-| STOR-003 | Checksum-first transfers | P1 | specified | [R-STOR-008](../spec/storage.md) |
+| STOR-003 | Checksum-first transfers | P1 | implemented | [R-STOR-008](../spec/storage.md) (implemented) |
 | STOR-004 | SHA-256 kept as a first-class checksum | MVP | implemented | [R-ARCH-014](../spec/architecture.md) (implemented), [R-STOR-002](../spec/storage.md) (implemented) |
 | STOR-005 | SHA-256 backfill job | P2 | open | – |
 | STOR-006 | Binary store configuration | MVP | implemented | [R-STOR-030](../spec/storage.md) (implemented), [R-STOR-035](../spec/storage.md) (implemented) |
