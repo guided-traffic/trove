@@ -485,7 +485,7 @@ read from the ServiceMonitor's namespace; with `config.metrics.auth: static` the
 
 Requirements: R-HA-060 and R-BAK-012; the commands are `trove backup create` and `trove backup restore` ([backup.md](backup.md)). They are
 commands of the binary and not roles (Q-ARCH-342): the pods serve nothing, open no port, have no probe, carry no `trove/serve` label (no
-Service and no Valkey policy selects them) and mount no volume but `/tmp`.
+Service and no Valkey policy selects them) and mount no volume but `/tmp` and the extra volumes of their own values (`backup.extraVolumes`, `restore.extraVolumes`, `postRestore.extraVolumes`).
 
 | Object | Rendered | Notes |
 |---|---|---|

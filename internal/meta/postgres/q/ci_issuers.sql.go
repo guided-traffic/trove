@@ -7,6 +7,7 @@ package q
 
 import (
 	"context"
+	"encoding/json"
 )
 
 const ciIssuerByID = `-- name: CiIssuerByID :many
@@ -41,7 +42,7 @@ type CiIssuerByIDRow struct {
 	MaxTtlSecs               int64
 	CaBundleRef              string
 	UseOutboundProxy         bool
-	JobTokenFallback         []byte
+	JobTokenFallback         json.RawMessage
 	Enabled                  bool
 	Description              string
 	Source                   string
@@ -133,7 +134,7 @@ type CiIssuerByIDShareRow struct {
 	MaxTtlSecs               int64
 	CaBundleRef              string
 	UseOutboundProxy         bool
-	JobTokenFallback         []byte
+	JobTokenFallback         json.RawMessage
 	Enabled                  bool
 	Description              string
 	Source                   string
@@ -227,7 +228,7 @@ type CiIssuerByIssuerRow struct {
 	MaxTtlSecs               int64
 	CaBundleRef              string
 	UseOutboundProxy         bool
-	JobTokenFallback         []byte
+	JobTokenFallback         json.RawMessage
 	Enabled                  bool
 	Description              string
 	Source                   string
@@ -321,7 +322,7 @@ type CiIssuerByNameRow struct {
 	MaxTtlSecs               int64
 	CaBundleRef              string
 	UseOutboundProxy         bool
-	JobTokenFallback         []byte
+	JobTokenFallback         json.RawMessage
 	Enabled                  bool
 	Description              string
 	Source                   string
@@ -587,7 +588,7 @@ type CiIssuerListRow struct {
 	MaxTtlSecs               int64
 	CaBundleRef              string
 	UseOutboundProxy         bool
-	JobTokenFallback         []byte
+	JobTokenFallback         json.RawMessage
 	Enabled                  bool
 	Description              string
 	Source                   string
@@ -871,7 +872,7 @@ SELECT jwks, jwks_uri, (extract(epoch FROM fetched_at) * 1000000)::bigint AS fet
 `
 
 type CiKeysGetRow struct {
-	Jwks          []byte
+	Jwks          json.RawMessage
 	JwksUri       string
 	FetchedUs     int64
 	Etag          string

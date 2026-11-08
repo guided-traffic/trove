@@ -15,13 +15,18 @@
 #   restore-ns.sh down                   uninstall the release and delete the namespace
 #
 # Environment: TROVE_E2E_RESTORE_NAMESPACE (default trove-restore), TROVE_IMAGE (default guidedtraffic/trove:dev),
-# TROVE_RESTORE_HELM_EXTRA (extra helm arguments for install and serve; a word-split string).
+# TROVE_RESTORE_HELM_EXTRA (extra helm arguments for install and serve; a word-split string),
+# TROVE_RESTORE_PROFILE (unset or empty: the base values of values-restore.yaml; `vuln`: also values-restore-vuln.yaml, the scanning
+# reading the test advisory source and two packages replicas, Q-VULN-127 and docs/developer/e2e.md#the-vulnerability-tests).
+# Install and serve set server.base_url to the edge port of the source (the cluster's published port 30443, as release-values.sh reads it),
+# so that a restored token and the restored CI issuers keep the source's address (R-BAK-021, Q-BAK-60).
 set -euo pipefail
 # shellcheck source=deploy/dev/lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 RNS="${TROVE_E2E_RESTORE_NAMESPACE:-trove-restore}"
 IMAGE="${TROVE_IMAGE:-guidedtraffic/trove:dev}"
+case "${TROVE_RESTORE_PROFILE:-}" in "" | vuln) ;; *) die "TROVE_RESTORE_PROFILE must be empty or vuln, not '${TROVE_RESTORE_PROFILE}'" ;; esac
 rn() { kubectl --context "$CTX" -n "$RNS" "$@"; }
 
 # render_r <manifest> substitutes the namespaces and the pinned images.
@@ -53,9 +58,29 @@ values_file() {
   printf '%s\n' "$f"
 }
 
+# vuln_values_file renders values-restore-vuln.yaml for this namespace and prints its path.
+vuln_values_file() {
+  local f="$STATE_DIR/values-restore-vuln-rendered.yaml"
+  mkdir -p "$STATE_DIR"
+  render_r "$DEV_DIR/values-restore-vuln.yaml" > "$f"
+  printf '%s\n' "$f"
+}
+
+# edge_port prints the host port of the source installation's edge, as release-values.sh reads it.
+edge_port() {
+  local p
+  p="$(docker port "${CLUSTER}-control-plane" 30443/tcp 2>/dev/null | head -1 | sed 's/.*://' || true)"
+  printf '%s\n' "${p:-$DEV_HTTP_PORT}"
+}
+
 helm_args() {
   local image_id; image_id="$(docker image inspect -f '{{.Id}}' "$IMAGE")"
-  printf '%s\n' -f "$(values_file)" --set-json "networkPolicy.ingress.probeCIDRs=$(probe_cidrs)" \
+  printf '%s\n' -f "$(values_file)"
+  case "${TROVE_RESTORE_PROFILE:-}" in
+    "") ;;
+    vuln) printf '%s\n' -f "$(vuln_values_file)" ;;
+  esac
+  printf '%s\n' --set-string "config.server.base_url=https://localhost:$(edge_port)" --set-json "networkPolicy.ingress.probeCIDRs=$(probe_cidrs)" \
     --set-string "api.podAnnotations.trove-dev/image-id=$image_id" --set-string "packages.podAnnotations.trove-dev/image-id=$image_id" \
     --set-string "worker.podAnnotations.trove-dev/image-id=$image_id" \
     --set-string "backup.podAnnotations.trove-dev/image-id=$image_id" --set-string "restore.podAnnotations.trove-dev/image-id=$image_id"

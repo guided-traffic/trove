@@ -7,6 +7,7 @@ package q
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -73,7 +74,7 @@ type MirrorStatusReadRow struct {
 	PassItemsStored      pgtype.Int8
 	PassBytesStored      pgtype.Int8
 	LastFullPassAt       pgtype.Timestamptz
-	LastPass             []byte
+	LastPass             json.RawMessage
 	ConsecutiveFailures  pgtype.Int4
 	LastErrorAt          pgtype.Timestamptz
 	LastErrorCode        pgtype.Text

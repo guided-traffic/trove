@@ -2711,7 +2711,10 @@ restore from a scheduled backup an MVP path. For this page:
   1. `resourceType` and `project` are equal.
   2. The repository selectors of `after` are a subset of those of `current`, compared as sets:
      key selectors by repository ID, pattern and class selectors with their format filter as
-     stored. Glob containment is not evaluated, so replacing `npm-*` by `npm-team-*` does not count
+     stored. Only what a kind stores is compared: the key and the class that the journal carries
+     next to a key selector are display (the class is the repository's), so a policy update that the
+     restored database already holds is `already in effect` and is not suspended. Glob containment
+     is not evaluated, so replacing `npm-*` by `npm-team-*` does not count
      as narrowing.
   3. In each pattern dimension (`packages`, `paths`, and `builds` for build policies), the exclude
      list of `after` contains every exclude pattern of `current`; and when the include list of

@@ -4,6 +4,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -22,6 +23,7 @@ import (
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
+	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 	"github.com/guided-traffic/trove/test/integration/testenv"
 )
 
@@ -747,6 +749,29 @@ func TestTransactionPooler(t *testing.T) {
 			return tx.QueryRow(context.Background(), "SHOW statement_timeout").Scan(&timeout)
 		}); err != nil || timeout != "30s" {
 			t.Fatalf("statement_timeout = %q, err = %v", timeout, err)
+		}
+	})
+
+	t.Run("R-ARCH-019 R-HA-058 a jsonb parameter of a generated query reaches the server as JSON text in exec mode", func(t *testing.T) {
+		// In exec mode pgx sends no parameter types and encodes a []byte as bytea ("\\x7b..."), which a ::jsonb cast refuses:
+		// the generated parameters of jsonb are json.RawMessage (sqlc.yaml).
+		db := open(t, pooled, "pod-jsonb", meta.RoleWorker)
+		docs := json.RawMessage(`[{"id":"T-1","modified":"2026-01-01T00:00:00Z","kind":"vulnerability","aliases":["CVE-1"],` +
+			`"summary":"s","details":"d","severity":"none","severity_source":"none","refs":[{"type":"WEB","url":"https://x"}],` +
+			`"cwe_ids":["CWE-79"],"record_sha256":"00ff"}]`)
+		if err := db.InPgxTx(ctxT(t, 10*time.Second), func(tx pgx.Tx) error {
+			qs := q.New(tx)
+			if err := qs.VulnAdvisoryUpsert(context.Background(), q.VulnAdvisoryUpsertParams{Ecosystem: "npm", Docs: docs}); err != nil {
+				return err
+			}
+			return qs.VulnStateFailure(context.Background(), q.VulnStateFailureParams{
+				LastError: json.RawMessage(`{"code":"x"}`), Source: "osv", Ecosystem: "npm",
+			})
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if n := scalar[int](t, admin, "SELECT count(*)::int FROM trove.vuln_advisory WHERE id = 'T-1' AND \"references\" = '[{\"type\":\"WEB\",\"url\":\"https://x\"}]'::jsonb"); n != 1 {
+			t.Fatalf("%d advisories with the references of the document, want 1", n)
 		}
 	})
 

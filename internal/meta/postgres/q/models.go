@@ -5,6 +5,7 @@
 package q
 
 import (
+	"encoding/json"
 	"net/netip"
 	"time"
 
@@ -18,8 +19,8 @@ type ApiIdempotencyKey struct {
 	Route           string
 	RequestSha256   []byte
 	ResponseStatus  int16
-	ResponseHeaders []byte
-	ResponseBody    []byte
+	ResponseHeaders json.RawMessage
+	ResponseBody    json.RawMessage
 	SecretIssuedID  pgtype.Text
 	CreatedAt       pgtype.Timestamptz
 	ExpiresAt       pgtype.Timestamptz
@@ -32,7 +33,7 @@ type ApiToken struct {
 	Hint              string
 	PrincipalID       pgtype.UUID
 	Description       string
-	Scope             []byte
+	Scope             json.RawMessage
 	SelfRotatable     bool
 	CreatedAt         pgtype.Timestamptz
 	CreatedBy         pgtype.UUID
@@ -47,7 +48,7 @@ type ApiToken struct {
 	LastUsedAddr      *netip.Addr
 	RejectionLoggedAt pgtype.Timestamptz
 	ExpiryNotifiedAt  pgtype.Timestamptz
-	CiContext         []byte
+	CiContext         json.RawMessage
 }
 
 type AppUser struct {
@@ -87,7 +88,7 @@ type AuditEvent struct {
 	Project      pgtype.Text
 	Path         pgtype.Text
 	Reason       pgtype.Text
-	Details      []byte
+	Details      json.RawMessage
 }
 
 type AuditPolicy struct {
@@ -185,9 +186,9 @@ type BackupRun struct {
 	Pod            string
 	TroveVersion   string
 	SnapshotAt     pgtype.Timestamptz
-	Progress       []byte
-	Result         []byte
-	Error          []byte
+	Progress       json.RawMessage
+	Result         json.RawMessage
+	Error          json.RawMessage
 	StartedAt      pgtype.Timestamptz
 	HeartbeatAt    pgtype.Timestamptz
 	LeaseExpiresAt pgtype.Timestamptz
@@ -251,7 +252,7 @@ type CiIssuer struct {
 	MaxTtl                   pgtype.Interval
 	CaBundleRef              pgtype.Text
 	UseOutboundProxy         bool
-	JobTokenFallback         []byte
+	JobTokenFallback         json.RawMessage
 	Enabled                  bool
 	Description              string
 	Source                   string
@@ -264,7 +265,7 @@ type CiIssuer struct {
 
 type CiIssuerKey struct {
 	IssuerID      pgtype.UUID
-	Jwks          []byte
+	Jwks          json.RawMessage
 	JwksUri       string
 	FetchedAt     pgtype.Timestamptz
 	Etag          pgtype.Text
@@ -284,10 +285,10 @@ type CiMapping struct {
 	Priority     int32
 	Enabled      bool
 	SubjectKinds []string
-	Match        []byte
-	Grants       []byte
+	Match        json.RawMessage
+	Grants       json.RawMessage
 	MaxTtl       pgtype.Interval
-	Options      []byte
+	Options      json.RawMessage
 	Description  string
 	Version      int64
 	CreatedBy    string
@@ -324,8 +325,8 @@ type CiTokenIssuance struct {
 	Sha            pgtype.Text
 	UserID         pgtype.Text
 	UserLogin      pgtype.Text
-	Claims         []byte
-	Grants         []byte
+	Claims         json.RawMessage
+	Grants         json.RawMessage
 	RequestedScope pgtype.Text
 	GrantedScope   string
 	CrossProject   bool
@@ -347,7 +348,7 @@ type CliLogin struct {
 	RequestedUa        pgtype.Text
 	Status             string
 	DecidedBy          pgtype.UUID
-	TokenScope         []byte
+	TokenScope         json.RawMessage
 	TokenTtl           pgtype.Interval
 	TokenSelfRotatable bool
 	RefusedPollCount   int32
@@ -361,7 +362,7 @@ type CliLogin struct {
 type ClusterChange struct {
 	Area      string
 	Epoch     int64
-	Payload   []byte
+	Payload   json.RawMessage
 	CreatedAt pgtype.Timestamptz
 }
 
@@ -378,11 +379,11 @@ type EndpointExposureRule struct {
 	Description string
 	RepoID      int64
 	Enabled     bool
-	Packages    []byte
-	Paths       []byte
-	Versions    []byte
+	Packages    json.RawMessage
+	Paths       json.RawMessage
+	Versions    json.RawMessage
 	Prereleases bool
-	DistTags    []byte
+	DistTags    json.RawMessage
 	Revision    int64
 	CreatedAt   pgtype.Timestamptz
 	CreatedBy   pgtype.UUID
@@ -443,7 +444,7 @@ type Job struct {
 	ID            pgtype.UUID
 	Kind          string
 	Queue         string
-	Args          []byte
+	Args          json.RawMessage
 	State         string
 	Priority      int16
 	RunAt         pgtype.Timestamptz
@@ -460,9 +461,9 @@ type Job struct {
 	ProgressDone  pgtype.Int8
 	ProgressTotal pgtype.Int8
 	ProgressUnit  pgtype.Text
-	Checkpoint    []byte
-	Result        []byte
-	Error         []byte
+	Checkpoint    json.RawMessage
+	Result        json.RawMessage
+	Error         json.RawMessage
 	CreatedBy     pgtype.UUID
 	Traceparent   pgtype.Text
 	CreatedAt     pgtype.Timestamptz
@@ -491,7 +492,7 @@ type MirrorState struct {
 	PassMethod            pgtype.Text
 	PassJobID             pgtype.UUID
 	PassHolder            pgtype.UUID
-	PassCursor            []byte
+	PassCursor            json.RawMessage
 	PassDiscoveryDone     bool
 	PassNames             int64
 	PassPackagesDone      int64
@@ -500,12 +501,12 @@ type MirrorState struct {
 	PassBytesStored       int64
 	PassDiscoveryComplete bool
 	PassDiscoveryNote     pgtype.Text
-	FeedCursor            []byte
+	FeedCursor            json.RawMessage
 	FeedMethod            pgtype.Text
 	PatternsFingerprint   []byte
 	LastFullPassAt        pgtype.Timestamptz
 	LastCompletePassAt    pgtype.Timestamptz
-	LastPass              []byte
+	LastPass              json.RawMessage
 	ConsecutiveFailures   int32
 	LastErrorAt           pgtype.Timestamptz
 	LastErrorCode         pgtype.Text
@@ -533,7 +534,7 @@ type NpmPackage struct {
 	PackageID  int64
 	RepoID     int64
 	NameFold   string
-	DistTags   []byte
+	DistTags   json.RawMessage
 	ModifiedAt pgtype.Timestamptz
 }
 
@@ -567,7 +568,7 @@ type NpmTombstone struct {
 
 type NpmVersion struct {
 	VersionID        int64
-	Manifest         []byte
+	Manifest         json.RawMessage
 	Integrity        string
 	Shasum           string
 	Deprecated       pgtype.Text
@@ -619,7 +620,7 @@ type NugetVersion struct {
 	Listed          bool
 	PublishedAt     pgtype.Timestamptz
 	PackageTypes    []string
-	Metadata        []byte
+	Metadata        json.RawMessage
 	SearchDoc       interface{}
 	Origin          string
 }
@@ -642,7 +643,7 @@ type Package struct {
 	RepoID      int64
 	Name        string
 	DisplayName string
-	Attributes  []byte
+	Attributes  json.RawMessage
 	RevSeq      int64
 	CreatedAt   pgtype.Timestamptz
 }
@@ -677,7 +678,7 @@ type PackageVersion struct {
 	Version        string
 	DisplayVersion string
 	LeadItemID     pgtype.Int8
-	Attributes     []byte
+	Attributes     json.RawMessage
 	CreatedAt      pgtype.Timestamptz
 	CreatedBy      pgtype.UUID
 	TrashedAt      pgtype.Timestamptz
@@ -762,16 +763,16 @@ type Replica struct {
 	Revision          string
 	Roles             []string
 	State             string
-	Checks            []byte
-	Leases            []byte
+	Checks            json.RawMessage
+	Leases            json.RawMessage
 	SecretKeyIds      []string
 	ActiveSecretKeyID string
 	Node              pgtype.Text
-	Valkey            []byte
+	Valkey            json.RawMessage
 	Pool              pgtype.Text
 	StartedAt         pgtype.Timestamptz
 	HeartbeatAt       pgtype.Timestamptz
-	Runtime           []byte
+	Runtime           json.RawMessage
 }
 
 type Repository struct {
@@ -779,7 +780,7 @@ type Repository struct {
 	Key            string
 	Format         string
 	Class          string
-	Config         []byte
+	Config         json.RawMessage
 	CreatedAt      pgtype.Timestamptz
 	UpdatedAt      pgtype.Timestamptz
 	Lifecycle      string
@@ -795,7 +796,7 @@ type RepositorySecret struct {
 	RepoID    int64
 	Field     string
 	Sealed    pgtype.Text
-	SecretRef []byte
+	SecretRef json.RawMessage
 	UpdatedAt pgtype.Timestamptz
 }
 
@@ -811,7 +812,7 @@ type RevocationOutbox struct {
 	ID    pgtype.UUID
 	At    pgtype.Timestamptz
 	Event string
-	Entry []byte
+	Entry json.RawMessage
 }
 
 type SchemaMigration struct {
@@ -863,7 +864,7 @@ type StorageUsageTotal struct {
 
 type SystemState struct {
 	Key       string
-	Value     []byte
+	Value     json.RawMessage
 	UpdatedAt pgtype.Timestamptz
 	UpdatedBy pgtype.UUID
 }
@@ -923,7 +924,7 @@ type UserIdentity struct {
 	Issuer     string
 	Subject    pgtype.Text
 	LinkedAt   pgtype.Timestamptz
-	LastClaims []byte
+	LastClaims json.RawMessage
 }
 
 type UserPreference struct {
@@ -976,7 +977,7 @@ type VulnAdvisory struct {
 	CvssScore         pgtype.Numeric
 	KnownExploited    bool
 	KevDateAdded      pgtype.Date
-	References        []byte
+	References        json.RawMessage
 	CweIds            []string
 	RecordSha256      []byte
 	OwnSeverity       pgtype.Text
@@ -992,7 +993,7 @@ type VulnAffected struct {
 	AdvisoryID   string
 	Ord          int16
 	Name         string
-	Ranges       []byte
+	Ranges       json.RawMessage
 	Versions     []string
 	EveryVersion bool
 	Fixed        []string
@@ -1045,7 +1046,7 @@ type VulnFindingEvent struct {
 	ToStatus   pgtype.Text
 	Reason     pgtype.Text
 	Comment    pgtype.Text
-	Details    []byte
+	Details    json.RawMessage
 }
 
 type VulnKev struct {
@@ -1073,7 +1074,7 @@ type VulnSourceState struct {
 	SyncedAt                  pgtype.Timestamptz
 	AttemptedAt               pgtype.Timestamptz
 	Failures                  int32
-	LastError                 []byte
+	LastError                 json.RawMessage
 	Records                   int32
 	Rejected                  int32
 	Unevaluable               int32

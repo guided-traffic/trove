@@ -1299,19 +1299,23 @@ so the journal ships with the backup, not after it (Q-ROAD-2).
 
   Tests: `TestBackupJournal` of the set `backup` (the revoked token, the disabled user, the npm withholding and `trove admin npm reinstate`, the NuGet reservation, the narrowed
   and the deleted exposure rule, the usage counters, the summary of the backups screen); `TestR_BAK_029_RevocationsSurviveTheRestore` (the restore command with the real
-  journal, killed during the replay). Not yet run on a cluster: the CI bullets (a replayed mapping disable with the suspension of the later mappings, the single-use subject token),
-  the hand-written journal objects ([H-567](../spec/backup-and-restore.md#h-567--hand-written-journal-objects-are-tried-at-replay-level-not-through-the-restore-job-on-a-cluster))
-  and a narrowing the comparator cannot prove; the integration tier covers them (`TestR_CI_020_*`, `TestR_EP_020_*`, `TestR_HA_054_ForgedEntriesCannotEscalate`).
+  journal, killed during the replay). The CI bullets run in the same cycle on kind (`backup_ci_test.go`, Q-BAK-60): a mapping disabled after the snapshot is
+  replayed `applied` and the later mappings of its tier `suspended`, a fresh token matches no mapping, and a single-use subject token issued before the restore finished
+  answers `subject_token_predates_restore` (a later one is exchanged once). Not run on the cluster: the hand-written journal objects
+  ([H-567](../spec/backup-and-restore.md#h-567--hand-written-journal-objects-are-tried-at-replay-level-not-through-the-restore-job-on-a-cluster))
+  and a narrowing the comparator cannot prove for a CI mapping; the integration tier covers them (`TestR_CI_020_*`, `TestR_EP_020_*`, `TestR_HA_054_ForgedEntriesCannotEscalate`).
 
 - **E5.13** Vulnerability scanning under the failure suite ([vulnerability-scanning.md](../spec/vulnerability-scanning.md)):
   a `vuln-sync-osv-full` job on an evicted `worker` finishes elsewhere from its checkpoint (R-VULN-004); a PostgreSQL
   switchover during a `vuln-evaluate` job leaves no finding twice and none lost (R-VULN-011); a malicious version stays
   blocked on every replica throughout drain variants A to E; the trove-backup drill restores blocks and triage and
-  reconciles them after the first sync (R-VULN-026). Written as tests of the long set of the vulnerability e2e tests (compiled and vetted; their first run on kind is the nightly one)
-  ([e2e.md](../developer/e2e.md#the-vulnerability-tests)): the drain of a full sync (E4b.1), a worker killed mid-sync
-  (Q-VULN-89), the switchover during an evaluation (Q-VULN-87) and the blocks through the node drain of variant A and the
-  Valkey and PostgreSQL failovers (Q-VULN-88); open: drain variants B to E for the blocks and the restore drill, which wait for
-  the backup, the restore and the pooler profile.
+  reconciles them after the first sync (R-VULN-026). Tests of the vulnerability e2e sets ([e2e.md](../developer/e2e.md#the-vulnerability-tests)), run on kind:
+  the drain of a full sync (E4b.1), a worker killed mid-sync (Q-VULN-89), the switchover during an evaluation (Q-VULN-87), the blocks through drain variant A and the
+  Valkey and PostgreSQL failovers (Q-VULN-88), through variants B, C and E in `TestVulnLong_R_VULN_015_BlockHoldsThroughDrainVariants` and through variant D in the set
+  `vuln-pooler` (Q-VULN-128), and the restore drill `TestVulnLong_R_VULN_026_RestoreKeepsBlocksAndTriage` (Q-VULN-125 to Q-VULN-127): on kind on 2026-11-08 the whole set `vuln-long` passed once (85 tests and subtests, 1052 s); the variants test was then run three times after the review changes: the first run failed variant B (the evicted Valkey primary returned before Sentinel's
+  `down-after-milliseconds`, no failover happened, the counters stayed 0) and variant C (the order), the second failed variant C (a `trove-restore` installation left by
+  `TestBackupJournal` held the drain), the third passed all of B, C and E; B passed in the second run too (e2e.md, findings);
+  the nightly run on a CI runner is still to come.
 **Work packages.** These can run in parallel:
 
 | WP | Content | Can start |

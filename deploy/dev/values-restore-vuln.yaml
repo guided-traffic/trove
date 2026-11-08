@@ -1,0 +1,26 @@
+# The scanning part of the restore drill's installation (Q-VULN-127, R-VULN-026, docs/developer/e2e.md#the-vulnerability-tests), layered
+# after values-restore.yaml by restore-ns.sh when TROVE_RESTORE_PROFILE=vuln: the restored installation reads the test advisory source of
+# the namespace ${NS} (the stub the vulnerability sets start) and runs two packages replicas, so the drill judges the restored blocks on
+# each of them. The scanning keys copy those of values-vuln.yaml with the hosts of ${NS}; a change there is made here too.
+#
+# The three scheduled syncs are off, as in values-vuln.yaml: the drill starts the first synchronization through the task API.
+packages:
+  replicaCount: 2
+config:
+  vulnerabilities:
+    sources:
+      osv:
+        mode: online
+        base_url: https://osvstub.${NS}.svc/
+      kev:
+        mode: online
+        url: https://osvstub.${NS}.svc/sites/default/files/feeds/known_exploited_vulnerabilities.json
+    matching:
+      public_upstreams:
+        npm: [registry.npmjs.org, npmstub.${NS}.svc]
+        nuget: [api.nuget.org, www.nuget.org, nugetstub.${NS}.svc]
+  maintenance:
+    tasks:
+      vuln-sync-osv: {enabled: false, schedule: "*/15 * * * *"}
+      vuln-sync-osv-full: {enabled: false, schedule: "17 3 * * 0"}
+      vuln-sync-kev: {enabled: false, schedule: "41 */6 * * *"}

@@ -29,7 +29,11 @@
 #                         scenario of the backup suite collects what it deletes at once (values-backup.yaml).
 #                         Run up.sh again without it to switch back.
 #   TROVE_POOLER=1        also install the transaction-mode poolers and point the chart at them
-#                         (pooler.yaml, values-pooler.yaml, R-HA-058).
+#                         (pooler.yaml, values-pooler.yaml, R-HA-058). The profile carries what the drain of a pooler instance
+#                         needs (R-HA-059 rule 5: PodDisruptionBudgets, node spread, a grace period of 120 s, a pooled connection
+#                         lifetime of 60 s + 15 s) and the role defaults that preflight reads on a pooled connection, which this
+#                         script sets with ALTER ROLE trove IN DATABASE trove SET ... (statement_timeout 30s, lock_timeout 5s,
+#                         idle_in_transaction_session_timeout 60s, search_path trove: the configuration's defaults).
 #   TROVE_IMAGE=<ref>     the trove image to load into the cluster (default guidedtraffic/trove:dev,
 #                         built by `make image`). It must be present in the local Docker.
 #   TROVE_DEV_HTTP_PORT=n the host port of the edge, default 8080 (https://localhost:8080). Set it when
@@ -186,6 +190,15 @@ task_postgres() {
   ready="$(kn get cluster trove-db -o jsonpath='{.status.readyInstances}')"
   [ "$ready" = "2" ] || { echo "trove-db has $ready ready instances, want 2"; exit 1; }
   if [ "$POOLER" = "1" ]; then
+    # A transaction-mode pooler cannot pass these four settings as startup parameters (R-HA-058); preflight refuses to start
+    # without them as role defaults. The values are the defaults of database.session (internal/config/database.go). Idempotent.
+    local primary
+    primary="$(kn get cluster trove-db -o jsonpath='{.status.currentPrimary}')"
+    kn exec "$primary" -c postgres -- psql -U postgres -d trove -v ON_ERROR_STOP=1 -c "
+      ALTER ROLE trove IN DATABASE trove SET statement_timeout = '30s';
+      ALTER ROLE trove IN DATABASE trove SET lock_timeout = '5s';
+      ALTER ROLE trove IN DATABASE trove SET idle_in_transaction_session_timeout = '60s';
+      ALTER ROLE trove IN DATABASE trove SET search_path = trove;"
     kn apply -f "$DEV_DIR/pooler.yaml"
     # The operator creates the Deployments a moment after the Pooler objects.
     for d in trove-db-pooler-rw trove-db-pooler-control; do

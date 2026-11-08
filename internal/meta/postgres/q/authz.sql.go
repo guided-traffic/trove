@@ -7,6 +7,7 @@ package q
 
 import (
 	"context"
+	"encoding/json"
 )
 
 const authzAdminBindings = `-- name: AuthzAdminBindings :one
@@ -393,7 +394,7 @@ type AuthzBuildRepositoriesRow struct {
 	Key        string
 	Class      string
 	Format     string
-	Config     []byte
+	Config     json.RawMessage
 	ProjectID  string
 	ProjectKey string
 }

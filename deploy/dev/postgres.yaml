@@ -31,6 +31,19 @@ spec:
       method: any
       number: 1
       dataDurability: preferred
+  certificates:
+    # The server certificate the operator issues names the Services of the cluster only. The request and the control pooler
+    # of the pooler profile (pooler.yaml, TROVE_POOLER=1) present the same certificate, and trove verifies it with verify-full
+    # against the pooler's Service (R-HA-015, R-HA-058), so the Services of both poolers are named too.
+    serverAltDNSNames:
+      - trove-db-pooler-rw
+      - trove-db-pooler-rw.${NS}
+      - trove-db-pooler-rw.${NS}.svc
+      - trove-db-pooler-rw.${NS}.svc.cluster.local
+      - trove-db-pooler-control
+      - trove-db-pooler-control.${NS}
+      - trove-db-pooler-control.${NS}.svc
+      - trove-db-pooler-control.${NS}.svc.cluster.local
   bootstrap:
     initdb:
       database: trove

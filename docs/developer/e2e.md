@@ -45,7 +45,7 @@ failovers under npm load, in [Drain and failover under npm load](#drain-and-fail
 ```
 deploy/dev/e2e.sh           what `make e2e` calls: builds the driver, starts its pod, runs go test
 deploy/dev/values-mirror.yaml  the profile `mirror`: the worker pool `mirror` of two processes (up.sh, TROVE_PROFILE=mirror)
-deploy/dev/drain.sh         E0.14 as a script (`make dev-drain`), and the drain alone for the test
+deploy/dev/drain.sh         E0.14 as a script (`make dev-drain`), the drain alone for the test, and with `--also valkey|postgres|pooler` the drain of variants B, C and D (below)
 deploy/dev/pg-kill.sh       force-delete the PostgreSQL primary, wait for the recovery
 deploy/dev/pg-stop.sh       stop PostgreSQL for a time by fencing the CloudNativePG cluster
 deploy/dev/valkey-stop.sh   stop Valkey and the Sentinels until valkey-start.sh (the M1 tests hold the outage themselves)
@@ -53,7 +53,7 @@ deploy/dev/s3-stop.sh       scale the object store to 0 until s3-start.sh (its o
 deploy/dev/valkey-cli.sh    valkey-cli against the current primary (FLUSHALL of E1.11, CLIENT PAUSE of E1.8)
 deploy/dev/bastion.sh       the e2e Bastions of R-BAS-049: infra, install <volume|bucket>, status, down (the Bastion tests, below)
 deploy/dev/bastion*.yaml    their manifests and chart values; values-bastion.yaml is the main installation's `bastion` profile
-deploy/dev/restore-ns.sh    the second installation of the restore drill (namespace trove-restore): infra, install <backup id>, serve, down; restore-ns.yaml and values-restore.yaml are its manifests and chart values (the backup tests, below)
+deploy/dev/restore-ns.sh    the second installation of the restore drill (namespace trove-restore): infra, install <backup id>, serve, down; restore-ns.yaml and values-restore.yaml are its manifests and chart values, values-restore-vuln.yaml the overlay of `TROVE_RESTORE_PROFILE=vuln` (the backup tests and the vulnerability tests, below)
 deploy/dev/values-backup.yaml  the profile `backup`: garbage collection without a grace period (TROVE_PROFILE=backup)
 test/e2e/                   the Go tests, build tag `e2e`, package e2e
   env_test.go               kubectl, the API-server proxy to :8081, the driver and k6 helpers
@@ -110,10 +110,15 @@ test/e2e/                   the Go tests, build tag `e2e`, package e2e
   mirror_long_test.go       the long set `mirror-long`: the drain of the node of the process that runs a pass
   mirror_long_fault_test.go the failure suite of R-HA-052 on a pass (`mirror-long`): the process lost three ways, the upstream throttling across a drain and a kill, a PostgreSQL switchover and a Valkey failover
   vuln_failures_test.go     the vulnerability scanning under the failure suite (E5.13): a switchover during an evaluation, the block through a drain and the primaries' failovers, a killed worker
+  drain_variants_test.go    the harness of drain variants B to E of R-HA-059: the node pick, `drain.sh --also`, each variant's condition (Drain variants B to E, below)
+  vuln_drain_variants_test.go  E5.13: the blocks through drain variants B, C and E (set vuln-long)
+  vuln_pooler_test.go       E5.13: the block through drain variant D on the cluster with the poolers (set vuln-pooler)
+  vuln_restore_test.go      E5.13, R-VULN-026: the restore drill of the vulnerability data (set vuln-long)
   backup_env_test.go        the backup harness (R-BAK-029): the profile, the repositories, the load, Jobs made from the CronJob, the port-forwards to the restored installation, the timings artifact
   backup_drill_test.go      the restore drill: a backup during the load, the restore Job into the second namespace, the restored installation judged by its bytes, npm view and verify --deep, two overlapping Jobs
   backup_drain_test.go      a node drain and a kill -9 of a backup and of a restore (R-BAK-012, R-BAK-010, R-BAK-021)
   backup_journal_test.go    E5.12: the revocation journal across a restore
+  backup_ci_test.go         E5.12's CI bullets: the issuer, the mappings and the exchange against the source and the restored installation
   clients/                  the npm client matrix image (below): package.json + package-lock.json, bin/ wrappers, shim/npm, fwd/ forwarder,
                             Dockerfile, build.sh, check-pins.mjs
 web/e2e/                    the Playwright journeys of R-UI-047 (TypeScript, in the web workspace's lockfile)
@@ -161,7 +166,8 @@ make e2e SET=bastion-long    # the drain, the failure suite under client load (r
 make e2e SET=mirror          # the mirror (R-REPO-059, E6b.6): npm ci and dotnet restore while a pass runs, the status from every replica, two claimants, Valkey stopped, a restore with the upstream stopped, the browser journey (CI job e2e-mirror, when the change touches the mirror; nightly)
 make e2e SET=mirror-long     # the drain of the node of the process that runs a pass of 300 packages, and the failure suite on a pass of 100 (a process lost, a throttling upstream, a switchover and a failover) (CI: nightly and on dispatch; a red long leg is a finding, not a blocker)
 make e2e SET=upgrade         # the upgrade across the cut from v0.16.0 (E6a.7) and the rolling upgrade with its rollback from the latest release (R-HA-020), under npm, NuGet and browser loops; replaces the installation and puts the current dev release back (CI: nightly and on dispatch; a red long leg is a finding, not a blocker)
-make e2e SET=backup          # the backup and restore suite (R-BAK-029): the drill into the namespace trove-restore, the drain and the kill -9 of a backup and a restore, the journal across a restore; the profile backup, one npm client pod (CI: job e2e-backup of the nightly workflow, on dispatch; about 25 minutes)
+make e2e SET=vuln-pooler     # E5.13: the block through drain variant D on the cluster with the poolers of R-HA-058 (TROVE_POOLER=1, set by the set); no client pods; about 6 minutes of `make e2e` (the variant takes 2.5 to 3.5 minutes: the pooler pod stops after its 90 s `preStop` sleep); the cluster stays in the pooler overlay until the next `make dev-up` (CI: job e2e-vuln, nightly)
+make e2e SET=backup          # the backup and restore suite (R-BAK-029): the drill into the namespace trove-restore, the drain and the kill -9 of a backup and a restore, the journal across a restore with E5.12's CI bullets (starts the issuer double); the profile backup, one npm client pod (CI: job e2e-backup of the nightly workflow, on dispatch; about 25 minutes)
 make fuzz-npm FUZZ=FuzzMatch FUZZTIME=1m   # npm's fuzz targets (CI: 30 minutes, closing run only)
 ```
 
@@ -1263,6 +1269,50 @@ Not verified here: a run of the leg on a CI runner (the runners were queued), an
 7. **Observed on the dev profile, not gated:** `p8` of the R-ARCH-027 report held 1,000 requests/s with a p99 of 16.5 ms in one run and
    dropped 126 iterations with a p99 of 649 ms in the run before, on the same cluster; a kind cluster on a laptop is no reference
    environment.
+
+### Drain variants B to E
+
+[R-HA-059](../spec/ha-and-helm.md#r-ha-059--node-drain-without-outage) names five drains; variant A is the node drain of the sections above. B, C and D add one dependency to the
+node that is drained, E a running backup pod. Decisions: [Q-HA-170 to Q-HA-174](../spec/ha-and-helm.md#q-ha-170--a-variant-drain-evicts-the-releases-pods-and-the-variants-dependency-by-their-own-selectors-in-parallel-drains-and-nothing-else-on-the-node).
+
+`deploy/dev/drain.sh --also valkey|postgres|pooler… <node>` starts one `kubectl drain --pod-selector` per set of pods together: the release's (`app.kubernetes.io/name=trove,app.kubernetes.io/instance=trove`) and, for each
+`--also`, the dependency's. Nothing else on the node is evicted. The script logs when each run started and ended, fails if one failed, waits for the release's rollouts, uncordons, and then waits for the dependency to be
+whole again (its volume, where it has one, is bound to the node, so it cannot return before the uncordon):
+
+| `--also` | Selector (`--pod-selector`) | Whole again |
+|---|---|---|
+| `valkey` | `app.kubernetes.io/instance=trove-valkey`: the Valkey data pods (`component=valkey`) and the Sentinels (`component=sentinel`) | `sts_wait_ready` of `trove-valkey` (2) and `trove-valkey-sentinel` (3) |
+| `postgres` | `cnpg.io/cluster=trove-db,cnpg.io/podRole=instance` | `readyInstances` 2 and the `Ready` condition of `cluster/trove-db` |
+| `pooler` | `cnpg.io/poolerName` (every pod of the two poolers) | `rollout status` of `trove-db-pooler-rw` and `trove-db-pooler-control` |
+
+`kubectl drain --pod-selector` selects the pods of every namespace, so the restore installation of `trove-restore` (its release is named `trove` and its PostgreSQL cluster `trove-db`) must not exist while a
+variant drains; `TestVulnLong_R_VULN_026_RestoreKeepsBlocksAndTriage` removes it when it ends. The labels of the Valkey and CloudNativePG pods were read from the cluster (`kubectl get pods --show-labels`); the pooler label
+is `cnpg.io/poolerName`, the CloudNativePG operator's own, and `Verify` fails if a pod of the dependency that was on the node is still the same pod afterwards, so a selector that matched nothing cannot pass.
+
+The harness, [drain_variants_test.go](../../test/e2e/drain_variants_test.go), brings no load: the caller's probes or load run between `prepareVariantDrain` and `Verify`.
+
+```go
+d := prepareVariantDrain(t, variantB)  // picks the node (moving a primary in the way), records the pods on it, starts the pod watch and the variant's monitors
+// ... start the probes or the load ...
+d.Run(t)                               // the fault: drain.sh [--also ...] <node>; never fails the test itself, Verify reports it
+// ... stop the probes or the load ...
+d.Verify(t)                            // the variant's condition and the shared ones
+d.Settle(t)                            // the release has its pods again, the evicted dependency is whole
+```
+
+| Variant | The node | Its own condition | How it is judged |
+|---|---|---|---|
+| B | the node of the Valkey primary (`valkeyPrimaryBySentinel`) that hosts an `api`, a `packages` and a main `worker` pod and not the PostgreSQL primary; a primary in the way is moved first with `failover.sh` or `valkey-failover.sh` (at most four attempts) | `trove_valkey_primary_changes_total` rises by at least 1 on every replica that existed before and is not on the node, and none of them answers `/readyz` other than 200 (`startMonitor` and the counter snapshot start in `Run`, right before `drain.sh`, so the monitor does not see the preparation's own recovery); a replacement's counter is logged | the primary is evicted without a planned failover first (Q-HA-171); the node must also host a Sentinel |
+| C | the node of the PostgreSQL primary under the same conditions, not the Valkey primary | CloudNativePG has requested the switchover before the eviction: a poll every 250 ms of `.status.targetPrimary` of the cluster with its `targetPrimaryTimestamp` and of the time the old primary pod's deletion was requested (`deletionTimestamp` minus the grace period; the server's own, a second of resolution allowed) from before the drain; the target must name another instance when the pod is marked for deletion (Q-HA-172; the operator admits the eviction from the request, the promotion follows a few seconds later) | the switchover is never asked for once the node is picked (F-65) |
+| D | a node with an instance of the request pooler (`trove-db-pooler-rw`), the same hosting condition, neither primary | none of its own | needs the pooler profile (`TROVE_POOLER=1`, set `vuln-pooler`) |
+| E | `drainNodeVariantA`; 16 files of 1 MiB go into a generic repository of the run first, and a backup Job is made from the CronJob with `backoffLimit: 0`, a fresh `TROVE_BACKUP_TARGET_PREFIX`, `TROVE_BACKUP_COPY_BYTES_PER_SECOND=512KiB` and `TROVE_BACKUP_COPY_CONCURRENCY=1` and a preferred node affinity (weight 100) for the node (`bakJob.preferNode`, Q-HA-174); if its pod landed elsewhere the Job is deleted and made once more | the Job ends `Complete` within 15 minutes and ran at least two pods | the replacement pod is scheduled wherever it fits, so it is not `Pending` for the length of the drain |
+
+Every variant also requires, as R-HA-059: no trove container killed (`SIGKILL`, exit 137 or OOM, from the pod watch of `selTrove`), no trove pod `Pending` for more than 60 s, `drain.sh` within 10 minutes, the node
+uncordoned, no `Killing` event with `SIGKILL` for the pods on the node (`checkEvents`).
+
+Measured on the dev cluster (kind with three worker nodes, the profile `vuln`, 2026-11-08, `TestVulnLong_R_VULN_015_BlockHoldsThroughDrainVariants`, 824 s in all): B 112 s (`drain.sh` 28 s), C 101 s (`drain.sh` 42 s; the cluster named
+the new primary 2.2 s before the old primary's pod was marked for deletion), E 515 s (`drain.sh` 22 s, the Job `Complete` with two pods; at 256 KiB/s the second pod's copy of the whole installation took 16 minutes, so the rate is 512 KiB/s).
+`TestVulnLong_R_VULN_015_BlockHoldsDuringFailures` (variant A and the failovers) 258 s. Not yet run on a CI runner.
 
 ## The failure suite under npm load
 
@@ -2843,10 +2893,29 @@ Every test runs against the one environment; the npm rows and the SDKs run side 
 | `TestVulnLong_R_VULN_027_ClientsWithValkeyStopped` | R-VULN-027, E4b.8 | the tests above that drive clients (audits, the endpoint's body, the blocked installs and restores, the NuGet resource) once more with Valkey stopped |
 | `TestVulnLong_R_VULN_011_SwitchoverDuringEvaluation` | R-VULN-011, R-HA-052, E5.13 | the repository `npm-vuln-bulk` stores 20,000 packages with four versions each (0.9.0, 1.0.0, 1.0.1, 1.1.0), seeded in the tables under the names of the source's filler records; a full sync imports the 20,000 filler records (introduced 0, fixed 1.0.1), which queues them all; once the `vuln-evaluate` job has committed batches, `failover.sh` switches the PostgreSQL primary over. The job ends `succeeded` (a later attempt is allowed and logged); the findings of the repository are exactly the 40,000 of the two affected versions of every name (missing and unexpected computed with `EXCEPT` against the rule, not counted), no identity exists twice, every finding has exactly one `detected` event, nothing waits in `vuln_pending_evaluation`, no finding lacks its package or version |
 | `TestVulnLong_R_VULN_015_BlockHoldsDuringFailures` | R-VULN-015, R-VULN-016, R-VULN-027, R-HA-059, R-HA-052, E5.13 | four versions are probed through the edge by one loop each, 10 requests a second as GET, HEAD and Range GET in turn, with the replica named in `X-Trove-Replica`: the tarball of an npm version and the `.nupkg` of a NuGet version, each blocked in triage after its cache fill, and the tarball of `trove-test-mal` and the `.nupkg` of `Contoso.Json.Codecs` (malicious, never stored). Three faults, each after 10 to 20 s of probing and followed by 30 to 40 s: the drain of the node of variant A (R-HA-059; the PostgreSQL and Valkey primaries are moved away first), `valkey-failover.sh`, `failover.sh`. Every answer is `403` (the GET with `vulnerability_blocked` in the body); a `200`, `206` or `304` is a breach of R-VULN-015, any other status or a transport error a failed request; the drain's probes reach the three `packages` replicas and the replacement of the drained one |
+| `TestVulnLong_R_VULN_015_BlockHoldsThroughDrainVariants` | R-VULN-015, R-VULN-016, R-VULN-027, R-HA-059, E5.13 | the same four versions (a label of their own, `variants`) and the same probes, from 20 s before the drain until 40 s after `drain.sh` returned, through drain variants B, C and E of [the harness](#drain-variants-b-to-e), one subtest each: B (the Valkey primary and a Sentinel; the primary change reaches every replica that ran through, none turns unready), C (the PostgreSQL primary; CloudNativePG has requested the switchover before the eviction), E (a running backup pod; the backup Job completes with `backoffLimit` 0). Every answer is the refusal from a replica, the requests reach the three `packages` replicas and the replacement of the one on the node |
+| `TestVulnPooler_R_VULN_015_BlockHoldsThroughDrainVariantD` | R-VULN-015, R-VULN-016, R-VULN-027, R-HA-058, R-HA-059, E5.13 | set `vuln-pooler` only: the cluster runs the transaction-mode poolers (`database.pooler.mode: transaction`, two ready pooler pods on two nodes, checked first and failing otherwise); the same probes through drain variant D, the drain of a node with an instance of the request pooler |
 | `TestVulnLong_R_VULN_004_FullSyncWorkerKilledMidRun` | R-VULN-004, H-523, E5.13 | the source holds 60,000 filler records; once the full sync has committed batches its worker pod is deleted with `--grace-period=0 --force`: the reaper ends the job `failed` with `attempts_exhausted` within the lease plus a poll (MaxAttempts is 1, a killed worker releases nothing, so this is not a resumption); the next full run succeeds, the ecosystem is `complete` and holds the source's records, the advisory table agrees with the state, `vuln_sync_touched` is empty, the evaluation catches up |
+| `TestVulnLong_R_VULN_026_RestoreKeepsBlocksAndTriage` | R-VULN-026, R-VULN-013, R-VULN-015, R-BAK-004, R-BAK-022, R-HA-054, E5.13 | the restore drill (Q-VULN-125 to Q-VULN-127), see [below](#the-restore-drill-of-the-vulnerability-data) |
 
 Yarn 4 fetches the package document of every package it audits from the registry it audits through (`YN0035`, a `404` of `npm-local` for a package only `npm-remote` holds), so its trees are per repository, each of what that repository
 holds; npm and pnpm audit one tree through all three.
+
+### The restore drill of the vulnerability data
+
+`TestVulnLong_R_VULN_026_RestoreKeepsBlocksAndTriage` ([vuln_restore_test.go](../../test/e2e/vuln_restore_test.go), decisions Q-VULN-125 to Q-VULN-127) restores a backup of the installation under test into the
+namespace `trove-restore` and judges the vulnerability data before and after the restored installation's first synchronization. It needs the fixture of `vulnFx` and the Job and restore helpers of the backup tests, not the
+profile `backup`. `t.Setenv("TROVE_RESTORE_PROFILE", "vuln")` makes [restore-ns.sh](../../deploy/dev/restore-ns.sh) layer [values-restore-vuln.yaml](../../deploy/dev/values-restore-vuln.yaml): the test advisory source and the test
+upstreams of the main namespace, the three scheduled syncs off, two `packages` replicas; each replica is reached through a port-forward of its own and its `X-Trove-Replica` is checked. The restored installation has the
+source's base URL and the dev CA like every drill ([Q-BAK-60](../spec/backup-and-restore.md#q-bak-60--e512s-ci-bullets-run-in-the-backup-and-restore-of-testbackupjournal-with-the-issuer-double-started-by-the-set-against-a-restored-installation-configured-like-its-source)).
+
+Twelve packages (npm through `npm-remote`, one NuGet through `nuget-remote`, version 1.0.0 cached before any record exists) are put into the states of the table in Q-VULN-126: `rb`, `rn` blocked, `rd` dismissed, `rm`
+malicious and open, `jb`, `js` blocked after the snapshot (journaled; `js` lifted again), `jl` lifted and `jd` dismissed after it (not journaled), `cw` withdrawn, `cn` and `cm` new in the source, `cr` resolved at the snapshot
+and re-detected blocked after it. The backup Job is made from the CronJob; the test waits until `revocation_outbox` is empty (the journal is shipped) before it restores. Subtests, in order: the six transient tables are empty;
+the restore's output lists the blocks of `jb` and `js` as applied and `js` has a history row without a principal that names the entry; before the first sync every restored block refuses on both replicas (GET, HEAD, Range), the
+dismissed version is served with its cached bytes, `cw` stays `needs_triage`, the npm audit answers `503` and `nuget-local` lists no vulnerability resource; the findings keep their IDs and history, their revisions are the
+source's plus 2^32 and the source's `ETag` answers `412`; the first `vuln-sync-osv` imports both ecosystems completely with the source's record counts and requests the full evaluation; afterwards the blocks stand on both
+replicas, `cw` is resolved `advisory_withdrawn`, `cn` has one new finding, `cr` and `cm` are refused, the audit answers `200` and the vulnerability page has the same `ETag` on both replicas. `cr` (re-detected blocked after the snapshot) and `cm` (a malicious record added after it) are refused before the first sync, because the evaluation's blocks are journaled (Q-VULN-130) and the replay restores them, `cm` as a finding it creates (Q-VULN-131). The installation is removed when the test ends, because the drains of the variants select pods of every namespace.
 
 ### Running it
 
@@ -2854,7 +2923,10 @@ holds; npm and pnpm audit one tree through all three.
 make image VERSION=dev && make dev-up
 make e2e SET=vuln          # the short set: the profile, the upstreams, the clients and the tests (about 20 minutes)
 make e2e SET=vuln-long     # the drain of a full sync, the client tests with Valkey stopped, and the scanning under the failure suite (E5.13)
-TROVE_E2E_RUN='^TestVulnLong_R_VULN_015_' make e2e SET=vuln-long   # one of them: the blocks through a drain and the failovers (about 8 minutes of probing plus the drain)
+TROVE_E2E_RUN='^TestVulnLong_R_VULN_015_BlockHoldsDuringFailures$' make e2e SET=vuln-long   # variant A and the failovers
+TROVE_E2E_RUN='^TestVulnLong_R_VULN_015_BlockHoldsThroughDrainVariants$' make e2e SET=vuln-long   # variants B, C and E
+TROVE_E2E_RUN='^TestVulnLong_R_VULN_026_' make e2e SET=vuln-long   # the restore drill
+make e2e SET=vuln-pooler    # variant D on the cluster with the poolers; leaves the cluster in the pooler overlay until the next make dev-up
 TROVE_E2E_REUSE_CLIENTS=1 make e2e SET=vuln TROVE_E2E_RUN='^TestVuln_R_VULN_017_'   # one test; client pods that are running stay
 ```
 
@@ -2877,6 +2949,18 @@ the scanning ([releasing.md](releasing.md#ci)), job `e2e-vuln` of HA and Perform
 | A blocked restore and a blocked `pnpm add` succeeded | the SDK's global packages folder and pnpm 11's store below `$HOME/.local` still held the version | the scenarios remove them (`rm -rf packages obj httpcache`, `wipeAll`) |
 | The findings filter `package` found nothing for a NuGet ID with capitals | the findings carry the normalized (lowercase) name and the filter compares it as it is | the tests filter with the lowercase ID; reported as a product observation |
 
+### Findings of the first runs of the restore drill and the variants (E5.13)
+
+| Finding | Cause | Fix |
+|---|---|---|
+| The restore Job failed: `proxy.outbound.tls.ca_files: open /var/run/secrets/trove-dev/keycloak-ca.crt: no such file` | the Job checks the key at start, and the global `extraVolumes` reach the Deployments only (Q-HA-149) | the Jobs take volumes of their own values: `backup.extraVolumes`, `restore.extraVolumes` and `postRestore.extraVolumes` (with the mounts); `values-restore.yaml` and `values-dev.yaml` set the CA volume for them; `TestR_HA_030_BackupSecrets` asserts that each Job gets only its own list |
+| After the restore the `packages` pods answered `404` to the publisher's token | the replay window starts at the newest audit event, before the snapshot, and replays `authz.policy.updated` entries the database already holds; the journaled selector of kind `key` carries a key and a class that the stored row does not, so the update never matched and was suspended, which cleared the policy's entries | `canonicalSelector` in [journal_replay.go](../../internal/authz/journal_replay.go) compares and writes only what a kind stores (`TestR_AUTHZ_031_APolicyUpdateAlreadyInEffectIsNotSuspended`) |
+| Variant B, once in four runs (2026-11-08): the counter of every replica stayed 0 and 0 | the evicted Valkey primary (the Valkey pods use `emptyDir`, so the pod is rescheduled at once) can return before Sentinel's `down-after-milliseconds` (5 s) fires, and then no failover happens; the next two runs failed over and passed | the test names the case: "variant B caused no failover: the evicted primary returned before down-after-milliseconds" when the Sentinels name the same primary before and after; the condition is unchanged |
+| Variant C failed twice, once with the order and once with a hanging drain | the old primary pod was marked for deletion 0.6 to 3 s before `.status.currentPrimary` changed (the operator admits the eviction once the switchover is requested); and an installation left in `trove-restore` by `TestBackupJournal` held the drain on its PodDisruptionBudget | the condition is the request before the eviction, read from `targetPrimaryTimestamp` and the pod's `deletionTimestamp` (Q-HA-172); `prepareVariantDrain` removes `trove-restore` first |
+| `cr` came back `blocked`, not `resolved` | the replay window also holds the block that preceded the resolution, and the evaluation's re-detection is journaled | `cr` is judged `blocked` before the first sync (Q-VULN-126) |
+| Variant B could not find a node with the Valkey primary and without the PostgreSQL primary | the first picker moved one primary and then the other back | one picker for B and C that moves the other primary away, then its own |
+| Variant E exceeded 15 minutes | at 256 KiB/s the copy restarts in the second pod and covers the whole installation | 512 KiB/s |
+
 ### Findings of the first runs of the failure suite (E5.13)
 
 The nightly run 42177273488 failed `TestVulnLong_R_VULN_011_SwitchoverDuringEvaluation` and `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun`; the causes and their fixes:
@@ -2895,10 +2979,7 @@ Measured on kind after the fixes: `R_VULN_004` drained 42 s (released at 14 batc
 - The reference lockfile's recorded public answer (R-VULN-017's first criterion, E4b.5): no recorded answer exists in the repository (H-494).
 - Mode `repository` and the offline import (R-VULN-005), the fault cases of R-VULN-004, the matching corpus and the lifecycle's re-detection are the integration tier's.
 - `pg_stat_statements` over 10,000 cached downloads (R-VULN-015) and the object-store GET counters of a late advisory (R-VULN-011): the e2e profile has neither.
-- Restore of a backup (E4b.7) and E5.13's last clause (blocks and triage restored and reconciled after the first sync): they need `trove backup` and the restore, which are
-  not built; the emulated restore state of the integration tier (`test/integration/vulnrestore`, H-492) is what exists.
-- Drain variants B to E of R-HA-059 for the blocks (E5.13): B and C need the node of the Valkey and PostgreSQL primaries drained with their own rules, D the pooler profile, E the backup
-  job; `TestVulnLong_R_VULN_015_BlockHoldsDuringFailures` runs variant A and the planned Valkey failover and the PostgreSQL switchover as stand-ins for B and C without their node drain.
+- Drain variants under the full load are E5.9's.
 - A worker killed mid-sync is not resumed (Q-VULN-89): the test asserts the specified outcome, a `failed` job and a clean next run; H-523 is the missing failure record.
 - A Windows row and Visual Studio: the NuGet clients image is Linux.
 
@@ -3292,6 +3373,13 @@ installation, the administrator's token of the snapshot still works; alice is di
 number is refused and the journaled bytes are accepted (R-NUGET-033); the first overview (`/api/v1/system/overview`) equals the `blobs` table (R-STOR-047); the backup summary of the restored installation names the restore
 origin and the runs (R-API-050, R-UI-048; the browser journey `16-backups.spec.ts` runs against the source installation).
 
+E5.12's CI bullets ([backup_ci_test.go](../../test/e2e/backup_ci_test.go), Q-BAK-60) run in the same cycle; the set `backup` starts the issuer double (`TROVE_E2E_OIDCSTUB=1`). Before the snapshot the test
+registers a CI issuer of the double with single-use subject tokens and a clock skew of 5 s, two policies on `bak-npm`, and four mappings of the issuer's system tier: M0 (priority 5, project R), M1 (10) and M2 (20, read and
+deploy) for project P, M3 (30) for project Q; an exchange for P names M1. After the snapshot M1 is disabled (a `PUT` with `enabled: false`) and a subject token for R is minted. After the restore: the restore's output lists
+`ci.mapping.disabled` of M1 as applied and of M2 and M3 as suspended, M0 stays enabled, a fresh token for P answers `400 no_matching_mapping` (R-CI-020, Q-CI-11); the token minted before the restore finished answers `400
+subject_token_predates_restore`, a token minted more than the skew after `restored_at` is exchanged through M0, and its second use answers `subject_token_replayed` (R-CI-018, R-CI-029). The restored installation has the
+source's base URL (its edge port) and the dev CA at the source's path, so it accepts the source's audience and verifies the double's certificate.
+
 **Measured on the dev cluster** (kind with four nodes on a laptop, runs of 2026-11-07; the numbers are measured, not promised, Q-BAK-48; `backup-timings.json` of the leg has them per run).
 
 | What | Measured |
@@ -3329,9 +3417,6 @@ The runs of 2026-11-07 each ran on this cluster after `make image`; `TestBackupD
   `TestR_BAK_021_KillNine` (integration).
 - Hand-written journal objects (R-AUTHZ-031, [H-567](../spec/backup-and-restore.md#h-567--hand-written-journal-objects-are-tried-at-replay-level-not-through-the-restore-job-on-a-cluster)) and the restore across two releases and across PostgreSQL 16 and 18
   (R-BAK-023, [H-568](../spec/backup-and-restore.md#h-568--the-restore-across-releases-and-across-postgresql-major-versions-is-not-run-by-the-drill)) are not run on the cluster.
-- The two CI bullets of E5.12 (a replayed disable of a CI mapping that suspends every later enabled mapping of its tier, R-CI-020, and a single-use subject token that answers
-  `subject_token_predates_restore`, R-CI-018) are not run on the cluster: they need the issuer double and the CI fixtures of [the CI tests](#the-ci-tests) inside the second installation. The
-  integration tier runs them against the restored database (`TestR_CI_020_*`, `TestR_CI_018_TheRestoreCutOff`, `journal_ci_replay_test.go`).
 - The exposure rules of E5.12 are judged in the restored database, not through the second endpoint: the restored installation has no endpoint `customers` (values-restore.yaml configures the default
   endpoint only), so no request reaches a rule there.
 - The browser journey `16-backups.spec.ts` runs against the source installation (the restored one has no edge and no identity provider); the restored installation's side of the screen is the summary

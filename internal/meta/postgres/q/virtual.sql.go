@@ -7,6 +7,7 @@ package q
 
 import (
 	"context"
+	"encoding/json"
 )
 
 const authzBuildDeployTargets = `-- name: AuthzBuildDeployTargets :many
@@ -401,7 +402,7 @@ type LockRepositoriesByKeysRow struct {
 	Class     string
 	Format    string
 	Lifecycle string
-	Config    []byte
+	Config    json.RawMessage
 }
 
 // Resolves the keys a virtual repository names and keeps the rows from being

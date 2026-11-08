@@ -40,7 +40,7 @@ func (o *Outbox) Claim(ctx context.Context, limit int) ([]journal.OutboxRow, err
 	}
 	out := make([]journal.OutboxRow, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, journal.OutboxRow{ID: r.ID, At: r.At.Time.UTC(), Event: r.Event, Entry: json.RawMessage(r.Entry)})
+		out = append(out, journal.OutboxRow{ID: r.ID, At: r.At.Time.UTC(), Event: r.Event, Entry: r.Entry})
 	}
 	return out, nil
 }

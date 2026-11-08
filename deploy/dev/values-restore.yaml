@@ -35,20 +35,47 @@ worker:
     requests: {cpu: 50m, memory: 128Mi, ephemeral-storage: 128Mi}
     limits: {memory: 512Mi}
 
+# The dev CA at the path the source mounts it (values-dev.yaml): the Secret trove-tls of this namespace carries only the CA certificate
+# in ca.crt, not the CA's key.
+extraVolumes:
+  - name: dev-auth
+    secret:
+      secretName: trove-tls
+      defaultMode: 0440
+      items: [{key: ca.crt, path: keycloak-ca.crt}]
+extraVolumeMounts:
+  - {name: dev-auth, mountPath: /var/run/secrets/trove-dev, readOnly: true}
+
 restore:
+  extraVolumes:                          # the Jobs take their own volumes, not the global ones (Q-HA-149): the restore Job checks ca_files at start; the post-restore Job has its own postRestore.extraVolumes
+    - name: dev-auth
+      secret:
+        secretName: trove-tls
+        defaultMode: 0440
+        items: [{key: ca.crt, path: keycloak-ca.crt}]
+  extraVolumeMounts:
+    - {name: dev-auth, mountPath: /var/run/secrets/trove-dev, readOnly: true}
   resources:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {memory: 1Gi}
 
 backup:
   enabled: true
+  extraVolumes:
+    - name: dev-auth
+      secret:
+        secretName: trove-tls
+        defaultMode: 0440
+        items: [{key: ca.crt, path: keycloak-ca.crt}]
+  extraVolumeMounts:
+    - {name: dev-auth, mountPath: /var/run/secrets/trove-dev, readOnly: true}
   resources:
     requests: {cpu: 50m, memory: 128Mi}
     limits: {memory: 1Gi}
 
 config:
   server:
-    base_url: https://localhost:8080          # as the source: with the same base URL the restored tokens keep working (R-BAK-021)
+    base_url: https://localhost:8080          # restore-ns.sh replaces it with the source's (its edge port): with the same base URL the restored tokens keep working (R-BAK-021)
     replica_header: always
   log:
     level: debug
@@ -72,6 +99,9 @@ config:
   proxy:
     metadata_cache_bytes: 32MiB
     merged_metadata_cache_bytes: 64MiB
+    outbound:
+      tls:
+        ca_files: [/var/run/secrets/trove-dev/keycloak-ca.crt]   # as the source: a restored CI issuer (caBundleRef) and the test advisory source verify against the dev CA
   database:
     host: trove-db-rw.${RESTORE_NS}.svc
     name: trove

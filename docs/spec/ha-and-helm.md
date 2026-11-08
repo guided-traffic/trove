@@ -1053,8 +1053,8 @@ what "sized for it" means.
 
    | Service on the node | What makes its drain safe |
    |---|---|
-   | PostgreSQL instance | CloudNativePG switches the primary over before it drains the primary's node ([Kubernetes upgrade and maintenance](https://cloudnative-pg.io/docs/1.30/kubernetes_upgrade)); with `dataDurability: required` at least three instances, so a drained standby leaves a synchronous standby (R-HA-013). Other platforms: their maintenance procedure |
-   | Pooler instance (R-HA-058), request or control pooler | At least two instances of each pooler on different nodes, a PDB, PgBouncer 1.23 or later, whose `SIGTERM` waits for clients to disconnect ([signals](https://www.pgbouncer.org/usage.html)), and a grace period longer than trove's pooled connection lifetime |
+   | PostgreSQL instance | CloudNativePG requests the switchover when the primary's node is cordoned and releases the primary's budget from that request on, so the old primary may be evicted while it is still demoting (Q-HA-172) ([Kubernetes upgrade and maintenance](https://cloudnative-pg.io/docs/1.30/kubernetes_upgrade)); with `dataDurability: required` at least three instances, so a drained standby leaves a synchronous standby (R-HA-013). Other platforms: their maintenance procedure |
+   | Pooler instance (R-HA-058), request or control pooler | At least two instances of each pooler on different nodes, a PDB, PgBouncer 1.23 or later, and a stop that waits until trove's connections have left the instance: a `preStop` sleep of at least `max_conn_lifetime` + jitter + `health_check_period` while the pod is out of its Service, and a grace period longer than the sleep. PgBouncer's own `SIGTERM` waits for clients to disconnect ([signals](https://www.pgbouncer.org/usage.html)), but the CloudNativePG pooler manager does not pass it on: it sends `SIGINT`, which closes every idle client connection at once (R-HA-058) |
    | Valkey primary | A replica and a Sentinel majority on other nodes. Sentinel fails over after `down-after-milliseconds`, and trove runs degraded meanwhile (R-HA-057). Running `SENTINEL FAILOVER` before the primary stops shortens that window |
    | Valkey replica, Sentinel | A PDB with `maxUnavailable: 1` from whoever runs Valkey; three Sentinels on three nodes keep a majority |
    | S3-compatible store, edge proxy | The platform's; both must run highly available |
@@ -1104,9 +1104,18 @@ Variants, with the same load and pass conditions:
 |---|---|---|---|
 | A | nothing else | — | every night and on dispatch, in HA and Performance (2 minutes of load before and 3 after; every change to `main` until the owner's decision of 2026-11-01, [Q-HA-67](#q-ha-67--where-and-how-often-the-scenarios-under-npm-load-run)) |
 | B | the Valkey primary and one Sentinel | `trove_valkey_primary_changes_total` rises on every replica; no replica turns unready | a green full run of Test and Release on the commit that closes the phase |
-| C | the PostgreSQL primary | CloudNativePG switches over before the eviction | a green full run of Test and Release on the commit that closes the phase |
+| C | the PostgreSQL primary | CloudNativePG has requested the switchover (`.status.targetPrimary` names another instance or the operator's failover marker `pending`) when the old primary is evicted; the traffic sees no failed request | a green full run of Test and Release on the commit that closes the phase |
 | D | an instance of the transaction-mode pooler (pooler profile, R-HA-058) | — | a green full run of Test and Release on the commit that closes the phase |
 | E | a running backup pod (R-HA-060) | the backup Job completes, and the eviction is not counted against `backoffLimit` | a green full run of Test and Release on the commit that closes the phase |
+
+**How the test drains variants B to E** ([Q-HA-170](#q-ha-170--a-variant-drain-evicts-the-releases-pods-and-the-variants-dependency-by-their-own-selectors-in-parallel-drains-and-nothing-else-on-the-node)
+to Q-HA-174). `deploy/dev/drain.sh [--also valkey|postgres|pooler]… <node>` drains the release's pods and, for B, C and D, the
+dependency's pods on the node, each set by its own `kubectl drain --pod-selector` run, all started together; nothing else on the node
+is evicted, and the script returns once the node is uncordoned and the evicted dependency is whole again. B evicts the Valkey primary
+and the Sentinel without a planned failover first; C lets CloudNativePG switch the primary over at the cordon and evicts the demoted
+instance; D runs in the pooler profile with the prerequisites of rule 5; E places a backup pod on the node through a preferred node
+affinity. The harness that picks the node, drains it and judges the variant's own condition (`test/e2e/drain_variants_test.go`) does
+not bring a load: the blocks of the vulnerability scanning run it under their probes (roadmap E5.13), and E5.9 runs it under the load above.
 
 **A drain per role** (phase 6a). For each of `api`, `packages` and `worker` (and a worker pool of the queue `vuln` when the
 run configures one), the pods of that role alone are evicted one after the other through the eviction API, each after the
@@ -1708,12 +1717,27 @@ connections stay supported and remain the default.
   the main pool's exec mode is switched as [architecture.md](architecture.md) R-ARCH-019 states.
 - **The pooler is highly available.** Each pooler (request and control) runs at least two instances
   on different nodes behind one Service, with a PodDisruptionBudget that the operator adds
-  (CloudNativePG's pooling page names none, checked 2026-10-28), and PgBouncer 1.23 or later, whose
-  `SIGTERM` waits for clients to disconnect ([signals](https://www.pgbouncer.org/usage.html)). With
-  the pooler, trove's main pool SHOULD use `database.pool.max_conn_lifetime: 5m` and
-  `max_conn_lifetime_jitter: 1m`, and the pooler pods' termination grace period MUST exceed their
-  sum. A draining pooler instance then loses no client before trove has moved its connections to
-  another instance (R-HA-059).
+  (CloudNativePG's pooling page names none, checked 2026-10-28), and PgBouncer 1.23 or later.
+  - **A stopping instance must outwait trove's connections.** PgBouncer's `SIGTERM` waits for clients to disconnect
+    ([signals](https://www.pgbouncer.org/usage.html)), but the CloudNativePG pooler manager (PID 1 of the pod)
+    answers `SIGTERM` with `SIGINT` ("got SIGINT, shutting down, waiting for all servers connections to be released",
+    read from a pooler pod of CloudNativePG 1.30 with PgBouncer 1.25.2): the instance exits within a second and drops
+    every idle client connection, so the next request on such a connection fails and a request whose transaction was
+    in flight returns `500`. The grace period alone therefore does not hold the instance open. A `preStop` sleep does:
+    the pod leaves the Service when its deletion starts, so trove's new connections reach the other instance, and the
+    connections it holds age out meanwhile.
+  - **The arithmetic.** A pooled connection is closed when it passes `database.pool.max_conn_lifetime` plus its
+    jitter (up to `max_conn_lifetime_jitter`). pgxpool closes an idle connection past its lifetime only in its health
+    check, which runs every `database.pool.health_check_period` (default 30 s). The last connection is gone from the
+    draining instance after at most `max_conn_lifetime + max_conn_lifetime_jitter + health_check_period`: with the
+    recommended `5m` + `1m` and the default `30s`, 390 s. The `preStop` sleep MUST be at least that, and
+    `terminationGracePeriodSeconds` MUST exceed the sleep by the time the shutdown needs (60 s is ample).
+  - **With the pooler**, trove's main pool SHOULD use `database.pool.max_conn_lifetime: 5m` and
+    `max_conn_lifetime_jitter: 1m`. A shorter lifetime shortens the drain (the dev profile uses 60 s + 15 s and a
+    health check of 5 s: 80 s, sleep 90 s, grace 120 s) at the price of opening connections more often.
+  - These are installation requirements of whoever runs a pooler: the chart does not install it and cannot check them.
+    A draining pooler instance then loses no client before trove has moved its connections to another instance
+    (R-HA-059).
 - **Pooler limits.** Each request-pooler instance accepts `max_client_conn ≥ (web_max + worker_max)
   × database.pool.max_conns`, because one instance may receive every client while the other
   drains; each control-pooler instance accepts `max_client_conn ≥ web_max + worker_max`.
@@ -1723,7 +1747,7 @@ connections stay supported and remain the default.
   A PostgreSQL failover behind the pooler is handled by R-HA-009.
 
 CloudNativePG example ([connection pooling](https://cloudnative-pg.io/docs/1.30/connection_pooling);
-the `template` needs `containers: []` when no container is overridden):
+the `template` needs `containers: []` when no container is overridden, and the entry named `pgbouncer` for the `preStop` below):
 
 ```yaml
 apiVersion: postgresql.cnpg.io/v1
@@ -1747,8 +1771,13 @@ spec:
       labels:
         app: trove-db-pooler              # example
     spec:
-      containers: []
-      terminationGracePeriodSeconds: 420  # example; > max_conn_lifetime + jitter (360 s)
+      containers:
+        - name: pgbouncer                 # overrides only the lifecycle of the operator's container
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 400              # example; ≥ 5m + 1m + 30s (390 s): the pod is out of its Service meanwhile
+      terminationGracePeriodSeconds: 460  # example; > the preStop sleep (400 s) + 60 s for the shutdown
       topologySpreadConstraints:
         - maxSkew: 1                      # example
           topologyKey: kubernetes.io/hostname
@@ -1778,8 +1807,13 @@ spec:
       labels:
         app: trove-db-pooler-control      # example
     spec:
-      containers: []
-      terminationGracePeriodSeconds: 420  # example
+      containers:
+        - name: pgbouncer
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 400              # example
+      terminationGracePeriodSeconds: 460  # example
       topologySpreadConstraints:
         - maxSkew: 1                      # example
           topologyKey: kubernetes.io/hostname
@@ -1802,6 +1836,7 @@ database:
   pool:
     max_conn_lifetime: 5m                       # example; recommended with the pooler
     max_conn_lifetime_jitter: 1m                # example
+    health_check_period: 30s                    # default; idle connections past their lifetime close here
 ```
 
 Acceptance criteria (pooler profile of R-HA-051, a green full run of Test and Release on the commit that closes the phase):
@@ -2700,7 +2735,7 @@ its NetworkPolicy. While it is off, `NOTES.txt` says so and names the two values
   the security contexts of R-HA-033, `backup.resources` and
   `terminationGracePeriodSeconds: backup.terminationGracePeriodSeconds` (60). The backup streams
   table files and blobs, so the pod mounts no volume but `/tmp`, an `emptyDir` with
-  `backup.tmpSizeLimit` (R-HA-061). It has no listener for clients and no probes.
+  `backup.tmpSizeLimit` (R-HA-061), and the operator's `backup.extraVolumes` (Q-HA-149). It has no listener for clients and no probes.
 - **Identity.** The pod runs as ServiceAccount `<fullname>-backup` (`backup.serviceAccount.*`),
   separate from the replicas' account, so workload identity maps the backup to a cloud role of its
   own (R-BAK-015). `automountServiceAccountToken: false`.
@@ -4358,6 +4393,8 @@ postRestore:
       memory: 512Mi
   podAnnotations: {}                    # safe-to-evict: "false" is always added
   extraEnv: []
+  extraVolumes: []                      # the post-restore Job's own, like extraEnv: it holds the owner login, the blob store and the journal reader, never the target (R-BAK-015); see backup.extraVolumes
+  extraVolumeMounts: []
 
 # ── Backup CronJob and restore Job (R-HA-060, backup-and-restore.md R-BAK-012) ──
 backup:
@@ -4372,7 +4409,7 @@ backup:
   backoffLimit: 2                       # evictions are not counted (podFailurePolicy)
   activeDeadlineSeconds: 0              # 0 = not rendered
   terminationGracePeriodSeconds: 60
-  tmpSizeLimit: 256Mi                   # the only volume (R-HA-061); the commands use at most 64 MiB (R-BAK-012), the rest keeps the kubelet's sizeLimit eviction away
+  tmpSizeLimit: 256Mi                   # the only volume the chart adds (R-HA-061); the commands use at most 64 MiB (R-BAK-012), the rest keeps the kubelet's sizeLimit eviction away
   resources:
     requests:
       cpu: 500m
@@ -4391,6 +4428,8 @@ backup:
   podAnnotations: {}                    # cluster-autoscaler.kubernetes.io/safe-to-evict: "false" is always added (R-BAK-012)
   podLabels: {}
   extraEnv: []
+  extraVolumes: []                      # the backup pod's own, like extraEnv: the global extraVolumes reach the Deployments only (Q-HA-149); a file the configuration names (proxy.outbound.tls.ca_files) must exist here
+  extraVolumeMounts: []
 
 restore:
   enabled: false                        # renders the restore Job, no migration Job, a suspended CronJob (Q-HA-18)
@@ -4415,11 +4454,13 @@ restore:
       memory: 2Gi
   podAnnotations: {}                    # safe-to-evict: "false" is always added, as for backup pods
   extraEnv: []
+  extraVolumes: []                      # the restore Job's own, like extraEnv; see backup.extraVolumes
+  extraVolumeMounts: []
 
 # ── Extension points ────────────────────────────────────────────
 extraEnv: []                            # example: [{name: TROVE_LOG_LEVEL, value: debug}]
 extraEnvFrom: []
-extraVolumes: []                        # the operator's; the chart's volume check cannot see a claim's access mode
+extraVolumes: []                        # the operator's, for the Deployments only (the Jobs take backup.extraVolumes and restore.extraVolumes, Q-HA-149); the chart's volume check cannot see a claim's access mode
 extraVolumeMounts: []
 initContainers: []                      # run before trove starts
 sidecars: []                            # native sidecars (restartPolicy: Always) allowed
@@ -5260,7 +5301,8 @@ Priority: **P1** · Covers: HA-048, HA-049, HA-050, HA-051
 - `extraEnv` and `extraEnvFrom` (the containers of the Deployments; the backup and restore Jobs take only their own
   `backup.extraEnv` and `restore.extraEnv`, like the migration Job, Q-HA-149), `web.extraEnv`, `worker.extraEnv`,
   `backup.extraEnv`, `restore.extraEnv` and `migrations.extraEnv` (per workload), `extraVolumes`
-  and `extraVolumeMounts` (trove container), `initContainers`,
+  and `extraVolumeMounts` (the Deployments' trove container; the backup, restore and post-restore Jobs take `backup.extraVolumes`,
+  `backup.extraVolumeMounts`, `restore.extraVolumes` and `restore.extraVolumeMounts`, Q-HA-149), `initContainers`,
   `sidecars` (Kubernetes native sidecars with `restartPolicy: Always` are allowed), `lifecycle`
   and `extraObjects`.
 - All of them are rendered with `tpl`, so they can reference values and release names.
@@ -8576,13 +8618,13 @@ Status: **Decided by the development agent** — selected from the options below
 | Option | What it means | For | Against |
 |---|---|---|---|
 | (a) The global `extraEnv`, `extraEnvFrom`, `extraVolumes` and `extraVolumeMounts` reach the Jobs as they reach the Deployments | R-HA-046 read literally | An outbound proxy variable set once reaches every pod | A variable or volume that serves the replicas (a Valkey or login Secret an operator adds, the dev profile's CA volume) would reach the pods that hold the target's credentials, and the rule that the Jobs mount no Valkey Secret (R-BAK-012) could not be checked from the chart |
-| (b) The Jobs take `backup.extraEnv` and `restore.extraEnv` and nothing global (chosen) | As the migration Job does with `migrations.extraEnv` | What a Job mounts is what its values and the Secrets of its scope say; the chart test can assert it | An operator sets a proxy variable three times |
+| (b) The Jobs take `backup.extraEnv` and `restore.extraEnv` and the volumes of their own values (`backup.`, `restore.` and `postRestore.extraVolumes` with the mounts) and nothing global (chosen) | As the migration Job does with `migrations.extraEnv` | What a Job mounts is what its values and the Secrets of its scope say; the chart test can assert it | An operator sets a proxy variable three times |
 
 **Choice:** (b).
 
 **Rationale:** The Jobs are the pods with the highest privilege on the data, and the chart's rule is that each Secret is mounted only into the pods whose process reads it (R-HA-030). The development agent would revisit this if operators ask for a shared list for all Jobs.
 
-**Applied:** R-HA-046, R-HA-060; `templates/_backup.tpl`.
+**Applied:** R-HA-046, R-HA-060; `templates/_backup.tpl`; the values `backup.extraVolumes`, `restore.extraVolumes`, `postRestore.extraVolumes` and their mounts (a file the configuration names, such as `proxy.outbound.tls.ca_files`, must exist in the Job; `TestR_HA_030_BackupSecrets`).
 
 ### Q-HA-154 · The backup suite is a long leg: nightly and on dispatch, not per change
 
@@ -8825,6 +8867,146 @@ That last assertion can run only after the push, because BuildKit writes the att
 The development agent would revisit this when `docker/buildkit-syft-scanner` ships the pinned version (then (a) with `generator=docker/buildkit-syft-scanner:<tag>@sha256:…` drops the repository's script), or when the organisation wants the generator published (option (d)).
 
 **Applied:** R-HA-047 (attestations bullet); [build.yml](../../.github/workflows/build.yml) (job `build`), [release.yml](../../.github/workflows/release.yml) (job `sbom-generator`), `tools/sbom-generator/`, [versions.env](../../tools/versions.env) (`SYFT_IMAGE`, `SBOM_GENERATOR_SHELL_IMAGE`, `SBOM_GENERATOR_REGISTRY_IMAGE`), the Makefile targets `versions-check` and `sbom-generator-check`, [releasing.md](../developer/releasing.md#the-release-pipeline); `TestR_HA_047_TheImageAttestationUsesThePinnedSyft` guards the build step and `TestR_HA_047_TheTokensHoldWhatTheJobsUse` the absence of any network option on the builder.
+
+### Q-HA-170 · A variant drain evicts the release's pods and the variant's dependency by their own selectors in parallel drains, and nothing else on the node
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-059's acceptance test evicts only the release's pods "except where a variant says otherwise", and `drain.sh <node>`
+drains with the release's selector (Q-HA-68, Test and Release run 42406831768). Variants B, C and D each add one dependency. On the
+three worker nodes of the dev profile a node also holds a Sentinel, often a Valkey data pod, a PostgreSQL instance or a pooler
+instance, and sometimes an operator; SeaweedFS, the edge, the test upstreams and the client pods run on the control-plane node, which
+no test drains. Nothing drains a variant's dependency today: the vulnerability tests and the npm tests run A only.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `kubectl drain` without a selector | The node emptied as a node-pool upgrade empties it | The real drain | Evicts the PostgreSQL standby on a node of A, B or D (the commit stall of Q-HA-68), the operators and every dependency at once, so a variant no longer isolates the dependency it names |
+| (b) Label the chosen pods and drain by the label | One `kubectl drain` | One process | Writes labels on pods that the Valkey and CloudNativePG operators own |
+| (c) One `kubectl drain --pod-selector` per selector, started together (chosen) | The release's selector and the dependency's: for B the Valkey resource's data and Sentinel pods, for C the instances of the cluster `trove-db`, for D the pods of the two `Pooler` resources | Each run cordons, evicts and retries what a PodDisruptionBudget refuses, as `kubectl drain` does; nothing but the node is written | Several processes; the selectors are the operators' labels, read from the cluster when the script is written |
+
+**Choice:** (c). `drain.sh [--also valkey|postgres|pooler]… <node>` returns when every run returned, the release's Deployments rolled
+out, the node is uncordoned and the evicted dependency is whole: two Valkey data pods and three Sentinels ready, two ready
+PostgreSQL instances, both poolers rolled out. The harness `test/e2e/drain_variants_test.go` picks the node of a variant, moves a
+primary that is in the way first (as `drainNodeVariantA`), runs the drain as the caller's fault and judges the variant's own
+condition with R-HA-059's `SIGKILL`, `Pending` and duration conditions; the load or the probes are the caller's, so E5.9 runs the same
+harness under the full load and the blocks of E5.13 under their probes.
+
+**Rationale:** each variant names one dependency, and draining only that one keeps a failure attributable to it. The development
+agent would revisit it if the dev profile gets more worker nodes than dependencies, where (a) would evict nothing a variant does not
+name.
+
+**Applied:** R-HA-059 (how the test drains variants B to E); `deploy/dev/drain.sh`, `test/e2e/drain_variants_test.go`.
+
+### Q-HA-171 · Variant B evicts the Valkey primary without a planned failover, and its counter condition covers the replicas that ran through the drain
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: rule 5 says "Running `SENTINEL FAILOVER` before the primary stops shortens that window"; B's condition is that
+`trove_valkey_primary_changes_total` rises on every replica and no replica turns unready. The drain evicts the node's trove pods at
+the same time, and a replacement may start before or after Sentinel promotes the replica.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Evict the primary as the drain reaches it; judge the counter and the readiness on every replica that ran before the drain and was not evicted (chosen) | Sentinel fails over after `down-after-milliseconds`, trove runs degraded meanwhile (R-HA-057); a replacement must be ready at the end, its counter is logged | The drain of a platform without a pre-stop failover, the harder path; the condition is judged where it can hold | A replacement that saw the change is not required to |
+| (b) `SENTINEL FAILOVER` first, then drain | The recommended procedure | The shortest degraded window | The eviction then meets a replica: it is the planned failover the failover rows already run (`TestNPMHA`, Q-VULN-88) |
+| (c) Every replica, replacements included | The sentence read literally | — | A replacement that starts after the promotion can never see a change, so the condition would fail on timing |
+
+**Choice:** (a). "Rises" is at least one; the planned failover's "exactly one" of `TestNPMHA` stays there. Readiness is the monitor of
+the failover tests (`/readyz` of every replica once a second), judged for the replicas that ran through.
+
+**Rationale:** the variant proves the drain of the primary's node, which the planned failover does not. The development agent would
+revisit it when the Valkey operator fails a primary over before it stops: then (a) and (b) are one drain.
+
+**Applied:** R-HA-059 (how the test drains variants B to E); `test/e2e/drain_variants_test.go`.
+
+### Q-HA-172 · Variant C lets CloudNativePG request the switchover at the cordon, evicts the old primary, and reads the order from the cluster's own timestamps
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: C's condition is that CloudNativePG acts before the eviction. The operator switches a primary away from a cordoned
+node by itself (F-65, Q-HA-126): it requests the switchover (`.status.targetPrimary` names another instance, with `targetPrimaryTimestamp`)
+and marks the old primary's `instanceRole` `unhealthy` while target and current primary differ, which the PodDisruptionBudgets of the
+primary and of the replicas select neither of, so the eviction is admitted from the request on, not from the completion (read in the
+CloudNativePG 1.30 sources of the module cache: `cluster_controller.go`, `replicas.go`, `pkg/specs/poddisruptionbudget.go`). The evicted
+instance keeps a volume bound to its node (kind's local-path storage), so it waits for the uncordon. The dev profile runs two
+instances with `dataDurability: preferred`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The order from Kubernetes events | The eviction event against an event of the operator | No poller | The switchover is a status change; events are pruned and not a contract of the operator |
+| (b) `.status.targetPrimary` with its `targetPrimaryTimestamp`, and the time the old primary pod's deletion was requested (its `deletionTimestamp` minus its grace period, which is the end of the grace period), both the server's own, read by a poll every 250 ms from before the drain (chosen) | Passes when the switchover was requested before the pod's deletion was requested (a second of resolution allowed); it fails when the eviction comes first or no switchover is requested | Read where the operator and the API server write them; independent of the poll's resolution | The request, not the completion: the new primary is promoted a few seconds later, which the probes judge as zero failed requests |
+| (c) `failover.sh` first, then drain | A switchover the test asks for | Deterministic | Not variant C: the eviction meets a standby, as variant A's moves do |
+
+**Choice:** (b). `drain.sh --also postgres` waits for two ready instances after the uncordon, before the next fault. The stall of
+commits while the operator drops the drained synchronous standby (Q-HA-68) belongs to this variant on the dev profile.
+
+**Rationale:** (b) judges the operator's own order of steps as far as it guarantees one: the request precedes the eviction. A stricter order (the completion first) is not what the operator promises, and the probes carry the traffic condition. Variant C's condition in R-HA-059 is worded that way. The development agent would revisit the
+profile when E5.9's variant C under the full load meets the stall: rule 5 asks for three instances with `dataDurability: required`.
+
+**Applied:** R-HA-059 (how the test drains variants B to E; the variant table row C and rule 5's PostgreSQL row); `deploy/dev/drain.sh`, `test/e2e/drain_variants_test.go`.
+
+### Q-HA-173 · The pooler profile of the dev cluster carries rule 5's drain prerequisites, with lifetimes shortened for the test
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: rule 5 asks of a pooler instance two instances on different nodes, a PodDisruptionBudget, PgBouncer 1.23 or later and a
+stop that outwaits trove's pooled connections; R-HA-058 recommends `max_conn_lifetime: 5m` with `1m` of jitter.
+`deploy/dev/pooler.yaml` (M0) had two instances per pooler and nothing else; `values-pooler.yaml` set no lifetime and declared
+`server_connections: 24`, where the two poolers hold 2 × 20 + 2 × 4 = 48 server connections; the dev database set no role
+defaults, which preflight requires on a pooled connection (`checkRoleDefaults` in `internal/meta/postgres/preflight.go`). No set had
+run the profile. Running it showed four more facts: the pooler presents the cluster's server certificate, which named only the
+`trove-db-rw`, `-r` and `-ro` Services (`verify-full` failed); the CloudNativePG pooler manager turns `SIGTERM` into `SIGINT`, so
+the instance exits within a second whatever the grace period (the first run of variant D saw two `500`s at the eviction); pgxpool
+closes an idle connection past its lifetime only in its health check; and every `jsonb` parameter failed in exec mode
+([Q-ARCH-348](architecture.md#q-arch-348--jsonb-parameters-are-jsonrawmessage-so-that-exec-mode-sends-them-as-text)).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The spec's example: lifetime 5m with 1m of jitter, sleep 400 s, grace 460 s | As production would run it | The recommended values | A pooler pod's drain takes about 6.5 minutes, the variant about 8 |
+| (b) Lifetime 60 s with 15 s of jitter, `health_check_period: 5s`, a `preStop` sleep of 90 s, grace 120 s, a PodDisruptionBudget with `maxUnavailable: 1` per pooler, a hostname spread with `DoNotSchedule` and `nodeTaintsPolicy: Honor`, role defaults set by `up.sh`, the pooler Services in `certificates.serverAltDNSNames`, `server_connections: 48` (chosen) | Rule 5 holds: the last connection is gone after at most 60 + 15 + 5 = 80 s, 10 s before the sleep ends | A drain of a pooler pod takes 90 s; connections are opened again every minute; the dev values are not the recommended ones |
+| (c) A grace period only, as the first reading of rule 5 | The profile as planned | Nothing to add to the Pooler | The instance exits within a second: it tests a lost instance (R-HA-052's pooler row), not a drain |
+| (d) No lifetime | trove keeps its connections and the pooler pod is killed at the end of its grace | — | Same as (c) |
+
+**Choice:** (b). The role defaults are the configuration's defaults (`internal/config/database.go`): `statement_timeout` 30s,
+`lock_timeout` 5s, `idle_in_transaction_session_timeout` 60s and `search_path` `trove`, set by `up.sh` with
+`ALTER ROLE trove IN DATABASE trove SET …` when `TROVE_POOLER=1`. The facts read from the cluster: PgBouncer 1.25.2 in CloudNativePG
+1.30's pooler image; the pooler's certificate names only the cluster's Services, so `deploy/dev/postgres.yaml` adds the pooler
+Services to `certificates.serverAltDNSNames` (a pooler started before the change presents the old certificate until it restarts);
+preflight refuses to start without the role defaults, naming the login and the setting.
+
+**Rationale:** the variant judges the drain rule: the stop must outwait trove's connections, which a sleep with the pod out of its
+Service does and the grace period does not. R-HA-058 states the rule and the arithmetic for operators. The shorter lifetime keeps the
+nightly leg short. The development agent would revisit it when CloudNativePG's manager waits for clients on `SIGTERM`: the sleep
+would then be dropped from the profile and the rule.
+
+**Applied:** R-HA-058 ("The pooler is highly available", the example), R-HA-059 rule 5 and its table row; `deploy/dev/pooler.yaml`,
+`values-pooler.yaml`, `postgres.yaml`, `up.sh`; [local-profile.md](../developer/local-profile.md); the README's `database.pooler`
+reference and [the admin configuration page](../manual/admin/configuration.md).
+
+### Q-HA-174 · Variant E places its backup pod on the drained node through a preferred node affinity
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: E's condition is that the backup Job completes and the eviction is not counted against `backoffLimit`. `TestBackupDrain`
+pins its backup pod with a `nodeSelector`, so the pod that replaces it waits for the uncordon; R-HA-059 fails a trove pod that stays
+`Pending` for more than 60 s, and the backup CronJob has no scheduling values.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A `nodeSelector`, as `TestBackupDrain` | The Job's pods run on that node only | As built | The replacement pod is `Pending` until the uncordon, about the length of the rollouts, and the pod watch counts it |
+| (b) Cordon the other nodes while the Job starts | As `TestBackupDrain` steers the restore Job | No change to the Job | Writes on two other nodes while the cluster serves; a pod rescheduled in that moment lands on the drained node |
+| (c) A preferred node affinity of weight 100 for the node (chosen) | The scheduler puts the first pod there when it fits (the harness checks and starts the Job again otherwise); the replacement runs wherever it fits | The replacement starts at once | One more field of the test's Job description |
+
+**Choice:** (c). The Job runs with `backoffLimit: 0` into a fresh target prefix at `TROVE_BACKUP_COPY_BYTES_PER_SECOND=512KiB` over at
+least 16 MiB of files the harness puts first, so that the copy outlasts the 20 s before the drain (the eviction restarts the copy of
+the whole installation in the next pod, so 256 KiB/s took 16 minutes on a cluster that had run the vulnerability tests); it must end
+`Complete` with at least two pods within 15 minutes.
+
+**Rationale:** (c) is the only option under which the replacement is scheduled as in production. The development agent would revisit
+it if the chart gets scheduling values for the backup CronJob.
+
+**Applied:** R-HA-059 (how the test drains variants B to E); `test/e2e/backup_env_test.go` (`bakJob`), `test/e2e/drain_variants_test.go`.
+
 ### Q-HA-180 · A replay handler starts follow-up work by writing a job row in its own transaction
 
 Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
@@ -8847,6 +9029,7 @@ restore commands build no job registry (`cmd/trove/backup_restore.go`, `admin_po
 the restore commands stay free of the worker wiring. The development agent would revisit (a) when a second handler needs a job.
 **Applied:** R-HA-054 "Replay rules"; R-REPO-061 step 7; `internal/jobs/queue.go`, `internal/vuln/jobs.go`,
 `internal/app/wire_vuln_eval.go`.
+
 
 ## What this does not cover
 

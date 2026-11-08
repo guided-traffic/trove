@@ -920,7 +920,7 @@ it is listed as a cross-page change.
 | No wall-clock limit shorter than a run | `activeDeadlineSeconds` not rendered by default (`backup.activeDeadlineSeconds` and `restore.activeDeadlineSeconds` 0) | A first full backup of a large installation runs longer than any fixed limit (Q-BAK-2); a hung run cancels itself (R-BAK-013, Q-BAK-11) |
 | Overlap | `concurrencyPolicy: Forbid` | First line of R-BAK-010; the database decides |
 | Clean shutdown | `terminationGracePeriodSeconds` ≥ 30 | Time to end the run as `interrupted` (below) |
-| Scratch | `TMPDIR` on `/tmp`, R-HA-060's only volume: an `emptyDir` with `backup.tmpSizeLimit` (default 256Mi), in backup and restore pods alike | Table files and blob copies stream; the commands use at most 64 MiB of it. No ReadWriteMany or persistent volume (INV-13) |
+| Scratch | `TMPDIR` on `/tmp`, R-HA-060's only volume of the chart's own (the operator's `extraVolumes` of the Job's values come on top): an `emptyDir` with `backup.tmpSizeLimit` (default 256Mi), in backup and restore pods alike | Table files and blob copies stream; the commands use at most 64 MiB of it. No ReadWriteMany or persistent volume (INV-13) |
 | Memory | `limits.memory` ≥ 512 MiB | Bounded by `database.parallel × 2 × database.part_size` plus copy buffers, about 100 MiB with defaults |
 | Credentials | Target credentials only in backup and restore pods; no Valkey credentials in either; the key ring only in the restore pod | R-BAK-015; the restore never touches Valkey (R-BAK-022); R-BAK-020 check 3 needs the key ring |
 | Autoscaler | Pod annotation `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"` | Only the cluster autoscaler's scale-down reads it: consolidation does not restart a multi-hour run. `kubectl drain` and the Eviction API ignore it, so a drain never waits (below) |
@@ -2689,6 +2689,39 @@ Scenario 9 says the drill "reports the restore duration per phase, and the backu
 **Rationale:** The spec asks for measured numbers and an artifact; it does not ask for the medium profile on a laptop-class kind cluster. The development agent would revisit it when the nightly performance workflow runs the medium profile.
 
 **Applied:** `test/e2e/backup_env_test.go` (`timings`), `.github/workflows/performance.yml` (job `e2e-backup`).
+
+### Q-BAK-60 · E5.12's CI bullets run in the backup and restore of `TestBackupJournal`, with the issuer double started by the set, against a restored installation configured like its source
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: roadmap E5.12 asks that a replayed disable of a CI mapping also suspends every later enabled mapping of its tier
+([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-020, Q-CI-11) and that a single-use subject token issued before the restore finished
+answers `subject_token_predates_restore` (R-CI-018, R-CI-029). The integration tier covers both against a restored database; on the
+cluster they need the issuer double of `deploy/dev/oidcstub.yaml`, which the sets `full`, `access`, `access-long`, `ci` and `ci-ha`
+start and `backup` does not. The second installation is configured by `values-restore.yaml`, whose base URL is
+`https://localhost:8080` whatever port the source's edge has (8102 in the nightly leg `e2e-backup`), and which has no copy of the dev
+CA at the path the source mounts it (`/var/run/secrets/trove-dev/keycloak-ca.crt`, named by the issuer's `caBundleRef`): a restored
+issuer could neither accept the source's audience nor fetch its keys.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Stay at the integration tier | As today | Nothing to build | The restore Job's replay and the restored installation's exchange never run together |
+| (b) A test of its own in the set `backup` | Its own backup and restore | Isolated | One more cycle of about 4 minutes |
+| (c) In the cycle of `TestBackupJournal` (chosen) | The set starts the double (`TROVE_E2E_OIDCSTUB=1`). Before the snapshot: an issuer of the double with single use and a clock skew of 5 s, a read policy on `bak-npm`, four mappings of the system tier: M0 (priority 5, project R), M1 (10) and M2 (20, read and deploy) for project P, M3 (30, project Q); an exchange for P at the source matches M1. After the snapshot: M1 disabled, a token for R minted. After the restore: the replay lists M1 applied and M2 and M3 suspended, M0 stays enabled; the token minted before the restore finished answers `400 subject_token_predates_restore`; a token minted after `restored_at` plus the skew exchanges through M0, and its second use answers `subject_token_replayed`; a fresh token for P answers `no_matching_mapping` | One cycle; the setup is a few requests | `TestBackupJournal` grows by about a minute |
+| (d) In the set `ci-ha` | The CI fixture is there | The double and the reference setup exist | The set has no backup harness and runs the scatter profile on a hosted runner; the second installation would join it |
+
+**Choice:** (c). The second installation is configured like its source, as R-BAK-021 assumes: `restore-ns.sh` sets
+`config.server.base_url` from the edge port of the cluster, as `up.sh` does, and `values-restore.yaml` mounts the dev CA from the
+namespace's `trove-tls` at the source's path and lists it in `proxy.outbound.tls.ca_files`. The Jobs check the configured CA files at start, so
+`values-restore.yaml` (and `values-dev.yaml`, where the backup runs) sets `backup.extraVolumes` and `restore.extraVolumes` with the mounts;
+the global `extraVolumes` stay the Deployments' (Q-HA-149 holds). The vulnerability drill needs the same
+trust for its first sync ([vulnerability-scanning.md](vulnerability-scanning.md) Q-VULN-127).
+
+**Rationale:** the bullets are two more things a restore withholds, in the same cycle as the others of E5.12. The development agent
+would revisit it if `TestBackupJournal` passes 15 minutes on the dev cluster: then the CI part moves to a test of its own (b).
+
+**Applied:** `test/e2e/backup_journal_test.go`, `test/e2e/backup_ci_test.go`, `deploy/dev/e2e.sh` (set `backup`),
+`deploy/dev/restore-ns.sh`, `deploy/dev/values-restore.yaml`; [e2e.md](../developer/e2e.md#the-backup-tests).
 
 ## What this does not cover
 

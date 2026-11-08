@@ -2,6 +2,7 @@ package ci
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -67,9 +68,9 @@ func listRows[R ~struct {
 	Priority                                                               int32
 	Enabled                                                                bool
 	SubjectKinds                                                           []string
-	Match, Grants                                                          []byte
+	Match, Grants                                                          json.RawMessage
 	MaxTtlSecs                                                             int64
-	Options                                                                []byte
+	Options                                                                json.RawMessage
 	Description                                                            string
 	Version                                                                int64
 	CreatedBy                                                              string

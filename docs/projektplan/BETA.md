@@ -1041,8 +1041,7 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   finding twice, none lost), the block of four versions answered on every replica through a node drain, a Valkey failover and a
   switchover, a worker killed mid-sync (a failed job and a clean next run: the sync kinds have one attempt). The set `vuln-long` passed
   with them in the dispatched nightly run 42192042297, after two defects of the tests and one of the product were fixed (the alias
-  closure's plan on a table without statistics, Q-VULN-94). Open: drain variants B to E, and the restore part, which waits for backup
-  and restore
+  closure's plan on a table without statistics, Q-VULN-94). Built on 2026-11-08: the blocks hold on every replica through drain variants B, C and E (set `vuln-long`, `TestVulnLong_R_VULN_015_BlockHoldsThroughDrainVariants`, Q-HA-170 to Q-HA-174) and D in the pooler profile (set `vuln-pooler`, `TestVulnPooler_R_VULN_015_BlockHoldsThroughDrainVariantD`), and the restore drill restores blocks and triage and reconciles them after the first sync (`TestVulnLong_R_VULN_026_RestoreKeepsBlocksAndTriage`, Q-VULN-125 to Q-VULN-128); the whole set `vuln-long` passed on kind (1052 s), the variants after the review fixes and `vuln-pooler` twice. Found and fixed on the way: `jsonb` parameters through a transaction-mode pooler (Q-ARCH-348), a policy update already in effect replayed as suspended (R-AUTHZ-031), the restore Jobs without the CA volume (per-Job `extraVolumes`, Q-HA-149 kept). Variant B once caused no failover (F-78). Open: the nightly evidence of the sets  and restore
 - 🟢 Rolling upgrade from the previous pre-release with mixed versions. `TestUpgrade_R_HA_020_RollingFromThePreviousRelease`
   (set `upgrade`) passed on kind on 2026-11-06: v0.19.0 (resolved from the tags) upgraded with its migration Job and rolled back with
   `helm rollback`, under 447 `npm ci`, 47 publishes, 545 `dotnet restore` and 71 browser journeys, 0 failed; R-HA-020's verification
@@ -1097,8 +1096,7 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   database, `trove backup verify --deep` exits 0, two overlapping Jobs end one Complete and one exit 3), `TestBackupDrain` (a drain and a
   `kill -9` during a backup and during a restore, every Job Complete), `TestBackupJournal` (E5.12's token, user, npm withhold and
   reinstate, NuGet reservation, exposure, storage summary and restore origin), the scenarios 1, 2, 5, 7 and 10 of R-BAK-029 against the
-  integration stack. Open: the first run of the nightly leg; on the cluster E5.12's CI bullets (covered at integration level), the
-  restore across releases and PostgreSQL majors (H-568) and E5.13's restore part (R-VULN-026)
+  integration stack. On 2026-11-08 E5.12's CI bullets joined `TestBackupJournal` on the cluster (a replayed mapping disable suspends the later mappings, the single-use subject token answers `subject_token_predates_restore`) and E5.13's restore part passed (`TestVulnLong_R_VULN_026_RestoreKeepsBlocksAndTriage`), both on kind. Open: the first run of the nightly leg; the restore across releases and PostgreSQL majors stays gap H-568
 
 **Helm chart and release**
 - 🟢 Chart complete: values reference and schema, autoscaling, network policies, monitoring integration. Built on 2026-11-07: the values reference is held to `values.yaml` and `values.schema.json` (`TestR_HA_031_ValuesReference`), the Gateway API exposure (`TestR_HA_038_GatewayAPIExposure`), the ServiceMonitor and 23 alerts of the PrometheusRule with promtool tests ([Q-HA-135](../spec/ha-and-helm.md)). The backup CronJob, the restore Job and the post-restore hook Job with their values, schema, validation and Secrets by scope (R-HA-060, R-HA-025), and every alert of R-HA-045 (`TestR_HA_045_PrometheusRule`)

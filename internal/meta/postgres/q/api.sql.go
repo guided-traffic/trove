@@ -7,6 +7,7 @@ package q
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -145,8 +146,8 @@ type GetJobViewRow struct {
 	ProgressDone  pgtype.Int8
 	ProgressTotal pgtype.Int8
 	ProgressUnit  pgtype.Text
-	Result        []byte
-	Error         []byte
+	Result        json.RawMessage
+	Error         json.RawMessage
 	CreatedAt     pgtype.Timestamptz
 	StartedAt     pgtype.Timestamptz
 	FinishedAt    pgtype.Timestamptz
@@ -402,8 +403,8 @@ type ListJobsNewestFirstRow struct {
 	ProgressDone  pgtype.Int8
 	ProgressTotal pgtype.Int8
 	ProgressUnit  pgtype.Text
-	Result        []byte
-	Error         []byte
+	Result        json.RawMessage
+	Error         json.RawMessage
 	CreatedAt     pgtype.Timestamptz
 	StartedAt     pgtype.Timestamptz
 	FinishedAt    pgtype.Timestamptz
@@ -495,8 +496,8 @@ type ListJobsOldestFirstRow struct {
 	ProgressDone  pgtype.Int8
 	ProgressTotal pgtype.Int8
 	ProgressUnit  pgtype.Text
-	Result        []byte
-	Error         []byte
+	Result        json.RawMessage
+	Error         json.RawMessage
 	CreatedAt     pgtype.Timestamptz
 	StartedAt     pgtype.Timestamptz
 	FinishedAt    pgtype.Timestamptz

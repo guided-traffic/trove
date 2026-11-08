@@ -7,6 +7,7 @@ package q
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -120,8 +121,8 @@ type CiIssuanceGetRow struct {
 	Sha            string
 	UserID         string
 	UserLogin      string
-	Claims         []byte
-	Grants         []byte
+	Claims         json.RawMessage
+	Grants         json.RawMessage
 	RequestedScope string
 	GrantedScope   string
 	CrossProject   bool
@@ -257,8 +258,8 @@ type CiIssuanceListRow struct {
 	Sha            string
 	UserID         string
 	UserLogin      string
-	Claims         []byte
-	Grants         []byte
+	Claims         json.RawMessage
+	Grants         json.RawMessage
 	RequestedScope string
 	GrantedScope   string
 	CrossProject   bool
@@ -409,8 +410,8 @@ type CiIssuanceListForProjectRow struct {
 	Sha            string
 	UserID         string
 	UserLogin      string
-	Claims         []byte
-	Grants         []byte
+	Claims         json.RawMessage
+	Grants         json.RawMessage
 	RequestedScope string
 	GrantedScope   string
 	CrossProject   bool

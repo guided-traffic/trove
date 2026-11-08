@@ -1003,6 +1003,51 @@ func TestR_HA_030_BackupSecrets(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("the global extraVolumes reach no Job, the Jobs' own do (Q-HA-149)", func(t *testing.T) {
+		vol := func(prefix, name string) []string {
+			return []string{
+				prefix + "extraVolumes[0].name=" + name, prefix + "extraVolumes[0].secret.secretName=" + name,
+				prefix + "extraVolumeMounts[0].name=" + name, prefix + "extraVolumeMounts[0].mountPath=/var/run/extra/" + name,
+			}
+		}
+		has := func(pod any, name string) (mounted, declared bool) {
+			if cs, ok := at(pod, "containers").([]any); ok && len(cs) > 0 {
+				for _, m := range at(cs[0], "volumeMounts").([]any) {
+					mounted = mounted || str(m, "name") == name
+				}
+			}
+			for _, v := range at(pod, "volumes").([]any) {
+				declared = declared || str(v, "name") == name
+			}
+			return
+		}
+		pods := func(extra ...string) map[string]any {
+			_, d := render(t, required(), append(append(staticTarget(), restoreSets()...), extra...)...)
+			_, pd := render(t, required(), append(append(staticTarget(), postRestoreSets()...), extra...)...)
+			return map[string]any{"the backup CronJob": cronJobPod(d), "the restore Job": restorePod(d), "the post-restore Job": postRestorePod(pd)}
+		}
+		// the global lists: the replicas only
+		for what, pod := range pods(vol("", "replica-only")...) {
+			if m, v := has(pod, "replica-only"); m || v {
+				t.Errorf("%s takes the global extraVolumes (mounted %v, declared %v)", what, m, v)
+			}
+		}
+		// the Jobs' own lists
+		own := map[string]string{"the backup CronJob": "backup-ca", "the restore Job": "restore-ca", "the post-restore Job": "post-restore-ca"}
+		lists := append(append(vol("backup.", "backup-ca"), vol("restore.", "restore-ca")...), vol("postRestore.", "post-restore-ca")...)
+		for what, pod := range pods(lists...) {
+			for job, name := range own {
+				m, v := has(pod, name)
+				switch {
+				case job == what && (!m || !v):
+					t.Errorf("%s: %s mounted %v, declared %v, want both", what, name, m, v)
+				case job != what && (m || v):
+					t.Errorf("%s takes %s, the volume of %s", what, name, job)
+				}
+			}
+		}
+	})
 }
 
 // TestR_HA_059_NoDisruptionBudgetForTheJobs (R-HA-059, R-HA-060, R-BAK-012): no PodDisruptionBudget selects a backup or restore

@@ -5,8 +5,9 @@ package e2e
 // The vulnerability scanning under the failure suite (E5.13, R-HA-052; owner rule of 2026-11-01: long tests run nightly, on dispatch and
 // locally): a PostgreSQL switchover during an evaluation job (R-VULN-011), a malicious or blocked version that stays blocked on every
 // replica while a node is drained and while the Valkey and PostgreSQL primaries change (R-VULN-015, R-VULN-027, R-HA-059), and a
-// worker killed in the middle of a full synchronization (R-VULN-004, H-523). The restore part of E5.13 and the drain variants B to E
-// need the backup and the pooler profiles, which are not built.
+// worker killed in the middle of a full synchronization (R-VULN-004, H-523). The blocks through drain variants B, C and E are in
+// vuln_drain_variants_test.go, the one through variant D in vuln_pooler_test.go (the set vuln-pooler), the restore drill of E5.13 in
+// vuln_restore_test.go.
 
 import (
 	"context"
@@ -342,12 +343,14 @@ func (b *blockTally) report(t *testing.T, minReplicas int) {
 	}
 }
 
-// blockedPaths builds the probes: the tarball and the .nupkg of a version blocked in triage (cached before it was blocked) and of
-// a malicious one (never stored), through the repositories that hold the remote boundary of the vuln profile.
-func (e *vulnEnv) blockedPaths(t *testing.T) []blockProbe {
+// blockedPathsLabeled builds the probes: the tarball and the .nupkg of a version blocked in triage (cached before it was blocked) and of
+// a malicious one (never stored), through the repositories that hold the remote boundary of the vuln profile. The label names the
+// packages of the triage versions: a test that builds its probes after another one of the process needs a label of its own, because a
+// second call with the same label would publish the same name and version to the upstream again.
+func (e *vulnEnv) blockedPathsLabeled(t *testing.T, label string) []blockProbe {
 	t.Helper()
-	e.addNPMTriage(t, "fault")
-	e.addNuGetTriage(t, "fault")
+	e.addNPMTriage(t, label)
+	e.addNuGetTriage(t, label)
 	e.syncIncremental(t)
 	npmA := e.adm.withToken(e.npm.token)
 	nugetA := e.adm.withToken(e.nuget.token)
@@ -355,7 +358,7 @@ func (e *vulnEnv) blockedPaths(t *testing.T) []blockProbe {
 		l := strings.ToLower(id)
 		return nugetAddr(repo) + "/v3/flatcontainer/" + l + "/1.0.0/" + l + ".1.0.0.nupkg"
 	}
-	npmName, nugetID := e.npmTri["fault"], e.nugetTri["fault"]
+	npmName, nugetID := e.npmTri[label], e.nugetTri[label]
 	npmTri, nugetTri := tarballPath(npmRemoteKey, npmName), nupkg(vulnNuGetRemote, nugetID)
 	npmA.get(npmTri).want(t, "the first download of the npm package fills the cache", 200)
 	nugetA.get(nugetTri).want(t, "the first download of the NuGet package fills the cache", 200)
@@ -390,11 +393,11 @@ func (e *vulnEnv) blockedPaths(t *testing.T) []blockProbe {
 // 10 requests a second each as GET, HEAD and Range GET, while a node of variant A of R-HA-059 is drained, while the Valkey
 // primary is failed over (R-HA-057) and while the PostgreSQL primary is switched over. Every answer must be the refusal of
 // R-VULN-016 from a replica; a 200, 206 or 304 is a breach of R-VULN-015, any other answer or a connection error a failed request.
-// The replacement pod of the drain must refuse from its first request. Variants B to E need the Valkey-primary node, the
-// pooler and the backup profiles and are not run.
+// The replacement pod of the drain must refuse from its first request. Variants B, C and E are
+// TestVulnLong_R_VULN_015_BlockHoldsThroughDrainVariants, variant D is TestVulnPooler_R_VULN_015_BlockHoldsThroughDrainVariantD.
 func TestVulnLong_R_VULN_015_BlockHoldsDuringFailures(t *testing.T) {
 	e := vulnFx(t)
-	probes := e.blockedPaths(t)
+	probes := e.blockedPathsLabeled(t, "fault")
 
 	t.Run("R-HA-059 R-VULN-015 R-VULN-027 E5.13 drain variant A: every replica refuses, the replacement from its first request", func(t *testing.T) {
 		troveSettled(t, 3, 3, 4)
@@ -414,12 +417,12 @@ func TestVulnLong_R_VULN_015_BlockHoldsDuringFailures(t *testing.T) {
 		tally.report(t, 4)
 		troveSettled(t, 3, 3, 4)
 	})
-	t.Run("R-HA-052 R-HA-057 R-VULN-015 R-VULN-027 E5.13 Valkey planned failover (a stand-in for variant B)", func(t *testing.T) {
+	t.Run("R-HA-052 R-HA-057 R-VULN-015 R-VULN-027 E5.13 Valkey planned failover (R-HA-052)", func(t *testing.T) {
 		troveSettled(t, 3, 3, 4)
 		tally := probeDuring(t, probes, 10*time.Second, 30*time.Second, func() { script(t, "valkey-failover.sh") })
 		tally.report(t, 3)
 	})
-	t.Run("R-HA-052 R-VULN-015 R-VULN-027 E5.13 PostgreSQL switchover (a stand-in for variant C)", func(t *testing.T) {
+	t.Run("R-HA-052 R-VULN-015 R-VULN-027 E5.13 PostgreSQL switchover (R-HA-052)", func(t *testing.T) {
 		troveSettled(t, 3, 3, 4)
 		tally := probeDuring(t, probes, 10*time.Second, 30*time.Second, func() { script(t, "failover.sh") })
 		tally.report(t, 3)

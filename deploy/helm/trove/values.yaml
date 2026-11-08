@@ -726,9 +726,11 @@ postRestore:
       memory: 512Mi
   podAnnotations: {}                    # safe-to-evict: "false" is always added
   extraEnv: []
+  extraVolumes: []                      # the post-restore Job's own, like extraEnv: it holds the owner login, the blob store and the journal reader, never the target (R-BAK-015); see backup.extraVolumes
+  extraVolumeMounts: []
 
 # ── Backup CronJob and restore Job (R-HA-060, R-BAK-012) ──────────────────────
-# Both are Jobs of the binary's command `trove backup`, not roles. They serve nothing, open no port and mount no volume but /tmp.
+# Both are Jobs of the binary's command `trove backup`, not roles. They serve nothing, open no port and mount no volume but /tmp and the extra volumes of their own values.
 backup:
   enabled: false                        # true turns the backup on and then needs config.backup.target.bucket
   schedule: "0 2 * * *"                 # five fields or one of the @-macros, the dialect of trove's cron parser; no seconds, no ?, day of week 0-6, no @every, no TZ=
@@ -741,7 +743,7 @@ backup:
   backoffLimit: 2                       # a drain or an eviction is not counted (podFailurePolicy)
   activeDeadlineSeconds: 0              # 0 = not rendered: a first backup of a large installation takes many hours, and a hung run cancels itself after config.backup.stall_timeout
   terminationGracePeriodSeconds: 60     # at least 30: time to end the run as interrupted
-  tmpSizeLimit: 256Mi                   # the only volume; the commands use at most 64 MiB of it
+  tmpSizeLimit: 256Mi                   # the only volume the chart adds; the commands use at most 64 MiB of it
   resources:
     requests:
       cpu: 500m
@@ -759,6 +761,8 @@ backup:
   podAnnotations: {}                    # cluster-autoscaler.kubernetes.io/safe-to-evict: "false" is always added
   podLabels: {}
   extraEnv: []
+  extraVolumes: []                      # the backup pod's own, like extraEnv: the global extraVolumes reach the Deployments only (Q-HA-149); a file the configuration names (proxy.outbound.tls.ca_files) must exist here
+  extraVolumeMounts: []
 
 restore:
   enabled: false                        # renders the restore Job, no migration Job and a suspended CronJob; every role and pool must have no replica
@@ -782,10 +786,12 @@ restore:
       memory: 2Gi
   podAnnotations: {}                    # safe-to-evict: "false" is always added, as for backup pods
   extraEnv: []
+  extraVolumes: []                      # the restore Job's own, like extraEnv; see backup.extraVolumes
+  extraVolumeMounts: []
 
 # ── Extension points ────────────────────────────────────────────
 extraEnv: []                            # example: [{name: TROVE_LOG_LEVEL, value: debug}]
 extraEnvFrom: []
-extraVolumes: []                        # the operator's; the chart's volume check cannot see a claim's access mode
+extraVolumes: []                        # the operator's, for the Deployments only (the Jobs take backup.extraVolumes and restore.extraVolumes, Q-HA-149); the chart's volume check cannot see a claim's access mode
 extraVolumeMounts: []
 extraObjects: []                        # extra manifests rendered with tpl

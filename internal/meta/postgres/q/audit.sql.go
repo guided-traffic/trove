@@ -7,6 +7,7 @@ package q
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
@@ -67,7 +68,7 @@ type GetAuditEventRow struct {
 	Project      string
 	Path         string
 	Reason       string
-	Details      []byte
+	Details      json.RawMessage
 }
 
 // One event by id. The caller bounds occurred_at around the time a UUIDv7 id
@@ -269,7 +270,7 @@ type ListAuditEventsNewestRow struct {
 	Project      string
 	Path         string
 	Reason       string
-	Details      []byte
+	Details      json.RawMessage
 }
 
 // repository is the qualified name <project>/<key> and project the project key (Q-AUTHZ-209).
@@ -407,7 +408,7 @@ type ListAuditEventsOldestRow struct {
 	Project      string
 	Path         string
 	Reason       string
-	Details      []byte
+	Details      json.RawMessage
 }
 
 // The same filters, oldest first (the export reads in this order).

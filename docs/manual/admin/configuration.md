@@ -113,6 +113,7 @@ The tables below list the keys an installation most often sets. Every key with i
 | `database.schema` | `trove` | Schema trove creates and uses |
 | `database.session_host` | empty (`host`) | A direct host for the connections that hold session locks (the migration and the job leases), when `host` is a pooler |
 | `database.pooler.mode` | `none` | `none`, `session` or `transaction`: the kind of pooler `host` points at |
+| `database.pool.health_check_period` | `30s` | How often idle connections past `max_conn_lifetime` are closed; it adds to the time a connection needs to leave a draining pooler instance |
 | `database.ssl_mode` | `verify-full` | `verify-full`, `verify-ca`, `require`; `disable`, `allow` and `prefer` also need `allow_insecure: true` |
 | `database.ssl_root_cert_file` | empty (system roots) | CA of the server; the chart sets it from `secrets.databaseCA` |
 | `database.pool.max_conns` | `20` | Connections per replica |
@@ -296,3 +297,12 @@ Each class allows `requests_per_second` on average and `burst` at once. The limi
 | `system.bootstrap_anonymous_read` | `false` | Development only: lets anonymous callers read the system information; refused with an `https` base URL that is not `localhost` |
 
 </details>
+
+## Behind a transaction-mode pooler
+
+With `database.pooler.mode: transaction` the installation has to provide what the chart cannot (the full rules are R-HA-058 and R-HA-059 rule 5 of the specification):
+
+- Role defaults for the login of the application: `ALTER ROLE <login> IN DATABASE <database> SET statement_timeout = '30s'`, and the same for `lock_timeout` (`5s`), `idle_in_transaction_session_timeout` (`60s`) and `search_path` (the schema). trove refuses to start, naming the login and the setting, when one differs from its configuration.
+- `database.session_host` (direct) and `database.control_host` (a second pooler with a pool of its own). The pooler's certificate must name its Services when `ssl_mode` is `verify-full`.
+- At least two instances of each pooler on different nodes and a PodDisruptionBudget.
+- A stop that waits for trove's connections: a `preStop` sleep on the pooler container of at least `max_conn_lifetime` + `max_conn_lifetime_jitter` + `health_check_period` (390 s with the recommended `5m`, `1m` and the default `30s`), and a termination grace period longer than the sleep. The CloudNativePG pooler does not wait for clients on `SIGTERM`; without the sleep a node drain drops the connections of the instance and some requests fail.

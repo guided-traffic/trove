@@ -1068,6 +1068,12 @@ migrate:
   ddl_lock_retries: 20                  # default
 ```
 
+**Running a transaction-mode pooler** (`database.pooler.mode: transaction`) puts requirements on the installation that the chart cannot install or check ([R-HA-058](docs/spec/ha-and-helm.md), [R-HA-059](docs/spec/ha-and-helm.md) rule 5):
+
+- The login needs role defaults for the four session settings, because a pooler cannot pass them as startup parameters: `ALTER ROLE <login> IN DATABASE <name> SET statement_timeout = '30s'` (and `lock_timeout = '5s'`, `idle_in_transaction_session_timeout = '60s'`, `search_path = <schema>`, with the configured values). Start-up refuses to proceed, naming the login and the setting, when one differs.
+- `database.session_host` and `database.control_host` must be set (a direct host, and a second pooler for the control connection); the pooler's server certificate must name the pooler Services for `verify-full`.
+- Each pooler runs at least two instances on different nodes with a PodDisruptionBudget. A stopping instance must outwait trove's connections: a `preStop` sleep of at least `max_conn_lifetime + max_conn_lifetime_jitter + health_check_period` (390 s with `5m`, `1m` and the default `30s`), and a termination grace period longer than the sleep. The CloudNativePG pooler does not wait for clients on `SIGTERM`, so without the sleep every drain drops the connections of the instance and some requests fail.
+
 </details>
 
 <details>
@@ -2529,7 +2535,7 @@ commonAnnotations: {}                   # default
 
 The three are Jobs of the binary's commands, not roles ([backup.yaml](deploy/helm/trove/templates/backup.yaml),
 [restore.yaml](deploy/helm/trove/templates/restore.yaml), [post-restore.yaml](deploy/helm/trove/templates/post-restore.yaml),
-[_backup.tpl](deploy/helm/trove/templates/_backup.tpl)): they serve nothing, have no probe, mount no volume but `/tmp` and their
+[_backup.tpl](deploy/helm/trove/templates/_backup.tpl)): they serve nothing, have no probe, mount no volume but `/tmp`, the extra volumes of their own values and their
 Secrets, take neither the global `extraEnv` nor `extraVolumes`, and run as a ServiceAccount of their own without a token. Their pod
 failure policy ignores a disruption (a drain, a preemption) first, then fails the Job on exit `2`, `3`, `4` and `6`; `1` and `75`
 are retried within `backoffLimit`.
@@ -2562,6 +2568,8 @@ backup:
   podAnnotations: {}                    # default; cluster-autoscaler.kubernetes.io/safe-to-evict: "false" is always added
   podLabels: {}                         # default
   extraEnv: []                          # default
+  extraVolumes: []                      # default; the backup Job's own (the global extraVolumes reach the Deployments only)
+  extraVolumeMounts: []                 # default
 restore:
   enabled: false                        # default; true renders the Job <fullname>-restore, no migration Job and a suspended CronJob, and refuses any replica or autoscaler of a role, pool or the bridge
   backupId: ""                          # default; required with enabled; example: 20261028T020000Z-7f3a
@@ -2581,6 +2589,8 @@ restore:
     limits: {memory: 2Gi}               # default
   podAnnotations: {}                    # default; safe-to-evict: "false" is always added
   extraEnv: []                          # default
+  extraVolumes: []                      # default; the restore Job's own (the global extraVolumes reach the Deployments only)
+  extraVolumeMounts: []                 # default
 postRestore:
   enabled: false                        # default; true renders the post-install, post-upgrade hook Job <fullname>-post-restore-<hash>; every role, pool and the bridge must have no replica
   restoredTo: ""                        # default; required with enabled: the time the platform restore went to, RFC 3339; example: "2026-10-28T09:15:00Z"
@@ -2599,6 +2609,8 @@ postRestore:
     limits: {memory: 512Mi}             # default
   podAnnotations: {}                    # default; safe-to-evict: "false" is always added
   extraEnv: []                          # default
+  extraVolumes: []                      # default; the postRestore Job's own (the global extraVolumes reach the Deployments only)
+  extraVolumeMounts: []                 # default
 config:
   backup:                               # the keys the chart reads; the whole section is in the configuration reference above
     target:

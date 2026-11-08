@@ -7,6 +7,7 @@ package q
 
 import (
 	"context"
+	"encoding/json"
 )
 
 const vulnAdvisoryCount = `-- name: VulnAdvisoryCount :one
@@ -362,7 +363,7 @@ ON CONFLICT (ecosystem, id) DO UPDATE
 type VulnAdvisoryUpsertParams struct {
 	Ecosystem      string
 	AdapterVersion int32
-	Docs           []byte
+	Docs           json.RawMessage
 }
 
 // Upserts the documents of a batch. A new record's decided severity is its own; a rewritten record keeps its canonical
@@ -397,7 +398,7 @@ SELECT $1::text, e.advisory_id, e.ord, e.name, COALESCE(e.ranges, '[]'::jsonb),
 
 type VulnAffectedInsertParams struct {
 	Ecosystem string
-	Entries   []byte
+	Entries   json.RawMessage
 }
 
 // The affected entries of a batch's records, one jsonb array of entries.
@@ -535,7 +536,7 @@ SELECT k.cve_id, k.date_added::date, NULLIF(k.due_date, '')::date, NULLIF(k.rans
   FROM jsonb_to_recordset($1::jsonb) AS k(cve_id text, date_added text, due_date text, ransomware text)
 `
 
-func (q *Queries) VulnKEVInsert(ctx context.Context, entries []byte) error {
+func (q *Queries) VulnKEVInsert(ctx context.Context, entries json.RawMessage) error {
 	_, err := q.db.Exec(ctx, vulnKEVInsert, entries)
 	return err
 }
@@ -600,7 +601,7 @@ UPDATE vuln_source_state
 `
 
 type VulnStateCancelledParams struct {
-	LastError []byte
+	LastError json.RawMessage
 	Source    string
 	Ecosystem string
 }
@@ -642,7 +643,7 @@ UPDATE vuln_source_state
 `
 
 type VulnStateFailureParams struct {
-	LastError []byte
+	LastError json.RawMessage
 	Source    string
 	Ecosystem string
 }
@@ -683,7 +684,7 @@ type VulnStateGetRow struct {
 	SyncedUs        int64
 	AttemptedUs     int64
 	Failures        int32
-	LastError       []byte
+	LastError       json.RawMessage
 	Records         int32
 	Rejected        int32
 	Unevaluable     int32
@@ -797,7 +798,7 @@ type VulnStateLockRow struct {
 	SyncedUs        int64
 	AttemptedUs     int64
 	Failures        int32
-	LastError       []byte
+	LastError       json.RawMessage
 	Records         int32
 	Rejected        int32
 	Unevaluable     int32

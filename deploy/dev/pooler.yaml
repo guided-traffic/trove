@@ -1,7 +1,17 @@
-# Optional pooler overlay (`TROVE_POOLER=1 deploy/dev/up.sh`, R-HA-051, R-HA-058): two
-# CloudNativePG Pooler resources in transaction mode with two instances each, one for the
-# request pool and one for the control connection. values-pooler.yaml points the chart at them.
-# The transaction-mode profile itself is verified in M5; M0 applies the manifests only.
+# Pooler overlay (`TROVE_POOLER=1 deploy/dev/up.sh`, R-HA-051, R-HA-058, R-HA-059 rule 5): two CloudNativePG
+# Pooler resources in transaction mode with two instances each, one for the request pool and one for the control
+# connection. values-pooler.yaml points the chart at them.
+#
+# What the drain of a pooler instance (variant D of R-HA-059) needs, per Pooler: the instances on different nodes
+# (a hostname spread with DoNotSchedule; nodeTaintsPolicy Honor keeps the tainted control-plane node out of the
+# skew), a PodDisruptionBudget (the operator adds none), and a stop that waits until trove has moved its connections
+# to the other instance. The wait is a preStop sleep of 90 s, not PgBouncer's SIGTERM: the CloudNativePG pooler
+# manager turns SIGTERM into SIGINT ("waiting for all servers connections to be released"), which drops every idle
+# client connection at once. During the sleep the pod is out of the Service, so trove's new connections reach the
+# other instance, and its own connections age out within lifetime + jitter + health check period
+# (values-pooler.yaml: 60s + 15s + 5s = 80 s). The grace period of 120 s covers the sleep and the shutdown.
+#
+# The server connections of the four pool sizes are 2 x 20 + 2 x 4 = 48, which values-pooler.yaml declares.
 apiVersion: postgresql.cnpg.io/v1
 kind: Pooler
 metadata:
@@ -16,6 +26,26 @@ spec:
     parameters:
       default_pool_size: "20"
       max_client_conn: "500"
+  template:
+    metadata:
+      labels:
+        trove/pooler: trove-db-pooler-rw
+    spec:
+      containers:
+        - name: pgbouncer
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 90
+      terminationGracePeriodSeconds: 120
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          nodeTaintsPolicy: Honor
+          labelSelector:
+            matchLabels:
+              trove/pooler: trove-db-pooler-rw
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Pooler
@@ -31,3 +61,43 @@ spec:
     parameters:
       default_pool_size: "4"
       max_client_conn: "100"
+  template:
+    metadata:
+      labels:
+        trove/pooler: trove-db-pooler-control
+    spec:
+      containers:
+        - name: pgbouncer
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 90
+      terminationGracePeriodSeconds: 120
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          nodeTaintsPolicy: Honor
+          labelSelector:
+            matchLabels:
+              trove/pooler: trove-db-pooler-control
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: trove-db-pooler-rw
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      trove/pooler: trove-db-pooler-rw
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: trove-db-pooler-control
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      trove/pooler: trove-db-pooler-control

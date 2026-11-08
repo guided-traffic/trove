@@ -45,7 +45,7 @@ The chart gives each Job its own pod template and the Secrets of its scope only 
 
 Verified in this repo: the render tests above. Not verified, because it needs a cluster: that a workload identity annotation maps the Job to
 a role, and that a CNI enforces the empty ingress list (the profile's CNI is the only one the ingress policies are verified on, H-41). The
-chart cannot see what an operator adds through `backup.extraEnv`, `backup.nodeSelector`, `extraObjects` or a mutating webhook of the cluster;
+chart cannot see what an operator adds through `backup.extraEnv`, `backup.extraVolumes`, `restore.extraVolumes`, `postRestore.extraVolumes`, `backup.nodeSelector`, `extraObjects` or a mutating webhook of the cluster;
 a Secret placed there reaches the Job as the operator wrote it.
 
 ## The run record and the hold

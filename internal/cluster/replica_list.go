@@ -71,7 +71,7 @@ func replicaInfoOf(r q.ListReplicasRow) (ReplicaInfo, error) {
 		InstanceUID: r.InstanceUid.String(), Name: r.Name, Version: r.Version, Revision: r.Revision,
 		Roles: r.Roles, State: r.State, Lost: r.Lost,
 		StartedAt: r.StartedAt.Time.UTC(), HeartbeatAt: r.HeartbeatAt.Time.UTC(),
-		Node: r.Node.String, Pool: r.Pool.String, Valkey: json.RawMessage(r.Valkey),
+		Node: r.Node.String, Pool: r.Pool.String, Valkey: r.Valkey,
 		SecretKeyIDs: r.SecretKeyIds, ActiveSecretKeyID: r.ActiveSecretKeyID,
 		Runtime: runtimeOf(r.Runtime),
 	}

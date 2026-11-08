@@ -1,11 +1,14 @@
 {{/*
 The Jobs of `trove backup` (R-HA-060, R-BAK-012): the CronJob <fullname>-backup and the restore Job <fullname>-restore.
-They are not roles (Q-ARCH-342): they serve nothing, open no port, have no probe and mount no volume but /tmp. A Job runs
+They are not roles (Q-ARCH-342): they serve nothing, open no port, have no probe and mount no volume but /tmp and the operator's own
+extra volumes of their values. A Job runs
 as a ServiceAccount of its own, so a workload identity maps it to a cloud role of its own (R-BAK-015), and mounts the
 Secrets of its scope only (templates/_secrets.tpl): the backup pod the database login of the backup (or the runtime
 login), the blob store's read credential and the target; the restore Job the login of the migration Job, the blob
 store, the target and the key ring. None of them mounts a Valkey Secret, and the pods carry no trove/serve label, so no
-Service selects them.
+Service selects them. Their environment and their extra volumes are those of their own values (backup.extraEnv, backup.extraVolumes,
+restore.extraEnv, restore.extraVolumes; postRestore.extraVolumes): the global extraEnv and extraVolumes
+reach the Deployments only (Q-HA-149), so a replica-only Secret never reaches a backup pod.
 */}}
 
 {{/*
@@ -36,6 +39,8 @@ renders for the journal replay (templates/restore.yaml, templates/post-restore.y
 {{- $ := .root -}}
 {{- $kind := .kind -}}
 {{- $r := get $.Values (.key | default $kind) -}}
+{{- /* the volumes of the Job's own values (backup., restore. or postRestore.), never the global ones (Q-HA-149) */ -}}
+{{- $vols := $r -}}
 {{- $labels := include "trove.labels" (dict "root" $ "component" $kind) -}}
 metadata:
   labels:
@@ -114,6 +119,9 @@ spec:
           readOnly: true
         {{- end }}
         {{- include "trove.secretVolumeMounts" (dict "root" $ "scope" $kind) | nindent 8 }}
+        {{- with $vols.extraVolumeMounts }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
   volumes:
     - name: config
       configMap:
@@ -127,6 +135,9 @@ spec:
         name: {{ include "trove.fullname" $ }}-{{ $kind }}
     {{- end }}
     {{- include "trove.secretVolumes" (dict "root" $ "scope" $kind) | nindent 4 }}
+    {{- with $vols.extraVolumes }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 {{- end -}}
 
 {{/*

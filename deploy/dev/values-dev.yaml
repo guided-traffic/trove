@@ -160,6 +160,15 @@ config:
 backup:
   enabled: true                  # the chart's default is off; this profile, and every e2e set layered on it, renders the CronJob
   schedule: "0 */6 * * *"
+  # The dev CA at the path proxy.outbound.tls.ca_files names: the backup pod takes the volumes of its own values, not the global ones (Q-HA-149).
+  extraVolumes:
+    - name: dev-auth
+      secret:
+        secretName: trove-keycloak-tls
+        defaultMode: 0440
+        items: [{key: ca.crt, path: keycloak-ca.crt}]
+  extraVolumeMounts:
+    - {name: dev-auth, mountPath: /var/run/secrets/trove-dev, readOnly: true}
 
 secrets:
   database:

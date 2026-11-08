@@ -7,6 +7,7 @@ package q
 
 import (
 	"context"
+	"encoding/json"
 )
 
 const vulnAffectedForItem = `-- name: VulnAffectedForItem :many
@@ -43,7 +44,7 @@ type VulnAffectedForItemRow struct {
 	Severity       string
 	CvssScore      float64
 	KnownExploited bool
-	Ranges         []byte
+	Ranges         json.RawMessage
 	Versions       []string
 	EveryVersion   bool
 	Fixed          []string
@@ -116,7 +117,7 @@ type VulnAffectedForNamesRow struct {
 	Severity       string
 	CvssScore      float64
 	KnownExploited bool
-	Ranges         []byte
+	Ranges         json.RawMessage
 	Versions       []string
 	EveryVersion   bool
 	Fixed          []string

@@ -7,6 +7,7 @@ package q
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -51,7 +52,7 @@ type ListClusterChangesParams struct {
 
 type ListClusterChangesRow struct {
 	Epoch     int64
-	Payload   []byte
+	Payload   json.RawMessage
 	CreatedAt pgtype.Timestamptz
 }
 
@@ -117,16 +118,16 @@ type ListReplicasRow struct {
 	Revision          string
 	Roles             []string
 	State             string
-	Checks            []byte
-	Leases            []byte
+	Checks            json.RawMessage
+	Leases            json.RawMessage
 	SecretKeyIds      []string
 	ActiveSecretKeyID string
 	Node              pgtype.Text
-	Valkey            []byte
+	Valkey            json.RawMessage
 	Pool              pgtype.Text
 	StartedAt         pgtype.Timestamptz
 	HeartbeatAt       pgtype.Timestamptz
-	Runtime           []byte
+	Runtime           json.RawMessage
 	Lost              bool
 }
 

@@ -7,6 +7,7 @@ package q
 
 import (
 	"context"
+	"encoding/json"
 )
 
 const auditAdvisoriesForNames = `-- name: AuditAdvisoriesForNames :many
@@ -49,7 +50,7 @@ type AuditAdvisoriesForNamesRow struct {
 	CweIds         []string
 	Ord            int16
 	Name           string
-	Ranges         []byte
+	Ranges         json.RawMessage
 	Versions       []string
 	EveryVersion   bool
 	Fixed          []string
@@ -134,7 +135,7 @@ type AuditAllAdvisoriesRow struct {
 	CweIds         []string
 	Ord            int16
 	Name           string
-	Ranges         []byte
+	Ranges         json.RawMessage
 	Versions       []string
 	EveryVersion   bool
 	Fixed          []string

@@ -343,6 +343,9 @@ type bakJob struct {
 	env     map[string]string // added to the container's environment
 	backoff *int              // replaces spec.backoffLimit when set
 	node    string            // pins the pod to a node when set
+	// preferNode asks the scheduler for a node without pinning the pod to it (a preferred node affinity of weight 100): the pod that
+	// replaces an evicted one is scheduled wherever it fits (Q-HA-174)
+	preferNode string
 }
 
 // bakCreateJob creates the Job from cronjob/trove-backup the way `kubectl create job --from` does (R-BAK-012) and applies the
@@ -365,6 +368,15 @@ func bakCreateJob(t testing.TB, j bakJob) {
 	if j.node != "" {
 		podSpec := spec["template"].(map[string]any)["spec"].(map[string]any)
 		podSpec["nodeSelector"] = map[string]any{"kubernetes.io/hostname": j.node}
+	}
+	if j.preferNode != "" {
+		podSpec := spec["template"].(map[string]any)["spec"].(map[string]any)
+		podSpec["affinity"] = map[string]any{"nodeAffinity": map[string]any{"preferredDuringSchedulingIgnoredDuringExecution": []any{map[string]any{
+			"weight": 100,
+			"preference": map[string]any{"matchExpressions": []any{map[string]any{
+				"key": "kubernetes.io/hostname", "operator": "In", "values": []any{j.preferNode},
+			}}},
+		}}}}
 	}
 	env, _ := c["env"].([]any)
 	for k, v := range j.env {

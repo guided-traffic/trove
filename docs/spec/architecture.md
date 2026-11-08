@@ -3153,6 +3153,9 @@ Priority: **MVP** · Covers: HA-062
     supports them in transaction mode when `max_prepared_statements` is non-zero (default 200).
     Behind a pooler without that support, the main pool's URL sets
     `default_query_exec_mode=exec`.
+  - In exec mode pgx sends no parameter types and encodes a Go `[]byte` as `bytea` text (`\x7b…`), which a `$n::jsonb`
+    cast refuses (SQLSTATE `22P02`). The `jsonb` parameters and columns of the generated queries are therefore
+    `json.RawMessage` ([Q-ARCH-348](#q-arch-348--jsonb-parameters-are-jsonrawmessage-so-that-exec-mode-sends-them-as-text)).
 - **No connection is held across a wait.** A request or a job holds a main-pool connection for one
   query or one transaction only. It never holds one while it reads from or writes to a client, the
   object store, an upstream or Valkey. The number of concurrent transfers per replica (P-10: 500) is
@@ -9285,6 +9288,31 @@ Status: **Decided by the development agent** — selected from the options below
 **Choice:** (b), in `internal/app/wire_restore_items.go`. `cmd/trove/backup_restore.go` passes it as `restore.Deps.Items`.
 **Rationale:** The restore pod must reach the format hooks without becoming a replica. Revisit when a second command needs the item store headless: the constructor would then move into a shared headless composition.
 **Applied:** R-BAK-008, R-BAK-021 step 7, R-BAK-022; `internal/app/wire_restore_items.go`, `wire_formats.go` (`formatPorts` takes the NuGet job interface), `cmd/trove/backup_restore.go`, `internal/backup/restore/restore.go`.
+
+
+### Q-ARCH-348 · `jsonb` parameters are `json.RawMessage`, so that exec mode sends them as text
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: behind a transaction-mode pooler the main pool runs in `QueryExecModeExec` (Q-ARCH-23). In that mode pgx sends the
+parameters without types and picks the encoding from the Go type; sqlc generates `[]byte` for `jsonb`, which pgx sends as `bytea`
+text (`\x7b…`). The first synchronization of the vulnerability data in the pooler profile failed with `invalid input syntax for type
+json (SQLSTATE 22P02)` on `VulnAdvisoryUpsert` and `VulnStateFailure`; the PostgreSQL log shows the parameter beginning with `\`.
+Every `$n::jsonb` parameter of the generated queries (about sixty) was affected. The integration tier did not see it: its pooled run
+is a switch (`TROVE_TEST_PG_POOLED=1`), and no suite covered these queries through the pooler.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An sqlc override `jsonb` → `encoding/json.RawMessage` (chosen) | The generated parameters and columns are `json.RawMessage`; pgx registers the type and sends the JSON text | One line in `sqlc.yaml`; every present and future query; a `[]byte` still assigns | The rows change type too: one generic constraint (`internal/ci/mappings_read.go`) and two conversions |
+| (b) `::text::jsonb` in each query, with a string parameter, as `cluster_change` does | The cast goes through text | No type change | Every query edited by hand; the next one forgets it |
+| (c) Another exec mode (`cache_describe`) | pgx asks the server for the types first | No code change | A describe round trip outside a transaction, and Q-ARCH-23 chose exec mode so that no connection holds state |
+
+**Choice:** (a). `TestTransactionPooler` in `test/integration/postgres` runs `VulnAdvisoryUpsert` and `VulnStateFailure` through PgBouncer
+and fails without the override with the same `22P02`; it belongs to the default integration run (the stack has PgBouncer).
+**Rationale:** the type decides the wire format in exec mode, so the type is where the rule belongs. Revisit when sqlc maps `jsonb` to
+a type that pgx sends as JSON without an override.
+**Applied:** R-ARCH-019 (main-pool rules); `internal/meta/postgres/sqlc.yaml`, `internal/meta/postgres/q/`, `internal/ci/mappings_read.go`,
+`internal/cluster/replica_list.go`, `internal/journal/ship/outbox.go`; `test/integration/postgres/open_test.go`.
 
 ### Q-ARCH-343 · Ports of the backup lane that need the driver are adapted in `internal/backup`, and two files are named exceptions of the SQL rules
 

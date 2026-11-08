@@ -254,3 +254,14 @@ built, and the exporter keeps that pool. A rotated collector CA is not trusted u
 in the meantime. The span export itself has no egress policy ([H-53](../spec/operations-and-observability.md#h-53--span-export-bypasses-the-egress-address-policy)).
 
 What makes it real: a collector certificate issued by a new CA while the process keeps the old one.
+
+### H-584 · Behind a transaction-mode pooler trove verifies the pooler, and the pooler's leg to PostgreSQL is the pooler's own setting
+
+Stage: `database.pooler.mode: transaction` ([R-HA-058](../spec/ha-and-helm.md)); the pooled connection of the main pool, and the control connection through the second pooler.
+
+Dormant: live only with a pooler in front of PostgreSQL. trove's `database.ssl_mode` (`verify-full` in the dev profile) applies to the connection to the pooler: the
+pooler's server certificate must name its Service. The leg from the pooler to PostgreSQL is configured on the pooler (CloudNativePG: the `Pooler`'s own PgBouncer settings),
+which trove can neither set nor check, and the pooler's server certificate is the cluster's (CloudNativePG poolers present the cluster's server certificate; that behaviour is the operator's, taken from CloudNativePG's documentation and not verified in this repository), so the pooler
+sits inside the database's trust boundary: whoever can read the pooler's pod can use the credentials it holds for the database.
+
+What makes it real: a pooler whose own `server_tls_sslmode` is weaker than `verify-full`, or a pod of the pooler that an attacker with access to its namespace can read.

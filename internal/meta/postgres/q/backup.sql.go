@@ -7,6 +7,7 @@ package q
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -214,7 +215,7 @@ type ClaimRevocationOutboxRow struct {
 	ID    string
 	At    pgtype.Timestamptz
 	Event string
-	Entry []byte
+	Entry json.RawMessage
 }
 
 // The shipper takes rows in id order (R-HA-054). The worker job holds a singleton lease, so a plain read is enough; a row

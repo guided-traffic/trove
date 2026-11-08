@@ -134,3 +134,39 @@ func TestR_AUTHZ_031_WriteSettingOnlyWhereItApplies(t *testing.T) {
 		t.Errorf("the other members must survive untouched: %s", raw)
 	}
 }
+
+// TestR_AUTHZ_031_SelectorsCompareByWhatTheirKindStores: the replay compares selectors in the form their kind stores
+// (canonicalSelector), so a journaled key selector that carries the repository's key and class for display equals the stored one,
+// while a different restriction never does.
+func TestR_AUTHZ_031_SelectorsCompareByWhatTheirKindStores(t *testing.T) {
+	with := func(sel journalSelector) *journalState {
+		st := pstate([]string{"@web/*"}, nil, pent("a", "read"))
+		st.Selectors = []journalSelector{sel}
+		return st
+	}
+	var cmp policyOrder
+	cases := []struct {
+		name         string
+		current, aft journalSelector
+		want         bool
+	}{
+		{"class local against class any", journalSelector{Kind: "class", Class: "local"}, journalSelector{Kind: "class", Class: "any"}, false},
+		{"the same class", journalSelector{Kind: "class", Class: "local"}, journalSelector{Kind: "class", Class: "local"}, true},
+		{"pattern, format only in after", journalSelector{Kind: "pattern", Pattern: "npm-*"}, journalSelector{Kind: "pattern", Pattern: "npm-*", Format: "npm"}, false},
+		{"pattern, format only in current", journalSelector{Kind: "pattern", Pattern: "npm-*", Format: "npm"}, journalSelector{Kind: "pattern", Pattern: "npm-*"}, false},
+		{"class, format only in after", journalSelector{Kind: "class", Class: "local"}, journalSelector{Kind: "class", Class: "local", Format: "npm"}, false},
+		{"class, format only in current", journalSelector{Kind: "class", Class: "local", Format: "npm"}, journalSelector{Kind: "class", Class: "local"}, false},
+		{"key with the same ID and another key and class", journalSelector{Kind: "key", RepositoryID: 7}, journalSelector{Kind: "key", RepositoryID: 7, Key: "npm-internal", Class: "local"}, true},
+		{"key with another ID", journalSelector{Kind: "key", RepositoryID: 7}, journalSelector{Kind: "key", RepositoryID: 8, Key: "npm-internal", Class: "local"}, false},
+		{"a key selector against a pattern selector", journalSelector{Kind: "key", RepositoryID: 7}, journalSelector{Kind: "pattern", Pattern: "npm-*"}, false},
+		{"an unknown kind against a key", journalSelector{Kind: "weird", RepositoryID: 7}, journalSelector{Kind: "key", RepositoryID: 7}, false},
+		{"an unknown kind with other members", journalSelector{Kind: "weird", Class: "local"}, journalSelector{Kind: "weird", Class: "any"}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := cmp.Narrows(with(c.current), with(c.aft)); got != c.want {
+				t.Errorf("Narrows(%+v, %+v) = %v, want %v", c.current, c.aft, got, c.want)
+			}
+		})
+	}
+}

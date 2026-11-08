@@ -9,6 +9,12 @@
 #   drain.sh <node>        the drain alone (this is what the test calls): `kubectl drain
 #                          --ignore-daemonsets --delete-emptydir-data` of trove's pods, wait for the rollouts, uncordon.
 #   drain.sh --pick        print the node the test would drain.
+#   drain.sh --also valkey|postgres|pooler [--also ...] <node>
+#                          the drain of variants B, C and D of R-HA-059 (Q-HA-170): the release's pods and, in a run of its own started
+#                          together with it, the pods of each named dependency on the node: valkey the Valkey data pods and the
+#                          Sentinels, postgres the CloudNativePG instances of trove-db, pooler the pods of both poolers. Nothing else on
+#                          the node is evicted. After the uncordon the script waits until the evicted dependency is whole again: two
+#                          Valkey data pods and three Sentinels ready, two ready instances, both pooler Deployments rolled out.
 #
 # The test picks a worker node that hosts an api, a packages and a worker pod and not the CloudNativePG primary:
 # CloudNativePG switches the primary over as soon as its node is cordoned (Test and Release run 42406831768). When only
@@ -33,6 +39,24 @@ pick_node() {
   comm -12 <(comm -12 <(nodes_of api) <(nodes_of packages)) <(nodes_of worker) | grep -vx "$dbprimary" | head -1 || true
 }
 
+# the selectors of the dependencies of --also (the labels the operators put on their pods; kubectl drain --pod-selector matches
+# pods of every namespace, so the restore installation of trove-restore must not exist while a variant drains)
+also_selector() {
+  case "$1" in
+    valkey) echo 'app.kubernetes.io/instance=trove-valkey' ;;
+    postgres) echo 'cnpg.io/cluster=trove-db,cnpg.io/podRole=instance' ;;
+    pooler) echo 'cnpg.io/poolerName' ;;
+  esac
+}
+also=()
+while [ "${1:-}" = "--also" ]; do
+  [ -n "${2:-}" ] && [ -n "$(also_selector "$2")" ] || die "--also takes valkey, postgres or pooler, not '${2:-}'"
+  also+=("$2"); shift 2
+done
+if [ "${#also[@]}" != 0 ]; then
+  [ "$#" = 1 ] && [ -n "$1" ] && [ "${1#-}" = "$1" ] || die "usage: drain.sh [--also valkey|postgres|pooler]... <node>"
+fi
+
 case "${1:-}" in
   "")
     exec "$DEV_DIR/e2e.sh" drain ;;
@@ -45,12 +69,57 @@ case "${1:-}" in
 esac
 
 node="$1"
+# a failure, a signal or the caller's timeout never leaves the node cordoned or a drain running
+drain_cleanup() {
+  local p
+  for p in $(jobs -p); do pkill -TERM -P "$p" 2>/dev/null || true; kill "$p" 2>/dev/null || true; done
+  k uncordon "$node" >/dev/null 2>&1 || true
+}
+trap drain_cleanup EXIT
 log "draining $node"
 kn get pods -l "$sel" -o wide --field-selector "spec.nodeName=$node"
-# only the release's pods: the dependencies on the node stay (see the header)
-k drain "$node" --pod-selector 'app.kubernetes.io/name=trove,app.kubernetes.io/instance=trove' --ignore-daemonsets --delete-emptydir-data --timeout=5m
+# only the release's pods and the dependencies --also names: the others on the node stay (see the header). The runs start together;
+# each cordons the node, evicts its pods and retries what a PodDisruptionBudget refuses, as kubectl drain does.
+drain_one() {
+  local name="$1" selector="$2" start; start="$(date +%s)"
+  log "drain of $name starts (--pod-selector $selector)"
+  if k drain "$node" --pod-selector "$selector" --ignore-daemonsets --delete-emptydir-data --timeout=5m; then
+    log "drain of $name ended after $(( $(date +%s) - start )) s"
+  else
+    log "drain of $name failed after $(( $(date +%s) - start )) s"
+    return 1
+  fi
+}
+pids=(); names=()
+drain_one trove 'app.kubernetes.io/name=trove,app.kubernetes.io/instance=trove' & pids+=("$!"); names+=(trove)
+for dep in ${also[@]+"${also[@]}"}; do
+  drain_one "$dep" "$(also_selector "$dep")" & pids+=("$!"); names+=("$dep")
+done
+failed=0
+for i in "${!pids[@]}"; do
+  wait "${pids[$i]}" || { log "the drain of ${names[$i]} failed"; failed=1; }
+done
+[ "$failed" = 0 ] || die "a drain of $node failed"
 # every Deployment of the roles, the worker pools of the profile in use included (vuln in the default profile, mirror in the `mirror` one)
 for d in $(kn get deployments -l "app.kubernetes.io/instance=trove,app.kubernetes.io/component in (api,packages,worker)" -o name); do kn rollout status "$d" --timeout=5m; done
 log "pods after the drain"
 kn get pods -l "$sel" -o wide
 k uncordon "$node"
+# the evicted dependency comes back (its volume, where it has one, is bound to the node, so it could not before the uncordon)
+for dep in ${also[@]+"${also[@]}"}; do
+  case "$dep" in
+    valkey)
+      sts_wait_ready trove-valkey 2 300
+      sts_wait_ready trove-valkey-sentinel 3 300 ;;
+    postgres)
+      deadline=$(( $(date +%s) + 600 ))
+      until [ "$(kn get cluster trove-db -o jsonpath='{.status.readyInstances}')" = 2 ]; do
+        [ "$(date +%s)" -lt "$deadline" ] || die "trove-db has no two ready instances 10 minutes after the uncordon"
+        sleep 2
+      done
+      kn wait --for=condition=Ready cluster/trove-db --timeout=10m ;;
+    pooler)
+      for d in trove-db-pooler-rw trove-db-pooler-control; do kn rollout status "deployment/$d" --timeout=5m; done ;;
+  esac
+  log "$dep is whole again"
+done

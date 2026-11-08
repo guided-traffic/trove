@@ -58,7 +58,11 @@
 #                       (a change to the scanning) and the nightly HA and Performance workflow
 #   e2e.sh vuln-long    the long scenarios of R-VULN-029: a full synchronization drained mid-run and one whose worker is killed, the client tests once
 #                       more with Valkey stopped, a PostgreSQL switchover during an evaluation, and the block of four versions through a node
-#                       drain and the failovers of Valkey and PostgreSQL (E5.13; nightly, dispatch, locally)
+#                       drain and the failovers of Valkey and PostgreSQL, through drain variants B, C and E, and the restore drill of the vulnerability
+#                       data (E5.13; nightly, dispatch, locally)
+#   e2e.sh vuln-pooler  the block of a malicious version through drain variant D (E5.13): the `vuln` profile with the poolers of R-HA-058
+#                       (TROVE_POOLER=1), no client pods; the cluster stays in the pooler overlay until the next `make dev-up`
+#                       (CI: job e2e-vuln, nightly)
 #   e2e.sh mirror       the short scenarios of R-REPO-059: the chart in the `mirror` profile (three api and three packages replicas, the main worker
 #                       and a pool of two processes that claim the queue `mirror` alone, the scatter edge), npm and NuGet remotes in mode mirror
 #                       over the counting test upstreams (the npm one also under the names of the public registry, through a CoreDNS rewrite
@@ -68,7 +72,8 @@
 #   e2e.sh mirror-long  the long scenario of R-REPO-058: `kubectl drain` of the node of the process that runs a pass of 300 packages
 #                       (nightly, dispatch, locally: a red long leg is a finding, not a blocker, owner 2026-11-01)
 #   e2e.sh backup       the backup and restore suite (R-BAK-029, E5.11, E5.12): a backup during a publishing, deleting and collecting load restored into
-#                       the namespace trove-restore, the drain and kill -9 of a backup and of a restore, the journal across a restore (nightly, dispatch, locally)
+#                       the namespace trove-restore, the drain and kill -9 of a backup and of a restore, the journal across a restore with E5.12's CI
+#                       bullets (the issuer double, TROVE_E2E_OIDCSTUB=1) (nightly, dispatch, locally)
 #   e2e.sh upgrade      the upgrade tests (E6a.7 and R-HA-020): the cut into roles in the two steps of R-HA-064 from v0.16.0, the rolling
 #                       upgrade and rollback from the latest release, and the rolling upgrade of the working tree from its second UI
 #                       bundle (make image-marked) to the image under test, each under npm, NuGet and browser loops; it replaces the
@@ -169,9 +174,14 @@ case "$set_name" in
   # The vulnerability scanning (R-VULN-029, docs/developer/e2e.md#the-vulnerability-tests): the `vuln` profile (up.sh, values-vuln.yaml),
   # the three test upstreams (npm, NuGet, advisory source) and three client pods of each kind. `vuln` is the short scenarios
   # (CI: job e2e-vuln on a change to the scanning, and nightly); `vuln-long` the drain of a full synchronization and the client tests
-  # with Valkey stopped, and the scanning under the failure suite of E5.13 (nightly, on dispatch, locally: a red long leg is a finding, not a blocker, owner 2026-11-01).
+  # with Valkey stopped, the scanning under the failure suite of E5.13 (the blocks through drain variants A, B, C and E) and the restore drill of R-VULN-026 into the
+  # namespace trove-restore (nightly, on dispatch, locally: a red long leg is a finding, not a blocker, owner 2026-11-01).
   vuln) run='^TestVuln_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 TROVE_E2E_OSVSTUB=1 ;;
   vuln-long) run='^TestVulnLong_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 TROVE_E2E_OSVSTUB=1 ;;
+  # `vuln-pooler` runs the blocks through drain variant D of R-HA-059 (E5.13, Q-VULN-128): the cluster in the profile `vuln` with the poolers of R-HA-058
+  # (TROVE_POOLER=1, up.sh), the three test upstreams, no client pods (the tests probe through port-forwards). After a local run the cluster stays in the
+  # pooler overlay until the next `make dev-up`.
+  vuln-pooler) run='^TestVulnPooler_'; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 TROVE_E2E_OSVSTUB=1 TROVE_POOLER=1 ;;
   # <<< M4b vuln
   # >>> M6b mirror
   # The remote full mirror (R-REPO-059, docs/developer/e2e.md#the-mirror-tests): the `mirror` profile (up.sh, values-mirror.yaml), the two counting
@@ -200,7 +210,8 @@ case "$set_name" in
   # (deploy/dev/restore-ns.sh) with a database, a Valkey and a blob bucket of its own, and one npm client pod (`npm view`, `npm unpublish`). The drill
   # backs up while a load publishes, deletes and collects, restores into the second installation and judges it. A long leg: nightly,
   # on dispatch, locally (a red long leg is a finding, not a blocker, owner 2026-11-01).
-  backup) run='^TestBackup'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=1 ;;
+  # The double of the CI issuer (TROVE_E2E_OIDCSTUB=1) is for E5.12's CI bullets in TestBackupJournal (Q-BAK-60): a disabled mapping and a single-use token across a restore.
+  backup) run='^TestBackup'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=1; export TROVE_E2E_OIDCSTUB=1 ;;
   # <<< M5 backup
   *) run="$set_name" ;;
 esac

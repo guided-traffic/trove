@@ -23,6 +23,14 @@ sql:
           # The audit package reads event times as plain times (R-ARCH-002).
           - column: "audit_event.occurred_at"
             go_type: "time.Time"
+          # A transaction-mode pooler runs the main pool in pgx's Exec mode (R-ARCH-019, Q-ARCH-14), which sends no parameter
+          # types: pgx then encodes a []byte as bytea ("\\x7b..."), which a ::jsonb cast refuses. json.RawMessage is sent as the
+          # JSON text it holds.
+          - db_type: "jsonb"
+            go_type: "encoding/json.RawMessage"
+          - db_type: "jsonb"
+            nullable: true
+            go_type: "encoding/json.RawMessage"
           - db_type: "job_state"
             go_type: "string"
           - db_type: "job_state"

@@ -1,11 +1,20 @@
 # Chart values layered after values-dev.yaml by up.sh when TROVE_POOLER=1 (R-HA-058): the
 # request pool and the control connection go through two poolers, the session-level work
 # (migration lock, leases) keeps the direct read-write Service.
+#
+# The pooled connection lifetime is 60 s + 15 s of jitter (the spec recommends 5 m + 1 m). pgxpool closes an idle
+# connection past its lifetime in the health check, so the check runs every 5 s: a connection is gone from a draining
+# pooler instance within 80 s, which the preStop sleep of 90 s and the grace period of 120 s (pooler.yaml) cover.
+# The role defaults that preflight reads on a pooled connection are set by up.sh.
 config:
   database:
     host: trove-db-pooler-rw.trove.svc
     session_host: trove-db-rw.trove.svc
     control_host: trove-db-pooler-control.trove.svc
+    pool:
+      max_conn_lifetime: 60s
+      max_conn_lifetime_jitter: 15s
+      health_check_period: 5s
     pooler:
       mode: transaction
-      server_connections: 24
+      server_connections: 48   # 2 x default_pool_size 20 of the request pooler + 2 x 4 of the control pooler (pooler.yaml)

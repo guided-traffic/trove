@@ -62,6 +62,13 @@ func TestBackupJournal(t *testing.T) {
 		}
 	})
 
+	// A CI issuer of the issuer double with single-use subject tokens and four mappings of its system tier (E5.12, R-CI-020, R-CI-018). The double is
+	// not reset: the tokens minted below are the ones the restored installation judges.
+	ci := bakCISetup(t, adm, run)
+	if got := ciGranted(t, ciExchangeAt(t, adm, ci.token(t, bakCIProjectP))); strings.Join(got, ",") != ci.mappings[1] {
+		t.Fatalf("an exchange for project P names the mappings %v at the source, want [%s]", got, ci.mappings[1])
+	}
+
 	// ── the backup ───────────────────────────────────────────────────────────
 	zero := 0
 	job := "bak-journal-" + run
@@ -92,6 +99,12 @@ func TestBackupJournal(t *testing.T) {
 	}
 	g := adm.get("/api/v1/endpoints/customers/exposure-rules/"+gone).want(t, "read the rule", 200)
 	adm.do(http.MethodDelete, "/api/v1/endpoints/customers/exposure-rules/"+gone, nil, "If-Match", g.Header.Get("ETag")).want(t, "delete the rule", 204)
+	ci.disable(t, adm, ci.mappings[1])
+	if got := ciExchangeAt(t, adm, ci.token(t, bakCIProjectP)); got.Status != 200 || strings.Join(ciGranted(t, got), ",") != ci.mappings[2] {
+		t.Fatalf("after the disable of %s an exchange for project P answers %s, want 200 through %s (the fall-through the restore must not reproduce)", ci.mappings[1], got, ci.mappings[2])
+	}
+	// a subject token issued before the restore finishes: single use is on, so the restored installation refuses it (R-CI-018)
+	preTok := ci.token(t, bakCIProjectR)
 	// the shipper writes the outbox to the bucket every ship_interval (5 s); the journal is complete when no row is pending
 	time.Sleep(25 * time.Second)
 
@@ -211,6 +224,48 @@ func TestBackupJournal(t *testing.T) {
 			return got == want
 		})
 		t.Logf("the overview says %s, the blobs table %s", got, want)
+	})
+
+	t.Run("R-CI-020 R-HA-054 a mapping disabled after the snapshot stays disabled after the restore and every later enabled mapping of its tier is suspended", func(t *testing.T) {
+		const event = "ci.mapping.disabled"
+		subject := func(i int) string { return ci.issuer + "/" + ci.mappings[i] }
+		if got := replayLine(logs, event, subject(1)); got != "applied" {
+			t.Errorf("the restore's output gives %s the outcome %q, want applied:\n%s", subject(1), got, tail(logs, 1500))
+		}
+		for _, i := range []int{2, 3} {
+			if got := replayLine(logs, event, subject(i)); got != "suspended" {
+				t.Errorf("the restore's output gives %s the outcome %q, want suspended:\n%s", subject(i), got, tail(logs, 1500))
+			}
+		}
+		if got := replayLine(logs, event, subject(0)); got != "" {
+			t.Errorf("the restore's output gives %s the outcome %q: the mapping above the disabled one is untouched", subject(0), got)
+		}
+		want := map[string]bool{ci.mappings[0]: true, ci.mappings[1]: false, ci.mappings[2]: false, ci.mappings[3]: false}
+		if got := ci.enabled(t, rst.api); fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Errorf("the mappings of %s on the restored installation are %v (enabled), want %v", ci.issuer, got, want)
+		}
+		// the jobs of P fell through to M2 at the source; here nothing of the tier is left for them
+		bakCIWaitPastSkew(t)
+		r := ciExchangeAt(t, rst.api, ci.token(t, bakCIProjectP))
+		if code, reason := ciOAuthError(t, r); r.Status != 400 || code != "invalid_request" || reason != "no_matching_mapping" {
+			t.Errorf("a fresh token for project P answers %s on the restored installation, want 400 invalid_request no_matching_mapping", r)
+		}
+	})
+
+	t.Run("R-CI-018 R-CI-029 a single-use subject token issued before the restore finished answers subject_token_predates_restore, a later one is exchanged once", func(t *testing.T) {
+		r := ciExchangeAt(t, rst.api, preTok)
+		if code, reason := ciOAuthError(t, r); r.Status != 400 || code != "invalid_request" || reason != "subject_token_predates_restore" {
+			t.Errorf("the token issued before the restore finished answers %s, want 400 invalid_request subject_token_predates_restore", r)
+		}
+		bakCIWaitPastSkew(t)
+		fresh := ci.token(t, bakCIProjectR)
+		if got := ciGranted(t, ciExchangeAt(t, rst.api, fresh)); strings.Join(got, ",") != ci.mappings[0] {
+			t.Errorf("a fresh token for project R names the mappings %v, want [%s]", got, ci.mappings[0])
+		}
+		r = ciExchangeAt(t, rst.api, fresh)
+		if code, reason := ciOAuthError(t, r); r.Status != 400 || code != "invalid_request" || reason != "subject_token_replayed" {
+			t.Errorf("the second use of a token answers %s, want 400 invalid_request subject_token_replayed", r)
+		}
 	})
 
 	t.Run("R-API-050 the restored installation shows its origin, the source shows the run and the stored backups", func(t *testing.T) {

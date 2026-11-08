@@ -500,6 +500,12 @@ journal of Q-NUGET-10 is a set of objects, not a table.
 `make generate`. Catalog relations are written `pg_catalog.<name>`. Dynamic list queries belong in `listq/`,
 which M1 creates with the first list endpoint.
 
+Overrides: `jsonb` generates `json.RawMessage` (parameters, columns and rows), not `[]byte`. Behind a transaction-mode pooler the main pool
+runs in pgx's exec mode, which sends no parameter types and encodes a `[]byte` as `bytea` text; a `$n::jsonb` cast then fails with
+`22P02` (Q-ARCH-348). A new `jsonb` query needs nothing; a hand-written statement passes `json.RawMessage` or a string cast through
+`::text::jsonb`. `TestTransactionPooler` in `test/integration/postgres` runs generated `jsonb` queries through PgBouncer in the default
+integration run.
+
 ## Integration tests
 
 `test/integration/postgres/`, tag `integration`, run with the stack up:

@@ -233,7 +233,8 @@ func replayPolicyUpdated(ctx context.Context, qs *q.Queries, env journal.Env, tx
 			if err := qs.JournalPolicyClearSelectorsPatterns(ctx, head.ID); err != nil {
 				return err
 			}
-			for i, s := range e.After.Selectors {
+			for i, sel := range e.After.Selectors {
+				s := canonicalSelector(sel)
 				err := qs.AuthzInsertSelector(ctx, q.AuthzInsertSelectorParams{
 					PolicyID: head.ID, Ordinal: int16(i), Kind: s.Kind, RepositoryID: s.RepositoryID, //nolint:gosec // bounded by the stored selectors it is a subset of
 					KeyPattern: s.Pattern, RepoClass: s.Class, Format: s.Format,
@@ -349,7 +350,27 @@ func (policyOrder) Narrows(current, after *journalState) bool {
 }
 
 func selectorKey(s journalSelector) string {
-	return fmt.Sprintf("%s|%d|%s|%s|%s", s.Kind, s.RepositoryID, s.Pattern, s.Class, s.Format)
+	c := canonicalSelector(s)
+	return fmt.Sprintf("%s|%d|%s|%s|%s", c.Kind, c.RepositoryID, c.Pattern, c.Class, c.Format)
+}
+
+// canonicalSelector keeps of a selector what its kind stores and so what it means: a key selector is the repository ID
+// (authz_policy_selector.repository_id; the key and the class the producer journals next to it are for display, the class is the
+// repository's and not a restriction), a pattern selector is the key pattern, a class selector the repository class; the format
+// filter belongs to every kind. The replay compares and writes selectors in this form.
+func canonicalSelector(s journalSelector) journalSelector {
+	c := journalSelector{Kind: s.Kind, Format: s.Format}
+	switch s.Kind {
+	case selKey:
+		c.RepositoryID = s.RepositoryID
+	case selPattern:
+		c.Pattern = s.Pattern
+	case selClass:
+		c.Class = s.Class
+	default:
+		return s
+	}
+	return c
 }
 
 // subset reports whether every element of a is in b.

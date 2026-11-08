@@ -7,6 +7,7 @@ package q
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -1467,7 +1468,7 @@ type IdentityListTokensRow struct {
 	OwnerKind        string
 	OwnerName        string
 	Description      string
-	Scope            []byte
+	Scope            json.RawMessage
 	SelfRotatable    bool
 	CreatedAt        pgtype.Timestamptz
 	CreatedBy        string
@@ -1481,7 +1482,7 @@ type IdentityListTokensRow struct {
 	LastUsedAt       pgtype.Timestamptz
 	LastUsedAddr     string
 	Expired          bool
-	CiContext        []byte
+	CiContext        json.RawMessage
 }
 
 // Keyset order by id descending (a UUIDv7 sorts by creation time). Bastion tokens (type bst) are not listed: they
@@ -2463,7 +2464,7 @@ SELECT t.id::text AS id, t.type, t.scope, t.principal_id::text AS owner_id,
 type IdentityTokenBySecretRow struct {
 	ID              string
 	Type            string
-	Scope           []byte
+	Scope           json.RawMessage
 	OwnerID         string
 	OwnerKind       string
 	OwnerName       string
@@ -2473,7 +2474,7 @@ type IdentityTokenBySecretRow struct {
 	Expired         bool
 	Revoked         bool
 	Hint            string
-	CiContext       []byte
+	CiContext       json.RawMessage
 	RejectionDue    bool
 }
 
@@ -2647,7 +2648,7 @@ type IdentityTokenRowRow struct {
 	OwnerKind        string
 	OwnerName        string
 	Description      string
-	Scope            []byte
+	Scope            json.RawMessage
 	SelfRotatable    bool
 	CreatedAt        pgtype.Timestamptz
 	CreatedBy        string
@@ -2661,7 +2662,7 @@ type IdentityTokenRowRow struct {
 	LastUsedAt       pgtype.Timestamptz
 	LastUsedAddr     string
 	Expired          bool
-	CiContext        []byte
+	CiContext        json.RawMessage
 }
 
 // A Bastion token (type bst) is managed through its registration (queries/bastion_registration.sql, R-BAS-004)

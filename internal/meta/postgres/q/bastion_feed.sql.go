@@ -7,6 +7,7 @@ package q
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
@@ -36,7 +37,7 @@ type BastionFeedAheadRow struct {
 	ResourceType string
 	ResourceID   string
 	Repository   string
-	Details      []byte
+	Details      json.RawMessage
 }
 
 // Entries after the cursor position, in order. For a synthetic cursor (no ID) the caller passes the nil UUID
@@ -104,7 +105,7 @@ type BastionFeedBehindRow struct {
 	ResourceType string
 	ResourceID   string
 	Repository   string
-	Details      []byte
+	Details      json.RawMessage
 }
 
 // Queries of the Bastion revocation feed (R-BAS-015, Q-BAS-29, Q-BAS-49; work package 2). The feed reads the

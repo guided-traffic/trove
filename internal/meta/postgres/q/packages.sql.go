@@ -7,6 +7,7 @@ package q
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -120,7 +121,7 @@ type GetPackageRow struct {
 	RepoID      int64
 	Name        string
 	DisplayName string
-	Attributes  []byte
+	Attributes  json.RawMessage
 	RevSeq      int64
 }
 
@@ -331,7 +332,7 @@ type ListLiveVersionsRow struct {
 	Version        string
 	DisplayVersion string
 	LeadItemID     int64
-	Attributes     []byte
+	Attributes     json.RawMessage
 	CreatedAt      pgtype.Timestamptz
 	CreatedBy      string
 }
@@ -419,7 +420,7 @@ type LockPackageRow struct {
 	RepoID      int64
 	Name        string
 	DisplayName string
-	Attributes  []byte
+	Attributes  json.RawMessage
 	RevSeq      int64
 }
 

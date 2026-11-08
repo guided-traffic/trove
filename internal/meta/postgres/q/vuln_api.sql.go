@@ -7,6 +7,7 @@ package q
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -58,7 +59,7 @@ type VulnAdvisoryResolveRow struct {
 	CvssScore      float64
 	KnownExploited bool
 	KevAdded       string
-	Refs           []byte
+	Refs           json.RawMessage
 	CweIds         []string
 	Modified       pgtype.Timestamptz
 	Published      pgtype.Timestamptz

@@ -7,6 +7,7 @@ package q
 
 import (
 	"context"
+	"encoding/json"
 )
 
 const ciGroupActions = `-- name: CiGroupActions :many
@@ -138,10 +139,10 @@ type CiMappingByIDRow struct {
 	Priority     int32
 	Enabled      bool
 	SubjectKinds []string
-	Match        []byte
-	Grants       []byte
+	Match        json.RawMessage
+	Grants       json.RawMessage
 	MaxTtlSecs   int64
-	Options      []byte
+	Options      json.RawMessage
 	Description  string
 	Version      int64
 	CreatedBy    string
@@ -218,10 +219,10 @@ type CiMappingByNameRow struct {
 	Priority     int32
 	Enabled      bool
 	SubjectKinds []string
-	Match        []byte
-	Grants       []byte
+	Match        json.RawMessage
+	Grants       json.RawMessage
 	MaxTtlSecs   int64
-	Options      []byte
+	Options      json.RawMessage
 	Description  string
 	Version      int64
 	CreatedBy    string
@@ -451,10 +452,10 @@ type CiMappingListRow struct {
 	Priority     int32
 	Enabled      bool
 	SubjectKinds []string
-	Match        []byte
-	Grants       []byte
+	Match        json.RawMessage
+	Grants       json.RawMessage
 	MaxTtlSecs   int64
-	Options      []byte
+	Options      json.RawMessage
 	Description  string
 	Version      int64
 	CreatedBy    string
@@ -534,10 +535,10 @@ type CiMappingListOfProjectRow struct {
 	Priority     int32
 	Enabled      bool
 	SubjectKinds []string
-	Match        []byte
-	Grants       []byte
+	Match        json.RawMessage
+	Grants       json.RawMessage
 	MaxTtlSecs   int64
-	Options      []byte
+	Options      json.RawMessage
 	Description  string
 	Version      int64
 	CreatedBy    string
@@ -866,10 +867,10 @@ type CiMappingsOfIssuerIDRow struct {
 	Priority     int32
 	Enabled      bool
 	SubjectKinds []string
-	Match        []byte
-	Grants       []byte
+	Match        json.RawMessage
+	Grants       json.RawMessage
 	MaxTtlSecs   int64
-	Options      []byte
+	Options      json.RawMessage
 	Description  string
 	Version      int64
 	CreatedBy    string
@@ -944,10 +945,10 @@ type CiMappingsOfIssuerIDShareRow struct {
 	Priority     int32
 	Enabled      bool
 	SubjectKinds []string
-	Match        []byte
-	Grants       []byte
+	Match        json.RawMessage
+	Grants       json.RawMessage
 	MaxTtlSecs   int64
-	Options      []byte
+	Options      json.RawMessage
 	Description  string
 	Version      int64
 	CreatedBy    string

@@ -8,7 +8,8 @@
 # browser journey; switched off in the nightly run until the first stable release, Q-ARCH-340, and run by a dispatch with sets=upgrade); job npm-ha-soak runs the 20-minute pod crash of R-HA-052 under the npm load and the npm load scripts of R-ARCH-027
 # (Q-HA-67); job e2e-nuget runs nuget-ha (TestNuGetHA: the drain and failover under the NuGet load and the npm load, on the large class,
 # Q-HA-102); job e2e-ci runs ci-ha (E4.7); job e2e-bastion runs the sets bastion and
-# bastion-long (R-BAS-049); job e2e-vuln runs vuln and vuln-long (R-VULN-029); job e2e-mirror runs mirror and mirror-long (R-REPO-059); job e2e-backup runs the set backup (R-BAK-029: the restore
+# bastion-long (R-BAS-049); job e2e-vuln runs vuln, vuln-long and vuln-pooler (R-VULN-029; vuln-pooler is the blocks through drain variant D on the cluster
+# with the poolers of R-HA-058, on large); job e2e-mirror runs mirror and mirror-long (R-REPO-059); job e2e-backup runs the set backup (R-BAK-029: the restore
 # drill, the drain and the kill -9 of a backup and a restore, the revocation journal across a restore).
 # The perf jobs start after every kind leg of this workflow has finished, so they measure on the large VM without this workflow's
 # clusters beside them (Q-ARCH-325; a Test and Release run that starts meanwhile can still share the VM): job latency enforces the p99 bounds of P-13 (change propagation) and P-14 (job pick-up) with Valkey available, against
@@ -21,8 +22,9 @@
 # docs/developer/releasing.md#ha-and-performance-nightly.
 #
 # Runners (owner, 2026-11-05; the assignment and its measured basis, Q-ARCH-326): the jobs run on the organisation's large runners (runs-on:
-# large), the class for kind, e2e and load tests, except e2e-ci, e2e-bastion, e2e-vuln and e2e-upgrade, which run on GitHub-hosted runners
-# (runs-on: ubuntu-24.04). The legs with a CPU-bound condition that load the NuGet clients image moved to large once that image went into the
+# large), the class for kind, e2e and load tests, except e2e-ci, e2e-bastion, e2e-upgrade and the legs vuln and vuln-long of e2e-vuln, which run on
+# GitHub-hosted runners (runs-on: ubuntu-24.04); the leg vuln-pooler of e2e-vuln runs on large, as it loads no clients image.
+# The legs with a CPU-bound condition that load the NuGet clients image moved to large once that image went into the
 # control-plane node only: nuget-ha (Q-HA-102) and the set mirror, whose install-time ratio is enforced here (Q-REPO-211).
 # Sizes: docs/developer/releasing.md#ci.
 name: HA and Performance (nightly)
@@ -1259,12 +1261,14 @@ jobs:
         run: make dev-down
 
   # The vulnerability suite (R-VULN-029, docs/developer/e2e.md#the-vulnerability-tests) on a kind cluster: the short set `vuln`, as in
-  # Test and Release, and the long set `vuln-long` (a full synchronization drained mid-run, and the client tests once more with Valkey
-  # stopped). A red long leg is a finding and holds nothing (owner, 2026-11-01). Edge ports 8095 and 8096 are the first free ones of
-  # both workflows.
+  # Test and Release, the long set `vuln-long` (a full synchronization drained mid-run, the client tests once more with Valkey
+  # stopped, the blocks through drain variants A, B, C and E, and the restore drill of R-VULN-026) and the set `vuln-pooler` (the blocks
+  # through drain variant D on the cluster with the poolers of R-HA-058, E5.13). A red long leg is a finding and holds nothing (owner,
+  # 2026-11-01). `vuln` and `vuln-long` load the NuGet clients image and run on a GitHub-hosted runner (Q-ARCH-326); `vuln-pooler` starts no
+  # client pods and runs on a large one. Edge ports 8095, 8096 and 8103 are the first free ones of both workflows.
   e2e-vuln:
     name: e2e-vuln on kind (${{ matrix.set }})
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 150
     strategy:
       fail-fast: false
@@ -1272,8 +1276,15 @@ jobs:
         include:
           - set: vuln
             port: "8095"
+            runner: ubuntu-24.04
+            journeys: true          # the Playwright journeys of R-VULN-022
           - set: vuln-long
             port: "8096"
+            runner: ubuntu-24.04
+            journeys: true
+          - set: vuln-pooler
+            port: "8103"
+            runner: large
     env:
       TROVE_IMAGE: guidedtraffic/trove:dev
       TROVE_DEV_CLUSTER: trove-${{ matrix.set }}-${{ github.run_id }}
@@ -1295,7 +1306,7 @@ jobs:
       # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
       # nodes, the images and the build caches need; no job here uses them.
       - name: Free disk space (GitHub-hosted runner)
-        if: steps.leg.outputs.run == 'true'
+        if: matrix.runner == 'ubuntu-24.04' && steps.leg.outputs.run == 'true'
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
           df -h /
@@ -1317,13 +1328,13 @@ jobs:
           sudo apt-get install -y build-essential jq
 
       - name: Set up Node.js (the Playwright journeys of R-VULN-022)
-        if: steps.leg.outputs.run == 'true'
+        if: matrix.journeys == true && steps.leg.outputs.run == 'true'
         uses: actions/setup-node@v7
         with:
           node-version-file: web/.nvmrc
 
       - name: Install the Playwright journeys and their browser
-        if: steps.leg.outputs.run == 'true'
+        if: matrix.journeys == true && steps.leg.outputs.run == 'true'
         working-directory: web
         run: |
           set -euo pipefail

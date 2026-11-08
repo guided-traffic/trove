@@ -7,6 +7,7 @@ package q
 
 import (
 	"context"
+	"encoding/json"
 )
 
 const journalAnonymousAccess = `-- name: JournalAnonymousAccess :one
@@ -468,7 +469,7 @@ type JournalRepositoryLockRow struct {
 	ID         int64
 	Key        string
 	Class      string
-	Config     []byte
+	Config     json.RawMessage
 	Lifecycle  string
 	ProjectID  string
 	ProjectKey string

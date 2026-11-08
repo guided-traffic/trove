@@ -7,6 +7,7 @@ package q
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -30,7 +31,7 @@ SELECT value, updated_at, updated_by
 `
 
 type GetSystemStateRow struct {
-	Value     []byte
+	Value     json.RawMessage
 	UpdatedAt pgtype.Timestamptz
 	UpdatedBy pgtype.UUID
 }
@@ -51,7 +52,7 @@ ON CONFLICT (key) DO UPDATE
 
 type UpsertSystemStateParams struct {
 	Key       string
-	Value     []byte
+	Value     json.RawMessage
 	UpdatedBy pgtype.UUID
 }
 
