@@ -56,17 +56,24 @@ Hard rules, also for every subagent (put them into every subagent prompt):
    trove has no users and no installations: change APIs, URLs, configuration, schema and stored formats the way that
    is technically best, with no deprecations, aliases, fallbacks or migration paths; a changed migration needs a fresh
    database, which is acceptable until then.
-10. **Parallel from the first hour: features and findings side by side (owner, 2026-11-08).** A run works with many agents at
-   once. Every work package of a feature (the registries of
-   [section 10](#10--owner-tasks-of-2026-11-07-the-next-registries)), or a smaller cut of it, gets an agent and a branch (worktree) of
-   its own; every open finding of [section 8](#8--open-findings) gets an agent of its own as well; they all start in the first hour
-   and run in parallel, each through plan, build and check (section 10's working mode). Findings are never worked off first for
-   hours with the features squeezed in at the end, and features never push findings aside: a finding is fixed in the run, or, when
-   it cannot be fixed yet, documented with its cause, evidence and next step so that nothing slips through. A run never waits for a
-   nightly run or a CI confirmation: it pushes, watches the runs per job in the background, fixes a red job at once and keeps
-   building. During the alpha no criterion waits for N green runs in a row; a red long leg is a finding with its cause, and a
-   finding whose last reading is green is closed with it. The run of 2026-11-07/08 worked sequentially — eight hours of findings,
-   then the Docker registry at the end ([section 11](#11--run-record)) — which this rule forbids.
+10. **ALPHA working mode: features first, no review rounds, findings only when they block (owner, 2026-11-08 evening).**
+   - **Features in parallel, at most four builders.** Each builder owns a whole feature end to end (for example OCI remote with its
+     mirror, OCI virtual, APT local, APT remote), not a slice of 14 small work packages that share files. More than four builders
+     overload the host (load 80 to 160 on 20 cores on 2026-11-08), and the overload turned tests into false failures.
+   - **No review subagents during ALPHA.** No code reviewer, security auditor, penetration tester, architecture reviewer or
+     re-check round after a builder. A builder's work lands once its own gates are green: the unit tests of the touched packages,
+     the integration areas it touches (one run each, through the slot wrapper), lint, `make cyclo`, `make generate-check`, the
+     coverage check and the white-label scan. Security is checked in one pass before BETA, not per package.
+   - **Findings: only blockers at once.** A finding is fixed in the run only when it blocks: `main`'s CI is red, a security hole is
+     live and exploitable, or data can be lost. Every other finding gets one line in [section 8](#8--open-findings) and is fixed in
+     one batch at the end of the run, after the features. A test that fails only under host load gets no agent of its own.
+   - **No repeated race or stress runs.** No `-count=N` loops, no repeated `-race` runs in the Linux image, as a gate or as a proof.
+     One normal run of the touched tests is enough.
+   - **Never wait.** A run pushes, watches the CI runs per job in the background, fixes a red job at once and keeps building. No
+     criterion waits for N green runs in a row.
+   - **Why:** the run of 2026-11-08 spent hours in three or four review rounds per work package and per finding, recorded 28 new
+     findings (most of them false failures under its own load), and delivered only the local OCI class: OCI remote stayed in
+     review, OCI virtual and the mirror and APT were not started ([section 11](#11--run-record)).
 
 ## 1 · Find the next phase
 
@@ -103,9 +110,9 @@ Hard rules, also for every subagent (put them into every subagent prompt):
 4. Resume rule: for a 🟡 phase, compare the checklist with the code and with `git log` since the
    last tag, keep what is done and tested, and plan only the rest.
 5. Open findings ([section 8](#8--open-findings)) and the tasks of
-   [section 9](#9--owner-review-of-2026-11-06-tasks-and-open-questions): each gets an agent of its own in this run, started in the
-   first hour beside the feature's packages (rule 10), never queued in front of them and never left out. A finding the run cannot
-   fix is updated in section 8 with what was found (cause, evidence, the next step), so no finding is forgotten. The registries of
+   [section 9](#9--owner-review-of-2026-11-06-tasks-and-open-questions): a blocking finding (rule 10) is fixed at once; the others are
+   fixed in one batch at the end of the run, after the features, never queued in front of them and never left out. A finding the
+   run cannot fix keeps its line in section 8 with what was found (cause, evidence, the next step), so no finding is forgotten. The registries of
    [section 10](#10--owner-tasks-of-2026-11-07-the-next-registries) are the next phases, ahead of the next unit of FULL.md. Before fixing one, reproduce it (a failing test first); a
    finding that does not reproduce is removed with a one-line reason in the commit message. Remove each
    finding from section 8 in the commit that fixes it.
@@ -138,7 +145,7 @@ brief.
 | Drains, failovers, chaos tests | `voltagent-qa-sec:chaos-engineer`, `voltagent-infra:sre-engineer` |
 | Load and performance | `voltagent-qa-sec:performance-engineer` |
 | Later formats | `voltagent-lang:python-pro` (PyPI), `voltagent-infra:docker-expert` (OCI and Docker), `voltagent-lang:java-architect` (Maven, Gradle), `voltagent-lang:golang-pro` (Go modules), `voltagent-infra:kubernetes-specialist` (Helm charts), `voltagent-infra:devops-engineer` (Ansible Galaxy) |
-| Reviews | `voltagent-qa-sec:code-reviewer` (every phase), `voltagent-qa-sec:architect-reviewer` (contracts and structure), `voltagent-qa-sec:security-auditor` and `voltagent-qa-sec:penetration-tester` (anything that authenticates, authorizes, parses untrusted input or faces the network) |
+| Reviews (not during ALPHA, rule 10) | `voltagent-qa-sec:code-reviewer` (every phase), `voltagent-qa-sec:architect-reviewer` (contracts and structure), `voltagent-qa-sec:security-auditor` and `voltagent-qa-sec:penetration-tester` (anything that authenticates, authorizes, parses untrusted input or faces the network) |
 | Failing tests and pipelines | `voltagent-qa-sec:debugger`, `voltagent-qa-sec:error-detective` |
 | Documentation | `voltagent-dev-exp:documentation-engineer`, `voltagent-biz:technical-writer` |
 
@@ -149,19 +156,18 @@ Rules while building:
   e2e tests (its real clients against trove deployed by the Helm chart with several `web`
   replicas and random distribution, through local, remote and virtual repositories). Other code
   gets unit tests and, where it crosses PostgreSQL, Valkey or S3, integration tests.
-- **Integrate continuously.** After each work package: review the diff yourself, run the task
-  runner's lint, unit and integration targets, then commit one coherent change with a message
-  in imperative English that names the requirement IDs, and set its checklist items to 🟢. Push
-  whenever the local checks are green.
+- **Integrate continuously.** A builder returns one commit on top of the current `main`, with a
+  release-notes message (step 6, item 1); the development agent runs the touched gates once,
+  fast-forwards or cherry-picks it, and pushes once per landed feature. Set its checklist items
+  to 🟢.
 - **Design questions.** Decide them yourself. Record each one as a decision block in the
   `## Decisions` section of the owning spec page (status line "Decided by the development agent —
   selected from the options below; the owner reviews it at the walkthrough.", options table,
   choice, rationale with a revisit condition, applied edits) and add an ADR for significant ones.
   A UI question that really needs a visual reference becomes a note for the walkthrough, not a
   blocker.
-- **Review before done.** Run `voltagent-qa-sec:code-reviewer` over the phase's diff, plus the
-  security and architecture reviewers where the table says so. Have the fitting specialist fix
-  every finding, or record why it does not apply.
+- **Review before done.** Not during ALPHA (rule 10). After ALPHA: run `voltagent-qa-sec:code-reviewer`
+  over the phase's diff, plus the security and architecture reviewers where the table says so.
 
 ## 4 · Definition of done
 
@@ -200,7 +206,11 @@ and `Release Docker & Helm` publishes the image `guidedtraffic/trove` and the ch
 
 1. Commit the phase's work with conventional commit messages: `feat:` for what the phase adds, `fix:`
    for fixes, `docs:` or `chore:` for the plan and the rest. Commit the final plan update (phase row 🟢)
-   with them.
+   with them. **The subject is the line of the release notes (owner, 2026-11-08):** a plain-language sentence
+   that tells a user what is new or fixed and what it does, never a list of IDs. The body explains it in two
+   or three sentences and names the requirement, decision and finding IDs on its last line. A subject such as
+   "the registry root serves /v2/ through one enforcement point (R-OCI-003, …, T-16 WP3)" is what the owner
+   called useless: nobody can tell from it what changed.
 2. Push, and wait until `Test and Release` is green on that commit. Semantic Release has then cut the
    release of the push, if the commits held a `feat` or a `fix`, and `Release Docker & Helm` has run for
    it: `gh run list --workflow "Release Docker & Helm" --limit 3`, then `gh run watch <run-id> --exit-status`.
@@ -212,7 +222,7 @@ and `Release Docker & Helm` publishes the image `guidedtraffic/trove` and the ch
 4. Check the published artifacts of the release: `gh release view vX.Y.Z`, the image
    `guidedtraffic/trove:X.Y.Z` on Docker Hub, and the chart index
    `https://guided-traffic.github.io/trove/index.yaml`. The release notes are generated from the commit
-   messages; they name the requirement IDs, so the commits carry them (rule 4, the commit messages).
+   subjects (item 1); the IDs stay in the commit bodies.
 
 ## 7 · Report to the owner
 
@@ -250,10 +260,9 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
 
 
 
-- **F-104 · The Bastion counts a replayed 404 as refused but a fresh one not** (read by the review of F-102). A kept 404
-  answer replayed from the probe cache raises `trove_bastion_refused_total{reason="read_only"}`, while the probe path that
-  first saw the 404 counts only 403s. Done when one 404 is counted the same whether fresh or replayed, as the metric's
-  definition says.
+
+- **F-108 · A manual name claim and an automatic one of the same name can race** (read by the F-101 builder). The claims API
+  does not take the lock F-101 added for automatic claims. Done when both take the same lock, with a test.
 
 ### Tests and tools
 
@@ -325,8 +334,8 @@ come before the next unit of [FULL.md](FULL.md) (step 1, item 3) and after the f
 matching FULL.md entry (block B F4 for Docker, the block D row "Debian / APT repositories" for APT) to 🟡 when the phase starts and
 to 🟢 with the evidence when it is done; remove the task here in the commit that closes it.
 
-**Working mode (owner, 2026-11-07), for F-73 and for every task of this section.** Planning, building and checking are done by
-separate agents; no agent checks its own work.
+**Working mode (owner, 2026-11-07; changed for ALPHA on 2026-11-08 evening, rule 10).** Planning and building are done by separate
+agents. The check step (3) below does not run during ALPHA: a builder lands its feature on its own green gates.
 
 1. **Plan.** A planning agent (`voltagent-qa-sec:architect-reviewer` or `voltagent-core-dev:api-designer` with the format's specialist)
    writes the spec first: the format's spec page under [docs/spec/formats/](../spec/formats/) from its catalog page under
@@ -366,12 +375,11 @@ separate agents; no agent checks its own work.
   took one; squash into one `feat(oci)` commit and bring it to main without a force push. (2) Wave 1 of the cut in parallel: WP1
   upload sessions, WP2 registry tokens, WP4 the OCI format (local class), WP6 the remote engine's handshake, WP7 the counting stub
   registry, planned, built and checked by separate agents as this section says.
-  Run of 2026-11-08 (session of the afternoon): wave 1 started on the rebased WP0 (08fb9ff8) in the first hour, WP4 split into WP4a
-  (manifest parser, manifest and blob GET/HEAD/PUT, package view, `routes.go`) and WP4b (tags list, referrers, deletion, sweep, journal
-  replay, reinstate, setup snippets). On main since: WP0 (6abafcd1, the rebased 6052035a with ChecksumAlwaysVerified merged) and
-  WP7, the counting stub registry (38c066a3). In review rounds on their branches: WP1 (upload sessions), WP2 (registry tokens; a
-  fail-closed grant table for the `/v2/` mount is part of it), WP4a+WP4b (branch `t16-wp4`, rebased on main), WP6 (handshake;
-  Q-OCI-82, a remembered challenge per repository instead of a 401 per request). Wave 2 (WP3, WP5, WP8, WP12) starts as these land.
+  Status at the end of 2026-11-08: on `main` are WP0 to WP7 and WP12, so the local class works end to end through `/v2/` (push,
+  pull, tags, catalog, referrers, deletes, uploads and mounts). WP8 (the remote class, pull-through) is built on the branch
+  `worktree-agent-af5707b60a45cf45d` and lands once its last round is done (Q-OCI-129: grants on a Docker Hub remote are decided
+  on both spellings of a name). Not started: WP9 (virtual), WP10 (mirror), WP11 (e2e on kind), WP13 (conformance and client
+  integration), WP14 (documentation). The cut is `docs/projektplan/oci-work-packages.md`; FULL.md block B F4 stays 🟡.
 - **T-17 · APT registry (Debian and Ubuntu), with pull-through and full mirror.** Scope from the owner: local, remote and virtual
   repositories for `apt` and `apt-get`; the remote in both modes of R-REPO-050. The planning agent writes `docs/spec/formats/debian.md`
   from [debian.md](../features/formats/debian.md): the repository layout (`dists/<suite>/Release`, `InRelease`, `Release.gpg`,
@@ -407,3 +415,23 @@ What a run did, in short, so the next run starts where it stopped. The plan item
   parallel from the first hour, an agent and a branch per feature package and an agent per finding (rule 10). The next run starts
   T-16's wave 1 and an agent for each open finding together in its first hour.
 
+**Run of 2026-11-08** (releases v0.27.0 to v0.29.0; v0.30.0 waits for Test and Release on the last push).
+
+- Built and on `main`: T-16's local OCI registry. WP1 upload sessions across replicas, WP2 registry tokens and one enforcement point
+  in front of `/v2/`, WP3 the `/v2/` registry root (logins by token, pulls, manifest pushes, tags, catalog), WP4 the local
+  registry class (manifests, tags, referrers, deletes, sweep, replay), WP5 blob uploads and cross-repository mounts, WP6 the remote
+  engine's token handshake, WP7 the counting stub registry, WP12 the OCI screens of the UI. A local `docker push` and `docker pull`
+  through `/v2/` work end to end.
+- Findings closed: F-43, F-50, F-75, F-78 to F-82, F-85 to F-87, F-89 to F-94, F-97 to F-104, F-107. The important ones: path-scoped
+  grants now apply on the npm and NuGet protocol routes (F-82); the stall timeout no longer cuts a request while the server works,
+  over HTTP/1.1 and HTTP/2 (F-91, F-92); a replica's shutdown keeps its deadline (F-94, F-97); two first publishes cannot both claim
+  a name (F-101).
+- Not done: T-16 WP8 (OCI remote) is built but not on `main` (its last round decides grants on both spellings of a Docker Hub name,
+  Q-OCI-129); WP9 (virtual), WP10 (mirror), WP11 (e2e on kind), WP13, WP14 not started. T-17 (APT) not started. F-83 (round 3) and
+  F-84 (round 4) are built but not on `main`.
+- Where the time went: three or four review rounds per work package and per finding, 28 new findings (most of them false failures
+  under the load of 10 to 14 parallel agents on 20 cores), and a full Docker disk at the end (252 GB) that stopped the integration
+  stack. The owner's verdict (rule 10, changed): during ALPHA no review subagents, findings only when they block, no repeated race
+  or stress runs, at most four builders, each a whole feature, and release notes that say in plain words what changed.
+- Next run: land WP8 and F-83/F-84 if their builders finished, then four builders: OCI virtual (WP9), OCI mirror (WP10), APT local,
+  APT remote; the open findings of section 8 in one batch at the end.
