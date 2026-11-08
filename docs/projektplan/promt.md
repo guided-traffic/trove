@@ -248,33 +248,6 @@ Found on 2026-11-08 by the security audit of the F-72 fix, reading a replay hand
   when a genuine entry cannot be shadowed by a forged earlier one for the same version (e.g. the replay keeps every journaled digest of a
   version reserved, or refuses a reservation whose digest differs from another entry's), with a test.
 
-Found on 2026-11-07 while reading the scheduled nightly run 42356771989:
-
-### Tests and tools
-
-- **F-70 · One `npm publish` of `TestHASuite_ObjectStoreOutage` (300 s) ended in `ECONNRESET` instead of the registry's `503`** (read from
-  the job log and the artifacts `e2e-npm-artifacts-ha-suite` and `e2e-npm-cluster-state-ha-suite` of run 42356771989, 2026-11-07, main at
-  f0416d2f; the closing side is not witnessed). The 30 s outage, the node loss, both primary losses and the audit drain passed. The failing
-  assertion is `ha_suite_test.go:508`: publish command 8 (started 09:01:05.069, ended 09:02:15.638, outage 09:00:57 to 09:07:01) printed
-  `network request to https://localhost:8100/api/npm/e2e/npm-local/@e2e%2fha-b8ff1c-s3-outage-300s-pub failed, reason: socket hang up`.
-  `localhost:8100` is the forwarder of the npm clients pod (`fwd`, test/e2e/clients/fwd), a byte relay to the in-cluster edge, so no
-  port-forward and no `packages` pod is on that path. The edge's access log holds attempts 1 and 2 of the command (09:01:05.5 and 09:01:15.6,
-  both `503`, 469 bytes, one client connection, termination state `----`), and nothing for attempt 3, which npm makes 60 s later
-  (`fetch-retry-maxtimeout`) at 09:02:15.6, on the same connection. The edge's access log has no status -1 line from the forwarder's address in
-  the whole run. The replica `4gl7j` was deleted about 10 s after the command ended (first draining `/readyz` 503 at 09:02:25.449), so neither
-  its deletion nor its drain touched the request. In the same run the third attempts of publish commands 9, 10 and 11 came 60.01 to 60.03 s
-  after the second answer, each on a new connection, so by then the edge had closed the idle one. Cause, as far as it is shown: the client
-  reused an idle keep-alive connection in the instant the edge closed it (HAProxy Ingress `timeout-keep-alive`, 1 m by the controller's
-  documentation, not read from the pinned image) because npm's last retry delay is 60 s as well. Not shown: which side closed first; an
-  access line can also be lost (the first attempt of command 10 has none and the command went on), so the missing line alone proves nothing.
-  Product defect excluded for the `packages` role (no request reached it); it is an edge and client timing coincidence of the test
-  environment. Fixed for the dev profile: the edge keeps an idle connection for 90 s (`deploy/dev/haproxy-values.yaml`,
-  [Q-HA-136](../spec/ha-and-helm.md#q-ha-136--the-dev-edge-keeps-an-idle-client-connection-longer-than-npms-longest-retry-delay)), and
-  `fwd` writes a `target closed the connection first` line (idle time, whether the client's bytes came after the close) into the pod's log,
-  which the cluster-state artifact keeps. Done when the next nightly run's `ha-suite` leg passes and no `fwd` line shows a reset with an idle
-  time other than the edge's limit; if one does, the cause is elsewhere and this entry is reopened. Not related to F-66 (that is the 30 s
-  outage; it passed here with no non-200 `/readyz`).
-
 Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
 
 ### Product
@@ -313,7 +286,7 @@ Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
   The dispatched nightly run 42338478182 (2026-11-07, release v0.22.0, `sets=ha-suite`, runner class `large`) passed the whole set,
   `TestHASuite_ObjectStoreOutage` included (30 s and 5 min, no replica unready), with the monitor that keeps a failing pod's
   logs; it did not reproduce the stall. Done when the scheduled nightly runs pass the set too (then removed as not reproduced),
-  or a recurrence names the cause through the kept logs.
+  or a recurrence names the cause through the kept logs. The dispatched nightly run 42461514664 (2026-11-08, release v0.26.0) passed `ha-suite` whole again.
 
 - **F-63 · `TestMirror_R_REPO_055_ClientsFirst/npm` missed its install-time bound in the scheduled nightly run 42194413882** (confirmed from
   the run's pod logs, 2026-11-06, release v0.19.4). `npm ci` with a pass running took 161 % of the best install without it (22.6 s against
@@ -345,6 +318,8 @@ Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
   transaction verb (Q-OPS-188), and the clients-first subtest records the database's waits, the standby's lag, the nodes' and the
   runner's pressure, the test's steps and, on a miss, the cluster logs while the mirror profile is installed (Q-REPO-236). Next: the
   nightly `mirror` reading names the stall from these records; done when the cause is named and the bound holds.
+  The dispatched nightly run 42461514664 (2026-11-08, `large`, release v0.26.0) met the bound: 97 % (pairs 92 %, 98 %, 94 %), the
+  pre-emption subtest 0 -> 2 and the pairs +4; F-63 is closed once a scheduled nightly run confirms it.
 
 Found on 2026-11-04 while cutting trove into task areas (phase 6a):
 
