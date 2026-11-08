@@ -233,8 +233,9 @@ func TestR_STOR_011_ConcurrentPatchesOneIsRecordedTheOtherAnswers416(t *testing.
 // tail and fails its record; the recorded tail is the second request's (R-STOR-011 acceptance).
 func TestR_STOR_011_AZombieWriterFailsItsRecordAndLeavesTheRecordedTailAlone(t *testing.T) {
 	w := newWorld(t)
-	short := func(c *config.Storage) { c.Uploads.WriterLease = 1500 * time.Millisecond }
-	zombie, other := newReplica(t, w.e, w.p, short), newReplica(t, w.e, w.p, short)
+	// Both replicas have the normal lease: the zombie's claim is expired in the database below, so the test does not depend on how fast the store
+	// sends a part (a short lease cuts a part upload at three quarters of it).
+	zombie, other := newReplica(t, w.e, w.p, nil), newReplica(t, w.e, w.p, nil)
 	data := random(8 * mib)
 	ctx := context.Background()
 	sess, err := zombie.svc.Start(ctx, w.p.repo, w.sc)
@@ -262,7 +263,7 @@ func TestR_STOR_011_AZombieWriterFailsItsRecordAndLeavesTheRecordedTailAlone(t *
 		done <- result{n, err}
 	}()
 	<-reached
-	time.Sleep(2 * time.Second) // the lease of the zombie's claim runs out
+	w.p.exec(t, "UPDATE trove.upload_sessions SET writer_until = now() - interval '1 second' WHERE id = $1::uuid", sess.ID.String()) // the lease of the zombie's claim runs out
 	got, err := other.append(w.sc, sess.ID, 0, data[:4*mib])
 	if err != nil || got != 4*mib {
 		t.Fatalf("the second request: received %d, err %v", got, err)
