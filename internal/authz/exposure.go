@@ -460,6 +460,10 @@ type ExposureView struct {
 	// package, its versions and its tags on it, as the ceiling decides the protocol's document
 	// and a listing row (Q-AUTHZ-251). Nil: no path, which a rule with path patterns refuses.
 	doc func(name string) string
+	// ver is the path of a version's file in the repository's format (catalog.Entry.VersionPath):
+	// the view decides a version on it as well, as the ceiling decides the download of the file
+	// (Q-AUTHZ-255, Q-EP-85); has is false for a format whose versions have no file of their own.
+	ver func(name, version string) (path string, has bool)
 }
 
 // docPath is the path the view decides a package on.
@@ -493,7 +497,11 @@ func (e *ExposureCeiling) View(x *Index, endpoint string, repoKey qname.Repo) *E
 		rules = ee.byRepo[r.ID]
 	}
 	reg, format := e.reg, r.Format
-	return &ExposureView{rules: rules, v: f.Versioning, doc: func(name string) string { return documentPathIn(reg, format, name) }}
+	return &ExposureView{
+		rules: rules, v: f.Versioning,
+		doc: func(name string) string { return documentPathIn(reg, format, name) },
+		ver: func(name, version string) (string, bool) { return versionPathIn(reg, format, name, version) },
+	}
 }
 
 // Package reports whether a rule admits the package: a document of it may be served,
@@ -502,10 +510,19 @@ func (v *ExposureView) Package(name string) bool {
 	return admitsItem(v.rules, exposureItem{pkg: name, path: v.docPath(name)}, v.v)
 }
 
-// Version reports whether a version of the package is exposed, on the package's document
-// path, where the version's entry is listed.
+// Version reports whether a version of the package is exposed: on the package's document path,
+// where the version's entry is listed, and on the path of the version's file, which the entry
+// stands for (Q-AUTHZ-255, Q-EP-85). A rule whose path pattern names one version's file hides the
+// version from the document as the ceiling hides the file.
 func (v *ExposureView) Version(name, version string) bool {
-	return admitsItem(v.rules, exposureItem{pkg: name, path: v.docPath(name), version: version}, v.v)
+	if !admitsItem(v.rules, exposureItem{pkg: name, path: v.docPath(name), version: version}, v.v) {
+		return false
+	}
+	if v.ver == nil {
+		return true
+	}
+	p, has := v.ver(name, version)
+	return !has || admitsItem(v.rules, exposureItem{pkg: name, path: p, version: version}, v.v)
 }
 
 // Tag reports whether a tag stays in a filtered document: a rule that admits the

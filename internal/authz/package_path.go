@@ -54,3 +54,53 @@ func (e *Engine) atPackage(idx *Index, c Coordinate) Coordinate {
 	c.Path = e.packagePath(format, c.Package)
 	return c
 }
+
+// A version is decided on the path of its file as well (Q-AUTHZ-255). A package document lists every version with what
+// the version's file holds - npm's manifest and the README of latest, NuGet's description - so a path pattern finer
+// than a package's folder that hides a version's file has to hide the version wherever the package is shown. The
+// decision point therefore decides a question about one version (a listing row with a version, a version an exposure
+// view or check-exposure judges) twice: on the package document's path and on the path of the version's file
+// (catalog.Entry.VersionPath), and the version may be read only if both allow it. A format whose versions have no file
+// of their own decides a version on the document's path alone.
+
+// versionPathIn returns the canonical path of the file of a version in a format of the catalog; has is false for a
+// format whose versions have no file of their own. A pair the format takes for no version has a format with paths and
+// the path "", which a path set with any pattern does not match (fail closed).
+func versionPathIn(reg *catalog.Registry, format, pkg, version string) (path string, has bool) {
+	if reg == nil {
+		return "", false
+	}
+	e, ok := reg.Lookup(format)
+	if !ok || e.VersionPath == nil {
+		return "", false
+	}
+	if pkg == "" || version == "" {
+		return "", true
+	}
+	p, ok := e.VersionPath(pkg, version)
+	if !ok {
+		return "", true
+	}
+	return p, true
+}
+
+// atVersion returns the coordinate of a question about one version on the path of the version's file, and false when
+// there is no second question to ask: the coordinate names a path already, names no version, or its format's versions
+// have no file of their own.
+func (e *Engine) atVersion(idx *Index, c Coordinate) (Coordinate, bool) {
+	if c.Package == "" || c.Version == "" || c.Path != "" {
+		return c, false
+	}
+	format := c.Format
+	if format == "" && idx != nil {
+		if r := idx.repo(c.Repository); r != nil {
+			format = r.Format
+		}
+	}
+	p, has := versionPathIn(e.o.Formats, format, c.Package, c.Version)
+	if !has {
+		return c, false
+	}
+	c.Path = p
+	return c, true
+}

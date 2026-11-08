@@ -112,27 +112,26 @@ func (s *Store) Package(ctx context.Context, repoID int64, name string) (p Packa
 }
 
 // Versions lists the live versions of a package with its revision; a package that
-// does not exist has none and revision 0. The revision is read before the
-// versions, so a concurrent write makes the rows newer than the revision, never
-// older: a document rendered from them carries an ETag that is at worst too old,
-// and a client that holds it is told so by the next change.
+// does not exist has none and revision 0. One statement reads both, so the revision
+// and the versions are one snapshot: a list kept under the revision (the version
+// list of formats.LiveVersions, Q-AUTHZ-255) is the list of that revision, and the
+// read costs one statement (R-ARCH-027).
 func (s *Store) Versions(ctx context.Context, repoID int64, name string) (vs []Version, rev int64, err error) {
 	err = s.read(ctx, func(qs *q.Queries) error {
-		rows, err := qs.GetPackage(ctx, q.GetPackageParams{RepoID: repoID, Name: name})
+		rows, err := qs.ListLiveVersionsByName(ctx, q.ListLiveVersionsByNameParams{RepoID: repoID, Name: name})
 		if err != nil || len(rows) == 0 {
 			return err
 		}
 		rev = rows[0].RevSeq
-		vrows, err := qs.ListLiveVersions(ctx, rows[0].ID)
-		if err != nil {
-			return err
-		}
-		vs = make([]Version, len(vrows))
-		for i, r := range vrows {
-			vs[i] = Version{
+		vs = make([]Version, 0, len(rows))
+		for _, r := range rows {
+			if r.ID == 0 {
+				continue // the package has no live version
+			}
+			vs = append(vs, Version{
 				ID: r.ID, Version: r.Version, DisplayVersion: r.DisplayVersion, LeadItem: r.LeadItemID,
 				Attributes: r.Attributes, CreatedAt: r.CreatedAt.Time, CreatedBy: r.CreatedBy,
-			}
+			})
 		}
 		return nil
 	})

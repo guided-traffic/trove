@@ -28,11 +28,10 @@ func (f *Format) handleFlatIndex(ctx context.Context, rq *formats.Request, w htt
 	}
 	lowerID := rq.Params.Get("id")
 	repoID := rq.RepoRef().ID
-	keep := exposes(viewOf(rq), lowerID)
 	return f.serveDocument(ctx, rq, w, lowerID, docSpec{
 		path:    PackageDocumentPath(lowerID),
 		variant: "flat",
-		render: func(ctx context.Context, st Store) ([]byte, int64, bool, error) {
+		render: func(ctx context.Context, st Store, keep func(string) bool) ([]byte, int64, bool, error) {
 			idx, err := st.FlatIndex(ctx, repoID, lowerID)
 			if err != nil {
 				return nil, 0, false, err
@@ -91,6 +90,17 @@ func (f *Format) serveFile(ctx context.Context, rq *formats.Request, w http.Resp
 	// file is served exactly when a filtered document lists its version (R-NUGET-034).
 	if hiddenVersion(rq, lowerID, ver) {
 		return errNoSuchResource()
+	}
+	// A file of a version the caller's grants hide (its .nupkg's path is refused) is a missing one, so the .nuspec does
+	// not carry what the documents leave out (Q-NUGET-120).
+	if path != NupkgPath(lowerID, ver) {
+		cv, err := formats.CallerVersions(ctx, rq, lowerID)
+		if err != nil {
+			return err
+		}
+		if !cv.Version(ver) {
+			return errNoSuchResource()
+		}
 	}
 	it, found, err := rq.Host.Items().Stat(ctx, rq.RepoRef(), formats.Path{Path: path})
 	if err != nil {

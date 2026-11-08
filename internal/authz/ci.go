@@ -269,6 +269,40 @@ func (e *Engine) ciReadShape(g CIGrantSet, idx *Index, r *repoInfo) (anyRead, un
 	return anyRead, unrestricted
 }
 
+// ciReadsByPath is readsByPath for a CI subject: a contribution's grant or inline grant that gives read on the repository
+// and narrows paths, unless another one reads every package and path of it (Q-AUTHZ-255).
+func (e *Engine) ciReadsByPath(g CIGrantSet, idx *Index, r *repoInfo) bool {
+	byPath := false
+	for i := range g.contributions {
+		c := &g.contributions[i]
+		for _, id := range append([]string{c.pid}, c.groups...) {
+			if id == "" {
+				continue
+			}
+			for _, gr := range idx.grantsFor(r.ID, id) {
+				if !gr.actions.Has(Read) || (c.project != "" && gr.project != c.project) {
+					continue
+				}
+				if gr.res.unrestrictedPackages() {
+					return false
+				}
+				byPath = byPath || gr.res.narrowsPaths()
+			}
+		}
+		for _, ig := range c.inlineFor(r) {
+			if !slices.Contains(ig.Actions, claims.Read) || !e.compile.selectorsMatch(ig.Repositories, qname.Context{}, r.repoView) {
+				continue
+			}
+			paths := ig.Paths != nil && len(ig.Paths.Include)+len(ig.Paths.Exclude) > 0
+			if !paths && (ig.Packages == nil || len(ig.Packages.Include)+len(ig.Packages.Exclude) == 0) {
+				return false
+			}
+			byPath = byPath || paths
+		}
+	}
+	return byPath
+}
+
 // ciWrite is what the ownership check needs to know of a CI subject's write on the index (R-CI-015,
 // R-AUTHZ-018): whether an inline grant with ownership bind_project allows one of the coordinate's write actions
 // (then ownership is checked whatever the repository's packageOwnership says), and the owners a claim by a

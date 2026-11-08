@@ -43,9 +43,11 @@ type docSpec struct {
 	gzip bool
 	// settings are the keys of the nuget section that change the bytes of the document.
 	settings string
-	// render reads the rows and renders the document. rev is the revision of the rows it
-	// read, 0 when the render did not read one; found is false when there is no document.
-	render func(ctx context.Context, st Store) (body []byte, rev int64, found bool, err error)
+	// render reads the rows and renders the document with the versions keep admits (nil
+	// admits every version): the endpoint's exposure view and the versions the caller's
+	// grants let it read (Q-NUGET-120). rev is the revision of the rows it read, 0 when the
+	// render did not read one; found is false when there is no document.
+	render func(ctx context.Context, st Store, keep func(lowerVersion string) bool) (body []byte, rev int64, found bool, err error)
 }
 
 // serveDocument answers a GET or HEAD of a document of the ID lowerID from the validator,
@@ -74,6 +76,30 @@ func (f *Format) serveDocument(ctx context.Context, rq *formats.Request, w http.
 	if !found {
 		return errNoSuchResource()
 	}
+	keep := exposes(view, lowerID)
+	// The versions the caller's grants hide (Q-NUGET-120): an ID whose every version is
+	// hidden is a missing one, and the fingerprint of the hidden versions of the revision
+	// joins the variant, so a rendition is served only to callers from whom the same
+	// versions are hidden; an empty set shares the rendition of every caller.
+	cv, err := formats.CallerVersions(ctx, rq, lowerID)
+	if err != nil {
+		return err
+	}
+	revSeq := row.Ref.RevSeq
+	if cv != nil {
+		live, rev, err := formats.LiveVersions(ctx, rq, row)
+		if err != nil {
+			return err
+		}
+		hidden := cv.Hidden(live)
+		if len(live) > 0 && len(hidden) == len(live) {
+			return errNoSuchResource()
+		}
+		if fp := formats.HiddenFingerprint(hidden); fp != "" {
+			spec.variant += "#" + fp
+		}
+		revSeq, keep = rev, callerKeep(keep, cv)
+	}
 	links := rq.Host.Links(rq)
 	serving := servingName(rq).String()
 	inputs := func(rev int64) document.Inputs {
@@ -85,12 +111,12 @@ func (f *Format) serveDocument(ctx context.Context, rq *formats.Request, w http.
 	}
 
 	key := formats.RenditionKey{
-		Repo: repo, Package: lowerID, RevSeq: row.Ref.RevSeq, Variant: spec.variant + "@" + serving, Encoding: encodingOf(false),
+		Repo: repo, Package: lowerID, RevSeq: revSeq, Variant: spec.variant + "@" + serving, Encoding: encodingOf(false),
 		BaseURL: links.Base(), Endpoint: rq.Endpoint.Name, Exposure: rq.Endpoint.ExposureFingerprint,
 		Settings: inputs(0).Settings, RenderVersion: RenderVersion,
 	}
-	if view != nil {
-		return serveFiltered(ctx, rq, w, st, spec, key, inputs(0))
+	if view != nil || cv != nil {
+		return serveFiltered(ctx, rq, w, st, spec, key, inputs(0), keep, cv != nil)
 	}
 
 	etag := inputs(int64(row.Ref.RevSeq)).ETag()
@@ -112,7 +138,7 @@ func (f *Format) serveDocument(ctx context.Context, rq *formats.Request, w http.
 	}
 	if !hit {
 		var rev int64
-		body, rev, found, err = spec.render(ctx, st)
+		body, rev, found, err = spec.render(ctx, st, nil)
 		if err != nil {
 			return err
 		}
@@ -138,30 +164,39 @@ func (f *Format) serveDocument(ctx context.Context, rq *formats.Request, w http.
 }
 
 // serveFiltered answers a document on an endpoint with exposure rules (R-NUGET-034,
-// Q-NUGET-87). Its validator follows the filtered rendering instead of the revision: the
-// revision rises with every write of the ID, those of versions the endpoint hides included,
+// Q-NUGET-87), and one filtered for the versions the caller's grants hide (Q-NUGET-120).
+// Its validator follows the filtered rendering instead of the revision: the revision rises
+// with every write of the ID, those of versions the endpoint or the grants hide included,
 // and a validator that rose with it would tell a consumer polling with If-None-Match when a
 // version it cannot see was pushed, unlisted, relisted or deleted. The identity rendering of
 // the revision comes from the rendition cache or is rendered, so a 304 here costs a cache hit
-// or a read of the rows; base holds every other input of the validator.
-func serveFiltered(ctx context.Context, rq *formats.Request, w http.ResponseWriter, st Store, spec docSpec, key formats.RenditionKey, base document.Inputs) error {
+// or a read of the rows; base holds every other input of the validator. byRev says the key
+// names the hidden versions of its revision: a rendering of rows read at another revision is
+// then served and not kept.
+func serveFiltered(ctx context.Context, rq *formats.Request, w http.ResponseWriter, st Store, spec docSpec, key formats.RenditionKey,
+	base document.Inputs, keep func(string) bool, byRev bool,
+) error {
 	cache := rq.Host.Renditions()
 	plain, hit := cache.Get(key)
+	kept := true
 	if !hit {
-		body, rev, found, err := spec.render(ctx, st)
+		body, rev, found, err := spec.render(ctx, st, keep)
 		if err != nil {
 			return err
 		}
 		if !found {
 			return errNoSuchResource()
 		}
+		kept = !byRev || rev == int64(key.RevSeq)
 		if rev > 0 {
 			key.RevSeq = formats.RevSeq(rev)
 		}
 		if int64(len(body)) > MaxDocumentBytes {
 			return errs.E(errs.Internal, errs.CodeInternal, "The document is larger than the limit of documents held in memory.")
 		}
-		cache.Put(key, body)
+		if kept {
+			cache.Put(key, body)
+		}
 		plain = body
 	}
 	base.Content = document.ContentDigest(plain)
@@ -174,12 +209,20 @@ func serveFiltered(ctx context.Context, rq *formats.Request, w http.ResponseWrit
 	body := plain
 	if gzip {
 		var ok bool
-		if body, ok = cache.Get(withEncoding(key, true)); !ok {
+		if !kept {
+			body = document.Gzip(plain)
+		} else if body, ok = cache.Get(withEncoding(key, true)); !ok {
 			body = document.Gzip(plain)
 			cache.Put(withEncoding(key, true), body)
 		}
 	}
 	return document.Reply{ETag: etag, Body: body, Gzip: gzip, Vary: spec.gzip}.Write(w, rq.Method)
+}
+
+// callerKeep joins the endpoint's filter (nil: the endpoint narrows nothing) and the versions the caller's grants let it
+// read (Q-NUGET-120).
+func callerKeep(keep func(string) bool, cv *formats.VersionView) func(string) bool {
+	return func(v string) bool { return (keep == nil || keep(v)) && cv.Version(v) }
 }
 
 func encodingOf(gzip bool) string {

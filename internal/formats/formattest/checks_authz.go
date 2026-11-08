@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/repository"
 )
@@ -38,7 +39,8 @@ func (r *run) authzPaths() {
 		r.failf("%s: the fixture has no content case and no change case, and the check is not skipped", CheckAuthzPaths)
 		return
 	}
-	judged, acted := 0, 0
+	r.versionsHaveAFile()
+	judged, acted, docsServed, versionsJudged := 0, 0, 0, 0
 	for _, c := range r.fx.Content {
 		h := r.host("")
 		if c.Seed != nil {
@@ -56,7 +58,15 @@ func (r *run) authzPaths() {
 		judged += j
 		if served {
 			acted++
+			docs, versions := r.documentVersions(c, method)
+			docsServed += docs
+			versionsJudged += versions
 		}
+	}
+	if docsServed > 0 && versionsJudged == 0 {
+		r.failf("%s: content cases serve package documents and none names a stored version, so the fifth rule judged no version: a "+
+			"fixture of a format with formats.VersionPather holds one such case, seeded through the format's own writes so that the "+
+			"package rows hold its versions (Q-AUTHZ-255, Q-AUTHZ-258)", CheckAuthzPaths)
 	}
 	// The remote and the virtual class: the routes of a document an upstream serves and of a merged document decide on
 	// the same coordinate as the local class. Their Hosts have no engine behind the documents, so a request may end in
@@ -134,6 +144,191 @@ func orPath(request, path string) string {
 		return request
 	}
 	return path
+}
+
+// documentVersions is the fifth rule (Q-AUTHZ-255): a package document lists only the versions whose file the caller may
+// read. The decision point decides a version on the path of its file (formats.VersionPather), and a format's document
+// filters with formats.CallerVersions. For a content case whose canonical path Classify places in a package and in no
+// version (the package's document, its tags, its version list) and whose answer names a stored version of the package,
+// the case is served again on a fresh Host whose Allow refuses the read of that version's file and nothing else: the
+// version must be gone from the answer, or the answer must be a refusal. A control run first refuses an unrelated path
+// only, and its answer must equal the unrefused one, so the format's filtering path renders the same document when it
+// hides nothing. The path of a version's file must be canonical and classify to the package and the version. A format
+// without VersionPather has no file per version to decide on and nothing to judge here.
+// It returns whether the case served a package document (1 or 0) and how many versions it judged.
+func (r *run) documentVersions(c ContentCase, method string) (docs, judged int) {
+	vp := formats.CapabilitiesOf(r.f).VersionPath
+	if vp == nil || !r.d.PackageNames {
+		return 0, 0
+	}
+	// Every run serves the case on one Host, seeded once, so the runs differ in what Allow refuses and in nothing else
+	// (the times a seed stamps are the same); the Host's renditions are forgotten before each run, so each run renders.
+	var o HostOptions
+	if r.fx.Host != nil {
+		o = r.fx.Host()
+	}
+	h := NewHost(r.f, o)
+	if c.Seed != nil && c.Seed(h) != nil {
+		return docs, judged
+	}
+	prior := o.Allow
+	serve := func(allow func(formats.Target) error) (*formats.Request, int, []byte) {
+		h.opts.Allow = prior
+		if allow != nil {
+			h.opts.Allow = func(t formats.Target) error {
+				if err := allow(t); err != nil {
+					return err
+				}
+				if prior != nil {
+					return prior(t)
+				}
+				return nil
+			}
+		}
+		h.forgetRenditions()
+		rq, err := h.NewRequest(context.Background(), method, c.Path, bytes.NewReader(c.Body))
+		if err != nil {
+			return nil, 0, nil
+		}
+		resp := h.ServeRequest(rq, false)
+		return rq, resp.Code, resp.Body.Bytes()
+	}
+	defer func() { h.opts.Allow = prior }()
+	rq, code, full := serve(nil)
+	if rq == nil || code >= http.StatusBadRequest {
+		return docs, judged
+	}
+	canon := rq.Path
+	if r.fx.Canonical != nil {
+		p, ok := r.fx.Canonical(rq.Escaped)
+		if !ok {
+			return docs, judged
+		}
+		cp, err := repository.CleanPath(p)
+		if err != nil {
+			return docs, judged
+		}
+		canon = cp
+	}
+	info := r.f.Classify(canon)
+	if info.Kind != formats.PathMetadata || info.Package == "" || info.Version != "" {
+		return docs, judged
+	}
+	docs = 1
+	what := fmt.Sprintf("content case %q (route %q)", c.Name, rq.Route.Name)
+	// The control run: with Allow set, the format takes its filtering path, and a refusal of a path that is none of the
+	// package's must leave the answer as it is. A document that differs here differs for something else than a hidden
+	// version, and the runs below could not tell the two apart.
+	_, codeC, control := serve(func(t formats.Target) error {
+		if t.Path == unrelatedPath {
+			return errs.E(errs.NotFound, errs.CodeNotFound, "The caller may not read the file.")
+		}
+		return nil
+	})
+	if codeC != code || !bytes.Equal(control, full) {
+		r.failf("%s answers %d and other bytes when only an unrelated path is refused (%d unrefused): a document filtered for the caller "+
+			"must be the unfiltered one when it hides nothing (Q-AUTHZ-255)", what, codeC, code)
+		return docs, judged
+	}
+	for _, v := range h.liveVersionNames(info.Package) {
+		p, ok := vp.VersionPath(info.Package, v)
+		if !ok {
+			r.failf("%s: VersionPath names no file for the stored version %q of %q, so the decision point cannot decide it (Q-AUTHZ-255)", what, v, info.Package)
+			continue
+		}
+		clean, err := repository.CleanPath(strings.ReplaceAll(p.Path, "%", "%25"))
+		if got := r.f.Classify(clean); err != nil || clean.Path != p.Path || got.Package != info.Package || got.Version != v {
+			r.failf("%s: VersionPath(%q, %q) is %q, which is not a canonical path that Classify places in that package and version", what, info.Package, v, p.Path)
+			continue
+		}
+		if !namesVersion(full, v) {
+			continue
+		}
+		judged++
+		hidden := p.Path
+		_, code2, body2 := serve(func(t formats.Target) error {
+			if t.Path == hidden && slices.Contains(t.Actions, formats.ActionRead) {
+				return errs.E(errs.NotFound, errs.CodeNotFound, "The caller may not read the file.")
+			}
+			return nil
+		})
+		if code2 < http.StatusBadRequest && namesVersion(body2, v) {
+			r.failf("%s lists the version %q of %q to a caller who may not read its file %q: the document is filtered with formats.CallerVersions (R-AUTHZ-005, Q-AUTHZ-255)",
+				what, v, info.Package, hidden)
+		}
+	}
+	return docs, judged
+}
+
+// versionsHaveAFile is the mandatory part of the fifth rule (Q-AUTHZ-258): a format with package names whose fixture places a
+// path in a version - a path case that Classify gives a version, or the canonical path of a content case - names the file of a
+// version (formats.VersionPather). Without it the decision point decides the format's versions on the package document's path
+// alone, so a path pattern that hides a version's file leaves the version in the package screens and the reports.
+func (r *run) versionsHaveAFile() {
+	if !r.d.PackageNames || formats.CapabilitiesOf(r.f).VersionPath != nil {
+		return
+	}
+	for _, pc := range r.fx.Paths {
+		if pc.Want.Package != "" && pc.Want.Version != "" {
+			r.failVersionWithoutFile(pc.Path, pc.Want)
+			return
+		}
+	}
+	for _, c := range r.fx.Content {
+		h := r.host("")
+		rq, err := h.NewRequest(context.Background(), http.MethodGet, c.Path, nil)
+		if err != nil {
+			continue
+		}
+		canon := rq.Path
+		if r.fx.Canonical != nil {
+			p, ok := r.fx.Canonical(rq.Escaped)
+			if !ok {
+				continue
+			}
+			if canon, err = repository.CleanPath(p); err != nil {
+				continue
+			}
+		}
+		if info := r.f.Classify(canon); info.Package != "" && info.Version != "" {
+			r.failVersionWithoutFile(c.Path, info)
+			return
+		}
+	}
+}
+
+func (r *run) failVersionWithoutFile(path string, info formats.PathInfo) {
+	r.failf("%s: the fixture path %q is one Classify places in the version %q of %q, and the format has no formats.VersionPather: the "+
+		"decision point would decide its versions on the package document's path alone, and a path pattern that hides a version's file "+
+		"would leave the version listed (R-AUTHZ-005, Q-AUTHZ-255, Q-AUTHZ-258)", CheckAuthzPaths, path, info.Version, info.Package)
+}
+
+// unrelatedPath is a canonical path no fixture stores and no format's document is decided on: the path the control run
+// of the fifth rule refuses.
+const unrelatedPath = "formattest-control/never/stored.bin"
+
+// namesVersion reports whether a document names a version as a value of its own: an occurrence of the text that no
+// letter, digit, dot, plus or minus sign touches on either side, as a JSON string, a key or a list entry holds it. A
+// version inside a longer token (a file name "acme-1.2.3.tgz", another version "1.2.3-rc.1" or "11.2.3") is not one.
+func namesVersion(doc []byte, version string) bool {
+	if version == "" {
+		return false
+	}
+	touches := func(b byte) bool {
+		return b >= '0' && b <= '9' || b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b == '.' || b == '+' || b == '-'
+	}
+	for from := 0; ; {
+		i := bytes.Index(doc[from:], []byte(version))
+		if i < 0 {
+			return false
+		}
+		at := from + i
+		end := at + len(version)
+		if (at == 0 || !touches(doc[at-1])) && (end == len(doc) || !touches(doc[end])) {
+			return true
+		}
+		from = at + 1
+	}
 }
 
 // recordedTarget is one target a format handed the Host, with the call that took it.

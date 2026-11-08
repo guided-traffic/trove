@@ -27,13 +27,19 @@ const requests = 30
 // ran for nearly every request, divided by the number of requests.
 func perDownload(t *testing.T, e *env, r *testenv.Replica, path string) map[string]int {
 	t.Helper()
-	if a := e.do(r, path); a.Status != 200 {
+	return perRequestAs(t, e, r, path, e.tokReader)
+}
+
+// perRequestAs is perDownload for the caller of a token.
+func perRequestAs(t *testing.T, e *env, r *testenv.Replica, path, token string) map[string]int {
+	t.Helper()
+	if a := e.st.Do(r, "GET", path, token, nil); a.Status != 200 {
 		t.Fatalf("warm-up %s: %d %.200s", path, a.Status, a.Body)
 	}
 	time.Sleep(time.Second)
 	start := time.Now()
 	for range requests {
-		if a := e.do(r, path); a.Status != 200 {
+		if a := e.st.Do(r, "GET", path, token, nil); a.Status != 200 {
 			t.Fatalf("%s: %d", path, a.Status)
 		}
 	}

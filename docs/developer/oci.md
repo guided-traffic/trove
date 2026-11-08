@@ -33,7 +33,7 @@ The registry tokens and the token service ([Registry tokens and the token servic
 |---|---|
 | [format.go](../../internal/formats/oci/format.go) | `Format`, `Descriptor` (the facts: registry root, upstream, extra and credential hosts, periods, limits, data port), `New`, `Match` |
 | [names.go](../../internal/formats/oci/names.go) | The grammars of image names, tags and digests (`ValidName`, `ValidFullName`, `ValidTag`, `ValidDigest`) and the package-name rule `names` (a name is never folded; a pattern is left alone) |
-| [paths.go](../../internal/formats/oci/paths.go) | The storage layout (`ManifestPath`, `TagPath`, `TaglistPath`, `BlobPath`), `Classify` and `PackageDocumentPath` |
+| [paths.go](../../internal/formats/oci/paths.go) | The storage layout (`ManifestPath`, `TagPath`, `TaglistPath`, `BlobPath`), `Classify`, `PackageDocumentPath` and `VersionPath` (a tag is a version, decided on its tag path as well, Q-AUTHZ-258) |
 | [routes.go](../../internal/formats/oci/routes.go) | The route table of R-OCI-009 to R-OCI-018 with its matchers (the image name has slashes, so the operation is read from the end of the path); every operation has a handler |
 | [errors.go](../../internal/formats/oci/errors.go) | `WriteError`: the distribution specification's error list `{"errors":[{"code":…}]}` for every row of R-OCI-008; a conflict is `409 DENIED` |
 | [handlers_manifest.go](../../internal/formats/oci/handlers_manifest.go) | The pull of a manifest and the push by tag or by digest: the order of the checks, the tag decision (`commitTag`), the reference check (`checkReferences`), the validator translation |

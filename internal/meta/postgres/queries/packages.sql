@@ -43,6 +43,19 @@ SELECT id, version, display_version, COALESCE(lead_item_id, 0)::bigint AS lead_i
  WHERE package_id = sqlc.arg(package_id)::bigint AND trashed_at IS NULL
  ORDER BY id;
 
+-- name: ListLiveVersionsByName :many
+-- The revision of a package by name with its live versions, in one statement and so in one snapshot: under READ
+-- COMMITTED two statements could pair a revision with the versions of a later commit, and a list kept under that
+-- revision would name versions it never had (Q-AUTHZ-255). A package without a live version answers one row whose
+-- version id is 0; a name without a package answers none.
+SELECT p.rev_seq, COALESCE(pv.id, 0)::bigint AS id, COALESCE(pv.version, '')::text AS version,
+       COALESCE(pv.display_version, '')::text AS display_version, COALESCE(pv.lead_item_id, 0)::bigint AS lead_item_id,
+       COALESCE(pv.attributes, '{}'::jsonb) AS attributes, pv.created_at, COALESCE(pv.created_by::text, '')::text AS created_by
+  FROM packages p
+  LEFT JOIN package_versions pv ON pv.package_id = p.id AND pv.trashed_at IS NULL
+ WHERE p.repo_id = sqlc.arg(repo_id)::bigint AND p.name = sqlc.arg(name)::text
+ ORDER BY pv.id NULLS FIRST;
+
 -- name: ListPackageRevisions :many
 -- The revision of one package name in each of the given repositories; a repository
 -- without the package has no row (R-ARCH-015).

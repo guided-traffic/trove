@@ -1571,6 +1571,7 @@ type Capabilities struct {
 	Vulnerability VulnerabilityAdapter // nil for a format without the vulnerability adapter (R-VULN-009, ADR-150)
 	ServeFacts    ServeFactsKeyer      // nil for a format whose serve check reads nothing besides the item (Q-ARCH-291)
 	ViewSizer     ViewSizer            // nil for a format whose versions are the sum of their files (ADR-177)
+	VersionPath   VersionPather        // nil for a format whose versions have no file of their own (Q-AUTHZ-255, ADR-174)
 }
 
 // ViewSizer is the optional interface of a Format whose version has a size that is not the sum of the version's files (an OCI tag:
@@ -1580,6 +1581,14 @@ type Capabilities struct {
 // never asked (ADR-177).
 type ViewSizer interface {
 	ViewSizes(ctx context.Context, ports DataPorts, vs []ViewVersion) (map[VersionID]int64, error)
+}
+
+// VersionPather gives the canonical path of the file that holds a version's content (npm's tarball, NuGet's .nupkg) for
+// a normalized name and a stored version; ok is false for a pair that names no version. Classify of the path gives the
+// name and the version back (kit check 13). catalog.Entry.VersionPath carries it to the decision point, which decides a
+// version on that path as well as on the package document's (authorization.md R-AUTHZ-005, Q-AUTHZ-255).
+type VersionPather interface {
+	VersionPath(name, version string) (p Path, ok bool)
 }
 
 // ServeFactsKeyer names, for a path of a repository, the rows the format's ServeCheck decides on, or the zero key when it
@@ -1776,7 +1785,16 @@ returns a `QueryResult` (the upstream's answer as received, shared with the cach
 `Resolver.Plan` returns a `VirtualPlan` of `PlannedMember`s (member, tier, position, whether the caller may fill it);
 `Resolver.KeepsAway` answers whether a claim, pin rule or exclude pattern keeps a search term away from a member;
 `Resolver.ReadScope` returns the caller's `ReadScope` for the rows of a listing, whose `ReadShape` says per repository whether
-every row, none or only the rows `MayRead` allows can be read.
+every row, none or only the rows `MayRead` allows can be read; `MayRead` decides a version on the package document's path and on
+the path of its file, and `VersionsByPath` says whether the caller's own grants decide the versions of a package one by one
+(a grant or the token scope narrows paths, Q-AUTHZ-255).
+
+The versions a caller's grants let it read are the contract's own service over the read scope (ADR-174, Q-AUTHZ-255): a
+`VersionView` (`Version` decides one version, `Hidden` lists the versions of a list it hides) that `CallerVersions` returns for a
+package of the request's repository, nil when `VersionsByPath` is false, so a caller whose grants carry no path pattern pays
+nothing; `LiveVersions` returns the versions of a package at the revision of its row and keeps them in the rendition cache under
+that revision, so a document request that finds them asks no statement (R-ARCH-027); `HiddenFingerprint` names a set of hidden
+versions in the key and the validator of a rendering, "" for none.
 
 The blocks above are held equal to the code: `TestR_ARCH_008_TheWrittenContractEqualsTheCode`
 (`internal/formats/contract_spec_test.go`) parses the Go blocks of R-ARCH-008 and R-ARCH-009 and compares every type
@@ -2190,7 +2208,15 @@ own tests:
     the operation serves or writes when it names a package; the path is canonical and, for a format with package names,
     `Classify` places it in that package; every file a route serves was authorized for `read` at its own path; and a
     request whose canonical path `Classify` places in a package authorized that package at a path, not the repository
-    ([authorization.md](authorization.md) R-AUTHZ-005, R-AUTHZ-007, Q-AUTHZ-250). The last two rules apply to a served
+    ([authorization.md](authorization.md) R-AUTHZ-005, R-AUTHZ-007, Q-AUTHZ-250). For a format with `VersionPather`, a
+    content case whose canonical path `Classify` places in a package and in no version (a package's document, its tags,
+    its version list) is served again on its seeded host, once with `Allow` refusing an unrelated path only (the answer
+    must equal the unrefused one) and once for each stored version the answer names with `Allow` refusing the read of that
+    version's file and nothing else (the version must be gone from the answer, as a value of its own, or the answer must be
+    a refusal); the version's file path must be canonical and classify to the package and the version (Q-AUTHZ-255). The rule
+    is mandatory: a format with package names whose fixture places a path in a version (a path case, or the canonical path of
+    a content case, that `Classify` gives a version) and that has no `VersionPather` fails, and so does a fixture that serves
+    package documents of which none names a stored version (Q-AUTHZ-258). The last two rules apply to a served
     answer and to every refusal that asked the decision point anything, so a route whose cases all refuse after a decision
     (listed in `NoContent`) is held to them as well. A `Remote` document or a `Merge` case is requested at its protocol path
     (`RemoteDoc.Request`, `MergeCase.Request`, for a format whose protocol paths are not its canonical paths), and one that
@@ -2250,9 +2276,14 @@ Acceptance criteria:
   or 9 that the format contradicts fails (`TestQ_ARCH_281_*`, `TestR_ARCH_010_KitSkips`).
 - A test format whose document route authorizes the package without a path, whose document route authorizes the
   repository instead of the package, whose tarball route authorizes the package document's path for the tarball it
-  serves, or whose document route leaves the path out or authorizes the repository in a remote and a virtual repository
-  only fails kit check 13 and no other check (`TestR_ARCH_010_Defects`); npm and NuGet pass it, and the OCI skeleton,
-  whose routes all refuse before any decision, has nothing for it to judge yet.
+  serves, whose document route leaves the path out or authorizes the repository in a remote and a virtual repository
+  only, whose document lists a version whose tarball the caller may not read (`lists-hidden-versions`), or whose document
+  is rendered otherwise on the path that filters it while it hides nothing (`filters-differently`, the control run) fails kit
+  check 13 and no other check (`TestR_ARCH_010_Defects`), and so does the test format without `VersionPather`; a test format
+  that keeps its versions out of the package rows, so that its documents name versions the fifth rule cannot judge
+  (`versions-outside-rows`), fails check 13 by the vacuity rule, and check 9 with it, since a removal takes no version row;
+  npm, NuGet and OCI pass it, OCI with the tags list of a pushed tag as the package document whose version the fifth rule
+  hides (Q-AUTHZ-258).
 - A test format with a leaking document route and a fixture whose cases all refuse, every route listed in `NoContent` and
   `NoRevision`, fails kit check 13 (`TestR_ARCH_010_Check13HoldsARefusingFixtureToItsDecisions`); a `Remote` document or a
   `Merge` case that matches no route fails it as well.
@@ -4630,7 +4661,11 @@ Database budget per request, used to size P-1 to P-8:
   statements of that revalidation besides;
 - file of a virtual repository: 1 query per member the resolution asks until one has the file (R-REPO-019), the last of them
   being the hit above, so a file of the second member costs 2 (Q-ARCH-290);
-- computed local document: 1 query (`rev_seq`) when the rendition is cached;
+- computed local document: 1 query (`rev_seq`) when the rendition is cached; for a caller whose own grants decide the
+  versions of the package one by one (a path pattern, [authorization.md](authorization.md) Q-AUTHZ-255) the version list of
+  the revision as well, which the replica keeps in its rendition cache under the revision, so it costs 1 statement (the
+  revision with the live versions, one snapshot) once per revision and replica and nothing afterwards; a caller without
+  path patterns asks nothing more (`TestR_ARCH_027_ADocumentOfACallerWithPathPatternsCostsOneStatement`);
 - virtual merge: 1 query for local `rev_seq` values, plus 1 per remote member;
 - token and policy checks: 0 queries while their caches are valid;
 - per replica, not per request: one change-log poll per `cluster.epoch_poll_interval`;

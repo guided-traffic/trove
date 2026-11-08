@@ -613,3 +613,4 @@ type fixedScope map[string]authz.ReadShape
 
 func (f fixedScope) Shape(key qname.Repo) authz.ReadShape     { return f[key.Key] }
 func (f fixedScope) MayRead(_ qname.Repo, pkg, _ string) bool { return pkg != "secret" }
+func (f fixedScope) VersionsByPath(qname.Repo) bool           { return false }

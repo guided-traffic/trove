@@ -213,7 +213,10 @@ Consequences:
   separately stored metadata (PKG-NPM-047) cannot occur.
 - Permission path patterns (R-AUTHZ-005) are matched against the path the route decides on: `<name>` for the package
   document, a version document, the dist-tags and every write of the package as a whole, the tarball's path for a tarball
-  (Q-NPM-80). `@acme/**` covers both; a pattern that names only tarballs admits no document.
+  (Q-NPM-80). `@acme/**` covers both; a pattern that names only tarballs admits no document. A version is decided on its
+  tarball's path as well (the format's `VersionPath`, Q-AUTHZ-255): a pattern that hides one tarball hides its version from
+  every document of the caller, and a write is decided on every file it writes or removes, the provenance bundle included
+  (Q-NPM-82, Q-NPM-83).
 - Every stored tarball is an item at its canonical path (storage.md); raw access through
   `/files/<projectKey>/<repoKey>/<path>` (INV-6) uses the same path, and is refused wherever the npm tarball
   route refuses the tarball: a tombstoned version (R-NPM-015, R-NPM-047) or a version removed
@@ -955,7 +958,9 @@ Priority: **P1** · Covers: PKG-NPM-028
 `GET {name}/{version-or-tag}` returns one version's manifest exactly as it appears in the full
 document of the same repository (same `dist`, same `deprecated`). `{version-or-tag}` is a
 canonical version or a dist-tag of that document (merged for virtual repositories); otherwise 404.
-Headers as R-NPM-013; permission `read`.
+Headers as R-NPM-013; permission `read`. A version the caller's grants hide (its tarball's path is refused, Q-AUTHZ-255) is
+404 by number, and a tag names the version of the caller's filtered document, so a tag at a hidden version is 404 and
+`latest` names the highest version the caller may read (Q-NPM-82).
 
 Acceptance criteria:
 
@@ -989,19 +994,25 @@ Priority: **MVP** · Covers: PKG-NPM-021, PKG-NPM-031
 
 | Method | Path | Request | Response | Permission (R-AUTHZ-007) |
 |---|---|---|---|---|
-| GET | `-/package/{name}/dist-tags` | — | 200 `{"latest": "1.2.0", "next": "2.0.0-rc.1"}`; 404 unknown | `read` |
-| PUT | `-/package/{name}/dist-tags/{tag}` | JSON string, e.g. `"1.2.0"` | 200 `{"ok": true}`; 400 `npm_invalid_tag` or version not live; 404 unknown package | `deploy`, ownership |
-| DELETE | `-/package/{name}/dist-tags/{tag}` | — | 200 `{"ok": true}`; 400 for `latest`; 404 unknown tag | `deploy`, ownership |
+| GET | `-/package/{name}/dist-tags` | — | 200 `{"latest": "1.2.0", "next": "2.0.0-rc.1"}`, the tags of the caller's filtered document (a tag at a version the caller may not read is left out, `latest` moved, Q-NPM-82); 404 unknown | `read` |
+| PUT | `-/package/{name}/dist-tags/{tag}` | JSON string, e.g. `"1.2.0"` | 200 `{"ok": true}`; 400 `npm_invalid_tag` or version not live, also for a version the caller may not read; 403 `forbidden` when the tag points to a version the caller may not read (Q-NPM-84); 404 unknown package | `deploy`, ownership |
+| DELETE | `-/package/{name}/dist-tags/{tag}` | — | 200 `{"ok": true}`; 400 for `latest`; 404 unknown tag, also for a tag at a version the caller may not read (Q-NPM-84) | `deploy`, ownership |
 
 - Tag names follow R-NPM-007's rule; a tag that is a valid SemVer range (`1.x`, `v1.4`) is rejected,
   matching the clients' own check (`semver.ValidateTag`; strict range syntax, as `npm dist-tag add`
   tests it, Q-NPM-15).
 - `latest` cannot be deleted; it can be moved to any live version, older ones included (moving it
   back after a broken release is legitimate).
-- A publish applies the tag of its body. **Latest guard** (`npm.latestGuard`): when a publish
+- A publish applies the tag of its body, except to a tag that points to a version the publisher may
+  not read (R-AUTHZ-005): such a tag stays where it is, `latest` included and whatever the new
+  version is, the version is stored, and the 201 carries `npm-notice: <tag> was not moved: it points
+  to a version you may not read`, which names no version
+  ([Q-NPM-85](#q-npm-85--a-publish-leaves-a-tag-at-a-version-the-publisher-may-not-read-where-it-is-and-its-notice-names-no-hidden-version)). **Latest guard**
+  (`npm.latestGuard`): when a publish
   carries `latest` and the new version is lower than the current `latest`, or is a pre-release
   while the current `latest` is not, the version is stored, `latest` stays, and the 201 carries
-  `npm-notice: latest stays at <version>; move it with npm dist-tag add`. npm 11 refuses such
+  `npm-notice: latest stays at <version>; move it with npm dist-tag add`; the guard is asked only
+  for a `latest` the publisher may read, so the version it names is one the publisher sees. npm 11 refuses such
   implicit tags on the client
   ([npm source](https://github.com/npm/cli/blob/latest/lib/commands/publish.js)); pnpm and Yarn
   do not, and a maintenance release from an old branch would otherwise silently become `latest`.
@@ -1036,6 +1047,11 @@ Acceptance criteria:
   prints `npm-notice` only on error responses
   ([npmHttpUtils.ts](https://github.com/yarnpkg/berry/blob/master/packages/plugin-npm/sources/npmHttpUtils.ts)),
   so the test reads the header, not Yarn's output.
+- A publish by a caller whose grant hides `keep@1.0.0`, with `beta` and `latest` at 1.0.0, stores
+  `keep@1.2.0` under `--tag beta`, `keep@2.0.0` and `keep@0.9.0` under `latest`, leaves both tags at
+  1.0.0, and answers each with the notice of Q-NPM-85, which does not name 1.0.0; the `npm.publish`
+  event records `tag_held`; a lower version of a package whose `latest` the caller reads still gets
+  the guard's notice (`TestR_NPM_016_APublishLeavesATagAtAVersionThePublisherMayNotReadWhereItIs`).
 
 ### R-NPM-017 · Unpublish
 Priority: **MVP** · Covers: PKG-NPM-019
@@ -1047,9 +1063,9 @@ maps to three operations. Each needs `delete` and ownership (R-AUTHZ-007) and th
 
 | Method | Path | Body | Effect | Response |
 |---|---|---|---|---|
-| PUT | `{name}/-rev/{rev}` | full document without the versions to remove | Each live version absent from `versions` is deleted through [storage.md](../storage.md) R-STOR-018 (to the trash can from P1, permanently in the MVP) and tombstoned | 200 `{"ok": true, "rev": "<new rev>"}`; 400 if `versions` is missing or names a version trove does not hold; 409 stale rev, unless the request changes nothing (R-NPM-009) |
-| DELETE | `{name}/-/{file}.tgz/-rev/{rev}` | — | No-op for a version already removed by the `PUT` (npm sends it next); the revision is not compared (Q-NPM-30) | 200; 400 `npm_bad_publish` if the version is still live |
-| DELETE | `{name}/-rev/{rev}` | — | Every live version deleted and tombstoned; all dist-tags removed | 200; 409 stale rev, unless every version is already removed (R-NPM-009) |
+| PUT | `{name}/-rev/{rev}` | full document without the versions to remove | Each live version absent from `versions` that the caller may read is deleted through [storage.md](../storage.md) R-STOR-018 (to the trash can from P1, permanently in the MVP) and tombstoned; a version the caller's grants hide stays (Q-NPM-82) | 200 `{"ok": true, "rev": "<new rev>"}`; 400 if `versions` is missing or names a version trove does not hold, or one the caller may not read (Q-NPM-84); 403 when the caller may not delete the tarball or the provenance bundle path of a removed version (Q-NPM-83); 409 stale rev, unless the request changes nothing (R-NPM-009) |
+| DELETE | `{name}/-/{file}.tgz/-rev/{rev}` | — | No-op for a version already removed by the `PUT` (npm sends it next); the revision is not compared (Q-NPM-30) | 200; 400 `npm_bad_publish` if the version is still live and the caller may read it; a version the caller's grants hide answers 200 like a removed one (Q-NPM-84) |
+| DELETE | `{name}/-rev/{rev}` | — | Every live version the caller may read deleted and tombstoned, a version the caller's grants hide stays (Q-NPM-82); the dist-tags follow R-NPM-016, so none is left when no version stays | 200; 403 as for the `PUT`; 409 stale rev, unless every version is already removed (R-NPM-009) |
 
 - On the `PUT` path trove applies removals only: dist-tags are recomputed by R-NPM-016, not taken
   from the body, and every other difference is ignored. A body without `versions` (npm's partial
@@ -4945,6 +4961,128 @@ package list).
 **Applied in the spec:** R-NPM-038. Code: [handlers_audit.go](../../../internal/formats/npm/handlers_audit.go)
 (`readableNames`). Tests: `TestR_NPM_038_ANameTheCallerMayNotReadIsWithheldLikeOneNeverFetched` (unit),
 `TestR_NPM_038_ANameTheCallerMayNotReadIsNotForwarded` (integration).
+
+### Q-NPM-82 · An npm document lists only the versions the caller may read, and a write leaves the others alone
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: finding F-83 ([authorization.md](../authorization.md) Q-AUTHZ-255). With `paths.exclude:
+["hidden/-/hidden-2.0.0.tgz"]` the tarball of 2.0.0 answered 404 and the package document listed 2.0.0 with its manifest and
+the README of 2.0.0 (its `latest`), the version and tag documents of 2.0.0 answered 200, the dist-tags pointed at it, the
+`?write=true` document carried it, and a revisioned `PUT` that the client built from that document could remove it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The filter of an endpoint with rules (`exposeRows`) applies the caller's versions too (chosen) | A local document (full, abbreviated, single-version by number or tag, dist-tags, `?write=true`) is filtered by the endpoint's view and `formats.CallerVersions`: the hidden versions go, `latest` moves to the highest version left, a tag at a hidden version is dropped, the README of a `latest` that moved goes; the rendition key and the `ETag` carry the hidden fingerprint; a version named by number that is hidden is a missing one; a dist-tag write at a hidden version answers like one at a version that is not published, a `DELETE` of a tag at a hidden version like an unknown tag; an unpublish leaves a hidden version where it is | One filter for both narrowings (Q-NPM-38, Q-NPM-39 keep applying); a client sees a consistent package; the caller cannot probe hidden versions through a write | The document of such a caller needs the version list of the revision (cached per replica, R-ARCH-027) and its renditions are kept per hidden set |
+| (b) Answer 404 for the package when any version is hidden | The document is all or nothing | No filter | The caller loses the versions it may read |
+| (c) Filter only the full document | The others as before | Smaller | `npm view hidden@2.0.0`, the tags and `?write=true` keep the hidden version |
+
+**Choice:** (a). `callerVersions` and `filterOf` ([versions.go](../../../internal/formats/npm/versions.go)); a filtered
+rendition of rows read at another revision than the fingerprinted one is served and not kept. Remote and virtual documents
+are filtered by the endpoint only (H-655 in [permissions.md](../../security/permissions.md)).
+
+**Rationale:** what a document says of a version is a copy of its tarball. The development agent would revisit the remote and
+virtual classes when their documents keep a version list per revision as the local class does.
+
+**Applied in the spec:** R-NPM-003, R-NPM-014 (a hidden version's document), R-NPM-016 (the tags of the filtered document),
+R-NPM-017. Code: [versions.go](../../../internal/formats/npm/versions.go),
+[handlers_document.go](../../../internal/formats/npm/handlers_document.go), [handlers_disttags.go](../../../internal/formats/npm/handlers_disttags.go),
+[handlers_unpublish.go](../../../internal/formats/npm/handlers_unpublish.go), [handlers_virtual.go](../../../internal/formats/npm/handlers_virtual.go).
+Tests: `TestR_AUTHZ_005_AVersionPathPatternHidesTheVersionFromNPMDocuments`
+([version_paths_test.go](../../../test/integration/npm/version_paths_test.go)), the npm run of kit check 13.
+
+### Q-NPM-83 · A publish and an unpublish are decided on every file they write or remove
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: H-586 ([authorization.md](../authorization.md) Q-AUTHZ-256). A publish was decided on `<name>` and the tarball and
+stored the provenance bundle too; both unpublish forms were decided on `<name>` and removed every removed version's tarball
+and bundle.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Decide the bundle's path for a publish that attaches one, and the tarball's and the bundle's path of every removed version for an unpublish, whether or not the bundle exists (chosen) | `Authorize` on the bundle's path before anything is stored; the unpublish decides its paths with `Host.PathsAllowed` in its transaction, under the package row lock that read the versions, and refuses with the `Authorize` of the first path not held | `/files/` and the protocol refuse the same change; the refusal tells nothing about a bundle the caller may not read | A grant that excludes `**/*.sigstore` from `delete` refuses every unpublish |
+| (b) Decide the bundle only where one is stored | The refusal follows the item | Fewer refusals | The answer tells whether a version has a bundle |
+
+**Choice:** (a). The tarball `DELETE` of npm's unpublish sequence stays decided on the tarball's path.
+
+**Rationale:** a file is changed by whoever may change that file. The development agent would revisit (b) if a grant that
+withholds bundles from `delete` proves common.
+
+**Applied in the spec:** R-NPM-017, [authorization.md](../authorization.md) R-AUTHZ-007. Code: [publish.go](../../../internal/formats/npm/publish.go),
+[handlers_unpublish.go](../../../internal/formats/npm/handlers_unpublish.go) (`mayDelete`), [paths.go](../../../internal/formats/npm/paths.go)
+(`sigstoreTarget`). Test: `TestR_AUTHZ_005_AnNPMWriteIsDecidedOnEveryFileItWritesOrRemoves`.
+
+### Q-NPM-84 · Every npm write treats a version the caller may not read as one the package does not hold, and a tag at such a version is not the caller's to move
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the code review and the penetration test of F-83 (2026-11-08) found three npm writes that answered a hidden version
+otherwise than a missing one. The revisioned `PUT {name}/-rev/{rev}` compared the body's versions with the unfiltered live
+versions: a body that named the hidden 1.0.0 answered 200, one that named 9.9.9 answered 400 "which the package does not
+hold". The tarball `DELETE {name}/-/{file}/-rev/{rev}` of a caller who may delete a tarball it may not read answered 400
+"still published" for the hidden version and 200 for a missing one. A dist-tag at a hidden version answered a `DELETE` with
+the 404 of an unknown tag, while a `PUT` moved it to a version the caller sees, `latest` included.
+
+Two rules decide, in this order: a write never changes what the caller may not read ([authorization.md](../authorization.md)
+Q-AUTHZ-256), and the answer gives the smallest signal that something hidden exists, which is the answer the caller's own
+view predicts wherever that answer changes nothing.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Filter the live versions before a write looks at them; a tag at a hidden version: `DELETE` as an unknown tag, `PUT` refused (chosen) | Both unpublish forms pick among the versions the caller may read (a body that names a hidden one is the 400 of a version the package does not hold); the tarball `DELETE` answers a hidden version as a removed one (200, the current `_rev`); a dist-tag `PUT` to a hidden version is the 400 of a version that is not published; a dist-tag whose version is hidden is answered by `DELETE` as an unknown tag (404) and refused by `PUT` with 403 `forbidden` | Every answer but one is the answer of the caller's view, and none changes a hidden version or a tag at one | A `PUT` over a hidden tag tells that the tag exists (H-686 in [permissions.md](../../security/permissions.md)): it cannot be answered as the new tag the caller's view predicts without moving the hidden one |
+| (b) As (a), but a `PUT` over a hidden tag answers 200 and changes nothing | The answer of the caller's view | No signal in the answer | A success that did nothing: the caller's next read of the tags shows the tag missing, so the signal comes one request later, and automation that trusts the answer is misled |
+| (c) A `PUT` moves the tag | As before | No refusal | A caller who cannot see the newest release moves `latest` away from it for everyone |
+| (d) `PUT` and `DELETE` over a hidden tag both 403 | One answer for both | Simple | The `DELETE` signals what its 404 need not |
+
+**Choice:** (a). The view of the unpublish is taken in its transaction, on the index the commit-time decision moved the
+request to, as every other decision there.
+
+**Rationale:** a hidden version is no version of the package for the caller, so every route answers as for one the package
+does not hold; where a write would have to change a hidden thing to do what the caller asked, it does not, and the refusal is
+the only signal left. The development agent would revisit (b) if clients that tag in pipelines meet the 403 often. The tag a
+publish carries follows the same rule; its answer is
+[Q-NPM-85](#q-npm-85--a-publish-leaves-a-tag-at-a-version-the-publisher-may-not-read-where-it-is-and-its-notice-names-no-hidden-version).
+
+**Applied in the spec:** R-NPM-016 (the table), R-NPM-017 (the table), [authorization.md](../authorization.md) R-AUTHZ-005
+(acceptance). Code: [handlers_unpublish.go](../../../internal/formats/npm/handlers_unpublish.go) (`unpublish`,
+`handleUnpublishTarball`), [handlers_disttags.go](../../../internal/formats/npm/handlers_disttags.go). Tests:
+`TestR_AUTHZ_005_AVersionPathPatternHidesTheVersionFromNPMDocuments`, `TestR_AUTHZ_005_AnNPMWriteIsDecidedOnEveryFileItWritesOrRemoves`,
+`TestR_AUTHZ_005_TheTarballDeleteOfAnUnpublishAnswersAHiddenVersionAsAMissingOne`
+([version_paths_test.go](../../../test/integration/npm/version_paths_test.go)).
+
+### Q-NPM-85 · A publish leaves a tag at a version the publisher may not read where it is, and its notice names no hidden version
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the review of F-83 (2026-11-08, round 3). A publish applied the tag of its body without the publisher's view: a caller
+whose grant hides `keep@1.0.0`, with `beta` and `latest` at 1.0.0, published `keep@1.2.0 --tag beta` (201) and moved `beta`
+off the hidden version, the move a dist-tag `PUT` is refused (Q-NPM-84). Its publish of `keep@0.9.0` under `latest` answered
+201 with `npm-notice: latest stays at 1.0.0`, the number of a version it may not read. Two rules decide, in the order of
+Q-NPM-84: a write never changes what the caller may not read, and the answer gives the smallest signal that something hidden
+exists.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The version is stored and the tag stays, with a notice that names no version (chosen) | Under the package row lock the publish reads the tags and the publisher's view (`formats.CallerVersions`, in the commit's transaction, on the index the commit-time decision moved the request to); a tag of the body that points to a version the view hides stays, `latest` included and whatever the new version is; the 201 carries `npm-notice: <tag> was not moved: it points to a version you may not read`; the latest guard is asked only for a readable `latest`, so its notice names a version the publisher sees; the `npm.publish` event records `tag_held` | No hidden tag moves; the publisher learns at once that the tag stayed; the version, which the caller may write, is stored | The notice tells that the tag points to a hidden version (H-686 in [permissions.md](../../security/permissions.md)) |
+| (b) Refuse the publish (403) | As a dist-tag `PUT` over a hidden tag | One answer for every tag move | Every `npm publish` carries a tag, `latest` by default: a caller whose `latest` is hidden could not publish at all, and a version it may write is refused for a tag it did not name |
+| (c) Store the version and leave the tag without a notice | Silent | No signal in the answer | The client reports the tag as moved; the next read of the tags shows otherwise, so the signal comes one request later and automation is misled, as Q-NPM-84 (b) |
+| (d) Move the tag | As before | No signal | A caller who cannot see a release moves `latest` or a channel away from it for everyone (Q-AUTHZ-256) |
+
+**Choice:** (a). A new tag, or one at a version the publisher may read, moves as R-NPM-016 says; a package without `latest`
+gets it from the publish as before.
+
+**Rationale:** the publish does what the caller may do - store the version - and leaves what it may not change, and says so in
+the answer, where the client shows it. A refusal would cost the publish of every caller whose `latest` is hidden for a tag the
+default chose. The development agent would revisit (b) if a team asks that a publish under a hidden tag fail instead.
+
+**Applied in the spec:** R-NPM-016 (the publish's tag, the guard, acceptance). Code:
+[tags.go](../../../internal/formats/npm/tags.go) (`tagAfterPublish`), [hooks.go](../../../internal/formats/npm/hooks.go)
+(`commitVersion`), [publish.go](../../../internal/formats/npm/publish.go) (the notices), `internal/audit/events_npm.go`
+(`tag_held`). Tests: `TestR_NPM_016_APublishLeavesATagAtAHiddenVersionWhereItIs`,
+`TestR_NPM_016_OnCommitLeavesATagAtAHiddenVersion` (unit),
+`TestR_NPM_016_APublishLeavesATagAtAVersionThePublisherMayNotReadWhereItIs`
+([version_paths_test.go](../../../test/integration/npm/version_paths_test.go)).
 
 ## What this does not cover
 

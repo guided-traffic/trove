@@ -80,11 +80,17 @@ func (f *Format) virtualWriteDocument(ctx context.Context, rq *formats.Request, 
 	if err != nil {
 		return err
 	}
+	cv, err := formats.CallerVersions(ctx, trq, n.String())
+	if err != nil {
+		return err
+	}
 	p, found, err := st.LocalDocument(ctx, trq.RepoRef().ID, n.String())
 	if err != nil {
 		return err
 	}
-	if !found {
+	// A version the caller's grants hide in the target is not in the document it writes
+	// back (Q-NPM-82).
+	if !found || !filterOf(trq, n, cv)(&p) {
 		return notFound()
 	}
 	rep := f.replicaOf(rq.Host)

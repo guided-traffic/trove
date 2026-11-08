@@ -200,6 +200,46 @@ func TestR_NPM_007_OnCommitOfALaterVersion(t *testing.T) {
 	}
 }
 
+// The commit applies the tag with the publisher's view: a tag at a version the publisher may not
+// read stays, the guard is not asked, and the commit records it (Q-NPM-85).
+func TestR_NPM_016_OnCommitLeavesATagAtAHiddenVersion(t *testing.T) {
+	f := New()
+	commit := func(tag, version string, view func(context.Context) (func(string) bool, error)) (*publishCommit, rows.PublishInput, error) {
+		w := &fakeWriter{live: []formats.VersionRow{{ID: 1, Version: "2.0.0"}}}
+		st := &fakeStore{tags: map[string]string{"latest": "2.0.0", "beta": "2.0.0"}}
+		pc := newPublish(t, "left-pad", version, tag)
+		pc.readable = view
+		err := f.OnCommit(context.Background(), nil, publishEvent(t, w, st, pc))
+		if err != nil {
+			return pc, rows.PublishInput{}, err
+		}
+		return pc, st.published[0], nil
+	}
+	hides := func(context.Context) (func(string) bool, error) {
+		return func(v string) bool { return v != "2.0.0" }, nil
+	}
+	for _, c := range []struct{ tag, version string }{{"latest", "3.0.0"}, {"latest", "1.5.0"}, {"beta", "3.0.0-beta.1"}} {
+		t.Run("Q-NPM-85 "+c.tag+" at a hidden version stays for "+c.version, func(t *testing.T) {
+			pc, in, err := commit(c.tag, c.version, hides)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if in.Tags["latest"] != "2.0.0" || in.Tags["beta"] != "2.0.0" || !in.TagHeld || in.LatestKept || in.Tag != c.tag {
+				t.Fatalf("the tag moved or the commit does not record it: %+v", in)
+			}
+			if !pc.held || pc.kept {
+				t.Fatalf("result held %v kept %v", pc.held, pc.kept)
+			}
+		})
+	}
+	t.Run("Q-NPM-85 a view that fails fails the commit", func(t *testing.T) {
+		boom := errors.New("no view")
+		if _, _, err := commit("latest", "3.0.0", func(context.Context) (func(string) bool, error) { return nil, boom }); !errors.Is(err, boom) {
+			t.Fatalf("err %v, want the view's", err)
+		}
+	})
+}
+
 func TestR_NPM_016_LatestGuardSetting(t *testing.T) {
 	f := New()
 	publish := func(guard bool) *publishCommit {

@@ -37,7 +37,8 @@ func init() {
 	// package and version are the normalized name and the canonical version;
 	// integrity is the SRI string of the SHA-512. tag is the dist-tag the request
 	// carried, latest_guard says that the latest guard kept latest where it was
-	// (R-NPM-016), claim is the outcome of the namespace auto claim (R-REPO-023:
+	// (R-NPM-016), tag_held that the tag stayed at a version the publisher may not
+	// read and is absent otherwise (Q-NPM-85), claim is the outcome of the namespace auto claim (R-REPO-023:
 	// "created" or the reason nothing was created). shadowCheck is "undetermined" when
 	// the first version of the name was published although a remote member of a
 	// containing virtual repository could not be asked (R-REPO-048).
@@ -45,7 +46,7 @@ func init() {
 		Name: EventNPMPublish, Category: CategoryContent, Mode: Transactional,
 		Schema: `{"type":"object","properties":{` +
 			`"package":{"type":"string"},"version":{"type":"string"},"integrity":{"type":"string"},` +
-			`"tag":{"type":"string"},"latest_guard":{"type":"boolean"},"claim":{"type":"string"},` +
+			`"tag":{"type":"string"},"latest_guard":{"type":"boolean"},"tag_held":{"type":"boolean"},"claim":{"type":"string"},` +
 			`"shadowCheck":{"type":"string","enum":["undetermined"]}},` +
 			`"required":["package","version","integrity","tag"],"additionalProperties":false}`,
 	})

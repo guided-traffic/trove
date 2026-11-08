@@ -38,13 +38,18 @@ func (f *Format) handleDistTags(ctx context.Context, rq *formats.Request, w http
 	}
 	// >>> WP2.9 exposure
 	// The filtered tags need the exposed versions, to know where latest moves
-	// (R-NPM-048): they come from the rows of the whole document.
-	if view := viewOf(rq); view != nil {
+	// (R-NPM-048): they come from the rows of the whole document. The versions the
+	// caller's grants hide are filtered the same way (Q-NPM-82).
+	cv, err := formats.CallerVersions(ctx, rq, n.String())
+	if err != nil {
+		return err
+	}
+	if viewOf(rq) != nil || cv != nil {
 		p, found, err := st.LocalDocument(ctx, rq.RepoRef().ID, n.String())
 		if err != nil {
 			return err
 		}
-		if !found || !exposeRows(view, n.String(), &p) {
+		if !found || !filterOf(rq, n, cv)(&p) {
 			return notFound()
 		}
 		w.Header().Set("Cache-Control", "private, no-cache")
@@ -94,11 +99,18 @@ func (f *Format) handleDistTagSet(ctx context.Context, rq *formats.Request, w ht
 		if err := f.claim(ctx, pw, opDistTag, n.String(), version, false); err != nil {
 			return err
 		}
+		// A version the caller's grants hide is answered as one that is not published, and a tag
+		// that points to such a version is not the caller's to move (Q-NPM-84). The view is taken
+		// on the index the commit-time decision moved the request to, as every decision here.
+		cv, err := formats.CallerVersions(ctx, rq, n.String())
+		if err != nil {
+			return err
+		}
 		live, err := st.LiveVersions(ctx, tx, int64(pkg.ID))
 		if err != nil {
 			return err
 		}
-		if !slices.ContainsFunc(live, func(v rows.LiveVersion) bool { return v.Version == version }) {
+		if !slices.ContainsFunc(live, func(v rows.LiveVersion) bool { return v.Version == version }) || !cv.Version(version) {
 			return errs.E(errs.Invalid, errs.CodeNPMInvalidTag, "The version "+version+" is not published in this package; a tag points to a live version.")
 		}
 		cur, err := st.Tags(ctx, tx, int64(pkg.ID))
@@ -107,6 +119,11 @@ func (f *Format) handleDistTagSet(ctx context.Context, rq *formats.Request, w ht
 		}
 		if cur[tag] == version {
 			return nil // the tag points there already: the request changes nothing
+		}
+		if old, ok := cur[tag]; ok && !cv.Version(old) {
+			// A write never changes what the caller may not read (Q-AUTHZ-256): the tag stays where it
+			// is. The refusal tells that such a tag exists, which a write over it cannot avoid (H-686).
+			return errs.E(errs.Forbidden, errs.CodeForbidden, "The tag "+tag+" points to a version the caller may not read; it is not the caller's to move.")
 		}
 		tags := maps.Clone(cur)
 		tags[tag] = version
@@ -153,6 +170,12 @@ func (f *Format) handleDistTagDelete(ctx context.Context, rq *formats.Request, w
 		if err := f.claim(ctx, pw, opDistTag, n.String(), "", false); err != nil {
 			return err
 		}
+		// A tag whose version the caller's grants hide is answered as an unknown one (Q-NPM-84),
+		// decided on the index of the commit-time decision.
+		cv, err := formats.CallerVersions(ctx, rq, n.String())
+		if err != nil {
+			return err
+		}
 		cur, err := st.Tags(ctx, tx, int64(pkg.ID))
 		if err != nil {
 			return err
@@ -161,7 +184,7 @@ func (f *Format) handleDistTagDelete(ctx context.Context, rq *formats.Request, w
 		switch {
 		case tag == "latest" && ok:
 			return errs.E(errs.Invalid, errs.CodeNPMInvalidTag, "The tag latest cannot be removed; move it with npm dist-tag add.")
-		case !ok:
+		case !ok || !cv.Version(prev):
 			return notFound()
 		}
 		tags := maps.Clone(cur)

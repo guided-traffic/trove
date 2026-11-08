@@ -27,6 +27,7 @@ formats.Capabilities: field ItemsRestorer ItemsRestorer
 formats.Capabilities: field Remote RemoteCaps
 formats.Capabilities: field RemovalLocker RemovalLocker
 formats.Capabilities: field ServeFacts ServeFactsKeyer
+formats.Capabilities: field VersionPath VersionPather
 formats.Capabilities: field ViewSizer ViewSizer
 formats.Capabilities: field Vulnerability VulnerabilityAdapter
 formats.Class: alias catalog.Class
@@ -292,6 +293,7 @@ formats.QueryResult: field ContentType string
 formats.QueryResult: field FetchedAt time.Time
 formats.ReadScope: method MayRead(qname.Repo, string, string) bool
 formats.ReadScope: method Shape(qname.Repo) ReadShape
+formats.ReadScope: method VersionsByPath(qname.Repo) bool
 formats.ReadShape: type uint8
 formats.Refusal: field BaseURL string
 formats.Refusal: field CacheView bool
@@ -469,6 +471,7 @@ formats.UploadSessions: method Finalize(context.Context, *Request, SessionRef, i
 formats.UploadSessions: method Get(context.Context, *Request, SessionRef) (UploadSession, error)
 formats.UploadSessions: method Start(context.Context, *Request, RepoRef, string) (UploadSession, error)
 formats.VersionID: type int64
+formats.VersionPather: method VersionPath(string, string) (Path, bool)
 formats.VersionRow: field Attributes json.RawMessage
 formats.VersionRow: field CreatedAt time.Time
 formats.VersionRow: field CreatedBy string
@@ -476,6 +479,8 @@ formats.VersionRow: field DisplayVersion string
 formats.VersionRow: field ID VersionID
 formats.VersionRow: field LeadItem int64
 formats.VersionRow: field Version string
+formats.VersionView: method Hidden([]string) []string
+formats.VersionView: method Version(string) bool
 formats.ViewAdapter: method Compare(string, string) int
 formats.ViewAdapter: method Describe(context.Context, DataPorts, []ViewVersion, ViewFields, func(string) bool) (map[VersionID]ViewData, error)
 formats.ViewAdapter: method Find(context.Context, DataPorts, ViewFind, int) ([]VersionID, error)
@@ -517,13 +522,16 @@ formats.VulnerabilityData: method LocalByDefault() bool
 formats.VulnerabilityData: method Page(context.Context, string, func(context.Context) ([]byte, error)) ([]byte, error)
 formats.VulnerabilityData: method PageKey(string) string
 formats.VulnerabilityData: method State(string) advisory.DataState
+formats.CallerVersions: func(context.Context, *Request, string) (*VersionView, error)
 formats.CapabilitiesFor: func(ID) Capabilities
 formats.CapabilitiesOf: func(Format) Capabilities
 formats.CatalogEntry: func(Format) catalog.Entry
 formats.Descriptors: func() []Descriptor
 formats.ExecuteGuide: func(GuideSection, GuideData) (string, error)
 formats.GuideTopics: func() []string
+formats.HiddenFingerprint: func([]string) string
 formats.List: func() []Format
+formats.LiveVersions: func(context.Context, *Request, PackageRow) ([]string, RevSeq, error)
 formats.Lookup: func(string) (Format, bool)
 formats.MatchRoutes: func([]Route, string, string) (*Route, Params, error)
 formats.NoVulnerabilityData: func() VulnerabilityData
@@ -616,6 +624,7 @@ catalog.Entry: field Ecosystem string
 catalog.Entry: field Exposure Exposure
 catalog.Entry: field Mirror bool
 catalog.Entry: field Names Names
+catalog.Entry: field VersionPath func(string, string) (string, bool)
 catalog.Entry: method HasSettings() bool
 catalog.Entry: method ValidateSettings(Class, json.RawMessage) []SettingViolation
 catalog.Exposure: field Exposable bool

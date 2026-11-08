@@ -156,8 +156,16 @@ type ReadScope interface {
 	// Shape classifies a repository by key; a key that was not asked for is ReadNone.
 	Shape(repo qname.Repo) ReadShape
 	// MayRead decides the read of one version of one package of a repository; version may be empty
-	// for a question about the package.
+	// for a question about the package. A version is decided on the package document's path and on
+	// the path of its file (VersionPather), and may be read only if both allow it (Q-AUTHZ-255).
 	MayRead(repo qname.Repo, pkg, version string) bool
+	// VersionsByPath reports whether the caller's own grants decide the versions of a package of the
+	// repository one by one: a grant or the token scope narrows paths, so a version's file may be
+	// refused where the package's document is allowed. A document of a package the caller may read
+	// then lists only the versions MayRead allows; false means every version is readable as far as the
+	// caller's grants go (the endpoint's rules are the exposure view's). A key that was not asked for is
+	// true.
+	VersionsByPath(repo qname.Repo) bool
 }
 
 // Resolver is virtual resolution as a format meets it (C-5).

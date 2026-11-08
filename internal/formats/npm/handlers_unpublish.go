@@ -25,6 +25,14 @@ import (
 // The files of the removed versions go through the package writer (R-STOR-018,
 // permanently while the trash can does not exist), and OnItemsRemoved does the rest,
 // so this route and a raw delete through /files/ unpublish the same way (Q-NPM-27).
+//
+// A removal is decided on every file it removes, the tarball and the provenance bundle
+// of each removed version, whether or not a bundle is there, so the answer tells
+// nothing of the files a caller cannot see; the first that the caller may not delete
+// refuses the whole request (Q-AUTHZ-255, Q-NPM-83). A version the caller's grants
+// hide is not the caller's to remove, and the caller is told nothing of it: every
+// form treats it as a version the package does not hold, so the package keeps it and
+// the answer is the one a missing version gets (Q-NPM-82, Q-NPM-84).
 
 // handleUnpublishPut is PUT {name}/-rev/{rev} with the document as the client wants it
 // to be: every live version absent from `versions` is removed. Nothing else of the body
@@ -73,8 +81,9 @@ func (f *Format) handleUnpublishPackage(ctx context.Context, rq *formats.Request
 
 // handleUnpublishTarball is DELETE {name}/-/{file}.tgz/-rev/{rev}, which npm sends after
 // the PUT. The PUT removed the version with its tarball, so there is nothing to do: a
-// version that is gone answers 200, one that is still published 400. The revision is
-// not compared, because nothing changes.
+// version that is gone answers 200, one that is still published 400, and one the
+// caller's grants hide answers as a gone one, 200 with the current revision (Q-NPM-84).
+// The revision is not compared, because nothing changes.
 func (f *Format) handleUnpublishTarball(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
 	n, err := name.Parse(rq.Params.Get("name"))
 	if err != nil {
@@ -91,12 +100,18 @@ func (f *Format) handleUnpublishTarball(ctx context.Context, rq *formats.Request
 	if err != nil {
 		return err
 	}
-	facts, err := st.VersionFacts(ctx, repo.ID, n.String(), version)
+	cv, err := formats.CallerVersions(ctx, rq, n.String())
 	if err != nil {
 		return err
 	}
-	if facts.Live && !facts.Tombstoned {
-		return manifest.BadPublish("the version " + version + " is still published; remove it with the package document first")
+	if cv.Version(version) {
+		facts, err := st.VersionFacts(ctx, repo.ID, n.String(), version)
+		if err != nil {
+			return err
+		}
+		if facts.Live && !facts.Tombstoned {
+			return manifest.BadPublish("the version " + version + " is still published; remove it with the package document first")
+		}
 	}
 	row, _, err := rq.Host.Packages().Package(ctx, repo, n.String())
 	if err != nil {
@@ -137,6 +152,15 @@ func (f *Format) unpublish(ctx context.Context, rq *formats.Request, w http.Resp
 		if err != nil {
 			return err
 		}
+		// The versions the caller's grants hide are no versions of the package for it: pick
+		// neither removes them nor accepts a body that names them (Q-NPM-84). The view is
+		// taken here, on the index the commit-time decision moved the request to
+		// (Host.Write), the index every other decision of the transaction is made on.
+		cv, err := formats.CallerVersions(ctx, rq, n.String())
+		if err != nil {
+			return err
+		}
+		live = keepIf(live, func(v rows.LiveVersion) bool { return cv.Version(v.Version) })
 		remove, err := pick(live)
 		if err != nil {
 			return err
@@ -152,6 +176,11 @@ func (f *Format) unpublish(ctx context.Context, rq *formats.Request, w http.Resp
 		paths := make([]string, 0, 2*len(remove))
 		for _, v := range remove {
 			paths = append(paths, TarballPath(n, v), SigstorePath(n, v))
+		}
+		// The versions to remove are read under the package row lock, so their files are
+		// decided here, before anything is removed, on the index of the commit-time decision.
+		if err := mayDelete(ctx, rq, n, paths); err != nil {
+			return err
 		}
 		if err := pw.DeleteItems(ctx, repo, paths...); err != nil {
 			return err
@@ -182,6 +211,28 @@ func (f *Format) unpublish(ctx context.Context, rq *formats.Request, w http.Resp
 		return err
 	}
 	return writeJSON(w, http.StatusOK, map[string]any{"ok": true, "rev": newRev})
+}
+
+// mayDelete decides delete on every path a removal takes, with the listing form of the
+// decision (no audit event for the paths allowed), and refuses the whole removal with
+// the refusal of the first path that is not allowed, which the decision point records
+// (R-AUTHZ-016, Q-NPM-83).
+func mayDelete(ctx context.Context, rq *formats.Request, n name.Name, paths []string) error {
+	ok, err := rq.Host.PathsAllowed(ctx, rq, formats.ActionDelete, paths)
+	if err != nil {
+		return err
+	}
+	for i, allowed := range ok {
+		if allowed {
+			continue
+		}
+		t := formats.Target{Package: n.String(), Path: paths[i], Actions: []formats.Action{formats.ActionDelete}}
+		if err := rq.Host.Authorize(ctx, rq, t); err != nil {
+			return err
+		}
+		return errs.E(errs.Forbidden, errs.CodeForbidden, "The removal would also take "+paths[i]+", which the caller may not delete.")
+	}
+	return nil
 }
 
 // versionsOfBody reads the version numbers of the `versions` member of the document

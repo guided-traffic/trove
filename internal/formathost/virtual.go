@@ -184,6 +184,8 @@ func (s readScope) MayRead(repo qname.Repo, pkg, version string) bool {
 	return s.rs.MayRead(repo, pkg, version)
 }
 
+func (s readScope) VersionsByPath(repo qname.Repo) bool { return s.rs.VersionsByPath(repo) }
+
 // DeployTarget implements [formats.Resolver].
 func (r *resolver) DeployTarget(_ context.Context, rq *formats.Request) (*repository.Repository, error) {
 	t, err := r.e.DeployTarget(*rq.Repo)

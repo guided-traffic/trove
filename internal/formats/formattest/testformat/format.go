@@ -121,6 +121,16 @@ const (
 	// remote and a virtual repository only: the leaking form, since every grant on the repository matches it whatever its
 	// patterns say. Check 13, through the documents of the Remote fixture and the cases of the Merge fixture.
 	AuthorizesRepositoryLevelOffLocal Defect = "authorizes-repository-level-off-local"
+	// ListsHiddenVersions lets the package document list every stored version, also one whose tarball the caller may
+	// not read, instead of filtering with formats.CallerVersions: check 13 (R-AUTHZ-005, Q-AUTHZ-255).
+	ListsHiddenVersions Defect = "lists-hidden-versions"
+	// VersionsOutsideRows keeps a package's versions in the format's own store and none in the package rows: its
+	// documents name versions while the rows hold none, so the fifth rule of check 13 has no stored version to judge
+	// and its vacuity rule fails it (Q-AUTHZ-258).
+	VersionsOutsideRows Defect = "versions-outside-rows"
+	// FiltersDifferently renders the package document otherwise on the path that filters it for the caller, also when
+	// the filter hides nothing: the control run of check 13's fifth rule (Q-AUTHZ-255).
+	FiltersDifferently Defect = "filters-differently"
 )
 
 // Option adjusts the format; it is not a defect.
@@ -172,12 +182,34 @@ func (f Format) has(x string) bool { return f.flags[x] }
 type Store interface {
 	SetTag(pkg, tag, version string)
 	Tags(pkg string) map[string]string
+	// AddVersion and Versions keep the versions of a package outside the package rows; only the defect
+	// VersionsOutsideRows uses them.
+	AddVersion(pkg, version string)
+	Versions(pkg string) []string
 }
 
 // MemStore is the in-memory twin of the port.
 type MemStore struct {
-	mu   sync.Mutex
-	tags map[string]map[string]string
+	mu       sync.Mutex
+	tags     map[string]map[string]string
+	versions map[string][]string
+}
+
+// AddVersion implements Store.
+func (m *MemStore) AddVersion(pkg, version string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.versions == nil {
+		m.versions = map[string][]string{}
+	}
+	m.versions[pkg] = append(m.versions[pkg], version)
+}
+
+// Versions implements Store.
+func (m *MemStore) Versions(pkg string) []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.versions[pkg]...)
 }
 
 var _ Store = (*MemStore)(nil)
@@ -411,6 +443,27 @@ func (f Format) PackageDocumentPath(name string) (formats.Path, bool) {
 	return formats.Path{Path: name}, true
 }
 
+// WithoutVersionPath is the test format without formats.VersionPather: its paths still place tarballs in versions, so kit
+// check 13 fails it, since the decision point could decide its versions on the package document's path alone (Q-AUTHZ-258).
+// The restore hook is the only other optional interface of the format, and it stays.
+func WithoutVersionPath() formats.Format { return withoutVersionPath{Format: New()} }
+
+// withoutVersionPath hides VersionPath behind the contract's interface.
+type withoutVersionPath struct{ formats.Format }
+
+func (w withoutVersionPath) OnItemsRestored(ctx context.Context, tx formats.Tx, e formats.ItemsEvent) error {
+	return w.Format.(Format).OnItemsRestored(ctx, tx, e)
+}
+
+// VersionPath implements formats.VersionPather: the tarball of a version, "<name>/-/<base>-<version>.tgz", the file the
+// decision point decides a version on (Q-AUTHZ-255).
+func (f Format) VersionPath(name, version string) (formats.Path, bool) {
+	if name == "" || version == "" || strings.Contains(version, "/") {
+		return formats.Path{}, false
+	}
+	return formats.Path{Path: name + "/-/" + name[strings.LastIndex(name, "/")+1:] + "-" + version + ".tgz"}, true
+}
+
 // SetupTemplates implements formats.Format.
 func (f Format) SetupTemplates() []formats.SetupTemplate {
 	configure := "registry={{.RegistryURL}}\n"
@@ -576,7 +629,12 @@ func (f Format) OnCommit(ctx context.Context, _ formats.Tx, c formats.CommitEven
 	if err != nil {
 		return err
 	}
-	if _, err := c.Packages.InsertVersion(ctx, pkg, formats.NewVersion{Version: c.Inspection.Version, LeadItem: &c.Item}); err != nil {
+	if f.has(string(VersionsOutsideRows)) {
+		c.Data.(Store).AddVersion(pkg.Name, c.Inspection.Version)
+		if _, _, err := c.Packages.BumpRevision(ctx, pkg); err != nil {
+			return err
+		}
+	} else if _, err := c.Packages.InsertVersion(ctx, pkg, formats.NewVersion{Version: c.Inspection.Version, LeadItem: &c.Item}); err != nil {
 		return err
 	}
 	if err := c.Packages.SetProperties(ctx, c.Item, c.Inspection.Properties); err != nil {
@@ -643,9 +701,27 @@ func Tarball(name, version string) []byte {
 
 // document renders the package document of a local repository from its rows.
 func (f Format) document(ctx context.Context, rq *formats.Request, name string) ([]byte, bool, error) {
-	rows, rev, err := rq.Host.Packages().Versions(ctx, rq.RepoRef(), name)
+	rows, rev, err := f.versionRows(ctx, rq, name)
 	if err != nil || len(rows) == 0 {
 		return nil, false, err
+	}
+	filtered := false
+	// The versions the caller's grants hide are not listed (Q-AUTHZ-255).
+	if !f.has(string(ListsHiddenVersions)) {
+		cv, err := formats.CallerVersions(ctx, rq, name)
+		if err != nil {
+			return nil, false, err
+		}
+		filtered = cv != nil
+		kept := rows[:0:0]
+		for _, v := range rows {
+			if cv.Version(v.Version) {
+				kept = append(kept, v)
+			}
+		}
+		if rows = kept; len(rows) == 0 {
+			return nil, false, nil
+		}
 	}
 	ln := rq.Host.Links(rq)
 	base := name[strings.LastIndex(name, "/")+1:]
@@ -658,8 +734,29 @@ func (f Format) document(ctx context.Context, rq *formats.Request, name string) 
 	if st, ok := rq.Host.FormatData(ID).(Store); ok {
 		doc["dist-tags"] = st.Tags(name)
 	}
+	if filtered && f.has(string(FiltersDifferently)) {
+		doc["filtered"] = true
+	}
 	b, err := json.Marshal(doc)
 	return b, true, err
+}
+
+// versionRows reads the live versions of a package and the revision of its row; the defect VersionsOutsideRows reads
+// the versions from the format's own store.
+func (f Format) versionRows(ctx context.Context, rq *formats.Request, name string) ([]formats.VersionRow, formats.RevSeq, error) {
+	if !f.has(string(VersionsOutsideRows)) {
+		return rq.Host.Packages().Versions(ctx, rq.RepoRef(), name)
+	}
+	row, found, err := rq.Host.Packages().Package(ctx, rq.RepoRef(), name)
+	st, ok := rq.Host.FormatData(ID).(Store)
+	if err != nil || !found || !ok {
+		return nil, 0, err
+	}
+	var out []formats.VersionRow
+	for _, v := range st.Versions(name) {
+		out = append(out, formats.VersionRow{Version: v})
+	}
+	return out, row.Ref.RevSeq, nil
 }
 
 func (f Format) strip(w http.ResponseWriter) {

@@ -35,6 +35,7 @@ func testRegistry() *catalog.Registry {
 		},
 		Names:        exactNames{},
 		DocumentPath: npmDocumentPath,
+		VersionPath:  npmVersionPath,
 		Exposure:     catalog.Exposure{Exposable: true, Packages: true, Versions: true, Tags: true, Versioning: semverish{}},
 	})
 	r.Register(catalog.Entry{
@@ -44,6 +45,7 @@ func testRegistry() *catalog.Registry {
 		},
 		Names:        lowerNames{},
 		DocumentPath: nugetDocumentPath,
+		VersionPath:  nugetVersionPath,
 	})
 	return r
 }
@@ -55,4 +57,23 @@ func npmDocumentPath(name string) (string, bool) { return name, name != "" }
 // (R-NUGET-001).
 func nugetDocumentPath(name string) (string, bool) {
 	return strings.ToLower(name) + "/index.json", name != ""
+}
+
+// npmVersionPath is the path of a version's tarball in the npm-like format: "<name>/-/<basename>-<version>.tgz", as npm's
+// (R-NPM-006). A version with a slash is no version.
+func npmVersionPath(name, version string) (string, bool) {
+	if name == "" || version == "" || strings.Contains(version, "/") {
+		return "", false
+	}
+	base := name[strings.LastIndexByte(name, '/')+1:]
+	return name + "/-/" + base + "-" + version + ".tgz", true
+}
+
+// nugetVersionPath is the path of a version's .nupkg in the NuGet-like format, as NuGet's (R-NUGET-005).
+func nugetVersionPath(name, version string) (string, bool) {
+	if name == "" || version == "" {
+		return "", false
+	}
+	id, v := strings.ToLower(name), strings.ToLower(version)
+	return id + "/" + v + "/" + id + "." + v + ".nupkg", true
 }

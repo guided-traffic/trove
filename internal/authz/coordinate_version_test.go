@@ -9,12 +9,14 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-// TestR_VULN_028_CoordinateVersionIsReadByTheExposureOnly: ReadScope.VersionIndependent (Q-VULN-81) claims that no input of the
-// decision looks at the version of a coordinate except the exposure of an endpoint with rules. The claim holds while
-// Coordinate.Version is read in exposure.go alone (paths.go sets it from a path); a new reader anywhere else in the package makes
-// a listing of findings decide a package once for versions the decision point may refuse. A new reader has to make
-// VersionIndependent false for the subjects it applies to, and then be added here.
-func TestR_VULN_028_CoordinateVersionIsReadByTheExposureOnly(t *testing.T) {
+// TestR_VULN_028_CoordinateVersionIsReadByTheExposureAndTheVersionPathOnly: ReadScope.VersionIndependent (Q-VULN-81) claims that no input of the
+// decision looks at the version of a coordinate except the exposure of an endpoint with rules and the path of a version's file,
+// which a grant, a token scope or a CI contribution with a path pattern decides (Q-AUTHZ-255). The claim holds while
+// Coordinate.Version is read in exposure.go and package_path.go alone (paths.go sets it from a path), and VersionIndependent is
+// false for a scope on an endpoint with rules and for one whose subject reads a classified repository by path (readsByPath); a
+// new reader anywhere else in the package makes a listing of findings decide a package once for versions the decision point may
+// refuse. A new reader has to make VersionIndependent false for the subjects it applies to, and then be added here.
+func TestR_VULN_028_CoordinateVersionIsReadByTheExposureAndTheVersionPathOnly(t *testing.T) {
 	cfg := &packages.Config{Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports | packages.NeedDeps}
 	pkgs, err := packages.Load(cfg, ".")
 	if err != nil || len(pkgs) != 1 || len(pkgs[0].Errors) > 0 {
@@ -25,7 +27,7 @@ func TestR_VULN_028_CoordinateVersionIsReadByTheExposureOnly(t *testing.T) {
 	if obj == nil {
 		t.Fatal("authz.Coordinate not found")
 	}
-	allowed := map[string]bool{"exposure.go": true, "paths.go": true}
+	allowed := map[string]bool{"exposure.go": true, "paths.go": true, "package_path.go": true}
 	found := map[string]int{}
 	isCoordinate := func(tv types.Type) bool {
 		for {
@@ -46,7 +48,7 @@ func TestR_VULN_028_CoordinateVersionIsReadByTheExposureOnly(t *testing.T) {
 				if x.Sel.Name == "Version" && isCoordinate(pkg.TypesInfo.TypeOf(x.X)) {
 					found[file]++
 					if !allowed[file] {
-						t.Errorf("%s: Coordinate.Version is used at %s; only exposure.go reads it (Q-VULN-81)", file, pkg.Fset.Position(x.Pos()))
+						t.Errorf("%s: Coordinate.Version is used at %s; only exposure.go and package_path.go read it (Q-VULN-81, Q-AUTHZ-255)", file, pkg.Fset.Position(x.Pos()))
 					}
 				}
 			}

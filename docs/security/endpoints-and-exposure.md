@@ -67,6 +67,12 @@ same rules (R-EP-018, [developer/endpoints.md](../developer/endpoints.md#package
   so a version a filtered document lists is one the ceiling lets the same caller download, and a hidden version is refused as
   an artifact. The rendition and the validator are keyed by the endpoint and the fingerprint: a rule change misses every cached
   rendition, and a `304` never confirms a copy that lists a version hidden since (`TestR_EP_018_ARuleChangeFailsTheEarlierValidatorOnEveryReplica`).
+- **A version is judged on its file too.** The view and check-exposure decide a package on its document's path and a version
+  on that path and on the path of its file (npm's tarball, NuGet's `.nupkg`), so a rule whose path pattern names one version's
+  file, `paths.exclude: ["acme-sdk/-/acme-sdk-2.0.1.tgz"]` or `["acme.sdk/2.0.1/**"]`, hides 2.0.1 from the documents, moves
+  npm's `latest` and drops a tag at it, as the ceiling refuses the file; check-exposure reports the version hidden. Before
+  finding F-83 the view judged versions on the document's path only and listed 2.0.1 with its manifest
+  (`TestR_EP_018_AVersionPathRuleHidesTheVersionFromNPMDocuments`, red before the change; Q-EP-85).
 - **npm** (R-NPM-048): `versions`, `time`, the dist-tags, `maintainers` and the top-level fields follow the exposed versions;
   `latest` moves to the highest exposed release, and the README of a hidden former `latest` is not shown (Q-NPM-39). A hidden
   version, a dropped tag, a hidden tarball and a package without an exposed version answer the `404` of a missing one, decided
@@ -225,18 +231,3 @@ version ever pushed or cached, kept when later versions declare another casing a
 [nuget_search.sql](../../internal/meta/postgres/queries/nuget_search.sql), `hitOf` in [search.go](../../internal/formatdata/nuget/search.go)). A consumer who
 reads only a newer version can see the casing of an older hidden one. What makes it real: a package whose versions declare the ID in different casings, and
 a consumer who must not learn that a hidden version exists.
-
-### H-646 · An exposure rule's path pattern finer than a package hides its files and leaves them listed in its documents
-
-Stage: the `paths` dimension of an exposure rule on an npm or NuGet repository. The ceiling decides each protocol request on
-its canonical path, and the format's document view, check-exposure and a listing row decide a package, its versions and its
-tags on the path of the package's document ([authorization.md](../spec/authorization.md) Q-AUTHZ-250, Q-AUTHZ-251).
-
-Subject: the versions and the metadata of a package an exposure rule means to withhold in part. A rule with
-`paths.exclude: ["acme-sdk/-/acme-sdk-2.0.1.tgz"]` or `["acme.sdk/2.0.1/**"]` refuses those files on the endpoint, while
-the package document, the registrations and the search still list version 2.0.1 with its manifest or description: the
-view has no path of a version's files to decide the version on. Live for a rule whose path patterns are finer than a
-package's folder; dormant for a rule that narrows versions with its `versions` dimension, which is the dimension that
-filters a document's versions (R-EP-012), and for folder-level path patterns. The policy form of the same shape is
-[H-647](permissions.md#h-647--a-path-pattern-finer-than-a-package-hides-its-files-and-leaves-their-contents-in-its-documents);
-closing both is one decision (F-83).

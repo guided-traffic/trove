@@ -864,7 +864,11 @@ func (s *ExposureService) Check(ctx context.Context, endpoint string, in Exposur
 		// (Q-AUTHZ-251); a path the request names is judged on that path.
 		doc := documentPathIn(s.o.Ceiling.reg, repo.Format, in.Package)
 		res.Exposed, res.Rule, res.Reason = judge(exposureItem{pkg: in.Package, path: doc})
-		held = checkHeld{repo: repo, f: f, names: names, rules: rules, judge: judge, doc: doc}
+		reg, format := s.o.Ceiling.reg, repo.Format
+		held = checkHeld{
+			repo: repo, f: f, names: names, rules: rules, judge: judge, doc: doc,
+			ver: func(version string) (string, bool) { return versionPathIn(reg, format, in.Package, version) },
+		}
 		res.Paths = make([]ExposureCheckItem, 0, len(in.Paths))
 		for _, p := range in.Paths {
 			ok, rule, reason := judge(exposureItem{pkg: in.Package, path: p})
@@ -882,7 +886,7 @@ func (s *ExposureService) Check(ctx context.Context, endpoint string, in Exposur
 		return res, err
 	}
 	for _, v := range versions {
-		ok, rule, reason := held.judge(exposureItem{pkg: in.Package, path: held.doc, version: v})
+		ok, rule, reason := held.version(in.Package, v)
 		res.Versions = append(res.Versions, ExposureCheckItem{Value: v, Exposed: ok, Rule: rule, Reason: reason})
 	}
 	return res, nil
@@ -931,7 +935,7 @@ func tagVisible(held checkHeld, mode, pkg, tag, target string) bool {
 	if mode == ExposureModeAll {
 		return true
 	}
-	pointed, _, _ := held.judge(exposureItem{pkg: pkg, path: held.doc, version: target})
+	pointed, _, _ := held.version(pkg, target)
 	return pointed && admitsItem(held.rules, exposureItem{pkg: pkg, path: held.doc, tag: tag}, held.f.Versioning)
 }
 
@@ -946,6 +950,23 @@ type checkHeld struct {
 	judge func(exposureItem) (bool, string, string)
 	// doc is the path of the package's document, "" for a check without a package.
 	doc string
+	// ver is the path of a version's file (versionPathIn); has is false for a format whose versions have none.
+	ver func(version string) (path string, has bool)
+}
+
+// version judges a version as ExposureView.Version decides it: on the package document's path and on the path of the
+// version's file (Q-AUTHZ-255, Q-EP-85). The verdict that hides it names its rule and reason; an exposed version names
+// the verdict of its file's path.
+func (h checkHeld) version(pkg, v string) (bool, string, string) {
+	ok, rule, reason := h.judge(exposureItem{pkg: pkg, path: h.doc, version: v})
+	if !ok || h.ver == nil {
+		return ok, rule, reason
+	}
+	p, has := h.ver(v)
+	if !has {
+		return ok, rule, reason
+	}
+	return h.judge(exposureItem{pkg: pkg, path: p, version: v})
 }
 
 // storedWant says what a check needs of the source.

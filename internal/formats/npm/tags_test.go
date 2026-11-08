@@ -16,28 +16,60 @@ func TestR_NPM_016_TagAfterPublish(t *testing.T) {
 		version string
 		guard   bool
 		want    tags
-		kept    bool
+		out     tagOutcome
 	}{
-		{"a first publish under latest", nil, "latest", "1.0.0", true, tags{"latest": "1.0.0"}, false},
-		{"a first publish under another tag also sets latest", nil, "next", "1.0.0-rc.1", true, tags{"latest": "1.0.0-rc.1", "next": "1.0.0-rc.1"}, false},
-		{"a higher version moves latest", tags{"latest": "1.0.0"}, "latest", "1.1.0", true, tags{"latest": "1.1.0"}, false},
-		{"a lower version keeps latest", tags{"latest": "2.0.0"}, "latest", "1.1.5", true, tags{"latest": "2.0.0"}, true},
-		{"a pre-release does not take latest from a release", tags{"latest": "1.0.0"}, "latest", "2.0.0-rc.1", true, tags{"latest": "1.0.0"}, true},
-		{"a pre-release may follow a pre-release", tags{"latest": "2.0.0-rc.1"}, "latest", "2.0.0-rc.2", true, tags{"latest": "2.0.0-rc.2"}, false},
-		{"a release may follow a pre-release", tags{"latest": "2.0.0-rc.1"}, "latest", "2.0.0", true, tags{"latest": "2.0.0"}, false},
-		{"the guard off moves latest back", tags{"latest": "2.0.0"}, "latest", "1.1.5", false, tags{"latest": "1.1.5"}, false},
-		{"another tag leaves latest", tags{"latest": "2.0.0"}, "beta", "3.0.0-beta.1", true, tags{"latest": "2.0.0", "beta": "3.0.0-beta.1"}, false},
-		{"a tag moves", tags{"latest": "2.0.0", "beta": "3.0.0-beta.1"}, "beta", "3.0.0-beta.2", true, tags{"latest": "2.0.0", "beta": "3.0.0-beta.2"}, false},
+		{"a first publish under latest", nil, "latest", "1.0.0", true, tags{"latest": "1.0.0"}, tagMoved},
+		{"a first publish under another tag also sets latest", nil, "next", "1.0.0-rc.1", true, tags{"latest": "1.0.0-rc.1", "next": "1.0.0-rc.1"}, tagMoved},
+		{"a higher version moves latest", tags{"latest": "1.0.0"}, "latest", "1.1.0", true, tags{"latest": "1.1.0"}, tagMoved},
+		{"a lower version keeps latest", tags{"latest": "2.0.0"}, "latest", "1.1.5", true, tags{"latest": "2.0.0"}, tagGuarded},
+		{"a pre-release does not take latest from a release", tags{"latest": "1.0.0"}, "latest", "2.0.0-rc.1", true, tags{"latest": "1.0.0"}, tagGuarded},
+		{"a pre-release may follow a pre-release", tags{"latest": "2.0.0-rc.1"}, "latest", "2.0.0-rc.2", true, tags{"latest": "2.0.0-rc.2"}, tagMoved},
+		{"a release may follow a pre-release", tags{"latest": "2.0.0-rc.1"}, "latest", "2.0.0", true, tags{"latest": "2.0.0"}, tagMoved},
+		{"the guard off moves latest back", tags{"latest": "2.0.0"}, "latest", "1.1.5", false, tags{"latest": "1.1.5"}, tagMoved},
+		{"another tag leaves latest", tags{"latest": "2.0.0"}, "beta", "3.0.0-beta.1", true, tags{"latest": "2.0.0", "beta": "3.0.0-beta.1"}, tagMoved},
+		{"a tag moves", tags{"latest": "2.0.0", "beta": "3.0.0-beta.1"}, "beta", "3.0.0-beta.2", true, tags{"latest": "2.0.0", "beta": "3.0.0-beta.2"}, tagMoved},
 	}
 	for _, c := range cases {
 		t.Run("R-NPM-016 "+c.name, func(t *testing.T) {
 			before := maps.Clone(c.cur)
-			got, kept := tagAfterPublish(c.cur, c.tag, c.version, c.guard)
-			if !maps.Equal(got, c.want) || kept != c.kept {
-				t.Fatalf("tags %v kept %v, want %v %v", got, kept, c.want, c.kept)
+			got, out := tagAfterPublish(c.cur, c.tag, c.version, c.guard, nil)
+			if !maps.Equal(got, c.want) || out != c.out {
+				t.Fatalf("tags %v outcome %v, want %v %v", got, out, c.want, c.out)
 			}
 			if !maps.Equal(before, c.cur) {
 				t.Fatal("the input map was changed")
+			}
+		})
+	}
+}
+
+// A tag at a version the publisher may not read stays where it is, latest included and
+// whatever the new version is; the guard is not asked for it (Q-NPM-85).
+func TestR_NPM_016_APublishLeavesATagAtAHiddenVersionWhereItIs(t *testing.T) {
+	type tags = map[string]string
+	hidden := func(v string) bool { return v != "1.0.0" }
+	cases := []struct {
+		name    string
+		cur     tags
+		tag     string
+		version string
+		guard   bool
+		want    tags
+		out     tagOutcome
+	}{
+		{"an explicit tag at a hidden version stays", tags{"latest": "1.0.0", "beta": "1.0.0"}, "beta", "1.2.0", true, tags{"latest": "1.0.0", "beta": "1.0.0"}, tagHeld},
+		{"a higher version does not move a hidden latest", tags{"latest": "1.0.0"}, "latest", "2.0.0", true, tags{"latest": "1.0.0"}, tagHeld},
+		{"the guard off does not move a hidden latest", tags{"latest": "1.0.0"}, "latest", "0.9.0", false, tags{"latest": "1.0.0"}, tagHeld},
+		{"a lower version under a hidden latest is held, not guarded", tags{"latest": "1.0.0"}, "latest", "0.9.0", true, tags{"latest": "1.0.0"}, tagHeld},
+		{"a tag at a readable version moves", tags{"latest": "1.0.0", "beta": "1.1.0"}, "beta", "1.2.0", true, tags{"latest": "1.0.0", "beta": "1.2.0"}, tagMoved},
+		{"a new tag is set beside a hidden latest", tags{"latest": "1.0.0"}, "next", "1.2.0", true, tags{"latest": "1.0.0", "next": "1.2.0"}, tagMoved},
+		{"a readable latest is still guarded", tags{"latest": "2.0.0", "old": "1.0.0"}, "latest", "1.5.0", true, tags{"latest": "2.0.0", "old": "1.0.0"}, tagGuarded},
+	}
+	for _, c := range cases {
+		t.Run("Q-NPM-85 "+c.name, func(t *testing.T) {
+			got, out := tagAfterPublish(c.cur, c.tag, c.version, c.guard, hidden)
+			if !maps.Equal(got, c.want) || out != c.out {
+				t.Fatalf("tags %v outcome %v, want %v %v", got, out, c.want, c.out)
 			}
 		})
 	}

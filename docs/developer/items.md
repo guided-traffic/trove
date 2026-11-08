@@ -161,8 +161,9 @@ a job's arguments never carry it. The queries take the bound as `bounded` beside
 
 `Store.RemoveIn` is the same removal inside a transaction of the caller, for a format's route that removes the files of a version together with its own rows
 (`PackageWriter.DeleteItems`, [formats.md](formats.md), [npm.md](npm.md)): it lists the files of the given paths (a folder path takes its subtree), removes them by id, tells
-`Hooks.OnItemsRemoved` in the caller's transaction, writes the `artifact.deleted` events and removes the implicit folders that stay empty. It checks nothing and queues no job: the caller
-has decided every path and bounds their number.
+`Hooks.OnItemsRemoved` in the caller's transaction, writes the `artifact.deleted` events and removes the implicit folders that stay empty. It queues no job: the caller bounds the
+number of paths. It decides nothing itself; `RemoveSpec.Check`, when set, receives the files it is about to remove, the subtree of a folder included, and an error refuses the whole
+removal. The writer of `Host.Write` sets it, so every file a format's route removes is decided for the request's subject (Q-AUTHZ-257).
 
 A removing transaction (`Delete` at once, `RemoveIn`) never waits for the lock of a folder it emptied ([sweep.go](../../internal/items/sweep.go), Q-NUGET-88). It
 may hold a package row that a deploy waits for while that deploy holds the folder `FOR SHARE` (a format's route locks the row before `RemoveIn`, the generic layer

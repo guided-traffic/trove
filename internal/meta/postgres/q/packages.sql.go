@@ -365,6 +365,65 @@ func (q *Queries) ListLiveVersions(ctx context.Context, packageID int64) ([]List
 	return items, nil
 }
 
+const listLiveVersionsByName = `-- name: ListLiveVersionsByName :many
+SELECT p.rev_seq, COALESCE(pv.id, 0)::bigint AS id, COALESCE(pv.version, '')::text AS version,
+       COALESCE(pv.display_version, '')::text AS display_version, COALESCE(pv.lead_item_id, 0)::bigint AS lead_item_id,
+       COALESCE(pv.attributes, '{}'::jsonb) AS attributes, pv.created_at, COALESCE(pv.created_by::text, '')::text AS created_by
+  FROM packages p
+  LEFT JOIN package_versions pv ON pv.package_id = p.id AND pv.trashed_at IS NULL
+ WHERE p.repo_id = $1::bigint AND p.name = $2::text
+ ORDER BY pv.id NULLS FIRST
+`
+
+type ListLiveVersionsByNameParams struct {
+	RepoID int64
+	Name   string
+}
+
+type ListLiveVersionsByNameRow struct {
+	RevSeq         int64
+	ID             int64
+	Version        string
+	DisplayVersion string
+	LeadItemID     int64
+	Attributes     json.RawMessage
+	CreatedAt      pgtype.Timestamptz
+	CreatedBy      string
+}
+
+// The revision of a package by name with its live versions, in one statement and so in one snapshot: under READ
+// COMMITTED two statements could pair a revision with the versions of a later commit, and a list kept under that
+// revision would name versions it never had (Q-AUTHZ-255). A package without a live version answers one row whose
+// version id is 0; a name without a package answers none.
+func (q *Queries) ListLiveVersionsByName(ctx context.Context, arg ListLiveVersionsByNameParams) ([]ListLiveVersionsByNameRow, error) {
+	rows, err := q.db.Query(ctx, listLiveVersionsByName, arg.RepoID, arg.Name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLiveVersionsByNameRow{}
+	for rows.Next() {
+		var i ListLiveVersionsByNameRow
+		if err := rows.Scan(
+			&i.RevSeq,
+			&i.ID,
+			&i.Version,
+			&i.DisplayVersion,
+			&i.LeadItemID,
+			&i.Attributes,
+			&i.CreatedAt,
+			&i.CreatedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPackageRevisions = `-- name: ListPackageRevisions :many
 SELECT repo_id, rev_seq
   FROM packages

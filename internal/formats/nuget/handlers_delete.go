@@ -34,12 +34,22 @@ func (f *Format) handleDelete(ctx context.Context, rq *formats.Request, w http.R
 	if err := rq.Host.Authorize(ctx, rq, target); err != nil {
 		return err
 	}
+	hard := settingsOf(rq.Repo.Config).DeleteMode == DeleteModeDelete
+	if hard {
+		// A removal takes every file of the version: each is decided on its own path, whether or
+		// not it is there, so the answer tells nothing of the files the caller cannot see, and the
+		// first the caller may not delete refuses the whole delete (Q-NUGET-121).
+		for _, p := range []string{NuspecPath(lowerID, lowerVersion), SnupkgPath(lowerID, lowerVersion)} {
+			if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: lowerID, Version: lowerVersion, Path: p, Actions: []formats.Action{formats.ActionDelete}}); err != nil {
+				return err
+			}
+		}
+	}
 	st, err := storeOf(rq.Host.FormatData(ID))
 	if err != nil {
 		return err
 	}
 	repo := rq.RepoRef()
-	hard := settingsOf(rq.Repo.Config).DeleteMode == DeleteModeDelete
 	// An ID that has no package row and no tombstone has no version to find: 404 before a
 	// lock is taken, so that a delete never creates a package row (R-NUGET-007).
 	_, pkgFound, err := rq.Host.Packages().Package(ctx, repo, lowerID)
@@ -66,6 +76,9 @@ func (f *Format) handleDelete(ctx context.Context, rq *formats.Request, w http.R
 			pkg = p
 		}
 		if err := pw.Claim(ctx, target, formats.OwnershipWrite{}); err != nil {
+			return err
+		}
+		if err := hiddenFromCaller(ctx, rq, lowerID, lowerVersion); err != nil {
 			return err
 		}
 		ref, found, err := st.FindVersion(ctx, tx, repo.ID, lowerID, lowerVersion)
@@ -160,6 +173,9 @@ func (f *Format) handleRelist(ctx context.Context, rq *formats.Request, w http.R
 		if err := pw.Claim(ctx, target, formats.OwnershipWrite{}); err != nil {
 			return err
 		}
+		if err := hiddenFromCaller(ctx, rq, lowerID, lowerVersion); err != nil {
+			return err
+		}
 		ref, found, err := st.FindVersion(ctx, tx, repo.ID, lowerID, lowerVersion)
 		if err != nil {
 			return err
@@ -180,5 +196,20 @@ func (f *Format) handleRelist(ctx context.Context, rq *formats.Request, w http.R
 		return err
 	}
 	w.WriteHeader(http.StatusOK)
+	return nil
+}
+
+// hiddenFromCaller answers a version the caller's grants hide - its .nupkg's path is refused for read - as a missing one.
+// It runs in the write's transaction, after the ownership claim and before the version is looked up, where a missing
+// version is found missing, so the two get the same answer, and on the index the commit-time decision moved the request
+// to: a caller who may change a version it cannot read learns nothing of it, not even that it exists (Q-NUGET-120).
+func hiddenFromCaller(ctx context.Context, rq *formats.Request, lowerID, lowerVersion string) error {
+	cv, err := formats.CallerVersions(ctx, rq, lowerID)
+	if err != nil {
+		return err
+	}
+	if !cv.Version(lowerVersion) {
+		return errNoSuchResource()
+	}
 	return nil
 }

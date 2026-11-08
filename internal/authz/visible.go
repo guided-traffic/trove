@@ -67,16 +67,26 @@ type ReadScope interface {
 	// decision of [Decider.DecideOn] for a read, without the audit event and the
 	// denial counters, because the caller asked about rows it lists and no client
 	// requested a refused resource. version may be empty for a package-level
-	// question.
+	// question. A package is decided on its document's path; a version on that path
+	// and on the path of its file, and it may be read only if both allow it
+	// (Q-AUTHZ-255).
 	MayRead(repo qname.Repo, pkg, version string) bool
+	// VersionsByPath reports whether the subject's own grants decide the versions of
+	// a package of the repository one by one: a grant or a CI contribution that gives
+	// it read there, or its token scope, narrows paths, so a version's file may be
+	// refused where its package's document is allowed (Q-AUTHZ-255). False means that
+	// every version of a package the subject may read is readable as far as its grants
+	// go; the endpoint's rules are not part of it (a format's exposure view decides
+	// them). A key that was not asked for is true.
+	VersionsByPath(key qname.Repo) bool
 }
 
 // VersionIndependent is the optional property of a [ReadScope] that a listing of findings uses to decide a package once and not
 // once per version (H-488, V-7b of R-VULN-028): when it reports true, MayRead(repo, pkg, v) gives the same answer for every
 // version v of the package, so MayRead(repo, pkg, "") stands for all of them. A scope that does not implement it, or reports
-// false, is decided one version at a time. It is true when no input of the decision looks at the version: the grants, the
-// token scope and the CI contributions match packages and paths only, and the one input that reads a version is the exposure of
-// an endpoint with rules (R-EP-018), which the scope reports as dependent.
+// false, is decided one version at a time. It is true when no input of the decision looks at the version: the endpoint exposes
+// everything (an exposure rule reads versions, R-EP-018) and no grant, token scope or CI contribution of a classified repository
+// narrows paths (a version is decided on its file's path, Q-AUTHZ-255).
 type VersionIndependent interface {
 	VersionIndependent() bool
 }
@@ -100,14 +110,26 @@ type readScope struct {
 	st *evalState
 	// read is the action list of every decision of the scope; evaluate only reads it.
 	read []Action
-	// versionFree is [VersionIndependent]: the endpoint's ceiling admits every coordinate.
+	// versionFree is [VersionIndependent]: the endpoint's ceiling admits every coordinate and no classified repository
+	// is read by path.
 	versionFree bool
+	// byPath is [ReadScope.VersionsByPath] of every classified key.
+	byPath map[qname.Repo]bool
+	// allEndpoint says the endpoint's ceiling admits every coordinate; otherwise its rules may narrow the path of a
+	// version's file, and MayRead decides a version on it whatever byPath says.
+	allEndpoint bool
 }
 
 // VersionIndependent implements [VersionIndependent].
 func (s *readScope) VersionIndependent() bool { return s.versionFree }
 
 func (s *readScope) Shape(key qname.Repo) ReadShape { return s.shapes[key] }
+
+// VersionsByPath implements [ReadScope]: a key the scope did not classify is read by path.
+func (s *readScope) VersionsByPath(key qname.Repo) bool {
+	by, ok := s.byPath[key]
+	return by || !ok
+}
 
 func (s *readScope) MayRead(repo qname.Repo, pkg, version string) bool {
 	if s.sub.Anonymous && s.sub.anon != anonOn {
@@ -118,11 +140,17 @@ func (s *readScope) MayRead(repo qname.Repo, pkg, version string) bool {
 	}
 	// A row stands for the package's document: it is decided on that document's path,
 	// so a path pattern hides from a listing what it hides from the protocol (Q-AUTHZ-250).
-	d := s.e.evaluateWith(s.idx, s.sub, s.st, s.e.atPackage(s.idx, Coordinate{
-		Repository: repo, Package: pkg, Version: version,
-		Kind: KindMetadata, Actions: s.read, Addressed: s.addressed,
-	}))
-	return d.Outcome == Allow
+	c := Coordinate{Repository: repo, Package: pkg, Version: version, Kind: KindMetadata, Actions: s.read, Addressed: s.addressed}
+	if s.e.evaluateWith(s.idx, s.sub, s.st, s.e.atPackage(s.idx, c)).Outcome != Allow {
+		return false
+	}
+	// A row with a version stands for what the version's file holds as well: it is decided on that file's path too,
+	// unless neither the subject's grants nor the endpoint's rules can tell the two paths apart (Q-AUTHZ-255).
+	if s.allEndpoint && !s.VersionsByPath(repo) {
+		return true
+	}
+	vc, ok := s.e.atVersion(s.idx, c)
+	return !ok || s.e.evaluateWith(s.idx, s.sub, s.st, vc).Outcome == Allow
 }
 
 // ReadScopeOn implements [ReadScoper].
@@ -131,22 +159,27 @@ func (e *Engine) ReadScopeOn(ctx context.Context, idx *Index, sub Subject, addre
 	if refused != nil {
 		return nil, refused.Err()
 	}
+	allEndpoint := e.exposesEverything(sub.Endpoint)
 	rs := &readScope{
 		e: e, idx: idx, sub: sub, addressed: addressed, shapes: make(map[qname.Repo]ReadShape, len(keys)), read: []Action{Read},
-		versionFree: e.exposesEverything(sub.Endpoint),
+		versionFree: allEndpoint, byPath: make(map[qname.Repo]bool, len(keys)), allEndpoint: allEndpoint,
 	}
 	if sub.Anonymous && sub.anon != anonOn {
 		return rs, nil
 	}
 	st := e.newEvalState(idx, sub)
 	rs.st = st
-	allEndpoint := e.exposesEverything(sub.Endpoint)
 	for _, k := range keys {
 		if !idx.addressedReaches(addressed, k) {
 			rs.shapes[k] = ReadNone
+			rs.byPath[k] = false
 			continue
 		}
-		rs.shapes[k] = e.readShape(st, sub, idx.repo(k), allEndpoint)
+		r := idx.repo(k)
+		rs.shapes[k] = e.readShape(st, sub, r, allEndpoint)
+		by := rs.shapes[k] == ReadRows && e.readsByPath(st, sub, r)
+		rs.byPath[k] = by
+		rs.versionFree = rs.versionFree && !by
 	}
 	return rs, nil
 }
@@ -241,4 +274,47 @@ func rowsUnless(all bool) ReadShape {
 // may leave out (Q-AUTHZ-250).
 func (r resourceSet) unrestrictedPackages() bool {
 	return len(r.packages.include) == 0 && len(r.packages.exclude) == 0 && len(r.paths.include) == 0 && len(r.paths.exclude) == 0
+}
+
+// narrowsPaths reports whether a grant's resource set holds a path pattern, include or exclude.
+func (r resourceSet) narrowsPaths() bool { return len(r.paths.include)+len(r.paths.exclude) > 0 }
+
+// readsByPath is [ReadScope.VersionsByPath] for one repository the subject reads row by row: whether its own grants can
+// allow one path of a package and refuse another (Q-AUTHZ-255). It never answers false where they could: a token scope
+// with any path pattern, and a grant or a CI contribution with read and a path pattern, make it true unless the subject
+// also reads every package and path of the repository through a grant without patterns or its project role.
+// content:bypass and content:metadata-read read every path of what they read, so only the token scope narrows them.
+func (e *Engine) readsByPath(st *evalState, sub Subject, r *repoInfo) bool {
+	if r == nil {
+		return false
+	}
+	if sub.Scope != nil && !sub.Scope.Inherit {
+		for _, el := range sub.Scope.Repositories {
+			if len(el.Paths.Include)+len(el.Paths.Exclude) > 0 {
+				return true
+			}
+		}
+	}
+	if st.bypass || st.metadata {
+		return false
+	}
+	if st.isCI {
+		return e.ciReadsByPath(st.ci, st.idx, r)
+	}
+	if roleActions(st.roleIn(r.proj), r).Has(Read) {
+		return false
+	}
+	byPath := false
+	for _, p := range st.pset {
+		for _, g := range st.idx.grantsFor(r.ID, p) {
+			switch {
+			case !g.actions.Has(Read):
+			case g.res.unrestrictedPackages():
+				return false
+			case g.res.narrowsPaths():
+				byPath = true
+			}
+		}
+	}
+	return byPath
 }

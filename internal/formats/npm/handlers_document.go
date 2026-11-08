@@ -37,6 +37,11 @@ type rendering struct {
 	// read reads the rows; found is false when the document does not exist.
 	read   func(ctx context.Context, st Store) (rows.LocalPackage, bool, error)
 	render func(p *rows.LocalPackage, o document.Options) ([]byte, error)
+	// version is the version a single-version document names by number, "" for a
+	// package document and for one that names its version by a tag.
+	version string
+	// tag is the dist-tag a single-version document names its version by, "" otherwise.
+	tag string
 }
 
 func (f *Format) handleDocument(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
@@ -89,35 +94,35 @@ func (f *Format) handleVersion(ctx context.Context, rq *formats.Request, w http.
 		version, tag = v, ""
 	}
 	rd := rendering{
-		variant: "version/" + ref, contentType: "application/json",
+		variant: "version/" + ref, contentType: "application/json", version: version, tag: tag,
 		read: func(ctx context.Context, st Store) (rows.LocalPackage, bool, error) {
 			return st.LocalVersion(ctx, repo.ID, n.String(), version, tag)
 		},
 		render: document.VersionDocument,
 	}
 	// >>> WP2.9 exposure
-	if view := viewOf(rq); view != nil {
-		// A hidden version is a missing one, decided before any lookup (R-NPM-048,
-		// R-EP-013).
-		if version != "" && !view.Version(n.String(), version) {
-			return notFound()
-		}
-		// A tag names the version of the filtered document: latest moves to the
-		// highest exposed release, a tag the rules drop is missing.
-		if tag != "" {
-			rd.read = func(ctx context.Context, st Store) (rows.LocalPackage, bool, error) {
-				p, found, err := st.LocalDocument(ctx, repo.ID, n.String())
-				if err != nil || !found || !exposeRows(view, n.String(), &p) {
-					return rows.LocalPackage{}, false, err
-				}
-				v, ok := p.Tags[tag]
-				p.Versions = keepIf(p.Versions, func(lv rows.LocalVersion) bool { return lv.Version == v })
-				return p, ok && len(p.Versions) == 1, nil
-			}
-		}
+	// A hidden version is a missing one, decided before any lookup (R-NPM-048,
+	// R-EP-013). A tag names the version of the filtered document (serveRendering).
+	if view := viewOf(rq); view != nil && version != "" && !view.Version(n.String(), version) {
+		return notFound()
 	}
 	// <<< WP2.9 exposure
 	return f.serveRendering(ctx, rq, w, n, rd)
+}
+
+// byFilteredTag is the read of a single-version document named by a tag when the document is filtered: the tag names the
+// version of the filtered document, so latest moves to the highest version left and a tag whose version is gone is
+// missing (R-NPM-048, Q-NPM-82).
+func byFilteredTag(repoID int64, n name.Name, tag string, filter func(p *rows.LocalPackage) bool) func(context.Context, Store) (rows.LocalPackage, bool, error) {
+	return func(ctx context.Context, st Store) (rows.LocalPackage, bool, error) {
+		p, found, err := st.LocalDocument(ctx, repoID, n.String())
+		if err != nil || !found || !filter(&p) {
+			return rows.LocalPackage{}, false, err
+		}
+		v, ok := p.Tags[tag]
+		p.Versions = keepIf(p.Versions, func(lv rows.LocalVersion) bool { return lv.Version == v })
+		return p, ok && len(p.Versions) == 1, nil
+	}
 }
 
 // authorizeRead decides the read of a package and finds its row. A package that does
@@ -148,6 +153,10 @@ func (f *Format) serveRendering(ctx context.Context, rq *formats.Request, w http
 	if err != nil {
 		return err
 	}
+	cv, err := f.callerVersions(ctx, rq, n, row, &rd)
+	if err != nil {
+		return err
+	}
 	repo := rq.RepoRef()
 	links := rq.Host.Links(rq)
 	settings := fmt.Sprintf("%d/%t", rq.Repo.Version, rep.cfg.AbbreviatedTime)
@@ -156,6 +165,12 @@ func (f *Format) serveRendering(ctx context.Context, rq *formats.Request, w http
 			Repo: repo.ID, Package: int64(row.Ref.ID), Rev: rev, Variant: rd.variant, BaseURL: links.Base(),
 			Endpoint: rq.Endpoint.Name, Exposure: rq.Endpoint.ExposureFingerprint, Settings: settings,
 		}
+	}
+	// The rows are filtered by the endpoint's rules and by what the caller's own grants hide of the
+	// versions (R-NPM-048, Q-NPM-82); a tag names the version of the filtered document.
+	filter := filterOf(rq, n, cv.view)
+	if rd.tag != "" && (viewOf(rq) != nil || cv.view != nil) {
+		rd.read = byFilteredTag(repo.ID, n, rd.tag, filter)
 	}
 	maxAge := int64(rep.cfg.DocumentMaxAge / time.Second)
 	cacheControl := "private, max-age=" + strconv.FormatInt(maxAge, 10) + ", must-revalidate"
@@ -166,7 +181,7 @@ func (f *Format) serveRendering(ctx context.Context, rq *formats.Request, w http
 		h.Set("Cache-Control", cacheControl)
 	}
 
-	etag := inputs(int64(row.Ref.RevSeq)).ETag()
+	etag := inputs(int64(cv.rev)).ETag()
 	if document.IfNoneMatch(rq.Header.Get("If-None-Match"), etag) {
 		// A validator of this revision: the rows are the ones the client holds. No
 		// rendering and no read of the rows; If-Modified-Since is not consulted
@@ -178,7 +193,7 @@ func (f *Format) serveRendering(ctx context.Context, rq *formats.Request, w http
 
 	gzip := document.AcceptsGzip(rq.Header.Get("Accept-Encoding"))
 	key := formats.RenditionKey{
-		Repo: repo, Package: n.String(), RevSeq: row.Ref.RevSeq, Variant: rd.variant, Encoding: encodingOf(gzip),
+		Repo: repo, Package: n.String(), RevSeq: cv.rev, Variant: rd.variant, Encoding: encodingOf(gzip),
 		BaseURL: links.Base(), Endpoint: rq.Endpoint.Name, Exposure: rq.Endpoint.ExposureFingerprint,
 		Settings: settings, RenderVersion: document.RenderVersion,
 	}
@@ -202,14 +217,18 @@ func (f *Format) serveRendering(ctx context.Context, rq *formats.Request, w http
 		// On an endpoint with exposure rules the rows are filtered before they are
 		// rendered; the key and the validator carry the endpoint and its exposure
 		// fingerprint already (R-NPM-048, Q-NPM-38). Nothing exposed is a missing
-		// package.
-		if view := viewOf(rq); view != nil && !exposeRows(view, n.String(), &p) {
+		// package. The versions the caller's grants hide are filtered with them, and
+		// the key and the validator carry their fingerprint (Q-NPM-82).
+		if !filter(&p) {
 			return notFound()
 		}
 		// <<< WP2.9 exposure
 		// The rows carry the revision they were read at, which may be newer than the
 		// lookup above when a write raced it: the rendering is keyed and validated by
-		// the revision of its own rows.
+		// the revision of its own rows. A rendering filtered for the caller's grants is
+		// keyed by the hidden versions of the revision looked up, so one of rows read at
+		// another revision is served and not kept.
+		keep := cv.view == nil || p.RevSeq == int64(cv.rev)
 		key.RevSeq, etag = formats.RevSeq(p.RevSeq), inputs(p.RevSeq).ETag()
 		body, err := rd.render(&p, f.optionsOf(rq, rep, n, links, &p))
 		if err != nil {
@@ -219,11 +238,15 @@ func (f *Format) serveRendering(ctx context.Context, rq *formats.Request, w http
 			return errs.E(errs.Internal, errs.CodeInternal, "The package document is larger than the limit of documents held in memory.")
 		}
 		plain := stamp(p.ModifiedAt, body)
-		rq.Host.Renditions().Put(withEncoding(key, false), plain)
 		entry = plain
+		if keep {
+			rq.Host.Renditions().Put(withEncoding(key, false), plain)
+		}
 		if gzip {
 			entry = stamp(p.ModifiedAt, document.Gzip(body))
-			rq.Host.Renditions().Put(key, entry)
+			if keep {
+				rq.Host.Renditions().Put(key, entry)
+			}
 		}
 	}
 	if len(entry) < modifiedBytes {
@@ -288,11 +311,17 @@ func (f *Format) serveForWrite(ctx context.Context, rq *formats.Request, w http.
 	if err != nil {
 		return err
 	}
+	view, err := formats.CallerVersions(ctx, rq, n.String())
+	if err != nil {
+		return err
+	}
 	p, found, err := st.LocalDocument(ctx, rq.RepoRef().ID, n.String())
 	if err != nil {
 		return err
 	}
-	if !found {
+	// A version the caller's grants hide is not in the document it writes back; the
+	// write leaves such a version where it is (Q-NPM-82).
+	if !found || !filterOf(rq, n, view)(&p) {
 		return notFound()
 	}
 	body, err := document.FullDocument(&p, f.optionsOf(rq, rep, n, rq.Host.Links(rq), &p))

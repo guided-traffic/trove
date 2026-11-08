@@ -36,12 +36,19 @@ type publishCommit struct {
 	shadowSkipped bool
 	// latestGuard is npm.latestGuard of the repository the publish goes to.
 	latestGuard bool
+	// readable takes the publisher's view of the package's versions, in the commit's transaction
+	// and on the index the commit-time decision moved the request to, and answers whether the
+	// publisher may read a version; nil reads every version. A tag at a version the publisher may
+	// not read is not moved (Q-NPM-85).
+	readable func(context.Context) (func(version string) bool, error)
 
-	// Filled by the hook.
+	// Filled by the hook: latest is the tag after the commit, kept says that the latest guard
+	// held it, held that the tag of the publish stayed at a version the publisher may not read.
 	pkg    formats.PackageID
 	rev    formats.RevSeq
 	latest string
 	kept   bool
+	held   bool
 }
 
 // sigstoreCommit is the payload of the provenance bundle, the companion of the
@@ -182,20 +189,27 @@ func (f *Format) commitVersion(ctx context.Context, tx formats.Tx, c formats.Com
 	if err != nil {
 		return err
 	}
-	tags, kept := tagAfterPublish(cur, p.tag, p.version, p.latestGuard)
+	var readable func(string) bool
+	if p.readable != nil {
+		if readable, err = p.readable(ctx); err != nil {
+			return err
+		}
+	}
+	tags, out := tagAfterPublish(cur, p.tag, p.version, p.latestGuard, readable)
+	kept, held := out == tagGuarded, out == tagHeld
 	err = st.Publish(ctx, tx, rows.PublishInput{
 		RepoID: c.Repo.ID, PackageID: int64(pkg.ID), VersionID: int64(vid), Name: pkgName, NameFold: p.name.Fold(), Version: p.version,
 		Manifest: stored, Integrity: p.res.Integrity(), Shasum: p.res.SHA1Hex(),
 		FileCount: p.res.FileCount, UnpackedSize: p.res.UnpackedSize,
 		HasInstallScript: p.installScript, HasShrinkwrap: p.res.HasShrinkwrap,
 		Readme: p.res.Readme, ReadmeFilename: p.res.ReadmeFilename,
-		Tag: p.tag, Tags: tags, LatestKept: kept, At: at, PublishedBy: c.Actor, Claim: claim, Audit: p.audit,
+		Tag: p.tag, Tags: tags, LatestKept: kept, TagHeld: held, At: at, PublishedBy: c.Actor, Claim: claim, Audit: p.audit,
 		Shadowing: shadowingOf(first, p.shadowing),
 	})
 	if err != nil {
 		return err
 	}
-	p.pkg, p.rev, p.latest, p.kept = pkg.ID, rev, tags["latest"], kept
+	p.pkg, p.rev, p.latest, p.kept, p.held = pkg.ID, rev, tags["latest"], kept, held
 	return nil
 }
 

@@ -51,6 +51,12 @@ func tarballTarget(n name.Name, version string, actions ...formats.Action) forma
 	return formats.Target{Package: n.String(), Version: version, Path: TarballPath(n, version), Actions: actions}
 }
 
+// sigstoreTarget is the target of a write of a version's provenance bundle: the bundle's
+// canonical path, a file of its own that a publish stores with the tarball (Q-NPM-83).
+func sigstoreTarget(n name.Name, version string, actions ...formats.Action) formats.Target {
+	return formats.Target{Package: n.String(), Version: version, Path: SigstorePath(n, version), Actions: actions}
+}
+
 // VersionOfFile returns the version a file name of a package names, when the file
 // is "<basename>-<version><suffix>" and the version is canonical (R-NPM-015: the
 // version is what remains after removing "<basename>-" and the suffix and must be

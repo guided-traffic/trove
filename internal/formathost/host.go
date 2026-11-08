@@ -284,6 +284,37 @@ func (h *Host) PathsAllowed(ctx context.Context, rq *formats.Request, a formats.
 	return out, nil
 }
 
+// removalAllowed decides `delete` on every file a removal of the request takes - the files of a folder the format names
+// included - for the request's subject, with the listing form of the decision, on the index the request decides on (the
+// commit-time decision's, Host.Write). The first file that is refused refuses the whole removal with that file's
+// refusal, which the decision point records as Authorize records any (Q-AUTHZ-257): a format that removes a folder
+// cannot take a file of it the caller could not delete through /files/. The guard of a storage hook's cascade (cascadeAllowed)
+// refuses the same way.
+func (h *Host) removalAllowed(ctx context.Context, rq *formats.Request, files []string) error {
+	if len(files) == 0 {
+		return nil
+	}
+	ok, err := h.PathsAllowed(ctx, rq, formats.ActionDelete, files)
+	if err != nil {
+		return err
+	}
+	for i, allowed := range ok {
+		if allowed {
+			continue
+		}
+		t := formats.Target{Path: files[i], Actions: []formats.Action{formats.ActionDelete}}
+		if f, known := h.o.lookup(rq.Repo.Format); known {
+			info := f.Classify(formats.Path{Path: files[i]})
+			t.Package, t.Version = info.Package, info.Version
+		}
+		if err := h.Authorize(ctx, rq, t); err != nil {
+			return err
+		}
+		return errs.E(errs.Forbidden, errs.CodeForbidden, "The removal would also take "+files[i]+", which the caller may not delete.")
+	}
+	return nil
+}
+
 // CheckOwnership implements [formats.Host]: the ownership rule on the request's index and
 // subject, read-only and before the body. A host with no ownership rule bound refuses, as the
 // claim in the commit does.
@@ -332,6 +363,7 @@ func (h *Host) Write(ctx context.Context, rq *formats.Request, fn func(tx format
 			w.(*writer).d.remove = rm
 		}
 		w.(*writer).d.guard = func(ctx context.Context, paths []string) error { return h.cascadeAllowed(ctx, rq, paths) }
+		w.(*writer).d.check = func(ctx context.Context, files []string) error { return h.removalAllowed(ctx, rq, files) }
 		if err := fn(tx, w); err != nil {
 			return err
 		}
@@ -342,16 +374,8 @@ func (h *Host) Write(ctx context.Context, rq *formats.Request, fn func(tx format
 // cascadeAllowed is the guard of a removal a request makes: every path a storage hook is about to remove besides the ones the request
 // named is decided for `delete` for the request's subject, with the listing form of the decision, and the first that is refused refuses
 // the whole removal. The cascade of a hook is thereby held to the same grants as the removal of its own items: the check and the
-// removal are one list (Q-OCI-76).
+// removal are one list (Q-OCI-76). The refusal is the one of removalAllowed, recorded by the decision point as every refusal of a
+// write is, so a refused cascade and a refused file of a folder answer and audit alike (Q-AUTHZ-257).
 func (h *Host) cascadeAllowed(ctx context.Context, rq *formats.Request, paths []string) error {
-	ok, err := h.PathsAllowed(ctx, rq, formats.ActionDelete, paths)
-	if err != nil {
-		return err
-	}
-	for i, allowed := range ok {
-		if !allowed {
-			return errs.E(errs.Forbidden, errs.CodeForbidden, "The removal would also take "+paths[i]+", which the caller may not delete.")
-		}
-	}
-	return nil
+	return h.removalAllowed(ctx, rq, paths)
 }

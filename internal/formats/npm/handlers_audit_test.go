@@ -92,6 +92,7 @@ func (s auditScope) Shape(qname.Repo) formats.ReadShape { return s.shape }
 func (s auditScope) MayRead(_ qname.Repo, pkg, _ string) bool {
 	return s.may == nil || s.may(pkg)
 }
+func (s auditScope) VersionsByPath(qname.Repo) bool { return false }
 
 // auditResolver answers the read scope; nothing else of the resolver is asked by an audit.
 type auditResolver struct {

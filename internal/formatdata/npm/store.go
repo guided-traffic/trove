@@ -159,6 +159,9 @@ func (s *Store) Publish(ctx context.Context, tx meta.Tx, in rows.PublishInput) e
 		return err
 	}
 	details := map[string]any{"package": in.Name, "version": in.Version, "integrity": in.Integrity, "tag": in.Tag, "latest_guard": in.LatestKept}
+	if in.TagHeld {
+		details["tag_held"] = true
+	}
 	if in.Claim != "" {
 		details["claim"] = in.Claim
 	}

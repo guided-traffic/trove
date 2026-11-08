@@ -246,7 +246,8 @@ type ItemStore interface {
 type PackageStore interface {
 	// Package returns the row of a normalized name.
 	Package(ctx context.Context, repo RepoRef, name string) (PackageRow, bool, error)
-	// Versions lists the live versions with the package's revision.
+	// Versions lists the live versions with the package's revision, read together in one
+	// statement, so the revision is the one the versions belong to.
 	Versions(ctx context.Context, repo RepoRef, name string) ([]VersionRow, RevSeq, error)
 	// RevSeqs returns packages.rev_seq per repository id; a repository without the
 	// package maps to 0 (R-ARCH-015).

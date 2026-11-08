@@ -100,6 +100,7 @@ func (s scopeFake) Shape(qname.Repo) formats.ReadShape { return s.shape }
 func (s scopeFake) MayRead(_ qname.Repo, pkg, version string) bool {
 	return s.may == nil || s.may(pkg, version)
 }
+func (s scopeFake) VersionsByPath(qname.Repo) bool { return s.may != nil }
 
 type resolverFake struct {
 	formats.Resolver

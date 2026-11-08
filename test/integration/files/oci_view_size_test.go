@@ -22,6 +22,7 @@ type readEverything struct{}
 
 func (readEverything) Shape(qname.Repo) authz.ReadShape        { return authz.ReadAll }
 func (readEverything) MayRead(qname.Repo, string, string) bool { return true }
+func (readEverything) VersionsByPath(qname.Repo) bool          { return false }
 
 // viewOf builds the package view over the same database and the scope of a caller who may read everything.
 func (f *ociFixture) viewOf(t *testing.T) (*view.Service, view.Scope) {

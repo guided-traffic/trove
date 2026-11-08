@@ -30,6 +30,9 @@ func (f *fakeScope) MayRead(repo qname.Repo, pkg, version string) bool {
 	return f.allow(pkg, version)
 }
 
+// VersionsByPath: the fixture's rows are decided by allow, which may look at the version.
+func (f *fakeScope) VersionsByPath(qname.Repo) bool { return true }
+
 // independent adds the optional property; the value is the answer.
 type independent struct {
 	*fakeScope

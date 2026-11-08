@@ -59,7 +59,6 @@ func (f *Format) serveRegistration(ctx context.Context, rq *formats.Request, w h
 		Paging:  pg,
 	}
 	repoID := rq.RepoRef().ID
-	keep := exposes(viewOf(rq), lowerID)
 
 	variant := string(hive)
 	lower, upper, ver := rq.Params.Get("lower"), rq.Params.Get("upper"), rq.Params.Get("version")
@@ -77,7 +76,7 @@ func (f *Format) serveRegistration(ctx context.Context, rq *formats.Request, w h
 		gzip:    hive.Gzipped(),
 		// The paging changes the bytes of the index and of the pages' bounds.
 		settings: strconv.Itoa(pg.PageSize) + "/" + strconv.Itoa(pg.InlineBelow),
-		render: func(ctx context.Context, st Store) ([]byte, int64, bool, error) {
+		render: func(ctx context.Context, st Store, keep func(string) bool) ([]byte, int64, bool, error) {
 			pkg, found, err := st.Registration(ctx, repoID, lowerID)
 			if err != nil || !found {
 				return nil, 0, false, err

@@ -819,8 +819,11 @@ Priority: **MVP** · Covers: trove-only
     rule admits its package; its versions are then filtered inside the document (R-EP-018).
   - On a format with package names the `paths` dimension meets the path the coordinate carries: a protocol request's
     canonical path, and for a package, its versions and its tags in the format's document view and in check-exposure the
-    path of the package's document (npm `<name>`, NuGet `<id>/index.json`). An item that names a package and no path
-    fails a rule with path patterns ([authorization.md](authorization.md) Q-AUTHZ-250, Q-AUTHZ-251).
+    path of the package's document (npm `<name>`, NuGet `<id>/index.json`). A version is judged on that path and on the
+    path of the file that holds it (npm's tarball, NuGet's `.nupkg`), and is exposed only if both are: a rule whose path
+    pattern names one version's file hides the version from the documents as the ceiling hides the file (Q-EP-85). An item
+    that names a package and no path fails a rule with path patterns ([authorization.md](authorization.md) Q-AUTHZ-250,
+    Q-AUTHZ-251, Q-AUTHZ-255).
   - A repository-level coordinate (a service index, a search, the registry root) is admitted when
     E has an enabled rule for the repository; listed items are filtered per item.
   - A tag is visible when a rule that admits its package admits the tag name and the version the
@@ -2517,6 +2520,30 @@ could carry the format of the bound repository).
 
 **Applied in the spec:** R-EP-006, R-EP-007; [formats/oci.md](formats/oci.md) R-OCI-029.
 
+### Q-EP-85 · The exposure view and check-exposure decide a version on its file's path as well
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: finding F-83 (H-646 in [endpoints-and-exposure.md](../security/endpoints-and-exposure.md), reproduced by
+`TestR_EP_018_AVersionPathRuleHidesTheVersionFromNPMDocuments` before the change). Q-AUTHZ-251 judged a package's versions on
+the package document's path, so a rule with `paths.exclude: ["tool/-/tool-2.0.0.tgz"]` refused the tarball on the endpoint while
+the package document listed 2.0.0 with `latest` at it, `tool/2.0.0` answered 200, and check-exposure reported 2.0.0 exposed.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Judge a version on the document's path and on its file's path, both must admit (chosen) | `ExposureView.Version` and check-exposure's version and tag verdicts ask the rules for the version's file (`catalog.Entry.VersionPath`) after the document's | The view lists exactly the versions the ceiling serves; the same rule as the grants' (Q-AUTHZ-255) | Two rule evaluations per version on an endpoint with rules |
+| (b) Refuse path rules finer than a package's folder | 422 | Nothing to judge | The layout of files is not in the catalog; `versions` cannot hide one leaked file's version on a format whose versions have several spellings as reliably |
+| (c) Leave it to the `versions` dimension | Document that path rules hide files only | No change | The preview and the documents disagree with the ceiling |
+
+**Choice:** (a). The view's `Tag` follows `Version`, so a tag at a hidden version is dropped and npm's `latest` moves. A format
+whose versions have no file of their own judges a version on the document's path alone.
+
+**Rationale:** one rule is one promise, and a version entry stands for its file. The development agent would revisit this with
+the grant side (Q-AUTHZ-255).
+
+**Applied:** R-EP-012 (matching), R-EP-018; code `internal/authz/{exposure.go,exposure_service.go}`. Tests:
+`TestR_EP_018_TheViewDecidesAVersionOnItsFilesPath`, `TestR_EP_018_AVersionPathRuleHidesTheVersionFromNPMDocuments`.
+
 ## What this does not cover
 
 ### H-57 · A further endpoint runs with every credential of a `web` replica
@@ -2568,13 +2595,15 @@ side.
 ### H-60 · Package-level metadata reveals activity of hidden versions
 
 Stage: npm package documents and their `Last-Modified` on endpoints with `exposure: rules`
-([formats/npm.md](formats/npm.md) R-NPM-048).
+([formats/npm.md](formats/npm.md) R-NPM-048), and the local npm documents a caller's own path patterns filter
+([formats/npm.md](formats/npm.md) Q-NPM-82).
 
-Live for every npm package that an endpoint exposes in part. `time.modified` and `Last-Modified`
-keep the source document's value, because they must never move backwards for downstream proxies
-(R-NPM-012), so a consumer can tell that a package changed (a hidden version was published or a tag
-moved), though not what changed. NuGet documents carry per-version times only. What makes it real:
-release timing that is itself confidential.
+Live for every npm package that an endpoint exposes in part, and for every npm package of which a caller's grant or token
+scope hides a version. `time.modified` and `Last-Modified` keep the source document's value, because they must never move
+backwards for downstream proxies (R-NPM-012), and the `ETag` carries the package's revision, so a consumer can tell that a
+package changed (a hidden version was published or a tag moved), though not what changed. NuGet documents carry per-version
+times only, and their validator follows the filtered bytes (Q-NUGET-87, Q-NUGET-120). What makes it real: release timing
+that is itself confidential.
 
 ### H-61 · Exposure follows the members of an addressed virtual repository
 

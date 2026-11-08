@@ -53,11 +53,13 @@ type PublishInput struct {
 	// the text to what the column takes.
 	Readme, ReadmeFilename string
 	// Tag is the dist-tag the request carried. Tags are the dist-tags the package
-	// holds after the publish, and LatestKept says that the latest guard kept
-	// latest where it was although the request carried it (R-NPM-016).
+	// holds after the publish, LatestKept says that the latest guard kept latest
+	// where it was although the request carried it (R-NPM-016), and TagHeld that
+	// the tag stayed at a version the publisher may not read (Q-NPM-85).
 	Tag        string
 	Tags       map[string]string
 	LatestKept bool
+	TagHeld    bool
 	// At is PostgreSQL's clock read after the row lock (PackageWriter.BumpRevision).
 	At time.Time
 	// PublishedBy is the principal id of the publisher, "" for none.

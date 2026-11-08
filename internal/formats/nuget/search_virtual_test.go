@@ -203,6 +203,7 @@ func (s memberScope) Shape(repo qname.Repo) formats.ReadShape { return s.shapes[
 func (s memberScope) MayRead(repo qname.Repo, pkg, version string) bool {
 	return s.may == nil || s.may(repo.Key, pkg, version)
 }
+func (s memberScope) VersionsByPath(qname.Repo) bool { return s.may != nil }
 
 // TestR_NUGET_018_APlanThatAdmitsNothingIsAnEmptyResult: a plan that admits nothing is an empty
 // result and not an error, and so is a plan without members. A remote member takes part through

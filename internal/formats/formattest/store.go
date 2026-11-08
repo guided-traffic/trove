@@ -535,6 +535,22 @@ func (s packageStore) Versions(ctx context.Context, repo formats.RepoRef, name s
 	return w.live(p), p.rev, nil
 }
 
+// liveVersionNames returns the live versions of a package by name, for check 13.
+func (h *Host) liveVersionNames(name string) []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	p, ok := h.pkgs[name]
+	if !ok {
+		return nil
+	}
+	w := &writer{h: h}
+	var out []string
+	for _, v := range w.live(p) {
+		out = append(out, v.Version)
+	}
+	return out
+}
+
 func (s packageStore) RevSeqs(ctx context.Context, repos []formats.RepoRef, name string) (map[int64]formats.RevSeq, error) {
 	for _, r := range repos {
 		if err := formats.RepositoryAllowed(ctx, r); err != nil {

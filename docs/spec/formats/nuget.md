@@ -1204,16 +1204,19 @@ operations that table does not list:
 
 | Operation | Coordinate | Action |
 |---|---|---|
-| Service index, search, autocomplete | repository level; results filtered per ID, on the path of its version list `{lower_id}/index.json` (Q-AUTHZ-250) | `read` |
-| Version list, registration documents, `.nupkg`, `.nuspec`, embedded files | `lower_id` and canonical path: `{lower_id}/index.json`, `{lower_id}/.registration/index.json` for every registration document, the file's path (Q-NUGET-113) | `read` |
-| Push, symbol push | declared ID and the path of the version's `.nupkg` or `.snupkg` | `deploy`, ownership |
-| Unlist, hard delete | `lower_id` and the path of the version's `.nupkg` | `delete`, ownership |
-| Relist | `lower_id` and the path of the version's `.nupkg` | `deploy`, ownership |
+| Service index, search, autocomplete | repository level; results filtered per ID and version, on the path of its version list `{lower_id}/index.json` and the version's `.nupkg` (Q-AUTHZ-250, Q-AUTHZ-255) | `read` |
+| Version list, registration documents, `.nupkg`, `.nuspec`, embedded files | `lower_id` and canonical path: `{lower_id}/index.json`, `{lower_id}/.registration/index.json` for every registration document, the file's path (Q-NUGET-113); a document lists a version only when the caller may read its `.nupkg`, and a `.nuspec` of a version whose `.nupkg` it may not read is missing (Q-NUGET-120) | `read` |
+| Push | declared ID and the paths of the version's `.nupkg` and of the generated `.nuspec` (Q-NUGET-121) | `deploy`, ownership |
+| Symbol push | declared ID and the path of the version's `.snupkg` | `deploy`, ownership |
+| Unlist | `lower_id` and the path of the version's `.nupkg`; a version the caller may not read is missing (Q-NUGET-120) | `delete`, ownership |
+| Hard delete | `lower_id` and the paths of the version's `.nupkg`, `.nuspec` and `.snupkg`, whether or not each is stored (Q-NUGET-121), and every other file stored below `{lower_id}/{version}/`, decided by the host when the folder is removed ([authorization.md](../authorization.md) Q-AUTHZ-257); a version the caller may not read is missing | `delete`, ownership |
+| Relist | `lower_id` and the path of the version's `.nupkg`; a version the caller may not read is missing | `deploy`, ownership |
 | Symbol file from a local repository | `lower_id` of the version that holds the file | `read` |
 | Symbol file or vulnerability page from a remote upstream | repository level | `read`, plus the cache fill rule for uncached files |
 | Metadata reindex (R-NUGET-025) | repository level | per R-REPO-016 |
 
-- A package-name grant is all-or-nothing per ID: a caller sees every version of an ID or none.
+- A package-name grant is all-or-nothing per ID: a caller sees every version of an ID or none. A path pattern can hide
+  single versions (`acme.core/2.0.0/**`): the version list, the registrations and the search leave them out.
 - Through a virtual repository the caller needs `read` on the virtual repository itself; members
   the caller cannot read are skipped silently in every merge (R-AUTHZ-009, R-NUGET-017,
   R-NUGET-018). Publishing through a virtual repository is checked on its deploy target
@@ -1236,6 +1239,13 @@ Acceptance criteria:
   `acme.open` is served; with `deploy`, a push of `Acme.Secret` answers 403. With `paths.include: ["acme.open/**"]`,
   `acme.open` is served through the protocol and `acme.secret` answers 404
   (`TestR_AUTHZ_005_PathPatternsDecideTheNuGetProtocolOnCanonicalPaths`).
+- A grant with `read` and `paths.exclude: ["acme.secret/2.0.0/**"]` (or the `.nupkg` of 2.0.0 alone): the version list
+  and every registration document of `acme.secret` leave 2.0.0 out, its leaf and its `.nuspec` answer 404, and a search
+  for its description finds nothing, while a caller without the pattern sees both versions from the same replica
+  (`TestR_AUTHZ_005_AVersionPathPatternHidesTheVersionFromNuGetDocuments`). A grant with `delete` and `paths.exclude:
+  ["**/*.snupkg"]` gets 403 for a hard delete and removes nothing, and so does one with `paths.exclude: ["**/.embedded/**"]`
+  when the version's folder holds an embedded file; one with `deploy` and `paths.exclude: ["**/*.nuspec"]` gets 403 for a
+  push and stores nothing (`TestR_AUTHZ_005_ANuGetWriteIsDecidedOnEveryFileItWritesOrRemoves`).
 
 ### R-NUGET-014 · Remote repository: upstream and resource discovery
 Priority: **MVP** · Covers: PKG-NUGET-023, PKG-NUGET-024, RMT-004
@@ -5427,8 +5437,7 @@ R-NUGET-015); a push, a delete, a relist and a symbol push have no canonical pat
 **Choice:** (a). `docSpec.path` and `remoteSpec.path` carry the document's path, `serveFile`, `remoteFile` and
 `virtualFile` the file's, `serveVirtual` the document's; the push, the symbol push, the delete and the relist name the
 version's `.nupkg` or `.snupkg` in the target of `Authorize`, `CheckOwnership` and `Claim`. A delete removes the version's
-files below `{lower_id}/{version}/` and is decided on its `.nupkg` (H-586 in
-[permissions.md](../../security/permissions.md)).
+files below `{lower_id}/{version}/`; it was decided on its `.nupkg` alone (H-586) until Q-NUGET-121 decided every file.
 
 **Rationale:** the path a pattern is matched against must be one the content has; the cache layout already says where
 each document lives. The development agent would revisit (b) if registration documents become items of their own.
@@ -5437,6 +5446,54 @@ each document lives. The development agent would revisit (b) if registration doc
 [authorization.md](../authorization.md) R-AUTHZ-007 (the NuGet rows). Tests:
 `TestR_AUTHZ_005_PathPatternsDecideTheNuGetProtocolOnCanonicalPaths`
 ([path_patterns_test.go](../../../test/integration/nuget/path_patterns_test.go)), the NuGet run of kit check 13.
+
+### Q-NUGET-120 · A NuGet document lists only the versions the caller may read
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: finding F-83 ([authorization.md](../authorization.md) Q-AUTHZ-255). With `paths.exclude: ["acme.secret/2.0.0/**"]`
+the `.nupkg` and the `.nuspec` of 2.0.0 answered 404 while the version list listed 2.0.0, the registration index carried its
+description, its leaf answered 200 and the search found it by the words of that description (`q=TOPSECRET`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Filter the local version list and the registration documents with the endpoint's view and the caller's versions, and decide the search per version (chosen) | `serveDocument` joins `formats.CallerVersions` to the exposure filter (`keep`); a document filtered for the caller goes the way of Q-NUGET-87: its validator follows the filtered bytes, its rendition key carries the hidden fingerprint, a rendering of rows read at another revision is served and not kept; the search's per-row decision (`ReadScope.MayRead`) decides the version's `.nupkg`; a `.nuspec` of a hidden version, an unlist, a delete and a relist of one answer as for a missing version, the writes decided in their transaction after the ownership claim and before the version is looked up | The documents, the search and the files agree; the validator does not move with hidden versions | Such a caller's document costs the version list of the revision (cached per replica) |
+| (b) Hide the ID when any version is hidden | All or nothing | No filter | The caller loses what it may read |
+
+**Choice:** (a). An ID whose every version is hidden answers like a missing one. Remote and virtual documents are filtered by
+the endpoint only (H-655 in [permissions.md](../../security/permissions.md)).
+
+**Rationale:** a registration leaf and a search result are copies of the `.nuspec` the version's `.nupkg` carries. The
+development agent would revisit the remote and virtual classes with npm's (Q-NPM-82).
+
+**Applied in the spec:** R-NUGET-013. Code: [documents.go](../../../internal/formats/nuget/documents.go) (`serveDocument`,
+`serveFiltered`, `callerKeep`), [handlers_flat.go](../../../internal/formats/nuget/handlers_flat.go),
+[handlers_registration.go](../../../internal/formats/nuget/handlers_registration.go), [handlers_delete.go](../../../internal/formats/nuget/handlers_delete.go)
+(`hiddenFromCaller`), [match.go](../../../internal/formats/nuget/match.go) (`VersionPath`). Tests:
+`TestR_AUTHZ_005_AVersionPathPatternHidesTheVersionFromNuGetDocuments`
+([version_paths_test.go](../../../test/integration/nuget/version_paths_test.go)), the NuGet run of kit check 13.
+
+### Q-NUGET-121 · A push and a delete are decided on every file they write or remove
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: H-586 ([authorization.md](../authorization.md) Q-AUTHZ-256). A push was decided on the `.nupkg` and stored the
+generated `.nuspec`; a delete in mode delete was decided on the `.nupkg` and removed the `.nuspec` and the `.snupkg` too.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A push also decides the `.nuspec`'s path; a hard delete the `.nuspec`'s and the `.snupkg`'s, whether or not they are stored (chosen) | `Authorize` for each before anything is stored or the transaction opens | `/files/` and the protocol refuse the same change; the refusal tells nothing about a symbol package the caller may not read | A grant that excludes `**/*.snupkg` from `delete` refuses every hard delete |
+| (b) Decide the files that exist | A listing of `{lower_id}/{version}/` | Fewer refusals | An existence oracle for the files the caller may not read |
+
+**Choice:** (a). The files of the folder the delete does not name - embedded files (R-NUGET-024) and symbol files below
+`.symbols/`, which no local route stores yet - are decided by the host as the folder is removed, against what is stored
+([authorization.md](../authorization.md) Q-AUTHZ-257).
+
+**Rationale:** as Q-NPM-83. The development agent would revisit (b) with npm's.
+
+**Applied in the spec:** R-NUGET-013, [authorization.md](../authorization.md) R-AUTHZ-007. Code:
+[handlers_publish.go](../../../internal/formats/nuget/handlers_publish.go), [handlers_delete.go](../../../internal/formats/nuget/handlers_delete.go).
+Test: `TestR_AUTHZ_005_ANuGetWriteIsDecidedOnEveryFileItWritesOrRemoves`.
 
 ## What this does not cover
 

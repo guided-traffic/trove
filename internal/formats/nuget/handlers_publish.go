@@ -54,6 +54,12 @@ func (f *Format) handlePush(ctx context.Context, rq *formats.Request, w http.Res
 	if err := rq.Host.Authorize(ctx, rq, target); err != nil {
 		return err
 	}
+	// The push stores the generated .nuspec with the package: a file of its own, decided on
+	// its own path, so a push that would write a .nuspec the caller may not write is
+	// refused whole (Q-NUGET-121).
+	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: in.lowerID, Version: in.lowerVersion, Path: in.nuspecPath(), Actions: []formats.Action{formats.ActionDeploy}}); err != nil {
+		return err
+	}
 	repo := rq.RepoRef()
 	live, _, err := rq.Host.Packages().Versions(ctx, repo, in.lowerID)
 	if err != nil {

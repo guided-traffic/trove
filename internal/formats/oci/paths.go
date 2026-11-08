@@ -53,6 +53,21 @@ func (f *Format) PackageDocumentPath(name string) (formats.Path, bool) {
 	return formats.Path{Path: TaglistPath(n)}, true
 }
 
+var _ formats.VersionPather = (*Format)(nil)
+
+// VersionPath is the path of a tag, "<name>/_tags/<tag>": a version of an image is a tag (the package rows record tags), and the
+// tag's item holds the bytes of the manifest it points at, which is what a version shows. The decision point decides a tag on it
+// as well as on the tags list, so a path pattern that hides a tag hides it from the package screens as the tags list hides it
+// (Q-AUTHZ-258); OCI has no vulnerability adapter, so no vulnerability report lists a tag. A name or a tag the grammar refuses
+// names no version.
+func (f *Format) VersionPath(name, tag string) (formats.Path, bool) {
+	n, ok := names{}.Normalize(name)
+	if !ok || !ValidTag(tag) {
+		return formats.Path{}, false
+	}
+	return formats.Path{Path: TagPath(n, tag)}, true
+}
+
 // Classify says how a canonical path of the layout behaves (R-OCI-007): manifests and blobs are immutable content, a tag and
 // the tags list are metadata that expires on a remote repository. A path outside the layout is metadata of no package.
 func (f *Format) Classify(p formats.Path) formats.PathInfo {

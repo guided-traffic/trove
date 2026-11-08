@@ -41,6 +41,7 @@ func bodyLimit(maxTarball int64) int64 { return base64Len(maxTarball) + bodySlac
 // them (guide_test.go).
 const (
 	latestKeptNotice        = "latest stays at %s; move it with npm dist-tag add"
+	tagHeldNotice           = "%s was not moved: it points to a version you may not read"
 	retryAcknowledgedNotice = "%s@%s was already published by you at %s; nothing changed"
 )
 
@@ -133,6 +134,13 @@ func (f *Format) handlePublish(ctx context.Context, rq *formats.Request, w http.
 	if err := rq.Host.Authorize(ctx, rq, tarballTarget(n, version, formats.ActionDeploy)); err != nil {
 		return err
 	}
+	// The provenance bundle is a file of its own, decided on its own path: a publish
+	// that would store a bundle the caller may not write is refused whole (Q-NPM-83).
+	if sigSpool != nil {
+		if err := rq.Host.Authorize(ctx, rq, sigstoreTarget(n, version, formats.ActionDeploy)); err != nil {
+			return err
+		}
+	}
 
 	// Step 4, outside any transaction: the version exists, was unpublished, or is new.
 	integrity := res.Integrity()
@@ -157,6 +165,13 @@ func (f *Format) handlePublish(ctx context.Context, rq *formats.Request, w http.
 		name: n, version: version, tag: req.Tag, res: res, principal: rq.Subject.ID, audit: audit,
 		installScript: manifest.HasInstallScript(res.Manifest, res.Facts), shadowing: shadow, shadowSkipped: shadowSkipped,
 		latestGuard: settingsOf(rq.Repo.Config).LatestGuard,
+		readable: func(ctx context.Context) (func(string) bool, error) {
+			cv, err := formats.CallerVersions(ctx, rq, n.String())
+			if err != nil {
+				return nil, err
+			}
+			return cv.Version, nil
+		},
 	}
 	pc.stored = manifest.Stored(req.Manifest, manifest.ServerFields{
 		Name: n.String(), Version: version, Principal: principalName(rq), Integrity: integrity, Shasum: res.SHA1Hex(),
@@ -192,7 +207,12 @@ func (f *Format) handlePublish(ctx context.Context, rq *formats.Request, w http.
 	if sigSpool != nil {
 		rev = sc.rev
 	}
-	if pc.kept {
+	switch {
+	case pc.held:
+		// The notice names no version: the one the tag points to is hidden from the publisher (Q-NPM-85).
+		w.Header().Set("npm-notice", fmt.Sprintf(tagHeldNotice, req.Tag))
+	case pc.kept:
+		// The guard holds only a latest the publisher may read; a hidden one is held above.
 		w.Header().Set("npm-notice", fmt.Sprintf(latestKeptNotice, pc.latest))
 	}
 	return writePublished(w, n.String(), Rev(repo.ID, pc.pkg, rev))

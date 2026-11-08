@@ -282,3 +282,20 @@ func (f *Format) PackageDocumentPath(pkg string) (formats.Path, bool) {
 	}
 	return formats.Path{Path: PackageDocumentPath(n)}, true
 }
+
+var _ formats.VersionPather = (*Format)(nil)
+
+// VersionPath is the path of a version's .nupkg, the file that holds its content: the decision point decides a version
+// on it, so a path pattern that hides `{id}/{version}/**` or the .nupkg hides the version from the version list, the
+// registrations and the search (Q-AUTHZ-255, Q-NUGET-120). Any spelling of the version resolves to its URL form.
+func (f *Format) VersionPath(pkg, ver string) (formats.Path, bool) {
+	n, ok := lowerID(pkg)
+	if !ok {
+		return formats.Path{}, false
+	}
+	v, ok := urlForm(ver)
+	if !ok {
+		return formats.Path{}, false
+	}
+	return formats.Path{Path: NupkgPath(n, v)}, true
+}

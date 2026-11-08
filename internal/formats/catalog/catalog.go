@@ -226,7 +226,14 @@ type Entry struct {
 	// it as they apply to the protocol's package document (R-AUTHZ-005, Q-AUTHZ-250). Nil: such a question carries
 	// no path, and a grant with path patterns does not match it (fail closed).
 	DocumentPath func(name string) (path string, ok bool)
-	Exposure     Exposure
+	// VersionPath returns the canonical path of the file that holds a version's content - npm's tarball, NuGet's
+	// .nupkg - for a normalized name and a version as the format stores it; ok is false for a pair the format takes
+	// for no version. formats.Register derives it from the format's optional formats.VersionPather. The decision
+	// point decides a version on that path as well as on the package document's, so a path pattern that hides the
+	// file hides the version from every listing, every document and the search (R-AUTHZ-005, Q-AUTHZ-255). Nil: the
+	// format's versions have no file of their own, and a version is decided on the package document's path alone.
+	VersionPath func(name, version string) (path string, ok bool)
+	Exposure    Exposure
 	// Ecosystem is the OSV ecosystem name of the format's vulnerability adapter (R-VULN-009), "" for a format without
 	// one. formats.Register derives it; the repository model reads it to refuse the member `vulnerabilities` where it
 	// does not apply (R-VULN-002), and the scanning derives the ecosystems it syncs from the entries that have one

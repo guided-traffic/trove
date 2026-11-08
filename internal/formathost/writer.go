@@ -80,6 +80,8 @@ type writerDeps struct {
 	signals Signaler
 	// remove removes items in the transaction; set for the writer of Host.Write.
 	remove ItemRemover
+	// check decides every file a removal of the request takes; set for the writer of Host.Write.
+	check func(ctx context.Context, files []string) error
 	// areas are the notification areas the writer's format declared.
 	areas []string
 	// guard decides the paths a hook cascades to for the request's subject; set for the writer of Host.Write.
@@ -229,6 +231,7 @@ func (w *writer) DeleteItems(ctx context.Context, repo formats.RepoRef, paths ..
 	return w.d.remove.RemoveIn(ctx, w.tx, items.RemoveSpec{
 		Repo:  items.RepoRef{ID: repo.ID, Name: repo.Name, Class: string(repo.Class), Format: string(repo.Format)},
 		Paths: paths, Actor: edge.ActorFrom(httpserver.PrincipalFrom(ctx)), Source: httpserver.SourceFrom(ctx), Endpoint: w.req.Subject.Endpoint,
+		Check: w.d.check,
 	})
 }
 

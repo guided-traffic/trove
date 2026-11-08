@@ -64,8 +64,10 @@ Format registration (R-REPO-003): name `oci`, display name `OCI (Docker)`; class
 base path template `/v2/{project}/{key}/` (the registry root of R-ARCH-005, Q-OCI-4); default upstream URL
 `https://registry-1.docker.io/`, with the proposed extra hosts of R-OCI-021; default metadata period 300 s and not-found period
 300 s (R-OCI-022); pattern subject `name` (the image name, R-REPO-005); priority members, pin rules and namespace claims
-supported; package name = image name; package version = tag (R-STOR-039); package-document path `<name>/_taglist`
-(R-OCI-024); `VerifyAnnouncedDigests: true`, because every artifact is addressed by its SHA-256 (R-REPO-041).
+supported; package name = image name; package version = tag (R-STOR-039), whose file is the tag's item `<name>/_tags/<tag>`
+(`VersionPath`: the package screens decide a tag on it as well as on the tags list, Q-AUTHZ-258; OCI has no vulnerability
+adapter, so no report lists a tag);
+package-document path `<name>/_taglist` (R-OCI-024); `VerifyAnnouncedDigests: true`, because every artifact is addressed by its SHA-256 (R-REPO-041).
 
 **Address.** Docker and OCI clients fix the API at `/v2/` on the root of a host (R-HA-041). The repository is named by the
 first two path segments after `/v2/`, the project key and the repository key, exactly as below `/api/<format>/`

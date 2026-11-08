@@ -122,6 +122,10 @@ func conformance(t *testing.T) formattest.Fixture {
 		Content: []formattest.ContentCase{
 			{Name: "the registry URL", Path: "", Status: 200},
 			{Name: "a package document", Path: "lodash", Status: 200, Seed: publish("lodash", "4.17.21")},
+			// Two versions, so kit check 13 hides one of them and the document keeps the other (Q-AUTHZ-255).
+			{Name: "a package document of two versions", Path: "lodash", Status: 200, Seed: publishAll("lodash", "4.17.20", "4.17.21")},
+			{Name: "the dist-tags of two versions", Path: "-/package/lodash/dist-tags", Status: 200, Seed: publishAll("lodash", "4.17.20", "4.17.21")},
+			{Name: "a single version of two by its tag", Path: "lodash/latest", Status: 200, Seed: publishAll("lodash", "4.17.20", "4.17.21")},
 			{Name: "an unknown package", Path: "lodash", Status: 404},
 			{Name: "a single version", Path: "lodash/4.17.21", Status: 200, Seed: publish("lodash", "4.17.21")},
 			{Name: "a single version by its tag", Path: "lodash/latest", Status: 200, Seed: publish("lodash", "4.17.21")},
@@ -350,7 +354,7 @@ func mustName(s string) name.Name {
 }
 
 // noShadow is a resolver that finds no remote member to shadow.
-type noShadow struct{ formats.Resolver }
+type noShadow struct{ formattest.Resolver }
 
 func (noShadow) ShadowCheck(context.Context, *formats.Request, string) (formats.ShadowOutcome, error) {
 	return formats.ShadowOutcome{Proceed: true}, nil

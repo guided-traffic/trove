@@ -94,3 +94,65 @@ func TestR_EP_018_PathRulesDecideAnNPMPackageOnItsDocumentPath(t *testing.T) {
 		}
 	}
 }
+
+// TestR_EP_018_AVersionPathRuleHidesTheVersionFromNPMDocuments: an exposure rule whose path pattern names one version's
+// tarball hides that version from the documents of the endpoint, as it hides the tarball, and check-exposure reports the
+// version as hidden (R-EP-012, R-NPM-048, Q-EP-85): the view decides a version on its tarball's path.
+func TestR_EP_018_AVersionPathRuleHidesTheVersionFromNPMDocuments(t *testing.T) {
+	x := newExposureEnv(t, 1)
+	st := x.st
+	st.Repository("npm-pver", "local", "npm", `{"local":{"packageOwnership":"off"}}`)
+	for _, policy := range []string{"customers-read", "customers-publish"} {
+		st.Exec(`INSERT INTO authz_policy_selector (policy_id, ordinal, kind, repository_id)
+			SELECT p.id, 10 + row_number() OVER (), 'key', r.id FROM authz_policy p, repositories r WHERE p.name = $1 AND r.key = 'npm-pver'`, policy)
+	}
+	r := st.Start(t, testenv.ReplicaOptions{Name: "web-pver", Endpoints: customersEndpoint})
+	x.mustPublish(r, "npm-pver", x.tokA, pkg{Name: "tool", Version: "1.0.0"})
+	x.mustPublish(r, "npm-pver", x.tokA, pkg{Name: "tool", Version: "2.0.0"})
+	a := st.Do(r, "POST", "/api/v1/endpoints/customers/exposure-rules", x.opsPAT,
+		[]byte(`{"name":"pver","repository":"it/npm-pver","enabled":true,"paths":{"include":[],"exclude":["tool/-/tool-2.0.0.tgz"]}}`))
+	if a.Status != http.StatusCreated {
+		t.Fatalf("rule: %d %s", a.Status, a.Body)
+	}
+	x.epoch = a.Header.Get("Trove-Authz-Epoch")
+	on := func(path string, hdr ...string) testenv.Answer {
+		return st.DoAt(r.Addr("customers"), customersHost, "GET", "/api/npm/it/npm-pver/"+path, x.acmeSAT, nil, append(hdr, "Trove-Authz-Min-Epoch", x.epoch)...)
+	}
+	if a := on("tool/-/tool-2.0.0.tgz"); a.Status != http.StatusNotFound {
+		t.Errorf("the excluded tarball on customers: %d, want 404", a.Status)
+	}
+	for _, accept := range [][]string{nil, {"Accept", abbreviatedAccept}} {
+		doc := document(t, on("tool", accept...))
+		if got := versionNames(doc); len(got) != 1 || got[0] != "1.0.0" {
+			t.Errorf("customers, package document %v lists %v, want [1.0.0]", accept, got)
+		}
+		if got := tagsOfDoc(doc); got["latest"] != "1.0.0" {
+			t.Errorf("customers, dist-tags %v, want latest 1.0.0", got)
+		}
+	}
+	if a := on("tool/2.0.0"); a.Status != http.StatusNotFound {
+		t.Errorf("customers, document tool/2.0.0: %d, want 404", a.Status)
+	}
+	c := st.Do(r, "POST", "/api/v1/endpoints/customers/check-exposure", x.opsPAT, map[string]any{"repository": "it/npm-pver", "package": "tool"})
+	var res struct {
+		PackageExposed bool `json:"packageExposed"`
+		Versions       []struct {
+			Version string `json:"version"`
+			Exposed bool   `json:"exposed"`
+		} `json:"versions"`
+	}
+	if c.Status != http.StatusOK || json.Unmarshal(c.Body, &res) != nil {
+		t.Fatalf("check-exposure: %d %s", c.Status, c.Body)
+	}
+	if !res.PackageExposed {
+		t.Errorf("check-exposure: the package is reported hidden")
+	}
+	if len(res.Versions) != 2 {
+		t.Errorf("check-exposure: %d versions judged, want 2: %s", len(res.Versions), c.Body)
+	}
+	for _, v := range res.Versions {
+		if v.Exposed != (v.Version == "1.0.0") {
+			t.Errorf("check-exposure: tool@%s exposed %v", v.Version, v.Exposed)
+		}
+	}
+}

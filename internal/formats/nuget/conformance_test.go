@@ -177,8 +177,9 @@ func conformance(f *Format) formattest.Fixture {
 				Data: newDocStore(),
 				// The vulnerability information is served while trove's NuGet data is complete (R-VULN-018).
 				Vulnerabilities: newScanning(),
-				// The push reads the shadowing verdict and the search the scope of the caller (R-AUTHZ-016).
-				Resolver: conformanceResolver{shadowResolver: shadowResolver{out: formats.ShadowOutcome{Proceed: true}}, scope: scopeFake{shape: formats.ReadAll}},
+				// The push reads the shadowing verdict, and the search and the documents the scope of the caller, which is
+				// the kit's: its Allow (R-AUTHZ-016, Q-AUTHZ-255).
+				Resolver: conformanceResolver{shadowResolver: shadowResolver{out: formats.ShadowOutcome{Proceed: true}}},
 				Subject:  authz.Subject{Kind: "user", ID: "11111111-1111-1111-1111-111111111111", Name: "alice"},
 			}
 		},
@@ -212,6 +213,9 @@ func conformance(f *Format) formattest.Fixture {
 			{Name: "registration index", Path: feed("registration-semver2/acme.widgets/index.json"), Seed: seedWidgets},
 			{Name: "registration page", Path: feed("registration-gz/acme.widgets/page/1.0.0/2.0.0.json"), Seed: seedWidgets},
 			{Name: "registration leaf", Path: feed("registration/acme.widgets/1.2.3.json"), Seed: seedWidgets},
+			// Two versions, so kit check 13 hides one of them and the documents keep the other (Q-AUTHZ-255).
+			{Name: "version list of two versions", Path: feed("flatcontainer/acme.widgets/index.json"), Seed: seedTwoWidgets},
+			{Name: "registration index of two versions", Path: feed("registration-semver2/acme.widgets/index.json"), Seed: seedTwoWidgets},
 			{Name: "search", Path: feed("search")},
 			{Name: "vulnerability index", Path: feed("vulnerabilities/index.json")},
 			{Name: "vulnerability page", Path: feed("vulnerabilities/trove.json")},
@@ -335,11 +339,12 @@ func remoteFixture() *formattest.RemoteFixture {
 // conformanceResolver answers the shadowing check of the push and the read scope of the search.
 type conformanceResolver struct {
 	shadowResolver
-	scope formats.ReadScope
 }
 
-func (r conformanceResolver) ReadScope(context.Context, *formats.Request, []qname.Repo) (formats.ReadScope, error) {
-	return r.scope, nil
+// ReadScope is the kit's scope of the request's Host: every row while its Allow is nil, row by row and path by path once a
+// check refuses targets with it.
+func (r conformanceResolver) ReadScope(ctx context.Context, rq *formats.Request, keys []qname.Repo) (formats.ReadScope, error) {
+	return formattest.Resolver{}.ReadScope(ctx, rq, keys)
 }
 
 // seedWidgets stores version 1.2.3 of acme.widgets with its files, the state the content cases
@@ -352,6 +357,14 @@ func seedWidgets(h *formattest.Host) error {
 	}
 	putFiles(h)
 	return nil
+}
+
+// seedTwoWidgets stores versions 1.2.3 and 1.3.0 of acme.widgets, for the documents that list more than one version.
+func seedTwoWidgets(h *formattest.Host) error {
+	if err := seedWidgets(h); err != nil {
+		return err
+	}
+	return h.FormatData(ID).(*docStore).commit(h, "acme.widgets", registrationVersion("Acme.Widgets", "1.3.0", true, `{"description":"Widget primitives, the next one."}`))
 }
 
 // TestR_ARCH_010_NoCheckIsSkipped: every check of the kit runs over NuGet (E3.3); a skip added to

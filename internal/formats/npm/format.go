@@ -189,6 +189,23 @@ func (f *Format) PackageDocumentPath(pkg string) (formats.Path, bool) {
 	return formats.Path{Path: n.String()}, true
 }
 
+var _ formats.VersionPather = (*Format)(nil)
+
+// VersionPath is the path of a version's tarball, the file that holds its content: the decision point decides a version
+// on it, so a path pattern that hides the tarball hides the version from documents and listings (Q-AUTHZ-255, Q-NPM-82).
+// A name or a version that is not canonical names no version.
+func (f *Format) VersionPath(pkg, version string) (formats.Path, bool) {
+	n, err := name.Parse(pkg)
+	if err != nil {
+		return formats.Path{}, false
+	}
+	v, ok := canonicalVersion(version)
+	if !ok {
+		return formats.Path{}, false
+	}
+	return formats.Path{Path: TarballPath(n, v)}, true
+}
+
 // clients are the native clients of the acceptance matrix (R-NPM-045).
 func clients() []formats.Client {
 	return []formats.Client{

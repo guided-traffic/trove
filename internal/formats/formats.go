@@ -233,6 +233,19 @@ type Capabilities struct {
 	ServeFacts ServeFactsKeyer
 	// ViewSizer reports the size of a version that is not the sum of its files (ADR-177); nil for a format whose versions are.
 	ViewSizer ViewSizer
+	// VersionPath gives the path of the file that holds a version's content (Q-AUTHZ-255); nil for a format whose
+	// versions have none.
+	VersionPath VersionPather
+}
+
+// VersionPather is the optional interface of a format whose versions each have one file that holds their content: npm's
+// tarball, NuGet's .nupkg. VersionPath returns its canonical path for a normalized name and a version as the format stores
+// it, the path a protocol download of the version is decided on; ok is false for a pair that names no version. The
+// decision point decides a version on that path as well as on the package document's (catalog.Entry.VersionPath), so a
+// path pattern that hides the file hides the version from listings, documents and the search (R-AUTHZ-005, Q-AUTHZ-255).
+// Classify of the returned path gives the name and the version back; the conformance kit checks it.
+type VersionPather interface {
+	VersionPath(name, version string) (p Path, ok bool)
 }
 
 // CapabilitiesOf reads the capabilities off a format. It is the one function of the
@@ -254,6 +267,9 @@ func CapabilitiesOf(f Format) Capabilities {
 	}
 	if z, ok := f.(ViewSizer); ok {
 		c.ViewSizer = z
+	}
+	if v, ok := f.(VersionPather); ok {
+		c.VersionPath = v
 	}
 	if ra := f.Remote(); ra != nil {
 		c.Remote.Discovery, _ = ra.(Discoverer)
@@ -307,7 +323,8 @@ func CapabilitiesFor(id ID) Capabilities {
 }
 
 // CatalogEntry derives the catalog entry of a format: its facts, its name rule,
-// the path of its package documents and the exposure facts of its adapter.
+// the paths of its package documents and of its versions' files, and the exposure
+// facts of its adapter.
 func CatalogEntry(f Format) catalog.Entry {
 	d := f.Descriptor()
 	e := catalog.Entry{Facts: d.Facts, Names: d.Names}
@@ -318,6 +335,12 @@ func CatalogEntry(f Format) catalog.Entry {
 		}
 	}
 	caps := CapabilitiesOf(f)
+	if vp := caps.VersionPath; vp != nil && d.PackageNames {
+		e.VersionPath = func(name, version string) (string, bool) {
+			p, ok := vp.VersionPath(name, version)
+			return p.Path, ok && p.Path != ""
+		}
+	}
 	if v := caps.Vulnerability; v != nil {
 		e.Ecosystem = v.Ecosystem()
 	}

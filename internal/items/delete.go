@@ -616,14 +616,19 @@ type RemoveSpec struct {
 	// InScope is the scope of the removal this one belongs to, when it is a cascade of a storage hook (RemovedEvent.InScope): the hooks of
 	// the cascaded events judge a reference against the whole removal and not only against the paths of the cascade. Nil: the paths alone.
 	InScope func(ctx context.Context, path string) (bool, error)
+	// Check decides the files the removal takes, the subtree of a folder included, before
+	// any is removed; an error refuses the whole removal. Nil decides nothing: the caller
+	// decided every path before.
+	Check func(ctx context.Context, files []string) error
 }
 
 // RemoveIn removes the files at the paths of spec permanently, in the transaction
 // of the caller, as [Store.Delete] removes a subtree: the storage hook learns of
 // the removed files in this transaction, their events are written, and the
-// implicit folders that stay empty go. The caller decided every path before (a
-// format's route has authorized the action on its package); this checks nothing,
-// and it never queues a job, so the caller bounds the number of paths.
+// implicit folders that stay empty go. The caller decided the paths it names (a
+// format's route has authorized the action on its package); spec.Check, when set,
+// decides every file the removal takes, so a folder's files are decided one by one.
+// It never queues a job, so the caller bounds the number of paths.
 func (s *Store) RemoveIn(ctx context.Context, tx meta.Tx, spec RemoveSpec) error {
 	qs, err := queries(tx)
 	if err != nil {
@@ -648,6 +653,17 @@ func (s *Store) RemoveIn(ctx context.Context, tx meta.Tx, spec RemoveSpec) error
 	}
 	if len(rows) == 0 {
 		return nil
+	}
+	if spec.Check != nil {
+		files := make([]string, 0, len(rows))
+		for _, r := range rows {
+			if r.Kind == "file" {
+				files = append(files, r.Path)
+			}
+		}
+		if err := spec.Check(ctx, files); err != nil {
+			return err
+		}
 	}
 	if err := s.removeRows(ctx, tx, qs, who{spec.Actor, spec.Source, spec.Endpoint}, spec.Repo, rows, joinScope(scopeOf(rows), spec.InScope)); err != nil {
 		return err

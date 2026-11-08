@@ -32,7 +32,7 @@ and the restore on [backup-and-restore.md](backup-and-restore.md). The requireme
 | 5 | Every `sha512` entry of `dist.integrity` and `dist.shasum` equal the digests computed while the tarball was spooled | `Request.CheckDigests` | 409 |
 | 6 | The tarball in one streaming pass: one gzip member, clean entry names under one first component, exactly one regular `package.json`, no duplicate install path, links inside the package, the size, entry and ratio bounds | [tarball.go](../../internal/formats/npm/tarball/tarball.go) `Validate` | 400 `npm_bad_publish`, 413 `npm_too_large` |
 | 7 | The `name` and `version` of the tarball's `package.json` are the request's; the compared fields of the request manifest and the `package.json` agree (`npm.publish.manifest_consistency`) | [manifest/compare.go](../../internal/formats/npm/manifest/compare.go) `CheckIdentity`, `Mismatches` | 400 `npm_manifest_mismatch` |
-| 8 | `deploy` on the name and the version, at the tarball's path, so a grant's path patterns decide the file the publish creates (Q-AUTHZ-250) | `Host.Authorize` | 403 |
+| 8 | `deploy` on the name and the version, at the tarball's path and, when the body attaches a provenance bundle, at the bundle's path, so a grant's path patterns decide every file the publish creates (Q-AUTHZ-250, Q-NPM-83) | `Host.Authorize` | 403 |
 | 9 | The number: tombstoned, or live with other bytes; the acknowledged retry (below) | `Store.VersionFacts`, `versionTaken` | 409 `npm_version_unpublished`, 409 `npm_version_exists`, or 201 without a write |
 | 10 | For the first version of a name: whether a remote member of a containing virtual repository serves it (R-REPO-048) | `shadowCheck` | 403 `shadows_remote_package`, 503 `shadow_check_unavailable` |
 | 11 | The commit transaction: the package row is locked, the live versions are read again, the ownership rule decides and claims, the tombstone is read again, the name fold must be free, then the rows, the tags and the audit event are written | [hooks.go](../../internal/formats/npm/hooks.go) `OnCommit`, [store.go](../../internal/formatdata/npm/store.go) `Publish` | 409, 403, 400 `npm_invalid_name`, 503 `shadow_check_unavailable`, or 201 |
@@ -256,7 +256,7 @@ The state changes are written in the transaction of the change ([R-NPM-044](../s
 
 | Event | Written by | Journal |
 |---|---|---|
-| `npm.publish` (with `tag`, `latest_guard`, the claim of a first version; the reason `retry_acknowledged` for an acknowledged retry) | the publish commit | no |
+| `npm.publish` (with `tag`, `latest_guard`, `tag_held` when the tag stayed at a version the publisher may not read (Q-NPM-85), the claim of a first version; the reason `retry_acknowledged` for an acknowledged retry) | the publish commit | no |
 | `repository.remote_package_shadowed` | a first version published on the strength of `manage` over a name a remote member serves | no |
 | `npm.publish.manifest_mismatch` (asynchronous; outcome `failure` in `reject` mode) | step 7 of a publish | no |
 | `npm.unpublish` | the removal of a version by any road | yes: `{"repositoryId", "package", "version", "integrity", "actorId"}`, identifiers and a digest, no secret |

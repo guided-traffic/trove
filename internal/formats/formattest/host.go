@@ -198,6 +198,13 @@ func (h *Host) ServedPaths() []string {
 	return append([]string(nil), h.servedPaths...)
 }
 
+// forgetRenditions empties the rendition cache, for check 13's runs of one case under different Allow functions.
+func (h *Host) forgetRenditions() {
+	h.mu.Lock()
+	clear(h.renders)
+	h.mu.Unlock()
+}
+
 // forgetTargets clears what Authorize, CheckOwnership and Claim recorded, so that a check reads the targets of one
 // request and not those of its seed.
 func (h *Host) forgetTargets() {
@@ -330,7 +337,53 @@ func (h *Host) Resolver() formats.Resolver {
 	if h.opts.Resolver != nil {
 		return h.opts.Resolver
 	}
-	return unsupportedResolver{}
+	return Resolver{}
+}
+
+// Resolver is the resolver of a Host without one: virtual resolution is not supported, and the read scope of a
+// listing or a document is the Allow function of the request's Host, as the production host's is the decision point. A
+// test's resolver embeds it for what it does not answer itself.
+type Resolver struct{ unsupportedResolver }
+
+// ReadScope implements formats.Resolver with [kitScope] of the request's Host.
+func (Resolver) ReadScope(_ context.Context, rq *formats.Request, _ []qname.Repo) (formats.ReadScope, error) {
+	h, ok := rq.Host.(*Host)
+	if !ok {
+		return nil, notSupported()
+	}
+	return kitScope{h: h}, nil
+}
+
+// kitScope is the read scope Allow stands for: every repository is read whole while Allow is nil, and row by row,
+// path by path, once a test decides targets with it. A package is decided on its document's path and a version on that
+// path and on its file's (formats.VersionPather), as the decision point decides them (Q-AUTHZ-255).
+type kitScope struct{ h *Host }
+
+func (s kitScope) Shape(qname.Repo) formats.ReadShape {
+	if s.h.opts.Allow == nil {
+		return formats.ReadAll
+	}
+	return formats.ReadRows
+}
+
+func (s kitScope) VersionsByPath(qname.Repo) bool { return s.h.opts.Allow != nil }
+
+func (s kitScope) MayRead(_ qname.Repo, pkg, version string) bool {
+	allow := s.h.opts.Allow
+	if allow == nil {
+		return true
+	}
+	read := []formats.Action{formats.ActionRead}
+	doc, ok := s.h.f.PackageDocumentPath(pkg)
+	if !ok || allow(formats.Target{Package: pkg, Path: doc.Path, Actions: read}) != nil {
+		return false
+	}
+	vp := formats.CapabilitiesOf(s.h.f).VersionPath
+	if version == "" || vp == nil {
+		return true
+	}
+	p, ok := vp.VersionPath(pkg, version)
+	return ok && allow(formats.Target{Package: pkg, Version: version, Path: p.Path, Actions: read}) == nil
 }
 
 // Uploads implements formats.Host.

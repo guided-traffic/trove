@@ -328,7 +328,7 @@ func TestR_NUGET_006_APushIsRefusedWhenTheOwnershipRuleSaysNo(t *testing.T) {
 
 // shadowResolver is a Resolver whose shadowing check says what a test wants.
 type shadowResolver struct {
-	formats.Resolver
+	formattest.Resolver
 	out formats.ShadowOutcome
 }
 
@@ -385,7 +385,7 @@ func TestR_NUGET_006_TheShadowingCheckAsksOnlyForAFirstVersion(t *testing.T) {
 }
 
 type countingResolver struct {
-	formats.Resolver
+	formattest.Resolver
 	asked *int
 	out   formats.ShadowOutcome
 }

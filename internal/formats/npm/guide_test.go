@@ -113,6 +113,7 @@ func TestR_NPM_041_TheGuideQuotesWhatTroveSends(t *testing.T) {
 	all := strings.Join(mapValues(everyRendering(t)), "\n")
 	for _, want := range []string{
 		fmt.Sprintf(latestKeptNotice, "<version>"),
+		fmt.Sprintf(tagHeldNotice, "<tag>"),
 		fmt.Sprintf(retryAcknowledgedNotice, "<name>", "<version>", "<time>"),
 		strings.ReplaceAll(strings.Replace(strings.Replace(strings.Replace(auditPartialNotice, "%d", "<n>", 1), "%d", "<m>", 1), "%d", "<k>", 1), "%%", "%"),
 		strings.ReplaceAll(strings.Replace(strings.Replace(strings.Replace(auditLocalNotice, "%d", "<n>", 1), "%d", "<m>", 1), "%d", "<k>", 1), "%%", "%"),

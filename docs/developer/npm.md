@@ -23,15 +23,16 @@ internal/formats/npm/
 ├── servecheck.go    ServeCheck: a tombstoned or withheld version is 404 on the tarball route and on /files/
 ├── handlers_document.go  GET {name}, {name}/{ref}: validator, rendition cache, rendering; ?write=true
 ├── handlers_tarball.go   GET {name}/-/{file}: the item with the headers of an immutable file
-├── handlers_disttags.go  the dist-tag read and writes
-├── handlers_unpublish.go the three unpublish requests
+├── handlers_disttags.go  the dist-tag read and writes; a tag at a hidden version is not the caller's to move (Q-NPM-84)
+├── handlers_unpublish.go the three unpublish requests; mayDelete decides every removed file (Q-NPM-83); a hidden version is one the package does not hold (Q-NPM-84)
 ├── handlers_identity.go  whoami and ping
 ├── handlers_deprecate.go the metadata PUT; answers 404 until deprecate is built (R-NPM-018, R-NPM-043), 400 for a body without versions
 ├── handlers_audit.go     the security audit: the dispatch by mode, the forwarder, the bounds of the body, the forwarded set, the forward and npm 6's endpoints (R-NPM-038)
 ├── handlers_audit_local.go   the audit in mode local, from trove's own advisory data: the mode of a repository, the answer and its notice (R-VULN-017)
 ├── handlers_audit_ranges.go  vulnerable_versions as node-semver text, the pre-release completion, the adapter the audit hands to the matcher (R-VULN-017)
-├── tags.go          the dist-tag rules of R-NPM-016 on the SemVer order
+├── tags.go          the dist-tag rules of R-NPM-016 on the SemVer order; a publish leaves a tag at a hidden version (Q-NPM-85)
 ├── exposure.go      the exposure adapter (ranges, pre-releases, dimensions) and the filter of rows and documents (R-NPM-048)
+├── versions.go      the versions a caller's grants hide: callerVersions (the hidden fingerprint of a rendition), filterOf, callerView (Q-NPM-82)
 ├── store.go         the data port (Store), with marked blocks for the work packages that add to it
 ├── bind.go          Format.Bind: the settings and the metrics of one replica, kept per Host
 ├── rev.go           Rev: the _rev of a document and the rev of a write (R-NPM-009)
@@ -345,7 +346,7 @@ sections; their texts are the files of [guide/](../../internal/formats/npm/guide
 |---|---|
 | The troubleshooting table's codes and statuses | `TestR_UI_049_TheTroubleshootingCodesAreTroves`: each row's code is in `internal/errs` and answers that status |
 | Every snake_case code anywhere in the guide | `TestR_UI_049_EveryCodeTheGuideNamesExists`, over every class, client, reader and endpoint kind |
-| The notices and the refusal it quotes | `TestR_NPM_041_TheGuideQuotesWhatTroveSends`, against `latestKeptNotice`, `retryAcknowledgedNotice` ([publish.go](../../internal/formats/npm/publish.go)), `auditPartialNotice`, `auditUnavailableText` ([handlers_audit.go](../../internal/formats/npm/handlers_audit.go)) |
+| The notices and the refusal it quotes | `TestR_NPM_041_TheGuideQuotesWhatTroveSends`, against `latestKeptNotice`, `tagHeldNotice`, `retryAcknowledgedNotice` ([publish.go](../../internal/formats/npm/publish.go)), `auditPartialNotice`, `auditUnavailableText` ([handlers_audit.go](../../internal/formats/npm/handlers_audit.go)) |
 | Periods, limits, settings and their defaults | `TestR_NPM_041_TheGuideStatesTheDefaults`: the descriptor, the `default` tags of `config.NPMPublish`, the settings schema |
 | No credential step for an anonymous reader; the endpoint note only with rules | `TestR_UI_049_AnAnonymousReaderGetsNoCredentialSteps`, `TestR_UI_049_TheEndpointSectionIsForEndpointsWithRules` |
 | Coverage of every class and client, the snippets attached, no credential in code | kit check 8 in `TestR_ARCH_010_Conformance` (the fixture's `OptionNames` `_authToken`, `npmAuthToken`, `TROVE_TOKEN` are the option names a code block may spell) |

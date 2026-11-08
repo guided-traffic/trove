@@ -111,6 +111,13 @@ func TestR_ARCH_010_Defects(t *testing.T) {
 		{"R-AUTHZ-005 a handler that authorizes the package document's path for a file it serves fails check 13", testformat.AuthorizesDocumentForFile, formattest.CheckAuthzPaths, "authorized no read of that path", nil},
 		{"R-AUTHZ-005 a handler that forgets the path in a remote and a virtual repository only fails check 13", testformat.AuthorizesWithoutPathOffLocal, formattest.CheckAuthzPaths, "remote document", nil},
 		{"R-AUTHZ-005 a handler that authorizes the repository in a remote and a virtual repository only fails check 13", testformat.AuthorizesRepositoryLevelOffLocal, formattest.CheckAuthzPaths, "authorized no target that names the package at a path", nil},
+		{"R-AUTHZ-005 a document that lists a version whose file the caller may not read fails check 13", testformat.ListsHiddenVersions, formattest.CheckAuthzPaths, "lists the version", nil},
+		{
+			// Check 9 fails with it: a removal finds no version row to take, so the package's revision stays.
+			"R-AUTHZ-005 a format whose package rows hold no version its documents name fails check 13", testformat.VersionsOutsideRows, formattest.CheckAuthzPaths, "none names a stored version",
+			[]formattest.Check{formattest.CheckRevision},
+		},
+		{"R-AUTHZ-005 a document rendered otherwise on the path that filters it fails check 13", testformat.FiltersDifferently, formattest.CheckAuthzPaths, "when only an unrelated path is refused", nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -125,6 +132,15 @@ func TestR_ARCH_010_Defects(t *testing.T) {
 			}
 		})
 	}
+	t.Run("R-AUTHZ-005 a format whose paths place files in versions and that names no file of a version fails check 13", func(t *testing.T) {
+		rep := formattest.Evaluate(testformat.WithoutVersionPath(), testformat.Fixture())
+		if failed := rep.Failed(); !slices.Equal(failed, []formattest.Check{formattest.CheckAuthzPaths}) {
+			t.Fatalf("failed checks = %v, want check 13 alone:\n%v", failed, rep)
+		}
+		if got := strings.Join(rep.Result(formattest.CheckAuthzPaths).Failures, "\n"); !strings.Contains(got, "has no formats.VersionPather") {
+			t.Fatalf("failures do not name the missing VersionPather:\n%s", got)
+		}
+	})
 	t.Run("R-ARCH-010 the ambiguous variant is also refused by Register's own check", func(t *testing.T) {
 		err := formats.Validate(testformat.With(testformat.AmbiguousRoutes))
 		if err == nil || !strings.Contains(err.Error(), "ambiguous routes") {

@@ -12,6 +12,8 @@ Unpublishing deletes the version for good and leaves a tombstone: the same versi
 
 A publish under the dist-tag `latest` of a version lower than the current `latest`, or of a pre-release while `latest` is a release, stores the version and leaves `latest` where it is (the repository setting `latestGuard`, on by default). npm prints the notice `latest stays at <version>; move it with npm dist-tag add`; move the tag yourself if you meant it.
 
+A publish never moves a dist-tag that points to a version your permissions do not let you read, `latest` included: the version is stored, the tag stays, and npm prints the notice `<tag> was not moved: it points to a version you may not read`. Somebody who may read that version moves the tag.
+
 ### Who may publish a name
 
 The first publish of a name records its owner: the publisher, or the owner the publisher's permission names. From then on only owners and holders of the manage permission publish, tag or unpublish the package; anybody else gets `403` with `package_owned_by_other_owner` until an owner adds them. A repository can turn package ownership off.

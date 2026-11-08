@@ -388,9 +388,17 @@ NuGet or OCI repository has to cover its package document and its files: `@acme/
 `@acme/ui/-/ui-1.0.0.tgz`, NuGet's `acme.core/**` covers `acme.core/index.json`,
 `acme.core/.registration/index.json` and the files below `acme.core/<version>/`, and OCI's `team/app/**` covers the tags list document
 `team/app/_taglist` and the items below `team/app/_tags/`, `_manifests/` and `_blobs/` (Q-OCI-140). A pattern finer than a package's folder
-(`<name>/-/**`, `acme.core/1.0.0/**`, a single file) decides some of a package's paths and not others: it hides the files
-it names, while the package document, the search and the package screens still show what those files hold
-([permissions.md](../security/permissions.md) H-647). When a policy with any path pattern, include or exclude, covers an
+(`<name>/-/**`, `acme.core/1.0.0/**`, a single file) decides some of a package's paths and not others. A version is
+therefore decided twice: on the package document's path and on the path of the file that holds the version's content (npm's
+tarball, NuGet's `.nupkg`, OCI's tag `<name>/_tags/<tag>`; the format's `VersionPather`, [architecture.md](architecture.md)
+R-ARCH-008, Q-AUTHZ-258), and it may be read
+only if both allow it (Q-AUTHZ-255). A pattern that hides a version's file hides the version wherever the package is shown:
+a local package document lists only the versions the caller may read (a `latest` that is hidden moves to the highest
+version left, and the README of a `latest` that moved goes with it), a version document and a registration leaf of a hidden
+version are missing, the search and the package screens count and show only readable versions, and the endpoint's
+exposure view decides a version the same way (Q-EP-85). A write is decided on every file it writes or removes, and a
+version the caller may not read is not the caller's to change (Q-AUTHZ-256). Remote and virtual documents are filtered by
+the endpoint's rules only ([permissions.md](../security/permissions.md) H-655). When a policy with any path pattern, include or exclude, covers an
 npm or NuGet repository, the policy API returns the warning `path_patterns_on_package_format` (R-AUTHZ-021,
 Q-AUTHZ-253). NuGet stores lower-case paths (R-NUGET-005), and the path dimension of a NuGet repository is compared in
 lower case, pattern and path alike, whenever the pattern was written and whatever selector brings it to the repository
@@ -427,6 +435,10 @@ Preconditions on coordinates:
 | paths exclude `@secret/**` | npm protocol: the package document of `@acme/ui` (path `@acme/ui`) | yes |
 | paths exclude `@secret/**` | a coordinate that names the package `@acme/ui` and no path (Q-AUTHZ-250) | no |
 | paths include `acme.core/**` | NuGet protocol: a registration leaf of `acme.core` (path `acme.core/.registration/index.json`) | yes |
+| paths exclude `hidden/-/hidden-2.0.0.tgz` | npm: the package document of `hidden` (path `hidden`) | yes, without version 2.0.0 (Q-AUTHZ-255) |
+| paths exclude `hidden/-/hidden-2.0.0.tgz` | a listing row `hidden@2.0.0` (paths `hidden` and `hidden/-/hidden-2.0.0.tgz`) | no |
+| paths exclude `acme.secret/2.0.0/**` | NuGet: the version list and the registrations of `acme.secret`, the search | yes, without version 2.0.0 |
+| paths exclude `**/*.sigstore` (with `deploy`) | npm: a publish that attaches a provenance bundle (paths `<name>`, the tarball, the bundle) | no, the whole publish (Q-AUTHZ-256) |
 | no include lists | anything in the selected repositories | yes |
 
 Acceptance criteria:
@@ -443,6 +455,27 @@ Acceptance criteria:
   carries the pattern, and for NuGet's flat container, registrations, search and push
   (`TestR_AUTHZ_005_PathPatternsDecideTheNPMProtocolOnCanonicalPaths`,
   `TestR_AUTHZ_005_PathPatternsDecideTheNuGetProtocolOnCanonicalPaths`).
+- A policy grants `read` on `web/npm-internal` with `paths.exclude: ["hidden/-/hidden-2.0.0.tgz"]`. `npm view hidden`
+  lists 1.0.0 alone with `latest` at 1.0.0 and without the README of 2.0.0, `npm view hidden@2.0.0` gets `E404`, and the
+  package screen shows 1.0.0 as the latest and answers 404 for the README of 2.0.0; a caller without the pattern sees both
+  versions from the same replica, before and after. With `paths.exclude: ["acme.secret/2.0.0/**"]` on NuGet, the version
+  list, the registrations and the search leave 2.0.0 out (`TestR_AUTHZ_005_AVersionPathPatternHidesTheVersionFromNPMDocuments`,
+  `TestR_AUTHZ_005_AVersionPathPatternHidesTheVersionFromNuGetDocuments`).
+- A policy grants `read`, `deploy` and `delete` with `paths.exclude: ["**/*.sigstore"]`: `npm publish --provenance`
+  gets `E403` and stores nothing; with `paths.exclude: ["**/*.snupkg"]` on NuGet, a delete of a version (deleteMode
+  `delete`) gets 403 and removes nothing, and so does one whose version folder holds a file a pattern excludes that the
+  route does not name (Q-AUTHZ-257) (`TestR_AUTHZ_005_AnNPMWriteIsDecidedOnEveryFileItWritesOrRemoves`,
+  `TestR_AUTHZ_005_ANuGetWriteIsDecidedOnEveryFileItWritesOrRemoves`).
+- A caller whose `read` grant hides `keep@1.0.0` and who holds `deploy` and `delete` meets that version in every npm write
+  as one the package does not hold: a revisioned `PUT` that names it and a dist-tag `PUT` that points a tag at it answer the
+  400 of a missing version, the tarball `DELETE` of npm's unpublish answers the 200 of a removed one, a `DELETE` of a tag at
+  it the 404 of an unknown tag; a dist-tag `PUT` that would move a tag at it answers 403 and moves nothing (Q-NPM-84,
+  `TestR_AUTHZ_005_TheTarballDeleteOfAnUnpublishAnswersAHiddenVersionAsAMissingOne`); a publish under a tag at it stores
+  the new version and leaves the tag, with a notice that does not name 1.0.0 (Q-NPM-85,
+  `TestR_NPM_016_APublishLeavesATagAtAVersionThePublisherMayNotReadWhereItIs`).
+- A `read` grant on the OCI repository `web/docker-local` with `paths.exclude: ["team/app/_tags/v2"]` hides the tag `v2` of
+  `team/app` from the version list of the package API, as the tags list of `/v2/` leaves it out, and lists `v1`; a caller
+  without the pattern sees both (Q-AUTHZ-258, `TestR_AUTHZ_005_APathPatternOnATagHidesItFromThePackageAPI`).
 - `curl -X PUT --data-binary @evil-1.0.0.tgz
   https://trove.example.com/files/web/npm-internal/@acme/ui/-/ui-9.9.9.tgz` with a tarball whose
   `package.json` names `@other/evil` answers 400 and stores nothing.
@@ -501,12 +534,12 @@ npm:
 
 | Client operation | Coordinate | Actions | Ownership |
 |---|---|---|---|
-| `npm view`, `npm install`: package document, version document, dist-tags | name; path `<name>`, the package document they are part of | `read` | — |
+| `npm view`, `npm install`: package document, version document, dist-tags | name; path `<name>`, the package document they are part of; each version listed also on its tarball's path (Q-AUTHZ-255) | `read` | — |
 | Tarball download | name; the tarball's path `<name>/-/<file>` | `read` | — |
-| `npm publish` of a new version (with its dist-tag) | name; path `<name>` before the body is read, the tarball's path once the body names the version | `deploy`; for the first version of the name in the repository also the shadowing check | yes |
+| `npm publish` of a new version (with its dist-tag) | name; path `<name>` before the body is read, the tarball's path once the body names the version, and the provenance bundle's path `<name>/-/<base>-<version>.sigstore` when the body attaches one (Q-AUTHZ-256) | `deploy`; for the first version of the name in the repository also the shadowing check | yes |
 | `npm publish` of an existing version | name | refused by the format (immutable versions) | — |
-| `npm unpublish name@version`, `npm unpublish name` | name; path `<name>`, and the tarball's path for the tarball `DELETE` | `delete` | yes |
-| `npm dist-tag add` / `rm` | name; path `<name>` | `deploy` | yes |
+| `npm unpublish name@version`, `npm unpublish name` | name; path `<name>`, the tarball's and the bundle's path of every version it removes, and the tarball's path for the tarball `DELETE`; a version the caller may not read is not removed (Q-AUTHZ-256) | `delete` | yes |
+| `npm dist-tag add` / `rm` | name; path `<name>`; a tag at a version the caller may not read answers as at a missing one | `deploy` | yes |
 | `npm deprecate` | name; path `<name>` | `deploy` | yes |
 | `npm search` | repository level; results filtered per name, on the path `<name>` | `read` | — |
 | npm metadata recalculation | repository level | `manage` | — |
@@ -525,12 +558,12 @@ NuGet:
 | Client operation | Coordinate | Actions | Ownership |
 |---|---|---|---|
 | Service index | repository level | `read` | — |
-| Flat container (version list, package download), registrations | ID; the canonical path of the document or file (R-NUGET-005): `{id}/index.json`, `{id}/{version}/{file}`, and `{id}/.registration/index.json` for every registration document | `read` | — |
-| Search, autocomplete | repository level; results filtered per ID, on the path of its version list `{id}/index.json` | `read` | — |
-| `dotnet nuget push` of a new version | ID; the path of the version's `.nupkg` | `deploy`; for the first version of the ID in the repository also the shadowing check | yes |
+| Flat container (version list, package download), registrations | ID; the canonical path of the document or file (R-NUGET-005): `{id}/index.json`, `{id}/{version}/{file}`, and `{id}/.registration/index.json` for every registration document; each version listed also on its `.nupkg`'s path, and a `.nuspec` of a version whose `.nupkg` is refused is missing (Q-AUTHZ-255) | `read` | — |
+| Search, autocomplete | repository level; results filtered per ID and version, on the path of its version list `{id}/index.json` and the version's `.nupkg` | `read` | — |
+| `dotnet nuget push` of a new version | ID; the paths of the version's `.nupkg` and of the generated `.nuspec` (Q-AUTHZ-256) | `deploy`; for the first version of the ID in the repository also the shadowing check | yes |
 | Push of an existing, deleted or moved-away version | ID | refused by the format (immutable versions with tombstones, [formats/nuget.md](formats/nuget.md) R-NUGET-006) | — |
-| `dotnet nuget delete` | ID; the path of the version's `.nupkg` | `delete`, whether the repository deletes or unlists | yes |
-| Relist | ID; the path of the version's `.nupkg` | `deploy` | yes |
+| `dotnet nuget delete` | ID; the path of the version's `.nupkg`, and in deleteMode `delete` also of its `.nuspec` and `.snupkg`; a version the caller may not read answers as a missing one (Q-AUTHZ-256) | `delete`, whether the repository deletes or unlists | yes |
+| Relist | ID; the path of the version's `.nupkg`; a version the caller may not read answers as a missing one | `deploy` | yes |
 | Symbol package push | ID; the path of the version's `.snupkg` | `deploy` | yes |
 
 The NuGet API key header carries a credential (INV-8) and plays no further part in authorization.
@@ -5577,8 +5610,8 @@ the road a client takes most; a path the format leaves out has to cost the calle
 core would hide the format that forgot it and cannot know a write's path; refusing path patterns would decide on
 repositories that do not exist yet. Deciding the core's package questions on the package document keeps a listing equal to
 the document a client would fetch. The development agent would revisit this if a format serves a document that spans
-packages under one path (then its rows need paths of their own), or if an operation that removes several files (H-586 in
-[permissions.md](../security/permissions.md)) has to be decided per file.
+packages under one path (then its rows need paths of their own), or if an operation that removes several files has to be
+decided per file (H-586, which Q-AUTHZ-256 decided that way).
 
 **Applied:** R-AUTHZ-005 (the rule for a coordinate without a path, the paths a format reports, examples, acceptance),
 R-AUTHZ-007 (the path of every row), R-AUTHZ-023; [architecture.md](architecture.md) R-ARCH-010 check 13;
@@ -5603,7 +5636,7 @@ document and the tarball's version although the ceiling admitted them), and a ru
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) The view and check-exposure decide a package, its versions and its tags on the package document's path, and a rule's path set fails a package item without one (chosen) | `ExposureView` carries the format's package-document path (`catalog.Entry.DocumentPath`, through the ceiling's catalog); check-exposure judges the package, the versions and the tags on it; `compiledRule.evaluate` uses `matchPath` | The view, the ceiling, a listing row and the preview agree on one path; a rule that names a package's folder exposes the package | A path rule finer than a package's folder hides files and leaves the document listing them (H-646 in [endpoints-and-exposure.md](../security/endpoints-and-exposure.md)) |
+| (a) The view and check-exposure decide a package, its versions and its tags on the package document's path, and a rule's path set fails a package item without one (chosen) | `ExposureView` carries the format's package-document path (`catalog.Entry.DocumentPath`, through the ceiling's catalog); check-exposure judges the package, the versions and the tags on it; `compiledRule.evaluate` uses `matchPath` | The view, the ceiling, a listing row and the preview agree on one path; a rule that names a package's folder exposes the package | A path rule finer than a package's folder hides files and leaves the document listing them (H-646, closed by Q-EP-85) |
 | (b) The view ignores path patterns | Only the ceiling applies them | No path needed | The preview and the documents disagree with what the ceiling serves |
 | (c) Refuse path patterns on package formats in exposure rules | 422 for a rule with paths on npm or NuGet | Nothing to decide | Breaks what R-EP-012 allows and the warning `path_patterns_on_package_format` already covers |
 
@@ -5650,7 +5683,7 @@ Context: the second penetration test of F-82. NuGet stores `{lower_id}/{lower_ve
 dimension is compared as written, so a grant with `paths.exclude: ["Acme.Secret/**"]` excluded nothing and the caller
 read `acme.secret`; the policy API took the pattern without a word. The warning `path_patterns_on_package_format` was given
 for an include only, although an exclude finer than a package's folder is the shape that hides files and leaves their
-contents in the documents (H-647).
+contents in the documents (H-647, closed by Q-AUTHZ-255).
 
 | Option | What it means | For | Against |
 |---|---|---|---|
@@ -5707,6 +5740,147 @@ gains paths whose case carries meaning.
 code `internal/authz/{pattern.go,index.go,decide.go,ci.go,exposure.go,exposure_service.go}`. Tests: the folding cases of
 `TestR_AUTHZ_005_AnUpperCasePathPatternOnALowerCaseFormatIsRefused`, the upper-case case of
 `TestR_AUTHZ_005_PathPatternsDecideTheNuGetProtocolOnCanonicalPaths` (integration).
+
+### Q-AUTHZ-255 · A version is decided on its file's path as well as on the package document's, and every place that shows a package shows only the versions the caller may read
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: finding F-83 (the penetration test of the F-82 fix, 2026-11-08, reproduced the same day by
+`TestR_AUTHZ_005_AVersionPathPatternHidesTheVersionFromNPMDocuments`, `…FromNuGetDocuments` and
+`TestR_EP_018_AVersionPathRuleHidesTheVersionFromNPMDocuments` before the change). Q-AUTHZ-250 decided a package, a listing
+row and a document on the package document's path. A path pattern finer than a package's folder therefore hid the files it
+named and left what they hold everywhere the package is shown: with `paths.exclude: ["hidden/-/hidden-2.0.0.tgz"]` the
+tarball answered 404 while the package document listed 2.0.0 with its manifest and the README, `hidden/2.0.0` answered 200,
+the package API named 2.0.0 the latest and served its README; with `paths.exclude: ["acme.secret/2.0.0/**"]` the NuGet
+version list, the registrations and the search listed 2.0.0 with its description (`q=TOPSECRET` found it). An exposure
+rule's path exclude of one tarball did the same on its endpoint (H-646).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The format names the file of a version, the decision point decides a version on it as well, and the documents filter for the caller (chosen) | `formats.VersionPather` (npm's tarball, NuGet's `.nupkg`) reaches the decision point as `catalog.Entry.VersionPath`; `ReadScope.MayRead(repo, pkg, version)` decides the document's path and the version's file's path, and allows only if both do; `ReadScope.VersionsByPath` says whether the caller's own grants (a grant, the token scope or a CI contribution with a path pattern) decide versions one by one; a local document of such a caller is filtered through `formats.CallerVersions`, and its rendition key and validator carry the fingerprint of the hidden versions | Every place that shows a version - document, single-version document, dist-tags, registration, search, package screens, findings - agrees with the download of its file; a caller without path patterns pays nothing | A document request of a caller with path patterns costs the version list of the revision once per replica, and its renditions are cached per set of hidden versions; a listing decides an allowed version twice (two evaluations, no statement) for such a caller and on an endpoint with rules, which doubles the decisions of H-299 and H-335 for them |
+| (b) Refuse path patterns finer than a package's folder on package formats | 422 for `<name>/-/**`, `<id>/<version>/**`, a single file | No version-level decision | The layout of a format's files is not in the catalog, so "finer than a folder" cannot be told apart from a folder pattern when a grant is written; a selector covers repositories created later (the argument of Q-AUTHZ-250 (c)); the shape is legitimate (hide one leaked release) |
+| (c) Filter documents only, keep listings on the document's path | The handlers filter; `MayRead` stays as it is | Smaller change | The package screens, the search and the findings keep showing the hidden version; two answers for one version |
+| (d) Decide a version on its file's path alone | `MayRead` with a version asks the file's path only | One decision per version | A pattern that admits the files and not the document (`acme.core/1.0.0/**` alone) would list versions of a package whose document the caller may not read |
+
+**Choice:** (a). `Engine.atVersion` completes a coordinate with a version and no path with the version's file's path;
+`readScope.MayRead` asks it after the document's path when the subject's grants or the endpoint's rules can tell the two
+apart (`readsByPath`, `exposesEverything`). `VersionIndependent` is false for a scope whose classified repositories are
+read by path. A local npm document (full, abbreviated, single-version, dist-tags, the document of `?write=true`) and a local
+NuGet version list and registration document filter with the caller's view; the rendition key and the validator carry
+`formats.HiddenFingerprint` of the hidden versions of the revision (empty, and so shared with every caller, when nothing is
+hidden), and a rendering of rows read at another revision than the one fingerprinted is served and not kept; the version
+list of a revision is kept in the rendition cache under that revision (`formats.LiveVersions`), so a cached document of such a
+caller still costs one statement (R-ARCH-027). A package whose every version is hidden answers like a missing one. A
+NuGet `.nuspec` of a hidden version is a missing file. The exposure view decides a version on both paths too (Q-EP-85).
+Kit check 13 fails a format whose package document lists a version whose file the caller may not read.
+
+**Rationale:** a document entry is a copy of what the version's file holds, so a version may be shown exactly when its file
+may be read; deciding it on both paths keeps the document rule of Q-AUTHZ-250 and adds the file. Keying a rendition by the
+hidden versions instead of by the caller keeps the cache key a function of what was rendered, so no inventory of a caller's
+inputs can be incomplete. The development agent would revisit this if a format's version has content in more than one file
+that a document shows (then `VersionPather` names several), or if the per-caller renditions crowd the cache in practice.
+
+**Applied:** R-AUTHZ-005 (the rule, examples, acceptance), [architecture.md](architecture.md) R-ARCH-008 (the contract),
+R-ARCH-010 check 13, R-ARCH-027 (the budget of a document of such a caller), [endpoints.md](endpoints.md) Q-EP-85,
+[formats/npm.md](formats/npm.md) Q-NPM-82, [formats/nuget.md](formats/nuget.md) Q-NUGET-120,
+[vulnerability-scanning.md](vulnerability-scanning.md) Q-VULN-81 (what the decision looks at); ADR-174. Code:
+`internal/authz/{package_path.go,visible.go,ci.go,exposure.go,exposure_service.go}`, `internal/formats/{formats.go,versions.go,virtual.go}`,
+`internal/formats/catalog/catalog.go`, `internal/formats/npm/{versions.go,handlers_document.go,handlers_disttags.go,handlers_virtual.go,format.go}`,
+`internal/formats/nuget/{documents.go,handlers_flat.go,handlers_registration.go,handlers_delete.go,match.go}`,
+`internal/formats/formattest/{checks_authz.go,host.go}`. Tests: `TestR_AUTHZ_005_AVersionIsDecidedOnItsFilesPath`,
+`TestR_EP_018_TheViewDecidesAVersionOnItsFilesPath`, the two integration tests above, `TestR_ARCH_010_Defects`
+(`lists-hidden-versions`), `TestR_ARCH_027_ADocumentOfACallerWithPathPatternsCostsOneStatement` (the budget).
+
+### Q-AUTHZ-256 · A write is decided on every file it writes or removes, whether or not the file is there, and a version the caller may not read is not the caller's to change
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: finding F-83 part 2 (H-586, reproduced the same day by `TestR_AUTHZ_005_AnNPMWriteIsDecidedOnEveryFileItWritesOrRemoves`
+and `…ANuGetWriteIsDecidedOnEveryFileItWritesOrRemoves`). A protocol write was decided on one path and wrote or removed more:
+an npm revisioned `PUT` and a package unpublish removed a version's tarball the caller's grant excluded (`/files/` refused
+the same `DELETE`), a publish stored a provenance bundle under an excluded `**/*.sigstore`, a NuGet delete removed an excluded
+`.snupkg` and `.nuspec`, a push stored an excluded generated `.nuspec`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Decide every path the operation can write or remove, before anything is written, whether or not a file is there; the first refusal refuses the whole operation; a version the caller may not read is left alone (chosen) | npm publish: the tarball and, with a bundle, the bundle; npm unpublish (both forms): the tarball and the bundle of every removed version; NuGet push: the `.nupkg` and the generated `.nuspec`; NuGet delete in mode delete: the `.nupkg`, the `.nuspec` and the `.snupkg`. A batch of paths is decided with `Host.PathsAllowed` (no audit event) and refused with the `Authorize` of the first path not held. An unpublish keeps the versions the caller may not read; a dist-tag at such a version, a NuGet delete, unlist or relist of one answer as for a missing version | `/files/` and the protocol refuse the same change of the same file; the answer tells nothing of which files exist; a caller cannot change what it cannot see | A grant that excludes one kind of file (`**/*.snupkg`) refuses every delete of a version, also one without that file |
+| (b) Decide only the files that exist | The paths of the stored items of the operation | A version without a bundle can be unpublished under `**/*.sigstore` | The refusal says that the file exists, which the caller may not read: an existence oracle |
+| (c) Refuse an operation whose paths a pattern finer than the folder splits | Decide the folder | Simple | Needs the format's layout in the decision point; same result as (a) for the common case |
+
+**Choice:** (a). The npm unpublish decides in its transaction, because the versions it removes are read under the package
+row lock; the decisions ask no statement and are made on the index the commit-time decision moved the request to
+(`Host.Write`, R-AUTHZ-015), as every other decision of the transaction. The others decide before the body is stored or the
+transaction opens. A version the caller's grants hide is not removed by an unpublish of the whole package either: the
+caller's unpublish removes what the caller sees, and the package keeps the rest (the answers: [formats/npm.md](formats/npm.md)
+Q-NPM-84). What a route names is decided by the route; what a folder it removes holds besides is decided by the host
+(Q-AUTHZ-257).
+
+**Rationale:** a change of a file is a change of that file, whatever route carries it; deciding every possible path keeps the
+answer independent of what exists. The development agent would revisit (b) if a grant shape that excludes one kind of file
+proves common for callers who delete.
+
+**Applied:** R-AUTHZ-005 (examples, acceptance), [formats/npm.md](formats/npm.md) Q-NPM-83, [formats/nuget.md](formats/nuget.md)
+Q-NUGET-121, [architecture.md](architecture.md) R-ARCH-008 (`Host.PathsAllowed`); ADR-174. Code: `internal/formats/npm/{publish.go,handlers_unpublish.go,paths.go}`,
+`internal/formats/nuget/{handlers_publish.go,handlers_delete.go}`, `internal/formathost/host.go` (`PathsAllowed`). Tests: the two
+integration tests above.
+
+### Q-AUTHZ-257 · Every file a format's removal takes is decided for the caller, the files of a folder it names included
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the code review of F-83. NuGet's hard delete removes the folder `{id}/{version}` through the package writer and decides
+three files of it (the `.nupkg`, the `.nuspec`, the `.snupkg`, Q-NUGET-121). A folder can hold more: the embedded files of
+R-NUGET-024 (`.embedded/*`) and symbol files (`.symbols/**`) are paths the classification places in the version, and no local
+route stores them today. A file of the folder that the route does not name was removed without a decision, a removal `/files/`
+refuses file by file. The items layer's `RemoveIn` decided nothing ("the caller decided every path before"). The remover of the
+OCI work package guards what a storage hook cascades to, not the files of a folder a route names.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The host decides every file a removal of a request takes, in the transaction, before any is removed (chosen) | `items.RemoveSpec.Check` receives the files of the removal, the subtree of a folder included; the writer of `Host.Write` sets it to `removalAllowed`: `Host.PathsAllowed` for `delete`, and the first file refused refuses the whole removal with that file's audited refusal (`Authorize`) | Holds every format to it, whatever its folders hold later; the decision follows what exists, read in the transaction that removes it | A refusal of a file that exists tells that it exists; a file the route already decided is decided again |
+| (b) The NuGet route names a fixed list of a version's files | `.nupkg`, `.nuspec`, `.snupkg`, the three embedded files | No host change | A symbol file has an arbitrary path; a file a later route stores under the folder is missed again |
+| (c) Delete the named files instead of the folder | Remove what the route decided | Exact | Leaves behind what the folder holds besides, a version half removed |
+
+**Choice:** (a). A route keeps deciding the paths it names, whether or not they exist (Q-AUTHZ-256), so its answer does not
+depend on what exists; the host's check adds the files the route does not name. The refusal is audited as every refusal of a
+write is, and the guard of a storage hook's cascade (`cascadeAllowed`, Q-OCI-76), which answered with an unaudited 403, now
+refuses through the same function: a refused file of a folder and a refused file of a cascade answer and audit alike.
+
+**Rationale:** the removal's own list is the only complete list of what it takes. The development agent would revisit the
+existence signal if a format stores files under a version's folder that a caller who may delete the version must not learn of.
+
+**Applied:** R-AUTHZ-005 (acceptance), [formats/nuget.md](formats/nuget.md) R-NUGET-013, Q-NUGET-121. Code: `internal/items/delete.go`
+(`RemoveSpec.Check`), `internal/formathost/{host.go,writer.go}` (`removalAllowed`). Test: the folder case of
+`TestR_AUTHZ_005_ANuGetWriteIsDecidedOnEveryFileItWritesOrRemoves`.
+
+### Q-AUTHZ-258 · A format whose paths place files in versions names the file of a version, and the kit holds every such format to it
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the code review of F-83 (M3). The fifth rule of kit check 13 ran only for a format that implements `VersionPather`, so
+a format without it passed. OCI had none: `catalog.Entry.VersionPath` was nil for it, so the package screens
+(`packages/view/service.go`) decided an image's versions, its tags, on the tags list `<name>/_taglist` alone (OCI has no
+vulnerability adapter, so no vulnerability report lists a tag), and a path pattern that hides one tag (`team/app/_tags/v2`) left the tag listed there while the tags list
+of `/v2/` left it out (Q-OCI-140). The OCI fixture also had no package document that named a stored version, so even with the
+interface the rule would have judged nothing (a tags list seeded in the data port's twin and not through a push has no package
+rows).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The fifth rule is mandatory, and OCI names its tag path (chosen) | The kit fails a format with package names whose fixture places a path in a version (a path case, or a content case's canonical path, that `Classify` gives a version) and that has no `VersionPather`; it fails a fixture that serves package documents and judges no version; OCI's `VersionPath` is `TagPath`, the item that holds the manifest a tag points at; its fixture gains the tags list of a pushed tag | Every format that has versions with files is held to the rule, the next one included; the package screens and the tags list decide a tag on one path | A fixture has to seed a document through the format's own writes |
+| (b) Keep the rule opt-in | A format chooses | No fixture work | A format that forgets the interface passes, as OCI did |
+| (c) The manifest path as OCI's version file | `<name>/_manifests/<digest>` | The bytes themselves | A version is a tag, and a pattern names tags; the tag's item is the one a pull by tag is decided on |
+
+**Choice:** (a). The test format without `VersionPather` fails check 13 and no other check.
+
+**Rationale:** a rule a format can skip by omission is no rule; the classification already says which paths belong to versions, so
+the kit knows when the interface is missing. The development agent would revisit (c) if OCI versions become digests.
+
+**Applied:** [architecture.md](architecture.md) R-ARCH-010 (check 13, acceptance), R-AUTHZ-005, [formats/oci.md](formats/oci.md)
+(the package version). Code: `internal/formats/formattest/checks_authz.go` (`versionsHaveAFile`, the count of judged versions),
+`internal/formats/formattest/testformat/format.go` (`WithoutVersionPath`), `internal/formats/oci/paths.go` (`VersionPath`), the
+OCI fixture. Tests: `TestR_ARCH_010_Defects` (the format without `VersionPather`, `versions-outside-rows` for a fixture that judges no version), `TestR_ARCH_010_Conformance` of OCI,
+`TestR_AUTHZ_005_APathPatternOnATagHidesItFromThePackageAPI` (integration, red without OCI's `VersionPath`).
 
 ### Q-AUTHZ-260 · A job carries who asked, and reads what that subject holds for every batch
 

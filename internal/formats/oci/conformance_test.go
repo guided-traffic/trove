@@ -3,6 +3,7 @@ package oci
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"net/http"
 	"strings"
@@ -79,6 +80,15 @@ func conformance() formattest.Fixture {
 			{Name: "blob", Path: "app/blobs/" + sha(seedLayer), Seed: seed},
 			{Name: "tags list", Path: "app/tags/list", Seed: func(h *formattest.Host) error {
 				bind(h).putTag("app", "1", digestN(1))
+				return nil
+			}},
+			// A tag pushed as a client pushes it, so the package rows hold it as a version: kit check 13 hides it and the tags list
+			// leaves it out (Q-AUTHZ-258). The twin's tags list is kept apart from the push, so the seed names the tag there too.
+			{Name: "tags list of a pushed tag", Path: "app/tags/list", Seed: func(h *formattest.Host) error {
+				if err := seed(h); err != nil {
+					return err
+				}
+				bind(h).putTag("app", "1", sha256.Sum256(seedManifest))
 				return nil
 			}},
 			{Name: "tags list of an unknown name", Path: "nothing/tags/list", Status: http.StatusNotFound, Seed: func(h *formattest.Host) error { bind(h); return nil }},
