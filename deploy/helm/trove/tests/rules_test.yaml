@@ -20,7 +20,13 @@ tests:
       - {series: 'trove_vuln_source_consecutive_failures{namespace="default",source="osv",ecosystem="NuGet",pod="w1"}', values: '2x2000'}
       - {series: 'trove_vuln_claimed_name_matches{namespace="default",ecosystem="npm",kind="malicious",pod="w1"}', values: '0x2000'}
       - {series: 'trove_vuln_claimed_name_matches{namespace="default",ecosystem="npm",kind="vulnerability",pod="w1"}', values: '5x2000'}
+      - {series: 'trove_vuln_sync_records_total{namespace="default",source="osv",ecosystem="npm",result="rejected",pod="w1"}', values: '0x2000'}
+      - {series: 'trove_vuln_sync_records_total{namespace="default",source="osv",ecosystem="npm",result="rejected_malicious",pod="w1"}', values: '0x2000'}
+      - {series: 'trove_vuln_sync_records_total{namespace="default",source="osv",ecosystem="npm",result="written",pod="w1"}', values: '0+1000x2000'}
     alert_rule_test:
+      - {eval_time: 1500m, alertname: TroveVulnerabilityRecordsRejected, exp_alerts: []}
+      - {eval_time: 1500m, alertname: TroveVulnerabilityRecordsInvalid, exp_alerts: []}
+      - {eval_time: 1500m, alertname: TroveVulnerabilityMaliciousRecordRejected, exp_alerts: []}
       - {eval_time: 1500m, alertname: TroveVulnerabilityDataStale, exp_alerts: []}
       - {eval_time: 1500m, alertname: TroveVulnerabilitySyncFailing, exp_alerts: []}
       - {eval_time: 1500m, alertname: TroveVulnerabilityClaimedNameMalicious, exp_alerts: []}
@@ -91,6 +97,85 @@ tests:
       - eval_time: 8m
         alertname: TroveVulnerabilitySyncFailing
         exp_alerts: []
+
+  # --- TroveVulnerabilityRecordsRejected, TroveVulnerabilityMaliciousRecordRejected -----------------------
+  # The counters are created at 0 when the service is built (zeroRejected), so increase() sees the step. A record named MAL- that a
+  # bound rejected is counted under both results; written records, records that failed validation (result invalid) and another
+  # namespace never fire them.
+  - name: TroveVulnerabilityRecordsRejected fires on a record rejected by a bound and not on written or invalid records
+    interval: 1m
+    input_series:
+      - {series: 'trove_vuln_sync_records_total{namespace="default",source="osv",ecosystem="npm",result="rejected",pod="w1"}', values: '0 0 0 2 2 2 2 2'}
+      - {series: 'trove_vuln_sync_records_total{namespace="default",source="osv",ecosystem="NuGet",result="rejected",pod="w1"}', values: '0x8'}
+      - {series: 'trove_vuln_sync_records_total{namespace="default",source="osv",ecosystem="NuGet",result="invalid",pod="w1"}', values: '0 0 0 9 9 9 9 9'}
+      - {series: 'trove_vuln_sync_records_total{namespace="default",source="osv",ecosystem="npm",result="written",pod="w1"}', values: '0+500x8'}
+      - {series: 'trove_vuln_sync_records_total{namespace="default",source="osv",ecosystem="npm",result="rejected_malicious",pod="w1"}', values: '0x8'}
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: TroveVulnerabilityRecordsRejected
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: TroveVulnerabilityRecordsRejected
+        exp_alerts:
+          - exp_labels: {severity: warning, source: osv, ecosystem: npm}
+            exp_annotations:
+              summary: Advisory records of osv npm were rejected by a size bound within the last seven days.
+              description: A record above a bound of one entry is not applied, and a record that was stored before keeps its older copy; the package it names may be missing from the data (R-VULN-004, Q-VULN-116). Records that fail validation are the result "invalid" and do not fire this alert. The worker logs each one at WARN with its entry, size and limit. If a legitimate record is too large, raise vulnerabilities.sources.osv.max_record_size.
+      - {eval_time: 6m, alertname: TroveVulnerabilityMaliciousRecordRejected, exp_alerts: []}
+
+  # --- TroveVulnerabilityRecordsInvalid -------------------------------------------------------------------
+  # At least ten invalid records in 24 hours and more than 1 % of the records processed in that time: a burst of new records that
+  # fail validation fires it; a record now and then, a count under the floor of ten, or a count that is a small share of a full
+  # sync's hundreds of thousands does not.
+  - name: TroveVulnerabilityRecordsInvalid fires on a burst of records that fail validation
+    interval: 1m
+    input_series:
+      - {series: 'trove_vuln_sync_records_total{namespace="default",source="osv",ecosystem="npm",result="invalid",pod="w1"}', values: '0x1000 500x500'}
+      - {series: 'trove_vuln_sync_records_total{namespace="default",source="osv",ecosystem="npm",result="written",pod="w1"}', values: '0+10x1500'}
+      - {series: 'trove_vuln_sync_records_total{namespace="default",source="osv",ecosystem="NuGet",result="invalid",pod="w1"}', values: '0x1500'}
+      - {series: 'trove_vuln_sync_records_total{namespace="default",source="osv",ecosystem="NuGet",result="written",pod="w1"}', values: '0+10x1500'}
+    alert_rule_test:
+      - {eval_time: 900m, alertname: TroveVulnerabilityRecordsInvalid, exp_alerts: []}
+      - eval_time: 1100m
+        alertname: TroveVulnerabilityRecordsInvalid
+        exp_alerts:
+          - exp_labels: {severity: warning, source: osv, ecosystem: npm}
+            exp_annotations:
+              summary: More than 1 percent of the advisory records of osv npm failed validation within a day.
+              description: At least ten records, and more than one percent of those the sync processed in 24 hours, failed the rules of R-VULN-006 and were not applied; a record that was stored before keeps its older copy. A single record that fails is only counted and logged. Look at the worker log (message "an advisory record was rejected", attribute reason) for the first (R-VULN-004, Q-VULN-122).
+
+  - name: TroveVulnerabilityRecordsInvalid stays silent for single records, for a count under the floor and for a small share of a full sync
+    interval: 1m
+    input_series:
+      # one record now and then
+      - {series: 'trove_vuln_sync_records_total{namespace="default",source="osv",ecosystem="npm",result="invalid",pod="w1"}', values: '0x300 1x300 2x300 3x300 4x300'}
+      - {series: 'trove_vuln_sync_records_total{namespace="default",source="osv",ecosystem="npm",result="written",pod="w1"}', values: '0+10x1500'}
+      # five at once in a quiet day: over 1 % of what was processed, under the floor of ten
+      - {series: 'trove_vuln_sync_records_total{namespace="default",source="osv",ecosystem="NuGet",result="invalid",pod="w1"}', values: '0x1000 5x500'}
+      - {series: 'trove_vuln_sync_records_total{namespace="default",source="osv",ecosystem="NuGet",result="written",pod="w1"}', values: '0+1x1500'}
+      # twelve at once in a day of a full sync: over the floor, a thousandth of the records processed
+      - {series: 'trove_vuln_sync_records_total{namespace="default",source="osv",ecosystem="Go",result="invalid",pod="w1"}', values: '0x1000 12x500'}
+      - {series: 'trove_vuln_sync_records_total{namespace="default",source="osv",ecosystem="Go",result="skipped",pod="w1"}', values: '0+1000x1500'}
+    alert_rule_test:
+      - {eval_time: 1100m, alertname: TroveVulnerabilityRecordsInvalid, exp_alerts: []}
+      - {eval_time: 1500m, alertname: TroveVulnerabilityRecordsInvalid, exp_alerts: []}
+
+  - name: TroveVulnerabilityMaliciousRecordRejected fires on a rejected MAL- record and not on another namespace
+    interval: 1m
+    input_series:
+      - {series: 'trove_vuln_sync_records_total{namespace="default",source="osv",ecosystem="npm",result="rejected_malicious",pod="w1"}', values: '0 0 1 1 1 1'}
+      - {series: 'trove_vuln_sync_records_total{namespace="other",source="osv",ecosystem="NuGet",result="rejected_malicious",pod="w9"}', values: '0 0 4 4 4 4'}
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: TroveVulnerabilityMaliciousRecordRejected
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: TroveVulnerabilityMaliciousRecordRejected
+        exp_alerts:
+          - exp_labels: {severity: critical, source: osv, ecosystem: npm}
+            exp_annotations:
+              summary: A malicious-package advisory record of osv npm was rejected, by a bound or by validation, within the last seven days.
+              description: The record named MAL-... is not applied, so the package it names is not flagged or blocked by it (R-VULN-004, Q-VULN-122). Find the entry in the worker log (message "an advisory record was rejected"); the cause is the bound of one entry (its size) or a rule of R-VULN-006 (it failed validation).
 
   # --- TroveVulnerabilityClaimedNameMalicious -------------------------------------------------------------
   - name: TroveVulnerabilityClaimedNameMalicious fires on a malicious match and not on a vulnerability match

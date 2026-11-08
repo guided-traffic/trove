@@ -137,6 +137,33 @@ func TestGarbageCollectionTrigger(t *testing.T) {
 	}
 }
 
+// TestR_OPS_019_AFailedJobAnswersItsErrorAsAJobError reads a failed and a cancelled job through the response check of
+// R-API-002 and finds the members of the declared JobError (Q-OPS-186).
+func TestR_OPS_019_AFailedJobAnswersItsErrorAsAJobError(t *testing.T) {
+	e := newEnv(t, false)
+	c := e.cluster(e.newNode("web-1", nodeOpts{}))
+	admin := e.admin.header()
+
+	insert := func(state, errJSON string) string {
+		id := uuidV4()
+		e.exec("INSERT INTO trove.job (id, kind, queue, state, attempt, max_attempts, error, finished_at) VALUES ($1, 'probe', 'maintenance', $2, 2, 3, $3::jsonb, now())", id, state, errJSON)
+		return id
+	}
+	failed := insert("failed", `{"code":"job_failed","detail":"archive entry \"MAL-2026-1.json\" is larger than the limit","attempt":2}`)
+	cancelled := insert("cancelled", `{"code":"cancelled"}`)
+
+	got := send(t, c, "GET", "/api/v1/system/jobs/"+failed, nil, admin...)
+	em, _ := got.JSON(t)["error"].(map[string]any)
+	if got.Status != 200 || em["code"] != "job_failed" || em["attempt"] != float64(2) || !strings.Contains(em["detail"].(string), "MAL-2026-1.json") {
+		t.Fatalf("%d %s", got.Status, got.Body)
+	}
+	got = send(t, c, "GET", "/api/v1/system/jobs/"+cancelled, nil, admin...)
+	em, _ = got.JSON(t)["error"].(map[string]any)
+	if got.Status != 200 || em["code"] != "cancelled" || len(em) != 1 {
+		t.Fatalf("%d %s", got.Status, got.Body)
+	}
+}
+
 // TestJobAccessAndPaging covers who sees and cancels which job (R-API-015) and
 // the cursor walk over the jobs across replicas (R-API-010, R-API-051).
 func TestJobAccessAndPaging(t *testing.T) {

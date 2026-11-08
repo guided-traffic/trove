@@ -73,8 +73,10 @@ func TestR_VULN_004_FirstRunImportsBothArchives(t *testing.T) {
 			t.Errorf("%s: %d advisories queued for the evaluation, want %d", eco, got, info.Records)
 		}
 	}
-	var res []map[string]any
-	if err := json.Unmarshal([]byte(j.Result), &res); err != nil || len(res) != 2 {
+	var res struct {
+		Ecosystems []map[string]any `json:"ecosystems"`
+	}
+	if err := json.Unmarshal([]byte(j.Result), &res); err != nil || len(res.Ecosystems) != 2 {
 		t.Fatalf("result %s: %v", j.Result, err)
 	}
 	// The job that works the change off is the evaluation's.

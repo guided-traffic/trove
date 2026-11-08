@@ -228,7 +228,7 @@ The scanning of stored packages against public advisory data is being built in t
 | `vulnerabilities.sources.osv.base_url`, `.kev.url` | the OSV export bucket, the CISA catalog | `https` only |
 | `vulnerabilities.sources.osv.ecosystems` | `[]` | Narrows the imported ecosystems (`npm`, `NuGet`); empty means all of them |
 | `vulnerabilities.sources.osv.max_shrink` | `0.2` | The share of an ecosystem's records a full sync may delete before it is refused |
-| `vulnerabilities.sources.osv.max_archive_size`, `.max_record_size` | `1GiB`, `1MiB` | Largest archive and largest record |
+| `vulnerabilities.sources.osv.max_archive_size`, `.max_record_size` | `1GiB`, `8MiB` | Largest archive (a larger one fails the run) and largest record (a larger one is rejected and counted, the run goes on) |
 | `vulnerabilities.matching.public_upstreams` | npm `registry.npmjs.org`; NuGet `api.nuget.org`, `www.nuget.org` | The hosts of the public registries; a remote repository whose upstream is not listed is not scanned until it sets `matchPublicAdvisories: always` |
 | `vulnerabilities.findings.resolved_retention` | `9600h` | How long a resolved finding is kept |
 | `vulnerabilities.export.max_rows` | `100000` | The most rows of a findings export |

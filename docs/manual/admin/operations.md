@@ -123,6 +123,8 @@ The screen cannot see disruption budgets or free capacity on other nodes, becaus
 
 **Jobs** lists background jobs newest first, filtered by **Kind (comma separated)** and **State** (queued, running, cancelling, succeeded, failed, cancelled). A holder of `settings:read` sees every job, anyone else only the jobs they started. **Cancel** is offered for queued and running jobs to holders of `settings:write` and to whoever started the job; a running job shows cancelling until it reaches its next checkpoint. Through the API, whoever started the job cancels it with a browser session or a token with all permissions of the owner; a token with a restricted scope needs `settings:write` in its scope (`403` otherwise).
 
+The **Result** column of a job that did not succeed shows the error: its code (`job_failed`, `job_timeout`, `attempts_exhausted`, `cancelled` or `superseded`) and, when there is one, the detail as the server wrote it and **Attempt *n* of *m***. The detail is the text of the failed attempt's error, cut to 2,000 bytes, and is not translated; it names what failed, for example the archive entry or the limit that a sync crossed. A job that is queued or running again after a failed attempt keeps the error of the attempt before, so the attempt shown can be lower than the job's own. The result of a succeeded job is a short summary of its figures; a list in it, such as the ecosystems of an advisory sync, shows its length.
+
 ### Backups
 
 The chart's backup is off until you set `backup.enabled: true` and a bucket of its own in `config.backup.target.bucket` ([Installation](installation.md)); while it is off, the screen below shows **No backup yet** and the command to start a backup carries placeholders.
@@ -271,6 +273,9 @@ The scanning needs the `worker` role: the sync of the advisory data and the eval
 |---|---|---|
 | `TroveVulnerabilityDataStale` | no sync run of a source and ecosystem has ended successfully for longer than `vulnerabilities.stale_after` (default 24h, read from `config.vulnerabilities.stale_after`) for 15 minutes. A source that never synced counts: its last success is 0 | warning |
 | `TroveVulnerabilitySyncFailing` | three consecutive runs of one source and ecosystem failed; a cancelled run does not count. The last error is on the sources page of the vulnerability section | warning |
+| `TroveVulnerabilityRecordsRejected` | the sync rejected an advisory record above a size bound (larger than `max_record_size`) within the last seven days; the worker's log names it. Records that fail validation are counted separately and do not fire it. Stays on for seven days after the last rejection | warning |
+| `TroveVulnerabilityRecordsInvalid` | at least ten records, and more than 1 % of those the sync processed in 24 hours, failed validation and were not applied; a single record that fails is only counted and logged | warning |
+| `TroveVulnerabilityMaliciousRecordRejected` | a malicious-package record (`MAL-…`) was rejected, by a size bound or by validation, so the package it names is not flagged or blocked by it | critical |
 | `TroveVulnerabilityClaimedNameMalicious` | a malicious-package advisory names a package name that a local repository claims | critical |
 | `TroveBlobMissing` | a replica found the object of a blob missing from the object store within the last hour (see "When the object store loses objects" above; a gateway in front of the store that answers 404 fires it too) | critical |
 

@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/blob"
@@ -33,7 +34,7 @@ func (s *Service) osvURL(ecosystem, name string) string {
 func (s *Service) get(ctx context.Context, rawURL string, hdr ...string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
-		return nil, problemf(errs.CodeUpstreamError, "the source URL is not valid", err)
+		return nil, problemf(errs.CodeUpstreamError, "the source URL is not valid", redacted(err))
 	}
 	for i := 0; i+1 < len(hdr); i += 2 {
 		req.Header.Set(hdr[i], hdr[i+1])
@@ -51,13 +52,37 @@ func (s *Service) transportError(ctx context.Context, err error) error {
 	case released(ctx):
 		return context.Cause(ctx)
 	case errors.Is(err, outbound.ErrEgressDenied):
-		return problemf(errs.CodeEgressDenied, "the address policy refuses the source's address", err)
+		return problemf(errs.CodeEgressDenied, "the address policy refuses the source's address", redacted(err))
 	case errors.Is(err, context.DeadlineExceeded):
-		return problemf(errs.CodeUpstreamTimeout, "the source did not answer in time", err)
+		return problemf(errs.CodeUpstreamTimeout, "the source did not answer in time", redacted(err))
 	case ctx.Err() != nil:
 		return ctx.Err()
 	}
-	return problemf(errs.CodeUpstreamUnreachable, "the source could not be reached or the transfer broke off", err)
+	return problemf(errs.CodeUpstreamUnreachable, "the source could not be reached or the transfer broke off", redacted(err))
+}
+
+// redactedError is a transport error without the URL it carries: the URL of a request may hold userinfo, a token in its path or a
+// query, and the error ends in the error of a job, which readers of the jobs API see. Only scheme and host remain.
+type redactedError struct {
+	msg string
+	err error
+}
+
+func (e *redactedError) Error() string { return e.msg }
+func (e *redactedError) Unwrap() error { return e.err }
+
+// redacted returns err with the URL of a *url.Error reduced to scheme and host; an error that carries no URL is returned as it
+// is. The text of the error inside is kept, and errors.Is and errors.As still reach it.
+func redacted(err error) error {
+	var ue *url.Error
+	if err == nil || !errors.As(err, &ue) {
+		return err
+	}
+	where := "<invalid URL>"
+	if u, perr := url.Parse(ue.URL); perr == nil && u.Host != "" {
+		where = u.Scheme + "://" + u.Host
+	}
+	return &redactedError{msg: fmt.Sprintf("%s %q: %v", ue.Op, where, ue.Err), err: err}
 }
 
 // unexpected is the problem of a status the run does not expect.
@@ -102,12 +127,22 @@ func (a *archive) Close() {
 	}
 }
 
+// archiveTooLarge is the problem of an archive above max_archive_size; size is the length the source or the mirror declared, not
+// positive when none is known (Q-VULN-121).
+func archiveTooLarge(limit, size int64, cause error) error {
+	detail := fmt.Sprintf("the archive is larger than vulnerabilities.sources.osv.max_archive_size (%d bytes)", limit)
+	if size > 0 {
+		detail += fmt.Sprintf(": %d bytes", size)
+	}
+	return problemf(errs.CodeArchiveTooLarge, detail, cause)
+}
+
 // spooled admits a body to the spool under the archive size limit and wraps it.
 func (s *Service) spooled(ctx context.Context, body io.Reader, length int64) (*archive, error) {
 	sp, err := s.o.Spool.Ingest(ctx, body, blob.IngestOptions{ContentLength: length, MaxSize: int64(s.o.Config.Sources.OSV.MaxArchiveSize)})
 	if err != nil {
 		if e, ok := errs.As(err); ok && e.Kind == errs.TooLarge {
-			return nil, problemf(errs.CodeArchiveTooLarge, "the archive is larger than vulnerabilities.sources.osv.max_archive_size", err)
+			return nil, archiveTooLarge(int64(s.o.Config.Sources.OSV.MaxArchiveSize), length, err)
 		}
 		if e, ok := errs.As(err); ok {
 			return nil, problemf(e.Code, "the archive could not be admitted to the spool: "+e.Detail, err)
@@ -185,6 +220,8 @@ type rowSink struct {
 	watermark time.Time
 	rows      []changeRow
 	bad       int
+	// badLines are the first rows that did not parse, cut, so that the rejection log can name them (Q-VULN-119).
+	badLines []string
 	// limit is the number of rows after which the run turns full; 0 is none.
 	limit int
 	over  bool
@@ -199,6 +236,9 @@ func (k *rowSink) add(line []byte) {
 	r, ok := parseChangeRow(line)
 	if !ok {
 		k.bad++
+		if len(k.badLines) < maxRejectLines {
+			k.badLines = append(k.badLines, cut(string(bytes.TrimSpace(line))))
+		}
 		return
 	}
 	if !r.Modified.After(k.watermark) {
@@ -226,7 +266,7 @@ func (s *Service) changeRows(ctx context.Context, ecosystem string, watermark ti
 		}
 		if full {
 			// A server that ignores Range sent the whole file: its rows replace what was read so far.
-			sink.rows, sink.bad, carry = nil, 0, nil
+			sink.rows, sink.bad, sink.badLines, carry = nil, 0, nil, nil
 			if err := scanLines(data, &carry, sink, true); err != nil {
 				return nil, err
 			}
@@ -337,32 +377,85 @@ func parseContentRange(v string) (start, end, total int64, ok bool) {
 	return start, end, total, true
 }
 
-// fetchRecord reads <base>/<ecosystem>/<id>.json; found is false for a 404 (left to the next full sync). tooLarge is true for a
-// record above max_record_size.
-func (s *Service) fetchRecord(ctx context.Context, ecosystem, id string) (body []byte, found, tooLarge bool, err error) {
-	pctx, cancel := context.WithTimeout(ctx, PartTimeout)
+// fetchRecord reads <base>/<ecosystem>/<id>.json. found is false for a 404 (left to the next full sync); tooLarge is true for a
+// record above max_record_size, and size is then the length the response declared, 0 when it declared none. The body is counted
+// in gate while it waits for the decoder: before it is read when the response declares its length, after it when it does not.
+// The caller releases f.held once it has decoded the body.
+func (s *Service) fetchRecord(ctx context.Context, ecosystem, id string, gate *byteGate) (f fetched) {
+	f.id = id
+	// The timeout of a record covers its request and the read of its body, not the wait at the gate: that wait is for the decoder,
+	// which is the run's own, and it ends with the run's context.
+	pctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	begin := time.Now()
+	var timedOut atomic.Bool
+	timer := time.AfterFunc(s.partTimeout(), func() {
+		timedOut.Store(true)
+		cancel()
+	})
+	defer timer.Stop()
+	fail := func(err error) fetched {
+		if timedOut.Load() && ctx.Err() == nil {
+			f.err = problemf(errs.CodeUpstreamTimeout, "the source did not answer in time", nil)
+		} else {
+			f.err = s.transportError(pctx, err)
+		}
+		return f
+	}
 	resp, err := s.get(pctx, s.osvURL(ecosystem, id+".json"), "Accept", "application/json")
 	if err != nil {
-		return nil, false, false, err
+		if timedOut.Load() && ctx.Err() == nil {
+			return fail(err)
+		}
+		f.err = err
+		return f
 	}
 	defer resp.Body.Close()
 	switch resp.StatusCode {
 	case http.StatusOK:
 	case http.StatusNotFound:
-		return nil, false, false, nil
+		return f
 	default:
-		return nil, false, false, unexpected("the record", resp.StatusCode)
+		f.err = unexpected("the record", resp.StatusCode)
+		return f
 	}
-	max := int64(s.o.Config.Sources.OSV.MaxRecordSize)
-	b, err := io.ReadAll(io.LimitReader(resp.Body, max+1))
+	limit := int64(s.o.Config.Sources.OSV.MaxRecordSize)
+	if declared := min(max(resp.ContentLength, 0), limit+1); declared > 0 {
+		timer.Stop()
+		spent := time.Since(begin)
+		if err := gate.acquire(ctx, declared); err != nil {
+			f.err = s.transportError(ctx, err)
+			return f
+		}
+		f.held = declared
+		// The body read gets what is left of the timeout, so that the request and the read together take one timeout.
+		timer.Reset(max(s.partTimeout()-spent, time.Millisecond))
+	}
+	b, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
-		return nil, false, false, s.transportError(pctx, err)
+		gate.release(f.held)
+		f.held = 0
+		return fail(err)
 	}
-	if int64(len(b)) > max {
-		return nil, true, true, nil
+	if extra := int64(len(b)) - f.held; extra > 0 {
+		gate.add(extra)
+		f.held += extra
 	}
-	return b, true, false, nil
+	f.found = true
+	if int64(len(b)) > limit {
+		f.tooLarge, f.size = true, max(resp.ContentLength, 0)
+		return f
+	}
+	f.body = b
+	return f
+}
+
+// partTimeout is the timeout of one record or one part of the change file.
+func (s *Service) partTimeout() time.Duration {
+	if s.partTimeoutOverride > 0 {
+		return s.partTimeoutOverride
+	}
+	return PartTimeout
 }
 
 // fetchDocument reads a document with the conditional header and a size bound; notModified is true for a 304.

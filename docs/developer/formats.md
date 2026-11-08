@@ -431,7 +431,7 @@ A format maps both to the codes of its protocol; `IsTooLarge` and `IsRefused` cl
 | [json.go](../../internal/formats/untrusted/json.go) | `CheckJSON` (one pass over the bytes for nesting depth and number of values, strings skipped), `DecodeJSON`, `UnmarshalJSON` |
 | [xml.go](../../internal/formats/untrusted/xml.go) | `CheckXML` (any declaration, so any document type declaration, is refused; nesting depth; well-formedness; UTF-8 only), `DecodeXML`, `UnmarshalXML` |
 | [tar.go](../../internal/formats/untrusted/tar.go) | `NewTarGz`, `TarReader` (`Next`, `Read`, `ReadEntry`), `CountTarGz` |
-| [zip.go](../../internal/formats/untrusted/zip.go) | `NewZip`, `ZipReader` (`Entries`, `ReadEntry`) |
+| [zip.go](../../internal/formats/untrusted/zip.go) | `NewZip`, `NewZipDeclared`, `ZipReader` (`Entries`, `CheckEntry`, `ReadEntry`); `CheckEntry` judges the bounds of one entry (declared size, ratio) from its declaration and reads nothing, so a caller that can go on without the entry tells them from the bounds of the whole archive, which only `ReadEntry` meets; `Limits.DeclaredEntryCap` lets such a caller count a rejected entry at its bound toward the declared total (R-VULN-004, Q-VULN-116) |
 
 What the archive readers enforce, and what stays with the format:
 
@@ -439,9 +439,9 @@ What the archive readers enforce, and what stays with the format:
 |---|---|---|
 | Entry count | `Entries`, at the header | `Entries`, from the end record, before the standard library parses the directory |
 | Declared bytes of all files | `StreamBytes`, at the header | `StreamBytes`, at open |
-| Bytes read into memory | `UncompressedBytes` in total; `ReadEntry(max)` refuses a declared size above `max` (default `ManifestEntryBytes`) before inflating | the same, per `ReadEntry` |
+| Bytes read into memory | `UncompressedBytes` in total; `ReadEntry(max)` refuses a declared size above `max` (default `ManifestEntryBytes`) before inflating | the same, per `ReadEntry`; the size of one entry is also `CheckEntry`'s |
 | Inflated bytes | capped at `StreamBytes` plus a per-entry overhead, skipped content included | cut at the declared size; a stream that disagrees is refused |
-| Ratio | `Ratio` per entry read, measured on the compressed bytes the inflater consumed, with 128 KiB of read-ahead allowance | `Ratio` on the declared sizes, before inflating |
+| Ratio | `Ratio` per entry read, measured on the compressed bytes the inflater consumed, with 128 KiB of read-ahead allowance | `Ratio` on the declared sizes, before inflating (`CheckEntry`, and `ReadEntry` after the size and the memory bound) |
 | Names | A name used twice (a directory's trailing slash is no second name) is refused | The same, and the central directory's name must equal the local header's |
 | Entry types | Links, devices, sparse files refused | Links, encrypted entries and methods other than store and deflate refused |
 | After the archive | Only zero padding, a clean gzip trailer and no second member | No bytes in the central directory its entries do not account for |

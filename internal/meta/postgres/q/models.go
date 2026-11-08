@@ -984,6 +984,7 @@ type VulnAdvisory struct {
 	OwnCvssVersion    pgtype.Text
 	OwnCvssVector     pgtype.Text
 	OwnCvssScore      pgtype.Numeric
+	AdapterVersion    int32
 }
 
 type VulnAffected struct {
@@ -1079,6 +1080,8 @@ type VulnSourceState struct {
 	MatcherVersion            int32
 	FullEvaluationRequestedAt pgtype.Timestamptz
 	AdapterVersion            int32
+	FullRejected              int32
+	RecordLimit               int64
 }
 
 type VulnSyncTouched struct {

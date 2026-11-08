@@ -558,18 +558,18 @@ same change; a feature that arrives takes its prefix out of `unbuiltPrefixes`.
 
 `metrics.prometheusRule.enabled` renders one PrometheusRule `<fullname>`, group `<fullname>`: every alert of
 [_rules.tpl](../../deploy/helm/trove/templates/_rules.tpl) except `disabledAlerts`, then `extraRules`, with `labels` on the object. With
-`backup.enabled` the rule holds 32 alerts; without it the last six, the alerts of the backup runs, are left out (26 alerts, Q-HA-17),
+`backup.enabled` the rule holds 35 alerts; without it the last six, the alerts of the backup runs, are left out (29 alerts, Q-HA-17),
 because with no CronJob no run succeeds and `TroveBackupStale` would fire one interval after every installation that leaves the backup
 off. A name of the six stays a valid entry of `disabledAlerts` either way. The order: `TroveReplicasNotReady`, `TroveDatabaseUnreachable`,
 `TroveObjectStoreUnreachable`, `TroveObjectStoreUnreachableSingleReplica`, `TroveDatabasePoolSaturated`, `TroveControlConnectionWaits`, `TroveJobsStuck`, `TroveLeaseLost`,
 `TroveMixedVersions`, `TroveSpoolNearlyFull` (rows of R-HA-045's table), `TroveVulnerabilityDataStale`, `TroveVulnerabilitySyncFailing`,
-`TroveVulnerabilityClaimedNameMalicious` (R-VULN-024), `TroveMirrorFailing`, `TroveMirrorStale` (R-OPS-046, Q-OPS-160, Q-OPS-167),
+`TroveVulnerabilityRecordsRejected`, `TroveVulnerabilityRecordsInvalid`, `TroveVulnerabilityMaliciousRecordRejected`, `TroveVulnerabilityClaimedNameMalicious` (R-VULN-024, Q-VULN-122), `TroveMirrorFailing`, `TroveMirrorStale` (R-OPS-046, Q-OPS-160, Q-OPS-167),
 `TroveBridgeLeftOn` (a `web` replica registered for 24 hours, Q-HA-92), `TroveBlobMissing` (a read found the object of a blob missing within the
 hour, R-HA-024, Q-STOR-152), `TroveGCStale`, `TroveBackupCheckFailed` (R-HA-023), `TroveRevocationJournalBacklog` (R-HA-054), `TroveRevocationJournalQuarantined` (a row set aside, Q-HA-162), `TroveValkeyUnavailable`, `TroveValkeyUnavailableSingleReplica`,
 `TroveValkeySentinelsDegraded`, `TroveValkeyFailoverFlapping`, `TroveValkeyPrimaryDisagreement` (rows of the table), `TroveBackupStale`,
 `TroveBackupFailed`, `TroveBackupRunningLong`, `TroveBackupGlobalHoldLong`, `TroveBackupSourceDamage` and `TroveBackupVerifyFindings` (R-BAK-014). Severities are in the spec's table (`critical`:
 `TroveReplicasNotReady`, `TroveDatabaseUnreachable`, `TroveObjectStoreUnreachable`, `TroveValkeyUnavailable`, `TroveValkeyPrimaryDisagreement`,
-`TroveVulnerabilityClaimedNameMalicious`, `TroveBlobMissing`, `TroveBackupCheckFailed`, `TroveRevocationJournalQuarantined`, `TroveBackupStale`, `TroveBackupFailed`,
+`TroveVulnerabilityMaliciousRecordRejected`, `TroveVulnerabilityClaimedNameMalicious`, `TroveBlobMissing`, `TroveBackupCheckFailed`, `TroveRevocationJournalQuarantined`, `TroveBackupStale`, `TroveBackupFailed`,
 `TroveBackupSourceDamage`, `TroveBackupVerifyFindings`; the others `warning`).
 
 **The platform check.** `TroveBackupCheckFailed` is `min(trove_backup_check_ok) == 0` for an hour. The gauge is exported by every replica

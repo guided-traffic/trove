@@ -4495,8 +4495,10 @@ Priority: **MVP** · Covers: trove-only
   untrusted bytes through them: `Limit` and `ReadAll` (a byte cap that fails instead of cutting),
   `DecodeJSON` and `DecodeXML` (byte cap, then a scan for depth and values or for declarations, then
   the decoder), `NewTarGz` and `NewZip` (entry count, declared and read bytes, ratio, duplicate
-  names, links, and for zip the names of the central directory against those of the local headers)
-  and `CountTarGz` (the streaming pass). A bound that is crossed answers `413`; a structure the
+  names, links, and for zip the names of the central directory against those of the local headers;
+  `ZipReader.CheckEntry` reports the bounds of one entry, its declared size and ratio, without
+  reading it, for a pass that rejects an entry instead of the archive, [vulnerability-scanning.md](vulnerability-scanning.md)
+  Q-VULN-116) and `CountTarGz` (the streaming pass). A bound that is crossed answers `413`; a structure the
   helpers refuse answers `422`. A format maps both to the codes of its own protocol.
 - These limits bind entries whose content is read into memory. A format MAY add a streaming pass
   that only counts entries and sums their sizes without keeping content, for example to record

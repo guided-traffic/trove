@@ -1272,8 +1272,8 @@
         <note category="location">src/app/core/http/problem-messages-vulnerability.ts:21</note>
       </notes>
       <segment>
-        <source>The advisory archive does not match the digest that was configured for it.</source>
-        <target>Das Advisory-Archiv passt nicht zu dem dafür konfigurierten Digest.</target>
+        <source>The advisory archive does not match the digest its source announced for it.</source>
+        <target>Das Advisory-Archiv passt nicht zu dem Digest, den seine Quelle dafür angekündigt hat.</target>
       </segment>
     </unit>
     <unit id="problem.vuln.archive-limit">
@@ -1281,8 +1281,8 @@
         <note category="location">src/app/core/http/problem-messages-vulnerability.ts:23</note>
       </notes>
       <segment>
-        <source>The advisory archive exceeds a limit on untrusted content and was not imported.</source>
-        <target>Das Advisory-Archiv überschreitet eine Grenze für nicht vertrauenswürdige Inhalte und wurde nicht importiert.</target>
+        <source>The advisory archive is damaged or crosses a limit of the archive as a whole, and was not imported.</source>
+        <target>Das Advisory-Archiv ist beschädigt oder überschreitet eine Grenze des gesamten Archivs und wurde nicht importiert.</target>
       </segment>
     </unit>
     <unit id="problem.vuln.too-many-invalid">
@@ -1290,8 +1290,8 @@
         <note category="location">src/app/core/http/problem-messages-vulnerability.ts:25</note>
       </notes>
       <segment>
-        <source>Too many records of the advisory archive were invalid, so the run was stopped and nothing was changed.</source>
-        <target>Zu viele Datensätze des Advisory-Archivs waren ungültig, daher wurde der Lauf angehalten und nichts geändert.</target>
+        <source>Too many records of the advisory archive were rejected, so the run was stopped and nothing was changed.</source>
+        <target>Zu viele Datensätze des Advisory-Archivs wurden abgelehnt, daher wurde der Lauf angehalten und nichts geändert.</target>
       </segment>
     </unit>
     <unit id="problem.vuln.shrink-refused">
@@ -19942,6 +19942,15 @@
         <target>Ergebnis</target>
       </segment>
     </unit>
+    <unit id="jobs.attempt">
+      <notes>
+        <note category="location">src/app/features/system/job-table.ts:67,68</note>
+      </notes>
+      <segment>
+        <source>Attempt <ph id="0" equiv="INTERPOLATION" disp="{{ attemptOf(j) }}"/> of <ph id="1" equiv="INTERPOLATION_1" disp="{{ j.maxAttempts }}"/></source>
+        <target>Versuch <ph id="0" equiv="INTERPOLATION" disp="{{ attemptOf(j) }}"/> von <ph id="1" equiv="INTERPOLATION_1" disp="{{ j.maxAttempts }}"/></target>
+      </segment>
+    </unit>
     <unit id="jobs.cancel">
       <notes>
         <note category="location">src/app/features/system/job-table.ts:71,72</note>
@@ -24693,6 +24702,15 @@
         <target>Aktuell</target>
       </segment>
     </unit>
+    <unit id="vuln.sources.rejected-full">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:133,134</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="INTERPOLATION" disp="{{ s.fullRejected | number }}"/> in the last full sync</source>
+        <target><ph id="0" equiv="INTERPOLATION" disp="{{ s.fullRejected | number }}"/> bei der letzten vollständigen Synchronisierung</target>
+      </segment>
+    </unit>
     <unit id="vuln.sources.run-group">
       <notes>
         <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:141</note>
@@ -24871,8 +24889,8 @@
         <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:195</note>
       </notes>
       <segment>
-        <source>Records of the last run that failed validation and were not stored.</source>
-        <target>Datensätze des letzten Laufs, die die Prüfung nicht bestanden haben und nicht gespeichert wurden.</target>
+        <source>Records of the last run that were rejected: they failed validation or crossed the size or compression limit of a record. Below it, the count of the last full sync, which an incremental run does not change. A rejected record that was stored before keeps its stored copy.</source>
+        <target>Datensätze des letzten Laufs, die abgelehnt wurden: Sie haben die Prüfung nicht bestanden oder die Größen- oder Kompressionsgrenze eines Datensatzes überschritten. Darunter steht die Zahl der letzten vollständigen Synchronisierung, die ein inkrementeller Lauf nicht ändert. Ein abgelehnter Datensatz, der zuvor gespeichert war, behält seine gespeicherte Kopie.</target>
       </segment>
     </unit>
     <unit id="vuln.sources.col-unevaluable">

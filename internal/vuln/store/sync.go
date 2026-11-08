@@ -54,6 +54,10 @@ type SyncState struct {
 	Records, Rejected, Unevaluable, MatcherVersion                  int
 	// AdapterVersion is the version of the format adapter's normalization the stored records were imported with (match.AdapterVersion).
 	AdapterVersion int
+	// FullRejected is the number of records the last full sync rejected (Rejected is that of the last run of any kind) and
+	// RecordLimit the max_record_size that sync completed with, 0 before one did (Q-VULN-122).
+	FullRejected int
+	RecordLimit  int64
 }
 
 // Complete reports whether a full import of the source has finished.
@@ -95,7 +99,7 @@ func (Sync) Get(ctx context.Context, db q.DBTX, source, ecosystem string) (SyncS
 		return SyncState{}, false, err
 	}
 	return stateOf(r.Source, r.Ecosystem, r.State, r.DataEpoch, r.Etag, r.ArchiveSha256, r.WatermarkUs, r.FullSyncedUs, r.SyncedUs,
-		r.AttemptedUs, r.Failures, r.LastError, r.Records, r.Rejected, r.Unevaluable, r.MatcherVersion, r.EvalRequestedUs, r.AdapterVersion), true, nil
+		r.AttemptedUs, r.Failures, r.LastError, r.Records, r.Rejected, r.Unevaluable, r.MatcherVersion, r.EvalRequestedUs, r.AdapterVersion, r.FullRejected, r.RecordLimit), true, nil
 }
 
 // Lock reads the row and locks it until the transaction ends; the row must exist ([Sync.Ensure]).
@@ -105,17 +109,18 @@ func (Sync) Lock(ctx context.Context, db q.DBTX, source, ecosystem string) (Sync
 		return SyncState{}, err
 	}
 	return stateOf(r.Source, r.Ecosystem, r.State, r.DataEpoch, r.Etag, r.ArchiveSha256, r.WatermarkUs, r.FullSyncedUs, r.SyncedUs,
-		r.AttemptedUs, r.Failures, r.LastError, r.Records, r.Rejected, r.Unevaluable, r.MatcherVersion, r.EvalRequestedUs, r.AdapterVersion), nil
+		r.AttemptedUs, r.Failures, r.LastError, r.Records, r.Rejected, r.Unevaluable, r.MatcherVersion, r.EvalRequestedUs, r.AdapterVersion, r.FullRejected, r.RecordLimit), nil
 }
 
 func stateOf(source, eco, state string, epoch int64, etag string, sha []byte, wm, full, synced, attempted int64, failures int32,
-	lastErr []byte, records, rejected, unevaluable, matcher int32, evalReq int64, adapter int32,
+	lastErr []byte, records, rejected, unevaluable, matcher int32, evalReq int64, adapter, fullRejected int32, recordLimit int64,
 ) SyncState {
 	return SyncState{
 		Source: source, Ecosystem: eco, State: state, DataEpoch: epoch, ETag: etag, ArchiveSHA256: sha,
 		Watermark: microTime(wm), FullSyncedAt: microTime(full), SyncedAt: microTime(synced), AttemptedAt: microTime(attempted),
 		EvalRequestedAt: microTime(evalReq), Failures: int(failures), LastError: jsonOrNil(lastErr),
 		Records: int(records), Rejected: int(rejected), Unevaluable: int(unevaluable), MatcherVersion: int(matcher), AdapterVersion: int(adapter),
+		FullRejected: int(fullRejected), RecordLimit: recordLimit,
 	}
 }
 
@@ -151,6 +156,8 @@ func (Sync) Save(ctx context.Context, db q.DBTX, s SyncState) error {
 		Records: int32(s.Records), Rejected: int32(s.Rejected), Unevaluable: int32(s.Unevaluable), //nolint:gosec // counts of one archive
 		MatcherVersion: int32(s.MatcherVersion), EvalRequestedUs: micros(s.EvalRequestedAt), //nolint:gosec // a small constant
 		AdapterVersion: int32(s.AdapterVersion), //nolint:gosec // a small constant
+		FullRejected:   int32(s.FullRejected),   //nolint:gosec // a count of one archive
+		RecordLimit:    s.RecordLimit,
 		Source:         s.Source, Ecosystem: s.Ecosystem,
 	})
 }
@@ -182,6 +189,8 @@ type Stored struct {
 	Modified    time.Time
 	SHA256      []byte
 	CanonicalID string
+	// AdapterVersion is the version of the adapter that wrote the row; a row of another version is not skipped by its digest.
+	AdapterVersion int
 }
 
 // Stored returns the stored modified time and digest of the identifiers that exist.
@@ -192,7 +201,7 @@ func (Sync) Stored(ctx context.Context, db q.DBTX, ecosystem string, ids []strin
 	}
 	out := make(map[string]Stored, len(rows))
 	for _, r := range rows {
-		out[r.ID] = Stored{Modified: microTime(r.ModifiedUs), SHA256: r.RecordSha256, CanonicalID: r.CanonicalID}
+		out[r.ID] = Stored{Modified: microTime(r.ModifiedUs), SHA256: r.RecordSha256, CanonicalID: r.CanonicalID, AdapterVersion: int(r.AdapterVersion)}
 	}
 	return out, nil
 }
@@ -200,6 +209,18 @@ func (Sync) Stored(ctx context.Context, db q.DBTX, ecosystem string, ids []strin
 // IDs returns every stored advisory identifier of the ecosystem.
 func (Sync) IDs(ctx context.Context, db q.DBTX, ecosystem string) ([]string, error) {
 	return q.New(db).VulnAdvisoryIDs(ctx, ecosystem)
+}
+
+// OlderAdapter returns up to limit identifiers of the ecosystem's rows that an adapter older than version wrote, and how many
+// rows there are in all.
+func (Sync) OlderAdapter(ctx context.Context, db q.DBTX, ecosystem string, version, limit int) (ids []string, total int, err error) {
+	qs := q.New(db)
+	n, err := qs.VulnAdvisoryOlderAdapterCount(ctx, q.VulnAdvisoryOlderAdapterCountParams{Ecosystem: ecosystem, Version: int32(version)}) //nolint:gosec // a small constant
+	if err != nil || n == 0 {
+		return nil, int(n), err
+	}
+	ids, err = qs.VulnAdvisoryOlderAdapter(ctx, q.VulnAdvisoryOlderAdapterParams{Ecosystem: ecosystem, Version: int32(version), MaxRows: int32(limit)}) //nolint:gosec // a small constant
+	return ids, int(n), err
 }
 
 // Count returns the number of stored advisories of the ecosystem.
@@ -252,7 +273,7 @@ func nonNil(s []string) []string {
 
 // Upsert writes the records of a batch and replaces their affected entries. A rewritten record keeps its canonical identifier
 // and known-exploited flag until [Sync.SetCanonical] and [Sync.ApplyKEV] decide them.
-func (Sync) Upsert(ctx context.Context, db q.DBTX, ecosystem string, batch []Written) error {
+func (Sync) Upsert(ctx context.Context, db q.DBTX, ecosystem string, adapterVersion int, batch []Written) error {
 	if len(batch) == 0 {
 		return nil
 	}
@@ -293,7 +314,9 @@ func (Sync) Upsert(ctx context.Context, db q.DBTX, ecosystem string, batch []Wri
 		return err
 	}
 	qs := q.New(db)
-	if err := qs.VulnAdvisoryUpsert(ctx, q.VulnAdvisoryUpsertParams{Ecosystem: ecosystem, Docs: body}); err != nil {
+	if err := qs.VulnAdvisoryUpsert(ctx, q.VulnAdvisoryUpsertParams{
+		Ecosystem: ecosystem, Docs: body, AdapterVersion: int32(adapterVersion), //nolint:gosec // a small constant
+	}); err != nil {
 		return err
 	}
 	if err := qs.VulnAffectedDelete(ctx, q.VulnAffectedDeleteParams{Ecosystem: ecosystem, Ids: ids}); err != nil {

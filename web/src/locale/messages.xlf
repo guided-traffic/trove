@@ -1383,7 +1383,7 @@
         <note category="location">src/app/core/http/problem-messages-vulnerability.ts:21</note>
       </notes>
       <segment>
-        <source>The advisory archive does not match the digest that was configured for it.</source>
+        <source>The advisory archive does not match the digest its source announced for it.</source>
       </segment>
     </unit>
     <unit id="problem.vuln.archive-limit">
@@ -1391,7 +1391,7 @@
         <note category="location">src/app/core/http/problem-messages-vulnerability.ts:23</note>
       </notes>
       <segment>
-        <source>The advisory archive exceeds a limit on untrusted content and was not imported.</source>
+        <source>The advisory archive is damaged or crosses a limit of the archive as a whole, and was not imported.</source>
       </segment>
     </unit>
     <unit id="problem.vuln.too-many-invalid">
@@ -1399,7 +1399,7 @@
         <note category="location">src/app/core/http/problem-messages-vulnerability.ts:25</note>
       </notes>
       <segment>
-        <source>Too many records of the advisory archive were invalid, so the run was stopped and nothing was changed.</source>
+        <source>Too many records of the advisory archive were rejected, so the run was stopped and nothing was changed.</source>
       </segment>
     </unit>
     <unit id="problem.vuln.shrink-refused">
@@ -18959,9 +18959,17 @@
         <source>Result</source>
       </segment>
     </unit>
+    <unit id="jobs.attempt">
+      <notes>
+        <note category="location">src/app/features/system/job-table.ts:67,68</note>
+      </notes>
+      <segment>
+        <source>Attempt <ph id="0" equiv="INTERPOLATION" disp="{{ attemptOf(j) }}"/> of <ph id="1" equiv="INTERPOLATION_1" disp="{{ j.maxAttempts }}"/></source>
+      </segment>
+    </unit>
     <unit id="jobs.cancel">
       <notes>
-        <note category="location">src/app/features/system/job-table.ts:71,72</note>
+        <note category="location">src/app/features/system/job-table.ts:81,82</note>
       </notes>
       <segment>
         <source> Cancel </source>
@@ -18969,7 +18977,7 @@
     </unit>
     <unit id="jobs.cancel.label">
       <notes>
-        <note category="location">src/app/features/system/job-table.ts:110</note>
+        <note category="location">src/app/features/system/job-table.ts:120</note>
       </notes>
       <segment>
         <source>Cancel job <ph id="0" equiv="kind" disp="job.kind"/></source>
@@ -23134,9 +23142,17 @@
         <source>Current</source>
       </segment>
     </unit>
+    <unit id="vuln.sources.rejected-full">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:133,134</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="INTERPOLATION" disp="{{ s.fullRejected | number }}"/> in the last full sync</source>
+      </segment>
+    </unit>
     <unit id="vuln.sources.run-group">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:141</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:149</note>
       </notes>
       <segment>
         <source>Run now</source>
@@ -23144,7 +23160,7 @@
     </unit>
     <unit id="vuln.sources.run-osv">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:142,143</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:150,151</note>
       </notes>
       <segment>
         <source>Run the incremental sync now</source>
@@ -23152,7 +23168,7 @@
     </unit>
     <unit id="vuln.sources.run-full">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:143,144</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:151,152</note>
       </notes>
       <segment>
         <source>Run a full sync now</source>
@@ -23160,7 +23176,7 @@
     </unit>
     <unit id="vuln.sources.run-kev">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:144,148</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:152,156</note>
       </notes>
       <segment>
         <source>Refresh the known-exploited catalog now</source>
@@ -23168,7 +23184,7 @@
     </unit>
     <unit id="vuln.sources.mirror">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:150,151</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:158,159</note>
       </notes>
       <segment>
         <source>Load the files into the mirror</source>
@@ -23176,7 +23192,7 @@
     </unit>
     <unit id="vuln.sources.mirror-hint">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:152,154</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:160,162</note>
       </notes>
       <segment>
         <source>
@@ -23186,7 +23202,7 @@
     </unit>
     <unit id="vuln.sources.caption">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:185</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:193</note>
       </notes>
       <segment>
         <source>Advisory sources</source>
@@ -23194,7 +23210,7 @@
     </unit>
     <unit id="vuln.sources.empty">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:186</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:194</note>
       </notes>
       <segment>
         <source>No advisory source is configured.</source>
@@ -23202,7 +23218,7 @@
     </unit>
     <unit id="vuln.sources.copy">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:187</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:195</note>
       </notes>
       <segment>
         <source>Copy the commands</source>
@@ -23210,7 +23226,7 @@
     </unit>
     <unit id="vuln.sources.col-source">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:189</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:197</note>
       </notes>
       <segment>
         <source>Source</source>
@@ -23218,7 +23234,7 @@
     </unit>
     <unit id="vuln.sources.col-mode">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:190</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:198</note>
       </notes>
       <segment>
         <source>Mode</source>
@@ -23226,7 +23242,7 @@
     </unit>
     <unit id="vuln.sources.help-mode">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:190</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:198</note>
       </notes>
       <segment>
         <source>online reads the public archive, repository reads a mirror repository, off stops the sync and keeps the data as it was.</source>
@@ -23234,7 +23250,7 @@
     </unit>
     <unit id="vuln.sources.col-state">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:191</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:199</note>
       </notes>
       <segment>
         <source>State</source>
@@ -23242,7 +23258,7 @@
     </unit>
     <unit id="vuln.sources.help-state">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:191</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:199</note>
       </notes>
       <segment>
         <source>Stale means the last successful sync is older than the configured limit.</source>
@@ -23250,7 +23266,7 @@
     </unit>
     <unit id="vuln.sources.col-synced">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:192</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:200</note>
       </notes>
       <segment>
         <source>Last synchronised</source>
@@ -23258,7 +23274,7 @@
     </unit>
     <unit id="vuln.sources.col-failures">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:193</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:201</note>
       </notes>
       <segment>
         <source>Failed runs in a row</source>
@@ -23266,7 +23282,7 @@
     </unit>
     <unit id="vuln.sources.help-failures">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:193</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:201</note>
       </notes>
       <segment>
         <source>The count of consecutive failed runs and the error of the last one.</source>
@@ -23274,7 +23290,7 @@
     </unit>
     <unit id="vuln.sources.col-records">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:194</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:202</note>
       </notes>
       <segment>
         <source>Records</source>
@@ -23282,7 +23298,7 @@
     </unit>
     <unit id="vuln.sources.col-rejected">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:195</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:203</note>
       </notes>
       <segment>
         <source>Rejected</source>
@@ -23290,15 +23306,15 @@
     </unit>
     <unit id="vuln.sources.help-rejected">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:195</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:203</note>
       </notes>
       <segment>
-        <source>Records of the last run that failed validation and were not stored.</source>
+        <source>Records of the last run that were rejected: they failed validation or crossed the size or compression limit of a record. Below it, the count of the last full sync, which an incremental run does not change. A rejected record that was stored before keeps its stored copy.</source>
       </segment>
     </unit>
     <unit id="vuln.sources.col-unevaluable">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:196</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:204</note>
       </notes>
       <segment>
         <source>Unevaluable ranges</source>
@@ -23306,7 +23322,7 @@
     </unit>
     <unit id="vuln.sources.help-unevaluable">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:196</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:204</note>
       </notes>
       <segment>
         <source>Affected ranges trove cannot compare with a version; a version they name is not flagged by them.</source>
@@ -23314,7 +23330,7 @@
     </unit>
     <unit id="vuln.sources.col-next">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:197</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:205</note>
       </notes>
       <segment>
         <source>Next run</source>
@@ -23322,7 +23338,7 @@
     </unit>
     <unit id="vuln.sources.mode-online">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:207</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:215</note>
       </notes>
       <segment>
         <source>Online</source>
@@ -23330,7 +23346,7 @@
     </unit>
     <unit id="vuln.sources.mode-repository">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:209</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:217</note>
       </notes>
       <segment>
         <source>Mirror repository</source>
@@ -23338,7 +23354,7 @@
     </unit>
     <unit id="vuln.sources.mode-off">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:211</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:219</note>
       </notes>
       <segment>
         <source>Off</source>
@@ -23346,7 +23362,7 @@
     </unit>
     <unit id="vuln.sources.queued">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:227</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:236</note>
       </notes>
       <segment>
         <source>The run is queued. Reload the page to see its result.</source>

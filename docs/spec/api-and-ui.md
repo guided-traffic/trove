@@ -4084,6 +4084,11 @@ INV-12 makes roles, drains and Valkey MVP and INV-19 the backup job (Q-UI-7).
   source; the maintenance mode, as a row only while it is not `normal` (Q-OPS-156); database (server version, schema version against the supported ones);
   scheduled tasks (`/system/tasks`: next run, last outcome) with "Run now", which runs on a
   `worker` replica; recent jobs (`/system/jobs`) with cancel.
+- **Jobs** (`/admin/system/jobs`, and the recent jobs of the status screen, one table for both): kind, state, enqueued,
+  progress, replica, result and cancel. The result cell of a job whose `error` is set shows its `code`, under it the `detail`
+  as the server wrote it, untranslated and wrapping at any character, and "Attempt *n* of *m*" with *n* the error's `attempt`
+  (the job's `attempt` when the error has none) and *m* the job's `maxAttempts`; an error without a detail shows its code
+  alone. The result of a succeeded job is summarised as before (Q-UI-172).
 - **Replicas by role** (Q-UI-7, Q-UI-107). One group per role in the order `api`, `packages`, `worker`, taken from the replica's `roles`
   (Q-ARCH-341); a group `web` while a replica of that role is live, during the
   upgrade across the cut ([ha-and-helm.md](ha-and-helm.md) R-HA-064); a replica with roles
@@ -9015,6 +9020,33 @@ its own run. The development agent would revisit (b) if pipelines need to cancel
 **Applied:** R-API-015 (rule, acceptance); `internal/api/v1/jobs_api.go` (`mayCancel`), `api/openapi.yaml` (`cancelJob`),
 [tokens-and-credentials.md](../security/tokens-and-credentials.md). Tests: `TestR_API_015_TheStarterCancelsThroughASessionOrAnInheritingToken`
 (unit), `TestR_API_015_ANarrowedTokenCancelsItsOwnersJobsOnlyWithSettingsWrite` (integration).
+
+### Q-UI-172 · The jobs table shows a job's error code, its detail and the attempt it failed in, in the result cell
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the result cell showed only `error.code` of a failed job, so the owner's jobs screen said `job_failed` for 58 runs whose
+cause was in the job's `detail` the API returned ([vulnerability-scanning.md](vulnerability-scanning.md) Q-VULN-121). The detail is
+at most 2,000 bytes; a failed sync's is a sentence or two. The table serves the jobs screen and the recent jobs of the status
+screen. The owner's direction is to copy GitLab and add no unasked styling; GitLab's job list names a failure reason in a tooltip
+and its job page shows the log.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The code only, as built | — | Compact rows | The screen does not name the cause |
+| (b) The code, the detail and "Attempt *n* of *m*" in the result cell, the detail wrapping at any character (chosen) | Every row with an error shows it | Visible without a click, readable by a screen reader in reading order, no state; a long entry name cannot widen the table | A row with a long detail is tall |
+| (c) The code and a disclosure "Show the error" that opens the detail | Rows stay short | Compact | One click per failure for the one thing the owner looked for; a disclosure per row is state the refresh every 5 s must keep |
+| (d) A tooltip with the detail, as GitLab's list | Hover | Compact | Not reachable by keyboard and touch without extra work, and not read in order; 2,000 bytes do not fit a tooltip |
+| (e) A page per job | A route `/admin/system/jobs/{id}` | Room for the result too | A new screen for two lines of text |
+
+**Choice:** (b). *n* is the error's `attempt`, the attempt the detail belongs to (a job queued or running again carries the error
+of the attempt before), else the job's `attempt`; *m* is `maxAttempts`. The code and the detail are not translated (`translate="no"`);
+the attempt line is.
+**Rationale:** the cause of a failure is what an operator opens the jobs screen for, and failures are the exception in the list, so
+the room they take is room where it is needed. The development agent would revisit this if lists with many long details become hard
+to scan, with a clamp to a few lines and a control to expand.
+**Applied:** R-UI-038 (the Jobs bullet); [operations-and-observability.md](operations-and-observability.md) Q-OPS-186 types the
+members. Code: `web/src/app/features/system/job-table.ts`; the manual page [operations.md](../manual/admin/operations.md#jobs).
 
 ## What this does not cover
 

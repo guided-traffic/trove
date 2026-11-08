@@ -216,39 +216,6 @@ is, what was seen and how far it is confirmed: **confirmed** means checked in th
 development agent, **read** means found by reading the code and not reproduced. Add new findings
 here; remove a finding in the commit that fixes it.
 
-Found on 2026-11-07 by the owner on his installation (`wds18-k8s-main`, release v0.24.0):
-
-### Product
-
-- **F-73 · One oversized advisory record stops every OSV import of its ecosystem, and neither screen says why** (confirmed on the
-  owner's installation and in the code, 2026-11-07). The advisory sources screen showed OSV npm "Noch nicht importiert" with 58 failed
-  runs in a row and only "Das Advisory-Archiv überschreitet eine Grenze für nicht vertrauenswürdige Inhalte und wurde nicht
-  importiert"; the jobs screen showed `vuln-sync-osv` failed with the result `job_failed`. The cause, from the worker's log and the job
-  row (`trove.job.error`): `archive_limit: the archive crossed a limit or is not a valid zip archive: payload_too_large: entry
-  "MAL-2026-16369.json" is larger than 1048576 bytes`.
-  - **The limit.** `vulnerabilities.sources.osv.max_record_size` (default 1 MiB, `internal/config/vulnerabilities.go`) bounds each entry of
-    the archive (`zipLimits`, `scanArchive` in `internal/vuln/sync/archive.go`), and R-VULN-004 step 3 fails the whole run on any crossed
-    limit. Measured in the npm archive of 2026-11-07 (220 MB, 231,292 entries): p99.9 13,186 bytes; one entry above 1 MiB,
-    `MAL-2026-16369.json` with 1,148,610 bytes, a legitimate malicious-package advisory ("Malicious code in mathsbase"); the next two,
-    `MAL-2026-16368` and `-16367`, about 560 KB. So the npm data of the installation has been empty since that record appeared.
-  - **Why it matters beyond the size.** MAL records are generated from reported malicious packages, so a record's size is
-    attacker-influenced: failing the whole archive turns one large record into a denial of service of the vulnerability data of an
-    ecosystem.
-  - **The diagnosis gap.** The job row keeps the full cause (`{"code":"job_failed","detail":"…","attempt":1}`) and the API returns it as
-    `error` (`internal/api/v1/jobs_api.go`), but the jobs screen shows only the code. `trove.vuln_source_state.last_error` loses the
-    cause: `problemf(errs.CodeArchiveLimit, …, err)` writes only its own sentence into `detail`, so the advisory sources screen cannot
-    show the entry, its size, the limit or the key that sets it.
-  - **To build (the development agent's proposal of 2026-11-07, recorded as decisions on the spec page):** (1) an entry above
-    `max_record_size` is rejected and counted (the screen's "Abgelehnt"), logged at WARN with source, ecosystem, entry, size and
-    limit, and the run goes on; the limits of the archive as a whole (entry count, total inflated size, an invalid or ambiguous zip)
-    still end the run; a rejected record keeps its stored row (it was seen, so step 5 does not delete it); (2) default
-    `max_record_size` 8 MiB (about seven times the largest record measured); (3) `last_error.detail` names what was crossed (entry,
-    size, limit, configuration key), and the advisory sources screen shows it under the title; (4) the jobs screen shows a failed job's
-    `error.detail` and attempt. Spec R-VULN-004 steps 3 to 5, the configuration reference, README and the manual move with it.
-  - **How:** planned, built and checked by separate agents (section 10's working mode). Done when the npm import of the measured
-    archive completes with one rejected record, a test holds each of the four points, and both screens name the cause of a failed run.
-    The owner's installation needs no change of its values: it takes the fix with the release.
-
 Found on 2026-11-08 by the security audit of the F-72 fix, reading a replay handler outside that change:
 
 ### Product

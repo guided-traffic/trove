@@ -4563,8 +4563,8 @@
                   "x-trove-type": "bytes"
                 },
                 "max_record_size": {
-                  "default": "1MiB",
-                  "description": "Largest advisory record, in the archive uncompressed and as a single record.",
+                  "default": "8MiB",
+                  "description": "Largest advisory record, in the archive uncompressed and fetched singly. A larger record is rejected and counted, and the run goes on (R-VULN-004, Q-VULN-116).",
                   "type": [
                     "string",
                     "integer"

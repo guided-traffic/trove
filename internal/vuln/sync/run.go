@@ -57,7 +57,7 @@ func (s *Service) RunOSV(ctx context.Context, run Run, p Params, full bool) erro
 			return err
 		}
 	}
-	if err := run.SetResult(results); err != nil {
+	if err := run.SetResult(map[string]any{"ecosystems": results}); err != nil {
 		return err
 	}
 	return errors.Join(errList...)
@@ -105,7 +105,7 @@ func (s *Service) syncOne(ctx context.Context, run Run, p Params, forceFull bool
 	if s.o.Config.Sources.OSV.Mode == "repository" {
 		return s.fullMirror(ctx, run, p, eco, ad, st, cp)
 	}
-	if !forceFull && st.Complete() && !st.Watermark.IsZero() && s.now().Sub(st.Watermark) <= MaxWatermarkAge && !adapterStale(eco, st) {
+	if !forceFull && st.Complete() && !st.Watermark.IsZero() && s.now().Sub(st.Watermark) <= MaxWatermarkAge && !adapterStale(eco, st) && !s.limitChanged(st) {
 		res, escalate, err := s.incremental(ctx, eco, ad, st)
 		if err != nil || !escalate {
 			return res, err
@@ -119,7 +119,7 @@ func (s *Service) fullOnline(ctx context.Context, run Run, p Params, eco string,
 	started := s.now()
 	dctx, cancel := context.WithTimeout(ctx, s.o.Config.Sources.OSV.Timeout)
 	ifNone := ""
-	if st.Complete() && !adapterStale(eco, st) {
+	if st.Complete() && !adapterStale(eco, st) && !s.limitChanged(st) {
 		ifNone = st.ETag
 	}
 	arch, notModified, err := s.downloadArchive(dctx, eco, ifNone)
@@ -145,7 +145,13 @@ func (s *Service) incremental(ctx context.Context, eco string, ad match.Adapter,
 	if sink.over {
 		return res, true, nil
 	}
+	rl := s.newRejectLog(eco)
+	defer rl.finish()
 	res.Rejected = sink.bad
+	for _, line := range sink.badLines {
+		rl.add(line, "", &rejection{reason: "the row of the change file does not parse", validation: true})
+	}
+	rl.counted(sink.bad - len(sink.badLines))
 	if len(sink.rows) == 0 && sink.bad == 0 {
 		res, err = s.finishUnchanged(ctx, eco, kindIncremental)
 		return res, false, err
@@ -160,6 +166,7 @@ func (s *Service) incremental(ctx context.Context, eco string, ad match.Adapter,
 		seen[r.ID] = true
 		if !validRecordID(r.ID) {
 			res.Rejected++
+			rl.add(r.ID, "", &rejection{reason: "the identifier of the row does not satisfy the rule", validation: true})
 			continue
 		}
 		ids = append(ids, r.ID)
@@ -167,7 +174,7 @@ func (s *Service) incremental(ctx context.Context, eco string, ad match.Adapter,
 	for len(ids) > 0 {
 		chunk := ids[:min(BatchSize, len(ids))]
 		ids = ids[len(chunk):]
-		w, k, rej, err := s.fetchApply(ctx, eco, ad, chunk)
+		w, k, rej, err := s.fetchApply(ctx, eco, ad, chunk, rl)
 		if err != nil {
 			return res, false, err
 		}
@@ -177,7 +184,6 @@ func (s *Service) incremental(ctx context.Context, eco string, ad match.Adapter,
 	}
 	s.count(store.SourceOSV, eco, "written", res.Written)
 	s.count(store.SourceOSV, eco, "skipped", res.Skipped)
-	s.count(store.SourceOSV, eco, "rejected", res.Rejected)
 	if err := s.finishGroups(ctx, eco, st.Complete()); err != nil {
 		return res, false, err
 	}

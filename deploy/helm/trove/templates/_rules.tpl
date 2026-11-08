@@ -122,6 +122,31 @@ the alert and the report banner agree (R-VULN-004). It is a duration parsed by t
   annotations:
     summary: Three consecutive sync runs of {{ "{{ $labels.source }}" }} {{ "{{ $labels.ecosystem }}" }} failed.
     description: The last error is in GET /api/v1/vulnerabilities/sources and in the audit event vulnerability.source.failed (R-VULN-024). The data is not refreshed until a run succeeds.
+- alert: TroveVulnerabilityRecordsRejected
+  expr: sum by (source, ecosystem) (increase(trove_vuln_sync_records_total{ {{ $ns }},result="rejected" }[7d])) > 0
+  labels:
+    severity: warning
+  annotations:
+    summary: Advisory records of {{ "{{ $labels.source }}" }} {{ "{{ $labels.ecosystem }}" }} were rejected by a size bound within the last seven days.
+    description: A record above a bound of one entry is not applied, and a record that was stored before keeps its older copy; the package it names may be missing from the data (R-VULN-004, Q-VULN-116). Records that fail validation are the result "invalid" and do not fire this alert. The worker logs each one at WARN with its entry, size and limit. If a legitimate record is too large, raise vulnerabilities.sources.osv.max_record_size.
+- alert: TroveVulnerabilityRecordsInvalid
+  expr: |-
+    sum by (source, ecosystem) (increase(trove_vuln_sync_records_total{ {{ $ns }},result="invalid" }[24h])) >= 10
+    and
+    sum by (source, ecosystem) (increase(trove_vuln_sync_records_total{ {{ $ns }},result="invalid" }[24h]))
+    / sum by (source, ecosystem) (increase(trove_vuln_sync_records_total{ {{ $ns }},result=~"written|skipped|rejected|invalid" }[24h])) > 0.01
+  labels:
+    severity: warning
+  annotations:
+    summary: More than 1 percent of the advisory records of {{ "{{ $labels.source }}" }} {{ "{{ $labels.ecosystem }}" }} failed validation within a day.
+    description: At least ten records, and more than one percent of those the sync processed in 24 hours, failed the rules of R-VULN-006 and were not applied; a record that was stored before keeps its older copy. A single record that fails is only counted and logged. Look at the worker log (message "an advisory record was rejected", attribute reason) for the first (R-VULN-004, Q-VULN-122).
+- alert: TroveVulnerabilityMaliciousRecordRejected
+  expr: sum by (source, ecosystem) (increase(trove_vuln_sync_records_total{ {{ $ns }},result="rejected_malicious" }[7d])) > 0
+  labels:
+    severity: critical
+  annotations:
+    summary: A malicious-package advisory record of {{ "{{ $labels.source }}" }} {{ "{{ $labels.ecosystem }}" }} was rejected, by a bound or by validation, within the last seven days.
+    description: The record named MAL-... is not applied, so the package it names is not flagged or blocked by it (R-VULN-004, Q-VULN-122). Find the entry in the worker log (message "an advisory record was rejected"); the cause is the bound of one entry (its size) or a rule of R-VULN-006 (it failed validation).
 - alert: TroveVulnerabilityClaimedNameMalicious
   expr: max(trove_vuln_claimed_name_matches{ {{ $ns }},kind="malicious" }) > 0
   labels:
@@ -278,5 +303,5 @@ the alert and the report banner agree (R-VULN-004). It is a duration parsed by t
 
 {{/* The names of every alert the chart can render, for the check of disabledAlerts. */}}
 {{- define "trove.rules.names" -}}
-{{- toJson (list "TroveReplicasNotReady" "TroveDatabaseUnreachable" "TroveObjectStoreUnreachable" "TroveObjectStoreUnreachableSingleReplica" "TroveDatabasePoolSaturated" "TroveControlConnectionWaits" "TroveJobsStuck" "TroveLeaseLost" "TroveMixedVersions" "TroveSpoolNearlyFull" "TroveVulnerabilityDataStale" "TroveVulnerabilitySyncFailing" "TroveVulnerabilityClaimedNameMalicious" "TroveMirrorFailing" "TroveMirrorStale" "TroveBridgeLeftOn" "TroveBlobMissing" "TroveGCStale" "TroveBackupCheckFailed" "TroveRevocationJournalBacklog" "TroveRevocationJournalQuarantined" "TroveValkeyUnavailable" "TroveValkeyUnavailableSingleReplica" "TroveValkeySentinelsDegraded" "TroveValkeyFailoverFlapping" "TroveValkeyPrimaryDisagreement" "TroveBackupStale" "TroveBackupFailed" "TroveBackupRunningLong" "TroveBackupGlobalHoldLong" "TroveBackupSourceDamage" "TroveBackupVerifyFindings") -}}
+{{- toJson (list "TroveReplicasNotReady" "TroveDatabaseUnreachable" "TroveObjectStoreUnreachable" "TroveObjectStoreUnreachableSingleReplica" "TroveDatabasePoolSaturated" "TroveControlConnectionWaits" "TroveJobsStuck" "TroveLeaseLost" "TroveMixedVersions" "TroveSpoolNearlyFull" "TroveVulnerabilityDataStale" "TroveVulnerabilitySyncFailing" "TroveVulnerabilityRecordsRejected" "TroveVulnerabilityRecordsInvalid" "TroveVulnerabilityMaliciousRecordRejected" "TroveVulnerabilityClaimedNameMalicious" "TroveMirrorFailing" "TroveMirrorStale" "TroveBridgeLeftOn" "TroveBlobMissing" "TroveGCStale" "TroveBackupCheckFailed" "TroveRevocationJournalBacklog" "TroveRevocationJournalQuarantined" "TroveValkeyUnavailable" "TroveValkeyUnavailableSingleReplica" "TroveValkeySentinelsDegraded" "TroveValkeyFailoverFlapping" "TroveValkeyPrimaryDisagreement" "TroveBackupStale" "TroveBackupFailed" "TroveBackupRunningLong" "TroveBackupGlobalHoldLong" "TroveBackupSourceDamage" "TroveBackupVerifyFindings") -}}
 {{- end -}}

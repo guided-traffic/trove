@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -1075,5 +1076,54 @@ func TestClockOrdersChanges(t *testing.T) {
 			t.Errorf("modified %s is not after %s", mod, last)
 		}
 		last = mod
+	}
+}
+
+// R-VULN-004, Q-VULN-116: Pad gives a record exactly the asked size with a later modified, once as hex text that deflates to about
+// half and once as a repeated character that deflates to almost nothing, and it fails for an unknown record or a size below the
+// record.
+func TestPad(t *testing.T) {
+	f := newServer(t, Config{})
+	before := f.get("/npm/" + IDMal + ".json").body
+	mod, err := f.stub.Pad("npm", IDMal, 123457, PadHex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := f.get("/npm/" + IDMal + ".json").body
+	if len(body) != 123457 {
+		t.Fatalf("hex padding: %d bytes", len(body))
+	}
+	var rec struct {
+		ID       string `json:"id"`
+		Modified string `json:"modified"`
+		Summary  string `json:"summary"`
+	}
+	if err := json.Unmarshal(body, &rec); err != nil || rec.ID != IDMal || rec.Modified != stamp(mod) {
+		t.Fatalf("padded record: %+v, %v", rec, err)
+	}
+	if !strings.HasPrefix(string(f.get("/npm/modified_id.csv").body), stamp(mod)+","+IDMal) {
+		t.Error("the padded record is not the first row of the change file")
+	}
+	if got := unzip(t, f.get("/npm/all.zip").body)[IDMal+".json"]; len(got) != 123457 {
+		t.Errorf("the archive holds %d bytes", len(got))
+	}
+	if len(before) >= 123457 {
+		t.Fatalf("the record was %d bytes before", len(before))
+	}
+	if _, err := f.stub.Pad("npm", IDMal, 40000, PadRepeat); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.get("/npm/" + IDMal + ".json").body; len(got) != 40000 || strings.Count(string(got), "aaaaaaaaaaaaaaaa") == 0 {
+		t.Errorf("repeat padding: %d bytes", len(got))
+	}
+	if _, err := f.stub.Pad("npm", "MAL-0000-0", 1000, PadHex); !errors.Is(err, ErrUnknown) {
+		t.Errorf("unknown record: %v", err)
+	}
+	at := f.get("/npm/" + IDMal + ".json").body
+	if _, err := f.stub.Pad("npm", IDMal, 10, PadHex); err == nil {
+		t.Error("a size below the record was accepted")
+	}
+	if !bytes.Equal(f.get("/npm/"+IDMal+".json").body, at) {
+		t.Error("a failed Pad changed the record")
 	}
 }

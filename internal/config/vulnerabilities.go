@@ -41,7 +41,7 @@ type VulnerabilityOSV struct {
 	MaxShrink           float64       `yaml:"max_shrink" default:"0.2" validate:"min=0,max=1" doc:"The share of an ecosystem's stored records a full sync may delete. A larger shrink fails the run with shrink_refused and changes nothing; a manual run with {\"acceptShrink\": true} overrides it once."`
 	Timeout             time.Duration `yaml:"timeout" default:"10m" validate:"min=10s,max=24h" doc:"Timeout of one archive download; a record or a part of the change file has 30 s."`
 	MaxArchiveSize      ByteSize      `yaml:"max_archive_size" default:"1GiB" validate:"min=1MiB" doc:"Largest archive accepted. The worker's spool (worker.spool.sizeLimit) must hold one archive plus headroom."`
-	MaxRecordSize       ByteSize      `yaml:"max_record_size" default:"1MiB" validate:"min=1KiB,max=64MiB" doc:"Largest advisory record, in the archive uncompressed and as a single record."`
+	MaxRecordSize       ByteSize      `yaml:"max_record_size" default:"8MiB" validate:"min=1KiB,max=64MiB" doc:"Largest advisory record, in the archive uncompressed and fetched singly. A larger record is rejected and counted, and the run goes on (R-VULN-004, Q-VULN-116)."`
 }
 
 // VulnerabilityKEV configures the CISA known-exploited catalog (R-VULN-008).

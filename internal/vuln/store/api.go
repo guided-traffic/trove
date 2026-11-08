@@ -525,6 +525,8 @@ type SourceRow struct {
 	Source, Ecosystem, State                 string
 	SyncedAt, FullSyncedAt, AttemptedAt      *time.Time
 	Failures, Records, Rejected, Unevaluable int
+	// FullRejected is the rejected count of the last full sync; Rejected is that of the last run of any kind.
+	FullRejected int
 	// LastError is the problem object of the last failed run, nil when there is none.
 	LastError json.RawMessage
 }
@@ -554,7 +556,7 @@ func ReadSources(ctx context.Context, db Database) ([]SourceRow, error) {
 			Source: r.Source, Ecosystem: r.Ecosystem, State: r.State,
 			SyncedAt: optT(r.SyncedAt.Valid, r.SyncedAt.Time), FullSyncedAt: optT(r.FullSyncedAt.Valid, r.FullSyncedAt.Time),
 			AttemptedAt: optT(r.AttemptedAt.Valid, r.AttemptedAt.Time), Failures: int(r.Failures), Records: int(r.Records),
-			Rejected: int(r.Rejected), Unevaluable: int(r.Unevaluable),
+			Rejected: int(r.Rejected), Unevaluable: int(r.Unevaluable), FullRejected: int(r.FullRejected),
 		}
 		if r.LastError != "" {
 			s.LastError = json.RawMessage(r.LastError)

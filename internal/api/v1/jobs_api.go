@@ -67,7 +67,7 @@ func toJob(r jobFields) gen.Job {
 		}
 		j.Progress = &p
 	}
-	j.Result, j.Error = jsonObject(r.Result), jsonObject(r.Error)
+	j.Result, j.Error = jsonObject(r.Result), jobError(r.Error)
 	if r.CreatedBy.Valid {
 		by := r.CreatedBy.String()
 		j.TriggeredBy = &by
@@ -88,6 +88,19 @@ func jsonObject(raw []byte) *map[string]interface{} {
 		return nil
 	}
 	return &m
+}
+
+// jobError decodes the error column of a job (Q-OPS-186). SQL NULL, JSON null and a value that is not an object with a code
+// are nil; the row is the database's, so a malformed one is not an error of the request.
+func jobError(raw []byte) *gen.JobError {
+	if len(raw) == 0 {
+		return nil
+	}
+	var e gen.JobError
+	if json.Unmarshal(raw, &e) != nil || e.Code == "" {
+		return nil
+	}
+	return &e
 }
 
 func jobReference(id, kind, state string) gen.JobReference {

@@ -5135,8 +5135,8 @@ Priority: **MVP** · Covers: HA-055
 **Status.** The PrometheusRule is rendered by the main chart with `metrics.prometheusRule.{enabled,labels,disabledAlerts,extraRules}`
 (`disabledAlerts` refuses a name that is no alert), checked by `promtool check rules` and tested by `promtool test rules`
 ([deploy/helm/trove/tests/rules_test.yaml](../../deploy/helm/trove/tests/rules_test.yaml), `make chart-test`), one test in which the alert fires and one in
-which it stays silent per alert. It carries the three alerts of the vulnerability scanning ([vulnerability-scanning.md](vulnerability-scanning.md)
-R-VULN-024, Q-VULN-55): `TroveVulnerabilityDataStale`, `TroveVulnerabilitySyncFailing` and `TroveVulnerabilityClaimedNameMalicious`; the two of the
+which it stays silent per alert. It carries the six alerts of the vulnerability scanning ([vulnerability-scanning.md](vulnerability-scanning.md)
+R-VULN-024, Q-VULN-55, Q-VULN-122): `TroveVulnerabilityDataStale`, `TroveVulnerabilitySyncFailing`, `TroveVulnerabilityRecordsRejected` (warning), `TroveVulnerabilityRecordsInvalid` (warning), `TroveVulnerabilityMaliciousRecordRejected` (critical) and `TroveVulnerabilityClaimedNameMalicious`; the two of the
 mirror mode (R-OPS-046); `TroveBridgeLeftOn` (R-HA-064); `TroveBlobMissing` (severity `critical`, summed over the replicas, [storage.md](storage.md)
 Q-STOR-152); and these sixteen rows of the table below: `TroveReplicasNotReady`, `TroveDatabaseUnreachable`, `TroveObjectStoreUnreachable`,
 `TroveObjectStoreUnreachableSingleReplica`, `TroveDatabasePoolSaturated`, `TroveControlConnectionWaits`, `TroveJobsStuck`, `TroveLeaseLost`,

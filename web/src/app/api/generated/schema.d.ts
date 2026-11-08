@@ -3982,7 +3982,7 @@ export interface paths {
         /**
          * The advisory sources and their state
          * @description Per source and ecosystem: `mode`, `state`, `stale`, `syncedAt`, `fullSyncedAt`, `attemptedAt`, `failures`, `lastError`,
-         *     `records`, `rejected`, `unevaluable` and `nextRunAt` (R-VULN-021).
+         *     `records`, `rejected`, `fullRejected`, `unevaluable` and `nextRunAt` (R-VULN-021).
          */
         get: operations["listVulnerabilitySources"];
         put?: never;
@@ -4703,6 +4703,18 @@ export interface components {
             kind: string;
             key: string;
         };
+        /** @description Why the last attempt of a job failed, or why the job ended without succeeding (R-OPS-019, Q-OPS-186). */
+        JobError: {
+            /**
+             * @description Stable snake_case identifier; clients match on it.
+             * @enum {string}
+             */
+            code: "job_failed" | "job_timeout" | "attempts_exhausted" | "cancelled" | "superseded";
+            /** @description The text of the failed attempt's error as the handler returned it, cut to 2,000 bytes; a handler whose error could carry a secret or a full URL reduces it before it returns. Not translated. */
+            detail?: string;
+            /** @description The attempt the detail belongs to; absent where the reaper or a cancel wrote the error. A job queued or running again keeps the error of the attempt before. */
+            attempt?: number;
+        };
         Job: {
             /** Format: uuid */
             id: string;
@@ -4724,10 +4736,8 @@ export interface components {
             result: {
                 [key: string]: unknown;
             } | null;
-            /** @description A stable `code` and a sanitised message; `null` unless the job failed or was cancelled. */
-            error: {
-                [key: string]: unknown;
-            } | null;
+            /** @description Why the last attempt failed or why the job ended without succeeding; `null` until an attempt failed or the job was cancelled. */
+            error: components["schemas"]["JobError"] | null;
             /** @description The ID of the principal that started the job; `null` for scheduled and system runs. */
             triggeredBy: string | null;
             target: components["schemas"]["JobTarget"] | null;
@@ -8027,7 +8037,10 @@ export interface components {
             failures: number;
             lastError: components["schemas"]["Problem"] | null;
             records: number;
+            /** @description The records the last run, full or incremental, rejected (R-VULN-004). */
             rejected: number;
+            /** @description The records the last full sync rejected; an incremental run does not change it (Q-VULN-122). */
+            fullRejected: number;
             unevaluable: number;
             /** Format: date-time */
             nextRunAt: string | null;

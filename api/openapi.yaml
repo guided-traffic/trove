@@ -11033,7 +11033,7 @@ paths:
       summary: The advisory sources and their state
       description: |
         Per source and ecosystem: `mode`, `state`, `stale`, `syncedAt`, `fullSyncedAt`, `attemptedAt`, `failures`, `lastError`,
-        `records`, `rejected`, `unevaluable` and `nextRunAt` (R-VULN-021).
+        `records`, `rejected`, `fullRejected`, `unevaluable` and `nextRunAt` (R-VULN-021).
       x-trove-permission:
         permission: settings:read
       responses:
@@ -12621,6 +12621,23 @@ components:
           type: string
         key:
           type: string
+    JobError:
+      type: object
+      additionalProperties: false
+      required: [code]
+      description: Why the last attempt of a job failed, or why the job ended without succeeding (R-OPS-019, Q-OPS-186).
+      properties:
+        code:
+          type: string
+          description: Stable snake_case identifier; clients match on it.
+          enum: [job_failed, job_timeout, attempts_exhausted, cancelled, superseded]
+        detail:
+          type: string
+          description: The text of the failed attempt's error as the handler returned it, cut to 2,000 bytes; a handler whose error could carry a secret or a full URL reduces it before it returns. Not translated.
+        attempt:
+          type: integer
+          minimum: 1
+          description: The attempt the detail belongs to; absent where the reaper or a cancel wrote the error. A job queued or running again keeps the error of the attempt before.
     Job:
       type: object
       required: [id, kind, state, replica, enqueuedAt, startedAt, finishedAt, attempt, maxAttempts, progress, result, error, triggeredBy, target, href]
@@ -12658,9 +12675,10 @@ components:
           description: The result summary the kind defines; `null` until the job succeeded.
           additionalProperties: true
         error:
-          type: [object, "null"]
-          description: A stable `code` and a sanitised message; `null` unless the job failed or was cancelled.
-          additionalProperties: true
+          description: Why the last attempt failed or why the job ended without succeeding; `null` until an attempt failed or the job was cancelled.
+          oneOf:
+            - $ref: "#/components/schemas/JobError"
+            - type: "null"
         triggeredBy:
           type: [string, "null"]
           description: The ID of the principal that started the job; `null` for scheduled and system runs.
@@ -17350,7 +17368,7 @@ components:
     VulnerabilitySourceState:
       type: object
       additionalProperties: false
-      required: [source, ecosystem, mode, repository, state, stale, syncedAt, fullSyncedAt, attemptedAt, failures, lastError, records, rejected, unevaluable, nextRunAt]
+      required: [source, ecosystem, mode, repository, state, stale, syncedAt, fullSyncedAt, attemptedAt, failures, lastError, records, rejected, unevaluable, fullRejected, nextRunAt]
       description: One source and ecosystem (R-VULN-021).
       properties:
         source: {type: string, enum: [osv, kev]}
@@ -17370,7 +17388,8 @@ components:
             - $ref: "#/components/schemas/Problem"
             - type: "null"
         records: {type: integer}
-        rejected: {type: integer}
+        rejected: {type: integer, description: "The records the last run, full or incremental, rejected (R-VULN-004)."}
+        fullRejected: {type: integer, description: "The records the last full sync rejected; an incremental run does not change it (Q-VULN-122)."}
         unevaluable: {type: integer}
         nextRunAt: {type: [string, "null"], format: date-time}
     VulnerabilitySourceList:

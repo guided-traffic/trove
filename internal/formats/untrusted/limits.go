@@ -43,6 +43,12 @@ type Limits struct {
 	// DocumentBytes bounds a document held in memory: the smaller of the format's
 	// MaxDocumentBytes and the proxy's metadata size limit. The core sets it.
 	DocumentBytes int64
+	// DeclaredEntryCap, when positive, is the largest entry that adds to the declared total NewZipDeclared checks against
+	// StreamBytes: an entry above it adds nothing. A pass that rejects the entries above a bound of their own with
+	// [ZipReader.CheckEntry], and never reads them, sets it to that bound, so that rejected entries do not use up the total
+	// (the entry count still bounds the archive); what a pass reads into memory stays bounded by UncompressedBytes, which counts
+	// read entries only.
+	DeclaredEntryCap int64
 }
 
 // DefaultLimits returns the defaults of R-ARCH-028.

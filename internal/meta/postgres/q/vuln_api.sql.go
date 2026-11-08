@@ -20,7 +20,7 @@ WITH hit AS (
    ORDER BY (a.id = $2::text) DESC, (a.canonical_id = $2::text) DESC, a.modified DESC
    LIMIT 1
 ), rep AS (
-  SELECT a.ecosystem, a.id, a.canonical_id, a.modified, a.published, a.withdrawn, a.kind, a.aliases, a.summary, a.details, a.severity, a.severity_source, a.cvss_version, a.cvss_vector, a.cvss_score, a.known_exploited, a.kev_date_added, a."references", a.cwe_ids, a.record_sha256, a.own_severity, a.own_severity_source, a.own_cvss_version, a.own_cvss_vector, a.own_cvss_score FROM vuln_advisory a JOIN hit ON a.canonical_id = hit.canonical_id
+  SELECT a.ecosystem, a.id, a.canonical_id, a.modified, a.published, a.withdrawn, a.kind, a.aliases, a.summary, a.details, a.severity, a.severity_source, a.cvss_version, a.cvss_vector, a.cvss_score, a.known_exploited, a.kev_date_added, a."references", a.cwe_ids, a.record_sha256, a.own_severity, a.own_severity_source, a.own_cvss_version, a.own_cvss_vector, a.own_cvss_score, a.adapter_version FROM vuln_advisory a JOIN hit ON a.canonical_id = hit.canonical_id
    WHERE a.ecosystem = $1::text
    ORDER BY (a.id = hit.canonical_id) DESC, a.modified DESC
    LIMIT 1
@@ -1044,7 +1044,7 @@ func (q *Queries) VulnScopePackages(ctx context.Context, arg VulnScopePackagesPa
 
 const vulnSourceStates = `-- name: VulnSourceStates :many
 SELECT source, ecosystem, state, synced_at, full_synced_at, attempted_at, failures,
-       COALESCE(last_error::text, '')::text AS last_error, records, rejected, unevaluable
+       COALESCE(last_error::text, '')::text AS last_error, records, rejected, unevaluable, full_rejected
   FROM vuln_source_state
  ORDER BY source, ecosystem
 `
@@ -1061,6 +1061,7 @@ type VulnSourceStatesRow struct {
 	Records      int32
 	Rejected     int32
 	Unevaluable  int32
+	FullRejected int32
 }
 
 // The state of every source and ecosystem as the sources operation and the system information read it (R-VULN-021).
@@ -1085,6 +1086,7 @@ func (q *Queries) VulnSourceStates(ctx context.Context) ([]VulnSourceStatesRow, 
 			&i.Records,
 			&i.Rejected,
 			&i.Unevaluable,
+			&i.FullRejected,
 		); err != nil {
 			return nil, err
 		}

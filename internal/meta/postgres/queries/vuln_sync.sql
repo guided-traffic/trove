@@ -17,7 +17,8 @@ SELECT source, ecosystem, state, data_epoch, COALESCE(etag, '')::text AS etag, C
        COALESCE(extract(epoch FROM synced_at) * 1000000, 0)::bigint AS synced_us,
        COALESCE(extract(epoch FROM attempted_at) * 1000000, 0)::bigint AS attempted_us,
        failures, COALESCE(last_error, 'null'::jsonb)::jsonb AS last_error, records, rejected, unevaluable, matcher_version,
-       COALESCE(extract(epoch FROM full_evaluation_requested_at) * 1000000, 0)::bigint AS eval_requested_us, adapter_version
+       COALESCE(extract(epoch FROM full_evaluation_requested_at) * 1000000, 0)::bigint AS eval_requested_us, adapter_version,
+       full_rejected, record_limit
   FROM vuln_source_state
  WHERE source = sqlc.arg(source)::text AND ecosystem = sqlc.arg(ecosystem)::text;
 
@@ -30,7 +31,8 @@ SELECT source, ecosystem, state, data_epoch, COALESCE(etag, '')::text AS etag, C
        COALESCE(extract(epoch FROM synced_at) * 1000000, 0)::bigint AS synced_us,
        COALESCE(extract(epoch FROM attempted_at) * 1000000, 0)::bigint AS attempted_us,
        failures, COALESCE(last_error, 'null'::jsonb)::jsonb AS last_error, records, rejected, unevaluable, matcher_version,
-       COALESCE(extract(epoch FROM full_evaluation_requested_at) * 1000000, 0)::bigint AS eval_requested_us, adapter_version
+       COALESCE(extract(epoch FROM full_evaluation_requested_at) * 1000000, 0)::bigint AS eval_requested_us, adapter_version,
+       full_rejected, record_limit
   FROM vuln_source_state
  WHERE source = sqlc.arg(source)::text AND ecosystem = sqlc.arg(ecosystem)::text
    FOR UPDATE;
@@ -55,6 +57,7 @@ UPDATE vuln_source_state
        attempted_at = now(), failures = 0, last_error = NULL,
        records = sqlc.arg(records)::int, rejected = sqlc.arg(rejected)::int, unevaluable = sqlc.arg(unevaluable)::int,
        matcher_version = sqlc.arg(matcher_version)::int, adapter_version = sqlc.arg(adapter_version)::int,
+       full_rejected = sqlc.arg(full_rejected)::int, record_limit = sqlc.arg(record_limit)::bigint,
        full_evaluation_requested_at = CASE WHEN sqlc.arg(eval_requested_us)::bigint = 0 THEN NULL
                                            ELSE to_timestamp(sqlc.arg(eval_requested_us)::bigint / 1000000.0) END
  WHERE source = sqlc.arg(source)::text AND ecosystem = sqlc.arg(ecosystem)::text;
@@ -92,15 +95,25 @@ RETURNING data_epoch;
 -- ecosystem for every batch and filters them by the identifiers (0.5 s a batch at 42,000 stored records, 1.2 s at 100,000, 86 batches, 65 s of an
 -- import of 107 s, growing with the table). The LATERAL makes the identifiers the outer side whatever is estimated, and `OFFSET 0` keeps the
 -- subquery from being flattened into a join the planner orders by its estimates.
-SELECT v.id, (extract(epoch FROM v.modified) * 1000000)::bigint AS modified_us, v.record_sha256, v.canonical_id
+SELECT v.id, (extract(epoch FROM v.modified) * 1000000)::bigint AS modified_us, v.record_sha256, v.canonical_id, v.adapter_version
   FROM unnest(sqlc.arg(ids)::text[]) AS n(name)
  CROSS JOIN LATERAL (
-       SELECT x.id, x.modified, x.record_sha256, x.canonical_id FROM vuln_advisory x
+       SELECT x.id, x.modified, x.record_sha256, x.canonical_id, x.adapter_version FROM vuln_advisory x
         WHERE x.ecosystem = sqlc.arg(ecosystem)::text AND x.id = n.name OFFSET 0) AS v;
 
 -- name: VulnAdvisoryIDs :many
 -- Every stored identifier of an ecosystem: the full sync's pass 1 finds what the archive no longer has.
 SELECT id FROM vuln_advisory WHERE ecosystem = sqlc.arg(ecosystem)::text;
+
+-- name: VulnAdvisoryOlderAdapter :many
+-- Up to max_rows identifiers of the ecosystem's rows that an adapter older than the current one wrote: after a forced full sync
+-- these are the rows that a rejected record kept (Q-VULN-122).
+SELECT id FROM vuln_advisory
+ WHERE ecosystem = sqlc.arg(ecosystem)::text AND adapter_version < sqlc.arg(version)::int
+ ORDER BY id COLLATE "C" LIMIT sqlc.arg(max_rows)::int;
+
+-- name: VulnAdvisoryOlderAdapterCount :one
+SELECT count(*)::int FROM vuln_advisory WHERE ecosystem = sqlc.arg(ecosystem)::text AND adapter_version < sqlc.arg(version)::int;
 
 -- name: VulnAdvisoryCount :one
 SELECT count(*)::int FROM vuln_advisory WHERE ecosystem = sqlc.arg(ecosystem)::text;
@@ -112,12 +125,12 @@ SELECT count(*)::int FROM vuln_advisory WHERE ecosystem = sqlc.arg(ecosystem)::t
 INSERT INTO vuln_advisory (ecosystem, id, canonical_id, modified, published, withdrawn, kind, aliases, summary, details,
                            severity, severity_source, cvss_version, cvss_vector, cvss_score,
                            own_severity, own_severity_source, own_cvss_version, own_cvss_vector, own_cvss_score,
-                           "references", cwe_ids, record_sha256)
+                           "references", cwe_ids, record_sha256, adapter_version)
 SELECT sqlc.arg(ecosystem)::text, d.id, d.id, d.modified, d.published, d.withdrawn, d.kind,
        ARRAY(SELECT jsonb_array_elements_text(d.aliases)), d.summary, d.details, d.severity, d.severity_source,
        d.cvss_version, d.cvss_vector, d.cvss_score, d.severity, d.severity_source, d.cvss_version, d.cvss_vector, d.cvss_score,
        COALESCE(d.refs, '[]'::jsonb),
-       ARRAY(SELECT jsonb_array_elements_text(d.cwe_ids)), decode(d.record_sha256, 'hex')
+       ARRAY(SELECT jsonb_array_elements_text(d.cwe_ids)), decode(d.record_sha256, 'hex'), sqlc.arg(adapter_version)::int
   FROM jsonb_to_recordset(sqlc.arg(docs)::jsonb) AS d(id text, modified timestamptz, published timestamptz, withdrawn timestamptz,
        kind text, aliases jsonb, summary text, details text, severity text, severity_source text, cvss_version text,
        cvss_vector text, cvss_score numeric, refs jsonb, cwe_ids jsonb, record_sha256 text)
@@ -127,7 +140,7 @@ ON CONFLICT (ecosystem, id) DO UPDATE
        own_severity = EXCLUDED.own_severity, own_severity_source = EXCLUDED.own_severity_source,
        own_cvss_version = EXCLUDED.own_cvss_version, own_cvss_vector = EXCLUDED.own_cvss_vector,
        own_cvss_score = EXCLUDED.own_cvss_score, "references" = EXCLUDED."references", cwe_ids = EXCLUDED.cwe_ids,
-       record_sha256 = EXCLUDED.record_sha256;
+       record_sha256 = EXCLUDED.record_sha256, adapter_version = EXCLUDED.adapter_version;
 
 -- name: VulnAffectedDelete :exec
 DELETE FROM vuln_affected WHERE ecosystem = sqlc.arg(ecosystem)::text AND advisory_id = ANY(sqlc.arg(ids)::text[]);

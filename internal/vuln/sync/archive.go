@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"errors"
+	"encoding/binary"
+	"encoding/hex"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -23,20 +25,34 @@ import (
 const (
 	maxArchiveEntries = 1_000_000
 	maxInflated       = int64(4) << 30
-	maxRatio          = 100
+	// maxRatio is above the most deflate can compress (about 1032:1): for the data of a real archive the bound is inert, and it
+	// stops an entry whose header declares far more than its stream can inflate to, before the entry is read (Q-VULN-116).
+	maxRatio = 2048
 )
 
 func (s *Service) zipLimits() untrusted.Limits {
 	return untrusted.Limits{
 		Entries: maxArchiveEntries, UncompressedBytes: maxInflated, StreamBytes: maxInflated, Ratio: maxRatio,
 		ManifestEntryBytes: int64(s.o.Config.Sources.OSV.MaxRecordSize), JSONDepth: 64,
+		// An entry above the record size is rejected unread, so it adds nothing to the declared total; the entry count bounds the
+		// archive then.
+		DeclaredEntryCap: int64(s.o.Config.Sources.OSV.MaxRecordSize),
 	}
 }
 
-// archiveError maps what the zip reader refused to the run's problem: a crossed limit, a damaged or ambiguous archive.
+// archiveError maps what the zip reader refused to the run's problem: a bound of the archive as a whole that is crossed, or an
+// archive that is damaged or ambiguous. The detail carries the reader's reason (Q-VULN-121); the bounds of one entry never reach
+// it, they reject the entry (Q-VULN-116).
 func archiveError(err error) error {
-	if untrusted.IsTooLarge(err) || untrusted.IsRefused(err) {
-		return problemf(errs.CodeArchiveLimit, "the archive crossed a limit or is not a valid zip archive", err)
+	reason := err.Error()
+	if e, ok := errs.As(err); ok {
+		reason = e.Detail
+	}
+	switch {
+	case untrusted.IsTooLarge(err):
+		return problemf(errs.CodeArchiveLimit, "the archive crosses a fixed bound of the import: "+reason, err)
+	case untrusted.IsRefused(err):
+		return problemf(errs.CodeArchiveLimit, "the archive is not a valid zip archive: "+reason, err)
 	}
 	return err
 }
@@ -54,19 +70,62 @@ type entryMeta struct {
 
 // scanResult is the first pass over an archive.
 type scanResult struct {
-	metas       []entryMeta
+	metas []entryMeta
+	// records is every ".json" entry of the archive (Q-VULN-118). rejected counts those that crossed a bound of the entry or
+	// failed validation, invalid those that failed validation: the guard of 1 % counts invalid only (Q-VULN-118).
 	records     int
 	rejected    int
+	invalid     int
 	unevaluable int
+	// kept holds the identifiers that rejected entries are named after: their stored rows are neither updated nor deleted
+	// (Q-VULN-117).
+	kept []string
+	// firstEntry and firstReason describe the first record that failed validation, for the detail of the guard.
+	firstEntry, firstReason string
 }
 
-// scanArchive is the first pass: every entry is read, decoded and validated, and only its identity is kept (R-VULN-004 step
-// 4). A record that fails validation is counted; a limit that is crossed ends the run. Of two entries with one identifier the
-// one with the later modified time is kept.
+// reject counts a rejected entry, remembers the identifier its name gives and logs it; the rejection says whether the entry failed
+// a rule of R-VULN-006 rather than a bound of its own.
+func (r *scanResult) reject(rl *rejectLog, name string, why *rejection) {
+	if why.validation {
+		if r.invalid == 0 {
+			r.firstEntry, r.firstReason = name, why.reason
+		}
+		r.invalid++
+	}
+	r.rejected++
+	id, _ := entryID(name)
+	if id != "" {
+		r.kept = append(r.kept, id)
+	}
+	rl.add(name, id, why)
+}
+
+// tooManyInvalid reports the guard: more than invalidPercent of the archive's records failed validation.
+func (r *scanResult) tooManyInvalid() bool { return r.invalid*100 > r.records*invalidPercent }
+
+// jsonEntries counts the ".json" entries of the central directory.
+func jsonEntries(entries []untrusted.ZipEntry) int {
+	n := 0
+	for _, e := range entries {
+		if !e.Dir && strings.HasSuffix(e.Name, ".json") {
+			n++
+		}
+	}
+	return n
+}
+
+// scanArchive is the first pass: every entry is checked against the bounds of one entry, read, decoded and validated, and only
+// its identity is kept (R-VULN-004 step 4). An entry above a bound of its own, or a record that fails validation, is rejected:
+// it is counted and logged and the scan goes on. A bound of the archive as a whole that is crossed, or a damaged archive, ends
+// the run, and so does the guard: once the records that failed validation exceed 1 % of the entries the central directory
+// lists, the rest of the archive is not read. Of two entries with one identifier the one with the later modified time is kept.
 func (s *Service) scanArchive(ctx context.Context, z *untrusted.ZipReader, eco string, ad match.Adapter) (*scanResult, error) {
 	max := int64(s.o.Config.Sources.OSV.MaxRecordSize)
-	res := &scanResult{}
 	entries := z.Entries()
+	res := &scanResult{records: jsonEntries(entries)}
+	rl := s.newRejectLog(eco)
+	defer rl.finish()
 	byID := map[string]int{}
 	for i, e := range entries {
 		if e.Dir || !strings.HasSuffix(e.Name, ".json") {
@@ -77,17 +136,23 @@ func (s *Service) scanArchive(ctx context.Context, z *untrusted.ZipReader, eco s
 				return nil, context.Cause(ctx)
 			}
 		}
-		data, err := z.ReadEntry(e, max)
+		data, why, err := readRecordEntry(z, e, max)
 		if err != nil {
-			return nil, archiveError(err)
+			return nil, err
 		}
-		res.records++
+		if why != nil {
+			res.reject(rl, e.Name, why)
+			continue
+		}
 		rec, err := osv.Decode(data, eco, ad)
 		if err != nil {
-			if !errors.Is(err, osv.ErrRejected) {
+			if !isRejected(err) {
 				return nil, err
 			}
-			res.rejected++
+			res.reject(rl, e.Name, ruleRejection(err))
+			if res.tooManyInvalid() {
+				return res, nil
+			}
 			continue
 		}
 		res.unevaluable += rec.Unevaluable
@@ -105,6 +170,25 @@ func (s *Service) scanArchive(ctx context.Context, z *untrusted.ZipReader, eco s
 	return res, nil
 }
 
+// readRecordEntry reads one entry of the archive. An entry that crosses a bound of its own (size or ratio) is not read and comes
+// back as a rejection; any other refusal of the reader ends the run.
+func readRecordEntry(z *untrusted.ZipReader, e untrusted.ZipEntry, max int64) (data []byte, why *rejection, err error) {
+	if err := z.CheckEntry(e, max); err != nil {
+		if !untrusted.IsTooLarge(err) {
+			return nil, nil, archiveError(err)
+		}
+		if e.Size > max {
+			return nil, sizeRejection(e.Size, max), nil
+		}
+		return nil, ratioRejection(e.Size), nil
+	}
+	data, err = z.ReadEntry(e, max)
+	if err != nil {
+		return nil, nil, archiveError(err)
+	}
+	return data, nil, nil
+}
+
 // checkpoint is the resumable state of a job (R-VULN-004 "Resumption"): the ecosystems whose run ended, and for the one in
 // progress the identity of the archive and the number of batches committed.
 type checkpoint struct {
@@ -112,9 +196,38 @@ type checkpoint struct {
 	Ecosystem string   `json:"ecosystem,omitempty"`
 	// Ident is the ETag of the archive (the SHA-256 of a mirrored item): a resumed run continues only when the archive it
 	// downloads again has the same one.
-	Ident   string `json:"ident,omitempty"`
-	Batches int    `json:"batches,omitempty"`
-	Written int    `json:"written,omitempty"`
+	Ident string `json:"ident,omitempty"`
+	// Cut is the digest of the batch cut ([cutDigest]), AdapterVersion the adapter that wrote the batches: the first pass leaves
+	// out the entries that a bound rejects, so a batch index means another batch when the records that pass are other ones, and a
+	// batch an older adapter wrote is not one a newer adapter may skip (Q-VULN-116).
+	Cut            string `json:"cut,omitempty"`
+	AdapterVersion int    `json:"adapterVersion,omitempty"`
+	Batches        int    `json:"batches,omitempty"`
+	Written        int    `json:"written,omitempty"`
+}
+
+// resumes reports whether the checkpoint was taken on the run that is starting: the same ecosystem, the same archive, the same
+// batch cut and the same adapter version, with at least one batch committed.
+func (cp *checkpoint) resumes(eco, ident, cut string, adapterVersion int) bool {
+	return cp.Ecosystem == eco && cp.Ident == ident && cp.Cut == cut && cp.AdapterVersion == adapterVersion && cp.Batches > 0
+}
+
+// cutDigest is the SHA-256, in hex, of the identifiers of the records that passed the first pass, in the order of the batches,
+// and of the end offset of each batch: two runs that read the same archive under the same bounds get the same digest, and
+// any other limit, adapter or archive that cuts the batches elsewhere gets another.
+func cutDigest(metas []entryMeta, ends []int) string {
+	h := sha256.New()
+	var n [8]byte
+	for _, m := range metas {
+		binary.BigEndian.PutUint64(n[:], uint64(len(m.id)))
+		h.Write(n[:])
+		h.Write([]byte(m.id))
+	}
+	for _, e := range ends {
+		binary.BigEndian.PutUint64(n[:], uint64(e)) //nolint:gosec // an offset into a slice
+		h.Write(n[:])
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // batchEnds cuts the records of an archive into the batches of the second pass: at most BatchSize records and, once a batch holds
@@ -149,10 +262,84 @@ type fullInput struct {
 	force bool
 }
 
+// reportOlderAdapter logs the stored rows that an older adapter wrote and that this full sync did not write again, which are the
+// ones a rejected record kept (Q-VULN-122): the first maxRejectLines one by one at WARN, then one line that counts the rest. Such a
+// row is written when its record next passes. It is best effort: the report is not worth a failed run.
+func (s *Service) reportOlderAdapter(ctx context.Context, eco string) {
+	version := match.AdapterVersion(eco)
+	var ids []string
+	var total int
+	err := s.o.DB.Read(ctx, func(db dbtx) (err error) {
+		ids, total, err = store.Sync{}.OlderAdapter(ctx, db, eco, version, maxRejectLines)
+		return err
+	})
+	if err != nil {
+		if ctx.Err() == nil {
+			s.log.Warn("the stored records of an older adapter were not counted", "source", store.SourceOSV, "ecosystem", eco, "error", err)
+		}
+		return
+	}
+	for _, id := range ids {
+		s.log.Warn("a stored advisory record was written by an older adapter and is kept until it passes again",
+			"source", store.SourceOSV, "ecosystem", eco, "id", escaped(id), "adapterVersion", version)
+	}
+	if total > len(ids) {
+		s.log.Warn("further stored advisory records were written by an older adapter and are not logged one by one",
+			"source", store.SourceOSV, "ecosystem", eco, "count", total-len(ids), "adapterVersion", version)
+	}
+}
+
+// limitChanged reports that the configured max_record_size is not the one the last full sync completed with, and that sync
+// rejected records: such a record may pass now, so the source's "unchanged" answers (a 304, an unchanged digest) and the
+// incremental run, which fetches only what changed, do not apply and the archive is read again (Q-VULN-122).
+func (s *Service) limitChanged(st store.SyncState) bool {
+	return st.FullRejected > 0 && st.RecordLimit != int64(s.o.Config.Sources.OSV.MaxRecordSize)
+}
+
 // adapterStale reports whether the records stored for an ecosystem were imported with an older adapter than this release's, so
 // that the next run must import them again, in full and unconditionally (Q-VULN-63).
 func adapterStale(eco string, st store.SyncState) bool {
 	return st.AdapterVersion < match.AdapterVersion(eco)
+}
+
+// gone lists the stored identifiers the archive no longer has. A rejected entry named after an identifier still has it: the
+// stored row stays (Q-VULN-117).
+func (r *scanResult) gone(stored []string) []string {
+	seen := make(map[string]struct{}, len(r.metas)+len(r.kept))
+	for _, m := range r.metas {
+		seen[m.id] = struct{}{}
+	}
+	for _, id := range r.kept {
+		seen[id] = struct{}{}
+	}
+	var gone []string
+	for _, id := range stored {
+		if _, ok := seen[id]; !ok {
+			gone = append(gone, id)
+		}
+	}
+	return gone
+}
+
+// invalidDetail is the detail of too_many_invalid_records: the measured share, the fixed limit and the first record that failed
+// validation (Q-VULN-121). The reason is cleaned here, at the sink, whatever made it.
+func (r *scanResult) invalidDetail() string {
+	return fmt.Sprintf("%d of %d records were rejected by validation (%.2f %%), more than the fixed %d %%; the first: %s: %s",
+		r.invalid, r.records, percent(r.invalid, r.records), invalidPercent, quoted(r.firstEntry), clean(r.firstReason, 200))
+}
+
+// shrinkDetail is the detail of shrink_refused: the measured share and the key that sets the limit with its value.
+func shrinkDetail(gone, stored int, limit float64) string {
+	return fmt.Sprintf("the archive would delete %d of %d stored records (%.2f %%), more than vulnerabilities.sources.osv.max_shrink (%g)",
+		gone, stored, percent(gone, stored), limit)
+}
+
+// percent is part of whole in percent; 0 for an empty whole.
+func percent(part, whole int) float64 {
+	if whole == 0 {
+		return 0
+	}
+	return 100 * float64(part) / float64(whole)
 }
 
 // applyArchive runs a full sync over a downloaded or mirrored archive: pass 1, the integrity guards, pass 2 in batches with a
@@ -169,29 +356,20 @@ func (s *Service) applyArchive(ctx context.Context, run Run, p Params, cp *check
 		return Result{}, err
 	}
 	res := Result{Ecosystem: in.eco, Kind: kindFull, Rejected: scan.rejected, Unevaluable: scan.unevaluable}
-	s.count(store.SourceOSV, in.eco, "rejected", scan.rejected)
 
-	// The integrity guards, before anything is written: a truncated or tampered source changes nothing.
-	if scan.rejected*100 > scan.records*invalidPercent {
-		return res, problemf(errs.CodeTooManyInvalidRecords, "more than 1 % of the archive's records failed validation", nil)
+	// The integrity guards, before anything is written: a truncated or tampered source changes nothing. Only the records that
+	// failed validation count; the ones a bound of their own rejected are reported by the metric and its alert (Q-VULN-118).
+	if scan.tooManyInvalid() {
+		return res, problemf(errs.CodeTooManyInvalidRecords, scan.invalidDetail(), nil)
 	}
 	stored, err := s.storedIDs(ctx, in.eco)
 	if err != nil {
 		return res, err
 	}
-	seen := make(map[string]struct{}, len(scan.metas))
-	for _, m := range scan.metas {
-		seen[m.id] = struct{}{}
-	}
-	var gone []string
-	for _, id := range stored {
-		if _, ok := seen[id]; !ok {
-			gone = append(gone, id)
-		}
-	}
+	gone := scan.gone(stored)
 	if len(stored) > 0 && float64(len(gone)) > cfg.MaxShrink*float64(len(stored)) {
 		if !p.AcceptShrink {
-			return res, problemf(errs.CodeShrinkRefused, "the archive would delete more than vulnerabilities.sources.osv.max_shrink of the stored records", nil)
+			return res, problemf(errs.CodeShrinkRefused, shrinkDetail(len(gone), len(stored), cfg.MaxShrink), nil)
 		}
 		res.AcceptedShrink = true
 	}
@@ -200,10 +378,11 @@ func (s *Service) applyArchive(ctx context.Context, run Run, p Params, cp *check
 	in.force = adapterStale(in.eco, in.state)
 	ends := batchEnds(scan.metas)
 	start := 0
-	if cp.Ecosystem == in.eco && cp.Ident == in.arch.ident && cp.Batches > 0 {
+	cut, version := cutDigest(scan.metas, ends), match.AdapterVersion(in.eco)
+	if cp.resumes(in.eco, in.arch.ident, cut, version) {
 		start, res.Written = cp.Batches, cp.Written
 	} else {
-		*cp = checkpoint{Done: cp.Done, Ecosystem: in.eco, Ident: in.arch.ident}
+		*cp = checkpoint{Done: cp.Done, Ecosystem: in.eco, Ident: in.arch.ident, Cut: cut, AdapterVersion: version}
 	}
 	z2, err := untrusted.NewZipDeclared(ctx, in.arch.ra, in.arch.size, lim)
 	if err != nil {
@@ -259,6 +438,7 @@ func (s *Service) applyArchive(ctx context.Context, run Run, p Params, cp *check
 		return res, err
 	}
 	res.Records = len(scan.metas)
+	s.reportOlderAdapter(ctx, in.eco)
 	return s.finishFull(ctx, p, in, res)
 }
 
@@ -278,10 +458,11 @@ func (s *Service) writeChunk(ctx context.Context, z *untrusted.ZipReader, eco st
 		return 0, 0, err
 	}
 	max := int64(s.o.Config.Sources.OSV.MaxRecordSize)
+	version := match.AdapterVersion(eco)
 	var batch []store.Written
 	entries := z.Entries()
 	for _, m := range chunk {
-		if st, ok := stored[m.id]; ok && !force && bytes.Equal(st.SHA256, m.sha[:]) && st.Modified.Equal(m.modified) {
+		if st, ok := stored[m.id]; ok && !force && st.AdapterVersion == version && bytes.Equal(st.SHA256, m.sha[:]) && st.Modified.Equal(m.modified) {
 			skipped++
 			continue
 		}
@@ -318,7 +499,7 @@ func (s *Service) commitBatch(ctx context.Context, eco string, batch []store.Wri
 		if err != nil {
 			return err
 		}
-		if err := (store.Sync{}).Upsert(ctx, db, eco, batch); err != nil {
+		if err := (store.Sync{}).Upsert(ctx, db, eco, match.AdapterVersion(eco), batch); err != nil {
 			return err
 		}
 		if err := (store.Sync{}).TouchedAdd(ctx, db, eco, names); err != nil {

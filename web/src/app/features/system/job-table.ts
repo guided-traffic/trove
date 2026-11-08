@@ -59,7 +59,17 @@ import { jobStateText } from '../../shared/job-progress';
                 {{ progressText(j) }}
               </td>
               <td translate="no">{{ j.replica ?? '–' }}</td>
-              <td translate="no">{{ summary(j) }}</td>
+              <td>
+                @if (j.error; as err) {
+                  <span translate="no">{{ err.code }}</span>
+                  @if (err.detail) {
+                    <span class="error-detail" translate="no">{{ err.detail }}</span>
+                    <span class="error-detail" i18n="@@jobs.attempt">Attempt {{ attemptOf(j) }} of {{ j.maxAttempts }}</span>
+                  }
+                } @else {
+                  <span translate="no">{{ summary(j) }}</span>
+                }
+              </td>
               <td>
                 @if (canCancel(j)) {
                   <button class="btn btn-tertiary"
@@ -110,16 +120,22 @@ export class JobTable {
     return $localize`:@@jobs.cancel.label:Cancel job ${job.kind}:kind:`;
   }
 
-  /** A compact result or error summary; the full object is in the API. */
+  /** The attempt a job's error belongs to: the error's own, else the job's (Q-UI-172). */
+  protected attemptOf(job: Job): number {
+    return job.error?.attempt ?? job.attempt;
+  }
+
+  /** A compact summary of a result; the full object is in the API. A list shows its length, an object its JSON. */
   protected summary(job: Job): string {
-    if (job.error) {
-      const code = job.error['code'];
-      return typeof code === 'string' ? code : JSON.stringify(job.error);
-    }
     if (job.result)
       return Object.entries(job.result)
-        .map(([k, v]) => `${k}: ${String(v)}`)
+        .map(([k, v]) => `${k}: ${resultValue(v)}`)
         .join(', ');
     return jobActive(job.state) ? '' : '–';
   }
+}
+
+function resultValue(v: unknown): string {
+  if (Array.isArray(v)) return String(v.length);
+  return v !== null && typeof v === 'object' ? JSON.stringify(v) : String(v);
 }

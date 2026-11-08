@@ -59,6 +59,7 @@ func (s *Service) finishFull(ctx context.Context, p Params, in fullInput, res Re
 			return err
 		}
 		next.Rejected, next.Unevaluable = res.Rejected, res.Unevaluable
+		next.FullRejected, next.RecordLimit = res.Rejected, int64(cfg.MaxRecordSize)
 		if changed {
 			next.DataEpoch++
 		}

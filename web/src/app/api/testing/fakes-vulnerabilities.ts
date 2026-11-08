@@ -508,6 +508,7 @@ export function sampleSource(over: Partial<VulnerabilitySourceState> = {}): Vuln
     lastError: null,
     records: 1234,
     rejected: 0,
+    fullRejected: 0,
     unevaluable: 2,
     nextRunAt: new Date(Date.now() + 3_600_000).toISOString(),
     ...over,

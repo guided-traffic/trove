@@ -116,11 +116,11 @@ func (s *Service) fullMirror(ctx context.Context, run Run, p Params, eco string,
 		s.countRun(store.SourceOSV, eco, kindFull, outcomeUnchanged)
 		return res, nil
 	}
-	if st.Complete() && bytes.Equal(st.ArchiveSHA256, item.SHA256[:]) && !adapterStale(eco, st) {
+	if st.Complete() && bytes.Equal(st.ArchiveSHA256, item.SHA256[:]) && !adapterStale(eco, st) && !s.limitChanged(st) {
 		return s.finishUnchanged(ctx, eco, kindFull)
 	}
 	if item.Size > int64(s.o.Config.Sources.OSV.MaxArchiveSize) {
-		return res, problemf(errs.CodeArchiveTooLarge, "the item is larger than vulnerabilities.sources.osv.max_archive_size", nil)
+		return res, archiveTooLarge(int64(s.o.Config.Sources.OSV.MaxArchiveSize), item.Size, nil)
 	}
 	rc, err := item.Open(ctx)
 	if err != nil {

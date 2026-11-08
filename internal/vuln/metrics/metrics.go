@@ -47,7 +47,13 @@ const (
 	RecordWritten  = "written"
 	RecordSkipped  = "skipped"
 	RecordRejected = "rejected"
-	RecordDeleted  = "deleted"
+	// RecordInvalid counts the records that failed a rule of R-VULN-006 (and the rows of the change file that do not parse); the
+	// bounds of one entry are RecordRejected (Q-VULN-122).
+	RecordInvalid = "invalid"
+	// RecordRejectedMalicious counts the records named like a malicious-package record (MAL-) that were rejected, by a bound of
+	// one entry or by validation; they are counted in RecordRejected or RecordInvalid too. The record's identifier is never a label (Q-VULN-122).
+	RecordRejectedMalicious = "rejected_malicious"
+	RecordDeleted           = "deleted"
 
 	// mode of trove_vuln_downloads_blocked_total.
 	ModeEnforce = "enforce"
@@ -97,7 +103,7 @@ func New(reg prometheus.Registerer) (*Metrics, error) {
 			Name: SyncRuns, Help: "Advisory sync runs by source, ecosystem, kind (full, incremental) and outcome (changed, unchanged, failed, cancelled) (R-VULN-004).",
 		}, runLabels()),
 		SyncRecords: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: SyncRecords, Help: "Advisory records by source, ecosystem and result (written, skipped, rejected, deleted) (R-VULN-004).",
+			Name: SyncRecords, Help: "Advisory records by source, ecosystem and result (written, skipped, rejected, invalid, rejected_malicious, deleted) (R-VULN-004).",
 		}, recordLabels()),
 		UnevaluableRanges: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: UnevaluableRanges, Help: "Advisory ranges the format's version order cannot evaluate, by ecosystem (R-VULN-009).",

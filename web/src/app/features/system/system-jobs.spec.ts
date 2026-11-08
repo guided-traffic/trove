@@ -207,6 +207,59 @@ describe('Jobs screen', () => {
     await expectAccessible(root);
   });
 
+  it('R-UI-038 a failed job shows its error code, the detail and the attempt it failed in, and passes the accessibility check', async () => {
+    const detail = 'the archive is not a valid zip archive: entry "MAL-2026-16369.json" is larger than the limit';
+    const { root } = await open({}, (jobs) => {
+      jobs.jobList = [
+        sampleJob({
+          kind: 'vuln-sync-osv',
+          state: 'failed',
+          attempt: 2,
+          maxAttempts: 3,
+          result: null,
+          error: { code: 'job_failed', detail, attempt: 2 },
+        }),
+      ];
+    });
+    const cell = root.querySelector('tbody tr td:nth-child(6)')!;
+    const lines = [...cell.querySelectorAll('span')].map((e) => text(e));
+    expect(lines).toEqual(['job_failed', detail, 'Attempt 2 of 3']);
+    expect(cell.querySelector('.error-detail')!.getAttribute('translate')).toBe('no');
+    await expectAccessible(root);
+  });
+
+  it('R-UI-038 a job queued again after a failed attempt shows the attempt of its error, not its own', async () => {
+    const { root } = await open({}, (jobs) => {
+      jobs.jobList = [
+        sampleJob({
+          state: 'queued',
+          attempt: 3,
+          maxAttempts: 5,
+          result: null,
+          error: { code: 'job_timeout', detail: 'the job ran past its timeout', attempt: 2 },
+        }),
+      ];
+    });
+    expect(text(root)).toContain('Attempt 2 of 5');
+    expect(text(root)).not.toContain('Attempt 3 of 5');
+  });
+
+  it('R-UI-038 an error without a detail shows its code alone', async () => {
+    const { root } = await open({}, (jobs) => {
+      jobs.jobList = [sampleJob({ state: 'cancelled', result: null, error: { code: 'cancelled' } })];
+    });
+    const cell = root.querySelector('tbody tr td:nth-child(6)')!;
+    expect(text(cell)).toBe('cancelled');
+    expect(root.querySelector('.error-detail')).toBeNull();
+  });
+
+  it('R-UI-038 the result of a job whose result holds a list shows the length of the list', async () => {
+    const { root } = await open({}, (jobs) => {
+      jobs.jobList = [sampleJob({ kind: 'vuln-sync-osv', result: { ecosystems: [{ ecosystem: 'npm' }, { ecosystem: 'NuGet' }] } })];
+    });
+    expect(text(root)).toContain('ecosystems: 2');
+  });
+
   it('R-UI-038 filters by kind and state reach the API', async () => {
     const { jobs, root } = await open({ kind: 'gc,gc-full', state: ['running', 'cancelling'] });
     expect(jobs.filterCalls.at(-1)).toEqual({

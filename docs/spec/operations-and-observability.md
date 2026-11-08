@@ -2186,6 +2186,16 @@ API:
 | `GET /api/v1/system/jobs/{id}` | — | `200` one job, including its result summary | `system.read`, or the caller started the job (R-API-015) |
 | `POST /api/v1/system/jobs/{id}/cancel` | — | `202`; the job turns `cancelling` and stops at its next checkpoint; `409` if finished | system administrator, or the caller started the job (R-API-015) |
 
+A job's `error` is `null` until an attempt failed or the job was cancelled, and then an object with the stable `code`
+(`job_failed`, `job_timeout`, `attempts_exhausted`, `cancelled`, `superseded`), the `detail` when the writer has one, and the
+`attempt` the detail belongs to when a worker wrote it (Q-OPS-186). The `detail` is the text of the failed attempt's error as the
+handler returned it, cut to 2,000 bytes: a handler whose error could carry a secret or a full URL reduces it before it returns, as
+the mirror's does. A job that returns to `queued` for another attempt keeps the `error` of the attempt that failed, also while
+the next attempt runs, so its `attempt` member and the job's `attempt` differ then.
+
+A job's `result` is `null` until the job succeeded and then a JSON object, the same shape for every kind: `vuln-sync-osv`
+answers `{"ecosystems":[…]}` with one entry per ecosystem (Q-OPS-187).
+
 A job reference returned by any trigger on this page has this shape:
 
 ```json
@@ -5946,6 +5956,48 @@ Status: **Decided by the development agent** — selected from the options below
 **Rationale:** The clause is the one of R-BAK-014 ("absent for longer than `expected_interval`"). The development agent would revisit this if the replicas gain an installation-age metric for another reason.
 
 **Applied:** R-BAK-014, R-HA-045; `deploy/helm/trove/templates/_rules.tpl`, `deploy/helm/trove/tests/rules_test.yaml`.
+
+### Q-OPS-186 · The `error` of a job is a declared object of `code`, `detail` and `attempt`
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the job table's `error` column holds `{"code","detail","attempt"}` when a worker ends an attempt failed
+(`internal/jobs/worker.go`), `{"code":"attempts_exhausted","detail":…}` from the reaper and `{"code":"cancelled"}` or
+`{"code":"superseded"}` from the statements of `internal/meta/postgres/queries/jobs.sql`. The OpenAPI document declared `error` as
+an open object, "a stable `code` and a sanitised message", and the UI read `error['code']` from a map. The jobs screen is to show
+the detail and the attempt ([api-and-ui.md](api-and-ui.md) Q-UI-172). Nothing sanitises the detail centrally; it is the handler's
+error text cut to 2,000 bytes.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the open object and read `detail` and `attempt` as untyped members | No contract change | Nothing to generate | A member the screen depends on is in no contract, so a writer that renames it breaks the screen without a failing check; the description claims a sanitising that does not happen |
+| (b) A schema `JobError` with `code` (required), `detail` and `attempt`, no other members, and a description that says what `detail` is (chosen) | `toJob` decodes the column into the generated type | The response check of R-API-002 holds every writer to the three members; the UI reads typed members; the description is true | One more schema; a member a future writer adds needs the schema first |
+| (c) A separate endpoint for a job's error | The list stays small | — | A request per failed row for text of at most 2,000 bytes |
+
+**Choice:** (b).
+**Rationale:** the screen now depends on `detail` and `attempt`, and a dependency belongs in the contract the response check
+enforces. The development agent would revisit this if a job kind needs structured error members of its own.
+**Applied:** R-OPS-019 (the paragraph on a job's `error`). Code: `JobError` and `Job.error` in `api/openapi.yaml` with the generated
+`internal/api/v1/gen` and `web/src/app/api/generated/schema.d.ts`; `toJob` in `internal/api/v1/jobs_api.go`.
+
+### Q-OPS-187 · The result of a job is always a JSON object; `vuln-sync-osv` wraps its list of ecosystems in one
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `RunOSV` stored a JSON array (one entry per ecosystem) as the job's result, while `Job.result` is declared `object | null`
+and `toJob` decodes objects only, so the result of the one job that reports what it imported never reached the jobs API (it
+answered `null`). Every other job kind sets an object.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `result` accepts any JSON value | The OpenAPI type of `result` widens to any value, `toJob` passes the raw value on | The producer stays as it is | Every client of the result must branch on the type; the generated types lose their shape (`unknown`); the summary of the jobs table has to handle arrays |
+| (b) The producer sets an object `{"ecosystems":[…]}` (chosen) | One function changes, `RunOSV` in `internal/vuln/sync/run.go` | The contract stays an object for all kinds; a key can be added next to `ecosystems` without another shape change; the skipped result (`{"skipped":…}`) is already an object | The stored result of older runs is an array and is answered as `null` (no migration, pre-alpha) |
+
+**Choice:** (b).
+**Rationale:** one result shape for every kind is a smaller contract than a union, and the repository's other kinds already
+follow it. The development agent would revisit this if a kind needs a result that is not a mapping.
+**Applied:** R-OPS-019 (the paragraph after the table of the jobs API). Code: `RunOSV` in `internal/vuln/sync/run.go`. Tests:
+`TestR_OPS_019_TheResultOfTheOSVSyncIsAnObject`, `TestR_OPS_019_TheResultOfAJobRowIsAnObject`.
 
 ## What this does not cover
 

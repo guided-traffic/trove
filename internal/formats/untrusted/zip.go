@@ -113,7 +113,11 @@ func newZip(ctx context.Context, ra io.ReaderAt, size int64, l Limits) (*ZipRead
 			Dir: strings.HasSuffix(f.Name, "/"), index: i,
 		}
 		if !e.Dir {
-			if declared += e.Size; declared > l.StreamBytes {
+			contribution := e.Size
+			if l.DeclaredEntryCap > 0 && contribution > l.DeclaredEntryCap {
+				contribution = 0
+			}
+			if declared += contribution; declared > l.StreamBytes {
 				return nil, TooLarge(fmt.Sprintf("the archive unpacks to more than %d bytes", l.StreamBytes))
 			}
 		}
@@ -125,30 +129,80 @@ func newZip(ctx context.Context, ra io.ReaderAt, size int64, l Limits) (*ZipRead
 // Entries lists the entries in the order of the central directory.
 func (z *ZipReader) Entries() []ZipEntry { return z.entries }
 
-// ReadEntry reads one entry into memory. max is the bound for this entry,
-// Limits.ManifestEntryBytes when it is not positive. A declared size above it, or
-// above what remains of Limits.UncompressedBytes, or a declared compression ratio
-// above Limits.Ratio, fails with TooLarge before a byte is inflated; the inflater
-// is cut at the declared size, and a stream that disagrees with its declaration is
-// Refused.
-func (z *ZipReader) ReadEntry(e ZipEntry, max int64) ([]byte, error) {
+// CheckEntry reports whether the declaration of e crosses a bound of the entry itself: its size above max
+// (Limits.ManifestEntryBytes when max is not positive) or its compression ratio above Limits.Ratio. It reads nothing.
+// It returns TooLarge for a crossed bound, Refused for an entry that is not one of this archive or is a directory, and nil
+// otherwise. ReadEntry refuses everything CheckEntry refuses, so the two never disagree; a caller that can go on without
+// the entry (a record of a large archive) tells these bounds from the one of the archive as a whole, which only ReadEntry meets.
+func (z *ZipReader) CheckEntry(e ZipEntry, max int64) error {
+	e, max, err := z.declared(e, max)
+	if err != nil {
+		return err
+	}
+	if err := checkSize(e, max); err != nil {
+		return err
+	}
+	return z.checkRatio(e)
+}
+
+// declared resolves e against the archive's own declaration and the bound that applies to it.
+func (z *ZipReader) declared(e ZipEntry, max int64) (ZipEntry, int64, error) {
 	if e.index < 0 || e.index >= len(z.zr.File) || z.entries[e.index].Name != e.Name {
-		return nil, Refused("the entry is not one of this archive")
+		return e, 0, Refused("the entry is not one of this archive")
 	}
 	e = z.entries[e.index] // the declaration of the archive, not the caller's copy
 	if e.Dir {
-		return nil, Refused("the entry has no content")
+		return e, 0, Refused("the entry has no content")
 	}
 	if max <= 0 {
 		max = z.l.ManifestEntryBytes
 	}
-	switch {
-	case e.Size > max:
-		return nil, TooLarge(fmt.Sprintf("entry %q is larger than %d bytes", shorten(e.Name), max))
-	case z.read+e.Size > z.l.UncompressedBytes:
+	return e, max, nil
+}
+
+func checkSize(e ZipEntry, max int64) error {
+	if e.Size > max {
+		return TooLarge(fmt.Sprintf("entry %q is larger than %d bytes", shorten(e.Name), max))
+	}
+	return nil
+}
+
+// overRatio reports whether size bytes declared for an entry of compressed bytes cross ratio:1 plus the read-ahead allowance. The
+// allowance is computed without overflow: a compressed size so large that ratio times it exceeds every int64 allows any size.
+func overRatio(size, compressed int64, ratio int) bool {
+	r := int64(ratio)
+	if r > 0 && compressed > (math.MaxInt64-ratioSlack)/r {
+		return false
+	}
+	return size > r*compressed+ratioSlack
+}
+
+func (z *ZipReader) checkRatio(e ZipEntry) error {
+	if overRatio(e.Size, e.CompressedSize, z.l.Ratio) {
+		return TooLarge(fmt.Sprintf("entry %q compresses by more than %d:1", shorten(e.Name), z.l.Ratio))
+	}
+	return nil
+}
+
+// ReadEntry reads one entry into memory. max is the bound for this entry,
+// Limits.ManifestEntryBytes when it is not positive. A declared size above it, or
+// above what remains of Limits.UncompressedBytes, or a declared compression ratio
+// above Limits.Ratio, fails with TooLarge before a byte is inflated (the bounds of
+// the entry are CheckEntry's); the inflater is cut at the declared size, and a
+// stream that disagrees with its declaration is Refused.
+func (z *ZipReader) ReadEntry(e ZipEntry, max int64) ([]byte, error) {
+	e, max, err := z.declared(e, max)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkSize(e, max); err != nil {
+		return nil, err
+	}
+	if z.read+e.Size > z.l.UncompressedBytes {
 		return nil, TooLarge(fmt.Sprintf("more than %d bytes would be read into memory", z.l.UncompressedBytes))
-	case e.Size > int64(z.l.Ratio)*e.CompressedSize+ratioSlack:
-		return nil, TooLarge(fmt.Sprintf("entry %q compresses by more than %d:1", shorten(e.Name), z.l.Ratio))
+	}
+	if err := z.checkRatio(e); err != nil {
+		return nil, err
 	}
 	if err := z.ctx.Err(); err != nil {
 		return nil, err

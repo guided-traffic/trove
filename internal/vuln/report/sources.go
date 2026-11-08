@@ -30,6 +30,8 @@ type SourceView struct {
 	// LastError is the problem object of the last failed run, nil when there is none.
 	LastError                      json.RawMessage
 	Records, Rejected, Unevaluable int
+	// FullRejected is the number of records the last full sync rejected; Rejected is that of the last run of any kind.
+	FullRejected int
 }
 
 // SourceConfig is what the view of the sources reads of the configuration.
@@ -87,7 +89,7 @@ func SourceViews(cfg SourceConfig, rows []store.SourceRow, now time.Time) []Sour
 		out = append(out, SourceView{
 			Source: r.Source, Ecosystem: r.Ecosystem, Mode: mode, State: r.State, SyncedAt: r.SyncedAt,
 			FullSyncedAt: r.FullSyncedAt, AttemptedAt: r.AttemptedAt, Failures: r.Failures, LastError: r.LastError,
-			Records: r.Records, Rejected: r.Rejected, Unevaluable: r.Unevaluable,
+			Records: r.Records, Rejected: r.Rejected, Unevaluable: r.Unevaluable, FullRejected: r.FullRejected,
 			Stale: cfg.StaleAfter > 0 && r.SyncedAt != nil && now.Sub(*r.SyncedAt) > cfg.StaleAfter,
 		})
 	}

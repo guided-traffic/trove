@@ -140,6 +140,8 @@ type Service struct {
 	states *States
 	log    *slog.Logger
 	mu     stdsync.Mutex
+	// partTimeoutOverride replaces PartTimeout in a test that scales it down.
+	partTimeoutOverride time.Duration
 }
 
 // New creates the service and registers the cache of the source state.
@@ -169,6 +171,10 @@ func New(o Options) (*Service, error) {
 	}
 	s := &Service{o: o, log: o.Log.With("component", "vulnerabilities")}
 	s.states = newStates(o.DB, o.Caches, o.Config.StaleAfter, o.Now, s.log)
+	ecosystems, _ := s.ecosystems()
+	for _, eco := range ecosystems {
+		s.zeroRejected(eco)
+	}
 	return s, nil
 }
 
@@ -250,6 +256,17 @@ const (
 func (s *Service) count(source, eco, result string, n int) {
 	if s.o.Metrics != nil && n > 0 {
 		s.o.Metrics.SyncRecords.WithLabelValues(source, eco, result).Add(float64(n))
+	}
+}
+
+// zeroRejected creates the series of the rejected-record counters of an ecosystem at 0, for every result the alerts read, when the
+// service is built: a counter that first appears with a value is invisible to increase() (Q-VULN-122).
+func (s *Service) zeroRejected(eco string) {
+	if s.o.Metrics == nil {
+		return
+	}
+	for _, result := range []string{vmetrics.RecordRejected, vmetrics.RecordInvalid, vmetrics.RecordRejectedMalicious} {
+		s.o.Metrics.SyncRecords.WithLabelValues(store.SourceOSV, eco, result).Add(0)
 	}
 }
 

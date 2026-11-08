@@ -82,6 +82,18 @@
   overflow-x: auto;
 }
 
+// The error text of a job or a source under its code or title (Q-UI-172, Q-VULN-121): server text that may hold a long entry
+// name, so it wraps at any character and keeps its line breaks.
+.error-detail {
+  display: block;
+  max-inline-size: 60ch;
+  color: var(--trove-text-muted);
+  font-size: var(--trove-text-muted-size);
+  font-weight: 400;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
 table.data {
   border-collapse: collapse;
   inline-size: 100%;

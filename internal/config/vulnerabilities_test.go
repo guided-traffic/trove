@@ -25,7 +25,7 @@ func TestR_VULN_025_TheSectionDefaults(t *testing.T) {
 	o := v.Sources.OSV
 	if o.Mode != "online" || o.BaseURL != "https://osv-vulnerabilities.storage.googleapis.com/" || len(o.Ecosystems) != 0 || o.Repository != "" ||
 		o.FullResyncThreshold != 2000 || o.Overlap != time.Hour || o.MaxShrink != 0.2 || o.Timeout != 10*time.Minute ||
-		o.MaxArchiveSize != GiB || o.MaxRecordSize != MiB {
+		o.MaxArchiveSize != GiB || o.MaxRecordSize != 8*MiB {
 		t.Errorf("osv %+v", o)
 	}
 	k := v.Sources.KEV

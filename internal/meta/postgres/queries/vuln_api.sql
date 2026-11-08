@@ -421,7 +421,7 @@ SELECT to_char(GREATEST((f.resolved_at AT TIME ZONE 'UTC')::date, sqlc.arg(from_
 -- name: VulnSourceStates :many
 -- The state of every source and ecosystem as the sources operation and the system information read it (R-VULN-021).
 SELECT source, ecosystem, state, synced_at, full_synced_at, attempted_at, failures,
-       COALESCE(last_error::text, '')::text AS last_error, records, rejected, unevaluable
+       COALESCE(last_error::text, '')::text AS last_error, records, rejected, unevaluable, full_rejected
   FROM vuln_source_state
  ORDER BY source, ecosystem;
 

@@ -1630,7 +1630,7 @@ vulnerabilities:
       max_shrink: 0.2                   # default; 0 to 1: the share of stored records a full sync may delete; above it the run fails with shrink_refused
       timeout: 10m                      # default; 10s to 24h: one archive download; a record or a part of the change file has 30s
       max_archive_size: 1GiB            # default; at least 1MiB; the worker's spool budget must hold it (the chart refuses a smaller one)
-      max_record_size: 1MiB             # default; 1KiB to 64MiB: in the archive uncompressed and as a single record
+      max_record_size: 8MiB             # default; 1KiB to 64MiB: in the archive uncompressed and as a single record; a larger record is rejected and counted, the run goes on
     kev:
       mode: online                      # default: online | repository | off; off keeps every known-exploited flag as last computed
       url: https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json   # default; https only

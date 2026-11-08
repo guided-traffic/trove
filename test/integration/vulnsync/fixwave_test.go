@@ -296,14 +296,16 @@ func TestR_VULN_004_ARisenAdapterVersionForcesAFullUnconditionalImport(t *testin
 	if !archive {
 		t.Fatalf("the archive was not downloaded\n%s", e.requestLog())
 	}
-	var results []struct {
-		Ecosystem, Kind, Outcome string
-		Written                  int
+	var result struct {
+		Ecosystems []struct {
+			Ecosystem, Kind, Outcome string
+			Written                  int
+		} `json:"ecosystems"`
 	}
-	if err := json.Unmarshal([]byte(j.Result), &results); err != nil {
+	if err := json.Unmarshal([]byte(j.Result), &result); err != nil || len(result.Ecosystems) == 0 {
 		t.Fatalf("result %s: %v", j.Result, err)
 	}
-	for _, r := range results {
+	for _, r := range result.Ecosystems {
 		if r.Ecosystem == "npm" && (r.Kind != "full" || r.Outcome != "changed" || r.Written == 0) {
 			t.Errorf("result of npm %+v: want a full run that wrote records", r)
 		}

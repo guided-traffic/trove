@@ -1273,6 +1273,33 @@ func (e ItemKind) Valid() bool {
 	}
 }
 
+// Defines values for JobErrorCode.
+const (
+	JobErrorCodeAttemptsExhausted JobErrorCode = "attempts_exhausted"
+	JobErrorCodeCancelled         JobErrorCode = "cancelled"
+	JobErrorCodeJobFailed         JobErrorCode = "job_failed"
+	JobErrorCodeJobTimeout        JobErrorCode = "job_timeout"
+	JobErrorCodeSuperseded        JobErrorCode = "superseded"
+)
+
+// Valid indicates whether the value is a known member of the JobErrorCode enum.
+func (e JobErrorCode) Valid() bool {
+	switch e {
+	case JobErrorCodeAttemptsExhausted:
+		return true
+	case JobErrorCodeCancelled:
+		return true
+	case JobErrorCodeJobFailed:
+		return true
+	case JobErrorCodeJobTimeout:
+		return true
+	case JobErrorCodeSuperseded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for JobState.
 const (
 	JobStateCancelled  JobState = "cancelled"
@@ -5761,9 +5788,9 @@ type Job struct {
 	Attempt    int       `json:"attempt"`
 	EnqueuedAt time.Time `json:"enqueuedAt"`
 
-	// Error A stable `code` and a sanitised message; `null` unless the job failed or was cancelled.
-	Error      *map[string]interface{} `json:"error"`
-	FinishedAt *time.Time              `json:"finishedAt"`
+	// Error Why the last attempt failed or why the job ended without succeeding; `null` until an attempt failed or the job was cancelled.
+	Error      *JobError  `json:"error"`
+	FinishedAt *time.Time `json:"finishedAt"`
 
 	// Href The path to poll.
 	Href        string             `json:"href"`
@@ -5784,6 +5811,21 @@ type Job struct {
 	// TriggeredBy The ID of the principal that started the job; `null` for scheduled and system runs.
 	TriggeredBy *string `json:"triggeredBy"`
 }
+
+// JobError Why the last attempt of a job failed, or why the job ended without succeeding (R-OPS-019, Q-OPS-186).
+type JobError struct {
+	// Attempt The attempt the detail belongs to; absent where the reaper or a cancel wrote the error. A job queued or running again keeps the error of the attempt before.
+	Attempt *int `json:"attempt,omitempty"`
+
+	// Code Stable snake_case identifier; clients match on it.
+	Code JobErrorCode `json:"code"`
+
+	// Detail The text of the failed attempt's error as the handler returned it, cut to 2,000 bytes; a handler whose error could carry a secret or a full URL reduces it before it returns. Not translated.
+	Detail *string `json:"detail,omitempty"`
+}
+
+// JobErrorCode Stable snake_case identifier; clients match on it.
+type JobErrorCode string
 
 // JobList defines model for JobList.
 type JobList struct {
@@ -8259,13 +8301,18 @@ type VulnerabilitySourceState struct {
 	Ecosystem string `json:"ecosystem"`
 
 	// Failures Consecutive failed runs.
-	Failures     int                          `json:"failures"`
+	Failures int `json:"failures"`
+
+	// FullRejected The records the last full sync rejected; an incremental run does not change it (Q-VULN-122).
+	FullRejected int                          `json:"fullRejected"`
 	FullSyncedAt *time.Time                   `json:"fullSyncedAt"`
 	LastError    *Problem                     `json:"lastError"`
 	Mode         VulnerabilitySourceStateMode `json:"mode"`
 	NextRunAt    *time.Time                   `json:"nextRunAt"`
 	Records      int                          `json:"records"`
-	Rejected     int                          `json:"rejected"`
+
+	// Rejected The records the last run, full or incremental, rejected (R-VULN-004).
+	Rejected int `json:"rejected"`
 
 	// Repository The key of the configured mirror repository in the mode `repository` (R-VULN-005), else `null`.
 	Repository  *string                        `json:"repository"`
