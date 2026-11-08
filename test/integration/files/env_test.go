@@ -345,10 +345,14 @@ type countingStore struct {
 	// putDelay, in nanoseconds, delays every Put and CompleteMultipart: the tests
 	// that hold an upload in its commit use it.
 	putDelay atomic.Int64
+	// delayed counts the writes that entered the delay: a test that needs an upload to be in its
+	// commit waits for it instead of sleeping.
+	delayed atomic.Int64
 }
 
 func (c *countingStore) delay(ctx context.Context) {
 	if d := time.Duration(c.putDelay.Load()); d > 0 {
+		c.delayed.Add(1)
 		select {
 		case <-time.After(d):
 		case <-ctx.Done():

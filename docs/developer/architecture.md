@@ -131,6 +131,8 @@ net/http server ── track (stall deadlines, active-request registry for the s
                                                   (404 where the route hides its methods from the caller, Router.HideMethods)
 ```
 
+`track` ([server.go](../../internal/httpserver/server.go)) bounds a peer that stops moving bytes, never the server's own work (Q-ARCH-403): body chunks move the read and write deadline, both deadlines are released when the body ends (and none is set for a request without a body; over HTTP/2 each is a running stream timer), `stallWriter` arms the write deadline before and after every response write, and the handler's return arms it once more for what net/http still has buffered. A test of these deadlines must not depend on wall-clock gaps over a socket: `TestStallTimeout` records the deadlines set on the connection instead.
+
 [chain.go](../../internal/httpserver/chain.go) builds this in one function; a test records the order
 (`R-ARCH-005 stages run in the fixed order`). The route label of the log and the metrics is
 `r.Pattern`, resolved by the outermost stage with `Router.Pattern`, because every stage that copies the

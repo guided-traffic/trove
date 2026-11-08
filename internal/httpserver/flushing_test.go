@@ -17,6 +17,12 @@ import (
 // h2Server serves h over TLS with HTTP/2 and returns the CA the client trusts.
 func h2Server(t *testing.T, h http.Handler) (*Server, string, *tlstest.CA) {
 	t.Helper()
+	return h2ServerStall(t, h, 0)
+}
+
+// h2ServerStall is h2Server with a stall timeout.
+func h2ServerStall(t *testing.T, h http.Handler, stall time.Duration) (*Server, string, *tlstest.CA) {
+	t.Helper()
 	dir := t.TempDir()
 	ca := tlstest.NewCA(t, "ca")
 	cert, key := ca.Issue(t, tlstest.Options{}).Files(t, dir, "srv")
@@ -24,7 +30,7 @@ func h2Server(t *testing.T, h http.Handler) (*Server, string, *tlstest.CA) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, addr := start(t, ServerConfig{Handler: h, TLS: l, CommitGrace: time.Second})
+	s, addr := start(t, ServerConfig{Handler: h, TLS: l, CommitGrace: time.Second, StallTimeout: stall})
 	return s, addr, ca
 }
 

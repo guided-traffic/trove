@@ -335,7 +335,7 @@ func (s *Server) track(next http.Handler) http.Handler {
 			s.mu.Unlock()
 		}()
 
-		extend := func() {}
+		extend, release, arm := func() {}, func() {}, func() {}
 		if d := s.cfg.StallTimeout; d > 0 {
 			rc := http.NewResponseController(w)
 			extend = func() {
@@ -343,16 +343,33 @@ func (s *Server) track(next http.Handler) http.Handler {
 				_ = rc.SetReadDeadline(t)
 				_ = rc.SetWriteDeadline(t)
 			}
-			extend()
+			// The deadlines only bound a peer that stops moving bytes. While the server works
+			// without moving any (an upload's commit after the last body byte, an upstream fetch
+			// before the first response byte) no deadline may run: net/http watches the
+			// connection in the background once the body is complete, and a read deadline that
+			// expires there cancels the request context (F-91). Over HTTP/2 the write deadline is a
+			// running timer of the stream that resets it when it fires, so the release clears both;
+			// stallWriter arms a fresh write deadline before every write.
+			release = func() {
+				_ = rc.SetReadDeadline(time.Time{})
+				_ = rc.SetWriteDeadline(time.Time{})
+			}
+			arm = func() { _ = rc.SetWriteDeadline(time.Now().Add(d)) }
+			if a.hasBody {
+				extend() // waiting for the first body chunk
+			}
 			// net/http resets the read deadline itself before it reads the next request, and
 			// it relies on ours while it drains an unread body after the handler returned.
-			// The write deadline would otherwise outlive the request.
-			defer func() { _ = rc.SetWriteDeadline(time.Time{}) }()
+			// What net/http still has buffered when the handler returns (a whole small response,
+			// the last kilobytes of a large one) is written after this deferred call, so the
+			// write deadline is armed for it instead of cleared: a client that never reads is
+			// cut after one stall timeout, not held for as long as its kernel answers probes.
+			defer arm()
 		}
 		if a.hasBody {
-			r.Body = &trackedBody{ReadCloser: r.Body, a: a, extend: extend}
+			r.Body = &trackedBody{ReadCloser: r.Body, a: a, extend: extend, release: release}
 		}
-		next.ServeHTTP(&stallWriter{ResponseWriter: w, extend: extend}, r)
+		next.ServeHTTP(&stallWriter{ResponseWriter: w, arm: arm}, r)
 	})
 }
 
@@ -379,12 +396,13 @@ func (s *Server) holdFlushing(r *http.Request, a *activeRequest) {
 	}
 }
 
-// trackedBody notes the end of the request body and moves the read deadline
-// after every chunk.
+// trackedBody notes the end of the request body, moves the stall deadlines after
+// every chunk and releases the read deadline when the body is complete.
 type trackedBody struct {
 	io.ReadCloser
-	a      *activeRequest
-	extend func()
+	a       *activeRequest
+	extend  func()
+	release func()
 }
 
 func (b *trackedBody) Read(p []byte) (int, error) {
@@ -394,28 +412,33 @@ func (b *trackedBody) Read(p []byte) (int, error) {
 	}
 	if errors.Is(err, io.EOF) {
 		b.a.bodyDone.Store(true)
+		b.release()
 	}
 	return n, err
 }
 
-// stallWriter moves the write deadline after every successful chunk.
+// stallWriter arms the write deadline before every write, so a response that
+// follows long server work starts with a fresh deadline, and moves it after
+// every successful chunk.
 type stallWriter struct {
 	http.ResponseWriter
-	extend func()
+	arm func()
 }
 
 func (w *stallWriter) Write(p []byte) (int, error) {
+	w.arm()
 	n, err := w.ResponseWriter.Write(p)
 	if n > 0 && err == nil {
-		w.extend()
+		w.arm()
 	}
 	return n, err
 }
 
 // Flush implements http.Flusher.
 func (w *stallWriter) Flush() {
+	w.arm()
 	_ = http.NewResponseController(w.ResponseWriter).Flush()
-	w.extend()
+	w.arm()
 }
 
 // Unwrap returns the wrapped writer for http.ResponseController.

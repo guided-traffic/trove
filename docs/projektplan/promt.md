@@ -247,18 +247,6 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   group membership, a revoked token or CI token, or a disabled principal neither narrows nor stops the running job, the main
   deletion included (`docs/spec/formats/oci.md` H-653). Done when the job re-reads the principal (active, current groups) and
   the token's revocation per batch and fails permanently when they are withdrawn, with a test for each.
-- **F-91 · The stall deadline cancels a request while the server itself works** (confirmed by the code review of the F-89
-  fix). Once a request body reaches its end, or at once for a request without a body, net/http reads the connection in the
-  background; that read runs into the read deadline the stall timeout (R-ARCH-005) set at the last chunk and cancels the
-  request's context. With a 300 ms stall timeout an upload whose work after the body took three timeouts, and a GET whose
-  first byte took three, both saw `context canceled`; with the default 60 s, a commit or an upstream fetch longer than a
-  minute is cancelled. Not yet verified: whether the commit paths abort on it. Done when quiet server work is never cut by
-  the stall timeout, with a test on the real server.
-- **F-92 · Deleting a whole OCI name answered 500 under load** (confirmed: a consequence of F-91).
-  `TestR_OCI_018_ADeleteOfAWholeNameBeyondOneEventIsOneRemoval` (`test/integration/ocilocal`) deletes 5,004 files with a
-  body-less `DELETE`; under CPU load the request ran past the 60 s stall timeout, its context was cancelled and the next
-  statement failed (`audit: insert artifact.deleted: context canceled`, 500 at 60.0 s in 6 of 6 failing runs); with the
-  F-91 change the same runs pass at 131 to 201 s. Closes with F-91; the test is its regression check under load.
 
 - **F-100 · Concurrent pushes of one OCI tag answer 404, 409 or 503 and can leave no version** (confirmed).
   `TestR_OCI_013_ConcurrentPushesOfOneTagLeaveOneDigestAndOneVersion` (`internal/formats/oci`) fails in 20 of 200 runs with

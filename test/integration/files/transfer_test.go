@@ -447,7 +447,21 @@ func TestR_HA_011_UploadsDuringARolloutRestart(t *testing.T) {
 			_ = res.Body.Close()
 			out <- result{status: res.StatusCode}
 		}()
-		time.Sleep(500 * time.Millisecond) // the body is in the spool, the object write is running
+		// The object write is running, so the body has arrived. A fixed sleep here let a loaded host
+		// shut the server down while the body was still on the wire, which cuts that upload by design.
+		var early *result
+		waitFor(t, "the object write of the upload", 60*time.Second, func() bool {
+			select {
+			case r := <-out: // the upload ended without reaching its object write: name why
+				early = &r
+				return true
+			default:
+				return a.obj.delayed.Load() > 0
+			}
+		})
+		if early != nil {
+			t.Fatalf("the upload ended before its object write started: status %d, error %v", early.status, early.err)
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 		defer cancel()
 		_ = a.server.Shutdown(ctx)

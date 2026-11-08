@@ -918,9 +918,16 @@ Transfer rules:
   before it reads the request body. Go sends `100 Continue` only on the first body read, so a
   rejected upload never transfers its body.
 - `http.Server.ReadTimeout` and `WriteTimeout` stay at 0, because they would cut long transfers.
-  Requests are bounded by `server.read_header_timeout` and by a stall timeout: after every
-  successful chunk, the handler moves the read and write deadlines forward by
-  `server.transfer_stall_timeout` through `http.ResponseController` (HA-024).
+  Requests are bounded by `server.read_header_timeout` and by a stall timeout through
+  `http.ResponseController` (HA-024): every successful chunk of the request body moves the read and
+  write deadlines forward by `server.transfer_stall_timeout`, and the response moves the write
+  deadline forward before and after every write. The stall timeout bounds a peer that stops moving
+  bytes, never the server's own work: once the request body is complete, and for a request without
+  one, neither deadline runs (over HTTP/1.1 and over HTTP/2), so a commit after the last body byte
+  or an upstream fetch before the first response byte of any length keeps its request context;
+  the response arms the write deadline before every write and when the handler returns, for what
+  net/http still has buffered
+  ([Q-ARCH-403](#q-arch-403--the-stall-deadline-runs-only-while-bytes-are-expected-from-the-peer)).
 - Bodies are streamed. Only documents a format declares as bounded are held in memory
   (R-ARCH-028). Upload size limits belong to [storage.md](storage.md), and JSON body limits on
   `/api/v1/` to [api-and-ui.md](api-and-ui.md).
@@ -9604,6 +9611,49 @@ it if a second prefix needs the same protection (`/.well-known/` has its own exe
 
 **Applied in the spec:** the `/v2/` row and the route-table test of R-ARCH-005 above. Code: `httpserver.CheckRouter`, `CheckRouteTable`
 ([routetable.go](../../internal/httpserver/routetable.go)), `Router.HandleRegistryUncleaned`.
+
+### Q-ARCH-403 · The stall deadline runs only while bytes are expected from the peer
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `track` set the read and write deadline at the start of every request and after every chunk. Once a request body is complete
+(or at once for a request without one), net/http reads the connection in the background to notice a client that left, and a timeout
+of that read cancels the request context. With the default of 60 s an upload commit, or an upstream fetch before the first response
+byte, that ran longer than the stall timeout had its context cancelled while the server itself was working, and the write
+deadline of the same moment was already past when the response started. Measured with a stall timeout of 300 ms: an upload whose
+post-body step took 900 ms and a GET whose first byte took 900 ms both saw `context canceled`; without a stall timeout the context was alive.
+Over HTTP/2 the write deadline of the last body chunk is a running timer of the stream; when it fired, net/http reset the stream with
+`INTERNAL_ERROR` and cancelled the context, and the client saw no status. Separately, the deferred call of `track` cleared the write
+deadline before net/http wrote what it still had buffered (a whole small response, the last kilobytes of a large one), so a client that
+pipelined requests and read nothing held the connection and a goroutine in a write that no deadline bounded.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Release both deadlines when the body ends, set none for a request without a body, arm the write deadline before and after each response write and once more when the handler returns, and let the response move the write deadline only | The deadlines exist while the peer owes bytes (the body) or has to take bytes (a write in progress or about to happen) | The server's work is never cut by a timer meant for the peer, over HTTP/1.1 and HTTP/2; a client that closes the connection still cancels the context; a stalled reader is cut at the write, also for the buffered rest of a response | A peer that vanishes without closing is noticed by TCP keepalive or the next write, not by the stall timeout |
+| (b) Keep the deadlines and let the commit paths use a context without cancellation | Every long step of a handler detaches itself | No change in the server | Every commit path and every slow first byte must remember it; a client that left no longer stops the work; the request context stays a lie |
+| (c) Raise `transfer_stall_timeout` above the longest commit | A bigger number | No code | A stalled client then holds its slot just as long; no number is right for a commit that scales with the object |
+
+**Choice:** (a).
+
+**Rationale:** the purpose of R-ARCH-005's stall timeout is to cut a client that stopped sending or reading, not the server's own
+work, and the request context is what the commit paths (the blob commit, the upload finalize steps) honour. Both deadlines are
+cleared at the end of the body because over HTTP/2 each is a running timer of the stream, and an expired one resets the stream; the
+read deadline matters over HTTP/1.1 as well, where net/http's background read would cancel the context. The response arms the write
+deadline before every write, so a response that follows long server work starts with a fresh one, and the handler's return arms it
+once more, because net/http writes the buffered rest of the response after that call and clears the deadline itself when the response
+is out. A request with a body keeps the initial deadline, which also covers the `100 Continue` net/http writes on the first body read.
+Keep-alive is not affected: net/http sets its own read deadline for the next request. In `net/http`'s HTTP/2 server a stream's timers
+are stopped when the stream closes (`closeStream`), so the deadline armed at a handler's return does not reset a later stream; a test
+sends a second request on the same connection after the armed deadline has expired. The Bastion's listener uses the same
+`httpserver.Server`.
+
+A vanished peer that sends no FIN or reset is noticed by TCP keepalive or by the next write. The listener uses Go's defaults, which
+on Linux with Go 1.27 are an idle time of 15 s, an interval of 15 s and 9 probes, so about 150 s, not 15 s. Behind an Ingress or a
+proxy the TCP peer is the proxy, so the probes check the hop to the proxy and the end client's departure reaches trove only as far as
+the proxy passes it on. The development agent would revisit the decision if peers that vanish without closing the connection hold work
+for longer than that matters.
+
+**Applied in the spec:** the transfer rules of R-ARCH-005. Code: `track`, `trackedBody` and `stallWriter` in [server.go](../../internal/httpserver/server.go).
 
 ## What this does not cover
 

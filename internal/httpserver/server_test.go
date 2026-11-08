@@ -321,7 +321,7 @@ func TestStallTimeout(t *testing.T) {
 		h := s.track(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			rec := w.(*stallWriter).ResponseWriter.(*deadlineRecorder)
 			if len(rec.reads) != 1 || len(rec.writes) != 1 {
-				t.Fatalf("deadlines set before the first chunk: reads %d, writes %d, want 1 each (the initial deadline)", len(rec.reads), len(rec.writes))
+				t.Fatalf("deadlines set before the first chunk: reads %d, writes %d, want 1 each (the initial deadline of a request with a body)", len(rec.reads), len(rec.writes))
 			}
 			buf := make([]byte, 10)
 			for {
@@ -361,16 +361,22 @@ func TestStallTimeout(t *testing.T) {
 		if bodyChunks != chunks {
 			t.Fatalf("read %d chunks, want %d", bodyChunks, chunks)
 		}
-		if got, want := len(w.reads), 1+chunks+3; got != want {
-			t.Fatalf("read deadline set %d times, want %d (initial, one per request chunk, one per response chunk)", got, want)
+		if got, want := len(w.reads), 1+chunks+1; got != want {
+			t.Fatalf("read deadline set %d times, want %d (initial, one per request chunk, one release at the end of the body; a response chunk leaves it alone)", got, want)
 		}
-		if got, want := len(w.writes), 1+chunks+3+1; got != want {
-			t.Fatalf("write deadline set %d times, want %d (initial, one per request chunk, one per response chunk, one cleared at the end)", got, want)
+		if last := w.reads[len(w.reads)-1]; !last.IsZero() {
+			t.Fatalf("the read deadline outlives the request body: %v", last)
 		}
-		if last := w.writes[len(w.writes)-1]; !last.IsZero() {
-			t.Fatalf("the write deadline outlives the request: %v", last)
+		if got, want := len(w.writes), 1+chunks+1+3*2+1; got != want {
+			t.Fatalf("write deadline set %d times, want %d (initial, one per request chunk, one release at the end of the body, two per response chunk, one armed for what net/http still writes)", got, want)
 		}
-		for i := 1; i < len(w.reads); i++ {
+		if rel := w.writes[1+chunks]; !rel.IsZero() {
+			t.Fatalf("the write deadline outlives the request body: %v", rel)
+		}
+		if last, prev := w.writes[len(w.writes)-1], w.writes[len(w.writes)-2]; last.IsZero() || last.Before(prev) {
+			t.Fatalf("the write deadline for the final flush is %v, want armed and not before %v", last, prev)
+		}
+		for i := 1; i < len(w.reads)-1; i++ {
 			if w.reads[i].Before(w.reads[i-1]) {
 				t.Fatalf("read deadline %d (%v) moved back before deadline %d (%v)", i, w.reads[i], i-1, w.reads[i-1])
 			}
@@ -477,15 +483,23 @@ func TestStallTimeout(t *testing.T) {
 			}
 		}
 		for i, br := range writes {
-			if !in(c.reads, br) || !in(c.writes, br) {
-				t.Errorf("response chunk %d moved no deadline of the connection", i)
+			if !in(c.writes, br) {
+				t.Errorf("response chunk %d moved no write deadline of the connection", i)
 			}
 		}
 		if len(writes) != 3 {
 			t.Errorf("the handler wrote %d response chunks, want 3", len(writes))
 		}
-		if len(c.writes) == 0 || !c.writes[len(c.writes)-1].IsZero() {
-			t.Errorf("the last write deadline of the connection is not zero: %v", c.writes)
+		// net/http clears the write deadline itself once the response is out; before that, track
+		// armed one for what net/http still had buffered when the handler returned.
+		if len(c.writes) < 2 || len(writes) == 0 {
+			t.Fatal("no write deadline recorded")
+		}
+		if last := c.writes[len(c.writes)-1]; !last.IsZero() {
+			t.Errorf("the last write deadline of the connection is %v, want the one net/http clears at the end of the request", last)
+		}
+		if armed := c.writes[len(c.writes)-2]; armed.Before(writes[len(writes)-1].after.Add(stall)) {
+			t.Errorf("the write deadline for the final flush is %v, want one armed after the last response chunk", armed)
 		}
 	})
 }
@@ -552,4 +566,119 @@ func (c *chunkReader) Read(p []byte) (int, error) {
 	}
 	c.done++
 	return copy(p, "0123456789"), nil
+}
+
+// TestStallDeadlineLeavesServerWorkAlone covers the stall deadline's reach: it cuts a client that
+// stops sending or reading, and it never cancels the request context or fails the response of a
+// request while the server itself works without writing.
+func TestStallDeadlineLeavesServerWorkAlone(t *testing.T) {
+	const stall = 300 * time.Millisecond
+	type outcome struct {
+		ctxErr   error
+		writeErr error
+	}
+	run := func(t *testing.T, h http.HandlerFunc, call func(addr string) (*http.Response, error)) (outcome, string) {
+		t.Helper()
+		out := make(chan outcome, 1)
+		_, addr := start(t, ServerConfig{StallTimeout: stall, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			h(w, r)
+			_, err := w.Write([]byte("ok"))
+			out <- outcome{r.Context().Err(), err}
+		})})
+		resp, err := call(addr)
+		if err != nil {
+			t.Fatalf("request: %v", err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		o := <-out
+		return o, string(b)
+	}
+
+	t.Run("R-ARCH-005 the server's work after the request body is complete does not cancel the request context", func(t *testing.T) {
+		o, body := run(t, func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.Copy(io.Discard, r.Body)
+			time.Sleep(3 * stall)
+		}, func(addr string) (*http.Response, error) {
+			return http.Post("http://"+addr+"/", "application/octet-stream", stringsReader("abc"))
+		})
+		if o.ctxErr != nil || o.writeErr != nil || body != "ok" {
+			t.Fatalf("after %v of post-body work: context %v, write %v, body %q; want the request alive", 3*stall, o.ctxErr, o.writeErr, body)
+		}
+	})
+
+	t.Run("R-ARCH-005 the server's work before the first byte of a request without a body does not cancel the request context", func(t *testing.T) {
+		o, body := run(t, func(w http.ResponseWriter, r *http.Request) {
+			time.Sleep(3 * stall)
+		}, func(addr string) (*http.Response, error) { return http.Get("http://" + addr + "/") })
+		if o.ctxErr != nil || o.writeErr != nil || body != "ok" {
+			t.Fatalf("after %v before the first byte: context %v, write %v, body %q; want the request alive", 3*stall, o.ctxErr, o.writeErr, body)
+		}
+	})
+
+	t.Run("R-ARCH-005 a response whose chunks come further apart than the stall timeout keeps its request context and completes", func(t *testing.T) {
+		o, body := run(t, func(w http.ResponseWriter, r *http.Request) {
+			for range 2 {
+				_, _ = w.Write([]byte("x"))
+				w.(http.Flusher).Flush()
+				time.Sleep(2 * stall)
+			}
+		}, func(addr string) (*http.Response, error) { return http.Get("http://" + addr + "/") })
+		if o.ctxErr != nil || o.writeErr != nil || body != "xxok" {
+			t.Fatalf("slow response: context %v, write %v, body %q; want the request alive and \"xxok\"", o.ctxErr, o.writeErr, body)
+		}
+	})
+
+	t.Run("R-ARCH-005 a client that is gone while the server works still cancels the request context", func(t *testing.T) {
+		entered := make(chan struct{})
+		cancelled := make(chan error, 1)
+		_, addr := start(t, ServerConfig{StallTimeout: time.Hour, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			close(entered)
+			select {
+			case <-r.Context().Done():
+				cancelled <- r.Context().Err()
+			case <-time.After(10 * time.Second):
+				cancelled <- nil
+			}
+		})})
+		c, err := net.Dial("tcp", addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprint(c, "GET / HTTP/1.1\r\nHost: x\r\n\r\n")
+		<-entered
+		c.Close()
+		if err := <-cancelled; err == nil {
+			t.Fatal("the request context was not cancelled after the client closed the connection")
+		}
+	})
+
+	t.Run("R-ARCH-005 a client that stops reading the response has its connection cut after the stall timeout, also after long server work", func(t *testing.T) {
+		werr := make(chan error, 1)
+		_, addr := start(t, ServerConfig{StallTimeout: stall, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			time.Sleep(2 * stall)
+			chunk := make([]byte, 1<<20)
+			for range 512 {
+				if _, err := w.Write(chunk); err != nil {
+					werr <- err
+					return
+				}
+			}
+			werr <- nil
+		})})
+		c, err := net.Dial("tcp", addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		fmt.Fprint(c, "GET / HTTP/1.1\r\nHost: x\r\n\r\n") // and never read
+		select {
+		case err := <-werr:
+			if err == nil {
+				t.Fatal("512 MiB were written to a client that does not read")
+			}
+		case <-time.After(30 * time.Second):
+			t.Fatal("the write to a client that does not read was not cut")
+		}
+	})
 }
