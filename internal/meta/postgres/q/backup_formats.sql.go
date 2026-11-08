@@ -271,8 +271,8 @@ type BackupNuGetPromoteReservedParams struct {
 	LowerVersion string
 }
 
-// A version removed after the snapshot whose number the replay had reserved: the tombstone becomes a removal, so the
-// deleted bytes stay refused (R-NUGET-033).
+// A reserved number that a replayed entry turns into a removal: a version removed after the snapshot (the deleted bytes
+// stay refused), or an addition that names other bytes than the reservation (R-NUGET-033, Q-NUGET-112).
 func (q *Queries) BackupNuGetPromoteReserved(ctx context.Context, arg BackupNuGetPromoteReservedParams) (int64, error) {
 	result, err := q.db.Exec(ctx, backupNuGetPromoteReserved,
 		arg.At,

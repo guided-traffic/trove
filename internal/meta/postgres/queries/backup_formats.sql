@@ -83,8 +83,8 @@ VALUES (sqlc.arg(repository_id)::bigint, sqlc.arg(lower_id)::text, sqlc.arg(lowe
 ON CONFLICT (repository_id, lower_id, lower_version) DO NOTHING;
 
 -- name: BackupNuGetPromoteReserved :execrows
--- A version removed after the snapshot whose number the replay had reserved: the tombstone becomes a removal, so the
--- deleted bytes stay refused (R-NUGET-033).
+-- A reserved number that a replayed entry turns into a removal: a version removed after the snapshot (the deleted bytes
+-- stay refused), or an addition that names other bytes than the reservation (R-NUGET-033, Q-NUGET-112).
 UPDATE nuget_tombstone
    SET kind = 'removed', deleted_at = sqlc.arg(at)::text::timestamptz, deleted_by = sqlc.arg(by)::text::uuid
  WHERE repository_id = sqlc.arg(repository_id)::bigint

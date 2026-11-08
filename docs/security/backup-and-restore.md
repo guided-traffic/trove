@@ -132,11 +132,15 @@ a missing member, an oversized value or a digest that is not the expected shape 
   The actor the entry names is stored only when it is a UUID; the tombstone records the entry's ID, which the reinstate event repeats.
 - **NuGet reserves and keeps removed numbers removed** ([R-NUGET-033](../spec/formats/nuget.md#r-nuget-033--nuget-data-in-backups-and-restores)).
   A forged `package.published` entry can burn a version number that no version holds (a `reserved` tombstone), and a forged `package.deleted`
-  can turn a reservation into a removal or write a `removed` tombstone; for a number the journal holds no genuine entry of, both cost the
-  number, never data, and the replay never deletes a stored version (it reports it `revived`). A reserved number admits only the identical
-  `.nupkg`. For a number the journal also holds a genuine `package.published` entry of, a forged one with an earlier time reserves it for the
-  forger's bytes, which a holder of `deploy` can then push under that number
-  ([H-581](nuget-publish.md#h-581--a-forged-nuget-publish-entry-with-an-earlier-time-reserves-a-version-number-for-the-forgers-bytes)). The
+  can turn a reservation into a removal or write a `removed` tombstone; both cost the number, never data, and the replay never deletes a
+  stored version (it reports it `revived`). A reserved number admits only the identical `.nupkg`. The end state of a number does not depend on
+  the order of its entries, whose times the writer chooses: an addition that meets a reservation for other bytes turns it into a removal and
+  prints a warning naming both SHA-512s, so a forged entry with an earlier time cannot reserve a number for its bytes while the journal holds a
+  genuine entry of it, where the replay sees the genuine object: it reads every version of a key (a versioned bucket with `journalCredentials`
+  other than `runtime`) or the bucket refuses both overwrites and deletions of journal objects (for example object lock), whereas with the chart default the runtime credential overwrites or deletes the
+  genuine object and the one forged entry left reserves the number for the forger ([H-553](../spec/backup-and-restore.md#h-553--a-journal-object-can-be-overwritten-with-the-runtime-credential)) ([Q-NUGET-112](../spec/formats/nuget.md#q-nuget-112--two-replayed-additions-of-one-version-that-name-different-bytes-leave-its-number-refusing-every-package)).
+  A refused number does not come back
+  ([H-585](nuget-publish.md#h-585--a-forged-nuget-journal-entry-takes-a-version-number-out-of-use-for-good)). The
   system principal of the restore (the nil UUID) is the actor of what the replay writes.
 - **Remote-cache purgers** ([fixup](../../internal/backup/fixup/npm.go)) delete the cached items of the remote repositories of their format
   through the storage delete path and the cache entries and index rows of those repositories; they read the remote repositories of the
@@ -270,7 +274,8 @@ the event name and the subject quoted, because both come from the object. Every 
 | `user.updated` | Removes the pending identity link of any user for any provider: the provider's login no longer takes the user over | Add the link again with `PATCH /api/v1/users/<username>` |
 | `settings.auth.changed` | Lowers each token lifetime maximum, to 60 seconds at the least: new tokens live that long, and anonymous access is switched off when the entry says so | Raise the maxima and switch anonymous access on in the settings |
 | `vulnerability.finding.*` with `block: set` | Blocks any version of a repository of the restored database, creating the finding when it is missing: the version is refused until the finding is triaged. An entry is found by its ID only when repository, package version and advisory match; a finding that a replay created takes the stronger kind and severity of every later copy (each raise has a history row), a finding restored from the backup is never raised | Triage the finding; the first complete import after a restore also reconciles it |
-| `token.*`, `user.*`, `serviceaccount.*`, `bastion.*`, `ci.*`, `authz.*`, `endpoint.exposure.*`, `repository.disabled`, `repository.deleted`, `npm.unpublish`, `nuget.*` | Revokes, disables, deletes or narrows the object the entry names, if the restored database holds it | Create the token again, enable the object, restore the grant; an unpublished version is reinstated with `trove admin npm reinstate` |
+| `package.published`, `package.deleted` of a local NuGet repository | Takes a version number that the restored database does not hold out of use: reserves it for the bytes the entry names, or refuses it for every package (a removal, or an addition that names other bytes than another entry of the version, Q-NUGET-112); the genuine package cannot come back under that number, not even byte-identically | None: no operation removes a tombstone, the package takes a new version number ([H-585](nuget-publish.md#h-585--a-forged-nuget-journal-entry-takes-a-version-number-out-of-use-for-good)) |
+| `token.*`, `user.*`, `serviceaccount.*`, `bastion.*`, `ci.*`, `authz.*`, `endpoint.exposure.*`, `repository.disabled`, `repository.deleted`, `npm.unpublish` | Revokes, disables, deletes or narrows the object the entry names, if the restored database holds it | Create the token again, enable the object, restore the grant; an unpublished version is reinstated with `trove admin npm reinstate` |
 
 ## What a restore trusts
 
@@ -314,7 +319,7 @@ The mechanisms of this page add:
 - [H-37](../spec/ha-and-helm.md#h-37--a-database-restore-revives-revoked-credentials-and-removed-grants): a database restore revives revoked credentials and removed grants where the journal does not reach.
 - [H-50](../spec/formats/nuget.md#h-50--a-restore-revives-nuget-versions-deleted-after-the-backups-snapshot-and-can-free-lost-version-numbers): a restore revives NuGet versions deleted after the backup's snapshot and can free lost version numbers.
 - [H-51](../spec/formats/npm.md#h-51--a-restore-reverts-npm-metadata-changes-made-after-the-backups-snapshot): a restore reverts npm metadata changes made after the backup's snapshot.
-- [H-581](nuget-publish.md#h-581--a-forged-nuget-publish-entry-with-an-earlier-time-reserves-a-version-number-for-the-forgers-bytes): a forged NuGet publish entry with an earlier time reserves a version number for the forger's bytes.
+- [H-585](nuget-publish.md#h-585--a-forged-nuget-journal-entry-takes-a-version-number-out-of-use-for-good): a forged NuGet journal entry takes a version number out of use for good.
 - [H-553](../spec/backup-and-restore.md#h-553--a-journal-object-can-be-overwritten-with-the-runtime-credential): a journal object can be overwritten with the runtime credential.
 - [H-554](../spec/backup-and-restore.md#h-554--a-compromised-backup-pod-can-hold-garbage-collection): a compromised backup pod can hold garbage collection.
 - [H-557](../spec/backup-and-restore.md#h-557--the-post-restore-does-not-verify-the-blobs-and-a-replay-writes-no-audit-event-per-changed-object): post-restore does not verify the blobs, and a replay writes no audit event per changed object.

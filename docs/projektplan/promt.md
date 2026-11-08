@@ -250,19 +250,6 @@ Found on 2026-11-08 while running the drain variants of E5.13 on kind:
   take-over after a shutdown is not known. Done when a failing run's diagnostics (the pass state and job rows, the engines' logs) name the
   cause and it is fixed or shown to be the stack's load.
 
-Found on 2026-11-08 by the security audit of the F-72 fix, reading a replay handler outside that change:
-
-### Product
-
-- **F-75 · A forged NuGet `package.published` entry with an earlier time reserves a version number for the forger's bytes** (read in the
-  code, not reproduced). The NuGet replay handler (`internal/formatdata/nuget/journal_replay.go` around lines 123 to 129) applies the
-  first entry it reads for a version and reports a later genuine entry for the same version `already in effect` once a tombstone exists.
-  A holder of the runtime S3 credential can write an entry with an earlier `at` naming the attacker's SHA-512, so after a restore the
-  version number stays reserved for those bytes and a deployer of that repository can publish them under a number that held other bytes
-  (R-NUGET-033, Q-NUGET-10). Same ordering pattern as the replayed blocks and claims fixed with F-72/F-74 (Q-VULN-131, Q-REPO-250). Done
-  when a genuine entry cannot be shadowed by a forged earlier one for the same version (e.g. the replay keeps every journaled digest of a
-  version reserved, or refuses a reservation whose digest differs from another entry's), with a test.
-
 Found on 2026-11-04 while cutting trove into task areas (phase 6a):
 
 ### Tests and tools

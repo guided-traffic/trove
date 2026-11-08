@@ -2432,10 +2432,12 @@ The backup format, its consistency and the restore procedure belong to
 | Journaled after the snapshot | State in the restored database | Replay outcome |
 |---|---|---|
 | A version entered the repository | Absent, without a tombstone | A tombstone of kind `reserved` with the journaled SHA-512 is written (`applied`) |
-| A version entered the repository | Present, or tombstoned | Nothing (`already in effect`) |
+| A version entered the repository | Absent, with a `reserved` tombstone for the journaled SHA-512 | Nothing (`already in effect`) |
+| A version entered the repository | Absent, with a `reserved` tombstone for other bytes | The tombstone becomes `removed` (`applied`), so the number refuses every package; the replay prints a warning that names both SHA-512s (Q-NUGET-112) |
+| A version entered the repository | Present, or absent with a `removed` tombstone | Nothing (`already in effect`) |
 | A version was removed | Present with the journaled SHA-512 | Nothing is deleted. The version is reported `revived` in the replay output and counted in `system.restore.journal_replayed` (H-50). |
 | A version was removed | Present with other bytes | Nothing (`subject unknown`) |
-| A version was removed | Absent, with a `reserved` tombstone | The tombstone becomes `removed` (`applied`), so the deleted bytes stay refused as they were before the restore |
+| A version was removed | Absent, with a `reserved` tombstone | The tombstone becomes `removed` (`applied`), so the deleted bytes stay refused as they were before the restore; the replay prints the warning of the row above when the removal names other bytes than the reservation (Q-NUGET-112) |
 | A version was removed | Absent, without a tombstone | A `removed` tombstone with the journaled SHA-512 is written (`applied`) |
 | A version was removed | Absent, with a `removed` tombstone | Nothing (`already in effect`) |
 | Any | The repository is unknown | `subject unknown` |
@@ -2443,6 +2445,21 @@ The backup format, its consistency and the restore procedure belong to
   Entries are applied in the order of R-HA-054. A version published and then deleted after the
   snapshot therefore ends with a `removed` tombstone, as in the old installation; a `reserved`
   one would have admitted the deleted bytes again.
+
+  The end state of a number does not depend on that order, because the order comes from the
+  entries' own times, which whoever writes an entry chooses (Q-NUGET-112). A number that the
+  restored database does not hold ends `reserved` for a package only when that package's SHA-512
+  is the only one that the restored reservation and the replayed additions name, and no replayed
+  removal names the number; otherwise, where an entry or a tombstone names the number, it refuses
+  every package (a number that nothing names stays free). In the old installation one number
+  never holds two packages, so two SHA-512s for one number mean an entry that somebody else wrote,
+  or a number that a restore without the journal let take other bytes (H-50). An entry with an
+  earlier time therefore cannot take a number for other bytes than another entry names. That
+  holds where the replay sees the genuine journal object: where it reads every version of a key (a
+  versioned bucket with `journalCredentials` other than `runtime`) or the bucket refuses
+  both overwrites and deletions of journal objects (for example object lock). With the chart default the runtime credential overwrites or deletes the genuine
+  object instead, and the one forged entry that is left reserves the number for the forger
+  ([H-553](../backup-and-restore.md#h-553--a-journal-object-can-be-overwritten-with-the-runtime-credential)).
 
   A `reserved` tombstone refuses a push of other bytes with 409 `nuget_version_reserved` and admits
   the identical `.nupkg` (R-NUGET-006). A pipeline that rebuilds a lost version byte-identically
@@ -2471,6 +2488,14 @@ R-BAK-029:
 - After a restore with `backup.exclude.remote_caches: true`, `nuget_tombstone` holds no row of a
   remote repository, and `dotnet restore` of `Newtonsoft.Json 13.0.3` through `nuget-org` fetches
   it from the stub upstream once.
+
+Acceptance criterion run through the replayer against PostgreSQL, because objects written by hand are
+not planted on a cluster ([backup-and-restore.md](../backup-and-restore.md#h-567--hand-written-journal-objects-are-tried-at-replay-level-not-through-the-restore-job-on-a-cluster) H-567):
+- After B, `Acme.Widgets` 3.2.0 is pushed, and a journal object written by hand names 3.2.0 with the
+  SHA-512 of another package and a time between B's snapshot and the push. After B is restored and
+  the journal replayed, a push of either package as 3.2.0 answers 409 `nuget_version_deleted`, and
+  the output carries a warning that names both SHA-512s. The same holds when the hand-written
+  object's time is later than the push's.
 
 ## Mirror discovery
 
@@ -2698,9 +2723,14 @@ pre-releases):
   identical bytes (R-NUGET-033, Q-NUGET-10), so a rebuild cannot silently replace what clients
   cached from the old installation. A version published and deleted after the snapshot stays
   refused. Whoever holds the runtime object-store credential can forge journal entries. A forged
-  entry can reserve a version number for good or report a version as `revived`; it cannot delete or
-  replace a package. A version deleted after the snapshot comes back with the restore, and a restore
-  without the journal reserves nothing (H-50).
+  entry can reserve a version number for good, refuse it for every package, or report a version as
+  `revived`; it cannot delete or replace a package (the replay never deletes), and nothing gives a refused number back
+  ([nuget-publish.md](../../security/nuget-publish.md#h-585--a-forged-nuget-journal-entry-takes-a-version-number-out-of-use-for-good) H-585). A forged entry with an earlier time cannot take a number for its
+  bytes while another entry names other bytes for it: two SHA-512s leave the number refusing every
+  package (Q-NUGET-112). That holds only where the replay sees the genuine object: with the chart
+  default the runtime credential can overwrite or delete it instead
+  ([H-553](../backup-and-restore.md#h-553--a-journal-object-can-be-overwritten-with-the-runtime-credential)). A version deleted after the snapshot comes back with the restore, and a
+  restore without the journal reserves nothing (H-50).
 
 ## Decisions
 
@@ -5281,6 +5311,98 @@ an archive than its manifest on push (a placeholder file under `lib/` would then
 **Applied in the spec:** none. [../../developer/e2e.md](../../developer/e2e.md#drain-and-failover-under-nuget-load),
 [test/e2e/nuget_load_test.go](../../../test/e2e/nuget_load_test.go).
 
+### Q-NUGET-112 · Two replayed additions of one version that name different bytes leave its number refusing every package
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: F-75. The replay of R-NUGET-033 applies the entries in the order of R-HA-054 (by `at`, then by ID). It reserved a lost number
+for the SHA-512 of the first `package.published` entry of the version it read, and reported every later entry of that version
+`already in effect` because the tombstone then existed, whatever bytes it named (`published` in
+[journal_replay.go](../../../internal/formatdata/nuget/journal_replay.go)). The `at` of a journal object is the writer's claim: the
+objects carry no MAC and no signature, and the reader checks their shape, their key and the day the key names
+([reader.go](../../../internal/journal/replay/reader.go)). Whoever holds the runtime S3 credential could therefore write an entry for a
+version the journal holds, with an earlier time after the restore point and the SHA-512 of a package of their own; after a restore the
+number was reserved for those bytes, and a holder of `deploy` and the ownership of the ID could push them under a number that held other
+bytes. In the old installation one number never holds two packages (a stored version refuses other bytes, a `reserved` tombstone admits
+only its own, Q-NUGET-6), so two SHA-512s for one number come from an entry somebody else wrote, or from a number that a restore without
+the journal let take other bytes (H-50). Nothing in the restored database tells the genuine entry apart: the version is absent from it,
+or the entry would be `already in effect`, and the blob store that might still hold either package is writable with the credential that
+forges the entry. F-72 and F-74 met the same dependence on order and removed it: a replayed block raises its finding to the stronger facts
+of every copy, in whichever order the copies come ([Q-VULN-131](../vulnerability-scanning.md#q-vuln-131--a-replayed-block-names-its-repository-and-package-version-creates-the-finding-the-restored-database-lacks-and-leaves-the-shape-both-download-gates-read)),
+and a replayed claim that would take names from another repository disables its own repository instead
+([Q-REPO-250](../repositories-and-proxy.md#q-repo-250--every-claims-change-carries-a-journal-entry-and-a-replayed-manual-claim-that-overlaps-another-repositorys-claim-disables-its-repository)).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The first entry wins (as built) | The earliest addition reserves the number; later ones are `already in effect` | No change | An entry with an earlier time takes the number for its bytes (F-75) |
+| (b) Keep every journaled SHA-512 reserved: the number admits any of them | The reservation holds a set of digests | The genuine package can still come back byte-identically | The forger's package is admitted too, which is the substitution F-75 is about; a set of digests per number is a schema change |
+| (c) Keep every journaled SHA-512 refused: two digests leave the number refusing every package (chosen) | An addition that meets a `reserved` tombstone for other bytes turns it into `removed`; the replay warns with both digests | The end state is a function of the set of entries, not of their order, the rule of Q-VULN-131; no package one entry names can take a number another entry gives to other bytes; a forged entry gains nothing that a forged `package.deleted` does not already do (it turns a reservation into a removal); no schema change, the statement that turns a reservation into a removal exists | A genuine package whose number a forged entry also names cannot come back under it, not even byte-identically; the push answers `nuget_version_deleted` for a number that was disputed, not deleted |
+| (d) As (c), with a tombstone kind of its own (`disputed`) and its own push code | A third kind beside `removed` and `reserved` | The push answer names the dispute | A CHECK, an error code, and a case in every reader of tombstones (push, delete, replay, serve check) for a state that refuses exactly what `removed` refuses; the administrator who restored reads the warning already |
+| (e) Prefer the entry that matches the restored database | Keep the digest a row of the restored database confirms | The genuine package stays restorable | No such row exists: the version is absent from the restored database (a present version is `already in effect`), and the blob store is writable with the credential that forges the entry |
+| (f) Authenticate journal entries with a key the runtime S3 credential does not give | The reader replays only what it verifies | Closes forged entries for every handler at once | A change of the journal format for every event and handler (R-HA-054, [backup-and-restore.md](../backup-and-restore.md#h-553--a-journal-object-can-be-overwritten-with-the-runtime-credential) H-553), not a NuGet decision; every replica that ships entries holds the key and the credential together, so a compromised replica still forges |
+| (g) As (c), and a command with which an administrator gives a disputed number to the digest they confirm | `trove admin nuget …` removes the tombstone or narrows it to one digest | A disputed number can be recovered | An operation that removes a tombstone, which R-NUGET-006 keeps out of every API, UI and command, with an authorization question of its own; it widens, so a forged confirmation is the risk it would have to answer |
+
+**Choice:** (c). The rows of the replay table for an addition (R-NUGET-033):
+
+1. A version the restored database holds: `already in effect`, whatever bytes the entry names (unchanged).
+2. Absent, without a tombstone: a `reserved` tombstone with the entry's SHA-512 (`applied`, unchanged).
+3. Absent, with a `reserved` tombstone for the entry's SHA-512: `already in effect` (unchanged).
+4. Absent, with a `reserved` tombstone for other bytes: the tombstone becomes `removed` with the replay's time and the system principal
+   of the restore, its SHA-512 left as it was (`applied`). The result carries a warning that names the tombstone's and the entry's
+   SHA-512 in hexadecimal and says that the number now refuses every package (a removal that names other bytes than the reservation
+   carries it too). The warning is printed on a line of its own and joins the
+   summary's warnings, the list of journal objects somebody else wrote; it holds no text of the entry other than the digest, which the
+   entry check admits only as 128 hexadecimal digits, so it cannot forge a line of the output. Whether the reservation came from the
+   restored database (an earlier restore's replay) or from an entry of this replay makes no difference.
+5. Absent, with a `removed` tombstone: `already in effect`, whatever bytes the entry names (unchanged).
+
+The removals keep their rows: a `reserved` tombstone becomes `removed` whatever digest the removal names, and an absent version without
+a tombstone gets a `removed` one. A removal that turns a reservation for other bytes into a removal carries the same warning as the
+addition of row 4. Which entry is reported depends on the order, because the warning belongs to the entry that meets the reservation:
+an addition that arrives after the number is `removed` (a genuine addition, its removal, then a forged addition) is `already in
+effect` and silent, while the forged addition first is reported. The end state does not depend on it; the report does. A number's end state is then the same in every order of its entries: free without entries, `reserved`
+for one SHA-512 when every addition names it and no removal names the number, `removed` otherwise. Only the SHA-512 a `removed` tombstone
+records can differ by order, and a `removed` tombstone refuses every package whatever it records. A second pass reports every entry
+`already in effect` and prints no warning. The 0-rows case of the statement that turns a reservation into a removal (a concurrent writer
+changed the tombstone between the read and the update) is reported `already in effect` without the warning; the `restore_in_progress`
+marker of the restore rules a concurrent writer out during the restore, and the rule of Q-HA-161, which refuses the post-restore Job while
+replicas run, does after it; a manual `trove admin post-restore` while replicas serve is the exception.
+
+**Precondition:** the rule holds where the replay sees the genuine journal object. With the chart default (`source: runtime` for the
+restore and post-restore Jobs) the reader takes one body per key and no object versions, and the runtime credential can overwrite the
+genuine `package.published` object at its key with the forger's SHA-512, or delete it. One entry is then left and the number is reserved
+for the forger, the end state of F-75 without the time trick. The rule holds where the replay reads every version of a key (a versioned
+bucket with `journalCredentials` other than `runtime`) or the bucket refuses both overwrites and deletions of journal objects (for example object lock)
+([H-553](../backup-and-restore.md#h-553--a-journal-object-can-be-overwritten-with-the-runtime-credential), H-585, H-50). This decision
+closes the order of entries, not the authenticity of objects (option (f)).
+
+**Rationale:**
+- The reservation exists so that one number keeps one content across a restore (Q-NUGET-10). When the entries disagree, the restore
+  cannot know which content clients hold, and admitting either breaks the promise for the clients that hold the other; refusing both
+  keeps it for everybody at the cost of the number.
+- The order of the entries is the writer's choice, so no rule that depends on it can tell the forger from the genuine publisher; a rule
+  over the set cannot be steered by a time. That is the conclusion of Q-VULN-131 for blocks, applied to version numbers.
+- The cost is a denial, and the same one a forged `package.deleted` can already cause: whoever can write one entry can write the other.
+  A refused number costs a version bump, never data, and nothing is deleted.
+- (d) would only change the words of the 409. Both answers tell the publisher to take a new version number, and the administrator who
+  restored reads the dispute in the replay output.
+- The development agent would revisit this when journal entries carry an authentication that the runtime S3 credential cannot produce
+  (the replay could then believe the authenticated entry), or when the trash can (P1) or a reviewed release of a tombstone the replay
+  wrote gives an administrator a reversible way to give a disputed number to the package they confirm
+  ([nuget-publish.md](../../security/nuget-publish.md#h-585--a-forged-nuget-journal-entry-takes-a-version-number-out-of-use-for-good) H-585).
+
+**Applied in the spec:** R-NUGET-033 (the replay table, the paragraph on the order, the acceptance criterion through the replayer, and the
+fourth case of H-50), the Security notes; [ha-and-helm.md](../ha-and-helm.md) R-HA-054 (the table row and "Forged entries cannot
+escalate"); [nuget-publish.md](../../security/nuget-publish.md) (the `reserved` tombstone; H-581 is closed and removed, H-585 is new),
+[backup-and-restore.md](../../security/backup-and-restore.md) (the format handlers, the table of what a forged entry can deny) and the gap
+index of [docs/security/README.md](../../security/README.md). Code: `published` in
+[journal_replay.go](../../../internal/formatdata/nuget/journal_replay.go); tests
+`TestR_NUGET_033_TwoAdditionsThatNameDifferentBytesLeaveTheNumberRefusedInEitherOrder` and
+`TestR_NUGET_033_AForgedAdditionWithAnEarlierTimeCannotTakeTheNumberOfAGenuineOne` in
+[formats_nuget_test.go](../../../test/integration/backup/formats_nuget_test.go), and
+`TestR_NUGET_033_TheEndStateOfANumberDoesNotDependOnTheOrderOfItsEntries` in
+[journal_replay_test.go](../../../internal/formatdata/nuget/journal_replay_test.go).
+
 ## What this does not cover
 
 ### H-35 · Cached NuGet packages are not checked against an upstream digest
@@ -5328,13 +5450,18 @@ snapshot whose journal entry the replay never sees. Their numbers carry no tombs
 restore, so a rebuild can publish other bytes under a number that clients already resolved, which
 Q-NUGET-6 exists to prevent.
 
-Live in the MVP in three cases (R-NUGET-033):
+Live in the MVP in four cases (R-NUGET-033):
 - a restore with `--skip-revocation-journal`, which [backup-and-restore.md](../backup-and-restore.md)
   R-BAK-024 provides for the disaster in which the source bucket, and with it the journal, is gone,
   one of the disasters a backup exists for;
 - an installation that ran with `backup.revocation_journal.enabled: false` during the interval;
 - publishes whose entries had not been shipped when the old database stopped (normally less than
-  one `backup.revocation_journal.ship_interval`).
+  one `backup.revocation_journal.ship_interval`);
+- publishes whose entry the holder of the runtime object-store credential deleted, or overwrote
+  with an entry that names other bytes, where the replay reads no object versions
+  ([backup-and-restore.md](../backup-and-restore.md#h-553--a-journal-object-can-be-overwritten-with-the-runtime-credential) H-553): the number is free, or reserved for the bytes the
+  overwrite names, which the overwriting entry is then the only one to name (Q-NUGET-112 needs both
+  entries to refuse it).
 
 What makes it real: a pipeline that runs again after the restore and builds the lost version with
 other bytes. Projects with lock files fail with a content-hash mismatch; projects without them, and

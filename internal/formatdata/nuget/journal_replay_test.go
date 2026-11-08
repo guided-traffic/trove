@@ -1,6 +1,7 @@
 package nuget
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"strings"
@@ -61,4 +62,93 @@ func TestR_NUGET_033_AnIncompleteEntryIsSkipped(t *testing.T) {
 			})
 		}
 	}
+}
+
+// The end state of a number that the restored database does not hold must not depend on the order of the entries about it,
+// because that order comes from times the writer of an entry chooses (R-NUGET-033).
+func TestR_NUGET_033_TheEndStateOfANumberDoesNotDependOnTheOrderOfItsEntries(t *testing.T) {
+	a, b := []byte{0xaa}, []byte{0xbb}
+	type entry struct {
+		published bool
+		sum       []byte
+	}
+	apply := func(s numberState, e entry) (numberState, bool) {
+		st, warn := absentStep(e.published, s, e.sum)
+		switch st {
+		case stepReserve:
+			return numberState{Kind: kindReserved, Sha512: e.sum}, warn
+		case stepRemove:
+			return numberState{Kind: kindRemoved, Sha512: e.sum}, warn
+		case stepPromote:
+			return numberState{Kind: kindRemoved, Sha512: s.Sha512}, warn
+		}
+		return s, warn
+	}
+	same := func(x, y numberState) bool {
+		return x.Kind == y.Kind && (x.Kind != kindReserved || bytes.Equal(x.Sha512, y.Sha512))
+	}
+	pool := []entry{{true, a}, {true, b}, {false, a}, {false, b}}
+	starts := map[string]numberState{
+		"none": {}, "reserved(A)": {kindReserved, a}, "reserved(B)": {kindReserved, b}, "removed(A)": {kindRemoved, a},
+	}
+	sets := [][]entry{nil}
+	for _, x := range pool {
+		sets = append(sets, []entry{x})
+		for _, y := range pool {
+			sets = append(sets, []entry{x, y})
+			for _, z := range pool {
+				sets = append(sets, []entry{x, y, z})
+			}
+		}
+	}
+	for name, start := range starts {
+		for _, es := range sets {
+			want := numberState{Kind: kindRemoved}
+			switch {
+			case len(es) == 0:
+				want = start
+			case start.Kind == kindNone || start.Kind == kindReserved:
+				d := es[0].sum
+				if start.Kind == kindReserved {
+					d = start.Sha512
+				}
+				all := true
+				for _, e := range es {
+					all = all && e.published && bytes.Equal(e.sum, d)
+				}
+				if all {
+					want = numberState{Kind: kindReserved, Sha512: d}
+				}
+			}
+			for _, p := range permutations(es) {
+				s := start
+				for _, e := range p {
+					before := s
+					var warn bool
+					s, warn = apply(s, e)
+					wantWarn := before.Kind == kindReserved && s.Kind == kindRemoved && !bytes.Equal(before.Sha512, e.sum)
+					if warn != wantWarn {
+						t.Errorf("%s %v: warning %v, want %v: it belongs to a reservation turned into a removal by an entry of other bytes", name, p, warn, wantWarn)
+					}
+				}
+				if !same(s, want) {
+					t.Fatalf("%s %v: end state %+v, want %+v", name, p, s, want)
+				}
+			}
+		}
+	}
+}
+
+func permutations[T any](xs []T) [][]T {
+	if len(xs) <= 1 {
+		return [][]T{append([]T(nil), xs...)}
+	}
+	var out [][]T
+	for i := range xs {
+		rest := append(append([]T(nil), xs[:i]...), xs[i+1:]...)
+		for _, p := range permutations(rest) {
+			out = append(out, append([]T{xs[i]}, p...))
+		}
+	}
+	return out
 }

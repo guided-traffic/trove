@@ -212,11 +212,17 @@ func (s *twinSide) replay(store journal.Store, restoredTo time.Time, notifier jo
 // handWritten writes a journal object as anybody with the runtime credential could and returns its ID.
 func handWritten(t *testing.T, store journal.Store, event string, entry []byte) string {
 	t.Helper()
+	return handWrittenAt(t, store, event, entry, time.Now())
+}
+
+// handWrittenAt is handWritten with the time the writer puts in the object, which is the writer's to choose.
+func handWrittenAt(t *testing.T, store journal.Store, event string, entry []byte, at time.Time) string {
+	t.Helper()
 	var b [16]byte
 	_, _ = rand.Read(b[:])
 	b[6], b[8] = b[6]&0x0f|0x70, b[8]&0x3f|0x80
 	id := fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
-	o := journal.Object{V: journal.Version, ID: id, At: time.Now().UTC(), Event: event, Entry: entry}
+	o := journal.Object{V: journal.Version, ID: id, At: at.UTC(), Event: event, Entry: entry}
 	raw, err := o.Encode()
 	if err != nil {
 		t.Fatalf("encode: %v", err)

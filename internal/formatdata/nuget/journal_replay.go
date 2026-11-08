@@ -19,8 +19,11 @@ import (
 // deleted after it is back, and the replay leaves it (nothing is deleted: the trash can is P1, so a replayed deletion
 // could not be undone) and reports it `revived`; where the version is gone for good the replay keeps its number refused.
 //
-// The table of R-NUGET-033, row by row, is replayEntry below. The entry is a claim: it acts only on a local NuGet
-// repository, only with a complete SHA-512, and never grants anything.
+// The table of R-NUGET-033, row by row, is published and deleted below. The entry is a claim: it acts only on a local NuGet
+// repository, only with a complete SHA-512, and never grants anything. The order of the entries comes from times that
+// whoever writes an entry chooses, so the end state of a number must not depend on it (Q-NUGET-112): a reservation holds
+// only while every entry names its digest, and an addition or a removal that names other bytes than the reservation makes the number
+// `removed`, with a warning that names both digests, so that no entry takes a number from the genuine package by coming first.
 
 func init() {
 	journal.Register(journal.Handler{
@@ -108,10 +111,56 @@ func (r replayer) done(o journal.Outcome, detail map[string]string) (journal.Res
 	return r.res, nil
 }
 
+// The kinds of a version number's tombstone; kindNone is no tombstone.
+const (
+	kindNone     = ""
+	kindReserved = "reserved"
+	kindRemoved  = "removed"
+)
+
+// numberState is what the restored database holds for an absent version number.
+type numberState struct {
+	Kind   string
+	Sha512 []byte
+}
+
+// step is what the replay does to an absent version number for one entry.
+type step int
+
+const (
+	stepNothing step = iota
+	stepReserve
+	stepRemove
+	stepPromote
+)
+
+// absentStep decides an entry for an absent version number, as a function of the number's state alone. Taken in any
+// order, the entries about one number end in the same state: it stays `reserved` only while every entry names the digest
+// of the reservation, and anything else, a removal or a second digest, makes it `removed`, which nothing leaves (Q-NUGET-112).
+// The warning is true where an entry, an addition or a removal, turned a reservation for other bytes into a removal.
+func absentStep(published bool, tomb numberState, sum []byte) (step, bool) {
+	switch {
+	case tomb.Kind == kindRemoved:
+		return stepNothing, false
+	case tomb.Kind == kindNone && published:
+		return stepReserve, false
+	case tomb.Kind == kindNone:
+		return stepRemove, false
+	case !published:
+		return stepPromote, !bytes.Equal(tomb.Sha512, sum)
+	case bytes.Equal(tomb.Sha512, sum):
+		return stepNothing, false
+	}
+	return stepPromote, true
+}
+
 // published is the first half of the table of R-NUGET-033.
 //
-//	A version entered the repository | absent, without a tombstone | a `reserved` tombstone with the journaled SHA-512 (applied)
-//	A version entered the repository | present, or tombstoned      | nothing (already in effect)
+//	A version entered the repository | present                                           | nothing (already in effect)
+//	A version entered the repository | absent, without a tombstone                       | a `reserved` tombstone with the journaled SHA-512 (applied)
+//	A version entered the repository | absent, `reserved` tombstone, the journaled SHA-512 | nothing (already in effect)
+//	A version entered the repository | absent, `reserved` tombstone, other bytes         | the tombstone becomes `removed` (applied, with a warning naming both SHA-512s)
+//	A version entered the repository | absent, `removed` tombstone                       | nothing (already in effect)
 func (r replayer) published() (journal.Result, error) {
 	present, err := r.present()
 	if err != nil {
@@ -124,24 +173,55 @@ func (r replayer) published() (journal.Result, error) {
 	if err != nil {
 		return r.res, err
 	}
+	state := numberState{}
 	if tomb != nil {
-		return r.done(journal.AlreadyInEffect, nil)
+		state = numberState{Kind: tomb.Kind, Sha512: tomb.Sha512}
 	}
-	n, err := r.insertTombstone("reserved")
-	if err != nil {
-		return r.res, err
+	st, warn := absentStep(true, state, r.sum)
+	switch st {
+	case stepReserve:
+		n, err := r.insertTombstone(kindReserved)
+		if err != nil {
+			return r.res, err
+		}
+		if n == 0 {
+			return r.done(journal.AlreadyInEffect, nil)
+		}
+		return r.done(journal.Applied, map[string]string{"reserved": r.e.ID + " " + r.e.Version})
+	case stepPromote:
+		n, err := r.promote()
+		if err != nil {
+			return r.res, err
+		}
+		if n == 0 {
+			return r.done(journal.AlreadyInEffect, nil)
+		}
+		if warn {
+			r.res.Note = r.disputeNote(tomb.Sha512)
+		}
+		return r.done(journal.Applied, map[string]string{"refused": r.e.ID + " " + r.e.Version})
 	}
-	if n == 0 {
-		return r.done(journal.AlreadyInEffect, nil)
-	}
-	return r.done(journal.Applied, map[string]string{"reserved": r.e.ID + " " + r.e.Version})
+	return r.done(journal.AlreadyInEffect, nil)
+}
+
+// disputeNote is the warning of an entry that turned a reservation for other bytes into a removal. The replayer prints it as
+// it is, so it holds fixed text and hexadecimal digits, never the entry's ID or version.
+func (r replayer) disputeNote(reserved []byte) string {
+	return "an entry names other bytes than the reservation of its version (SHA-512 " + hex.EncodeToString(reserved) + " and " +
+		r.e.SHA512 + "): the number refuses every package"
+}
+
+func (r replayer) promote() (int64, error) {
+	return r.qs.BackupNuGetPromoteReserved(r.ctx, q.BackupNuGetPromoteReservedParams{
+		RepositoryID: r.e.Repository, LowerID: r.e.ID, LowerVersion: r.e.Version, At: stamp(r.env.Now), By: noActor,
+	})
 }
 
 // deleted is the second half of the table of R-NUGET-033.
 //
 //	A version was removed | present with the journaled SHA-512 | nothing is deleted; reported `revived`
 //	A version was removed | present with other bytes           | nothing (subject unknown)
-//	A version was removed | absent, `reserved` tombstone       | the tombstone becomes `removed` (applied)
+//	A version was removed | absent, `reserved` tombstone       | the tombstone becomes `removed` (applied; with a warning when it names other bytes)
 //	A version was removed | absent, no tombstone               | a `removed` tombstone with the journaled SHA-512 (applied)
 //	A version was removed | absent, `removed` tombstone        | nothing (already in effect)
 func (r replayer) deleted() (journal.Result, error) {
@@ -165,29 +245,28 @@ func (r replayer) deleted() (journal.Result, error) {
 	if err != nil {
 		return r.res, err
 	}
-	switch {
-	case tomb == nil:
-		n, err := r.insertTombstone("removed")
-		if err != nil {
-			return r.res, err
-		}
-		if n == 0 {
-			return r.done(journal.AlreadyInEffect, nil)
-		}
-		return r.done(journal.Applied, nil)
-	case tomb.Kind == "reserved":
-		n, err := r.qs.BackupNuGetPromoteReserved(r.ctx, q.BackupNuGetPromoteReservedParams{
-			RepositoryID: r.e.Repository, LowerID: r.e.ID, LowerVersion: r.e.Version, At: stamp(r.env.Now), By: noActor,
-		})
-		if err != nil {
-			return r.res, err
-		}
-		if n == 0 {
-			return r.done(journal.AlreadyInEffect, nil)
-		}
-		return r.done(journal.Applied, nil)
+	state := numberState{}
+	if tomb != nil {
+		state = numberState{Kind: tomb.Kind, Sha512: tomb.Sha512}
 	}
-	return r.done(journal.AlreadyInEffect, nil)
+	var n int64
+	st, warn := absentStep(false, state, r.sum)
+	switch st {
+	case stepRemove:
+		n, err = r.insertTombstone(kindRemoved)
+	case stepPromote:
+		n, err = r.promote()
+	}
+	if err != nil {
+		return r.res, err
+	}
+	if n == 0 {
+		return r.done(journal.AlreadyInEffect, nil)
+	}
+	if warn {
+		r.res.Note = r.disputeNote(tomb.Sha512)
+	}
+	return r.done(journal.Applied, nil)
 }
 
 func (r replayer) present() (bool, error) {

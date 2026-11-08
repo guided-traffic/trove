@@ -3,6 +3,8 @@
 package backup
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -11,6 +13,8 @@ import (
 
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/journal"
+	"github.com/guided-traffic/trove/internal/journal/replay"
+	"github.com/guided-traffic/trove/test/integration/testenv"
 )
 
 const (
@@ -250,5 +254,196 @@ func TestR_NUGET_033_TheEntryOfARealPushAndDeleteIsTheEntryTheReplayReads(t *tes
 	}
 	if res := e.replay(audit.EventPackageDeleted, entry, time.Now()); res.Outcome != journal.AlreadyInEffect {
 		t.Errorf("replay of the deleted entry = %q", res.Outcome)
+	}
+}
+
+// Two additions of one version that name different bytes leave the number refused, whichever comes first (R-NUGET-033).
+func TestR_NUGET_033_TwoAdditionsThatNameDifferentBytesLeaveTheNumberRefusedInEitherOrder(t *testing.T) {
+	e := newFormatsEnv(t)
+	r := e.replica("web-1")
+	push := func(pkg []byte) (int, string) {
+		a := e.pushNuGet(r, pkg)
+		return a.Status, nugetCode(a)
+	}
+	pair := func(v string) (genuine, forged []byte) {
+		return nupkg(t, "Acme.Widgets", v, "the genuine build"), nupkg(t, "Acme.Widgets", v, "the forged build")
+	}
+	bothDigests := func(t *testing.T, note string, a, b []byte) {
+		t.Helper()
+		if !strings.Contains(note, sha512hex(a)) || !strings.Contains(note, sha512hex(b)) {
+			t.Errorf("note %q does not name both SHA-512s", note)
+		}
+	}
+	refused := func(t *testing.T, v string, pkgs ...[]byte) {
+		t.Helper()
+		for _, p := range pkgs {
+			if status, code := push(p); status != http.StatusConflict || code != "nuget_version_deleted" {
+				t.Errorf("push of %s = %d %s, want 409 nuget_version_deleted", v, status, code)
+			}
+		}
+		if n := e.st.Number(`SELECT count(*) FROM package_versions pv JOIN packages p ON p.id = pv.package_id WHERE p.name = $1 AND pv.version = $2`, widgets, v); n != 0 {
+			t.Errorf("%d rows for %s", n, v)
+		}
+	}
+	order := func(t *testing.T, v string, first, second []byte) {
+		t.Helper()
+		if res := e.published(widgets, v, sha512hex(first)); res.Outcome != journal.Applied || res.Note != "" {
+			t.Fatalf("first: %q note %q", res.Outcome, res.Note)
+		}
+		if kind, sha := e.nugetTombstone(widgets, v); kind != "reserved" || sha != sha512hex(first) {
+			t.Fatalf("tombstone = %q %s", kind, sha)
+		}
+		res := e.published(widgets, v, sha512hex(second))
+		if res.Outcome != journal.Applied {
+			t.Fatalf("second: %q", res.Outcome)
+		}
+		bothDigests(t, res.Note, first, second)
+		if kind, sha := e.nugetTombstone(widgets, v); kind != "removed" || sha != sha512hex(first) {
+			t.Errorf("tombstone = %q %s, want removed with the first digest", kind, sha)
+		}
+		if got := e.st.Text(`SELECT deleted_by::text FROM nuget_tombstone WHERE lower_version = $1`, v); got != system {
+			t.Errorf("deleted_by = %s", got)
+		}
+		refused(t, v, first, second)
+		for _, p := range [][]byte{first, second} {
+			if res := e.published(widgets, v, sha512hex(p)); res.Outcome != journal.AlreadyInEffect || res.Note != "" {
+				t.Errorf("second pass: %q note %q", res.Outcome, res.Note)
+			}
+		}
+	}
+	t.Run("the forged entry first", func(t *testing.T) {
+		g, f := pair("5.0.0")
+		order(t, "5.0.0", f, g)
+	})
+	t.Run("the genuine entry first", func(t *testing.T) {
+		g, f := pair("5.1.0")
+		order(t, "5.1.0", g, f)
+	})
+	t.Run("the same bytes twice leave the number reserved for them", func(t *testing.T) {
+		g, f := pair("5.2.0")
+		if res := e.published(widgets, "5.2.0", sha512hex(g)); res.Outcome != journal.Applied {
+			t.Fatalf("first: %q", res.Outcome)
+		}
+		if res := e.published(widgets, "5.2.0", sha512hex(g)); res.Outcome != journal.AlreadyInEffect || res.Note != "" {
+			t.Fatalf("second: %q note %q", res.Outcome, res.Note)
+		}
+		if status, code := push(f); status != http.StatusConflict || code != "nuget_version_reserved" {
+			t.Errorf("other bytes = %d %s, want 409 nuget_version_reserved", status, code)
+		}
+		if status, code := push(g); status != http.StatusCreated {
+			t.Errorf("same bytes = %d %s, want 201", status, code)
+		}
+	})
+	t.Run("a reservation in the restored database", func(t *testing.T) {
+		a, b := pair("5.3.0")
+		e.st.Exec(`INSERT INTO nuget_tombstone (repository_id, lower_id, lower_version, sha512, deleted_at, deleted_by, kind)
+			VALUES ($1, $2, '5.3.0', decode($3, 'hex'), now(), $4::uuid, 'reserved')`, e.repoID(repoNuGet), widgets, sha512hex(a), system)
+		res := e.published(widgets, "5.3.0", sha512hex(b))
+		if res.Outcome != journal.Applied {
+			t.Fatalf("other bytes: %q", res.Outcome)
+		}
+		bothDigests(t, res.Note, a, b)
+		if kind, _ := e.nugetTombstone(widgets, "5.3.0"); kind != "removed" {
+			t.Errorf("kind = %q", kind)
+		}
+		if res := e.published(widgets, "5.3.0", sha512hex(a)); res.Outcome != journal.AlreadyInEffect {
+			t.Errorf("the reserved bytes: %q", res.Outcome)
+		}
+		refused(t, "5.3.0", a)
+	})
+	t.Run("a removal that names other bytes than the reservation warns", func(t *testing.T) {
+		a, b := pair("5.5.0")
+		if res := e.published(widgets, "5.5.0", sha512hex(a)); res.Outcome != journal.Applied || res.Note != "" {
+			t.Fatalf("published: %q note %q", res.Outcome, res.Note)
+		}
+		res := e.deleted(widgets, "5.5.0", sha512hex(b))
+		if res.Outcome != journal.Applied {
+			t.Fatalf("deleted: %q", res.Outcome)
+		}
+		bothDigests(t, res.Note, a, b)
+		if kind, sha := e.nugetTombstone(widgets, "5.5.0"); kind != "removed" || sha != sha512hex(a) {
+			t.Errorf("tombstone = %q %s", kind, sha)
+		}
+		refused(t, "5.5.0", a, b)
+		if res := e.deleted(widgets, "5.5.0", sha512hex(b)); res.Outcome != journal.AlreadyInEffect || res.Note != "" {
+			t.Errorf("second pass: %q note %q", res.Outcome, res.Note)
+		}
+	})
+	t.Run("a removal in the restored database stays", func(t *testing.T) {
+		a, b := pair("5.4.0")
+		e.st.Exec(`INSERT INTO nuget_tombstone (repository_id, lower_id, lower_version, sha512, deleted_at, deleted_by, kind)
+			VALUES ($1, $2, '5.4.0', decode($3, 'hex'), now(), $4::uuid, 'removed')`, e.repoID(repoNuGet), widgets, sha512hex(a), system)
+		if res := e.published(widgets, "5.4.0", sha512hex(b)); res.Outcome != journal.AlreadyInEffect || res.Note != "" {
+			t.Fatalf("%q note %q", res.Outcome, res.Note)
+		}
+		if kind, sha := e.nugetTombstone(widgets, "5.4.0"); kind != "removed" || sha != sha512hex(a) {
+			t.Errorf("tombstone = %q %s", kind, sha)
+		}
+	})
+}
+
+// The order of the replay comes from the entries' own times, which the writer of an entry chooses; the end state must not.
+func TestR_NUGET_033_AForgedAdditionWithAnEarlierTimeCannotTakeTheNumberOfAGenuineOne(t *testing.T) {
+	for _, tc := range []struct {
+		name, version string
+		forgedAt      time.Duration
+	}{{"forged earlier", "6.0.0", 10 * time.Minute}, {"forged later", "6.1.0", 30 * time.Minute}} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newFormatsEnv(t)
+			r := e.replica("web-1")
+			genuine, forged := nupkg(t, "Acme.Widgets", tc.version, "the genuine build"), nupkg(t, "Acme.Widgets", tc.version, "the forged build")
+			store := newMemStore()
+			restoredTo := time.Now().Add(-time.Hour)
+			write := func(pkg []byte, at time.Time) string {
+				raw, err := json.Marshal(e.nugetEntry(widgets, tc.version, sha512hex(pkg)))
+				if err != nil {
+					t.Fatal(err)
+				}
+				return handWrittenAt(t, store, audit.EventPackagePublished, raw, at)
+			}
+			gid := write(genuine, restoredTo.Add(20*time.Minute))
+			fid := write(forged, restoredTo.Add(tc.forgedAt))
+			later := fid
+			if tc.forgedAt < 20*time.Minute {
+				later = gid
+			}
+			run := func() (*journal.Summary, string) {
+				var out bytes.Buffer
+				sum, err := replay.New(replay.Options{DB: e.db, Reader: replay.NewReader(store, twinPrefix), Log: testenv.Quiet()}).
+					Replay(context.Background(), journal.ReplayOptions{RestoredTo: restoredTo, Margin: 5 * time.Minute, Out: &out})
+				if err != nil {
+					t.Fatal(err)
+				}
+				return sum, out.String()
+			}
+			sum, out := run()
+			if sum.Counts[journal.Applied] != 2 {
+				t.Fatalf("counts = %v", sum.Counts)
+			}
+			for _, res := range sum.Results {
+				if (res.ID == later) != (res.Note != "") {
+					t.Errorf("entry %s: note %q", res.ID, res.Note)
+				}
+			}
+			if len(sum.Warnings) != 1 || !strings.Contains(sum.Warnings[0], later) ||
+				!strings.Contains(sum.Warnings[0], sha512hex(genuine)) || !strings.Contains(sum.Warnings[0], sha512hex(forged)) {
+				t.Errorf("warnings = %q", sum.Warnings)
+			}
+			if !strings.Contains(out, "  warning: ") || !strings.Contains(out, sha512hex(genuine)) || !strings.Contains(out, sha512hex(forged)) {
+				t.Errorf("output lacks the warning:\n%s", out)
+			}
+			if kind, _ := e.nugetTombstone(widgets, tc.version); kind != "removed" {
+				t.Errorf("kind = %q", kind)
+			}
+			for _, p := range [][]byte{genuine, forged} {
+				if a := e.pushNuGet(r, p); a.Status != http.StatusConflict || nugetCode(a) != "nuget_version_deleted" {
+					t.Errorf("push = %d %s", a.Status, a.Body)
+				}
+			}
+			sum, _ = run()
+			if sum.Counts[journal.AlreadyInEffect] != 2 || len(sum.Warnings) != 0 {
+				t.Errorf("second replay: counts %v warnings %q", sum.Counts, sum.Warnings)
+			}
+		})
 	}
 }
