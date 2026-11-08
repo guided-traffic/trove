@@ -60,14 +60,13 @@ paths:
 
 func TestBootstrapAnonymousReadOnlyOnDefaultEndpoint(t *testing.T) {
 	t.Run("R-EP-010 SA3 bootstrap anonymous read opens system.read on the default endpoint and not on a further one", func(t *testing.T) {
-		cust := freePort(t)
 		h := startEndpoints(t, "web", map[string]string{
 			"TROVE_SYSTEM_BOOTSTRAP_ANONYMOUS_READ": "true",
 			"TROVE_SERVER_BASE_URL":                 "http://trove.example.com",
 			"TROVE_SERVER_ENDPOINTS": fmt.Sprintf(
-				`{"customers":{"listen":%q,"base_url":"http://packages.example.com","surface":["api","packages"],"auth":{"anonymous":true}}}`, cust),
+				`{"customers":{"listen":%q,"base_url":"http://packages.example.com","surface":["api","packages"],"auth":{"anonymous":true}}}`, anyPort),
 		})
-		def := h.app.EndpointAddr("default")
+		def, cust := h.app.EndpointAddr("default"), h.app.EndpointAddr("customers")
 		if code, body := hostGet(t, def, "trove.example.com", "/api/v1/system/replicas"); code != 200 {
 			t.Fatalf("default endpoint: %d %s", code, body)
 		}

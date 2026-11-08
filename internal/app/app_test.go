@@ -33,13 +33,20 @@ func (s *syncBuffer) Write(p []byte) (int, error) {
 }
 func (s *syncBuffer) String() string { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
 
-func freePort(t *testing.T) string {
+// anyPort lets the kernel choose the port at bind time; a test reads the address back from the app (EndpointAddr, OpsAddr,
+// ClientAddr). Picking a free port first and binding it later lets another package take it in between (F-109).
+const anyPort = "127.0.0.1:0"
+
+// heldPort returns an address whose port the test holds until it ends. A process that must not open a listener is given it: had
+// the process tried to bind it, its start-up would fail with "address already in use", which is a stronger proof than a dial and
+// cannot race another package for the port.
+func heldPort(t *testing.T) string {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+	l, err := net.Listen("tcp", anyPort)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer l.Close()
+	t.Cleanup(func() { _ = l.Close() })
 	return l.Addr().String()
 }
 
@@ -73,7 +80,7 @@ type harness struct {
 // env is the minimal valid serve configuration plus overrides.
 func baseEnv(t *testing.T, extra map[string]string) []string {
 	env := map[string]string{
-		"TROVE_SERVER_LISTEN": freePort(t), "TROVE_SERVER_OPS_LISTEN": freePort(t),
+		"TROVE_SERVER_LISTEN": anyPort, "TROVE_SERVER_OPS_LISTEN": anyPort,
 		"TROVE_HEALTH_SHUTDOWN_DRAIN_DELAY": "300ms", "TROVE_SERVER_SHUTDOWN_TIMEOUT": "5s",
 		"TROVE_HEALTH_CHECK_INTERVAL": "1s", "TROVE_HEALTH_CHECK_TIMEOUT": "1s",
 		"TROVE_DATABASE_HOST": "db.example", "TROVE_DATABASE_NAME": "trove",
@@ -190,14 +197,9 @@ func TestRoles(t *testing.T) {
 	})
 
 	t.Run("R-ARCH-001 a worker replica opens no client socket", func(t *testing.T) {
-		client := freePort(t)
-		h := start(t, "worker", map[string]string{"TROVE_SERVER_LISTEN": client})
+		h := start(t, "worker", map[string]string{"TROVE_SERVER_LISTEN": heldPort(t)}) // a bind attempt would fail start-up
 		if h.app.ClientAddr() != nil {
 			t.Fatal("worker has a client listener")
-		}
-		if c, err := net.DialTimeout("tcp", client, 500*time.Millisecond); err == nil {
-			c.Close()
-			t.Fatalf("something listens on the client address %s", client)
 		}
 		if code, _, _ := get(t, h.ops+"/readyz"); code != 200 {
 			t.Fatalf("worker readyz %d", code)

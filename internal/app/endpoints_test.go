@@ -68,7 +68,7 @@ func endpointsJSON(listen string, more string) string {
 
 func TestEndpointRefusesAnonymousByDefault(t *testing.T) {
 	h := startEndpoints(t, "web", map[string]string{
-		"TROVE_SERVER_ENDPOINTS": fmt.Sprintf(`{"customers":{"listen":%q,"base_url":"https://packages.example.com"}}`, freePort(t)),
+		"TROVE_SERVER_ENDPOINTS": fmt.Sprintf(`{"customers":{"listen":%q,"base_url":"https://packages.example.com"}}`, anyPort),
 	})
 	cust := h.app.EndpointAddr("customers")
 	t.Run("R-EP-010 R-EP-005 a further endpoint answers every request without a credential with the same 401", func(t *testing.T) {
@@ -121,11 +121,10 @@ func requestRecords(logs *syncBuffer) []map[string]any {
 }
 
 func TestEndpointsOnOneReplica(t *testing.T) {
-	custAddr := freePort(t)
-	h := startEndpoints(t, "web", map[string]string{"TROVE_SERVER_ENDPOINTS": endpointsJSON(custAddr, "")})
+	h := startEndpoints(t, "web", map[string]string{"TROVE_SERVER_ENDPOINTS": endpointsJSON(anyPort, "")})
 	def := h.app.EndpointAddr("default")
 	cust := h.app.EndpointAddr("customers")
-	if def == "" || cust != custAddr {
+	if def == "" || cust == "" {
 		t.Fatalf("addresses: default %q customers %q", def, cust)
 	}
 
@@ -242,7 +241,7 @@ func TestEndpointsOnOneReplica(t *testing.T) {
 
 	t.Run("R-EP-003 the default endpoint answers 421 once hosts are configured for it", func(t *testing.T) {
 		h := startEndpoints(t, "web", map[string]string{
-			"TROVE_SERVER_ENDPOINTS": fmt.Sprintf(`{"default":{"hosts":["trove.example.com"]},"customers":{"listen":%q,"base_url":"https://packages.example.com","auth":{"anonymous":true}}}`, freePort(t)),
+			"TROVE_SERVER_ENDPOINTS": fmt.Sprintf(`{"default":{"hosts":["trove.example.com"]},"customers":{"listen":%q,"base_url":"https://packages.example.com","auth":{"anonymous":true}}}`, anyPort),
 		})
 		def := h.app.EndpointAddr("default")
 		if code, _ := hostGet(t, def, "packages.example.com", "/api/v1/system/ping"); code != 421 {
@@ -255,15 +254,19 @@ func TestEndpointsOnOneReplica(t *testing.T) {
 }
 
 func TestEndpointProcesses(t *testing.T) {
-	custAddr := freePort(t)
-	pooled := func(extra map[string]string) map[string]string {
-		m := map[string]string{"TROVE_SERVER_ENDPOINTS": endpointsJSON(custAddr, `,"pool":"ep-customers"`)}
+	// A listener a process must open binds anyPort and is read back; a listener it must not open is a port the test holds, so a
+	// bind attempt fails the start-up (F-109: no port is picked first and bound later).
+	pooled := func(custListen string, extra map[string]string) map[string]string {
+		m := map[string]string{"TROVE_SERVER_ENDPOINTS": endpointsJSON(custListen, `,"pool":"ep-customers"`)}
 		for k, v := range extra {
 			m[k] = v
 		}
 		return m
 	}
 	listening := func(addr string) bool {
+		if addr == "" {
+			return false
+		}
 		c, err := net.DialTimeout("tcp", addr, startGuard) // a refusal is immediate; the bound only guards a starved connect
 		if err == nil {
 			c.Close()
@@ -272,48 +275,43 @@ func TestEndpointProcesses(t *testing.T) {
 	}
 
 	t.Run("R-EP-002 a process of the endpoint's pool opens that endpoint's listener and not :8080", func(t *testing.T) {
-		defAddr := freePort(t)
-		h := startEndpoints(t, "web", pooled(map[string]string{"TROVE_POOL_NAME": "ep-customers", "TROVE_SERVER_LISTEN": defAddr}))
+		h := startEndpoints(t, "web", pooled(anyPort, map[string]string{"TROVE_POOL_NAME": "ep-customers", "TROVE_SERVER_LISTEN": heldPort(t)}))
 		if got := h.app.EndpointNames(); len(got) != 1 || got[0] != "customers" {
 			t.Fatalf("endpoints = %v", got)
 		}
-		if !listening(custAddr) || listening(defAddr) {
-			t.Fatalf("customers listening %v, default listening %v", listening(custAddr), listening(defAddr))
+		cust := h.app.EndpointAddr("customers")
+		if !listening(cust) || h.app.EndpointAddr("default") != "" {
+			t.Fatalf("customers at %q listening %v, default at %q", cust, listening(cust), h.app.EndpointAddr("default"))
 		}
-		if code, _ := hostGet(t, custAddr, "packages.example.com", "/api/npm/it/xx/"); code != 200 {
+		if code, _ := hostGet(t, cust, "packages.example.com", "/api/npm/it/xx/"); code != 200 {
 			t.Fatalf("pool process: %d", code)
 		}
 	})
 
 	t.Run("R-EP-002 the main web Deployment opens :8080 and not the pooled endpoint", func(t *testing.T) {
-		custAddr = freePort(t)
-		defAddr := freePort(t)
-		h := startEndpoints(t, "web", pooled(map[string]string{"TROVE_SERVER_LISTEN": defAddr}))
+		h := startEndpoints(t, "web", pooled(heldPort(t), nil))
 		if got := h.app.EndpointNames(); len(got) != 1 || got[0] != "default" {
 			t.Fatalf("endpoints = %v", got)
 		}
-		if listening(custAddr) || !listening(defAddr) {
-			t.Fatalf("customers listening %v, default listening %v", listening(custAddr), listening(defAddr))
+		if def := h.app.EndpointAddr("default"); !listening(def) || h.app.EndpointAddr("customers") != "" {
+			t.Fatalf("default at %q listening %v, customers at %q", def, listening(def), h.app.EndpointAddr("customers"))
 		}
 	})
 
 	t.Run("R-EP-002 a process in a pool that no endpoint names serves the endpoints without a pool", func(t *testing.T) {
-		custAddr = freePort(t)
-		h := startEndpoints(t, "web", pooled(map[string]string{"TROVE_POOL_NAME": "path-pool"}))
+		h := startEndpoints(t, "web", pooled(heldPort(t), map[string]string{"TROVE_POOL_NAME": "path-pool"}))
 		if got := h.app.EndpointNames(); len(got) != 1 || got[0] != "default" {
 			t.Fatalf("endpoints = %v", got)
 		}
 	})
 
 	t.Run("R-EP-002 the development role all opens every listener, a worker none", func(t *testing.T) {
-		custAddr = freePort(t)
-		h := startEndpoints(t, "all", pooled(nil))
-		if got := h.app.EndpointNames(); len(got) != 2 || !listening(custAddr) {
+		h := startEndpoints(t, "all", pooled(anyPort, nil))
+		if got := h.app.EndpointNames(); len(got) != 2 || !listening(h.app.EndpointAddr("customers")) {
 			t.Fatalf("all: %v", got)
 		}
-		custAddr = freePort(t)
-		startEndpoints(t, "worker", pooled(nil))
-		if listening(custAddr) {
+		w := startEndpoints(t, "worker", pooled(heldPort(t), map[string]string{"TROVE_SERVER_LISTEN": heldPort(t)}))
+		if w.app.EndpointAddr("customers") != "" || w.app.EndpointAddr("default") != "" {
 			t.Fatal("a worker opened an endpoint listener")
 		}
 	})
@@ -352,14 +350,14 @@ func TestEndpointListenerTLS(t *testing.T) {
 	exact, exactKey := ca.Issue(t, tlstest.Options{DNSNames: []string{"packages.example.com"}, Serial: big.NewInt(1001)}).Files(t, dir, "exact")
 	wild, wildKey := ca.Issue(t, tlstest.Options{DNSNames: []string{"*.packages.example.com"}, Serial: big.NewInt(1002)}).Files(t, dir, "wild")
 	def, defKey := ca.Issue(t, tlstest.Options{DNSNames: []string{"trove.example.com", "localhost"}, IPs: []net.IP{net.IPv4(127, 0, 0, 1)}, Serial: big.NewInt(1003)}).Files(t, dir, "default")
-	custAddr := freePort(t)
 	h := startEndpoints(t, "web", map[string]string{
 		"TROVE_SERVER_TLS_CERTIFICATES":    certificatesEnv(def, defKey),
 		"TROVE_SERVER_TLS_RELOAD_INTERVAL": "1s",
 		"TROVE_SERVER_ENDPOINTS": fmt.Sprintf(`{"customers":{"listen":%q,"base_url":"https://packages.example.com","tls":{"certificates":[{"cert_file":%q,"key_file":%q},{"cert_file":%q,"key_file":%q}]}}}`,
-			custAddr, exact, exactKey, wild, wildKey),
+			anyPort, exact, exactKey, wild, wildKey),
 	})
 	def8080 := h.app.EndpointAddr("default")
+	custAddr := h.app.EndpointAddr("customers")
 
 	served := func(addr, sni string) (int64, int, error) {
 		c := &tls.Config{RootCAs: ca.Pool(), ServerName: sni, InsecureSkipVerify: true, MinVersion: tls.VersionTLS12} //nolint:gosec // the test reads which certificate arrives

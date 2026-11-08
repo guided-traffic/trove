@@ -792,8 +792,9 @@ Every manifest, pushed or fetched, is untrusted input (R-ARCH-028):
 Acceptance criteria:
 
 - The conformance kit's crafted inputs for the format (a manifest nested 100,000 deep, one with 20,000 layers, a 5 MiB index,
-  a descriptor digest `sha256:../../x`) are refused within 5 s with 400 or 413 and the replica's RSS stays within 512 MiB of its
-  baseline.
+  a descriptor digest `sha256:../../x`) are refused with 400 or 413 by the parser's bounds, before any referenced blob is looked up
+  (which is what keeps a refusal within 5 s, [Q-OCI-151](#q-oci-151--refused-within-5-s-is-proven-by-where-the-refusal-happens-not-by-a-wall-clock-on-a-shared-runner)),
+  and the replica's RSS stays within 512 MiB of its baseline.
 
 ### R-OCI-021 · Remote repository: upstream and its token handshake
 Priority: **P1** · Covers: PKG-DOCKER-033, PKG-DOCKER-038, PKG-OCI-003
@@ -2935,6 +2936,29 @@ upstream pages is refused as the local class refuses it. Eight is what a page of
 **Applied in the spec:** [R-OCI-024](#r-oci-024--remote-repository-tags-list-and-referrers). Code: `maxPassPages` in
 [remote_handlers.go](../../../internal/formats/oci/remote_handlers.go). Test: `TestR_OCI_024_APageEndsEarlyWithALinkAfterTheAllowedUpstreamPages`
 ([remote_paging_cap_test.go](../../../internal/formats/oci/remote_paging_cap_test.go)).
+
+### Q-OCI-151 · "Refused within 5 s" is proven by where the refusal happens, not by a wall clock on a shared runner
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the unit test of R-OCI-020's crafted inputs measured each refusal against 5 s. The manifest with 20,000 layers took 0.04 s
+locally (0.4 s under `-race` and coverage) and 5.15 s on a loaded CI runner (F-110): the bound measured the runner, not trove.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The test proves the structure: every crafted manifest is refused with the parser's code before any referenced blob is looked up (chosen) | The layers name a digest the repository does not hold, so a refusal after the reference check would read `MANIFEST_BLOB_UNKNOWN` | Independent of the runner; it names the property that makes the refusal quick: the work stops at the parser's bounds on a document of at most 4 MiB | No number in seconds on the unit tier |
+| (b) Keep 5 s, raise it for `-race` | | A number | Still decided by the runner's load |
+| (c) Move the timing to the nightly | A measured bound on a quiet runner | A number | A long leg for a property the structure already shows |
+
+**Choice:** (a). The 20,000 layers and the 5 MiB index are refused with 413 `SIZE_INVALID`, the duplicate and the miscased key with 400
+`MANIFEST_INVALID`, the deep nesting and the path digest with 400 or 413; none with `MANIFEST_BLOB_UNKNOWN`. The parser's bounds have
+their own tests in the manifest package.
+
+**Rationale:** a refusal that never reaches the store costs the parse of at most 4 MiB, which the bounds make linear. The development
+agent would revisit this if the parser gains work per descriptor that is not linear.
+
+**Applied in the spec:** [R-OCI-020](#r-oci-020--limits-for-untrusted-content) acceptance criteria. Test:
+`TestR_OCI_020_CraftedManifestsAreRefusedQuicklyWithoutStoringAnything` ([handlers_manifest_test.go](../../../internal/formats/oci/handlers_manifest_test.go)).
 
 ## What this does not cover
 

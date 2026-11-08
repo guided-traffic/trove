@@ -12,7 +12,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
@@ -711,33 +710,38 @@ func TestR_OCI_013_APushThatFindsTheTagTakenDecidesAgain(t *testing.T) {
 	}
 }
 
+// The criterion's "within 5 s" is shown by structure, not by a wall clock the runner's load decides (Q-OCI-151): every crafted
+// manifest is refused by the parser's bounds, before the handler looks up a single referenced blob. The layers name a digest the
+// repository does not hold, so a refusal that came after the reference check would read MANIFEST_BLOB_UNKNOWN instead of the
+// parser's code; the parser's own work is linear in a document bounded at 4 MiB (manifest package tests of the bounds).
 func TestR_OCI_020_CraftedManifestsAreRefusedQuicklyWithoutStoringAnything(t *testing.T) {
 	fx := newFixture(t, formattest.HostOptions{})
 	cfg := fx.blob("app", []byte("{}"))
-	layer := `{"mediaType":"application/vnd.oci.image.layer.v1.tar","digest":"` + cfg + `","size":2}`
+	unknown := "sha256:" + strings.Repeat("ab", 32)
+	layer := `{"mediaType":"application/vnd.oci.image.layer.v1.tar","digest":"` + unknown + `","size":2}`
 	for _, tc := range []struct {
-		name string
-		body string
-		want []int
+		name   string
+		body   string
+		status int
+		code   string
 	}{
-		{"nested 100,000 deep", `{"schemaVersion":2,"x":` + strings.Repeat("[", 100_000) + strings.Repeat("]", 100_000) + `}`, []int{400, 413}},
-		{"20,000 layers", `{"schemaVersion":2,"config":{"mediaType":"a/b","digest":"` + cfg + `","size":2},"layers":[` + strings.TrimSuffix(strings.Repeat(layer+",", 20_000), ",") + `]}`, []int{400, 413}},
-		{"a 5 MiB index", `{"schemaVersion":2,"manifests":[],"annotations":{"k":"` + strings.Repeat("a", 5<<20) + `"}}`, []int{400, 413}},
-		{"a digest that is a path", `{"schemaVersion":2,"config":{"mediaType":"a/b","digest":"sha256:../../x","size":2},"layers":[]}`, []int{400, 413}},
-		{"a duplicate key", `{"schemaVersion":2,"schemaVersion":2,"config":{"mediaType":"a/b","digest":"` + cfg + `","size":2},"layers":[]}`, []int{400}},
-		{"a key in the wrong case", `{"schemaVersion":2,"Config":{"mediaType":"a/b","digest":"` + cfg + `","size":2},"config":{"mediaType":"a/b","digest":"` + cfg + `","size":2},"layers":[]}`, []int{400}},
+		{"nested 100,000 deep", `{"schemaVersion":2,"x":` + strings.Repeat("[", 100_000) + strings.Repeat("]", 100_000) + `}`, 0, ""},
+		{"20,000 layers", `{"schemaVersion":2,"config":{"mediaType":"a/b","digest":"` + cfg + `","size":2},"layers":[` + strings.TrimSuffix(strings.Repeat(layer+",", 20_000), ",") + `]}`, http.StatusRequestEntityTooLarge, "SIZE_INVALID"},
+		{"a 5 MiB index", `{"schemaVersion":2,"manifests":[],"annotations":{"k":"` + strings.Repeat("a", 5<<20) + `"}}`, http.StatusRequestEntityTooLarge, "SIZE_INVALID"},
+		{"a digest that is a path", `{"schemaVersion":2,"config":{"mediaType":"a/b","digest":"sha256:../../x","size":2},"layers":[]}`, 0, ""},
+		{"a duplicate key", `{"schemaVersion":2,"schemaVersion":2,"config":{"mediaType":"a/b","digest":"` + cfg + `","size":2},"layers":[]}`, http.StatusBadRequest, "MANIFEST_INVALID"},
+		{"a key in the wrong case", `{"schemaVersion":2,"Config":{"mediaType":"a/b","digest":"` + cfg + `","size":2},"config":{"mediaType":"a/b","digest":"` + cfg + `","size":2},"layers":[]}`, http.StatusBadRequest, "MANIFEST_INVALID"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			start := time.Now()
 			resp := fx.put("app/manifests/1", []byte(tc.body), ctImage)
-			if time.Since(start) > 5*time.Second {
-				t.Errorf("took %v", time.Since(start))
+			code := errorCode(resp)
+			if code == "MANIFEST_BLOB_UNKNOWN" {
+				t.Fatalf("refused by the reference check, not by the parser: %s", resp.Body)
 			}
-			ok := false
-			for _, w := range tc.want {
-				ok = ok || resp.Code == w
-			}
-			if !ok {
+			switch {
+			case tc.status != 0 && (resp.Code != tc.status || code != tc.code):
+				t.Fatalf("status %d code %q, want %d %q: %s", resp.Code, code, tc.status, tc.code, resp.Body)
+			case tc.status == 0 && resp.Code != http.StatusBadRequest && resp.Code != http.StatusRequestEntityTooLarge:
 				t.Fatalf("status %d: %s", resp.Code, resp.Body)
 			}
 		})

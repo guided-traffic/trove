@@ -245,10 +245,6 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
 
 ### Product
 
-
-
-
-
 - **F-111 · `TestSpoolAdmission` (`internal/blob`) failed once in a full `go test ./internal/...`** on a loaded host and passed
   alone. Cause not looked at.
 - **F-112 · An npm unpublish of the visible `latest` can move `latest` onto a version the caller may not read** (read by the F-83
@@ -257,12 +253,6 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
 - **F-113 · The integration stack's object store fills up in about a day** (2026-11-08): the tests leave their objects behind,
   and SeaweedFS in `test/integration/compose.yaml` holds 100 volumes of 512 MB; at 45 GB every upload failed until the stack was
   reset. Done when the tests remove what they write, or the stack cleans up on its own.
-- **F-109 · Blocker (main red): `TestEndpointProcesses` takes a port another test holds** (CI, Test and Release 42515085391,
-  unit tests: `endpoints_test.go:310: ops listener: listen tcp 127.0.0.1:35057: bind: address already in use`). The test picks a
-  free port and binds it later, and another package can take it in between. Done when the test binds without that gap.
-- **F-110 · Blocker (main red): `TestR_OCI_020_CraftedManifestsAreRefusedQuicklyWithoutStoringAnything/20,000_layers` has a
-  wall-clock bound of 5 s** (`internal/formats/oci/handlers_manifest_test.go:734`, took 5.15 s on the same run, under `-race` and
-  coverage). Done when the refusal of a crafted manifest is proven without a wall-clock bound that the runner's load decides.
 - **F-108 · A manual name claim and an automatic one of the same name can race** (read by the F-101 builder). The claims API
   does not take the lock F-101 added for automatic claims. Done when both take the same lock, with a test.
 
@@ -278,7 +268,6 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   body (a product defect), or an unrelated transaction of the shared stack the test counts (a test defect).
 - **F-102 · `TestR_BAS_014_ThousandWritesToOnePathCauseOneProbe` failed once under host load** (seen once, by the WP5
   builder; passes alone and three times in a row). Done when the cause is found and fixed.
->>>>>>> 52121250 (wip: F-103)
 - **F-95 · One Angular unit test failed once in 1,080, its name not recorded** (seen once, by the F-86 builder on a loaded
   host; the second run and the reviewer's run passed all 1,080). Done when the failing test is identified and its cause
   fixed; until then a recurrence is reported with the test's name and output.
