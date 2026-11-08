@@ -290,10 +290,38 @@ func (e *Enforcer) Scope(r *http.Request) string {
 		return "registry:catalog:*"
 	case RouteRepository:
 		if act, ok := ActionOf(rt.Action); ok && !t.Repo.IsZero() && t.Image != "" {
-			return e.scopeOf(t, act)
+			return e.scopeOf(t, act) + e.mountScope(r, t)
 		}
 	}
 	return ""
+}
+
+// mountScope is the further scope entry of the challenge of a cross-repository mount: pull on the source, after the push on
+// the target, as a client asks the token service for both (the distribution specification's token flow, and what the
+// conformance suite's client does). Without it the first token has no pull on the source, the mount is dropped to an ordinary
+// session (withoutUnreadableMount) and the client is never told to ask again. It is " " and the entry for a mount request whose
+// `from` names an image, "" for every other request.
+func (e *Enforcer) mountScope(r *http.Request, t route.Target) string {
+	if e.o.MountRoute == "" || e.o.MountSource == nil || t.Route != e.o.MountRoute || r.Method != http.MethodPost {
+		return ""
+	}
+	q := r.URL.Query()
+	if !q.Has("mount") || !q.Has("from") {
+		return ""
+	}
+	var bound qname.Repo
+	if t.Bound {
+		bound = t.Repo
+	}
+	repo, image, cache, ok := e.o.MountSource(q.Get("from"), bound)
+	if !ok {
+		return ""
+	}
+	s := e.scopeOf(route.Target{Repo: repo, Image: image, CacheView: cache, Bound: t.Bound}, registrytoken.Pull)
+	if s == "" {
+		return ""
+	}
+	return " " + s
 }
 
 // wrap puts the check in front of h. The request carries a memo of its match from here on, so the handler behind the check
@@ -420,7 +448,7 @@ func (e *Enforcer) decide(r *http.Request, g *httpserver.RegistryGrant, t route.
 		if g.Allows(t.Repo, t.Image, act.String()) {
 			return nil
 		}
-		return e.insufficient(r, e.scopeOf(t, act))
+		return e.insufficient(r, e.scopeOf(t, act)+e.mountScope(r, t))
 	}
 	return e.insufficient(r, "")
 }

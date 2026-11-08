@@ -11,6 +11,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/api/dispatch"
 	"github.com/guided-traffic/trove/internal/api/registry"
+	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/qname"
@@ -93,5 +94,58 @@ func TestAMountWithoutPullOnTheSourceFallsBackToASession(t *testing.T) {
 	}
 	if got := run(httpserver.Principal{Kind: httpserver.KindUser}, q); got != q {
 		t.Errorf("a trove token presented directly: %q", got)
+	}
+}
+
+// The challenge of a mount asks for push on the target and pull on the source (the distribution specification's token flow): a
+// client that follows the challenge gets a token that carries both, so the mount is served as a mount and not dropped to a session.
+// Found by the conformance suite, whose client takes the scope from the challenge: its mount answered 202 for lack of the source's pull.
+func TestTheChallengeOfAMountNamesTheSourcesPullToo(t *testing.T) {
+	disp, err := dispatch.New(dispatch.Options{Host: stubHost{}, Decider: stubDecider{}, Repos: stubRepos{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := func(from string, bound qname.Repo) (qname.Repo, string, bool, bool) {
+		if !bound.IsZero() {
+			return bound, from, false, true
+		}
+		p := strings.SplitN(from, "/", 3)
+		if len(p) != 3 {
+			return qname.Repo{}, "", false, false
+		}
+		return qname.Repo{Project: p[0], Key: p[1]}, p[2], false, true
+	}
+	e, err := registry.NewEnforcer(registry.EnforcerOptions{Matcher: disp, WriteError: writeError, MountRoute: "oci.upload.start", MountSource: src})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var oci formats.Format
+	for _, f := range formats.List() {
+		if f.Descriptor().RegistryRoot {
+			oci = f
+		}
+	}
+	router := httpserver.NewClientRouter()
+	if err := e.Mount(router, []string{"/v2/{rest...}"}, http.NotFoundHandler(), registry.RepositoryRoutes(oci.Routes(), "/v2/web/docker-local/")...); err != nil {
+		t.Fatal(err)
+	}
+	digest := "sha256:" + strings.Repeat("a", 64)
+	req := func(method, query string) *http.Request {
+		return httptest.NewRequestWithContext(context.Background(), method, "/v2/web/docker-local/app/blobs/uploads/?"+query, nil)
+	}
+	const target, source = "repository:web/docker-local/app:push", "repository:web/docker-hub/library/alpine:pull"
+	if got := e.Scope(req("POST", "mount="+digest+"&from=web/docker-hub/library/alpine")); got != target+" "+source {
+		t.Errorf("scope of a mount = %q, want the target's push and the source's pull", got)
+	}
+	for name, q := range map[string]string{"an upload without a mount": "digest=" + digest, "a mount without from": "mount=" + digest, "a from that names no image": "mount=" + digest + "&from=x"} {
+		if got := e.Scope(req("POST", q)); got != target {
+			t.Errorf("%s: scope = %q, want the target's push alone", name, got)
+		}
+	}
+	// A registry token without push on the target is told both entries as well.
+	p := httpserver.Principal{Kind: httpserver.KindUser, Credential: httpserver.Credential{Registry: &httpserver.RegistryGrant{}}}
+	err = e.Check(withPrincipal(req("POST", "mount="+digest+"&from=web/docker-hub/library/alpine"), p))
+	if ee, ok := errs.As(err); !ok || !strings.Contains(ee.Challenge, `scope="`+target+" "+source+`"`) {
+		t.Errorf("the challenge of a token without push on a mount's target: %v", err)
 	}
 }
