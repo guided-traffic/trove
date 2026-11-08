@@ -270,6 +270,10 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
 - **F-93 · `TestDatabaseOutageGrace` failed on timing under load** (seen once, `test/integration/server`), and passed when
   the area ran alone. Done when the cause (a wall-clock bound in the test, or a grace that fires late or early under load)
   is fixed.
+- **F-94 · A replica's shutdown overran its close deadline under load** (seen twice, by the F-90 agent).
+  `TestR_EP_018_FormatsOnAnEndpointWithRules` (`test/integration/endpoints`) failed with `stop a: close phase overran its
+  deadline` while the object-store health probes timed out on an overloaded host. Done when the cause (a close step that
+  waits on something slow, or a deadline that does not fit the test configuration) is found and fixed.
 - **F-88 · OCI tests carry requirement IDs whose acceptance criteria they do not prove** (read). The code review of T-16 WP3
   found tests of WP4 named with R-OCI-006, 014, 015, 016, 018, 020, 028, 030, 031, 032 and 033 whose criteria need real
   clients, the conformance suite (R-OCI-035), the e2e runs or the restore drill; the coverage report derives "implemented"
