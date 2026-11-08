@@ -131,6 +131,47 @@ func TestR_ARCH_009_InMemoryHost(t *testing.T) {
 			t.Fatal("a rollback sent a notification")
 		}
 	})
+	t.Run("R-ARCH-009 transactions do not overlap, so a rollback never takes rows another transaction built on", func(t *testing.T) {
+		h := newHost(t)
+		inside := make(chan struct{})
+		release := make(chan struct{})
+		first := make(chan error, 1)
+		go func() {
+			first <- h.Write(ctx, nil, func(_ formats.Tx, w formats.PackageWriter) error {
+				if _, _, err := w.EnsureLocked(ctx, h.Ref(), "left-pad", ""); err != nil {
+					return err
+				}
+				close(inside)
+				<-release
+				return errors.New("rolled back")
+			})
+		}()
+		<-inside
+		second := make(chan bool, 1)
+		go func() {
+			var created bool
+			_ = h.Write(ctx, nil, func(_ formats.Tx, w formats.PackageWriter) error {
+				_, created, _ = w.EnsureLocked(ctx, h.Ref(), "left-pad", "")
+				return nil
+			})
+			second <- created
+		}()
+		select {
+		case <-second:
+			t.Fatal("a second transaction ran while the first was open")
+		case <-time.After(50 * time.Millisecond):
+		}
+		close(release)
+		if err := <-first; err == nil {
+			t.Fatal("the first transaction committed")
+		}
+		if !<-second {
+			t.Fatal("the second transaction saw the package of a transaction that rolled back")
+		}
+		if _, ok, _ := h.Packages().Package(ctx, h.Ref(), "left-pad"); !ok {
+			t.Fatal("the package of the committed transaction is gone")
+		}
+	})
 	t.Run("R-ARCH-018 a commit sends the notifications and runs the after hooks", func(t *testing.T) {
 		h := newHost(t)
 		after := 0

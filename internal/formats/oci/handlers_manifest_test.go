@@ -612,12 +612,12 @@ func TestR_OCI_013_APushThatFailsInTheTransactionLeavesNothing(t *testing.T) {
 	layer := fx.blob("app", []byte("l"))
 	m := imageManifestBytes(cfg, layer)
 	// The blob goes away between the check outside the transaction and the check in it.
-	fx.twin.betweenChecks = func() {
+	fx.h.OnNextWrite(func() {
 		rq, _ := fx.h.NewRequest(context.Background(), http.MethodDelete, "app/blobs/"+layer, nil)
 		if err := fx.h.Remove(context.Background(), rq, "delete", BlobPath("app", layer)); err != nil {
 			t.Error(err)
 		}
-	}
+	})
 	resp := fx.put("app/manifests/1", m, ctImage)
 	fx.wantStatus(resp, http.StatusBadRequest, "MANIFEST_BLOB_UNKNOWN")
 	ctx := context.Background()

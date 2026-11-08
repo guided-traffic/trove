@@ -248,11 +248,6 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   deletion included (`docs/spec/formats/oci.md` H-653). Done when the job re-reads the principal (active, current groups) and
   the token's revocation per batch and fails permanently when they are withdrawn, with a test for each.
 
-- **F-100 · Concurrent pushes of one OCI tag answer 404, 409 or 503 and can leave no version** (confirmed).
-  `TestR_OCI_013_ConcurrentPushesOfOneTagLeaveOneDigestAndOneVersion` (`internal/formats/oci`) fails in 20 of 200 runs with
-  the race detector on b2317314: eight concurrent pushes answer e.g. `[409 404 201 503 404 409 503 201]`
-  (`shadow_check_unavailable`), once with no version left. Not yet known whether the production host or only the in-memory
-  test host is at fault. Done when every push of one tag ends 201 with one digest and one version, under `-race -count=500`.
 
 ### Tests and tools
 

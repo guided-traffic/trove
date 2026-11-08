@@ -87,6 +87,10 @@ type Host struct {
 	repo *repository.Repository
 	ref  formats.RepoRef
 
+	// txMu runs the transactions one at a time (see Write); mu guards the maps and is never held across a transaction.
+	txMu        sync.Mutex
+	interleaved []func()
+
 	mu        sync.Mutex
 	nextID    int64
 	items     map[string]*itemRec // by path

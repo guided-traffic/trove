@@ -88,7 +88,43 @@ func (t *memTx) SetValue(key, v any)                               { t.values[ke
 // log. A failure of fn or of a Before hook plays the log backwards, so the rows,
 // the notifications of the attempt vanish; a commit publishes the notifications
 // and runs the After hooks.
+//
+// Transactions run one at a time, in the order they begin. PostgreSQL lets two transactions
+// run side by side and makes the conflicting ones wait: the package row lock (EnsureLocked), the
+// unique path of an item and the unique version of a package. A rolled-back transaction there
+// never shows a row, and a transaction never sees the rows of one that has not ended. The undo
+// log here writes straight into the shared maps, so two overlapping transactions would see each
+// other's uncommitted rows and a rollback would take away rows another transaction had built on;
+// running them one after the other is one of the outcomes the database allows and is the one
+// this Host models. The reads outside a transaction (Stat, Versions) are not blocked by it.
 func (h *Host) Write(ctx context.Context, rq *formats.Request, fn func(tx formats.Tx, w formats.PackageWriter) error) error {
+	h.runInterleaved()
+	h.txMu.Lock()
+	defer h.txMu.Unlock()
+	return h.write(ctx, rq, fn)
+}
+
+// OnNextWrite registers fn to run once, before the next transaction begins and while no transaction is
+// running: another client's request that completes between the checks a handler makes outside its
+// transaction and the transaction itself. It cannot run inside a transaction, where a second
+// transaction on the same rows would wait for the first (see [Host.Write]).
+func (h *Host) OnNextWrite(fn func()) {
+	h.mu.Lock()
+	h.interleaved = append(h.interleaved, fn)
+	h.mu.Unlock()
+}
+
+func (h *Host) runInterleaved() {
+	h.mu.Lock()
+	fns := h.interleaved
+	h.interleaved = nil
+	h.mu.Unlock()
+	for _, fn := range fns {
+		fn()
+	}
+}
+
+func (h *Host) write(ctx context.Context, rq *formats.Request, fn func(tx formats.Tx, w formats.PackageWriter) error) error {
 	tx := newTx()
 	w := &writer{h: h, tx: tx, rq: rq, prefix: h.f.Descriptor().PropertyPrefix}
 	err := fn(tx, w)

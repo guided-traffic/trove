@@ -33,8 +33,6 @@ type twin struct {
 	lists *lists
 	// calls counts the port's calls by name, for the tests that pin what a request asks.
 	calls map[string]int
-	// betweenChecks runs once, when the references are checked inside the commit transaction: the moment after the check outside it.
-	betweenChecks func()
 	// hideInTx names item paths the existence check inside a commit transaction does not find: a removal that wins the race.
 	hideInTx map[string]bool
 }
@@ -124,11 +122,6 @@ func (t *twin) Tombstone(_ context.Context, repo int64, name string, d [32]byte)
 
 func (t *twin) ExistingItems(ctx context.Context, tx formats.Tx, repo int64, paths []string) ([]string, error) {
 	t.note("ExistingItems")
-	if tx != nil && t.betweenChecks != nil {
-		f := t.betweenChecks
-		t.betweenChecks = nil
-		f()
-	}
 	var out []string
 	for _, p := range paths {
 		if tx != nil && t.hideInTx[p] {
