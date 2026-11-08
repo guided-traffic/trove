@@ -9,13 +9,13 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 490 of 695 spec requirements are implemented: a passing test names them and no
+**Status.** 491 of 695 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 704 specified (348 of them implemented), 1,535 open.
+**Totals.** 2,239 catalog features on 60 pages: 704 specified (350 of them implemented), 1,535 open.
 695 spec requirements: 546 cover catalog features, 149 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
@@ -39,7 +39,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Storage and blob providers](#storage-and-blob-providers-stor) | `STOR` | 41 | 12 of 12 | 21 | 20 | 12 |
 | [Retention, cleanup and archiving](#retention-cleanup-and-archiving-ret) | `RET` | 42 | – | 26 | 16 | 0 |
 | [High availability and deployment](#high-availability-and-deployment-ha) | `HA` | 79 | 49 of 49 | 61 | 18 | 35 |
-| [Operations, monitoring and configuration](#operations-monitoring-and-configuration-ops) | `OPS` | 100 | 17 of 17 | 43 | 57 | 24 |
+| [Operations, monitoring and configuration](#operations-monitoring-and-configuration-ops) | `OPS` | 100 | 17 of 17 | 43 | 57 | 26 |
 | [Events and extensibility](#events-and-extensibility-evt) | `EVT` | 82 | 1 of 1 | 26 | 56 | 2 |
 | [Distribution and release lifecycle](#distribution-and-release-lifecycle-dist) | `DIST` | 70 | 2 of 2 | 2 | 68 | 2 |
 | [Security scanning and curation](#security-scanning-and-curation-sec) | `SEC` | 98 | 18 of 18 | 18 | 80 | 15 |
@@ -968,7 +968,7 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 Catalog page: [operations-and-monitoring.md](../features/operations-and-monitoring.md) · specified by priority: MVP 17 of 17 · P1 19 of 23 · P2 7 of 34 · Later 0 of 1 · Out of scope 0 of 25
 
 <details>
-<summary>100 features: 43 specified, 57 open, 24 implemented</summary>
+<summary>100 features: 43 specified, 57 open, 26 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -983,8 +983,8 @@ Catalog page: [operations-and-monitoring.md](../features/operations-and-monitori
 | OPS-009 | Cluster lock diagnostics | P2 | specified | [R-OPS-026](../spec/operations-and-observability.md) |
 | OPS-010 | Outbound connection test | P2 | open | – |
 | OPS-011 | Metrics endpoint | MVP | implemented | [R-OPS-006](../spec/operations-and-observability.md) (implemented) |
-| OPS-012 | Core metric families | MVP | specified | [R-BAK-014](../spec/backup-and-restore.md) (implemented), [R-EP-009](../spec/endpoints.md) (implemented), [R-OPS-007](../spec/operations-and-observability.md) (implemented), [R-OPS-008](../spec/operations-and-observability.md) |
-| OPS-013 | Auxiliary service metric families | P1 | specified | [R-OPS-008](../spec/operations-and-observability.md) |
+| OPS-012 | Core metric families | MVP | implemented | [R-BAK-014](../spec/backup-and-restore.md) (implemented), [R-EP-009](../spec/endpoints.md) (implemented), [R-OPS-007](../spec/operations-and-observability.md) (implemented), [R-OPS-008](../spec/operations-and-observability.md) (implemented) |
+| OPS-013 | Auxiliary service metric families | P1 | implemented | [R-OPS-008](../spec/operations-and-observability.md) (implemented) |
 | OPS-014 | Federation metric families | Later | open | – |
 | OPS-015 | Metrics log output | P2 | open | – |
 | OPS-016 | Runtime management beans | Out of scope | open | – |
