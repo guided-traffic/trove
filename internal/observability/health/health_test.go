@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -551,6 +552,66 @@ func TestServing(t *testing.T) {
 	})
 }
 
+func TestCheckTimeoutClassification(t *testing.T) {
+	expired, cancelExpired := context.WithTimeout(context.Background(), time.Nanosecond)
+	defer cancelExpired()
+	<-expired.Done()
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	live := context.Background()
+	other := errors.New("connection refused")
+
+	t.Run("R-OPS-001 Q-OPS-31 an answer of context.DeadlineExceeded after the check's own deadline is a timeout", func(t *testing.T) {
+		got := timedOut(expired, live, context.DeadlineExceeded)
+		if !errors.Is(got, errCheckTimeout) || !IsTransient(got) {
+			t.Fatalf("got %v, transient=%v", got, IsTransient(got))
+		}
+		if wrapped := timedOut(expired, live, fmt.Errorf("reading: %w", context.DeadlineExceeded)); !errors.Is(wrapped, errCheckTimeout) {
+			t.Fatalf("a wrapped DeadlineExceeded is %v", wrapped)
+		}
+	})
+	t.Run("R-OPS-001 Q-OPS-31 other answers and other expiries stay as they are", func(t *testing.T) {
+		if got := timedOut(expired, live, other); !errors.Is(got, other) {
+			t.Fatalf("another error after the deadline became %v", got)
+		}
+		if got := timedOut(expired, live, nil); got != nil {
+			t.Fatalf("a pass became %v", got)
+		}
+		if got := timedOut(live, live, context.DeadlineExceeded); errors.Is(got, errCheckTimeout) {
+			t.Fatal("a DeadlineExceeded from inside the check, before its deadline, is not the check's timeout")
+		}
+		if got := timedOut(expired, cancelled, context.DeadlineExceeded); errors.Is(got, errCheckTimeout) {
+			t.Fatal("a deadline during the loop's shutdown is not a timeout")
+		}
+	})
+
+	// End to end, on the forced path (Refresh) and on the clock path (runDue): a check that gives up at
+	// its deadline and returns ctx.Err() is recorded as an outage. runCheck is normally parked in its
+	// select before the answer arrives; that branch hands cctx.Err() to the same timedOut as an answer
+	// does, so removing the call from runCheck fails these runs.
+	giveUp := func(ctx context.Context) error { <-ctx.Done(); return ctx.Err() }
+
+	for name, run := range map[string]func(*Health, context.Context){
+		"forced": func(h *Health, ctx context.Context) { h.Refresh(ctx) },
+		"timed":  func(h *Health, ctx context.Context) { h.runDue(ctx, false) },
+	} {
+		t.Run("R-OPS-001 Q-OPS-31 a check returning its ctx.Err() at the deadline is recorded as timeout ("+name+")", func(t *testing.T) {
+			for range 5 {
+				h := New(cfg())
+				h.AddReadiness("database", giveUp, false, WithGrace(time.Minute))
+				run(h, t.Context())
+				c := h.checks[0]
+				c.mu.Lock()
+				broken, since := c.runBroken, c.runSince
+				c.mu.Unlock()
+				if broken || since.IsZero() {
+					t.Fatalf("the run is broken=%v since=%v: a deadline was not counted as an outage", broken, since)
+				}
+			}
+		})
+	}
+}
+
 func TestOutageGrace(t *testing.T) {
 	type clock struct {
 		mu sync.Mutex
@@ -616,6 +677,43 @@ func TestOutageGrace(t *testing.T) {
 		}
 		if h.Ready() {
 			t.Fatal("a failure that is not marked transient must gate after the debounce")
+		}
+	})
+
+	t.Run("R-OPS-001 Q-OPS-31 a check that runs past health.check_timeout earns the grace: degraded inside it, failing after it", func(t *testing.T) {
+		clk := &clock{t: time.Unix(1_700_000_000, 0)}
+		h := New(cfg(), WithClock(func() time.Time { clk.mu.Lock(); defer clk.mu.Unlock(); return clk.t }))
+		var stall atomic.Bool
+		h.AddReadiness("database", func(ctx context.Context) error {
+			if stall.Load() {
+				<-ctx.Done() // answers only when health.check_timeout cancels it
+				return ctx.Err()
+			}
+			return nil
+		}, false, WithGrace(20*time.Second))
+		advance := func(d time.Duration) { clk.mu.Lock(); clk.t = clk.t.Add(d); clk.mu.Unlock() }
+		h.Refresh(t.Context())
+		if !h.Ready() {
+			t.Fatal("setup: the replica must have been ready once")
+		}
+		stall.Store(true)
+		for range 3 { // 3 timeouts, 5 s apart: 10 s, past failure_threshold 2
+			advance(5 * time.Second)
+			h.Refresh(t.Context())
+		}
+		snap := h.Snapshot()
+		if !snap.Serving || len(snap.Failing) != 0 || !slices.Equal(snap.Degraded, []string{"database"}) {
+			t.Fatalf("10 s of timeouts inside a 20 s grace: failing=%v degraded=%v", snap.Failing, snap.Degraded)
+		}
+		if snap.Checks[0].Status != Degraded || snap.Checks[0].Reason != "timeout" {
+			t.Fatalf("check = %+v, want degraded with reason timeout", snap.Checks[0])
+		}
+		for range 3 { // 25 s since the first timeout
+			advance(5 * time.Second)
+			h.Refresh(t.Context())
+		}
+		if h.Ready() || !slices.Equal(h.Failing(), []string{"database"}) {
+			t.Fatalf("25 s of timeouts past a 20 s grace must fail readiness; failing=%v", h.Failing())
 		}
 	})
 

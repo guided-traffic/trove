@@ -532,9 +532,23 @@ func (h *Health) runCheck(ctx context.Context, c *check, force bool) {
 		if ctx.Err() != nil {
 			return // shutting down: no result
 		}
-		err = errCheckTimeout
+		err = cctx.Err() // classified by timedOut below, like an answer that carries it
 	}
-	h.record(c, err, time.Since(start))
+	h.record(c, timedOut(cctx, ctx, err), time.Since(start))
+}
+
+// timedOut turns the answer of a check that gave up at its own deadline into
+// errCheckTimeout. When the deadline fires before the call has parked in the
+// select of runCheck, the answer and the expired context are both ready and Go
+// picks one at random; the answer then is the check's ctx.Err(), and whether it
+// counts as an outage (IsTransient) must not depend on that pick. cctx is the
+// context the check ran with, parent the context of the check loop: a deadline
+// that is the loop's own shutdown is not a timeout.
+func timedOut(cctx, parent context.Context, err error) error {
+	if errors.Is(err, context.DeadlineExceeded) && errors.Is(cctx.Err(), context.DeadlineExceeded) && parent.Err() == nil {
+		return errCheckTimeout
+	}
+	return err
 }
 
 // callGuarded runs fn and turns a panic into a failed check.

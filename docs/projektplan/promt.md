@@ -268,9 +268,6 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
 
 ### Tests and tools
 
-- **F-93 · `TestDatabaseOutageGrace` failed on timing under load** (seen once, `test/integration/server`), and passed when
-  the area ran alone. Done when the cause (a wall-clock bound in the test, or a grace that fires late or early under load)
-  is fixed.
 - **F-94 · A replica's shutdown overran its close deadline under load** (seen twice, by the F-90 agent).
   `TestR_EP_018_FormatsOnAnEndpointWithRules` (`test/integration/endpoints`) failed with `stop a: close phase overran its
   deadline` while the object-store health probes timed out on an overloaded host. Done when the cause (a close step that

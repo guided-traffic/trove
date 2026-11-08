@@ -769,8 +769,16 @@ profile after the fixes (`SET=push` and `SET=failover`, above): the measurements
    [internal/observability/health](../../internal/observability/health/health_test.go), `TestMarkOutage` and
    `TestDatabaseOutageGrace` in
    [test/integration/server/outage_test.go](../../test/integration/server/outage_test.go) (a TCP proxy in front of
-   PostgreSQL: down for 1.2 s, `/readyz` stays 200 and lists `database` as degraded; down past the 2.5 s grace of
-   that test, 503 not earlier than 2 s, and 200 again when the proxy is back). The 30 s stop of E0.13 still turns
+   PostgreSQL, grace 12 s: down until `/readyz` lists `database` as degraded, then back, and `/readyz` stays 200 until
+   neither `database` nor `schema` is listed (other checks may be degraded for their own reasons); down past the grace,
+   503 not earlier than the grace and not later than the grace plus three rounds of interval and timeout, and 200 again
+   when the proxy is back. The first case does not time the outage. Every replica of the server area runs with
+   `health.check_interval` and `health.check_timeout` of 2 s (`checkInterval`, `checkTimeout` in
+   [env_test.go](../../test/integration/server/env_test.go)); with 200 ms the five-statement schema check timed out
+   every round on a starved CPU, replicas did not become ready, and the grace, which runs from the first failed check to
+   the first passing one, ran out. `TestOutageGrace` also asserts that a check which runs past `health.check_timeout`
+   earns the grace, and `TestCheckTimeoutClassification` that an answer of `ctx.Err()` at the check's own deadline counts as
+   that timeout (`timedOut`), whichever branch of `runCheck`'s select delivered it). The 30 s stop of E0.13 still turns
    `/readyz` 503, now 20 to 25 s into the outage instead of 10.
 4. **Fixed: `make image` produced a binary that never became ready in a checkout without tags.** `VERSION` fell back
    to `git describe --tags --always --dirty`, a commit hash, which `parseVersion`
