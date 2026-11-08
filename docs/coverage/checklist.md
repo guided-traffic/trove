@@ -9,13 +9,13 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 488 of 694 spec requirements are implemented: a passing test names them and no
+**Status.** 489 of 694 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 704 specified (347 of them implemented), 1,535 open.
+**Totals.** 2,239 catalog features on 60 pages: 704 specified (348 of them implemented), 1,535 open.
 694 spec requirements: 546 cover catalog features, 148 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
@@ -38,7 +38,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [OIDC federation for CI systems](#oidc-federation-for-ci-systems-cioidc) | `CIOIDC` | 40 | 20 of 20 | 31 | 9 | 14 |
 | [Storage and blob providers](#storage-and-blob-providers-stor) | `STOR` | 41 | 12 of 12 | 21 | 20 | 12 |
 | [Retention, cleanup and archiving](#retention-cleanup-and-archiving-ret) | `RET` | 42 | – | 26 | 16 | 0 |
-| [High availability and deployment](#high-availability-and-deployment-ha) | `HA` | 79 | 49 of 49 | 61 | 18 | 34 |
+| [High availability and deployment](#high-availability-and-deployment-ha) | `HA` | 79 | 49 of 49 | 61 | 18 | 35 |
 | [Operations, monitoring and configuration](#operations-monitoring-and-configuration-ops) | `OPS` | 100 | 17 of 17 | 43 | 57 | 24 |
 | [Events and extensibility](#events-and-extensibility-evt) | `EVT` | 82 | 1 of 1 | 26 | 56 | 2 |
 | [Distribution and release lifecycle](#distribution-and-release-lifecycle-dist) | `DIST` | 70 | 2 of 2 | 2 | 68 | 2 |
@@ -877,7 +877,7 @@ Catalog page: [retention-and-cleanup.md](../features/retention-and-cleanup.md) �
 Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specified by priority: MVP 49 of 49 · P1 11 of 14 · P2 1 of 10 · Later 0 of 3 · Out of scope 0 of 3
 
 <details>
-<summary>79 features: 61 specified, 18 open, 34 implemented</summary>
+<summary>79 features: 61 specified, 18 open, 35 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -936,7 +936,7 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 | HA-053 | Persistence and storage back-end selection in the chart | MVP | implemented | [R-HA-030](../spec/ha-and-helm.md) (implemented) |
 | HA-054 | Network policies | MVP | implemented | [R-HA-042](../spec/ha-and-helm.md) (implemented) |
 | HA-055 | Log shipping and metrics integration in the chart | P1 | implemented | [R-HA-045](../spec/ha-and-helm.md) (implemented) |
-| HA-056 | Private image registry and air-gapped installation | P1 | specified | [R-HA-047](../spec/ha-and-helm.md) |
+| HA-056 | Private image registry and air-gapped installation | P1 | implemented | [R-HA-047](../spec/ha-and-helm.md) (implemented) |
 | HA-057 | Server-side extension scripts delivered through the chart | Later | open | – |
 | HA-073 | Message-broker TLS for the scanning component | Later | open | – |
 | HA-058 | Supported database engine and versions | MVP | implemented | [R-HA-013](../spec/ha-and-helm.md) (implemented) |
