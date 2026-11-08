@@ -8895,8 +8895,8 @@ but not the party that made the claim.
 - **Component and subject:** the release pipeline and the two places it writes to. The subject is every
   consumer that pulls the image or the chart, and any admission policy of the cluster that runs them. The
   chart renders no admission policy and no signature check.
-- **Live or dormant:** dormant until the first release of the pipeline, because the workflows have not run
-  on GitHub yet ([releasing.md](../developer/releasing.md#not-in-place-yet)). From that release on, live.
+- **Live or dormant:** live: Release Docker & Helm publishes every release (run 42436292019 published `v0.25.2`,
+  [releasing.md](../developer/releasing.md#the-release-pipeline)).
 - **What makes it real:** whoever holds the Docker Hub access token of the account `guidedtraffic` (the
   secret `DOCKERHUB_PAT`) can push a different image under an existing tag. The chart pulls by tag by default,
   because `image.digest` is empty in [values.yaml](../../deploy/helm/trove/values.yaml). Whoever can write to the
@@ -8917,7 +8917,8 @@ design.
 - **Component and subject:** the self-hosted runners and the pipeline. The subject is the organisation's secrets
   that the jobs of a pull request receive, and the host and network of a runner while a job runs.
 - **Live or dormant:** live for every pull request from a branch of this repository. Those runs receive the
-  repository's secrets: the jobs `image`, `container-scan`, `integration`, `s3-conformance`, `e2e` and `e2e-npm` log in to
+  repository's secrets: the jobs `image`, `container-scan`, `integration`, `s3-conformance`, `e2e` and `e2e-npm` on the
+  self-hosted runners, and `e2e-nuget`, `e2e-ci`, `e2e-bastion`, `e2e-vuln` and `e2e-mirror` on GitHub-hosted runners, log in to
   Docker Hub with `secrets.DOCKERHUB_PAT`. GitHub passes repository secrets to pull requests from the same
   repository, not to pull requests from forks. Whether a fork's pull request reaches these runners at all depends
   on the repository's Actions settings, which are not in the repository and are not verified here. For the jobs on

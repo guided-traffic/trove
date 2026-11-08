@@ -5,8 +5,8 @@ who owns a pass and how a stale writer is stopped, what a pass takes from an ups
 messages show, and what a restore leaves. The specification is
 [repositories-and-proxy.md](../spec/repositories-and-proxy.md#mirror-mode) (R-REPO-050 to R-REPO-059); the build is described in
 [mirror.md](../developer/mirror.md). The requests themselves, with their credentials, egress rules and integrity checks, belong to the
-remote engine's side of the seam (`mirror.Host`), which the remote engine's work package implements; this page covers what the
-engine does with the answers.
+remote engine's side of the seam (`mirror.Host`), described on [remote-repositories.md](remote-repositories.md) and [egress.md](egress.md);
+this page covers what the engine does with the answers.
 
 ## Who writes, and as whom
 
@@ -71,12 +71,22 @@ package name (Q-OPS-158); the label sets are closed.
 ## What a restore leaves
 
 `mirror_state` is data, `mirror_pending` transient ([tables_mirror.go](../../internal/meta/postgres/tables_mirror.go)). The restore
-rule of R-REPO-058 is one statement, `PGStore.ClearAfterRestore`: the pass in progress and its fence, the request, the rate-limit
-wait and the bound are cleared, the next pass is due at the restore time, and a restore without remote caches also forgets the cursor
-of the last complete pass, so that its first pass is full. The restore job of phase 7 calls it; until it exists the function is
-tested alone (`TestR_REPO_058_ARestoreClearsThePassAndKeepsOrForgetsTheCursor`).
+rule of R-REPO-058 is one statement, `RestoreResetMirrorState`, which the restore runs as its fix-up `mirror-state` in the one transaction
+of its step 6 ([backup/fixup/mirror_state.go](../../internal/backup/fixup/mirror_state.go),
+[backup_restore.sql](../../internal/meta/postgres/queries/backup_restore.sql)): the pass in progress and its fence, the request, the
+rate-limit wait and the bound are cleared, the next pass is due at the restore time, and a restore without remote caches also forgets the
+cursor of the last complete pass, so that its first pass is full. `PGStore.ClearAfterRestore` of the mirror package states the same rule
+for its own tests (`TestR_REPO_058_ARestoreClearsThePassAndKeepsOrForgetsTheCursor`).
 
 ## What this does not cover
+
+The gaps of the mirror mode that the spec records:
+
+- [H-503](../spec/repositories-and-proxy.md#h-503--a-mirror-stores-a-malicious-version-before-anyone-asked-for-it): a mirror stores a malicious version before anyone asked for it.
+- [H-505](../spec/repositories-and-proxy.md#h-505--the-byte-bound-of-a-mirror-can-be-passed-by-the-artifacts-in-flight-and-the-fold-lag): the byte bound of a mirror can be passed by the artifacts in flight and the fold lag; the lagging base of that bound is [H-527](#h-527--the-bounds-base-is-a-lagging-counter-and-a-per-process-tally).
+- [H-506](../spec/repositories-and-proxy.md#h-506--until-quotas-are-built-only-maxbytes-bounds-a-mirror-of-an-upstream-that-is-not-well-known): until quotas are built, only `maxBytes` bounds a mirror of an upstream that is not well known.
+- [H-507](../spec/repositories-and-proxy.md#h-507--a-hostile-upstream-can-make-a-mirror-send-as-many-requests-as-its-feed-lists-names): a hostile upstream can make a mirror send as many requests as its feed lists names.
+- [H-504](../spec/repositories-and-proxy.md#h-504--npms-replication-host-is-contacted-although-it-is-not-an-extrahosts-entry): npm's replication host is contacted although it is not an `extraHosts` entry.
 
 ### H-527 · The bound's base is a lagging counter and a per-process tally
 
@@ -89,7 +99,8 @@ stores by one `storage.usage.fold_interval` (5 s by default) plus one iteration,
 time, lives in the memory of one attempt, so a pass that starts, or a process that restarts, inside that interval does not see the
 stores of the attempt before it. The bound can therefore be passed by the artifacts in flight (`concurrency`) and by the stores of
 one fold interval, which is the overshoot [R-REPO-052](../spec/repositories-and-proxy.md) and
-[H-505](../spec/repositories-and-proxy.md) accept. A fold that keeps failing (the database refuses its transaction) freezes the
+[H-505](../spec/repositories-and-proxy.md#h-505--the-byte-bound-of-a-mirror-can-be-passed-by-the-artifacts-in-flight-and-the-fold-lag) accept;
+H-505 is the bound's overshoot as the spec states it, this gap the mechanism behind it. A fold that keeps failing (the database refuses its transaction) freezes the
 counter and with it the bound's base; the failure is logged at warn level every interval and the loop's liveness entry
 `blob.usage_fold` shows it stuck only if the iteration itself hangs. What makes it real: a mirror with a `maxBytes` whose passes
 follow each other within one fold interval, or a fold that fails for a long time.

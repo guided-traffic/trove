@@ -1,9 +1,10 @@
 # Roles and trust boundaries
 
-Status: the roles `api` and `packages` are built in the binary (Q-ARCH-294, Q-ARCH-300 to Q-ARCH-303) and tested on the integration stack
-(`test/integration/roles`); the chart renders `web` only in the bridge of the upgrade across the cut (`web.enabled`). Implemented in M0 for the listeners, the client-address rule, the trace trust rule and the Valkey data path. No
-login, identity provider or repository exists yet, so no principal is authenticated. The sections that would need one say
-what is not there.
+Status: built. The roles `api` and `packages` are built in the binary (Q-ARCH-294, Q-ARCH-300 to Q-ARCH-303) and tested on the integration stack
+(`test/integration/roles`); the chart renders `web` only in the bridge of the upgrade across the cut (`web.enabled`). The listeners,
+the client-address rule, the trace trust rule and the Valkey data path date from M0; how a principal is authenticated is on
+[login-and-sessions.md](login-and-sessions.md) and [tokens-and-credentials.md](tokens-and-credentials.md), what it may do on
+[permissions.md](permissions.md).
 
 This page says which process plays which role, which party each boundary trusts and for what, and where a request or a
 value crosses a boundary. The code that implements each rule is linked. Open gaps are at the end of the page.
@@ -18,8 +19,12 @@ value crosses a boundary. The code that implements each rule is linked. Open gap
 | `worker` | `trove serve --role worker` | the ops listener only | the job claim loop, scheduler and reaper; the lease pool | Deployment `<fullname>-worker` |
 | `all` | `trove serve --role all` | both listeners | both sets | not rendered by the chart; for a local run outside the chart ([spec INV-2](../spec/README.md#design-invariants)) |
 | migration | `trove migrate up` | nothing: no listener | none; after the schema steps it applies the role bindings of `authz.role_bindings` under the migration lock ([permissions](permissions.md#role-bindings-from-the-configuration)) | Job `<fullname>-migrate` ([migrate.yaml](../../deploy/helm/trove/templates/migrate.yaml)) |
+| backup | `trove backup create --trigger schedule` | no client traffic; `/metrics` on the operations port while a run lasts ([backup_create.go](../../cmd/trove/backup_create.go), `serveBackupMetrics`) | one run at a time, decided by the `backup_run` row (R-BAK-010) | CronJob `<fullname>-backup` ([backup.yaml](../../deploy/helm/trove/templates/backup.yaml)), with `backup.enabled` |
+| restore | `trove backup restore <id>` | nothing | the restore of one backup into an empty installation; no replica runs meanwhile | Job `<fullname>-restore` ([restore.yaml](../../deploy/helm/trove/templates/restore.yaml)), with `restore.enabled` |
+| post-restore | `trove admin post-restore --restored-to <time>` | nothing | the clean-up after a restore and the replay of the revocation journal | Job `<fullname>-post-restore-<hash>` ([post-restore.yaml](../../deploy/helm/trove/templates/post-restore.yaml)), with `postRestore.enabled` |
 
-`trove backup` is reserved and answers "not implemented yet". Its role has no code yet.
+What the backup, restore and post-restore Jobs hold, and what each of them never holds, is on
+[backup-and-restore.md](backup-and-restore.md#who-holds-what).
 
 ## Trust boundaries
 
@@ -32,7 +37,7 @@ value crosses a boundary. The code that implements each rule is linked. Open gap
              +------------+-------------+  only from its own addresses
                           | HTTPS (tls.enabled), verified by the edge
    +----------------------v-----------------------+
-   | web pod                                       |
+   | api or packages pod                           |
    |  client listener :8080 (default endpoint)     |   host outside the endpoint: 421
    |  further endpoint listeners (own port each)   |
    |  ops listener :8081  (probes, metrics)  <-----+---- kubelet, monitoring
@@ -53,7 +58,8 @@ value crosses a boundary. The code that implements each rule is linked. Open gap
 | Client to trace context | a peer named in `tracing.trusted_peers` may continue its trace | a client choose the trace ID | `tracing.incoming_context`, `tracing.trusted_peers` | [tracing.go](../../internal/observability/tracing.go) |
 | Replicas to PostgreSQL, Valkey, object store | the server's certificate, checked by the client | a plaintext connection unless named with `allow_insecure` | `database.ssl_mode`, `valkey.tls`, `storage.s3` | [transport-encryption.md](transport-encryption.md) |
 | Replicas to Valkey data | the value a Valkey read returns | grant access or supply served content (INV-3) | the key families of [valkey.go](../../internal/cluster/valkey_keys.go) | this page, below |
-| Replicas to identity provider, upstream registries | not yet built (M1, M2) | not applicable in M0 | not applicable | [identity-and-authentication.md](../spec/identity-and-authentication.md), [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
+| Replicas to the identity provider | the IdP's signed ID token and its claims, after the checks of a login | sign in a user whose token fails a check or a claim gate | `auth.oidc.providers` | [login-and-sessions.md](login-and-sessions.md#parties-and-what-each-is-trusted-with) |
+| Replicas to upstream registries | the bytes and documents an upstream answers, after the checks of the fill path | reach an address the egress policy refuses; grant access | the remote repository's settings, `proxy.outbound` | [remote-repositories.md](remote-repositories.md#who-is-trusted-with-what), [egress.md](egress.md) |
 
 ## The cut into `api` and `packages`
 
@@ -125,22 +131,22 @@ codes (`no_sentinel`, `circuit_open`, `probe_failed` and the others of [valkey_r
 never an address or a raw error text. Reachability of the listener is the one fence, and it is described under
 [H-41](../spec/operations-and-observability.md#h-41--ingress-enforcement-is-verified-on-one-cni-only).
 
-## Installation facts before identity ships
+## Installation facts through the bootstrap switch
 
-Until the identity work of M1 nobody holds `system.read`. The switch `system.bootstrap_anonymous_read` (default `false`)
-lets an anonymous caller read `/api/v1/system/info` and `/api/v1/system/replicas` on the default endpoint's client
+The switch `system.bootstrap_anonymous_read` (default `false`) dates from before the identity work of M1, when nobody held
+`system.read`. It lets an anonymous caller read `/api/v1/system/info` and `/api/v1/system/replicas` on the default endpoint's client
 listener, and only there: the bridge answers for a request only when the endpoint it arrived on is the default endpoint and
 admits anonymous requests (`server.endpoints.default.auth.anonymous`, [access.go](../../internal/app/access.go), `Require`); a
-further endpoint refuses the same request as unauthenticated ([config/system.go](../../internal/config/system.go), [app.go](../../internal/app/app.go), `bootstrapAccess`;
-[access.go](../../internal/app/access.go)). Startup logs a warning while it is set
+further endpoint refuses the same request as unauthenticated ([config/system.go](../../internal/config/system.go),
+[wire_api.go](../../internal/app/wire_api.go), `newBridgeAccess`; [access.go](../../internal/app/access.go)). Startup logs a warning while it is set
 ([warnings.go](../../internal/app/warnings.go)) and refuses it when `server.base_url` or the `base_url` of any further endpoint
 is an `https` origin other than localhost ([config/finalize.go](../../internal/config/finalize.go), `Validate`). The dev profile sets it
-([values-dev.yaml](../../deploy/dev/values-dev.yaml)). See [H-63](#h-63--anonymous-read-of-installation-facts-and-the-replica-list-until-identity-ships).
+([values-dev.yaml](../../deploy/dev/values-dev.yaml)). See [H-63](#h-63--anonymous-read-of-installation-facts-and-the-replica-list-while-the-bootstrap-switch-is-on).
 
 ## Valkey is a boundary of its own
 
-Valkey holds shared ephemeral state: the coordination keys, the negative cache of remote repositories and, later, rate
-limits ([spec INV-3](../spec/README.md#design-invariants), [architecture.md](../spec/architecture.md) Q-ARCH-16). Nothing
+Valkey holds shared ephemeral state: the coordination keys, the negative cache of remote repositories and the counters of the
+rate limits ([api-edge.md](api-edge.md); [spec INV-3](../spec/README.md#design-invariants), [architecture.md](../spec/architecture.md) Q-ARCH-16). Nothing
 trove serves is read from it, and no positive authentication or authorization result is. A value read from Valkey can make
 trove refuse a request or fetch from an upstream again; it cannot grant access or supply content. Change messages on the
 Valkey channel only evict caches early and never advance the applied epoch ([changelog.go](../../internal/cluster/changelog.go),
@@ -152,6 +158,14 @@ The write path of Valkey is therefore a denial-of-service boundary. Its exposure
 
 ## What this does not cover
 
+The gaps of these boundaries that the spec pages record:
+
+- [H-1](../spec/architecture.md#h-1--format-code-runs-in-process-without-isolation): format code runs in the replica's process, with every credential the replica holds.
+- [H-517](../spec/architecture.md#h-517--the-cut-into-roles-separates-the-login-secrets-not-the-data-credentials): the cut into roles separates the login secrets, not the data credentials.
+- [H-521](../spec/architecture.md#h-521--two-path-rules-outside-the-stages-of-authentication-and-rate-limits-do-not-ask-whether-the-family-is-served): two path rules outside the stages of authentication and rate limits do not ask whether the family is served.
+- [H-41](../spec/operations-and-observability.md#h-41--ingress-enforcement-is-verified-on-one-cni-only): the ops listener is fenced by the ingress NetworkPolicy alone, and its enforcement is verified on one CNI.
+- [H-49](../spec/architecture.md#h-49--write-access-to-valkey-denies-service): write access to Valkey denies service.
+
 ### H-62 · Client address follows the header the edge sends
 
 Stage: the client address of every request, which the request log records
@@ -160,13 +174,13 @@ Stage: the client address of every request, which the request log records
 Live when an entry of `server.trusted_proxies` (or of an endpoint's `trusted_proxies`) is a proxy that does not append the
 peer's address to the selected header family. The walk then takes the client's own entry, so the client chooses its logged
 address. The chart default `trusted_proxies: []` keeps the rule at the TCP peer, which makes the gap dormant until an
-operator names an edge. Subject: the client address in the request log, which the rate limits and the audit trail of
-the spec will also use once they exist.
+operator names an edge. Subject: the client address in the request log, the per-address buckets of the rate limits
+([api-edge.md](api-edge.md)) and the source address of every audit event ([audit/row.go](../../internal/audit/row.go)).
 
 What makes it real: an edge that forwards a client's header unchanged, or sets none, listed as a trusted proxy. The edge's
 configuration is outside trove, and trove cannot check it.
 
-### H-63 · Anonymous read of installation facts and the replica list until identity ships
+### H-63 · Anonymous read of installation facts and the replica list while the bootstrap switch is on
 
 Stage: `GET /api/v1/system/info` and `GET /api/v1/system/replicas` on the default endpoint's client listener, reached
 through the edge ([access.go](../../internal/app/access.go), `bridgeAccess.Require`). These two and no other: the bridge

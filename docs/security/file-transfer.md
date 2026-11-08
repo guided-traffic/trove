@@ -141,8 +141,14 @@ still arriving leaves nothing behind (the spool file is removed); one whose body
 
 ## What this does not cover
 
-The timing signal of a deduplication hit across projects is a gap of the storage spec:
-[H-552](../spec/storage.md#h-552--a-deduplication-hit-across-projects-can-be-told-apart-by-its-timing).
+The gaps of the spec pages whose mechanism this page describes:
+
+- [H-3](../spec/architecture.md#h-3--ui-and-package-content-share-one-origin): the UI and package content share one origin.
+- [H-11](../spec/storage.md#h-11--object-store-principals-bypass-troves-authorization-and-integrity-checks): object-store principals bypass trove's authorization and integrity checks.
+- [H-13](../spec/storage.md#h-13--deduplication-reveals-the-existence-of-known-content-through-upload-timing): deduplication reveals the existence of known content through upload timing; the same signal across projects is H-552.
+- [H-552](../spec/storage.md#h-552--a-deduplication-hit-across-projects-can-be-told-apart-by-its-timing): a deduplication hit across projects can be told apart by its timing; it is H-13's signal, accepted by the owner for the cross-project case.
+- [H-14](../spec/storage.md#h-14--no-per-principal-limit-on-concurrent-uploads-or-spool-use): no per-principal limit on concurrent uploads or spool use.
+- [H-131](../spec/formats/generic.md#h-131--generic-content-is-served-as-stored-to-whoever-can-read-it): generic content is served as stored, to whoever can read it.
 
 ### H-154 · An insert that was in flight when the delete was checked is removed without a decision
 

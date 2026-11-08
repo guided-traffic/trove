@@ -315,6 +315,15 @@ differs from the tokens above:
 
 ## What this does not cover
 
+The gaps of the spec pages whose mechanism this page describes:
+
+- [H-19](../spec/identity-and-authentication.md#h-19--tokens-are-bearer-credentials): tokens are bearer credentials.
+- [H-16](../spec/identity-and-authentication.md#h-16--idp-side-deactivation-without-scim): a deactivation at the identity provider does not reach trove's tokens and sessions without SCIM.
+- [H-44](../spec/api-and-ui.md#h-44--credentials-displayed-in-the-browser-are-outside-troves-control): credentials displayed in the browser are outside trove's control.
+- [H-319](../spec/api-and-ui.md#h-319--a-configuration-file-that-holds-a-token-can-be-committed): a configuration file that holds a token can be committed.
+- [H-320](../spec/api-and-ui.md#h-320--a-guide-can-state-what-trove-no-longer-does): a guide can state what trove no longer does.
+- [H-321](../spec/api-and-ui.md#h-321--an-anonymous-reader-learns-the-token-variables-name-from-the-guide-of-a-format): an anonymous reader learns the token variable's name from the guide of a format.
+
 ### H-82 · Rejected credentials of one address are counted together
 
 Component: the stage and the throttle. Subject: users behind a shared address (NAT gateway, build farm). Dormant until one
@@ -329,7 +338,7 @@ one address, for example a misconfigured pipeline, together with other users on 
 Component: `EndpointRules.PublicRoute` ([wire_identity.go](../../internal/app/wire_identity.go)). Subject: the management
 API on the default endpoint. The stage lets a request without credential reach an operation declared public, and, while
 `system.bootstrap_anonymous_read` is on, every safe request under `/api/v1/` (the bridge of the M0 authorization stand-in,
-see H-63 in [roles-and-trust-boundaries.md](roles-and-trust-boundaries.md#h-63--anonymous-read-of-installation-facts-and-the-replica-list-until-identity-ships)).
+see H-63 in [roles-and-trust-boundaries.md](roles-and-trust-boundaries.md#h-63--anonymous-read-of-installation-facts-and-the-replica-list-while-the-bootstrap-switch-is-on)).
 The per-operation check of `authorizingMux` then decides. Live only with the bridge on; with it off only public operations
 are reachable. What makes it real: an operation declared public that should not be, or the bridge enabled on an
 installation that is reachable from untrusted networks (the configuration check refuses it for an https origin other than
@@ -341,8 +350,8 @@ Component: `principal.PGProvisioner`, subject: group memberships of an OIDC user
 takes `LoginClaims.Groups` as the trove group names that the provider's mapping rules produced and creates a missing group
 with origin `oidc` when `CreateGroups` is set; it cannot tell a mapped name from a name the claim controls. A group that
 carries an administrator role binding therefore gives that role to whoever the identity provider puts into the mapped
-group, as [H-16](../spec/identity-and-authentication.md#h-16--idp-side-deactivation-without-scim) and the security notes of
-the specification describe. What makes it real: a provider whose users can create or name groups themselves, with a rule
+group, as the trust in the group-sync rules on [permissions.md](permissions.md#role-bindings-from-the-configuration) and the
+security notes of the specification describe. What makes it real: a provider whose users can create or name groups themselves, with a rule
 that maps such names onto a bound group.
 
 ### H-134 · Revocation by value and the login routes share one budget per address

@@ -95,7 +95,7 @@ Priority: **MVP** · Covers: OPS-002, OPS-003, OPS-004, ADMAPI-069, HA-023
 Every `web` and `worker` replica MUST serve `GET /healthz` (liveness) and `GET /readyz`
 (readiness) on the operations listener (INV-6) without authentication. Neither path exists on the
 client listener, and a `worker` replica has no client listener at all
-([architecture.md](architecture.md) R-ARCH-001). After the cut into roles (phase 6a, specified, not built yet), `api`
+([architecture.md](architecture.md) R-ARCH-001). After the cut into roles (phase 6a, built), `api`
 and `packages` replicas are what this requirement calls `web`: each runs the checks, loops and drain of the `web` column,
 and a ready one is an endpoint of its role's Service; the watched identity loops of R-AUTH-042 run on `api` only. `backup` pods have no probes
 ([ha-and-helm.md](ha-and-helm.md) R-HA-060).
@@ -6059,16 +6059,23 @@ not apply to the exporter.
 
 ### H-40 · Outbound address checks are weaker through an outbound proxy
 
-When a webhook handler names an outbound proxy (R-OPS-042), the proxy resolves and connects to the
-target. trove can only check its own resolution of the name before sending, so a name that
-resolves differently for the proxy, or changes in between, reaches whatever address the proxy
-chooses. Proxy-side egress rules are the only full control. The gap is live only for subscriptions
-that use a proxy.
+When an outbound client sends through an HTTP proxy, the proxy resolves and connects to the target.
+With `proxy.outbound.proxy_from_environment` on, that is every client of the outbound factory that does not
+go direct: the remote repositories, the advisory sources of the vulnerability scanning, the CI issuers'
+discovery and keys and the login's identity providers (a Bastion's link to its main installation goes
+direct). A webhook handler that names an outbound proxy (R-OPS-042) would add its own; webhooks are not
+built. trove can only check its own resolution of the name before sending (`checkedProxy` in
+[factory.go](../../internal/outbound/factory.go)), so a name that resolves differently for the proxy, or
+changes in between, reaches whatever address the proxy chooses. Proxy-side egress rules are the only full
+control. The gap is live only for installations that route outbound traffic through a proxy. The object
+store's proxy is outside it, because no address check applies to the object store at all (H-56 in
+[architecture.md](architecture.md)). The security perspective is
+[security/egress.md](../security/egress.md#how-the-check-works).
 
 ### H-41 · Ingress enforcement is verified on one CNI only
 
-With the default `metrics.auth: none`, any pod that can reach port 8081 of a trove replica (`web` and `worker` today;
-`api`, `packages` and `worker` after phase 6a) reads metrics: repository keys, request and byte volumes, queue depth, backup run state. It
+With the default `metrics.auth: none`, any pod that can reach port 8081 of a trove replica (`api`, `packages` and `worker`,
+and `web` while the bridge of the upgrade across the cut runs) reads metrics: repository keys, request and byte volumes, queue depth, backup run state. It
 also reads verbose readiness: dependency latency, schema version, whether Valkey is reachable. The chart ships an
 ingress NetworkPolicy, enabled by default, that admits port 8081 only from the monitoring namespace and the probe
 CIDRs (R-HA-042). Its enforcement is verified on the kind profile's CNI (kindnet) in the end-to-end suite and on no other

@@ -55,9 +55,13 @@ A version number of a local repository is immutable for the life of the reposito
   ends every run in a state with exactly one of the two. A hard delete never waits inside its transaction for a folder that a push holds until its
   commit, so a push and a hard delete of another version of the same ID do not deadlock and neither fails when they collide repeatedly (Q-NUGET-88,
   `TestR_NUGET_007_APushAndAHardDeleteOfAnotherVersionNeverDeadlock`).
-- **A `reserved` tombstone** is what a restore's journal replay writes for a version that was published after the snapshot. It refuses other bytes
+- **A `reserved` tombstone** is what a restore's journal replay writes for a version that was published after the snapshot
+  ([formatdata/nuget/journal_replay.go](../../internal/formatdata/nuget/journal_replay.go), `published`). It refuses other bytes
   with `nuget_version_reserved`, and it admits the one package whose SHA-512 it holds, deleting itself in that push's transaction. A protocol delete of
-  that number in a `delete` repository turns it into a `removed` tombstone, so the journaled bytes are refused as well. The replay itself is not built.
+  that number in a `delete` repository turns it into a `removed` tombstone, so the journaled bytes are refused as well. The replay takes the entries in
+  the order of their time and reserves the number for the first `package.published` entry of a version it reads; a later entry of the same version
+  finds the tombstone and is reported `already in effect`, whatever digest it names
+  ([H-581](#h-581--a-forged-nuget-publish-entry-with-an-earlier-time-reserves-a-version-number-for-the-forgers-bytes)).
 
 ## Unlist, relist and delete
 
@@ -102,6 +106,11 @@ principal name. The cache fill of a remote repository is no push and records non
 
 ## What this does not cover
 
+The gaps of the spec pages whose mechanism this page describes:
+
+- [H-36](../spec/formats/nuget.md#h-36--package-signatures-are-neither-verified-nor-produced): package signatures are neither verified nor produced.
+- [H-50](../spec/formats/nuget.md#h-50--a-restore-revives-nuget-versions-deleted-after-the-backups-snapshot-and-can-free-lost-version-numbers): a restore revives NuGet versions deleted after the backup's snapshot and can free lost version numbers.
+
 ### H-333 · Unlisting is not a withdrawal: a holder of `deploy` relists
 
 Stage: `POST <feed>/v3/package/{id}/{version}` and the unlist of `DELETE` in a repository whose `deleteMode` is `unlist`
@@ -131,3 +140,25 @@ What makes it real: a principal with `deploy` on the repository but no right to 
 replica the spool up to the repository's upload limit, the read of the central directory and the `.nuspec`, and ends in a 403, without a stored blob and
 without a row. The cost is bounded by the upload size limit and the spool budget (503 with `Retry-After` of at most 30 s when it is exhausted); a repository where
 `deploy` is granted to many principals widens it.
+
+### H-581 · A forged NuGet publish entry with an earlier time reserves a version number for the forger's bytes
+
+Stage: the replay of `package.published` entries of local NuGet repositories after a restore
+([formatdata/nuget/journal_replay.go](../../internal/formatdata/nuget/journal_replay.go), `published`;
+[R-NUGET-033](../spec/formats/nuget.md#r-nuget-033--nuget-data-in-backups-and-restores), Q-NUGET-10), with the order of the journal reader
+([journal/object.go](../../internal/journal/object.go), `Less`: by time, then by ID).
+
+Subject: every local NuGet repository after a restore, and the version numbers published after the restore point. Live whenever a restore
+replays the journal. Read in the code, not reproduced by a test.
+
+The replay reserves the number of a version that the restore lost for the SHA-512 of the first `package.published` entry of that version it
+reads, and reports every later entry of the same version `already in effect`, because the tombstone now exists. A journal object is untrusted
+input: whoever holds the runtime S3 credential can write one (R-HA-054). Such a writer adds an entry for a version the journal already holds,
+with an earlier time after the restore point and the SHA-512 of a package of their own. After a restore the number is reserved for those bytes,
+the genuine entry is reported as in effect, and a holder of `deploy` and the ownership of the ID can push the forged package under a number
+that held other bytes before. Clients that pinned the genuine content detect the change (a NuGet lock file with content hashes, a signature
+check); a client that resolves the number gets the forged package.
+
+What makes it real: the runtime S3 credential of the installation (every replica holds it), a restore that replays the journal, and a push of
+the forger's package by someone who may write the ID. What would close it: a reservation that a second entry of the same version with another digest
+does not leave standing (every journaled digest of the version kept refused, or the reservation refused when the entries disagree).

@@ -12,11 +12,11 @@ default). The specification is
 | `backup` pod | the target writer credential, a read-only blob login of its own (`secrets.backupSource`, or the backup ServiceAccount's workload identity), the `backup` database role (`SELECT` everywhere, writes on `backup_run` and `backup_blob_pin`) | Valkey credentials, the key ring, the runtime credential of the blob bucket, any right to write or delete there |
 | restore Job | the target reader, a blob writer (the runtime credential), the journal reader (`restore.journalCredentials`: a credential that lists object versions), the owner database credential, the key ring | Valkey credentials |
 | post-restore Job | the owner database credential, the blob store's keys, the journal reader (`postRestore.journalCredentials`) | Valkey credentials, the key ring, any target credential |
-| `web` and `worker` replicas | `backup.expected_interval` and `backup.manual_run`, read access to `backup_run` through the API | any target credential |
+| `api`, `packages` and `worker` replicas (and the bridge's `web`) | `backup.expected_interval` and `backup.manual_run`, read access to `backup_run` through the API | any target credential |
 
 The configuration keeps the split: `backup.target.credentials` is a section the chart renders into backup and restore pods only
 ([internal/config/backup.go](../../internal/config/backup.go)); the API reads rows, never the target
-([backups_api.go](../../internal/api/v1/backups_api.go) answers from `backup_run` once built).
+([backups_api.go](../../internal/api/v1/backups_api.go) answers from `backup_run`, `system_state` and the configuration).
 
 The target client ([target.go](../../internal/blob/s3/target.go)) is built from `backup.target` alone and signs every request with
 `backup.target.credentials` or the default chain of the backup pod's environment; it has no path to `storage.s3.credentials`, so the
@@ -132,9 +132,12 @@ a missing member, an oversized value or a digest that is not the expected shape 
   The actor the entry names is stored only when it is a UUID; the tombstone records the entry's ID, which the reinstate event repeats.
 - **NuGet reserves and keeps removed numbers removed** ([R-NUGET-033](../spec/formats/nuget.md#r-nuget-033--nuget-data-in-backups-and-restores)).
   A forged `package.published` entry can burn a version number that no version holds (a `reserved` tombstone), and a forged `package.deleted`
-  can turn a reservation into a removal or write a `removed` tombstone; both cost the number, never data, and the replay never deletes a
-  stored version (it reports it `revived`). A reserved number admits only the identical `.nupkg`. The system principal of the restore (the
-  nil UUID) is the actor of what the replay writes.
+  can turn a reservation into a removal or write a `removed` tombstone; for a number the journal holds no genuine entry of, both cost the
+  number, never data, and the replay never deletes a stored version (it reports it `revived`). A reserved number admits only the identical
+  `.nupkg`. For a number the journal also holds a genuine `package.published` entry of, a forged one with an earlier time reserves it for the
+  forger's bytes, which a holder of `deploy` can then push under that number
+  ([H-581](nuget-publish.md#h-581--a-forged-nuget-publish-entry-with-an-earlier-time-reserves-a-version-number-for-the-forgers-bytes)). The
+  system principal of the restore (the nil UUID) is the actor of what the replay writes.
 - **Remote-cache purgers** ([fixup](../../internal/backup/fixup/npm.go)) delete the cached items of the remote repositories of their format
   through the storage delete path and the cache entries and index rows of those repositories; they read the remote repositories of the
   format and nothing else, so a local repository, its tombstones and its reservations survive a purge.
@@ -300,10 +303,18 @@ installation are never read ([system_state.go](../../internal/backup/fixup/syste
 
 ## What this does not cover
 
-The gaps of the backup itself are [H-46](../spec/backup-and-restore.md#h-46--backup-integrity-is-not-authenticated),
-[H-47](../spec/backup-and-restore.md#h-47--the-backup-role-can-read-everything-and-delete-backups) and
-[H-48](../spec/backup-and-restore.md#h-48--database-files-are-readable-to-every-reader-of-the-target-until-p1). The mechanisms of this page add:
+The gaps of the backup itself:
 
+- [H-46](../spec/backup-and-restore.md#h-46--backup-integrity-is-not-authenticated): backup integrity is not authenticated.
+- [H-47](../spec/backup-and-restore.md#h-47--the-backup-role-can-read-everything-and-delete-backups): the backup role can read everything and delete backups.
+- [H-48](../spec/backup-and-restore.md#h-48--database-files-are-readable-to-every-reader-of-the-target-until-p1): database files are readable to every reader of the target.
+
+The mechanisms of this page add:
+
+- [H-37](../spec/ha-and-helm.md#h-37--a-database-restore-revives-revoked-credentials-and-removed-grants): a database restore revives revoked credentials and removed grants where the journal does not reach.
+- [H-50](../spec/formats/nuget.md#h-50--a-restore-revives-nuget-versions-deleted-after-the-backups-snapshot-and-can-free-lost-version-numbers): a restore revives NuGet versions deleted after the backup's snapshot and can free lost version numbers.
+- [H-51](../spec/formats/npm.md#h-51--a-restore-reverts-npm-metadata-changes-made-after-the-backups-snapshot): a restore reverts npm metadata changes made after the backup's snapshot.
+- [H-581](nuget-publish.md#h-581--a-forged-nuget-publish-entry-with-an-earlier-time-reserves-a-version-number-for-the-forgers-bytes): a forged NuGet publish entry with an earlier time reserves a version number for the forger's bytes.
 - [H-553](../spec/backup-and-restore.md#h-553--a-journal-object-can-be-overwritten-with-the-runtime-credential): a journal object can be overwritten with the runtime credential.
 - [H-554](../spec/backup-and-restore.md#h-554--a-compromised-backup-pod-can-hold-garbage-collection): a compromised backup pod can hold garbage collection.
 - [H-557](../spec/backup-and-restore.md#h-557--the-post-restore-does-not-verify-the-blobs-and-a-replay-writes-no-audit-event-per-changed-object): post-restore does not verify the blobs, and a replay writes no audit event per changed object.

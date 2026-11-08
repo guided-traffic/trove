@@ -94,7 +94,7 @@ role is a set of enabled subsystems and wiring areas chosen by configuration, no
 and every role the chart deploys runs as a Deployment of its own (the task areas of
 [ADR-153](../decisions.md#adr-153--trove-is-cut-into-task-areas-roles-of-one-binary-network-seams-only-at-trust-or-load-boundaries)
 and [ADR-155](../decisions.md#adr-155--three-roles-api-packages-and-worker-variants-are-pools), owner, 2026-11-04;
-specified for phase 6a, not built yet). Roles:
+built in phase 6a). Roles:
 - `api`: the route families `ui`, `api` and `ci_exchange` ([endpoints.md](endpoints.md) R-EP-005): the UI, the
   management API, the sign-in with its sessions, the OIDC client secrets and the break-glass account, the CI token
   exchange;
@@ -393,9 +393,11 @@ acceptance criteria.
   ```
 
 - Security-relevant gaps that stay open go into `## What this does not cover` as
-  `### H-<n> · <title>`. H numbers are unique across all pages of this directory; a new item takes
-  the next free number. Each item names the component, the subject it affects, whether it is live
-  or dormant (and which requirement makes it live), and what makes it real.
+  `### H-<n> · <title>`. H numbers are unique across all pages of this directory and of
+  [docs/security](../security/README.md); a new item takes the next free number. Each item names the
+  component, the subject it affects, whether it is live or dormant (and which requirement makes it live),
+  and what makes it real. Once the mechanism is built, the security page of its perspective links the
+  item under its number; the heading stays here.
 
 ## Pages
 

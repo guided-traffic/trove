@@ -397,5 +397,3 @@ record is the model counterpart and depends on the catalog of PKG-ML-016.
   repository must answer the container's token exchange as well as its model downloads.
 - New upstream NIM models appear only after the metadata cache period; a manual cache invalidation
   (ART-050) helps when a model must be available immediately.
-</content>
-</invoke>

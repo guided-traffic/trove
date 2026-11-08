@@ -445,5 +445,3 @@ Priority: **P2**
   header gives users an actionable message instead of a generic HTTP error.
 - Requests carry the repository type through `models`/`datasets` paths and the `datasets/` prefix;
   a dataset and a model with the same ID are different objects.
-</content>
-</invoke>

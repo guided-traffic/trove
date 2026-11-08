@@ -154,7 +154,7 @@ The other operations of `settings:read` (the scheduled tasks, the encryption sta
 closed (Q-AUTHZ-71; `TestBootstrapAnonymousReadOnlyOnDefaultEndpoint`). It opens no repository action, it is refused with an
 `https` base URL other than localhost, and every other permission goes to the engine. The exposure it causes is the one
 recorded as
-[H-63](roles-and-trust-boundaries.md#h-63--anonymous-read-of-installation-facts-and-the-replica-list-until-identity-ships).
+[H-63](roles-and-trust-boundaries.md#h-63--anonymous-read-of-installation-facts-and-the-replica-list-while-the-bootstrap-switch-is-on).
 
 ## Audit
 
@@ -315,12 +315,22 @@ heartbeats. See [privilege-footprint.md](privilege-footprint.md) for the grants 
 
 ## What this does not cover
 
+The gaps of the spec pages whose mechanism this page describes:
+
+- [H-21](../spec/authorization.md#h-21--no-reservation-of-name-prefixes): no reservation of name prefixes.
+- [H-22](../spec/authorization.md#h-22--no-two-person-rule-for-permission-changes): no two-person rule for permission changes.
+- [H-45](../spec/api-and-ui.md#h-45--hiding-unauthorized-resources-is-not-timing-safe): hiding unauthorized resources is not timing-safe.
+
 ### H-102 · A caller that decides several coordinates without `Begin` can straddle an index swap
 
 `Decide` takes the installed index at the moment of the call. A request that decides several coordinates (the members of a
 virtual repository, a copy) must call `Engine.Begin` once and `DecideOn` per coordinate to decide on one index; a caller that
-calls `Decide` repeatedly can see two indexes if a build installs in between. Dormant: no caller in M1 decides more than one
-coordinate per request; it becomes live with virtual resolution (M2) if that code does not use `Begin`.
+calls `Decide` repeatedly can see two indexes if a build installs in between. Dormant: the callers that decide several coordinates
+in one request do so on one begun index. The package dispatcher resolves one holder per request
+([edge/access.go](../../internal/api/edge/access.go), `Resolve`, `Begin`) and the format host decides the members on that index
+(`rq.Index`, [formathost/host.go](../../internal/formathost/host.go)) and re-checks a request's writes on one index begun before the
+commit ([formathost/state.go](../../internal/formathost/state.go), `Decider.Begin`); the management API decides on the holder of its
+shared step. Nothing enforces the rule for a new caller: it becomes live with code that calls `Decide` more than once per request.
 
 ### H-104 · The commit-time re-check decides on the grants, not on the credential
 
@@ -350,12 +360,6 @@ replace or delete a project policy, and change members, for as long as the repli
 `authz.cache.max_staleness`. Live for every project write; what makes it real is a member whose role is being removed and who acts
 in that window. The write itself stays inside the project (the rules of the service read the database, not the index), and the
 last-Owner rule counts the rows under the project's lock, so the window widens who may write, not what a project policy can grant.
-
-### H-105 · The revocation journal is written and not replayed
-
-The events that remove access carry the journal entry of R-AUTHZ-031, and the comparator `narrows` is not implemented
-because no restore exists. Dormant until the backup and restore work (M5): a restore to an earlier time would bring back a
-removed grant or role binding.
 
 ### H-212 · The identity provider's group sync can remove the last administrator
 

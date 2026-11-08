@@ -14,12 +14,12 @@ lock or a rotation reaches every replica.
 ## Parties and what each is trusted with
 
 ```text
-  browser ──(1) /auth/oidc/{p}/start──► trove web replica ──flow row──► PostgreSQL
+  browser ──(1) /auth/oidc/{p}/start──► trove api replica ──flow row──► PostgreSQL
      │                                        │                            ▲
      │◄──302 to the IdP (state, nonce, PKCE)──┘                            │
      ├──(2) sign-in at the IdP──► IdP                                      │
      │◄──302 code, state, iss────┘                                         │
-     └──(3) /auth/oidc/{p}/callback──► any web replica ──DELETE flow──────►│
+     └──(3) /auth/oidc/{p}/callback──► any api replica ──DELETE flow──────►│
                                           │──token, JWKS, userinfo──► IdP (outbound client, 10 s each)
                                           │──provisioner (identity) + session row──────────────────────►│
      ◄──__Host-trv_session, __Host-trv_csrf──┘
@@ -46,7 +46,7 @@ lock or a rotation reaches every replica.
 | The provider's ID token | `ui_session.id_token`, the `id_token_hint` of RP-initiated logout (R-AUTH-013) | every API answer; backups (`transient`) |
 | The provider's access and refresh token | the callback's memory until userinfo has answered | anywhere afterwards (INV-8) |
 | OIDC client secret | a mounted file, read again when its modification time or size changes ([provider.go](../../internal/auth/oidc/provider.go), `secretSource`), or one environment variable | PostgreSQL, the configuration file |
-| Break-glass password | a mounted file on `web` replicas; the replica keeps the Argon2id salt and key and the SHA-256 of the file, never the plaintext ([argon.go](../../internal/auth/oidc/argon.go)) | PostgreSQL, `worker` pods, logs and events (an event records whether the presented username was the account's, never the value, so a password typed into the username field stays out; `TestR_AUTH_014_TheBreakGlassEventDoesNotKeepThePresentedUsername`) |
+| Break-glass password | a mounted file on `api` replicas (and the bridge's `web`); the replica keeps the Argon2id salt and key and the SHA-256 of the file, never the plaintext ([argon.go](../../internal/auth/oidc/argon.go)) | PostgreSQL, `packages` and `worker` pods, logs and events (an event records whether the presented username was the account's, never the value, so a password typed into the username field stays out; `TestR_AUTH_014_TheBreakGlassEventDoesNotKeepThePresentedUsername`) |
 
 ## Checks a login passes
 
@@ -126,9 +126,8 @@ decoder. The tests `TestR_AUTH_014_LocalLoginEdge` pin the order.
   `auth.breakglass.locked`, `auth.logout` and `auth.session.ended` go to the audit recorder of the replica
   ([events_login.go](../../internal/audit/events_login.go)); the `trove admin` commands write their events (actor `admin-cli`,
   pod and OS user) through an audit writer of their own, in the transaction of the change.
-- The single factor and the IdP's authentication strength are [H-17](../spec/identity-and-authentication.md#h-17--break-glass-account-is-single-factor)
-  and [H-18](../spec/identity-and-authentication.md#h-18--authentication-strength-at-the-idp-is-not-checked); a rotation that no
-  running replica notices is [H-52](../spec/identity-and-authentication.md#h-52--a-break-glass-rotation-that-no-running-replica-notices).
+- The single factor, the IdP's authentication strength and a rotation that no running replica notices are gaps of the spec, linked
+  at the end of this page.
 
 ## Sessions and the break-glass lock through the API
 
@@ -148,6 +147,13 @@ decoder. The tests `TestR_AUTH_014_LocalLoginEdge` pin the order.
 
 ## What this does not cover
 
+The gaps of the spec pages whose mechanism this page describes:
+
+- [H-16](../spec/identity-and-authentication.md#h-16--idp-side-deactivation-without-scim): a deactivation at the identity provider does not reach trove without SCIM; open sessions run until their timeout.
+- [H-17](../spec/identity-and-authentication.md#h-17--break-glass-account-is-single-factor): the break-glass account is single-factor.
+- [H-18](../spec/identity-and-authentication.md#h-18--authentication-strength-at-the-idp-is-not-checked): the authentication strength at the IdP is not checked.
+- [H-52](../spec/identity-and-authentication.md#h-52--a-break-glass-rotation-that-no-running-replica-notices): a break-glass rotation that no running replica notices.
+
 ### H-91 · Provisioning and the session commit in two transactions
 
 Stage: the callback, after the ID token is valid (R-AUTH-006 step 10, [flow.go](../../internal/auth/oidc/flow.go), `callback`).
@@ -161,7 +167,7 @@ trove only with a completed login" (R-AUTH-008) to time a membership change.
 
 ### H-93 · An enabled break-glass account without a password file starts silently
 
-Stage: the start of a `web` replica ([breakglass.go](../../internal/auth/oidc/breakglass.go), `newBreakGlass`). Subject: the
+Stage: the start of an `api` replica (or the bridge's `web`) ([breakglass.go](../../internal/auth/oidc/breakglass.go), `newBreakGlass`). Subject: the
 recovery path. Live whenever `auth.break_glass.enabled` is true (the default) and `password_file` is empty.
 
 R-AUTH-014 asks the replica to refuse to start without a readable password file; it starts instead, logs a warning, and refuses
@@ -199,7 +205,8 @@ Keep the break-glass account disabled outside recovery, or restrict `/auth/local
 
 ### H-211 · Many distinct addresses can still fill the pending-flow cap
 
-Stage: `/auth/oidc/*/start` and the command-line logins ([flow.go](../../internal/auth/oidc/flow.go), `pendingFull`). Subject:
+Stage: `/auth/oidc/*/start` ([flow.go](../../internal/auth/oidc/flow.go), `pendingFull`); the command-line logins that would share the cap
+(R-AUTH-034, R-AUTH-036, P1) are not built. Subject:
 browser sign-in for everyone. Live in the MVP. `auth.flow_starts` counts per address and an IPv6 address per `/64`
 (Q-AUTH-90), and the cap of `max_pending_flows` (100,000 by default) is one number for the cluster. With the defaults one
 address or network creates at most 300 pending flows in their 10-minute life, so about 340 addresses or `/64` networks fill the

@@ -3,8 +3,10 @@
 Status: implemented in M1 for the credential rules of an endpoint, endpoint-bound tokens, exposure rules as the ceiling of
 the decision point, the rate-limit class of an endpoint and the operations that manage exposure rules. M2 adds the package
 formats on an endpoint: the filter of npm's local documents, member names in the virtual engine and the cache-fill policy in
-the remote and virtual engines; npm's remote and virtual documents are filtered too (H-295 stays for later formats). The replay
-of journaled exposure changes arrives with the restore (M5).
+the remote and virtual engines; npm's and NuGet's local, remote and virtual documents are filtered too. A restore replays the
+journaled exposure changes ([journal_replay_exposure.go](../../internal/authz/journal_replay_exposure.go)): a deleted rule is deleted
+again, an update that narrows the restored rule is applied, one that only added exposure is skipped, and any other update suspends the
+rule (the update rule of R-HA-054, [journal/replay.go](../../internal/journal/replay.go), `ApplyUpdate`).
 
 This page says what an audience that reaches a further endpoint can present, what it can retrieve, what a refusal tells it,
 and how fast a change of what it may retrieve takes effect. The listener, host and surface rules that decide which endpoint a
@@ -140,6 +142,14 @@ share, the budget divided by the live replicas of its pool, so the cluster stays
 
 ## What this does not cover
 
+The gaps of the spec pages whose mechanism this page describes:
+
+- [H-57](../spec/endpoints.md#h-57--a-further-endpoint-runs-with-every-credential-of-a-web-replica): a further endpoint runs with every credential of its role.
+- [H-58](../spec/endpoints.md#h-58--exposure-rules-are-bound-to-an-endpoint-name): exposure rules are bound to an endpoint name.
+- [H-59](../spec/endpoints.md#h-59--traffic-routed-to-the-default-endpoints-port-bypasses-exposure): traffic routed to the default endpoint's port bypasses exposure.
+- [H-60](../spec/endpoints.md#h-60--package-level-metadata-reveals-activity-of-hidden-versions): package-level metadata reveals activity of hidden versions.
+- [H-61](../spec/endpoints.md#h-61--exposure-follows-the-members-of-an-addressed-virtual-repository): exposure follows the members of an addressed virtual repository.
+
 ### H-166 · A job that acts on behalf of a request decides without the request's endpoint
 
 Stage: a background job or a command that decides for a request after the request is over.
@@ -176,10 +186,12 @@ registry.
 
 ### H-295 · A merged or rewritten document is filtered only where its handler calls the filter
 
-Stage: the npm handlers of the remote and virtual classes, and every later format's document handlers (R-EP-018).
+Stage: the document handlers of the remote and virtual classes of every format (R-EP-018).
 
-Dormant for npm: its local, remote and virtual handlers filter (`exposeRows`, `exposedDocument`, tested on the R-EP-012 fixture of a virtual repository with a remote member), and
-generic has no documents; live for every later format. The filter is the format's call: nothing in the core stops a handler that serves a merged or rewritten
+Dormant for npm and NuGet: npm's local, remote and virtual handlers filter (`exposeRows`, `exposedDocument`, tested on the R-EP-012 fixture of a virtual repository with a remote member),
+NuGet's documents and search filter by the endpoint's view ([nuget/documents.go](../../internal/formats/nuget/documents.go),
+[search_virtual.go](../../internal/formats/nuget/search_virtual.go); [R-NUGET-034](../spec/formats/nuget.md#r-nuget-034--nuget-documents-on-an-endpoint-with-exposure-rules),
+`TestR_NUGET_034_DocumentsOnAnEndpointWithExposureRules`), and generic has no documents; live for every later format. The filter is the format's call: nothing in the core stops a handler that serves a merged or rewritten
 document on an endpoint with rules without calling the format's own filter with `rq.Endpoint.Exposure`, and the ceiling, which decided the
 package, would let every version of that document through to the listing. Downloads stay bound by the ceiling. Subject: the version
 list of every exposed package of such a class. What makes it real: a remote or virtual document handler without the call; the

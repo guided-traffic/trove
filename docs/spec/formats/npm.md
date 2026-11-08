@@ -4873,7 +4873,9 @@ The npm exchange routes (R-NPM-022) let every GitLab job whose identity mapping 
 a package publish it without a stored token. The token is package-bound and short-lived, but the
 decision rests entirely on the identity mappings of [gitlab-ci-oidc.md](../gitlab-ci-oidc.md); a
 mapping that matches too many projects or unprotected refs lets those jobs publish. trove does
-not add a second check (such as protected-ref-only publishing) on top of the mapping.
+not add a second check (such as protected-ref-only publishing) on top of the mapping. Dormant:
+R-NPM-022 is P1 and not built, so its paths issue no token
+([security/npm.md](../../security/npm.md#trusted-publishing)); it becomes live with the exchange.
 
 ### H-32 · Registry signatures and provenance cannot be verified through trove
 

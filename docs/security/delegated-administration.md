@@ -155,16 +155,20 @@ drives every rule over HTTP as an Owner and as an administrator.
 
 The gaps of these mechanisms recorded on the spec pages are linked here; the ones only this page describes follow.
 
-- [H-392](../spec/authorization.md#h-392--a-project-administrator-can-enumerate-user-and-group-names) — the lookup of users and
+- [H-392](../spec/authorization.md#h-392--a-project-administrator-can-enumerate-user-and-group-names): the lookup of users and
   groups lists the names of every active user and group by prefix, now to every Owner.
-- [H-393](../spec/authorization.md#h-393--a-project-administrator-with-managerepositories-probes-the-addresses-the-outbound-rules-allow) —
+- [H-393](../spec/authorization.md#h-393--a-project-administrator-with-managerepositories-probes-the-addresses-the-outbound-rules-allow):
   the upstream test of a project's remote repository (it extends [H-282](egress.md#h-282--the-upstream-test-tells-a-holder-of-repositorieswrite-config-what-it-sees-of-an-address)).
-- [H-394](../spec/authorization.md#h-394--whoever-controls-a-project-administrator-group-administers-the-project) — whoever controls
+- [H-394](../spec/authorization.md#h-394--whoever-controls-a-project-administrator-group-administers-the-project): whoever controls
   the identity provider's group holds the group's role, Owner included.
-- [H-398](../spec/authorization.md#h-398--a-failed-project-delete-can-leave-the-project-without-some-of-its-policies) — a project
+- [H-398](../spec/authorization.md#h-398--a-failed-project-delete-can-leave-the-project-without-some-of-its-policies): a project
   delete that fails after the policy deletions leaves the project with fewer policies.
-- [H-406](../spec/authorization.md#h-406--the-audit-event-of-a-refused-project-administrator-does-not-name-the-project) — the audit
+- [H-406](../spec/authorization.md#h-406--the-audit-event-of-a-refused-project-administrator-does-not-name-the-project): the audit
   event of a refused declaration does not name the project.
+- [H-399](../spec/authorization.md#h-399--a-global-service-account-and-a-project-key-created-at-the-same-instant-can-overlap): a global
+  service account and a project key created at the same instant can overlap.
+- [H-405](../spec/authorization.md#h-405--a-global-policy-that-predates-a-project-keeps-the-projects-prefix): a global policy that
+  predates a project keeps the project's prefix.
 
 ### H-403 · What a project administrator still reaches of an upstream an administrator configured
 

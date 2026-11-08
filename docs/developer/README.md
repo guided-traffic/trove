@@ -255,7 +255,7 @@ rules are in [coverage.md](coverage.md).
 | `INV-n` | [spec/README.md](../spec/README.md#design-invariants) | Design invariants |
 | `R-<AREA>-nnn` | [docs/spec/](../spec/README.md), one prefix per page (page table there) | `### R-<AREA>-nnn · <Title>`, then `Priority: **<P>** · Covers: <catalog IDs>` or `Covers: trove-only` |
 | `Q-<AREA>-n` | `## Decisions` of each spec page | Status line, options table, the development agent's choice, rationale with a revisit condition, and what the choice changed; format in [spec/README.md](../spec/README.md#requirement-format) |
-| `H-n` | `## What this does not cover` of the page whose mechanism has the gap: a spec page today, a security perspective page once the mechanism is implemented | Unique across all spec and security pages; see [security/README.md](../security/README.md) |
+| `H-n` | `## What this does not cover` of the one page that records the gap: the spec page for a gap the specification owns, the security page of its mechanism for a gap docs/security owns; the security page of the mechanism links a spec-owned gap under its number | Unique across all spec and security pages; see [security/README.md](../security/README.md#form) |
 
 Next free number for a prefix (examples for `RMT`, `R-REPO` and `H`):
 

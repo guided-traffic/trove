@@ -12,13 +12,24 @@ the check does not reach. It describes the code of [internal/outbound](../../int
 ## Which connections are checked
 
 The process builds its HTTP clients from one factory ([factory.go](../../internal/outbound/factory.go)), one client per purpose.
-The address policy is on for every purpose except `objectstore`:
+The address policy is on for every purpose except `objectstore`, and a Bastion's client of `bastion_main` comes from a factory of its own
+whose policy denies nothing:
 
 | Purpose | Address policy | Why |
 |---|---|---|
-| `oidc_discovery`, `jwks`, `webhook` | on | addresses an operator or a provider names |
+| `oidc_discovery`, `jwks` | on | addresses an operator or a provider names: the login's identity providers and the CI issuers' discovery and keys ([ci/keys_fetch.go](../../internal/ci/keys_fetch.go)) |
+| `webhook` | on | declared for the webhooks; no client of this purpose is built |
 | `remote` | on | addresses that a repository's upstream, its redirects and its upstream metadata name, and the advisory provider of an npm audit forward (`Engine.Exchange`, [exchange.go](../../internal/proxy/exchange.go)); the clients are built in [proxy/upstream](../../internal/proxy/upstream/clients.go) |
-| `objectstore` | **off** ([factory.go](../../internal/outbound/factory.go), `clientSettings`) | the endpoint is operator configuration and, in development, a local service; see [H-56](../spec/architecture.md#h-56--the-object-store-endpoint-skips-the-egress-address-policy) |
+| `vuln_source` | on | the advisory sources of the vulnerability scanning, at the base URL of `vulnerabilities.sources` ([vuln/sync/service.go](../../internal/vuln/sync/service.go), `Purpose`; [wire_vuln_sync.go](../../internal/app/wire_vuln_sync.go)) |
+| `bastion_main` | **in effect off**: the Bastion builds its own factory with an empty deny list, so only a zoned IPv6 address is refused ([bastion/mainclient/client.go](../../internal/bastion/mainclient/client.go), `factoryClient`) | the main installation a Bastion asks is operator configuration (`bastion.main.url`) and may sit in a private range; see [H-446](../spec/bastion.md#h-446--the-connection-to-the-main-installation-is-not-under-the-egress-address-policy) |
+| `objectstore` | **off** ([factory.go](../../internal/outbound/factory.go), `defaults`) | the endpoint is operator configuration and, in development, a local service; see [H-56](../spec/architecture.md#h-56--the-object-store-endpoint-skips-the-egress-address-policy) |
+
+Every S3 client is of purpose `objectstore`, because each is built through `s3.NewFromFactory`
+([blob/s3/client.go](../../internal/blob/s3/client.go)): the blob store and the journal shipper of the replicas, and, in the Jobs of the
+backup lane, the backup target client (`backup.target`, [target.go](../../internal/blob/s3/target.go), `NewTarget`), the backup's read of
+the blob bucket (`backup.source`, [backup_create.go](../../cmd/trove/backup_create.go)) and the journal reader of a restore and of the
+post-restore ([journal/replay/open.go](../../internal/journal/replay/open.go), `OpenJournal`). None of them passes the address policy, so
+the endpoint of `backup.target` is as unchecked as `storage.s3.endpoint`.
 
 The OTLP span export does not use the factory at all; it uses the SDK's transport ([H-53](../spec/operations-and-observability.md#h-53--span-export-bypasses-the-egress-address-policy)).
 
@@ -71,7 +82,7 @@ IPv6 addresses are refused before it is consulted, so an allow entry cannot open
 
 - The NAT64 prefix is fixed at `64:ff9b::/96`. A cluster whose NAT64 gateway uses another prefix is not covered by step 5: see
   [H-78](#h-78--the-nat64-check-knows-only-the-well-known-prefix).
-- The object store, by design ([H-56](../spec/architecture.md#h-56--the-object-store-endpoint-skips-the-egress-address-policy)).
+- The object store and the backup target, by design ([H-56](../spec/architecture.md#h-56--the-object-store-endpoint-skips-the-egress-address-policy)).
 - The OTLP span export ([H-53](../spec/operations-and-observability.md#h-53--span-export-bypasses-the-egress-address-policy)).
 - The connection a proxy makes after trove checked the target ([H-40](../spec/operations-and-observability.md#h-40--outbound-address-checks-are-weaker-through-an-outbound-proxy)).
 - The private ranges, which the default list does not deny ([H-6](../spec/repositories-and-proxy.md#h-6--remote-repositories-reach-private-networks)).
@@ -80,11 +91,13 @@ IPv6 addresses are refused before it is consulted, so an allow entry cannot open
 
 ## Which hosts receive credentials
 
-A remote repository's credentials, its custom headers and its client certificate go to the upstream origin and to the hosts of
-`extraHosts` entries with `sendCredentials: true`, and to other origins of a redirect chain only with `forwardAuthOnRedirect`
-([R-REPO-033](../spec/repositories-and-proxy.md), [R-REPO-039](../spec/repositories-and-proxy.md), Q-ARCH-199). The rule is enforced
-in the client's round tripper, once per request and per redirect hop ([hop.go](../../internal/outbound/hop.go), `CredentialPolicy`),
-not by the caller:
+A remote repository's credential goes to the upstream origin and to the hosts of `extraHosts` entries with `sendCredentials: true`, and
+to other origins of a redirect chain only with `forwardAuthOnRedirect` ([R-REPO-033](../spec/repositories-and-proxy.md),
+[R-REPO-039](../spec/repositories-and-proxy.md), Q-ARCH-199). The rule is enforced in the client's round tripper, once per request and
+per redirect hop ([hop.go](../../internal/outbound/hop.go), `CredentialPolicy`), not by the caller. Today the rows apply to the credential
+only: a client certificate (R-REPO-034) and custom headers (R-REPO-036) are refused by the configuration with `422 not_applicable`
+([validate_remote.go](../../internal/repository/validate_remote.go)), so no remote has one; the columns for them state what the policy
+would do with them:
 
 | Request | Credentials and custom headers | Client certificate |
 |---|---|---|
@@ -123,15 +136,16 @@ applies these:
 
 | Request | Allowed host | Credentials, custom headers, client certificate |
 |---|---|---|
-| to the upstream origin | yes | as for a client: sent, presented |
+| to the upstream origin | yes | as for a client: the credential sent (custom headers and a client certificate cannot be configured) |
 | to a host of `extraHosts` | yes | as for a client: sent only with `sendCredentials` |
 | to a host the lister names for this upstream (`MirrorHosts`, for example npm's replication host of the public registry) | yes, by host name, and never over `http` while the upstream is `https` | **never**: not even when an `extraHosts` entry with `sendCredentials` matches the host |
 | to any other host | no: `502 foreign_host_denied`, nothing is sent | n/a |
 
 The check of the host is [Client.AllowedMirror](../../internal/proxy/upstream/client.go), before the request takes its slot. The
 refusal of the credential for a discovery host is a mark on the request's context
-([outbound.WithoutCredentials](../../internal/outbound/hop.go)): the credential policy removes every credential and custom header and
-withholds the client certificate on every hop of a marked request, so a redirect from the discovery host keeps the mark. A format
+([outbound.WithoutCredentials](../../internal/outbound/hop.go)): the credential policy removes the credential (and would remove custom
+headers and withhold a client certificate, which no remote can configure today) on every hop of a marked request, so a redirect from the
+discovery host keeps the mark. A format
 sets the `Accept` header and nothing else (`Upstream.Get` takes no other header), and the policy removes any `Authorization` header on
 every hop, as for every request of a remote.
 
@@ -166,6 +180,15 @@ its fetch, and a probe of the shadowing check resolves it as the system, so a fi
 document and store it.
 
 ## What this does not cover
+
+The gaps of the spec pages whose mechanism this page describes:
+
+- [H-446](../spec/bastion.md#h-446--the-connection-to-the-main-installation-is-not-under-the-egress-address-policy): a Bastion's connection to its main installation is not under the egress address policy.
+- [H-6](../spec/repositories-and-proxy.md#h-6--remote-repositories-reach-private-networks): remote repositories reach private networks.
+- [H-40](../spec/operations-and-observability.md#h-40--outbound-address-checks-are-weaker-through-an-outbound-proxy): outbound address checks are weaker through an outbound proxy.
+- [H-53](../spec/operations-and-observability.md#h-53--span-export-bypasses-the-egress-address-policy): the span export bypasses the egress address policy.
+- [H-56](../spec/architecture.md#h-56--the-object-store-endpoint-skips-the-egress-address-policy): the object-store endpoint, and with it the backup target, skips the egress address policy.
+- [H-504](../spec/repositories-and-proxy.md#h-504--npms-replication-host-is-contacted-although-it-is-not-an-extrahosts-entry): npm's replication host is contacted although it is not an `extraHosts` entry.
 
 ### H-78 · The NAT64 check knows only the well-known prefix
 

@@ -4769,7 +4769,7 @@ checksum does not leak this (unreadable content answers `404`).
 
 ### H-14 · No per-principal limit on concurrent uploads or spool use
 
-Component: the spool admission of R-STOR-004 on every `web` replica. Subject: every principal that
+Component: the spool admission of R-STOR-004 on every replica that takes uploads (`packages`, and the bridge's `web`). Subject: every principal that
 uploads. The spool budget is per replica and shared by all principals. A single token with
 `deploy` can hold many slow concurrent uploads and exhaust the budget, making every other upload
 on that replica fail with `503` until the requests end or are cut. The Service spreads the

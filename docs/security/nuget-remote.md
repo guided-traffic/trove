@@ -2,8 +2,12 @@
 
 Status: built (M3, phase 4): the remote class of NuGet, the proxy and cache of a NuGet v3 feed (R-NUGET-014, R-NUGET-015, R-NUGET-031). The virtual class
 of NuGet is built and merges a remote member's documents (R-NUGET-017). The forwarded search is built (R-NUGET-016, 2026-11-02): a remote sends a search to
-its upstream unless a name of the query is protected, and a virtual repository merges a remote member's forwarded results (R-NUGET-018). The vulnerability
-documents, the symbol files and the embedded files are not built.
+its upstream unless a name of the query is protected, and a virtual repository merges a remote member's forwarded results (R-NUGET-018). trove's own
+vulnerability documents are built on every class and come from trove's advisory data, not from the upstream
+([vuln_documents.go](../../internal/formats/nuget/vuln_documents.go), [vulnerability-scanning.md](vulnerability-scanning.md)); not built are the pass-through
+of the upstream's vulnerability information (`nuget.vulnerabilityInfo: upstream`, R-NUGET-023, P1, which the settings schema refuses), the symbol files
+(R-NUGET-021, R-NUGET-022) and the embedded files (R-NUGET-024), whose routes answer as not implemented
+([handlers_stub.go](../../internal/formats/nuget/handlers_stub.go)).
 
 This page describes what an upstream NuGet feed can make trove do and show, and what limits that. The upstream is a party trove does not trust: its documents
 decide which addresses trove contacts, which bytes it stores and what its clients are told. The outbound rules it relies on (addresses, TLS, credentials,
@@ -124,6 +128,11 @@ counted in `trove_nuget_search_forward_failures_total{repo}`.
 
 ## What this does not cover
 
+The gaps of the spec pages whose mechanism this page describes:
+
+- [H-35](../spec/formats/nuget.md#h-35--cached-nuget-packages-are-not-checked-against-an-upstream-digest): cached NuGet packages are not checked against an upstream digest.
+- [H-5](../spec/repositories-and-proxy.md#h-5--version-removals-reach-cached-artifacts-only-where-the-format-tracks-versions): a version the upstream withdrew stays reachable by exact path from a NuGet remote, which does not track removals per version.
+
 ### H-336 · A cached package is inspected under the default archive limits, not the configured ones
 
 Stage: `InspectFill`, the hook that reads a package a remote repository fetched ([remote_fill.go](../../internal/formats/nuget/remote_fill.go)).
@@ -204,7 +213,8 @@ it for that ID (R-REPO-023).
 ### H-353 · Forwarded searches share the remote's circuit and fetch slots with its downloads
 
 Stage: the engine's query path that a forwarded search takes ([internal/proxy/query.go](../../internal/proxy/query.go) `queryFetch`, the classification in
-[classify.go](../../internal/proxy/classify.go)); npm's audit takes the same path.
+[classify.go](../../internal/proxy/classify.go)). npm's audit forward does not take it: it goes through `Engine.Exchange`, which takes no fetch slot and
+neither reads nor moves the circuit ([internal/proxy/exchange.go](../../internal/proxy/exchange.go)).
 
 Subject: every remote with `forwardSearch` on; the downloads of its uncached packages.
 
@@ -214,5 +224,5 @@ opens the circuit of the whole remote, and every request for a package that is n
 caller; queries also hold slots that downloads wait for (`proxy.queue_timeout`). Search falls back to the cache meanwhile, so search itself degrades
 gracefully; downloads do not. What makes it real: an upstream whose search resource lives on another host or service than its package content (nuget.org's
 search runs on its own hosts) and fails or rate-limits on its own, and callers that search often (IDE package browsers). Closing it gives queries a circuit
-and a small slot budget of their own in the engine, for npm's audit as well; it changes the engine's contract of Q-ARCH-270 and needs a decision of its own.
+and a small slot budget of their own in the engine; it changes the engine's contract of Q-ARCH-270 and needs a decision of its own.
 

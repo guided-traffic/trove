@@ -7643,10 +7643,12 @@ volume of first publishes became a cost.
 ### H-4 · Malicious content from a legitimate upstream
 
 Verification proves only that the bytes match what the upstream announced. A malicious package
-published to a public registry is fetched, cached and served like any other: there is no scanning, no
-vetting of new packages and no minimum-age rule (the catalog's scanning area is Later). Claims and pin
-rules stop name confusion, not malicious public packages. `cacheFillAction: deploy` narrows who can
-bring new packages in.
+published to a public registry is fetched, cached and served like any other until an advisory names it:
+the vulnerability scanning of M4b ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-015) blocks
+a version only once its advisory has arrived, it matches identities and not content (H-310 and H-315 there), and
+trove applies no vetting of new packages and no minimum-age rule of its own (an npm client's release-age
+policy reads the publish times trove serves, [formats/npm.md](formats/npm.md) R-NPM-012). Claims and pin rules
+stop name confusion, not malicious public packages. `cacheFillAction: deploy` narrows who can bring new packages in.
 
 ### H-5 · Version removals reach cached artifacts only where the format tracks versions
 
@@ -7681,8 +7683,8 @@ public package of the same name. Names leak; contents do not.
 ### H-8 · The stored-secret key sits on every replica
 
 Every replica holds the key that unseals upstream credentials, client-certificate keys and proxy
-passwords: `web` replicas make upstream requests, and every replica opens the key ring's start-up
-canary ([architecture.md](architecture.md) R-ARCH-021). Exec access to a trove pod, or read access
+passwords: `packages` replicas (and the bridge's `web`) make upstream requests, `worker` replicas run the
+mirror passes, and every replica opens the key ring's start-up canary ([architecture.md](architecture.md) R-ARCH-021). Exec access to a trove pod, or read access
 to the key's Secret, yields all of them. Adding `web` replicas for load adds copies of the key, not
 new holders of a different kind. Valkey never holds a secret or a value derived from one
 ([architecture.md](architecture.md) R-ARCH-030). Integration with an external key management service
@@ -7757,7 +7759,7 @@ remote stores a version when a client first asks for it; a mirror stores every v
 soon as the upstream lists it, so a malicious version published under a mirrored name (H-4) is in the cache within one interval,
 also when no build would have chosen it. The vulnerability scanning evaluates stored versions and blocks a malicious one when it is
 served ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-015); between the store and the advisory a client that resolves
-the version gets it, as with pull-through. Dormant until R-REPO-053 is built. What makes it real: a mirror of a public upstream whose
+the version gets it, as with pull-through. Live since the passes of R-REPO-053 are built (phase 6b). What makes it real: a mirror of a public upstream whose
 patterns cover a name that an attacker publishes to, and a client that resolves `latest` before the advisory arrives.
 
 ### H-504 · npm's replication host is contacted although it is not an extraHosts entry
@@ -7766,21 +7768,23 @@ Component: the npm discovery of [formats/npm.md](formats/npm.md#mirror-discovery
 npm mirror of the public registry. The format declares `replicate.npmjs.com` as a discovery host of its well-known upstream, so the
 mirror's feed requests go to a host that the remote's `extraHosts` does not list. The egress address rules apply at connect time and
 no credential is sent there, but an operator who reads `extraHosts` as the complete list of the remote's destinations is wrong for
-this one host. Dormant until the npm discovery is built. What makes it real: an outbound allow list kept from `extraHosts` alone.
+this one host. Live since the npm discovery is built (phase 6b, [mirror.go](../../internal/formats/npm/mirror.go)). What makes it
+real: an outbound allow list kept from `extraHosts` alone.
 
 ### H-505 · The byte bound of a mirror can be passed by the artifacts in flight and the fold lag
 
 Component: `remote.mirror.maxBytes` (R-REPO-052). Subject: the object store's capacity. The bound reads the folded usage counter,
 which lags by up to one fold interval (`storage.usage.fold_interval`, 5 s by default), and the pass checks it before each artifact,
 so up to `concurrency` artifacts in flight and those committed within the lag can pass it, each up to `limits.maxArtifactBytes`.
-Dormant until R-REPO-052 is built. What makes it real: a bound set close to the store's capacity with large artifacts.
+Live since R-REPO-052 is built (phase 6b; the mechanism behind the lag is
+[H-527](../security/mirror.md#h-527--the-bounds-base-is-a-lagging-counter-and-a-per-process-tally)). What makes it real: a bound set close to the store's capacity with large artifacts.
 
 ### H-506 · Until quotas are built, only maxBytes bounds a mirror of an upstream that is not well known
 
 Component: R-REPO-052 and [storage.md](storage.md) R-STOR-029 (P1). Subject: the installation's object store. A holder of
 `repositories:write-config` can mirror an upstream other than the format's well-known one without include patterns and without
 `maxBytes`; the warning `mirror_unbounded` is the only stop, and the system capacity guard that would stop the pass at `warnPercent`
-exists only with R-STOR-029. Live from the contract wave for the configuration, dormant for the passes until R-REPO-053 is built.
+exists only with R-STOR-029. Live for the configuration and, since R-REPO-053 is built (phase 6b), for the passes.
 What makes it real: a large private or proxying upstream mirrored without a bound, filling the store until client publishes fail.
 
 ### H-507 · A hostile upstream can make a mirror send as many requests as its feed lists names
@@ -7789,6 +7793,6 @@ Component: the discovery of R-REPO-051. Subject: the outbound request volume of 
 its passes. The patterns bound
 which names are asked for, and the byte bound what is stored, but not how many names a feed or a listing returns under an admitted
 prefix: an upstream that lists millions of names below `@acme/` makes each pass ask for each of their documents. The requests go to
-that upstream only, under the window of R-REPO-054. Dormant until R-REPO-053 is built. What makes it real: a mirror of an upstream
+that upstream only, under the window of R-REPO-054. Live since R-REPO-053 is built (phase 6b). What makes it real: a mirror of an upstream
 that an attacker controls or has compromised, with a broad admitted prefix.
 

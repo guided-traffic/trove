@@ -300,5 +300,3 @@ constraints do not fit the running R.
   make anonymous read (if enabled) and credentialed read return the same index.
 - The archive move operation changes content behind a `GET`; protect it against caching proxies and
   link prefetchers.
-</content>
-</invoke>

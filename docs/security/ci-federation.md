@@ -12,7 +12,8 @@ A CI issuer ([R-CI-001](../spec/gitlab-ci-oidc.md)) is a name, an issuer URL and
 that issuer's when the `iss` claim equals the stored URL byte for byte and the signature verifies with one of the stored keys. Nothing
 else makes a token trusted: the audience, the algorithm list and the claims are checks on top of that
 ([R-CI-004](../spec/gitlab-ci-oidc.md)). Whoever controls the issuer's key set, a GitLab administrator or whoever takes over its domain
-or its TLS, can sign for it; the specification keeps that case as [H-24](../spec/gitlab-ci-oidc.md).
+or its TLS, can sign for it; the specification keeps that case as
+[H-24](../spec/gitlab-ci-oidc.md#h-24--trust-in-the-gitlab-instance-and-its-signing-key).
 
 | Who | What they can do with an issuer | Where it is enforced |
 |---|---|---|
@@ -289,6 +290,17 @@ pipeline, the runner and the client address are left out of the record and of it
 
 ## What this does not cover
 
+The gaps of the spec page whose mechanisms this page describes ([gitlab-ci-oidc.md](../spec/gitlab-ci-oidc.md#what-this-does-not-cover)):
+
+- [H-24](../spec/gitlab-ci-oidc.md#h-24--trust-in-the-gitlab-instance-and-its-signing-key): trust in the GitLab instance and its signing key.
+- [H-25](../spec/gitlab-ci-oidc.md#h-25--bearer-tokens-without-sender-constraint): the ID token and the CI token are bearer tokens without sender constraint.
+- [H-26](../spec/gitlab-ci-oidc.md#h-26--ci-tokens-outlive-the-job): CI tokens outlive the job.
+- [H-27](../spec/gitlab-ci-oidc.md#h-27--group-hierarchies-cannot-be-pinned-by-immutable-id): group hierarchies cannot be pinned by immutable ID.
+- [H-30](../spec/gitlab-ci-oidc.md#h-30--path-only-read-mappings-on-private-issuers-follow-released-paths): path-only read mappings on private issuers follow released paths.
+
+npm's trusted-publishing exchange, which would rest on these mappings, is not built; its gap
+[H-31](../spec/formats/npm.md#h-31--trusted-publishing-widens-the-set-of-credentials-that-can-publish) is linked on [npm.md](npm.md).
+
 ### H-408 · A writer on `ci_issuer_keys` can plant a signing key
 
 The key set of an issuer decides whether a token is accepted, and it is a row that the runtime role of the `web` and `worker`
@@ -362,8 +374,8 @@ Component: the group grants of a CI token (R-AUTHZ-014, R-CI-013). Subject: a ma
 deleted and created again under that name. A mapping names its groups by name in its grant specification, and the evaluator resolves
 the name through the grant index at use time, so the new group's policies apply to the tokens of the mapping, issued before or after
 the re-creation; [R-AUTHZ-002](../spec/authorization.md) promises that a principal created later under a reused name inherits nothing,
-which holds for policies, role bindings and owners but not for a mapping's group list. Dormant until the mapping store (W3) saves
-mappings with groups; live then for every system-tier mapping that lists one. What makes it real: an administrator who re-creates a
+which holds for policies, role bindings and owners but not for a mapping's group list. Live: the mapping store (W3) is built and saves
+mappings with groups, so every system-tier mapping that lists one is exposed. What makes it real: an administrator who re-creates a
 deleted group for another team.
 
 ### H-418 · A matched job learns which repository keys exist through its scope

@@ -332,5 +332,3 @@ Index record keys a client needs per package: `name`, `version`, `build`, `build
   index must only reference shards that already exist.
 - With credentials in the channel URL, every package URL the client builds carries them; keep all
   package links relative to, or under, the channel URL.
-</content>
-</invoke>

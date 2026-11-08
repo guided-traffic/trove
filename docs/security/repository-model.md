@@ -1,8 +1,8 @@
 # Repository model, paths and replica state
 
-Status: the model, the path rules and the snapshot of milestone M1 are implemented. The authorization of a repository
-request (who may read or deploy) is a separate perspective and has no page yet; this page covers what the repository
-model itself decides and what a replica believes about it.
+Status: the model, the path rules and the snapshot of milestone M1 are implemented, and the virtual repositories and their routing
+of M2. The authorization of a repository request (who may read or deploy) is the perspective of [permissions.md](permissions.md);
+this page covers what the repository model itself decides and what a replica believes about it.
 
 This page describes three mechanisms of [internal/repository](../../internal/repository/) that have a security
 relation: the canonical path every repository request passes before authorization, the include and exclude patterns
@@ -142,6 +142,13 @@ The routing above is the same for everybody; the engine ([virtual.md](../develop
 
 ## What this does not cover
 
+The gaps of the spec pages whose mechanism this page describes:
+
+- [H-7](../spec/repositories-and-proxy.md#h-7--claimed-names-are-observable): claimed names are observable.
+- [H-9](../spec/repositories-and-proxy.md#h-9--member-scoped-claims-do-not-protect-other-virtual-repositories): member-scoped claims do not protect other virtual repositories.
+- [H-10](../spec/repositories-and-proxy.md#h-10--deploy-on-a-local-member-shadows-public-packages-for-every-consumer): deploy on a local member shadows public packages for every consumer.
+- [H-404](../spec/repositories-and-proxy.md#h-404--the-repository-key-column-carries-the-databases-collation): the repository key column carries the database's collation.
+
 ### H-303 · A format setting is stored and returned as given, so a format's schema must not hold a secret
 
 Component: the member named after the format in the repository document (`npm`; R-REPO-004, Q-ARCH-229) and the settings form rendered
@@ -161,15 +168,18 @@ refuses user information.
 
 Component: `VirtualAdapter.Merge` of a format ([virtual.md](../developer/virtual.md) "The contract of a format's merge"). Subject: the versions
 a caller who may not fill a remote member is offered. The engine decides the populate right per member, keeps merges of different rights apart
-(Q-REPO-110) and marks the part `Restricted`, but only the format can drop the versions of its own document. npm, the one format with a virtual
-class, does: a part the caller may not fill supplies only the versions whose tarball is cached ([merge.go](../../internal/formats/npm/merge/merge.go),
+(Q-REPO-110) and marks the part `Restricted`, but only the format can drop the versions of its own document. npm does: a part the caller may not fill supplies only the versions whose tarball is cached ([merge.go](../../internal/formats/npm/merge/merge.go),
 `member.eligible`; `TestR_AUTHZ_008_AMergeListsOnlyTheCachedVersionsOfAMemberTheCallerMayNotFill`,
-`TestR_AUTHZ_008_ACallerWhoMayNotFillSeesOnlyTheCachedVersionsOfARemoteMember`). What stays open is the next format: check 5 of the
-conformance kit does not cover `Restricted`, so a merge that ignores the flag passes the kit, lists versions of an upstream that the caller
+`TestR_AUTHZ_008_ACallerWhoMayNotFillSeesOnlyTheCachedVersionsOfARemoteMember`), and so does NuGet: a restricted part contributes only
+its cached versions ([nuget/merge/merge.go](../../internal/formats/nuget/merge/merge.go), `Do`;
+`TestR_AUTHZ_008_ARestrictedMemberListsOnlyWhatItHasCached`, `TestR_NUGET_017_AMemberTheCallerMayNotFillListsItsCachedVersionsOnly`,
+`TestR_AUTHZ_008_ARestrictedRemoteMemberContributesTheCachedVersionsOfTheStoredPages`). What stays open is the next format: check 5 of the
+conformance kit ([formattest/checks.go](../../internal/formats/formattest/checks.go), `merge`) does not cover `Restricted`, so a merge
+that ignores the flag passes the kit, lists versions of an upstream that the caller
 cannot download (a read-only caller of a frozen mirror then sees 404 for a version the document announced) and, for a caller on an endpoint
 with `cache_fill: false`, reveals what the mirror's upstream publishes. Nothing is stolen and nothing is stored, but R-EP-018 ("every version
-a filtered document lists is downloadable") is broken. Dormant: live with the second format that gets a virtual class (NuGet), unless its tests
-pin the two callers of Q-REPO-113 in both orders as npm's do.
+a filtered document lists is downloadable") is broken. Dormant for npm and NuGet; live with the next format that gets a virtual class, unless
+its tests pin the two callers of Q-REPO-113 in both orders as npm's and NuGet's do.
 
 ### H-329 · A format that reads a member without `rq.Member` skips the per-member read check
 

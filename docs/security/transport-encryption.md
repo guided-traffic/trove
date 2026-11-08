@@ -15,10 +15,10 @@ rotation reaches a running process. The configuration keys are listed in the ref
 |---|---|---|---|---|
 | clients to the client listener and each endpoint listener | `server.tls`, `server.endpoints.<name>.tls` | plain HTTP until `certificates` is set | the client, not trove | every `reload_interval` (`10s`) |
 | kubelet and monitoring to the ops listener | `server.ops_tls` | `inherit: true`: the client listener's pairs, no client certificate | the kubelet does not verify probes | with the listener |
-| web and worker to PostgreSQL | `database.ssl_mode`, `ssl_root_cert_file`, `ssl_cert_file`, `ssl_key_file` | `verify-full` | chain and host name against the roots | on each new connection |
-| web and worker to Valkey data nodes | `valkey.tls.mode`, `ca_file`, `cert_file`, `key_file`, `server_name` | `verify-full`, the system roots when no `ca_file` | chain and host name | on each handshake |
-| web and worker to Sentinels | `valkey.sentinel.tls` (follows `valkey.tls`) | `true` | as the data nodes | on each handshake |
-| web and worker to the object store | `storage.s3.endpoint`, `storage.s3.ca_file` | an endpoint without a scheme is `https` ([Q-STOR-15](../spec/storage.md#q-stor-15--object-store-endpoint-without-a-scheme)) | `ca_file` only when it is set; else the outbound factory's trust store (the system roots while `proxy.outbound.tls.use_system_roots`, plus `proxy.outbound.tls.ca_files`) | on each check of the outbound transport |
+| every role (`api`, `packages`, `worker`, the bridge's `web`) and the Jobs to PostgreSQL | `database.ssl_mode`, `ssl_root_cert_file`, `ssl_cert_file`, `ssl_key_file` | `verify-full` | chain and host name against the roots | on each new connection |
+| every role to Valkey data nodes | `valkey.tls.mode`, `ca_file`, `cert_file`, `key_file`, `server_name` | `verify-full`, the system roots when no `ca_file` | chain and host name | on each handshake |
+| every role to Sentinels | `valkey.sentinel.tls` (follows `valkey.tls`) | `true` | as the data nodes | on each handshake |
+| every role and the Jobs of the backup lane to the object store | `storage.s3.endpoint`, `storage.s3.ca_file` | an endpoint without a scheme is `https` ([Q-STOR-15](../spec/storage.md#q-stor-15--object-store-endpoint-without-a-scheme)) | `ca_file` only when it is set; else the outbound factory's trust store (the system roots while `proxy.outbound.tls.use_system_roots`, plus `proxy.outbound.tls.ca_files`) | on each check of the outbound transport |
 | outbound HTTP clients | `proxy.outbound.tls` | system roots, `min_version` `1.2` | chain and host name | at most every 10 s on use |
 | OTLP span export | `tracing.ca_file`, `tracing.protocol` | off until `tracing.enabled` | the system roots, or `ca_file` (refused with an `http://` endpoint) | **once, at start** ([H-69](#h-69--tracingca_file-is-read-once-at-start)) |
 
@@ -138,12 +138,12 @@ The chart is [deploy/helm/trove](../../deploy/helm/trove). The defaults below ar
 | `secrets.s3CA.existingSecret`, `key` | `""`, `ca.crt` | mounts the CA of the object store at `/var/run/secrets/trove/s3-ca/` and renders `storage.s3.ca_file` |
 
 What the pods get, from [_secrets.tpl](../../deploy/helm/trove/templates/_secrets.tpl): the Secret is mounted read-only at
-`/var/run/secrets/trove/tls/` with `tls.crt` and `tls.key` only, and only into pods that load that pair: the main `web`
-pods (the client listener), a pod that serves a further endpoint without a pair of its own, and every pod whose operations
+`/var/run/secrets/trove/tls/` with `tls.crt` and `tls.key` only, and only into pods that load that pair: the pods that open the client listener (`api`, `packages`, their path pools and the
+bridge's `web`), a pod that serves a further endpoint without a pair of its own, and every pod whose operations
 listener inherits it, which is every pod unless `tls.ops.secretName` is set. With `tls.ops`, workers and endpoint pools
 whose endpoints bring their own pairs hold no copy of the client listener's private key
 ([H-57](../spec/endpoints.md#h-57--a-further-endpoint-runs-with-every-credential-of-a-web-replica) lists what such a pod
-still holds). The client CA mounts into the main `web` pods only. `ca.crt` is not projected into the process, because the
+still holds). The client CA mounts only into the pods that open the client listener of the default endpoint. `ca.crt` is not projected into the process, because the
 listener never reads it; the Secret itself still carries `ca.crt` for the edge and for monitoring. The mount has no
 `subPath`, so the kubelet's swap of the projected files reaches the process. The migration Job mounts no listener material.
 
@@ -160,11 +160,22 @@ HAProxy Ingress or ingress-nginx without `caSecret`, with Traefik without `serve
 `tls.clientCaSecret` with HAProxy and no `clientCertSecret` all fail the render. `verify: false` is the only way to render an
 unverified backend connection with these three controllers.
 
-Not rendered yet: a `ServiceMonitor` for Prometheus (the TLS settings of the scrape are therefore not rendered either),
-and an `HTTPRoute`. The Gateway API `BackendTLSPolicy` is rendered only with `tls.backendTLSPolicy.enabled`
-([backendtlspolicy.yaml](../../deploy/helm/trove/templates/backendtlspolicy.yaml)); it takes its CA from a ConfigMap.
+The `ServiceMonitor` (`metrics.serviceMonitor.enabled`, [servicemonitor.yaml](../../deploy/helm/trove/templates/servicemonitor.yaml))
+scrapes the ops port with `scheme: https` when `tls.enabled` is true, and its `tlsConfig` verifies the pods against `ca.crt` of the ops
+listener's Secret (`tls.ops.secretName`, else `tls.secretName`) and the name `<fullname>-ops.<namespace>.svc`; with `metrics.auth: static`
+it sends the bearer token of `secrets.metricsToken`. The Gateway API edge of the default endpoint is an `HTTPRoute` (`gateway.enabled`,
+[httproute.yaml](../../deploy/helm/trove/templates/httproute.yaml)), whose rules go to the Service port `http` of each role. How the Gateway
+verifies that connection is the `BackendTLSPolicy`, rendered only with `tls.enabled` and `tls.backendTLSPolicy.enabled`
+([backendtlspolicy.yaml](../../deploy/helm/trove/templates/backendtlspolicy.yaml)): one policy per Service the edge may route to, for
+the name `<fullname>.<namespace>.svc`, with the CA from a ConfigMap (`tls.backendTLSPolicy.caConfigMapName`, which the render requires).
 
 ## What this does not cover
+
+The gaps of the spec pages that sit on these connections:
+
+- [H-38](../spec/ha-and-helm.md#h-38--plain-http-between-the-edge-proxy-and-the-replicas): plain HTTP between the edge proxy and the replicas when `tls.enabled` is false.
+- [H-41](../spec/operations-and-observability.md#h-41--ingress-enforcement-is-verified-on-one-cni-only): the ops listener is fenced by the ingress NetworkPolicy alone, and its enforcement is verified on one CNI.
+- [H-53](../spec/operations-and-observability.md#h-53--span-export-bypasses-the-egress-address-policy): the span export bypasses the egress address policy.
 
 ### H-64 · Sentinel trust with the chart defaults
 
@@ -243,4 +254,3 @@ built, and the exporter keeps that pool. A rotated collector CA is not trusted u
 in the meantime. The span export itself has no egress policy ([H-53](../spec/operations-and-observability.md#h-53--span-export-bypasses-the-egress-address-policy)).
 
 What makes it real: a collector certificate issued by a new CA while the process keeps the old one.
-</content>

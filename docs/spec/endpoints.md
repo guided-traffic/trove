@@ -2503,7 +2503,7 @@ data as from any other request. No reduced-privilege role exists for endpoint po
 mounts the private key of the default endpoint's pair (`tls.secretName`) only into pods that load it:
 with `tls.ops.secretName` set and pairs of their own on the pool's endpoints, an endpoint pool and
 the workers hold no copy of it; without `tls.ops`, every pod holds it, because its operations
-listener inherits the pair. Set `tls.ops` when you run pools. The cut into roles (phase 6a, specified, not built yet;
+listener inherits the pair. Set `tls.ops` when you run pools. The cut into roles (phase 6a, built;
 Q-EP-70, [ha-and-helm.md](ha-and-helm.md) Q-HA-79) narrows the subject for package endpoints: their pods are of role
 `packages`, which mounts no OIDC client secret and no break-glass password and evaluates no session; the credentials listed
 above stay ([architecture.md](architecture.md) H-517). What makes it real: an exploitable flaw in a code path that the

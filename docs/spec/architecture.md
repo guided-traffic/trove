@@ -9410,12 +9410,15 @@ that other workloads can read. Mitigation today is the restart of every replica 
 ### H-56 · The object-store endpoint skips the egress address policy
 
 Stage: every object-store client of purpose `objectstore` (`internal/outbound`, used by
-`internal/blob/s3`, R-ARCH-022, [storage.md](storage.md) R-STOR-030).
+`internal/blob/s3`, R-ARCH-022, [storage.md](storage.md) R-STOR-030): the blob store and the journal
+shipper of the replicas, and in the Jobs of the backup lane the backup target client (`backup.target`),
+the backup's read of the blob bucket (`backup.source`) and the journal reader of a restore and of the
+post-restore ([backup-and-restore.md](backup-and-restore.md)).
 
-Live for every installation whose `storage.s3.endpoint` resolves to an address that the egress policy
-would refuse, which includes every private-network object store. The endpoint comes from the
-configuration the operator writes. Subject: the set of addresses that a replica may connect to with the
-object-store credentials.
+Live for every installation whose `storage.s3.endpoint` or `backup.target.endpoint` resolves to an
+address that the egress policy would refuse, which includes every private-network object store. The
+endpoints come from the configuration the operator writes. Subject: the set of addresses that a replica or
+a Job of the backup lane may connect to with the object-store or backup-target credentials.
 
 What makes it real: a write to the configuration, or a compromise of the operator's configuration
 management, can point the object-store client at an internal address, and the policy that refuses the

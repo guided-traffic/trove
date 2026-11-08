@@ -276,95 +276,95 @@ The gaps of the Bastion's mechanisms are recorded on the spec page, where the me
 that no mechanism of the Bastion holds, because the chart leaves it to the cluster operator, is recorded on this page:
 [H-522](#h-522--the-chart-restricts-no-egress-of-the-bastion-pods).
 
-- [H-382](../spec/bastion.md#h-382--a-volumetric-attack-on-bandwidth-is-not-absorbed-by-the-bastion) — volumetric attacks on
+- [H-382](../spec/bastion.md#h-382--a-volumetric-attack-on-bandwidth-is-not-absorbed-by-the-bastion): volumetric attacks on
   bandwidth;
-- [H-383](../spec/bastion.md#h-383--during-the-grace-period-a-token-revoked-at-the-main-installation-reads-on-at-the-bastion) —
+- [H-383](../spec/bastion.md#h-383--during-the-grace-period-a-token-revoked-at-the-main-installation-reads-on-at-the-bastion):
   revocations during an outage of the main installation;
-- [H-384](../spec/bastion.md#h-384--a-version-newly-published-appears-at-the-bastion-only-after-the-metadata-period) — new versions
+- [H-384](../spec/bastion.md#h-384--a-version-newly-published-appears-at-the-bastion-only-after-the-metadata-period): new versions
   and security fixes after the metadata period;
-- [H-385](../spec/bastion.md#h-385--a-withdrawal-the-feed-does-not-carry-reaches-the-bastion-within-the-artifact-revalidation-period)
-  — withdrawals and automatic blocks the feed does not carry;
-- [H-386](../spec/bastion.md#h-386--whoever-holds-the-bastion-token-can-test-credentials-name-client-addresses-and-add-download-events)
-  — what the holder of the Bastion token can do;
-- [H-387](../spec/bastion.md#h-387--the-signing-key-and-write-access-to-the-bastions-valkey-or-bucket-together-forge-answers-and-entries)
-  — the signing key together with write access to Valkey or the bucket;
-- [H-388](../spec/bastion.md#h-388--anonymous-misses-from-many-addresses-take-the-anonymous-share-of-the-budget) — distributed
+- [H-385](../spec/bastion.md#h-385--a-withdrawal-the-feed-does-not-carry-reaches-the-bastion-within-the-artifact-revalidation-period):
+  withdrawals and automatic blocks the feed does not carry;
+- [H-386](../spec/bastion.md#h-386--whoever-holds-the-bastion-token-can-test-credentials-name-client-addresses-and-add-download-events):
+  what the holder of the Bastion token can do;
+- [H-387](../spec/bastion.md#h-387--the-signing-key-and-write-access-to-the-bastions-valkey-or-bucket-together-forge-answers-and-entries):
+  the signing key together with write access to Valkey or the bucket;
+- [H-388](../spec/bastion.md#h-388--anonymous-misses-from-many-addresses-take-the-anonymous-share-of-the-budget): distributed
   anonymous miss floods;
-- [H-389](../spec/bastion.md#h-389--without-valkey-a-block-and-a-counter-hold-on-one-replica-only) — blocks and counters without
+- [H-389](../spec/bastion.md#h-389--without-valkey-a-block-and-a-counter-hold-on-one-replica-only): blocks and counters without
   Valkey;
-- [H-390](../spec/bastion.md#h-390--the-time-of-an-answer-tells-a-caller-whether-others-fetched-a-package-recently) — what the
+- [H-390](../spec/bastion.md#h-390--the-time-of-an-answer-tells-a-caller-whether-others-fetched-a-package-recently): what the
   timing of a hit tells;
-- [H-391](../spec/bastion.md#h-391--download-events-lost-to-a-full-buffer-a-crash-or-an-ephemeral-spool-are-missing-from-the-audit)
-  — download events lost before they reach the audit;
-- [H-428](../spec/bastion.md#h-428--the-ops-listener-of-a-bastion-serves-its-metrics-without-authentication) — the ops listener's
+- [H-391](../spec/bastion.md#h-391--download-events-lost-to-a-full-buffer-a-crash-or-an-ephemeral-spool-are-missing-from-the-audit):
+  download events lost before they reach the audit;
+- [H-428](../spec/bastion.md#h-428--the-ops-listener-of-a-bastion-serves-its-metrics-without-authentication): the ops listener's
   metrics carry no authentication;
-- [H-432](../spec/bastion.md#h-432--the-edge-limit-counts-per-tcp-peer-address-and-has-no-burst) — the edge limit keys on the TCP
+- [H-432](../spec/bastion.md#h-432--the-edge-limit-counts-per-tcp-peer-address-and-has-no-burst): the edge limit keys on the TCP
   peer address and has no burst;
-- [H-434](../spec/bastion.md#h-434--a-controller-that-ignores-the-annotations-turns-the-edge-limit-and-routing-off-silently) — a
+- [H-434](../spec/bastion.md#h-434--a-controller-that-ignores-the-annotations-turns-the-edge-limit-and-routing-off-silently): a
   controller that ignores the Ingress annotations turns the edge limit and routing off silently;
-- [H-436](../spec/bastion.md#h-436--deleting-a-registration-deletes-its-token-rows-so-a-later-use-of-a-deleted-token-is-unknown-and-not-logged) —
+- [H-436](../spec/bastion.md#h-436--deleting-a-registration-deletes-its-token-rows-so-a-later-use-of-a-deleted-token-is-unknown-and-not-logged):
   a deleted registration's token leaves no rejection log;
-- [H-437](../spec/bastion.md#h-437--a-bastion-tokens-last-use-is-one-value-per-token-at-the-granularity-of-the-last-used-buffer) — the last
+- [H-437](../spec/bastion.md#h-437--a-bastion-tokens-last-use-is-one-value-per-token-at-the-granularity-of-the-last-used-buffer): the last
   use of a Bastion token is one value per token;
-- [H-438](../spec/bastion.md#h-438--the-interface-calls-of-a-bastion-share-the-read-budget-of-its-token) — the interface calls of a
+- [H-438](../spec/bastion.md#h-438--the-interface-calls-of-a-bastion-share-the-read-budget-of-its-token): the interface calls of a
   Bastion share the read budget of its token;
-- [H-439](../spec/bastion.md#h-439--download-events-enter-the-audit-trail-with-the-time-the-bastion-reports) — download events enter
+- [H-439](../spec/bastion.md#h-439--download-events-enter-the-audit-trail-with-the-time-the-bastion-reports): download events enter
   the audit trail with the time the Bastion reports, behind the position of a tailing consumer;
-- [H-440](../spec/bastion.md#h-440--an-address-that-sends-rejected-bastion-tokens-is-refused-its-valid-bastion-token-for-a-minute) — an
+- [H-440](../spec/bastion.md#h-440--an-address-that-sends-rejected-bastion-tokens-is-refused-its-valid-bastion-token-for-a-minute): an
   address that sends rejected Bastion tokens is refused its valid one for a minute;
-- [H-441](../spec/bastion.md#h-441--absent-rests-on-the-notes-of-the-cores-lookups-not-on-the-routes) — the class `absent` rests on the
+- [H-441](../spec/bastion.md#h-441--absent-rests-on-the-notes-of-the-cores-lookups-not-on-the-routes): the class `absent` rests on the
   notes of the core's lookups;
-- [H-442](../spec/bastion.md#h-442--a-401-states-the-subject-as-invalid-whether-the-credential-was-rejected-or-none-was-sent) — a `401`
+- [H-442](../spec/bastion.md#h-442--a-401-states-the-subject-as-invalid-whether-the-credential-was-rejected-or-none-was-sent): a `401`
   states the subject as `invalid` whatever the reason;
-- [H-444](../spec/bastion.md#h-444--download-events-spooled-by-a-draining-replica-can-be-delivered-twice) — spooled download
+- [H-444](../spec/bastion.md#h-444--download-events-spooled-by-a-draining-replica-can-be-delivered-twice): spooled download
   events can be delivered twice;
-- [H-445](../spec/bastion.md#h-445--a-bastion-clock-ahead-of-the-main-installations-shortens-the-feed-lookback) — a Bastion
+- [H-445](../spec/bastion.md#h-445--a-bastion-clock-ahead-of-the-main-installations-shortens-the-feed-lookback): a Bastion
   clock ahead of the main installation's shortens the feed lookback;
-- [H-446](../spec/bastion.md#h-446--the-connection-to-the-main-installation-is-not-under-the-egress-address-policy) — the
+- [H-446](../spec/bastion.md#h-446--the-connection-to-the-main-installation-is-not-under-the-egress-address-policy): the
   connection to the main installation is not under the egress address policy;
-- [H-447](../spec/bastion.md#h-447--a-background-refresh-keeps-the-token-string-beyond-its-request) — a background refresh keeps the
+- [H-447](../spec/bastion.md#h-447--a-background-refresh-keeps-the-token-string-beyond-its-request): a background refresh keeps the
   token string beyond its request;
-- [H-448](../spec/bastion.md#h-448--a-chunked-body-of-a-read-route-that-takes-a-body-is-held-in-memory) — a chunked body of a read
+- [H-448](../spec/bastion.md#h-448--a-chunked-body-of-a-read-route-that-takes-a-body-is-held-in-memory): a chunked body of a read
   route that takes a body is held in memory;
-- [H-449](../spec/bastion.md#h-449--a-range-request-costs-a-read-of-the-whole-object) — a range request costs a read of the whole
+- [H-449](../spec/bastion.md#h-449--a-range-request-costs-a-read-of-the-whole-object): a range request costs a read of the whole
   object;
-- [H-450](../spec/bastion.md#h-450--a-fill-that-does-not-fit-the-spool-is-passed-through-unkept-and-a-request-answered-from-the-spool-fails) —
+- [H-450](../spec/bastion.md#h-450--a-fill-that-does-not-fit-the-spool-is-passed-through-unkept-and-a-request-answered-from-the-spool-fails):
   a fill that does not fit the spool is passed through unkept, and a request answered from the spool fails;
-- [H-451](../spec/bastion.md#h-451--a-ranged-read-of-a-cached-artifact-is-not-verified) — a ranged read of a cached artifact is not
+- [H-451](../spec/bastion.md#h-451--a-ranged-read-of-a-cached-artifact-is-not-verified): a ranged read of a cached artifact is not
   verified;
-- [H-452](../spec/bastion.md#h-452--the-entries-of-evicted-bytes-stay-until-they-are-read-and-are-not-counted-in-the-cache-size) —
+- [H-452](../spec/bastion.md#h-452--the-entries-of-evicted-bytes-stay-until-they-are-read-and-are-not-counted-in-the-cache-size):
   entries of evicted bytes stay until read and are not counted in the size;
-- [H-453](../spec/bastion.md#h-453--objects-and-markers-are-not-signed-a-replaced-object-is-found-only-when-it-is-read-and-markers-steer-eviction)
-  — objects and markers are not signed;
-- [H-454](../spec/bastion.md#h-454--the-gauge-of-blocked-addresses-counts-the-blocks-a-replica-knows) — the gauge of blocked addresses
+- [H-453](../spec/bastion.md#h-453--objects-and-markers-are-not-signed-a-replaced-object-is-found-only-when-it-is-read-and-markers-steer-eviction):
+  objects and markers are not signed;
+- [H-454](../spec/bastion.md#h-454--the-gauge-of-blocked-addresses-counts-the-blocks-a-replica-knows): the gauge of blocked addresses
   is per replica;
-- [H-455](../spec/bastion.md#h-455--every-request-costs-the-bastions-valkey-round-trips-and-an-unblocked-flood-from-many-addresses-costs-it-per-request)
-  — the load a flood from many addresses puts on the Bastion's Valkey;
-- [H-456](../spec/bastion.md#h-456--a-block-or-a-timeout-set-without-valkey-or-while-it-is-unavailable-is-forgotten-when-the-replica-restarts)
-  — blocks set without Valkey are forgotten at a restart;
-- [H-457](../spec/bastion.md#h-457--a-reader-without-endpointsread-is-not-offered-the-bastion-as-a-target) — a reader without
+- [H-455](../spec/bastion.md#h-455--every-request-costs-the-bastions-valkey-round-trips-and-an-unblocked-flood-from-many-addresses-costs-it-per-request):
+  the load a flood from many addresses puts on the Bastion's Valkey;
+- [H-456](../spec/bastion.md#h-456--a-block-or-a-timeout-set-without-valkey-or-while-it-is-unavailable-is-forgotten-when-the-replica-restarts):
+  blocks set without Valkey are forgotten at a restart;
+- [H-457](../spec/bastion.md#h-457--a-reader-without-endpointsread-is-not-offered-the-bastion-as-a-target): a reader without
   `endpoints:read` is not offered the Bastion as a target;
-- [H-458](../spec/bastion.md#h-458--the-address-a-registration-reports-chooses-among-the-listed-addresses-and-the-name-is-testable) —
+- [H-458](../spec/bastion.md#h-458--the-address-a-registration-reports-chooses-among-the-listed-addresses-and-the-name-is-testable):
   the reported address chooses among the listed addresses, and the name is testable;
-- [H-460](../spec/bastion.md#h-460--without-a-signing-key-the-entries-on-the-volume-are-not-authenticated) — without a signing key the entries on the
+- [H-460](../spec/bastion.md#h-460--without-a-signing-key-the-entries-on-the-volume-are-not-authenticated): without a signing key the entries on the
   volume are not authenticated;
-- [H-461](../spec/bastion.md#h-461--the-suites-front-reaches-the-main-installations-replica-in-plain-http) — the suite's front reaches the main installation's replica in plain HTTP;
-- [H-462](../spec/bastion.md#h-462--a-main-installation-that-reports-a-higher-interface-version-in-its-own-problem-body-is-not-exercised) — a main installation that reports a higher interface version in its own problem body is not exercised;
-- [H-463](../spec/bastion.md#h-463--the-bound-on-the-upload-body-a-bastion-reads-is-shown-by-the-answer-not-by-a-counter) — the bound on the upload body a Bastion reads is shown by the answer, not by a counter;
-- [H-467](../spec/bastion.md#h-467--behind-the-main-installations-own-ingress-the-forwarded-host-is-what-the-ingress-reports) — behind the main installation's own ingress the forwarded host is what the ingress reports;
-- [H-468](../spec/bastion.md#h-468--the-download-budget-is-per-registration-so-many-registrations-at-their-budget-still-fill-the-audit-buffer) — the download budget is per registration;
-- [H-469](../spec/bastion.md#h-469--a-probe-admitted-for-routing-runs-any-handler-below-the-package-families-that-does-not-tell-the-marking-its-route) — a probe admitted for routing runs any handler below the package families that does not tell the marking its
+- [H-461](../spec/bastion.md#h-461--the-suites-front-reaches-the-main-installations-replica-in-plain-http): the suite's front reaches the main installation's replica in plain HTTP;
+- [H-462](../spec/bastion.md#h-462--a-main-installation-that-reports-a-higher-interface-version-in-its-own-problem-body-is-not-exercised): a main installation that reports a higher interface version in its own problem body is not exercised;
+- [H-463](../spec/bastion.md#h-463--the-bound-on-the-upload-body-a-bastion-reads-is-shown-by-the-answer-not-by-a-counter): the bound on the upload body a Bastion reads is shown by the answer, not by a counter;
+- [H-467](../spec/bastion.md#h-467--behind-the-main-installations-own-ingress-the-forwarded-host-is-what-the-ingress-reports): behind the main installation's own ingress the forwarded host is what the ingress reports;
+- [H-468](../spec/bastion.md#h-468--the-download-budget-is-per-registration-so-many-registrations-at-their-budget-still-fill-the-audit-buffer): the download budget is per registration;
+- [H-469](../spec/bastion.md#h-469--a-probe-admitted-for-routing-runs-any-handler-below-the-package-families-that-does-not-tell-the-marking-its-route): a probe admitted for routing runs any handler below the package families that does not tell the marking its
   route;
-- [H-470](../spec/bastion.md#h-470--the-bastion-assumes-the-feeds-default-lookback-when-it-keeps-the-ids-of-applied-entries) — the Bastion assumes the
+- [H-470](../spec/bastion.md#h-470--the-bastion-assumes-the-feeds-default-lookback-when-it-keeps-the-ids-of-applied-entries): the Bastion assumes the
   feed's default lookback when it keeps the IDs of applied entries;
-- [H-471](../spec/bastion.md#h-471--a-pass-through-body-at-the-floor-rate-holds-its-budget-slot-for-the-length-of-the-transfer) — a pass-through body at
+- [H-471](../spec/bastion.md#h-471--a-pass-through-body-at-the-floor-rate-holds-its-budget-slot-for-the-length-of-the-transfer): a pass-through body at
   the floor rate holds its budget slot for the length of the transfer;
-- [H-472](../spec/bastion.md#h-472--a-fill-goes-on-after-its-client-has-left) — a fill goes on after its client has left;
-- [H-473](../spec/bastion.md#h-473--the-roles-binary-contains-packages-of-the-main-installation-it-never-starts) — the role's binary contains
+- [H-472](../spec/bastion.md#h-472--a-fill-goes-on-after-its-client-has-left): a fill goes on after its client has left;
+- [H-473](../spec/bastion.md#h-473--the-roles-binary-contains-packages-of-the-main-installation-it-never-starts): the role's binary contains
   packages of the main installation it never starts;
-- [H-474](../spec/bastion.md#h-474--the-sliding-estimate-of-a-limit-admits-more-than-the-limit-in-a-minute-that-spans-a-boundary) — the sliding
+- [H-474](../spec/bastion.md#h-474--the-sliding-estimate-of-a-limit-admits-more-than-the-limit-in-a-minute-that-spans-a-boundary): the sliding
   estimate of a limit admits more than the limit in a minute that spans a boundary;
-- [H-464](../spec/bastion.md#h-464--a-client-that-sends-accept-encoding-gzip-was-asked-about-at-the-main-installation-on-every-artifact-read-cause-not-found) — a client that sends
+- [H-464](../spec/bastion.md#h-464--a-client-that-sends-accept-encoding-gzip-was-asked-about-at-the-main-installation-on-every-artifact-read-cause-not-found): a client that sends
   `Accept-Encoding: gzip` was asked about at the main installation on every artifact read, cause not found.
 
 This page does not describe the main installation's own mechanisms that the Bastion relies on (the decision point, token

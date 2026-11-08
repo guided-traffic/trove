@@ -69,6 +69,14 @@ identifier. Rows are read and written on the request pool and removed hourly by 
 
 ## What this does not cover
 
+The gaps of the spec pages whose mechanism this page describes:
+
+- [H-43](../spec/api-and-ui.md#h-43--general-api-rate-limits-are-per-replica): the general rate limits count per replica while Valkey is unavailable, and lose counters in a failover.
+- [H-322](../spec/architecture.md#h-322--slow-requests-of-one-client-take-the-memory-slots-of-every-client): slow requests of one client take the memory slots of every client.
+- [H-323](../spec/architecture.md#h-323--a-replica-that-retains-memory-above-the-high-water-mark-refuses-every-request): a replica that retains memory above the high-water mark refuses every request.
+- [H-324](../spec/architecture.md#h-324--connections-that-send-no-request-are-outside-the-memory-guard): connections that send no request are outside the memory guard.
+- [H-539](../spec/architecture.md#h-539--a-cache-that-grows-after-a-request-was-admitted-is-outside-the-memory-charges): a cache that grows after a request was admitted is outside the memory charges.
+
 ### H-111 · The read and write budgets are per class, not per route
 
 Live today for every caller. A route that is expensive (search, an export) shares the `api_read` budget with a cheap one, so a
@@ -97,10 +105,12 @@ NAT in front of many users does the same for those users.
 
 ### H-115 · Nothing detects an operation that returns a secret without declaring it
 
-Dormant today: no M1 operation returns a secret. It becomes live with the first one, token creation (identity area). The
-idempotent operation sets `Outcome.SecretID` to keep its body out of the table; if it forgets, the secret is stored in
-plaintext JSON in `api_idempotency_keys` for the retention period. The check for it is a review item and the E1.2 database
-dump scan, not code in `Idempotency.Do`.
+Live for every idempotent operation that returns a secret. The two that do today declare it: token creation sets
+`Outcome.SecretID` ([tokens_api.go](../../internal/api/v1/tokens_api.go)), and so does the creation of a Bastion registration's
+token ([bastion_registrations_api.go](../../internal/api/v1/bastion_registrations_api.go)), so their bodies are sent once and never
+stored. Nothing detects an operation that forgets the declaration: its secret is stored in plaintext JSON in `api_idempotency_keys`
+for the retention period. The check for it is a review item and the E1.2 database dump scan, not code in `Idempotency.Do`. What makes
+it real: a new operation that returns a credential behind an `Idempotency-Key` without the declaration.
 
 ### H-273 · A preflight is answered without authentication and is not counted by the rate limits
 

@@ -3461,7 +3461,7 @@ M0 ships `system.bootstrap_anonymous_read` (default `false`, refused with an `ht
 
 **Rationale:** The bridge exists to make a development profile work and must not become a path inside the production engine. The condition that matters (the endpoint) is edge knowledge. The development agent would revisit this when the dev profile can sign in, at which point the switch and `bridgeAccess` are removed together.
 
-**Applied in the spec:** none. The gap stays [H-63](../security/roles-and-trust-boundaries.md#h-63--anonymous-read-of-installation-facts-and-the-replica-list-until-identity-ships). Narrowed by Q-AUTHZ-71: the bridge opens the system information and the replica list, not every operation of `settings:read`.
+**Applied in the spec:** none. The gap stays [H-63](../security/roles-and-trust-boundaries.md#h-63--anonymous-read-of-installation-facts-and-the-replica-list-while-the-bootstrap-switch-is-on). Narrowed by Q-AUTHZ-71: the bridge opens the system information and the replica list, not every operation of `settings:read`.
 
 ### Q-AUTHZ-17 · How `Trove-Authz-Min-Epoch` reaches the engine
 

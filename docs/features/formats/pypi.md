@@ -738,5 +738,3 @@ Client behavior that constrains the server:
 - In a virtual repository, a project page must list files from all eligible members consistently
   with the hashes each member serves; mixing a remote file name with a local file of different
   content breaks lock files.
-</content>
-</invoke>

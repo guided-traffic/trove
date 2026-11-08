@@ -1,7 +1,7 @@
 # Audit trail
 
 Status: implemented in M1: the writer, the append-only grants, the partition and retention maintenance, the revocation journal
-row, the store-side query and the three management operations that expose it (`GET /api/v1/audit/events`, `/{id}` and
+row and (phase 7) its shipper, the store-side query and the three management operations that expose it (`GET /api/v1/audit/events`, `/{id}` and
 `/export`), each behind the capability `audit:read`.
 
 This page says who can write audit events, who can change or delete them, where else a copy lives, and what the journal row of
@@ -78,7 +78,10 @@ For an event type flagged `journal: revocation` the writer inserts a `revocation
 transaction when the producer passes none, so a producer bug cannot silently drop a revocation; an entry on an unflagged type is an
 error, so one cannot be silently ignored either. The entry is whatever the producer supplies; the writer checks that it is a JSON
 object and stores it as it is. Producers keep secrets and token hashes out of it ([H-121](#h-121--event-details-and-journal-entries-are-not-checked-for-secrets)).
-Reading the outbox and shipping it to object storage is the journal writer of a later milestone and is not built here.
+The shipper reads the outbox and writes its rows to the journal in object storage: the job `revocation-journal-ship`, which a
+`worker` enqueues every `backup.revocation_journal.ship_interval` while the outbox holds a row and runs under a singleton lease with the
+runtime credential of the blob bucket ([internal/journal/ship](../../internal/journal/ship), [wire_journal.go](../../internal/app/wire_journal.go)).
+What a restore trusts of that journal is on [backup-and-restore.md](backup-and-restore.md).
 
 ## What the writer does with attacker-influenced text
 
@@ -106,6 +109,8 @@ installation writes two events about its dealings with Bastions itself. All thre
 The check of a Bastion writes `token.rejected` with the caller's address and the reason, as a direct request does, and no `authz.denied`.
 
 ## What this does not cover
+
+- [H-23](../spec/authorization.md#h-23--allowed-downloads-are-not-attributable-by-default): allowed downloads are not attributable by default.
 
 ### H-39 · Audit records are not tamper-evident
 

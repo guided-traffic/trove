@@ -1,8 +1,9 @@
 # Isolation and coordination
 
-Status: implemented in M0 for the role split of the replicas, the leases on the lease pool, the fence of singleton writes, the
-change log that every replica polls, and the replica registry. Tenancy between repositories and between endpoints is not built
-yet; the repository model is M2 work.
+Status: built: the role split of the replicas, the leases on the lease pool, the fence of singleton writes, the change log that
+every replica polls, the replica registry (M0), and the mirror's yield signal (phase 6b). What separates repositories, projects and
+endpoints from each other is on [repository-model.md](repository-model.md), [permissions.md](permissions.md),
+[delegated-administration.md](delegated-administration.md) and [endpoints-and-exposure.md](endpoints-and-exposure.md).
 
 This page says which replica may hold what coordination state, how a singleton writer is kept from acting after it lost its
 lease, which party can change what other replicas read, and where two installations can share a lock without knowing it.
@@ -10,15 +11,17 @@ lease, which party can change what other replicas read, and where two installati
 ## Who may hold coordination state
 
 Only the `worker` and `all` roles claim jobs, open the lease pool and hold leases. The role sets are fixed in code, and the
-`web` role has neither ([roles.go](../../internal/app/roles.go), `SubsystemsFor`):
+serving roles `api`, `packages` and the bridge's `web` have neither ([roles.go](../../internal/app/roles.go), `SubsystemsFor`):
 
 | Role | Lease pool | Job loops | Change-log poll | Replica registry |
 |---|---|---|---|---|
+| `api` | no | no | yes | yes |
+| `packages` | no | no | yes | yes |
 | `web` | no | no | yes | yes |
 | `worker` | yes | yes | yes | yes |
 | `all` | yes | yes | yes | yes |
 
-A `web` replica therefore cannot construct a lease manager, and a request cannot take a singleton lock. A request that needs
+A replica of a serving role therefore cannot construct a lease manager, and a request cannot take a singleton lock. A request that needs
 singleton work enqueues a job, and a worker claims it ([architecture.md](../spec/architecture.md) R-ARCH-016, R-ARCH-017).
 
 ## Leases
@@ -70,9 +73,9 @@ registry is a table in PostgreSQL that every replica writes its own row to on ea
 ([replica_registry.go](../../internal/cluster/replica_registry.go)).
 
 The registry therefore tells anyone who reads it how the installation is laid out: which nodes run it, which versions run side
-by side, and which replica holds which singleton. Its fields hold no credential. In M0 nobody holds `system.read`, so the
-only path to the listing is the bootstrap switch described on
-[roles-and-trust-boundaries.md](roles-and-trust-boundaries.md#installation-facts-before-identity-ships).
+by side, and which replica holds which singleton. Its fields hold no credential. The listing needs `settings:read`
+([handlers.go](../../internal/api/v1/handlers.go), `PermissionSystemRead`); with the bootstrap switch on, an anonymous caller on the
+default endpoint reads it as well ([roles-and-trust-boundaries.md](roles-and-trust-boundaries.md#installation-facts-through-the-bootstrap-switch)).
 
 ## Transactions and a lost COMMIT
 
@@ -103,6 +106,8 @@ the mirror time and an upstream request, not integrity.
 
 ## What this does not cover
 
+- [H-49](../spec/architecture.md#h-49--write-access-to-valkey-denies-service): write access to Valkey denies service; it cannot suppress a change, only evict early, delay and refuse.
+
 ### H-76 · Advisory locks are per database, not per schema
 
 Stage: every lease and the migration lock ([lease_manager.go](../../internal/cluster/lease_manager.go),
@@ -122,12 +127,21 @@ Stage: a write request whose transaction loses its connection during `COMMIT` ([
 `attempt`).
 
 Live on every write whose connection breaks during `COMMIT`, which is rare but not excluded by any setting. Trove does not retry
-it, and the client gets `503`. A client that retries the request after a `503` can write the same object twice, because no idempotency key exists
-yet. Subject: the content of a write, which a repeated upload or a repeated management call duplicates.
+it, and the client gets `503`. A management create sent with an `Idempotency-Key`
+([R-API-014](../spec/api-and-ui.md#r-api-014--idempotency-keys-for-creates), [api-edge.md](api-edge.md#stored-outcomes-of-idempotent-requests))
+stores its outcome in the transaction of the change, so its retry either replays the stored outcome or runs again on a database that
+holds neither. The package protocols answer an identical retry themselves: an npm publish repeated by the same principal with the
+same SHA-512 and dist-tag within `npm.publish.retry_window` is acknowledged with 201 and changes nothing (Q-NPM-11; outside the window it
+is 409 `npm_version_exists`, [npm.md](npm.md#a-version-number-is-taken-for-good)), a NuGet push of bytes already stored under the number
+is replayed with 201 and no write ([nuget-publish.md](nuget-publish.md#a-version-number-is-taken-for-good)), an npm unpublish whose versions
+are already gone succeeds and removes nothing, a dist-tag write that changes nothing writes no event, and a repeated NuGet unlist, relist or delete
+answers without a change. What a retry can duplicate is a management create sent without the key, and a management operation outside
+R-API-014's scope whose repetition is not a no-op. Subject: the effect of such a call, which a client that retries after a `503`
+applies twice.
 
 What makes it real: a failover or a connection drop that coincides with a `COMMIT`, and a client that retries without checking
-the state first. Content addressing makes a repeated blob upload harmless; a repeated metadata change is not.
-</content>
+the state first. Content addressing makes a repeated blob upload harmless and the package protocols' repeats change nothing; a
+repeated management create without the key is not harmless.
 
 ### H-526 · Whoever can publish on the Valkey signal channel can hold a mirror back
 

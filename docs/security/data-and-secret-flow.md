@@ -3,8 +3,9 @@
 Status: implemented in M0 for the credentials of every connection, the stored-secret key ring and its envelope, and the
 redaction of logs, spans and error texts, and in M2 for the upstream credentials of remote repositories: their sealed rows, the
 secret references and the clients that send them, and for the names an npm audit forwards to an advisory provider; the release
-pipeline's secrets as the workflows hold them. Package bytes do not exist yet: the blob layer is built, but no package
-writes it.
+pipeline's secrets as the workflows hold them. Package bytes are blobs in the object store; who can read them there besides trove is
+[H-11](../spec/storage.md#h-11--object-store-principals-bypass-troves-authorization-and-integrity-checks) on
+[file-transfer.md](file-transfer.md).
 
 This page says where each credential lives inside the running installation, when a process reads it, what a process holds in
 memory, and what is written where it could be read by someone else, and which code the release pipeline's credentials reach.
@@ -25,18 +26,20 @@ Secret through `secretKeyRef` (`TROVE_STORAGE_S3_BUCKET`, `TROVE_STORAGE_S3_ENDP
 | Object-store access key and secret | files under `/var/run/secrets/trove/s3/` (`static`), or the SDK's default chain, or a web-identity token file | the static files at most once per second ([blob/s3/credentials.go](../../internal/blob/s3/credentials.go), `fileReread`) | the default chain: see [H-74](privilege-footprint.md#h-74--the-default-object-store-credential-chain-can-reach-node-metadata) |
 | Metrics bearer token | file `metrics.bearer_token_file` | on every request to `/metrics` with `auth: static` ([observability/metrics.go](../../internal/observability/metrics.go), `authorized`) | not logged |
 | OTLP headers | file `tracing.headers_file`, `Name: value` per line | once, when the exporter is built ([observability/otlp.go](../../internal/observability/otlp.go)) | not in the configuration |
-| Stored-secret key ring | files under `/var/run/secrets/trove/encryption/`, one per key | once, at start ([app.go](../../internal/app/app.go), `secrets.Load`) | see [H-55](../spec/architecture.md#h-55--key-files-of-the-stored-secret-key-ring-are-read-once-at-start-up) |
-| Break-glass password | one file, `/var/run/secrets/trove/break-glass/password`, from `secrets.breakGlass`; plaintext (at least 20 characters) or an Argon2id hash | at start and again whenever its modification time changes, looked at every `auth.break_glass.check_interval` ([oidc/breakglass.go](../../internal/auth/oidc/breakglass.go)); read by `web` replicas only (R-AUTH-042) | not in PostgreSQL, not in `worker`, the migration Job or the backup pods; not logged |
+| Stored-secret key ring | files under `/var/run/secrets/trove/encryption/`, one per key | once, at start ([wire_keys.go](../../internal/app/wire_keys.go), `secrets.Load`) | see [H-55](../spec/architecture.md#h-55--key-files-of-the-stored-secret-key-ring-are-read-once-at-start-up) |
+| Break-glass password | one file, `/var/run/secrets/trove/break-glass/password`, from `secrets.breakGlass`; plaintext (at least 20 characters) or an Argon2id hash | at start and again whenever its modification time changes, looked at every `auth.break_glass.check_interval` ([oidc/breakglass.go](../../internal/auth/oidc/breakglass.go)); read by `api` replicas only, and by `web` in the bridge of the upgrade across the cut (R-AUTH-042) | not in PostgreSQL, not in `packages`, `worker`, the migration Job or the backup, restore and post-restore pods; not logged |
 | Upstream password or token of a remote repository | sealed in `repository_secrets.sealed`, or a reference to a file under `config_as_code.secrets_dir` or to a `TROVE_CAC_` variable | a sealed value when the repository's client is built; a reference at most every 10 s ([upstream/secret.go](../../internal/proxy/upstream/secret.go)); both only by the replica that sends a request to that upstream | not in `repositories.config` (it holds `{"set": true}` or the reference), not in an audit event, a log line or an error text, not in any API answer |
-| OIDC client secrets | one file per provider, `/var/run/secrets/trove/oidc-<providerId>/client-secret`, from `secrets.oidc[]` | when the file's modification time changes ([oidc/provider.go](../../internal/auth/oidc/provider.go)); `web` replicas only | not in PostgreSQL, not in `worker`, the Job or the backup pods |
+| OIDC client secrets | one file per provider, `/var/run/secrets/trove/oidc-<providerId>/client-secret`, from `secrets.oidc[]` | when the file's modification time changes ([oidc/provider.go](../../internal/auth/oidc/provider.go)); `api` replicas only, and `web` in the bridge | not in PostgreSQL, not in `packages`, `worker` or any Job |
 
 The chart mounts each Secret into the pods that need it and nowhere else ([_secrets.tpl](../../deploy/helm/trove/templates/_secrets.tpl)):
 
-- the key ring (`encryption`) only in the `web` and `worker` pods, never in the migration Job (the migration never seals or opens a value);
+- the key ring (`encryption`) in the pods of every role and in the restore Job, which checks that it opens every key ID of the backup;
+  never in the migration Job or the backup pods, which never seal or open a value;
 - the object-store credentials only with `credentials.source: static`;
 - the metrics token only with `metrics.auth: static`;
-- the break-glass password and the OIDC client secrets only in the `web` pods and endpoint pools, which serve the login; the
-  `worker` and the Job never get them. The Secret that holds the break-glass password is an administrator credential: whoever can
+- the break-glass password and the OIDC client secrets only in the pods of the role `api` (the main Deployment, its path pools and its
+  endpoint pools) and, in the bridge of the upgrade across the cut, the `web` pods, which serve the login; `packages`, `worker` and the
+  Jobs never get them. The Secret that holds the break-glass password is an administrator credential: whoever can
   read it through the Kubernetes API can sign in as the break-glass account, so its RBAC is the access control of that account;
 - the listener certificate (`tls.crt` and `tls.key`, not `ca.crt`) only in the pods whose process serves a listener.
 
@@ -93,11 +96,13 @@ A key ring holds the keys with which the database's sealed columns are encrypted
   ([config/secrets.go](../../internal/config/secrets.go), `Validate`). The chart takes the first key of `secrets.encryption.keys`
   as active ([_helpers.tpl](../../deploy/helm/trove/templates/_helpers.tpl)).
 - **Fingerprint.** `Fingerprint` is an HMAC-SHA-256 under a key derived with HKDF-SHA-256 from the active key, info
-  `trove fingerprint v1`. It has no call site in M0.
-- **Canary.** `SealCanary` and `CheckCanary` seal and open a known text in the `secret_key_canary` row of a key. No start-up
-  path calls them in M0, and `RequireKeys` (which names the missing key IDs of a database or a backup) has no call site yet.
-  A ring that does not match stored values is therefore not reported at start in M0. This becomes relevant with the first
-  sealed column of M1.
+  `trove fingerprint v1`. It has no call site.
+- **Canary.** `SealCanary` and `CheckCanary` seal and open a known text in the `secret_key_canary` row of a key. Every role checks
+  them at start, before it serves ([wire_api.go](../../internal/app/wire_api.go), `wireKeyRing`, `verifyKeyRingCanaries`): a replica
+  refuses to start when sealed rows reference a key ID its ring lacks (`RequireKeys`, which names the missing IDs), and when its ring
+  cannot open the canary of a key ID it holds (the same ID with other key material); a key ID without a canary gets one. The restore
+  runs the same checks against the backup's key IDs ([restore/checks.go](../../internal/backup/restore/checks.go)). A reference file of
+  a remote repository is not part of the check ([H-280](#h-280--a-secret-that-cannot-be-resolved-is-found-at-its-first-use)).
 - **Errors.** Errors name the file or the key ID, never key material. `MismatchError` lists missing key IDs only
   ([keyring.go](../../internal/secrets/keyring.go), `MismatchError`).
 - **Logging.** `KeyRing` implements `String` and `LogValue` with the key IDs only ([keyring.go](../../internal/secrets/keyring.go)).
@@ -205,9 +210,10 @@ what that job holds:
 
 | Credential | What it can do | Jobs that hold it | Third-party actions in those jobs |
 |---|---|---|---|
-| `DOCKERHUB_PAT`, the access token of the Docker Hub user `guidedtraffic` | push `docker.io/guidedtraffic/trove` under any tag | `Build Docker Image` and `Smoke the published release` ([build.yml](../../.github/workflows/build.yml); the second logs in for the dev profile's images and keeps the login as the pull secret below, and it also runs on a dispatch of any ref the dispatcher can push to, [H-80](../spec/ha-and-helm.md#h-80--self-hosted-runners-build-the-code-of-every-pull-request)); in [release.yml](../../.github/workflows/release.yml) `image`, `container-scan`, `integration`, `s3-conformance`, `e2e` and `e2e-npm`, which log in for base-image pulls, on pull requests from this repository's branches too ([H-80](../spec/ha-and-helm.md#h-80--self-hosted-runners-build-the-code-of-every-pull-request)) | `Build Docker Image`: the `docker/*` actions, `anchore/sbom-action@v0`, `softprops/action-gh-release@v3`, `docker/scout-action@v1` (the token as an input), and the throwaway registry container (the image `SBOM_GENERATOR_REGISTRY_IMAGE`, by digest) that holds no credential and shares Docker's default bridge network with the builder and the `RUN` steps of the image build (the generator is referenced by digest, so none of them can replace what the builder runs); `Smoke the published release`: `docker/*`, `azure/*` (the job `sbom-generator` of release.yml pulls anonymously and holds no secret); `container-scan`: `aquasecurity/trivy-action@v0.36.0`, after `docker/login-action` has stored the login on the runner; the other jobs: `docker/*`, `azure/setup-helm@v5`, `azure/setup-kubectl@v5` |
+| `DOCKERHUB_PAT`, the access token of the Docker Hub user `guidedtraffic` | push `docker.io/guidedtraffic/trove` under any tag | `Build Docker Image` and `Smoke the published release` ([build.yml](../../.github/workflows/build.yml); the second logs in for the dev profile's images and keeps the login as the pull secret below, and it also runs on a dispatch of any ref the dispatcher can push to, [H-80](../spec/ha-and-helm.md#h-80--self-hosted-runners-build-the-code-of-every-pull-request)); in [release.yml](../../.github/workflows/release.yml) `image`, `container-scan`, `integration`, `s3-conformance`, `e2e`, `e2e-npm`, `e2e-nuget`, `e2e-ci`, `e2e-bastion`, `e2e-vuln` and `e2e-mirror`, which log in for base-image pulls, on pull requests from this repository's branches too ([H-80](../spec/ha-and-helm.md#h-80--self-hosted-runners-build-the-code-of-every-pull-request)); the last five run on GitHub-hosted runners (`ubuntu-24.04`); in [performance.yml](../../.github/workflows/performance.yml) the twelve jobs `latency`, `vuln-perf`, `npm-ha-soak`, `e2e`, `e2e-npm`, `e2e-nuget`, `e2e-ci`, `e2e-bastion`, `e2e-vuln`, `e2e-mirror`, `e2e-backup` and `e2e-upgrade`, which log in for image pulls, every night and on a dispatch of any ref the dispatcher can push to | `Build Docker Image`: the `docker/*` actions, `anchore/sbom-action@v0`, `softprops/action-gh-release@v3`, `docker/scout-action@v1` (the token as an input), and the throwaway registry container (the image `SBOM_GENERATOR_REGISTRY_IMAGE`, by digest) that holds no credential and shares Docker's default bridge network with the builder and the `RUN` steps of the image build (the generator is referenced by digest, so none of them can replace what the builder runs); `Smoke the published release`: `docker/*`, `azure/*` (the job `sbom-generator` of release.yml pulls anonymously and holds no secret); `container-scan`: `aquasecurity/trivy-action@v0.36.0`, after `docker/login-action` has stored the login on the runner; the other jobs of release.yml and performance.yml: `docker/*`, `azure/setup-helm@v5`, `azure/setup-kubectl@v5` |
 | `APP_CLIENT_ID`, `APP_PRIVATE_KEY`, the organisation's GitHub App | an installation token for this repository: tags, releases (a release starts build.yml), commits | `Semantic Release` (release.yml, token with `contents: write`), `renovate` ([renovate.yml](../../.github/workflows/renovate.yml), token with every permission of the App) | `Semantic Release`: none, only `actions/*`; `renovate`: `renovatebot/github-action@v46.3.10` |
-| `GITHUB_TOKEN` of build.yml (the workflow default is `contents: read`) | `Build Docker Image`: `contents: write`, for the release's assets; `Release Helm Chart to GitHub Pages`: `contents: write`, for the release's assets and the push of the `gh-pages` branch that serves the chart repository (GitHub Pages builds the site from the push; no `pages` permission is used); `Smoke the published release`: `contents: read`. No job holds `id-token`, `attestations`, `actions` or `pages` | all three jobs of build.yml | as for `DOCKERHUB_PAT`, and `azure/setup-helm@v5` in the chart job |
+| `GITHUB_TOKEN` of build.yml (the workflow default is `contents: read`) | `Build Docker Image`: `contents: write`, for the release's assets; `Release Helm Chart to GitHub Pages`: `contents: write`, for the release's assets and the push of the `gh-pages` branch that serves the chart repository, and `pages: write`, which no step of the job uses (GitHub Pages builds the site from the push); `Smoke the published release`: `contents: read`. No job holds `id-token`, `attestations` or `actions` | all three jobs of build.yml | as for `DOCKERHUB_PAT`, and `azure/setup-helm@v5` and `softprops/action-gh-release@v3` in the chart job |
+| `GITHUB_TOKEN` of performance.yml (the workflow default is `contents: read`) | `vuln-perf`: `issues: write`, to open a regression issue after a miss or a failed run; it can open, edit and comment on every issue of the repository. The other jobs: `contents: read` | `vuln-perf` | `docker/login-action@v4` (with `DOCKERHUB_PAT` in the same job) |
 
 **The pull secret of the post-release check.** `Smoke the published release` installs the image by digest into a kind cluster of its own. The job copies the Docker
 Hub entry of `~/.docker/config.json` (the one `docker/login-action` wrote, which holds `DOCKERHUB_PAT`) into the Secret `dockerhub-pull` of the namespace `trove`
@@ -222,6 +228,15 @@ read-only token for this pull would not close the read; it would limit what a le
 No job runs in a GitHub environment with protection rules, so the secrets are bound to nothing but the job that names them.
 
 ## What this does not cover
+
+The gaps of the spec pages whose mechanism this page describes:
+
+- [H-2](../spec/architecture.md#h-2--the-upload-spool-is-not-encrypted-by-trove): the upload spool is not encrypted by trove.
+- [H-8](../spec/repositories-and-proxy.md#h-8--the-stored-secret-key-sits-on-every-replica): the stored-secret key sits on every replica.
+- [H-55](../spec/architecture.md#h-55--key-files-of-the-stored-secret-key-ring-are-read-once-at-start-up): key files of the stored-secret key ring are read once at start-up.
+- [H-34](../spec/formats/npm.md#h-34--audit-forwarding-discloses-the-dependency-set): the audit forward discloses the dependency set.
+- [H-79](../spec/ha-and-helm.md#h-79--artifacts-are-unsigned-and-nothing-checks-their-origin): the image and the chart are unsigned, and nothing checks their origin.
+- [H-80](../spec/ha-and-helm.md#h-80--self-hosted-runners-build-the-code-of-every-pull-request): self-hosted runners build the code of every pull request, and its jobs hold `DOCKERHUB_PAT`.
 
 ### H-70 · The standard-output log carries every record in full
 
@@ -290,7 +305,7 @@ Stage: the reading of an audit body ([handlers_audit.go](../../internal/formats/
 Live: a body is read and decompressed in memory before the forwarded set is decided, up to ten times `npm.audit.maxBodySize`
 (10 MiB with the default of 1 MiB, 100 MiB with the largest setting) plus the decoded names, at most 100,000
 ([Q-NPM-64](../spec/formats/npm.md#q-npm-64--the-bounds-of-an-audit-body)). No budget per replica bounds the audits that run at once.
-Subject: the memory of the `web` replicas. A caller with `read` on a forwarding repository (an anonymous one where anonymous read is
+Subject: the memory of the `packages` replicas (and of `web` in the bridge). A caller with `read` on a forwarding repository (an anonymous one where anonymous read is
 on) can send many large gzip bodies at once.
 
 What makes it real: a raised `maxBodySize` together with a burst of large audits; the request rate limits of the edge are the only
@@ -328,14 +343,16 @@ repository (a Maintainer or an Owner of its project among them) and an Owner of 
 
 ### H-325 · A moved action tag runs in a job that holds release secrets
 
-Stage: the actions of [release.yml](../../.github/workflows/release.yml), [build.yml](../../.github/workflows/build.yml) and
-[renovate.yml](../../.github/workflows/renovate.yml), each referenced by a tag
+Stage: the actions of [release.yml](../../.github/workflows/release.yml), [build.yml](../../.github/workflows/build.yml),
+[performance.yml](../../.github/workflows/performance.yml) and [renovate.yml](../../.github/workflows/renovate.yml), each referenced by a tag
 ([the release pipeline's credentials](#the-release-pipelines-credentials)).
 
 Live wherever the workflows run: Test and Release on every push and on every pull request from a branch of this repository,
-Renovate every day, Release Docker & Helm on every published release and on every dispatch of any ref the dispatcher can push to (the check job runs that ref's workflow file with `DOCKERHUB_PAT` and a read-only `GITHUB_TOKEN`; the publish jobs do not run on a dispatch). Semantic Release has cut `v0.2.0` to `v0.4.0` (tags of
-this repository), so Test and Release has run on GitHub; whether Release Docker & Helm has published from them is not verified
-here. A tag is a movable reference: whoever controls an action's repository, or a maintainer's account, can point it at another
+Renovate every day, the performance workflow every night and on every dispatch of any ref the dispatcher can push to (its twelve
+jobs that pull images run that ref's workflow file with `DOCKERHUB_PAT`, and `vuln-perf` with `issues: write` as well), Release
+Docker & Helm on every published release and on every dispatch of any ref the dispatcher can push to (the check job runs that ref's
+workflow file with `DOCKERHUB_PAT` and a read-only `GITHUB_TOKEN`; the publish jobs do not run on a dispatch). Release Docker & Helm
+has published releases: run 42436292019 published `v0.25.2` with all three jobs green. A tag is a movable reference: whoever controls an action's repository, or a maintainer's account, can point it at another
 commit, and the next run of a job that names the tag runs that commit with the job's secrets. Renovate does not notice: it
 raises a tag when a new one appears, and a moved tag keeps its name. In the Trivy incident (GHSA-69fq-xp46-6x23, March 2026)
 76 of 77 tags of `aquasecurity/trivy-action` were moved to malicious commits. The owner decided on 2026-10-31 to keep tag pins,
@@ -346,14 +363,15 @@ Subject, per credential:
 
 - `DOCKERHUB_PAT`: a moved `aquasecurity/trivy-action` tag runs in `container-scan` after the Docker Hub login, on every push
   and pull request; a moved `anchore/sbom-action`, `softprops/action-gh-release` or `docker/scout-action` tag runs in the job
-  that pushes the image, at the next release; the `docker/*` and `azure/*` tags of the other jobs that log in run with the
-  login as well. With the token, the image of an existing tag can be replaced
+  that pushes the image, at the next release; the `docker/*` and `azure/*` tags of the other jobs that log in, in release.yml and
+  in performance.yml, run with the login as well. With the token, the image of an existing tag can be replaced
   ([H-79](../spec/ha-and-helm.md#h-79--artifacts-are-unsigned-and-nothing-checks-their-origin)), so every installation that
   pulls by tag runs it.
 - The GitHub App: a moved `renovatebot/github-action` tag runs in Renovate's daily job with an installation token that holds
   every permission of the App: it can push commits and tags and publish a release, which starts Release Docker & Helm.
 - The `GITHUB_TOKEN` of build.yml: a moved tag in the two publish jobs, which hold `contents: write`, can change the release's assets and the chart
   repository on `gh-pages`; in `Smoke the published release` the token only reads.
+- The `GITHUB_TOKEN` of performance.yml: a moved `docker/login-action` tag in `vuln-perf` can open and edit issues of the repository.
 
 What makes it real: a compromised repository or maintainer account of one of the third-party actions above, before the moved
 tag is noticed and restored.
