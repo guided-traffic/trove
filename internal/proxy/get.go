@@ -31,6 +31,9 @@ type Get struct {
 	// MirrorHosts are the hosts besides the upstream's and the extraHosts entries that the request may reach, and that never
 	// receive a credential.
 	MirrorHosts []string
+	// Auth is the format's handshake with the upstream (R-OCI-021); nil leaves a 401 as the result. The handshake is not run for
+	// a request to a mirror host: no credential and no token goes there.
+	Auth Authenticator
 	// Ceiling and JobID are those of the pass, as on a [Request].
 	Ceiling int
 	JobID   string
@@ -117,12 +120,45 @@ func (e *Engine) get(ctx context.Context, g Get, cl *upstream.Client, viaMirror 
 		fl: &flight{done: make(chan struct{})}, cl: cl, target: g.URL,
 	}
 	start := time.Now()
-	resp, err := cl.HTTP().Do(req) //nolint:bodyclose // closed through the idle body below
-	if err != nil {
-		e.m.request(rem.Repo.Name.String(), 0)
-		return nil, f.transportFailure(ctx, err, false).err
+	// The handshake of a format (R-REPO-033, Q-OCI-82) is run for a request to the upstream's own hosts: a mirror host never
+	// receives a credential or a token. The request after the first reports no slot wait (Q-REPO-236).
+	var h *handshake
+	if g.Auth != nil && !viaMirror {
+		h = &handshake{cl: cl, rem: rem, auth: g.Auth, jobID: g.JobID, background: true}
 	}
-	e.m.request(rem.Repo.Name.String(), resp.StatusCode)
+	send := func(c context.Context) (*http.Response, context.CancelFunc, *atomic.Bool, error) {
+		r, err := cl.HTTP().Do(req.Clone(c)) //nolint:bodyclose // the caller closes it through the idle body below
+		if err != nil {
+			e.m.request(rem.Repo.Name.String(), 0)
+			return nil, nil, nil, err
+		}
+		e.m.request(rem.Repo.Name.String(), r.StatusCode)
+		return r, func() {}, nil, nil
+	}
+	var used *attempt
+	first := rctx
+	if h != nil {
+		if used = e.preemptive(ctx, h, req); used != nil {
+			first = outbound.WithAuthorization(rctx, used.value)
+		}
+	}
+	resp, _, _, err := send(first) //nolint:bodyclose // closed through the idle body below
+	if err != nil {
+		if used != nil && ctx.Err() == nil {
+			e.dropToken(used.key, used.value)
+		}
+		return nil, f.failureOf(ctx, err)
+	}
+	if resp.StatusCode == http.StatusUnauthorized && h != nil {
+		later := func(c context.Context) (*http.Response, context.CancelFunc, *atomic.Bool, error) {
+			c = outbound.WithCall(c, outbound.Call{Repo: rem.Repo.Name.String(), FlightRole: roleMirror, JobID: g.JobID, SlotWait: outbound.NewSlotWait(0)})
+			return send(c)
+		}
+		resp, _, _, err = e.authenticate(rctx, h, req, resp, func() {}, nil, later, used) //nolint:bodyclose // closed through the idle body below
+		if err != nil {
+			return nil, f.failureOf(ctx, err)
+		}
+	}
 	idle := new(atomic.Bool)
 	body := newIdleBody(resp.Body, time.Duration(rem.Settings.ReadTimeoutMs)*time.Millisecond, rcancel, idle, func() {
 		e.m.upstreamDur.WithLabelValues(rem.Repo.Name.String()).Observe(time.Since(start).Seconds())
@@ -143,4 +179,14 @@ func (e *Engine) get(ctx context.Context, g Get, cl *upstream.Client, viaMirror 
 		return nil, &upstream.RateLimitError{RateLimit: rl, Repo: rem.Repo.Name.String()}
 	}
 	return &GetResult{Status: resp.StatusCode, Header: resp.Header, Body: data}, nil
+}
+
+// failureOf is the error a background request of a pass returns for err: the mirror's own outcome (a rate limit of the token
+// service) or the classified failure.
+func (f *fetcher) failureOf(ctx context.Context, err error) error {
+	r := f.transportFailure(ctx, err, false)
+	if r.own != nil {
+		return r.own
+	}
+	return r.err
 }

@@ -59,6 +59,11 @@ func (c *Client) ExchangeHTTP() *http.Client {
 	return c.http
 }
 
+// CredentialFingerprint is a digest of the credential the client sends now, the zero value for none. It changes with a rotation
+// of a secret behind a reference, which moves no configuration version; the engine keys the tokens of an upstream's handshake
+// with it.
+func (c *Client) CredentialFingerprint() [32]byte { return c.cred.fingerprint() }
+
 // Close drops the idle connections of the client's pools.
 func (c *Client) Close() {
 	c.http.CloseIdleConnections()

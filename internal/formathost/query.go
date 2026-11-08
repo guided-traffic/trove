@@ -48,6 +48,7 @@ func (r *remote) Query(ctx context.Context, rq *formats.Request, q formats.Query
 			return ra.AcceptResponse(formats.Path{Path: path}, resp)
 		},
 		TTL: q.TTL, MaxBytes: f.Descriptor().MaxDocumentBytes, Mode: modeOf(rq),
+		Auth:     handshakeOf(formats.RemoteCapabilities(f.Descriptor().ID), rq.Repo, settings, nil),
 		Populate: &populate{h: r.h, rq: rq, coord: populateCoordinate(rq, f.Classify(q.Path), q.Path)},
 		Caller: proxy.CallerFacts{
 			Principal: pr.ID, Actor: edge.ActorFrom(pr), Source: httpserver.SourceFrom(ctx), Endpoint: rq.Subject.Endpoint,

@@ -70,14 +70,14 @@ type Authenticator interface {
 	// TokenRequest reads an upstream 401 for path p. ok false: no handshake, the 401 stands. key names the token in the
 	// replica's cache (with the repository id and its config version). The engine adds the credential by the host rule of
 	// R-REPO-033, sends req through the repository's upstream client, and retries the original request once.
-	TokenRequest(ctx context.Context, rc RemoteContext, p Path, status int, challenge http.Header) (req *http.Request, key string, ok bool, err error)
+	TokenRequest(ctx context.Context, rc RemoteContext, orig *http.Request, p Path, status int, challenge http.Header) (req *http.Request, key string, ok bool, err error)
 	// ReadToken reads the realm's answer (the engine bounds it at 64 KiB): the Authorization value to retry with and its
 	// lifetime (0: 60 s).
 	ReadToken(ctx context.Context, rc RemoteContext, status int, body []byte) (authorization string, ttl time.Duration, err error)
 }
 type Revalidator interface {
 	// RevalidationRequest returns the request (OCI: a HEAD) for an expired stored document; ok false: the engine's conditional GET.
-	RevalidationRequest(ctx context.Context, rc RemoteContext, p Path, variant string, stored RemoteDocument) (req *http.Request, ok bool, err error)
+	RevalidationRequest(ctx context.Context, rc RemoteContext, p Path, variant string, stored RemoteDocument, get *http.Request) (req *http.Request, ok bool, err error)
 	// Unchanged reads its answer: true renews the stored document's freshness without a body; false makes the engine fetch it.
 	Unchanged(p Path, stored RemoteDocument, resp *http.Response) bool
 }
@@ -161,7 +161,7 @@ whether it needs the integration stack (shared `trove-it-*`, never `integration-
 | WP5 | OCI uploads and mount | `voltagent-infra:docker-expert` | R-OCI-011, R-OCI-012 | `internal/formats/oci/handlers_upload.go`, `handlers_mount.go` | WP0, WP1 (port), WP4 (routes file is WP4's: WP5 adds its handlers through a registration function WP0 declares) | yes | no |
 | WP6 | Remote engine: handshake, HEAD revalidation, credential hosts, quota header (the media-type column, `RemoteDocument.MediaType` and `Prepared.Aliases` were built by WP0) | `voltagent-lang:golang-pro` | R-OCI-021 (engine side), R-OCI-022 (engine side), R-OCI-025 (parser), R-REPO-033/054 edits | `internal/proxy/` (`authenticator.go`, `revalidate.go`, the token cache per replica, `upstream/` rate-limit parse of `0;w=`), `internal/formathost/remote.go` (wire `RemoteCaps.Auth/Revalidate`), `internal/repository/validate_remote.go` (`DefaultCredentialHosts`) | WP0 | yes | no |
 | WP7 | Counting stub registry | `voltagent-qa-sec:test-automator` | R-OCI-035 (stub) | `test/ocistub/` (new), Makefile pin `OCI_STUB_IMAGE`, `deploy/dev/ocistub.yaml` | WP0 (names only) | no | no |
-| WP8 | OCI remote adapter | `voltagent-infra:docker-expert` | R-OCI-021 to R-OCI-025 | `internal/formats/oci/remote*.go` (`UpstreamRequest` with the namespace prefix and `library/`, `Accept`, `AcceptResponse`, `PrepareFill` digest checks, `FillInspector`/`OnFill` rows, `BeforeArtifact`, `Authenticator`, `Revalidator`, tags list document, referrers pass-through), registers class `remote` | WP4, WP6, WP7 | yes | no |
+| WP8 | OCI remote adapter | `voltagent-infra:docker-expert` | R-OCI-021 to R-OCI-025 | `internal/formats/oci/remote*.go` (`UpstreamRequest` with the namespace prefix and `library/`, `Accept`, `AcceptResponse`, `PrepareFill` digest checks, `FillInspector`/`OnFill` rows, `BeforeArtifact`, `Authenticator`, `Revalidator`, tags list document, referrers pass-through), registers class `remote`; its `TokenRequest` takes the scope from `orig` and `p` and only the realm and the service from the challenge (Q-OCI-82); the upstream test of an OCI remote (R-REPO-024) runs no handshake: WP8 sets the probe path (`v2/`) and decides what it reports, recommended: a `401` with a Bearer challenge is "reachable, token handshake required" and does not read as `authenticated: false` | WP4, WP6, WP7 | yes | no |
 | WP9 | OCI virtual adapter | `voltagent-infra:docker-expert` | R-OCI-027, R-OCI-028 | `internal/formats/oci/virtual*.go` (tag order by member, digest tiers, union lists, the link step via `Ingestor.Link`, writes to the deploy target), registers class `virtual` | WP4, WP5, WP8 | yes | no |
 | WP10 | Mirror | `voltagent-lang:golang-pro` + `voltagent-infra:docker-expert` | R-OCI-026, Mirror discovery, R-REPO-050/051 edits | `internal/formats/oci/mirror*.go` (lister: `listing`, `names`, plan with tags/platforms/attestations), `internal/mirror/policy.go` (`SelectItems` counts versions), `internal/formathost/mirror_host.go` (`Artifact`), `internal/repository/validate_mirror.go` (`<format>.mirror` restricted), `test/integration/mirror/oci_test.go` | WP6, WP7, WP8 | yes | no |
 | WP11 | e2e harness and CI | `voltagent-qa-sec:test-automator` + `voltagent-infra:kubernetes-specialist` + `voltagent-infra:devops-engineer` | R-OCI-035 (e2e), R-OCI-032 (scatter, Valkey stopped), R-OCI-011 drain, R-REPO-058/059 for OCI | `test/e2e/oci_*_test.go`, `test/e2e/ociclients/` (Dockerfile or pinned images: `docker:<v>-dind` with Buildx, `quay.io/podman/stable:<v>`; Makefile pins and `check-pins`), `deploy/dev/oci-clients.yaml` (namespace `trove-e2e-clients` with Pod Security `privileged`, dev CA in `certs.d`), `deploy/dev/values-*.yaml` additions (a bound host for the Docker Engine mirror), `deploy/dev/kind.yaml` only if the node's containerd needs `config_path` for the Kubernetes pull row, `test/e2e/mirror_*` additions, `.github/workflows/release.yml` (set `oci` per change; closing-run legs), `.github/workflows/performance.yml` (`oci-long` nightly) | WP3, WP4, WP5, WP7, WP8, WP9, WP10 (rows join as their packages land) | — | **yes** |
@@ -277,3 +277,17 @@ WP0 ──┬─ WP1 ─────────────┐
   WITHHOLDS: writes the mark, deletes nothing), `trove admin oci reinstate <p>/<r> <name>@<digest>` (event `oci.reinstate`, not journaled)
   and the 409 `DENIED` of a push of a withheld digest; a remote's manifest rows are removed by the hook with the alias item
   `<name>/_manifests/<digest>` (WP8); a hook's cascade follows the event's reason once the trash can exists.
+
+## WP6 as built (the remote engine's handshake and revalidation)
+
+- The engine calls `Authenticator` and `Revalidator` (ADR-165): `proxy.Authenticator`/`proxy.Revalidator` are the engine's views,
+  `formathost` adapts the format's; `proxy.QueryRequest.Auth` and `proxy.Get.Auth` carry the handshake of a pass-through query and a
+  mirror's discovery request (`passUpstream.Get` passes the format's, WP10 needs no more). `Exchange` runs no handshake. `Revalidator.RevalidationRequest` receives the engine's GET (`get`) and derives the request from it.
+- The engine remembers the last challenge per repository and configuration version and asks the format before a request (Q-OCI-82, superseding Q-OCI-80): only the first request of a replica is challenged. A token goes to the
+  upstream origin only (`outbound.WithAuthorization`, Q-REPO-255). `authMode: bearer` runs no handshake.
+- WP8 implements `TokenRequest(ctx, rc, orig, p, status, challenge)` (the realm and the service from the challenge, the scope from `orig` and `p`) and
+  `ReadToken` (the token and `expires_in`); it names `auth.docker.io` and the confirmed blob hosts in `DefaultExtraHosts` and
+  `DefaultCredentialHosts` (the repository validation proposes the credential hosts with `sendCredentials: true`).
+- The generic test adapter of `internal/proxy/proxytest` (`Auth`, `HeadRevalidation`, `Tokens`, `TokenService`, `Challenge`, `As`) is what WP8's
+  adapter tests may copy; the stub registry of WP7 is the OCI-shaped counterpart.
+- Security: [remote-repositories.md](../security/remote-repositories.md) (the handshake section, H-610 to H-612).

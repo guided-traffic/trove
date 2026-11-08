@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -126,6 +127,10 @@ type Engine struct {
 	// queries holds the answers of pass-through queries (query.go); nil when
 	// proxy.query_cache_bytes is 0.
 	queries *cache.Cache[queryKey, *queryEntry]
+	// tokens holds the tokens of the upstream handshakes (authenticator.go); nil for the engine of a view.
+	tokens *cache.Cache[tokenKey, tokenEntry]
+	// challenges holds the last challenge of an upstream per repository and configuration version (authenticator.go).
+	challenges *cache.Cache[challengeKey, http.Header]
 
 	base   context.Context
 	cancel context.CancelFunc
@@ -142,6 +147,10 @@ type Engine struct {
 
 	qmu    sync.Mutex
 	qcalls map[queryKey]*queryCall
+
+	// amu guards acalls: the requests to a token service in flight, by token (authenticator.go).
+	amu    sync.Mutex
+	acalls map[tokenKey]*tokenCall
 
 	keys sync.Map // repository id -> qualified name, for the gauge of repositories no request touched
 
@@ -205,7 +214,7 @@ func newEngine(o Options, readOnly bool) (*Engine, error) {
 		o: o, log: o.Log, m: newMetrics(o.Metrics),
 		slots:   newSlots(o.Config.MaxConcurrentFetches, o.Replicas),
 		flights: map[string]*flight{}, probes: map[int64]*atomic.Bool{}, ensured: map[int64]bool{},
-		throttled: map[string]time.Time{}, qcalls: map[queryKey]*queryCall{}, unrepaired: map[string]time.Time{},
+		throttled: map[string]time.Time{}, qcalls: map[queryKey]*queryCall{}, acalls: map[tokenKey]*tokenCall{}, unrepaired: map[string]time.Time{},
 	}
 	e.slots.now = o.Now
 	e.readOnly = readOnly
@@ -231,6 +240,7 @@ func newEngine(o Options, readOnly bool) (*Engine, error) {
 		})
 	}
 	e.registerQueries()
+	e.registerTokens()
 	return e, nil
 }
 

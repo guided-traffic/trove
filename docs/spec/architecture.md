@@ -490,6 +490,7 @@ connection through an edge proxy that balances per request.
 | Negative cache of unknown repository names, a project key with a repository key (R-ARCH-011 step 2) | Until evicted, at most `SafetyTTL` | A copy of a PostgreSQL miss. Every `repo_config` change evicts it on every replica within the bound of R-ARCH-018, so a new repository answers `404` on a replica only if that replica missed the name shortly before the creation, and for at most that bound ([api-and-ui.md](api-and-ui.md) R-API-052). |
 | Negative-cache L1 (R-ARCH-030) | At most the checked lifetime of the Valkey entry it copies | A copy of an upstream `404` or `410`, not of PostgreSQL state. Any replica may answer from such an entry or ask the upstream within `notFoundTtlSeconds` ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-028), so both answers are the same contract; an invalidation applies to the L1 as to Valkey. |
 | Caches of external documents: OIDC discovery and JWKS of the login providers ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-004) | Until their refresh | A copy of what the provider publishes. An unknown `kid` makes the replica refetch, at most once per provider and replica per 60 s, so right after a provider signs with a new key, one replica may reject a login that another accepts, for at most that throttle. A provider that publishes a key before signing with it never opens this window. The GitLab issuer keys live in PostgreSQL and are a registered cache above ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-003). On an unknown `kid`, a CI issuer re-reads its `ci_issuer_keys` row at most once per issuer and replica per `cluster.epoch_poll_interval`, then refetches under the same kind of per-replica throttle (`ci.signing_keys.unknown_kid_refresh_interval`). A key that any replica has stored is accepted on every replica within one poll interval, and a forged `kid` costs no PostgreSQL query of its own ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-003, Q-CI-12). |
+| The tokens of upstream handshakes and the last challenge of each repository, the registered caches `proxy_upstream_tokens` and `proxy_upstream_challenges` ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-033, [formats/oci.md](formats/oci.md) R-OCI-021, [Q-ARCH-350](#q-arch-350--the-tokens-of-upstream-handshakes-are-a-registered-per-replica-cache-never-stored)) | A token until 10 s before the lifetime the token service named (60 s when it named none), at most one hour; a challenge 5 minutes, or until evicted or invalidated | The token authenticates the repository's request to its upstream; any replica may use its own or ask the token service for another, so both answers meet the same contract. The key carries the repository's configuration version, a digest of the token service and of the credential in effect, and a change of `repo_config` drops the entries of the older versions. A challenge is a hint and never the answer: it is learned from the origin only, after its token was accepted, and forgotten when it fails. Both caches are shared by the repositories of the replica, bounded by count ([H-613](../security/remote-repositories.md#h-613--one-upstream-can-evict-the-tokens-of-other-repositories-from-a-replicas-cache)). Neither is written to PostgreSQL or Valkey. |
 | Pass-through answers of remote repositories, the registered cache `proxy_query_results` (R-ARCH-013 step 6, Q-ARCH-270): the forwarded NuGet search results ([formats/nuget.md](formats/nuget.md) R-NUGET-016) | At most the period the format asks (`nuget.search.remote_result_ttl`), and never more than one hour | A copy of an upstream answer, stored unfiltered; patterns, claims and permissions are applied on every use. Any replica may answer from its copy or ask the upstream within the period, so both answers meet the same contract. |
 | Break-glass verifier and OIDC client secrets read from Secret files, and the loaded break-glass file content ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-004, R-AUTH-014) | Until the file changes | Replicas switch at different moments on a rotation. The session end of a break-glass rotation is one PostgreSQL transaction, so no replica keeps a session that another has ended (R-AUTH-014, Q-AUTH-14). |
 | Pending-flow count ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-038) | At most 5 s old | A copy of a PostgreSQL count that bounds a `503` decision. |
@@ -1447,13 +1448,16 @@ type FactsGate interface {
 	BeforeArtifactWith(ctx context.Context, h Host, rq *Request, p Path, have ServeFacts) (Digests, ServeFacts, error)
 }
 
-// Authenticator (orig is the upstream request that was answered 401, whose URL carries the scope of a catalog or a tags list; p is its
-// repository path, the zero Path for the engine's Get, Query and Exchange): the upstream authenticates with a token handshake, the 401 challenge and the realm of a container
-// registry (R-OCI-021, Q-OCI-13). The format reads the protocol and the engine does the I/O: on a 401 for path p it asks
-// TokenRequest for the realm request (ok false: no handshake, the 401 stands), adds the repository's credential by the host
-// rule of R-REPO-033, sends the request through the repository's upstream client, hands the answer (bounded at 64 KiB) to
-// ReadToken and retries the original request once with the Authorization value it returns. key names the token in the
-// replica's cache, which the engine scopes by the repository id and its configuration version; a ttl of 0 is 60 s.
+// Authenticator: the upstream authenticates with a token handshake, the 401 challenge and the realm of a container registry
+// (R-OCI-021, Q-OCI-13). The format reads the protocol and the engine does the I/O. The engine asks TokenRequest(orig, p,
+// challenge) for the realm request (ok false: no handshake, the 401 stands), adds the repository's credential by the host rule of
+// R-REPO-033, sends the request through the repository's upstream client, hands the 2xx answer (bounded at 64 KiB) to ReadToken and
+// retries the original request once with the Authorization value it returns. The engine asks on a 401 and, with the last challenge
+// it remembered for the repository's configuration version, before a request (Q-OCI-82). The binding rule: the format takes the
+// scope (and so the key) from orig and p, and only the realm and the service from the challenge. orig is the request that was
+// answered 401 or is about to be sent, p its repository path, the zero Path for the engine's Get and Query. key names the token in
+// the replica's cache, which the engine scopes by the repository id, its configuration version, the token service and the
+// credential in effect; it is at most 1 KiB; a ttl of 0 is 60 s.
 type Authenticator interface {
 	TokenRequest(ctx context.Context, rc RemoteContext, orig *http.Request, p Path, status int, challenge http.Header) (req *http.Request, key string, ok bool, err error)
 	ReadToken(ctx context.Context, rc RemoteContext, status int, body []byte) (authorization string, ttl time.Duration, err error)
@@ -1461,11 +1465,12 @@ type Authenticator interface {
 
 // Revalidator: an expired stored document is revalidated by a request of the format's own kind (OCI: a HEAD whose digest
 // header says whether a tag still points at the stored manifest, R-OCI-022). RevalidationRequest returns it (ok false: the
-// engine's conditional GET); Unchanged reads the answer: true renews the stored document's freshness without a body, false
-// makes the engine fetch the document. The engine reads a status that is not 2xx itself (401 runs the handshake, 404 and 410 are
+// engine's conditional GET; get is the GET the engine would send, and the request derives from it: the same URL and Accept);
+// Unchanged reads the answer: true renews the stored document's freshness without a body, false makes the engine fetch the
+// document with an unconditional GET. The engine reads a status that is not 2xx itself (401 runs the handshake, 404 and 410 are
 // "gone", 429 and 5xx follow the stale rules) and never asks. RemoteDocument carries the stored SHA-256 and media type for the comparison.
 type Revalidator interface {
-	RevalidationRequest(ctx context.Context, rc RemoteContext, p Path, variant string, stored RemoteDocument) (req *http.Request, ok bool, err error)
+	RevalidationRequest(ctx context.Context, rc RemoteContext, p Path, variant string, stored RemoteDocument, get *http.Request) (req *http.Request, ok bool, err error)
 	Unchanged(p Path, stored RemoteDocument, resp *http.Response) bool
 }
 
@@ -9479,6 +9484,25 @@ The downloads that are GitHub release assets are: the buildx archive of [install
 
 **Not verified:** a GitHub Actions run of the authenticated path with the job's `github.token` (the request shape is `actions/setup-go`'s, in the same Actions service, but not run here); the release host's behaviour during a future incident; the verification of the cloudnative-pg provenance file (not implemented, no publisher key is pinned).
 
+### Q-ARCH-350 · The tokens of upstream handshakes are a registered per-replica cache, never stored
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the remote engine carries out the token handshake of a format (R-OCI-021, R-REPO-033) and reuses the token until it expires.
+R-ARCH-032 lists every kind of per-replica state, and a package-level map is refused by the state rule.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Registered caches `proxy_upstream_tokens` (keyed by repository, configuration version and a digest of the format's key, the token service and the credential) and `proxy_upstream_challenges` (by repository and configuration version); the concurrent handshakes of a key share one request in an engine field (chosen) | The cache of R-ARCH-018 with its `SafetyTTL` and its change handler | Bounded, flushed with the area, the same pattern as `proxy_query_results`; no package-level state | A token is also in the memory of every replica that used it |
+| (b) A package-level map | A map and a mutex in `internal/proxy` | Simple | R-ARCH-032 forbids it, and nothing would evict it on a change |
+| (c) The token in Valkey, shared by the replicas | One request to the realm for the cluster | Fewer requests | A token is a credential: R-OCI-032 forbids it in Valkey and PostgreSQL, and an outage of Valkey would become a failure of the handshake |
+
+**Choice:** (a).
+
+**Rationale:** a token is cheap to obtain and valid for minutes; a replica that has none asks, and the asking is the only cost of not
+sharing. The development agent would revisit it if a registry rates the token requests of a cluster that has many replicas.
+
+**Applied in the spec:** the R-ARCH-032 table and the contract block of R-ARCH-008 (Q-OCI-82). Code: `registerTokens` in [authenticator.go](../../internal/proxy/authenticator.go).
 
 ## What this does not cover
 

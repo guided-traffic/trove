@@ -328,7 +328,8 @@ func (f *fetcher) notModified(ctx context.Context, resp *http.Response) flightRe
 	e, rq := f.e, f.rq
 	rem := rq.Remote
 	// The upstream log record completes when the body is closed: the status of the answer the client gets is set before.
-	f.box.set(CacheStatus{Forwarded: "stale", FwdStatus: http.StatusNotModified}.Header())
+	// A 304, or the 2xx of a format's own revalidation request that says the document is unchanged (R-OCI-022).
+	f.box.set(CacheStatus{Forwarded: "stale", FwdStatus: resp.StatusCode}.Header())
 	_ = resp.Body.Close()
 	f.exchanged() // no body is transferred: the upstream's share ends (Q-REPO-235)
 	f.success(ctx)
@@ -355,8 +356,8 @@ func (f *fetcher) notModified(ctx context.Context, resp *http.Response) flightRe
 	if err != nil || !found {
 		return flightResult{err: firstNonNil(err, errs.E(errs.Unavailable, errs.CodeUnavailable, "The stored document disappeared during its revalidation; retry."))}
 	}
-	cs := CacheStatus{Forwarded: "stale", FwdStatus: http.StatusNotModified}
-	return flightResult{doc: e.document(en, cs), status: http.StatusNotModified}
+	cs := CacheStatus{Forwarded: "stale", FwdStatus: resp.StatusCode}
+	return flightResult{doc: e.document(en, cs), status: resp.StatusCode}
 }
 
 func firstNonNil(a error, b error) error {

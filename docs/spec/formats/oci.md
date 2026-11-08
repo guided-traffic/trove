@@ -690,9 +690,16 @@ Priority: **P1** · Covers: PKG-DOCKER-033, PKG-DOCKER-038, PKG-OCI-003
   `extraHosts` entry (`foreign_host_denied` otherwise); the repository's credential goes to the realm as Basic only when that
   host is the upstream origin or an `extraHosts` entry with `sendCredentials: true` (R-REPO-033), otherwise the request is
   anonymous. A `Basic` challenge is answered with the repository's credential under the same host rule.
-- **Upstream tokens** are kept in the replica's memory per repository, configuration version and scope, until 10 s before the
-  answer's `expires_in` (60 s when absent); they are never written to PostgreSQL or Valkey (R-OCI-032). A 401 with a cached
-  token drops it and runs the handshake once more.
+- **Upstream tokens** are kept in the replica's memory per repository, configuration version, scope, token service and credential,
+  until 10 s before the answer's `expires_in` (60 s when absent); they are never written to PostgreSQL or Valkey (R-OCI-032). The
+  engine remembers the last challenge of the repository and asks the format before a request, so that only the first request of a
+  replica and configuration version is challenged ([Q-OCI-82](#q-oci-82--the-engine-asks-the-format-before-a-request-with-the-last-challenge-so-only-the-first-request-of-a-replica-is-challenged)): the
+  adapter takes the scope from the request and only the realm and the service from the challenge, the engine uses a token of that
+  scope from the cache or fetches one first, and sends the request with it. The remembered challenge is only a hint and never the
+  answer: when the pre-emptive handshake fails the request is sent without a token, and a `401` runs the handshake with its own
+  challenge, which replaces the remembered one. A cached token that the registry refuses is dropped and the handshake runs once more;
+  a fresh token that is refused leaves the `401` as the answer when the `401`'s own challenge names the same token service and key.
+  The token goes to the registry's origin only (R-REPO-033).
 - **Default extra hosts** proposed for the well-known upstream (R-REPO-024): `auth.docker.io` with `sendCredentials: true`
   (Docker Hub's realm), and, without credentials, the hosts Docker Hub redirects blob downloads to. The remote work package
   confirms the current redirect hosts against Docker Hub and records them here before the default ships (Q-OCI-13); the catalog
@@ -716,7 +723,9 @@ Priority: **P1** · Covers: PKG-DOCKER-017, PKG-DOCKER-034
   type), and fresh for the metadata period (# default (proposed) 300 s).
 - **Revalidation by `HEAD`** (Q-OCI-13). An expired tag document is revalidated with `HEAD` on the same URL: a
   `Docker-Content-Digest` equal to the stored manifest's digest renews its freshness without a body; another digest, or an
-  answer without the header, fetches the manifest with `GET`. Docker Hub counts `GET` of manifests against its pull limit and
+  answer without the header, fetches the manifest with a `GET` that carries no validator of the stored copy; a `404`, `410`, `429` or `5xx` to the `HEAD` is read by the engine's
+  rules for a failed revalidation ([Q-OCI-81](#q-oci-81--a-head-that-is-not-a-2xx-is-the-engines-answer-and-a-2xx-that-is-not-unchanged-is-a-get)).
+  Docker Hub counts `GET` of manifests against its pull limit and
   not `HEAD` ([Docker Hub usage](https://docs.docker.com/docker-hub/usage/pulls/)), so an unchanged tag costs no pull.
 - A manifest fetched by tag is also served by its digest from the cache: a later `GET …/manifests/<digest>` sends no upstream
   request. The format names the digest path as an alias of the fetched document (`Prepared.Aliases`), and the engine enters it in
@@ -1857,6 +1866,91 @@ Status: **Decided by the development agent** — selected from the options below
 **Rationale:** An item removal already runs the format's hook; a metadata eviction does not. The development agent would revisit it if a remote keeps a manifest that has no alias item.
 
 **Applied in the spec:** [R-OCI-007](#r-oci-007--storage-layout-packages-and-the-formats-tables), [R-OCI-022](#r-oci-022--remote-repository-manifests-by-tag-and-by-digest).
+
+### Q-OCI-80 · The token cache is read after the challenge, and a rejected cached token is replaced once
+
+Status: **Superseded by [Q-OCI-82](#q-oci-82--the-engine-asks-the-format-before-a-request-with-the-last-challenge-so-only-the-first-request-of-a-replica-is-challenged)** (decided by the development agent; the owner reviews it at the walkthrough). The text below is what was decided first.
+
+Context: the key of a token is the scope the format reads from the registry's challenge (`repository:<name>:pull`); the realm and the
+service come from the same challenge. The contract (`Authenticator.TokenRequest`) therefore names the key only after a `401`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Ask the format after the `401`, look the key up, retry with the cached token without a request to the token service; a cached token that the retry shows rejected is dropped and one fresh handshake runs (chosen) | Every request to a registry that wants a token costs one challenged request | The contract stays as WP0 froze it; the engine guesses no scope; no token of another scope is sent | One extra request to the registry per request; the registry counts a `401` |
+| (b) The engine remembers the key of the last handshake per repository and sends that token first | The first request carries a token | No challenged request when the guess is right | The guess is wrong for every image but the last; a token of another scope goes to the registry; the engine would have to know what a scope is |
+| (c) A contract member that names the key before the request | The format derives the key from the path | No challenged request | The realm and service still come from a challenge, so the token request cannot be built without one |
+
+**Choice:** (a).
+
+**Rationale:** the acceptance criterion of R-OCI-021 is that a second pull within the token's lifetime sends no token request, which (a)
+meets; the challenged request is a bodiless `401` that no registry counts against a pull quota. The development agent would revisit it if a
+registry rates unauthenticated requests.
+
+**Applied in the spec:** [R-OCI-021](#r-oci-021--remote-repository-upstream-and-its-token-handshake). Code: `Engine.token` and
+`Engine.authenticate` in [authenticator.go](../../../internal/proxy/authenticator.go).
+
+### Q-OCI-81 · A HEAD that is not a 2xx is the engine's answer, and a 2xx that is not unchanged is a GET
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `Revalidator.Unchanged` reads the answer of the format's revalidation request. The contract says the engine reads a status that
+is not 2xx itself.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A 2xx goes to `Unchanged`: true renews the freshness, false fetches with the engine's `GET`; any other status follows the rules of a conditional `GET` (`404` and `410` mark the document gone, `429` and `5xx` serve the stored copy and count toward the circuit, a `401` runs the handshake first) (chosen) | One status table for both requests | The format reads only what it understands; a `HEAD` is never treated differently from a `GET` for failures | A `404` to the `HEAD` is final, without a confirming `GET` |
+| (b) A `HEAD` that is not 2xx falls back to the `GET` | The `GET` decides | A proxy that answers `HEAD` badly cannot break a pull | A tag that is gone costs a `GET` that counts against the pull limit, which the `HEAD` exists to avoid |
+
+**Choice:** (a). The renewal is recorded with the `HEAD`'s status in the `Cache-Status` (`fwd=stale; fwd-status=200`).
+
+**Rationale:** a registry that answers `HEAD` and `GET` differently for the same URL violates the distribution specification. The
+development agent would revisit it if Docker Hub or another well-known registry does.
+
+**Applied in the spec:** [R-OCI-022](#r-oci-022--remote-repository-manifests-by-tag-and-by-digest). Code: `fetcher.revalidate` in
+[revalidate.go](../../../internal/proxy/revalidate.go).
+
+### Q-OCI-82 · The engine asks the format before a request with the last challenge, so only the first request of a replica is challenged
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Supersedes [Q-OCI-80](#q-oci-80--the-token-cache-is-read-after-the-challenge-and-a-rejected-cached-token-is-replaced-once).
+
+Context: Q-OCI-80 read the token cache only after a `401` had named the key, so every request to a registry went out without a token,
+was challenged and was sent again. The architecture review of the first build (a separate agent) showed what that costs, and that the
+contract allows better: `TokenRequest` receives the request (`orig`) and a challenge, and the realm and the service of a challenge do
+not depend on the request.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Ask after the `401` only (Q-OCI-80) | Every request is challenged once | The contract as WP0 froze it; nothing remembered | About twice the requests to the registry (below); the repository's long-lived credential goes to the registry on every challenged request; half of `trove_remote_upstream_requests_total` for a registry remote is `401`; an overall abuse limit per address that counts every request, `401` included, is met sooner |
+| (b) Remember the last challenge per repository and configuration version; before a request call `TokenRequest(orig, p, rememberedChallenge)`, attach a token the replica holds under the key it returns, else fetch one first; a rejected pre-emptive token falls into the handshake of the `401`'s own challenge; any failure of the pre-emptive step sends the request without a token (chosen) | Only the first request of a replica and configuration version is challenged | No signature change; the existing fallback loop covers a stale challenge; the credential goes to the registry once | The contract needs one binding sentence: the format takes the scope from `orig` and `p`, and only the realm and the service from the challenge; a token is fetched for a request the registry might have served anonymously |
+| (c) Use only tokens that are already cached, never fetch one pre-emptively | A cache hit saves the challenge | Simpler | Saves nothing on a cold pull of a new image: every layer of it is a new scope |
+
+Cost for Docker Hub (a token lives 300 s, the engine uses it for 290 s; counted, not measured):
+
+| Case | (a) | (b) |
+|---|---|---|
+| Cold pull of a new image (an index, a platform manifest, a config and 7 layers) | 2 × 10 requests to the registry and 1 token request: 21 | 10 and 1: 11 (one more for the first request of the replica) |
+| One tag revalidated by `HEAD` every 300 s, its token expired | `HEAD` 401, token request, `HEAD` 200: 3 | token request, `HEAD`: 2 |
+| Further tags of the same image within 290 s | 2 each | 1 each |
+
+**Choice:** (b). The binding contract sentence is on `formats.Authenticator` and in R-ARCH-008: the format takes the scope (and so the
+key) from `orig` and `p`, and only the realm and the service from the challenge. A format that reads the scope from the challenge is
+wrong, because the remembered challenge belongs to an earlier request.
+
+**Rationale:** the challenged request is the cost of a design that learns the scope from the answer, and the contract does not need
+that. The remembered challenge is a hint and never the answer: a registry that moves its token service refuses the first pre-emptive
+token, and the `401`'s own challenge is followed (one handshake, a different key) and remembered once its token is accepted; a token
+service that is gone fails the pre-emptive step, which forgets the challenge and sends the request without a token, so the `401` runs
+the normal handshake. A challenge is remembered only from the upstream's origin (not from a redirect target such as a blob host) and
+only after the token it led to was accepted, and only a request to the origin is sent with a pre-emptive token. It is kept per
+configuration version (a changed URL or credential asks again), for 5 minutes, and is bounded at 8 KiB; 5 minutes bound what a wrong
+remembered challenge can cost even if everything else fails, and a registry that is used keeps relearning it. A `401` that stands (a refused fresh token with the same key) forgets the remembered challenge too, which only costs the next request one challenged request. The development agent would revisit it for a registry that serves some paths anonymously and some with a token (the
+pre-emptive token request is then wasted for the anonymous ones), or if a registry rejects a token sent with a request that was not
+challenged.
+
+**Applied in the spec:** [R-OCI-021](#r-oci-021--remote-repository-upstream-and-its-token-handshake), R-REPO-033, R-ARCH-008 and R-ARCH-032 (the cache of challenges) in
+[architecture.md](../architecture.md). Code: `Engine.preemptive`, `Engine.token`, `Engine.authenticate` in
+[authenticator.go](../../../internal/proxy/authenticator.go). Tests: `TestR_REPO_033_SecondRequestOfAColdPullCarriesItsTokenWithoutAChallenge`,
+`TestR_REPO_033_ARememberedChallengeBelongsToItsConfigurationVersion`, `TestR_REPO_033_RejectedPreemptiveTokenIsReplacedOnce`.
 
 ## What this does not cover
 

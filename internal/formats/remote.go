@@ -182,21 +182,29 @@ type MirrorLister = discover.Lister
 // 401 challenge and the realm of a container registry (R-OCI-021, Q-OCI-13). Register reads it off the adapter once
 // ([RemoteCapabilities]).
 //
-// The format reads the protocol; the engine does the I/O. On a 401 of the upstream for path p the engine asks
-// TokenRequest, adds the repository's credential to the request by the host rule of R-REPO-033, sends it through the
-// repository's upstream client, hands the bounded answer to ReadToken and retries the original request once with the
-// Authorization value it returns. The token is kept in the replica's cache under key.
+// The format reads the protocol; the engine does the I/O. The engine asks TokenRequest for the realm request and retries the
+// original request once with the Authorization value ReadToken returns; it sends the request through the repository's upstream
+// client, so the credential goes to the realm by the host rule of R-REPO-033 and the token to the upstream origin only. The token
+// is kept in the replica's cache under key.
+//
+// The engine asks on a 401 and before a request: it remembers the last challenge of the repository (per configuration version) and
+// calls TokenRequest with it for a request that has not been answered 401 yet, to find a token it holds or to fetch one first
+// (Q-OCI-82). The binding rule: the format takes the scope (and so the key) from orig and p, and only the realm and the service
+// from the challenge. A format that reads the scope from the challenge is wrong, because the remembered challenge belongs to an
+// earlier request.
 type Authenticator interface {
-	// TokenRequest reads an upstream 401. orig is the upstream request that was answered (its method, URL and query: the scope of
-	// a registry token for the catalog or a tags list is read from it, not from a repository path), p the repository path the
-	// request was made for. A fetch of a document or an artifact of the repository has its path; the engine's Get (a mirror pass),
-	// Query and Exchange have none, so p is the zero Path and orig is all there is. ok false: the format knows no handshake for
-	// this answer, and the 401 stands. key names the token in the replica's cache (the engine adds the repository id and its
-	// configuration version). The engine adds the credential by the host rule of R-REPO-033, sends req through the repository's
-	// upstream client, and retries the original request once.
+	// TokenRequest reads an upstream challenge. orig is the upstream request that was answered 401, or is about to be sent (its
+	// method, URL and query: the scope of a registry token for the catalog or a tags list is read from it, not from a repository
+	// path), p the repository path the request is made for. A fetch of a document or an artifact of the repository has its path;
+	// the engine's Get (a mirror pass) and Query have none, so p is the zero Path and orig is all there is. challenge is the
+	// answer of the upstream, or the last one the engine saw for the repository; the realm and the service come from it, the scope
+	// and so key from orig and p. ok false: the format knows no handshake for this request, and the 401 stands. key names the
+	// token in the replica's cache (the engine adds the repository id, its configuration version, the token service and the
+	// credential in effect) and is at most 1 KiB. The engine adds the credential by the host rule of R-REPO-033, sends req through
+	// the repository's upstream client, and retries the original request once.
 	TokenRequest(ctx context.Context, rc RemoteContext, orig *http.Request, p Path, status int, challenge http.Header) (req *http.Request, key string, ok bool, err error)
-	// ReadToken reads the realm's answer (the engine bounds it at 64 KiB): the Authorization value to retry with and its
-	// lifetime (0: 60 s).
+	// ReadToken reads the realm's 2xx answer (the engine bounds it at 64 KiB and answers every other status itself): the
+	// Authorization value to retry with, a valid header field value, and its lifetime (0: 60 s).
 	ReadToken(ctx context.Context, rc RemoteContext, status int, body []byte) (authorization string, ttl time.Duration, err error)
 }
 
@@ -205,10 +213,12 @@ type Authenticator interface {
 // points at the stored manifest, R-OCI-022). Register reads it off the adapter once ([RemoteCapabilities]).
 type Revalidator interface {
 	// RevalidationRequest returns the request (OCI: a HEAD) for an expired stored document; ok false: the engine's
-	// conditional GET.
-	RevalidationRequest(ctx context.Context, rc RemoteContext, p Path, variant string, stored RemoteDocument) (req *http.Request, ok bool, err error)
+	// conditional GET. get is the GET the engine would send for the document, built by UpstreamRequest with the URL map
+	// applied and without validators: the request derives from it (the same URL and Accept), so that the answer describes the
+	// representation the GET would fetch.
+	RevalidationRequest(ctx context.Context, rc RemoteContext, p Path, variant string, stored RemoteDocument, get *http.Request) (req *http.Request, ok bool, err error)
 	// Unchanged reads its answer: true renews the stored document's freshness without a body; false makes the engine
-	// fetch it. The engine reads a status that is not 2xx itself and never asks: a 401 runs the handshake, a 404 or 410 is
+	// fetch it with an unconditional GET. The engine reads a status that is not 2xx itself and never asks: a 401 runs the handshake, a 404 or 410 is
 	// the upstream's "gone" of R-REPO-029, a 429 or a 5xx follows the stale rules and the circuit.
 	Unchanged(p Path, stored RemoteDocument, resp *http.Response) bool
 }

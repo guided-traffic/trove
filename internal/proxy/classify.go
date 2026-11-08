@@ -29,6 +29,9 @@ type failure struct {
 	sourceNetwork bool
 	// egress: counts trove_remote_egress_denied_total.
 	egress bool
+	// host is the host a security event names; "" is the host of the fetch's request. A token service's refusal names the
+	// service's host.
+	host string
 }
 
 // classifyStatus maps the status of an upstream response that is neither a success
@@ -78,6 +81,9 @@ func max0(d time.Duration) time.Duration {
 // classifyError maps a failure to send the request or to read its body.
 func (e *Engine) classifyError(rem Remote, target *url.URL, err error, idle bool) failure {
 	host := target.Hostname()
+	if he, ok := asHandshakeError(err); ok {
+		return he.failure() // the token service's failure is the answer; the circuit describes the registry
+	}
 	switch {
 	case idle:
 		return failure{count: true, err: errs.E(errs.UpstreamTimeout, errs.CodeUpstreamTimeout,

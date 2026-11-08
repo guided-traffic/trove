@@ -66,10 +66,21 @@ type fetcher struct {
 	// hold is the slot hold whose repository share the fetch returns when its upstream exchange ends (Q-REPO-235): its own, or
 	// the background slot's when the fetch is the slot's item. Nil for a fetch that holds none or leaves the share to another.
 	hold *slotHold
+	// auth is the handshake of a request that has no adapter of its own (a pass-through query, a pass's request); nil takes the
+	// adapter's, if it has one (authenticator.go). noPath says the request has no repository path to hand the format.
+	auth   Authenticator
+	noPath bool
 	// wait is the wait for the fetch's own slot, reported by its first upstream request as slot_wait_ms; hasWait tells a
 	// fetch that took a slot from one that took none (null).
 	wait    time.Duration
 	hasWait bool
+	// waitReported: a request of the fetch has reported the wait already; the challenged request's retry, a revalidation
+	// request and the GET after it report 0 (Q-REPO-236).
+	waitReported bool
+	// plain is the GET plainRequest built, kept for the request that follows a revalidation.
+	plain *http.Request
+	// unconditional: the next GET carries no validators of the stored copy (a revalidation said the document moved).
+	unconditional bool
 }
 
 // exchanged returns the repository's share of the fetch's slot: its upstream exchange has ended.
@@ -166,6 +177,9 @@ func (f *fetcher) inSlot(ctx context.Context) flightResult {
 			f.stored, f.haveStored = en, true
 		}
 	}
+	if res, done := f.revalidate(ctx); done {
+		return res
+	}
 	req, err := f.request(ctx)
 	if err != nil {
 		return flightResult{err: err}
@@ -247,9 +261,22 @@ func (f *fetcher) discover(ctx context.Context) error {
 	return nil
 }
 
-// request builds the upstream request: the format's, with the foreign-host check,
-// the identity encoding and the validators of the stored copy.
-func (f *fetcher) request(ctx context.Context) (*http.Request, error) {
+// plainRequest builds the upstream request without the validators of a stored copy: the format's, with the URL map applied, the
+// foreign-host check and the identity encoding.
+func (f *fetcher) plainRequest(ctx context.Context) (*http.Request, error) {
+	if f.plain != nil {
+		// Built once per fetch: the format's request and the URL map's transaction are not repeated by the revalidation and the GET.
+		return f.plain.Clone(ctx), nil
+	}
+	req, err := f.buildRequest(ctx)
+	if err != nil {
+		return nil, err
+	}
+	f.plain = req
+	return req.Clone(ctx), nil
+}
+
+func (f *fetcher) buildRequest(ctx context.Context) (*http.Request, error) {
 	rq := f.rq
 	rem := rq.Remote
 	req, err := rq.Adapter.UpstreamRequest(ctx, UpstreamBase{URL: f.cl.Origin()}, rq.Path, rq.Variant)
@@ -275,9 +302,21 @@ func (f *fetcher) request(ctx context.Context) (*http.Request, error) {
 	}
 	req.Header.Del("Authorization") // the client's hop policy alone adds the credential
 	req.Header.Set("Accept-Encoding", "identity")
+	f.target = req.URL
+	return req, nil
+}
+
+// request builds the upstream request: the format's, with the foreign-host check, the identity encoding and the validators of the
+// stored copy.
+func (f *fetcher) request(ctx context.Context) (*http.Request, error) {
+	rq := f.rq
+	req, err := f.plainRequest(ctx)
+	if err != nil {
+		return nil, err
+	}
 	// A stored document whose object is missing or damaged is fetched whole: a 304 would renew an entry that has no bytes
-	// to serve (Q-REPO-202).
-	if f.haveStored && rq.Kind == Metadata && !f.stored.Damaged() {
+	// to serve (Q-REPO-202). One that a revalidation said has moved is fetched whole as well.
+	if f.haveStored && rq.Kind == Metadata && !f.stored.Damaged() && !f.unconditional {
 		switch {
 		case f.stored.ETag != "":
 			req.Header.Set("If-None-Match", f.stored.ETag)
@@ -291,9 +330,37 @@ func (f *fetcher) request(ctx context.Context) (*http.Request, error) {
 	return req, nil
 }
 
-// send sends the request with the one retry of R-REPO-029 and the call facts of the
-// upstream log. The returned cancel ends the request and its body.
+// send sends the request ([fetcher.sendOnce]) with the format's token handshake when it has one (R-REPO-033, Q-OCI-82): with the
+// token the last challenge of the repository names, and, when the upstream answers 401, with the token that challenge names. The
+// returned cancel ends the request and its body.
 func (f *fetcher) send(ctx context.Context, req *http.Request) (resp *http.Response, cancel context.CancelFunc, idle *atomic.Bool, err error) {
+	h := f.handshakeFor()
+	if h == nil {
+		return f.sendOnce(ctx, req)
+	}
+	used := f.e.preemptive(ctx, h, req)
+	sctx := ctx
+	if used != nil {
+		sctx = outbound.WithAuthorization(ctx, used.value)
+	}
+	resp, cancel, idle, err = f.sendOnce(sctx, req)
+	if err != nil {
+		if used != nil && ctx.Err() == nil {
+			f.e.dropToken(used.key, used.value)
+		}
+		return resp, cancel, idle, err
+	}
+	if resp.StatusCode != http.StatusUnauthorized {
+		return resp, cancel, idle, nil
+	}
+	return f.e.authenticate(ctx, h, req, resp, cancel, idle, func(ctx context.Context) (*http.Response, context.CancelFunc, *atomic.Bool, error) {
+		return f.sendOnce(ctx, req)
+	}, used)
+}
+
+// sendOnce sends the request with the one retry of R-REPO-029 and the call facts of the
+// upstream log. The returned cancel ends the request and its body.
+func (f *fetcher) sendOnce(ctx context.Context, req *http.Request) (resp *http.Response, cancel context.CancelFunc, idle *atomic.Bool, err error) {
 	e, rq := f.e, f.rq
 	rem := rq.Remote
 	idle = new(atomic.Bool)
@@ -345,9 +412,10 @@ func (f *fetcher) slotWait(attempt int) (time.Duration, bool) {
 		return f.rq.slot.takeWait(), true
 	case !f.hasWait:
 		return 0, false
-	case attempt > 1:
+	case attempt > 1, f.waitReported:
 		return 0, true
 	}
+	f.waitReported = true
 	return f.wait, true
 }
 
@@ -355,6 +423,9 @@ func (f *fetcher) slotWait(attempt int) (time.Duration, bool) {
 // answer, the circuit, the metrics and the security events.
 func (f *fetcher) transportFailure(ctx context.Context, err error, idle bool) flightResult {
 	e, rq := f.e, f.rq
+	if he, ok := asHandshakeError(err); ok && he.rate != nil && rq.background() {
+		return flightResult{own: he.rate} // the token service rate limits a mirror's request: R-REPO-054 applies
+	}
 	fail := e.classifyError(rq.Remote, f.target0(), err, idle)
 	return f.failed(ctx, fail)
 }
@@ -384,11 +455,15 @@ func (f *fetcher) failed(ctx context.Context, fail failure) flightResult {
 	if fail.egress {
 		e.m.egressDenied.WithLabelValues(rem.Repo.Name.String()).Inc()
 	}
+	host := fail.host
+	if host == "" {
+		host = f.target0().Hostname()
+	}
 	switch fail.event {
 	case "egress":
-		e.securityEvent(ctx, rq, audit.EventProxyEgressDenied, f.target0().Hostname(), map[string]string{"host": f.target0().Hostname()})
+		e.securityEvent(ctx, rq, audit.EventProxyEgressDenied, host, map[string]string{"host": host})
 	case "tls":
-		e.securityEvent(ctx, rq, audit.EventProxyTLSUntrusted, f.target0().Hostname(), map[string]string{"host": f.target0().Hostname()})
+		e.securityEvent(ctx, rq, audit.EventProxyTLSUntrusted, host, map[string]string{"host": host})
 	}
 	return flightResult{err: fail.err, status: fail.status}
 }

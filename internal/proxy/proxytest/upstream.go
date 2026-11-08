@@ -1,11 +1,19 @@
 package proxytest
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/sha512"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
 	"log/slog"
+	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -60,15 +68,55 @@ type Upstream struct {
 	seen   []Seen
 	failed map[string]int
 	total  atomic.Int64
+	// aliases are the host names the upstream is also reached under ([Upstream.As]).
+	aliases []string
 }
 
 // NewUpstream starts an upstream that is closed with the test.
 func NewUpstream(t testing.TB) *Upstream {
 	t.Helper()
 	u := &Upstream{routes: map[string]*Route{}, failed: map[string]int{}}
-	u.Server = httptest.NewTLSServer(http.HandlerFunc(u.serve))
+	u.Server = httptest.NewUnstartedServer(http.HandlerFunc(u.serve))
+	u.TLS = &tls.Config{Certificates: []tls.Certificate{certificate(t)}, MinVersion: tls.VersionTLS12}
+	u.StartTLS()
 	t.Cleanup(u.Close)
 	return u
+}
+
+// certificate is a self-signed certificate for the loopback addresses and for every name below example.com and example.test,
+// which a test reaches the upstream under ([Upstream.As]).
+func certificate(t testing.TB) tls.Certificate {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "trove proxytest upstream"},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(24 * time.Hour),
+		KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true, IsCA: true,
+		DNSNames:    []string{"localhost", "example.com", "*.example.com", "example.test", "*.example.test"},
+		IPAddresses: []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tpl, tpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
+}
+
+// As returns the base URL under which the upstream is reached as the host name host, and makes every factory built with it
+// ([Factory]) connect that name to the upstream's listener. The name is a different host than the upstream's own URL for every
+// rule that reads URLs: a token service or a blob host of a test is a second upstream reached as "auth.example.com" or
+// "cdn.example.com", and the credential rules of R-REPO-033 are exercised on host names and not on ports. The certificate of the
+// test server is valid for every name below example.com and example.test.
+func (u *Upstream) As(host string) string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.aliases = append(u.aliases, host)
+	_, port, _ := net.SplitHostPort(u.Listener.Addr().String())
+	return "https://" + host + ":" + port
 }
 
 // Set installs the route of a path ("/pkg/lodash"); it replaces the previous one.
@@ -236,6 +284,16 @@ func FactoryWithLog(t testing.TB, log *slog.Logger, ups ...*Upstream) *outbound.
 		}
 	}
 	cfg.AddressPolicy.AllowCIDRs = []string{"127.0.0.0/8", "::1/128"}
+	// The names the upstreams are reached under (Upstream.As) connect to their listeners.
+	dial := map[string]string{}
+	for _, u := range ups {
+		u.mu.Lock()
+		_, port, _ := net.SplitHostPort(u.Listener.Addr().String())
+		for _, h := range u.aliases {
+			dial[h+":"+port] = u.Listener.Addr().String()
+		}
+		u.mu.Unlock()
+	}
 	dir := t.TempDir()
 	for i, u := range ups {
 		p := filepath.Join(dir, "ca"+strconv.Itoa(i)+".pem")
@@ -245,10 +303,11 @@ func FactoryWithLog(t testing.TB, log *slog.Logger, ups ...*Upstream) *outbound.
 		}
 		cfg.TLS.CAFiles = append(cfg.TLS.CAFiles, p)
 	}
+	opts := []outbound.Option{outbound.WithDialOverride(dial)}
 	if log != nil {
-		return outbound.New(cfg, outbound.WithUpstreamLog(log))
+		opts = append(opts, outbound.WithUpstreamLog(log))
 	}
-	return outbound.New(cfg)
+	return outbound.New(cfg, opts...)
 }
 
 // SHA256 is the SHA-256 of a body, for the digests a test announces.

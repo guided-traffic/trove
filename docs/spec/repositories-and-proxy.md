@@ -2430,9 +2430,47 @@ Priority: **MVP** · Covers: RMT-005, RMT-006, IAM-045
   ([RFC 7617](https://www.rfc-editor.org/rfc/rfc7617)) preemptively on every request to the upstream
   origin. `bearer` MUST send `Authorization: Bearer <password>`
   ([RFC 6750](https://www.rfc-editor.org/rfc/rfc6750)) and ignore `username`. `none` sends no
-  credentials. Token handshakes that a protocol defines itself (container registry token exchange)
-  belong to the format plug-in; format-specific rules (which username the public npm registry
-  expects) are on the format pages.
+  credentials. Format-specific rules (which username the public npm registry expects) are on the
+  format pages.
+- **Token handshakes** ([Q-REPO-255](#q-repo-255--a-handshake-token-goes-to-the-upstream-origin-only-and-the-realm-is-asked-under-the-credential-rule),
+  [Q-OCI-82](formats/oci.md#q-oci-82--the-engine-asks-the-format-before-a-request-with-the-last-challenge-so-only-the-first-request-of-a-replica-is-challenged)).
+  A protocol that authenticates with a token service of its own (a container registry answering `401` with
+  `WWW-Authenticate: Bearer realm=…`, R-OCI-021) is read by the format and carried out by the engine, which owns the I/O. The
+  engine asks the format for the token request on a `401` and, once it has seen a challenge of the repository, before a request,
+  with the last challenge it remembered for the repository's configuration version; the format takes the scope from the request
+  and only the realm and the service from the challenge. Then it:
+  - refuses an address that is neither the upstream origin nor an `extraHosts` entry (`502 foreign_host_denied`), one that leaves
+    an `https` upstream for `http` (`502 insecure_redirect`), and one that names a user (`502 upstream_error`); nothing is sent and
+    the service sees no request;
+  - sends the request through the repository's client, so the credential goes to the token service by the rule below and by no
+    other: to the upstream origin and to `extraHosts` entries with `sendCredentials: true`; an `extraHosts` entry without it is
+    asked anonymously, and a repository with `authMode: none` sends none anywhere. The credential goes to the token service's host
+    and to no redirect target of it, whatever `forwardAuthOnRedirect` says;
+  - reads at most 64 KiB of the answer (`502 upstream_error` beyond) and hands a `2xx` answer to the format, which returns an
+    `Authorization` value that is a valid header field value of at most 8 KiB; the original request is sent with it. That value goes
+    to the upstream origin only: it replaces the repository's credential there, and it follows no redirect and goes to no
+    `extraHosts` entry, whether or not the entry has `sendCredentials`;
+  - keeps the value per replica, in memory, until 10 s before the lifetime the format read (60 s when it read none, at most one
+    hour), and never in PostgreSQL or Valkey ([architecture.md](architecture.md) R-ARCH-032). The key is the repository, its
+    configuration version, and a digest of the format's key (at most 1 KiB), the token service (scheme, host, port, path and the
+    service it names) and the credential in effect, so a changed configuration, another token service and a rotated secret (which
+    moves no configuration version) never meet a token obtained before;
+  - treats the remembered challenge as a hint, never as the answer: when the step before a request fails (the format, the token
+    service) the challenge is forgotten and the request is sent without a token, so that its own `401` runs the handshake with its
+    own challenge; only a request to the upstream origin is sent with a token fetched before it; a challenge is remembered only
+    from the origin and after the token it led to was accepted, for 5 minutes;
+  - answers a `401` to a token the replica held with one fresh handshake, after dropping the rejected token (and only that one);
+    a `401` to a token fetched for the request is followed by one handshake with the `401`'s own challenge when that names another
+    key or token service (the registry moved it), and otherwise is the answer (`502 upstream_auth_failed`);
+  - runs one request to the token service for the concurrent requests of a replica that need the same token; the request is not
+    ended by the caller that started it, only by the engine's shutdown or after 30 s;
+  - makes a failure of the token service the answer of the request, counting toward no circuit: `upstream_auth_failed` for its `401`
+    or `403`, `upstream_rate_limited` (503) for `429`, `upstream_error` for `500`, `502`, `503` and `504`,
+    `upstream_unexpected_status` for any other status, `egress_denied`, `tls_untrusted`, `upstream_timeout` or `upstream_unreachable`
+    for a failure of the transfer. An egress or TLS refusal writes the security event of R-REPO-038 and counts
+    `trove_remote_egress_denied_total` with the token service's host. For a mirror's request a rate-limit answer of the token service
+    is the rate-limit answer of R-REPO-054;
+  - runs no handshake for `authMode: bearer`: the stored secret is the token.
 - Credentials go only to the upstream origin and to `extraHosts` entries with `sendCredentials:
   true`; redirects follow R-REPO-039. They travel over `https` only: a hop that is not `https` gets
   none, unless the upstream origin itself is `http` ([architecture.md](architecture.md) Q-ARCH-224).
@@ -3477,7 +3515,12 @@ Priority: **MVP** · Covers: trove-only
     rate limit with no hint, Q-REPO-183), and `503` whose body, read up to 4 KiB, is an S3 error with the code `SlowDown`
     ([Amazon S3 error responses](https://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html));
   - `403`, `429` or `503` with `RateLimit-Remaining: 0` or `X-RateLimit-Remaining: 0`; the reset then comes from
-    `RateLimit-Reset` (seconds) or `X-RateLimit-Reset` (seconds since the epoch) when `Retry-After` is absent.
+    `RateLimit-Reset` (seconds) or `X-RateLimit-Reset` (seconds since the epoch) when `Retry-After` is absent. The value is read
+    by its integer before the first `;`, so `0;w=21600`, which a registry sends with the window of its quota, is 0
+    ([Q-REPO-256](#q-repo-256--the-quota-header-is-read-by-its-integer-before-the-first-semicolon)); a value whose first element
+    is no integer is not a quota header.
+
+  The token service of a handshake (R-REPO-033) is no different: its `429` or `503` answer to a request of the pass is a rate-limit answer.
 
   Other `5xx` answers, timeouts and connection failures are failures of the item (R-REPO-053) with the same back-off as an
   answer without a hint, but they do not halve the window.
@@ -7713,6 +7756,51 @@ Context: the mirror pass treated `upstream_integrity_mismatch` like any failure 
 **Rationale:** the engine already verifies the digest while the body is spooled, so a second fetch can only repeat the answer of a tampered upstream. The development agent would revisit it if mismatches caused by transfer faults are seen in practice (retry once).
 
 **Applied in the spec:** R-REPO-053 step 3. Tests: `TestR_REPO_053_APermanentlyFailedFillFailsThePackageAtOnceAndThePassEnds`, `TestR_REPO_053_AnIntegrityFailureOfAFillIsPermanentForThePass`, and the mirror integration test `TestR_REPO_041_AMirrorPassOfAnNpmRemoteStoresNoTarballThatDoesNotMatchItsAnnouncedIntegrityAndEnds`.
+
+### Q-REPO-255 · A handshake token goes to the upstream origin only, and the realm is asked under the credential rule
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the engine carries out the token handshake of a format (R-OCI-021). The challenge comes from the upstream, so the upstream
+names the realm host, and two credentials are in play: the repository's own (what the realm may need to issue a token for a private
+image) and the token the realm issues (what the registry accepts). The hop policy of the upstream client removes every
+`Authorization` header and adds the repository's credential where R-REPO-033 allows, so a token set on a request would be removed.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The realm is asked through the repository's client under the one credential rule; the token is attached by a mark of the request's context (`outbound.WithAuthorization`) and the hop policy sends it to the upstream origin only, in place of the credential (chosen) | The credential reaches the realm exactly where R-REPO-033 says; the token reaches the registry and nobody else | One rule for every credential; a redirect or an `extraHosts` entry never receives a token meant for the registry; the check of the realm's host is the client's `Allowed` | The hop policy knows a second kind of value |
+| (b) The format sets `Authorization` itself and the engine passes it | The hop policy lets a request's own header stand on the hosts it admits | No mark | The policy's guarantee that no header of a caller or an adapter crosses a host boundary is gone for every format |
+| (c) The token goes to every host that may receive the credential | The mark follows the credential rule | One rule | A realm host with `sendCredentials` (Docker Hub's `auth.docker.io`) would receive the token it issued, and a registry that redirects to a credential host would hand the token on |
+
+**Choice:** (a).
+
+**Rationale:** the upstream chooses the realm, so the host rule must be applied to the realm's address before a byte is sent, and the
+credential must never reach a host the operator did not name. A token is valid for the registry that asked for it. The development
+agent would revisit it for a registry whose blob host needs the token (none of the well-known ones does).
+
+**Applied in the spec:** R-REPO-033 (the handshake bullet), [formats/oci.md](formats/oci.md) R-OCI-021. The token's key also holds the token service and a digest of the credential in effect (a rotation of a secret behind a reference moves no configuration version), and the request to the token service carries the credential on its first hop only (`outbound.WithCredentialsOnTheFirstHopOnly`). Code: `outbound.WithAuthorization`
+in [hop.go](../../internal/outbound/hop.go), `Engine.token` in [authenticator.go](../../internal/proxy/authenticator.go). Tests:
+`TestR_REPO_033_HandshakeTokenGoesToTheOriginOnly`, `TestHandshake` (`test/integration/proxy`).
+
+### Q-REPO-256 · The quota header is read by its integer before the first semicolon
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Docker Hub answers `RateLimit-Remaining: 0;w=21600`, the integer with the window of its quota as a parameter. The parser of
+R-REPO-054 read the whole value as an integer, so such an answer was not a quota answer and a mirror went on asking.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The integer before the first `;`, for every format (chosen) | `0;w=21600` is 0 | The header is the same for every upstream that sends it; one parser | A value that was never an integer elsewhere now parses |
+| (b) The format parses it | A hook per format | Format-specific | Every upstream that sends a parameter needs its format to say so |
+
+**Choice:** (a).
+
+**Rationale:** a parameter after a semicolon is part of the header's grammar, not a different number. The development agent would revisit
+it for an upstream that sends a list.
+
+**Applied in the spec:** R-REPO-054, [formats/oci.md](formats/oci.md) R-OCI-025. Code: `upstream.QuotaRemaining` in
+[ratelimit.go](../../internal/proxy/upstream/ratelimit.go). Test: `TestR_REPO_054_QuotaHeaderParse`.
 
 ## What this does not cover
 

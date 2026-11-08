@@ -377,7 +377,7 @@ formats.Resolver: method Plan(context.Context, *Request, Path, PathInfo) (*Virtu
 formats.Resolver: method ReadScope(context.Context, *Request, []qname.Repo) (ReadScope, error)
 formats.Resolver: method ShadowCheck(context.Context, *Request, string) (ShadowOutcome, error)
 formats.RevSeq: type int64
-formats.Revalidator: method RevalidationRequest(context.Context, RemoteContext, Path, string, RemoteDocument) (*http.Request, bool, error)
+formats.Revalidator: method RevalidationRequest(context.Context, RemoteContext, Path, string, RemoteDocument, *http.Request) (*http.Request, bool, error)
 formats.Revalidator: method Unchanged(Path, RemoteDocument, *http.Response) bool
 formats.Revision: field Digest [32]byte
 formats.Revision: field RevSeq RevSeq

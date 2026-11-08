@@ -579,3 +579,88 @@ func (p *populate) Record(ctx context.Context, tx meta.Tx) error {
 
 // Endpoint names the endpoint and whether it fills caches (R-EP-019).
 func (p *populate) Endpoint() (string, bool) { return p.rq.Subject.Endpoint, p.rq.Subject.CacheFill }
+
+// authenticator is the engine's view of a format's token handshake ([formats.Authenticator]).
+type authenticator struct {
+	auth     formats.Authenticator
+	repo     *repository.Repository
+	settings json.RawMessage
+	disc     any
+}
+
+var _ proxy.Authenticator = (*authenticator)(nil)
+
+// handshakeOf returns the handshake of the format whose capabilities are caps for a request the engine makes without the
+// format's adapter (a pass-through query, a pass's discovery request); nil for a format without one.
+func handshakeOf(caps formats.RemoteCaps, repo *repository.Repository, settings json.RawMessage, disc any) proxy.Authenticator {
+	if caps.Auth == nil {
+		return nil
+	}
+	return &authenticator{auth: caps.Auth, repo: repo, settings: settings, disc: disc}
+}
+
+// TokenRequest implements [proxy.Authenticator]: the request path is the zero [formats.Path] when the engine has none.
+func (a *authenticator) TokenRequest(ctx context.Context, b proxy.UpstreamBase, orig *http.Request, path string, status int, challenge http.Header) (*http.Request, string, bool, error) {
+	rc := formats.RemoteContext{Repo: a.repo, Upstream: b.URL, Settings: a.settings, Discovery: a.disc}
+	return a.auth.TokenRequest(ctx, rc, orig, formats.Path{Path: path}, status, challenge)
+}
+
+// ReadToken implements [proxy.Authenticator].
+func (a *authenticator) ReadToken(ctx context.Context, status int, body []byte) (string, time.Duration, error) {
+	rc := formats.RemoteContext{Repo: a.repo, Settings: a.settings, Discovery: a.disc}
+	if u, err := repoUpstream(a.repo); err == nil {
+		rc.Upstream = u
+	}
+	return a.auth.ReadToken(ctx, rc, status, body)
+}
+
+// handshake is the adapter's handshake, nil for a format without one.
+func (a *adapter) handshake() proxy.Authenticator {
+	return handshakeOf(a.caps, a.repo, a.settings, a.disc)
+}
+
+var _ proxy.Authenticator = (*adapter)(nil)
+
+// TokenRequest implements [proxy.Authenticator] over the format's [formats.Authenticator]; a format without one answers ok
+// false and the engine leaves the 401 as it is.
+func (a *adapter) TokenRequest(ctx context.Context, b proxy.UpstreamBase, orig *http.Request, path string, status int, challenge http.Header) (*http.Request, string, bool, error) {
+	h := a.handshake()
+	if h == nil {
+		return nil, "", false, nil
+	}
+	return h.TokenRequest(ctx, b, orig, path, status, challenge)
+}
+
+// ReadToken implements [proxy.Authenticator].
+func (a *adapter) ReadToken(ctx context.Context, status int, body []byte) (string, time.Duration, error) {
+	h := a.handshake()
+	if h == nil {
+		return "", 0, errs.E(errs.Internal, errs.CodeInternal, "The format has no token handshake.")
+	}
+	return h.ReadToken(ctx, status, body)
+}
+
+var _ proxy.Revalidator = (*adapter)(nil)
+
+// RevalidationRequest implements [proxy.Revalidator] over the format's [formats.Revalidator]; a format without one answers ok
+// false and the engine revalidates with the conditional GET.
+func (a *adapter) RevalidationRequest(ctx context.Context, b proxy.UpstreamBase, path, variant string, stored proxy.Document, get *http.Request) (*http.Request, bool, error) {
+	if a.caps.Revalidate == nil {
+		return nil, false, nil
+	}
+	return a.caps.Revalidate.RevalidationRequest(ctx, a.context(b), formats.Path{Path: path}, variant, remoteDocumentOf(stored), get)
+}
+
+// Unchanged implements [proxy.Revalidator].
+func (a *adapter) Unchanged(path string, stored proxy.Document, resp *http.Response) bool {
+	return a.caps.Revalidate != nil && a.caps.Revalidate.Unchanged(formats.Path{Path: path}, remoteDocumentOf(stored), resp)
+}
+
+// remoteDocumentOf is the stored document the engine hands to the format's revalidation.
+func remoteDocumentOf(d proxy.Document) formats.RemoteDocument {
+	return formats.RemoteDocument{
+		Digest: d.Digest, Size: d.Size, MediaType: d.MediaType, Bytes: d.Bytes, FetchedAt: d.FetchedAt, ValidatedAt: d.ValidatedAt,
+		ExpiresAt: d.ExpiresAt, GoneAt: d.GoneAt, Stale: d.Stale,
+		Status: formats.CacheStatus{Hit: d.Status.Hit, Stale: d.Status.Stale, Stored: d.Status.Stored, Negative: d.Status.Negative, Header: d.Status.Header()},
+	}
+}

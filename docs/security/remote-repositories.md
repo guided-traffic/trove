@@ -235,6 +235,44 @@ nothing counts per caller; and a repository's share is not capped below the repl
 can hold every slot of the replica ([H-582](#h-582--one-remote-repository-can-hold-every-fetch-slot-of-a-replica)). Forwarded searches take
 the same slots as downloads ([H-353](nuget-remote.md#h-353--forwarded-searches-share-the-remotes-circuit-and-fetch-slots-with-its-downloads)).
 
+## The token handshake and the credential hosts
+
+Status: built in the engine ([authenticator.go](../../internal/proxy/authenticator.go), [revalidate.go](../../internal/proxy/revalidate.go),
+[formathost/remote.go](../../internal/formathost/remote.go)); no registered format has a remote adapter that implements it yet, so the
+generic test adapter of [proxytest](../../internal/proxy/proxytest) is what runs it until the OCI remote adapter (R-OCI-021) registers. This
+section extends this page; the OCI format has no page of its own for it.
+
+A container registry answers a request without a token with `401` and a challenge that names a token service, and the upstream chooses that
+service's host. The engine therefore applies the host and credential rules of R-REPO-033 to an address that comes from the party it does not
+trust, before a byte is sent:
+
+| Rule | Where | Effect |
+|---|---|---|
+| The token request's host is the upstream origin or an `extraHosts` entry, an `https` upstream is never left for `http`, and the address names no user | [authenticator.go](../../internal/proxy/authenticator.go) `token` calls [upstream/client.go](../../internal/proxy/upstream/client.go) `Allowed` | `502 foreign_host_denied`, `502 insecure_redirect`; the service sees no request (`TestHandshake`, `TestR_OCI_021_RealmOnAnotherHostNeedsAnExtraHostsEntry`) |
+| The repository's credential goes to the token service only by the hop policy: to the origin and to `extraHosts` entries with `sendCredentials: true`; an entry without it is asked anonymously, and `authMode: none` sends none; the credential goes to the service's host and to no redirect target of it, also with `forwardAuthOnRedirect` | [outbound/hop.go](../../internal/outbound/hop.go) `CredentialPolicy` | the credential reaches the hosts the operator named for it and no other (`TestHandshake`) |
+| The token goes to the upstream origin only, in place of the credential: not to an `extraHosts` entry (with or without `sendCredentials`), not to a redirect target, not over a downgrade to `http`; a request marked without credentials gets none | [outbound/hop.go](../../internal/outbound/hop.go) `Decorate`, `WithAuthorization` | a registry that redirects to a blob host does not hand the token on (`TestR_OCI_021_HandshakeTokenGoesToTheOriginOnly`, `TestHandshake`) |
+| At most 64 KiB of the service's answer is read; a larger one is `502 upstream_error` and nothing is kept | [authenticator.go](../../internal/proxy/authenticator.go) `requestToken` | an upstream cannot make the engine buffer an unbounded answer |
+| The `Authorization` value the format returns is non-blank, at most 8 KiB and a valid header field value (`httpguts.ValidHeaderFieldValue`: no control character, no DEL) | `requestToken` | a service cannot inject a header, and cannot cache a token the transport refuses |
+| A token lives until 10 s before the lifetime the format read (60 s when it read none), at most one hour; it is cached per replica in the registered cache `proxy_upstream_tokens`, never in PostgreSQL or Valkey. The key is the repository, its configuration version and a digest of the format's key (refused above 1 KiB), the token service (scheme, host, port, path, service) and the credential in effect | `registerTokens`, `tokenKeyOf`; [architecture.md](../spec/architecture.md) R-ARCH-032 | a changed credential, `extraHosts` or URL (a new configuration version), a rotated secret behind a reference (a new credential fingerprint) and another token service never meet the old token; a token service cannot seed another service's entry; the cache is bounded by count and each key by 32 bytes |
+| The last challenge of a repository is remembered per configuration version (at most 8 KiB) and handed to the format before a request, so that the credential goes to the registry once and a token is sent with the request | `rememberChallenge`, `preemptive` | a challenge is a hint and never the answer: it is learned only from the origin and after its token was accepted, kept 5 minutes, forgotten when the pre-emptive step fails or its token is refused, and then the request is sent without a token so its own `401` is followed; a hostile or retired challenge costs one request, not the repository; the credential no longer goes to the registry on every request ([Q-OCI-82](../spec/formats/oci.md)) |
+| A rejected token is dropped by comparing its value, and a token the transport refused is dropped | `dropToken` | a request cannot drop the fresh token another stored |
+| The request to the token service runs in a goroutine of its own, ended by the engine's shutdown or after 30 s; a caller that leaves gets `503 unavailable` and counts toward no circuit; a panic of the format is the request's failure | `tokenOnce`, `leadToken` | a stuck or panicking format cannot hold a call forever |
+| One request to the token service for the concurrent requests of a replica that need the same token | `tokenOnce` | a burst of pulls is one request to the service |
+| `authMode: bearer` runs no handshake: the stored secret is the token | `token` | the secret is sent to the origin as it is |
+| A failure of the token service is the answer of the request and counts toward no circuit; an egress or TLS refusal at its host writes `proxy.egress_denied` or `proxy.tls_untrusted` naming that host and counts `trove_remote_egress_denied_total`; for a mirror's request a `429` is the rate limit of R-REPO-054 | [classify.go](../../internal/proxy/classify.go) `classifyError` | see [H-612](#h-612--a-failing-token-service-is-asked-by-every-request) |
+
+**What an upstream can make trove send where.** It can name any host on the repository's own list as the token service, so the repository's
+credential can be sent to every `extraHosts` entry that has `sendCredentials: true` and to the origin, and to no other host
+([H-610](#h-610--a-hostile-upstream-can-direct-the-credential-to-every-sendcredentials-host)). It cannot make trove send the credential or
+the token to a host the repository does not list, to a cleartext address of an `https` upstream, or to the host of a redirect of the token service (also with `forwardAuthOnRedirect`) or of the registry (the token never follows a redirect). The format
+builds the token request from the challenge's service and scope, so those strings come from the upstream as well; what the format does with
+them is on its own page.
+
+**Revalidation.** A format that gives its own revalidation request ([revalidate.go](../../internal/proxy/revalidate.go)) has that request
+sent like any other (the host check, the hop policy, the handshake on a `401`). A `404` or `410` to it marks the document gone and a `429` or
+`5xx` follows the stale rules and the circuit, as for a conditional `GET`; only a `2xx` goes to the format, whose verdict renews the
+freshness without a body or makes the engine fetch ([Q-OCI-81](../spec/formats/oci.md#q-oci-81--a-head-that-is-not-a-2xx-is-the-engines-answer-and-a-2xx-that-is-not-unchanged-is-a-get)).
+
 ## What this does not cover
 
 - [H-4](../spec/repositories-and-proxy.md#h-4--malicious-content-from-a-legitimate-upstream): verification proves only that the bytes are what the upstream announced; a malicious package of a legitimate upstream is fetched and stored like any other.
@@ -246,6 +284,10 @@ the same slots as downloads ([H-353](nuget-remote.md#h-353--forwarded-searches-s
 - [H-353](nuget-remote.md#h-353--forwarded-searches-share-the-remotes-circuit-and-fetch-slots-with-its-downloads): pass-through queries share the circuit and the fetch slots of the downloads.
 - [H-484](vulnerability-scanning.md#h-484--a-block-that-arrives-while-a-fetch-is-running-does-not-stop-that-fetch): a block that arrives while a fetch runs does not stop that fetch.
 - [H-526](isolation-and-coordination.md#h-526--whoever-can-publish-on-the-valkey-signal-channel-can-hold-a-mirror-back): whoever can publish on the signal channel can keep a mirror's background fetches from running.
+- [H-610](#h-610--a-hostile-upstream-can-direct-the-credential-to-every-sendcredentials-host): the upstream names the token service, and the credential goes to any `sendCredentials` host it names.
+- [H-611](#h-611--handshake-tokens-sit-in-the-memory-of-a-replica-until-they-expire): a token sits in process memory until it expires.
+- [H-612](#h-612--a-failing-token-service-is-asked-by-every-request): a failing token service is asked by every request, and no circuit protects it.
+- [H-613](#h-613--one-upstream-can-evict-the-tokens-of-other-repositories-from-a-replicas-cache): the token cache is shared, with no cap per repository.
 - [H-569](backup-and-restore.md#h-569--upstream-storage-and-format-settings-of-a-repository-come-back-with-a-restore): a restore brings back the upstream URL, the credential's hosts, the integrity settings and the offline mode of the restore point.
 
 ### H-582 · One remote repository can hold every fetch slot of a replica
@@ -288,3 +330,71 @@ What makes it real: a remote that few other requests keep healthy, a populating 
 `cacheFillAction: read`), and an upstream with one path that fails or answers with an HTML page, which is common for a proxying or
 self-hosted registry. The same holds for the searches that share the circuit
 ([H-353](nuget-remote.md#h-353--forwarded-searches-share-the-remotes-circuit-and-fetch-slots-with-its-downloads)).
+
+### H-610 · A hostile upstream can direct the credential to every `sendCredentials` host
+
+Component: the choice of the token service by the upstream's challenge ([authenticator.go](../../internal/proxy/authenticator.go) `token`),
+bounded by `Allowed` and the hop policy ([outbound/hop.go](../../internal/outbound/hop.go)).
+
+Subject: the upstream credential of a repository with `authMode: basic` (a `bearer` repository runs no handshake) and the hosts the operator
+listed with `sendCredentials: true`.
+
+Live today in the engine, for a remote whose adapter implements the handshake (none registered yet). The upstream's `401` names the realm;
+the engine sends the token request there with the repository's credential when the realm is the origin or a `sendCredentials` entry.
+A hostile or compromised upstream can therefore make trove send the credential to any of those hosts, with a path and a query of the
+upstream's choosing, as often as it can make trove ask (once per token). Hosts without `sendCredentials`, and every host not on the list,
+get no credential.
+
+What makes it real: an operator who lists more than one `sendCredentials` host for an upstream, one of which is not run by the upstream's
+operator, and an upstream that is compromised. The default proposal for the well-known OCI upstream is one host, `auth.docker.io`.
+
+### H-611 · Handshake tokens sit in the memory of a replica until they expire
+
+Component: the registered cache `proxy_upstream_tokens` ([authenticator.go](../../internal/proxy/authenticator.go) `registerTokens`).
+
+Subject: the tokens of the repositories' upstream handshakes.
+
+Live today in the engine. A token is an `Authorization` value in a plain string, kept in the process for at most an hour (usually the
+lifetime the service named, minus 10 s) and not wiped when it expires or when the cache is flushed; it is in the memory of every replica
+that used it. Whoever can read the process memory (a core dump, a debugger, a heap profile exposed by mistake) reads the tokens that are
+live, with the rights the repository's credential gave them at the upstream. The credential itself is in the process anyway
+([data-and-secret-flow.md](data-and-secret-flow.md#upstream-credentials-of-remote-repositories)); the token adds nothing a holder of the
+credential does not have, but it outlives a revocation of the credential at the upstream by its remaining lifetime.
+
+What makes it real: a credential revoked at the upstream and a token issued just before; the token is then valid at the upstream for up to the
+rest of its lifetime. A rotation on trove's side does not reach it: the credential in effect is part of the key, so the old token is unreachable at
+once (on a replica within the 10 s a changed secret file takes), and so is the token of an older configuration version after a change; an
+unreachable token stays in memory until it expires or the cache evicts it, also one that was stored after the change handler had run.
+
+### H-612 · A failing token service is asked by every request
+
+Component: the handshake outside the circuit ([classify.go](../../internal/proxy/classify.go) `classifyError`, [authenticator.go](../../internal/proxy/authenticator.go) `tokenOnce`).
+
+Subject: the token service's host (for the well-known OCI upstream `auth.docker.io`) and the callers whose requests need a token.
+
+Live today in the engine. A failure of the token service is the answer of the request and counts toward no circuit, because the circuit
+describes the registry; concurrent requests of a replica share one token request, but requests one after the other each ask again.
+While the service fails or is slow, every uncached request of the remote costs one request to it, held for the length of the failure under
+the request's fetch slot, and nothing remembers the failure (a failing pre-emptive step forgets the remembered challenge and the request goes out
+without a token, which costs the registry one `401` and the service one more request).
+
+What makes it real: an outage or a rate limit of the token service while clients keep pulling. The effect on the service is bounded by the
+fetch slots of the replica and the repositories, the effect on callers is a `502` per request instead of `503 upstream_assumed_offline`.
+
+### H-613 · One upstream can evict the tokens of other repositories from a replica's cache
+
+Component: the registered caches `proxy_upstream_tokens` and `proxy_upstream_challenges` ([authenticator.go](../../internal/proxy/authenticator.go)
+`registerTokens`).
+
+Subject: the tokens and challenges of every other remote repository on the replica.
+
+Live today in the engine. Each cache is bounded by count (4096 entries, about 33 MiB at the largest entry size, about 65 MiB for both) and
+shared by all repositories. The token cache holds one entry per key, and the key holds the scope, which comes from the upstream's requests, and
+the token service's path and `service`, which come from its challenge: an upstream whose repository is asked for many distinct scopes (distinct
+image names), or one that varies the token service's path or `service` (up to two keys per request), fills `proxy_upstream_tokens` and evicts
+the least recently used entries of other repositories. The challenge cache holds one entry per repository and configuration version, so
+the eviction applies to the token cache only. The effect is more requests to those repositories' token services, never a wrong token: a
+missing token is fetched again.
+
+What makes it real: a repository that is pulled with very many distinct scopes within a token lifetime (a mirror pass over a large registry),
+next to repositories whose tokens the replica would otherwise keep. No cap per repository exists.

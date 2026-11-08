@@ -359,6 +359,7 @@ flowchart TD
 | [flight.go](../../internal/proxy/flight.go) | the in-process flight, `lead` (Acquire, Wait, re-check, bypass), `recheck` |
 | [lost.go](../../internal/proxy/lost.go) | a cached item whose object is missing or damaged: the refill of an artifact (`refillArtifact`) and of a document's bytes (`refillBytes`), the `503 content_unavailable` of a request that cannot fill it (`lostContent`, `lostOr`), the log line (Q-REPO-202, Q-REPO-203) |
 | [fetch.go](../../internal/proxy/fetch.go), [classify.go](../../internal/proxy/classify.go) | one fetch: slots, circuit, request, the retry, classification of the outcome (R-REPO-029 table). `fetcher.exchanged` returns the repository's share when the upstream exchange ends (the body spooled in `artifact` and `metadata`, the start of `notModified` and `notFound`); `defer hold.release()` in `run` returns the rest after the commit. A fetch under a background slot calls `exchanged` on the slot's hold only for the item the slot was taken for. `fetcher.slotWait` is the `slot_wait_ms` of the upstream record (Q-REPO-235, Q-REPO-236) |
+| [authenticator.go](../../internal/proxy/authenticator.go), [revalidate.go](../../internal/proxy/revalidate.go) | the token handshake of a format (`Authenticator`, `Engine.token`, `Engine.authenticate`, the registered cache `proxy_upstream_tokens`, the shared request per token) and the revalidation by the format's own request (`Revalidator`, `fetcher.revalidate`): see "The token handshake and the revalidation request" below |
 | [exchange.go](../../internal/proxy/exchange.go) | `Exchange`: one request of a format outside the cache, through the repository's client, without slot or circuit (Q-NPM-62) |
 | [query.go](../../internal/proxy/query.go) | `Query`: the pass-through of a `Volatile` request under slot, circuit and egress rules (the slots and the circuit are the remote's own, shared with its downloads: [H-353](../security/nuget-remote.md#h-353--forwarded-searches-share-the-remotes-circuit-and-fetch-slots-with-its-downloads)), the registered cache `proxy_query_results`, the in-process collapse of identical queries (Q-ARCH-270) |
 | [state.go](../../internal/proxy/state.go) | the per-repository state cache (circuit, gone documents), the probe slot, `markGone` |
@@ -368,6 +369,50 @@ flowchart TD
 | [slots.go](../../internal/proxy/slots.go) (`slotHold`: `exchanged` returns the repository's share and the background count, `release` the replica's slot), [probe.go](../../internal/proxy/probe.go), [cachestatus.go](../../internal/proxy/cachestatus.go), [metrics.go](../../internal/proxy/metrics.go), [store.go](../../internal/proxy/store.go) | fetch slots, `Probe`, the `Cache-Status` header, metrics, the reads of the sqlc queries |
 | [proxy.sql](../../internal/meta/postgres/queries/proxy.sql) | every statement of the engine |
 | [proxytest/](../../internal/proxy/proxytest/) | a counting adapter, a counting TLS upstream and a counting `Populate`, for tests that need no format |
+
+### The token handshake and the revalidation request
+
+A format whose upstream authenticates with a token service (a container registry) implements `formats.Authenticator`; one whose expired
+documents are revalidated by a request of its own (OCI: a `HEAD`) implements `formats.Revalidator`. `Register` finds both
+(`RemoteCaps.Auth`, `RemoteCaps.Revalidate`), and [formathost/remote.go](../../internal/formathost/remote.go) adapts them to `proxy.Authenticator`
+and `proxy.Revalidator` (the adapter answers `ok` false for a format without them). The rules are R-REPO-033 (the handshake bullet),
+R-OCI-021 and R-OCI-022; [ADR-165](../decisions.md#adr-165--the-remote-engine-carries-out-the-formats-token-handshake-and-head-revalidation) is the decision.
+
+```mermaid
+sequenceDiagram
+  participant E as fetcher.send
+  participant U as upstream origin
+  participant F as format (TokenRequest, ReadToken)
+  participant T as token service (realm)
+  opt a challenge of the repository is remembered and the request is to the origin
+    E->>F: TokenRequest(orig, path, remembered challenge)
+    F-->>E: request, key
+    Note over E,T: a token under (repo, config version, digest of key, service, credential) is used, else fetched first (host check, credential by the hop policy, 64 KiB, ReadToken)
+  end
+  E->>U: request (with the token, else the credential by the hop policy)
+  U-->>E: 401 + challenge
+  Note over E: a challenge is remembered after its token was accepted, from the origin only; a failed pre-emptive step forgets it
+  E->>F: TokenRequest(orig, path, 401 challenge)
+  Note over E,T: a token held and not the rejected one is used, else one fresh handshake
+  E->>U: retry with the token
+  U-->>E: 2xx, or 401 (a fresh token: the 401 stands)
+```
+
+| What | Where |
+|---|---|
+| The request before it is sent, and the retry loop | `Engine.preemptive`, `Engine.authenticate`, called by `fetcher.send` (a fetch, a revalidation request), by `Engine.get` (`Get.Auth`, a mirror's discovery request) and through the fetcher of `Engine.Query` (`QueryRequest.Auth`); `Exchange` runs none |
+| The token lookup, the host check, the single request per key (in a goroutine of its own, ended by the engine's shutdown) | `Engine.token`, `Engine.tokenOnce`, `Engine.leadToken`, `Engine.requestToken`, `tokenKeyOf` |
+| The token on the wire | `outbound.WithAuthorization` in [hop.go](../../internal/outbound/hop.go): the policy sends it to the origin only, in place of the credential |
+| The per-replica caches | `proxy_upstream_tokens` and `proxy_upstream_challenges` (`registerTokens`); key `{repo, config version, digest}` and `{repo, config version}`; dropped for older versions by the `repo_config` change handler; `Engine.dropToken` removes a rejected value and no other |
+| A handshake error is the answer | `handshakeError` (the failure and the token service's host, or the mirror's rate limit), read by `classifyError` and `fetcher.transportFailure`; no circuit; the security event names the token service's host |
+| The revalidation request | `fetcher.revalidate`, called in `inSlot` before the conditional `GET`, derived from the engine's GET (`plainRequest`); a 2xx that the format calls unchanged goes through `notModified` (`ProxyMetadataRenew`), one it calls changed makes the next GET unconditional |
+| The adapter in tests | [proxytest/handshake.go](../../internal/proxy/proxytest/handshake.go): `Adapter.Auth`, `Adapter.HeadRevalidation`, `Tokens`, `Upstream.TokenService`, `Upstream.Challenge`, `Upstream.As` (a second upstream reached under another host name, `example.com` names, for the credential rules) |
+
+To give a new format a handshake: implement `formats.Authenticator` on its remote adapter (`TokenRequest` takes the scope, and so the key, from the
+request and the path, and the realm and the service from the challenge, which may be the last one the engine remembered; `ReadToken` reads the answer and returns the `Authorization` value and the lifetime), add the format's
+`DefaultCredentialHosts` to its catalog facts when its well-known upstream has a realm on another host, and test it against
+`proxytest` first. The format never sets `Authorization` itself, never opens a connection and never decides which host receives the
+credential.
 
 ### The collapsing protocol in code
 
@@ -480,6 +525,9 @@ virtual request records its allowed populate event with the grant reason of the 
 | unit | [remote_caps_test.go](../../internal/formathost/remote_caps_test.go), [remote_caps_test.go](../../internal/formats/remote_caps_test.go) | the adapter binds the parsed discovery data without changing the adapter it was called on; the hook is declared per path, reads the spooled body and its inspection travels as the commit payload; `Register` records the optional interfaces |
 | integration | [hook_test.go](../../test/integration/proxy/hook_test.go) | R-NUGET-015 at the engine: a refusal answers 502 to 40 concurrent requests and stores nothing, no byte before the hook accepted (with a control that streams without one), the object store down, the payload at the storage hook; R-NUGET-014: the discovery document is resolved once, a repository with one fetch slot does not wait for itself, a missing, unparsable or unpopulatable document; R-REPO-043: a mapped metadata path and its foreign host; the metadata-only bound |
 | integration | [query_test.go](../../test/integration/proxy/query_test.go) | the pass-through: cache, period, collapse, offline and fill refusal, circuit, foreign host and credentials, flush by `repo_config`, a copy of the current configuration through both applications of its change and through another repository's change during the fill (Q-NUGET-94), two replicas, through the `Host` |
+| unit | [authenticator_test.go](../../internal/proxy/authenticator_test.go) | R-REPO-033 at the engine without PostgreSQL (`Engine.Get` against a challenging registry and a token service): the retry, the cache per key, the expiry 10 s before the lifetime (60 s without one), the configuration version, one fresh handshake after a rejected cached token, the second `401`, the 64 KiB bound, one request for concurrent callers, the realm on another host, `authMode: bearer`, the failures of the service |
+| unit | [authorization_test.go](../../internal/outbound/authorization_test.go), [quota_test.go](../../internal/proxy/upstream/quota_test.go), [remote_credential_hosts_test.go](../../internal/repository/remote_credential_hosts_test.go), [remote_handshake_test.go](../../internal/formathost/remote_handshake_test.go) | the token goes to the origin only; the quota header `0;w=21600`; `sendCredentials` on the proposed credential hosts; the adapter's hand-over to the format |
+| integration | [handshake_test.go](../../test/integration/proxy/handshake_test.go) | R-REPO-033 and R-REPO-027 through `Metadata` and `Artifact` with PostgreSQL: the credential reaches the realm only on a `sendCredentials` host, never a foreign one; the token does not follow a redirect; a token per replica; a new configuration version; the `HEAD` revalidation renews the freshness row, fetches a changed document, treats `404` and `503` as a conditional `GET` does, and runs the handshake for its own `401` |
 | integration | [test/integration/proxy](../../test/integration/proxy/) | R-REPO-025 order and download order (R-ARCH-013); R-REPO-026 on two replicas (100 requests, killed and cancelled holders, draining, polling without messages, foreign locks, duplicate fills); R-REPO-027 to R-REPO-032; R-REPO-040 to R-REPO-043; R-REPO-047, R-OPS-011; R-AUTHZ-008 and R-EP-019 at the engine |
 | integration | [cachefill_test.go](../../test/integration/endpoints/cachefill_test.go) | R-EP-019 through the whole request path (dispatcher, Host populate check, engine) on a replica with a further endpoint and a counting upstream |
 
@@ -495,11 +543,17 @@ wrapper. Not tested here: the criteria with a `sourceNetwork` on two pods (R-REP
 [Q-ARCH-268](../spec/architecture.md#q-arch-268--upstream-addressing-follows-a-discovery-document-the-engine-resolves-and-the-url-map-holds-metadata-paths),
 [Q-ARCH-269](../spec/architecture.md#q-arch-269--a-format-can-declare-that-checksumpolicy-require-is-unsupported),
 [Q-REPO-202 to Q-REPO-204](../spec/repositories-and-proxy.md#q-repo-202--a-cached-item-whose-object-is-lost-is-a-cache-miss-filled-again-from-the-upstream-or-503-content_unavailable)
-(lost content).
+(lost content),
+[ADR-165](../decisions.md#adr-165--the-remote-engine-carries-out-the-formats-token-handshake-and-head-revalidation) with
+[Q-REPO-255](../spec/repositories-and-proxy.md#q-repo-255--a-handshake-token-goes-to-the-upstream-origin-only-and-the-realm-is-asked-under-the-credential-rule),
+[Q-REPO-256](../spec/repositories-and-proxy.md#q-repo-256--the-quota-header-is-read-by-its-integer-before-the-first-semicolon),
+[Q-OCI-80](../spec/formats/oci.md#q-oci-80--the-token-cache-is-read-after-the-challenge-and-a-rejected-cached-token-is-replaced-once),
+[Q-OCI-81](../spec/formats/oci.md#q-oci-81--a-head-that-is-not-a-2xx-is-the-engines-answer-and-a-2xx-that-is-not-unchanged-is-a-get) and
+[Q-ARCH-350](../spec/architecture.md#q-arch-350--the-tokens-of-upstream-handshakes-are-a-registered-per-replica-cache-never-stored) (the handshake and the revalidation request).
 
 ### Security notes
 
-- The engine never sets `Authorization`; the client's hop policy adds the credential (R-REPO-033). The upstream URL of an artifact comes from
+- The engine never sets `Authorization` on a request; the client's hop policy adds the credential (R-REPO-033), and the token of a handshake travels as a mark of the request's context that the policy sends to the origin only. The host of a token request is checked with `Client.Allowed` before anything is sent, and its credential goes to that host on the first hop only. The upstream URL of an artifact comes from
   the recorded map only after `Client.Allowed` accepted its host, and no client path can choose a host (R-REPO-043).
 - The URL builder encodes every canonical segment again and refuses `.` and `..`: a client that sent `%252e%252e` cannot make trove request `..`
   with the upstream credentials.

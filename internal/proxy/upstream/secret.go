@@ -1,6 +1,7 @@
 package upstream
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -169,6 +170,17 @@ func (c *credential) headers() http.Header {
 		h.Set("Authorization", "Bearer "+pw)
 	}
 	return h
+}
+
+// fingerprint is a digest of the credential in effect now: it changes when the secret behind a reference is rotated, which
+// moves no configuration version. The zero value is no credential. A token that was obtained under one credential is not
+// reused under another (R-REPO-033).
+func (c *credential) fingerprint() [32]byte {
+	h := c.headers()
+	if len(h) == 0 {
+		return [32]byte{}
+	}
+	return sha256.Sum256([]byte(h.Get("Authorization")))
 }
 
 // secretUnavailable is the 502 of a secret that cannot be unsealed or resolved

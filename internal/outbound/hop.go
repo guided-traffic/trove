@@ -115,7 +115,7 @@ func (p *CredentialPolicy) Decorate(req *http.Request, hop int) {
 	for k := range creds {
 		req.Header.Del(k)
 	}
-	if withoutCredentials(req) || !p.allowed(req.URL, hop) {
+	if withoutCredentials(req) || (hop > 0 && firstHopOnly(req)) || !p.allowed(req.URL, hop) {
 		return
 	}
 	for k, vs := range creds {
@@ -123,11 +123,16 @@ func (p *CredentialPolicy) Decorate(req *http.Request, hop int) {
 			req.Header.Add(k, v)
 		}
 	}
+	// A token from the upstream's own handshake belongs to the origin that asked for it: no other host receives it, not an
+	// extraHosts entry with sendCredentials and not a redirect target, and it replaces the repository's credential there.
+	if v, ok := req.Context().Value(authorizationKey{}).(string); ok && p.Origin != nil && sameOrigin(p.Origin, req.URL) {
+		req.Header.Set("Authorization", v)
+	}
 }
 
 // AllowClientCertificate implements ClientCertPolicy.
 func (p *CredentialPolicy) AllowClientCertificate(req *http.Request, hop int) bool {
-	return !withoutCredentials(req) && p.allowed(req.URL, hop)
+	return !withoutCredentials(req) && (hop == 0 || !firstHopOnly(req)) && p.allowed(req.URL, hop)
 }
 
 func isHTTPS(u *url.URL) bool { return strings.EqualFold(u.Scheme, "https") }
@@ -144,6 +149,31 @@ func portOf(u *url.URL) string {
 		return "443"
 	}
 	return "80"
+}
+
+type authorizationKey struct{}
+
+type firstHopOnlyKey struct{}
+
+// WithCredentialsOnTheFirstHopOnly marks the requests made with the returned context as ones whose credentials, custom headers and
+// client certificate go to the host the request names and to no redirect target, whatever forwardAuthOnRedirect says: the request
+// to an upstream's token service, whose redirect is the upstream's to choose (R-REPO-033).
+func WithCredentialsOnTheFirstHopOnly(ctx context.Context) context.Context {
+	return context.WithValue(ctx, firstHopOnlyKey{}, true)
+}
+
+func firstHopOnly(req *http.Request) bool {
+	v, _ := req.Context().Value(firstHopOnlyKey{}).(bool)
+	return v
+}
+
+// WithAuthorization makes the requests made with the returned context carry value as their Authorization header on the hops
+// that reach the upstream's origin (CredentialPolicy.Origin), in place of the repository's credential: the token a handshake
+// with the upstream's token service produced (R-REPO-033). The hop policy still decides: a hop to any other host gets neither the
+// token nor the repository's credential from this mark, a hop the policy gives no credential (https to http) gets no token, and
+// [WithoutCredentials] outranks it.
+func WithAuthorization(ctx context.Context, value string) context.Context {
+	return context.WithValue(ctx, authorizationKey{}, value)
 }
 
 type noCredentialsKey struct{}

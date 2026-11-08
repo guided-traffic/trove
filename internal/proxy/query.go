@@ -56,6 +56,9 @@ type QueryRequest struct {
 	// cache only. A nil Populate refuses.
 	Populate Populate
 	Caller   CallerFacts
+	// Auth is the format's handshake with the upstream (R-OCI-021); nil sends the query as it is and a 401 stands. The query has
+	// no repository path to hand it: the format reads the request.
+	Auth Authenticator
 }
 
 // QueryResponse is the upstream's answer to a query.
@@ -255,7 +258,7 @@ func (e *Engine) queryFetch(ctx context.Context, rq QueryRequest, cl *upstream.C
 	rem := rq.Remote
 	f := &fetcher{
 		e: e, rq: Request{Remote: rem, Path: rq.Path, Kind: Metadata, MaxBytes: rq.MaxBytes, Caller: rq.Caller},
-		st: &reqState{role: "query"}, fl: &flight{done: make(chan struct{})}, cl: cl,
+		st: &reqState{role: "query"}, fl: &flight{done: make(chan struct{})}, cl: cl, auth: rq.Auth, noPath: true,
 	}
 	hold, wait, err := e.slots.acquire(ctx, rem.id, rem.Settings.Limits.MaxConcurrentFetches, e.o.Config.QueueTimeout())
 	e.m.queueWait.WithLabelValues(rem.Repo.Name.String()).Observe(wait.Seconds())

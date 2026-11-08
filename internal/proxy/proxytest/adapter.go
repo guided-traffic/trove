@@ -66,11 +66,19 @@ type Adapter struct {
 	// Inspect, when set, is the fill hook of every artifact path (InspectFill). Its payload is
 	// handed to the storage hook; its error is the fetch's answer.
 	Inspect func(path string, sp *items.Spooled) (any, error)
+	// Auth makes the adapter answer a 401 with a Bearer challenge by the token handshake of handshake.go; ScopeOf names the
+	// scope (the cache key) of a challenged request, the default is the request's path. Without Auth a 401 stands.
+	Auth    bool
+	ScopeOf func(orig *http.Request, path string) string
+	// HeadRevalidation revalidates an expired document with a HEAD that answers its digest in DigestHeader.
+	HeadRevalidation bool
 
-	requests, accepts, prepares, fills, inspects, discovers atomic.Int64
+	requests, accepts, prepares, fills, inspects, discovers, tokenRequests, revalidations atomic.Int64
 
 	mu     sync.Mutex
 	events []proxy.FillEvent
+	// revalidationGets are the GETs the engine handed to RevalidationRequest.
+	revalidationGets []string
 }
 
 var (

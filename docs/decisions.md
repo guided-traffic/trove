@@ -195,6 +195,7 @@ checked every earlier decision against them:
 | [ADR-159](#adr-159--the-data-state-the-format-contract-carries-says-whether-the-ecosystem-has-synced-since-the-last-restore) | The data state the format contract carries says whether the ecosystem has synced since the last restore | Decided by the development agent — owner review at the walkthrough |
 | [ADR-160](#adr-160--the-catalog-says-which-formats-always-verify-the-announced-digest) | The catalog says which formats always verify the announced digest | Decided by the development agent — owner review at the walkthrough |
 | [ADR-161](#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions) | The format contract gains the registry root, the upstream handshake, HEAD revalidation and upload sessions | Decided by the development agent — owner review at the walkthrough |
+| [ADR-165](#adr-165--the-remote-engine-carries-out-the-formats-token-handshake-and-head-revalidation) | The remote engine carries out the format's token handshake and HEAD revalidation | Decided by the development agent — owner review at the walkthrough |
 | [ADR-125](#adr-125--gnu-make-and-one-pin-file-for-every-tool) | GNU Make and one pin file for every tool | Decided by the development agent — owner review at the walkthrough |
 | [ADR-126](#adr-126--problem-details-with-a-relative-type-a-requestid-member-and-named-error-codes) | Problem details with a relative type, a requestId member and named error codes | Decided by the development agent — owner review at the walkthrough |
 | [ADR-127](#adr-127--transport-encryption-on-every-connection-troves-listeners-included) | Transport encryption on every connection, trove's listeners included (INV-20) | Accepted (owner constraint) |
@@ -6149,6 +6150,47 @@ format); a field `Refusal.Base` (a new member for a fact the catalog holds); a b
 
 **Spec:** [spec/architecture.md](spec/architecture.md) Q-ARCH-355; [developer/releasing.md](developer/releasing.md#pinned-tools-in-the-jobs).
 
+### ADR-165 · The remote engine carries out the format's token handshake and HEAD revalidation
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** ADR-161 gave the remote adapter the optional interfaces `Authenticator` and `Revalidator` and left the engine not calling them. A
+container registry answers a request without a token with `401` and a challenge naming a token service (R-OCI-021), expects its quota to
+be spent on a `HEAD` and not a `GET` (R-OCI-022), and sends `RateLimit-Remaining: 0;w=21600` (R-OCI-025). The upstream chooses the token
+service's host, so the engine must apply the host and credential rules of R-REPO-033 to an address that comes from the upstream.
+
+**Decision.** The engine owns the I/O, the format the protocol:
+
+- `proxy.Authenticator` and `proxy.Revalidator` are the engine's views of the format's interfaces; `internal/formathost` adapts
+  `formats.RemoteCaps.Auth` and `.Revalidate` to them (a format without them answers `ok` false, so a `401` or an expired document is
+  handled as before). `proxy.QueryRequest.Auth` and `proxy.Get.Auth` give the handshake to a pass-through query and to a mirror's
+  discovery request, which have no repository path.
+- On a `401` the engine asks the format for the token request, refuses an address that is not the upstream origin or an `extraHosts`
+  entry, sends it through the repository's client (the credential goes where R-REPO-033 allows), reads at most 64 KiB, hands the answer to
+  the format and retries the original request once with the value the format returns. The value goes to the upstream origin only
+  (`outbound.WithAuthorization`, [Q-REPO-255](spec/repositories-and-proxy.md#q-repo-255--a-handshake-token-goes-to-the-upstream-origin-only-and-the-realm-is-asked-under-the-credential-rule)).
+- The token is kept in the registered cache `proxy_upstream_tokens`, per repository, configuration version and the format's key, and
+  looked up before a request with the last challenge of the repository ([Q-OCI-82](spec/formats/oci.md#q-oci-82--the-engine-asks-the-format-before-a-request-with-the-last-challenge-so-only-the-first-request-of-a-replica-is-challenged), superseding Q-OCI-80;
+  [Q-ARCH-350](spec/architecture.md#q-arch-350--the-tokens-of-upstream-handshakes-are-a-registered-per-replica-cache-never-stored)); concurrent
+  handshakes of a key share one request.
+- An expired stored document is revalidated with the format's request when it gives one; the 2xx answer that the format calls unchanged
+  renews the freshness without a body ([Q-OCI-81](spec/formats/oci.md#q-oci-81--a-head-that-is-not-a-2xx-is-the-engines-answer-and-a-2xx-that-is-not-unchanged-is-a-get)).
+- The repository validation proposes the extra hosts of a well-known upstream with `sendCredentials: true` for the hosts the catalog
+  names in `DefaultCredentialHosts`.
+- `RateLimit-Remaining` is read by its integer before the first `;` ([Q-REPO-256](spec/repositories-and-proxy.md#q-repo-256--the-quota-header-is-read-by-its-integer-before-the-first-semicolon)).
+
+**Consequences.** `ContractVersion` stays 2 and no format changes. Only the first request of a replica and configuration version to a registry
+is challenged; the format takes the scope from the request and only the realm and the service from the challenge. The handshake's failures are the request's answer and do not count toward the circuit.
+
+**Alternatives considered.** The format doing the I/O (it would need the repository's client and the credential rules); a token set as a
+request header by the adapter (the hop policy removes it); a token guessed from the last key (the scope belongs to the request); the cache in Valkey
+(a token is a credential).
+
+**Revisit condition:** a registry that counts unauthenticated requests, or a format whose upstream needs the token at a second host.
+
+**Spec:** [spec/repositories-and-proxy.md](spec/repositories-and-proxy.md) R-REPO-033, R-REPO-054, Q-REPO-255, Q-REPO-256;
+[spec/formats/oci.md](spec/formats/oci.md) R-OCI-021, R-OCI-022, R-OCI-025, Q-OCI-80 to Q-OCI-82; [spec/architecture.md](spec/architecture.md) R-ARCH-032, Q-ARCH-350.
+
 ## Decisions by the development agent
 
 The development agent selected each of these decisions from the options documented in the
@@ -6351,6 +6393,7 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-ARCH-347](spec/architecture.md#q-arch-347--the-restore-builds-its-item-store-through-a-narrow-constructor-of-internalapp-not-through-a-replica) | How does the restore get the item store with the format hooks? | (b) `app.RestoreItems`, a narrow constructor | |
 | [Q-ARCH-355](spec/architecture.md#q-arch-355--how-do-the-ci-jobs-get-their-pinned-tools-without-a-live-release-asset-download-per-job) | How do the CI jobs get their pinned tools, without a live release-asset download per job? | (c) a repo-owned install per pinned tool, and a cache of the chart archives of `make dev-up`: a verified archive cached under `.bin`, a bounded retry, the digest of `tools/versions.env` (chosen, applied to Docker Buildx and the chart pulls' retry) | [ADR-167](decisions.md#adr-167--the-pinned-tools-of-a-ci-job-come-from-a-verified-cache-not-from-a-live-release-download) |
 | [Q-ARCH-356](spec/architecture.md#q-arch-356--how-do-ci-jobs-download-github-release-assets-while-the-release-host-is-degraded) | How do CI jobs download GitHub release assets while the release host is degraded? | (d) the release URL on github.com with the job's token in a request that does not follow redirects, the redirect fetched without it, through `tools/github-download.sh` (chosen) | — |
+| [Q-ARCH-350](spec/architecture.md#q-arch-350--the-tokens-of-upstream-handshakes-are-a-registered-per-replica-cache-never-stored) | Where do the tokens of upstream handshakes live? | (a) A registered per-replica cache `proxy_upstream_tokens`; never in PostgreSQL or Valkey | [ADR-165](#adr-165--the-remote-engine-carries-out-the-formats-token-handshake-and-head-revalidation) |
 | [Q-REPO-1](spec/repositories-and-proxy.md#q-repo-1--who-specifies-the-stored-secret-mechanism-iam-045) | Which page specifies the stored-secret mechanism? | (b) architecture.md's R-ARCH-021, for every stored secret; repository secrets only use it | [ADR-032](#adr-032--stored-secrets-are-sealed-under-a-key-ring-the-operator-supplies) |
 | [Q-REPO-2](spec/repositories-and-proxy.md#q-repo-2--lower-bound-of-the-metadata-period) | Lower bound of the metadata period? | (a) `0` is allowed and means revalidate on every request; no minimum. Revisited 2026-10-28, choice unchanged | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving) |
 | [Q-REPO-3](spec/repositories-and-proxy.md#q-repo-3--generic-default-when-the-upstream-removes-a-cached-document) | Generic default when the upstream removes a cached document? | (b) mark the package gone; its documents and cached artifacts answer 404 until the upstream serves it again | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving), [ADR-069](#adr-069--versions-removed-upstream-are-hidden-by-default) |
@@ -6504,6 +6547,8 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-REPO-235](spec/repositories-and-proxy.md#q-repo-235--the-repositorys-share-of-a-fetch-slot-ends-with-the-upstream-exchange-the-replicas-slot-with-the-fetch) | How long does a fetch hold its slot? | (d) the repository's share and the background count until the upstream exchange ends (the body read into the spool), the replica's slot until the fetch ends; a fetch that is storing is not pre-empted | — |
 | [Q-REPO-236](spec/repositories-and-proxy.md#q-repo-236--the-next-reading-of-clients-first-records-the-databases-waits-the-standbys-lag-the-runners-pressure-the-tests-events-and-the-slot-wait) | What does the next reading of the clients-first ratio record, so that a miss names its cause? | (a) one record per open question: slow statements and WAL timing in the dev PostgreSQL, a sampler of its waits and the standby's lag, the runner's pressure, the test's events, the cluster's logs at a slow install, `slot_wait_ms` on the upstream record | — |
 | [Q-REPO-253](spec/repositories-and-proxy.md#q-repo-253--the-e2e-criterion-pre-emptions-grew-is-proved-with-forced-contention-not-by-the-install-of-the-ratio) | How is the e2e criterion that pre-emptions grew proved once clients rarely wait? | (c) a subtest with forced contention (a slow pass, 36 clients over 9 slots) asserts it; the pairs only log the counter | — |
+| [Q-REPO-255](spec/repositories-and-proxy.md#q-repo-255--a-handshake-token-goes-to-the-upstream-origin-only-and-the-realm-is-asked-under-the-credential-rule) | Where does a handshake token go, and under which rule is the realm asked? | (a) The realm through the repository's client under the credential rule; the token to the upstream origin only | [ADR-165](#adr-165--the-remote-engine-carries-out-the-formats-token-handshake-and-head-revalidation) |
+| [Q-REPO-256](spec/repositories-and-proxy.md#q-repo-256--the-quota-header-is-read-by-its-integer-before-the-first-semicolon) | How is `RateLimit-Remaining` read? | (a) By its integer before the first `;`, for every format | [ADR-165](#adr-165--the-remote-engine-carries-out-the-formats-token-handshake-and-head-revalidation) |
 | [Q-REPO-245](spec/repositories-and-proxy.md#q-repo-245--a-narrowing-update-records-repositorynarrowed-beside-repositoryupdated-with-only-the-parts-that-narrowed) | How is a repository update that narrows its content journaled? Decided by the development agent | (b) a journaled `repository.narrowed` beside `repository.updated`, with only the parts that narrowed; rejected: the whole document under the update rule, no entry | — |
 | [Q-REPO-246](spec/repositories-and-proxy.md#q-repo-246--patterns-auto-claims-virtual-members-pin-rules-and-the-vulnerabilities-member-are-journaled-upstream-storage-and-format-settings-are-not) | Which members of a repository document are journaled as narrowings? Decided by the development agent | (a) patterns, `autoClaim`, virtual members, pin rules, the `vulnerabilities` member; upstream, storage and format settings are not (H-569) | — |
 | [Q-REPO-247](spec/repositories-and-proxy.md#q-repo-247--a-replayed-include-list-keeps-the-patterns-both-lists-hold-and-none-left-disables-the-repository) | How is a narrowed include list replayed? Decided by the development agent | (c) the patterns both lists hold; an empty restored list takes the journaled one; none left disables the repository | — |
@@ -7011,6 +7056,9 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-OCI-32](spec/formats/oci.md#q-oci-32--a-link-names-its-source-by-repository-name-and-path-and-the-host-resolves-it) | How does a link name its source? | (a) `SourceRef{Repo, Path}`; the host resolves the repository by name, through the members of a virtual one, and checks the item | [ADR-161](#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions) |
 | [Q-OCI-33](spec/formats/oci.md#q-oci-33--a-manifest-the-journal-replay-withheld-is-refused-by-the-serve-check-from-facts-read-with-the-item-and-an-administrator-reinstates-it) | How is a withheld manifest refused, and how does it come back? | (a) The serve-facts kind `oci_local` in the one statement of the lookup; the replay withholds, `trove admin oci reinstate` reinstates; a push of the digest is refused meanwhile | [ADR-161](#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions) |
 | [Q-OCI-34](spec/formats/oci.md#q-oci-34--the-rows-of-a-remote-manifest-are-tied-to-its-alias-item) | What owns the rows of a remote manifest? | (a) The alias item `<name>/_manifests/<digest>`; tag documents own none | — |
+| [Q-OCI-80](spec/formats/oci.md#q-oci-80--the-token-cache-is-read-after-the-challenge-and-a-rejected-cached-token-is-replaced-once) | When does the engine read its token cache, and what does it do with a rejected token? | (a) After the challenge named the key; a rejected cached token is dropped and one fresh handshake runs. Superseded by Q-OCI-82 | [ADR-165](#adr-165--the-remote-engine-carries-out-the-formats-token-handshake-and-head-revalidation) |
+| [Q-OCI-81](spec/formats/oci.md#q-oci-81--a-head-that-is-not-a-2xx-is-the-engines-answer-and-a-2xx-that-is-not-unchanged-is-a-get) | What does the engine do with the answer to a revalidation request? | (a) A 2xx goes to the format's `Unchanged`; every other status follows the rules of a conditional `GET` | [ADR-165](#adr-165--the-remote-engine-carries-out-the-formats-token-handshake-and-head-revalidation) |
+| [Q-OCI-82](spec/formats/oci.md#q-oci-82--the-engine-asks-the-format-before-a-request-with-the-last-challenge-so-only-the-first-request-of-a-replica-is-challenged) | When does the engine ask the format for a token? | (b) Before a request, with the last challenge remembered per repository and configuration version; the format takes the scope from the request and only realm and service from the challenge | [ADR-165](#adr-165--the-remote-engine-carries-out-the-formats-token-handshake-and-head-revalidation) |
 | [Q-GENERIC-1](spec/formats/generic.md#q-generic-1--the-format-is-generic-flat-paths-and-the-descriptor-lists-only-implemented-classes) | Is the format `generic` with flat paths, and which classes does the descriptor list? | (a) the implemented classes only | — |
 | [Q-GENERIC-2](spec/formats/generic.md#q-generic-2--path-limits-of-the-generic-format) | Path limits of the generic format? | (a) 4096 bytes per path, 255 bytes per segment, valid UTF-8 | — |
 | [Q-GENERIC-3](spec/formats/generic.md#q-generic-3--a-path-is-a-file-or-a-folder-not-both) | May a path be a file and a folder at once? | (a) refuse with 409 `path_conflict` | — |

@@ -81,13 +81,27 @@ func RateLimitOf(status int, h http.Header, body []byte, now time.Time) (RateLim
 
 func remainingZero(h http.Header) bool {
 	for _, k := range []string{"RateLimit-Remaining", "X-RateLimit-Remaining"} {
-		if v := strings.TrimSpace(h.Get(k)); v != "" {
-			if n, err := strconv.ParseInt(v, 10, 64); err == nil && n <= 0 {
-				return true
-			}
+		if n, ok := QuotaRemaining(h.Get(k)); ok && n <= 0 {
+			return true
 		}
 	}
 	return false
+}
+
+// QuotaRemaining reads the value of a RateLimit-Remaining header by its integer before the first ';': a registry sends the
+// quota with its window as a parameter, "0;w=21600" (R-REPO-054, R-OCI-025). ok is false for an empty value and for one whose
+// first element is no integer.
+func QuotaRemaining(v string) (n int64, ok bool) {
+	first, _, _ := strings.Cut(v, ";")
+	first = strings.TrimSpace(first)
+	if first == "" {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(first, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }
 
 func slowDown(body []byte) bool {

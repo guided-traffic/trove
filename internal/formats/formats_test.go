@@ -470,7 +470,7 @@ func (authRemote) ReadToken(context.Context, RemoteContext, int, []byte) (string
 	return "Bearer t", time.Minute, nil
 }
 
-func (authRemote) RevalidationRequest(context.Context, RemoteContext, Path, string, RemoteDocument) (*http.Request, bool, error) {
+func (authRemote) RevalidationRequest(context.Context, RemoteContext, Path, string, RemoteDocument, *http.Request) (*http.Request, bool, error) {
 	return nil, false, nil
 }
 

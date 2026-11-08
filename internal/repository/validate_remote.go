@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -204,7 +205,9 @@ func (r *remoteResolver) url(s *RemoteSettings, in remoteInput) {
 		hosts = []ExtraHost{}
 		if s.URL != "" && s.URL == known {
 			for _, h := range r.info.DefaultExtraHosts {
-				hosts = append(hosts, ExtraHost{Pattern: h})
+				// The hosts the format names as holding the upstream's token service receive the repository's credential
+				// (R-OCI-021, R-REPO-033); the catalog guarantees each is also among the default extra hosts.
+				hosts = append(hosts, ExtraHost{Pattern: h, SendCredentials: slices.Contains(r.info.DefaultCredentialHosts, h)})
 			}
 		}
 	}
