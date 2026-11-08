@@ -1372,6 +1372,12 @@ Priority: **P2** · Covers: PKG-DEB-010
   `Description`, and as metadata the architectures, the coordinates, `Maintainer`, `Section`, `Priority`, `Installed-Size`,
   `Homepage`, `Depends` and `Source`. There is no README.
 - For a remote repository the screens show the versions whose files are stored, described from the parsed rows (R-DEB-023).
+- **The repository screen** ([api-and-ui.md](../api-and-ui.md) R-UI-021, Q-DEB-100 to Q-DEB-102): a local or virtual Debian repository
+  has the tabs **Signing keys** (R-DEB-015, R-DEB-017, R-DEB-032: the list, the next key generated or imported, the promotion, the
+  removal of the next key, the confirmation or reinstatement of a withheld key; a private key is never shown) and **Index**
+  (R-DEB-014: each suite's state with the reason of a failed build in words, and the full rebuild). A remote repository has neither;
+  its format tab shows the read-only `upstreamKeyFingerprints` beside the editable `upstreamKeys`. The settings of R-DEB-008 and
+  R-DEB-024 are the format tab: each list as one entry per line, `compression` as a checkbox.
 
 Acceptance criteria:
 
@@ -2847,6 +2853,103 @@ signing keys (T-17 WP2).
 restriction. The development agent would revisit the "subject unknown" cases if real restores produce them routinely.
 
 **Applied in the spec:** R-DEB-032.
+
+### Q-DEB-100 · The signing keys and the index state are two lazy tabs of a local or virtual repository's edit form
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the
+Debian screens (T-17 WP11).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Two tabs, **Signing keys** and **Index**, of the repository's edit form, for the classes local and virtual, created when the tab is opened (chosen) | The panels read their own endpoints; the form's save does not touch them; key changes act at once, each behind its own confirmation where it erases something | The edit form is where an operator looks for a repository's configuration; a read happens only when someone looks; the key operations are not part of the document, so they must not wait for "Save changes" | Two more tabs for one format |
+| (b) One "Debian" tab holding settings, keys and index | One place | Fewer tabs | The settings are written by the form's save and the keys by their own calls in the same tab: a reader cannot tell which button belongs to which |
+| (c) A screen of its own below the repository | A route per panel | Deep links | A second place to find a repository's configuration; the tabs of the form already carry links |
+
+**Choice:** (a). The key changes are offered to the principals who may edit the repository (`repositories:write-config` or Owner of the
+project, the rule of "Save changes"); the server enforces `manage` on every call and answers 403 otherwise, so the UI only decides what to
+offer ([H-766](../../security/deb-signing.md#h-766--the-screen-offers-key-changes-to-the-principals-who-may-edit-the-repository-not-to-everyone-who-holds-manage)).
+The promotion, the removal of the next key and the confirmation of a retirement ask first and say what they erase (the private key) and
+what a client that never replaced its key file then sees; generating a next key and reinstating a withheld key ask nothing, because
+neither erases anything. The list is read again after every call, also after a refusal: the server's state is what the page shows. An
+imported secret key and its passphrase live in two form fields, are sent once and are cleared from the form after the answer, whatever
+it was ([H-765](../../security/deb-signing.md#h-765--an-imported-secret-key-passes-through-the-operators-browser)).
+
+**Rationale:** the screen follows the mechanism: a document setting is saved, a key operation is an act with consequences for the
+clients. The development agent revisits this when an operator needs the panels without the permission to edit the document, or when a
+deep link to the key list is asked for.
+
+**Applied in the spec:** R-DEB-030 (the repository screen bullet), R-UI-021 in [api-and-ui.md](../api-and-ui.md).
+
+### Q-DEB-101 · A remote repository shows the fingerprints of its upstream keys read-only, and has no key or index tab
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The format tab shows `upstreamKeyFingerprints` as a read-only list with copy buttons under the editable `upstreamKeys`; no Signing keys or Index tab for a remote (chosen) | The server-computed fingerprints are the only copy of what the pasted block holds | An operator compares the fingerprints with the archive's published ones before trusting the block (R-DEB-020); a remote has no keys of its own (`GET …/deb/signing-keys` answers 400 `not_applicable`) and builds no index | A remote's cached releases are not visible as suites on this screen |
+| (b) Show the fingerprints inside the key panel for every class | One panel | Fewer components | The panel would answer 400 for a remote |
+| (c) Leave the fingerprints to the API | No UI | Less code | The one fact an operator needs to verify the paste is not on the screen |
+
+**Choice:** (a). The list follows the saved document: it is not recomputed from the text being typed, and a save never writes it back (the
+member is read-only; the form's patch carries only what changed).
+
+**Rationale:** R-DEB-020 gives `upstreamKeyFingerprints` for exactly this comparison. The development agent revisits this when the
+remote's index state (the releases it holds and their verification, R-DEB-023) is exposed by an API.
+
+**Applied in the spec:** R-DEB-030.
+
+### Q-DEB-102 · The index panel reads again while a suite waits for its build, and says why a build failed in words
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A plain read, repeated every 3 s while any suite is `pending`, ended when none is or the tab is left; the reason of a `failed` suite in a sentence per code (chosen) | `GET …/deb/index` without `waitFor`; `no_signing_key`, `member_unverified`, `member_expired`, `member_rollback`, `deb_members_unreadable` have sentences, another code is shown as it is | A person watching an upload's build sees it finish; no request is held open; the member codes of a virtual repository (R-DEB-029) are readable | A pending suite costs one read every 3 s while the tab is open |
+| (b) The long wait (`waitFor`) | One held request per suite | Fewer requests | The wait is for a client that knows a `changeSeq`; the page does not (it would invent the numbers it waits for) |
+| (c) A single read when the tab opens | No polling | Simplest | A suite that is `pending` stays so on the screen until the operator reloads |
+
+**Choice:** (a). The panel also offers **Rebuild all indexes** (R-DEB-014, `POST …/reindex`): it asks first (what is rebuilt, and that
+clients keep reading the published indexes meanwhile), shows the queued job with a link to the jobs list, and shows a `409 reindex_running`
+as the sentence "already queued or running", not as an error.
+
+**Rationale:** the endpoint exists to let a caller wait; a screen that has no `changeSeq` to wait for reads. The development agent
+revisits this when the screen is reached from an upload (then it knows the `changeSeq`).
+
+**Applied in the spec:** R-DEB-014 is unchanged; the panel is described under R-DEB-030.
+
+### Q-DEB-103 · The version's architectures, coordinates and control fields are one block of the Metadata tab
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A "Package details" block of the Metadata tab: architectures, suites and components (`stable/main`), maintainer, section, priority, installed size (KiB), depends, source package (chosen) | Read from `metadata` as R-DEB-030 lists it; a field the version lacks is not shown; `homepage` joins the Links block of the tab | The place where the other formats show their facts (Q-UI-177); the same tab ids | Dependencies are one line of text, as the control field writes them, not a list of links |
+| (b) A tab of its own for coordinates | A tab per concept | Visible | A tab that exists for one format |
+
+**Choice:** (a), with the values shown as the server sends them (the page does not parse `Depends`).
+
+**Rationale:** the control field is the package's own statement; a parsed list of links would claim a resolution trove does not do for
+this format. The development agent revisits this when the search of control fields is built (Deferred: PKG-DEB-010).
+
+**Applied in the spec:** R-DEB-030.
+
+### Q-DEB-104 · The setup dialog renders the default suite; a suite field is not built
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The dialog offers the client `apt`, renders the snippets the API sends and explains them; the suite is the template's default `stable`, the operator edits the `Suites:` line (chosen) | The UI sends no `scope`; the `-scoped` ids the API can send for a suite are explained too | Same as every format: the dialog has no variant input for any client (Q-API-235) | A repository whose suites are not `stable` shows a snippet the operator must correct |
+| (b) A suite field in the dialog that sends `scope` | The snippets name the chosen suite | Correct for the reader's suite | A new control for one format; the dialog's scope handling does not exist for npm either; the suites come from the index state, which a reader of the setup may not read |
+
+**Choice:** (a). The ids of the `apt` client are `apt.configure.shell`, `apt.configure.list`, `apt.install` and `apt.publish.curl`, and
+the `-scoped` form of the two configure ids; each has an explanation, and `snippet-ids.fixture.ts` lists them (the test that renders
+every format with a scope now includes Debian).
+
+**Rationale:** R-UI-016 asks for the clients of a format; the suite variant is the API's, and a picker is a feature of the dialog, not of
+the format. The development agent revisits this when the dialog offers a variant for any client.
+
+**Applied in the spec:** R-DEB-029 is unchanged; `internal/api/v1/setup_snippet_ids_test.go` lists `deb` among the formats of the fixture.
 
 ## What this does not cover
 

@@ -3,10 +3,13 @@ import { ApiError } from '../../api/problem';
 import { RepositoriesApi } from '../../api/repositories-api';
 import { FakeGuidesApi } from '../../api/testing/fakes-guides';
 import {
+  DEB_FORMAT,
   FakeRepositoriesApi,
   GENERIC_FORMAT,
   PACKAGE_FORMAT,
 } from '../../api/testing/fakes-catalog';
+import { DebApi } from '../../api/deb-api';
+import { FakeDebApi } from '../../api/testing/fakes-deb';
 import { button, expectAccessible, renderScreen, settle, text, type } from '../../testing/screen';
 import { RepositoryDetail } from './repository-detail';
 
@@ -291,5 +294,85 @@ describe('Repository edit form', () => {
     await settle(r.fixture);
     expect(text(r.root)).toContain('curl -X PATCH');
     expect(text(r.root)).toContain('If-Match: "1"');
+  });
+
+  describe('Debian', () => {
+    const withDeb = (cls: 'local' | 'remote' | 'virtual', deb?: Record<string, unknown>) => (fake: FakeRepositoriesApi) => {
+      fake.formatsResult = [GENERIC_FORMAT, DEB_FORMAT];
+      fake.repositories.push({
+        key: `deb-${cls}`,
+        project: 'web',
+        class: cls,
+        format: 'deb',
+        description: 'APT',
+        ...(deb ? { deb: deb as never } : {}),
+      });
+    };
+    const openDeb = (cls: 'local' | 'remote' | 'virtual', deb?: Record<string, unknown>, capabilities?: string[]) =>
+      renderScreen(RepositoryDetail, {
+        inputs: { project: 'web', key: `deb-${cls}` },
+        ...(capabilities ? { capabilities } : {}),
+        setup: (get) => withDeb(cls, deb)(get(RepositoriesApi) as FakeRepositoriesApi),
+      });
+    const tabNames = (r: Awaited<ReturnType<typeof openDeb>>) =>
+      [...r.root.querySelectorAll('[role="tab"]')].map((t) => text(t));
+
+    it('R-DEB-030 R-UI-021 a local repository has the tabs for its format settings, signing keys, index state and the APT guide', async () => {
+      const r = await openDeb('local');
+      expect(tabNames(r)).toEqual(['General', 'Access', 'Debian (APT) settings', 'Signing keys', 'Index', 'How to use', 'API']);
+      await openTab(r, 'Signing keys');
+      expect(text(r.root)).toContain('3F2A 0000');
+      const api = r.get(DebApi) as FakeDebApi;
+      expect(api.calls).toContain('signingKeys');
+      expect(api.calls).not.toContain('indexState');
+      await openTab(r, 'Index');
+      expect(api.calls).toContain('indexState');
+      expect(text(r.root)).toContain('Waiting for a build');
+      await expectAccessible(r.root);
+    });
+
+    it('R-DEB-015 someone who may write repositories can promote; a reader of the configuration sees the keys without the buttons', async () => {
+      const writer = await openDeb('virtual');
+      await openTab(writer, 'Signing keys');
+      expect(text(writer.root)).toContain('Generate a next key');
+      const reader = await openDeb('virtual', undefined, ['repositories:read-config']);
+      await openTab(reader, 'Signing keys');
+      expect(text(reader.root)).toContain('3F2A 0000');
+      expect(text(reader.root)).not.toContain('Generate a next key');
+      await openTab(reader, 'Index');
+      expect(text(reader.root)).not.toContain('Rebuild all indexes');
+    });
+
+    it('R-DEB-020 a remote repository has no signing keys and no index state of its own and shows the fingerprints of its upstream keys read-only', async () => {
+      const r = await openDeb('remote', {
+        upstreamKeys: 'BLOCK',
+        upstreamKeyFingerprints: ['AAAA000000000000000000000000000000001111', 'BBBB000000000000000000000000000000002222'],
+      });
+      const names = tabNames(r);
+      expect(names).not.toContain('Signing keys');
+      expect(names).not.toContain('Index');
+      await openTab(r, 'Debian (APT)');
+      const section = r.root.querySelector('[data-testid="deb-upstream-fingerprints"]')!;
+      expect([...section.querySelectorAll('code')].map((c) => text(c))).toEqual([
+        'AAAA 0000 0000 0000 0000 0000 0000 0000 0000 1111',
+        'BBBB 0000 0000 0000 0000 0000 0000 0000 0000 2222',
+      ]);
+      expect(section.querySelector('input, textarea')).toBeNull();
+      expect(r.root.querySelector<HTMLTextAreaElement>('#f-deb-upstreamKeys')?.value).toBe('BLOCK');
+    });
+
+    it('R-DEB-020 the read-only fingerprints are never written back: changing another setting patches that setting only', async () => {
+      const r = await openDeb('remote', {
+        upstreamKeys: 'BLOCK',
+        upstreamKeyFingerprints: ['AAAA000000000000000000000000000000001111'],
+      });
+      await openTab(r, 'Debian (APT)');
+      const fake = r.get(RepositoriesApi) as FakeRepositoriesApi;
+      type(r.root.querySelector<HTMLTextAreaElement>('#f-deb-mirror-suites')!, 'stable');
+      await settle(r.fixture);
+      button(r.root, 'Save changes').click();
+      await settle(r.fixture);
+      expect(fake.patches[0]?.patch).toEqual({ deb: { mirror: { suites: ['stable'] } } });
+    });
   });
 });

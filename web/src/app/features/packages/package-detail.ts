@@ -338,6 +338,26 @@ export class PackageDetail {
     ];
     return entries.filter((e) => e[1] !== '');
   });
+  /**
+   * The facts of a Debian version (R-DEB-030): the architectures of its files, its coordinates (suite and component, shown as
+   * `stable/main`) and the control fields the view adapter sends. Installed-Size is in KiB, as the control field says.
+   */
+  protected readonly debFacts = computed<readonly [string, string][]>(() => {
+    const m = this.detail()?.metadata ?? {};
+    const text = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+    const size = text(m['installedSize']);
+    const entries: [string, string][] = [
+      [$localize`:@@pkg.meta.deb-architectures:Architectures`, strings(m['architectures']).join(', ')],
+      [$localize`:@@pkg.meta.deb-coordinates:Suites and components`, strings(m['coordinates']).join(', ')],
+      [$localize`:@@pkg.meta.deb-maintainer:Maintainer`, text(m['maintainer'])],
+      [$localize`:@@pkg.meta.deb-section:Section`, text(m['section'])],
+      [$localize`:@@pkg.meta.deb-priority:Priority`, text(m['priority'])],
+      [$localize`:@@pkg.meta.deb-installed-size:Installed size`, size === '' ? '' : $localize`:@@pkg.meta.deb-kib:${size}:size: KiB`],
+      [$localize`:@@pkg.meta.deb-depends:Depends`, text(m['depends'])],
+      [$localize`:@@pkg.meta.deb-source:Source package`, text(m['source'])],
+    ];
+    return entries.filter((e) => e[1] !== '');
+  });
   protected readonly deprecated = computed(() => {
     const d = this.detail()?.metadata['deprecated'];
     return typeof d === 'string' && d !== '' ? d : null;
@@ -367,6 +387,7 @@ export class PackageDetail {
       this.engines().length > 0 ||
       this.authors().length > 0 ||
       this.nugetFacts().length > 0 ||
+      this.debFacts().length > 0 ||
       this.links().length > 0 ||
       this.deprecated() !== null,
   );

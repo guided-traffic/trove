@@ -153,6 +153,9 @@
                 (valueChange)="setFormatMember($event)"
                 [fieldErrors]="fieldErrors()"
               />
+              @if (debUpstreamFingerprints().length > 0) {
+                <trove-deb-upstream-keys [fingerprints]="debUpstreamFingerprints()" />
+              }
             </div>
           </trove-tab>
         }
@@ -181,6 +184,22 @@
                   [restricted]="mirrorRestricted()"
                   [fieldErrors]="fieldErrors()"
                 />
+              </div>
+            </ng-template>
+          </trove-tab>
+        }
+        @if (debSection()) {
+          <trove-tab [label]="tabDebKeys">
+            <ng-template troveTabContent>
+              <div class="tab">
+                <trove-deb-signing-keys [key]="ref()" [canManage]="canWrite() && repo.lifecycle !== 'deleting'" />
+              </div>
+            </ng-template>
+          </trove-tab>
+          <trove-tab [label]="tabDebIndex">
+            <ng-template troveTabContent>
+              <div class="tab">
+                <trove-deb-index-state [key]="ref()" [canManage]="canWrite() && repo.lifecycle !== 'deleting'" />
               </div>
             </ng-template>
           </trove-tab>

@@ -1,5 +1,5 @@
 import { FieldProblem } from '../../api/problem';
-import { NUGET_SETTINGS_SCHEMA, RICH_SETTINGS_SCHEMA } from '../../api/testing/fakes-catalog';
+import { DEB_SETTINGS_SCHEMA, NUGET_SETTINGS_SCHEMA, RICH_SETTINGS_SCHEMA } from '../../api/testing/fakes-catalog';
 import { JsonObject } from '../../shared/merge-patch';
 import { expectAccessible, renderScreen, settle, text, type } from '../../testing/screen';
 import { FormatSettings } from './format-settings';
@@ -179,5 +179,86 @@ describe('Format settings rendered from the schema', () => {
 
     const virtual = await render('virtual');
     expect(virtual.root.querySelector('input, select')).toBeNull();
+  });
+
+  describe('Debian', () => {
+    const render = (cls: string, value: JsonObject = {}, errors = new Map<string, FieldProblem>()) =>
+      renderScreen(FormatSettings, {
+        inputs: {
+          nodes: settingNodes(DEB_SETTINGS_SCHEMA as SettingSchema, cls, 'deb'),
+          pointer: '/deb',
+          value,
+          fieldErrors: errors,
+        },
+      });
+
+    it('R-DEB-008 a local repository edits architectures one per line with the default shown, compression as a checkbox, origin and label', async () => {
+      const r = await render('local');
+      const arch = el<HTMLTextAreaElement>(r.root, '#f-deb-architectures');
+      expect(arch.value).toBe('');
+      expect(text(el(r.root, '#f-deb-architectures-v'))).toBe('Default: amd64, arm64');
+      expect(text(el(r.root, '#f-deb-architectures-l'))).toBe('One entry per line.');
+      const xz = el<HTMLInputElement>(r.root, '#f-deb-compression-xz');
+      expect(xz.type).toBe('checkbox');
+      expect(xz.checked).toBe(false);
+      expect(r.root.querySelector('#f-deb-compression-v')).toBeNull();
+      expect(el<HTMLInputElement>(r.root, '#f-deb-origin').value).toBe('');
+      expect(r.root.querySelector('#f-deb-suites')).toBeNull();
+      expect(r.root.querySelector('#f-deb-upstreamKeys')).toBeNull();
+
+      type(arch, 'arm64\n\n riscv64 ');
+      xz.checked = true;
+      xz.dispatchEvent(new Event('change', { bubbles: true }));
+      type(el<HTMLInputElement>(r.root, '#f-deb-origin'), 'acme');
+      await settle(r.fixture);
+      expect(r.fixture.componentInstance.value()).toEqual({
+        architectures: ['arm64', 'riscv64'],
+        compression: ['xz'],
+        origin: 'acme',
+      });
+      // the blank line the user is typing is not rewritten under the cursor
+      expect(el<HTMLTextAreaElement>(r.root, '#f-deb-architectures').value).toBe('arm64\n\n riscv64 ');
+
+      type(el<HTMLTextAreaElement>(r.root, '#f-deb-architectures'), '');
+      xz.checked = false;
+      xz.dispatchEvent(new Event('change', { bubbles: true }));
+      await settle(r.fixture);
+      expect(r.fixture.componentInstance.value()).toEqual({ origin: 'acme' });
+      await expectAccessible(r.root);
+    });
+
+    it('R-DEB-008 a stored list is shown one entry per line, and a virtual repository adds suites and components', async () => {
+      const r = await render('virtual', { suites: ['stable', 'testing'], components: ['main', 'contrib'] });
+      expect(el<HTMLTextAreaElement>(r.root, '#f-deb-suites').value).toBe('stable\ntesting');
+      expect(el<HTMLTextAreaElement>(r.root, '#f-deb-components').value).toBe('main\ncontrib');
+      expect(text(el(r.root, '#f-deb-components-v'))).toBe('Default: main');
+      expect(r.root.querySelector('#f-deb-suites-v')).toBeNull();
+    });
+
+    it('R-DEB-020 R-DEB-024 a remote repository edits the upstream keys in an area and the mirror settings in a fieldset, and a server refusal appears at the member', async () => {
+      const keys = new Map<string, FieldProblem>([
+        ['/deb/mirror/suites', { pointer: '/deb/mirror/suites', code: 'deb_mirror_suites_required', detail: 'a mirror needs suites' }],
+        ['/deb/upstreamKeys', { pointer: '/deb/upstreamKeys', code: 'invalid_value', detail: 'no certificate' }],
+      ]);
+      const r = await render('remote', { upstreamKeys: 'BLOCK', mirror: { suites: ['stable'], sources: true } }, keys);
+      const area = el<HTMLTextAreaElement>(r.root, '#f-deb-upstreamKeys');
+      expect(area.tagName).toBe('TEXTAREA');
+      expect(area.value).toBe('BLOCK');
+      expect(area.getAttribute('aria-invalid')).toBe('true');
+      const mirror = el<HTMLFieldSetElement>(r.root, 'fieldset#f-deb-mirror');
+      expect(el<HTMLTextAreaElement>(mirror, '#f-deb-mirror-suites').value).toBe('stable');
+      expect(el<HTMLTextAreaElement>(mirror, '#f-deb-mirror-suites').getAttribute('aria-invalid')).toBe('true');
+      expect(text(el(mirror, '#f-deb-mirror-architectures-v'))).toBe('Default: amd64');
+      expect(el<HTMLInputElement>(mirror, '#f-deb-mirror-sources').checked).toBe(true);
+      expect(r.root.querySelector('#f-deb-architectures')).toBeNull();
+
+      type(el<HTMLTextAreaElement>(mirror, '#f-deb-mirror-suites'), 'stable\ntesting');
+      await settle(r.fixture);
+      expect(r.fixture.componentInstance.value()).toEqual({
+        upstreamKeys: 'BLOCK',
+        mirror: { suites: ['stable', 'testing'], sources: true },
+      });
+      await expectAccessible(r.root);
+    });
   });
 });

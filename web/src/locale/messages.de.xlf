@@ -27681,5 +27681,1013 @@
         <target>Befehl kopieren</target>
       </segment>
     </unit>
+    <unit id="pkg.meta.deb-architectures">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:350</note>
+      </notes>
+      <segment>
+        <source>Architectures</source>
+        <target>Architekturen</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.deb-coordinates">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:351</note>
+      </notes>
+      <segment>
+        <source>Suites and components</source>
+        <target>Suites und Komponenten</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.deb-maintainer">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:352</note>
+      </notes>
+      <segment>
+        <source>Maintainer</source>
+        <target>Maintainer</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.deb-section">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:353</note>
+      </notes>
+      <segment>
+        <source>Section</source>
+        <target>Sektion</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.deb-priority">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:354</note>
+      </notes>
+      <segment>
+        <source>Priority</source>
+        <target>Priorität</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.deb-installed-size">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:355</note>
+      </notes>
+      <segment>
+        <source>Installed size</source>
+        <target>Installierte Größe</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.deb-kib">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:355</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="size" disp="size"/> KiB</source>
+        <target><ph id="0" equiv="size" disp="size"/> KiB</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.deb-depends">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:356</note>
+      </notes>
+      <segment>
+        <source>Depends</source>
+        <target>Abhängigkeiten</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.deb-source">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:357</note>
+      </notes>
+      <segment>
+        <source>Source package</source>
+        <target>Quellpaket</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.state.current">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:21</note>
+      </notes>
+      <segment>
+        <source>Current</source>
+        <target>Aktuell</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.state.failed">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:23</note>
+      </notes>
+      <segment>
+        <source>Failed</source>
+        <target>Fehlgeschlagen</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.state.pending">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:25</note>
+      </notes>
+      <segment>
+        <source>Waiting for a build</source>
+        <target>Wartet auf einen Build</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.reason.no-key">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:39</note>
+      </notes>
+      <segment>
+        <source>The repository has no primary signing key, so nothing can be signed. Reinstate a withheld key, or create a next key and promote it.</source>
+        <target>Das Repository hat keinen primären Signaturschlüssel, deshalb kann nichts signiert werden. Setzen Sie einen zurückgehaltenen Schlüssel wieder ein oder erstellen Sie einen nächsten Schlüssel und stufen Sie ihn hoch.</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.reason.unverified">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:41</note>
+      </notes>
+      <segment>
+        <source>A member&apos;s release could not be verified against its upstream keys: <ph id="0" equiv="member" disp="detail"/>.</source>
+        <target>Das Release eines Mitglieds konnte nicht gegen die Upstream-Schlüssel geprüft werden: <ph id="0" equiv="member" disp="detail"/>.</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.reason.expired">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:43</note>
+      </notes>
+      <segment>
+        <source>A member&apos;s release has expired: <ph id="0" equiv="member" disp="detail"/>.</source>
+        <target>Das Release eines Mitglieds ist abgelaufen: <ph id="0" equiv="member" disp="detail"/>.</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.reason.rollback">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:45</note>
+      </notes>
+      <segment>
+        <source>A member&apos;s release is older than the one already merged: <ph id="0" equiv="member" disp="detail"/>. Take the member out and add it back to accept the older release.</source>
+        <target>Das Release eines Mitglieds ist älter als das bereits zusammengeführte: <ph id="0" equiv="member" disp="detail"/>. Nehmen Sie das Mitglied heraus und fügen Sie es wieder hinzu, um das ältere Release zu akzeptieren.</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.reason.unreadable">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:47</note>
+      </notes>
+      <segment>
+        <source>A member of this virtual repository cannot be read with your permissions: <ph id="0" equiv="member" disp="detail"/>.</source>
+        <target>Ein Mitglied dieses virtuellen Repositorys ist mit Ihren Berechtigungen nicht lesbar: <ph id="0" equiv="member" disp="detail"/>.</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:70,71</note>
+      </notes>
+      <segment>
+        <source>Index state</source>
+        <target>Index-Zustand</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.intro">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:72,76</note>
+      </notes>
+      <segment>
+        <source> The indexes of each suite are built from the stored packages a moment after a change. A client that must see an upload at once waits for the change number the upload answered with. </source>
+        <target>Die Indizes jeder Suite werden kurz nach einer Änderung aus den gespeicherten Paketen gebaut. Ein Client, der einen Upload sofort sehen muss, wartet auf die Änderungsnummer, mit der der Upload geantwortet hat.</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.behind">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:96</note>
+      </notes>
+      <segment>
+        <source>behind by</source>
+        <target>im Rückstand um</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.reindex">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:121,122</note>
+      </notes>
+      <segment>
+        <source> Rebuild all indexes </source>
+        <target>Alle Indizes neu bauen</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.reindex-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:125,128</note>
+      </notes>
+      <segment>
+        <source> Rebuilds every suite from the stored packages, drops suites without packages and removes rows of items that no longer exist. </source>
+        <target>Baut jede Suite aus den gespeicherten Paketen neu, entfernt Suites ohne Pakete und löscht Zeilen von Objekten, die es nicht mehr gibt.</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.started">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:131,132</note>
+      </notes>
+      <segment>
+        <source>The rebuild is queued.</source>
+        <target>Der Neubau ist eingereiht.</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.running">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:133,135</note>
+      </notes>
+      <segment>
+        <source>A rebuild is already queued or running.</source>
+        <target>Ein Neubau ist bereits eingereiht oder läuft.</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.job-link">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:136,137</note>
+      </notes>
+      <segment>
+        <source>Open the jobs</source>
+        <target>Jobs öffnen</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.loading">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:145,148</note>
+      </notes>
+      <segment>
+        <source>Loading the index state.</source>
+        <target>Der Index-Zustand wird geladen.</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.caption">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:182</note>
+      </notes>
+      <segment>
+        <source>Suites of this repository</source>
+        <target>Suites dieses Repositorys</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.empty">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:183</note>
+      </notes>
+      <segment>
+        <source>No suite has packages yet. A suite appears with the first package uploaded to it.</source>
+        <target>Noch keine Suite hat Pakete. Eine Suite erscheint mit dem ersten Paket, das in sie hochgeladen wird.</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.col.suite">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:185</note>
+      </notes>
+      <segment>
+        <source>Suite</source>
+        <target>Suite</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.col.state">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:186</note>
+      </notes>
+      <segment>
+        <source>State</source>
+        <target>Zustand</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.col.change">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:189</note>
+      </notes>
+      <segment>
+        <source>Change number</source>
+        <target>Änderungsnummer</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.help.change">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:191</note>
+      </notes>
+      <segment>
+        <source>The number an upload answered with. It rises with every change of the suite.</source>
+        <target>Die Nummer, mit der ein Upload geantwortet hat. Sie steigt mit jeder Änderung der Suite.</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.col.published">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:195</note>
+      </notes>
+      <segment>
+        <source>Published number</source>
+        <target>Veröffentlichte Nummer</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.help.published">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:197</note>
+      </notes>
+      <segment>
+        <source>The change number the published indexes were built from. The suite is current when it reaches the change number.</source>
+        <target>Die Änderungsnummer, aus der die veröffentlichten Indizes gebaut wurden. Die Suite ist aktuell, wenn sie die Änderungsnummer erreicht.</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.col.generation">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:199</note>
+      </notes>
+      <segment>
+        <source>Generation</source>
+        <target>Generation</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.col.release">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:200</note>
+      </notes>
+      <segment>
+        <source>Release date</source>
+        <target>Release-Datum</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.col.signed">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:203</note>
+      </notes>
+      <segment>
+        <source>Signed by</source>
+        <target>Signiert von</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.help.signed">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:204</note>
+      </notes>
+      <segment>
+        <source>The fingerprints of the keys that signed the published release, shortened to their last sixteen digits.</source>
+        <target>Die Fingerabdrücke der Schlüssel, die das veröffentlichte Release signiert haben, gekürzt auf ihre letzten sechzehn Stellen.</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.reindex.title">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:266</note>
+      </notes>
+      <segment>
+        <source>Rebuild all indexes</source>
+        <target>Alle Indizes neu bauen</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.reindex.line">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:268</note>
+      </notes>
+      <segment>
+        <source>Every suite is built again from the stored packages. Suites without packages are dropped. Clients keep reading the published indexes until the new ones are ready.</source>
+        <target>Jede Suite wird aus den gespeicherten Paketen neu gebaut. Suites ohne Pakete werden entfernt. Clients lesen die veröffentlichten Indizes weiter, bis die neuen fertig sind.</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.reindex.confirm">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:270</note>
+      </notes>
+      <segment>
+        <source>Rebuild</source>
+        <target>Neu bauen</target>
+      </segment>
+    </unit>
+    <unit id="deb.index.reindex.done">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:279</note>
+      </notes>
+      <segment>
+        <source>The rebuild was requested.</source>
+        <target>Der Neubau wurde angefordert.</target>
+      </segment>
+    </unit>
+    <unit id="deb.key.state.primary">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:23</note>
+      </notes>
+      <segment>
+        <source>Primary</source>
+        <target>Primär</target>
+      </segment>
+    </unit>
+    <unit id="deb.key.state.next">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:25</note>
+      </notes>
+      <segment>
+        <source>Next</source>
+        <target>Nächster</target>
+      </segment>
+    </unit>
+    <unit id="deb.key.state.withheld">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:27</note>
+      </notes>
+      <segment>
+        <source>Withheld</source>
+        <target>Zurückgehalten</target>
+      </segment>
+    </unit>
+    <unit id="deb.key.state.retired">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:29</note>
+      </notes>
+      <segment>
+        <source>Retired</source>
+        <target>Außer Dienst</target>
+      </segment>
+    </unit>
+    <unit id="deb.key.state.primary.text">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:36</note>
+      </notes>
+      <segment>
+        <source>Signs every index and is served to clients.</source>
+        <target>Signiert jeden Index und wird an Clients ausgeliefert.</target>
+      </segment>
+    </unit>
+    <unit id="deb.key.state.next.text">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:38</note>
+      </notes>
+      <segment>
+        <source>Co-signs every index and is served to clients, until it is promoted or removed.</source>
+        <target>Signiert jeden Index mit und wird an Clients ausgeliefert, bis er hochgestuft oder entfernt wird.</target>
+      </segment>
+    </unit>
+    <unit id="deb.key.state.withheld.text">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:40</note>
+      </notes>
+      <segment>
+        <source>A restore withheld this key. It neither signs nor is served; its private key is kept until you confirm the retirement or reinstate it.</source>
+        <target>Eine Wiederherstellung hat diesen Schlüssel zurückgehalten. Er signiert nicht und wird nicht ausgeliefert; sein privater Schlüssel bleibt erhalten, bis Sie die Außerdienststellung bestätigen oder ihn wieder einsetzen.</target>
+      </segment>
+    </unit>
+    <unit id="deb.key.state.retired.text">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:42</note>
+      </notes>
+      <segment>
+        <source>Neither signs nor is served; its private key is erased. The certificate stays as the record of what signed.</source>
+        <target>Signiert nicht und wird nicht ausgeliefert; sein privater Schlüssel ist gelöscht. Das Zertifikat bleibt als Nachweis, was signiert hat.</target>
+      </segment>
+    </unit>
+    <unit id="deb.key.err.in-use">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:50</note>
+      </notes>
+      <segment>
+        <source>This key is already known to trove, in this or another repository, in some state. A retired or withheld key cannot come back by import.</source>
+        <target>trove kennt diesen Schlüssel bereits, in diesem oder einem anderen Repository, in irgendeinem Zustand. Ein außer Dienst gestellter oder zurückgehaltener Schlüssel kann nicht per Import zurückkehren.</target>
+      </segment>
+    </unit>
+    <unit id="deb.key.err.unsupported">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:52</note>
+      </notes>
+      <segment>
+        <source>trove cannot use this key. It needs an EdDSALegacy (Ed25519) or RSA primary key of at least 3072 bits that can sign, is not revoked, has no expiry, was not created in the future and has no signing subkeys.</source>
+        <target>trove kann diesen Schlüssel nicht verwenden. Er braucht einen primären EdDSALegacy-Schlüssel (Ed25519) oder RSA-Schlüssel mit mindestens 3072 Bit, der signieren kann, nicht widerrufen ist, kein Ablaufdatum hat, nicht in der Zukunft erstellt wurde und keine Signatur-Unterschlüssel hat.</target>
+      </segment>
+    </unit>
+    <unit id="deb.key.err.state">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:54</note>
+      </notes>
+      <segment>
+        <source>The key is not in a state that allows this. Reload the list and try again.</source>
+        <target>Der Schlüssel ist nicht in einem Zustand, der das erlaubt. Laden Sie die Liste neu und versuchen Sie es erneut.</target>
+      </segment>
+    </unit>
+    <unit id="deb.key.err.no-next">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:56</note>
+      </notes>
+      <segment>
+        <source>There is no next key to promote.</source>
+        <target>Es gibt keinen nächsten Schlüssel zum Hochstufen.</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:74,75</note>
+      </notes>
+      <segment>
+        <source>Signing keys</source>
+        <target>Signaturschlüssel</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.intro">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:76,79</note>
+      </notes>
+      <segment>
+        <source> Every index of this repository is signed. Clients trust the key through the key file the setup snippet installs. To change the key without breaking clients, create a next key, let the clients replace their key file while both keys sign, then promote the next key. </source>
+        <target>Jeder Index dieses Repositorys ist signiert. Clients vertrauen dem Schlüssel über die Schlüsseldatei, die der Einrichtungs-Befehl installiert. Um den Schlüssel zu wechseln, ohne Clients zu brechen, erstellen Sie einen nächsten Schlüssel, lassen die Clients ihre Schlüsseldatei ersetzen, während beide Schlüssel signieren, und stufen den nächsten Schlüssel dann hoch.</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.no-primary">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:88,90</note>
+      </notes>
+      <segment>
+        <source> This repository has no primary key, so its builds publish nothing and the last published indexes stay served. Reinstate a withheld key, or create a next key and promote it. </source>
+        <target>Dieses Repository hat keinen primären Schlüssel, deshalb veröffentlichen seine Builds nichts und die zuletzt veröffentlichten Indizes bleiben im Umlauf. Setzen Sie einen zurückgehaltenen Schlüssel wieder ein oder erstellen Sie einen nächsten Schlüssel und stufen Sie ihn hoch.</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.withheld-note">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:97,99</note>
+      </notes>
+      <segment>
+        <source> A restore withheld a key because the journal records its retirement. Confirm the retirement to erase the private key, or reinstate the key if the entry is wrong. </source>
+        <target>Eine Wiederherstellung hat einen Schlüssel zurückgehalten, weil das Journal seine Außerdienststellung verzeichnet. Bestätigen Sie die Außerdienststellung, um den privaten Schlüssel zu löschen, oder setzen Sie den Schlüssel wieder ein, wenn der Eintrag falsch ist.</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.overlap">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:104</note>
+      </notes>
+      <segment>
+        <source>Both keys sign since</source>
+        <target>Beide Schlüssel signieren seit</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.overlap-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:104,108</note>
+      </notes>
+      <segment>
+        <source>trove cannot know which clients replaced their key file. A client that holds only the old key fails to update after the promotion.</source>
+        <target>trove kann nicht wissen, welche Clients ihre Schlüsseldatei ersetzt haben. Ein Client, der nur den alten Schlüssel hat, kann sich nach dem Hochstufen nicht mehr aktualisieren.</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.certificate">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:116,117</note>
+      </notes>
+      <segment>
+        <source>Public certificate</source>
+        <target>Öffentliches Zertifikat</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.promote">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:138,139</note>
+      </notes>
+      <segment>
+        <source>Promote</source>
+        <target>Hochstufen</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.remove">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:139,140</note>
+      </notes>
+      <segment>
+        <source>Remove</source>
+        <target>Entfernen</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.reinstate">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:142,143</note>
+      </notes>
+      <segment>
+        <source>Reinstate</source>
+        <target>Wieder einsetzen</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.confirm-retirement">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:143,145</note>
+      </notes>
+      <segment>
+        <source>Confirm retirement</source>
+        <target>Außerdienststellung bestätigen</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.next.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:161,163</note>
+      </notes>
+      <segment>
+        <source>Next key</source>
+        <target>Nächster Schlüssel</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.next.exists">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:164,166</note>
+      </notes>
+      <segment>
+        <source> A next key exists. Promote it or remove it before you create another. </source>
+        <target>Ein nächster Schlüssel existiert. Stufen Sie ihn hoch oder entfernen Sie ihn, bevor Sie einen weiteren erstellen.</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.next.intro">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:168,170</note>
+      </notes>
+      <segment>
+        <source> Creating a next key starts the overlap: from the next build both keys sign every index. </source>
+        <target>Ein nächster Schlüssel beginnt die Überlappung: ab dem nächsten Build signieren beide Schlüssel jeden Index.</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.generate">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:172,173</note>
+      </notes>
+      <segment>
+        <source> Generate a next key </source>
+        <target>Nächsten Schlüssel erzeugen</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.import">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:175,176</note>
+      </notes>
+      <segment>
+        <source> Import a key </source>
+        <target>Schlüssel importieren</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.import.key">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:181,182</note>
+      </notes>
+      <segment>
+        <source>Armored secret key</source>
+        <target>Geheimer Schlüssel (ASCII-Armor)</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.import.hint">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:193,194</note>
+      </notes>
+      <segment>
+        <source> For an archive whose clients already trust a key. It is sent once over this connection and sealed on the server; it is never shown again. </source>
+        <target>Für ein Archiv, dessen Clients einem Schlüssel bereits vertrauen. Er wird einmal über diese Verbindung gesendet und auf dem Server versiegelt; er wird nie wieder angezeigt.</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.import.pass">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:198,200</note>
+      </notes>
+      <segment>
+        <source>Passphrase</source>
+        <target>Passphrase</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.import.pass-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:209,210</note>
+      </notes>
+      <segment>
+        <source> Only if the key is protected. It is used once and never stored. </source>
+        <target>Nur wenn der Schlüssel geschützt ist. Sie wird einmal verwendet und nie gespeichert.</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.import.submit">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:213,214</note>
+      </notes>
+      <segment>
+        <source> Import as next key </source>
+        <target>Als nächsten Schlüssel importieren</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.loading">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:220,223</note>
+      </notes>
+      <segment>
+        <source>Loading the keys.</source>
+        <target>Die Schlüssel werden geladen.</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.copy-fingerprint">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:271</note>
+      </notes>
+      <segment>
+        <source>Copy fingerprint</source>
+        <target>Fingerabdruck kopieren</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.origin.imported">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:272</note>
+      </notes>
+      <segment>
+        <source>Imported</source>
+        <target>Importiert</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.origin.generated">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:273</note>
+      </notes>
+      <segment>
+        <source>Generated</source>
+        <target>Erzeugt</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.caption">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:274</note>
+      </notes>
+      <segment>
+        <source>Signing keys of this repository</source>
+        <target>Signaturschlüssel dieses Repositorys</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.col.fingerprint">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:276</note>
+      </notes>
+      <segment>
+        <source>Fingerprint</source>
+        <target>Fingerabdruck</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.col.state">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:277</note>
+      </notes>
+      <segment>
+        <source>State</source>
+        <target>Zustand</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.col.type">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:278</note>
+      </notes>
+      <segment>
+        <source>Type</source>
+        <target>Typ</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.col.origin">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:279</note>
+      </notes>
+      <segment>
+        <source>Origin</source>
+        <target>Herkunft</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.col.created">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:280</note>
+      </notes>
+      <segment>
+        <source>Key created</source>
+        <target>Schlüssel erstellt</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.col.since">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:281</note>
+      </notes>
+      <segment>
+        <source>In this state since</source>
+        <target>In diesem Zustand seit</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.col.actions">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:283</note>
+      </notes>
+      <segment>
+        <source>Actions</source>
+        <target>Aktionen</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.done.created">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:347</note>
+      </notes>
+      <segment>
+        <source>The next key was created. Both keys sign from the next build.</source>
+        <target>Der nächste Schlüssel wurde erstellt. Ab dem nächsten Build signieren beide Schlüssel.</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.done.imported">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:357</note>
+      </notes>
+      <segment>
+        <source>The key was imported as the next key. Both keys sign from the next build.</source>
+        <target>Der Schlüssel wurde als nächster Schlüssel importiert. Ab dem nächsten Build signieren beide Schlüssel.</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.promote.title">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:367</note>
+      </notes>
+      <segment>
+        <source>Promote the next key</source>
+        <target>Nächsten Schlüssel hochstufen</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.promote.line1">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:369</note>
+      </notes>
+      <segment>
+        <source>The next key <ph id="0" equiv="fingerprint" disp="groupedFingerprint(k.fingerprint)"/> becomes the primary key. The old primary key is retired: it stops signing, leaves the key file clients fetch and its private key is erased.</source>
+        <target>Der nächste Schlüssel <ph id="0" equiv="fingerprint" disp="groupedFingerprint(k.fingerprint)"/> wird zum primären Schlüssel. Der alte primäre Schlüssel wird außer Dienst gestellt: Er signiert nicht mehr, verschwindet aus der Schlüsseldatei, die Clients abrufen, und sein privater Schlüssel wird gelöscht.</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.promote.line2">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:370</note>
+      </notes>
+      <segment>
+        <source>A client that never replaced its key file fails to update from then on.</source>
+        <target>Ein Client, der seine Schlüsseldatei nie ersetzt hat, kann sich danach nicht mehr aktualisieren.</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.promote.confirm">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:372</note>
+      </notes>
+      <segment>
+        <source>Promote</source>
+        <target>Hochstufen</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.done.promoted">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:377</note>
+      </notes>
+      <segment>
+        <source>The key was promoted.</source>
+        <target>Der Schlüssel wurde hochgestuft.</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.confirm.title">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:386</note>
+      </notes>
+      <segment>
+        <source>Confirm the retirement of the key</source>
+        <target>Außerdienststellung des Schlüssels bestätigen</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.remove.title">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:387</note>
+      </notes>
+      <segment>
+        <source>Remove the next key</source>
+        <target>Nächsten Schlüssel entfernen</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.confirm.line1">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:390</note>
+      </notes>
+      <segment>
+        <source>The key <ph id="0" equiv="fingerprint" disp="groupedFingerprint(k.fingerprint)"/> is retired and its private key is erased. This cannot be undone.</source>
+        <target>Der Schlüssel <ph id="0" equiv="fingerprint" disp="groupedFingerprint(k.fingerprint)"/> wird außer Dienst gestellt und sein privater Schlüssel gelöscht. Das lässt sich nicht rückgängig machen.</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.remove.line1">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:391</note>
+      </notes>
+      <segment>
+        <source>The next key <ph id="0" equiv="fingerprint" disp="groupedFingerprint(k.fingerprint)"/> stops signing and leaves the key file clients fetch. Its private key is erased and the key cannot be imported again.</source>
+        <target>Der nächste Schlüssel <ph id="0" equiv="fingerprint" disp="groupedFingerprint(k.fingerprint)"/> signiert nicht mehr und verschwindet aus der Schlüsseldatei, die Clients abrufen. Sein privater Schlüssel wird gelöscht und der Schlüssel kann nicht erneut importiert werden.</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.confirm.confirm">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:394</note>
+      </notes>
+      <segment>
+        <source>Retire the key</source>
+        <target>Schlüssel außer Dienst stellen</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.remove.confirm">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:395</note>
+      </notes>
+      <segment>
+        <source>Remove the key</source>
+        <target>Schlüssel entfernen</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.done.retired">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:400</note>
+      </notes>
+      <segment>
+        <source>The key was retired.</source>
+        <target>Der Schlüssel wurde außer Dienst gestellt.</target>
+      </segment>
+    </unit>
+    <unit id="deb.keys.done.reinstated">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:408</note>
+      </notes>
+      <segment>
+        <source>The key was reinstated.</source>
+        <target>Der Schlüssel wurde wieder eingesetzt.</target>
+      </segment>
+    </unit>
+    <unit id="deb.upstream.fingerprints">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-upstream-keys.ts:15,16</note>
+      </notes>
+      <segment>
+        <source>Fingerprints of the upstream keys</source>
+        <target>Fingerabdrücke der Upstream-Schlüssel</target>
+      </segment>
+    </unit>
+    <unit id="deb.upstream.fingerprints-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-upstream-keys.ts:17,20</note>
+      </notes>
+      <segment>
+        <source> Read-only. Compare them with the fingerprints the archive publishes, through another channel, before you trust the keys above. They follow the saved keys. </source>
+        <target>Nur lesbar. Vergleichen Sie sie über einen anderen Kanal mit den Fingerabdrücken, die das Archiv veröffentlicht, bevor Sie den Schlüsseln oben vertrauen. Sie folgen den gespeicherten Schlüsseln.</target>
+      </segment>
+    </unit>
+    <unit id="deb.upstream.copy">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-upstream-keys.ts:42</note>
+      </notes>
+      <segment>
+        <source>Copy fingerprint</source>
+        <target>Fingerabdruck kopieren</target>
+      </segment>
+    </unit>
+    <unit id="repo.format.list">
+      <notes>
+        <note category="location">src/app/features/repositories/format-settings.ts:139,140</note>
+      </notes>
+      <segment>
+        <source>One entry per line.</source>
+        <target>Ein Eintrag pro Zeile.</target>
+      </segment>
+    </unit>
+    <unit id="repo.tab.deb-keys">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:526</note>
+      </notes>
+      <segment>
+        <source>Signing keys</source>
+        <target>Signaturschlüssel</target>
+      </segment>
+    </unit>
+    <unit id="repo.tab.deb-index">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:527</note>
+      </notes>
+      <segment>
+        <source>Index</source>
+        <target>Index</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.apt-configure">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:118</note>
+      </notes>
+      <segment>
+        <source>Installs the repository&apos;s signing key as a key file and adds the repository as an APT source that is verified against that key. The credentials go into a file that only root can read, never into the source URL. The key file is replaced by running the key command again, which is also how a key rotation reaches this machine.</source>
+        <target>Installiert den Signaturschlüssel des Repositorys als Schlüsseldatei und fügt das Repository als APT-Quelle hinzu, die gegen diesen Schlüssel geprüft wird. Die Zugangsdaten kommen in eine Datei, die nur root lesen kann, nie in die Quell-URL. Die Schlüsseldatei wird ersetzt, indem Sie den Schlüsselbefehl erneut ausführen; so erreicht auch ein Schlüsselwechsel diesen Rechner.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.apt-list">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:121</note>
+      </notes>
+      <segment>
+        <source>The same source as one line, for systems that prefer a .list file. Install the key file as above first.</source>
+        <target>Dieselbe Quelle als eine Zeile, für Systeme, die eine .list-Datei bevorzugen. Installieren Sie zuerst die Schlüsseldatei wie oben.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.apt-install">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:123</note>
+      </notes>
+      <segment>
+        <source>Reads the repository&apos;s indexes and installs the package through APT. Replace the package name with yours.</source>
+        <target>Liest die Indizes des Repositorys und installiert das Paket über APT. Ersetzen Sie den Paketnamen durch Ihren.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.apt-publish">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:125</note>
+      </notes>
+      <segment>
+        <source>Uploads a .deb file to the repository that receives uploads, into the suite and component named in the address. An index that lists the package follows within moments.</source>
+        <target>Lädt eine .deb-Datei in das Repository hoch, das Uploads annimmt, in die Suite und Komponente aus der Adresse. Ein Index, der das Paket führt, folgt in wenigen Augenblicken.</target>
+      </segment>
+    </unit>
   </file>
 </xliff>

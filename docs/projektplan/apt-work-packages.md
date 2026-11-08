@@ -653,3 +653,30 @@ are WP4b (the APT local builder). Pages: [docs/developer/deb.md](../developer/de
   caller and target); the `trove admin` commands.
 - **Verified by test:** the new areas `itempublish` and the coalesce test in `coordination`, the reindex tests in `debkeys`; the areas `files`,
   `coordination`, `ocilocal` and `uploads` once for regressions of the guard and the queue change.
+
+## 15 · WP11 as built
+
+Built on 2026-11-09 on the base e695dce9, in `web/`. Page: [web-ui.md](../developer/web-ui.md#the-debian-screens); decisions Q-DEB-100 to Q-DEB-104 in
+debian.md and Q-UI-200 to Q-UI-202 in api-and-ui.md; gaps H-765 and H-766 in [security/deb-signing.md](../security/deb-signing.md).
+
+**Built.**
+
+- The client `deb` -> `apt` in `clients.ts` with the explanations of the four snippet ids and their `-scoped` forms; `snippet-ids.fixture.ts` now lists `deb:apt`
+  (the format list of `TestR_API_030_RenderedSnippetIdsMatchTheUIFixture` gained `deb`: the only Go change). The format icon `unarchive`.
+- The settings of the format: the settings form got a list control for arrays of strings and a textarea for a long string (Q-UI-200), which is all of
+  `DebSettings` (`architectures`, `compression`, `suites`, `components`, `mirror.*`, `upstreamKeys`); the read-only `upstreamKeyFingerprints` is a block under the settings of a remote.
+- The tab **Signing keys** (list, generate or import the next key, promote, remove, confirm the retirement of or reinstate a withheld key; with and without
+  write rights; no private key is ever shown or kept) and the tab **Index** (suite states, reasons of a failed build in words, the full rebuild) of a local or virtual repository.
+- The package detail: architectures, `suite/component` coordinates and the control fields in the Metadata tab.
+- `DebApi` (HTTP and fake), 112 i18n units with the German targets, glossary rows, specs for every part, the journey `web/e2e/tests/17-deb.spec.ts`.
+
+**Differences from the work-package row.** The index state panel shows the reason of a failed build and the member codes as the API sends them in `reason`; the API
+has no per-member list, so "member failure reasons" are the sentence per code, with the member named behind the colon. No key operation lives in the dialog of the
+package; no suite field in the setup dialog (Q-DEB-104).
+
+**Not verified.**
+
+- No panel was run against a live answer of `GET …/deb/index`: its handler was being built in parallel. The panel and its fake follow the generated type and the shape of R-DEB-014 (`reason` as `<code>[: <member>]`).
+- The journey `17-deb.spec.ts` was not run (the kind cluster was in use by another builder); it type-checks and passes the lint. Its steps for the key rotation need only the built key API.
+- The German texts were written without a native review.
+- A real `apt-get` against a repository set up with the rendered snippets is WP10's.

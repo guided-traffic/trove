@@ -138,7 +138,7 @@ export const RICH_SETTINGS_SCHEMA = {
         timeout: { type: 'string', default: '30s', description: 'A duration such as 30s.' },
         maxBodySize: { type: 'string', default: '10MiB' },
         retries: { title: 'Retries', type: 'integer', default: 2 },
-        hosts: { type: 'array', items: { type: 'string' } },
+        hosts: { type: 'array', items: { type: 'object' } },
       },
     },
     latestStrategy: {
@@ -217,6 +217,71 @@ export const OCI_FORMAT: FormatDescriptor = {
   ],
   protocolBasePath: '/v2/{project}/{key}/',
   patternSubject: 'name',
+};
+
+/**
+ * The settings schema Debian registers (internal/formats/deb/settings.schema.json) with the constructs the form meets in it: arrays of
+ * strings, an array whose items are an enum, a long nullable string and a nested object of the remote class. The read-only
+ * `upstreamKeyFingerprints` is not part of the registered schema.
+ */
+export const DEB_SETTINGS_SCHEMA = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    architectures: {
+      description: "Architectures every suite's indexes are built for.",
+      type: 'array',
+      minItems: 1,
+      uniqueItems: true,
+      default: ['amd64', 'arm64'],
+      'x-trove-classes': ['local', 'virtual'],
+      items: { type: 'string' },
+    },
+    compression: {
+      description: 'Index variants built besides gzip, which is always built.',
+      type: 'array',
+      maxItems: 1,
+      uniqueItems: true,
+      default: [],
+      'x-trove-classes': ['local', 'virtual'],
+      items: { type: 'string', enum: ['xz'] },
+    },
+    origin: { description: 'The Origin field of every Release.', type: 'string', default: 'trove', 'x-trove-classes': ['local', 'virtual'] },
+    label: { description: 'The Label field of every Release.', type: 'string', 'x-trove-classes': ['local', 'virtual'] },
+    suites: { description: 'Suites a virtual repository serves.', type: 'array', default: [], 'x-trove-classes': ['virtual'], items: { type: 'string' } },
+    components: { description: 'Components a virtual repository merges.', type: 'array', default: ['main'], 'x-trove-classes': ['virtual'], items: { type: 'string' } },
+    upstreamKeys: {
+      description: 'ASCII-armored OpenPGP public keys of the upstream.',
+      type: ['string', 'null'],
+      default: null,
+      'x-trove-classes': ['remote'],
+      maxLength: 262144,
+    },
+    mirror: {
+      description: 'What a mirror of an APT archive keeps.',
+      type: 'object',
+      additionalProperties: false,
+      'x-trove-classes': ['remote'],
+      properties: {
+        suites: { description: 'Suites to mirror; required in mode mirror.', type: 'array', default: [], items: { type: 'string' } },
+        components: { description: 'Components whose indexes and package files are kept.', type: 'array', default: ['main'], items: { type: 'string' } },
+        architectures: { description: 'Architectures kept.', type: 'array', default: ['amd64'], items: { type: 'string' } },
+        translations: { description: 'Languages of i18n/Translation-<language> kept.', type: 'array', default: ['en'], items: { type: 'string' } },
+        sources: { description: 'Whether Sources indexes and source package files are kept.', type: 'boolean', default: false },
+      },
+    },
+  },
+};
+
+/** Debian (APT) as the catalog lists it (internal/formats/deb/format.go): the three classes, one client for apt and apt-get. */
+export const DEB_FORMAT: FormatDescriptor = {
+  ...PACKAGE_FORMAT,
+  name: 'deb',
+  displayName: 'Debian (APT)',
+  clients: [{ id: 'apt', displayName: 'APT (apt, apt-get)' }],
+  protocolBasePath: '/api/deb/{project}/{key}/',
+  settingsSchema: DEB_SETTINGS_SCHEMA,
 };
 
 /** A repository of the fake: the project is writable so that a test can move one. */

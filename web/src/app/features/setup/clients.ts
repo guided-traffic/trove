@@ -11,7 +11,8 @@ export interface ClientChoice {
  * it does not know; this table only decides what the pickers offer. A format without an entry has
  * no setup screen yet and is not offered. NuGet offers the .NET CLI, nuget.exe
  * and Visual Studio (R-UI-018, Q-UI-93). OCI offers the Docker CLI and Podman (R-OCI-030); a Kubernetes cluster
- * signs in with the image pull secret of the Docker CLI's configure section.
+ * signs in with the image pull secret of the Docker CLI's configure section. Debian offers APT: apt and apt-get read
+ * one source format, so they are one client (R-DEB-029).
  */
 export const FORMAT_CLIENTS: Readonly<Record<string, readonly ClientChoice[]>> = {
   generic: [{ id: 'curl', label: 'curl' }],
@@ -30,6 +31,7 @@ export const FORMAT_CLIENTS: Readonly<Record<string, readonly ClientChoice[]>> =
     { id: 'docker', label: 'Docker CLI (with Buildx)' },
     { id: 'podman', label: 'Podman' },
   ],
+  deb: [{ id: 'apt', label: 'APT (apt, apt-get)' }],
 };
 
 export function clientsOf(format: string): readonly ClientChoice[] {
@@ -111,6 +113,16 @@ export function snippetExplanation(id: string): string | null {
       return $localize`:@@setup.snippet.oci-push:Names a local image below this repository and pushes it to the repository that receives uploads.`;
     case 'docker.publish.buildx':
       return $localize`:@@setup.snippet.oci-buildx:Builds the image for two platforms from the Dockerfile in the current directory and pushes the result as one multi-platform image.`;
+    case 'apt.configure.shell':
+    case 'apt.configure.shell-scoped':
+      return $localize`:@@setup.snippet.apt-configure:Installs the repository's signing key as a key file and adds the repository as an APT source that is verified against that key. The credentials go into a file that only root can read, never into the source URL. The key file is replaced by running the key command again, which is also how a key rotation reaches this machine.`;
+    case 'apt.configure.list':
+    case 'apt.configure.list-scoped':
+      return $localize`:@@setup.snippet.apt-list:The same source as one line, for systems that prefer a .list file. Install the key file as above first.`;
+    case 'apt.install':
+      return $localize`:@@setup.snippet.apt-install:Reads the repository's indexes and installs the package through APT. Replace the package name with yours.`;
+    case 'apt.publish.curl':
+      return $localize`:@@setup.snippet.apt-publish:Uploads a .deb file to the repository that receives uploads, into the suite and component named in the address. An index that lists the package follows within moments.`;
     default:
       return null;
   }

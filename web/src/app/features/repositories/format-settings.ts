@@ -14,6 +14,13 @@ import {
 
 type Of<K extends SettingNode['kind']> = Extract<SettingNode, { kind: K }>;
 
+function entriesOf(text: string): string[] {
+  return text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+}
+
 function shown(value: unknown): string {
   return typeof value === 'string' ? value : JSON.stringify(value);
 }
@@ -98,6 +105,42 @@ function shown(value: unknown): string {
                 <ng-container *ngTemplateOutlet="notes; context: { $implicit: n }" />
               </div>
             }
+            @case ('list') {
+              <div class="field">
+                @if (listNode(n).options; as options) {
+                  <fieldset class="settings-group" [id]="n.id" tabindex="-1" [attr.aria-describedby]="describedBy(n)">
+                    <legend translate="no" lang="en">{{ n.label }}</legend>
+                    @for (o of options; track o) {
+                      <label class="check-row">
+                        <input
+                          type="checkbox"
+                          [id]="n.id + '-' + o"
+                          [checked]="entries(n).includes(o)"
+                          (change)="toggle(n, o, $any($event.target).checked)"
+                        />
+                        <span translate="no">{{ o }}</span>
+                      </label>
+                    }
+                    <ng-container *ngTemplateOutlet="notes; context: { $implicit: n }" />
+                  </fieldset>
+                } @else {
+                  <label class="field-label" [for]="n.id" translate="no" lang="en">{{ n.label }}</label>
+                  <textarea
+                    class="area-input"
+                    [id]="n.id"
+                    rows="3"
+                    autocomplete="off"
+                    spellcheck="false"
+                    [value]="listText(n)"
+                    [attr.aria-invalid]="invalid(n)"
+                    [attr.aria-describedby]="listDescribedBy(n)"
+                    (input)="typeList(n, $any($event.target).value)"
+                  ></textarea>
+                  <p class="hint" [id]="n.id + '-l'" i18n="@@repo.format.list">One entry per line.</p>
+                  <ng-container *ngTemplateOutlet="notes; context: { $implicit: n }" />
+                }
+              </div>
+            }
             @case ('other') {
               <div class="field">
                 <span class="field-label" [id]="n.id" tabindex="-1" translate="no" lang="en">{{
@@ -117,18 +160,32 @@ function shown(value: unknown): string {
                 <label class="field-label" [for]="n.id" translate="no" lang="en">{{
                   n.label
                 }}</label>
-                <input
-                  class="text-input"
-                  [id]="n.id"
-                  [type]="isUrl(n) ? 'url' : 'text'"
-                  [attr.inputmode]="inputMode(n)"
-                  autocomplete="off"
-                  spellcheck="false"
-                  [value]="text(n)"
-                  [attr.aria-invalid]="invalid(n)"
-                  [attr.aria-describedby]="describedBy(n)"
-                  (input)="type(n, $any($event.target).value)"
-                />
+                @if (isMultiline(n)) {
+                  <textarea
+                    class="area-input"
+                    [id]="n.id"
+                    rows="8"
+                    autocomplete="off"
+                    spellcheck="false"
+                    [value]="text(n)"
+                    [attr.aria-invalid]="invalid(n)"
+                    [attr.aria-describedby]="describedBy(n)"
+                    (input)="type(n, $any($event.target).value)"
+                  ></textarea>
+                } @else {
+                  <input
+                    class="text-input"
+                    [id]="n.id"
+                    [type]="isUrl(n) ? 'url' : 'text'"
+                    [attr.inputmode]="inputMode(n)"
+                    autocomplete="off"
+                    spellcheck="false"
+                    [value]="text(n)"
+                    [attr.aria-invalid]="invalid(n)"
+                    [attr.aria-describedby]="describedBy(n)"
+                    (input)="type(n, $any($event.target).value)"
+                  />
+                }
                 <ng-container *ngTemplateOutlet="notes; context: { $implicit: n }" />
               </div>
             }
@@ -244,6 +301,51 @@ export class FormatSettings {
     return n.kind === 'number' ? (n.integer ? 'numeric' : 'decimal') : null;
   }
 
+  protected listNode(n: SettingNode): Of<'list'> {
+    return n as Of<'list'>;
+  }
+
+  protected isMultiline(n: SettingNode): boolean {
+    return n.kind === 'text' && n.multiline;
+  }
+
+  /** What the user typed into a list, so that a blank line being typed is not rewritten under the cursor. */
+  private readonly drafts = new Map<string, string>();
+
+  /** The entries in effect: the one set, else the schema default. */
+  protected entries(n: SettingNode): readonly string[] {
+    const v = this.effective(n);
+    return Array.isArray(v) ? v.filter((e): e is string => typeof e === 'string') : [];
+  }
+
+  protected listText(n: SettingNode): string {
+    const current = this.current(n);
+    const set = Array.isArray(current) ? current.map(String) : [];
+    const draft = this.drafts.get(n.id);
+    if (draft !== undefined && JSON.stringify(entriesOf(draft)) === JSON.stringify(set)) return draft;
+    return set.join('\n');
+  }
+
+  protected listDescribedBy(n: SettingNode): string {
+    const ids = this.describedBy(n);
+    return ids ? `${ids} ${n.id}-l` : `${n.id}-l`;
+  }
+
+  protected typeList(n: SettingNode, text: string): void {
+    this.drafts.set(n.id, text);
+    const entries = entriesOf(text);
+    this.set(n, entries.length === 0 ? undefined : entries);
+  }
+
+  protected toggle(n: SettingNode, option: string, on: boolean): void {
+    const options = this.listNode(n).options ?? [];
+    const now = new Set(this.entries(n));
+    if (on) now.add(option);
+    else now.delete(option);
+    const entries = options.filter((o) => now.has(o));
+    this.set(n, entries.length === 0 ? undefined : entries);
+  }
+
   protected isUrl(n: SettingNode): boolean {
     return n.kind === 'text' && n.url;
   }
@@ -276,11 +378,13 @@ export class FormatSettings {
 
   protected fallbackKind(n: SettingNode): 'on' | 'off' | 'value' | null {
     if (!('fallback' in n) || n.fallback === undefined || n.fallback === null) return null;
+    if (n.kind === 'list' && Array.isArray(n.fallback) && n.fallback.length === 0) return null;
     if (n.kind === 'boolean') return n.fallback ? 'on' : 'off';
     return 'value';
   }
 
   protected fallbackText(n: SettingNode): string {
+    if (n.kind === 'list' && Array.isArray(n.fallback)) return n.fallback.join(', ');
     return 'fallback' in n ? shown(n.fallback) : '';
   }
 

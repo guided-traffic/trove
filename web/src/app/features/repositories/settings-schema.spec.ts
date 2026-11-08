@@ -1,4 +1,4 @@
-import { RICH_SETTINGS_SCHEMA } from '../../api/testing/fakes-catalog';
+import { DEB_SETTINGS_SCHEMA, RICH_SETTINGS_SCHEMA } from '../../api/testing/fakes-catalog';
 import {
   SettingSchema,
   errorTarget,
@@ -112,5 +112,51 @@ describe('Settings schema model', () => {
       ['audit.timeout', '45s'],
       ['audit.retries', '3'],
     ]);
+  });
+
+  it('R-DEB-008 R-DEB-024 an array of strings is a list, one with an enum of items offers its options, a long string is an area, an array of anything else stays unedited', () => {
+    const local = settingNodes(DEB_SETTINGS_SCHEMA as SettingSchema, 'local', 'deb');
+    expect(local.map((n) => [n.name, n.kind])).toEqual([
+      ['architectures', 'list'],
+      ['compression', 'list'],
+      ['origin', 'text'],
+      ['label', 'text'],
+    ]);
+    expect(local[0]).toMatchObject({ options: null, fallback: ['amd64', 'arm64'] });
+    expect(local[1]).toMatchObject({ options: ['xz'], fallback: [] });
+
+    const virtual = settingNodes(DEB_SETTINGS_SCHEMA as SettingSchema, 'virtual', 'deb');
+    expect(virtual.map((n) => n.name)).toEqual(['architectures', 'compression', 'origin', 'label', 'suites', 'components']);
+
+    const remote = settingNodes(DEB_SETTINGS_SCHEMA as SettingSchema, 'remote', 'deb');
+    expect(remote.map((n) => [n.name, n.kind])).toEqual([
+      ['upstreamKeys', 'text'],
+      ['mirror', 'group'],
+    ]);
+    expect(remote[0]).toMatchObject({ multiline: true, url: false });
+    const mirror = remote[1];
+    if (mirror?.kind !== 'group') throw new Error('mirror is no group');
+    expect(mirror.children.map((n) => [n.name, n.kind, n.pointer])).toEqual([
+      ['suites', 'list', '/deb/mirror/suites'],
+      ['components', 'list', '/deb/mirror/components'],
+      ['architectures', 'list', '/deb/mirror/architectures'],
+      ['translations', 'list', '/deb/mirror/translations'],
+      ['sources', 'boolean', '/deb/mirror/sources'],
+    ]);
+    expect(settingNodes(SCHEMA, 'remote', 'npm')[1]).toMatchObject({ kind: 'group' });
+  });
+
+  it('R-DEB-008 the written member leaves out a list equal to its default and keeps one that differs', () => {
+    expect(
+      pruneDefaults(DEB_SETTINGS_SCHEMA as SettingSchema, {
+        architectures: ['amd64', 'arm64'],
+        compression: [],
+        origin: 'acme',
+      }),
+    ).toEqual({ origin: 'acme' });
+    expect(pruneDefaults(DEB_SETTINGS_SCHEMA as SettingSchema, { architectures: ['arm64'] })).toEqual({ architectures: ['arm64'] });
+    expect(
+      pruneDefaults(DEB_SETTINGS_SCHEMA as SettingSchema, { mirror: { components: ['main'], suites: ['stable'] } }),
+    ).toEqual({ mirror: { suites: ['stable'] } });
   });
 });

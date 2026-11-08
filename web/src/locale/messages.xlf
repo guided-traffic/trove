@@ -3766,7 +3766,7 @@
     <unit id="repo.deleting">
       <notes>
         <note category="location">src/app/features/browse/browse.html:371,372</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:262,263</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:281,282</note>
         <note category="location">src/app/features/repositories/repository-list.html:116,117</note>
       </notes>
       <segment>
@@ -4058,7 +4058,7 @@
       <notes>
         <note category="location">src/app/features/browse/browse.ts:360</note>
         <note category="location">src/app/features/guides/guide-page.ts:139</note>
-        <note category="location">src/app/features/packages/package-detail.ts:431</note>
+        <note category="location">src/app/features/packages/package-detail.ts:452</note>
         <note category="location">src/app/features/repositories/repository-wizard.ts:84</note>
         <note category="location">src/app/features/setup/client-setup.ts:214</note>
       </notes>
@@ -4070,7 +4070,7 @@
       <notes>
         <note category="location">src/app/features/browse/browse.ts:362</note>
         <note category="location">src/app/features/guides/guide-page.ts:141</note>
-        <note category="location">src/app/features/packages/package-detail.ts:432</note>
+        <note category="location">src/app/features/packages/package-detail.ts:453</note>
         <note category="location">src/app/features/repositories/repository-wizard.ts:86</note>
         <note category="location">src/app/features/setup/client-setup.ts:216</note>
       </notes>
@@ -4082,7 +4082,7 @@
       <notes>
         <note category="location">src/app/features/browse/browse.ts:364</note>
         <note category="location">src/app/features/guides/guide-page.ts:143</note>
-        <note category="location">src/app/features/packages/package-detail.ts:433</note>
+        <note category="location">src/app/features/packages/package-detail.ts:454</note>
         <note category="location">src/app/features/repositories/repository-wizard.ts:88</note>
         <note category="location">src/app/features/setup/client-setup.ts:218</note>
       </notes>
@@ -7833,7 +7833,7 @@
     <unit id="repo.action.delete">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:177,178</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:238,240</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:257,259</note>
         <note category="location">src/app/features/repositories/repository-list.html:110,111</note>
       </notes>
       <segment>
@@ -8340,7 +8340,7 @@
     <unit id="repo.edit.reset">
       <notes>
         <note category="location">src/app/features/endpoints/exposure-rule-editor.html:417,418</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:229,230</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:248,249</note>
       </notes>
       <segment>
         <source> Discard changes </source>
@@ -8349,7 +8349,7 @@
     <unit id="repo.edit.unsaved">
       <notes>
         <note category="location">src/app/features/endpoints/exposure-rule-editor.html:422,424</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:233,235</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:252,254</note>
       </notes>
       <segment>
         <source>You have unsaved changes.</source>
@@ -9755,7 +9755,7 @@
       <notes>
         <note category="location">src/app/features/packages/package-detail.html:13,14</note>
         <note category="location">src/app/features/packages/package-detail.html:105,106</note>
-        <note category="location">src/app/features/packages/package-detail.html:280,281</note>
+        <note category="location">src/app/features/packages/package-detail.html:289,290</note>
       </notes>
       <segment>
         <source>Loading.</source>
@@ -9876,7 +9876,7 @@
     <unit id="pkg.image.digest">
       <notes>
         <note category="location">src/app/features/packages/package-detail.html:117,118</note>
-        <note category="location">src/app/features/packages/package-detail.ts:420</note>
+        <note category="location">src/app/features/packages/package-detail.ts:441</note>
       </notes>
       <segment>
         <source>Digest</source>
@@ -9885,7 +9885,7 @@
     <unit id="pkg.image.media-type">
       <notes>
         <note category="location">src/app/features/packages/package-detail.html:123,124</note>
-        <note category="location">src/app/features/packages/package-detail.ts:421</note>
+        <note category="location">src/app/features/packages/package-detail.ts:442</note>
       </notes>
       <segment>
         <source>Media type</source>
@@ -9974,6 +9974,7 @@
     <unit id="pkg.meta.facts">
       <notes>
         <note category="location">src/app/features/packages/package-detail.html:227,228</note>
+        <note category="location">src/app/features/packages/package-detail.html:236,237</note>
       </notes>
       <segment>
         <source>Package details</source>
@@ -9981,7 +9982,7 @@
     </unit>
     <unit id="pkg.meta.engines">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.html:236,237</note>
+        <note category="location">src/app/features/packages/package-detail.html:245,246</note>
       </notes>
       <segment>
         <source>Required runtimes</source>
@@ -9989,7 +9990,7 @@
     </unit>
     <unit id="pkg.file.download-link">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.html:256,258</note>
+        <note category="location">src/app/features/packages/package-detail.html:265,267</note>
       </notes>
       <segment>
         <source>Download</source>
@@ -9997,7 +9998,7 @@
     </unit>
     <unit id="pkg.repo.show-in-browser">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.html:272,274</note>
+        <note category="location">src/app/features/packages/package-detail.html:281,283</note>
       </notes>
       <segment>
         <source>Show in browser</source>
@@ -10005,7 +10006,7 @@
     </unit>
     <unit id="pkg.badge.prerelease">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.html:298,299</note>
+        <note category="location">src/app/features/packages/package-detail.html:307,308</note>
       </notes>
       <segment>
         <source>pre-release</source>
@@ -10013,7 +10014,7 @@
     </unit>
     <unit id="pkg.ver.no-vulnerabilities">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.html:311,312</note>
+        <note category="location">src/app/features/packages/package-detail.html:320,321</note>
       </notes>
       <segment>
         <source>None</source>
@@ -10179,9 +10180,81 @@
         <source>Release notes</source>
       </segment>
     </unit>
+    <unit id="pkg.meta.deb-architectures">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:350</note>
+      </notes>
+      <segment>
+        <source>Architectures</source>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.deb-coordinates">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:351</note>
+      </notes>
+      <segment>
+        <source>Suites and components</source>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.deb-maintainer">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:352</note>
+      </notes>
+      <segment>
+        <source>Maintainer</source>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.deb-section">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:353</note>
+      </notes>
+      <segment>
+        <source>Section</source>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.deb-priority">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:354</note>
+      </notes>
+      <segment>
+        <source>Priority</source>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.deb-installed-size">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:355</note>
+      </notes>
+      <segment>
+        <source>Installed size</source>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.deb-kib">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:355</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="size" disp="size"/> KiB</source>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.deb-depends">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:356</note>
+      </notes>
+      <segment>
+        <source>Depends</source>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.deb-source">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:357</note>
+      </notes>
+      <segment>
+        <source>Source package</source>
+      </segment>
+    </unit>
     <unit id="pkg.meta.homepage">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:348</note>
+        <note category="location">src/app/features/packages/package-detail.ts:368</note>
       </notes>
       <segment>
         <source>Homepage</source>
@@ -10189,7 +10262,7 @@
     </unit>
     <unit id="pkg.meta.license-url">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:349</note>
+        <note category="location">src/app/features/packages/package-detail.ts:369</note>
       </notes>
       <segment>
         <source>License</source>
@@ -10197,7 +10270,7 @@
     </unit>
     <unit id="pkg.meta.source">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:350</note>
+        <note category="location">src/app/features/packages/package-detail.ts:370</note>
       </notes>
       <segment>
         <source>Source repository</source>
@@ -10205,7 +10278,7 @@
     </unit>
     <unit id="pkg.meta.bugs">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:351</note>
+        <note category="location">src/app/features/packages/package-detail.ts:371</note>
       </notes>
       <segment>
         <source>Issue tracker</source>
@@ -10213,7 +10286,7 @@
     </unit>
     <unit id="pkg.file.path">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:392</note>
+        <note category="location">src/app/features/packages/package-detail.ts:413</note>
       </notes>
       <segment>
         <source>File</source>
@@ -10221,7 +10294,7 @@
     </unit>
     <unit id="pkg.file.size">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:393</note>
+        <note category="location">src/app/features/packages/package-detail.ts:414</note>
       </notes>
       <segment>
         <source>Size</source>
@@ -10229,7 +10302,7 @@
     </unit>
     <unit id="pkg.file.sha256">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:396</note>
+        <note category="location">src/app/features/packages/package-detail.ts:417</note>
       </notes>
       <segment>
         <source>SHA-256</source>
@@ -10237,7 +10310,7 @@
     </unit>
     <unit id="pkg.help.sha256">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:397</note>
+        <note category="location">src/app/features/packages/package-detail.ts:418</note>
       </notes>
       <segment>
         <source>The checksum of the file&apos;s content. Compare it with the output of sha256sum on the downloaded file.</source>
@@ -10245,7 +10318,7 @@
     </unit>
     <unit id="pkg.file.download">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:399</note>
+        <note category="location">src/app/features/packages/package-detail.ts:420</note>
       </notes>
       <segment>
         <source>Download</source>
@@ -10253,7 +10326,7 @@
     </unit>
     <unit id="pkg.ver.version">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:402</note>
+        <note category="location">src/app/features/packages/package-detail.ts:423</note>
       </notes>
       <segment>
         <source>Version</source>
@@ -10261,7 +10334,7 @@
     </unit>
     <unit id="pkg.ver.published">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:403</note>
+        <note category="location">src/app/features/packages/package-detail.ts:424</note>
       </notes>
       <segment>
         <source>Published</source>
@@ -10269,7 +10342,7 @@
     </unit>
     <unit id="pkg.ver.size">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:404</note>
+        <note category="location">src/app/features/packages/package-detail.ts:425</note>
       </notes>
       <segment>
         <source>Size</source>
@@ -10277,7 +10350,7 @@
     </unit>
     <unit id="pkg.ver.repositories">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:405</note>
+        <note category="location">src/app/features/packages/package-detail.ts:426</note>
       </notes>
       <segment>
         <source>Repositories</source>
@@ -10285,7 +10358,7 @@
     </unit>
     <unit id="pkg.ver.downloads">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:406</note>
+        <note category="location">src/app/features/packages/package-detail.ts:427</note>
       </notes>
       <segment>
         <source>Downloads</source>
@@ -10293,7 +10366,7 @@
     </unit>
     <unit id="pkg.ver.vulnerabilities">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:408</note>
+        <note category="location">src/app/features/packages/package-detail.ts:429</note>
       </notes>
       <segment>
         <source>Open vulnerabilities</source>
@@ -10301,7 +10374,7 @@
     </unit>
     <unit id="pkg.repo.repository">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:412</note>
+        <note category="location">src/app/features/packages/package-detail.ts:433</note>
       </notes>
       <segment>
         <source>Repository</source>
@@ -10309,7 +10382,7 @@
     </unit>
     <unit id="pkg.repo.class">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:413</note>
+        <note category="location">src/app/features/packages/package-detail.ts:434</note>
       </notes>
       <segment>
         <source>Class</source>
@@ -10317,7 +10390,7 @@
     </unit>
     <unit id="pkg.repo.published">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:414</note>
+        <note category="location">src/app/features/packages/package-detail.ts:435</note>
       </notes>
       <segment>
         <source>Published</source>
@@ -10325,7 +10398,7 @@
     </unit>
     <unit id="pkg.repo.browse">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:415</note>
+        <note category="location">src/app/features/packages/package-detail.ts:436</note>
       </notes>
       <segment>
         <source>Browse</source>
@@ -10333,7 +10406,7 @@
     </unit>
     <unit id="pkg.image.platform">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:419</note>
+        <note category="location">src/app/features/packages/package-detail.ts:440</note>
       </notes>
       <segment>
         <source>Platform</source>
@@ -10341,7 +10414,7 @@
     </unit>
     <unit id="pkg.image.size">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:422</note>
+        <note category="location">src/app/features/packages/package-detail.ts:443</note>
       </notes>
       <segment>
         <source>Size</source>
@@ -10349,7 +10422,7 @@
     </unit>
     <unit id="pkg.image.platforms-caption">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:424</note>
+        <note category="location">src/app/features/packages/package-detail.ts:445</note>
       </notes>
       <segment>
         <source>Platforms of this image index</source>
@@ -10357,7 +10430,7 @@
     </unit>
     <unit id="pkg.image.copy-digest">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:425</note>
+        <note category="location">src/app/features/packages/package-detail.ts:446</note>
       </notes>
       <segment>
         <source>Copy digest</source>
@@ -10365,7 +10438,7 @@
     </unit>
     <unit id="pkg.file.caption">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:426</note>
+        <note category="location">src/app/features/packages/package-detail.ts:447</note>
       </notes>
       <segment>
         <source>Files of this version</source>
@@ -10373,7 +10446,7 @@
     </unit>
     <unit id="pkg.ver.caption">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:427</note>
+        <note category="location">src/app/features/packages/package-detail.ts:448</note>
       </notes>
       <segment>
         <source>All versions</source>
@@ -10381,7 +10454,7 @@
     </unit>
     <unit id="pkg.repo.caption">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:428</note>
+        <note category="location">src/app/features/packages/package-detail.ts:449</note>
       </notes>
       <segment>
         <source>Repositories that hold this version</source>
@@ -10389,7 +10462,7 @@
     </unit>
     <unit id="pkg.file.copy-sha">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:429</note>
+        <note category="location">src/app/features/packages/package-detail.ts:450</note>
       </notes>
       <segment>
         <source>Copy SHA-256</source>
@@ -13572,9 +13645,777 @@
         <source>Description</source>
       </segment>
     </unit>
+    <unit id="deb.index.state.current">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:21</note>
+      </notes>
+      <segment>
+        <source>Current</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.state.failed">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:23</note>
+      </notes>
+      <segment>
+        <source>Failed</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.state.pending">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:25</note>
+      </notes>
+      <segment>
+        <source>Waiting for a build</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.reason.no-key">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:39</note>
+      </notes>
+      <segment>
+        <source>The repository has no primary signing key, so nothing can be signed. Reinstate a withheld key, or create a next key and promote it.</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.reason.unverified">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:41</note>
+      </notes>
+      <segment>
+        <source>A member&apos;s release could not be verified against its upstream keys: <ph id="0" equiv="member" disp="detail"/>.</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.reason.expired">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:43</note>
+      </notes>
+      <segment>
+        <source>A member&apos;s release has expired: <ph id="0" equiv="member" disp="detail"/>.</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.reason.rollback">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:45</note>
+      </notes>
+      <segment>
+        <source>A member&apos;s release is older than the one already merged: <ph id="0" equiv="member" disp="detail"/>. Take the member out and add it back to accept the older release.</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.reason.unreadable">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:47</note>
+      </notes>
+      <segment>
+        <source>A member of this virtual repository cannot be read with your permissions: <ph id="0" equiv="member" disp="detail"/>.</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:70,71</note>
+      </notes>
+      <segment>
+        <source>Index state</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.intro">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:72,76</note>
+      </notes>
+      <segment>
+        <source> The indexes of each suite are built from the stored packages a moment after a change. A client that must see an upload at once waits for the change number the upload answered with. </source>
+      </segment>
+    </unit>
+    <unit id="deb.index.behind">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:96</note>
+      </notes>
+      <segment>
+        <source>behind by</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.reindex">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:121,122</note>
+      </notes>
+      <segment>
+        <source> Rebuild all indexes </source>
+      </segment>
+    </unit>
+    <unit id="deb.index.reindex-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:125,128</note>
+      </notes>
+      <segment>
+        <source> Rebuilds every suite from the stored packages, drops suites without packages and removes rows of items that no longer exist. </source>
+      </segment>
+    </unit>
+    <unit id="deb.index.started">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:131,132</note>
+      </notes>
+      <segment>
+        <source>The rebuild is queued.</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.running">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:133,135</note>
+      </notes>
+      <segment>
+        <source>A rebuild is already queued or running.</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.job-link">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:136,137</note>
+      </notes>
+      <segment>
+        <source>Open the jobs</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.loading">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:145,148</note>
+      </notes>
+      <segment>
+        <source>Loading the index state.</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.caption">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:182</note>
+      </notes>
+      <segment>
+        <source>Suites of this repository</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.empty">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:183</note>
+      </notes>
+      <segment>
+        <source>No suite has packages yet. A suite appears with the first package uploaded to it.</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.col.suite">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:185</note>
+      </notes>
+      <segment>
+        <source>Suite</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.col.state">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:186</note>
+      </notes>
+      <segment>
+        <source>State</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.col.change">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:189</note>
+      </notes>
+      <segment>
+        <source>Change number</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.help.change">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:191</note>
+      </notes>
+      <segment>
+        <source>The number an upload answered with. It rises with every change of the suite.</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.col.published">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:195</note>
+      </notes>
+      <segment>
+        <source>Published number</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.help.published">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:197</note>
+      </notes>
+      <segment>
+        <source>The change number the published indexes were built from. The suite is current when it reaches the change number.</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.col.generation">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:199</note>
+      </notes>
+      <segment>
+        <source>Generation</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.col.release">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:200</note>
+      </notes>
+      <segment>
+        <source>Release date</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.col.signed">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:203</note>
+      </notes>
+      <segment>
+        <source>Signed by</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.help.signed">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:204</note>
+      </notes>
+      <segment>
+        <source>The fingerprints of the keys that signed the published release, shortened to their last sixteen digits.</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.reindex.title">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:266</note>
+      </notes>
+      <segment>
+        <source>Rebuild all indexes</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.reindex.line">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:268</note>
+      </notes>
+      <segment>
+        <source>Every suite is built again from the stored packages. Suites without packages are dropped. Clients keep reading the published indexes until the new ones are ready.</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.reindex.confirm">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:270</note>
+      </notes>
+      <segment>
+        <source>Rebuild</source>
+      </segment>
+    </unit>
+    <unit id="deb.index.reindex.done">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-index-state.ts:279</note>
+      </notes>
+      <segment>
+        <source>The rebuild was requested.</source>
+      </segment>
+    </unit>
+    <unit id="deb.key.state.primary">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:23</note>
+      </notes>
+      <segment>
+        <source>Primary</source>
+      </segment>
+    </unit>
+    <unit id="deb.key.state.next">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:25</note>
+      </notes>
+      <segment>
+        <source>Next</source>
+      </segment>
+    </unit>
+    <unit id="deb.key.state.withheld">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:27</note>
+      </notes>
+      <segment>
+        <source>Withheld</source>
+      </segment>
+    </unit>
+    <unit id="deb.key.state.retired">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:29</note>
+      </notes>
+      <segment>
+        <source>Retired</source>
+      </segment>
+    </unit>
+    <unit id="deb.key.state.primary.text">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:36</note>
+      </notes>
+      <segment>
+        <source>Signs every index and is served to clients.</source>
+      </segment>
+    </unit>
+    <unit id="deb.key.state.next.text">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:38</note>
+      </notes>
+      <segment>
+        <source>Co-signs every index and is served to clients, until it is promoted or removed.</source>
+      </segment>
+    </unit>
+    <unit id="deb.key.state.withheld.text">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:40</note>
+      </notes>
+      <segment>
+        <source>A restore withheld this key. It neither signs nor is served; its private key is kept until you confirm the retirement or reinstate it.</source>
+      </segment>
+    </unit>
+    <unit id="deb.key.state.retired.text">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:42</note>
+      </notes>
+      <segment>
+        <source>Neither signs nor is served; its private key is erased. The certificate stays as the record of what signed.</source>
+      </segment>
+    </unit>
+    <unit id="deb.key.err.in-use">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:50</note>
+      </notes>
+      <segment>
+        <source>This key is already known to trove, in this or another repository, in some state. A retired or withheld key cannot come back by import.</source>
+      </segment>
+    </unit>
+    <unit id="deb.key.err.unsupported">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:52</note>
+      </notes>
+      <segment>
+        <source>trove cannot use this key. It needs an EdDSALegacy (Ed25519) or RSA primary key of at least 3072 bits that can sign, is not revoked, has no expiry, was not created in the future and has no signing subkeys.</source>
+      </segment>
+    </unit>
+    <unit id="deb.key.err.state">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:54</note>
+      </notes>
+      <segment>
+        <source>The key is not in a state that allows this. Reload the list and try again.</source>
+      </segment>
+    </unit>
+    <unit id="deb.key.err.no-next">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:56</note>
+      </notes>
+      <segment>
+        <source>There is no next key to promote.</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:74,75</note>
+      </notes>
+      <segment>
+        <source>Signing keys</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.intro">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:76,79</note>
+      </notes>
+      <segment>
+        <source> Every index of this repository is signed. Clients trust the key through the key file the setup snippet installs. To change the key without breaking clients, create a next key, let the clients replace their key file while both keys sign, then promote the next key. </source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.no-primary">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:88,90</note>
+      </notes>
+      <segment>
+        <source> This repository has no primary key, so its builds publish nothing and the last published indexes stay served. Reinstate a withheld key, or create a next key and promote it. </source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.withheld-note">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:97,99</note>
+      </notes>
+      <segment>
+        <source> A restore withheld a key because the journal records its retirement. Confirm the retirement to erase the private key, or reinstate the key if the entry is wrong. </source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.overlap">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:104</note>
+      </notes>
+      <segment>
+        <source>Both keys sign since</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.overlap-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:104,108</note>
+      </notes>
+      <segment>
+        <source>trove cannot know which clients replaced their key file. A client that holds only the old key fails to update after the promotion.</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.certificate">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:116,117</note>
+      </notes>
+      <segment>
+        <source>Public certificate</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.promote">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:138,139</note>
+      </notes>
+      <segment>
+        <source>Promote</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.remove">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:139,140</note>
+      </notes>
+      <segment>
+        <source>Remove</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.reinstate">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:142,143</note>
+      </notes>
+      <segment>
+        <source>Reinstate</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.confirm-retirement">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:143,145</note>
+      </notes>
+      <segment>
+        <source>Confirm retirement</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.next.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:161,163</note>
+      </notes>
+      <segment>
+        <source>Next key</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.next.exists">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:164,166</note>
+      </notes>
+      <segment>
+        <source> A next key exists. Promote it or remove it before you create another. </source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.next.intro">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:168,170</note>
+      </notes>
+      <segment>
+        <source> Creating a next key starts the overlap: from the next build both keys sign every index. </source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.generate">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:172,173</note>
+      </notes>
+      <segment>
+        <source> Generate a next key </source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.import">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:175,176</note>
+      </notes>
+      <segment>
+        <source> Import a key </source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.import.key">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:181,182</note>
+      </notes>
+      <segment>
+        <source>Armored secret key</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.import.hint">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:193,194</note>
+      </notes>
+      <segment>
+        <source> For an archive whose clients already trust a key. It is sent once over this connection and sealed on the server; it is never shown again. </source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.import.pass">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:198,200</note>
+      </notes>
+      <segment>
+        <source>Passphrase</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.import.pass-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:209,210</note>
+      </notes>
+      <segment>
+        <source> Only if the key is protected. It is used once and never stored. </source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.import.submit">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:213,214</note>
+      </notes>
+      <segment>
+        <source> Import as next key </source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.loading">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:220,223</note>
+      </notes>
+      <segment>
+        <source>Loading the keys.</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.copy-fingerprint">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:271</note>
+      </notes>
+      <segment>
+        <source>Copy fingerprint</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.origin.imported">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:272</note>
+      </notes>
+      <segment>
+        <source>Imported</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.origin.generated">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:273</note>
+      </notes>
+      <segment>
+        <source>Generated</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.caption">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:274</note>
+      </notes>
+      <segment>
+        <source>Signing keys of this repository</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.col.fingerprint">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:276</note>
+      </notes>
+      <segment>
+        <source>Fingerprint</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.col.state">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:277</note>
+      </notes>
+      <segment>
+        <source>State</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.col.type">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:278</note>
+      </notes>
+      <segment>
+        <source>Type</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.col.origin">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:279</note>
+      </notes>
+      <segment>
+        <source>Origin</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.col.created">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:280</note>
+      </notes>
+      <segment>
+        <source>Key created</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.col.since">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:281</note>
+      </notes>
+      <segment>
+        <source>In this state since</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.col.actions">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:283</note>
+      </notes>
+      <segment>
+        <source>Actions</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.done.created">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:347</note>
+      </notes>
+      <segment>
+        <source>The next key was created. Both keys sign from the next build.</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.done.imported">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:357</note>
+      </notes>
+      <segment>
+        <source>The key was imported as the next key. Both keys sign from the next build.</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.promote.title">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:367</note>
+      </notes>
+      <segment>
+        <source>Promote the next key</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.promote.line1">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:369</note>
+      </notes>
+      <segment>
+        <source>The next key <ph id="0" equiv="fingerprint" disp="groupedFingerprint(k.fingerprint)"/> becomes the primary key. The old primary key is retired: it stops signing, leaves the key file clients fetch and its private key is erased.</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.promote.line2">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:370</note>
+      </notes>
+      <segment>
+        <source>A client that never replaced its key file fails to update from then on.</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.promote.confirm">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:372</note>
+      </notes>
+      <segment>
+        <source>Promote</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.done.promoted">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:377</note>
+      </notes>
+      <segment>
+        <source>The key was promoted.</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.confirm.title">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:386</note>
+      </notes>
+      <segment>
+        <source>Confirm the retirement of the key</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.remove.title">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:387</note>
+      </notes>
+      <segment>
+        <source>Remove the next key</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.confirm.line1">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:390</note>
+      </notes>
+      <segment>
+        <source>The key <ph id="0" equiv="fingerprint" disp="groupedFingerprint(k.fingerprint)"/> is retired and its private key is erased. This cannot be undone.</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.remove.line1">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:391</note>
+      </notes>
+      <segment>
+        <source>The next key <ph id="0" equiv="fingerprint" disp="groupedFingerprint(k.fingerprint)"/> stops signing and leaves the key file clients fetch. Its private key is erased and the key cannot be imported again.</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.confirm.confirm">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:394</note>
+      </notes>
+      <segment>
+        <source>Retire the key</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.remove.confirm">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:395</note>
+      </notes>
+      <segment>
+        <source>Remove the key</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.done.retired">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:400</note>
+      </notes>
+      <segment>
+        <source>The key was retired.</source>
+      </segment>
+    </unit>
+    <unit id="deb.keys.done.reinstated">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-signing-keys.ts:408</note>
+      </notes>
+      <segment>
+        <source>The key was reinstated.</source>
+      </segment>
+    </unit>
+    <unit id="deb.upstream.fingerprints">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-upstream-keys.ts:15,16</note>
+      </notes>
+      <segment>
+        <source>Fingerprints of the upstream keys</source>
+      </segment>
+    </unit>
+    <unit id="deb.upstream.fingerprints-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-upstream-keys.ts:17,20</note>
+      </notes>
+      <segment>
+        <source> Read-only. Compare them with the fingerprints the archive publishes, through another channel, before you trust the keys above. They follow the saved keys. </source>
+      </segment>
+    </unit>
+    <unit id="deb.upstream.copy">
+      <notes>
+        <note category="location">src/app/features/repositories/deb-upstream-keys.ts:42</note>
+      </notes>
+      <segment>
+        <source>Copy fingerprint</source>
+      </segment>
+    </unit>
     <unit id="repo.format.intro">
       <notes>
-        <note category="location">src/app/features/repositories/format-settings.ts:34,37</note>
+        <note category="location">src/app/features/repositories/format-settings.ts:41,44</note>
       </notes>
       <segment>
         <source> Only the settings that apply to this class of repository are shown. A setting left at its default is not written into the repository. </source>
@@ -13582,15 +14423,23 @@
     </unit>
     <unit id="repo.format.unset">
       <notes>
-        <note category="location">src/app/features/repositories/format-settings.ts:89,90</note>
+        <note category="location">src/app/features/repositories/format-settings.ts:96,97</note>
       </notes>
       <segment>
         <source> Not set </source>
       </segment>
     </unit>
+    <unit id="repo.format.list">
+      <notes>
+        <note category="location">src/app/features/repositories/format-settings.ts:139,140</note>
+      </notes>
+      <segment>
+        <source>One entry per line.</source>
+      </segment>
+    </unit>
     <unit id="repo.format.other">
       <notes>
-        <note category="location">src/app/features/repositories/format-settings.ts:108,109</note>
+        <note category="location">src/app/features/repositories/format-settings.ts:151,152</note>
       </notes>
       <segment>
         <source> This setting cannot be changed here. Set it through the API. </source>
@@ -13598,7 +14447,7 @@
     </unit>
     <unit id="repo.format.default-on">
       <notes>
-        <note category="location">src/app/features/repositories/format-settings.ts:147,149</note>
+        <note category="location">src/app/features/repositories/format-settings.ts:204,206</note>
       </notes>
       <segment>
         <source>Default: on</source>
@@ -13606,7 +14455,7 @@
     </unit>
     <unit id="repo.format.default-off">
       <notes>
-        <note category="location">src/app/features/repositories/format-settings.ts:150,152</note>
+        <note category="location">src/app/features/repositories/format-settings.ts:207,209</note>
       </notes>
       <segment>
         <source>Default: off</source>
@@ -13614,7 +14463,7 @@
     </unit>
     <unit id="repo.format.default">
       <notes>
-        <note category="location">src/app/features/repositories/format-settings.ts:154,156</note>
+        <note category="location">src/app/features/repositories/format-settings.ts:211,213</note>
       </notes>
       <segment>
         <source> Default: <pc id="0" equivStart="START_TAG_CODE" equivEnd="CLOSE_TAG_CODE" type="other" dispStart="&lt;code translate=&quot;no&quot;&gt;" dispEnd="&lt;/code&gt;"><ph id="1" equiv="INTERPOLATION" disp="{{ fallbackText(n) }}"/></pc></source>
@@ -14659,7 +15508,7 @@
     <unit id="repo.tab.guide">
       <notes>
         <note category="location">src/app/features/repositories/repository-detail.html:46,47</note>
-        <note category="location">src/app/features/repositories/repository-detail.ts:510</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:529</note>
       </notes>
       <segment>
         <source>How to use</source>
@@ -14716,7 +15565,7 @@
     </unit>
     <unit id="mirror.status.unsaved">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:173,174</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:176,177</note>
       </notes>
       <segment>
         <source> The status appears once the repository is saved in mode mirror. </source>
@@ -14724,7 +15573,7 @@
     </unit>
     <unit id="repo.detail.api.document">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:199,200</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:218,219</note>
       </notes>
       <segment>
         <source>Stored document</source>
@@ -14732,7 +15581,7 @@
     </unit>
     <unit id="repo.detail.api.patch">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:201,203</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:220,222</note>
       </notes>
       <segment>
         <source>Your change as a request</source>
@@ -14740,7 +15589,7 @@
     </unit>
     <unit id="repo.detail.api.nochange">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:206,208</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:225,227</note>
       </notes>
       <segment>
         <source> Change a setting to see the request that saves it. </source>
@@ -14748,7 +15597,7 @@
     </unit>
     <unit id="repo.edit.save">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:221,222</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:240,241</note>
       </notes>
       <segment>
         <source> Save changes </source>
@@ -14756,7 +15605,7 @@
     </unit>
     <unit id="repo.move.heading">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:243,244</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:262,263</note>
       </notes>
       <segment>
         <source>Move to another project</source>
@@ -14764,7 +15613,7 @@
     </unit>
     <unit id="repo.move.hint">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:245,246</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:264,265</note>
       </notes>
       <segment>
         <source> The repository keeps its key and its content; its address changes. You must be Owner of the target project too. </source>
@@ -14772,7 +15621,7 @@
     </unit>
     <unit id="repo.move.target">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:249,250</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:268,269</note>
       </notes>
       <segment>
         <source>Target project</source>
@@ -14780,7 +15629,7 @@
     </unit>
     <unit id="repo.move.action">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:255,256</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:274,275</note>
       </notes>
       <segment>
         <source> Move repository </source>
@@ -14788,8 +15637,8 @@
     </unit>
     <unit id="repo.edit.saved">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:285</note>
-        <note category="location">src/app/features/repositories/repository-detail.ts:394</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:302</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:411</note>
       </notes>
       <segment>
         <source>Repository saved.</source>
@@ -14797,7 +15646,7 @@
     </unit>
     <unit id="mirror.paused-notice">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:312</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:329</note>
       </notes>
       <segment>
         <source>Mirror paused.</source>
@@ -14805,7 +15654,7 @@
     </unit>
     <unit id="mirror.resumed-notice">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:313</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:330</note>
       </notes>
       <segment>
         <source>Mirror resumed.</source>
@@ -14813,7 +15662,7 @@
     </unit>
     <unit id="repo.delete.title">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:419</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:436</note>
         <note category="location">src/app/features/repositories/repository-list.ts:208</note>
       </notes>
       <segment>
@@ -14822,7 +15671,7 @@
     </unit>
     <unit id="repo.delete.text">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:421</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:438</note>
         <note category="location">src/app/features/repositories/repository-list.ts:210</note>
       </notes>
       <segment>
@@ -14831,7 +15680,7 @@
     </unit>
     <unit id="repo.delete.confirm">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:423</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:440</note>
         <note category="location">src/app/features/repositories/repository-list.ts:212</note>
       </notes>
       <segment>
@@ -14840,7 +15689,7 @@
     </unit>
     <unit id="repo.move.choose">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:447</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:464</note>
       </notes>
       <segment>
         <source>Choose a project</source>
@@ -14848,7 +15697,7 @@
     </unit>
     <unit id="repo.move.title">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:464</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:481</note>
       </notes>
       <segment>
         <source>Move repository <ph id="0" equiv="key" disp="this.ref()"/> to project <ph id="1" equiv="project" disp="target"/>?</source>
@@ -14856,7 +15705,7 @@
     </unit>
     <unit id="repo.move.text">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:466</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:483</note>
       </notes>
       <segment>
         <source>The repository gets a new address; clients must switch to it. Policies, pins, virtual memberships and CI mappings that name it in this project stop applying, and the move is refused while any of them exists.</source>
@@ -14864,7 +15713,7 @@
     </unit>
     <unit id="repo.move.confirm">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:468</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:485</note>
       </notes>
       <segment>
         <source>Move repository</source>
@@ -14872,7 +15721,7 @@
     </unit>
     <unit id="repo.move.done">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:475</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:492</note>
       </notes>
       <segment>
         <source>Repository moved to project <ph id="0" equiv="project" disp="target"/>.</source>
@@ -14880,7 +15729,7 @@
     </unit>
     <unit id="repo.delete.failed">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:489</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:506</note>
         <note category="location">src/app/features/repositories/repository-list.ts:255</note>
       </notes>
       <segment>
@@ -14889,7 +15738,7 @@
     </unit>
     <unit id="repo.delete.done">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:494</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:511</note>
         <note category="location">src/app/features/repositories/repository-list.ts:245</note>
       </notes>
       <segment>
@@ -14898,7 +15747,7 @@
     </unit>
     <unit id="repo.delete.progress">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:499</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:516</note>
         <note category="location">src/app/features/repositories/repository-list.ts:176</note>
       </notes>
       <segment>
@@ -14907,7 +15756,7 @@
     </unit>
     <unit id="repo.copy-address">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:500</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:517</note>
         <note category="location">src/app/features/repositories/repository-list.ts:175</note>
       </notes>
       <segment>
@@ -14916,7 +15765,7 @@
     </unit>
     <unit id="repo.tab.general">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:501</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:518</note>
       </notes>
       <segment>
         <source>General</source>
@@ -14924,7 +15773,7 @@
     </unit>
     <unit id="repo.tab.access">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:502</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:519</note>
       </notes>
       <segment>
         <source>Access</source>
@@ -14932,7 +15781,7 @@
     </unit>
     <unit id="repo.tab.format">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:505</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:522</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="format" disp="this.format()?.displayName ?? this.member().name"/> settings</source>
@@ -14940,7 +15789,7 @@
     </unit>
     <unit id="repo.tab.upstream">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:507</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:524</note>
       </notes>
       <segment>
         <source>Upstream</source>
@@ -14948,15 +15797,31 @@
     </unit>
     <unit id="repo.tab.mirror">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:508</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:525</note>
       </notes>
       <segment>
         <source>Mirror</source>
       </segment>
     </unit>
+    <unit id="repo.tab.deb-keys">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:526</note>
+      </notes>
+      <segment>
+        <source>Signing keys</source>
+      </segment>
+    </unit>
+    <unit id="repo.tab.deb-index">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:527</note>
+      </notes>
+      <segment>
+        <source>Index</source>
+      </segment>
+    </unit>
     <unit id="repo.tab.api">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:509</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:528</note>
       </notes>
       <segment>
         <source>API</source>
@@ -17441,7 +18306,7 @@
     </unit>
     <unit id="setup.snippet.npmrc">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:48</note>
+        <note category="location">src/app/features/setup/clients.ts:50</note>
       </notes>
       <segment>
         <source>Save this as .npmrc in your project. It sends every request for packages to this repository and signs in with the token.</source>
@@ -17449,7 +18314,7 @@
     </unit>
     <unit id="setup.snippet.npmrc-scoped">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:52</note>
+        <note category="location">src/app/features/setup/clients.ts:54</note>
       </notes>
       <segment>
         <source>Use this variant to take only the packages of one scope from this repository. All other packages still come from npm&apos;s default registry.</source>
@@ -17457,7 +18322,7 @@
     </unit>
     <unit id="setup.snippet.yarnrc-scoped">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:54</note>
+        <note category="location">src/app/features/setup/clients.ts:56</note>
       </notes>
       <segment>
         <source>Add this to .yarnrc.yml to take only the packages of one scope from this repository. All other packages still come from npm&apos;s default registry.</source>
@@ -17465,7 +18330,7 @@
     </unit>
     <unit id="setup.snippet.npm-cli">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:56</note>
+        <note category="location">src/app/features/setup/clients.ts:58</note>
       </notes>
       <segment>
         <source>Writes the same settings into your user configuration file ~/.npmrc. Your shell fills in the token, so it is stored in that file.</source>
@@ -17473,7 +18338,7 @@
     </unit>
     <unit id="setup.snippet.yarnrc">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:58</note>
+        <note category="location">src/app/features/setup/clients.ts:60</note>
       </notes>
       <segment>
         <source>Save this as .yarnrc.yml in your project. Yarn fills in the token variable itself.</source>
@@ -17481,7 +18346,7 @@
     </unit>
     <unit id="setup.snippet.install">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:63</note>
+        <note category="location">src/app/features/setup/clients.ts:65</note>
       </notes>
       <segment>
         <source>Installs a package through this repository once the client is configured.</source>
@@ -17489,7 +18354,7 @@
     </unit>
     <unit id="setup.snippet.publish-flag">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:67</note>
+        <note category="location">src/app/features/setup/clients.ts:69</note>
       </notes>
       <segment>
         <source>Publishes the package in the current directory to the repository that receives uploads.</source>
@@ -17497,7 +18362,7 @@
     </unit>
     <unit id="setup.snippet.publish-berry">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:69</note>
+        <note category="location">src/app/features/setup/clients.ts:71</note>
       </notes>
       <segment>
         <source>Add this to .yarnrc.yml, then run yarn npm publish.</source>
@@ -17505,7 +18370,7 @@
     </unit>
     <unit id="setup.snippet.gitlab-generic">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:71</note>
+        <note category="location">src/app/features/setup/clients.ts:73</note>
       </notes>
       <segment>
         <source>For npm 10, pnpm 10 on npm 10 and Yarn 1. A pipeline step exchanges the job&apos;s ID token for a short-lived trove token and revokes it again as its last step.</source>
@@ -17513,7 +18378,7 @@
     </unit>
     <unit id="setup.snippet.gitlab-native">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:73</note>
+        <note category="location">src/app/features/setup/clients.ts:75</note>
       </notes>
       <segment>
         <source>For npm 11.5.1 and later, pnpm 11 and 12 and Yarn 4. The client exchanges the job&apos;s ID token itself.</source>
@@ -17521,7 +18386,7 @@
     </unit>
     <unit id="setup.snippet.dotnet-add-source">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:76</note>
+        <note category="location">src/app/features/setup/clients.ts:78</note>
       </notes>
       <segment>
         <source>Adds this repository as a package source of your user configuration. On Linux and macOS the .NET CLI cannot encrypt the password, so it is stored in clear text in that file.</source>
@@ -17529,7 +18394,7 @@
     </unit>
     <unit id="setup.snippet.nuget-config">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:80</note>
+        <note category="location">src/app/features/setup/clients.ts:82</note>
       </notes>
       <segment>
         <source>Save this as nuget.config next to your solution. It removes all other package sources, so every package comes through this repository, and it reads the token from the environment variable.</source>
@@ -17537,7 +18402,7 @@
     </unit>
     <unit id="setup.snippet.nuget-sources-add">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:83</note>
+        <note category="location">src/app/features/setup/clients.ts:85</note>
       </notes>
       <segment>
         <source>Adds this repository as a package source of your user configuration with nuget.exe.</source>
@@ -17545,7 +18410,7 @@
     </unit>
     <unit id="setup.snippet.dotnet-install">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:85</note>
+        <note category="location">src/app/features/setup/clients.ts:87</note>
       </notes>
       <segment>
         <source>Adds the package to the project in the current directory and restores it through the configured sources.</source>
@@ -17553,7 +18418,7 @@
     </unit>
     <unit id="setup.snippet.nuget-install">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:87</note>
+        <note category="location">src/app/features/setup/clients.ts:89</note>
       </notes>
       <segment>
         <source>Installs the package into the current directory through this repository.</source>
@@ -17561,7 +18426,7 @@
     </unit>
     <unit id="setup.snippet.vs-packagereference">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:89</note>
+        <note category="location">src/app/features/setup/clients.ts:91</note>
       </notes>
       <segment>
         <source>Add this line to the project file inside an ItemGroup, then restore. Or choose this source in the NuGet package manager of Visual Studio and install the package there.</source>
@@ -17569,7 +18434,7 @@
     </unit>
     <unit id="setup.snippet.nuget-publish">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:94</note>
+        <note category="location">src/app/features/setup/clients.ts:96</note>
       </notes>
       <segment>
         <source>Pushes the package to the repository that receives uploads. The token travels as the API key.</source>
@@ -17577,7 +18442,7 @@
     </unit>
     <unit id="setup.snippet.curl-function">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:96</note>
+        <note category="location">src/app/features/setup/clients.ts:98</note>
       </notes>
       <segment>
         <source>Paste this into the shell or the CI script that runs curl. It defines trove_curl, which hands curl the credential on standard input, so the token never appears on curl&apos;s command line.</source>
@@ -17585,7 +18450,7 @@
     </unit>
     <unit id="setup.snippet.curl-install">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:98</note>
+        <note category="location">src/app/features/setup/clients.ts:100</note>
       </notes>
       <segment>
         <source>Downloads a file of this repository with trove_curl. Replace &lt;path&gt; with the path of the file in the repository.</source>
@@ -17593,7 +18458,7 @@
     </unit>
     <unit id="setup.snippet.curl-publish">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:100</note>
+        <note category="location">src/app/features/setup/clients.ts:102</note>
       </notes>
       <segment>
         <source>Uploads a file to the path you give. Replacing a file with other bytes also needs the overwrite permission.</source>
@@ -17601,7 +18466,7 @@
     </unit>
     <unit id="setup.snippet.oci-login">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:103</note>
+        <note category="location">src/app/features/setup/clients.ts:105</note>
       </notes>
       <segment>
         <source>Signs the client in to this repository. A token is read from standard input, so it appears neither in the process list nor in the shell history; without a token the client asks for the password. The images of this repository begin with the address in the login.</source>
@@ -17609,7 +18474,7 @@
     </unit>
     <unit id="setup.snippet.oci-pull-secret">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:105</note>
+        <note category="location">src/app/features/setup/clients.ts:107</note>
       </notes>
       <segment>
         <source>For a Kubernetes cluster: creates an image pull secret that holds the token. A snippet without a token is only a comment, because a secret needs a credential. Name the secret under imagePullSecrets of the pods that pull images of this repository.</source>
@@ -17617,7 +18482,7 @@
     </unit>
     <unit id="setup.snippet.oci-pull">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:108</note>
+        <note category="location">src/app/features/setup/clients.ts:110</note>
       </notes>
       <segment>
         <source>Pulls an image of this repository by its tag. Replace &lt;package&gt; with the image name. Use the digest instead of the tag to pull exactly these bytes.</source>
@@ -17625,7 +18490,7 @@
     </unit>
     <unit id="setup.snippet.oci-push">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:111</note>
+        <note category="location">src/app/features/setup/clients.ts:113</note>
       </notes>
       <segment>
         <source>Names a local image below this repository and pushes it to the repository that receives uploads.</source>
@@ -17633,10 +18498,42 @@
     </unit>
     <unit id="setup.snippet.oci-buildx">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:113</note>
+        <note category="location">src/app/features/setup/clients.ts:115</note>
       </notes>
       <segment>
         <source>Builds the image for two platforms from the Dockerfile in the current directory and pushes the result as one multi-platform image.</source>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.apt-configure">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:118</note>
+      </notes>
+      <segment>
+        <source>Installs the repository&apos;s signing key as a key file and adds the repository as an APT source that is verified against that key. The credentials go into a file that only root can read, never into the source URL. The key file is replaced by running the key command again, which is also how a key rotation reaches this machine.</source>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.apt-list">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:121</note>
+      </notes>
+      <segment>
+        <source>The same source as one line, for systems that prefer a .list file. Install the key file as above first.</source>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.apt-install">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:123</note>
+      </notes>
+      <segment>
+        <source>Reads the repository&apos;s indexes and installs the package through APT. Replace the package name with yours.</source>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.apt-publish">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:125</note>
+      </notes>
+      <segment>
+        <source>Uploads a .deb file to the repository that receives uploads, into the suite and component named in the address. An index that lists the package follows within moments.</source>
       </segment>
     </unit>
     <unit id="route.setup.title">

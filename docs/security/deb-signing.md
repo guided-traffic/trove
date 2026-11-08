@@ -110,6 +110,25 @@ common case (a key created before the snapshot and promoted after it) is repaire
 - [H-627](../spec/formats/debian.md#h-627--an-imported-signing-key-stays-known-to-whoever-imported-it): an imported signing key stays known to whoever imported it.
 - [H-629](../spec/formats/debian.md#h-629--a-forged-journal-entry-can-withhold-a-repositorys-signing-key-until-an-administrator-acts): a forged journal entry can withhold a repository's signing key until an administrator acts.
 
+### H-765 · An imported secret key passes through the operator's browser
+
+The screen's **Import a key** takes the armored secret key and its passphrase in two form fields and sends them once over the connection to
+trove. The page clears both fields after the answer and keeps no draft, but it cannot control the browser: the pasted text lives in the
+field and in the page's memory until it is overwritten and collected, the operator's clipboard holds the key from the copy until it is
+replaced, a browser extension with access to the page reads the fields, and a password manager or autofill may offer the passphrase
+field to be saved (the field is `autocomplete="off"`, which not every manager honours). Live whenever the screen is used to import;
+real for an operator whose browser or machine is not trusted with the signing identity of an archive. The API accepts the same
+request from `curl` with the key read from a file, which keeps it out of a browser; the import is for an archive whose clients already
+trust a key, so it is rare.
+
+### H-766 · The screen offers key changes to the principals who may edit the repository, not to everyone who holds `manage`
+
+The API enforces `manage` on the repository for every key change and for the rebuild. The screen decides what to offer by the rule of
+"Save changes": the capability `repositories:write-config` or Owner of the project. A principal who holds `manage` on this repository
+through a permission policy and is neither sees the key list and the index state read-only in the UI, and has to use the API for a
+promotion. Not a bypass (the server decides, a button shown to someone without `manage` answers 403); a gap in what the screen offers.
+Live for every project whose policies grant `manage` below the Owner role.
+
 ### H-735 · The secret key of an import and its passphrase stay in process memory until the collector frees them
 
 An import arrives as a JSON string. The handler wipes the byte copy it hands to the store, and the store wipes the armored secret it

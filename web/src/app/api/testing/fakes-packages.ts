@@ -276,6 +276,81 @@ export function ociFixture(fake: FakePackagesApi): void {
   );
 }
 
+/** The Debian repositories of the fakes: a local, a remote and a virtual one. */
+export const DEB_REPOSITORIES: readonly Repository[] = [
+  { key: 'deb-local', project: 'web', class: 'local', format: 'deb', description: 'Internal packages' },
+  { key: 'deb-remote', project: 'web', class: 'remote', format: 'deb', description: 'Debian archive cache' },
+  { key: 'deb-all', project: 'web', class: 'virtual', format: 'deb', description: 'Everything for APT clients' },
+];
+
+/** The package of the Debian fakes. It is not in the default list of {@link FakePackagesApi}; a test adds it with {@link debFixture}. */
+export const DEB_PACKAGE: PackageSummary = {
+  id: 'pkg_01JBQ9DEBDEB',
+  format: 'deb',
+  name: 'hello',
+  description: 'example package based on GNU hello',
+  latestVersion: '2.10-3',
+  keywords: [],
+  repositories: ['web/deb-local'],
+  createdAt: '2026-11-01T00:00:00.000Z',
+  updatedAt: '2026-11-08T00:00:00.000Z',
+  versionCount: 2,
+  downloadCount: 0,
+};
+
+/**
+ * A Debian version as the view adapter describes it (formats/debian.md R-DEB-030, internal/formats/deb/view.go): the architectures of the
+ * files, the coordinates as `suite/component` and the control fields it sends, those the version has. There is no README.
+ */
+function debVersion(v: string, metadata: Record<string, unknown>, over: Partial<FakeVersion> = {}): FakeVersion {
+  const file = (arch: string): PackageVersion['files'][number] => {
+    const path = `pool/main/h/hello/hello_${v}_${arch}.deb`;
+    return {
+      path,
+      sizeBytes: 56_132,
+      sha256: sha(arch === 'amd64' ? 0x3d1 : 0x3d2),
+      downloadUrl: `${BASE}/api/deb/web/deb-local/${path}`,
+      contentUrl: `/api/v1/projects/web/repositories/deb-local/content/${path}`,
+    };
+  };
+  return {
+    packageId: DEB_PACKAGE.id,
+    format: 'deb',
+    name: 'hello',
+    version: v,
+    prerelease: false,
+    publishedAt: '2026-11-08T00:00:00.000Z',
+    licenses: [],
+    sizeBytes: 112_264,
+    downloadCount: 0,
+    hasReadme: false,
+    metadata,
+    repositories: [{ key: 'web/deb-local', class: 'local', publishedAt: '2026-11-08T00:00:00.000Z' }],
+    files: [file('amd64'), file('arm64')],
+    readme: null,
+    ...over,
+  };
+}
+
+/** Adds the Debian package `hello` with `2.10-3` (full control data, two architectures, one coordinate) and `2.9-1` (a bare version). */
+export function debFixture(fake: FakePackagesApi): void {
+  fake.packages.push(DEB_PACKAGE);
+  fake.versionList.push(
+    debVersion('2.9-1', { architectures: ['amd64'], coordinates: ['stable/main'] }, { publishedAt: '2026-10-01T00:00:00.000Z', files: [] }),
+    debVersion('2.10-3', {
+      architectures: ['amd64', 'arm64'],
+      coordinates: ['stable/main'],
+      maintainer: 'Jane Maintainer <jane@example.com>',
+      section: 'devel',
+      priority: 'optional',
+      installedSize: '280',
+      homepage: 'https://www.gnu.org/software/hello/',
+      depends: 'libc6 (>= 2.34)',
+      source: 'hello (2.10-3)',
+    }),
+  );
+}
+
 export class FakePackagesApi extends PackagesApi {
   packages: PackageSummary[] = [
     {

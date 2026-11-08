@@ -37,6 +37,9 @@ import { provideVulnerabilityFakes } from './fakes-vulnerabilities';
 // >>> G2 backups
 import { provideBackupFakes } from './fakes-backups';
 // <<< G2 backups
+// >>> T17 deb
+import { provideDebFakes } from './fakes-deb';
+// <<< T17 deb
 
 /*
  * In-memory fakes of the typed service interfaces (R-UI-047 component tier). Screens of the later
@@ -358,5 +361,8 @@ export function provideFakeApis(): Provider[] {
     // >>> G2 backups
     ...provideBackupFakes(),
     // <<< G2 backups
+    // >>> T17 deb
+    ...provideDebFakes(),
+    // <<< T17 deb
   ];
 }

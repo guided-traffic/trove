@@ -2,6 +2,14 @@
 // regenerate with: go test ./internal/api/v1 -run RenderedSnippetIds -update-snippet-ids
 // The ids the API sends for every client of a format (<client>.<section>[.<name>], Q-API-160); a UI spec checks that each has an explanation.
 export const RENDERED_SNIPPET_IDS: Readonly<Record<string, readonly string[]>> = {
+  'deb:apt': [
+    'apt.configure.list',
+    'apt.configure.list-scoped',
+    'apt.configure.shell',
+    'apt.configure.shell-scoped',
+    'apt.install',
+    'apt.publish.curl',
+  ],
   'generic:curl': [
     'curl.configure.function',
     'curl.install',

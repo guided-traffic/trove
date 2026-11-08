@@ -12,6 +12,8 @@ export interface SettingSchema {
   readonly default?: unknown;
   readonly enum?: readonly unknown[];
   readonly format?: string;
+  readonly maxLength?: number;
+  readonly items?: SettingSchema;
   readonly properties?: Readonly<Record<string, SettingSchema>>;
   readonly required?: readonly string[];
   /** The repository classes a member applies to; absent means every class. */
@@ -41,10 +43,28 @@ export type SettingNode =
       readonly options: readonly unknown[];
       readonly fallback: unknown;
     })
-  | (NodeBase & { readonly kind: 'text'; readonly url: boolean; readonly fallback: unknown })
+  | (NodeBase & {
+      readonly kind: 'text';
+      readonly url: boolean;
+      /** A string that may be long (a pasted key block): edited in an area, not in a line (`maxLength` above 1 KiB). */
+      readonly multiline: boolean;
+      readonly fallback: unknown;
+    })
+  /**
+   * An array of strings (Q-UI-200): one of `options` as a checkbox each when the items are an enum, else one entry per line.
+   * An empty list leaves the setting to its default, like an empty text field.
+   */
+  | (NodeBase & {
+      readonly kind: 'list';
+      readonly options: readonly string[] | null;
+      readonly fallback: unknown;
+    })
   | (NodeBase & { readonly kind: 'number'; readonly integer: boolean; readonly fallback: unknown })
   /** A construct the form does not render (an array, a composition): shown, not edited. */
   | (NodeBase & { readonly kind: 'other' });
+
+/** A string setting that may be longer than this many characters gets an area to edit in. */
+const MULTILINE_ABOVE = 1024;
 
 function isObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -113,7 +133,21 @@ function node(
         fallback: typeof fallback === 'boolean' ? fallback : undefined,
       };
     case 'string':
-      return { ...base, kind: 'text', url: s.format === 'uri', fallback };
+      return {
+        ...base,
+        kind: 'text',
+        url: s.format === 'uri',
+        multiline: typeof s.maxLength === 'number' && s.maxLength > MULTILINE_ABOVE,
+        fallback,
+      };
+    case 'array': {
+      const items = s.items;
+      if (!isSchema(items) || typeOf(items) !== 'string') return { ...base, kind: 'other' };
+      const options = Array.isArray(items.enum) && items.enum.every((o) => typeof o === 'string')
+        ? (items.enum as readonly string[])
+        : null;
+      return { ...base, kind: 'list', options, fallback };
+    }
     case 'integer':
     case 'number':
       return { ...base, kind: 'number', integer: typeOf(s) === 'integer', fallback };

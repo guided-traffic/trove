@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { PackagesApi } from '../../api/packages-api';
-import { FakePackagesApi, ociFixture } from '../../api/testing/fakes-packages';
+import { FakePackagesApi, debFixture, ociFixture } from '../../api/testing/fakes-packages';
 import { expectAccessible, inProject, renderScreen, settle, text } from '../../testing/screen';
 import { PackageDetail } from './package-detail';
 import { PackageMemory } from './package-memory';
@@ -424,6 +424,65 @@ describe('Package details', () => {
       expect(pairs(odd).join('|')).not.toContain('Artifact type');
       expect(cells(odd).map((c) => c[0])).toEqual(['linux/amd64']);
       expect(cells(odd)[0]?.[3]).toBe('–');
+    });
+  });
+
+  describe('Debian', () => {
+    const deb = (inputs: Record<string, unknown> = {}, setup?: (fake: FakePackagesApi) => void) =>
+      open(
+        { format: 'deb', name: 'hello', ...inputs },
+        (fake) => {
+          debFixture(fake);
+          setup?.(fake);
+        },
+        'hello',
+      );
+    const facts = (r: Opened) =>
+      Object.fromEntries(
+        [...r.root.querySelectorAll('[data-testid="deb-facts"] dt')].map((dt) => [text(dt), text(dt.nextElementSibling!)]),
+      );
+
+    it('R-DEB-030 the package opens on the newest version in dpkg order and shows the repositories it is in', async () => {
+      const r = await deb();
+      expect(text(r.root.querySelector('h1')!)).toBe('hello');
+      expect(versionInput(r).value).toBe('2.10-3');
+      expect(r.root.querySelector('.chips')?.textContent).toContain('deb-local');
+      await expectAccessible(r.root);
+    });
+
+    it('R-DEB-030 the metadata lists the architectures, the suites and components and the control fields of the version', async () => {
+      const r = await deb({ tab: 'metadata' });
+      expect(facts(r)).toEqual({
+        Architectures: 'amd64, arm64',
+        'Suites and components': 'stable/main',
+        Maintainer: 'Jane Maintainer <jane@example.com>',
+        Section: 'devel',
+        Priority: 'optional',
+        'Installed size': '280 KiB',
+        Depends: 'libc6 (>= 2.34)',
+        'Source package': 'hello (2.10-3)',
+      });
+      const links = [...r.root.querySelectorAll<HTMLAnchorElement>('.pkg-tabs a[target="_blank"]')].map((a) => a.href);
+      expect(links).toContain('https://www.gnu.org/software/hello/');
+      await expectAccessible(r.root);
+    });
+
+    it('R-DEB-030 fields a version lacks are left out, and a version with several coordinates lists each', async () => {
+      const bare = await deb({ tab: 'metadata', version: '2.9-1' });
+      expect(Object.keys(facts(bare))).toEqual(['Architectures', 'Suites and components']);
+      const many = await deb({ tab: 'metadata' }, (fake) => {
+        for (const v of fake.versionList) {
+          if (v.format === 'deb') v.metadata = { ...v.metadata, coordinates: ['stable/main', 'testing/contrib'] };
+        }
+      });
+      expect(facts(many)['Suites and components']).toBe('stable/main, testing/contrib');
+    });
+
+    it('R-DEB-030 a version without metadata shows the empty-state sentence', async () => {
+      const r = await deb({ tab: 'metadata' }, (fake) => {
+        for (const v of fake.versionList) if (v.format === 'deb') v.metadata = {};
+      });
+      expect(text(r.root)).toContain('This version declares no further metadata.');
     });
   });
 });

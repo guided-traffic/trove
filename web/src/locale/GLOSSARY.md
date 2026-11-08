@@ -92,3 +92,6 @@ before using a new term in a German text.
 | avatar | Avatar |
 | pull (an image), image index, multi-platform image | ziehen, Image-Index, Multi-Plattform-Image |
 | image (OCI), tag, digest, media type, artifact type, platform (of an image index), image pull secret | Image, Tag, Digest, Medientyp, Artefakttyp, Plattform, Image-Pull-Secret |
+| signing key (primary, next, withheld, retired), fingerprint, certificate (public) | Signaturschlüssel (primär, nächster, zurückgehalten, außer Dienst), Fingerabdruck, öffentliches Zertifikat |
+| promote (a next key), reinstate (a withheld key), confirm the retirement | hochstufen, wieder einsetzen, Außerdienststellung bestätigen |
+| suite, component, architecture, index (of a suite), release (APT), generation | Suite, Komponente, Architektur, Index, Release, Generation |

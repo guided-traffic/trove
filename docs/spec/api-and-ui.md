@@ -3635,6 +3635,15 @@ Priority: **MVP** · Covers: UI-031
   `dotnet nuget delete` and `nuget delete` do in this repository: unlist the version, or delete it
   for good with a tombstone ([formats/nuget.md](formats/nuget.md) R-NUGET-007). Deletes through
   the UI and the management API are hard deletes whatever the mode (R-NUGET-007).
+- A setting that is an array of strings is a **list control** (Q-UI-200): one entry per line, or, when its items are an enum, one
+  checkbox per option; an empty list leaves the setting to its default. A string setting that may be longer than 1 KiB (a pasted key
+  block) is an area. A read-only member of the document that is not in the schema (`deb.upstreamKeyFingerprints`) is shown by the
+  format's own panel and never written back.
+- Debian (APT) repositories ([formats/debian.md](formats/debian.md) R-DEB-030, Q-DEB-100 to Q-DEB-102): a local or virtual repository
+  has the tabs **Signing keys** (the keys in every state with fingerprint in groups of four, state in words, type, origin, times and
+  the public certificate; **Generate a next key**, **Import a key** with a write-only secret key and passphrase, **Promote**,
+  **Remove**, **Reinstate** and **Confirm retirement**; a private key is never shown) and **Index** (the state of each suite and
+  **Rebuild all indexes**). The calls act at once and are not part of "Save changes"; the destructive ones ask first.
 - Key: live check of the INV-5 pattern and of availability within the chosen project (a `GET` of
   `/api/v1/projects/{projectKey}/repositories/{repoKey}` answering 404); the same key may exist in another project.
 - Remote: an **Upstream** section, in the class-specific step of the wizard above the format's settings and on a tab
@@ -9151,6 +9160,50 @@ Context: `formatIcon` (R-UI-006, R-UI-021) gives `nuget` the puzzle glyph and ev
 **Choice:** (a). The owner may replace the glyph at the walkthrough with the one he wants; it is one line in `web/src/app/shared/format-icon.ts`.
 **Rationale:** the icon font is the one source of glyphs (Q-UI-1), so a format icon is a ligature name; revisited when the owner names another glyph.
 **Applied:** `web/src/app/shared/format-icon.ts`, `package-detail.html`.
+
+### Q-UI-200 · An array of strings in a settings schema is a list control, a long string an area
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the settings form (Q-UI-78) rendered an array as "This setting cannot be changed here. Set it through the API". Every list of the Debian settings (`architectures`, `compression`, `suites`, `components`, the five members of `mirror`) is an array of strings, and `upstreamKeys` is a block of up to 256 KiB.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A `list` control for an array of strings: a textarea with one entry per line, or a checkbox per option when the items are an enum; an empty list leaves the default; a string with `maxLength` above 1 KiB gets a textarea (chosen) | The schema alone decides; no format code in the form | Every format with such a list is editable at once (FMT-001); the same pruning against the default as for text (Q-UI-80) | Items are plain strings: a pattern of the schema is checked by the server, the form does not repeat it |
+| (b) A chip input | One entry per chip | Familiar | A new control, keyboard handling and a test surface for what a textarea does |
+| (c) A panel per format | Debian-specific form | Tailored | The UI would know a format (FMT-001) |
+
+**Choice:** (a). A typed list keeps the text the user typed while it parses to the stored array, so a blank line being typed is not rewritten under the cursor. An array of anything but strings stays "other": shown, not edited. The fixture of the "other" case in the specs is now an array of objects, which is what that case always meant.
+**Rationale:** the schema already says what the control is; a list is the commonest setting after text and a boolean. The development agent revisits this when a schema needs ordered entries with structure.
+**Applied:** R-UI-021 (the list bullet); `web/src/app/features/repositories/settings-schema.ts`, `format-settings.ts` and their specs; `fakes-catalog.ts` (`DEB_SETTINGS_SCHEMA`).
+
+### Q-UI-201 · Debian gets the archive-box icon
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `unarchive`, the open archive box (chosen) | A ligature of the bundled font, next to `extension` and `view_in_ar` | Says "package archive"; no new mechanism (Q-UI-1) | A Material glyph, not Debian's swirl |
+| (b) The neutral glyph | No change | Nothing to review | Indistinguishable from npm in a list |
+| (c) A drawn swirl | A brand glyph | Recognisable | A third-party logo and a second icon mechanism (as in Q-UI-178) |
+
+**Choice:** (a); the owner may replace it at the walkthrough in `web/src/app/shared/format-icon.ts`.
+**Rationale:** as Q-UI-178. Revisited when the owner names another glyph.
+**Applied:** `web/src/app/shared/format-icon.ts`.
+
+### Q-UI-202 · The Debian key panel never keeps a secret it was given, and asks before it erases
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The import form holds the armored key and the passphrase in two fields (the passphrase is `type="password"`), sends them once and clears both after the answer, also a refusal; promote, remove and confirm-retirement ask first and say what they erase (chosen) | No secret is kept in a signal after the call, in storage, in the URL or in a draft | The smallest time a secret lives in the page; a refused key is pasted again, which is rare | Someone who mistypes a passphrase pastes the key again |
+| (b) Keep the key in the form after a refusal | Retry without pasting | Convenient | The secret stays in the page as long as the form is open |
+| (c) No confirmation | Fewer clicks | Faster | A promotion erases a private key and breaks every client that never replaced its key file |
+
+**Choice:** (a). The panel keeps no draft of the form (the unsaved-changes guard and the drafts store do not see it). Reinstating a withheld key and generating a next key do not ask: neither erases anything and both are visible in the list at once.
+**Rationale:** R-DEB-015 says a private key is never written anywhere else than its sealed column; the browser is the one place trove does not control, so the page holds it for the length of one call. The development agent revisits this when imports are common enough to warrant a file upload instead of a paste.
+**Applied:** `web/src/app/features/repositories/deb-signing-keys.ts` and its spec ("an imported key is sent once with its passphrase and leaves the form").
 
 ### Q-API-235 · A scope is rendered and accepted only where the client has a scoped variant
 

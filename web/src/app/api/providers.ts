@@ -36,6 +36,9 @@ import { HttpVulnerabilitiesApi, VulnerabilitiesApi } from './vulnerabilities-ap
 // >>> G2 backups
 import { BackupsApi, HttpBackupsApi } from './backups-api';
 // <<< G2 backups
+// >>> T17 deb
+import { DebApi, HttpDebApi } from './deb-api';
+// <<< T17 deb
 
 /**
  * Binds every service interface of `api/` to its HTTP implementation. Specs and component tests
@@ -83,5 +86,8 @@ export function provideApiServices(): Provider[] {
     // >>> G2 backups
     { provide: BackupsApi, useClass: HttpBackupsApi },
     // <<< G2 backups
+    // >>> T17 deb
+    { provide: DebApi, useClass: HttpDebApi },
+    // <<< T17 deb
   ];
 }

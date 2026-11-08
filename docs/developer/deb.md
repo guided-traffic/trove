@@ -144,7 +144,7 @@ and a source file named by `SetupData.Project` and `Key`, Q-ARCH-420, and an `au
 Built: everything above. Not built, by work package of [apt-work-packages.md](../projektplan/apt-work-packages.md): the OpenPGP library, the signing
 keys and their API (WP2, built beside this by another builder), the index builder and the publication port (WP4: `dists/…`, `by-hash` and
 `signing-key.asc` answer 501), the stub archive (WP5), the remote class (WP6), the mirror (WP7), the virtual class (WP8), the background
-upstream (WP13), the tests and the e2e sets (WP9, WP10), the UI (WP11) and the final documentation (WP12). A repository has no `InRelease`
+upstream (WP13), the tests and the e2e sets (WP9, WP10), the final documentation (WP12). A repository has no `InRelease`
 until WP4 lands, so `apt-get update` cannot use it yet; the packages are stored and downloadable.
 
 ## The OpenPGP library and the counting stub archive (stage 1 of the remote side)
@@ -277,6 +277,16 @@ The index builder replaces `RunIndexJob` (`build.go`): it reads `IndexJobArgs` f
 rows and returns `ErrSuperseded` when a newer generation exists), and registers nothing else: the endpoint and the enqueues need no change. Tests: the area
 [test/integration/debkeys](../../test/integration/debkeys/reindex_test.go) (`TestR_REPO_016_…`), [itempublish](../../test/integration/itempublish/publish_test.go) and
 the queue test in [coordination](../../test/integration/coordination/coalesce_test.go).
+
+## The screens
+
+The Angular side (T-17 WP11) is described in [web-ui.md](web-ui.md#the-debian-screens): the tabs **Signing keys** and **Index** of a local or virtual
+repository, the read-only fingerprints of a remote's upstream keys, the list controls of the settings, the client `apt`, the icon and the
+"Package details" block. It talks to the five key operations of [Signing keys](#signing-keys), `GET …/deb/index` and `POST …/reindex` through the
+generated types (`web/src/app/api/deb-api.ts`); the decisions are Q-DEB-100 to Q-DEB-104 and Q-UI-200 to Q-UI-202. When you add a field to
+`DebSigningKey`, `DebIndexState` or the `metadata` of the view (`metadataOf` in [formats/deb/view.go](../../internal/formats/deb/view.go)), change the
+panel and its fake in the same step; the ids of the setup snippets (`apt.*`) are checked against the UI by
+`TestR_API_030_RenderedSnippetIdsMatchTheUIFixture`.
 
 ## test/debstub: the counting stub archive
 
