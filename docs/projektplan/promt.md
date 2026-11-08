@@ -253,6 +253,10 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
 
 ### Tests and tools
 
+- **F-114 · Two npm mirror tests time out under host load** (2026-11-08, load about 48 from four builders):
+  `TestR_REPO_053_AShutdownReleasesThePassAndASecondProcessFetchesEveryTarballOnce` and
+  `TestR_REPO_051_NpmPrivateRegistryTakesNamesAndTheHeldPackages` ("a full pass … did not end complete within 1m30s"); both passed
+  alone in 27 s on the same tree. Done when the cause of the pass's slowdown under load is known.
 - **F-105 · `TestR_NPM_007_ASlowPublishOf200MiB` fails under load** (seen twice: by the F-83 builder, an S3 UploadPart
   cancellation followed by the package timeout, and by the F-101 builder, "1 connections held a transaction older than 1 s
   while the body arrived"; passes alone). The test asserts that no database transaction stays open longer than 1 s while
