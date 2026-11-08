@@ -258,6 +258,14 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   identical copy. Only npm's templates use the scope, and the UI sends none. Done when a scope yields only snippets that use
   it, or is refused for a format without scoped snippets, with a test.
 
+- **F-91 · The stall deadline cancels a request while the server itself works** (confirmed by the code review of the F-89
+  fix). Once a request body reaches its end, or at once for a request without a body, net/http reads the connection in the
+  background; that read runs into the read deadline the stall timeout (R-ARCH-005) set at the last chunk and cancels the
+  request's context. With a 300 ms stall timeout an upload whose work after the body took three timeouts, and a GET whose
+  first byte took three, both saw `context canceled`; with the default 60 s, a commit or an upstream fetch longer than a
+  minute is cancelled. Not yet verified: whether the commit paths abort on it. Done when quiet server work is never cut by
+  the stall timeout, with a test on the real server.
+
 ### Tests and tools
 
 - **F-88 · OCI tests carry requirement IDs whose acceptance criteria they do not prove** (read). The code review of T-16 WP3
