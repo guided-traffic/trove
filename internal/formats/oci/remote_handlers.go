@@ -161,6 +161,12 @@ func (f *Format) remoteManifestGet(ctx context.Context, rq *formats.Request, w h
 	}
 	doc, err := rq.Host.Remote().Metadata(ctx, rq, formats.Path{Path: path}, "")
 	if err != nil {
+		// The tag a client falls back to when the referrers API is not there (`sha256-<hex of the subject>`, OCI distribution specification,
+		// referrers tag schema) is asked for after every pull of Docker with the containerd image store. When the upstream cannot be
+		// asked or failed, it is a tag nobody has found out about: 404, as the referrers are (Q-OCI-204).
+		if referrersTag(ref) && (unreachable(err) || upstreamFailed(err)) {
+			return errManifestUnknown()
+		}
 		return missing(err, errManifestUnknown)
 	}
 	if doc.Status.Negative {
@@ -430,6 +436,23 @@ func (s *tagSource) pass(ctx context.Context) (page []string, ok bool, err error
 	return page[:min(len(page), MaxPage)], true, nil
 }
 
+// referrersTag reports whether a tag has the form of the referrers tag schema: `sha256-` and the 64 hexadecimal digits of a digest.
+func referrersTag(tag string) bool {
+	hexPart, ok := strings.CutPrefix(tag, "sha256-")
+	return ok && ValidDigest("sha256:"+hexPart)
+}
+
+// upstreamFailed reports whether the upstream was asked and did not answer usably: it could not be reached, cut the connection, timed out or
+// answered 5xx. A referrers request that meets it is answered as one that cannot be had (Q-OCI-204): Docker with the containerd image store
+// asks for the referrers of every image it pulls, and an error there would fail a pull of an image the repository holds completely.
+func upstreamFailed(err error) bool {
+	switch errs.KindOf(err) {
+	case errs.UpstreamFailed, errs.UpstreamTimeout, errs.Unavailable:
+		return true
+	}
+	return false
+}
+
 // unreachable reports whether an answer of the engine says the upstream cannot be asked now and the stored copy is to answer:
 // the repository is offline (or the installation is), the caller may not fill it, or the circuit is open.
 func unreachable(err error) bool {
@@ -524,7 +547,7 @@ func (f *Format) remoteReferrerList(ctx context.Context, rq *formats.Request, cl
 		// Not asked (offline, the circuit open, a caller who may not fill) is answered like an upstream without the API: 404, so that
 		// the client falls back to the tag schema through the same remote, whose manifests are cached like every other (Q-OCI-128). An
 		// empty index would say that nothing refers to the subject, which nobody has found out.
-		if unreachable(err) {
+		if unreachable(err) || upstreamFailed(err) {
 			return nil, errs.E(errs.NotFound, errs.CodeOCINameUnknown, "The referrers of this digest are not stored and the upstream cannot be asked.")
 		}
 		return nil, missing(err, func() error {

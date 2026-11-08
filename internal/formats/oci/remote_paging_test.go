@@ -197,3 +197,57 @@ func TestOfflineTheStoredWindowAnswersAndReferrersAre404(t *testing.T) {
 	}
 	pf.wantStatus(pf.get("app/referrers/"+sha([]byte("x"))), http.StatusNotFound, "NAME_UNKNOWN")
 }
+
+// failingMetadata is a remote whose upstream fails every document request.
+type failingMetadata struct {
+	*formattest.MemRemote
+	err error
+}
+
+func (f failingMetadata) Metadata(context.Context, *formats.Request, formats.Path, string) (*formats.RemoteDocument, error) {
+	return nil, f.err
+}
+
+// The tag a client falls back to when the referrers API is not there is 404 with the upstream failed or not asked, and an ordinary tag is
+// the failure it is (Q-OCI-204): Docker asks for the referrers tag after every pull, and a mirror holds the image completely.
+func TestR_OCI_024_TheReferrersTagOfAnUpstreamThatFailedIs404(t *testing.T) {
+	referrers := "app/manifests/sha256-" + strings.Repeat("ab", 32)
+	for name, tc := range map[string]struct {
+		err  error
+		path string
+		want int
+		code string
+	}{
+		"failed":       {errs.E(errs.UpstreamFailed, errs.CodeUpstreamFailed, "The upstream cannot be reached."), referrers, http.StatusNotFound, "MANIFEST_UNKNOWN"},
+		"not asked":    {errs.E(errs.Unavailable, errs.CodeUpstreamAssumedOffline, "open"), referrers, http.StatusNotFound, "MANIFEST_UNKNOWN"},
+		"ordinary tag": {errs.E(errs.UpstreamFailed, errs.CodeUpstreamFailed, "The upstream cannot be reached."), "app/manifests/1.0", http.StatusBadGateway, "UNAVAILABLE"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := failingMetadata{&formattest.MemRemote{}, tc.err}
+			tw := newTwin()
+			h := formattest.NewHost(New(), formattest.HostOptions{Class: formats.Remote, Remote: m, Data: tw, Resolver: proceedResolver{}})
+			tw.host = h
+			pf := &pagingFixture{fixture: &fixture{t: t, f: New(), h: h, twin: tw}}
+			pf.wantStatus(pf.get(tc.path), tc.want, tc.code)
+		})
+	}
+}
+
+// The referrers of a remote whose upstream was asked and failed are 404 as well, whatever the failure was (Q-OCI-204): Docker asks for the
+// referrers of every image it pulls, and a 502 would fail the pull of an image a mirror holds completely.
+func TestR_OCI_024_ReferrersOfAnUpstreamThatFailedAre404(t *testing.T) {
+	for name, fail := range map[string]error{
+		"cut":     errs.E(errs.UpstreamFailed, errs.CodeUpstreamFailed, "The upstream cannot be reached."),
+		"timeout": errs.E(errs.UpstreamTimeout, errs.CodeUpstreamTimeout, "The upstream did not answer in time."),
+		"5xx":     errs.E(errs.Unavailable, errs.CodeUnavailable, "The upstream is unavailable."),
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := &formattest.MemRemote{Queries: func(context.Context, *formats.Request, formats.Query) (*formats.QueryResult, error) { return nil, fail }}
+			tw := newTwin()
+			h := formattest.NewHost(New(), formattest.HostOptions{Class: formats.Remote, Remote: m, Data: tw, Resolver: proceedResolver{}})
+			tw.host = h
+			pf := &pagingFixture{fixture: &fixture{t: t, f: New(), h: h, twin: tw}}
+			pf.wantStatus(pf.get("app/referrers/"+sha([]byte("x"))), http.StatusNotFound, "NAME_UNKNOWN")
+		})
+	}
+}
