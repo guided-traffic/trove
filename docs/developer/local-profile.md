@@ -330,9 +330,9 @@ kubectl --context kind-trove -n trove get secret trove-keycloak -o jsonpath='{.d
 
 The provider entry is part of values-dev.yaml. The client secret (Secret `trove-keycloak`) and the break-glass password
 (Secret `trove-break-glass`) are the chart values `secrets.oidc` and `secrets.breakGlass`, which mount them into the `api` pods
-and render `client_secret_file` and `password_file`. Only the CA of `trove-keycloak-tls` is still a volume of the dev values
-(`extraVolumes` / `extraVolumeMounts` at `/var/run/secrets/trove-dev/keycloak-ca.crt`): the chart has no `trustedCA` value yet
-(R-HA-043 is not built). That CA is in `proxy.outbound.tls.ca_files`, so the outbound client trusts the IdP's
+and render `client_secret_file` and `password_file`. The CA of `trove-keycloak-tls` is the value `trustedCA` of the dev values
+(`existingSecret: trove-keycloak-tls`, `keys: [ca.crt]`, R-HA-043): the chart mounts it at `/etc/trove/ca/ca.crt` in every pod and lists it in
+`proxy.outbound.tls.ca_files`, so the outbound client trusts the IdP's
 certificate. The group rule maps the claim values `trove-team-web` and `trove-platform-admins` to the groups `team-web`
 and `platform-admins`, which `create_groups` creates on the first login:
 
@@ -422,7 +422,7 @@ Not verified here, or not configured:
 - The ACL user, the separate Sentinel credential and `maxmemory` of Valkey (deviations above); R-ARCH-031's ACL
   criterion is proven by the integration stack only.
 - The chart renders `auth.break_glass.enabled: false` without `secrets.breakGlass`; the dev values set it. The Keycloak CA is
-  still the `extraVolumes` workaround (no `trustedCA` value). A real rotation of `trove-break-glass` by the operator (the 24 h
+  the `trustedCA` value. A real rotation of `trove-break-glass` by the operator (the 24 h
   interval, the hold and the ended sessions in a running cluster) is verified by the chart render and the code, not by a drill.
 - Valkey and the S3 gateway read their certificates at start: a cert-manager renewal reaches the Valkey pods through
   the operator's own rolling restart (ADR 0030 of the operator, not exercised here) and SeaweedFS at its next restart.

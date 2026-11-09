@@ -509,6 +509,16 @@ secrets:
     existingSecret: ""                  # needed with config.metrics.auth static
     key: token
 
+# ── Trusted CA bundle (R-HA-043) ──────────────────────────────────────────────
+# The CA certificates every outbound TLS connection trusts besides the system roots (upstreams, OIDC issuers, GitLab, webhooks). Mounted at /etc/trove/ca/
+# into every pod of the release (roles, migration, backup, restore and post-restore Jobs) without subPath, so a rotated source reaches the pods and the binary
+# reloads the files within 60 s. PostgreSQL never uses it: the database connection trusts secrets.databaseCA only.
+trustedCA:
+  existingSecret: ""                    # empty = no bundle; at most one of existingSecret and existingConfigMap; example: corp-ca-bundle
+  existingConfigMap: ""                 # example: corp-ca-bundle (a trust-manager Bundle target)
+  keys: [ca-bundle.crt]                 # the files of the source that are mounted, each a PEM bundle; they are added to config.proxy.outbound.tls.ca_files
+  useForObjectStore: false              # true also sets storage.s3.ca_file to the one file of keys, for an S3-compatible store with a private CA; then it is that store's whole trust store
+
 # ── Monitoring (the alerts of the vulnerability scanning, the mirror and the bridge so far) ─
 metrics:
   serviceMonitor:

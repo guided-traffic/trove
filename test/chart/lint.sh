@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # helm lint and helm template for every value set of the chart trove (deploy/helm/trove/ci/*.yaml and
 # the dev profile's values: deploy/dev/values-dev.yaml, also with values-pooler.yaml layered on
-# it) and of the chart trove-bastion (deploy/helm/trove-bastion/ci/*.yaml). Needs only helm at the
+# it, and the sizing profiles of deploy/helm/trove/profiles on test/chart/testdata/operator-minimum.yaml) and of the chart trove-bastion (deploy/helm/trove-bastion/ci/*.yaml). Needs only helm at the
 # version pinned in tools/versions.env, no cluster.
 #
 # The render assertions (what the output must and must not contain) are in chart_test.go and run
@@ -50,6 +50,10 @@ for f in "${sets[@]}"; do
   run "ci/$(basename "$f")" -f "$f"
   LINT_EXTRA=()
   TEMPLATE_EXTRA=()
+done
+# The sizing profiles are layered before the operator's file (R-HA-050): lint each on the minimum an operator gives.
+for f in "$CHART"/profiles/*.yaml; do
+  run "profiles/$(basename "$f")" -f "$f" -f "$ROOT/test/chart/testdata/operator-minimum.yaml"
 done
 run "deploy/dev/values-dev.yaml" -f "$ROOT/deploy/dev/values-dev.yaml"
 run "deploy/dev/values-dev.yaml + values-pooler.yaml" -f "$ROOT/deploy/dev/values-dev.yaml" -f "$ROOT/deploy/dev/values-pooler.yaml"

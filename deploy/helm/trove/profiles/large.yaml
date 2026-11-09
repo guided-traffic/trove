@@ -1,0 +1,49 @@
+# Sizing profile large (R-HA-050): up to 1,000 concurrent clients and several TB of blobs. Layer it before your own values file:
+#   helm upgrade --install trove ./trove -f profiles/large.yaml -f my-values.yaml
+# The numbers are starting points taken from the table of R-HA-050, not measurements. The database and Valkey sizes are the operator's:
+# PostgreSQL 8 vCPU, 32 GiB, 3 instances with max_connections 200 behind a transaction-mode request pooler and control pooler of 2 instances each
+# and 100 server connections in total (R-HA-058; config.database.host names the pooler); Valkey maxmemory 1 GiB. The chart does not deploy the poolers.
+# A worker pool for the queue vuln (worker.pools, R-HA-062) is recommended from this profile on; it needs the queue names of your installation.
+api:
+  replicaCount: 2
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 4
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  spool:
+    sizeLimit: 5Gi
+packages:
+  replicaCount: 6
+  autoscaling:
+    enabled: true
+    minReplicas: 6
+    maxReplicas: 16
+  resources:
+    requests:
+      cpu: "2"
+      memory: 2Gi
+    limits:
+      memory: 4Gi
+worker:
+  replicaCount: 3
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 6
+spool:
+  type: ephemeral                       # one ReadWriteOnce claim per pod from the default StorageClass (R-HA-061); set spool.ephemeral.storageClassName for another
+  ephemeral:
+    size: 50Gi
+config:
+  database:
+    pool:
+      max_conns: 30
+  storage:
+    upload:
+      max_size: 48GiB                   # the claim of a pod (50Gi) less spool.headroom (2GiB): the largest upload one pod can hold

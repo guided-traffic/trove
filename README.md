@@ -190,7 +190,7 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 | Further endpoint listener | any free port, one per endpoint, name `^[a-z][a-z0-9-]{0,19}$` (`server.endpoints.<name>.listen`) | `internal/config/endpoints.go` |
 | Endpoint name in metrics, logs and spans | `default` for the default endpoint, the configured name otherwise; a name outside the configured set folds into `_other` | `internal/observability` |
 | Backup commands | `trove backup create`, `list`, `verify`, `delete`, `prune`, `restore`; commands of the binary, not roles: they serve nothing and open no port but the ops port of a `create` run, which exports its counters for as long as it lasts | `cmd/trove/backup*.go` |
-| Recovery commands of the backup lane | `trove admin post-restore`, `trove admin backup check`, `trove admin storage verify`, `trove admin npm reinstate`, `trove admin oci reinstate`, `trove admin deb reinstate` | `cmd/trove/admin_postrestore.go`, `admin_backupcheck.go`, `admin_storage.go`, `admin_npm.go`, `admin_oci.go`, `admin_deb.go` |
+| Recovery commands of the backup lane | `trove admin post-restore`, `trove admin backup check`, `trove admin storage verify`, `trove admin storage restore-versions`, `trove admin maintenance pause-deletions` and `resume-deletions`, `trove admin npm reinstate`, `trove admin oci reinstate`, `trove admin deb reinstate` | `cmd/trove/admin_postrestore.go`, `admin_backupcheck.go`, `admin_storage.go`, `admin_npm.go`, `admin_oci.go`, `admin_deb.go` |
 | Backup ID | `<yyyymmdd>T<hhmmss>Z-<4 lower-case hex>`, the UTC start of the run and 16 random bits, for example `20261028T020000Z-7f3a`; lexical order is chronological | `internal/backup/format/id.go` |
 | Backup actor | `system:backup`, the actor of the `system.backup.*` audit events | `internal/audit/events_backup.go` |
 
@@ -393,6 +393,7 @@ A remote Debian repository stores what it fetched at the path the client asked f
 | Endpoint certificate mount | `/var/run/secrets/trove/endpoints/<name>/<n>/` (`tls.crt`, `tls.key`; `n` is the position in `tls.certificates`), client CA at `…/<name>/client-ca/ca.crt` | yes (`_endpoints.tpl`) |
 | PostgreSQL CA and client pair | `/var/run/secrets/trove/database-ca/ca.crt`, `/var/run/secrets/trove/database-client/tls.{crt,key}` | yes |
 | Object-store CA | `/var/run/secrets/trove/s3-ca/ca.crt` (`secrets.s3CA`; renders `storage.s3.ca_file`) | yes |
+| Trusted CA bundle | `/etc/trove/ca/<key>` for each file of `trustedCA.keys` (default `ca-bundle.crt`), from a Secret or ConfigMap, in every pod of the release; listed in `proxy.outbound.tls.ca_files` after the operator's own, and with `trustedCA.useForObjectStore` the one file is `storage.s3.ca_file` | yes (`_secrets.tpl`, `_helpers.tpl`) |
 | Break-glass password mount | `/var/run/secrets/trove/break-glass/password` (`secrets.breakGlass`; renders `auth.break_glass.password_file`; `api` pods only) | yes (`_secrets.tpl`) |
 | OIDC client secret mount | `/var/run/secrets/trove/oidc-<providerId>/client-secret` (`secrets.oidc[]`; renders `auth.oidc.providers.<providerId>.client_secret_file`; `api` pods only) | yes |
 | Valkey CA and client pair | `/var/run/secrets/trove/valkey-ca/ca.crt`, `/var/run/secrets/trove/valkey-client/tls.{crt,key}` | yes |
@@ -587,6 +588,7 @@ The label sets of the M1 families are not restated per family in this pass; read
 | Name | Value | Built |
 |---|---|---|
 | Chart | `deploy/helm/trove` | yes |
+| Sizing profiles | `deploy/helm/trove/profiles/small.yaml`, `medium.yaml`, `large.yaml` (R-HA-050), layered before your own values file | yes |
 | Deployments | `<fullname>-api` (`--role api`), `<fullname>-packages` (`--role packages`), `<fullname>-worker` (`--role worker`) | yes |
 | Pools | `<fullname>-api-<pool>`, `<fullname>-packages-<pool>` (path pools, with a Service of the same name), `<fullname>-worker-<pool>` (label `trove/pool: <pool>`) | yes (`_units.tpl`) |
 | Endpoint pools | `<fullname>-packages-ep-<name>` and `<fullname>-api-ep-<name>`, label `trove/pool: ep-<name>`, for an endpoint with `endpoints.<name>.pool.enabled` (one per role its surface holds) | yes (`_units.tpl`) |
@@ -693,7 +695,7 @@ The names of the event registry ([internal/audit](internal/audit/)). Each event 
 | Debian | `deb.package.deleted`, `deb.coordinates.removed`, `deb.signing_key.promoted` and `deb.signing_key.retired` (transactional, journaled: a restore's replay withholds the file or the key and never deletes or erases, R-DEB-032), `deb.coordinates.changed`, `deb.signing_key.created`, `deb.signing_key.reinstated`, `deb.reinstate`, `deb.upstream_signature_invalid` (async, security); the replay handlers of all four are built; [internal/audit/events_deb.go](internal/audit/events_deb.go) |
 | Packages (NuGet) | `package.published`, `package.deleted`, `package.metadata_changed`; `package.published` and `package.deleted` carry the journal entry `{"repository", "id", "version", "sha512"}` of a local NuGet repository |
 | System and audit | `system.task_triggered`, `system.job.cancelled`, `audit.exported` |
-| Backup and restore | `system.backup.completed`, `system.backup.failed`, `system.backup.deleted` (`reason` `retention` or `manual`), `system.backup.target_adopted`, written by the backup commands as `system:backup` into the source database through `backup_record_event()`; `system.restored` (`source` `backup` or `pitr`) and `system.restore.journal_replayed` (the counts per outcome), written into the restored database ([internal/audit/events_backup.go](internal/audit/events_backup.go)) |
+| Backup and restore | `system.backup.completed`, `system.backup.failed`, `system.backup.deleted` (`reason` `retention` or `manual`), `system.backup.target_adopted`, written by the backup commands as `system:backup` into the source database through `backup_record_event()`; `system.restored` (`source` `backup` or `pitr`) and `system.restore.journal_replayed` (the counts per outcome), written into the restored database ([internal/audit/events_backup.go](internal/audit/events_backup.go)); `system.deletions_paused`, `system.deletions_resumed` and `system.storage.versions_restored`, written by the maintenance commands as `system:admin` ([internal/audit/events_maintenance.go](internal/audit/events_maintenance.go)) |
 | Bastion interface | `bastion.contact` (a Bastion replica reported for the first time or a reported value changed, R-BAS-010), `bastion.downloads.dropped` (a batch of download events reported or lost events, R-BAS-016); `artifact.downloaded` carries `origin: bastion`, `bastion` and `replica` for a download a Bastion served from its cache |
 | Mirror mode | `mirror.pass_completed` (a pass attempt ended `complete`, `partial`, `bound_reached`, `offline` or `stopped`), `mirror.pass_failed`, `mirror.bound_reached` (once per transition), `mirror.rate_limited` (at most once per pass and hour); all asynchronous with the system as actor ([internal/audit/events_mirror.go](internal/audit/events_mirror.go)); the details hold counts, codes and the upstream's host name, never a URL; `mirror.pass_requested` (transactional, the caller) belongs to the run operation |
 | Vulnerability scanning | `vulnerability.finding.status_changed` (a triager's change, each change of a bulk `set-status` with one `bulk` identifier), `vulnerability.finding.reopened` (trove reopens a dismissed finding), both transactional and carrying the journal entry when the change sets a download block; `vulnerability.download_blocked` (asynchronous, at most once a minute per repository, version and client address on each replica, `enforced: false` in mode `report`), `vulnerability.claimed_name_match` (asynchronous, once per advisory and name), `vulnerability.source.failed` (asynchronous, at most once an hour per source and ecosystem), `vulnerability.source.imported` (an import of mode `repository`, with the digest and `deployedBy`, or a run with `acceptShrink`), `vulnerability.advisory.kind_changed` (an alias group's canonical record changed kind) ([internal/audit/events_vuln.go](internal/audit/events_vuln.go)); `repository.updated` of a write that weakens the member `vulnerabilities` carries `block: lifted` and the members in `weakened` |
@@ -1120,12 +1122,15 @@ the chart's `backup`, `restore`, `postRestore` and backup Secret values. The con
 | `trove backup restore <id>` | `--check` (run the preconditions only, exit `0` or `6`), `--skip-revocation-journal` (only when the source's bucket is gone), `--journal-credentials-file <path>` (a credential that lists the source's journal when the blob-store credential cannot), `--identity-file <path>` (refused with exit `2`: client-side encrypted backups are not built, R-BAK-027) | Restores a backup into an empty installation ([R-BAK-020](docs/spec/backup-and-restore.md#r-bak-020--restore-preconditions), [R-BAK-021](docs/spec/backup-and-restore.md#r-bak-021--restore-procedure)): eight checks, then the schema up to the backup's step, the blobs, the load, the remaining migrations, the fix-ups and the journal replay; a second run of the same backup resumes, a finished one answers "already restored". Needs the owner database login and the key ring. |
 | `trove admin post-restore` | `--restored-to <RFC 3339 time>` (required), `--credentials-file <path>` (a credential that may list object versions, so a delete marker cannot hide a journal entry), `--skip-revocation-journal`, `--json` | The clean-up after a point-in-time restore of PostgreSQL by the platform ([R-HA-025](docs/spec/ha-and-helm.md)): jobs back to the queue, a new keyspace and incarnation, the deletion pause, `restored_at`, the journal replay from the restore point; prints one line per step and the quarantined outbox rows. A repeat for the same point runs no step again. Source: [cmd/trove/admin_postrestore.go](cmd/trove/admin_postrestore.go). |
 | `trove admin storage verify` | `--since <RFC 3339 time>` (default: every `live` blob row; limits the run to rows created or changed at or after the time), `--concurrency N` (`16`, simultaneous existence checks), `--max-items N` (`20`, items listed per damaged blob), `--json` | Asks the object store for the object of every `live` blob row and prints one line per item that references a blob without its object or with an object of another size (`item <project>/<repository>:<path>`, `(trashed)` marked), then the totals ([R-STOR-027](docs/spec/storage.md#r-stor-027--integrity-scrub), [R-HA-025](docs/spec/ha-and-helm.md)). Read-only: it runs with the replicas' own database role and object-store credential, writes no status and no audit event, and reads the table in pages, so its memory does not grow with it. Exit `5` with a finding, `75` when the store did not answer for some blob and nothing is damaged. Source: [cmd/trove/admin_storage.go](cmd/trove/admin_storage.go). |
+| `trove admin storage restore-versions` | `--before <RFC 3339 time>` (required, the time *t* the platform restore went to), `--credentials-file <path>` (example: `/etc/trove/post-restore/credentials.yaml`; a credential with `s3:ListBucketVersions` and `s3:DeleteObjectVersion`, which the runtime credential lacks; default: the blob store's credential), `--dry-run` (`false`), `--concurrency N` (`16`), `--json` | Step 5 of the [restore procedure](docs/spec/ha-and-helm.md) (R-HA-025): runs the check of `storage verify` over every live blob, and for each blob without an object removes the delete markers younger than *t* from its key, so that the version before the marker is current again (`restored`; `no_delete_marker` and `no_version` are left and reported). It deletes delete markers only, never an object version, and writes `system.storage.versions_restored` when it removed any. Exit `5` while a blob is still without an object, `75` when the store did not answer, `2` for a usage or credential error (a store that refuses the version listing included). Source: [cmd/trove/admin_restoreversions.go](cmd/trove/admin_restoreversions.go). |
+| `trove admin maintenance pause-deletions` | `--reason <text>` (required), `--json` | Sets the deletion pause in `system_state`: garbage collection, the orphan sweep, retention and cap enforcement delete nothing until it is cleared; for a planned restore drill. A pause that is already set keeps its time and reason. Writes `system.deletions_paused`. Source: [cmd/trove/admin_maintenance.go](cmd/trove/admin_maintenance.go). |
+| `trove admin maintenance resume-deletions` | `--json` | Step 7 of the restore procedure: clears the deletion pause that a post-restore or `pause-deletions` set, prints when and why it had been set, and writes `system.deletions_resumed`; a repeat changes nothing and exits `0`. Run it after the restored installation is verified. Source: [cmd/trove/admin_maintenance.go](cmd/trove/admin_maintenance.go). |
 | `trove admin backup check` | `--json` | Runs the checks of the declared platform protection (`backup.recovery_window`, `backup.object_versioning`) and prints one line per check; changes and stores nothing (the task `backup-check` stores its report). Exit `5` when a declared protection does not hold. Source: [cmd/trove/admin_backupcheck.go](cmd/trove/admin_backupcheck.go). |
 | `trove admin npm reinstate <projectKey>/<repoKey> <name>@<version>` | `--config <file>`, `--log-level <level>` | Puts back an npm version that a journal replay withheld, while the version is stored with the integrity of the replay's tombstone; writes `npm.reinstate` (R-NPM-047). Source: [cmd/trove/admin_npm.go](cmd/trove/admin_npm.go). |
 | `trove admin deb reinstate <projectKey>/<repoKey> <path>` | `--config <file>`, `--log-level <level>` | Puts back a Debian package file that a journal replay withheld after a restore, while the file is stored with the digest of the replay's mark; raises the file's suites so the next build lists it again, and writes `deb.reinstate` (R-DEB-032). Source: [cmd/trove/admin_deb.go](cmd/trove/admin_deb.go) |
 | `trove admin oci reinstate <projectKey>/<repoKey> <name>@sha256:<hex>` | `--config <file>`, `--log-level <level>` | Puts back an OCI manifest that a journal replay withheld after a restore, while the manifest and its item are stored with that digest; writes `oci.reinstate` (R-OCI-033). Source: [cmd/trove/admin_oci.go](cmd/trove/admin_oci.go). |
 
-Every `trove backup` command, `trove admin post-restore`, `trove admin storage verify` and `trove admin backup check` take `--config <file>`, `--log-level <level>` and
+Every `trove backup` command, `trove admin post-restore`, `trove admin storage verify`, `restore-versions`, `trove admin maintenance` and `trove admin backup check` take `--config <file>`, `--log-level <level>` and
 `--json` (the result as one JSON document). They load the configuration without a role and never open Valkey; every `trove backup`
 command needs `backup.target.bucket`, the three admin commands need no target. `SIGTERM` or `SIGINT` ends a run cleanly within
 the pod's grace period: a `create` sets its run `interrupted`, releases its pins and exits `75`.
@@ -2787,6 +2792,43 @@ secrets:
     existingSecret: ""                  # default; needed with config.metrics.auth static
     key: token                          # default
 ```
+
+<details>
+<summary>Trusted CA bundle and sizing profiles</summary>
+
+```yaml
+trustedCA:
+  existingSecret: ""                    # default: empty = no bundle; at most one of existingSecret and existingConfigMap; example: corp-ca-bundle
+  existingConfigMap: ""                 # default; example: corp-ca-bundle (a trust-manager Bundle target)
+  keys: [ca-bundle.crt]                 # default; the files of the source that are mounted at /etc/trove/ca/, each a PEM bundle; a plain file name
+  useForObjectStore: false              # default; true also sets storage.s3.ca_file to the one file of keys (exactly one key, not with secrets.s3CA)
+```
+
+The files are added to the system roots for every outbound TLS connection (upstreams, OIDC issuers, GitLab, webhooks) of every pod of the
+release, the Jobs included, after the files that `config.proxy.outbound.tls.ca_files` already lists. They are mounted without `subPath`, so a
+rotation of the source reaches the pods at the kubelet's pace and the binary reads the files again within 60 s
+([R-HA-043](docs/spec/ha-and-helm.md), [H-804](docs/spec/ha-and-helm.md#h-804--a-change-of-the-ca-source-reaches-the-pods-at-the-kubelets-pace)).
+Security: whoever can write the source can make trove accept a certificate it signs, so protect it like `tls.secretName`. PostgreSQL never uses
+the bundle: the database connection trusts `secrets.databaseCA` only. With `useForObjectStore` the file is the object store's whole trust store.
+
+Sizing profiles ([R-HA-050](docs/spec/ha-and-helm.md)) are values files of the chart; layer one before your own:
+
+```shell
+helm upgrade --install trove ./deploy/helm/trove -f deploy/helm/trove/profiles/medium.yaml -f my-values.yaml
+```
+
+| Profile | `packages` | `worker` | `packages` requests / memory limit | `config.database.pool.max_conns` | `packages` spool | The operator provides |
+|---|---|---|---|---|---|---|
+| `small` (up to 50 concurrent clients, 500 GB) | 3, no autoscaler | 2, no autoscaler | 500m, 512Mi / 1Gi | 10 | 10Gi | PostgreSQL 2 vCPU, 4 GiB, 3 instances, `max_connections` 150; Valkey `maxmemory` 256 MiB |
+| `medium` (up to 300, CI-heavy) | 4, autoscaler 4 to 8 | 2, autoscaler 2 to 4 | 1, 1Gi / 2Gi | 20 | 20Gi | PostgreSQL 4 vCPU, 16 GiB, 3 instances, `max_connections` 500; Valkey 512 MiB |
+| `large` (up to 1,000, several TB) | 6, autoscaler 6 to 16 | 3, autoscaler 3 to 6 | 2, 2Gi / 4Gi | 30 | 50Gi `ephemeral` claim | PostgreSQL 8 vCPU, 32 GiB, 3 instances behind the poolers of R-HA-058, `max_connections` 200; Valkey 1 GiB |
+
+Every profile also sets `api` to 2 replicas (an autoscaler of 2 to 4 in `medium` and `large`) with 500m / 512Mi, a 1Gi limit and a 5Gi spool, and
+`config.storage.upload.max_size` to the spool of a `packages` pod less `spool.headroom` (8, 18 and 48 GiB), because the chart refuses an upload limit
+above the spool. The numbers are the starting points of the table in R-HA-050; no reference load test has measured them
+([H-803](docs/spec/ha-and-helm.md#h-803--the-sizing-profiles-are-not-measured)). The profiles configure no database, pooler or Valkey: the chart deploys none of them.
+
+</details>
 
 Security notes on the login secrets:
 

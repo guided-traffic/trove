@@ -136,6 +136,7 @@ The chart is [deploy/helm/trove](../../deploy/helm/trove). The defaults below ar
 | `ingress.backendTLS.controller` | `haproxy` | the controller-specific backend settings: `haproxy`, `traefik`, `ingress-nginx` or `manual` |
 | `ingress.backendTLS.verify` | `true` | the controller verifies the trove certificate; with `true` and no `caSecret` (haproxy, ingress-nginx) or `serversTransport` (traefik) the render fails, for the Ingress of the default endpoint and for the Ingress of every further endpoint (its own `ingress.backendTLS` merged over this block) |
 | `secrets.s3CA.existingSecret`, `key` | `""`, `ca.crt` | mounts the CA of the object store at `/var/run/secrets/trove/s3-ca/` and renders `storage.s3.ca_file` |
+| `trustedCA.existingSecret` or `existingConfigMap`, `keys`, `useForObjectStore` | `""`, `""`, `[ca-bundle.crt]`, `false` | mounts the listed files of a Secret or ConfigMap at `/etc/trove/ca/` in every pod of the release, appends them to `proxy.outbound.tls.ca_files` (after the operator's own), and with `useForObjectStore` makes the one file `storage.s3.ca_file`; refused together with `secrets.s3CA` |
 
 What the pods get, from [_secrets.tpl](../../deploy/helm/trove/templates/_secrets.tpl): the Secret is mounted read-only at
 `/var/run/secrets/trove/tls/` with `tls.crt` and `tls.key` only, and only into pods that load that pair: the pods that open the client listener (`api`, `packages`, their path pools and the
@@ -146,6 +147,8 @@ whose endpoints bring their own pairs hold no copy of the client listener's priv
 still holds). The client CA mounts only into the pods that open the client listener of the default endpoint. `ca.crt` is not projected into the process, because the
 listener never reads it; the Secret itself still carries `ca.crt` for the edge and for monitoring. The mount has no
 `subPath`, so the kubelet's swap of the projected files reaches the process. The migration Job mounts no listener material.
+
+The trusted CA bundle (R-HA-043, [Q-HA-272](../spec/ha-and-helm.md#q-ha-272--the-trusted-ca-bundle-is-mounted-in-every-pod-of-the-release-its-files-are-appended-to-ca_files-and-one-file-can-be-the-object-stores-ca)) adds trust for every outbound TLS connection of every pod, upstreams, OIDC issuers, GitLab and webhooks: whoever can write the named Secret or ConfigMap can make trove accept a certificate it signs, so that source is as protected as `tls.secretName`. The files are public certificates, projected by `items` without `subPath`; PostgreSQL's connection never uses them (`secrets.databaseCA` is a directory of its own), and the Valkey and backup-target CAs stay their own values. With `useForObjectStore` the file is the object store's whole trust store, not an addition (the rule of `storage.s3.ca_file`). A rotation reaches the pods at the kubelet's pace ([H-804](../spec/ha-and-helm.md#h-804--a-change-of-the-ca-source-reaches-the-pods-at-the-kubelets-pace)). Tested by `TestR_HA_043_TrustedCA`.
 
 The probes use `scheme: HTTPS` on the ops port when `tls.enabled` is true ([_pod.tpl](../../deploy/helm/trove/templates/_pod.tpl)).
 The client and ops Service ports declare `appProtocol: https` ([services.yaml](../../deploy/helm/trove/templates/services.yaml)).

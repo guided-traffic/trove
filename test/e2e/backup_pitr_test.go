@@ -144,6 +144,48 @@ s3api() { aws --endpoint-url https://trove-s3.`+cfg.namespace+`.svc:9000 s3api "
 	return logs
 }
 
+// pitrAdminJob runs a trove command as a one-off Job whose pod is the pod template of the post-restore Job of step 4, so that it has
+// the release's configuration, the owner login and the credential that lists and deletes object versions: the Job an operator makes
+// with `kubectl run` while the roles are at zero (R-HA-025). It fails the test when the Job does not complete and returns its log.
+func pitrAdminJob(t testing.TB, name string, args ...string) string {
+	t.Helper()
+	var list struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(kn(t, "get", "jobs", "-l", "app.kubernetes.io/component=post-restore", "-o", "json")), &list); err != nil || len(list.Items) != 1 {
+		t.Fatalf("the post-restore Job: %d found, %v", len(list.Items), err)
+	}
+	template := list.Items[0]["spec"].(map[string]any)["template"].(map[string]any)
+	if meta, ok := template["metadata"].(map[string]any); ok {
+		if labels, ok := meta["labels"].(map[string]any); ok {
+			for _, k := range []string{"controller-uid", "batch.kubernetes.io/controller-uid", "job-name", "batch.kubernetes.io/job-name"} {
+				delete(labels, k)
+			}
+		}
+	}
+	template["spec"].(map[string]any)["containers"].([]any)[0].(map[string]any)["args"] = args
+	manifest, err := json.Marshal(map[string]any{
+		"apiVersion": "batch/v1", "kind": "Job", "metadata": map[string]any{"name": name},
+		"spec": map[string]any{"backoffLimit": 0, "ttlSecondsAfterFinished": 3600, "template": template},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kn(t, "delete", "job", name, "--ignore-not-found")
+	create := exec.Command("kubectl", "--context", cfg.kubeContext, "-n", cfg.namespace, "create", "-f", "-")
+	create.Stdin = strings.NewReader(string(manifest))
+	if b, err := create.CombinedOutput(); err != nil {
+		t.Fatalf("create %s: %v: %s", name, err, b)
+	}
+	e := bakWaitJob(t, cfg.namespace, name, 10*time.Minute)
+	logs := bakJobLogs(cfg.namespace, name)
+	t.Logf("%s: %s\n%s", name, e.Condition, tail(logs, 2500))
+	if e.Condition != "Complete" {
+		t.Fatalf("the Job %s ended %s:\n%s", name, e.Condition, tail(logs, 3000))
+	}
+	return logs
+}
+
 // pitrGet reads a file through the edge.
 func pitrGet(a *api, path string) reply {
 	return a.get(filesAddr(bakFiles) + "/" + path)
@@ -257,9 +299,7 @@ func TestBackupPITR_R_HA_025_R_HA_023_R_HA_054_PointInTimeRestoreOfThePlatformLa
 		extra := append(pitrNoRoles(), pitrNewDatabase()...)
 		extra = append(extra,
 			"--set", "postRestore.enabled=true", "--set-string", "postRestore.restoredTo="+st.tRFC,
-			"--set", "postRestore.journalCredentials.source=static", "--set", "secrets.journalReader.existingSecret=trove-s3",
-			"--set-json", `postRestore.extraVolumes=[{"name":"dev-auth","secret":{"secretName":"trove-keycloak-tls","defaultMode":288,"items":[{"key":"ca.crt","path":"keycloak-ca.crt"}]}}]`,
-			"--set-json", `postRestore.extraVolumeMounts=[{"name":"dev-auth","mountPath":"/var/run/secrets/trove-dev","readOnly":true}]`)
+			"--set", "postRestore.journalCredentials.source=static", "--set", "secrets.journalReader.existingSecret=trove-s3")
 		pitrHelm(t, "pitr-step4", extra...)
 		out, err := kubectl("-n", cfg.namespace, "get", "jobs", "-l", "app.kubernetes.io/component=post-restore", "-o", "jsonpath={.items[*].metadata.name}")
 		if err != nil || len(strings.Fields(out)) != 1 {
@@ -293,29 +333,21 @@ func TestBackupPITR_R_HA_025_R_HA_023_R_HA_054_PointInTimeRestoreOfThePlatformLa
 	})
 
 	step("R-HA-025 step 5: the object versions of the blob bucket go back to t", func(t *testing.T) {
-		// The runtime credential cannot do this in production (R-HA-023); the dev SeaweedFS has one login, so the Job uses it. Every delete marker
-		// younger than t under the blob prefix is removed; the objects written after t stay and are orphans of the restored database.
-		tEpoch := mustParseRFC3339(t, st.tRFC).Unix()
-		logs := pitrS3Job(t, "pitr-restore-versions", fmt.Sprintf(`set -eu
-bucket=trove-blobs
-n=0
-s3api list-object-versions --bucket "$bucket" --prefix %q/ --query 'DeleteMarkers[].[Key,VersionId,LastModified]' --output text > /tmp/markers
-while read -r key vid lm; do
-  [ -n "$key" ] && [ "$key" != None ] || continue
-  if [ "$(date -d "$lm" +%%s)" -gt %d ]; then
-    s3api delete-object --bucket "$bucket" --key "$key" --version-id "$vid" >/dev/null
-    n=$((n + 1))
-  fi
-done < /tmp/markers
-echo "removed $n delete markers younger than %s"
-for key in %q %q; do
-  s3api head-object --bucket "$bucket" --key "$key" >/dev/null && echo "present $key"
-done`, pitrBlobsRoot, tEpoch, st.tRFC, st.keep.key(), st.gone.key()))
-		if !strings.Contains(logs, "present "+st.gone.key()) || !strings.Contains(logs, "present "+st.keep.key()) {
-			t.Errorf("the objects written before t are not both present after the roll back:\n%s", logs)
+		// The command runs as a one-off Job with the pod template of the post-restore Job of step 4, which holds the release's configuration
+		// and the credential that may list and delete object versions (--credentials-file, R-HA-023: the runtime credential lacks both).
+		// It removes the delete markers younger than t from the keys of the blobs whose object is missing; the objects written after t stay
+		// and are orphans of the restored database.
+		logs := pitrAdminJob(t, "pitr-restore-versions", "admin", "storage", "restore-versions", "--before", st.tRFC,
+			"--credentials-file", "/etc/trove/post-restore/credentials.yaml")
+		m := regexp.MustCompile(`(\d+) without object, (\d+) restored, (\d+) delete markers removed, 0 still without object`).FindStringSubmatch(logs)
+		if m == nil {
+			t.Fatalf("the last line of trove admin storage restore-versions does not report every missing blob restored:\n%s", logs)
 		}
-		if strings.Contains(logs, "removed 0 delete markers") {
-			t.Errorf("no delete marker was removed, but the collector deleted %s after t", st.gone.key())
+		if restored, _ := strconv.Atoi(m[2]); restored < 1 {
+			t.Errorf("no blob was restored, but the collector deleted %s after t", st.gone.key())
+		}
+		if !strings.Contains(logs, "restored, 1 delete markers removed") {
+			t.Errorf("the output has no blob restored by removing its delete marker:\n%s", logs)
 		}
 	})
 
@@ -366,8 +398,12 @@ done`, pitrBlobsRoot, tEpoch, st.tRFC, st.keep.key(), st.gone.key()))
 		if !strings.Contains(logs, "present "+st.post.key()) {
 			t.Errorf("the object written after t was deleted while the deletion pause was set")
 		}
-		// There is no command that clears the pause yet (H-767); the row is the one the post-restore wrote.
-		pitrSQL(t, "UPDATE trove.system_state SET value = 'null'::jsonb, updated_at = now() WHERE key IN ('deletions_paused_at', 'deletions_paused_reason')")
+		// The command runs in a pod of the started installation, with the configuration of its release, as an operator runs it.
+		out := kn(t, "exec", "deploy/trove-worker", "--", "trove", "admin", "maintenance", "resume-deletions")
+		t.Logf("trove admin maintenance resume-deletions:\n%s", out)
+		if !strings.Contains(out, "deletion pause cleared (it was set at") || !strings.Contains(out, "post-restore") {
+			t.Errorf("resume-deletions does not report the pause of the post-restore as cleared: %q", out)
+		}
 		if got := pitrSQL(t, "SELECT count(*) FROM trove.system_state WHERE key = 'deletions_paused_at' AND value <> 'null'::jsonb"); got != "0" {
 			t.Errorf("the deletion pause is still set")
 		}
@@ -383,13 +419,4 @@ func pitrKeysOf(m map[string]json.RawMessage) []string {
 		out = append(out, k)
 	}
 	return out
-}
-
-func mustParseRFC3339(t testing.TB, s string) time.Time {
-	t.Helper()
-	v, err := time.Parse(time.RFC3339, s)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return v
 }

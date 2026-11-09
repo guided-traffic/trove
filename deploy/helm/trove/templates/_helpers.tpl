@@ -333,5 +333,26 @@ which is why a client CA on :8080 never extends to :8081.
 {{- $_ := set $srv "endpoints" $eps -}}
 {{- $_ := set $managed "server" $srv -}}
 {{- end -}}
+{{- /*
+The trusted CA bundle (R-HA-043): its files are added to proxy.outbound.tls.ca_files after those the operator listed in config
+(the system roots stay, use_system_roots is not touched), and with useForObjectStore the one file is storage.s3.ca_file.
+*/ -}}
+{{- $ca := .Values.trustedCA -}}
+{{- if or $ca.existingSecret $ca.existingConfigMap -}}
+{{- $caFiles := list -}}
+{{- range (dig "proxy" "outbound" "tls" "ca_files" (list) .Values.config) -}}
+{{- $caFiles = append $caFiles . -}}
+{{- end -}}
+{{- range $ca.keys -}}
+{{- $caFiles = append $caFiles (printf "/etc/trove/ca/%s" .) -}}
+{{- end -}}
+{{- $_ := set $managed "proxy" (dict "outbound" (dict "tls" (dict "ca_files" $caFiles))) -}}
+{{- if $ca.useForObjectStore -}}
+{{- $st := get $managed "storage" -}}
+{{- $s3 := get $st "s3" | default (dict) -}}
+{{- $_ := set $s3 "ca_file" (printf "/etc/trove/ca/%s" (first $ca.keys)) -}}
+{{- $_ := set $st "s3" $s3 -}}
+{{- end -}}
+{{- end -}}
 {{- $managed | mergeOverwrite (deepCopy .Values.config) | toYaml -}}
 {{- end -}}

@@ -87,6 +87,7 @@ deploy/helm/trove/
 ├── values.yaml             defaults; a value is commented only where its name does not say it
 ├── values.schema.json      draft-07, additionalProperties false for everything the chart owns
 ├── tests/rules_test.yaml   promtool test rules for the PrometheusRule (not packaged)
+├── profiles/               the sizing profiles small, medium and large (R-HA-050); layered before the operator's file, packaged
 ├── ci/                     value sets the tests render (not packaged, see .helmignore)
 │   ├── required-only.yaml      only the values R-HA-031 names as required; the backup stays off
 │   ├── ha-ingress.yaml         every optional Secret, Ingress with TLS, ephemeral spool, the backup on
@@ -238,6 +239,7 @@ never as an environment variable (the one exception is the non-secret S3 setting
 | `secrets.breakGlass` | `password` (the Secret's `key`) | `/var/run/secrets/trove/break-glass/` | `auth.break_glass.password_file` (also refused inside `config`); without the Secret `auth.break_glass.enabled: false` | `api` pods (main, pools, endpoint pools) and the bridge's `web`; never `packages`, `worker`, the Job or backup pods (R-AUTH-014, R-AUTH-042, Q-HA-79) |
 | `secrets.oidc[]` (`providerId`, `existingSecret`, `key`) | `client-secret` (the entry's `key`) | `/var/run/secrets/trove/oidc-<providerId>/` | `auth.oidc.providers.<providerId>.client_secret_file` (refused inside `config` for a listed provider) | `api` pods and the bridge's `web` only (R-AUTH-004, R-AUTH-042, Q-HA-79) |
 | `secrets.metricsToken` (`config.metrics.auth: static`) | `token` | `/var/run/secrets/trove/metrics/` | `metrics.bearer_token_file` | every Deployment |
+| `trustedCA` (`existingSecret` or `existingConfigMap`, `keys`) | the names in `trustedCA.keys` (default `ca-bundle.crt`) | `/etc/trove/ca/` | appended to `proxy.outbound.tls.ca_files` after the operator's own; with `useForObjectStore` the one file is `storage.s3.ca_file` (refused with `secrets.s3CA`) | every pod of the release: the Deployments and all Jobs ([Q-HA-272](../spec/ha-and-helm.md#q-ha-272--the-trusted-ca-bundle-is-mounted-in-every-pod-of-the-release-its-files-are-appended-to-ca_files-and-one-file-can-be-the-object-stores-ca)); the entry of `trove.secretMounts` named `trusted-ca` has `configMap` instead of `secret` for a ConfigMap source |
 | `tls.secretName` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/tls/` | `server.tls.certificates[0]` | the pods that load the pair, see [Mounts follow the listeners](#mounts-follow-the-listeners); never the Job |
 | `tls.clientCA.secretName` | `ca.crt` | `/var/run/secrets/trove/tls-client-ca/` | `server.tls.client_ca_file`, `server.tls.client_auth` | the pods that open :8080 (`api`, `packages`, their path pools, the bridge's `web`), not an endpoint pool |
 | `tls.ops.secretName` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/tls-ops/` | `ops_tls.certificates[0]`, `ops_tls.inherit: false` | every pod that opens the operations listener (every Deployment) |
@@ -550,7 +552,7 @@ backup restore runs the clean-up itself), `static` needs `secrets.journalReader.
 The values block of [R-HA-031](../spec/ha-and-helm.md) is the reference; `TestR_HA_031_ValuesReference` ([values_reference_test.go](../../test/chart/values_reference_test.go))
 holds it to [values.yaml](../../deploy/helm/trove/values.yaml): every key of values.yaml is in the block with the same default, every key of the
 block is in values.yaml unless the feature that owns it is not rendered yet (`unbuiltPrefixes` in the test: the post-restore Job, the chart-created
-Gateway, `contentOrigin`, `bootstrap`, `trustedCA`, Service tuning, the extension points, and the keys under `config`), and
+Gateway, `contentOrigin`, `bootstrap`, Service tuning, the extension points, and the keys under `config`), and
 [values.schema.json](../../deploy/helm/trove/values.schema.json) declares every key. A value added to the chart is added to the block in the
 same change; a feature that arrives takes its prefix out of `unbuiltPrefixes`.
 
@@ -630,6 +632,8 @@ is where the coverage generator reads the IDs from.
 
 | Test (subtest prefix) | Asserts |
 |---|---|
+| `R-HA-043` (`TestR_HA_043_TrustedCA`) | the bundle of a Secret or a ConfigMap is mounted without `subPath` at `/etc/trove/ca/` in every Deployment and Job, its files follow the operator's `ca_files`, `useForObjectStore` sets `storage.s3.ca_file`, PostgreSQL's CA stays apart, the refusals name the value |
+| `R-HA-050` (`TestR_HA_050_SizingProfiles`) | each file of `profiles/` renders on [operator-minimum.yaml](../../test/chart/testdata/operator-minimum.yaml) and the rendered replicas, autoscalers, resources, spool and `max_conns` equal the row of the table in the specification |
 | `R-HA-028` | lint passes for every set; no Secret, RBAC, CRD or subchart; names follow the fullname rule; standard labels |
 | `R-HA-002` | every Deployment runs the `--role` its name says (`api`, `packages`, `worker`; `web` only with the bridge), never `all`; `api`/`packages`/`worker` replicas below 1 fail naming the key; each role Service selects the main pods of its role; the pool label is in the selectors |
 | `R-HA-002`, `R-HA-028`, `R-HA-062` (`TestRolesDeployments`) | Deployment, PodDisruptionBudget and NetworkPolicy per role, pool and endpoint pool; component and pool labels; every selector selects the pods of its Deployment and no other; the queue variables (JSON lists) on the right Deployments; pool inheritance; the autoscaler leaves out `spec.replicas`; the connection counts and the budget in the notes |

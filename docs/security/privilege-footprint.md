@@ -78,8 +78,12 @@ collection run (a `worker`, in a full sweep, R-STOR-011 Expiry) and by the objec
 startup check sends a part number twice in a multipart upload and completes it, naming one ETag, then deletes the object
 (`CreateMultipartUpload`, `UploadPart`, `CompleteMultipartUpload`, `DeleteObject` below `<prefix>/_probe/`); `AbortMultipartUpload` is called only when
 the store refuses the completion or the check is cleaned up, and the sweep deletes the staging objects and aborts the leftover probe objects and
-uploads it finds; all of these are within the permissions of R-STOR-031. Trove never calls `CreateBucket`, any `PutBucket*`, `DeleteObjectVersion`, or any call that configures
-versioning, lifecycle or object lock ([internal/blob](../../internal/blob) has no such call). The bucket is an operator resource.
+uploads it finds; all of these are within the permissions of R-STOR-031. Trove never calls `CreateBucket`, any `PutBucket*`, or any call that configures
+versioning, lifecycle or object lock ([internal/blob](../../internal/blob) has no such call). The one call of `DeleteObjectVersion` is
+`trove admin storage restore-versions` ([versions.go](../../internal/blob/s3/versions.go)), which an operator runs by hand with a credential
+of its own (`--credentials-file`, with `s3:ListBucketVersions` and `s3:DeleteObjectVersion`) and which deletes only delete markers, never
+an object version ([backup-and-restore.md](backup-and-restore.md#the-version-repair-of-a-platform-restore)); no role, Job or CronJob of the
+chart calls it. The bucket is an operator resource.
 
 The minimum permissions per prefix are R-STOR-031 ([storage.md](../spec/storage.md)). The stackit S3 provisioner that the owner
 uses grants a workload policy that denies `PutBucketVersioning`, `PutLifecycleConfiguration`,

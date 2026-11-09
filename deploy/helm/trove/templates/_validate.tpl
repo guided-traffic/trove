@@ -156,6 +156,26 @@ fixes the form, so every term is a number and a unit.
 {{- fail (printf "trove: metrics.serviceMonitor.namespace (%s) must be the release namespace (%s) while tls.enabled is true: the Prometheus operator reads the CA Secret of the scrape (ca.crt of tls.secretName or tls.ops.secretName) from the namespace of the ServiceMonitor" $v.metrics.serviceMonitor.namespace $ns) -}}
 {{- end -}}
 
+{{- /* The trusted CA bundle (R-HA-043): one source, files to mount, and the object store's CA is either this bundle or secrets.s3CA. */ -}}
+{{- $ca := $v.trustedCA -}}
+{{- if and $ca.existingSecret $ca.existingConfigMap -}}
+{{- fail "trove: trustedCA.existingSecret and trustedCA.existingConfigMap are both set; name one source (example: trustedCA.existingConfigMap: corp-ca-bundle)" -}}
+{{- end -}}
+{{- if and (or $ca.existingSecret $ca.existingConfigMap) (not $ca.keys) -}}
+{{- fail "trove: trustedCA.keys is empty while a source is named; list the files of the source that hold the PEM bundles (example: [ca-bundle.crt])" -}}
+{{- end -}}
+{{- if $ca.useForObjectStore -}}
+{{- if not (or $ca.existingSecret $ca.existingConfigMap) -}}
+{{- fail "trove: trustedCA.useForObjectStore is true, but trustedCA.existingSecret and trustedCA.existingConfigMap are empty; name the source of the bundle" -}}
+{{- end -}}
+{{- if ne (len $ca.keys) 1 -}}
+{{- fail (printf "trove: trustedCA.useForObjectStore needs exactly one file in trustedCA.keys, because storage.s3.ca_file is one file (trustedCA.keys has %d)" (len $ca.keys)) -}}
+{{- end -}}
+{{- if $v.secrets.s3CA.existingSecret -}}
+{{- fail "trove: trustedCA.useForObjectStore and secrets.s3CA.existingSecret both set storage.s3.ca_file; use one of them" -}}
+{{- end -}}
+{{- end -}}
+
 {{- /* Keys the chart manages (R-HA-030): setting one inside config is refused. */ -}}
 {{- $managedPaths := list "storage.spool.dir" "database.username_file" "database.password_file" "database.ssl_root_cert_file" "database.ssl_cert_file" "database.ssl_key_file" "valkey.username_file" "valkey.password_file" "valkey.sentinel.username_file" "valkey.sentinel.password_file" "valkey.tls.ca_file" "valkey.tls.cert_file" "valkey.tls.key_file" "storage.s3.ca_file" "storage.s3.credentials.access_key_id_file" "storage.s3.credentials.secret_access_key_file" "metrics.bearer_token_file" "auth.break_glass.password_file" "secrets.encryption_key_files" "secrets.active_key_id" "server.endpoints" "backup.manual_run" "backup.source" "backup.target.ca_file" "backup.target.credentials.access_key_id_file" "backup.target.credentials.secret_access_key_file" "backup.target.credentials.session_token_file" -}}
 {{- if $t.enabled -}}

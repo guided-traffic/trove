@@ -306,6 +306,29 @@ guards:
 The restore holds no Valkey credential, and the fix-ups give the installation a new keyspace and incarnation, so entries of the old
 installation are never read ([system_state.go](../../internal/backup/fixup/system_state.go)).
 
+## The version repair of a platform restore
+
+Step 5 of the platform restore (R-HA-025) is `trove admin storage restore-versions --before <t>`: after a point-in-time restore of
+PostgreSQL, the objects the old installation's collector deleted after *t* sit under delete markers in the versioned blob bucket, and the
+command removes those markers so the restored rows find their objects again.
+
+- **Its credential is its own.** Listing versions and deleting a version (`s3:ListBucketVersions`, `s3:DeleteObjectVersion`) are
+  permissions the runtime credential deliberately lacks (R-HA-023). The operator passes a credential with them as `--credentials-file`
+  (the file `post-restore` takes, [LoadCredentials](../../internal/journal/replay/open.go)); it reaches this one process and no role,
+  and the chart renders no Job that calls the command.
+- **It can delete only delete markers.** [restoreversions.go](../../internal/blob/restoreversions/restoreversions.go) deletes a version
+  only when `ObjectVersion.Marker` is set, younger than *t*, on a key that `verify` found without an object and that has an object
+  version below it; a key whose markers are older than *t* is left, and so is a key with nothing below its markers
+  (`TestR_HA_025_RestoreVersionsRemovesTheDeleteMarkersYoungerThanTOfMissingBlobsOnly`,
+  `TestR_HA_025_RestoreVersionsKeepsAMarkerWhenNoVersionIsBelow`). A wrong *t* removes markers of objects deleted legitimately between the
+  wrong and the right time; the objects return and the orphan sweep collects them after the deletions resume. `--dry-run` shows the effect
+  first.
+- **The pause is the other half.** `trove admin maintenance resume-deletions` clears the deletion pause that the post-restore set, with the
+  runtime database role; it is the step that lets the collector delete again, so it is run after the verification, and each change of the
+  pause writes an audit event (`system.deletions_paused`, `system.deletions_resumed`), as does a repair that removed markers
+  (`system.storage.versions_restored`) (`TestR_HA_025_ResumeDeletionsClearsThePauseOfAPostRestore`). Who may run the commands is whoever
+  can run the binary with the release's configuration; there is no API endpoint.
+
 ## What this does not cover
 
 The gaps of the backup itself:

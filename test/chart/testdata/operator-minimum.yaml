@@ -1,0 +1,27 @@
+# The values an operator must give whatever the sizing profile: where the database, Valkey, the bucket and the secrets are. It
+# names no upload limit, no replica count and no resource, so a profile of profiles/ decides those (R-HA-050).
+config:
+  server:
+    base_url: https://trove.example.com
+  database:
+    host: trove-db-rw.trove.svc
+  storage:
+    s3:
+      bucket: trove-blobs
+  valkey:
+    sentinel:
+      addresses:
+        - trove-valkey-sentinel-0.trove-valkey-sentinel.trove.svc:26379
+        - trove-valkey-sentinel-1.trove-valkey-sentinel.trove.svc:26379
+        - trove-valkey-sentinel-2.trove-valkey-sentinel.trove.svc:26379
+      primary_name: trove
+tls:
+  secretName: trove-tls
+secrets:
+  database:
+    existingSecret: trove-db-app
+  valkey:
+    existingSecret: trove-valkey
+  encryption:
+    existingSecret: trove-encryption-keys
+    keys: [2026-10.key]

@@ -630,6 +630,7 @@ trove/
 │   ├── audit/
 │   ├── backup/                  # trove backup: create, restore (backup-and-restore.md)
 │   │   └── tables/              # table registry: the export class of every table (leaf layer)
+│   ├── maintenance/             # the deletion pause: trove admin maintenance pause-deletions, resume-deletions (R-HA-025)
 │   ├── outbound/
 │   ├── secrets/
 │   ├── tlsfiles/                # TLS material read from PEM files and reloaded by content (leaf layer, R-ARCH-035)

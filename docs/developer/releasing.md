@@ -446,6 +446,19 @@ Q-REPO-211: on the 4 vCPUs of a GitHub-hosted runner the pass's own work took th
 pool `mirror` that runs a pass of 300 packages (the job is `queued` again with its attempt unchanged, the other process of the pool ends the pass, and the test upstream served every
 tarball, `concurrency` of them twice at most), followed by the failure suite of R-HA-052 on passes of 100 packages (the process of the pass force-deleted, its node stopped and frozen, the upstream throttling across a drain and a kill, a PostgreSQL switchover and a Valkey failover; about 40 minutes more). A red long leg is a finding and holds nothing ([e2e.md](e2e.md#the-mirror-tests)). By hand: `make dev-up && make e2e SET=mirror-long`.
 
+#### The platform matrix
+
+Job `k8s-matrix` of the nightly is the install half of R-HA-049's acceptance ([Q-HA-274](../spec/ha-and-helm.md#q-ha-274--the-platform-matrix-is-a-light-kind-leg-per-kubernetes-version-and-helm-major-that-installs-the-chart-without-starting-its-pods)):
+four legs on a GitHub-hosted runner (`ubuntu-24.04`), `k8s-min-helm4`, `k8s-min-helm3`, `k8s-max-helm4` and `k8s-max-helm3`, each a one-node kind cluster of its own that
+[deploy/dev/k8s-matrix.sh](../../deploy/dev/k8s-matrix.sh) creates and removes. The oldest Kubernetes is `K8S_MIN_KIND_NODE_IMAGE` (1.34), the newest `DEV_KIND_NODE_IMAGE`
+(1.37, the dev profile's node), Helm 4 is `HELM_VERSION` and Helm 3 `HELM3_VERSION` ([tools/versions.env](../../tools/versions.env); Renovate keeps the minimum on 1.34 and Helm 3 on 3.x).
+A leg checks that the API server and the helm are the versions the leg names, lints the chart, has the API server admit six sets of values (`helm install --dry-run=server`: the roles and pools,
+the three sizing profiles of R-HA-050, the backup), installs the medium profile with the backup on without waiting (the migration hook is off, no database or image is there and no pod starts),
+reads back the fields R-HA-049 names as the reason for Kubernetes 1.31 (PDB `unhealthyPodEvictionPolicy`, `nodeTaintsPolicy`, CronJob `timeZone`, the HPA), upgrades to the small profile
+and uninstalls. `gh workflow run "HA and Performance (nightly)" --ref main -f sets=k8s-matrix` runs the four legs, `-f sets=k8s-min-helm3` one. By hand, with the pinned `kind`, `kubectl` and a Helm of the major asked for:
+`deploy/dev/k8s-matrix.sh "$K8S_MIN_KIND_NODE_IMAGE" 3`. **Not covered:** no pod starts, so the smoke subset of R-HA-052 does not run on these legs; Kubernetes 1.37 with Helm 4 is the only pair the
+failure suite runs on ([H-805](../spec/ha-and-helm.md#h-805--the-platform-matrix-installs-the-chart-and-starts-no-pod)).
+
 ### Renovate
 
 [`renovate.yml`](../../.github/workflows/renovate.yml) runs self-hosted Renovate every day at 02:00

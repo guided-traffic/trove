@@ -3000,10 +3000,14 @@ hook Job of the chart ([post-restore.yaml](../../deploy/helm/trove/templates/pos
 (phase 7): `TestBackupPITR_R_HA_025_R_HA_023_R_HA_054_PointInTimeRestoreOfThePlatformLayer`
 ([backup_pitr_test.go](../../test/e2e/backup_pitr_test.go), set `backup-pitr`, nightly in the job `e2e-backup`), on the dev stack with
 `TROVE_PITR=1` ([Q-HA-210](#q-ha-210--the-platform-layer-of-r-ha-023-in-the-dev-stack-is-opt-in-trove_pitr1-installs-the-barman-cloud-plugin-by-pinned-manifest-and-keeps-the-archive-on-the-dev-seaweedfs-over-tls)).
-It follows steps 1 to 7; steps 5 and 7 have no command yet and the drill does their effect by hand
-([Q-HA-211](#q-ha-211--the-point-in-time-drill-restores-the-installations-own-database-into-a-new-cluster-and-does-steps-5-and-7-of-r-ha-025-with-the-s3-api-and-sql-until-their-commands-exist),
-[H-767](#h-767--the-commands-of-r-ha-025-steps-5-and-7-do-not-exist)). The acceptance bullets it does not cover: the orphan sweep after
-the resume, the ETag after one publish, and the run with the journal disabled.
+It follows steps 1 to 7 with the commands: step 5 is `trove admin storage restore-versions` and step 7 `trove admin maintenance resume-deletions`
+([internal/blob/restoreversions](../../internal/blob/restoreversions), [internal/maintenance](../../internal/maintenance),
+[cmd/trove/admin_restoreversions.go](../../cmd/trove/admin_restoreversions.go), [cmd/trove/admin_maintenance.go](../../cmd/trove/admin_maintenance.go),
+[Q-HA-270](#q-ha-270--restore-versions-removes-the-delete-markers-younger-than-t-from-the-keys-of-referenced-blobs-without-an-object-and-nothing-else),
+[Q-HA-271](#q-ha-271--the-deletion-pause-is-set-and-cleared-by-trove-admin-maintenance-and-each-change-writes-one-audit-event),
+[Q-HA-211](#q-ha-211--the-point-in-time-drill-restores-the-installations-own-database-into-a-new-cluster-and-does-steps-5-and-7-of-r-ha-025-with-the-commands)).
+The acceptance bullets the drill does not cover: the orphan sweep after the resume, the ETag after one publish, and the run with the
+journal disabled.
 
 Restores are whole-installation, point-in-time operations. Restoring a single repository is
 Deferred (repository export and import, OPS-036 and OPS-037, are P2). This procedure restores the
@@ -3058,13 +3062,18 @@ keyspace.
    - prints a reminder that access granted after *t* is gone and that revocations newer than the
      last shipped journal entry are undone (H-37).
 5. **Repair missing blobs** if step 4 reported any and the bucket is versioned:
-   `trove admin storage restore-versions --before <t>` removes the delete markers of missing
-   referenced objects. This needs a separate credential with `s3:ListBucketVersions` and
-   `s3:DeleteObjectVersion`, passed only to this command (`--credentials-file`). The runtime
-   credential deliberately lacks these permissions (R-HA-023).
+   `trove admin storage restore-versions --before <t>` removes the delete markers younger than *t* from the keys of the
+   referenced blobs whose object is missing (it runs the check of `trove admin storage verify` over every live blob first),
+   so that the version before the marker is current again. It prints one line per such blob and a totals line, and exits 5 while
+   a blob is still without an object (no delete marker younger than *t*, or no object version below its markers). `--dry-run`
+   lists what it would do and removes nothing. This needs a separate credential with `s3:ListBucketVersions` and
+   `s3:DeleteObjectVersion`, passed only to this command (`--credentials-file`, the file of `post-restore`). The runtime
+   credential deliberately lacks these permissions (R-HA-023). A run that removed markers writes the audit event
+   `system.storage.versions_restored`.
 6. **Start.** `helm upgrade` with the normal values, which also resumes the backup CronJob. The
    migration Job brings an older restored schema forward.
-7. **Resume deletions** after verification: `trove admin maintenance resume-deletions`.
+7. **Resume deletions** after verification: `trove admin maintenance resume-deletions`. It clears the pause, prints when and why
+   it had been set, and writes the audit event `system.deletions_resumed`; a repeat says that nothing changed and exits 0.
 
 Deletion pause (sketch; `system_state` is defined in R-OPS-024):
 
@@ -3080,7 +3089,8 @@ ALTER TABLE system_state
   paused retention run ends `stopped` with `error.code = deletions_paused`; cap enforcement claims
   nothing while the pause is set (R-STOR-024, R-STOR-026, R-STOR-040, R-STOR-044, R-STOR-045).
 - `trove admin maintenance pause-deletions --reason …` sets the pause by hand, for example
-  before a planned restore drill.
+  before a planned restore drill. A pause that is already set keeps its time and reason; a change writes the audit event
+  `system.deletions_paused`.
 
 Acceptance criteria (point-in-time restore drill, part of R-HA-052, run weekly in CI):
 
@@ -4223,10 +4233,10 @@ secrets:
     key: token
 
 trustedCA:
-  existingSecret: ""                    # example: corp-ca-bundle
-  existingConfigMap: ""                 # example: corp-ca-bundle (trust-manager target)
-  keys: [ca-bundle.crt]
-  useForObjectStore: false              # also set storage.s3.caFile
+  existingSecret: ""                    # empty = no bundle; at most one of existingSecret and existingConfigMap; example: corp-ca-bundle
+  existingConfigMap: ""                 # example: corp-ca-bundle (a trust-manager Bundle target)
+  keys: [ca-bundle.crt]                 # the files of the source that are mounted, each a PEM bundle; they are added to config.proxy.outbound.tls.ca_files
+  useForObjectStore: false              # true also sets storage.s3.ca_file to the one file of keys, for an S3-compatible store with a private CA; then it is that store's whole trust store
 
 bootstrap:
   existingConfigMap: ""                 # configuration documents (P1)
@@ -5163,6 +5173,14 @@ Acceptance criteria:
 ### R-HA-043 · Trusted CA bundles
 Priority: **MVP** · Covers: HA-019
 
+**Status.** Built: the values `trustedCA.*` (with their schema), the mount in every pod of the release and the two config paths
+([_secrets.tpl](../../deploy/helm/trove/templates/_secrets.tpl), [_helpers.tpl](../../deploy/helm/trove/templates/_helpers.tpl),
+[_validate.tpl](../../deploy/helm/trove/templates/_validate.tpl)), tested by `TestR_HA_043_TrustedCA`
+([trustedca_test.go](../../test/chart/trustedca_test.go)); the dev profile's Keycloak CA and the restore drill's CA go through it
+([Q-HA-272](#q-ha-272--the-trusted-ca-bundle-is-mounted-in-every-pod-of-the-release-its-files-are-appended-to-ca_files-and-one-file-can-be-the-object-stores-ca)).
+The acceptance's reload within 60 s is the binary's from the file; the time a Secret or ConfigMap change takes to reach the file is the
+kubelet's ([H-804](#h-804--a-change-of-the-ca-source-reaches-the-pods-at-the-kubelets-pace)).
+
 - `trustedCA.existingSecret` or `trustedCA.existingConfigMap` (for example a trust-manager `Bundle`
   target, [trust-manager](https://cert-manager.io/docs/trust/trust-manager/)) is mounted at
   `/etc/trove/ca/`. Its files populate `proxy.outbound.tls.ca_files` (R-REPO-035). They are added to the system
@@ -5459,6 +5477,12 @@ Acceptance criteria:
 ### R-HA-049 · Platform prerequisites and network locality
 Priority: **MVP** · Covers: HA-068, HA-008
 
+**Status.** The platform matrix is built as the install half of the acceptance: the job `k8s-matrix` of the nightly
+([performance.yml](../../.github/workflows/performance.yml), [deploy/dev/k8s-matrix.sh](../../deploy/dev/k8s-matrix.sh),
+[Q-HA-274](#q-ha-274--the-platform-matrix-is-a-light-kind-leg-per-kubernetes-version-and-helm-major-that-installs-the-chart-without-starting-its-pods))
+installs the chart on kind with Kubernetes 1.34 and 1.37, each with Helm 4 and Helm 3, without starting its pods. R-HA-052's smoke subset does not
+run on it ([H-805](#h-805--the-platform-matrix-installs-the-chart-and-starts-no-pod)).
+
 | Requirement | Value |
 |---|---|
 | Kubernetes | 1.34 to 1.37 tested (the range Helm 4.3 supports, verified 2026-10-28 on [Helm version skew](https://helm.sh/docs/topics/version_skew/)). The chart uses no field newer than 1.31: PDB `unhealthyPodEvictionPolicy` and Job `podFailurePolicy` are stable since 1.31, `nodeTaintsPolicy` is on by default since 1.26 and GA since 1.33, CronJob `timeZone` stable since 1.27. 1.31–1.33 are expected to work untested |
@@ -5484,6 +5508,13 @@ Helm 4 and the latest Helm 3, and runs R-HA-052's smoke subset.
 
 ### R-HA-050 · Sizing guidance and profiles
 Priority: **MVP** · Covers: HA-067, HA-052
+
+**Status.** The profile files are built: [small.yaml](../../deploy/helm/trove/profiles/small.yaml),
+[medium.yaml](../../deploy/helm/trove/profiles/medium.yaml) and [large.yaml](../../deploy/helm/trove/profiles/large.yaml)
+([Q-HA-273](#q-ha-273--the-sizing-profiles-are-values-files-in-profiles-whose-numbers-a-test-reads-from-the-table-below)); `TestR_HA_050_SizingProfiles`
+([profiles_test.go](../../test/chart/profiles_test.go)) renders each on the operator's minimum values and compares the rendered replicas, autoscalers,
+resources, spool and `max_conns` with the table below. The reference load test does not exist, so the table is still the starting point it says it is
+([H-803](#h-803--the-sizing-profiles-are-not-measured)).
 
 Starting points. They are not measured: trove does not exist yet. The reference load test
 (npm and NuGet clients replaying a recorded mix of installs, restores and publishes against remote,
@@ -6842,7 +6873,7 @@ conditions: the chart gains the two secret values (then the projected volume goe
 `CLIENT PAUSE` (then a proxy).
 
 **Revisit applied:** the chart has the values `secrets.oidc` and `secrets.breakGlass` (built); values-dev.yaml uses them and no longer
-projects the client secret and the break-glass password. The Keycloak CA stays a volume of `extraVolumes` until `trustedCA` (R-HA-043) is built.
+projects the client secret and the break-glass password. The Keycloak CA went through `extraVolumes` until `trustedCA` (R-HA-043) was built; it is the value `trustedCA` of the dev values now.
 
 **Applied in the spec:** none; [../developer/local-profile.md](../developer/local-profile.md) and
 [../developer/e2e.md](../developer/e2e.md#m1-tests).
@@ -9279,11 +9310,11 @@ Context: E5.1 needs a CloudNativePG cluster that archives its WAL and takes base
 **Choice:** (b). **Pins (one place, `tools/versions.env`):** `DEV_BARMAN_PLUGIN_VERSION` v0.15.1 (needs CloudNativePG 1.30 or later, the pinned operator is 1.30.1), the SHA-256 of the release's `manifest.yaml` (a GitHub release asset fetched with `tools/github-download.sh`, checked on every use, fetched by `make dev-charts` in CI), and the operator image and the sidecar image as multi-arch index digests; `up.sh` refuses image tags that differ from the version, and the manifest's sidecar Secret is rewritten to the digest. **Archive:** `ObjectStore trove-pg-archive` (`deploy/dev/pitr.yaml`) names `https://trove-s3.<ns>.svc:9000` and the dev CA (`endpointCA`), so every link is TLS. The dev SeaweedFS has one identity, so the archive uses the same login as the blob bucket; the separate credential R-HA-023 asks of a production installation is not shown ([data-and-secret-flow.md](../security/data-and-secret-flow.md), H-768). **Revisit:** when the drill has run green for a release cycle, (a) is worth a measurement of the start time.
 **Applied:** `tools/versions.env`, `renovate.json`, `deploy/dev/{lib.sh,up.sh,charts.sh,pitr.yaml,postgres.yaml,s3.yaml}`.
 
-### Q-HA-211 · The point-in-time drill restores the installation's own database into a new cluster, and does steps 5 and 7 of R-HA-025 with the S3 API and SQL until their commands exist
+### Q-HA-211 · The point-in-time drill restores the installation's own database into a new cluster, and does steps 5 and 7 of R-HA-025 with the commands
 
 Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
 
-Context: R-HA-025 is a procedure on one installation: stop the roles, recover PostgreSQL into a new cluster, point the release at it, post-restore, roll the bucket back, start, resume deletions. Step 5 names `trove admin storage restore-versions` and step 7 `trove admin maintenance resume-deletions`; neither command exists in the code (H-767).
+Context: R-HA-025 is a procedure on one installation: stop the roles, recover PostgreSQL into a new cluster, point the release at it, post-restore, roll the bucket back, start, resume deletions. Step 5 names `trove admin storage restore-versions` and step 7 `trove admin maintenance resume-deletions`. The first version of the drill did their effect with an aws-cli Job and SQL because the commands did not exist yet; they exist now ([Q-HA-270](#q-ha-270--restore-versions-removes-the-delete-markers-younger-than-t-from-the-keys-of-referenced-blobs-without-an-object-and-nothing-else), [Q-HA-271](#q-ha-271--the-deletion-pause-is-set-and-cleared-by-trove-admin-maintenance-and-each-change-writes-one-audit-event)).
 
 | Option | What it means | For | Against |
 |---|---|---|---|
@@ -9291,7 +9322,7 @@ Context: R-HA-025 is a procedure on one installation: stop the roles, recover Po
 | (b) Restore the main installation in place of its database (chosen) | The release is repointed at `trove-db-pitr` (host, credentials Secret, CA Secret) and repointed back by the cleanup of the test | The steps of the spec as written, on the real bucket | The test changes the release; its cleanup must run |
 | (c) Skip steps 5 and 7 | Judge the database only | Smaller | The roll back of blobs deleted after *t* is the point of R-HA-024 |
 
-**Choice:** (b). **Stand-ins until the commands exist ([H-767](#h-767--the-commands-of-r-ha-025-steps-5-and-7-do-not-exist); the procedure itself is unchanged):** step 5 is done by a Job of the aws-cli image that removes every delete marker under the blob prefix that is younger than *t* (the dev SeaweedFS login has the permissions the runtime credential of production lacks); it rolls the bucket back to *t* and is a superset of "the delete markers of missing referenced objects", the surplus being objects the orphan sweep or GC collects after the resume. Step 7 clears `deletions_paused_at` and `deletions_paused_reason` in `system_state` by SQL. The new cluster does not archive (it would write a new timeline into the directory of `trove-db`, which the plugin refuses) and a production restore names a new `serverName` for the cluster's own archive. Not covered by the drill: the ETag acceptance bullet of R-HA-025, the orphan sweep after the resume, `backup.revocation_journal.enabled: false`. **Revisit:** when the two commands exist, the drill calls them.
+**Choice:** (b). **Steps 5 and 7 run the commands.** Step 5 is a one-off Job whose pod is the pod template of the post-restore Job of step 4 (the roles are at zero, so there is no pod to run it in; it carries the release's configuration, the owner login and, as `--credentials-file`, the dev SeaweedFS login that may list and delete object versions, which the runtime credential of production lacks): `trove admin storage restore-versions --before <t> --credentials-file …`. Step 7 runs in a pod of the started installation (`kubectl exec deploy/trove-worker -- trove admin maintenance resume-deletions`), because the post-restore Job and its credentials ConfigMap are gone after the upgrade of step 6. The new cluster does not archive (it would write a new timeline into the directory of `trove-db`, which the plugin refuses) and a production restore names a new `serverName` for the cluster's own archive. Not covered by the drill: the ETag acceptance bullet of R-HA-025, the orphan sweep after the resume, `backup.revocation_journal.enabled: false`. **Revisit:** when the chart renders a Job for step 5 itself, the drill calls that instead of copying the pod template.
 **Applied:** `test/e2e/backup_pitr_test.go`, `deploy/dev/{pitr.sh,pitr-restore.yaml,e2e.sh}`, `.github/workflows/performance.yml` (job `e2e-backup`).
 
 ### Q-HA-212 · Step 1 of R-HA-025 is a value of the chart, `postRestore.hold`, not a command behind Helm's back
@@ -9462,6 +9493,86 @@ Context: R-HA-058 asks: `kubectl delete pod <pooler pod>` during an `npm ci` loo
 
 Not verified: that the preStop sleep of the graceful stop (80 s with a 120 s grace period) fits the 6-minute wait (the graceful runs of that dispatch took 146 s each). **Applied in the spec:** none (R-HA-058's criterion is built as written, with k6's `503` standing for "with `Retry-After`").
 
+### Q-HA-270 · `restore-versions` removes the delete markers younger than t from the keys of referenced blobs without an object, and nothing else
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-025 step 5 says `trove admin storage restore-versions --before <t>` "removes the delete markers of missing referenced objects" and nothing more: not which objects count as missing, what happens to a marker older than *t*, or what the command does when no object lies below the marker. Verified in this repository: `trove admin storage verify` (`internal/blob/verify`) already names the blobs whose row has no object. Not verified: how a store orders versions written within one second (the SeaweedFS of the integration stack stamps whole seconds, and its listing has no fixed order for them), so the command does not depend on the order.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every delete marker younger than *t* under the blob prefix | A bucket roll back, what the first drill did with the S3 API | No database needed | Revives objects the old installation's collector deleted legitimately after *t* and no restored row references; they would be orphans until the sweep removes them, after the grace period |
+| (b) The markers younger than *t* of exactly the keys that `verify` finds missing (chosen) | Runs the check of step 4 over every live blob, lists the versions of each missing key, removes the markers younger than *t*, checks the key again | Touches only what the restored database needs; the spec's own wording; an `--dry-run` shows the effect first | One list call per missing blob |
+| (c) Also delete object versions younger than *t* | Rolls the bucket back completely | Orphans disappear | The command could delete data; the credential then needs more than the marker removal needs |
+
+**Choice:** (b). A key whose markers are all older than *t* is reported (`no_delete_marker`) and left, because the object was already gone at *t*; a key with markers younger than *t* and no object version below is reported (`no_version`) and left; the exit code is 5 while any blob is still without an object, 75 when the database or the store could not be asked, 2 for a usage or configuration error (a store that refuses the listing of versions with `AccessDenied` is one). Object versions are never deleted. A dry run removes nothing and writes no audit event; a run that removed markers writes `system.storage.versions_restored` (`before`, `markersRemoved`, `restored`, `remaining`).
+**Rationale:** the question after a point-in-time restore is "which referenced object is missing", and the check already answers it; widening the credential's use beyond the markers of those keys would turn a repair into a bucket operation. Not covered: a missing object that was never versioned (the bucket had versioning off) stays missing and is reported. **Revisit:** when a restore of a very large table makes the per-key listing slow (then a listing of the whole prefix by marker date, which needs a page of versions per request, replaces it).
+**Applied:** `internal/blob/restoreversions`, `internal/blob/s3/versions.go`, `cmd/trove/admin_restoreversions.go`, `internal/audit/events_maintenance.go`, `test/integration/restoreversions`.
+
+### Q-HA-271 · The deletion pause is set and cleared by `trove admin maintenance`, and each change writes one audit event
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-025 names `pause-deletions --reason` and `resume-deletions` and says the pause lives in `system_state` (`deletions_paused_at`, `deletions_paused_reason`). The post-restore already sets it; nothing cleared it. Verified in this repository: the collector, the orphan sweep and the other deleters read the key `deletions_paused_at` and treat a JSON `null` as not set; the runtime role may write `system_state` ([privilege footprint](../security/privilege-footprint.md)).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The commands write `system_state` with the runtime database role and record an audit event (chosen) | One transaction per change; the event carries the reason and the time of the pause that ended | No new privilege; the trail says who resumed deletions on which restore | Two event types |
+| (b) The commands write the rows without an event | Smaller | The log line is the only trace of the resume | A resume at the wrong moment is exactly the operation the trail should hold |
+| (c) A management API endpoint | Reachable from the UI | Needs authorization design | The procedure runs while the replicas are held not ready (step 1 to 6) |
+
+**Choice:** (a). `pause-deletions --reason <text>` needs a reason; a pause that is already set keeps its time and reason and the command says so. `resume-deletions` clears both keys, prints when and why the pause had been set, and a repeat says that nothing changed and exits 0, so a runbook may run it twice. The events are `system.deletions_paused` (`reason`) and `system.deletions_resumed` (`pausedAt`, `reason`), written as the actor `system:admin` in the transaction of the change, and only when it changed something.
+**Rationale:** the pause protects objects a restore needs; clearing it is the step that lets the collector delete again. **Revisit:** when the management API gains a system-state area, the endpoint calls the same package.
+**Applied:** `internal/maintenance`, `internal/meta/postgres/queries/maintenance.sql`, `cmd/trove/admin_maintenance.go`, `internal/audit/events_maintenance.go`, `docs/spec/operations-and-observability.md` (audit catalog), `test/integration/restoreversions`.
+
+### Q-HA-272 · The trusted CA bundle is mounted in every pod of the release, its files are appended to `ca_files`, and one file can be the object store's CA
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-043 says the source is mounted at `/etc/trove/ca/`, its files populate `proxy.outbound.tls.ca_files`, and `useForObjectStore` makes "the same bundle" `storage.s3.ca_file`. It does not say which pods get it, what happens to a `ca_files` the operator already lists in `config`, or what "the same bundle" is when `keys` lists several files while `ca_file` is one. Verified in this repository: the chart renders one configuration file for the roles and every Job, and the binary refuses a `ca_files` entry it cannot read at start (R-REPO-035, `internal/config/outbound.go`), so a pod without the mount would fail on the path.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Mount in the roles only | The Jobs get the bundle through their own `extraVolumes` | Smallest change | The shared file names the path in the Jobs too; the dev profile needed a workaround volume per Job (Q-HA-149) |
+| (b) Mount in every pod that reads the shared file (chosen) | The roles, the migration Job, the backup CronJob, the restore Job and the post-restore Job | One value serves the release; the Jobs that reach an S3 store with a private CA (backup, restore) trust it | A public certificate in pods that never use it |
+| (c) `ca_files` is the chart's alone | The chart replaces the operator's list | Simple | An operator's own list in `config` is silently dropped |
+
+**Choice:** (b), with the chart's files appended after those the operator listed in `config.proxy.outbound.tls.ca_files` (the system roots stay, `use_system_roots` is not touched). `useForObjectStore` needs exactly one file in `keys` and sets `storage.s3.ca_file` to it; it is refused together with `secrets.s3CA`, which sets the same key, and without a source. `trustedCA.existingSecret` and `trustedCA.existingConfigMap` are mutually exclusive; each file name is a plain name (`^[A-Za-z0-9][A-Za-z0-9._-]*$`), so a key cannot leave the directory. The volume is projected with `items` and no `subPath`, so a rotated source reaches the pod. PostgreSQL's CA stays `secrets.databaseCA` and is never in this directory.
+**Rationale:** the same reason the other CA values are Secret mounts; the bundle is public. **Revisit:** when a Job needs a CA the roles do not (then a per-workload list, as `backup.extraVolumes` is).
+**Applied:** `deploy/helm/trove/{values.yaml,values.schema.json,templates/_secrets.tpl,templates/_helpers.tpl,templates/_validate.tpl}`, `deploy/dev/{values-dev.yaml,values-restore.yaml}`, `test/chart/trustedca_test.go`, the values block of this page.
+
+### Q-HA-273 · The sizing profiles are values files in `profiles/`, whose numbers a test reads from the table below
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-050 gives a table and says the profile files exist and render; the chart's `.helmignore` leaves `ci/` out of the package, and R-HA-036 names `deploy/helm/trove/profiles/{small,medium,large}.yaml`, layered before the operator's file. The table speaks of `web`; since the cut into roles those columns are the `packages` Deployment, with `api` added.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Files in `ci/` | Test inputs only | Rendered by every chart test | Not in the packaged chart: an operator cannot layer them |
+| (b) Files in `profiles/`, in the package (chosen) | `helm upgrade -f profiles/medium.yaml -f my-values.yaml` | The spec's layout; they ship with the chart | Not rendered by the tests of the other sets unless a test names them |
+| (c) Values presets switched by `sizing: medium` | One key | Short | A second way to set what the roles' values already set |
+
+**Choice:** (b). Each file sets `packages` and `worker` (replicas or the autoscaler's bounds, requests, the memory limit, the spool), `api` (2 replicas, an autoscaler of 2 to 4 in medium and large, 500m / 512Mi, 1Gi, 5Gi), `config.database.pool.max_conns` and, because the chart refuses an upload limit above the spool budget, `config.storage.upload.max_size` as the pod's spool less `spool.headroom` (8, 18 and 48 GiB). Large uses `spool.type: ephemeral` with a 50Gi claim. The database, the poolers and Valkey of the table are the operator's, written as comments in each file: the chart deploys none of them. `TestR_HA_050_SizingProfiles` reads the row of each profile from the table of R-HA-050 and compares it with the rendered objects, so a changed table or a changed file fails the test; the worker pool for the queue `vuln` that the table recommends from medium on is not in the files, because its queue names are the installation's.
+**Rationale:** the table is the contract, and a test that reads it cannot drift from it. **Revisit:** when the reference load test replaces the numbers (H-803).
+**Applied:** `deploy/helm/trove/profiles/`, `test/chart/profiles_test.go`, `test/chart/testdata/operator-minimum.yaml`, README, `docs/developer/helm-chart.md`.
+
+### Q-HA-274 · The platform matrix is a light kind leg per Kubernetes version and Helm major that installs the chart without starting its pods
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-049's acceptance wants the chart installed on kind with Kubernetes 1.34 and 1.37, with Helm 4 and the latest Helm 3, "and runs R-HA-052's smoke subset". The smoke subset needs a database, Valkey, an object store and the image: the dev profile, a `large` runner and about 40 minutes a leg. The dev profile exists once, on 1.37 with Helm 4.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Four full dev-profile legs | 2 Kubernetes × 2 Helm, each with the smoke subset | The whole acceptance | Four more `large` kind legs a night for a property the API server decides, not the pods |
+| (b) A render and lint matrix with kubeconform schemas | No cluster | Cheapest | A schema is not the API server: defaulting, admission and the fields the version does not know are what 1.31 is about |
+| (c) A light kind leg per pair, install without pods (chosen) | A one-node cluster of the pinned node image, the pinned Helm of the major, a server-side dry run of six sets, a real install, the fields read back, an upgrade, an uninstall | The API server of each version decides; about 5 minutes on a GitHub-hosted runner; the three pairs besides 1.37 with Helm 4 get a real check | No pod starts: the smoke subset does not run (H-805) |
+
+**Choice:** (c). Pins, once, in `tools/versions.env`: `K8S_MIN_KIND_NODE_IMAGE` (Kubernetes 1.34, by digest), `DEV_KIND_NODE_IMAGE` (the newest, 1.37, the dev profile's), `HELM_VERSION` (Helm 4) and `HELM3_VERSION` (the latest Helm 3); Renovate keeps the minimum on 1.34 and Helm 3 on 3.x. The job is `k8s-matrix` of the nightly, four legs on `ubuntu-24.04`, and the script is `deploy/dev/k8s-matrix.sh`, which fails when the API server or the helm is not the version the leg names. The sets are the roles and pools, the three profiles and the backup; none needs a CRD. After the install it reads PDB `unhealthyPodEvictionPolicy`, `nodeTaintsPolicy`, CronJob `timeZone` and the HPA back from the server: the fields the table of R-HA-049 names as the reason for 1.31. It does not run in Test and Release: a kind cluster per push for a chart that changes rarely is the cost the nightly exists to avoid (owner, 2026-11-01).
+**Rationale:** the requirement's reason for the matrix is that the chart must work on the API of each supported version and with both Helm majors; that is decided by the install, not by the pods. **Revisit:** when the dev profile can start on a second Kubernetes version at an acceptable cost, the smoke subset runs there (then H-805 is closed), or when a Helm 3 release changes how `--dry-run=server` behaves.
+**Applied:** `tools/versions.env`, `renovate.json`, `deploy/dev/k8s-matrix.sh`, `.github/workflows/performance.yml` (job `k8s-matrix`), `docs/developer/releasing.md#the-platform-matrix`.
+
 ## What this does not cover
 
 ### H-37 · A database restore revives revoked credentials and removed grants
@@ -9563,9 +9674,6 @@ Live whenever a detached write (the periodic token last-used flush, 10 s; the ro
 the upload paths, up to 30 s, not traced) is running at the close deadline. What makes it real: such a write is cut by the process
 exit, and its effect is lost; the next use records most of them again, a half-finished upload is cleaned up by its sweep.
 
-### H-767 · The commands of R-HA-025 steps 5 and 7 do not exist
-
-Component: the restore procedure of the platform layer (R-HA-025). Subject: the operator who follows it. Step 5 names `trove admin storage restore-versions --before <t>` and step 7 `trove admin maintenance resume-deletions` (and the pause of a planned drill `pause-deletions`); `trove admin` has none of them, and the post-restore output that points at `resume-deletions` names a command that is not there. Both commands are product commands the procedure requires and are still to be built. Until then the drill stands in for them (an aws-cli Job that removes the delete markers younger than *t*, SQL that clears the pause on `system_state`); that is not an accepted change of the procedure, and the drill switches to the commands as soon as they exist. Live today: an operator has no command and would do by hand what the drill does ([Q-HA-211](#q-ha-211--the-point-in-time-drill-restores-the-installations-own-database-into-a-new-cluster-and-does-steps-5-and-7-of-r-ha-025-with-the-s3-api-and-sql-until-their-commands-exist)). What makes it real: a wrong delete-marker filter or a wrong `UPDATE` on a restore night.
 ### H-791 · The Valkey alerts are tested as rules, not as alerts of a running installation
 
 Component: `TroveValkeySentinelsDegraded` and `TroveValkeyUnavailable` ([_rules.tpl](../../deploy/helm/trove/templates/_rules.tpl), R-OPS-046). Subject: whether the alert fires in an installation when R-HA-057's scenarios run. `promtool test rules` ([rules_test.yaml](../../deploy/helm/trove/tests/rules_test.yaml)) feeds the series of the gauges to the expressions and checks the alert and its `for`; the e2e scenarios check the gauges (`trove_valkey_sentinels_reachable`, `trove_valkey_available`) on the pods. Nothing runs a Prometheus that scrapes the pods through the ServiceMonitor and evaluates the PrometheusRule against the Sentinel quorum loss or the 5-minute outage.
@@ -9593,3 +9701,15 @@ Live today, for every request that arrives in the window between the fence and t
 ### H-795 · The e2e legs of E5.10 are not yet shown green on a runner
 
 The scenarios were run in three nightly dispatches on the large class while other legs of the same and other runs shared its nodes (the probes of unrelated pods timed out in the second one: the sentinels, the object store and Keycloak). In all of them k6 recorded 50 to 200 requests that the edge answered `502` after 11 to 15 s, in every test, at times unrelated to the injected fault (the planned failover's came 40 s after it), and the first dispatch's `ha-suite` and `npm-ha` legs were skipped, so no unloaded reference run exists. `TestHAFaults_ValkeySentinelQuorumLoss`, `ValkeyFlushAll` and `ValkeyCredentialMismatch` and the graceful and control-pooler legs of `TestHAPooler_InstanceLoss` passed in a dispatch where the cluster was not starved (42587147342); all four legs of `TestHAPooler_InstanceLoss` passed in 42601429868; the planned failover's 10 s bound held (7.4 to 8.0 s for every replica, 42601429868). Not verified: a green run of every test of `ha-faults` and `ha-pooler` in one dispatch, and whether the `502` bursts come from the contention or from trove or the edge.
+
+### H-803 · The sizing profiles are not measured
+
+Component: the sizing profiles of R-HA-050 ([profiles/](../../deploy/helm/trove/profiles)). Subject: an operator who picks a profile for the load it names. The acceptance asks for a reference load test (npm and NuGet clients replaying a recorded mix of installs, restores and publishes) against each profile in CI before the beta, and for the table to be updated from its results. That test does not exist: it needs the reference environment of [Q-ROAD-9](../coverage/roadmap.md#q-road-9--what-wp28-builds-of-r-arch-027s-load-scripts-and-where-they-run) (the same one as [H-491](../security/vulnerability-scanning.md#h-491--the-performance-run-is-not-the-reference-environment)), which is not built, and the recorded mix of client traffic. The profile files and their tests prove that the numbers render and agree with the table, not that a profile serves the clients it names. Live today: every installation that takes a profile on trust. What makes it real: a `packages` pod that the table sizes for 50 concurrent clients saturates at fewer, or a database `max_connections` that the formula of R-HA-016 gets right and the load does not.
+
+### H-804 · A change of the CA source reaches the pods at the kubelet's pace
+
+Component: the trusted CA bundle of R-HA-043. Subject: the operator who rotates a CA in the Secret or ConfigMap named by `trustedCA`. R-REPO-035 promises that a CA file added to the mounted source is trusted within 60 s without a restart; the binary reads the file again at most every 10 s on use, but the mounted file changes when the kubelet syncs the volume, which takes up to the kubelet's sync period plus its cache delay (about a minute with the defaults, more on a loaded node). The chart tests render the mount and the paths; the reload from the file is the unit tests' of R-REPO-035; no end-to-end test changes a ConfigMap and times the first request that trusts the new CA. Live today: every rotation. What makes it real: an upstream whose CA was rotated fails with `tls_untrusted` for the kubelet's delay on every pod after the source changed.
+
+### H-805 · The platform matrix installs the chart and starts no pod
+
+Component: the platform matrix of R-HA-049 (job `k8s-matrix`, [k8s-matrix.sh](../../deploy/dev/k8s-matrix.sh)). Subject: the claim that the chart works on Kubernetes 1.34 and 1.37 with Helm 4 and Helm 3. The acceptance says the matrix "runs R-HA-052's smoke subset"; the legs install the chart with its pods unable to start (no database, Valkey, object store or image there), so they prove that each API server admits and stores the objects and that both Helm majors install, upgrade and remove the release, not that trove runs on those versions. The failure suite runs on Kubernetes 1.37 with Helm 4 only. Live today: Kubernetes 1.34 with either Helm, and 1.37 with Helm 3, have no running pod in any test. What makes it real: a behaviour of the kubelet or the scheduler of 1.34 that the API server does not show (the spread of `nodeTaintsPolicy`, the eviction of an unhealthy pod).

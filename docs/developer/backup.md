@@ -358,6 +358,8 @@ link them (`internal/backup/fixup` imports both, `internal/app` binds them).
 | [blob/s3/journalstore.go](../../internal/blob/s3/journalstore.go) | `JournalStore`: put, list (with versions on request), get |
 | [jobs/journal.go](../../internal/jobs/journal.go), [app/wire_journal.go](../../internal/app/wire_journal.go) | the job kind `revocation-journal-ship` and the timer that enqueues it |
 | `journal_replay.go` in `internal/auth/token`, `internal/auth/principal`, `internal/authz`, `internal/project` | the handlers and comparators of the identity and authorization events |
+| [blob/restoreversions](../../internal/blob/restoreversions/restoreversions.go), [blob/s3/versions.go](../../internal/blob/s3/versions.go), [cmd/trove/admin_restoreversions.go](../../cmd/trove/admin_restoreversions.go) | `trove admin storage restore-versions`: finds the blobs without an object, lists the versions of each key, removes the delete markers younger than *t* |
+| [maintenance](../../internal/maintenance/deletions.go), [cmd/trove/admin_maintenance.go](../../cmd/trove/admin_maintenance.go), [queries/maintenance.sql](../../internal/meta/postgres/queries/maintenance.sql) | `trove admin maintenance pause-deletions` and `resume-deletions`: the deletion pause in `system_state`, one audit event per change |
 | [backup/postrestore](../../internal/backup/postrestore/postrestore.go), [cmd/trove/admin_postrestore.go](../../cmd/trove/admin_postrestore.go) | `trove admin post-restore`: replica rows, deletion pause, sessions, the fix-ups of orders jobs, system state and revisions, `restored_at`, replay, `system.restored` |
 
 After the audit of the journal: the reader returns every copy and every version (`journal.AllVersions`, `Object.Warning`), the replayer
@@ -442,10 +444,14 @@ works only together with the restore package's fix-ups.
 
 The platform layer of R-HA-023 (WAL archive and base backups through the Barman Cloud plugin) is part of the dev stack behind `TROVE_PITR=1`, and the
 point-in-time restore of R-HA-025 is drilled by the set `backup-pitr`. Nothing of it is code of the product except the commands the drill calls
-(`trove admin post-restore`, [internal/backup/postrestore](../../internal/backup/postrestore)) and the chart's post-restore Job; the dev stack side is
+(`trove admin post-restore`, [internal/backup/postrestore](../../internal/backup/postrestore); `trove admin storage restore-versions`,
+[internal/blob/restoreversions](../../internal/blob/restoreversions); `trove admin maintenance pause-deletions` and `resume-deletions`,
+[internal/maintenance](../../internal/maintenance)) and the chart's post-restore Job; the dev stack side is
 [deploy/dev/pitr.sh](../../deploy/dev/pitr.sh), [pitr.yaml](../../deploy/dev/pitr.yaml) and [pitr-restore.yaml](../../deploy/dev/pitr-restore.yaml). What the drill does, its stages
-and what it leaves out: [e2e.md](e2e.md#the-point-in-time-restore-drill). `trove admin storage restore-versions` and `maintenance resume-deletions` do not exist
-([H-767](../spec/ha-and-helm.md#h-767--the-commands-of-r-ha-025-steps-5-and-7-do-not-exist)): the drill rolls the bucket back with the S3 API and clears the deletion pause with SQL.
+and what it leaves out: [e2e.md](e2e.md#the-point-in-time-restore-drill). `restore-versions` removes only the delete markers younger than *t* from the keys of the blobs that `trove admin storage verify` finds without an
+object ([Q-HA-270](../spec/ha-and-helm.md#q-ha-270--restore-versions-removes-the-delete-markers-younger-than-t-from-the-keys-of-referenced-blobs-without-an-object-and-nothing-else));
+its tests are `internal/blob/restoreversions` (a versioned fake store) and [test/integration/restoreversions](../../test/integration/restoreversions) (the binary against the
+versioned bucket of the integration stack).
 
 ## The create pipeline
 

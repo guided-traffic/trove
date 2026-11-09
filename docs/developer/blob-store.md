@@ -26,6 +26,7 @@ the verifying reader or a range.
 | [usagefold.go](../../internal/blob/usagefold.go) | `UsageFolder`: the fold loop of the usage counters (R-STOR-003) and its `Fold` iteration |
 | [conformance.go](../../internal/blob/conformance.go) | startup check, conformance checks, `AwaitStartupCheck` |
 | [sql.go](../../internal/blob/sql.go), [tables.go](../../internal/blob/tables.go), [metrics.go](../../internal/blob/metrics.go), [errors.go](../../internal/blob/errors.go) | the `DB` interface, the `blobRows` seam and its sqlc implementation, export-class registration, metric families, `errs` mapping |
+| [restoreversions/restoreversions.go](../../internal/blob/restoreversions/restoreversions.go), [s3/versions.go](../../internal/blob/s3/versions.go) | `trove admin storage restore-versions` (R-HA-025 step 5, [backup.md](backup.md#the-platform-layer-and-the-point-in-time-drill)): runs `verify`, lists the versions of each key without an object (`Client.ListVersions`), removes the delete markers younger than *t* (`Client.DeleteVersion`); never an object version |
 | [verify/verify.go](../../internal/blob/verify/verify.go), [verify/pg.go](../../internal/blob/verify/pg.go) | `trove admin storage verify` ([below](#storage-verify-r-stor-027-q-stor-200)): `Run` over a `Source` (the pages and the items) and an `Objects` (`Head`), `PGSource` |
 | [s3/client.go](../../internal/blob/s3/client.go) | `s3.Client` (the `ObjectStore`), `NewFromFactory` |
 | [s3/credentials.go](../../internal/blob/s3/credentials.go) | credential sources of R-STOR-031, SDK configuration |
