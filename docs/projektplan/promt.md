@@ -262,6 +262,12 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   while the body arrived"; passes alone). The test asserts that no database transaction stays open longer than 1 s while
   the body of a slow publish arrives. Done when the cause is found: a transaction the publish really holds during the
   body (a product defect), or an unrelated transaction of the shared stack the test counts (a test defect).
+  Read on 2026-11-09: the publish holds none while the body arrives (`handlePublish` decides and pre-checks ownership before the
+  body, `publish.Scan` streams the attachment through `Ingest().Spool` into the local spool file with no database handle, and the
+  first statement after the body is `VersionFacts`); the watch counts every connection of the stack's database, so the candidates
+  are a background transaction of the replica slowed past 1 s on the loaded host, or the commit's transaction counted because
+  `bodySent` closes only after the client goroutine returns from its last write. The test now names the transactions it counted;
+  next step: read that name in a recurrence and narrow the watch to it, or measure the request's own transactions instead.
 - **F-102 · `TestR_BAS_014_ThousandWritesToOnePathCauseOneProbe` failed once under host load** (seen once, by the WP5
   builder; passes alone and three times in a row). Done when the cause is found and fixed.
 - **F-95 · One Angular unit test failed once in 1,080, its name not recorded** (seen once, by the F-86 builder on a loaded

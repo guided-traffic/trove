@@ -102,6 +102,9 @@ func TestR_NPM_007_ASlowPublishOf200MiB(t *testing.T) {
 	a := e.replica("web-a")
 	const size = 200 << 20
 	var idle, peak atomic.Int64
+	// held names the transactions the watch counted, the first time it counted any: the next failure says which work held
+	// one (F-105), the request's own or the replica's background work.
+	var held atomic.Value
 	// done ends the heap watch when the answer arrives; bodySent ends the
 	// transaction watch when the client has sent the last byte, so the commit
 	// transaction that follows, whose statements pass through "idle in
@@ -130,6 +133,12 @@ func TestR_NPM_007_ASlowPublishOf200MiB(t *testing.T) {
 				n, err := e.st.TryNumber(`SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() AND xact_start < now() - interval '1 second'`)
 				if err == nil && n > idle.Load() {
 					idle.Store(n)
+					if held.Load() == nil {
+						if who, err := e.st.TryText(`SELECT string_agg(format('pid %s, %s, application %L, %s for %s: %s', pid, backend_type, application_name, state, now() - xact_start, left(query, 160)), '; ')
+							FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() AND xact_start < now() - interval '1 second'`); err == nil {
+							held.Store(who)
+						}
+					}
 				}
 			}
 			runtime.ReadMemStats(&ms)
@@ -156,7 +165,7 @@ func TestR_NPM_007_ASlowPublishOf200MiB(t *testing.T) {
 		t.Fatalf("the upload took %s: it was not slow", took)
 	}
 	if got := idle.Load(); got != 0 {
-		t.Fatalf("%d connections held a transaction older than 1 s while the body arrived", got)
+		t.Fatalf("%d connections held a transaction older than 1 s while the body arrived: %v", got, held.Load())
 	}
 	if grew := peak.Load() - int64(base.HeapAlloc); grew > 160<<20 {
 		t.Fatalf("the heap grew by %d MiB for a %d MiB tarball", grew>>20, size>>20)
