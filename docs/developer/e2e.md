@@ -173,7 +173,7 @@ make e2e SET=nuget-clients-down  # remove the NuGet client pods
 make e2e SET=nuget           # every TestNuGet... but TestNuGetClosing... and TestNuGetHA...: local, remote and virtual repositories, a project's partner (TestNuGetProjectPartner), E3.2, E3.6 and E3.7 with the real clients; the test upstream and three client pods (Q-NUGET-34, Q-NUGET-70); CI job e2e-nuget on every change
 make e2e SET=nuget-closing   # the additions of the closing run (TestNuGetClosing: R-NUGET-030 and R-NUGET-031 with Valkey stopped; TestNuGetClosingPublic: the read-only subset against nuget.org; exports TROVE_E2E_NUGET_CLOSING=1); CI leg of a closing dispatch
 make e2e SET=nuget-ha        # TestNuGetHA: drain variant A, the PostgreSQL switchover and the Valkey failover under the npm and NuGet load together (R-HA-059, R-ARCH-024); CI job e2e-nuget in the nightly workflow; starts both client pods and both test upstreams
-make e2e SET=drain-load      # E5.9: TestDrainLoad, drain variants B, C and E under the full load, the long-transfer probes and R-STOR-046's gc-full; both client pods; profile `drain`; CI job e2e-nuget, leg drain-load, nightly (about 55 minutes; needs about 12 cores and 10 GiB)
+make e2e SET=drain-load      # E5.9: TestDrainLoad, drain variants B, C and E under the full load, the long-transfer probes and R-STOR-046's gc-full; both client pods; profile `drain`; all three variants in one cluster, for local runs; CI runs the legs drain-load-b, -c and -e (one variant each; needs about 12 cores and 10 GiB)
 make e2e SET=drain-load-pooler  # E5.9: TestDrainLoadPooler, drain variant D (an instance of the request pooler) under the same load, in the pooler profile (TROVE_POOLER=1, set by the set); CI job e2e-drain-pooler, nightly
 make nuget-clients-image     # only build the NuGet clients image into the local Docker
 make nuget-clients-smoke     # the image like a pod against the counting NuGet test upstream, without a cluster
@@ -1783,14 +1783,15 @@ drain criterion): variants A to E of the drain test under the whole load of R-HA
 (lengths, the attempt check),
 [Q-HA-241](../spec/ha-and-helm.md#q-ha-241--the-long-transfer-probes-hold-one-download-on-the-evicted-pod-and-the-uploads-are-repeated-by-the-client)
 (the probes),
-[Q-HA-242](../spec/ha-and-helm.md#q-ha-242--the-variants-under-the-full-load-run-in-the-nightly-in-three-legs) (the legs),
+[Q-HA-242](../spec/ha-and-helm.md#q-ha-242--the-variants-under-the-full-load-run-in-the-nightly-in-five-legs) (the legs),
 [Q-STOR-211](../spec/storage.md#q-stor-211--r-stor-046s-drain-criterion-runs-a-real-full-collection-run-on-the-evicted-worker-and-judges-the-retention-half-on-the-probe-jobs-until-retention-runs-exist)
 (R-STOR-046).
 
 | Set | Test | Variants | Cluster | CI leg (nightly and dispatch) |
 |---|---|---|---|---|
 | `nuget-ha` | `TestNuGetHA` | A, and the PostgreSQL switchover and Valkey failover of R-HA-052 | profile `drain`, both client pods | job `e2e-nuget`, lane 1 |
-| `drain-load` | `TestDrainLoad` | B, C, E | profile `drain`, both client pods | job `e2e-nuget`, second leg (`max-parallel: 1`), lane 1, port 8109 |
+| `drain-load` | `TestDrainLoad` | B, C, E in one cluster (local) | profile `drain`, both client pods | none: CI runs the three legs below |
+| `drain-load-b`, `-c`, `-e` | `TestDrainLoad`, one subtest each | B, C, E | as `drain-load`, a cluster per variant | job `e2e-nuget`, legs after `nuget-ha` (`max-parallel: 1`), lane 1, ports 8109, 8111, 8112 |
 | `drain-load-pooler` | `TestDrainLoadPooler` | D | profile `drain` and `TROVE_POOLER=1` | job `e2e-drain-pooler`, lane 2 after `npm-ha-soak`, port 8110 |
 
 The profile `drain` ([values-drain.yaml](../../deploy/dev/values-drain.yaml), `up.sh`, `lib.sh`) is the scatter profile with

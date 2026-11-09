@@ -7,7 +7,7 @@
 # npm load); job e2e-upgrade runs the set upgrade (published releases upgraded to the commit's image under the npm and NuGet loads, with a
 # browser journey; switched off in the nightly run until the first stable release, Q-ARCH-340, and run by a dispatch with sets=upgrade); job npm-ha-soak runs the 20-minute pod crash of R-HA-052 under the npm load and the npm load scripts of R-ARCH-027
 # (Q-HA-67); job e2e-nuget runs nuget-ha (TestNuGetHA: the drain and failover under the NuGet load and the npm load, on the large class,
-# Q-HA-102) and drain-load (TestDrainLoad: drain variants B, C and E of R-HA-059 under that load, E5.9, Q-HA-242); job e2e-drain-pooler runs
+# Q-HA-102) and drain-load-b, -c and -e (TestDrainLoad: drain variants B, C and E of R-HA-059 under that load, one cluster each, E5.9, Q-HA-242); job e2e-drain-pooler runs
 # drain-load-pooler (TestDrainLoadPooler: variant D in the pooler profile); job e2e-ci runs ci-ha (E4.7); job e2e-bastion runs the sets bastion and
 # bastion-long (R-BAS-049); job e2e-vuln runs vuln, vuln-long and vuln-pooler (R-VULN-029; vuln-pooler is the blocks through drain variant D on the cluster
 # with the poolers of R-HA-058, on large); job e2e-mirror runs mirror and mirror-long (R-REPO-059, an OCI pass among them); job e2e-oci runs oci-long (R-OCI-011: a push cut by the drain of the receiving pod); job e2e-backup runs the set backup (R-BAK-029: the restore
@@ -30,7 +30,7 @@
 # Sizes: docs/developer/releasing.md#ci.
 # Q-ARCH-431: the kind legs on the large class run in three lanes, so at most three large legs of this run are active at once
 # (one per worker node of the class: three nodes of 16 CPUs, a kind leg about 12 cores). Lane 1: e2e-npm (npm-ha, then ha-suite),
-# then e2e-nuget (nuget-ha, then drain-load). Lane 2: e2e (drain-roles, then failover), then npm-ha-soak, then e2e-drain-pooler. Lane 3: e2e-vuln (its large leg vuln-pooler, the
+# then e2e-nuget (nuget-ha, then drain-load-b, -c, -e). Lane 2: e2e (drain-roles, then failover), then npm-ha-soak, then e2e-drain-pooler. Lane 3: e2e-vuln (its large leg vuln-pooler, the
 # GitHub-hosted legs are not in the lanes), then e2e-backup, e2e-mirror (mirror, then mirror-long), e2e-oci. Each lane job
 # needs its predecessor with `!cancelled()`, so a leg the dispatch does not select, or a failed one, does not stop the lane.
 name: HA and Performance (nightly)
@@ -794,8 +794,8 @@ jobs:
   # and the set loads them without building them again (Q-ARCH-327). TestNuGetHA needs about 16 cores under its load (Q-HA-102), far more
   # than a GitHub-hosted runner's 4, so the job runs on the large class; the set loads the 2.3 GB clients images into the control-plane
   # node only (the node of the client pods), which keeps them inside a large pod's Docker storage. Edge port 8090 is the first free port of
-  # both workflows. The leg drain-load (TestDrainLoad, E5.9, edge port 8109) runs the variants B, C and E of R-HA-059 under the same load, with the
-  # long-transfer probes and R-STOR-046's full collection run; it follows nuget-ha (max-parallel: 1), so the lane holds one large leg at a time.
+  # both workflows. The legs drain-load-b, -c and -e (TestDrainLoad, E5.9, edge ports 8109, 8111, 8112) run the variants B, C and E of R-HA-059 under the same load, with the
+  # long-transfer probes and R-STOR-046's full collection run, one variant per cluster; they follow nuget-ha (max-parallel: 1), so the lane holds one large leg at a time.
   # Lane 1 (Q-ARCH-431): after e2e-npm, whatever its result.
   e2e-nuget:
     name: e2e-nuget on kind (${{ matrix.set }})
@@ -810,8 +810,12 @@ jobs:
         include:
           - set: nuget-ha
             port: "8090"
-          - set: drain-load
+          - set: drain-load-b
             port: "8109"
+          - set: drain-load-c
+            port: "8111"
+          - set: drain-load-e
+            port: "8112"
     env:
       TROVE_IMAGE: guidedtraffic/trove:dev
       TROVE_DEV_CLUSTER: trove-${{ matrix.set }}-${{ github.run_id }}

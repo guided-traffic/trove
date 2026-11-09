@@ -1103,10 +1103,10 @@ Variants, with the same load and pass conditions:
 | Variant | The drained node also hosts | Additional pass condition | Runs |
 |---|---|---|---|
 | A | nothing else | — | every night and on dispatch, in HA and Performance (2 minutes of load before and 3 after; every change to `main` until the owner's decision of 2026-11-01, [Q-HA-67](#q-ha-67--where-and-how-often-the-scenarios-under-npm-load-run)) |
-| B | the Valkey primary and one Sentinel | `trove_valkey_primary_changes_total` rises on every replica; no replica turns unready | nightly and on dispatch, in HA and Performance (leg `drain-load`, [Q-HA-242](#q-ha-242--the-variants-under-the-full-load-run-in-the-nightly-in-three-legs)) |
-| C | the PostgreSQL primary | CloudNativePG has requested the switchover (`.status.targetPrimary` names another instance or the operator's failover marker `pending`) when the old primary is evicted; the traffic sees no failed request | nightly and on dispatch (leg `drain-load`, Q-HA-242) |
+| B | the Valkey primary and one Sentinel | `trove_valkey_primary_changes_total` rises on every replica; no replica turns unready | nightly and on dispatch, in HA and Performance (leg `drain-load-b`, [Q-HA-242](#q-ha-242--the-variants-under-the-full-load-run-in-the-nightly-in-five-legs)) |
+| C | the PostgreSQL primary | CloudNativePG has requested the switchover (`.status.targetPrimary` names another instance or the operator's failover marker `pending`) when the old primary is evicted; the traffic sees no failed request | nightly and on dispatch (leg `drain-load-c`, Q-HA-242) |
 | D | an instance of the transaction-mode pooler (pooler profile, R-HA-058) | — | nightly and on dispatch (leg `drain-load-pooler`, Q-HA-242) |
-| E | a running backup pod (R-HA-060) | the backup Job completes, and the eviction is not counted against `backoffLimit` | nightly and on dispatch (leg `drain-load`, Q-HA-242) |
+| E | a running backup pod (R-HA-060) | the backup Job completes, and the eviction is not counted against `backoffLimit` | nightly and on dispatch (leg `drain-load-e`, Q-HA-242) |
 
 **How the test drains variants B to E** ([Q-HA-170](#q-ha-170--a-variant-drain-evicts-the-releases-pods-and-the-variants-dependency-by-their-own-selectors-in-parallel-drains-and-nothing-else-on-the-node)
 to Q-HA-174). `deploy/dev/drain.sh [--also valkey|postgres|pooler]… <node>` drains the release's pods and, for B, C and D, the
@@ -9292,7 +9292,7 @@ development agent would revisit the held probe when the distribution alone is re
 upload repetition when a resumable generic upload exists.
 **Applied:** `test/e2e/drain_transfers_test.go`.
 
-### Q-HA-242 · The variants under the full load run in the nightly, in three legs
+### Q-HA-242 · The variants under the full load run in the nightly, in five legs
 
 Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
 
@@ -9303,7 +9303,7 @@ full load needs about 12 cores and 10 GiB (Q-HA-102), and Q-ARCH-431 allows thre
 | Option | What it means | For | Against |
 |---|---|---|---|
 | (a) In Test and Release | Four more drains in the release path | As the table says | Over an hour on the release path; the large class is shared with the push legs (Q-ARCH-432) |
-| (b) Nightly, three legs (chosen) | Variant A in `nuget-ha` (job `e2e-nuget`, lane 1), B, C and E in `drain-load` (the same job, after `nuget-ha`, `max-parallel: 1`), D in `drain-load-pooler` (job `e2e-drain-pooler`, lane 2 after `npm-ha-soak`, the pooler profile) | A heavy leg keeps at most one heavy neighbour (the lanes 1 and 2 are the heavy ones); D needs the cluster in the pooler profile, so it cannot share a cluster with B, C, E | Lane 1 grows by the leg `drain-load` (about 55 minutes) and lane 2 by D (about 25 minutes) |
+| (b) Nightly, five legs (chosen) | Variant A in `nuget-ha` (job `e2e-nuget`, lane 1), B, C and E in `drain-load-b`, `-c` and `-e` (the same job, one cluster each, after `nuget-ha`, `max-parallel: 1`), D in `drain-load-pooler` (job `e2e-drain-pooler`, lane 2 after `npm-ha-soak`, the pooler profile) | A heavy leg keeps at most one heavy neighbour (the lanes 1 and 2 are the heavy ones); D needs the cluster in the pooler profile, so it cannot share a cluster with B, C, E | Lane 1 grows by three legs (about 35 minutes each; one cluster per variant, because the single leg for B, C and E lost its runner three times in a row, runs 42586174028 and 42595496799) and lane 2 by D (about 25 minutes) |
 | (c) One leg for all five | One cluster | One job | A leg of over two hours; D needs the poolers, the others do not |
 
 **Choice:** (b). **Rationale:** the lanes and the owner's rule decide; the cost is wall time of the nightly, which Q-ARCH-431 said to revisit

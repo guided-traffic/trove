@@ -1260,10 +1260,10 @@ so the journal ships with the backup, not after it (Q-ROAD-2).
   installs afterwards; a long transfer is cut at most once per evicted `web` pod and completes by
   resume; no trove container gets `SIGKILL`; and every job of an evicted `worker` finishes
   elsewhere with `attempt` unchanged. R-STOR-046's drain criterion passes in the same runs.
-  Built in the nightly HA and Performance workflow: variant A and the failovers (`nuget-ha`), variants B, C and E (`drain-load`) and variant D (`drain-load-pooler`), each
+  Built in the nightly HA and Performance workflow: variant A and the failovers (`nuget-ha`), variants B, C and E (`drain-load-b`, `-c`, `-e`) and variant D (`drain-load-pooler`), each
   with the long-transfer probes and a full collection run on the evicted worker ([e2e.md](../developer/e2e.md#the-drain-under-the-full-load),
   [Q-HA-240](../spec/ha-and-helm.md#q-ha-240--the-variants-b-to-e-under-the-full-load-run-as-long-as-variant-a-and-judge-attempt-unchanged-on-the-jobs-that-moved) to
-  [Q-HA-242](../spec/ha-and-helm.md#q-ha-242--the-variants-under-the-full-load-run-in-the-nightly-in-three-legs),
+  [Q-HA-242](../spec/ha-and-helm.md#q-ha-242--the-variants-under-the-full-load-run-in-the-nightly-in-five-legs),
   [Q-STOR-211](../spec/storage.md#q-stor-211--r-stor-046s-drain-criterion-runs-a-real-full-collection-run-on-the-evicted-worker-and-judges-the-retention-half-on-the-probe-jobs-until-retention-runs-exist)).
   Not built: the retention run of R-STOR-046 (the product has none), the 5 and 10 minutes of load (2 and 3, Q-HA-240).
 - **E5.10** PostgreSQL and Valkey failovers under client load. PostgreSQL: a switchover and drain
