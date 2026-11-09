@@ -34,7 +34,7 @@ jobs:
     # Publishes: release events only (a dispatch runs the check alone).
     if: github.event_name == 'release'
     runs-on: self-hosted
-    # contents: write for the release assets (softprops/action-gh-release, and the SPDX upload of anchore/sbom-action is off).
+    # contents: write for the release assets (softprops/action-gh-release uploads the SPDX file).
     # Nothing else of the token is used: no OIDC token, no attestation API, no pages.
     permissions:
       contents: write
@@ -204,18 +204,25 @@ jobs:
           docker buildx imagetools inspect "guidedtraffic/trove:${GITHUB_REF_NAME#v}" --format '{{ json .Manifest }}' | jq -e --arg d "$DIGEST" '.digest == $d' >/dev/null \
             || { echo "::error::the version tag does not resolve to the asserted digest"; exit 1; }
 
-      - name: Generate and upload SBOM
-        uses: anchore/sbom-action@v0
-        with:
-          image: guidedtraffic/trove:${{ steps.version.outputs.version }}
-          format: spdx-json
-          syft-version: ${{ env.SYFT_VERSION }}
-          # Into the workspace, where the next step picks it up; without it the action writes to a temporary directory.
-          output-file: ${{ github.workspace }}/guidedtraffic-trove_${{ steps.version.outputs.version }}.spdx.json
-          upload-artifact: true
-          upload-release-assets: false
+      # The SPDX file of the release is written by the pinned syft image (SYFT_IMAGE, the same version as the attestation above,
+      # Q-HA-204). The image is read from the registry by the tag asserted above (`registry:` keeps syft off the runner's Docker
+      # daemon), and nothing is downloaded from GitHub at release time (F-120). The output is the file of the former
+      # step that wrapped the syft CLI: spdx-json, same name, same place for the upload below.
+      - name: Generate the SPDX SBOM at the syft pin
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          out="${GITHUB_WORKSPACE}/guidedtraffic-trove_${VERSION}.spdx.json"
+          docker run --rm "${SYFT_IMAGE}" "registry:guidedtraffic/trove:${VERSION}" -o spdx-json > "$out"
+          test -s "$out"
+
+      - name: Upload the SPDX SBOM as a workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: guidedtraffic-trove_${{ steps.version.outputs.version }}.spdx.json
+          path: ${{ github.workspace }}/guidedtraffic-trove_${{ steps.version.outputs.version }}.spdx.json
+          if-no-files-found: error
 
       - name: Upload SBOM to release
         uses: softprops/action-gh-release@v3

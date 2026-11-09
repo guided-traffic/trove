@@ -365,7 +365,7 @@ as the organisation's standard has them, after the risk was named
 Subject, per credential:
 
 - `DOCKERHUB_PAT`: a moved `aquasecurity/trivy-action` tag runs in `container-scan` after the Docker Hub login, on every push
-  and pull request; a moved `anchore/sbom-action`, `softprops/action-gh-release` or `docker/scout-action` tag runs in the job
+  and pull request; a moved `softprops/action-gh-release` or `docker/scout-action` tag runs in the job
   that pushes the image, at the next release; the `docker/*` and `azure/*` tags of the other jobs that log in, in release.yml and
   in performance.yml, run with the login as well. With the token, the image of an existing tag can be replaced
   ([H-79](../spec/ha-and-helm.md#h-79--artifacts-are-unsigned-and-nothing-checks-their-origin)), so every installation that
@@ -382,7 +382,7 @@ tag is noticed and restored.
 Hardening that would mitigate it (none is in place):
 
 - commit-SHA pins, with the tag as a comment, for the third-party actions of the jobs that hold these secrets:
-  `aquasecurity/trivy-action`, `anchore/sbom-action`, `softprops/action-gh-release`, `docker/scout-action` and the `docker/*`
+  `aquasecurity/trivy-action`, `softprops/action-gh-release`, `docker/scout-action` and the `docker/*`
   actions of build.yml, and `renovatebot/github-action`; a moved tag then changes nothing until a reviewed update;
 - a GitHub environment with protection rules (deployment from `main` only, required reviewers) for the jobs that publish,
   holding `DOCKERHUB_PAT` and the App's credentials as environment secrets, so that the test jobs and pull requests cannot

@@ -5362,8 +5362,8 @@ Priority: **P1** · Covers: HA-056
   `sbom: generator=…` in build.yml). The release also carries the image's SPDX SBOM as an asset,
   `guidedtraffic-trove_*.spdx.json`. Both SBOMs come from the one syft version `SYFT_VERSION` of
   [versions.env](../../tools/versions.env): the attestation from the generator image of
-  [tools/sbom-generator](../../tools/sbom-generator) (built from `SYFT_IMAGE`, the same version by digest), the asset from
-  anchore/sbom-action; the `build` job pushes the image by digest, asserts the creators of both platforms and only then tags it, and the job `sbom-generator` of Test
+  [tools/sbom-generator](../../tools/sbom-generator) (built from `SYFT_IMAGE`, the same version by digest), the asset from the
+  image `SYFT_IMAGE` itself, run by the `build` job on the release's registry tag (Q-HA-204; no download from GitHub); the `build` job pushes the image by digest, asserts the creators of both platforms and only then tags it, and the job `sbom-generator` of Test
   and Release proves the generator before any release (Q-HA-166). Docker Scout scans the image; its report goes to the job summary
   and to `scout-report.sarif`. The workflow sets no `exit-code` input; the action's default for it is not
   verified here.
@@ -8855,7 +8855,7 @@ Status: **Decided by the development agent** — selected from the options below
 
 ### Q-HA-166 · The SBOM attestation of the image comes from a generator that runs the pinned syft
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. The decision on the attestation stands; the SPDX file of the release, which this decision named as the asset of anchore/sbom-action, is written by the pinned image since [Q-HA-204](#q-ha-204--the-spdx-file-of-the-release-is-written-by-the-pinned-syft-image-from-the-registry-tag).
 
 The release carried two syft versions: BuildKit's bundled scanner wrote the SBOM attestation of the image index with syft v1.51.0 (the SPDX creators of the `0.25.0` attestation name `Tool: syft-v1.51.0` and `Tool: buildkit-v0.34.2`), and anchore/sbom-action wrote the SPDX file of the release with `SYFT_VERSION`, v1.55.0. Evidence for the options:
 
@@ -9158,6 +9158,26 @@ the hold (33 to 54 s measured, 28 s without it).
 **Applied:** R-HA-059 (how the test drains variants B to E; rule 5's Valkey row); R-HA-057 rule 8; the failure table; Q-HA-171 (a note); `test/e2e/drain_variants_hold_test.go`,
 `test/e2e/drain_variants_test.go`; [e2e.md](../developer/e2e.md#variant-b-the-hold).
 
+
+### Q-HA-204 · The SPDX file of the release is written by the pinned syft image from the registry tag
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: The SPDX file of the release (`guidedtraffic-trove_<version>.spdx.json`) came from `anchore/sbom-action@v0` with `syft-version: SYFT_VERSION`. That action installs syft from GitHub: its installer is read from `raw.githubusercontent.com` and the archive comes from `github.com/anchore/syft/releases/download/<version>/` (the source of the action, `src/github/SyftGithubAction.ts`, read on 2026-11-09). Release Docker & Helm 42569132981 (v0.31.0) needed three attempts: the logs of attempts 1 and 2 end with exit 1 in the step `Generate and upload SBOM`, and the 504 that GitHub answered for the release asset is the one F-120 records. The SBOM attestation does not touch GitHub: the generator image of Q-HA-166 is built from `SYFT_IMAGE`, a digest of Docker Hub. So the one download of the release path was the asset's.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the action and retry the step on failure | A second attempt of the same download | No code change | The release still depends on GitHub's release assets at release time; a retry is a re-run by hand under rule 7 |
+| (b) The pinned image `SYFT_IMAGE` run as `docker run --rm "${SYFT_IMAGE}" "registry:guidedtraffic/trove:<version>" -o spdx-json`, output redirected to the file (chosen) | The same image that writes the attestation writes the file; the source is the registry tag asserted before | No GitHub download; one image pin for both SBOMs (the version stays one); the image is already pulled for the generator | The step runs `docker run` on the runner, and the release's syft is a container's syft (the same binary) |
+| (c) The same, with the auto source (`guidedtraffic/trove:<version>`, the action's own form) | Syft reads the runner's Docker daemon first, then the registry | Identical to the action's source form | The daemon is read first, and the release image is not loaded into it (the builder pushes by digest); a stale copy under the tag would be scanned (see the evidence below) |
+| (d) Syft from a binary of the repository or a tarball in the build image | The binary is a file checked in or built | No network | A second place that holds the version; the pin rule of the repository asks for one |
+| (e) Scan the generator's own registry image of this run with `tools/sbom-generator/scan.sh` (`dir:` scans of the root file system) | The SPDX of the root file system, not of the image | No extra image | The file is a different subject (the rootfs, not the image index with its platforms); the format changes |
+
+**Choice:** (b). The step runs `docker run --rm "${SYFT_IMAGE}" "registry:guidedtraffic/trove:${VERSION}" -o spdx-json > "$out"` with `test -s` after it, in [build.yml](../../.github/workflows/build.yml) (step `Generate the SPDX SBOM at the syft pin`). The file goes into the workspace under the old name, and an `actions/upload-artifact@v7` step keeps the workflow artifact of the old step. `registry:` makes syft read the registry only, so the runner's daemon is not read.
+
+**Rationale:** The image is the pin of the attestation, so the version of both SBOMs is one digest, checked by [check-pins.sh](../../tools/sbom-generator/check-pins.sh), which now requires this command and refuses `anchore/sbom-action`, `anchore/syft/releases` and `syft-version:` in build.yml. The format and the name of the file do not change. Evidence, measured on 2026-11-09 on a Docker Desktop host (linux/amd64 platform flag, the runner's platform): `docker run … registry:guidedtraffic/trove:0.31.0 -o spdx-json` against the v0.31.0 release asset gives 79 packages in both, the same files (946) and relationships (1174), the same creators (`Tool: syft-1.55.0`) and the same name; the documents differ only in the namespace, the creation time, and one package, the image itself, whose SHA-256 and purl digest differ. The asset names the amd64 manifest `sha256:a41b92e2…`, which the registry does not know (`not found`); the v0.31.0 index has the amd64 manifest `sha256:c13768c4…`, and the indexes of attempts 1 and 2 have `d73cc01c…` and `402375d0…`. The mechanism that produced `a41b…` is not verified; the auto source of the action (c) reads a local image first, which would explain a digest that no push produced, and option (b) does not read the daemon. Not verified: the run of the step on the self-hosted runner (the first release after this change runs it); the anonymous or logged-in pull of the public tag from the runner (the login of the build job is in effect there); the platform of the runner (amd64, as the earlier runs). Revisit when a release's asset names a digest that the registry does not hold, or if syft stops accepting `registry:` for the tag.
+
+**Applied in the spec:** [Q-HA-166](#q-ha-166--the-sbom-attestation-of-the-image-comes-from-a-generator-that-runs-the-pinned-syft) (the status line and the release section above), the release section of this page. Code: [build.yml](../../.github/workflows/build.yml) (the step and its upload), [check-pins.sh](../../tools/sbom-generator/check-pins.sh), [versions.env](../../tools/versions.env) (the comment of the SBOM pins). Elsewhere: [releasing.md](../developer/releasing.md#ci) (the table of the release jobs and the one-syft paragraph).
 
 ### Q-HA-202 · The final deletion of the registry row runs on the request pool
 

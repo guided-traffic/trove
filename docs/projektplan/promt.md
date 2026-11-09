@@ -279,12 +279,9 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   a6d8767a, no product change since the green run 42557795728) failed other rows of the same set the same way: 10 of 3,245 requests
   through the scatter edge answered 502 with a slowest request of 15 s, and a replica with a wrong Valkey primary name turned ready
   while its database check took 2 s. Both point at a starved cluster on the runner rather than at trove; the runner's load was not
-  measured.
-- **F-120 · The release build of v0.31.0 needed two re-runs: GitHub answered 504 for the pinned syft's release assets** (Release
-  Docker & Helm 42569132981, 2026-11-09, attempts 1 and 2 red, attempt 3 green; rule 7): `https://github.com/anchore/syft/releases/download/v1.55.0/`
-  answered 504 for some minutes, also from outside the runners, while the same file came through the API and other releases' assets
-  downloaded. Done when the SBOM step does not depend on that one download at release time (the pinned syft in the build image, as the
-  SBOM generator job of Test and Release already has it).
+  measured. Read on 2026-11-09 (Q-ARCH-432): the first run did not share the cluster with the nightly (no nightly was active at its
+  04:18 UTC start), so the nightly's bound does not reach it; its neighbours were its own five large legs (push, access-long, npm,
+  oci, deb). Cause not settled; revisit when a run with four or more large legs of Test and Release fails the same way.
 - **F-105 · `TestR_NPM_007_ASlowPublishOf200MiB` fails under load** (seen twice: by the F-83 builder, an S3 UploadPart
   cancellation followed by the package timeout, and by the F-101 builder, "1 connections held a transaction older than 1 s
   while the body arrived"; passes alone). The test asserts that no database transaction stays open longer than 1 s while

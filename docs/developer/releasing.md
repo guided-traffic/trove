@@ -21,7 +21,7 @@ share the pod's budget, without `make` or a C compiler.
 | Class | Label | Pods | CPU request / limit | RAM request / limit (runner and dind together) | Disk: `_work` / Docker | Jobs |
 |---|---|---|---|---|---|---|
 | wds18-small | `runs-on: self-hosted` | 0–24 | 1 / 6 | 4 GiB / 10 GiB | 10 GiB / 15 GiB | every job of Test and Release except the kind legs, Release Docker & Helm, Renovate |
-| wds18-large | `runs-on: large` | 0–6 | 2 / 16 | 8 GiB / 20 GiB | 20 GiB / 30 GiB | the kind legs `e2e` (push, access-long) and `e2e-npm` of Test and Release; `e2e` (failover, drain-roles), `e2e-npm` (npm-ha, ha-suite), `npm-ha-soak`, `e2e-oci` (oci, oci-closing, oci-long), `e2e-nuget` (nuget-ha, [Q-HA-102](../spec/ha-and-helm.md#q-ha-102--the-cpu-of-the-nuget-drain-and-where-its-leg-runs)), `smoke-published` of Release Docker & Helm ([the post-release check](#the-post-release-check)), `e2e-mirror` (the sets mirror-long and mirror, [Q-REPO-211](../spec/repositories-and-proxy.md#q-repo-211--the-nightly-install-time-ratio-of-clients-first-runs-on-the-large-class)) and, after all of them, `latency` and `vuln-perf` ([Q-ARCH-325](../spec/architecture.md#q-arch-325--where-do-the-perf-jobs-run-relative-to-the-kind-legs)) of HA and Performance |
+| wds18-large | `runs-on: large` | 0–6 | 2 / 16 | 8 GiB / 20 GiB | 20 GiB / 30 GiB | the kind legs `e2e` (push, access-long) and `e2e-npm` of Test and Release; `e2e` (failover, drain-roles), `e2e-npm` (npm-ha, ha-suite), `npm-ha-soak`, `e2e-oci` (oci, oci-closing, oci-long), `e2e-nuget` (nuget-ha, [Q-HA-102](../spec/ha-and-helm.md#q-ha-102--the-cpu-of-the-nuget-drain-and-where-its-leg-runs)), `smoke-published` of Release Docker & Helm ([the post-release check](#the-post-release-check)), `e2e-mirror` (the sets mirror-long and mirror, [Q-REPO-211](../spec/repositories-and-proxy.md#q-repo-211--the-nightly-install-time-ratio-of-clients-first-runs-on-the-large-class)) and, after all of them, `latency` and `vuln-perf` ([Q-ARCH-325](../spec/architecture.md#q-arch-325--where-do-the-perf-jobs-run-relative-to-the-kind-legs)) of HA and Performance. The nightly bounds its own large legs to three in three lanes ([Q-ARCH-431](../spec/architecture.md#q-arch-431--how-many-large-legs-of-the-nightly-run-start-at-once-and-in-what-order)); Test and Release starts up to five large legs on a push, unbounded, and is not bounded yet ([Q-ARCH-432](../spec/architecture.md#q-arch-432--does-test-and-release-bound-its-large-legs-the-same-way)) |
 | GitHub-hosted | `runs-on: ubuntu-24.04` | GitHub's | 4 vCPU | 16 GB | 108 GB free on `/` after the job deletes the preinstalled SDKs | the kind legs that load the NuGet clients image: `e2e-nuget` of Test and Release, `e2e-ci`, `e2e-bastion`, `e2e-vuln`, in both workflows, and the set `mirror` of `e2e-mirror` in Test and Release; `e2e-upgrade` (HA and Performance only, set `upgrade`, which loads both clients images) |
 
 The measured basis of the nightly assignment ([Q-ARCH-326](../spec/architecture.md#q-arch-326--which-runner-class-runs-which-leg-the-runner-review-of-the-nightly-run)):
@@ -155,7 +155,7 @@ of run 42465102401 where a row says so):
 | kubectl v1.37.2 | `azure/setup-kubectl@v5` | dl.k8s.io (run 42465102401) | action's own download; no failure seen |
 | Node.js | `actions/setup-node@v7` | not checked | action's own download |
 | promtool, Trivy (`make promtool`, `make trivy`) | the Makefile's rules | github.com release assets | [tools/github-download.sh](../../tools/github-download.sh) with the job's token in CI; SHA-256; retries and stall bound |
-| Trivy action, syft (`anchore/sbom-action`), Docker Scout | the actions | not checked | action's own download |
+| Trivy action, Docker Scout | the actions | not checked | action's own download |
 | kind, golangci-lint, govulncheck, gocyclo, oasdiff, osv-scanner | `go install` in the workflows and the Makefile | the Go module proxy | not a release asset |
 
 `make dev-up` downloads no tool: `deploy/dev/lib.sh` `check_tools` checks kind, kubectl and Helm against their pins and prints the
@@ -339,6 +339,14 @@ Locally, from the repository root, after `make image VERSION=dev` and `make dev-
 then `make dev-down`; the latency tests need `make integration-up && make test-performance`.
 A red long leg does not hold the release: it is recorded as an open finding instead (owner, 2026-11-01).
 
+#### Dispatching a branch
+
+`gh workflow run "HA and Performance (nightly)" --ref <branch> -f sets=<set>` runs the workflow file of the branch, and the run is in
+the concurrency group of its ref (`${{ github.workflow }}-${{ github.ref }}`, [Q-ARCH-433](../spec/architecture.md#q-arch-433--is-the-concurrency-of-the-nightly-run-per-workflow-or-per-ref)),
+so it runs beside main's run instead of replacing main's pending run. Each run bounds its own large legs to three ([Q-ARCH-431](../spec/architecture.md#q-arch-431--how-many-large-legs-of-the-nightly-run-start-at-once-and-in-what-order)):
+a branch dispatch adds its own large legs to those of a run on main, and the development agent coordinates the dispatches it starts. Not verified on GitHub yet
+that a branch run starts beside a run on main.
+
 #### Dispatching one leg
 
 The input `sets` of a dispatch is a comma-separated list of set names or job keys, without spaces: `gh workflow run "HA and Performance (nightly)" --ref main -f sets=upgrade,ha-suite`
@@ -352,7 +360,14 @@ The input exists on `main` once the change is merged, because `gh` runs the work
 
 #### Order and wall time
 
-The kind legs start at once, as before. The perf jobs start after all of them have finished: `latency` (P-13 and P-14) after the nine kind jobs, and `vuln-perf` after
+The large legs run in three lanes, so at most three of them are active at once, one per worker node of the class
+([Q-ARCH-431](../spec/architecture.md#q-arch-431--how-many-large-legs-of-the-nightly-run-start-at-once-and-in-what-order)):
+lane 1 is `npm-ha` then `ha-suite` (job `e2e-npm`, one leg at a time) then `nuget-ha` (job `e2e-nuget`); lane 2 is `drain-roles` then
+`failover` (job `e2e`) then `npm-ha-soak`; lane 3 is the job `e2e-vuln` (its `vuln-pooler` leg; its GitHub-hosted legs run beside the lanes), then
+`backup`, then `mirror` and `mirror-long` (job `e2e-mirror`, one at a time), then `oci-long`. Each lane job waits for its predecessor with `!cancelled()`,
+so an unselected or failed leg does not stop its lane. The estimate, from the durations of run 42571414393 (measured under six-way contention): the lanes take
+about 87, 82 and 86 minutes, against 58 minutes for the kind legs before the change. Not measured yet: the wall time in this order.
+The perf jobs start after all of the kind legs have finished: `latency` (P-13 and P-14) after the nine kind jobs, and `vuln-perf` after
 `latency` ([Q-ARCH-325](../spec/architecture.md#q-arch-325--where-do-the-perf-jobs-run-relative-to-the-kind-legs)). So neither perf job shares the large VM with a kind cluster of this
 workflow or with the other perf job (a Test and Release run that starts meanwhile can still share it). The cost is wall time: in run 42126196109 the two jobs took 5 min 17 s and 7 min 22 s, so a nightly ends about 13 minutes after its longest kind
 leg. Not measured yet: the wall time of a whole nightly in this order, and the V-4 and V-7b results under it.
@@ -524,7 +539,7 @@ job checks out the tag.
 | Job | Runner | What it does |
 |---|---|---|
 | Build Docker Image | `self-hosted` ([CI](#ci)) | [docker/build-push-action](https://github.com/docker/build-push-action) builds [Containerfile](../../Containerfile) for `linux/amd64,linux/arm64` and pushes `guidedtraffic/trove` to Docker Hub with the tags of [docker/metadata-action](https://github.com/docker/metadata-action); provenance and SBOM attestations (the SBOM from the generator image of [tools/sbom-generator](../../tools/sbom-generator), built in this job from `SYFT_IMAGE` and served by digest from a throwaway registry container on the default bridge network (reached by its IP; the buildx builder stays on that network too), [Q-HA-166](../spec/ha-and-helm.md#q-ha-166--the-sbom-attestation-of-the-image-comes-from-a-generator-that-runs-the-pinned-syft); the image is pushed by digest without a tag, a step asserts that both platforms' attestations name the pinned syft, and only then `docker buildx imagetools create` adds the tags); the build arguments are the pins (`NODE_VERSION` from [web/.nvmrc](../../web/.nvmrc), `GO_VERSION` from [go.mod](../../go.mod), `RUNTIME_BASE_IMAGE` from [tools/versions.env](../../tools/versions.env)) and the version, the commit and the commit's date for the binary's version line |
-| Scan and attach the SBOM | same | the SPDX SBOM by anchore/sbom-action with `SYFT_VERSION`, uploaded to the release; a Docker Scout CVE report |
+| Scan and attach the SBOM | same | the SPDX SBOM written by the image `SYFT_IMAGE` on the release tag (`docker run`, no download from GitHub, [Q-HA-204](../spec/ha-and-helm.md#q-ha-204--the-spdx-file-of-the-release-is-written-by-the-pinned-syft-image-from-the-registry-tag)), uploaded to the release; a Docker Scout CVE report |
 | Release Helm Chart to GitHub Pages | same | `deploy/helm/trove` and `deploy/helm/trove-bastion` with `version` and `appVersion` set to the release (and the image tag in the `values.yaml` of `trove`), packaged together with one `helm package`, added to the chart repository's `index.yaml` on the `gh-pages` branch in one push, and `trove-<version>.tgz`, `trove-bastion-<version>.tgz` and `index.yaml` attached to the release |
 | Smoke the published release (E5.8) | `large` ([CI](#ci)) | after both jobs above; [below](#the-post-release-check) |
 
@@ -545,7 +560,7 @@ checked by [test/chart/image_test.go](../../test/chart/image_test.go). The relea
 `  tag:` of the `values.yaml` of the chart `trove`; the test fails when a second line of that shape appears.
 
 **One syft.** `SYFT_VERSION` in [tools/versions.env](../../tools/versions.env) writes both SBOMs of the image: the SPDX file of the release
-(anchore/sbom-action) and the attestation in the image index (the generator of `tools/sbom-generator`, whose
+(the image `SYFT_IMAGE`, run on the registry tag, [Q-HA-204](../spec/ha-and-helm.md#q-ha-204--the-spdx-file-of-the-release-is-written-by-the-pinned-syft-image-from-the-registry-tag)) and the attestation in the image index (the generator of `tools/sbom-generator`, whose
 [Containerfile](../../tools/sbom-generator/Containerfile) takes the syft binary from `SYFT_IMAGE`, the same version by digest, and has no version of its own). The scanner that
 BuildKit bundles, `docker/buildkit-syft-scanner`, ships an older syft (v1.51.0 in its newest release, 1.12.1, checked on 2026-11-07), which is why it is not used.
 `make versions-check` runs [check-pins.sh](../../tools/sbom-generator/check-pins.sh) and fails on a `SYFT_IMAGE` that is not `SYFT_VERSION` by digest, on a default or a

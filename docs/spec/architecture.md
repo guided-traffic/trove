@@ -9337,6 +9337,58 @@ Context: The set `nuget-ha` now starts the npm client pods as well (the drain of
 
 **Applied in the spec:** none (CI wiring). Code: [performance.yml](../../.github/workflows/performance.yml) (jobs `e2e-nuget` and `e2e-upgrade`). Elsewhere: [releasing.md](../developer/releasing.md#ha-and-performance-nightly).
 
+### Q-ARCH-431 · How many large legs of the nightly run start at once, and in what order?
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: The nightly run of 2026-11-09 (42571414393) started six `large` legs at 06:10: `npm-ha`, `mirror-long`, `nuget-ha`, `backup`, `mirror` and `drain-roles`. The class holds six pods, so the other large legs (`ha-suite`, `failover`, `npm-ha-soak`, `oci-long`, `vuln-pooler`) waited for a pod and started at 06:21 to 06:37. `drain-roles` and `npm-ha` failed with request timeouts and 502s that began before the first eviction (the k6 warm-up p99 was 34 s, [e14_drain_roles_test.go](../../test/e2e/e14_drain_roles_test.go)): six kind clusters on three worker nodes of 16 CPUs (a kind drain under the npm load needs about 12 cores, BETA phase 7, 2026-11-01). The legs that started later, with fewer neighbours, passed. The class is ARC pods on the owner's shared cluster, so the nightly must bound itself.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Status quo: every kind leg at once, the class's six pods decide | No change | No wall time | The run of 2026-11-09 (heavy legs starved by five neighbours); the release path shares the same six pods |
+| (b) One `needs` wave after another, each wave three legs | Waves of three large legs; a wave starts when the one before has finished | Simple to read | A wave waits for its slowest leg, so its total is at least the lane total of (d) and usually more (not computed); the heaviest legs can share a wave with each other |
+| (c) One concurrency group for the large jobs, one at a time (Q-ARCH-325 option (d)) | Every large job waits for the one before | Nothing else of the run shares a VM | About two hours of kind legs (Q-ARCH-325) |
+| (d) Three lanes: three chains of `needs`, each lane one large leg at a time (chosen) | At most three large legs of the run are active at once; each lane continues after a failed or unselected leg (`!cancelled()`) | Two heavy lanes and one light lane: a heavy leg has at most one heavy neighbour; a lane's successor starts when its own predecessor ends, not when the slowest leg of the wave ends | The job graph is longer; the lanes are fixed, so a change of a leg's duration changes the order by hand |
+| (e) Two large legs at a time | Two lanes | Fewest neighbours | At least 128 minutes for the kind legs with the measured durations (255 leg-minutes over two lanes, before the lanes' imbalance) |
+
+**Choice:** (d), with three lanes. Lane 1: `e2e-npm` (`npm-ha`, then `ha-suite`), then `e2e-nuget`. Lane 2: `e2e` (`drain-roles`, then `failover`), then `npm-ha-soak`. Lane 3: `e2e-vuln` (its large leg `vuln-pooler`; its GitHub-hosted legs are outside the lanes), then `e2e-backup`, `e2e-mirror` (`mirror`, then `mirror-long`), then `e2e-oci`. The two matrix jobs of the lanes that hold two large legs run them with `max-parallel: 1`; `e2e` starts `drain-roles` first, so the drain has the fewest neighbours.
+
+**Rationale:** The bound is three, one large leg per worker node: three nodes of 16 CPUs hold three kind legs of about 12 cores each, and the class's six pods leave three for Test and Release (which also runs on the class). The lanes keep every heavy leg at most one heavy neighbour, because the two heavy lanes are the only ones that hold heavy legs; the light lane holds backup, mirror, mirror-long, oci-long and vuln-pooler. The estimate uses the measured durations of 42571414393, which ran under six-way contention, so it is an upper bound for the kind legs: lane 1 about 87 minutes (`npm-ha` 25 min 35 s, `ha-suite` 36 min 9 s, `nuget-ha` 25 min 34 s), lane 2 about 82 minutes (`drain-roles` 29 min 38 s, `failover` 16 min 30 s, `npm-ha-soak` 35 min 36 s), lane 3 about 86 minutes (`e2e-vuln` 33 min 1 s, `backup` 21 min 9 s, `mirror` and `mirror-long` 21 min 50 s, `oci-long` 10 min 24 s). Today the kind legs end at 07:08 (58 minutes after 06:10), so the nightly ends about 29 minutes later before `latency` and `vuln-perf` (which follow as before). Not verified: the durations under three lanes (the legs may run faster without six neighbours), the placement of the pods on the nodes (the scheduler places pods by their requests, 2 CPUs each, so one leg per node is the basis, not a guarantee), and the job graph on GitHub (only actionlint is run here; the first dispatch with the change is the test). Revisit when a nightly run in this order shows a leg red with a runner cause, or when the wall time of the kind legs exceeds 100 minutes.
+
+**Applied in the spec:** none (CI wiring). Code: [performance.yml](../../.github/workflows/performance.yml) (the comment above `name`, the `needs` and `if` of `npm-ha-soak`, `e2e-nuget`, `e2e-mirror`, `e2e-backup` and `e2e-oci`, `max-parallel: 1` on `e2e` and `e2e-npm` and `e2e-mirror`). Elsewhere: [releasing.md](../developer/releasing.md#ha-and-performance-nightly).
+
+### Q-ARCH-432 · Does Test and Release bound its large legs the same way?
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: F-119 (section 8 of the project plan) records 429 and 502 answers in the set `push` of Test and Release 42561072166 (2026-11-09). That run started at 04:18 UTC, and no nightly run was active at that time (the nightly of 2026-11-08 ended at 10:09 UTC), so the nightly is not its neighbour. Its large legs ran together: `e2e` push and access-long (two pods), `e2e-npm` (npm), `e2e-oci` and `e2e-deb`, five large pods of the class's six. In that run `e2e-oci` and `e2e-deb` took 28 seconds each: the path filter skipped their work for that diff, so the runner was taken for a short time only.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) No change: five large legs per push, as now (chosen) | Test and Release keeps its order | No wall time on the release path | The push leg sees four neighbours on a shared class, as in F-119; the cause is not settled |
+| (b) Chain `e2e-oci` and `e2e-deb` behind `e2e-npm`, three lanes as in the nightly | At most three large legs of a push | Same bound as the nightly | The lane `npm`, `oci`, `deb` then takes the duration of `oci` and `deb` too, which that run did not measure (the path filter skipped them); when all three paths change, that lane can end after the 22 minutes of the push leg and lengthen the release path |
+| (c) A concurrency group over the large jobs | One large job at a time | No neighbours at all | The release path would be two hours or more |
+
+**Choice:** (a), for now. **Rationale:** F-119 has one run, and its cause is not settled: the 429 and 502 may come from the load of the test itself rather than from the neighbours, and the one measured case (the push leg with four neighbours) cannot separate them. Option (b) adds release wall time on the pushes that touch its three paths, and the release path is the one the owner weighs first. Verified: the five large legs and the path-filter skip of the two short legs, in the API of 42561072166. Not verified: the cause of F-119. Revisit when F-119 recurs in a run where four or more large legs of Test and Release were active; then (b) is decided on that evidence.
+
+**Applied in the spec:** none. Elsewhere: [releasing.md](../developer/releasing.md#ha-and-performance-nightly) (the runners of Test and Release), section 8 of the project plan (F-119 kept, with this evidence).
+
+### Q-ARCH-433 · Is the concurrency of the nightly run per workflow or per ref?
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `performance.yml` had one concurrency group for the workflow, with `cancel-in-progress: false`. GitHub keeps one pending run per group, so a dispatch on a builder's branch (`gh workflow run "HA and Performance (nightly)" --ref <branch> -f sets=<set>`) replaced main's pending run instead of queuing beside it. The run of a branch and the run of main share the large class, and Q-ARCH-431 bounds each run, not the two together.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One group for the workflow (status quo) | A branch dispatch queues in place of main's pending run | One nightly at a time | Main's scheduled run can be replaced by a branch's dispatch |
+| (b) One group per ref: `${{ github.workflow }}-${{ github.ref }}`, `cancel-in-progress: false` (chosen) | A branch dispatch runs beside main's run; each ref keeps one pending run | No run is replaced by another ref's run | More large legs can run at once, which the bound of each run does not cover |
+| (c) One group for the workflow, one for the large class | Runs queue behind each other | One at a time | Two hours or more, as Q-ARCH-325 option (d) |
+
+**Choice:** (b). **Rationale:** the coordinator of the closing run asked for it, and the cost is named: parallel branch dispatches add their own large legs, which the development agent coordinates when it starts them; the bound of Q-ARCH-431 holds per run. Verified: actionlint passes the file. Not verified on GitHub: that a branch dispatch runs beside main's run (the first such dispatch shows it). Revisit when a branch dispatch and a nightly on main overlap and the class starves again.
+
+**Applied in the spec:** none (CI wiring). Code: [performance.yml](../../.github/workflows/performance.yml) (`concurrency`). Elsewhere: [releasing.md](../developer/releasing.md#ha-and-performance-nightly).
+
 ### Q-ARCH-328 · Admission charges the bytes a request holds and the caches hold now, not a worst case per request and the caches' budgets
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Superseded in part by [Q-ARCH-330](#q-arch-330--the-charge-of-a-request-is-the-overhead-and-the-readers-it-has-open-now): what a request is charged after it settles. Revises [Q-ARCH-240](#q-arch-240--a-replica-admits-what-its-memory-holds-memory-slots-and-a-heap-gate-in-step-4) and [Q-ARCH-243](#q-arch-243--the-memory-slots-leave-the-caches-byte-budgets-aside) in part.

@@ -28,11 +28,12 @@ if grep -rnE '^[^#]*anchore/syft' "$root/Containerfile" "$root/Makefile" "$root/
   bad "the files above name a syft image of their own: take SYFT_IMAGE from tools/versions.env"
 fi
 
-# The workflow passes the pin to the SPDX action, and the attestation comes from the generator, not from BuildKit's own scanner.
-grep -qE 'syft-version: \$\{\{ env\.SYFT_VERSION \}\}' "$wf" || bad "$wf: the SPDX step must read syft-version from env.SYFT_VERSION"
+# The SPDX file runs the syft image of the pin (SYFT_IMAGE, Q-HA-204) on the registry tag of the release, and the attestation comes from the
+# generator, not from BuildKit's own scanner. No step downloads syft from GitHub (F-120).
+grep -qE '^\s+docker run --rm "\$\{SYFT_IMAGE\}" "registry:guidedtraffic/trove:\$\{VERSION\}" -o spdx-json > ' "$wf" || bad "$wf: the SPDX step must run the image SYFT_IMAGE on the release tag"
 grep -qE '^\s+sbom: generator=\$\{\{ steps\.[a-z_]+\.outputs\.[a-z_]+ \}\}$' "$wf" || bad "$wf: the build step must set sbom to the generator of tools/sbom-generator"
-if grep -nE 'buildkit-syft-scanner|syft-version: v?[0-9]|^\s+sbom: (true|false)$' "$wf"; then
-  bad "$wf: BuildKit's bundled scanner or a literal syft version is in use"
+if grep -nE 'buildkit-syft-scanner|syft-version:|anchore/sbom-action|anchore/syft/releases|^\s+sbom: (true|false)$' "$wf"; then
+  bad "$wf: BuildKit's bundled scanner, a syft download or a literal syft version is in use"
 fi
 
 # A syft on PATH must be the pinned one.

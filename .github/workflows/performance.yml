@@ -27,6 +27,11 @@
 # The legs with a CPU-bound condition that load the NuGet clients image moved to large once that image went into the
 # control-plane node only: nuget-ha (Q-HA-102) and the set mirror, whose install-time ratio is enforced here (Q-REPO-211).
 # Sizes: docs/developer/releasing.md#ci.
+# Q-ARCH-431: the kind legs on the large class run in three lanes, so at most three large legs of this run are active at once
+# (one per worker node of the class: three nodes of 16 CPUs, a kind leg about 12 cores). Lane 1: e2e-npm (npm-ha, then ha-suite),
+# then e2e-nuget. Lane 2: e2e (drain-roles, then failover), then npm-ha-soak. Lane 3: e2e-vuln (its large leg vuln-pooler, the
+# GitHub-hosted legs are not in the lanes), then e2e-backup, e2e-mirror (mirror, then mirror-long), e2e-oci. Each lane job
+# needs its predecessor with `!cancelled()`, so a leg the dispatch does not select, or a failed one, does not stop the lane.
 name: HA and Performance (nightly)
 
 on:
@@ -42,8 +47,10 @@ on:
         required: false
         default: ""
 
+# Q-ARCH-433: one run per ref. A dispatch on a branch runs beside main's run and does not replace its pending one; each run bounds
+# its own large legs (Q-ARCH-431), so parallel branch dispatches add their large legs and are coordinated by the development agent.
 concurrency:
-  group: ${{ github.workflow }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -233,7 +240,9 @@ jobs:
   # closing run of Test and Release runs the ten force-deletes too, in its leg npm-ha-closing (Q-HA-67).
   npm-ha-soak:
     name: e2e-npm on kind (npm-ha-soak)
-    if: ${{ !inputs.sets || contains(format(',{0},', inputs.sets), ',npm-ha-soak,') }}
+    # Lane 2 (Q-ARCH-431): after e2e, whatever its result.
+    needs: e2e
+    if: ${{ !cancelled() && (!inputs.sets || contains(format(',{0},', inputs.sets), ',npm-ha-soak,')) }}
     runs-on: large
     timeout-minutes: 90
     env:
@@ -370,20 +379,22 @@ jobs:
   # The leg drain-roles (E6a.6, port 8097) evicts every role pod by pod under its own load and the npm load of npm-ha
   # (Q-HA-94): deploy/dev/e2e.sh builds the npm clients image and the counting test upstream and starts three client pods,
   # whose Node.js is the image's own, so the leg needs no Node.js on the runner.
+  # Lane 2 (Q-ARCH-431): the legs run one after the other, drain-roles first, so the heavy drain sees the fewest neighbours.
   e2e:
     name: e2e on kind (${{ matrix.set }})
     runs-on: large
     timeout-minutes: 90
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
+          - set: drain-roles
+            port: "8097"
+            browser: false
           - set: failover
             port: "8081"
             # Declared so that the browser steps below type-check (actionlint); false skips them, as the e2e job skips them for failover.
-            browser: false
-          - set: drain-roles
-            port: "8097"
             browser: false
     env:
       # The image is built with an explicit VERSION=dev: the binary refuses a version that is not
@@ -601,12 +612,14 @@ jobs:
   # Leg ha-suite (the failure suite under the npm load: S3 outage, node loss, PostgreSQL and Valkey primary loss, the npm-audit drain;
   # its set is added to deploy/dev/e2e.sh by another change, so this leg fails at make e2e until then) has the budgets of npm-ha, 120 and
   # 80 minutes, and edge port 8100, the first free one.
+  # Lane 1 (Q-ARCH-431): npm-ha, then ha-suite, one large leg at a time.
   e2e-npm:
     name: e2e-npm on kind (${{ matrix.set }})
     runs-on: large
     timeout-minutes: 120
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
           - set: npm-ha
@@ -781,8 +794,11 @@ jobs:
   # than a GitHub-hosted runner's 4, so the job runs on the large class; the set loads the 2.3 GB clients images into the control-plane
   # node only (the node of the client pods), which keeps them inside a large pod's Docker storage. Edge port 8090 is the first free port of
   # both workflows.
+  # Lane 1 (Q-ARCH-431): after e2e-npm, whatever its result.
   e2e-nuget:
     name: e2e-nuget on kind (${{ matrix.set }})
+    needs: e2e-npm
+    if: ${{ !cancelled() }}
     runs-on: large
     timeout-minutes: 120
     strategy:
@@ -972,8 +988,11 @@ jobs:
   # and no multipart upload left behind. A red long leg is a finding and holds nothing (owner, 2026-11-01). The clients images are the Docker Engine
   # (dockerd of the dind image, Buildx included) and Podman; the pods are privileged (Q-OCI-21). The set mirror-long, which gained the drain of the
   # node of a process that runs an OCI pass, is a leg of e2e-mirror below. Edge port 8106 is the first free port of both workflows.
+  # Lane 3 (Q-ARCH-431): after e2e-mirror, whatever its result.
   e2e-oci:
     name: e2e-oci on kind (${{ matrix.set }})
+    needs: e2e-mirror
+    if: ${{ !cancelled() }}
     runs-on: large
     timeout-minutes: 120
     strategy:
@@ -1745,12 +1764,16 @@ jobs:
   # Test and Release, and the long set `mirror-long` (`kubectl drain` of the node of the process that runs a pass of 300 packages). A red long
   # leg is a finding and holds nothing (owner, 2026-11-01). `mirror` loads the NuGet clients image and runs on a GitHub-hosted runner,
   # `mirror-long` on a large one. Edge ports 8098 and 8099 are the first free ones of both workflows.
+  # Lane 3 (Q-ARCH-431): after e2e-backup, the two large legs one after the other.
   e2e-mirror:
     name: e2e-mirror on kind (${{ matrix.set }})
+    needs: e2e-backup
+    if: ${{ !cancelled() }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
           - set: mirror
@@ -1961,8 +1984,11 @@ jobs:
   # restore; the revocation journal across a restore. It runs for about 25 minutes, so it is a long leg: nightly and on dispatch, not per change
   # (owner, 2026-11-01); a red long leg is a finding and holds nothing. It publishes .out/e2e/backup-timings.json, the timings of scenario 9, as a
   # job artifact. Large runner (a kind cluster with two databases and two Valkeys). Edge port 8102 is the first free one after e2e-upgrade's 8101.
+  # Lane 3 (Q-ARCH-431): after e2e-vuln, whatever its result.
   e2e-backup:
     name: e2e-backup on kind
+    needs: e2e-vuln
+    if: ${{ !cancelled() }}
     runs-on: large
     timeout-minutes: 120
     env:
