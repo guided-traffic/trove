@@ -494,7 +494,7 @@ dev-drain: ## Drain a node under k6 load with cursor-persisting jobs; fails on a
 	deploy/dev/drain.sh
 
 .PHONY: e2e
-e2e: ## End-to-end tests on the dev cluster (deploy/dev/e2e.sh); SET=push|failover|access-long|access|full|drain|drain-roles|npm|npm-closing|npm-ha|npm-ha-crash|npm-ha-soak|npm-ha-closing|ha-suite|nuget-clients|nuget|nuget-closing|nuget-ha|oci-clients|oci|oci-closing|oci-long|apt-clients|deb|deb-closing|ci|ci-ha|bastion|bastion-long|vuln|vuln-long|vuln-pooler|mirror|mirror-long|upgrade|backup|release-smoke|<go test -run regexp>, default: all but the profile switch
+e2e: ## End-to-end tests on the dev cluster (deploy/dev/e2e.sh); SET=push|failover|access-long|access|full|drain|drain-roles|npm|npm-closing|npm-ha|npm-ha-crash|npm-ha-soak|npm-ha-closing|ha-suite|nuget-clients|nuget|nuget-closing|nuget-ha|cold-crash|oci-clients|oci|oci-closing|oci-long|apt-clients|deb|deb-closing|ci|ci-ha|bastion|bastion-long|vuln|vuln-long|vuln-pooler|mirror|mirror-long|upgrade|backup|release-smoke|<go test -run regexp>, default: all but the profile switch
 	deploy/dev/e2e.sh '$(SET)'
 
 # >>> M2 npm-clients

@@ -5653,7 +5653,7 @@ against the local profile (R-HA-051) in CI. Load comes from real clients in para
 
 | Scenario | Injection | Pass condition |
 |---|---|---|
-| Pod crash | `kubectl delete pod --grace-period=0 --force` of a random `web` or `worker` replica every 2 min: 10 times (20 min) nightly and in the closing run, 3 times in `make e2e SET=npm-ha-crash` | No client iteration fails after its own retries; no item row without a durable object (`trove admin storage verify`; until that command exists, every version the scenario's publishes left is downloaded against its integrity, [Q-HA-69](#q-ha-69--the-storage-check-of-the-pod-crash-before-trove-admin-storage-verify-exists)) |
+| Pod crash | `kubectl delete pod --grace-period=0 --force` of a random `web` or `worker` replica every 2 min: 10 times (20 min) nightly and in the closing run, 3 times in `make e2e SET=npm-ha-crash` | No client iteration fails after its own retries; no item row without a durable object: `trove admin storage verify` ([storage.md](storage.md) R-STOR-027, [Q-STOR-200](storage.md#q-stor-200--trove-admin-storage-verify-reads-the-live-blob-rows-reports-their-items-changes-nothing-and---since-selects-rows-by-their-creation-or-state-change)) exits 0, run in a pod of the installation after the scenario ([Q-HA-69](#q-ha-69--the-storage-check-of-the-pod-crash-before-trove-admin-storage-verify-exists)) |
 | Rolling restart | `kubectl rollout restart` of `deploy/trove-api`, `deploy/trove-packages`, then of `deploy/trove-worker` (before phase 6a: `deploy/trove-web`) | Zero failed iterations |
 | Rolling upgrade | Previous minor → current with the migration Job | Zero failed iterations; R-HA-020 verification passes |
 | Rollback | `helm rollback` after the upgrade | Zero failed iterations |
@@ -6986,6 +6986,13 @@ that matters to a client. The development agent revisits this when `trove admin 
 command as R-HA-052 states.
 
 **Applied in the spec:** R-HA-052, the pod-crash row: the interim check.
+
+**Revisited on 2026-11-09, when the command exists** ([Q-STOR-200](storage.md#q-stor-200--trove-admin-storage-verify-reads-the-live-blob-rows-reports-their-items-changes-nothing-and---since-selects-rows-by-their-creation-or-state-change)): `TestNPMHACrash` now ends with `requireStorageVerified`
+([cold_crash_test.go](../../test/e2e/cold_crash_test.go)), which runs `trove admin storage verify` in the worker pod and requires exit 0 and
+no blob without its object, for every item of the installation and not only the publish loop's package. The pod-crash row states the command
+alone. `committedTarballsReadable` stays as the client-side reading of the upgrade tests ([upgrade_loops_test.go](../../test/e2e/upgrade_loops_test.go)),
+whose pass condition is what a client reads; the crash test no longer calls it, and `installPublished` still installs every acknowledged
+publish.
 
 ### Q-HA-70 · The chart refuses a `web` pod whose memory cannot hold what it admits
 
@@ -9225,6 +9232,25 @@ step finished; a pool cannot force-close an acquired connection, so the exit its
 deadline but holds nothing is not named, and when no pool holds anything the close reports no error. The development agent would revisit (a) for the holders found by
 H-693.
 **Applied:** R-ARCH-024 step 6; `internal/meta/postgres/db.go` (`CloseContext`), `internal/app/wire_postgres.go`.
+
+### Q-HA-220 · The cold-install crash of exit criterion E5.2 kills one packages replica once the upstream has served a share of the packages, and the clients go through the edge
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: E5.2 asks for `npm ci` of the 500-package reference lockfile through `npm-all` and `dotnet restore --no-cache` of the reference solution through `nuget-all`, cold, on three replicas, with one replica force-deleted partway, no client iteration failing after the clients' own retries, and `trove admin storage verify` reporting no item without its object. Verified in this repository: `TestNPMCollapse` (E2.2) and `TestNuGetCollapse` (E3.2) are cold and kill nothing, and their clients are pinned to one replica each (a pin to a replica that dies is a dead client, not a retry); `TestNPMHACrash` kills, but warm and with 400 packages; nothing kills under NuGet load.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Add a kill to the E2.2 and E3.2 tests | The collapse tests get a second, killing variant | Reuses their asserts | Their counters assert one upstream request per package, which a killed leader legitimately breaks; and they pin the clients |
+| (b) A test of its own, `TestColdCrash`, with unpinned clients and a kill gated on the upstream's counters (chosen) | Fresh remote and virtual repositories, a delayed upstream, three clients through the edge, the kill when the upstream has been asked for 100 tarballs (npm) or 20 `.nupkg` files (NuGet) | The kill meets running installs by a proved precondition (the test fails when the clients finish first or the count does not come); the clients' retries are the only defence | A second cold-install harness next to E2.2's |
+| (c) A kill on a timer | Sleep, then delete | Simple | The timing is the thing the test would rely on: a fast cluster finishes first, and the kill meets nothing |
+| (d) Run the cold install under the HA load loops | The warm load of `TestNPMHACrash` with a cold remote | Reuses the loops | The loops are warm by design (the cache is filled before the fault); a cold, shared fill is the case to test |
+
+**Choice:** (b). `TestColdCrash` ([cold_crash_test.go](../../test/e2e/cold_crash_test.go)) has one subtest per format. Each creates a fresh remote and virtual repository on the counting test upstream (so every package is a miss), delays the upstream's tarballs by 300 ms (`.nupkg` files by 400 ms), starts three clients against the edge of the scatter profile, polls the upstream's counters, force-deletes a random ready `packages` pod once they reach the threshold, requires that no client had finished by then, waits for the three clients and for the release to settle, requires every client to exit 0 (no assert on the number of upstream requests: a killed leader's flight may be fetched again), and runs `trove admin storage verify` in the worker pod. The set is `cold-crash`; the nightly runs it as a leg of the job `e2e-nuget` in lane 1 (Q-ARCH-431).
+
+**Rationale:** the first fetch of a package by a replica holds a flight lock that the other replicas wait on (R-ARCH-033); a replica that dies holding it is the case the cold install adds to the warm crash. The clients' own retries are what the criterion measures, so they must not be pinned to the replica that dies. The development agent revisits the thresholds if the install on the reference environment is too short for 100 tarballs or 20 `.nupkg` files to be requested before it ends (the test then fails and says so).
+
+**Applied in the spec:** exit criterion E5.2 ([roadmap.md](../coverage/roadmap.md)). Code: [cold_crash_test.go](../../test/e2e/cold_crash_test.go), [e2e.sh](../../deploy/dev/e2e.sh) (set `cold-crash`), [performance.yml](../../.github/workflows/performance.yml) (leg `cold-crash` of `e2e-nuget`). Elsewhere: [e2e.md](../developer/e2e.md).
 
 ## What this does not cover
 

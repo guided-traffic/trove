@@ -98,3 +98,10 @@ func (s *Stack) ObjectExists(tb testing.TB, digest []byte) bool {
 	tb.Fatalf("head the object: %v", err)
 	return false
 }
+
+// ObjectClient is the client of the installation's object store below its prefix, with the prefix, for a test that asks the
+// store as a command of the installation does.
+func (s *Stack) ObjectClient(tb testing.TB) (blob.ObjectStore, string) {
+	tb.Helper()
+	return s.objects(tb)
+}

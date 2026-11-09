@@ -580,8 +580,9 @@ process.stdout.write(bad.length ? bad.join('\n') : 'ok');`
 }
 
 // committedTarballsReadable reads every version the registry lists for the publish loop's package and downloads its
-// tarball against its integrity: an item row without its object would answer an error here. It stands in for
-// `trove admin storage verify` (R-HA-052's pod-crash condition), which M5 builds.
+// tarball against its integrity: an item row without its object would answer an error here. It is the client's reading of
+// what the publish loop wrote (the upgrade tests' pass condition); the pod crash asks `trove admin storage verify`
+// (requireStorageVerified) for every item of the installation.
 func (r npmLoadResult) committedTarballsReadable(t *testing.T, h *npmHAFixture) {
 	t.Helper()
 	versions, _, doc := h.fx.versionsOf(t, npmLocalKey, r.PubPkg)

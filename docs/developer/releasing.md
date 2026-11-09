@@ -362,7 +362,7 @@ The input exists on `main` once the change is merged, because `gh` runs the work
 
 The large legs run in three lanes, so at most three of them are active at once, one per worker node of the class
 ([Q-ARCH-431](../spec/architecture.md#q-arch-431--how-many-large-legs-of-the-nightly-run-start-at-once-and-in-what-order)):
-lane 1 is `npm-ha` then `ha-suite` (job `e2e-npm`, one leg at a time) then `nuget-ha` (job `e2e-nuget`); lane 2 is `drain-roles` then
+lane 1 is `npm-ha` then `ha-suite` (job `e2e-npm`, one leg at a time) then `nuget-ha` and `cold-crash` (job `e2e-nuget`, one leg at a time); lane 2 is `drain-roles` then
 `failover` (job `e2e`) then `npm-ha-soak`; lane 3 is the job `e2e-vuln` (its `vuln-pooler` leg; its GitHub-hosted legs run beside the lanes), then
 `backup`, then `mirror` and `mirror-long` (job `e2e-mirror`, one at a time), then `oci-long`. Each lane job waits for its predecessor with `!cancelled()`,
 so an unselected or failed leg does not stop its lane. The estimate, from the durations of run 42571414393 (measured under six-way contention): the lanes take
@@ -395,6 +395,8 @@ evaluates, and measures; it uploads `perf-vuln.json`, the `go test -json` stream
 (the job has `issues: write`, no other job has). A scenario that did not finish is listed as `not finished`, and a scenario that needs it
 as `not measured` (V-2 and V-9 need V-1, V-3 to V-8 need V-1 and V-2; [perf/README.md](../../perf/README.md#reading-a-run)). It is the only job of the workflow that
 opens an issue ([Q-VULN-57](../spec/vulnerability-scanning.md#q-vuln-57--the-performance-run-is-a-test-package-on-the-integration-stack-gated-and-reported-by-the-nightly-workflow)).
+
+Job `e2e-nuget` also runs the leg `cold-crash` (`make e2e SET=cold-crash`, edge port 8110, cluster `trove-cold-crash-<run id>`, after `nuget-ha`, `max-parallel: 1`): `TestColdCrash`, a packages replica force-deleted during a cold `npm ci` and a cold `dotnet restore` of three clients each, then `trove admin storage verify` (E5.2, [Q-HA-220](../spec/ha-and-helm.md#q-ha-220--the-cold-install-crash-of-exit-criterion-e52-kills-one-packages-replica-once-the-upstream-has-served-a-share-of-the-packages-and-the-clients-go-through-the-edge)); it needs the same two clients images and runs under the same budgets.
 
 Job `e2e-nuget` runs `make e2e SET=nuget-ha` on a kind cluster (edge port 8090, cluster `trove-nuget-ha-<run id>`, reports
 `e2e-nuget-report-nuget-ha` and `e2e-nuget-artifacts-nuget-ha`, kept 14 days): `TestNuGetHA`, drain variant A, the PostgreSQL switchover

@@ -162,6 +162,7 @@ make e2e SET=npm-closing     # the additions of the closing run (below); fails u
 make e2e SET=npm-ha          # E2.11: drain variant A and the failovers under the npm load (CI leg npm-ha: nightly and on dispatch, since 2026-11-01)
 make e2e SET=npm-ha-crash    # E2.11: the pod crash under the npm load, three force-deletes (no CI leg since 2026-11-01; run by hand)
 make e2e SET=npm-ha-soak     # the pod crash with ten force-deletes over 20 minutes, then perf/k6/npm.js (nightly)
+make e2e SET=cold-crash      # E5.2: a packages replica force-deleted during a cold npm ci and a cold dotnet restore of three clients each, then trove admin storage verify (nightly, lane 1, job e2e-nuget)
 make e2e SET=npm-ha-closing  # npm-ha, npm-ha-soak and the 5-minute Valkey outage under the npm load (the closing run's leg)
 make e2e SET=ha-suite        # the failure scenarios of R-HA-052 that npm-ha leaves out, under the same npm load: the audit forward cut by a pod deletion, the object-store outage, PostgreSQL and Valkey primary loss, node loss (about 50 minutes; nightly and by hand)
 make npm-clients-image       # only build the image into the local Docker
@@ -1187,7 +1188,7 @@ fault is therefore never a failed client command, and a loop that dies leaves no
 | `TestNPMHA` drain | `drain.sh <node>`, 2 minutes after the load started; the load runs 3 more minutes after the drain returns; six `system.probe` jobs of 330 steps | all three | R-HA-059's: every `npm` command exits `0`; k6 only `2xx` and `304`, no connection error, no wrong tarball, no dropped iteration and 95 % of the rate; the p99 of the k6 requests from the first eviction until 2 minutes after the drain at most twice the p99 of the warm-up; every acknowledged publish installs afterwards; every probe job `succeeded` with `attempt` 1, at least one moved and resumed from its cursor; no container exit 137 or `OOMKilled`, no SIGKILL or `FailedKillPod` event; no trove pod `Pending` for more than 60 s; `drain.sh` returns within 10 minutes and the node is uncordoned |
 | `TestNPMHA` switchover | `failover.sh` (`dev-failover`) after 1 minute; 1 minute after | all three | every `npm` command exits `0`, every `npm ci` loop ran a command during the switchover; k6 as above; every acknowledged publish installs; `/healthz` 200 on every pod, no restart |
 | `TestNPMHA` Valkey failover | `valkey-failover.sh` (`dev-valkey-failover`) after 1 minute; 1 minute after | all three | as the switchover, and `/readyz` 200 on every pod throughout, and `trove_valkey_primary_changes_total` rises by exactly one on every `api`, `packages` and `worker` replica (R-HA-057) |
-| `TestNPMHACrash` | `kubectl delete pod --grace-period=0 --force` of a random `api`, `packages` or `worker` pod (the seed is logged), every 2 minutes: three times, ten with `TROVE_E2E_NPM_CRASH_SOAK=1` (`npm-ha-soak`, `npm-ha-closing`) | `npm ci` and publish loops (R-HA-052 adds k6 only to the drain and Valkey rows) | every `npm` command exits `0`; every version `npm-local` lists for the publish loop's package downloads with its `dist.integrity`, and every acknowledged one is listed (the interim of `trove admin storage verify`, [Q-HA-69](../spec/ha-and-helm.md#q-ha-69--the-storage-check-of-the-pod-crash-before-trove-admin-storage-verify-exists)); every acknowledged publish installs; `/healthz` 200 on every pod that was not deleted; three `api`, three `packages` and four `worker` pods ready at the end |
+| `TestNPMHACrash` | `kubectl delete pod --grace-period=0 --force` of a random `api`, `packages` or `worker` pod (the seed is logged), every 2 minutes: three times, ten with `TROVE_E2E_NPM_CRASH_SOAK=1` (`npm-ha-soak`, `npm-ha-closing`) | `npm ci` and publish loops (R-HA-052 adds k6 only to the drain and Valkey rows) | every `npm` command exits `0`; `trove admin storage verify`, run in the worker pod, exits `0` and reports no blob without its object (`requireStorageVerified`, [Q-HA-69](../spec/ha-and-helm.md#q-ha-69--the-storage-check-of-the-pod-crash-before-trove-admin-storage-verify-exists) revisited); every acknowledged publish installs; `/healthz` 200 on every pod that was not deleted; three `api`, three `packages` and four `worker` pods ready at the end |
 | `TestNPMHAClosing` (closing run) | `valkey-stop.sh` after 1 minute; 2 minutes in, one `packages` pod deleted with its grace period; `valkey-start.sh` 5 minutes after the stop | all three | every `npm` command exits `0`; k6 as above; the replacement pod becomes ready with `valkey` degraded; `/readyz` 200 throughout on every pod but the deleted one and its replacement; after the return, `degraded` clears on every replica within `open_duration` plus `health_check_interval` plus 5 s (15 s in the dev profile, read through `driver info`), counted from the first moment a Sentinel names a primary again (`valkeyClearWatch` polls while `valkey-start.sh` still waits for the StatefulSets and the operator) |
 | `TestNPMPerf` | none | [perf/k6/npm.js](../../perf/k6/npm.js) | every request answered `200` or shed with the replica's `503 server_busy`; no restart of the target pod; the numbers are reported, not gated (below) |
 
@@ -1200,7 +1201,7 @@ the pod watch sees with a deletion timestamp; the warm-up is every k6 request be
 **Not built in M2, with where it lands:** the NuGet rows of the load (`dotnet restore`, `dotnet nuget push`, k6's 20 %) are built
 ([Drain and failover under NuGet load](#drain-and-failover-under-nuget-load)); the
 long-transfer probes of R-HA-059 and variants B to E in E5.9; R-HA-057's "every replica writes to the new primary within 10 s", the alerts
-(`TroveValkeyUnavailable`; the dev profile runs no Prometheus) and the other Valkey rows in E5.10; `trove admin storage verify` in E5.2. The
+(`TroveValkeyUnavailable`; the dev profile runs no Prometheus) and the other Valkey rows in E5.10; the cold install with a replica killed, and `trove admin storage verify` after it, are built ([A replica killed during a cold install](#a-replica-killed-during-a-cold-install)). The
 Valkey-primary-loss row of R-HA-052, which ran on every change until 2026-11-01 and now runs in the nightly failover set, is E0.13's (`valkey-kill.sh` under the ping load); its npm load
 joins with M5.
 
@@ -1493,6 +1494,22 @@ commands); a run on a CI runner.
     blockers on three workers leave a clean node only by luck. The node is now chosen first and cleared with a cordon
     ([Q-HA-106](../spec/ha-and-helm.md#q-ha-106--the-node-of-the-node-loss-scenario-is-chosen-first-and-cleared-not-searched-for)). The same helper clears the node of the mirror's node-loss subtest (finding in
     [the mirror failure suite](#findings-of-the-mirror-tests)). A first fix that cleared the node of the standby still failed (R-HA-008, `/readyz` of the survivors non-200 two or three times, 4,771 k6 failures): the primary's log shows `canceling wait for synchronous replication` for every commit from 10 s after the stop; the node is now one without a PostgreSQL instance. Passed locally after that (replacements ready 1 min 48 s after the stop, one `npm ci` that was running failed with a network error, 395 k6 failures none after the replacements were ready). Not exercised: `ensureMainWorkerOn` (the node chosen already hosted a worker pod in the passing run); not verified on the CI runner class.
+
+## A replica killed during a cold install
+
+`make e2e SET=cold-crash` (`TestColdCrash`, [cold_crash_test.go](../../test/e2e/cold_crash_test.go); CI: leg `cold-crash` of the job `e2e-nuget` in the nightly
+workflow, edge port 8110, lane 1 after `nuget-ha`) is exit criterion E5.2 of the [roadmap](../coverage/roadmap.md): the cold-cache install with a replica
+killed mid-run, and `trove admin storage verify` after it. Decision: [Q-HA-220](../spec/ha-and-helm.md#q-ha-220--the-cold-install-crash-of-exit-criterion-e52-kills-one-packages-replica-once-the-upstream-has-served-a-share-of-the-packages-and-the-clients-go-through-the-edge).
+The set needs both clients images and both counting test upstreams (the scatter profile, three `packages` replicas).
+
+| Subtest | What it does | Pass condition |
+|---|---|---|
+| `npm ci` | A fresh remote and virtual repository on the npm test upstream, whose tarballs answer 300 ms late; three clients (one per client pod, through the edge, not pinned) run `npm ci` of the reference lockfile (at least 500 packages) from an empty client cache; the test polls the upstream's counters and force-deletes a random ready `packages` pod once 100 tarballs were requested | No client had finished at the kill (otherwise the test fails and says the delay is too short); the three `npm ci` exit `0` with npm's default retries; the release settles to three `api`, three `packages` and four `worker` pods; `trove admin storage verify` exits `0` |
+| `dotnet restore` | The same with the NuGet test upstream (`.nupkg` files 400 ms late), `dotnet restore Reference.sln --no-cache`, the kill at 20 `.nupkg` requests | The three restores succeed and extract the same number of packages (at least 100); the release settles; `trove admin storage verify` exits `0` |
+
+`requireStorageVerified` runs `trove admin storage verify` in the worker pod through `troveAdmin`, as an operator would, and requires exit status `0` and a last line with
+no blob without its object, of another size or unchecked. The pod crash of `TestNPMHACrash` ends with it too. The test asserts no number of upstream requests: a
+replica killed while it fetches leaves a flight whose waiters fetch again, which the collapse tests (E2.2, E3.2) do not allow and this one does.
 
 ## Drain and failover under NuGet load
 

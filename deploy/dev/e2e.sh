@@ -34,6 +34,9 @@
 #                       R-NPM-038 cut by a pod deletion, the object-store outage (30 s, and 5 min with a replica deleted), the PostgreSQL
 #                       and the Valkey primary loss and the loss of a node (docker stop); the scatter profile, three client pods, the counting
 #                       npm test upstream (nightly, dispatch, locally)
+#   e2e.sh cold-crash   a packages replica force-deleted during a cold `npm ci` and a cold `dotnet restore` of three clients each (E5.2,
+#                       TestColdCrash), then `trove admin storage verify` in a pod of the installation; the scatter profile, three npm and
+#                       three NuGet client pods, both counting test upstreams (nightly, dispatch, locally)
 #   e2e.sh nuget-clients  the smoke test of the NuGet client pods (R-NUGET-027: dotnet and nuget.exe run, the base URL reaches the
 #                       cluster with a verified certificate); builds the clients image and starts the pods, which stay up
 #   e2e.sh nuget-clients-down  removes the NuGet client pods
@@ -158,6 +161,8 @@ case "$set_name" in
   nuget) run='^TestNuGet'; skip='^TestNuGet(Closing|HA)'; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NUGETSTUB=1 ;;
   # empty_ok: the set may name no test yet (Q-ARCH-276); see the check after the case statement.
   nuget-closing) run='^TestNuGetClosing'; empty_ok=1; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NUGETSTUB=1 TROVE_E2E_NUGET_CLOSING=1 ;;
+  # E5.2: the cold install of three clients with a packages replica force-deleted meanwhile; both client kinds and both test upstreams.
+  cold-crash) run='^TestColdCrash$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 ;;
   # The drain runs the npm load and the NuGet load together (R-HA-059): both client pods and both test upstreams, the scatter profile.
   nuget-ha) run='^TestNuGetHA'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 ;;
   # <<< M3 nuget-clients

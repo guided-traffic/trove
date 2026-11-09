@@ -7,7 +7,8 @@
 # npm load); job e2e-upgrade runs the set upgrade (published releases upgraded to the commit's image under the npm and NuGet loads, with a
 # browser journey; switched off in the nightly run until the first stable release, Q-ARCH-340, and run by a dispatch with sets=upgrade); job npm-ha-soak runs the 20-minute pod crash of R-HA-052 under the npm load and the npm load scripts of R-ARCH-027
 # (Q-HA-67); job e2e-nuget runs nuget-ha (TestNuGetHA: the drain and failover under the NuGet load and the npm load, on the large class,
-# Q-HA-102); job e2e-ci runs ci-ha (E4.7); job e2e-bastion runs the sets bastion and
+# Q-HA-102) and cold-crash (TestColdCrash, E5.2: a replica force-deleted during a cold npm ci and dotnet restore, then trove admin storage verify,
+# Q-HA-220; the two legs run one at a time); job e2e-ci runs ci-ha (E4.7); job e2e-bastion runs the sets bastion and
 # bastion-long (R-BAS-049); job e2e-vuln runs vuln, vuln-long and vuln-pooler (R-VULN-029; vuln-pooler is the blocks through drain variant D on the cluster
 # with the poolers of R-HA-058, on large); job e2e-mirror runs mirror and mirror-long (R-REPO-059, an OCI pass among them); job e2e-oci runs oci-long (R-OCI-011: a push cut by the drain of the receiving pod); job e2e-backup runs the set backup (R-BAK-029: the restore
 # drill, the drain and the kill -9 of a backup and a restore, the revocation journal across a restore).
@@ -794,7 +795,10 @@ jobs:
   # than a GitHub-hosted runner's 4, so the job runs on the large class; the set loads the 2.3 GB clients images into the control-plane
   # node only (the node of the client pods), which keeps them inside a large pod's Docker storage. Edge port 8090 is the first free port of
   # both workflows.
-  # Lane 1 (Q-ARCH-431): after e2e-npm, whatever its result.
+  # Leg cold-crash (E5.2, TestColdCrash: a packages replica force-deleted during a cold npm ci and a cold dotnet restore of three clients
+  # each, then trove admin storage verify) needs the same two clients images and both test upstreams, so it is a leg of this job; edge
+  # port 8110 is the first free port of both workflows.
+  # Lane 1 (Q-ARCH-431): after e2e-npm, whatever its result; the legs nuget-ha and cold-crash run one at a time (max-parallel: 1).
   e2e-nuget:
     name: e2e-nuget on kind (${{ matrix.set }})
     needs: e2e-npm
@@ -803,10 +807,13 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
           - set: nuget-ha
             port: "8090"
+          - set: cold-crash
+            port: "8110"
     env:
       TROVE_IMAGE: guidedtraffic/trove:dev
       TROVE_DEV_CLUSTER: trove-${{ matrix.set }}-${{ github.run_id }}

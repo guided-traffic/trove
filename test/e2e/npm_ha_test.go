@@ -68,7 +68,7 @@ func TestNPMHA(t *testing.T) {
 func TestNPMHACrash(t *testing.T) {
 	h := npmHAFx(t)
 
-	t.Run("R-HA-052 R-NPM-046 pod crash: a random api, packages or worker replica force-deleted every 2 min under the npm ci and publish loops, 3 times per change and 10 times over 20 min in the soak: no failed iteration, every listed version's tarball is readable", func(t *testing.T) {
+	t.Run("R-HA-052 R-NPM-046 pod crash: a random api, packages or worker replica force-deleted every 2 min under the npm ci and publish loops, 3 times per change and 10 times over 20 min in the soak: no failed iteration, trove admin storage verify finds every object", func(t *testing.T) {
 		kills, every := 3, 2*time.Minute
 		if os.Getenv("TROVE_E2E_NPM_CRASH_SOAK") == "1" {
 			kills = 10
@@ -90,7 +90,7 @@ func TestNPMHACrash(t *testing.T) {
 		r.steady(t, victims...)
 		r.res.allExitZero(t)
 		r.res.loopsSpan(t, r.faultAt, r.faultEnd)
-		r.res.committedTarballsReadable(t, h)
+		requireStorageVerified(t)
 		r.res.installPublished(t, h)
 		troveSettled(t, 3, 3, 4)
 	})

@@ -552,3 +552,108 @@ func (q *Queries) TakeOverBlobs(ctx context.Context, arg TakeOverBlobsParams) ([
 	}
 	return items, nil
 }
+
+const verifyBlobItemCount = `-- name: VerifyBlobItemCount :one
+SELECT count(*)::bigint FROM items WHERE blob_sha256 = $1::bytea
+`
+
+func (q *Queries) VerifyBlobItemCount(ctx context.Context, sha256 []byte) (int64, error) {
+	row := q.db.QueryRow(ctx, verifyBlobItemCount, sha256)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const verifyBlobItems = `-- name: VerifyBlobItems :many
+SELECT p.key AS project_key, r.key AS repo_key, i.path, (i.trashed_at IS NOT NULL)::boolean AS trashed
+  FROM items i
+  JOIN repositories r ON r.id = i.repo_id
+  JOIN project p ON p.id = r.project_id
+ WHERE i.blob_sha256 = $1::bytea
+ ORDER BY p.key, r.key, i.path
+ LIMIT $2::int
+`
+
+type VerifyBlobItemsParams struct {
+	Sha256   []byte
+	MaxItems int32
+}
+
+type VerifyBlobItemsRow struct {
+	ProjectKey string
+	RepoKey    string
+	Path       string
+	Trashed    bool
+}
+
+// The items that reference a blob whose object is missing or of another size, for the per-item report of
+// `trove admin storage verify`: project, repository and path, trashed ones included (a trashed item still holds its blob,
+// R-STOR-022).
+func (q *Queries) VerifyBlobItems(ctx context.Context, arg VerifyBlobItemsParams) ([]VerifyBlobItemsRow, error) {
+	rows, err := q.db.Query(ctx, verifyBlobItems, arg.Sha256, arg.MaxItems)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []VerifyBlobItemsRow{}
+	for rows.Next() {
+		var i VerifyBlobItemsRow
+		if err := rows.Scan(
+			&i.ProjectKey,
+			&i.RepoKey,
+			&i.Path,
+			&i.Trashed,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const verifyBlobPage = `-- name: VerifyBlobPage :many
+SELECT sha256, size
+  FROM blobs
+ WHERE state = 'live'
+   AND sha256 > $1::bytea
+   AND GREATEST(created_at, state_changed_at) >= to_timestamp($2::double precision)
+ ORDER BY sha256
+ LIMIT $3::int
+`
+
+type VerifyBlobPageParams struct {
+	After     []byte
+	SinceUnix float64
+	PageSize  int32
+}
+
+type VerifyBlobPageRow struct {
+	Sha256 []byte
+	Size   int64
+}
+
+// One page of `trove admin storage verify` (R-HA-024, R-HA-025): the live blob rows after the last digest of the previous
+// page, in digest order, so that a table of any size is read in pages of a fixed size. since_unix is the --since cut-off
+// in Unix seconds; 0 selects every row. A row is selected when it was created or changed state at or after the cut-off.
+func (q *Queries) VerifyBlobPage(ctx context.Context, arg VerifyBlobPageParams) ([]VerifyBlobPageRow, error) {
+	rows, err := q.db.Query(ctx, verifyBlobPage, arg.After, arg.SinceUnix, arg.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []VerifyBlobPageRow{}
+	for rows.Next() {
+		var i VerifyBlobPageRow
+		if err := rows.Scan(&i.Sha256, &i.Size); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

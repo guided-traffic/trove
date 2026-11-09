@@ -2291,6 +2291,21 @@ Priority: **P1** · Covers: trove-only
   heals by itself: a read of the blob after its last existence check is 30 s old asks the store again, and an
   object that is back sets `ok` (R-STOR-012, Q-STOR-153); `POST /api/v1/storage/damaged-blobs/{sha256}/recheck` re-runs both checks
   (permission: system administrator).
+- **Operator check**: `trove admin storage verify [--since <RFC 3339 time>] [--concurrency N] [--max-items N] [--json]` asks the
+  store for the object of every `live` blob row, with the runtime database role and the runtime object-store credential, and
+  changes nothing (it neither sets `content_status` nor writes an audit event; the scrub's marks stay the scrub's). It reads the
+  `blobs` table in pages of 1,000 rows by digest, so its memory does not grow with the table, and runs `--concurrency` existence
+  checks at a time (default 16). An object that the store reports missing, or whose size differs from `blobs.size`, is a finding;
+  the command prints one line per item that references such a blob (`item <project>/<repository>:<path>`, `(trashed)` for a trashed
+  one, at most `--max-items` per blob, default 20, with the number of the rest) and a line for a blob that no item references (one that only a cache
+  metadata entry, a UI asset or an avatar references prints so), then the totals. An answer other than "no such object" (a timeout, `5xx`, throttling) is retried twice and then counted as *not
+  checked*, never as missing; `AccessDenied` ends the run (a store answers it for a missing object when the credential may not
+  list the bucket). `--since` limits the run to rows created or changed at or after the time (Q-STOR-200); `--json` prints the
+  report as one document. Exit status: `0` every checked object is there, `5` at least one blob has no object or another size,
+  `75` nothing is damaged but a check was not answered, `2` a usage or configuration error, `1` another failure
+  ([backup-and-restore.md](backup-and-restore.md) R-BAK-013 holds the codes). The recovery procedure runs it after a
+  point-in-time restore ([ha-and-helm.md](ha-and-helm.md) R-HA-024, R-HA-025), and the pod-crash scenario of R-HA-052 and the
+  cold-install scenario of exit criterion E5.2 run it as the condition "no item row without its object".
 - The scrub is the task `scrub` of the shared task framework (Q-STOR-10; R-OPS-019). A scheduled
   run performs the existence checks and the deep checks that are due. A manual trigger
   `POST /api/v1/system/tasks/scrub/run` with `{"deep": false}` performs only the due existence
@@ -2316,6 +2331,9 @@ Acceptance criteria:
   API lists the items referencing it; re-uploading the same file with `curl -T` resets it to
   `ok`.
 - An S3 outage during a scrub run leaves every status unchanged.
+- With the object of one blob deleted behind trove's back, `trove admin storage verify` exits `5` and prints the items that reference
+  the blob, a trashed one marked; with the object back it exits `0`. A cut-off after every row checks nothing
+  (`TestR_HA_024_StorageVerifyNamesTheItemsWhoseObjectIsGone`, `TestR_HA_025_StorageVerifySinceNarrowsTheRun`).
 
 ## Capacity
 
@@ -5185,6 +5203,25 @@ Not verified: the summary task itself (R-STOR-028) is not built yet, so this dec
 long for installations with many virtual repositories.
 
 **Applied in the spec:** R-STOR-028. Code: [publish_virtual.go](../../internal/items/publish_virtual.go).
+
+### Q-STOR-200 · `trove admin storage verify` reads the live blob rows, reports their items, changes nothing, and `--since` selects rows by their creation or state change
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-024 and R-HA-025 name `trove admin storage verify --since <t − storage.gc.grace_period>` and say it prints the number of referenced blobs whose objects are missing; R-HA-052's pod-crash row and exit criterion E5.2 need "no item without its object". The spec did not say what the command reads, what it writes, which credential it holds, how it stays within memory on a large table or what `--since` selects. Verified in this repository: `blobs` has no column for the time a row's object was last needed; its time columns are `created_at`, `state_changed_at`, `checked_at` and `deep_checked_at`; only `items`, `remote_cache_entries`, `ui_assets` and `user_avatars` reference `blobs`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The scrub's existence check, run on demand as a command (reuse the task) | `POST /api/v1/system/tasks/scrub/run` | Exists already | It writes `content_status` and audit events; its order and rate are the scrub's; it needs a running replica and an administrator token, and a restore drill runs before replicas serve |
+| (b) A read-only command over the live `blobs` rows, paged by digest, that lists the items per damaged blob (chosen) | One `HeadObject` per row, pages of 1,000, 16 at a time; the findings are the items of `items` that reference the blob | Needs only the database and the store credential of any replica; changes nothing; the report answers "which item" | A second reading of existence next to the scrub's, which the decision accepts because the scrub's marks are state and this is a report |
+| (c) Compare the table with a listing of the bucket | `ListObjectsV2` of the prefix against `blobs` | One request per 1,000 objects, not per blob | Reads every object key of the prefix, including orphans and the objects of other installations in a shared bucket; the listing is eventually consistent on some stores (R-STOR-035) |
+| (d) Check only the blobs `items` references | A join in the page query | Fewer checks | A blob that is `live` and unreferenced is still a row whose object must exist (R-STOR-005 writes the object first); a second arm of SQL for no saving at the sizes in question |
+
+**Choice:** (b). The package is [internal/blob/verify](../../internal/blob/verify/verify.go), the command [admin_storage.go](../../cmd/trove/admin_storage.go), the queries `VerifyBlobPage`, `VerifyBlobItems` and `VerifyBlobItemCount` in [blob.sql](../../internal/meta/postgres/queries/blob.sql). The run reads `state = 'live'` rows (a `deleting` row's object may be gone by design) with the web database role (it only reads) and the runtime credential. `--since <t>` keeps the rows with `GREATEST(created_at, state_changed_at) >= t`: the rows written or changed since the cut-off. A missing object and a size different from `blobs.size` are findings; a transient store error after three attempts is "not checked" and exits `75` when nothing else is wrong, so a store outage never reads as a clean run or as a loss.
+
+**Rationale:** the question after a crash or a restore is "which item cannot be served", and an operator cannot ask the API for it while the replicas are held not ready (R-HA-025). The command is a report: it leaves `content_status` to the scrub so that running it in the middle of an incident changes nothing a replica reads. Not verified: that the rows a point-in-time restore brings back and a GC deleted after *t* are exactly the rows that `--since <t − grace_period>` selects. They are the rows that were `deleting` or unreferenced at the time of the delete, which `blobs` does not date; `--since` therefore narrows a run, and a restore procedure that wants every lost object runs the command without it. The development agent revisits this when `blobs` gains a column that dates the last reference, or when a table is large enough that a full run is too slow (then a per-prefix split of the digest range, `--concurrency` aside).
+
+**Applied in the spec:** R-STOR-027 (the operator check and its acceptance criterion), R-HA-052's pod-crash row. Code and tests: [verify.go](../../internal/blob/verify/verify.go), [admin_storage.go](../../cmd/trove/admin_storage.go), `test/integration/storageverify`.
 
 ## What this does not cover
 

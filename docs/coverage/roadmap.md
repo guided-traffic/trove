@@ -1222,7 +1222,10 @@ so the journal ships with the backup, not after it (Q-ROAD-2).
   through `npm-all` succeeds on three `web` replicas while one of them is force-deleted partway
   through. The same holds for `dotnet restore --no-cache` of the reference solution through
   `nuget-all`. No client iteration fails after the clients' own retries, and
-  `trove admin storage verify` reports no item without its object.
+  `trove admin storage verify` reports no item without its object. Test: `TestColdCrash`
+  ([e2e.md](../developer/e2e.md#a-replica-killed-during-a-cold-install), set `cold-crash`,
+  [Q-HA-220](../spec/ha-and-helm.md#q-ha-220--the-cold-install-crash-of-exit-criterion-e52-kills-one-packages-replica-once-the-upstream-has-served-a-share-of-the-packages-and-the-clients-go-through-the-edge));
+  the command is [Q-STOR-200](../spec/storage.md#q-stor-200--trove-admin-storage-verify-reads-the-live-blob-rows-reports-their-items-changes-nothing-and---since-selects-rows-by-their-creation-or-state-change).
 - **E5.3** P-1 to P-17 of R-ARCH-027 are met in a full run of Test and Release on the commit that closes the phase, on the reference
   environment, among them the scale-out from three to six `web` replicas (P-16) and the latency
   with Valkey down (P-17). The reference load test also runs once with Valkey stopped and records

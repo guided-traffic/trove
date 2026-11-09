@@ -26,6 +26,7 @@ the verifying reader or a range.
 | [usagefold.go](../../internal/blob/usagefold.go) | `UsageFolder`: the fold loop of the usage counters (R-STOR-003) and its `Fold` iteration |
 | [conformance.go](../../internal/blob/conformance.go) | startup check, conformance checks, `AwaitStartupCheck` |
 | [sql.go](../../internal/blob/sql.go), [tables.go](../../internal/blob/tables.go), [metrics.go](../../internal/blob/metrics.go), [errors.go](../../internal/blob/errors.go) | the `DB` interface, the `blobRows` seam and its sqlc implementation, export-class registration, metric families, `errs` mapping |
+| [verify/verify.go](../../internal/blob/verify/verify.go), [verify/pg.go](../../internal/blob/verify/pg.go) | `trove admin storage verify` ([below](#storage-verify-r-stor-027-q-stor-200)): `Run` over a `Source` (the pages and the items) and an `Objects` (`Head`), `PGSource` |
 | [s3/client.go](../../internal/blob/s3/client.go) | `s3.Client` (the `ObjectStore`), `NewFromFactory` |
 | [s3/credentials.go](../../internal/blob/s3/credentials.go) | credential sources of R-STOR-031, SDK configuration |
 | [s3/errors.go](../../internal/blob/s3/errors.go), [s3/idle.go](../../internal/blob/s3/idle.go) | SDK error classification; stall detection |
@@ -291,6 +292,27 @@ It counts untrashed rows; when the trash can is built, the trashed bytes need a 
 (`OverviewStorage`), unrelated to this sum. The integration test is
 [storage_test.go](../../test/integration/projects/storage_test.go): it seeds blobs and items, folds with `blob.UsageFolder` and reads
 the figure over HTTP.
+
+## Storage verify (R-STOR-027, Q-STOR-200)
+
+`trove admin storage verify` ([cmd/trove/admin_storage.go](../../cmd/trove/admin_storage.go)) checks that the object of every `live` blob row is in the store.
+It is a command of the binary like `admin backup check`: it loads the configuration without a role, opens the database in the `web` role and the S3 client
+of `storage.s3` (the runtime credential, so it needs no permission the replicas lack), and never opens Valkey, so it runs in any pod of the installation
+(`kubectl exec deploy/trove-worker -- trove admin storage verify`) and, with the replicas held not ready, in a one-off pod of the release's configuration.
+
+| Part | Responsibility |
+|---|---|
+| `verify.Run` | Pages through `blobs` by digest (`VerifyBlobPage`, 1,000 rows, keyset on `sha256`), so memory is one page and the findings; runs up to `--concurrency` `Head` calls per page; one `Head` per row, three attempts with a 1 s and 2 s back-off for an error that is not "no such object"; a `KindConfig` error (`AccessDenied`) ends the run |
+| `verify.PGSource` | The two readers of the run (`db.Read`, one short read each, no transaction held over the slow checks): the page and the items of a damaged blob (`VerifyBlobItems`, `VerifyBlobItemCount`, [blob.sql](../../internal/meta/postgres/queries/blob.sql)) |
+| `verify.Report` | `Checked`, `Missing`, `SizeMismatch`, `Findings` (with up to `--max-items` items each, trashed ones marked), `Unchecked`, `ItemsAffected`; `--json` prints it whole |
+| `writeVerifyReport` | The text: one line per item of a damaged blob, a line for a damaged blob without an item, one per blob that was not checked, the totals last (the line the e2e tests read) |
+
+It writes nothing: no `content_status`, no audit event. Exit codes follow [R-BAK-013](../spec/backup-and-restore.md#r-bak-013--exit-codes-interruption-and-resumption):
+`5` for a finding, `75` when only unchecked blobs remain, `2` for usage and configuration, `1` otherwise. A caller in Go (the post-restore step of R-HA-025,
+which prints a count from) calls `verify.Run` and reads `Report.Missing` and `Report.SizeMismatch`. Tests: the unit tests in
+[verify_test.go](../../internal/blob/verify/verify_test.go) (pages, findings, retries, the cut-off) and [test/integration/storageverify](../../test/integration/storageverify/verify_test.go)
+(real PostgreSQL and S3: objects deleted behind the installation's back, a trashed item, `--since`); the end-to-end use is `TestColdCrash` and `TestNPMHACrash`
+([e2e.md](e2e.md#a-replica-killed-during-a-cold-install)).
 
 ## Conformance check (R-STOR-035)
 
