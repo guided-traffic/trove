@@ -48,6 +48,9 @@ deploy/dev/values-mirror.yaml  the profile `mirror`: the worker pool `mirror` of
 deploy/dev/drain.sh         E0.14 as a script (`make dev-drain`), the drain alone for the test, and with `--also valkey|postgres|pooler` the drain of variants B, C and D (below)
 deploy/dev/pg-kill.sh       force-delete the PostgreSQL primary, wait for the recovery
 deploy/dev/pg-stop.sh       stop PostgreSQL for a time by fencing the CloudNativePG cluster
+deploy/dev/sentinel-scale.sh  scale the Valkey Sentinels to a number with the operator stopped (TestHAFaults_ValkeySentinelQuorumLoss); valkey-start.sh ends it
+deploy/dev/valkey-slow.sh   repeat a CLIENT PAUSE on the Valkey primary for a time (TestHAFaults_ValkeySlow)
+deploy/dev/valkey-credential.sh  break|fix: change the default user's password on the Valkey pods (TestHAFaults_ValkeyCredentialMismatch)
 deploy/dev/valkey-stop.sh   stop Valkey and the Sentinels until valkey-start.sh (the M1 tests hold the outage themselves)
 deploy/dev/s3-stop.sh       scale the object store to 0 until s3-start.sh (its objects stay on the volume); s3-outage.sh is stop, sleep, start (TestHASuite_ObjectStoreOutage)
 deploy/dev/valkey-cli.sh    valkey-cli against the current primary (FLUSHALL of E1.11, CLIENT PAUSE of E1.8)
@@ -96,6 +99,9 @@ test/e2e/                   the Go tests, build tag `e2e`, package e2e
                             outage of the closing run (TestNPMHAClosing)
   ha_suite_test.go          R-HA-052 under the npm load, the rest of it: the object-store outage, node loss, PostgreSQL and Valkey primary loss,
                             the audit forward cut by a pod deletion (TestHASuite_..., set ha-suite)
+  ha_faults_test.go         E5.10 under the npm load: the database at 0 instances, Sentinel quorum loss, FLUSHALL, a slow Valkey, a Valkey credential
+                            mismatch (TestHAFaults_..., set ha-faults); ha_faults_failover_test.go: the planned failover's 10 s bound
+  ha_pooler_test.go         R-HA-058 under the npm load: a pooler instance deleted, gracefully and forced (TestHAPooler_..., set ha-pooler)
   npm_perf_test.go          R-ARCH-027: perf/k6/npm.js against one web replica from inside the cluster, reported (TestNPMPerf)
   k6/npm.js                 the k6 npm requests of R-HA-059: documents and 1 to 5 MiB tarballs of npm-all, 120 requests/s
   nuget_load_test.go        the NuGet load of R-HA-059: the fixture (nuget-ha-local, -remote, -all, 61 packages per restore), the dotnet restore and
@@ -166,6 +172,8 @@ make e2e SET=npm-ha-crash    # E2.11: the pod crash under the npm load, three fo
 make e2e SET=npm-ha-soak     # the pod crash with ten force-deletes over 20 minutes, then perf/k6/npm.js (nightly)
 make e2e SET=cold-crash      # E5.2: a packages replica force-deleted during a cold npm ci and a cold dotnet restore of three clients each, then trove admin storage verify (nightly, lane 1, job e2e-nuget)
 make e2e SET=npm-ha-closing  # npm-ha, npm-ha-soak and the 5-minute Valkey outage under the npm load (the closing run's leg)
+make e2e SET=ha-faults       # E5.10: the database at 0 instances for 2 minutes, Sentinel quorum loss, FLUSHALL, a slow Valkey, the planned failover with its 10 s bound, a Valkey credential mismatch (about 45 minutes; nightly and by hand)
+make e2e SET=ha-pooler       # E5.10, R-HA-058: a pooler instance deleted, gracefully and forced, in the pooler profile (TROVE_POOLER=1; about 25 minutes; nightly and by hand)
 make e2e SET=ha-suite        # the failure scenarios of R-HA-052 that npm-ha leaves out, under the same npm load: the audit forward cut by a pod deletion, the object-store outage, PostgreSQL and Valkey primary loss, node loss (about 50 minutes; nightly and by hand)
 make npm-clients-image       # only build the image into the local Docker
 make e2e SET=nuget-clients   # build the NuGet clients image, start the client pods, run the smoke test (the pods stay up)
@@ -1205,6 +1213,8 @@ the pod watch sees with a deletion timestamp; the warm-up is every k6 request be
 ([Drain and failover under NuGet load](#drain-and-failover-under-nuget-load)); the
 long-transfer probes of R-HA-059 and variants B to E in E5.9; R-HA-057's "every replica writes to the new primary within 10 s", the alerts
 (`TroveValkeyUnavailable`; the dev profile runs no Prometheus) and the other Valkey rows in E5.10; the cold install with a replica killed, and `trove admin storage verify` after it, are built ([A replica killed during a cold install](#a-replica-killed-during-a-cold-install)). The
+(`TroveValkeyUnavailable`; the dev profile runs no Prometheus, [H-791](../spec/ha-and-helm.md#h-791--the-valkey-alerts-are-tested-as-rules-not-as-alerts-of-a-running-installation)) and the other Valkey rows in E5.10, which
+are built now ([The failure suite ha-faults](#the-failure-suite-ha-faults)); `trove admin storage verify` in E5.2. The
 Valkey-primary-loss row of R-HA-052, which ran on every change until 2026-11-01 and now runs in the nightly failover set, is E0.13's (`valkey-kill.sh` under the ping load); its npm load
 joins with M5.
 
@@ -1513,6 +1523,49 @@ The set needs both clients images and both counting test upstreams (the scatter 
 `requireStorageVerified` runs `trove admin storage verify` in the worker pod through `troveAdmin`, as an operator would, and requires exit status `0` and a last line with
 no blob without its object, of another size or unchecked. The pod crash of `TestNPMHACrash` ends with it too. The test asserts no number of upstream requests: a
 replica killed while it fetches leaves a flight whose waiters fetch again, which the collapse tests (E2.2, E3.2) do not allow and this one does.
+## The failure suite ha-faults
+
+`make e2e SET=ha-faults` and `make e2e SET=ha-pooler` run the scenarios that E5.10 adds to [R-HA-052](../spec/ha-and-helm.md#r-ha-052--failure-injection-test-suite), and the rows of
+[R-HA-007](../spec/ha-and-helm.md#r-ha-007--failure-mode-contract) that had no scenario, under the same load as `ha-suite` ([The load](#the-load): eight `npm ci` loops, a publish loop,
+k6 at 120 requests/s, npm's default retries): [test/e2e/ha_faults_test.go](../../test/e2e/ha_faults_test.go),
+[ha_faults_failover_test.go](../../test/e2e/ha_faults_failover_test.go) and [ha_pooler_test.go](../../test/e2e/ha_pooler_test.go). Both are long sets (about 45 and 25 minutes) for the
+nightly workflow (legs of the job `e2e-npm`, lane 1, [Q-HA-250](../spec/ha-and-helm.md#q-ha-250--where-the-scenarios-of-e510-run-and-in-which-lane)), a dispatch and by hand. The decisions are
+Q-HA-250 to Q-HA-258 on the same page.
+
+| Test | Injection | Pass conditions |
+|---|---|---|
+| `TestHAFaults_PostgresOutage` | [pg-stop.sh](../../deploy/dev/pg-stop.sh) `2m`: every instance of the CloudNativePG cluster fenced for 2 minutes, then unfenced | R-HA-052: no trove container restarts, `/healthz` 200 throughout; every replica turns unready and ready again; every pod ready and the edge answering within 30 s of the cluster reporting two ready instances; every k6 failure a `503` inside [start of the fence, healthy + 30 s]; an `npm` command that overlaps that window may fail, with the `503` in its output, every other one exits 0 and every `npm ci` loop completes a command afterwards ([Q-HA-251](../spec/ha-and-helm.md#q-ha-251--what-the-clients-may-see-of-the-database-at-0-instances-for-2-minutes)); every acknowledged publish installs |
+| `TestHAFaults_ValkeySentinelQuorumLoss` | [sentinel-scale.sh](../../deploy/dev/sentinel-scale.sh) `1`, 45 s, then `0`, 45 s, then `valkey-start.sh` | R-HA-057: `trove_valkey_sentinels_reachable` is 3 on every serving replica before, then 1 and 0 within `valkey.sentinel.refresh_interval` + 1 s of the scale returning (polled every 250 ms); every `npm` command exits 0, k6 only `2xx` and `304`, `/readyz` 200 and no replica reporting `valkey` degraded; `trove_valkey_primary_changes_total` unchanged (no failover) |
+| `TestHAFaults_ValkeyFlushAll` | three documents requested through two `packages` replicas while the upstream holds its answer for 4 s; `FLUSHALL` on the primary ([valkey-cli.sh](../../deploy/dev/valkey-cli.sh)) 2 s in | R-HA-057: every command exits 0, k6 only `2xx` and `304`, `/readyz` 200; every request for the documents answers 200 and the counting upstream recorded 1 or 2 requests for each ([Q-HA-255](../spec/ha-and-helm.md#q-ha-255--the-flushall-criterion-is-run-on-documents-that-are-in-flight)) |
+| `TestHAFaults_ValkeySlow` | [valkey-slow.sh](../../deploy/dev/valkey-slow.sh) `3m 2000`: `CLIENT PAUSE 2000 ALL` renewed after a 300 ms gap ([Q-HA-252](../spec/ha-and-helm.md#q-ha-252--the-slow-valkey-is-a-repeated-client-pause-on-the-primary-not-a-fault-proxy)) | R-HA-057: every command exits 0, k6 only `2xx` and `304`, `/readyz` 200; `trove_valkey_circuit_open` reached 1 on every `packages` replica; the k6 p99 during the fault at most the p99 before it + 2 x `valkey.command_timeout`; `degraded` cleared within `open_duration` + `health_check_interval` + 5 s of the end |
+| `TestHAFaults_ValkeyPlannedFailover` | `valkey-failover.sh` | R-HA-057: as `TestNPMHA`'s failover, and `trove_valkey_primary_changes_total` rose by one on every replica within 10 s of the request |
+| `TestHAFaults_ValkeyCredentialMismatch` | [valkey-credential.sh](../../deploy/dev/valkey-credential.sh) `break`: the default user's password changed on the Valkey pods and the trove pods' connections closed; a `packages` pod deleted; `fix` ([Q-HA-253](../spec/ha-and-helm.md#q-ha-253--the-valkey-credential-mismatch-is-injected-on-the-server-not-by-editing-the-secret)) | R-HA-007: `valkey` degraded on every serving replica, every command exits 0, k6 only `2xx` and `304`, `/readyz` 200 on the running pods; the replacement pod not ready at any of 15 samples 2 s apart; it turns ready and `degraded` clears after the fix |
+| `TestHAPooler_InstanceLoss` (set `ha-pooler`, `TROVE_POOLER=1`) | an instance of `trove-db-pooler-rw` and of `trove-db-pooler-control` deleted, gracefully and with `--grace-period=0 --force`, each time until the pooler has two ready instances on two nodes | R-HA-058: every command exits 0 and no trove container restarts; graceful: k6 only `2xx` and `304`, `/readyz` 200 throughout; forced: every k6 failure a `503` within `retry.max_elapsed` of the kill |
+
+Spool exhaustion (R-HA-007, R-HA-052) is not an e2e run: `TestR_HA_052_SpoolExhaustionAnswers503AndEvictsNothing`
+([test/integration/files](../../test/integration/files/spool_exhaustion_test.go)) runs a replica with a 6 MiB spool budget against the integration stack: an upload that declares 5 MiB while another holds
+the budget answers `503` with `Retry-After` and leaves no spool file, one above `storage.upload.max_size` answers `413`, the holder commits (no eviction), and the refused upload succeeds afterwards.
+The dev profile's budget is 2 GiB per replica ([Q-HA-257](../spec/ha-and-helm.md#q-ha-257--where-each-remaining-row-of-r-ha-007-is-proven)). The backup and restore pod rows are `TestBackupDrain`'s subtests, whose
+names carry R-HA-007 and R-HA-052.
+
+**Not built.** An e2e run of the object store that rejects the credential (R-HA-007; unit tests prove the circuit and the log line, [H-793](../spec/ha-and-helm.md#h-793--the-dev-store-was-not-shown-to-reject-a-wrong-secret-key)). The alerts: the dev profile runs no Prometheus, so `TroveValkeySentinelsDegraded` and `TroveValkeyUnavailable` are proven by `promtool test rules` only ([Q-HA-256](../spec/ha-and-helm.md#q-ha-256--the-alerts-of-the-valkey-scenarios-are-proven-by-the-rule-tests-not-by-a-prometheus-in-the-e2e-run),
+H-791). A backup or restore pod cut off from the network (H-792). R-HA-058's other criteria in the pooler profile (the growth criterion of R-HA-016, the saturation run) are not part of `ha-pooler`.
+
+**First runs** (nightly dispatches 42587147342, 42595613488 and 42601429868 of the branch, 2026-11-09, on the large class beside other legs). Passed: `TestHAFaults_ValkeySentinelQuorumLoss` (the gauge followed the loss to 1 after 0.16 s and to 0 after 1.9 s, bound 6 s; back at 3 after 70 ms; 24 publishes installed),
+`TestHAFaults_ValkeyFlushAll` (two upstream requests for each of the three documents, every request 200), `TestHAFaults_ValkeyCredentialMismatch` (degraded on every serving replica 9 s after the change, the replacement ready 7 s after the fix, degraded cleared 4 s after it), the graceful stops of both poolers and the forced stop of
+the control pooler. `TestHAFaults_ValkeyPlannedFailover`: every replica followed the new primary in 7.4 to 8.0 s, bound 10 s. Red: `TestHAFaults_PostgresOutage` (every pod ready 0.8 to 2.3 s after the cluster was healthy again, all failures `503` but 1,654 to 2,006 of them requests that timed out at k6's 45 s,
+[H-794](../spec/ha-and-helm.md#h-794--requests-that-start-just-before-a-database-outage-stall-for-longer-than-the-retry-budget)), and every test whose k6 saw `502`s of 11 to 15 s at times unrelated to the fault ([H-795](../spec/ha-and-helm.md#h-795--the-e2e-legs-of-e510-are-not-yet-shown-green-on-a-runner)).
+The first run of the forced stop of the request pooler found a product defect: `FATAL: server shutting down (SQLSTATE 08P01)` from the stopping PgBouncer was not retried and answered `500` ([Q-HA-258](../spec/ha-and-helm.md#q-ha-258--a-lost-pooler-instance-is-deleted-gracefully-and-forced-for-both-poolers-under-the-full-npm-load)); fixed in `classify`; the leg `ha-pooler` of dispatch 42601429868 passed all four runs (graceful and forced, both poolers).
+
+**Dev scripts.** [pg-stop.sh](../../deploy/dev/pg-stop.sh) fences every instance (an `EXIT` trap removes the fence on any failure);
+[sentinel-scale.sh](../../deploy/dev/sentinel-scale.sh) stops the Valkey operator and scales the Sentinel StatefulSet (`valkey-start.sh` ends the fault);
+[valkey-slow.sh](../../deploy/dev/valkey-slow.sh) renews `CLIENT PAUSE` with a 300 ms gap from one connection inside the primary's pod;
+[valkey-credential.sh](../../deploy/dev/valkey-credential.sh) `break|fix` changes the default user's password on both Valkey pods and closes the trove pods' connections on the primary.
+
+### Artifacts
+
+`.out/e2e/npm-ha-<scenario>.json`, `npm-load-<scenario>.json` and `k6-npm-<scenario>/` as in [Artifacts](#artifacts) above, with the scenarios `pg-outage`, `sentinel-quorum-loss`, `valkey-flushall`,
+`valkey-slow`, `valkey-planned-failover`, `valkey-credential-mismatch`, `s3-credential-rejected` and `pooler-<pooler>-<graceful|forced>`.
 
 ## Drain and failover under NuGet load
 

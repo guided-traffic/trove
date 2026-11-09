@@ -82,6 +82,9 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 			// R-HA-057's bound for degraded to clear after a Valkey outage
 			"valkey_open_duration_ms":         cfg.Valkey.CircuitBreaker.OpenDuration.Milliseconds(),
 			"valkey_health_check_interval_ms": cfg.Valkey.HealthCheckInterval.Milliseconds(),
+			// R-HA-057's Sentinel quorum loss (the gauge follows within the refresh interval + 1 s) and slow Valkey (the p99 bound is twice the command timeout)
+			"valkey_sentinel_refresh_interval_ms": cfg.Valkey.Sentinel.RefreshInterval.Milliseconds(),
+			"valkey_command_timeout_ms":           cfg.Valkey.CommandTimeout.Milliseconds(),
 			// R-HA-052's object-store outage: full recovery within open_duration + 10 s
 			"s3_open_duration_ms": cfg.Storage.S3.CircuitBreaker.OpenDuration.Milliseconds(),
 			// R-HA-052's node loss: the server releases the advisory locks of a vanished session within idle + interval x count (R-HA-015)

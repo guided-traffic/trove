@@ -250,6 +250,19 @@ func TestErrorMapping(t *testing.T) {
 			}
 		}
 	})
+	t.Run("R-HA-007 R-STOR-031 the store's refusals of the credential are told from AccessDenied: a revoked key, a wrong secret and an expired token are credential rejections", func(t *testing.T) {
+		for _, c := range []struct {
+			status    int
+			code      string
+			rejection bool
+		}{{403, "InvalidAccessKeyId", true}, {403, "SignatureDoesNotMatch", true}, {400, "ExpiredToken", true}, {403, "AccessDenied", false}, {404, "NoSuchBucket", false}} {
+			e := newEnv(t, nil)
+			e.fake.fail = func(w http.ResponseWriter, r *http.Request) bool { s3Error(w, r, c.status, c.code); return true }
+			if err := put(e.client, "k", []byte("x"), blob.Checksum{}); blob.IsCredentialRejection(err) != c.rejection {
+				t.Errorf("%s: IsCredentialRejection = %v, want %v (%v)", c.code, !c.rejection, c.rejection, err)
+			}
+		}
+	})
 	t.Run("R-STOR-033 an unreachable store is transient", func(t *testing.T) {
 		e := newEnv(t, func(c *config.StorageS3) { c.Retry.MaxAttempts = 1 })
 		e.srv.Close()

@@ -2659,7 +2659,11 @@ Priority: **MVP** · Covers: STOR-024, STOR-017
 - Circuit breaker per replica: after `circuit_breaker.failure_threshold` consecutive failures
   (network errors, timeouts, `5xx`, credential errors; not `404` or other `4xx`) the circuit opens
   for `circuit_breaker.open_duration`; blob operations then fail fast (R-STOR-036); one probe
-  request closes it again.
+  request closes it again. A credential error is a failure to obtain a credential, or an answer that names the credential as
+  the cause: `InvalidAccessKeyId`, `SignatureDoesNotMatch`, `ExpiredToken`, `InvalidToken`, `AuthorizationHeaderMalformed`.
+  A plain `AccessDenied`, a missing bucket and the other `4xx` answers are answers about the request and do not count
+  ([ha-and-helm.md](ha-and-helm.md) Q-HA-254). When the circuit opens on such an answer, the replica logs one `WARN` line with
+  `credential_source` (`storage.s3.credentials.source`) and the store's code, never a key or a secret (R-HA-007).
 - Metrics: `trove_storage_s3_requests_total{operation,outcome}`,
   `trove_storage_s3_request_duration_seconds{operation}`, `trove_storage_s3_bytes_total{direction}`,
   `trove_storage_s3_circuit_open`.

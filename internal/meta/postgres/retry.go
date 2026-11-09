@@ -49,7 +49,14 @@ func classify(err error) retryKind {
 		switch {
 		case pe.Code == "40001" || pe.Code == "40P01":
 			return retrySerialization
-		case pe.Code == "08P01": // protocol_violation: a refused startup parameter, never transient
+		case pe.Code == "08P01":
+			// protocol_violation. A refused startup parameter never passes by waiting. PgBouncer also answers a stopping
+			// instance's clients with it ("server shutting down") and a client whose server it cannot reach ("pgbouncer cannot
+			// connect to server"): those are a lost pooler instance or a failover behind it, and the next connection reaches
+			// another instance (R-HA-007, R-HA-058).
+			if strings.Contains(pe.Message, "server shutting down") || strings.Contains(pe.Message, "pgbouncer cannot connect to server") {
+				return retryFailover
+			}
 			return retryNo
 		case strings.HasPrefix(pe.Code, "08"), // connection exception
 			pe.Code == "57P01", // admin_shutdown

@@ -1271,6 +1271,12 @@ so the journal ships with the backup, not after it (Q-ROAD-2).
   `web` pod replaced, Sentinel quorum loss, `FLUSHALL`, a slow Valkey) with zero failed commands and
   `/readyz` answering `200` throughout, and drain variant B passes. The pooler profile passes
   R-HA-058's criteria in the full run of Test and Release on the commit that closes the phase, drain variant D among them.
+  Tests: `TestHAFaults_PostgresOutage` (the database at 0 instances for 2 minutes), `TestHAFaults_ValkeySentinelQuorumLoss`, `TestHAFaults_ValkeyFlushAll`,
+  `TestHAFaults_ValkeySlow` and `TestHAFaults_ValkeyPlannedFailover` of the set `ha-faults`, and `TestHAPooler_InstanceLoss` of the set `ha-pooler`
+  ([e2e.md](../developer/e2e.md#the-failure-suite-ha-faults); nightly and on dispatch, [Q-HA-250](../spec/ha-and-helm.md#q-ha-250--where-the-scenarios-of-e510-run-and-in-which-lane));
+  the switchover, the force-deleted primary, the planned failover, the Valkey primary loss and the 5-minute outage are `TestNPMHA`, `TestHASuite_PostgresPrimaryLoss`,
+  `TestHASuite_ValkeyPrimaryLoss` and `TestNPMHAClosing`. The alerts of the Valkey scenarios are rule tests ([H-791](../spec/ha-and-helm.md#h-791--the-valkey-alerts-are-tested-as-rules-not-as-alerts-of-a-running-installation)).
+  R-HA-007's rows without a scenario are proven as [Q-HA-257](../spec/ha-and-helm.md#q-ha-257--where-each-remaining-row-of-r-ha-007-is-proven) lists.
 - **E5.11** A backup taken during publishing restores into an empty installation. R-BAK-029 passes
   scenario by scenario in CI. In scenario 1, npm and NuGet packages are published, deleted and
   trashed, and garbage collection runs with `grace_period: 0s` every 10 s, while

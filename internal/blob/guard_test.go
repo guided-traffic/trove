@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -110,6 +112,53 @@ func TestGuardBreaker(t *testing.T) {
 		}
 		if g.Open() {
 			t.Fatal("404 answers opened the circuit")
+		}
+	})
+	t.Run("R-HA-007 R-STOR-033 R-STOR-031 a store that rejects the credential (revoked key, wrong secret, expired token) counts as an object-store failure: the circuit opens, the log names the credential source and no secret", func(t *testing.T) {
+		for _, code := range []string{"InvalidAccessKeyId", "SignatureDoesNotMatch", "ExpiredToken"} {
+			now = time.Now()
+			mem := blobtest.New()
+			m := observability.NewMetrics("web")
+			var logs bytes.Buffer
+			g := blob.NewGuard(mem, cfg, blob.WithGuardClock(clock), blob.WithGuardMetrics(blob.NewMetrics(m)),
+				blob.WithGuardLogger(slog.New(slog.NewTextHandler(&logs, nil)), "static"))
+			mem.SetFault(func(op, _ string) error {
+				return &blob.StoreError{Op: op, Status: 403, Code: code, Kind: blob.KindConfig, Err: errors.New("the key AKIDSECRETKEY is rejected")}
+			})
+			for i := 0; i < 5; i++ {
+				if err := head(g); !blob.IsConfig(err) {
+					t.Fatalf("%s call %d: %v", code, i, err)
+				}
+			}
+			before := mem.Count("head")
+			if err := head(g); !errors.Is(err, blob.ErrCircuitOpen) || mem.Count("head") != before || !g.Open() {
+				t.Fatalf("%s: the sixth call did not fail fast on an open circuit: %v", code, err)
+			}
+			if v := gauge(t, m, "trove_storage_s3_circuit_open"); v != 1 {
+				t.Fatalf("%s: trove_storage_s3_circuit_open = %v", code, v)
+			}
+			out := logs.String()
+			if !strings.Contains(out, "credential_source=static") || !strings.Contains(out, "code="+code) {
+				t.Errorf("%s: the log names neither the credential source nor the code: %s", code, out)
+			}
+			if strings.Count(out, "rejects the credential") != 1 {
+				t.Errorf("%s: want one log line when the circuit opens, got: %s", code, out)
+			}
+		}
+	})
+	t.Run("R-HA-007 R-STOR-033 AccessDenied for one operation and a missing bucket are answers about the request, not credential rejections: they do not open the circuit", func(t *testing.T) {
+		now = time.Now()
+		g, mem, _ := newGuard(t)
+		for _, code := range []string{"AccessDenied", "NoSuchBucket"} {
+			mem.SetFault(func(op, _ string) error {
+				return &blob.StoreError{Op: op, Status: 403, Code: code, Kind: blob.KindConfig}
+			})
+			for i := 0; i < 20; i++ {
+				_ = head(g)
+			}
+			if g.Open() {
+				t.Fatalf("%s answers opened the circuit", code)
+			}
 		}
 	})
 	t.Run("R-STOR-033 a success resets the count of consecutive failures", func(t *testing.T) {
