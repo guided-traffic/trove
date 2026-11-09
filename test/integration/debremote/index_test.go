@@ -57,7 +57,12 @@ func TestR_DEB_021_AnIndexIsServedWhenTheStoredReleaseListsItAndNotOtherwise(t *
 	if n := e.requests(stubPath(suitePath, index)); n != 1 {
 		t.Errorf("the stub saw %d requests for the index, want 1", n)
 	}
-	// A file the release does not list answers 404 without a request to the upstream.
+	// A file the release does not list answers 404 without a request to the upstream. The fill of the index enqueued its parse
+	// (Q-DEB-90), which reads through the upstream in the background: wait until it is done, so the count below is the request's.
+	id := e.repoID(rKeyed)
+	eventually(t, 30*time.Second, "the parse of main/binary-amd64", func() bool {
+		return e.st.Number(`SELECT count(*) FROM deb_remote_indexes WHERE repo_id = $1 AND path = $2`, id, packages) > 0
+	})
 	e.stub.Reset()
 	c := e.get(rKeyed, suitePath+packages+".bz2")
 	if c.Status != http.StatusNotFound || c.Code(t) != "deb_not_in_release" {
