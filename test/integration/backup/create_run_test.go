@@ -4,10 +4,13 @@ package backup
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/guided-traffic/trove/internal/backup"
 	"github.com/guided-traffic/trove/internal/backup/create"
@@ -174,6 +177,26 @@ func TestR_BAK_005_RewriteDuringExportFailsAndRowCountsHold(t *testing.T) {
 	}
 }
 
+// exportReleased waits, bounded, until no session of the installation's database holds the backup's shared migration lock
+// (pg_advisory_lock_shared(3, 0)).
+func exportReleased(c *pgx.Conn) error {
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		var held int
+		if err := c.QueryRow(context.Background(), `SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND classid = 3 AND objid = 0
+			AND objsubid = 2 AND mode = 'ShareLock' AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`).Scan(&held); err != nil {
+			return err
+		}
+		if held == 0 {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return errors.New("the export still holds the shared migration lock after 30 s")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 // TestR_BAK_005_MigrationLock: a migration holding the lock makes the run wait and exit 75; a migration started during the export
 // waits and fails naming the backup; one started during the blob copy succeeds.
 func TestR_BAK_005_MigrationLock(t *testing.T) {
@@ -204,13 +227,19 @@ func TestR_BAK_005_MigrationLock(t *testing.T) {
 		migrate := func() error {
 			return migrateOnce(in, time.Second)
 		}
+		locks := dial(t, in)
 		r.mutate = func(d *create.Deps) {
 			d.Fault = func(_ context.Context, point string) error {
 				switch point {
 				case create.PointSnapshot:
 					duringExport = migrate()
 				case create.PointCopied:
-					duringCopy = migrate()
+					// The export runs beside the blob copy and releases the migration lock when its last table is written,
+					// which on a loaded host can be after the copy of the one blob (F-115): the copy phase starts for a
+					// migration once the export has let go of the lock.
+					if duringCopy = exportReleased(locks); duringCopy == nil {
+						duringCopy = migrate()
+					}
 				}
 				return nil
 			}

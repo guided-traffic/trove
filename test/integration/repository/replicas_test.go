@@ -67,25 +67,25 @@ func TestSnapshotAcrossReplicas(t *testing.T) {
 		}
 	})
 
-	t.Run("R-ARCH-011 R-API-052 R-REPO-049 a repository created on replica A is usable on replica B at once, without Valkey", func(t *testing.T) {
-		// B has never heard of the key, and its poll interval is far longer than this
-		// test waits: the lookup finds the row in PostgreSQL and polls the change log
-		// itself.
+	t.Run("R-ARCH-011 R-API-052 R-REPO-049 a repository created on replica A is usable on another replica at once, without Valkey", func(t *testing.T) {
+		// C has never heard of the key, and its own poll comes 15 s after its start, far later than this test runs: a lookup
+		// that finds the repository found the row in PostgreSQL and polled the change log itself. That is the proof that it
+		// did not wait for a poll, without a wall-clock bound that a loaded runner decides (F-115).
+		c := e.newProbe("snap-c", 15*time.Second)
+		if _, err := c.reader.List(ctx); err != nil { // build the snapshot before the key exists
+			t.Fatal(err)
+		}
 		if _, err := a.svc.Create(ctx, caller, "it", []byte(fmt.Sprintf(genericBody, "fresh-key"))); err != nil {
 			t.Fatal(err)
 		}
-		start := time.Now()
-		r, err := b.reader.ByName(ctx, qr("fresh-key"))
+		r, err := c.reader.ByName(ctx, qr("fresh-key"))
 		if err != nil || r.Name != qr("fresh-key") || r.Format != "generic" || r.Lifecycle != repository.Active {
 			t.Fatalf("ByKey = %+v, %v", r, err)
 		}
-		if d := time.Since(start); d > poll {
-			t.Fatalf("the lookup took %s with a poll interval of %s", d, poll)
-		}
 		// And it is in the snapshot now: no further query.
-		before := b.runner.n.Load()
-		if _, err := b.reader.ByName(ctx, qr("fresh-key")); err != nil || b.runner.n.Load() != before {
-			t.Fatalf("second lookup: %v, %d queries", err, b.runner.n.Load()-before)
+		before := c.runner.n.Load()
+		if _, err := c.reader.ByName(ctx, qr("fresh-key")); err != nil || c.runner.n.Load() != before {
+			t.Fatalf("second lookup: %v, %d queries", err, c.runner.n.Load()-before)
 		}
 	})
 

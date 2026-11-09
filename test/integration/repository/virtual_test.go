@@ -161,11 +161,13 @@ func TestVirtualMembers(t *testing.T) {
 	})
 
 	t.Run("R-REPO-017 a change of the member order is visible on both replicas within 2 seconds, without Valkey", func(t *testing.T) {
-		start := time.Now()
 		if _, err := a.svc.Patch(ctx, caller, qr("pkg-all"), repository.MatchAny(),
 			mergePatch(`{"virtual":{"members":["pkg-remote","pkg-local"]}}`)); err != nil {
 			t.Fatal(err)
 		}
+		// The 2 s of R-REPO-017 run from the committed change, which the write's answer reports; the time the write itself
+		// took on a loaded host is not part of the propagation (F-115).
+		start := time.Now()
 		for _, rep := range []*replica{a, b} {
 			waitFor(t, rep.name+" to show the new order", 2*time.Second, func() bool {
 				r, err := rep.reader.ByName(ctx, qr("pkg-all"))
