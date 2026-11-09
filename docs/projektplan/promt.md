@@ -397,3 +397,26 @@ What a run did, in short, so the next run starts where it stopped. The plan item
   or stress runs, at most four builders, each a whole feature, and release notes that say in plain words what changed.
 - Next run: first the blockers F-109 and F-110 (main red), then four builders: OCI virtual (WP9), OCI mirror (WP10), APT local,
   APT remote; the open findings of section 8 in one batch at the end.
+
+**Run of 2026-11-08/09** (ALPHA mode of rule 10; release v0.30.1, the next release waits for Test and Release once the Ubuntu archive
+answers again, F-117).
+
+- Built and on `main`: the rest of T-16, the Docker registry — the virtual class (pulls in member order, pushes to the deploy target),
+  the mirror (selected names, tags and platforms kept and pullable with the upstream gone), the conformance suite v1.1.1 in all four
+  categories, the e2e set `oci` with Docker and Podman on several replicas, the closing set `oci-closing`, the documentation; T-16 is
+  closed. All of T-17, the APT registry for Debian and Ubuntu: the contracts, the `.deb` and deb822 libraries, the OpenPGP library and
+  a signing key per repository with co-signing rotation, the local class with signed indexes built by a job, the remote class that
+  passes archives through with their signatures verified, the mirror of named suites, the virtual class that merges local and remote
+  members into one signed index, the UI, the e2e set `deb` on Debian 13 and 12 and Ubuntu 24.04 and 22.04, the documentation.
+- Product defects the clients and tests found on the way: a mount challenge without the source's pull scope (the conformance suite), a
+  mirror with its upstream down answering 502 to Docker's referrers request, a Docker Hub mirror that never ran a pass because Hub
+  refuses the catalog scope, APT ignoring every index until the Release listed the uncompressed checksums, a lost first build of a new
+  suite, a reindex of unchanged rows that published nothing, a manual and an automatic name claim deciding at the same time (F-108), the
+  build metrics counting virtual builds as local.
+- Findings closed: F-106, F-108, F-109, F-110, F-111, F-112 (decided, Q-NPM-86), F-113, F-114, F-115. Recorded: F-116, F-117.
+- Builders: at most four at a time, each a whole feature over several stages, resumed with their context; no review rounds. Load stayed
+  between 15 and 50 on 20 cores, and the timing failures under it were fixed in the tests (F-114, F-115) instead of being chased.
+- Merges: every builder branch was cherry-picked onto `main`, the touched gates rerun on the merged tree; the conflicts were the shared
+  plan and documentation pages, two migrations that both took 00064 (renumbered), and doc links one directory too short.
+- Next run: T-17 has no open package. Section 10 holds no registry task, so the next unit of FULL.md follows (step 1, item 3), with
+  the open findings of section 8 in one batch at the end.
