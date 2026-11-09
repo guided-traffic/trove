@@ -54,7 +54,8 @@ func drainUnderLoad(t *testing.T, kind string, v drainVariant, start func() drai
 		x.prepare(t)
 	}
 	troveSettled(t, 3, 3, 4)
-	d := prepareVariantDrain(t, v)
+	// the installation holds the 1 GiB file of the download probes: the backup of variant E copies it at 3 MiB/s (about 6 minutes) and not at 512 KiB/s
+	d := prepareVariantDrain(t, v, func(d *variantDrain) { d.BackupRate = "3MiB" })
 	// the pick may have moved the PostgreSQL and the Valkey primary and the backup Job may be running: the replicas are unready for
 	// a few seconds after that, and the load is the drain's, not the pick's
 	troveSettled(t, 3, 3, 4)

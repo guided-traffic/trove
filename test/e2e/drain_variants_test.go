@@ -68,8 +68,9 @@ type variantDrain struct {
 	oldPrimary string
 	poll       *primaryPoll
 
-	// E: the backup Job
-	job string
+	// E: the backup Job, and the rate its copy is slowed to (512 KiB/s by default: the installation of the vulnerability tests is small)
+	job        string
+	BackupRate string
 
 	runErr   error
 	runOut   string
@@ -166,9 +167,12 @@ func nodeOf(t testing.TB, podName string) string { return podNode(t, cfg.namespa
 // prepareVariantDrain picks the node of the variant (moving a primary that is in the way), records the pods on it and starts the
 // watches the variant's conditions read. Call it before the caller's load or probes start: the moves of a primary are not part of
 // the measured window.
-func prepareVariantDrain(t *testing.T, v drainVariant) *variantDrain {
+func prepareVariantDrain(t *testing.T, v drainVariant, opts ...func(*variantDrain)) *variantDrain {
 	t.Helper()
 	d := &variantDrain{V: v}
+	for _, o := range opts {
+		o(d)
+	}
 	// kubectl drain --pod-selector matches pods of every namespace: an installation left in trove-restore (its PostgreSQL cluster is
 	// named trove-db too, and its PodDisruptionBudget would hold the drain) is removed first
 	if out, err := kubectl("get", "namespace", restoreNS, "-o", "name"); err == nil && strings.TrimSpace(out) != "" {
@@ -389,7 +393,7 @@ func (d *variantDrain) prepareBackupJob(t *testing.T) {
 		bakCreateJob(t, bakJob{
 			name: d.job, backoff: &zero, preferNode: d.Node,
 			env: map[string]string{
-				"TROVE_BACKUP_TARGET_PREFIX": bakFreshPrefix(run, "var-e"), "TROVE_BACKUP_COPY_BYTES_PER_SECOND": "512KiB", "TROVE_BACKUP_COPY_CONCURRENCY": "1",
+				"TROVE_BACKUP_TARGET_PREFIX": bakFreshPrefix(run, "var-e"), "TROVE_BACKUP_COPY_BYTES_PER_SECOND": d.backupRate(), "TROVE_BACKUP_COPY_CONCURRENCY": "1",
 			},
 		})
 		bakWaitLog(t, cfg.namespace, d.job, "backup run started", 3*time.Minute)
@@ -407,6 +411,16 @@ func (d *variantDrain) prepareBackupJob(t *testing.T) {
 		job := d.job
 		waitFor(t, "the pod of Job "+job+" to be gone", 2*time.Minute, time.Second, func() bool { return len(podsOf(t, "job-name="+job)) == 0 })
 	}
+}
+
+// backupRate is the copy rate of variant E's backup Job. A pod that is evicted copies the whole installation again in the second pod
+// (and the Job must end within 15 minutes), so the rate must let a copy of the installation end in about 6 minutes: the load of E5.9
+// keeps a 1 GiB file in it, which at 512 KiB/s would take 35 minutes (the first runs of the leg lost their runner there, Q-HA-241).
+func (d *variantDrain) backupRate() string {
+	if d.BackupRate != "" {
+		return d.BackupRate
+	}
+	return "512KiB"
 }
 
 func (d *variantDrain) stopMonitor() {
