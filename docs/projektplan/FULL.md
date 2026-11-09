@@ -77,12 +77,13 @@ follow the [roadmap's format order](../coverage/roadmap.md#p1-format-expansion-o
 ### F4 · OCI and Docker (container images)
 - 🟢 Spec page `formats/oci.md` (one format `oci` for Docker and OCI content, Q-OCI-1 and Q-OCI-2), with the contracts, schema and format of WP0
 - 🟢 Registry API under `/v2/` (all four categories of the distribution specification, conformance suite v1.1.1), token service, chunked uploads across replicas
-- 🟢 Local, remote (Docker Hub and other registries; `pullThrough` and `mirror`), virtual; multi-architecture images; referrers; deletion and the sweep of unreferenced blobs
-- ⚪ Clients: Docker CLI, Podman, BuildX, BuildKit (`buildctl`, registry build caches), ORAS, Cosign
+- 🟢 Local, remote (Docker Hub and other registries; `pullThrough` and `mirror`), virtual; multi-architecture images; referrers; deletion and the sweep of unreferenced blobs; the Docker Engine mirror of a bound host
+- 🟡 Clients: Docker CLI with Buildx multi-platform push, Podman and Kubernetes pulls built; BuildKit registry caches, ORAS and Cosign beyond referrers stay
 - ⚪ WebAssembly modules as OCI artifacts (`wasm-to-oci`)
 - ⚪ Image vulnerability scanning: operating-system and language packages inside images, with the findings, report and blocking of beta phase 6; the analyser is decided on the spec page ([vulnerability-scanning.md](../spec/vulnerability-scanning.md#deferred))
 - 🟢 Integration tests (protocol over HTTP across three replicas, the counting stub registry, the conformance suite)
-- 🟡 E2E tests (building: T-16 WP11): push and pull with Docker and Podman through local, remote and virtual repositories, an upload interrupted by a drain
+- 🟢 E2E tests: push and pull with Docker and Podman through local, remote (both modes) and virtual repositories on several replicas, an upload interrupted by a drain (nightly set `oci-long`), a mirror pass on n replicas, the closing set `oci-closing` (Valkey stopped, Docker Hub read-only)
+- ⚪ Tag caps and kept tag revisions (with the repository caps), promotion, foreign layers, tag resolution by push time, labels and layer history, exposure rules and the Bastion for the format
 
 ### F5 · Helm charts stored as OCI artifacts
 - ⚪ Chart artifact type on top of F4

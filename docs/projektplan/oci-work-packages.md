@@ -533,3 +533,10 @@ WP0 ──┬─ WP1 ─────────────┐
 - Not done here, for the closing change: the FULL.md F4 status; the e2e rows (WP11) in the README status, the TL;DR's "not verified" note,
   the manual's Docker Engine mirror credential note, `oci.md` "What is built and what is not" and `e2e.md`; the spec gaps H-600, H-601,
   H-602, H-604, H-609 and H-672 are linked from no security page, because no page describes the manifest push and pull path.
+
+## Closing (2026-11-09)
+
+T-16 is closed: every work package WP0 to WP14 is on `main`, FULL.md block B F4 shows what is built and what stays, and the task left
+section 10 of promt.md. Evidence: the conformance suite in the CI integration leg (shard b, artifact `oci-conformance-junit`), the e2e set
+`oci` per change (job `e2e-oci`), the closing set `oci-closing` run on kind on 2026-11-09 (7 of 7; four Docker Hub manifest `GET`
+requests against the bound of six, Q-OCI-203), the full set `mirror` with the OCI pass on kind, and `oci-long` in the nightly workflow.

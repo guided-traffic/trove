@@ -79,7 +79,7 @@ Hard rules, also for every subagent (put them into every subagent prompt):
 
 1. `git status` must be clean; then `git pull --rebase origin main`.
 2. During the alpha (rule 10) a run works on two fronts at once: the first open task of
-   [section 10](#10--owner-tasks-of-2026-11-07-the-next-registries) (T-16 Docker, then T-17 APT; its status line says where an
+   [section 10](#10--owner-tasks-of-2026-11-07-the-next-registries) (T-17 APT, T-16 Docker is closed; its status line says where an
    earlier run stopped), cut into work packages with an agent and a branch each, and every open finding of section 8 with an agent
    each. The open items of BETA.md phase 7 are findings of the same kind. Outside the alpha: open [BETA.md](BETA.md), table
    **Where we are**; the current phase is the first row whose status is not 🟢, and a row at 🟡 is resumed (step 2, item 4).
@@ -340,37 +340,6 @@ agents. The check step (3) below does not run during ALPHA: a builder lands its 
    finding goes back to a builder, and the checker reads the fix. The development agent integrates, runs the checks of step 3 and
    commits.
 
-- **T-16 · Docker registry (OCI distribution), with pull-through and full mirror.** Scope from the owner: local, remote and virtual
-  repositories for container images; the remote in both modes of R-REPO-050 (`pullThrough` and `mirror`). The planning agent takes
-  FULL.md F4 as the starting list (registry API under `/v2/`, token challenge, chunked uploads across replicas, multi-architecture
-  images, referrers; clients Docker CLI and Podman at least) and records which F4 items this phase builds and which stay in F4
-  (BuildX/BuildKit caches, ORAS, Cosign, WebAssembly artifacts, image vulnerability scanning), as a decision. Full mirror for a
-  registry cannot mean the whole upstream: what a mirror of Docker Hub or another registry discovers and keeps (named repositories,
-  tag patterns, platforms, the newest n tags), within R-REPO-051's bounds and R-REPO-052's storage limits, is the central decision of
-  the plan. Tests per step 3: integration (protocol over HTTP against the stack, the conformance kit) and e2e with the real clients
-  through local, remote in both modes and virtual repositories on several replicas, an upload interrupted by a drain, a mirror pass on
-  n replicas (R-REPO-058, R-REPO-059).
-  Status 2026-11-08: the spec (`docs/spec/formats/oci.md`, R-OCI-001 to R-OCI-035, Q-OCI-1 to Q-OCI-34) and WP0 (format contract
-  additions ADR-161, migrations 00054 to 00056, config keys, the `oci` stub answering 501, `Ingestor.Link` by source name,
-  `ItemsEvent.Cascade`, the upload-session contract, withheld manifests in the serve facts) are built and reviewed (architecture and
-  code review, every finding fixed) on the branch `t16-oci`; the cut into WP1 to WP14 is `docs/projektplan/oci-work-packages.md` there.
-  Not merged to main on purpose: migration 00056 tightens the key grammar of every repository and project key (Q-OCI-3) and stops at
-  the first key that breaks it. Checked on 2026-11-08 on the owner's installation (read-only, schema `trove`): no repository, project,
-  principal, policy or CI-mapping name breaks the new CHECKs (0 repositories, 1 project `test`), so `t16-oci` may go to main.
-  Next, in this order: (1) a fresh agent rebased `t16-oci` onto main on 2026-11-08 and, if every check passed, pushed it squashed as
-  the branch `t16-oci-rebased` (one `feat(oci)` commit on top of main): check it and fast-forward main to it; if that branch does not
-  exist, rebase `t16-oci` (ca928052) onto main yourself. Main has migrations 00052 and 00053, ADR-159 and ADR-160 (F-76
-  added `catalog.Facts.ChecksumAlwaysVerified`: merge it with ADR-161's contract additions and regenerate the contract file), and the
-  jsonb RawMessage override of sqlc (regenerate `q/`); keep 00054 to 00056, ADR-161, the Q-OCI numbers and H-579, H-580 unless main
-  took one; squash into one `feat(oci)` commit and bring it to main without a force push. (2) Wave 1 of the cut in parallel: WP1
-  upload sessions, WP2 registry tokens, WP4 the OCI format (local class), WP6 the remote engine's handshake, WP7 the counting stub
-  registry, planned, built and checked by separate agents as this section says.
-  Status at the end of 2026-11-08: on `main` are WP0 to WP10, WP12 and WP13: the local class end to end through `/v2/`, the remote class
-  (pull-through from Docker Hub, GHCR and other registries), the mirror (`mode: mirror`: selected names, tags and platforms kept and
-  pullable with the upstream gone, ADR-182), the virtual class (pulls in member order, pushes to the deploy target, ADR-180), and the
-  OCI distribution conformance suite v1.1.1 (all four categories through a local repository; pull, push and discovery through a
-  virtual one, Q-OCI-211). Running: WP11 (e2e with Docker and Podman on kind). Not started: WP14 (closing documentation, FULL.md F4).
-  The cut is `docs/projektplan/oci-work-packages.md`; FULL.md block B F4 stays 🟡.
 - **T-17 · APT registry (Debian and Ubuntu), with pull-through and full mirror.** Scope from the owner: local, remote and virtual
   repositories for `apt` and `apt-get`; the remote in both modes of R-REPO-050. The planning agent writes `docs/spec/formats/debian.md`
   from [debian.md](../features/formats/debian.md): the repository layout (`dists/<suite>/Release`, `InRelease`, `Release.gpg`,
