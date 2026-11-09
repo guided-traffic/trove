@@ -115,7 +115,9 @@ func TestOCILocal(t *testing.T) {
 		other := fx.client(t, 1, ociDocker, "buildx-pull")
 		other.login(host)
 		other.exec("pull", "--platform", "linux/arm64", ref)
-		if got := strings.TrimSpace(other.exec("image", "inspect", "--format", "{{.Architecture}}", ref)); got != "arm64" {
+		// The image store keeps the index; without --platform, inspect reads the host's platform, which on an amd64 runner was
+		// not pulled and shows an empty architecture.
+		if got := strings.TrimSpace(other.exec("image", "inspect", "--platform", "linux/arm64", "--format", "{{.Architecture}}", ref)); got != "arm64" {
 			t.Fatalf("docker pull --platform linux/arm64 gave an image of the architecture %q", got)
 		}
 		p := fx.client(t, 2, ociPodman, "inspect")
