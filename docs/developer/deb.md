@@ -171,6 +171,16 @@ belongs to no package, stat the generated item and serve it with the core's stre
 `GET …/deb/index` ([api/v1/deb_index.go](../../internal/api/v1/deb_index.go)) reads the state, with `waitFor` through `buildStore.WaitPublished` (a poll every 250 ms, no
 transaction). The composition root binds the builder on a replica that claims jobs (`startDebIndexer`, [wire_deb_index.go](../../internal/app/wire_deb_index.go)).
 
+**Metrics and the delay.** `Indexer.Observe` records `trove_deb_index_builds_total{class,outcome}`, `trove_deb_index_build_seconds` and
+`trove_deb_index_delay_seconds` (wire_deb_index.go). The delay runs from `deb_suites.dirty_since` (migration 00065, Q-DEB-58) to the commit.
+
+**Tests of the local class** (`test/integration/deblocal`, Q-DEB-60): `local_test.go` and `replay_test.go` (upload, coordinates, deletion, replay), `index_test.go`
+(a published generation, retention, reindex, `waitFor`, fault injection, co-signing), `replicas_test.go` (three replicas: fifty parallel uploads, by-hash on every replica, a deleted
+by-hash item written again, identical full builds), `times_test.go` (twenty key changes in five seconds, a freshly bound imported key), `delay_test.go`
+(`TestR_DEB_010_DelayBound`, the p99 under `TROVE_PERF_GATE=1`), `actionmap_test.go` (`TestR_AUTHZ_007_DebActionMap`), `crafted_test.go` (R-DEB-034 over HTTP),
+`apt_test.go` (real clients, also with xz). The read budget of a download is `test/integration/querybudget/deb_test.go`. The stack runs without Valkey unless
+a test asks (`envOpts.valkey`), so the closing run of R-DEB-031 for the local class is every test of the area but the delay bound.
+
 **Tests.** The renderers: [index_test.go](../../internal/formats/deb/index/index_test.go) and `FuzzPackages`. The SQL, the signatures, the times, the retention, the
 parallel uploads, the stopped build and the co-signing: `test/integration/deblocal/index_test.go`. A real client: `apt_test.go` runs `apt-get update --error-on=any` and
 `apt-get install` in `debian:13` and `ubuntu:22.04` against a replica (skipped without docker). The replicas of these tests run with the role `all`, because the
@@ -179,9 +189,9 @@ builder is a job and the role `web` claims none; the stack seeds repositories by
 ## What is built and what is not
 
 Built: everything above, including the stub archive (WP5), the signing keys (WP2), the background upstream (WP13), the publication
-port and the index builder (WP4), the remote class (WP6) and the UI (WP11). Not built, by work package of
-[apt-work-packages.md](../projektplan/apt-work-packages.md): the mirror (WP7), the virtual class (WP8), the tests of the other classes
-(WP9), the e2e sets (WP10) and the final documentation (WP12). The metric `trove_deb_index_delay_seconds` is not recorded yet.
+port and the index builder (WP4) with its metrics, the remote class (WP6), the tests of the local class (WP9) and the UI (WP11). Not built, by
+work package of [apt-work-packages.md](../projektplan/apt-work-packages.md): the mirror (WP7), the virtual class (WP8), the tests of the other
+classes (WP9), the e2e sets (WP10) and the final documentation (WP12).
 
 ## The OpenPGP library and the counting stub archive (stage 1 of the remote side)
 

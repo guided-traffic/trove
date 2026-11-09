@@ -64,9 +64,33 @@ type Indexer struct {
 	Log        *slog.Logger
 	// Sleep waits for d or until ctx ends; nil waits on a timer. A test replaces it.
 	Sleep func(ctx context.Context, d time.Duration) error
+	// Observe receives the measurements of R-DEB-033; nil records none.
+	Observe Observer
 	// BeforeCommit, if set, runs after the blobs are written and before the commit's transaction would run (fault injection of the
 	// tests, R-DEB-010): an error stops the build there.
 	BeforeCommit func(suite string) error
+}
+
+// The outcomes of a build of a suite (R-DEB-033).
+const (
+	OutcomePublished = "published"
+	OutcomeUnchanged = "unchanged"
+	OutcomeFailed    = "failed"
+)
+
+// Observer receives what the metrics of R-DEB-033 count: trove_deb_index_builds_total, trove_deb_index_build_seconds and
+// trove_deb_index_delay_seconds. All are of the class local.
+type Observer interface {
+	// Build is one build of one suite and its outcome; Seconds the time it took.
+	Build(outcome string, seconds float64)
+	// Delay is the time from the first change a published generation covers to its commit.
+	Delay(seconds float64)
+}
+
+func (x *Indexer) built(outcome string, started time.Time) {
+	if x.Observe != nil {
+		x.Observe.Build(outcome, time.Since(started).Seconds())
+	}
 }
 
 var bound atomic.Pointer[Indexer]
@@ -151,6 +175,9 @@ func (x *Indexer) Build(ctx context.Context, repoID int64, args IndexJobArgs) er
 	}
 	in, err := x.snapshotInputs(ctx, repoID, args.Full)
 	if err != nil || len(in.Suites) == 0 {
+		if err == nil {
+			x.built(OutcomeUnchanged, time.Now())
+		}
 		return err
 	}
 	keys, err := x.openKeys(ctx, repoID, in.Now)
@@ -168,7 +195,10 @@ func (x *Indexer) Build(ctx context.Context, repoID int64, args IndexJobArgs) er
 	}
 	var first error
 	for _, s := range in.Suites {
-		if err := x.buildSuite(ctx, repo, s, keys, args.Full); err != nil {
+		started := time.Now()
+		outcome, err := x.buildSuite(ctx, repo, s, keys, args.Full)
+		x.built(outcome, started)
+		if err != nil {
 			x.log().Error("the build of a suite failed", "repository", repo.Project+"/"+repo.Key, "suite", s.Suite.Suite, "error", err)
 			if ferr := x.Store.FailBuild(ctx, rows.BuildFailure{RepoID: repoID, Suite: s.Suite.Suite, ReadSeq: s.Suite.ChangeSeq, Reason: reasonOf(err)}); ferr != nil {
 				err = errors.Join(err, ferr)
@@ -274,7 +304,15 @@ func generated(path string, body []byte, media string, at time.Time) items.Gener
 
 // buildSuite renders, signs and publishes one suite (R-DEB-010, R-DEB-016). The blobs are written by the port before its transaction;
 // nothing is held while this function renders, compresses, signs or waits.
-func (x *Indexer) buildSuite(ctx context.Context, repo IndexRepo, bs rows.BuildSuite, keys []*openpgp.Key, full bool) error {
+func (x *Indexer) buildSuite(ctx context.Context, repo IndexRepo, bs rows.BuildSuite, keys []*openpgp.Key, full bool) (string, error) {
+	outcome, err := x.publishSuite(ctx, repo, bs, keys, full)
+	if err != nil {
+		return OutcomeFailed, err
+	}
+	return outcome, nil
+}
+
+func (x *Indexer) publishSuite(ctx context.Context, repo IndexRepo, bs rows.BuildSuite, keys []*openpgp.Key, full bool) (string, error) {
 	suite := bs.Suite.Suite
 	gens := generationsOf(bs.Generations)
 	var current index.Generation
@@ -286,28 +324,28 @@ func (x *Indexer) buildSuite(ctx context.Context, repo IndexRepo, bs rows.BuildS
 	prefix := "dists/" + suite + "/"
 	pub := x.Publisher()
 	if pub == nil {
-		return errors.New("deb: the publication port is not available on this replica")
+		return OutcomeFailed, errors.New("deb: the publication port is not available on this replica")
 	}
 	if len(bs.Entries) == 0 && full {
-		return x.dropSuite(ctx, pub, repo, bs, gens)
+		return OutcomePublished, x.dropSuite(ctx, pub, repo, bs, gens)
 	}
 	date, err := x.chooseDate(ctx, bs.Now, bs.Suite.ReleaseDate, earliestOf(keys))
 	if err != nil {
-		return err
+		return OutcomeFailed, err
 	}
 	set := repo.Settings
 	set.Description = repo.Project + "/" + repo.Key + " " + suite
 	built, err := index.Build(suite, bs.Entries, componentsOf(current.Files), set, date)
 	if err != nil {
-		return err
+		return OutcomeFailed, err
 	}
 	inRelease, err := openpgp.ClearSign(built.Release, keys, date)
 	if err != nil {
-		return err
+		return OutcomeFailed, err
 	}
 	detached, err := openpgp.DetachSign(built.Release, keys, date)
 	if err != nil {
-		return err
+		return OutcomeFailed, err
 	}
 	newFiles := make(map[string]string, len(built.Files))
 	files := []items.GeneratedFile{
@@ -340,7 +378,8 @@ func (x *Indexer) buildSuite(ctx context.Context, repo IndexRepo, bs rows.BuildS
 		remove = append(remove, repository.Cleaned{Path: prefix + p})
 	}
 	rec := rows.GenerationRecord{
-		RepoID: bs.Suite.RepoID, Suite: suite, ReadSeq: bs.Suite.ChangeSeq, Generation: next, ReleaseDate: date, Files: newFiles,
+		RepoID: bs.Suite.RepoID, Suite: suite, ReadSeq: bs.Suite.ChangeSeq, Generation: next, PrevGeneration: bs.Suite.Generation, Full: full,
+		ReleaseDate: date, Files: newFiles,
 		SignedBy: fingerprints(keys),
 	}
 	for _, g := range dropped {
@@ -348,7 +387,7 @@ func (x *Indexer) buildSuite(ctx context.Context, repo IndexRepo, bs rows.BuildS
 	}
 	if x.BeforeCommit != nil {
 		if err := x.BeforeCommit(suite); err != nil {
-			return err
+			return OutcomeFailed, err
 		}
 	}
 	err = pub.Publish(ctx, repo.Ref, files, remove, func(ctx context.Context, tx meta.Tx) error {
@@ -363,9 +402,17 @@ func (x *Indexer) buildSuite(ctx context.Context, repo IndexRepo, bs rows.BuildS
 	})
 	if errors.Is(err, items.ErrSuperseded) {
 		x.log().Info("a newer build published the suite first", "repository", repo.Project+"/"+repo.Key, "suite", suite)
-		return nil
+		return OutcomeUnchanged, nil
 	}
-	return err
+	if err != nil {
+		return OutcomeFailed, err
+	}
+	if x.Observe != nil && bs.Suite.DirtySince != nil {
+		if now, nerr := x.databaseNow(ctx); nerr == nil {
+			x.Observe.Delay(now.Sub(*bs.Suite.DirtySince).Seconds())
+		}
+	}
+	return OutcomePublished, nil
 }
 
 // dropSuite removes a suite that has no files from a full build: its generated items and its rows (R-DEB-014).

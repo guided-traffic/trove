@@ -181,6 +181,11 @@ func releaseDate(t *testing.T, p control.Paragraph) time.Time {
 
 // packagesOf reads and returns the Package names of a suite's index through the Release's listing, checking sizes and digests.
 func (e *env) packagesOf(suite string, rel control.Paragraph, path string) []control.Paragraph {
+	return e.packagesOn(e.r, suite, rel, path)
+}
+
+// packagesOn is packagesOf through one replica.
+func (e *env) packagesOn(r *testenv.Replica, suite string, rel control.Paragraph, path string) []control.Paragraph {
 	e.t.Helper()
 	var line string
 	for _, l := range strings.Split(rel.Value("SHA256"), "\n") {
@@ -192,7 +197,7 @@ func (e *env) packagesOf(suite string, rel control.Paragraph, path string) []con
 		e.t.Fatalf("Release lists no %s", path)
 	}
 	f := strings.Fields(line)
-	a := e.get("dists/"+suite+"/"+path, e.tokA)
+	a := e.getOn(r, "dists/"+suite+"/"+path, e.tokA)
 	if a.Status != 200 {
 		e.t.Fatalf("%s = %d", path, a.Status)
 	}
@@ -202,7 +207,7 @@ func (e *env) packagesOf(suite string, rel control.Paragraph, path string) []con
 	if sha := fmt.Sprintf("%x", sha256sum(a.Body)); sha != f[0] {
 		e.t.Errorf("%s: sha256 %s, Release says %s", path, sha, f[0])
 	}
-	h := e.get("dists/"+suite+"/"+strings.TrimSuffix(path, "Packages.gz")+"by-hash/SHA256/"+f[0], e.tokA)
+	h := e.getOn(r, "dists/"+suite+"/"+strings.TrimSuffix(path, "Packages.gz")+"by-hash/SHA256/"+f[0], e.tokA)
 	if h.Status != 200 || !bytes.Equal(h.Body, a.Body) {
 		e.t.Errorf("by-hash of %s = %d", path, h.Status)
 	}

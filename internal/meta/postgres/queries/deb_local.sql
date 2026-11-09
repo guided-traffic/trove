@@ -4,13 +4,13 @@
 -- name: DebEnsureSuite :execrows
 -- A suite exists from the first coordinate that names it; an existing one is left as it is. A new suite starts with change_seq 1, so it
 -- needs no raise; the count says whether this call created it.
-INSERT INTO deb_suites (repo_id, suite)
-VALUES (sqlc.arg(repo_id)::bigint, sqlc.arg(suite)::text)
+INSERT INTO deb_suites (repo_id, suite, dirty_since)
+VALUES (sqlc.arg(repo_id)::bigint, sqlc.arg(suite)::text, now())
 ON CONFLICT (repo_id, suite) DO NOTHING;
 
 -- name: DebRaiseSuites :many
 -- Raises change_seq of the suites, so the next build reflects the change (R-DEB-008); returns the numbers a client waits on.
-UPDATE deb_suites SET change_seq = change_seq + 1
+UPDATE deb_suites SET change_seq = change_seq + 1, dirty_since = COALESCE(dirty_since, now())
  WHERE repo_id = sqlc.arg(repo_id)::bigint AND suite = ANY(sqlc.arg(suites)::text[])
 RETURNING suite, change_seq, built_seq;
 

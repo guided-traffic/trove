@@ -80,7 +80,7 @@ UPDATE deb_signing_keys
 
 -- name: DebRaiseChangeSeq :execrows
 -- A key change raises change_seq of every suite of the repository, so that the next build re-signs (R-DEB-017, R-DEB-032).
-UPDATE deb_suites SET change_seq = change_seq + 1 WHERE repo_id = sqlc.arg(repo_id)::bigint;
+UPDATE deb_suites SET change_seq = change_seq + 1, dirty_since = COALESCE(dirty_since, now()) WHERE repo_id = sqlc.arg(repo_id)::bigint;
 
 -- name: DebRepoRefLocked :many
 -- The same row, locked against a concurrent change of the repository's keys: every write operation starts here, so the statements

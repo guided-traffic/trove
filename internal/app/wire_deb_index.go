@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	debdata "github.com/guided-traffic/trove/internal/formatdata/deb"
 	"github.com/guided-traffic/trove/internal/formats"
 	debformat "github.com/guided-traffic/trove/internal/formats/deb"
@@ -22,8 +24,15 @@ func (a *App) startDebIndexer(ports map[formats.ID]any) {
 	if !ok {
 		return
 	}
+	m := a.tele.metrics
+	obs := debObserver{
+		builds:  m.NewCounterVec("trove_deb_index_builds_total", "Builds of the indexes of a Debian suite by outcome (R-DEB-033).", "class", "outcome"),
+		seconds: m.NewHistogramVec("trove_deb_index_build_seconds", "Duration of the build of a Debian suite's indexes (R-DEB-033).", debBuildBuckets(), "class"),
+		delay:   m.NewHistogramVec("trove_deb_index_delay_seconds", "From the first change a published Debian generation covers to its commit (R-DEB-010, R-DEB-033).", debDelayBuckets(), "class"),
+	}
 	debdata.BindIndexer(&debdata.Indexer{
-		Store: st,
+		Observe: obs,
+		Store:   st,
 		Publisher: func() items.Publisher {
 			if s, ok := a.itemStore.get(); ok {
 				return s
@@ -86,3 +95,23 @@ func containsString(list []string, s string) bool {
 	}
 	return false
 }
+
+// The buckets of the build metrics: a build takes from milliseconds to a minute, and the delay is the index delay (1 s to 60 s) plus a build.
+func debBuildBuckets() []float64 { return []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60} }
+
+func debDelayBuckets() []float64 { return []float64{0.5, 1, 2, 3, 4, 5, 7, 10, 15, 30, 60, 120} }
+
+// debObserver records the measurements of the index builds (R-DEB-033); the class is always local until the virtual class builds.
+type debObserver struct {
+	builds         *prometheus.CounterVec
+	seconds, delay *prometheus.HistogramVec
+}
+
+func (o debObserver) Build(outcome string, seconds float64) {
+	o.builds.WithLabelValues("local", outcome).Inc()
+	if outcome != debdata.OutcomeUnchanged {
+		o.seconds.WithLabelValues("local").Observe(seconds)
+	}
+}
+
+func (o debObserver) Delay(seconds float64) { o.delay.WithLabelValues("local").Observe(seconds) }

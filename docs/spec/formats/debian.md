@@ -555,7 +555,7 @@ The indexes of a suite are signed and stored in several compressed variants, so 
   a repository whose retention is due, a virtual repository whose check is due, or a remote's housekeeping, R-DEB-021); it
   deletes nothing itself. Every removal is therefore serialized with every publication under `index:<repository id>`.
 - A build never reads a package file: everything it lists comes from rows.
-- **Delay bound** (R-ARCH-012 item 2): from the answer of an upload to the commit of a generation that lists it, p99 at most
+- **Delay bound** (R-ARCH-012 item 2; measured from `deb_suites.dirty_since`, the first change no build published yet, Q-DEB-58): from the answer of an upload to the commit of a generation that lists it, p99 at most
   `deb.index_delay` + 5 s while Valkey is available and `deb.index_delay` + `jobs.poll_interval` + 5 s while it is not, for a
   local repository of 10,000 package files in three suites under ten uploads per second spread over three replicas (reference
   sizes, proposed). `trove_deb_index_delay_seconds` measures it.
@@ -582,8 +582,9 @@ Acceptance criteria:
   `Last-Modified` of `InRelease` equals its `Date`.
 - A by-hash item that a test deletes between two builds is present again after the next build that lists it (the commit upserts
   every by-hash item of its generation).
-- `TestR_DEB_010_DelayBound` holds the bound under the reference load in the nightly set `deb-long`
-  ([architecture.md](../architecture.md) Q-ARCH-293); per change it asserts that every upload of a smaller load is published.
+- `TestR_DEB_010_DelayBound` holds the bound under the reference load in the nightly performance run (`make test-performance` with
+  `TROVE_PERF_GATE=1`, [architecture.md](../architecture.md) Q-ARCH-293, Q-DEB-59); per change it asserts that every upload of a smaller load is published
+  and the p50.
 
 ### R-DEB-011 · Index content: Packages, Release and their variants
 Priority: **P2** · Covers: PKG-DEB-006, PKG-DEB-011, PKG-DEB-014, PKG-DEB-015
@@ -2865,6 +2866,81 @@ became one statement.
 
 **Applied in the spec:** R-ARCH-019, R-DEB-010. Code: `snapshot` in `internal/formatdata/deb/build_store.go`, `isolationExempt` in `internal/archtest/sqlrules.go`.
 
+### Q-DEB-58 · The delay of a build is measured from the first unpublished change, kept in the suite row
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-DEB-033 defines `trove_deb_index_delay_seconds` as the time "from the first change a build covers to its commit". No row held that time.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A column `deb_suites.dirty_since` (migration 00065): set when a suite is created or raised while it is clean, cleared by the commit that publishes it, set to now when a change arrived during the build (chosen) | The time of the first unpublished change, per suite | Exact and read in the build's snapshot; survives a replica change | A column on a table that clients hold revision numbers of |
+| (b) The enqueue time of the job | The job's `created_at` | No schema change | A coalesced job keeps the first change's time only until it starts; a change during a build is dated from the next job |
+| (c) The upload's own time | Item `created_at` | Nothing new | Misses coordinate changes, deletions and key changes |
+
+**Choice:** (a).
+
+**Rationale:** the bound of R-DEB-010 is about the first change, and only the suite row knows which changes a generation covers. The development agent
+would revisit it if the column cost showed on the hot update of `change_seq`.
+
+**Applied in the spec:** R-DEB-010, R-DEB-033. Code: `queries/deb_local.sql` (`DebEnsureSuite`, `DebRaiseSuites`), `deb_build.sql` (`DebApplyGeneration`), `Indexer.Observe`.
+
+### Q-DEB-59 · The delay bound is held by the performance gate, not by the e2e set deb-long
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-DEB-010 names the nightly set `deb-long` for `TestR_DEB_010_DelayBound`. The e2e sets run on kind clusters with clients; the bound is the time
+between two events inside the database's clock and needs neither a cluster nor a client.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An integration test with three in-process replicas, run per change at a small load (every upload published, the p50) and by `make test-performance` with `TROVE_PERF_GATE=1` at the reference load (10,000 files in three suites, ten uploads per second for 90 s), with and without Valkey (chosen) | The same tier as P-13 and P-14 (Q-ARCH-220) | One clock; the nightly job `latency` already runs it on the large runner after the kind legs; no cluster | Not the chart's three pods: a replica here is a process of the test |
+| (b) The e2e set `deb-long` on the kind cluster | What the spec names | The real chart | Timing on a shared cluster says nothing about the bound; the set is WP10's and does not exist yet |
+
+**Choice:** (a). The set `deb-long` keeps what needs a cluster: the drain during a build (R-DEB-031).
+
+**Rationale:** Q-ARCH-293 puts a wall-clock target where its cause can be isolated. The development agent would revisit it if the nightly numbers differed
+from a cluster's.
+
+**Applied in the spec:** R-DEB-010. Code: `test/integration/deblocal/delay_test.go`, `Makefile` (`test-performance`).
+
+### Q-DEB-60 · The tests of the local class stay in test/integration/deblocal; the other classes get areas of their own
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the plan names `test/integration/deb/` for WP9. `deblocal` exists since the local class (WP3) and holds its upload, coordinate, replay, index and apt tests.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The local class's rows extend `deblocal`; remote and virtual keep an area each (`debremote`, `debvirtual`) (chosen) | One area per class | No move of tests; no change of the Makefile or the CI legs, because `./test/integration/...` already runs the area; an area per class compiles and fails on its own | The plan's name `deb` is not used |
+| (b) Move everything to `test/integration/deb/` | The plan's name | One place | A move that touches every test of three builders in flight |
+
+**Choice:** (a).
+
+**Rationale:** the area list of the CI leg and the shards is generated from the directory, so a name costs nothing and a move costs history. The development agent would
+revisit it when the second class lands and the shared helpers want a package.
+
+**Applied in the spec:** the test plan table. Code: `test/integration/deblocal`.
+
+### Q-DEB-61 · A full build publishes again when the suite is built up to the number it read
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-DEB-010 lets the build's commit write only while the suite's `built_seq` is below the `change_seq` the build read. A reindex of rows that did not change reads
+`change_seq` equal to `built_seq` and so never published: `POST …/reindex` answered 202 and nothing happened. The integration test of the two full builds found it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The commit also writes while the suite is still at the generation the build started from; a full build writes when `built_seq` equals the number it read (chosen) | Linear generations by their number | A reindex and a restore's full build publish; two builds from one snapshot cannot both write | A build that reads a stale generation number is superseded and the suite is built by the next job |
+| (b) A reindex raises `change_seq` first | The old condition holds | No change of the commit | A write in the reindex request and a revision number that moves for nothing |
+
+**Choice:** (a).
+
+**Rationale:** jobs of one repository run one at a time (the key `index:<repository id>`), so the generation check only guards a build whose lease was lost. The
+development agent would revisit it if a reindex had to leave the revision numbers alone for another reason.
+
+**Applied in the spec:** R-DEB-010, R-DEB-014. Code: `DebApplyGeneration` in `queries/deb_build.sql`, `GenerationRecord.PrevGeneration` and `Full`.
+
 ### Q-DEB-70 · The stub's test keys have a fixed creation date, not "an hour back"
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with
@@ -3036,7 +3112,7 @@ Status: **Decided by the development agent** — selected from the options below
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) `deb_remote_files` (migration 00064): one row per listed file of a directory's current release, kept after the release is replaced with `current = false` and `superseded_at` until `deb.by_hash_keep` has passed (chosen) | A statement answers "what does the release list for this path" | One lookup per request; the history gives the housekeeping its set of names; the purge of a restore deletes it with the other cache rows | About two thousand rows per release of a Debian suite |
+| (a) `deb_remote_files` (migration 00065): one row per listed file of a directory's current release, kept after the release is replaced with `current = false` and `superseded_at` until `deb.by_hash_keep` has passed (chosen) | A statement answers "what does the release list for this path" | One lookup per request; the history gives the housekeeping its set of names; the purge of a restore deletes it with the other cache rows | About two thousand rows per release of a Debian suite |
 | (b) Parse the stored document at every request | No table | Nothing to keep | A fill (`OnFill`) has no host to read the document with; a parse of a 200 KB document on every index request |
 | (c) A `jsonb` column of the release row | No new table | One row | The history of replaced releases cannot be queried by hash; every read moves the whole list |
 

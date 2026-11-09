@@ -43,6 +43,7 @@ const (
 	rNuGet    = "nuget-local"
 	rNuGetRem = "nuget-remote"
 	rNuGetVrt = "nuget-virtual"
+	rDeb      = "deb-local"
 )
 
 // env is one installation with a local, a remote and a virtual repository of each of npm and NuGet, a stub upstream of each
@@ -134,11 +135,12 @@ func newEnvWith(t *testing.T, valkey bool) *env {
 				SELECT v.id, $2, m.id FROM repositories v, repositories m WHERE v.key = $1 AND m.key = $3`, key, i, m)
 		}
 	}
+	st.Repository(rDeb, "local", "deb", `{}`)
 	virtual(rNPMVirt, "npm", rNPM, rNPMRem)
 	virtual(rNuGetVrt, "nuget", rNuGet, rNuGetRem)
-	all := []string{rNPM, rNPMRem, rNPMVirt, rNuGet, rNuGetRem, rNuGetVrt}
+	all := []string{rNPM, rNPMRem, rNPMVirt, rNuGet, rNuGetRem, rNuGetVrt, rDeb}
 	st.Policy("readers", []string{"read"}, all, reader)
-	st.Policy("writers", []string{"read", "deploy", "delete"}, []string{rNPM, rNuGet}, rita)
+	st.Policy("writers", []string{"read", "deploy", "delete"}, []string{rNPM, rNuGet, rDeb}, rita)
 	st.Policy("fillers", []string{"read"}, all, rita)
 	return e
 }

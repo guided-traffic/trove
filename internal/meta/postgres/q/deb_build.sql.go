@@ -13,20 +13,25 @@ import (
 const debApplyGeneration = `-- name: DebApplyGeneration :execrows
 UPDATE deb_suites
    SET built_seq = $1::bigint, generation = $2::bigint, release_date = to_timestamp($3::bigint),
-       published_at = now(), state = 'current', reason = NULL
- WHERE repo_id = $4::bigint AND suite = $5::text AND built_seq < $1::bigint
+       published_at = now(), state = 'current', reason = NULL,
+       dirty_since = CASE WHEN change_seq > $1::bigint THEN now() ELSE NULL END
+ WHERE repo_id = $4::bigint AND suite = $5::text AND generation = $6::bigint
+   AND (built_seq < $1::bigint OR ($7::boolean AND built_seq = $1::bigint))
 `
 
 type DebApplyGenerationParams struct {
-	ReadSeq     int64
-	Generation  int64
-	ReleaseUnix int64
-	RepoID      int64
-	Suite       string
+	ReadSeq        int64
+	Generation     int64
+	ReleaseUnix    int64
+	RepoID         int64
+	Suite          string
+	PrevGeneration int64
+	EverySuite     bool
 }
 
-// Sets the suite's published generation while its built_seq is still below the change_seq the build read: a slower build of an older
-// snapshot changes nothing (R-DEB-010).
+// Sets the suite's published generation while its built_seq is still below the change_seq the build read and the generation is the one the
+// build started from: a slower build of an older snapshot changes nothing (R-DEB-010). A full build of rows that did not change (a reindex)
+// reads the number the suite has built already and publishes again.
 func (q *Queries) DebApplyGeneration(ctx context.Context, arg DebApplyGenerationParams) (int64, error) {
 	result, err := q.db.Exec(ctx, debApplyGeneration,
 		arg.ReadSeq,
@@ -34,6 +39,8 @@ func (q *Queries) DebApplyGeneration(ctx context.Context, arg DebApplyGeneration
 		arg.ReleaseUnix,
 		arg.RepoID,
 		arg.Suite,
+		arg.PrevGeneration,
+		arg.EverySuite,
 	)
 	if err != nil {
 		return 0, err
@@ -174,7 +181,8 @@ func (q *Queries) DebDropSuite(ctx context.Context, arg DebDropSuiteParams) erro
 }
 
 const debDueSuites = `-- name: DebDueSuites :many
-SELECT suite, change_seq, built_seq, generation, COALESCE((extract(epoch FROM release_date) * 1000000)::bigint, 0)::bigint AS release_us
+SELECT suite, change_seq, built_seq, generation, COALESCE((extract(epoch FROM release_date) * 1000000)::bigint, 0)::bigint AS release_us,
+       COALESCE((extract(epoch FROM dirty_since) * 1000000)::bigint, 0)::bigint AS dirty_us
   FROM deb_suites
  WHERE repo_id = $1::bigint AND ($2::boolean OR change_seq > built_seq)
  ORDER BY suite
@@ -191,6 +199,7 @@ type DebDueSuitesRow struct {
 	BuiltSeq   int64
 	Generation int64
 	ReleaseUs  int64
+	DirtyUs    int64
 }
 
 // The suites a build reads: the ones with changes not yet built, or every suite of a full build.
@@ -209,6 +218,7 @@ func (q *Queries) DebDueSuites(ctx context.Context, arg DebDueSuitesParams) ([]D
 			&i.BuiltSeq,
 			&i.Generation,
 			&i.ReleaseUs,
+			&i.DirtyUs,
 		); err != nil {
 			return nil, err
 		}

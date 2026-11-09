@@ -21,7 +21,8 @@ SELECT s.suite, s.change_seq, s.built_seq, s.generation, COALESCE((extract(epoch
 
 -- name: DebDueSuites :many
 -- The suites a build reads: the ones with changes not yet built, or every suite of a full build.
-SELECT suite, change_seq, built_seq, generation, COALESCE((extract(epoch FROM release_date) * 1000000)::bigint, 0)::bigint AS release_us
+SELECT suite, change_seq, built_seq, generation, COALESCE((extract(epoch FROM release_date) * 1000000)::bigint, 0)::bigint AS release_us,
+       COALESCE((extract(epoch FROM dirty_since) * 1000000)::bigint, 0)::bigint AS dirty_us
   FROM deb_suites
  WHERE repo_id = sqlc.arg(repo_id)::bigint AND (sqlc.arg(every)::boolean OR change_seq > built_seq)
  ORDER BY suite;
@@ -49,12 +50,15 @@ SELECT suite, generation, COALESCE((extract(epoch FROM superseded_at) * 1000000)
 SELECT (extract(epoch FROM now()) * 1000000)::bigint;
 
 -- name: DebApplyGeneration :execrows
--- Sets the suite's published generation while its built_seq is still below the change_seq the build read: a slower build of an older
--- snapshot changes nothing (R-DEB-010).
+-- Sets the suite's published generation while its built_seq is still below the change_seq the build read and the generation is the one the
+-- build started from: a slower build of an older snapshot changes nothing (R-DEB-010). A full build of rows that did not change (a reindex)
+-- reads the number the suite has built already and publishes again.
 UPDATE deb_suites
    SET built_seq = sqlc.arg(read_seq)::bigint, generation = sqlc.arg(generation)::bigint, release_date = to_timestamp(sqlc.arg(release_unix)::bigint),
-       published_at = now(), state = 'current', reason = NULL
- WHERE repo_id = sqlc.arg(repo_id)::bigint AND suite = sqlc.arg(suite)::text AND built_seq < sqlc.arg(read_seq)::bigint;
+       published_at = now(), state = 'current', reason = NULL,
+       dirty_since = CASE WHEN change_seq > sqlc.arg(read_seq)::bigint THEN now() ELSE NULL END
+ WHERE repo_id = sqlc.arg(repo_id)::bigint AND suite = sqlc.arg(suite)::text AND generation = sqlc.arg(prev_generation)::bigint
+   AND (built_seq < sqlc.arg(read_seq)::bigint OR (sqlc.arg(every_suite)::boolean AND built_seq = sqlc.arg(read_seq)::bigint));
 
 -- name: DebInsertGeneration :exec
 INSERT INTO deb_generations (repo_id, suite, generation, built_seq, files, signed_by)

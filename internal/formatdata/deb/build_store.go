@@ -150,7 +150,7 @@ func (s buildStore) GenerationInputs(ctx context.Context, tx meta.Tx, repoID int
 		bs := rows.BuildSuite{
 			Suite: rows.Suite{
 				RepoID: repoID, Suite: d.Suite, ChangeSeq: d.ChangeSeq, BuiltSeq: d.BuiltSeq, Generation: d.Generation,
-				ReleaseDate: microsTime(d.ReleaseUs),
+				ReleaseDate: microsTime(d.ReleaseUs), DirtySince: microsTime(d.DirtyUs),
 			},
 			Now: out.Now,
 		}
@@ -189,7 +189,7 @@ func (s buildStore) RecordGeneration(ctx context.Context, tx meta.Tx, in rows.Ge
 	}
 	n, err := qs.DebApplyGeneration(ctx, q.DebApplyGenerationParams{
 		RepoID: in.RepoID, Suite: in.Suite, ReadSeq: in.ReadSeq, Generation: in.Generation,
-		ReleaseUnix: in.ReleaseDate.UTC().Unix(),
+		ReleaseUnix: in.ReleaseDate.UTC().Unix(), PrevGeneration: in.PrevGeneration, EverySuite: in.Full,
 	})
 	if err != nil || n == 0 {
 		return false, err

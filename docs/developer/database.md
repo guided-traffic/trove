@@ -491,9 +491,9 @@ refuses (`docker-`, `a.-b`, `web-`) stops the migration; the operator renames or
 added `NOT VALID` and validated with `VALIDATE CONSTRAINT`, which lets reads and writes through. The statements the data port reads are in
 [oci.sql](../../internal/meta/postgres/queries/oci.sql); `test/integration/postgres/oci_test.go` pins the tables, the phases and both grammars at the database.
 
-## Debian tables (00060 to 00063)
+## Debian tables (00060 to 00065)
 
-Four expand migrations of phase T-17 ([deb.md](deb.md)); the numbers are the next free ones, because the runner needs numbers without a gap.
+Five expand migrations of phase T-17 ([deb.md](deb.md)); the numbers are the next free ones, because the runner needs numbers without a gap.
 Every table is export class `data`, registered in [tables_deb.go](../../internal/formatdata/deb/tables_deb.go).
 
 | Table | Migration | What it holds |
@@ -503,6 +503,7 @@ Every table is export class `data`, registered in [tables_deb.go](../../internal
 | `deb_remote_releases`, `deb_remote_indexes`, `deb_remote_entries` | [00062_deb_remote](../../internal/meta/postgres/migrations/00062_deb_remote.sql) | A remote's stored release documents with the verdict of their verification, its parsed indexes and their entries; cache rows (R-DEB-023). `GetLiveItem` reads the digest of `deb_remote_entries` for the kind `deb_remote` and the mark of `deb_tombstones` for `deb_local` ([files.sql](../../internal/meta/postgres/queries/files.sql)) |
 | `deb_remote_files` | [00064_deb_remote_files](../../internal/meta/postgres/migrations/00064_deb_remote_files.sql) | The files each stored release of a remote lists, `current` for the release stored now and kept for `deb.by_hash_keep` after it is replaced; cache rows (R-DEB-021, Q-DEB-79) |
 | `deb_binaries` (constraint) | [00063_deb_binaries_detached](../../internal/meta/postgres/migrations/00063_deb_binaries_detached.sql) | Drops the foreign key from `deb_binaries.item_id` to `items`: the item store deletes the item rows of a permanent removal before the format's hook runs, and the hook needs the file's row to raise the suites and journal the deletion; it deletes the row itself |
+| `deb_suites.dirty_since` | [00065_deb_suites_dirty_since](../../internal/meta/postgres/migrations/00065_deb_suites_dirty_since.sql) | The time of the first change of a suite that no build has published, so that the delay from a change to its generation can be measured (R-DEB-010, Q-DEB-58) |
 
 `test/integration/postgres/deb_test.go` pins the tables, the phases, the constraints and the item lookup's facts.
 

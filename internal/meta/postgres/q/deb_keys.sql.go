@@ -226,7 +226,7 @@ func (q *Queries) DebNowText(ctx context.Context) (string, error) {
 }
 
 const debRaiseChangeSeq = `-- name: DebRaiseChangeSeq :execrows
-UPDATE deb_suites SET change_seq = change_seq + 1 WHERE repo_id = $1::bigint
+UPDATE deb_suites SET change_seq = change_seq + 1, dirty_since = COALESCE(dirty_since, now()) WHERE repo_id = $1::bigint
 `
 
 // A key change raises change_seq of every suite of the repository, so that the next build re-signs (R-DEB-017, R-DEB-032).

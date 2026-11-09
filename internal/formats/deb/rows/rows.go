@@ -186,6 +186,8 @@ type Suite struct {
 	CheckedAt *time.Time
 	// SignedBy are the fingerprints of the keys that signed the current generation.
 	SignedBy []string
+	// DirtySince is the time of the first change no build has published yet (R-DEB-010); nil when there is none.
+	DirtySince *time.Time
 }
 
 // Key is a signing key of a repository without its private part (deb_signing_keys, R-DEB-015).
@@ -299,6 +301,10 @@ type GenerationRecord struct {
 	ReadSeq     int64
 	Generation  int64
 	ReleaseDate time.Time
+	// PrevGeneration is the generation the build started from; the record applies only while the suite still has it.
+	PrevGeneration int64
+	// Full says the build is a full one (a reindex, a restore): it publishes also when the suite has been built up to the number it read.
+	Full bool
 	// Files maps the path relative to dists/<suite>/ to the SHA-256 (hex) of the index file.
 	Files    map[string]string
 	SignedBy []string

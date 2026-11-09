@@ -6,6 +6,7 @@
 package deblocal
 
 import (
+	"fmt"
 	"net/url"
 	"os"
 	"testing"
@@ -30,7 +31,9 @@ const (
 type env struct {
 	t  *testing.T
 	st *testenv.Stack
+	// r is the first replica, rs all of them; every replica builds indexes (role all).
 	r  *testenv.Replica
+	rs []*testenv.Replica
 
 	alice, bob, carol testenv.Person
 	tokA, tokB, tokC  string
@@ -42,9 +45,29 @@ func newEnv(t *testing.T) *env { return newEnvWith(t, "{}") }
 
 func newOwnedEnv(t *testing.T) *env { return newEnvWith(t, `{"local":{"packageOwnership":"enforce"}}`) }
 
-func newEnvWith(t *testing.T, cfg string) *env {
+func newEnvWith(t *testing.T, cfg string) *env { return newEnvOpts(t, envOpts{cfg: cfg}) }
+
+// envOpts shape the installation of a test: the repository document, whether Valkey is in use (otherwise it is unavailable, the
+// state of R-HA-001), how many replicas run and the settings every replica gets besides the harness's.
+type envOpts struct {
+	cfg      string
+	valkey   bool
+	replicas int
+	env      []string
+	// seed adds principals, policies and rows before the replicas start, because their grant index is built from what exists then.
+	seed func(e *env)
+}
+
+func newEnvOpts(t *testing.T, o envOpts) *env {
 	t.Helper()
-	st := testenv.NewStack(t, testenv.StackOptions{Name: "deblocal", Env: []string{"TROVE_VULNERABILITIES_SOURCES_OSV_MODE=off"}})
+	if o.cfg == "" {
+		o.cfg = "{}"
+	}
+	if o.replicas == 0 {
+		o.replicas = 1
+	}
+	cfg := o.cfg
+	st := testenv.NewStack(t, testenv.StackOptions{Name: "deblocal", Valkey: o.valkey, Env: []string{"TROVE_VULNERABILITIES_SOURCES_OSV_MODE=off"}})
 	e := &env{t: t, st: st}
 	e.alice, e.bob, e.carol = st.User("alice"), st.User("bob"), st.User("carol")
 	st.Repository(repo, "local", "deb", cfg)
@@ -55,7 +78,16 @@ func newEnvWith(t *testing.T, cfg string) *env {
 	admin := st.User("ops")
 	st.Bind("admin", admin)
 	e.tokAdmin = st.Token(admin, scope.Scope{Inherit: true, Admin: true})
-	e.r = st.Start(t, testenv.ReplicaOptions{Name: "web-1", Role: "all", Env: []string{"TROVE_DEB_INDEX_WAIT_MAX=2s", "TROVE_DEB_INDEX_DELAY=1s"}})
+	if o.seed != nil {
+		o.seed(e)
+	}
+	for i := 1; i <= o.replicas; i++ {
+		e.rs = append(e.rs, st.Start(t, testenv.ReplicaOptions{
+			Name: fmt.Sprintf("web-%d", i), Role: "all",
+			Env: append([]string{"TROVE_DEB_INDEX_WAIT_MAX=2s", "TROVE_DEB_INDEX_DELAY=1s"}, o.env...),
+		}))
+	}
+	e.r = e.rs[0]
 	e.primaryKey()
 	return e
 }

@@ -476,6 +476,7 @@ type DebSuite struct {
 	Reason      pgtype.Text
 	Inputs      json.RawMessage
 	CheckedAt   pgtype.Timestamptz
+	DirtySince  pgtype.Timestamptz
 }
 
 type DebTombstone struct {

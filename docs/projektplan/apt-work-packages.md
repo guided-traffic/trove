@@ -737,3 +737,19 @@ Built on 027ec488 (stage 3 merged). Page: [docs/developer/deb.md](../developer/d
   the shadowing check, a key removal with its journal entry and replay, the purge); by hand `apt-get update --error-on=any` and `apt-get install`
   through a remote repository from `debian:13` (APT 3.0.4, sqv) and `ubuntu:22.04` (APT 2.4.14, gpgv) with the stub's key a as the client keyring, and
   the flat directory and the flat root `./` on both.
+
+## 18 · WP4b open items and WP9 (local rows), stage 4
+
+Built on the base of section 16. Pages: [deb.md](../developer/deb.md#the-index-builder-wp4b); decisions Q-DEB-58 to Q-DEB-61.
+
+- **Open items of WP4b:** the metrics `trove_deb_index_builds_total`, `trove_deb_index_build_seconds` and `trove_deb_index_delay_seconds` (migration 00065 adds
+  `deb_suites.dirty_since`); `TestR_DEB_010_DelayBound` (three replicas, with and without Valkey, small per change, 10,000 files and ten uploads per second in
+  the nightly performance run: p99 3.3 s with Valkey and 3.0 s without on the author's host, bounds 6 s and 8 s); the time rules as integration tests (twenty key changes in
+  five seconds; an imported key bound twenty seconds ago).
+- **A defect the tests found:** a reindex of unchanged rows published nothing (Q-DEB-61); fixed.
+- **WP9, local rows:** `TestR_AUTHZ_007_DebActionMap` (13 rows), the crafted inputs over HTTP (10 GiB control archive, 100,000 fields, duplicate `control.tar.gz`: 413, 413, 422 in
+  under 50 ms, heap unchanged), three replicas (parallel uploads, by-hash on each replica and its retention, the identical full builds), the read-budget rows (a package file, `InRelease`,
+  `Packages.gz` plain and by hash: one statement each), apt with xz. The area stayed `deblocal` (Q-DEB-60), so the Makefile's area list and the CI leg are unchanged;
+  `test-performance` gained the delay bound.
+- **Not done:** the `InRelease` with 200 signatures of R-DEB-034 (a remote's input); the e2e sets (WP10); the memory bound is measured on the heap of the test process, which holds the
+  replicas, not on a pod; the Valkey-stopped closing run is the stack's default for every other test of the area, not a separate run.

@@ -352,8 +352,8 @@ func (q *Queries) DebDeleteTombstone(ctx context.Context, arg DebDeleteTombstone
 
 const debEnsureSuite = `-- name: DebEnsureSuite :execrows
 
-INSERT INTO deb_suites (repo_id, suite)
-VALUES ($1::bigint, $2::text)
+INSERT INTO deb_suites (repo_id, suite, dirty_since)
+VALUES ($1::bigint, $2::text, now())
 ON CONFLICT (repo_id, suite) DO NOTHING
 `
 
@@ -525,7 +525,7 @@ func (q *Queries) DebPutTombstone(ctx context.Context, arg DebPutTombstoneParams
 }
 
 const debRaiseSuites = `-- name: DebRaiseSuites :many
-UPDATE deb_suites SET change_seq = change_seq + 1
+UPDATE deb_suites SET change_seq = change_seq + 1, dirty_since = COALESCE(dirty_since, now())
  WHERE repo_id = $1::bigint AND suite = ANY($2::text[])
 RETURNING suite, change_seq, built_seq
 `
