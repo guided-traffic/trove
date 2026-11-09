@@ -1,7 +1,7 @@
 # trove · Full product plan after the beta
 
 **Status:** ⚪ not started · 🟡 in progress or partly done · 🟢 done
-**Last updated:** 2026-11-08
+**Last updated:** 2026-11-09
 
 Everything that goes beyond the beta release in [BETA.md](BETA.md): the beta phase, the remaining
 registry types, and platform features. Releases after the beta are cut by Semantic Release from the

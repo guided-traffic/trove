@@ -421,8 +421,7 @@ What a run did, in short, so the next run starts where it stopped. The plan item
 - Next run: first the blockers F-109 and F-110 (main red), then four builders: OCI virtual (WP9), OCI mirror (WP10), APT local,
   APT remote; the open findings of section 8 in one batch at the end.
 
-**Run of 2026-11-08/09** (ALPHA mode of rule 10; release v0.30.1, the next release waits for Test and Release once the Ubuntu archive
-answers again, F-117).
+**Run of 2026-11-08/09** (ALPHA mode of rule 10; releases v0.30.1 and v0.31.0).
 
 - Built and on `main`: the rest of T-16, the Docker registry — the virtual class (pulls in member order, pushes to the deploy target),
   the mirror (selected names, tags and platforms kept and pullable with the upstream gone), the conformance suite v1.1.1 in all four
@@ -436,7 +435,14 @@ answers again, F-117).
   refuses the catalog scope, APT ignoring every index until the Release listed the uncompressed checksums, a lost first build of a new
   suite, a reindex of unchanged rows that published nothing, a manual and an automatic name claim deciding at the same time (F-108), the
   build metrics counting virtual builds as local.
-- Findings closed: F-106, F-108, F-109, F-110, F-111, F-112 (decided, Q-NPM-86), F-113, F-114, F-115. Recorded: F-116, F-117.
+- Findings closed: F-106, F-108, F-109, F-110, F-111, F-112 (decided, Q-NPM-86), F-113, F-114, F-115. Recorded: F-116 to F-120.
+- Release: v0.31.0 (2026-11-09) carries both registries. Test and Release 42565678133 green; Release Docker & Helm 42569132981 green on
+  its third attempt after two re-runs under the changed rule 7 (GitHub answered 504 for the syft download, F-120); checked: the GitHub
+  release with plain-language notes, the image `guidedtraffic/trove:0.31.0` on Docker Hub, the chart 0.31.0 in the index, the smoke
+  test of the published release. Before it, main was red six runs in a row for causes outside the product: the Ubuntu archive's outage
+  (F-117), shard b past its 45 minutes (now three shards), the apt client containers on the Linux runner (host networking, the key
+  through the environment), test preconditions written for one timing, and the set `push` on a starved runner cluster (F-119).
+- Rule change by the owner on 2026-11-09: a red CI job may be started again up to three times to reach a green run (rule 7, step 5).
 - Builders: at most four at a time, each a whole feature over several stages, resumed with their context; no review rounds. Load stayed
   between 15 and 50 on 20 cores, and the timing failures under it were fixed in the tests (F-114, F-115) instead of being chased.
 - Merges: every builder branch was cherry-picked onto `main`, the touched gates rerun on the merged tree; the conflicts were the shared
@@ -444,6 +450,7 @@ answers again, F-117).
 - Evidence of the closing: the e2e set `deb` (52 rows, the virtual row on) and the closing set `deb-closing` (Valkey stopped on all
   four images; `apt-get install hello` from `deb.debian.org` through a remote, 3 upstream requests, Debian's archive key checked against
   its pinned fingerprint) ran green on kind (`linux/arm64`); `oci-closing` 7 of 7. Left as findings: F-118 (architecture `all` through
-  a virtual repository); the Debian passes of the sets `mirror` and `mirror-long` are not built.
+  a virtual repository); the Debian passes of the sets `mirror` and `mirror-long` are not built. `HA and Performance (nightly)` was
+  dispatched on the release commit (run 42571414393) for the long OCI legs; its result is read at the start of the next run.
 - Next run: T-17 has no open package. Section 10 holds no registry task, so the next unit of FULL.md follows (step 1, item 3), with
   the open findings of section 8 in one batch at the end.
