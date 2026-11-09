@@ -190,35 +190,49 @@ func TestBastion_R_BAS_049_RoutingByPath(t *testing.T) {
 	if len(pods) != 2 {
 		t.Fatalf("%d replicas of %s", len(pods), site.release)
 	}
-	// the tarballs of all three npm sets were cached by the cold runs; request each twice more and watch the hits per replica
 	var paths []string
 	for _, set := range env.npmSets {
 		for _, n := range append([]string{set.root}, set.deps...) {
 			paths = append(paths, npmDocPath(n)+"/-/"+n+"-1.0.0.tgz")
 		}
 	}
-	before := map[string]float64{}
+	// from a client pod, with curl: the request of a package manager (the Go client of this machine asks for gzip, which is another variant)
+	fetch := func(rounds int) {
+		t.Helper()
+		urls := make([]string, 0, rounds*len(paths))
+		for range rounds {
+			for _, p := range paths {
+				urls = append(urls, site.baseURL(t)+p)
+			}
+		}
+		out := npmClientExec(t, 0, append([]string{
+			"env", "TOK=" + env.full.Token, "sh", "-c",
+			`for u in "$@"; do curl -s -o /dev/null -w '%{http_code}\n' --cacert /etc/trove-ca/ca.crt -H "Authorization: Bearer $TOK" "$u"; done`,
+			"sh",
+		}, urls...)...)
+		for _, code := range strings.Fields(out) {
+			if code != "200" {
+				t.Fatalf("a tarball request answered %s: %s", code, out)
+			}
+		}
+	}
+	// Warm-up (F-116): the cold runs before this test left the tarballs on the replica of their path, but their last runs may be older
+	// than artifact_revalidate_after, and a feed entry for the repository that arrived less than 15 s before makes every entry
+	// unusable (engine.fresh). One round here revalidates what is stale and puts a fresh validation time on every path, so the two
+	// rounds measured below are hits whatever the age of the cold runs; a request that still goes to the main installation after it is
+	// a revalidation caused by something that happened during the measurement, and the failure says what the Bastion applied.
+	fetch(1)
+	contentOf := func(m map[string]float64) float64 {
+		return msum(m, "trove_bastion_feed_entries_applied_total", `kind="content"`)
+	}
+	before, contentBefore := map[string]float64{}, map[string]float64{}
 	for _, p := range pods {
-		before[p.Name] = msum(basMetrics(t, p.Name), "trove_bastion_requests_total", `class="artifact"`, `result="hit"`)
+		m := basMetrics(t, p.Name)
+		before[p.Name] = msum(m, "trove_bastion_requests_total", `class="artifact"`, `result="hit"`)
+		contentBefore[p.Name] = contentOf(m)
 	}
 	w := openMainWindow(t)
-	// from a client pod, with curl: the request of a package manager (the Go client of this machine asks for gzip, which is another variant)
-	urls := make([]string, 0, 2*len(paths))
-	for range 2 {
-		for _, p := range paths {
-			urls = append(urls, site.baseURL(t)+p)
-		}
-	}
-	out := npmClientExec(t, 0, append([]string{
-		"env", "TOK=" + env.full.Token, "sh", "-c",
-		`for u in "$@"; do curl -s -o /dev/null -w '%{http_code}\n' --cacert /etc/trove-ca/ca.crt -H "Authorization: Bearer $TOK" "$u"; done`,
-		"sh",
-	}, urls...)...)
-	for _, code := range strings.Fields(out) {
-		if code != "200" {
-			t.Fatalf("a tarball request answered %s: %s", code, out)
-		}
-	}
+	fetch(2)
 	reqs, _ := splitKinds(w.done())
 	// a path may have been evicted by nothing; every request is a hit on the replica of the path
 	if len(reqs) > len(paths) {
@@ -239,6 +253,14 @@ func TestBastion_R_BAS_049_RoutingByPath(t *testing.T) {
 	}
 	if total < float64(len(paths)) {
 		t.Errorf("%v hits for %d paths requested twice, want at least %d", total, len(paths), len(paths))
+	}
+	if t.Failed() {
+		// Candidate (b) of F-116: a content entry of the feed that named the repository shortly before made every entry unusable.
+		for _, p := range pods {
+			m := basMetrics(t, p.Name)
+			t.Logf("%s: content feed entries applied since the warm-up: %v (total %v), feed lag %vs, feed resets %v", p.Name,
+				contentOf(m)-contentBefore[p.Name], contentOf(m), msum(m, "trove_bastion_feed_lag_seconds"), msum(m, "trove_bastion_feed_resets_total"))
+		}
 	}
 }
 

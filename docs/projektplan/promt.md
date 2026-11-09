@@ -273,8 +273,12 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   clients; past 90 s every npm tarball is stale, which explains the first round of revalidations but not the second, since a
   304 sets `validatedAt` anew; (b) a content entry of the feed that names the npm repository and arrived less than 15 s before
   makes every entry unusable, also one revalidated a moment ago, so all 72 requests revalidate while they run inside those 15 s.
-  Next step (`test/e2e` belonged to the APT e2e builder in this run): a warm-up round inside the test before `before` is read
-  removes (a); logging the Bastion's last applied content entry of the repository with a failure would confirm or rule out (b).
+  Done on 2026-11-09 (`go vet -tags e2e` only, no kind run): the test now requests every path once before it reads `before`, which
+  removes (a), and a failure logs, per replica, the content entries of the feed applied since that warm-up and the feed lag and
+  resets (the Bastion exposes the count of applied entries by kind and no per-entry record, so this tells whether a content
+  entry arrived during the measurement and not which repository it named). Open: (b) is not ruled out and the fix is not run
+  on kind. Next step: the next recurrence names the cause with those lines; if it is (b), the Bastion needs a per-entry record
+  (a debug log of the applied content entries with their repositories) before the test can wait for a quiet feed.
 - **F-117 · The self-hosted runners lost the Ubuntu archive for a few minutes** (Test and Release 42553790224, 2026-11-09 03:02):
   every job that installs `build-essential` at that moment (GoSec, cyclomatic complexity, both builds, the image, the source malware
   scan, Trivy) failed in `apt-get` with "Could not connect to archive.ubuntu.com:80" over IPv6 and IPv4; jobs that had installed
