@@ -82,7 +82,7 @@ is measured by [the end-to-end suite](e2e.md), which runs them under load.
 | `TROVE_SKIP_RELEASE=1` | unset | `up.sh` installs the dependency stack only, not the trove release. Use it while the image does not serve yet, or to work on the dependencies |
 | `TROVE_IMAGE` | `guidedtraffic/trove:dev` | the image `up.sh` loads into the cluster with `kind load docker-image`; build it with `make image` (its default `IMAGE`) first. `VERSION` defaults to `dev` (or the number of a `v0.*` tag on `HEAD`), the one non-release version the binary accepts ([e2e.md](e2e.md#findings-of-the-suite)) |
 | `TROVE_DEV_HTTP_PORT` | `8080` | host port of the edge (HTTPS). Set it when 8080 is taken (`up.sh` checks and says so); `config.server.base_url` and `endpoints.customers.baseUrl` follow. Fixed when the cluster is created |
-| `TROVE_PROFILE=scatter` or `bastion` | `default` | the `scatter` and `bastion` e2e profiles, see below |
+| `TROVE_PROFILE=scatter`, `bastion`, `edge` or `alerts` | `default` | the e2e profiles, see below. `edge` installs Envoy Gateway and `alerts` a Prometheus; both stay in the cluster after a later run with another profile |
 | `TROVE_PITR=1` | unset | also installs the Barman Cloud plugin of CloudNativePG (`DEV_BARMAN_PLUGIN_*` in [versions.env](../../tools/versions.env)) and the `ObjectStore` [pitr.yaml](../../deploy/dev/pitr.yaml), and adds the plugin to the Cluster `trove-db`: WAL archive and base backups to the bucket `trove-pg-archive` over TLS (R-HA-023, Q-HA-210). Sticky for a cluster that exists; the PostgreSQL pods roll once. Run by the set `backup-pitr` ([e2e.md](e2e.md#the-point-in-time-restore-drill)) |
 | `TROVE_POOLER=1` | unset | also installs the two transaction-mode poolers ([pooler.yaml](../../deploy/dev/pooler.yaml)) and layers [values-pooler.yaml](../../deploy/dev/values-pooler.yaml). The profile carries what the drain of a pooler instance needs (R-HA-059 rule 5, Q-HA-173): two instances per pooler spread over the nodes, a PodDisruptionBudget each, a `preStop` sleep of 90 s and a grace period of 120 s (CloudNativePG's pooler manager turns `SIGTERM` into `SIGINT` and exits within a second, so the sleep, with the pod out of its Service, is what lets trove's connections move), a pooled connection lifetime of 60 s + 15 s and `pool.health_check_period: 5s` (the last connection is gone from a draining instance after 80 s), `server_connections: 48` (2 x 20 + 2 x 4), and the pooler Services in the cluster's `certificates.serverAltDNSNames` ([postgres.yaml](../../deploy/dev/postgres.yaml)). `up.sh` sets the role defaults that preflight reads on a pooled connection (`ALTER ROLE trove IN DATABASE trove SET statement_timeout = '30s'`, `lock_timeout = '5s'`, `idle_in_transaction_session_timeout = '60s'`, `search_path = trove`). Run by the set `vuln-pooler` (about 6 minutes) |
 | `TROVE_RELEASE_VERSION`, `TROVE_RELEASE_DIGEST` | unset | the published mode of the post-release check ([E5.8](../spec/ha-and-helm.md#q-ha-164--the-post-release-check-is-a-job-of-release-docker--helm-and-a-dispatch-runs-only-that-job)); set together, e.g. `0.25.0` and `sha256:...` (example). `up.sh` installs the chart package of that version from `https://guided-traffic.github.io/trove/` and the image by that digest, which the nodes pull from Docker Hub: no `kind load`, no chart of the working tree. They exclude `TROVE_IMAGE` and `TROVE_SKIP_RELEASE=1`. The e2e suite's profile switches run `up.sh` with the same variables, so they keep the published release ([e2e.md](e2e.md#the-published-mode)). The release values carry no image-ID annotation in this mode (the digest is the identity; the annotation exists for a local build whose tag stays `dev`). The Docker Hub entry of `~/.docker/config.json`, and nothing else of the file, becomes the pull secret `dockerhub-pull`; without a Docker Hub login the nodes pull anonymously |
@@ -110,6 +110,34 @@ whichever node they run on, and the main installation resolves the client addres
 `up.sh`: `deploy/dev/bastion.sh infra` and `install <volume|bucket>` make the namespace `trove-bastion`, a Valkey of its own, the certificates and the two releases of the chart
 `trove-bastion` ([the Bastion tests](e2e.md#the-bastion-tests)); `bastion.sh down` removes them. Without the profile the Bastions are refused with `421 misdirected_request`,
 because their host is not one the main installation serves.
+
+### The `edge` profile
+
+`TROVE_PROFILE=edge deploy/dev/up.sh` (R-HA-038, R-HA-039, exit criterion E5.5) installs a Gateway API implementation beside HAProxy Ingress and renders trove's
+HTTPRoute on it next to the Ingress. Envoy Gateway comes from its OCI chart (`DEV_ENVOY_GATEWAY_*` in [versions.env](../../tools/versions.env): the chart
+version and the SHA-256 of its archive, which `oci_chart_tgz` of [lib.sh](../../deploy/dev/lib.sh) checks on every use, the controller image and the
+proxy image by digest), with the Gateway API CRDs of that chart. [gateway.yaml](../../deploy/dev/gateway.yaml) makes the platform Gateway `shared` in the namespace
+`gateway-system` (one HTTPS listener on 443 with the Ingress's certificate `trove-edge-tls`, read across namespaces through a `ReferenceGrant`), the
+`ClientTrafficPolicy` that keeps encoded slashes and double slashes unchanged and sets no request-received timeout, and the `BackendTrafficPolicy`
+without a request timeout; the proxy Service is `ClusterIP`, because the clients of the tests are pods
+([Q-HA-260](../spec/ha-and-helm.md#q-ha-260--the-gateway-api-implementation-of-the-dev-stack-is-envoy-gateway-installed-by-the-profile-edge)).
+[values-edge.yaml](../../deploy/dev/values-edge.yaml) enables `gateway`, the BackendTLSPolicies (`tls.backendTLSPolicy`, the CA ConfigMap `trove-tls-ca` that `up.sh`
+makes from the dev CA, so Envoy verifies trove for `trove.<ns>.svc`), HAProxy annotations without a body limit and with one-hour timeouts, a spool of 10Gi for the
+`packages` pods and `storage.upload.max_size: 7GiB`. Run `up.sh` without the variable to switch back: the route and the policies go, Envoy Gateway stays.
+The set `edge` ([e2e.md](e2e.md#the-edge-and-alert-tests)) uses it.
+
+### The `alerts` profile
+
+`TROVE_PROFILE=alerts deploy/dev/up.sh` (R-HA-045, R-OPS-045, R-OPS-046, exit criterion E5.5) installs kube-prometheus-stack into the namespace `monitoring`
+(`DEV_PROMETHEUS_*` in [versions.env](../../tools/versions.env)): the Prometheus operator, one Prometheus that selects every ServiceMonitor and
+PrometheusRule of the cluster, and kube-state-metrics; no Alertmanager, Grafana or node exporter
+([Q-HA-263](../spec/ha-and-helm.md#q-ha-263--the-dev-stack-gets-a-prometheus-for-the-profile-alerts-kube-prometheus-stack-without-alertmanager-grafana-and-node-exporter-plain-http-on-its-own-interface)).
+[values-alerts.yaml](../../deploy/dev/values-alerts.yaml) renders the chart's ServiceMonitor (every 10 s) and PrometheusRule. The Prometheus scrapes the ops
+listener over TLS and verifies it against the dev CA for `trove-ops.<ns>.svc`, a name that `trove-tls` carries ([pki.yaml](../../deploy/dev/pki.yaml)); the chart's
+NetworkPolicy admits the scrape from the namespace `monitoring`. Its interface is plain HTTP inside the cluster: reach it with
+`kubectl -n monitoring port-forward svc/prometheus-kube-prometheus-prometheus 9090` (see
+[H-797](../security/transport-encryption.md#h-797--the-prometheus-of-the-profile-alerts-serves-its-interface-and-api-in-plain-http)). The set `alerts`
+([e2e.md](e2e.md#the-edge-and-alert-tests)) uses it, on the cluster without the poolers.
 
 ## How `up.sh` works
 

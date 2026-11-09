@@ -1,0 +1,45 @@
+# The profile `edge` (R-HA-039, R-HA-038, exit criterion E5.5): the default profile with the transfers of R-HA-039 and the Gateway API beside the
+# Ingress. Layered on values-dev.yaml by deploy/dev/release-values.sh; up.sh installs Envoy Gateway and the Gateway `shared` for this profile
+# (gateway.yaml, TROVE_PROFILE=edge).
+#
+# Transfers: a 6 GiB upload and a 1 GiB NuGet push must fit the spool of a packages pod (R-HA-035: storage.upload.max_size is at most the spool
+# budget, the size limit minus spool.headroom), so the packages pods get a spool of 10Gi and the limit is 7GiB. The api pods spool only the UI's
+# uploads, which the profile bounds at its own default (ui.deploy.max_upload_bytes).
+packages:
+  spool:
+    sizeLimit: 10Gi
+
+spool:
+  headroom: 2GiB
+
+config:
+  storage:
+    upload:
+      max_size: 7GiB
+  ui:
+    deploy:
+      max_upload_bytes: 1GiB
+
+# The Ingress keeps the edge requirements of R-HA-039 for HAProxy Ingress: no body limit, and client and server timeouts above the longest
+# transfer (a slow download of 17 minutes). The HAProxy Ingress controller streams a request body and a response without buffering them.
+ingress:
+  annotations:
+    haproxy-ingress.github.io/timeout-client: 1h
+    haproxy-ingress.github.io/timeout-server: 1h
+    haproxy-ingress.github.io/proxy-body-size: "0"
+
+# The HTTPRoute on the platform Gateway of gateway.yaml, with the BackendTLSPolicies that make Envoy verify trove's certificate against the dev
+# CA (the ConfigMap trove-tls-ca, made by up.sh). The route's timeouts outlast the longest transfer.
+gateway:
+  enabled: true
+  parentRefs:
+    - name: shared
+      namespace: gateway-system
+      sectionName: https
+  timeouts:
+    request: 2h
+    backendRequest: 2h
+tls:
+  backendTLSPolicy:
+    enabled: true
+    caConfigMapName: trove-tls-ca

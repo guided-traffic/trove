@@ -268,3 +268,16 @@ which trove can neither set nor check, and the pooler's server certificate is th
 sits inside the database's trust boundary: whoever can read the pooler's pod can use the credentials it holds for the database.
 
 What makes it real: a pooler whose own `server_tls_sslmode` is weaker than `verify-full`, or a pod of the pooler that an attacker with access to its namespace can read.
+
+### H-797 · The Prometheus of the profile `alerts` serves its interface and API in plain HTTP
+
+Stage: the e2e profile `alerts` ([local-profile.md](../developer/local-profile.md#the-alerts-profile), [Q-HA-263](../spec/ha-and-helm.md)); the dev stack only, never the chart.
+
+Live in the profile `alerts`, dormant everywhere else. The Prometheus that kube-prometheus-stack installs listens on 9090 in plain HTTP, and so does kube-state-metrics:
+the tests read the alert state through the API server's Service proxy, and a person reads it with a port-forward. The link that carries trove's data, the scrape of the ops
+listener, is TLS and verified against the dev CA (the ServiceMonitor's `tlsConfig`, `trove-ops.<ns>.svc` in the certificate of `trove-tls`); what the plain interface holds is the
+metrics of the replicas, which the ops listener serves without authentication in this profile (`metrics.auth: none`). Anyone with a pod in the cluster can read them, which they could
+from the ops port if the chart's NetworkPolicy did not close it to the namespace `monitoring`; the Prometheus's pod sits in that namespace and answers to every namespace.
+
+What makes it real: a dev cluster shared with other workloads, where a pod outside `monitoring` reads the replicas' metrics (repository labels, route names, counts) from the Prometheus
+instead of the ops port. A production installation runs its own Prometheus and decides how that is protected.

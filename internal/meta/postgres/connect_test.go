@@ -325,6 +325,7 @@ func TestClassify(t *testing.T) {
 		{"R-HA-007 R-HA-058 a pooler instance that is shutting down", &pgconn.PgError{Code: "08P01", Message: "server shutting down"}, retryFailover},
 		{"R-HA-007 R-HA-058 a pooler that cannot reach its server", &pgconn.PgError{Code: "08P01", Message: "pgbouncer cannot connect to server"}, retryFailover},
 		{"a refused startup parameter is no outage", &pgconn.PgError{Code: "08P01", Message: "unsupported startup parameter: statement_timeout"}, retryNo},
+		{"a pooler whose server connections cannot be made is an outage", &pgconn.PgError{Code: "08P01", Message: "server login has been failing, cached error: connect failed (server_login_retry)"}, retryFailover},
 		{"unique violation is the caller's", pg("23505"), retryNo},
 		{"statement timeout is not retried", pg("57014"), retryNo},
 		{"io.EOF", io.EOF, retryFailover},
@@ -333,7 +334,7 @@ func TestClassify(t *testing.T) {
 		{"an unknown commit outcome", &outcomeUnknownError{err: io.EOF}, retryNo},
 	}
 	for _, c := range cases {
-		t.Run("R-ARCH-019 "+c.name, func(t *testing.T) {
+		t.Run("R-HA-058 R-ARCH-019 "+c.name, func(t *testing.T) {
 			if got := classify(c.err); got != c.want {
 				t.Fatalf("classify = %d, want %d", got, c.want)
 			}

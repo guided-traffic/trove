@@ -11,7 +11,9 @@
 # Q-HA-220; the two legs run one at a time); job e2e-ci runs ci-ha (E4.7); job e2e-bastion runs the sets bastion and
 # bastion-long (R-BAS-049); job e2e-vuln runs vuln, vuln-long and vuln-pooler (R-VULN-029; vuln-pooler is the blocks through drain variant D on the cluster
 # with the poolers of R-HA-058, on large); job e2e-mirror runs mirror and mirror-long (R-REPO-059, an OCI pass among them); job e2e-oci runs oci-long (R-OCI-011: a push cut by the drain of the receiving pod); job e2e-backup runs the set backup (R-BAK-029: the restore
-# drill, the drain and the kill -9 of a backup and a restore, the revocation journal across a restore).
+# drill, the drain and the kill -9 of a backup and a restore, the revocation journal across a restore); job e2e-edge runs the set edge (R-HA-039's large and
+# long transfers and R-HA-038 through the Ingress and through an HTTPRoute, E5.5); job e2e-alerts runs the set alerts (the alerts of R-HA-045 in their
+# R-HA-052 scenarios and "Maintenance stays quiet", E5.5; GitHub-hosted).
 # The perf jobs start after every kind leg of this workflow has finished, so they measure on the large VM without this workflow's
 # clusters beside them (Q-ARCH-325; a Test and Release run that starts meanwhile can still share the VM): job latency enforces the p99 bounds of P-13 (change propagation) and P-14 (job pick-up) with Valkey available, against
 # the integration stack (R-ARCH-027, Q-ARCH-220), and job vuln-perf, after latency, runs the performance run of the vulnerability scanning
@@ -30,7 +32,7 @@
 # Sizes: docs/developer/releasing.md#ci.
 # Q-ARCH-431: the kind legs on the large class run in three lanes, so at most three large legs of this run are active at once
 # (one per worker node of the class: three nodes of 16 CPUs, a kind leg about 12 cores). Lane 1: e2e-npm (npm-ha, then ha-suite, ha-faults and ha-pooler; Q-HA-250),
-# then e2e-nuget. Lane 2: e2e (drain-roles, then failover), then npm-ha-soak. Lane 3: e2e-vuln (its large leg vuln-pooler, the
+# then e2e-nuget. Lane 2: e2e (drain-roles, then failover), then npm-ha-soak, then e2e-edge. Lane 3: e2e-vuln (its large leg vuln-pooler, the
 # GitHub-hosted legs are not in the lanes), then e2e-backup, e2e-mirror (mirror, then mirror-long), e2e-oci. Each lane job
 # needs its predecessor with `!cancelled()`, so a leg the dispatch does not select, or a failed one, does not stop the lane.
 name: HA and Performance (nightly)
@@ -157,7 +159,7 @@ jobs:
   # after latency, so that no perf job shares the large VM with another job of this workflow or with the other perf job.
   latency:
     name: P-13 and P-14 latency (Valkey 9.1)
-    needs: [e2e, e2e-npm, npm-ha-soak, e2e-nuget, e2e-ci, e2e-bastion, e2e-vuln, e2e-mirror, e2e-backup, e2e-upgrade]
+    needs: [e2e, e2e-npm, npm-ha-soak, e2e-nuget, e2e-ci, e2e-bastion, e2e-vuln, e2e-mirror, e2e-backup, e2e-edge, e2e-alerts, e2e-upgrade]
     if: ${{ !cancelled() && (!inputs.sets || contains(format(',{0},', inputs.sets), ',latency,')) }}
     runs-on: large
     timeout-minutes: 45
@@ -227,7 +229,7 @@ jobs:
   # TROVE_PERF_GATE=1 makes a value above its target fail the job; a failed job opens an issue that lists the misses.
   vuln-perf:
     name: R-VULN-028 vulnerability scanning performance (V-1 to V-9)
-    needs: [e2e, e2e-npm, npm-ha-soak, e2e-nuget, e2e-ci, e2e-bastion, e2e-vuln, e2e-mirror, e2e-upgrade, latency]
+    needs: [e2e, e2e-npm, npm-ha-soak, e2e-nuget, e2e-ci, e2e-bastion, e2e-vuln, e2e-mirror, e2e-edge, e2e-alerts, e2e-upgrade, latency]
     if: ${{ !cancelled() && (!inputs.sets || contains(format(',{0},', inputs.sets), ',vuln-perf,')) }}
     runs-on: large
     timeout-minutes: 150
@@ -2268,6 +2270,363 @@ jobs:
       - name: make dev-down
         if: always() && steps.leg.outputs.run == 'true'
         run: make dev-down
+
+  # The edge tests (set edge, exit criterion E5.5, docs/developer/e2e.md#the-edge-and-alert-tests): R-HA-039's 6 GiB upload, 17-minute download at
+  # 2 MiB/s, 1 GiB NuGet push and the scoped npm package, and R-HA-038's criteria, through the chart's Ingress and through its HTTPRoute on a platform
+  # Gateway (Envoy Gateway, the profile `edge`). The 6 GiB file and the spool need a large runner's disk (Q-ARCH-326); the job is the end of lane 2
+  # (Q-ARCH-431). A red leg is a finding and holds nothing (owner, 2026-11-01). Edge port 8104.
+  e2e-edge:
+    name: e2e-edge on kind (edge)
+    # Lane 2 (Q-ARCH-431): after npm-ha-soak, whatever its result.
+    needs: npm-ha-soak
+    if: ${{ !cancelled() }}
+    runs-on: large
+    timeout-minutes: 180
+    env:
+      TROVE_IMAGE: guidedtraffic/trove:dev
+      TROVE_DEV_CLUSTER: trove-edge-${{ github.run_id }}
+      TROVE_DEV_HTTP_PORT: "8104"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Select the leg (the dispatch input sets)
+        id: leg
+        uses: ./.github/actions/select-leg
+        with:
+          leg: edge
+          job: e2e-edge
+          sets: ${{ inputs.sets }}
+
+      - name: Load the tool pins
+        if: steps.leg.outputs.run == 'true'
+        uses: ./.github/actions/load-pins
+
+      - name: Set up Go
+        if: steps.leg.outputs.run == 'true'
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install build tools
+        if: steps.leg.outputs.run == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential jq
+
+      - name: Install the pinned helm
+        if: steps.leg.outputs.run == 'true'
+        uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install the pinned kubectl
+        if: steps.leg.outputs.run == 'true'
+        uses: azure/setup-kubectl@v5
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: Install the pinned kind
+        if: steps.leg.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin"
+          GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Install the pinned Docker Buildx
+        timeout-minutes: 16
+        if: steps.leg.outputs.run == 'true'
+        uses: ./.github/actions/install-buildx
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
+      - name: Set up Docker Buildx
+        if: steps.leg.outputs.run == 'true'
+        uses: docker/setup-buildx-action@v4
+        with:
+          cache-binary: false
+
+      - name: Log in to Docker Hub (the dev profile's images)
+        if: steps.leg.outputs.run == 'true'
+        uses: docker/login-action@v4
+        with:
+          username: guidedtraffic
+          password: ${{ secrets.DOCKERHUB_PAT }}
+
+      - name: The dev profile's dependency pins and the runner architecture
+        if: steps.leg.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          [ "$(uname -m)" = "x86_64" ] || { echo "::error::the dev profile needs an amd64 runner (or qemu), got $(uname -m)"; exit 1; }
+          echo "kind $KIND_VERSION, kubectl $KUBECTL_VERSION, helm $HELM_VERSION"
+          kind version
+          kubectl version --client
+          helm version --short
+          for u in https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator; do
+            curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
+          done
+
+      - name: make image
+        if: steps.leg.outputs.run == 'true'
+        run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
+
+      - name: Fetch the dev charts that are GitHub release assets
+        timeout-minutes: 16
+        if: steps.leg.outputs.run == 'true'
+        env:
+          # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
+          GITHUB_TOKEN: ${{ github.token }}
+        run: make dev-charts
+
+      - name: make dev-up
+        if: steps.leg.outputs.run == 'true'
+        timeout-minutes: 25
+        run: make dev-up
+
+      - name: Disk and memory before the transfers
+        if: steps.leg.outputs.run == 'true'
+        run: |
+          df -h / /var/lib/docker 2>/dev/null || df -h /
+          free -g
+
+      - name: make e2e SET=edge
+        if: steps.leg.outputs.run == 'true'
+        timeout-minutes: 170
+        run: make e2e SET=edge
+
+      - name: Disk and memory after the transfers
+        if: always() && steps.leg.outputs.run == 'true'
+        run: |
+          df -h / /var/lib/docker 2>/dev/null || df -h /
+          free -g
+          docker system df
+
+      - name: Upload the go test -json report
+        if: always() && steps.leg.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-edge-report
+          path: .out/test-e2e.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload the job logs and the test output
+        if: always() && steps.leg.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-edge-artifacts
+          path: .out/e2e/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Cluster state (failure only)
+        if: failure() && steps.leg.outputs.run == 'true'
+        run: |
+          set -u
+          ctx="kind-${TROVE_DEV_CLUSTER}"
+          mkdir -p .out/cluster-state
+          for ns in trove trove-restore monitoring gateway-system envoy-gateway-system ingress-controller cert-manager valkey-operator-system internal-secrets-operator-system cnpg-system kube-system; do
+            kubectl --context "$ctx" -n "$ns" get pods -o wide > ".out/cluster-state/pods-$ns.txt" 2>&1 || true
+            kubectl --context "$ctx" -n "$ns" describe pods > ".out/cluster-state/describe-$ns.txt" 2>&1 || true
+            kubectl --context "$ctx" -n "$ns" get events --sort-by=.lastTimestamp > ".out/cluster-state/events-$ns.txt" 2>&1 || true
+            kubectl --context "$ctx" -n "$ns" get jobs -o yaml > ".out/cluster-state/jobs-$ns.yaml" 2>&1 || true
+          done
+          deploy/dev/cluster-logs.sh .out/cluster-state
+          kubectl --context "$ctx" get nodes -o wide > .out/cluster-state/nodes.txt 2>&1 || true
+          helm --kube-context "$ctx" -n trove status trove > .out/cluster-state/helm-status.txt 2>&1 || true
+          docker ps -a > .out/cluster-state/docker-ps.txt 2>&1 || true
+          cp -r .dev/logs .out/cluster-state/dev-logs 2>/dev/null || true
+
+      - name: Upload the cluster state (failure only)
+        if: failure() && steps.leg.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-edge-cluster-state
+          path: .out/cluster-state/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: make dev-down
+        if: always() && steps.leg.outputs.run == 'true'
+        run: make dev-down
+
+
+  # The alert tests (set alerts, exit criterion E5.5, docs/developer/e2e.md#the-edge-and-alert-tests): the PrometheusRule of the chart against a Prometheus
+  # that scrapes the profile through the ServiceMonitor (the profile `alerts`), in the scenarios of R-HA-052 that name an
+  # alert, and "Maintenance stays quiet". No client pods and no large file, so the job runs on a GitHub-hosted runner with the disk space freed, as
+  # e2e-vuln does (Q-ARCH-326). A red leg is a finding and holds nothing (owner, 2026-11-01). Edge port 8105.
+  e2e-alerts:
+    name: e2e-alerts on kind (alerts)
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 210
+    env:
+      TROVE_IMAGE: guidedtraffic/trove:dev
+      TROVE_DEV_CLUSTER: trove-alerts-${{ github.run_id }}
+      TROVE_DEV_HTTP_PORT: "8105"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Select the leg (the dispatch input sets)
+        id: leg
+        uses: ./.github/actions/select-leg
+        with:
+          leg: alerts
+          job: e2e-alerts
+          sets: ${{ inputs.sets }}
+
+      - name: Free disk space (GitHub-hosted runner)
+        if: steps.leg.outputs.run == 'true'
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Load the tool pins
+        if: steps.leg.outputs.run == 'true'
+        uses: ./.github/actions/load-pins
+
+      - name: Set up Go
+        if: steps.leg.outputs.run == 'true'
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install build tools
+        if: steps.leg.outputs.run == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential jq
+
+      - name: Install the pinned helm
+        if: steps.leg.outputs.run == 'true'
+        uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install the pinned kubectl
+        if: steps.leg.outputs.run == 'true'
+        uses: azure/setup-kubectl@v5
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: Install the pinned kind
+        if: steps.leg.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin"
+          GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Install the pinned Docker Buildx
+        timeout-minutes: 16
+        if: steps.leg.outputs.run == 'true'
+        uses: ./.github/actions/install-buildx
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
+      - name: Set up Docker Buildx
+        if: steps.leg.outputs.run == 'true'
+        uses: docker/setup-buildx-action@v4
+        with:
+          cache-binary: false
+
+      - name: Log in to Docker Hub (the dev profile's images)
+        if: steps.leg.outputs.run == 'true'
+        uses: docker/login-action@v4
+        with:
+          username: guidedtraffic
+          password: ${{ secrets.DOCKERHUB_PAT }}
+
+      - name: The dev profile's dependency pins and the runner architecture
+        if: steps.leg.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          [ "$(uname -m)" = "x86_64" ] || { echo "::error::the dev profile needs an amd64 runner (or qemu), got $(uname -m)"; exit 1; }
+          echo "kind $KIND_VERSION, kubectl $KUBECTL_VERSION, helm $HELM_VERSION"
+          kind version
+          kubectl version --client
+          helm version --short
+          for u in https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator https://prometheus-community.github.io/helm-charts; do
+            curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
+          done
+
+      - name: make image
+        if: steps.leg.outputs.run == 'true'
+        run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
+
+      - name: Fetch the dev charts that are GitHub release assets
+        timeout-minutes: 16
+        if: steps.leg.outputs.run == 'true'
+        env:
+          # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
+          GITHUB_TOKEN: ${{ github.token }}
+        run: make dev-charts
+
+      - name: make dev-up
+        if: steps.leg.outputs.run == 'true'
+        timeout-minutes: 25
+        run: make dev-up
+
+      - name: make e2e SET=alerts
+        if: steps.leg.outputs.run == 'true'
+        timeout-minutes: 200
+        run: make e2e SET=alerts
+
+      - name: Upload the go test -json report
+        if: always() && steps.leg.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-alerts-report
+          path: .out/test-e2e.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload the job logs and the test output
+        if: always() && steps.leg.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-alerts-artifacts
+          path: .out/e2e/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Cluster state (failure only)
+        if: failure() && steps.leg.outputs.run == 'true'
+        run: |
+          set -u
+          ctx="kind-${TROVE_DEV_CLUSTER}"
+          mkdir -p .out/cluster-state
+          for ns in trove trove-restore monitoring gateway-system envoy-gateway-system ingress-controller cert-manager valkey-operator-system internal-secrets-operator-system cnpg-system kube-system; do
+            kubectl --context "$ctx" -n "$ns" get pods -o wide > ".out/cluster-state/pods-$ns.txt" 2>&1 || true
+            kubectl --context "$ctx" -n "$ns" describe pods > ".out/cluster-state/describe-$ns.txt" 2>&1 || true
+            kubectl --context "$ctx" -n "$ns" get events --sort-by=.lastTimestamp > ".out/cluster-state/events-$ns.txt" 2>&1 || true
+            kubectl --context "$ctx" -n "$ns" get jobs -o yaml > ".out/cluster-state/jobs-$ns.yaml" 2>&1 || true
+          done
+          deploy/dev/cluster-logs.sh .out/cluster-state
+          kubectl --context "$ctx" get nodes -o wide > .out/cluster-state/nodes.txt 2>&1 || true
+          helm --kube-context "$ctx" -n trove status trove > .out/cluster-state/helm-status.txt 2>&1 || true
+          docker ps -a > .out/cluster-state/docker-ps.txt 2>&1 || true
+          cp -r .dev/logs .out/cluster-state/dev-logs 2>/dev/null || true
+
+      - name: Upload the cluster state (failure only)
+        if: failure() && steps.leg.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-alerts-cluster-state
+          path: .out/cluster-state/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: make dev-down
+        if: always() && steps.leg.outputs.run == 'true'
+        run: make dev-down
+
 
   # The upgrade leg (set upgrade, deploy/dev/e2e.sh; docs/developer/e2e.md): published releases of the chart (https://guided-traffic.github.io/trove/)
   # and their images (guidedtraffic/trove:<x.y.z> on Docker Hub), and the commit with its second UI bundle, are installed on a kind cluster

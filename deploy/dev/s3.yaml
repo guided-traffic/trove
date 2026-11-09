@@ -22,7 +22,7 @@ spec:
   accessModes: [ReadWriteOnce]
   resources:
     requests:
-      storage: 20Gi   # the local-path volume is sparse; -volume.max=100 times 128 MB bounds what the store allocates
+      storage: 20Gi   # the local-path volume is sparse; -volume.max=400 times 128 MB bounds what the store allocates
 ---
 apiVersion: v1
 kind: Service
@@ -105,7 +105,7 @@ spec:
             - server
             - -dir=/data
             - -master.volumeSizeLimitMB=128
-            - -volume.max=100
+            - -volume.max=400   # 400 x 128 MB: the 6 GiB object of R-HA-039 (edge set) needs 48 volumes on its own, and 100 left no room beside the data of the other suites
             - -filer
             - -s3
             - -s3.port=9000

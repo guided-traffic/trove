@@ -59,6 +59,8 @@ deploy/dev/bastion*.yaml    their manifests and chart values; values-bastion.yam
 deploy/dev/restore-ns.sh    the second installation of the restore drill (namespace trove-restore): infra, install <backup id>, serve, down; restore-ns.yaml and values-restore.yaml are its manifests and chart values, values-restore-vuln.yaml the overlay of `TROVE_RESTORE_PROFILE=vuln` (the backup tests and the vulnerability tests, below)
 deploy/dev/pitr.sh, pitr.yaml, pitr-restore.yaml  the platform layer of R-HA-023 and the new cluster of the point-in-time drill (TROVE_PITR=1, below)
 deploy/dev/values-backup.yaml  the profile `backup`: garbage collection without a grace period (TROVE_PROFILE=backup)
+deploy/dev/gateway.yaml, values-edge.yaml  the profile `edge`: the Gateway `shared` of Envoy Gateway with its policies, and the chart values for the HTTPRoute and the 6 GiB transfers (TROVE_PROFILE=edge)
+deploy/dev/values-alerts.yaml  the profile `alerts`: the ServiceMonitor and the PrometheusRule of the chart, read by the Prometheus up.sh installs (TROVE_PROFILE=alerts)
 test/e2e/                   the Go tests, build tag `e2e`, package e2e
   env_test.go               kubectl, the API-server proxy to :8081, the driver and k6 helpers
   e03_cluster_test.go       E0.3, E0.7 (Pod Security, NetworkPolicy enforcement)
@@ -131,13 +133,15 @@ test/e2e/                   the Go tests, build tag `e2e`, package e2e
   drain_variants_test.go    the harness of drain variants B to E of R-HA-059: the node pick, `drain.sh --also`, each variant's condition (Drain variants B to E, below)
   drain_variants_hold_test.go  the hold of variant B: the evicted Valkey primary stays lost until the Sentinels name another primary (Q-HA-181)
   vuln_drain_variants_test.go  E5.13: the blocks through drain variants B, C and E (set vuln-long)
-  vuln_pooler_test.go       E5.13: the block through drain variant D on the cluster with the poolers (set vuln-pooler)
+  vuln_pooler_test.go       E5.13: the block through drain variant D on the cluster without the poolerss (set vuln-pooler)
   vuln_restore_test.go      E5.13, R-VULN-026: the restore drill of the vulnerability data (set vuln-long)
   backup_env_test.go        the backup harness (R-BAK-029): the profile, the repositories, the load, Jobs made from the CronJob, the port-forwards to the restored installation, the timings artifact
   backup_drill_test.go      the restore drill: a backup during the load, the restore Job into the second namespace, the restored installation judged by its bytes, npm view and verify --deep, two overlapping Jobs
   backup_drain_test.go      a node drain and a kill -9 of a backup and of a restore (R-BAK-012, R-BAK-010, R-BAK-021)
   backup_journal_test.go    E5.12: the revocation journal across a restore
   backup_pitr_test.go       E5.1: the point-in-time restore drill of R-HA-025 (set backup-pitr)
+  edge_test.go              E5.5: R-HA-039 and R-HA-038 through the Ingress and through an HTTPRoute on a Gateway (set edge, profile edge)
+  alerts_test.go            E5.5: the alerts of R-HA-045 in their R-HA-052 scenarios and "Maintenance stays quiet" against a Prometheus (set alerts, profile alerts)
   backup_ci_test.go         E5.12's CI bullets: the issuer, the mappings and the exchange against the source and the restored installation
   clients/                  the npm client matrix image (below): package.json + package-lock.json, bin/ wrappers, shim/npm, fwd/ forwarder,
                             Dockerfile, build.sh, check-pins.mjs
@@ -194,9 +198,11 @@ make e2e SET=bastion-long    # the drain, the failure suite under client load (r
 make e2e SET=mirror          # the mirror (R-REPO-059, E6b.6): npm ci and dotnet restore while a pass runs, the status from every replica, two claimants, Valkey stopped, a restore with the upstream stopped, the browser journey (CI job e2e-mirror, when the change touches the mirror; nightly)
 make e2e SET=mirror-long     # the drain of the node of the process that runs a pass of 300 packages, and the failure suite on a pass of 100 (a process lost, a throttling upstream, a switchover and a failover) (CI: nightly and on dispatch; a red long leg is a finding, not a blocker)
 make e2e SET=upgrade         # the upgrade across the cut from v0.16.0 (E6a.7) and the rolling upgrade with its rollback from the latest release (R-HA-020), under npm, NuGet and browser loops; replaces the installation and puts the current dev release back (CI: nightly and on dispatch; a red long leg is a finding, not a blocker)
-make e2e SET=vuln-pooler     # E5.13: the block through drain variant D on the cluster with the poolers of R-HA-058 (TROVE_POOLER=1, set by the set); no client pods; about 6 minutes of `make e2e` (the variant takes 2.5 to 3.5 minutes: the pooler pod stops after its 90 s `preStop` sleep); the cluster stays in the pooler overlay until the next `make dev-up` (CI: job e2e-vuln, nightly)
+make e2e SET=vuln-pooler     # E5.13: the block through drain variant D on the cluster without the poolerss of R-HA-058 (TROVE_POOLER=1, set by the set); no client pods; about 6 minutes of `make e2e` (the variant takes 2.5 to 3.5 minutes: the pooler pod stops after its 90 s `preStop` sleep); the cluster stays in the pooler overlay until the next `make dev-up` (CI: job e2e-vuln, nightly)
 make e2e SET=backup-pitr      # the point-in-time restore drill of R-HA-025 (TROVE_PITR=1: the Barman Cloud plugin; CI: a step of the job e2e-backup; about 15 minutes)
 make e2e SET=backup          # the backup and restore suite (R-BAK-029): the drill into the namespace trove-restore, the drain and the kill -9 of a backup and a restore, the journal across a restore with E5.12's CI bullets (starts the issuer double); the profile backup, one npm client pod (CI: job e2e-backup of the nightly workflow, on dispatch; about 25 minutes)
+make e2e SET=edge            # E5.5: R-HA-039's 6 GiB upload, 17-minute download at 2 MiB/s and 1 GiB NuGet push, and R-HA-038, through the Ingress and through an HTTPRoute on Envoy Gateway (CI: job e2e-edge, nightly and on dispatch; about 90 minutes)
+make e2e SET=alerts          # E5.5: the alerts of R-HA-045 in their R-HA-052 scenarios and "Maintenance stays quiet" against the Prometheus of the profile alerts, on the cluster without the poolerss (CI: job e2e-alerts, nightly and on dispatch)
 make fuzz-npm FUZZ=FuzzMatch FUZZTIME=1m   # npm's fuzz targets (CI: 30 minutes, closing run only)
 ```
 
@@ -3264,7 +3270,7 @@ make e2e SET=vuln-long     # the drain of a full sync, the client tests with Val
 TROVE_E2E_RUN='^TestVulnLong_R_VULN_015_BlockHoldsDuringFailures$' make e2e SET=vuln-long   # variant A and the failovers
 TROVE_E2E_RUN='^TestVulnLong_R_VULN_015_BlockHoldsThroughDrainVariants$' make e2e SET=vuln-long   # variants B, C and E
 TROVE_E2E_RUN='^TestVulnLong_R_VULN_026_' make e2e SET=vuln-long   # the restore drill
-make e2e SET=vuln-pooler    # variant D on the cluster with the poolers; leaves the cluster in the pooler overlay until the next make dev-up
+make e2e SET=vuln-pooler    # variant D on the cluster without the poolerss; leaves the cluster in the pooler overlay until the next make dev-up
 TROVE_E2E_REUSE_CLIENTS=1 make e2e SET=vuln TROVE_E2E_RUN='^TestVuln_R_VULN_017_'   # one test; client pods that are running stay
 ```
 
@@ -3797,6 +3803,73 @@ CI: a step of the nightly job `e2e-backup`). Stages, each stops the drill when i
 
 The test's cleanup returns the release to `trove-db` (`helm upgrade` with the profile's values) and deletes `trove-db-pitr`. **Not verified by the drill:** the ETag
 bullet, the orphan sweep after the resume and the run with `backup.revocation_journal.enabled: false` of R-HA-025's acceptance criteria. Steps 5 and 7 call the product's commands; step 7 runs in a pod of the started installation because the post-restore Job and its credentials ConfigMap are gone after the upgrade of step 6.
+
+## The edge and alert tests
+
+Exit criterion E5.5 of the [roadmap](../coverage/roadmap.md) has three parts that need a cluster: R-HA-038 and R-HA-039 through an HTTPRoute on an existing
+Gateway as well as through the Ingress, and the alerts of R-HA-045 in their R-HA-052 scenarios. Each is a profile of the dev stack that installs what it needs
+(`TROVE_PROFILE=edge` and `alerts`, [local-profile.md](local-profile.md#the-edge-profile)) and a set; the production example values it also names are
+rendered by the chart tests ([helm-chart.md](helm-chart.md)).
+
+### The edge set
+
+`make e2e SET=edge` ([edge_test.go](../../test/e2e/edge_test.go)) switches the cluster to the profile `edge` and starts one NuGet and one npm client pod
+(`TROVE_E2E_NUGET_CLIENTS_WORK` sizes the work volume of the NuGet pod, 4Gi by default, enough for the 1 GiB package). `TestEdge_R_HA_039_TransfersThroughTheIngressAndTheGateway` has, for each of the two edges:
+
+| Subtest | What it shows |
+|---|---|
+| the edge under test | the Gateway's proxy adds `x-envoy-upstream-service-time` to the answer (`enableEnvoyHeaders` of the ClientTrafficPolicy) and the Ingress's controller does not, so a request cannot reach the other edge unseen |
+| `curl -T` of 6 GiB | the upload succeeds (HTTP 200 or 201) and the download of the same object has the SHA-256 of the bytes that were sent: they are made from `/dev/urandom` while they are sent (`tee` into `sha256sum`, `curl -T -`, chunked, at 150 MB/s) and are written to no file; the object is deleted afterwards |
+| `curl --limit-rate 2M` | a 2 GiB object read at 2 MiB/s answers 200, delivers every byte and takes more than 15 minutes ([Q-HA-261](../spec/ha-and-helm.md#q-ha-261--the-slow-download-of-r-ha-039-reads-a-2-gib-object-the-6-gib-object-is-downloaded-at-full-speed-and-compared-by-its-sha-256)) |
+| `dotnet nuget push` of 1 GiB | a package that `dotnet pack` makes around a random content file is accepted by a local NuGet repository |
+| `npm publish` of 200 MB, `npm view`, the packument, the UI | `@acme/ui` with a 200 MB file is published; `npm view @acme/ui version` and `GET .../npm/e2e/<repo>/@acme%2fui` (the encoded slash) answer with the version, the packument from a `packages` pod; `GET /` answers 200 from an `api` pod (R-HA-038) |
+
+`curl` runs in the NuGet pod and reaches an edge by name with `--connect-to localhost:<port>:<Service>:443`: the URL stays `https://localhost:<port>`, so the
+certificate is verified for `localhost` with the dev CA, and the connection goes to the Service of the Ingress controller or of the Gateway's proxy
+(`envoy-gateway-system`, found by the labels the controller puts on it). `dotnet` and `npm` need the forwarder of their pod (the base URL trove hands back is the
+same for both edges), which the test points at an edge through `/tmp/target` and returns to the Ingress at the end. The uploads and downloads of 6 GiB and 2 GiB are streamed and rate-limited because two runs of this set on the shared large runner (2026-11-09) ended with "the runner lost communication" about six minutes after the set began, when the pod wrote its 8 GiB of files beside the spool and the blob store; the cause was not proved (no log of the host survived). Every transfer of minutes runs detached in the pod
+(`nohup`, an exit file and an output file that the test polls), so no exec session to the API server has to last 17 minutes. The two 2 GiB reads run side by side;
+the uploads run one after the other, because a `packages` pod spools one upload of 6 GiB (`spool.sizeLimit: 10Gi` in [values-edge.yaml](../../deploy/dev/values-edge.yaml)).
+The 6 GiB object is the same bytes through both edges, so the blob store deduplicates the second upload by SHA-256 after the edge has carried it; the multipart path
+of S3 is exercised by the first. The Envoy side of R-HA-039 is the policies of [gateway.yaml](../../deploy/dev/gateway.yaml) (the example the spec shows, plus no
+request-received timeout and an idle timeout of one hour), the HTTPRoute's `timeouts` of two hours and the BackendTLSPolicies the chart renders.
+
+Measured on the dev cluster (arm64 laptop, 2026-11-09, both edges): the upload of 6144 MiB took 1m16s and the download 46s through each, the push of the 1 GiB
+package 14s, the publish of 200 MB 11 to 12 s, and the two reads of 2 GiB at 2 MiB/s 17m7s each; the set took 25 minutes. The first full-size runs failed on the dev
+stack, not on an edge: the SeaweedFS of the dev profile allowed 100 volumes of 128 MB (`-volume.max`), which the data of earlier suites and a 6 GiB object (48 volumes) exceed, and
+the store answered the upload with `503` after a minute; it allows 400 now ([s3.yaml](../../deploy/dev/s3.yaml)). In CI the leg `e2e-edge` on the shared self-hosted runner ended with a lost runner in four dispatches ([H-799](../spec/ha-and-helm.md#h-799--the-set-edge-has-ended-the-self-hosted-large-runner-four-times-its-full-size-result-exists-on-the-laptop-only)); run it alone on the machine.
+
+### The alerts set
+
+`make e2e SET=alerts` ([alerts_test.go](../../test/e2e/alerts_test.go)) switches to the profile `alerts` on the cluster without the poolers, waits until the Prometheus has loaded the rules of the chart, scrapes every replica and has kube-state-metrics series, and records the alerts
+that already fire after two minutes (none on a fresh cluster; on a cluster that earlier suites used, for example the claimed-name match that the vulnerability tests leave
+in the database, `TroveVulnerabilityClaimedNameMalicious`): "Maintenance stays quiet" leaves exactly those names out of its reading. It reads the Prometheus through the API server's Service proxy (`/api/v1/alerts`, `/api/v1/query`). The tests run in the order of the file
+(`TroveValkeyFailoverFlapping` stays firing for an hour after its own scenario, so "Maintenance stays quiet" is first):
+
+| Test | Scenario of R-HA-052 and R-OPS-046 | What it requires |
+|---|---|---|
+| `TestAlerts_R_OPS_046_MaintenanceStaysQuiet` | drain variants A, B, C and E (`prepareVariantDrain` of [drain_variants_test.go](../../test/e2e/drain_variants_test.go), variant A added for it), the planned failover of Valkey, a rolling restart of the three roles | each drain having run (its own conditions are the drain tests'), then no alert of the chart firing at any evaluation of the window (`max_over_time(ALERTS{alertstate="firing"}[window])`), except `TroveValkeyFailoverFlapping` when the window held two or more primary changes ([Q-HA-264](../spec/ha-and-helm.md#q-ha-264--maintenance-stays-quiet-runs-the-drain-variants-a-b-c-and-e-the-planned-failover-and-the-rolling-restarts-without-client-load-and-reads-the-window-back-from-the-prometheus)) |
+| `TestAlerts_R_OPS_046_ValkeyOutage` | Valkey and the Sentinels stopped for 5 minutes | `TroveValkeyUnavailable` fires; `trove_valkey_available` is 0 on every replica and `trove_valkey_degraded_total` grows (R-OPS-045); both resolve after the return |
+| `TestAlerts_R_OPS_046_OneReplicaCutOffFromValkey` | a NetworkPolicy denies one pod the egress to the Valkey pods | `TroveValkeyUnavailableSingleReplica` fires and `TroveValkeyUnavailable` does not; it resolves when the policy is lifted |
+| `TestAlerts_R_OPS_046_ValkeyFailoverFlapping` | three `SENTINEL FAILOVER` | each one raises `trove_valkey_primary_changes_total` by one on every replica, the fast path is subscribed again and `trove_valkey_primary_views` is back to 1 (R-OPS-045); `TroveValkeyFailoverFlapping` fires |
+| `TestAlerts_R_OPS_045_SlowValkey` | `CLIENT PAUSE 4000 ALL` ([Q-OPS-197](../spec/operations-and-observability.md)) | `trove_valkey_errors_total{kind="timeout"}` grows and a circuit opens |
+| `TestAlerts_R_OPS_046_PostgreSQLOutage` | PostgreSQL fenced for 3 minutes under a read loop | `TroveDatabaseUnreachable` fires and resolves |
+| `TestAlerts_R_OPS_046_RoleBelowTwoReplicas` | the worker Deployment scaled to one replica | `TroveReplicasNotReady` fires for `trove-worker` only and resolves ([Q-HA-264](../spec/ha-and-helm.md)) |
+| `TestAlerts_R_OPS_046_BackupFailedAndStale` | the process of a backup run killed with kill -9 from the node; then the interval lowered to a minute with the CronJob suspended | `TroveBackupFailed` fires and a successful run resolves it; `TroveBackupStale` fires and resolves ([Q-OPS-196](../spec/operations-and-observability.md)) |
+
+Not covered: `TroveObjectStoreUnreachable`, `TroveValkeyPrimaryDisagreement` and `TroveControlConnectionWaits` are tested by their rule tests only (the scenarios
+need a blocked Sentinel path and a test build that holds the control connection); the faults run without client load ([Q-HA-264](../spec/ha-and-helm.md)).
+
+### Running it
+
+```shell
+make dev-up
+make e2e SET=edge      # about 90 minutes: two uploads of 6 GiB and 2 GiB, two reads of 17 minutes side by side, the pushes
+make e2e SET=alerts    # about 2.5 hours: the quiet scenario about 30 minutes, the faults the rest
+```
+
+The legs run in the nightly workflow as the jobs `e2e-edge` (a large runner, the end of lane 2 of Q-ARCH-431) and `e2e-alerts` (a GitHub-hosted runner), and on a
+dispatch (`-f sets=e2e-edge,e2e-alerts`). A red leg is a finding, not a blocker (owner, 2026-11-01).
 
 ## Extension checklist
 

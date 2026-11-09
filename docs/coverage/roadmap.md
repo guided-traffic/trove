@@ -1242,6 +1242,16 @@ so the journal ships with the backup, not after it (Q-ROAD-2).
   PrometheusRule render with the production example values; the Valkey, drain and backup alerts
   fire in their R-HA-052 scenarios, and the "Maintenance stays quiet" scenario fires none
   (R-OPS-045, R-OPS-046).
+  Tests: the values reference and the schema, `TestR_HA_031_ValuesReference`; the production example values
+  ([production.yaml](../../deploy/helm/trove/examples/production.yaml), [Q-HA-262](../spec/ha-and-helm.md#q-ha-262--the-production-example-values-are-deployhelmtroveexamplesproductionyaml-packaged-with-the-chart-and-rendered-by-the-chart-tests)),
+  `TestR_HA_032_ProductionExample`, `TestR_HA_042_ProductionExample`, `TestR_HA_045_ProductionExample` and `TestR_HA_038_ProductionExample`; R-HA-038 and R-HA-039 through the Ingress and
+  through an HTTPRoute on Envoy Gateway, `TestEdge_R_HA_039_TransfersThroughTheIngressAndTheGateway` ([e2e.md](../developer/e2e.md#the-edge-and-alert-tests), set `edge`,
+  [Q-HA-260](../spec/ha-and-helm.md#q-ha-260--the-gateway-api-implementation-of-the-dev-stack-is-envoy-gateway-installed-by-the-profile-edge),
+  [Q-HA-261](../spec/ha-and-helm.md#q-ha-261--the-slow-download-of-r-ha-039-reads-a-2-gib-object-the-6-gib-object-is-downloaded-at-full-speed-and-compared-by-its-sha-256));
+  the alerts in their scenarios and "Maintenance stays quiet", `TestAlerts_R_OPS_046_...` and `TestAlerts_R_OPS_045_SlowValkey` (set `alerts`,
+  [Q-HA-263](../spec/ha-and-helm.md#q-ha-263--the-dev-stack-gets-a-prometheus-for-the-profile-alerts-kube-prometheus-stack-without-alertmanager-grafana-and-node-exporter-plain-http-on-its-own-interface),
+  [Q-HA-264](../spec/ha-and-helm.md#q-ha-264--maintenance-stays-quiet-runs-the-drain-variants-a-b-c-and-e-the-planned-failover-and-the-rolling-restarts-without-client-load-and-reads-the-window-back-from-the-prometheus),
+  [Q-OPS-196](../spec/operations-and-observability.md#q-ops-196--the-failed-backup-scenario-kills-the-runs-process-with-kill--9-the-run-is-left-abandoned-which-the-gauge-counts-as-a-failure)).
 - **E5.6** The coverage generator shows no uncovered MVP catalog entry. Every MVP requirement has at
   least one passing test that names it (Q-ROAD-4).
 - **E5.7** [docs/security/](../security/) describes the the beta mechanisms. Each H-item from the spec

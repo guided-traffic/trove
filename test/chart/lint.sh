@@ -21,7 +21,7 @@ if [ "$got" != "$HELM_VERSION" ]; then
   exit 1
 fi
 
-sets=("$CHART"/ci/*.yaml)
+sets=("$CHART"/ci/*.yaml "$CHART"/examples/*.yaml)
 failed=0
 # helm lint takes no API versions, so a value set that enables the Gateway API (R-HA-038) is linted with the
 # HTTPRoute off and rendered with the Gateway API declared.
@@ -47,7 +47,7 @@ for f in "${sets[@]}"; do
     LINT_EXTRA=(--set gateway.enabled=false)
     TEMPLATE_EXTRA=(--api-versions gateway.networking.k8s.io/v1/HTTPRoute)
   fi
-  run "ci/$(basename "$f")" -f "$f"
+  run "${f#"$CHART"/}" -f "$f"
   LINT_EXTRA=()
   TEMPLATE_EXTRA=()
 done

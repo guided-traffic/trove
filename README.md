@@ -2561,6 +2561,8 @@ The chart is [deploy/helm/trove](deploy/helm/trove/). The defaults below are fro
 [values.yaml](deploy/helm/trove/values.yaml); [values.schema.json](deploy/helm/trove/values.schema.json) refuses unknown keys.
 The `config` object is rendered to `/etc/trove/trove.yaml`, with the chart-managed paths of the mounted Secrets filled in.
 The chart never creates a Secret; every Secret named below must exist before the install.
+[examples/production.yaml](deploy/helm/trove/examples/production.yaml) puts the values of a production installation together (autoscalers, disruption budgets,
+topology spreading, the pooler, Ingress and HTTPRoute, ingress policies, ServiceMonitor and PrometheusRule, the backup); every name in it is an example.
 
 <details>
 <summary>Images, replicas, probes and the pod</summary>

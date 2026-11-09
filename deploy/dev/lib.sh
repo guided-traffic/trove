@@ -148,6 +148,42 @@ barman_plugin_manifest() {
   ' "$file"
 }
 
+# oci_chart_tgz REF CHART VERSION SHA256 prints the path of a chart archive that is an OCI artifact (REF, for example
+# oci://docker.io/envoyproxy/gateway-helm), pulled once into $STATE_DIR/charts and checked against SHA256 on every use, as
+# chart_release_tgz does for a release asset: the digest from tools/versions.env is the trust anchor. A pull that fails, or a file
+# with another digest, fails the call; the file is not kept.
+oci_chart_tgz() {
+  local ref="$1" chart="$2" version="$3" want="$4" dir="$STATE_DIR/charts" tmp got attempt=1
+  local file="$dir/$chart-$version.tgz"
+  if [ -s "$file" ] && [ "$(sha256_file "$file")" = "$want" ]; then
+    printf '%s\n' "$file"
+    return 0
+  fi
+  rm -f "$file"
+  mkdir -p "$dir"
+  tmp="$(mktemp -d "$dir/.pull.XXXXXX")"
+  until helm pull "$ref" --version "$version" --destination "$tmp" >&2; do
+    if [ "$attempt" -ge 4 ]; then
+      echo "error: the chart $ref $version could not be pulled" >&2
+      rm -rf "$tmp"; return 1
+    fi
+    echo "helm pull of $ref $version failed (attempt $attempt of 4), retrying in 15 s" >&2
+    sleep 15
+    attempt=$((attempt + 1))
+  done
+  got="$(sha256_file "$tmp/$chart-$version.tgz")"
+  if [ "$got" != "$want" ]; then
+    echo "error: the chart archive $chart $version has SHA-256 $got, tools/versions.env pins $want" >&2
+    rm -rf "$tmp"; return 1
+  fi
+  mv "$tmp/$chart-$version.tgz" "$file"
+  rm -rf "$tmp"
+  printf '%s\n' "$file"
+}
+envoy_gateway_chart_tgz() {
+  oci_chart_tgz oci://docker.io/envoyproxy/gateway-helm gateway-helm "$DEV_ENVOY_GATEWAY_CHART_VERSION" "$DEV_ENVOY_GATEWAY_CHART_SHA256"
+}
+
 os() { uname -s | tr '[:upper:]' '[:lower:]'; }
 arch() {
   case "$(uname -m)" in
@@ -237,6 +273,10 @@ release_values() {
   [ "$profile" = "vuln" ] && RELEASE_VALUES+=(-f "$dir/values-scatter.yaml" -f "$dir/values-vuln.yaml")
   [ "$profile" = "mirror" ] && RELEASE_VALUES+=(-f "$dir/values-scatter.yaml" -f "$dir/values-mirror.yaml")
   [ "$profile" = "backup" ] && RELEASE_VALUES+=(-f "$dir/values-backup.yaml")
+  # The profiles edge (Envoy Gateway beside the Ingress, the transfers of R-HA-039) and alerts (ServiceMonitor and PrometheusRule): older release
+  # copies have neither file, and the upgrade tests never ask for these profiles.
+  [ "$profile" = "edge" ] && RELEASE_VALUES+=(-f "$dir/values-edge.yaml")
+  [ "$profile" = "alerts" ] && RELEASE_VALUES+=(-f "$dir/values-alerts.yaml")
   # The Bastions' base URLs (deploy/dev/bastion.sh) carry the edge port the cluster was created with.
   [ "$profile" = "bastion" ] && RELEASE_VALUES+=(-f "$dir/values-bastion.yaml" \
     --set-json "config.server.additional_base_urls=[\"https://trove-api.trove.svc:8080\",\"https://trove-packages.trove.svc:8080\",\"https://bastion-volume.trove.localhost:$EDGE_PORT\",\"https://bastion-bucket.trove.localhost:$EDGE_PORT\"]")
@@ -278,6 +318,7 @@ render() {
     -e "s|\${DEV_AWSCLI_IMAGE}|${DEV_AWSCLI_IMAGE}|g" \
     -e "s|\${DEV_CNPG_POSTGRES_IMAGE}|${DEV_CNPG_POSTGRES_IMAGE}|g" \
     -e "s|\${DEV_KEYCLOAK_IMAGE}|${DEV_KEYCLOAK_IMAGE}|g" \
+    -e "s|\${DEV_ENVOY_PROXY_IMAGE}|${DEV_ENVOY_PROXY_IMAGE}|g" \
     -e "s|\${NS}|${NS}|g" \
     -e "s|\${EDGE_PORT}|${EDGE_PORT:-$DEV_HTTP_PORT}|g" \
     "$1"
