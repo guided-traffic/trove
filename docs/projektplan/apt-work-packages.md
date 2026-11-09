@@ -701,3 +701,39 @@ Q-DEB-57, H-721 and H-722.
 - **Not built or not verified:** the metric `trove_deb_index_delay_seconds`; the delay-bound test under the reference load (`TestR_DEB_010_DelayBound`, the nightly set `deb-long`);
   the twenty key changes in five seconds and the imported key with a fresh self-signature are covered by the pure test of `PickDate` and by the library's tests, not by an
   integration test; the virtual class (WP8); `Packages.xz` is rendered and tested as bytes, but no client fetched it.
+
+## 17 · WP6 (the remote class) as built (stage 4)
+
+Built on 027ec488 (stage 3 merged). Page: [docs/developer/deb.md](../developer/deb.md#the-remote-class); security page
+[deb-remote.md](../security/deb-remote.md); decisions Q-DEB-78 to Q-DEB-90, Q-REPO-300 to Q-REPO-303, Q-ARCH-425 to Q-ARCH-427, ADR-186, ADR-187.
+
+- **Built, format side:** `class_remote.go`, `remote.go` (the adapter: request, bounds, `PrepareFill` with the verification of R-DEB-019/020,
+  `OnFill` with the anti-rollback and the index check, identity `Rewrite`, the `Revalidator` for an unverified release), `remote_gate.go`
+  (`FactsGate`: by-hash digest, the digest the parsed rows list), `remote_names.go` (`NameServer`), `handlers_remote.go` (the answers),
+  `bind.go` (the replica value with the three metrics, `Bind`), `setup_remote.go` and `guide_remote.go` with two guide pages, the remote branch of
+  `signing-key.asc`, and `registerRemoteHandler` in `handlers.go` (ADR-186). New leaf `formats/deb/release` (the reader of a Release).
+- **Built, data side:** `remote_store.go` (`RecordRelease` with the floor, `RecordAbsent`, `RecordVerified`, `ListedFile`, `ServesName`, `EnsureParsed`,
+  `ClearVerifiedBy`), `remote_parse.go` (`RemoteJobs.RunParse`, bounds 1 GiB / 1,000,000 paragraphs, `too_many_entries`), `housekeeping.go`
+  (`RunIndex`: the re-verification and the removal of by-hash files), `refresh_remote.go` (the remote part of `deb-index-refresh`),
+  `restore_purge.go` with `backup/fixup/deb.go`, `remote_audit.go`, `queries/deb_remote.sql`, and the migration **00064** `deb_remote_files`
+  (the plan said 00065 onward; the runner refuses a gap, so it is 00064 and the development agent renumbers it with the index builder's).
+- **Built, repository side:** `validate_deb.go` (keys checked on save, fingerprints derived, mirror and member refusals, `debUpstreamKeysRemoved`),
+  the part in `narrowed.go`, its replay as step 8 in `journal_replay.go`, `keys_hooks.go` (`RegisterKeysRemovedHook`), and the dispatcher's flat root
+  (`cleanable` in `dispatch/dispatcher.go`, Q-ARCH-385).
+- **Changed beside the list:** `jobs.go` (`RegisterJobs(r, RemoteHandlers)` and the class dispatch of `deb-index`: **the index builder (WP4b) keeps
+  `RunIndexJob` and changes nothing else; its handler is called for every repository that is not a remote**), `openpgp` (`ParseStoredCertificates`,
+  `ClearText`), `untrusted` (`NewXZReaderMax`, `NewZstdReaderMax`), the conformance kit (`RemoteFixture.Identity`), the archtest allowlists, the
+  `RemoteFormatName` enum of `api/openapi.yaml` (and the line of the generated `web/src/app/api/generated/schema.d.ts` that follows it), the commit hook
+  of the format (a remote's cache owns no row) and the app wiring (`wire_deb_remote.go`).
+- **Merge notes:** the local `dists` handlers register with `registerHandler(routeDists, …)` and `registerHandler(routeByHash, …)` as planned; the remote
+  class's are in `registerRemoteHandler`, so neither file edits the other. `Store.EnqueueBuild` is used by the remote's refresh and by the key-removal
+  hook; the index builder must keep the key `index:<repository id>`.
+- **Not built:** the mirror's use of the rows (WP7: it enqueues the first parse of a `Sources` index); the virtual class (WP8): the shadowing check is
+  proved against the production data port, not through a virtual repository; the package screens of a remote (R-DEB-030) read no row yet; the
+  digest check of a by-hash file under `checksumPolicy: ignore` ([H-737](../security/deb-remote.md)).
+- **Verified:** unit tests of the leaf packages, the adapter, the repository rules and the parse; the integration area `test/integration/debremote`
+  against the production composition root and `test/debstub` (release pass-through and verification, the cases of R-DEB-020, rollback, absent suite,
+  indexes as one snapshot, by-hash, flat directory and flat root, pool digests and the require policy, parse rows, pdiff-driven re-parse, the bound,
+  the shadowing check, a key removal with its journal entry and replay, the purge); by hand `apt-get update --error-on=any` and `apt-get install`
+  through a remote repository from `debian:13` (APT 3.0.4, sqv) and `ubuntu:22.04` (APT 2.4.14, gpgv) with the stub's key a as the client keyring, and
+  the flat directory and the flat root `./` on both.

@@ -81,7 +81,11 @@ func New(o Options) (*Store, error) {
 }
 
 // group is what every group of the port shares: the options. A group embeds a pointer to it, so the composition is one value.
-type group struct{ o Options }
+type group struct {
+	o Options
+	// sig remembers when a remote's failed verification last wrote its security event (remote_audit.go).
+	sig signatureEvents
+}
 
 // errNotBuilt is the answer of a method whose work package has not landed.
 func errNotBuilt(what string) error {

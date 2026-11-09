@@ -11,13 +11,13 @@ import (
 // is what makes `trove admin secrets status`, the start-up canary and `secrets-reencrypt` cover it; a state `retired` has none (NULL).
 var SigningKeys = secrets.Register("deb_signing_keys", "id", "private_key")
 
-// Registrations of the tables the migrations 00060_deb, 00061_deb_signing_keys and 00062_deb_remote create, so that every table
+// Registrations of the tables the migrations 00060_deb, 00061_deb_signing_keys, 00062_deb_remote and 00064_deb_remote_files create, so that every table
 // carries its export class from its migration on (R-BAK-004).
 //
 // Every table is data (R-DEB-032): a restore brings back the suites with their sequence numbers, the stored files' rows and
 // coordinates, the generations that by-hash retention reads, the marks of withheld files and the signing keys with their sealed private
-// keys. The three tables of a remote are its cache rows: a restore without remote caches deletes them with the cache (R-BAK-008,
-// R-DEB-023, H-630); the purge that does so is built with the remote class.
+// keys. The four tables of a remote are its cache rows: a restore without remote caches deletes them with the cache (R-BAK-008,
+// R-DEB-023, H-630); the purge that does so is PurgeRemoteCaches (restore_purge.go).
 //
 // A table registered twice panics at start-up, so the registration lives here and nowhere else. This package is linked by the
 // composition root and by cmd/trove/registry.go, which `trove migrate` needs to check the migrated schema against the registry.
@@ -25,7 +25,7 @@ func init() {
 	for _, t := range []string{
 		"deb_suites", "deb_binaries", "deb_coordinates", "deb_generations", "deb_tombstones",
 		"deb_signing_keys",
-		"deb_remote_releases", "deb_remote_indexes", "deb_remote_entries",
+		"deb_remote_releases", "deb_remote_files", "deb_remote_indexes", "deb_remote_entries",
 	} {
 		tables.Register(t, tables.Data, tables.Options{})
 	}

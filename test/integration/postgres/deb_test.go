@@ -17,7 +17,7 @@ import (
 
 var debTables = []string{
 	"deb_suites", "deb_binaries", "deb_coordinates", "deb_generations", "deb_tombstones",
-	"deb_signing_keys", "deb_remote_releases", "deb_remote_indexes", "deb_remote_entries",
+	"deb_signing_keys", "deb_remote_releases", "deb_remote_files", "deb_remote_indexes", "deb_remote_entries",
 }
 
 // TestDebMigrations checks 00060_deb, 00061_deb_signing_keys and 00062_deb_remote against the migrated schema (R-DEB-008, R-DEB-015,

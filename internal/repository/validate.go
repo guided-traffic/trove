@@ -127,7 +127,9 @@ func validateSections(v *validation, info catalog.Entry, d *Document) {
 		validateLocal(v, info, d, na)
 	}
 	applyOwnershipDefault(info, d)
+	stripDebReadOnly(info, d)
 	validateFormatSettings(v, info, d)
+	validateDeb(v, info, d)
 	validateVulnerabilities(v, info, d, na)
 	if len(d.Storage) > 0 {
 		trimmed := bytes.TrimSpace(d.Storage)

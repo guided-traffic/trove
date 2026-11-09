@@ -7,6 +7,8 @@ export const RENDERED_SNIPPET_IDS: Readonly<Record<string, readonly string[]>> =
     'apt.configure.list-scoped',
     'apt.configure.shell',
     'apt.configure.shell-scoped',
+    'apt.configure.shell.configure',
+    'apt.configure.shell.configure-scoped',
     'apt.install',
     'apt.publish.curl',
   ],

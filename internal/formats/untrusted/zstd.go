@@ -15,7 +15,11 @@ import (
 //
 // The work package of the package-file libraries extends the checks around it (apt-work-packages.md, WP1).
 func NewZstdReader(r io.Reader, lim Limits) (io.Reader, error) {
-	max := effective(lim).UncompressedBytes
+	return NewZstdReaderMax(r, effective(lim).UncompressedBytes)
+}
+
+// NewZstdReaderMax is [NewZstdReader] with the cap given in bytes (see [NewXZReaderMax]).
+func NewZstdReaderMax(r io.Reader, max int64) (io.Reader, error) {
 	zr, err := zstd.NewReader(r, zstd.WithDecoderConcurrency(1), zstd.WithDecoderMaxMemory(uint64(max))) //nolint:gosec // G115: effective() makes the limit positive
 	if err != nil {
 		return nil, Refused("The content is not a valid Zstandard stream.", errs.WithCause(err))

@@ -28,6 +28,7 @@ import (
 	"github.com/guided-traffic/trove/internal/cache"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/config"
+	debdata "github.com/guided-traffic/trove/internal/formatdata/deb"
 	nugetdata "github.com/guided-traffic/trove/internal/formatdata/nuget"
 	ocidata "github.com/guided-traffic/trove/internal/formatdata/oci"
 	"github.com/guided-traffic/trove/internal/formats"
@@ -165,6 +166,7 @@ type App struct {
 	host        late[formats.Host]
 	semver2     late[*nugetdata.Semver2]
 	ociSweep    late[*ocidata.Sweeper]
+	debRemote   late[*debdata.RemoteJobs]
 	shipper     late[journal.Shipper]
 	checkBucket late[platform.Bucket]
 	// registryMetrics are the counters of the registry token service, shared by every endpoint (wire_registry.go).

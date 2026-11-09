@@ -109,6 +109,7 @@ func conformanceChanges() []formattest.ChangeCase {
 // its reason, and the work package that builds the operation removes the entry (the kit refuses a skip the format contradicts).
 func conformance() formattest.Fixture {
 	const generated = "the files are generated items that only the publication port writes, which the kit's host does not have; test/integration/deblocal serves them"
+	const remoteOnly = "the route serves the remote class, which the kit's local host does not address: the answers are covered against a remote engine and the counting stub in test/integration/debremote"
 	versions := []string{"1.0-1", "1.0-2", "1.1-1"}
 	return formattest.Fixture{
 		Rejects: []string{"pool/%2e%2e/x", "../pool/h/hello/hello_2.10-3_amd64.deb", "dists/stable/InRelease%00"},
@@ -129,9 +130,20 @@ func conformance() formattest.Fixture {
 			{Name: "package file", Path: poolPath("1.0-1"), Seed: upload("1.0-1", "stable")},
 			{Name: "package file that is not stored", Path: poolPath("9.9-9"), Status: http.StatusNotFound},
 			{Name: "signing key", Path: "signing-key.asc", Status: http.StatusOK},
+			{Name: "release document of a flat directory", Path: "binary/InRelease", Status: http.StatusNotFound},
+			{Name: "index of a flat directory", Path: "binary/Packages.gz", Status: http.StatusNotFound},
+			{Name: "package file of a flat directory", Path: "binary/hello_1.0_all.deb", Status: http.StatusNotFound},
 		},
 		NoContent: map[string]string{
 			routeDists: generated, routeByHash: generated,
+			routeFlatRelease: remoteOnly, routeFlatIndex: remoteOnly, routeFlatFile: remoteOnly,
+		},
+		Remote: &formattest.RemoteFixture{
+			Upstream: "https://deb.upstream.test", Identity: "an APT archive's documents hold no address of the upstream: they are passed through byte for byte (R-DEB-019)",
+			Docs: []formattest.RemoteDoc{
+				{Name: "release", Path: "dists/stable/InRelease", Body: []byte("-----BEGIN PGP SIGNED MESSAGE-----\n\nOrigin: test\n-----BEGIN PGP SIGNATURE-----\n\nAAAA\n-----END PGP SIGNATURE-----\n")},
+				{Name: "index", Path: "dists/stable/main/binary-amd64/Packages.gz", Body: []byte("\x1f\x8b\x08\x00opaque")},
+			},
 		},
 		Changes: conformanceChanges(),
 		View: &formattest.ViewFixture{
@@ -147,8 +159,7 @@ func conformance() formattest.Fixture {
 		},
 		OptionNames: optionNames(),
 		Skip: map[formattest.Check]string{
-			formattest.CheckRewrite: "local class only: the remote adapter joins with its work package (R-DEB-019)",
-			formattest.CheckMerge:   "local class only: the virtual adapter joins with its work package (R-DEB-025)",
+			formattest.CheckMerge: "local class only: the virtual adapter joins with its work package (R-DEB-025)",
 		},
 	}
 }

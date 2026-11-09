@@ -26,15 +26,15 @@ func TestRouteTableOfEveryClassIsUnambiguous(t *testing.T) {
 	}
 }
 
-func TestSkeletonRoutesFollowTheRegisteredClasses(t *testing.T) {
+func TestRoutesFollowTheRegisteredClasses(t *testing.T) {
 	f := New()
 	for _, r := range f.Routes() {
 		for _, c := range r.Classes {
-			if c != formats.Local {
-				t.Errorf("route %s serves class %s, and only the local class is registered", r.Name, c)
+			if c != formats.Local && c != formats.Remote {
+				t.Errorf("route %s serves class %s, and only the local and the remote class are registered", r.Name, c)
 			}
 		}
-		// A route that serves every class names none; the others name the local class alone while it is the only one.
+		// A route that serves every class names none; the others name the classes that are registered.
 		switch r.Name {
 		case routeDists, routeByHash, routePoolGet, routeSigningKey:
 		default:
@@ -43,8 +43,8 @@ func TestSkeletonRoutesFollowTheRegisteredClasses(t *testing.T) {
 			}
 		}
 	}
-	if f.Remote() != nil || f.Virtual() != nil {
-		t.Error("the skeleton has a remote or virtual adapter")
+	if f.Remote() == nil || f.Virtual() != nil {
+		t.Error("the format has the remote adapter and no virtual adapter until the virtual class registers")
 	}
 }
 

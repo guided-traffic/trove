@@ -73,6 +73,9 @@ func (a *App) wireFormatPorts(ctx context.Context, in infra) (formatPortsArea, e
 			return formatPortsArea{}, err
 		}
 		a.startDebIndexer(ports)
+		if err := a.startDebRemote(ports); err != nil {
+			return formatPortsArea{}, err
+		}
 	}
 	return formatPortsArea{bindings: b, views: formathost.NewViewAdapters(formats.List(), b)}, nil
 }
@@ -144,7 +147,8 @@ func (a *App) registerFormatJobs(r *jobs.Registry) {
 		spec.Schedule, spec.Disabled = t.Schedule, !t.Enabled
 	}
 	r.RegisterTask(ocidata.SweepJobKind, spec)
-	debdata.RegisterJobs(r)
+	debdata.RegisterJobs(r, a.debRemoteHandlers())
+	a.registerDebRemoteRefresh()
 }
 
 // formatsArea is what the hooks and the seam are made of. The seam reads the Host
@@ -391,6 +395,18 @@ func bindDebCreateHook(s *debdata.Store) {
 				return fmt.Errorf("formats: the Debian data port is not composed")
 			}
 			return st.CreateFirstKey(ctx, tx, repo.ID, repo.Name.String())
+		})
+		// A change of deb.upstreamKeys that takes fingerprints out clears verified_by of the releases they verified and enqueues the
+		// remote's job that verifies them again from the stored bytes (R-DEB-020, Q-DEB-42). The restore's replay runs it too.
+		repository.RegisterKeysRemovedHook(string(debformat.ID), func(ctx context.Context, tx meta.Tx, repo repository.CreatedRepo, fingerprints []string) error {
+			st := debHook.store.Load()
+			if st == nil {
+				return fmt.Errorf("formats: the Debian data port is not composed")
+			}
+			if _, err := st.ClearVerifiedBy(ctx, tx, repo.ID, fingerprints); err != nil {
+				return err
+			}
+			return st.EnqueueBuild(ctx, tx, repo.ID, 0)
 		})
 	})
 }

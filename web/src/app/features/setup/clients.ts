@@ -116,6 +116,9 @@ export function snippetExplanation(id: string): string | null {
     case 'apt.configure.shell':
     case 'apt.configure.shell-scoped':
       return $localize`:@@setup.snippet.apt-configure:Installs the repository's signing key as a key file and adds the repository as an APT source that is verified against that key. The credentials go into a file that only root can read, never into the source URL. The key file is replaced by running the key command again, which is also how a key rotation reaches this machine.`;
+    case 'apt.configure.shell.configure':
+    case 'apt.configure.shell.configure-scoped':
+      return $localize`:@@setup.snippet.apt-configure-upstream:For a remote repository without upstream keys: adds the repository as an APT source that is verified against the archive's own keyring, which Debian and Ubuntu install on every system. No key of trove's is installed, and verification stays on.`;
     case 'apt.configure.list':
     case 'apt.configure.list-scoped':
       return $localize`:@@setup.snippet.apt-list:The same source as one line, for systems that prefer a .list file. Install the key file as above first.`;

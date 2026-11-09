@@ -15,6 +15,7 @@ import (
 	"github.com/guided-traffic/trove/internal/journal"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
+	"github.com/guided-traffic/trove/internal/openpgp"
 	"github.com/guided-traffic/trove/internal/vuln"
 )
 
@@ -38,7 +39,21 @@ const replayPayloadVersion = 1
 const (
 	maxEntryRefs = 10000                        // repositories.max_virtual_members at its highest
 	maxEntryPins = MaxPinRules * MaxPinPatterns // every pattern of every rule
+	maxEntryKeys = 32                           // the certificates deb.upstreamKeys holds at most
 )
+
+// validFingerprint reports whether s is a v4 fingerprint: 40 upper-case hexadecimal digits.
+func validFingerprint(s string) bool {
+	if len(s) != 40 {
+		return false
+	}
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'A' || c > 'F') {
+			return false
+		}
+	}
+	return true
+}
 
 func replayRepository(ctx context.Context, tx meta.Tx, env journal.Env, o journal.Object) (journal.Result, error) {
 	qs, err := queries(tx)
@@ -170,6 +185,14 @@ func readNarrowed(o journal.Object) (e narrowedEntry, id int64, why string) {
 	case len(e.parts()) == 0:
 		return e, 0, "the entry carries no part"
 	}
+	if len(e.DebUpstreamKeysRemoved) > maxEntryKeys {
+		return e, 0, "a list of fingerprints is longer than a remote can hold"
+	}
+	for _, fp := range e.DebUpstreamKeysRemoved {
+		if !validFingerprint(fp) {
+			return e, 0, "a fingerprint is not 40 hexadecimal digits"
+		}
+	}
 	if _, ok := refIDs(e.MembersRemoved); !ok {
 		return e, 0, "a member is not an ID"
 	}
@@ -244,6 +267,9 @@ func (r *replayer) narrowed() (journal.Result, error) {
 		}
 	}
 	if err := r.vulnerabilities(e.Vulnerabilities); err != nil {
+		return journal.Result{}, err
+	}
+	if err := r.debUpstreamKeysRemoved(e.DebUpstreamKeysRemoved); err != nil {
 		return journal.Result{}, err
 	}
 	return r.finish(e.parts())
@@ -761,6 +787,66 @@ func (c *claimReplay) checkOverlap(pattern, scope string) error {
 			c.r.suspend("claims")
 			return nil
 		}
+	}
+	return nil
+}
+
+// debUpstreamKeysRemoved is step 8: the fingerprints an update took out of deb.upstreamKeys of a remote Debian repository are taken
+// out of the restored document again, and the releases they verified are unverified until a key that stays verifies them
+// (R-DEB-020, R-DEB-032). A restored document that holds keys not named in the entry keeps them. A mirror or a member of a virtual
+// repository left without a key is disabled: it would serve content nobody verifies (fail closed). The part acts on a remote Debian
+// repository only; an entry for another repository leaves nothing to do.
+func (r *replayer) debUpstreamKeysRemoved(remove []string) error {
+	if len(remove) == 0 || r.format != debFormat || r.class != Remote {
+		return nil
+	}
+	if err := runKeysRemovedHooks(r.ctx, r.tx, CreatedRepo{ID: r.id, Format: r.format}, remove); err != nil {
+		return err
+	}
+	m := debMemberMap(r.doc[debFormat])
+	keys := debKeysOf(m)
+	left := 0
+	if keys != "" {
+		certs, perr := openpgp.ParseStoredCertificates([]byte(keys), openpgp.Limits{})
+		if perr != nil {
+			// Keys that do not read verify nothing: the repository fails closed.
+			r.suspend(partDebUpstreamKeysRemoved)
+			return nil //nolint:nilerr // the entry is applied: the repository is disabled instead
+		}
+		kept := make([]openpgp.Certificate, 0, len(certs))
+		for _, c := range certs {
+			if !slices.Contains(remove, c.Fingerprint) {
+				kept = append(kept, c)
+			}
+		}
+		if len(kept) != len(certs) {
+			if len(kept) == 0 {
+				delete(m, "upstreamKeys")
+				delete(m, debFingerprints)
+			} else {
+				raw, _ := json.Marshal(string(openpgp.ArmorCertificates(kept...))) // a string always marshals
+				fps := make([]string, 0, len(kept))
+				for _, c := range kept {
+					fps = append(fps, c.Fingerprint)
+				}
+				rawFps, _ := json.Marshal(fps) // strings always marshal
+				m["upstreamKeys"], m[debFingerprints] = raw, rawFps
+			}
+			r.setMember(debFormat, m)
+			r.applied(partDebUpstreamKeysRemoved)
+		}
+		left = len(kept)
+	}
+	if left > 0 {
+		return nil
+	}
+	mirror := (&Document{Remote: r.doc["remote"]})
+	member, err := r.qs.ListReferencingVirtuals(r.ctx, r.id)
+	if err != nil {
+		return err
+	}
+	if remoteMode(mirror) == ModeMirror || len(member) > 0 {
+		r.suspend(partDebUpstreamKeysRemoved)
 	}
 	return nil
 }

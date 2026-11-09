@@ -53,12 +53,13 @@ deb [signed-by=` + tplKeyFile + `] {{.RegistryURL}} ` + tplSuite + ` main
 	publish := `curl -fsS -u ` + tplUser + `:"` + formats.SetupTokenRef + `" --upload-file ./hello_1.0_amd64.deb \
   {{shell (printf "%supload/hello_1.0_amd64.deb?distribution=%s&component=main" .RegistryURL ` + tplSuiteArg + `)}}
 `
-	return []formats.SetupTemplate{
+	out := []formats.SetupTemplate{
 		{ID: "apt.shell.configure", Client: ClientAPT, Section: "configure", Lang: "shell", Template: configure},
 		{ID: "apt.list.configure", Client: ClientAPT, Section: "configure", Lang: "ini", Template: list},
 		{ID: "apt.install", Client: ClientAPT, Section: "install", Lang: "shell", Template: install, VersionSpec: "=" + formats.SetupVersionRef},
 		{ID: "apt.curl.publish", Client: ClientAPT, Section: "publish", Lang: "shell", Template: publish},
 	}
+	return append(out, f.remoteSetupTemplates()...)
 }
 
 // optionNames are the client options a template spells although their names contain "password" (kit check 8): the name of the field

@@ -18512,9 +18512,17 @@
         <source>Installs the repository&apos;s signing key as a key file and adds the repository as an APT source that is verified against that key. The credentials go into a file that only root can read, never into the source URL. The key file is replaced by running the key command again, which is also how a key rotation reaches this machine.</source>
       </segment>
     </unit>
-    <unit id="setup.snippet.apt-list">
+    <unit id="setup.snippet.apt-configure-upstream">
       <notes>
         <note category="location">src/app/features/setup/clients.ts:121</note>
+      </notes>
+      <segment>
+        <source>For a remote repository without upstream keys: adds the repository as an APT source that is verified against the archive&apos;s own keyring, which Debian and Ubuntu install on every system. No key of trove&apos;s is installed, and verification stays on.</source>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.apt-list">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:124</note>
       </notes>
       <segment>
         <source>The same source as one line, for systems that prefer a .list file. Install the key file as above first.</source>
@@ -18522,7 +18530,7 @@
     </unit>
     <unit id="setup.snippet.apt-install">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:123</note>
+        <note category="location">src/app/features/setup/clients.ts:126</note>
       </notes>
       <segment>
         <source>Reads the repository&apos;s indexes and installs the package through APT. Replace the package name with yours.</source>
@@ -18530,7 +18538,7 @@
     </unit>
     <unit id="setup.snippet.apt-publish">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:125</note>
+        <note category="location">src/app/features/setup/clients.ts:128</note>
       </notes>
       <segment>
         <source>Uploads a .deb file to the repository that receives uploads, into the suite and component named in the address. An index that lists the package follows within moments.</source>

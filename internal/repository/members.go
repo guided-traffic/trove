@@ -76,6 +76,8 @@ func (s *Service) resolveVirtual(ctx context.Context, qs *q.Queries, v *validati
 			v.add(ptr, errs.CodeInvalidMember, "the repository has the format "+row.Format+", not "+d.Format)
 		case Class(row.Class) == Virtual:
 			v.add(ptr, errs.CodeInvalidMember, "a virtual repository takes local and remote members; nesting arrives with R-REPO-018")
+		case debMemberUnverified(row.Format, row.Class, row.Config):
+			v.add(ptr, errs.CodeDebMemberUnverified, "a remote Debian repository without deb.upstreamKeys cannot be a member: the virtual repository signs what it merges with its own key and would hand on content nobody checked")
 		default:
 			rel.members = append(rel.members, ref(k))
 		}

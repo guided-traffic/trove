@@ -223,8 +223,11 @@ func (r *run) rewrite() {
 	case rm == nil:
 		r.failf("the format has no remote adapter and the check is not skipped")
 		return
-	case fx == nil || len(fx.Docs) == 0 || fx.DownloadLinks == nil:
+	case fx == nil || len(fx.Docs) == 0 || (fx.DownloadLinks == nil && fx.Identity == ""):
 		r.failf("the format has a remote adapter and the fixture has no Remote documents with DownloadLinks")
+		return
+	case fx.Identity != "":
+		r.rewriteIdentity(rm, fx)
 		return
 	}
 	up, err := url.Parse(fx.Upstream)
@@ -274,6 +277,33 @@ func (r *run) rewrite() {
 	}
 	if !meaningful {
 		r.failf("no document of the Remote fixture has a download link to %s, so the check proves nothing", fx.Upstream)
+	}
+}
+
+// rewriteIdentity is check 4 for a format whose Rewrite is the identity by design (an APT archive passes its documents through byte for
+// byte, so that the client verifies the upstream's own signatures): the fixture states the reason, and the check holds Rewrite to it.
+func (r *run) rewriteIdentity(rm formats.RemoteAdapter, fx *RemoteFixture) {
+	up, err := url.Parse(fx.Upstream)
+	if err != nil || up.Host == "" {
+		r.failf("Remote.Upstream %q is no origin", fx.Upstream)
+		return
+	}
+	h := r.host(formats.Remote)
+	rc := formats.RemoteContext{Repo: h.Repo(), Upstream: up, Settings: fx.Settings}
+	ln := LinksAt("", r.d.ProtocolBasePath, h.Repo().Name)
+	for _, d := range fx.Docs {
+		clean, err := repository.CleanPath(d.Path)
+		if err != nil {
+			r.failf("document %q: %q is no clean path: %v", d.Name, d.Path, err)
+			continue
+		}
+		out, err := rm.Rewrite(context.Background(), rc, clean, append([]byte(nil), d.Body...), ln)
+		switch {
+		case err != nil:
+			r.failf("document %q: Rewrite fails: %v", d.Name, err)
+		case !bytes.Equal(out, d.Body):
+			r.failf("document %q: Rewrite is declared the identity (%s) and changed the document", d.Name, fx.Identity)
+		}
 	}
 }
 

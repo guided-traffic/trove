@@ -28662,6 +28662,15 @@
         <target>Installiert den Signaturschlüssel des Repositorys als Schlüsseldatei und fügt das Repository als APT-Quelle hinzu, die gegen diesen Schlüssel geprüft wird. Die Zugangsdaten kommen in eine Datei, die nur root lesen kann, nie in die Quell-URL. Die Schlüsseldatei wird ersetzt, indem Sie den Schlüsselbefehl erneut ausführen; so erreicht auch ein Schlüsselwechsel diesen Rechner.</target>
       </segment>
     </unit>
+    <unit id="setup.snippet.apt-configure-upstream">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:121</note>
+      </notes>
+      <segment>
+        <source>For a remote repository without upstream keys: adds the repository as an APT source that is verified against the archive&apos;s own keyring, which Debian and Ubuntu install on every system. No key of trove&apos;s is installed, and verification stays on.</source>
+        <target>Für ein Remote-Repository ohne Upstream-Schlüssel: fügt das Repository als APT-Quelle hinzu, die gegen den eigenen Schlüsselbund des Archivs geprüft wird, den Debian und Ubuntu auf jedem System installieren. Es wird kein Schlüssel von trove installiert, und die Prüfung bleibt eingeschaltet.</target>
+      </segment>
+    </unit>
     <unit id="setup.snippet.apt-list">
       <notes>
         <note category="location">src/app/features/setup/clients.ts:121</note>

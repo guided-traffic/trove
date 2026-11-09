@@ -409,6 +409,9 @@ func (s *Service) update(ctx context.Context, c Caller, name qname.Repo, pre Pre
 			return err
 		}
 		// <<< M2 virtual
+		if err := s.checkDebKeysKept(ctx, qs, v, row.ID, &cur, &nd); err != nil {
+			return err
+		}
 		if err := v.err(); err != nil {
 			return err
 		}
@@ -701,7 +704,11 @@ func (s *Service) recordUpdate(ctx context.Context, tx meta.Tx, c Caller, r Repo
 	if err := s.recordAndNotify(ctx, tx, c, EventUpdated, r, updateDetails(r, changes, cur, nd), strings.TrimPrefix(EventUpdated, "repository.")); err != nil {
 		return err
 	}
-	if err := s.recordNarrowed(ctx, tx, c, r, s.narrowing(r, cur, nd, curRel, rel)); err != nil {
+	narrowed := s.narrowing(r, cur, nd, curRel, rel)
+	if err := s.recordNarrowed(ctx, tx, c, r, narrowed); err != nil {
+		return err
+	}
+	if err := runKeysRemovedHooks(ctx, tx, CreatedRepo{ID: r.NumericID(), Name: r.Name, Format: r.Format}, narrowed.DebUpstreamKeysRemoved); err != nil {
 		return err
 	}
 	if cur.Disabled || !nd.Disabled {

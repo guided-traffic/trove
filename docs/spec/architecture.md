@@ -9911,6 +9911,54 @@ second loop. The composition root exposes the format host to the integration tes
 [window.go](../../internal/mirror/window.go), [background_upstream.go](../../internal/formathost/background_upstream.go), `newPassUpstream` in
 [mirror_host.go](../../internal/formathost/mirror_host.go).
 
+### Q-ARCH-425 · A format may import the OpenPGP library
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the remote class (T-17 WP6).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `internal/openpgp` joins the allowlist of the format packages (chosen) | The remote class verifies releases in `PrepareFill` | The library is a leaf, as `mirror/discover` is | One more import a format may name |
+| (b) Verify through the host | The host owns it | No allowlist change | A host method for one format; `PrepareFill` has no host |
+| (c) Verify in the data port | The domain owns it | No allowlist change | `PrepareFill` runs outside the data port's reach |
+
+**Choice:** (a).
+
+**Rationale:** The library imports the standard library and the OpenPGP module only.
+
+**Applied in the spec:** R-ARCH-008. Code: [imports.go](../../internal/archtest/imports.go).
+
+### Q-ARCH-426 · The reader of a Release is a leaf shared by the format, its jobs and the builds
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the remote class (T-17 WP6).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `internal/formats/deb/release` imports `control`, `rows` and `openpgp` and is a leaf by list entry (chosen) | The format (edge), the jobs (domain) and a virtual build read a release one way | No duplicate | One more list entry |
+| (b) In the format | No leaf | Small | The data port's jobs cannot import it |
+| (c) In `rows` | No leaf | Shared | `rows` imports nothing of the module |
+
+**Choice:** (a).
+
+**Rationale:** See Q-ARCH-383.
+
+**Applied in the spec:** R-ARCH-002. Code: [layers.go](../../internal/archtest/layers.go).
+
+### Q-ARCH-427 · The jobs of a data port reach the remote engine through a one-method interface of the composition root
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the remote class (T-17 WP6).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The data package declares `Background{Upstream(ctx, repoID, jobID)}` and the composition root implements it with `MirrorHost.Background`; the handlers find the runtime when a job runs (chosen) | The domain package names no format type | The host exists in the roles that run jobs | A late value in the composition root |
+| (b) Import `formats.Host` in the data package | Direct | No adapter | A domain package may not import the contract (layers) |
+| (c) Run the jobs in the format package | No seam | Direct | The format does not run SQL; the data port does |
+
+**Choice:** (a).
+
+**Rationale:** See ADR-186.
+
+**Applied in the spec:** R-ARCH-002. Code: [wire_deb_remote.go](../../internal/app/wire_deb_remote.go).
+
 ## What this does not cover
 
 

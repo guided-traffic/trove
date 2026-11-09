@@ -412,6 +412,16 @@ type DebRemoteEntry struct {
 	Size         int64
 }
 
+type DebRemoteFile struct {
+	RepoID       int64
+	Dir          string
+	Path         string
+	Sha256       []byte
+	Size         int64
+	Current      bool
+	SupersededAt pgtype.Timestamptz
+}
+
 type DebRemoteIndex struct {
 	RepoID   int64
 	Dir      string

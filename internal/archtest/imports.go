@@ -204,6 +204,9 @@ func formatAllowed() []string {
 		"internal/formats", "internal/formats/catalog", "internal/formats/untrusted",
 		"internal/vuln/advisory", "internal/vuln/match", "internal/mirror/discover",
 		"internal/errs", "internal/config", "internal/observability", "internal/qname",
+		// The OpenPGP library of the Debian format, a leaf: the remote class verifies the signatures of its upstream's release
+		// documents (R-DEB-020, Q-ARCH-383).
+		"internal/openpgp",
 	}
 }
 

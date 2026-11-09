@@ -15357,7 +15357,7 @@ components:
     RemoteFormatName:
       type: string
       description: The formats whose classes contain `remote`. The create form offers these for a remote repository.
-      enum: [npm, nuget, oci]
+      enum: [deb, npm, nuget, oci]
     VirtualFormatName:
       type: string
       description: The formats whose classes contain `virtual`. The create form offers these for a virtual repository.

@@ -6647,7 +6647,7 @@ export interface components {
          * @description The formats whose classes contain `remote`. The create form offers these for a remote repository.
          * @enum {string}
          */
-        RemoteFormatName: "npm" | "nuget" | "oci";
+        RemoteFormatName: "deb" | "npm" | "nuget" | "oci";
         /**
          * @description The formats whose classes contain `virtual`. The create form offers these for a virtual repository.
          * @enum {string}

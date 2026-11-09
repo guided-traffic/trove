@@ -165,6 +165,10 @@ type RemoteFixture struct {
 	Docs []RemoteDoc
 	// DownloadLinks returns the download URLs of a document, rewritten or not.
 	DownloadLinks func(doc []byte) []string
+	// Identity is the reason Rewrite returns every document unchanged, for a format whose upstream's documents hold no address of
+	// the upstream's and are passed through byte for byte (an APT archive, R-DEB-019). The check then holds Rewrite to the identity
+	// and needs no DownloadLinks.
+	Identity string
 }
 
 // RemoteDoc is one upstream document.

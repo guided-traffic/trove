@@ -329,6 +329,13 @@ type Release struct {
 	StoredAt    time.Time
 }
 
+// ReleaseFile is one file a release lists: its path relative to the release directory, its SHA-256 and its size.
+type ReleaseFile struct {
+	Path   string
+	SHA256 [32]byte
+	Size   int64
+}
+
 // ReleaseRecord is a release document a fill stores (R-DEB-019, R-DEB-020): the anti-rollback decision is made on it in OnFill.
 type ReleaseRecord struct {
 	RepoID      int64
@@ -337,17 +344,37 @@ type ReleaseRecord struct {
 	SHA256      [32]byte
 	ReleaseDate time.Time
 	ByHash      bool
-	// VerifiedBy is the fingerprint that verified the document, "" when the remote has no upstreamKeys.
+	// KeysSet says that the remote has deb.upstreamKeys, so the anti-rollback rule applies and an unverified record is not used.
+	KeysSet bool
+	// VerifiedBy is the fingerprint that verified the document, "" when the remote has no upstreamKeys or the document is not
+	// verified yet (a Release waits for its Release.gpg).
 	VerifiedBy string
+	// Files are the files the release lists with their SHA-256 (the checksum section of the document); they name the index files
+	// the remote serves (R-DEB-021). They are kept only from a document that is usable: verified when KeysSet.
+	Files []ReleaseFile
 	// Absent records that the upstream has no such suite (Q-DEB-41); the other fields are then unused.
 	Absent bool
 }
+
+// Usable says that the record may name index files: the remote has no keys, or a key verified the document.
+func (r ReleaseRecord) Usable() bool { return !r.KeysSet || r.VerifiedBy != "" }
 
 // ReleaseDecision is the answer to a ReleaseRecord: whether the document is stored (FillReplaceStored) or kept out as older than the
 // floor (R-DEB-019).
 type ReleaseDecision struct {
 	Stored     bool
 	RolledBack bool
+	// Parses is the number of parse jobs the record enqueued for indexes the new release changed (Q-DEB-36).
+	Parses int
+}
+
+// IndexRef is the index of a release the remote parses: Path is the canonical path relative to the release directory without the
+// compression suffix ("main/binary-amd64/Packages"), File the listed variant the job reads (the one it prefers) and SHA256 its digest.
+type IndexRef struct {
+	Path   string
+	File   string
+	SHA256 [32]byte
+	Size   int64
 }
 
 // Entry is one parsed row of a remote's index (deb_remote_entries): the digest and size the index lists for a path.
@@ -370,6 +397,10 @@ type NameScope struct {
 	Suites        []string
 	Components    []string
 	Architectures []string
+	// KeysSet says that the remote has deb.upstreamKeys: only a verified release settles a suite.
+	KeysSet bool
+	// NotFoundTTL is the remote's not-found period: an 'absent' record older than it counts as unknown (Q-DEB-41). Zero: no limit.
+	NotFoundTTL time.Duration
 }
 
 // MirrorScope is what a mirror keeps of an archive (R-DEB-024): the suites, components and architectures of a pass.

@@ -17,8 +17,14 @@ import (
 // file to the version (a file of another architecture joins the version a sibling created, R-STOR-039), raises the revision and
 // records the format's rows: the file, its coordinates and the raise of change_seq of its suites. Anything else is refused: a Debian
 // repository holds the package files that the upload route created, on their canonical pool paths, and a file that reached it any
-// other way would be one no index lists (R-DEB-001, raw deploys answer 409).
+// other way would be one no index lists (R-DEB-001, raw deploys answer 409). A remote repository's cache holds what its upstream serves
+// and owns no row here.
 func (f *Format) OnCommit(ctx context.Context, tx formats.Tx, c formats.CommitEvent) error {
+	// A file a remote repository fetched is its upstream's, stored as it is: its parsed index rows are the format's rows for it
+	// (R-DEB-023), and no row of the local class belongs to a cache.
+	if c.Repo.Class == formats.Remote {
+		return nil
+	}
 	if p, ok := c.Payload.(*uploadCommit); ok {
 		return f.commitFile(ctx, tx, c, p)
 	}

@@ -925,7 +925,9 @@ Priority: **P2** · Covers: PKG-DEB-021
   each client's own APT keeps its newer list against an older `Date` (verified). The 10-minute bound above keeps a forged or
   mistaken future `Date` from freezing a verified remote.
 - **`Release` and `Release.gpg` are one pair.** A request for either makes both current before it answers (both are revalidated
-  when either expired), so a client receives the pair of one fetch; with keys, the pair verifies before either is stored. A
+  when either expired), so a client receives the pair of one fetch; with keys, the pair verifies before the request is answered
+  and the `Release` is then recorded as verified, and until it is the `Release` names no file of its directory (Q-DEB-78,
+  [H-736](../../security/deb-remote.md#h-736--a-release-and-its-releasegpg-are-stored-before-they-are-verified-as-a-pair)). A
   client that reads `InRelease` (every APT since 1.1) needs neither.
 - The stored release that names a directory's index files (R-DEB-021) is the `InRelease` when the upstream has one, else the
   verified `Release`; it is recorded in `deb_remote_releases` (R-DEB-023).
@@ -959,10 +961,11 @@ Priority: **P2** · Covers: PKG-DEB-021
   expired can therefore not sign a backdated release. The verifying key's fingerprint is recorded with the release (R-DEB-023).
 - **A change of the keys re-verifies** (Q-DEB-32, Q-DEB-42). An update that removes fingerprints clears `verified_by` of every
   stored release that a removed key verified, in its transaction, and enqueues the remote's `deb-index` job, which re-verifies
-  those releases from their stored bytes against the new set (no upstream request) and records the verifying fingerprint where one
-  verifies. A release no key of the new set verifies counts as expired, and its next revalidation is sent **without validators**
-  (no `If-None-Match`, no `If-Modified-Since`), so the upstream answers with a body that `PrepareFill` verifies; an upstream 304
-  never marks a release verified. Nothing uses a release while its `verified_by` is cleared and keys are set. The removal of fingerprints is journaled as a part of
+  those releases from their stored bytes against the new set (no upstream request: the cache view of the engine, Q-DEB-82, Q-DEB-83)
+  and records the verifying fingerprint where one verifies. A release no key of the new set verifies counts as expired, and its next revalidation is sent **without validators**
+  (no `If-None-Match`, no `If-Modified-Since`: a HEAD whose answer says "moved", then the GET, Q-DEB-81), so the upstream answers
+  with a body that `PrepareFill` verifies; an upstream 304 never marks a release verified. Nothing uses a release while its
+  `verified_by` is cleared and keys are set: a request for a file of its directory answers 502 `deb_upstream_signature_invalid`. The removal of fingerprints is journaled as a part of
   `repository.narrowed` (`debUpstreamKeysRemoved`, R-REPO-061, Q-REPO-274), so a restore removes them again (R-DEB-032).
 - **Without keys** release documents are stored unverified and clients verify with their own keyrings (the bytes are the
   upstream's, R-DEB-019; [H-623](#h-623--a-pull-through-remote-without-upstream-keys-stores-what-its-upstream-sends)). Such a remote cannot be a mirror (422 `deb_upstream_keys_required` at `/deb/upstreamKeys` for
@@ -1002,7 +1005,10 @@ Every index file a client fetches after a release document must be the file that
 - **Plain index paths** (a path relative to the release directory that the stored release lists) are metadata documents at that
   path, served only while their SHA-256 equals the hash the stored release names: otherwise trove revalidates them first (one
   conditional request), and a mismatch after that answers 502 `deb_index_mismatch` (the upstream is inconsistent) and stores
-  nothing new.
+  nothing new. The fill of an index checks the fetched document against the listed hash in its own transaction and stores nothing
+  on a mismatch; a stored document that is another file than the stored release lists is not served: the listed file is read from
+  the upstream outside the cache, verified against its hash and served without being stored (Q-DEB-80,
+  [H-740](../../security/deb-remote.md#h-740--an-index-in-the-window-between-a-refreshed-release-and-its-stored-document-costs-an-upstream-request-per-client-request)).
 - A path below `dists/<suite>/` (or an index name in a flat directory) that the stored release does not list answers 404
   `deb_not_in_release` without an upstream request; files below a `*.diff/` directory (pdiff patches, which the release lists
   only through their `Index`) are passed through as content.
@@ -1014,7 +1020,9 @@ Every index file a client fetches after a release document must be the file that
 - **Housekeeping.** By-hash files and plain index documents that neither the stored release nor a release stored within
   `deb.by_hash_keep` names are removed by a `deb-index` job of the remote repository, under its key `index:<repository id>`,
   which the periodic task `deb-index-refresh` enqueues (Q-DEB-33); the mirror's rule that it deletes nothing covers package
-  files, not superseded index files (Q-DEB-17).
+  files, not superseded index files (Q-DEB-17). The names of the releases replaced within `deb.by_hash_keep` are the rows of
+  `deb_remote_files` with `current = false`; the job forgets the rows older than the period and removes the by-hash items no remaining
+  row names. A plain index document is one cache entry that the next fill replaces in place (Q-DEB-84).
 - **Flat root.** `remote.url` naming the flat directory itself and the source line `deb <repo URL> ./` make the root the release
   directory (R-DEB-003, Q-DEB-39).
 
@@ -1109,6 +1117,18 @@ CREATE TABLE deb_remote_entries (
 );
 CREATE INDEX deb_remote_entries_path ON deb_remote_entries (repo_id, path);
 CREATE INDEX deb_remote_entries_name ON deb_remote_entries (repo_id, package);
+
+CREATE TABLE deb_remote_files (               -- the files the stored releases list (migration 00064, Q-DEB-79)
+  repo_id        bigint NOT NULL REFERENCES repositories (id) ON DELETE CASCADE,
+  dir            text COLLATE "C" NOT NULL,
+  path           text COLLATE "C" NOT NULL,   -- relative to dir: "main/binary-amd64/Packages.xz"
+  sha256         bytea NOT NULL CHECK (octet_length(sha256) = 32),
+  size           bigint NOT NULL CHECK (size >= 0),
+  current        boolean NOT NULL,            -- listed by the release that is stored now
+  superseded_at  timestamptz,                 -- when the release that listed it was replaced; kept for deb.by_hash_keep
+  PRIMARY KEY (repo_id, dir, path, sha256),
+  CHECK (current = (superseded_at IS NULL))
+);
 ```
 
 - **Bounds** (R-DEB-034): 1 GiB decompressed, 1,000,000 paragraphs, 1 MiB per field; a paragraph without `Package`, `Version`,
@@ -1128,7 +1148,12 @@ CREATE INDEX deb_remote_entries_name ON deb_remote_entries (repo_id, package);
   fetch and the parse through the background path (Q-REPO-272), so a retry decides. A remote that is offline is not served
   (R-REPO-048 step 3). A name that exists only in a component or architecture V does not serve is not served through V and does
   not block the upload.
-- The rows are cache rows: a restore without remote caches deletes them with the cache (R-BAK-008).
+- The rows are cache rows: a restore without remote caches deletes them, and the rows of `deb_remote_files` with them, with the cache
+  (R-BAK-008).
+- **Where the jobs run.** `deb-remote-parse` and the remote's `deb-index` job run on the roles that claim jobs; a parse reads the
+  index through the background path as a by-hash file when the release has `Acquire-By-Hash` and at its plain path otherwise, and
+  replaces the rows of its index path in one transaction. A job with no index path fetches the release of its directory (and
+  records an absent suite) and enqueues the parse of the indexes of its scope that lack rows (Q-DEB-90).
 
 Acceptance criteria:
 
@@ -2989,6 +3014,213 @@ restriction. The development agent would revisit the "subject unknown" cases if 
 
 **Applied in the spec:** R-DEB-032.
 
+### Q-DEB-78 · A Release and its Release.gpg are verified as a pair when they are served, not when they are stored
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the remote class (T-17 WP6).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `PrepareFill` of a `Release` parses it; the pair is verified when a request for either is served (502 `deb_upstream_signature_invalid`) and the `Release` is then recorded as verified; until then it names no file of the directory (chosen) | The fill sees one document; the handler holds both | No second fetch inside a fill; an `InRelease` (every APT since 1.1) needs neither | A pair that does not verify is stored and refused on every request ([H-736](../../security/deb-remote.md#h-736--a-release-and-its-releasegpg-are-stored-before-they-are-verified-as-a-pair)) |
+| (b) Fetch `Release.gpg` inside `PrepareFill` | The fill verifies both | Nothing unverified is stored | `PrepareFill` has the body of one document and no upstream client; a second request would bypass the engine's egress, credential and throttling rules |
+| (c) Refuse a `Release` without `InRelease` | Only `InRelease` is stored | No pair | Old and third-party archives that publish `Release` and `Release.gpg` only would not work |
+
+**Choice:** (a).
+
+**Rationale:** The engine hands `PrepareFill` the body of the document it fetched and nothing else. The verified `InRelease` is what names files when the upstream has one; a `Release` is used only after the pair verified, by a client's request or by the job.
+
+**Applied in the spec:** R-DEB-019. Code: [handlers_remote.go](../../internal/formats/deb/handlers_remote.go) `verifyPair`.
+
+### Q-DEB-79 · The files a stored release lists are rows of their own: `deb_remote_files`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the remote class (T-17 WP6).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `deb_remote_files` (migration 00064): one row per listed file of a directory's current release, kept after the release is replaced with `current = false` and `superseded_at` until `deb.by_hash_keep` has passed (chosen) | A statement answers "what does the release list for this path" | One lookup per request; the history gives the housekeeping its set of names; the purge of a restore deletes it with the other cache rows | About two thousand rows per release of a Debian suite |
+| (b) Parse the stored document at every request | No table | Nothing to keep | A fill (`OnFill`) has no host to read the document with; a parse of a 200 KB document on every index request |
+| (c) A `jsonb` column of the release row | No new table | One row | The history of replaced releases cannot be queried by hash; every read moves the whole list |
+
+**Choice:** (a).
+
+**Rationale:** The check of R-DEB-021 runs inside the fill transaction and on the hottest metadata route; a keyed lookup is the shape both need.
+
+**Applied in the spec:** R-DEB-021, R-DEB-023. Code: [00064_deb_remote_files.sql](../../internal/meta/postgres/migrations/00064_deb_remote_files.sql), [remote_store.go](../../internal/formatdata/deb/remote_store.go).
+
+### Q-DEB-80 · A fetched index is stored only when it is the listed file; a stored document that is not the listed file is replaced by a read outside the cache
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the remote class (T-17 WP6).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `OnFill` of an index compares the digest of the fetched document with the listed hash and answers 502 `deb_index_mismatch` without storing; a request that finds the stored document is another file reads the listed file with `Exchange`, checks its hash and serves it without storing it (chosen) | No index is stored or served that no stored release names | Both windows of an archive without by-hash (a refreshed release over a fresh index document, a fresh index over an old release) end in the right bytes or a 502 | A request in the window costs one request to the upstream ([H-740](#h-740--an-index-in-the-window-between-a-refreshed-release-and-its-stored-document-costs-an-upstream-request-per-client-request)) |
+| (b) 502 on every mismatch | Simple | No exchange | Every client fails in the seconds between the refresh of the release and the expiry of the index document |
+| (c) Store what was fetched | The cache follows the upstream | No request outside the cache | The stored document then names no release; R-DEB-021 forbids it |
+
+**Choice:** (a).
+
+**Rationale:** APT fetches `InRelease` first and the index after it, so the release is nearly always the newer document; the read outside the cache bridges the rest.
+
+**Applied in the spec:** R-DEB-021. Code: [remote.go](../../internal/formats/deb/remote.go) `indexFilled`, [handlers_remote.go](../../internal/formats/deb/handlers_remote.go) `serveIndex`, `exchangeIndex`.
+
+### Q-DEB-81 · A directory whose stored release no key verifies serves nothing, and its release is revalidated without validators
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the remote class (T-17 WP6).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Index requests of the directory answer 502 `deb_upstream_signature_invalid` while its release is unverified; the adapter's revalidation of such a release is a HEAD whose answer says "moved", so the engine sends the GET with no `If-None-Match` and no `If-Modified-Since` (chosen) | A 304 can never mark a release verified, because none is asked for | No stored release is used on the authority of a key that was removed | A HEAD more than the conditional request; an upstream that refuses HEAD answers an error that delays the GET |
+| (b) Keep serving the stored release until it expires | No outage | Available | The removal of a key would not take effect for a period; the spec says it does |
+| (c) Delete the stored release | Clean | Nothing unverified is stored | The floor and the rollback protection go with it ([H-630](#h-630--a-restore-without-remote-caches-forgets-the-newest-upstream-release-a-remote-had-seen)) |
+
+**Choice:** (a).
+
+**Rationale:** The engine adds validators itself after the format has built the request; a `Revalidator` is the contract's way for a format to change what an expired document is revalidated with.
+
+**Applied in the spec:** R-DEB-020. Code: [remote.go](../../internal/formats/deb/remote.go) `RevalidationRequest`, [handlers_remote.go](../../internal/formats/deb/handlers_remote.go) `requireVerified`.
+
+### Q-DEB-82 · The re-verification reads the stored bytes through the cache view of the background upstream
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the remote class (T-17 WP6).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The upstream of a background run offers `StoredDocument(path)`, the document as the cache holds it with no request (chosen) | The job asserts it (`debdata.StoredReader`) | R-DEB-020 says "from their stored bytes (no upstream request)"; it is true | One more capability of the host's background upstream |
+| (b) `Document` | The contract as it is | No change in the host | It revalidates a stored document once per run, which is a request; and after a change of keys that request is the HEAD of Q-DEB-81 |
+| (c) Read the cache blob from the data port | No change in the host | No request | The data port does not know the cache entry or the object store |
+
+**Choice:** (a).
+
+**Rationale:** The cache view of the engine (R-REPO-032) exists for exactly this: serve what is stored.
+
+**Applied in the spec:** R-DEB-020. Code: [mirror_host.go](../../internal/formathost/mirror_host.go) `stored`, [housekeeping.go](../../internal/formatdata/deb/housekeeping.go) `reverify`.
+
+### Q-DEB-83 · The `deb-index` job of a remote repository is its re-verification and housekeeping; the handler is chosen by the class of the repository
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the remote class (T-17 WP6).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `RegisterJobs` registers one handler for `deb-index` that looks up the class of the repository the job targets: a remote's job is `RemoteJobs.RunIndex`, every other the index build (chosen) | The key `index:<id>` of R-DEB-021 and R-DEB-020 is the one a reindex and a key change use, so the jobs coalesce | One kind; the builder of WP4 changes nothing | A lookup of the class when a job starts |
+| (b) A kind of its own, `deb-remote-index` | No dispatch | Separate | The spec names `deb-index` and the key; a reindex of a remote would not find its job |
+| (c) The build handler asks the class | No dispatch in `jobs.go` | One place | It edits the file the index builder replaces |
+
+**Choice:** (a).
+
+**Rationale:** The class is a fact of the repository, and the dispatch is eight lines.
+
+**Applied in the spec:** R-DEB-020, R-DEB-021. Code: [jobs.go](../../internal/formatdata/deb/jobs.go) `classHandler`, [housekeeping.go](../../internal/formatdata/deb/housekeeping.go).
+
+### Q-DEB-84 · The housekeeping of a remote removes by-hash files and the rows of replaced releases, and nothing else
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the remote class (T-17 WP6).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The task finds the remotes that have replaced releases past `deb.by_hash_keep` (`DebRemoteHousekeepingDue`) and enqueues their `deb-index` job; the job forgets those rows and removes by-hash items older than the period that no remembered file names (chosen) | Matches what accumulates: a by-hash path is a new item for each generation | The mirror's "deletes nothing" rule is about package files and is not touched | A plain index path that no release lists any more stays until its unused-retention period |
+| (b) Also remove plain index documents | Complete | Nothing stays | A plain path is one cache entry that the next fill replaces in place; the engine's unused-retention rule already removes the unused |
+| (c) Remove at the time a release is replaced | Immediate | No task | A client that read the old release a moment ago would find its by-hash files gone, which the keep period is for |
+
+**Choice:** (a).
+
+**Rationale:** Package files are never touched.
+
+**Applied in the spec:** R-DEB-021. Code: [housekeeping.go](../../internal/formatdata/deb/housekeeping.go), [refresh_remote.go](../../internal/formatdata/deb/refresh_remote.go).
+
+### Q-DEB-85 · A remote repository's cache owns no row of the local class: the commit hook does nothing for a fetched file
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the remote class (T-17 WP6).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `OnCommit` returns nil for a repository of the remote class (chosen) | The rows of a cache are `deb_remote_entries` | A fetched file is not refused as a raw deploy; the cache needs no version row for its serving | The package screens of a remote have no rows of the engine's own until R-DEB-030 reads the parsed rows |
+| (b) Create package and version rows as npm does | Package screens work at once | Uniform with npm | The Debian identity of a file is a path and an architecture; the version rows belong to the screens (R-DEB-030) and are not needed to serve |
+| (c) Refuse | As the hook did for a raw deploy | Unchanged | Every fill would answer 409 |
+
+**Choice:** (a).
+
+**Rationale:** The hook ran for fills before this class existed and answered 409 to a raw deploy; the fill is not a deploy.
+
+**Applied in the spec:** R-DEB-001. Code: [hooks.go](../../internal/formats/deb/hooks.go) `OnCommit`.
+
+### Q-DEB-86 · A failed verification is counted and written as the security event where a client meets it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the remote class (T-17 WP6).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `PrepareFill` tags its error with the label of the failure; the handler counts it and asks the data port for the event, which writes it at most once an hour per repository and directory in this replica (chosen) | `PrepareFill` has no host | The failure is counted where it is seen | A job's failure is logged and not counted; two replicas may each write the event once an hour ([H-738](../../security/deb-remote.md#h-738--a-failed-verification-is-written-once-an-hour-per-replica-and-only-where-a-client-meets-it)) |
+| (b) A process-wide counter in the format | Counts everything | Complete | The format keeps no state outside its replica value (R-ARCH-032) |
+| (c) Return the failure to the engine for counting | One place | Complete | The engine knows no Debian reasons |
+
+**Choice:** (a).
+
+**Rationale:** The label is the reason of `openpgp.Reason`; it never carries key material.
+
+**Applied in the spec:** R-DEB-020. Code: [remote.go](../../internal/formats/deb/remote.go) `SignatureReason`, [remote_audit.go](../../internal/formatdata/deb/remote_audit.go).
+
+### Q-DEB-87 · The fingerprints of `deb.upstreamKeys` are derived when a document is written and are read-only
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the remote class (T-17 WP6).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The service takes the member out before the schema sees it and derives it from the keys it has just checked (chosen) | A client that writes back what it read is accepted | Always the fingerprints of the stored keys | The stored document holds a derived value |
+| (b) Compute on every read | Nothing stored | No stale value | Every reader of the document parses the keys; the key list of a remote is a document member (R-DEB-020) |
+| (c) Reject a document that carries it | Strict | No hidden rewrite | A client could not write back what it read |
+
+**Choice:** (a).
+
+**Rationale:** The keys are checked on save (R-DEB-020), so the fingerprints cost nothing more at that point.
+
+**Applied in the spec:** R-DEB-020. Code: [validate_deb.go](../../internal/repository/validate_deb.go).
+
+### Q-DEB-88 · The conformance kit holds a Rewrite that is the identity to the identity
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the remote class (T-17 WP6).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A fixture that names the reason `Rewrite` is the identity needs no download links and the kit checks that every document comes back unchanged (chosen) | Check 4 stays for the formats that rewrite | A format cannot skip the check unnoticed: the reason is in the fixture | One more fixture field |
+| (b) Skip check 4 | No kit change | Nothing to build | The kit refuses a skip for a format with a remote adapter |
+| (c) Invent a link in the fixture | No kit change | The check runs | It proves nothing: the document of an archive has no link to the upstream |
+
+**Choice:** (a).
+
+**Rationale:** An APT archive's documents hold no address of the upstream; trove must not change a byte of a signed release.
+
+**Applied in the spec:** R-ARCH-010. Code: [checks.go](../../internal/formats/formattest/checks.go) `rewriteIdentity`.
+
+### Q-DEB-89 · A key that expired after it was saved stays in the set and is judged when it is used
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the remote class (T-17 WP6).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Saving checks validity (`ParseCertificates`); verifying reads the set without it and judges each key by the time of the signature and by now (chosen) | An expired key does not break the verification by the others | R-DEB-020: a key left in the set after it expired cannot sign a backdated release | A stored set can hold a certificate that is no longer valid |
+| (b) Read the set with `ParseCertificates` every time | One function | Simple | One expired certificate would make every release of the remote fail |
+| (c) Drop an expired key from the set | Clean | No dead key | It rewrites an operator's document |
+
+**Choice:** (a).
+
+**Rationale:** The key library already judges validity at signature time and now (Q-DEB-35).
+
+**Applied in the spec:** R-DEB-020. Code: [certs.go](../../internal/openpgp/certs.go) `ParseStoredCertificates`.
+
+### Q-DEB-90 · A Sources index is parsed when a job asks for it; the fill of a Packages index enqueues its parse
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the remote class (T-17 WP6).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `OnFill` of a plain `Packages` index enqueues its parse; a new release enqueues the parse of every index of the directory that has rows (Sources included); the first parse of a `Sources` index is enqueued by the mirror that asks for sources (chosen) | Packages rows exist after the first `apt-get update` | Sources are parsed only for a mirror with `sources: true` | The mirror work package enqueues the first Sources parse |
+| (b) Parse every index a release lists | Complete | Everything is known | Contents and Translation indexes are not parsed (R-DEB-023); a Sources index is rows for a mirror only |
+| (c) Parse at the first request for a package | Lazy | Nothing unused | The gate needs the digest at the first request |
+
+**Choice:** (a).
+
+**Rationale:** The parse job reads any `Packages` or `Sources` path (`ParseArgs.Path`), so the mirror adds no code.
+
+**Applied in the spec:** R-DEB-023. Code: [remote_parse.go](../../internal/formatdata/deb/remote_parse.go).
 ### Q-DEB-100 · The signing keys and the index state are two lazy tabs of a local or virtual repository's edit form
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the

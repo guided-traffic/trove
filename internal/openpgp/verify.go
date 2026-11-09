@@ -302,3 +302,51 @@ func verifyData(pk *packet.PublicKey, sig *packet.Signature, data []byte) error 
 	}
 	return pk.VerifySignature(h, sig)
 }
+
+// ClearText reads a cleartext message the way VerifyClear does, without any key: it is one cleartext message with nothing before or
+// after it, holds a signature block with at least one and at most Limits.MaxSignatures signature packets, and its Hash armor header,
+// when present, names the hash of at least one of them. It returns the text the signatures cover. A remote without deb.upstreamKeys
+// stores its upstream's InRelease after this check and nothing more (R-DEB-019); it proves no signature.
+func ClearText(msg []byte, lim Limits) ([]byte, error) {
+	lim = lim.withDefaults()
+	if len(msg) > lim.MaxMessageBytes {
+		return nil, verifyFailure(ReasonTooMany, "the message is over %d bytes", lim.MaxMessageBytes)
+	}
+	trimmed := bytes.TrimLeft(msg, " \t\r\n")
+	if !bytes.HasPrefix(trimmed, []byte("-----BEGIN PGP SIGNED MESSAGE-----")) {
+		return nil, verifyFailure(ReasonMalformed, "not a cleartext signed message")
+	}
+	block, rest := clearsign.Decode(trimmed)
+	if block == nil || block.ArmoredSignature == nil {
+		return nil, verifyFailure(ReasonMalformed, "not a cleartext signed message")
+	}
+	if len(bytes.TrimSpace(rest)) != 0 {
+		return nil, verifyFailure(ReasonMalformed, "text after the signature")
+	}
+	if block.ArmoredSignature.Type != typeSignature {
+		return nil, verifyFailure(ReasonMalformed, "the signature block is a %q", block.ArmoredSignature.Type)
+	}
+	sigBody, err := io.ReadAll(io.LimitReader(block.ArmoredSignature.Body, int64(lim.MaxMessageBytes)+1))
+	if err != nil {
+		return nil, verifyFailure(ReasonMalformed, "signature armor: %v", err)
+	}
+	sigs, err := readSignatures(sigBody, lim.MaxSignatures)
+	if err != nil {
+		return nil, err
+	}
+	if hdr := block.Headers["Hash"]; len(hdr) > 0 {
+		named := false
+		for _, sig := range sigs {
+			name, _ := hashName(sig.Hash)
+			for _, h := range hdr {
+				if strings.EqualFold(h, name) {
+					named = true
+				}
+			}
+		}
+		if !named {
+			return nil, verifyFailure(ReasonHashHeader, "the Hash header names none of the signatures' hashes")
+		}
+	}
+	return block.Plaintext, nil
+}

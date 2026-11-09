@@ -40,16 +40,16 @@ func TestDescriptor(t *testing.T) {
 	}
 }
 
-// The skeleton registers the local class alone; a class joins by adding a class file (format.go).
+// A class joins the format by adding a class file (format.go); the virtual class is not registered yet.
 func TestNewRegistersTheClassesOfTheClassFiles(t *testing.T) {
 	f := New()
-	if got := f.Classes(); !reflect.DeepEqual(got, []formats.Class{formats.Local}) {
+	if got := f.Classes(); !reflect.DeepEqual(got, []formats.Class{formats.Local, formats.Remote}) {
 		t.Fatalf("classes = %v", got)
 	}
 	if err := formats.Validate(f); err != nil {
 		t.Fatal(err)
 	}
-	if d := f.Descriptor(); d.Supports(formats.Remote) || d.Supports(formats.Virtual) {
+	if d := f.Descriptor(); !d.Supports(formats.Remote) || d.Supports(formats.Virtual) {
 		t.Errorf("the descriptor lists %v", d.Classes)
 	}
 }

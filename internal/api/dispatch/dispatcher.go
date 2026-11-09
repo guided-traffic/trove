@@ -120,7 +120,7 @@ func (d *Dispatcher) APIKeyRoute(r *http.Request) bool {
 	if strings.HasPrefix(rest, "/") {
 		return false
 	}
-	if _, err := repository.CleanPath(rest); err != nil {
+	if _, err := repository.CleanPath(cleanable(rest)); err != nil {
 		return false
 	}
 	route, _, err := f.Match(r.Method, rest)
@@ -189,7 +189,7 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(errs.E(errs.Invalid, errs.CodeInvalidPath, "the path has an empty segment"))
 		return
 	}
-	cleaned, err := repository.CleanPath(rest)
+	cleaned, err := repository.CleanPath(cleanable(rest))
 	if err != nil {
 		fail(err)
 		return
@@ -200,6 +200,18 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d.serveRoute(w, r, f, key, cacheView, routed{route: route, params: params, escaped: rest, cleaned: cleaned})
+}
+
+// cleanable is the path CleanPath reads: the path as received, except that a first segment "." is dropped. An APT client reads the source
+// line `deb <repository URL> ./` as the flat repository at the root and requests `<repository URL>/./InRelease`; a dot segment is
+// refused everywhere else, but the root of a flat repository is named by it, so the format's Match is handed the path as received (it
+// reads a leading "./" as the root directory and refuses any other dot segment) and the canonical path is the one below the dot
+// (Q-ARCH-385, R-DEB-003). A second dot segment ("./.", "././x") stays in the path and is refused.
+func cleanable(rest string) string {
+	if tail, ok := strings.CutPrefix(rest, "./"); ok {
+		return tail
+	}
+	return rest
 }
 
 // routed is a request after the match: the route, its parameters and the path below the repository segment, escaped as

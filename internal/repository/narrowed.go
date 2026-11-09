@@ -28,6 +28,9 @@ const (
 	partPinsAdded         = "pinsAdded"
 	partPinMembersRemoved = "pinMembersRemoved"
 	partVulnerabilities   = "vulnerabilities"
+	// partDebUpstreamKeysRemoved lists the fingerprints an update took out of deb.upstreamKeys of a remote Debian repository
+	// (R-DEB-020, R-DEB-032, Q-REPO-274).
+	partDebUpstreamKeysRemoved = "debUpstreamKeysRemoved"
 )
 
 // repoRef names a repository of an entry: its ID as decimal text, which the replay acts on, and its qualified name, for
@@ -62,6 +65,8 @@ type narrowedEntry struct {
 	PinsAdded         []pinPart   `json:"pinsAdded,omitempty"`
 	PinMembersRemoved []pinPart   `json:"pinMembersRemoved,omitempty"`
 	Vulnerabilities   *vulnChange `json:"vulnerabilities,omitempty"`
+	// DebUpstreamKeysRemoved are the fingerprints taken out of deb.upstreamKeys.
+	DebUpstreamKeysRemoved []string `json:"debUpstreamKeysRemoved,omitempty"`
 }
 
 // parts lists the parts the entry carries, in the order of the table of R-REPO-061.
@@ -79,6 +84,7 @@ func (e narrowedEntry) parts() []string {
 	add(len(e.PinsAdded) > 0, partPinsAdded)
 	add(len(e.PinMembersRemoved) > 0, partPinMembersRemoved)
 	add(e.Vulnerabilities != nil, partVulnerabilities)
+	add(len(e.DebUpstreamKeysRemoved) > 0, partDebUpstreamKeysRemoved)
 	return out
 }
 
@@ -97,6 +103,7 @@ func (s *Service) narrowing(r Repository, cur, nd *Document, curRel, rel *virtua
 	e := narrowedEntry{RepositoryID: r.ID, Key: r.Name.String()}
 	e.Include = includeNarrowed(s.cat, cur.Format, cur.IncludePatterns, nd.IncludePatterns)
 	e.ExcludeAdded = addedPatterns(cur.ExcludePatterns, nd.ExcludePatterns)
+	e.DebUpstreamKeysRemoved = debKeysRemoved(cur, nd)
 	if r.Class == Local {
 		info, known := s.cat.Lookup(cur.Format)
 		e.AutoClaim = !effectiveAutoClaim(info, known, &cur.Settings) && effectiveAutoClaim(info, known, &nd.Settings)

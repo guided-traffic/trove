@@ -2010,6 +2010,7 @@ func (e ProjectRole) Valid() bool {
 
 // Defines values for RemoteFormatName.
 const (
+	RemoteFormatNameDeb   RemoteFormatName = "deb"
 	RemoteFormatNameNpm   RemoteFormatName = "npm"
 	RemoteFormatNameNuget RemoteFormatName = "nuget"
 	RemoteFormatNameOci   RemoteFormatName = "oci"
@@ -2018,6 +2019,8 @@ const (
 // Valid indicates whether the value is a known member of the RemoteFormatName enum.
 func (e RemoteFormatName) Valid() bool {
 	switch e {
+	case RemoteFormatNameDeb:
+		return true
 	case RemoteFormatNameNpm:
 		return true
 	case RemoteFormatNameNuget:

@@ -28,11 +28,6 @@ func (m *markStore) Tombstone(_ context.Context, _ int64, path string) (rows.Tom
 	return rows.Tombstone{Path: path}, path == m.withheld, nil
 }
 
-func isNotFound(err error) bool {
-	var e *errs.Error
-	return errors.As(err, &e) && e.Kind == errs.NotFound
-}
-
 // A package file the replay withheld is refused with the 404 of a missing file, by the facts the item lookup read with the item and,
 // when it read none, by the data port (R-DEB-032, Q-ARCH-381).
 func TestServeCheckRefusesAWithheldFile(t *testing.T) {

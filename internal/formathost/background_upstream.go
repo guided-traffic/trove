@@ -97,3 +97,16 @@ func (b *backgroundUpstream) Artifact(ctx context.Context, path string, max int6
 	})
 	return body, found, err
 }
+
+// Background is [Host.BackgroundUpstream] for a repository named by its id: the form the jobs of a format data port call, which hold
+// no format types (internal/formatdata/deb).
+func (m *MirrorHost) Background(ctx context.Context, repoID int64) (discover.Upstream, error) {
+	return m.h.BackgroundUpstream(ctx, formats.RepoRef{ID: repoID})
+}
+
+// StoredDocument reads the metadata document of the repository as the cache holds it, with no request to the upstream and outside the
+// run's window (it takes no part of the upstream's budget). found is false when none is stored. It is an optional capability of the
+// upstream of a background run: a caller asserts it.
+func (b *backgroundUpstream) StoredDocument(ctx context.Context, path, variant string) ([]byte, bool, error) {
+	return b.stored(ctx, path, variant)
+}

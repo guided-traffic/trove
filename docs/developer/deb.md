@@ -49,7 +49,7 @@ A route of a class the format has not registered is left out of `Format.Routes()
 | File | Responsibility |
 |---|---|
 | [format.go](../../internal/formats/deb/format.go) | `Format`, `Descriptor`, `New`, the registry of classes (`registerClass`) |
-| [class_local.go](../../internal/formats/deb/class_local.go) | Registers the local class; `class_remote.go` and `class_virtual.go` are created by their packages |
+| [class_local.go](../../internal/formats/deb/class_local.go), [class_remote.go](../../internal/formats/deb/class_remote.go) | Register the local and the remote class; `class_virtual.go` is created by its package |
 | [names.go](../../internal/formats/deb/names.go) | The grammars of R-DEB-002 (`ValidPackage`, `ValidVersion`, `ValidArchitecture`, `ValidSuite`) and the package-name rule |
 | [paths.go](../../internal/formats/deb/paths.go) | The pool layout (`PoolPath`, `PoolPrefix`, `PackagesPath`, `ByHashPath`), `Classify`, `IsIndexName`; `PackageDocumentPath` reports no document |
 | [routes.go](../../internal/formats/deb/routes.go) | The route table and its matchers; `Match` reads a leading `./` as the flat root (Q-DEB-39) |
@@ -75,8 +75,8 @@ A route of a class the format has not registered is left out of `Format.Routes()
 Migrations [00060_deb](../../internal/meta/postgres/migrations/00060_deb.sql), [00061_deb_signing_keys](../../internal/meta/postgres/migrations/00061_deb_signing_keys.sql),
 [00062_deb_remote](../../internal/meta/postgres/migrations/00062_deb_remote.sql) and [00063_deb_binaries_detached](../../internal/meta/postgres/migrations/00063_deb_binaries_detached.sql)
 are expand steps; every table is export class `data`
-([tables_deb.go](../../internal/formatdata/deb/tables_deb.go)). The three remote tables are cache rows; the purge that a restore without remote caches
-needs is the remote class's work (R-BAK-008, H-630). `test/integration/postgres/deb_test.go` pins the constraints, the registrations and the item lookup's
+([tables_deb.go](../../internal/formatdata/deb/tables_deb.go)). The remote tables (00062 and [00064_deb_remote_files](../../internal/meta/postgres/migrations/00064_deb_remote_files.sql)) are cache rows; the purge that a restore without remote caches
+needs is `PurgeRemoteCaches` ([restore_purge.go](../../internal/formatdata/deb/restore_purge.go), R-BAK-008, H-630). `test/integration/postgres/deb_test.go` pins the constraints, the registrations and the item lookup's
 facts; `deb_reseal_test.go` pins the key-ring walk.
 
 ## Configuration
@@ -179,9 +179,9 @@ builder is a job and the role `web` claims none; the stack seeds repositories by
 ## What is built and what is not
 
 Built: everything above, including the stub archive (WP5), the signing keys (WP2), the background upstream (WP13), the publication
-port and the index builder (WP4) and the UI (WP11). Not built, by work package of [apt-work-packages.md](../projektplan/apt-work-packages.md): the
-remote class (WP6), the mirror (WP7), the virtual class (WP8), the tests of the other classes (WP9), the e2e sets (WP10) and the final
-documentation (WP12). The metric `trove_deb_index_delay_seconds` is not recorded yet.
+port and the index builder (WP4), the remote class (WP6) and the UI (WP11). Not built, by work package of
+[apt-work-packages.md](../projektplan/apt-work-packages.md): the mirror (WP7), the virtual class (WP8), the tests of the other classes
+(WP9), the e2e sets (WP10) and the final documentation (WP12). The metric `trove_deb_index_delay_seconds` is not recorded yet.
 
 ## The OpenPGP library and the counting stub archive (stage 1 of the remote side)
 
@@ -287,8 +287,8 @@ opened; none when there is no primary. *Replay:* see [security/deb-signing.md](.
 
 **For the next packages.** WP4 (the index build) calls `SigningKeys`, signs with `openpgp.ClearSign` and `DetachSign` at a time not before
 `Key.EarliestSignature()` of each key, and sets `Options.KeysChanged` (the seam that enqueues a build without delay; until it is set a key
-change is picked up by the periodic refresh task). WP6 adds the remote branch to `serveSigningKey` and
-`debUpstreamKeysRemoved`. A change of the sealed column must change `reseal.go` too.
+change is picked up by the periodic refresh task). The remote branch of `serveSigningKey` and
+`debUpstreamKeysRemoved` are built ([the remote class](#the-remote-class)). A change of the sealed column must change `reseal.go` too.
 
 **Tests.** Unit: [keys_journal_test.go](../../internal/formatdata/deb/keys_journal_test.go), [deb_keys_test.go](../../internal/api/v1/deb_keys_test.go),
 [handlers_keys_test.go](../../internal/formats/deb/handlers_keys_test.go). Integration, the area [test/integration/debkeys](../../test/integration/debkeys)
@@ -323,6 +323,61 @@ generated types (`web/src/app/api/deb-api.ts`); the decisions are Q-DEB-100 to Q
 `DebSigningKey`, `DebIndexState` or the `metadata` of the view (`metadataOf` in [formats/deb/view.go](../../internal/formats/deb/view.go)), change the
 panel and its fake in the same step; the ids of the setup snippets (`apt.*`) are checked against the UI by
 `TestR_API_030_RenderedSnippetIdsMatchTheUIFixture`.
+
+## The remote class
+
+A remote repository is a pull-through cache of an APT archive (R-DEB-019 to R-DEB-023). The routes are the shared ones plus the three of a flat
+directory; a request addressed to a remote repository goes to `handleRemote` ([handlers_remote.go](../../internal/formats/deb/handlers_remote.go)) through
+`registerRemoteHandler` ([handlers.go](../../internal/formats/deb/handlers.go), ADR-186), so the local class's handlers are not edited.
+
+**What a path is** (`analyzeRemote`, [remote.go](../../internal/formats/deb/remote.go)): a release document (`InRelease`, `Release`, `Release.gpg`), a file a release
+names (any file below `dists/` that is no by-hash file and no pdiff patch, and an index name outside it), a by-hash file (SHA256, SHA512; MD5Sum and SHA1
+answer 404), a patch below a `*.diff` directory, or content. The first two are metadata documents of the engine, the rest artifacts.
+
+| Step | Where |
+|---|---|
+| The upstream URL is `remote.url` + the canonical path | `UpstreamRequest` |
+| A release is read, bounded to 16 MiB, parsed ([release](../../internal/formats/deb/release/release.go)) and, with keys, verified (`openpgp.VerifyClear`); a failure is 502 `deb_release_invalid` or `deb_upstream_signature_invalid` and stores nothing | `PrepareFill` |
+| The `Date` bound, the anti-rollback decision, the rows of the release and its listed files, and the enqueue of the parse of the indexes the release changes | `OnFill` → `RecordRelease` |
+| An index must be the file the stored release lists, or the fill stores nothing (`deb_index_mismatch`); a `Packages` index enqueues its parse | `OnFill` → `indexFilled` |
+| The digest of a by-hash file (its path) and of a package file (the newest parsed index) | `BeforeArtifactWith` ([remote_gate.go](../../internal/formats/deb/remote_gate.go)) with the serve facts `deb_remote` |
+| The shadowing check in the scope of a virtual repository | `ServesName` ([remote_names.go](../../internal/formats/deb/remote_names.go)) → `RemoteStore.ServesName`, `EnsureParsed`; the bridge is [formathost/name_servers.go](../../internal/formathost/name_servers.go) |
+| A release no key verifies is revalidated with a HEAD that says "moved", so the GET carries no validators | `RevalidationRequest` |
+
+**Rows** ([remote_store.go](../../internal/formatdata/deb/remote_store.go), [deb_remote.sql](../../internal/meta/postgres/queries/deb_remote.sql)): `deb_remote_releases` (the stored documents, `verified_by`, `floor_date`,
+the `absent` record), `deb_remote_files` (the files the current release lists and, for `deb.by_hash_keep`, the replaced one's), `deb_remote_indexes` and
+`deb_remote_entries` (the parse). Writers of one directory take an advisory lock of the directory. `RecordRelease` is the single place that decides the floor.
+
+**Jobs** ([remote_parse.go](../../internal/formatdata/deb/remote_parse.go), [housekeeping.go](../../internal/formatdata/deb/housekeeping.go), [jobs.go](../../internal/formatdata/deb/jobs.go)):
+`deb-remote-parse` (queue `index`, coalesced per repository, directory and index path) reads the hash the stored release names, fetches the index through
+`Host.BackgroundUpstream` (by hash when the release has `Acquire-By-Hash`), and replaces the rows in one transaction; an empty path fetches the release of a
+directory (recording an absent suite) and enqueues the parses of its scope. `deb-index` of a remote re-verifies the unverified releases from the cache and forgets what
+`deb.by_hash_keep` has passed. The runtime is `RemoteJobs`; the composition root wires it as a late value on a replica that claims jobs
+([wire_deb_remote.go](../../internal/app/wire_deb_remote.go), ADR-187) and implements `Background` over the mirror host.
+
+**Repository rules** ([validate_deb.go](../../internal/repository/validate_deb.go), [members.go](../../internal/repository/members.go), [journal_replay.go](../../internal/repository/journal_replay.go),
+[keys_hooks.go](../../internal/repository/keys_hooks.go)): keys are checked on save and their fingerprints derived; a mirror needs keys; a remote without keys cannot be a member and a member
+keeps its keys; an update that removes fingerprints runs the keys-removed hook (the data port clears `verified_by` and enqueues the re-verification) and journals
+`debUpstreamKeysRemoved` in `repository.narrowed`; the replay is step 8 and disables a mirror or member left without keys.
+
+**Dispatcher.** `deb <URL> ./` requests `<URL>/./InRelease`; the router has no redirect for it (`HandleUncleaned`), the dispatcher cleans the path after dropping the
+first `.` segment and hands the format the path as received, and `Format.Match` reads the leading `./` (Q-ARCH-385, Q-DEB-39).
+
+**Tests.** Unit: [release_test.go](../../internal/formats/deb/release/release_test.go), [remote_test.go](../../internal/formats/deb/remote_test.go),
+[validate_deb_test.go](../../internal/repository/validate_deb_test.go), [remote_parse_test.go](../../internal/formatdata/deb/remote_parse_test.go), the conformance fixture. Integration, the
+area [test/integration/debremote](../../test/integration/debremote) (production composition root in the role `all`, so that its jobs run; the stub on loopback HTTP): the
+release and its verification cases, the pair, the absent suite, `signing-key.asc`, indexes as one snapshot, by-hash, the flat directory and the flat root, pool digests and the
+`require` policy, the parse rows and their follow-up by pdiff, the paragraph bound, the shadowing check, the key removal with its journal entry, the replay and the purge.
+Run it through the slot wrapper (`go test -tags integration ./test/integration/debremote/`; the cases that wait for a period take a minute or two).
+
+### Proven by hand
+
+`TestProofServer` (set `TROVE_DEB_PROOF_DIR` to a directory) starts the installation, a replica in the role `all` and the stub, and writes the port, a token and the stub's key
+`a` into the directory. The clients are containers with the directory mounted and `trove.test` added to `/etc/hosts` (the host name of the default endpoint): the container
+removes the image's sources, installs `key.asc` as `Signed-By`, writes `auth.conf` with the token for `http://trove.test:<port>` and runs `apt-get update --error-on=any` and
+`apt-get install`. Run on 2026-11-09 against `debian:13` (APT 3.0.4, `sqv`) and `ubuntu:22.04` (APT 2.4.14, `gpgv`): the suite `stable main` of the keyed remote (the
+release passes through with the stub's signatures, the client verifies them with the key `a`; `trove-hello` and its dependency install), the flat directory `binary/` and the flat
+root `./`. The remote hands out the upstream's `InRelease` unchanged; the keyring on the client is the upstream's, never trove's.
 
 ## test/debstub: the counting stub archive
 

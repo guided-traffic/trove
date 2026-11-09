@@ -76,7 +76,7 @@ func (a *App) wireVirtualEngine(ctx context.Context, in infra, v virtualArea, az
 	}
 	o := virtual.Options{
 		Router: v.routing, Decider: az.engine, Locals: formathost.NewVirtualLocals(pkgs, store),
-		Remotes: remotes, Names: formathost.NewNameServers(), Caches: in.caches, CacheBytes: int64(a.cfg.Proxy.MergedMetadataCacheBytes),
+		Remotes: remotes, Names: formathost.NewNameServers(fm.deps.Bindings), Caches: in.caches, CacheBytes: int64(a.cfg.Proxy.MergedMetadataCacheBytes),
 		Metrics: a.tele.metrics.Registry(), Log: a.log.With("component", "virtual"),
 		FillRefused: fillRefused,
 	}

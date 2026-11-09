@@ -100,8 +100,8 @@ func TestR_DEB_018_SigningKeyRefusals(t *testing.T) {
 	if st, _ := code(f.serveSigningKey(context.Background(), keyRequest("GET", "", formats.Local, h), httptest.NewRecorder())); st != http.StatusForbidden {
 		t.Errorf("denied = %d", st)
 	}
-	// The remote class serves the upstream's keys (WP6): not built here.
-	if st, c := code(f.serveSigningKey(context.Background(), keyRequest("GET", "", formats.Remote, &keyHost{store: keyPort{}}), httptest.NewRecorder())); st != http.StatusNotImplemented || c != errs.CodeDebNotImplemented {
+	// The remote class serves the certificates of deb.upstreamKeys, and has none to serve without them (R-DEB-018).
+	if st, c := code(f.serveSigningKey(context.Background(), keyRequest("GET", "", formats.Remote, &keyHost{store: keyPort{}}), httptest.NewRecorder())); st != http.StatusNotFound || c != errs.CodeDebNoUpstreamKeys {
 		t.Errorf("remote = %d %s", st, c)
 	}
 	// A port error is the request's error.

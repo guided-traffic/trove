@@ -19,6 +19,7 @@ import (
 	"reflect"
 	"slices"
 	"sync"
+	"sync/atomic"
 
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/catalog"
@@ -65,6 +66,12 @@ type Format struct {
 	remote  formats.RemoteAdapter
 	virtual formats.VirtualAdapter
 	view    formats.ViewAdapter
+
+	// replicas and ports bind the format to the Hosts and data ports a process built (Bind): the metrics of the remote class.
+	replicas sync.Map
+	ports    sync.Map
+	// port is the data port bound last, for the parts of a fill that have no Host.
+	port atomic.Pointer[portBox]
 }
 
 var _ formats.Format = (*Format)(nil)

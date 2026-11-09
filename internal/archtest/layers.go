@@ -95,6 +95,9 @@ func layerTable() []layerRule {
 		{"internal/formats/deb/debfile", layerLeaf},
 		{"internal/formats/deb/version", layerLeaf},
 		{"internal/formats/deb/index", layerLeaf},
+		// The reader of a Release document of an APT archive (Date, names, checksum section): control and rows only, shared by the
+		// remote's format, its jobs and the builds that merge remote members (R-DEB-019, R-DEB-021).
+		{"internal/formats/deb/release", layerLeaf},
 		{"internal/auth/scope", layerLeaf},
 		// The CI federation's pure parts (R-CI-004, R-CI-010 to R-CI-014): reason names, the claim engine
 		// and the subject-token validation import only the standard library and each other, so that the

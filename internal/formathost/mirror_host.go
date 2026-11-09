@@ -333,6 +333,30 @@ func (u *passUpstream) Document(ctx context.Context, path, variant string) ([]by
 	return b, true, nil
 }
 
+// stored is the metadata document of the repository as the cache holds it, however old, with no request to the upstream (the cache
+// view of the engine, R-REPO-032): found is false when none is stored, the upstream's 404 is stored as negative, or it is gone. A job
+// that judges what is stored (the Debian remote's re-verification of its releases after a change of keys, R-DEB-020) reads it so.
+func (u *passUpstream) stored(ctx context.Context, path, variant string) ([]byte, bool, error) {
+	p := formats.Path{Path: path}
+	rq := u.m.request(ctx, u.repo, p)
+	rq.CacheView = true
+	doc, err := (&remote{h: u.m.h, e: u.m.e}).metadataSince(ctx, rq, p, variant, time.Time{})
+	if err != nil {
+		if ee, ok := errs.As(err); ok && ee.Code == errs.CodeNotFound {
+			return nil, false, nil
+		}
+		return nil, false, mapBackground(err)
+	}
+	if doc == nil || doc.Status.Negative || doc.Bytes == nil || !doc.GoneAt.IsZero() {
+		return nil, false, nil
+	}
+	b, err := doc.Bytes(ctx)
+	if err != nil {
+		return nil, false, mapBackground(err)
+	}
+	return b, true, nil
+}
+
 // Artifact implements [discover.Upstream]: the artifact at path is filled as Fill fills a plan item (the format's gate, the remote
 // engine, a background request of the pass; a stored one costs no request) and read back from the store when it is at most max
 // bytes. An artifact the upstream does not have is found=false; one above max is stored and answered found=true with a nil body. What

@@ -7943,6 +7943,70 @@ a pass only; a run's answers appear in the upstream log with the job's id.
 **Applied in the spec:** R-REPO-055 (the bullet "Runs outside a pass"). Code: [window.go](../../internal/mirror/window.go),
 [background_upstream.go](../../internal/formathost/background_upstream.go).
 
+### Q-REPO-300 · A format is told when an update takes fingerprints out of a remote's keys
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the remote class (T-17 WP6).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `repository.RegisterKeysRemovedHook(format, fn)`: the service runs it in the transaction of an update that removed fingerprints from `deb.upstreamKeys` and the replay runs it for the journaled part (chosen) | The data port clears `verified_by` and enqueues the re-verification atomically with the update | The same shape as the creation hook (Q-REPO-273) | A second seam of the service |
+| (b) The data port polls the document | No seam | Decoupled | A window in which a removed key still counts as verifying |
+| (c) The service clears the rows itself | No seam | Direct | The service would know the tables of a format |
+
+**Choice:** (a).
+
+**Rationale:** It is Q-REPO-273 for an update.
+
+**Applied in the spec:** R-REPO-061, R-DEB-020. Code: [keys_hooks.go](../../internal/repository/keys_hooks.go).
+
+### Q-REPO-301 · A remote Debian repository without keys cannot be a member of a virtual repository, and a member keeps its keys
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the remote class (T-17 WP6).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `resolveVirtual` refuses a member that is a remote Debian repository without `deb.upstreamKeys` at the member's pointer; an update that takes the last key from a remote that is a member answers the same code at `/deb/upstreamKeys` (chosen) | Either order of writing is refused | Both rules are in the transaction that holds the rows | The service knows one Debian rule |
+| (b) Only the virtual side | Half | One place | A remote could lose its keys while it is a member |
+| (c) Decided by the virtual build | Late | No service rule | The error would appear at a build, not at the write |
+
+**Choice:** (a).
+
+**Rationale:** The same rule the mirror mode has (`deb_upstream_keys_required`), written where the rows are locked.
+
+**Applied in the spec:** R-DEB-020. Code: [members.go](../../internal/repository/members.go), [validate_deb.go](../../internal/repository/validate_deb.go).
+
+### Q-REPO-302 · The replay of removed upstream keys is the eighth step and fails closed
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the remote class (T-17 WP6).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Step 8 of R-REPO-061: the named fingerprints leave `deb.upstreamKeys` and `upstreamKeyFingerprints`; a restored document that holds other keys keeps them; a mirror or virtual member left with none is disabled and reported suspended; the keys-removed hook runs (chosen) | A restore never widens what is trusted | Reports like the other parts | A repository can end disabled until an administrator acts |
+| (b) Only report | No change | Safe | The restored remote would trust a key the operator removed |
+| (c) Remove all keys | Simple | Closed | More than the entry says |
+
+**Choice:** (a).
+
+**Rationale:** Every part of the replay removes (R-REPO-061).
+
+**Applied in the spec:** R-REPO-061, R-DEB-032. Code: [journal_replay.go](../../internal/repository/journal_replay.go) `debUpstreamKeysRemoved`.
+
+### Q-REPO-303 · The upstream of a background run can read a stored document without a request
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the remote class (T-17 WP6).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `backgroundUpstream.StoredDocument(path, variant)` serves the document through the cache view of the engine (chosen) | No change in `discover.Upstream` | Implementors of the interface stay as they are | A caller asserts an optional interface |
+| (b) A method on `discover.Upstream` | Visible | Uniform | Every implementor, in tests too, changes |
+| (c) `Document` only | Nothing new | Simple | A request per run (Q-DEB-82) |
+
+**Choice:** (a).
+
+**Rationale:** See Q-DEB-82.
+
+**Applied in the spec:** R-REPO-055. Code: [background_upstream.go](../../internal/formathost/background_upstream.go).
+
 ### Q-REPO-273 · A format's data port adds rows in the transaction that creates its repository
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.

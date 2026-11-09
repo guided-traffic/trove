@@ -14,6 +14,18 @@ import (
 // parse, holds secret key material, or holds a certificate that is revoked, expired or not yet valid at now, cannot sign, or is
 // an RSA key below 2048 bits answers ErrInvalid with the reason. A certificate listed twice is kept once.
 func ParseCertificates(armored []byte, now time.Time, lim Limits) ([]Certificate, error) {
+	return parseCertificates(armored, now, lim, true)
+}
+
+// ParseStoredCertificates reads the certificates of an upstream archive that were checked when they were saved: the structure, the
+// bounds and the absence of secret key material are checked again, the validity of each certificate is not. A key that expired after
+// it was saved stays in the set, and the verification judges it by the time of the signature and by now (Q-DEB-35): a certificate
+// that is expired or revoked then verifies no signature, while the others still do.
+func ParseStoredCertificates(armored []byte, lim Limits) ([]Certificate, error) {
+	return parseCertificates(armored, time.Time{}, lim, false)
+}
+
+func parseCertificates(armored []byte, now time.Time, lim Limits, strict bool) ([]Certificate, error) {
 	lim = lim.withDefaults()
 	if len(armored) > lim.MaxCertificateBytes {
 		return nil, invalid("the keys are at most %d bytes", lim.MaxCertificateBytes)
@@ -44,7 +56,7 @@ func ParseCertificates(armored []byte, now time.Time, lim Limits) ([]Certificate
 		}
 		count += len(ents)
 		for _, e := range ents {
-			if err := checkCertificate(e, now); err != nil {
+			if err := checkCertificateAs(e, now, strict); err != nil {
 				return nil, err
 			}
 			c := newCertificate(e)
@@ -58,7 +70,9 @@ func ParseCertificates(armored []byte, now time.Time, lim Limits) ([]Certificate
 	return certs, nil
 }
 
-func checkCertificate(e *pgp.Entity, now time.Time) error {
+// checkCertificateAs checks a certificate; strict adds the checks of its validity and strength, which a saved set is not judged by
+// again (ParseStoredCertificates).
+func checkCertificateAs(e *pgp.Entity, now time.Time, strict bool) error {
 	name := fingerprint(e.PrimaryKey)
 	if e.PrivateKey != nil {
 		return invalid("certificate %s holds secret key material", name)
@@ -67,6 +81,9 @@ func checkCertificate(e *pgp.Entity, now time.Time) error {
 		if s.PrivateKey != nil {
 			return invalid("certificate %s holds secret key material", name)
 		}
+	}
+	if !strict {
+		return nil
 	}
 	if e.Revoked(now) {
 		return invalid("certificate %s is revoked", name)
