@@ -1285,7 +1285,7 @@ so the journal ships with the backup, not after it (Q-ROAD-2).
   `TestHAFaults_ValkeySlow` and `TestHAFaults_ValkeyPlannedFailover` of the set `ha-faults`, and `TestHAPooler_InstanceLoss` of the set `ha-pooler`
   ([e2e.md](../developer/e2e.md#the-failure-suite-ha-faults); nightly and on dispatch, [Q-HA-250](../spec/ha-and-helm.md#q-ha-250--where-the-scenarios-of-e510-run-and-in-which-lane));
   the switchover, the force-deleted primary, the planned failover, the Valkey primary loss and the 5-minute outage are `TestNPMHA`, `TestHASuite_PostgresPrimaryLoss`,
-  `TestHASuite_ValkeyPrimaryLoss` and `TestNPMHAClosing`. The alerts of the Valkey scenarios are rule tests ([H-791](../spec/ha-and-helm.md#h-791--the-valkey-alerts-are-tested-as-rules-not-as-alerts-of-a-running-installation)).
+  `TestHASuite_ValkeyPrimaryLoss` and `TestNPMHAClosing`. The alerts of the Valkey scenarios are rule tests ([H-791](../spec/ha-and-helm.md#h-791--the-sentinel-alert-is-tested-as-a-rule-not-as-an-alert-of-a-running-installation)).
   R-HA-007's rows without a scenario are proven as [Q-HA-257](../spec/ha-and-helm.md#q-ha-257--where-each-remaining-row-of-r-ha-007-is-proven) lists.
 - **E5.11** A backup taken during publishing restores into an empty installation. R-BAK-029 passes
   scenario by scenario in CI. In scenario 1, npm and NuGet packages are published, deleted and

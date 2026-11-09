@@ -1221,7 +1221,7 @@ the pod watch sees with a deletion timestamp; the warm-up is every k6 request be
 ([Drain and failover under NuGet load](#drain-and-failover-under-nuget-load)); the
 long-transfer probes of R-HA-059 and variants B to E in E5.9; R-HA-057's "every replica writes to the new primary within 10 s", the alerts
 (`TroveValkeyUnavailable`; the dev profile runs no Prometheus) and the other Valkey rows in E5.10; the cold install with a replica killed, and `trove admin storage verify` after it, are built ([A replica killed during a cold install](#a-replica-killed-during-a-cold-install)). The
-(`TroveValkeyUnavailable`; the dev profile runs no Prometheus, [H-791](../spec/ha-and-helm.md#h-791--the-valkey-alerts-are-tested-as-rules-not-as-alerts-of-a-running-installation)) and the other Valkey rows in E5.10, which
+(`TroveValkeyUnavailable`; the dev profile runs no Prometheus, [H-791](../spec/ha-and-helm.md#h-791--the-sentinel-alert-is-tested-as-a-rule-not-as-an-alert-of-a-running-installation)) and the other Valkey rows in E5.10, which
 are built now ([The failure suite ha-faults](#the-failure-suite-ha-faults)); `trove admin storage verify` in E5.2. The
 Valkey-primary-loss row of R-HA-052, which ran on every change until 2026-11-01 and now runs in the nightly failover set, is E0.13's (`valkey-kill.sh` under the ping load); its npm load
 joins with M5.
@@ -1556,7 +1556,7 @@ the budget answers `503` with `Retry-After` and leaves no spool file, one above 
 The dev profile's budget is 2 GiB per replica ([Q-HA-257](../spec/ha-and-helm.md#q-ha-257--where-each-remaining-row-of-r-ha-007-is-proven)). The backup and restore pod rows are `TestBackupDrain`'s subtests, whose
 names carry R-HA-007 and R-HA-052.
 
-**Not built.** An e2e run of the object store that rejects the credential (R-HA-007; unit tests prove the circuit and the log line, [H-793](../spec/ha-and-helm.md#h-793--the-dev-store-was-not-shown-to-reject-a-wrong-secret-key)). The alerts: the dev profile runs no Prometheus, so `TroveValkeySentinelsDegraded` and `TroveValkeyUnavailable` are proven by `promtool test rules` only ([Q-HA-256](../spec/ha-and-helm.md#q-ha-256--the-alerts-of-the-valkey-scenarios-are-proven-by-the-rule-tests-not-by-a-prometheus-in-the-e2e-run),
+**Not built.** An e2e run of the object store that rejects the credential (R-HA-007; unit tests prove the circuit and the log line, [H-793](../spec/ha-and-helm.md#h-793--the-dev-store-was-not-shown-to-reject-a-wrong-secret-key)). The firing of `TroveValkeySentinelsDegraded`: the profile `alerts` runs a Prometheus and waits for `TroveValkeyUnavailable` and the other alerts of its scenarios to fire, for this one only to resolve, so it is proven by `promtool test rules` ([Q-HA-256](../spec/ha-and-helm.md#q-ha-256--the-alerts-of-the-valkey-scenarios-are-proven-by-the-rule-tests-not-by-a-prometheus-in-the-e2e-run),
 H-791). A backup or restore pod cut off from the network (H-792). R-HA-058's other criteria in the pooler profile (the growth criterion of R-HA-016, the saturation run) are not part of `ha-pooler`.
 
 **First runs** (nightly dispatches 42587147342, 42595613488 and 42601429868 of the branch, 2026-11-09, on the large class beside other legs). Passed: `TestHAFaults_ValkeySentinelQuorumLoss` (the gauge followed the loss to 1 after 0.16 s and to 0 after 1.9 s, bound 6 s; back at 3 after 70 ms; 24 publishes installed),

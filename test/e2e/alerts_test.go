@@ -255,8 +255,8 @@ func valkeyFailovers(t *testing.T, base map[string]float64) float64 {
 // alert of the chart: the drain variants A, B, C and E of R-HA-059, the planned failover of R-HA-057 and the rolling restart of every role, with the
 // Prometheus scraping through the ServiceMonitor. The window is read back from the Prometheus: no alert of the chart was firing at any evaluation
 // since the first step began. The exception is the one alert whose definition is more than two Valkey failovers in an hour
-// (TroveValkeyFailoverFlapping): when the steps and the moves that prepare them changed the Valkey primary twice or more (variant B and the planned failover are two; the expression
-// extrapolates the increase over the hour, so two changes can read above 2), it fires by its own rule, and the test says so instead of reading that against maintenance.
+// (TroveValkeyFailoverFlapping): when the steps and the moves that prepare them changed the Valkey primary more than twice within the hour, it fires by its own
+// rule, and the test says so instead of reading that against maintenance. Two changes do not fire it (Q-OPS-198: the expression counts, it does not extrapolate).
 func TestAlerts_R_OPS_046_MaintenanceStaysQuiet(t *testing.T) {
 	alertsFx(t)
 	start := time.Now()
@@ -314,8 +314,8 @@ func TestAlerts_R_OPS_046_MaintenanceStaysQuiet(t *testing.T) {
 		if slices.Contains(alertsInherited, name) {
 			continue
 		}
-		if name == "TroveValkeyFailoverFlapping" && flips >= 2 {
-			t.Logf("%s fired by its own definition (increase() over the hour extrapolates, so two changes can pass 2): %.0f primary changes within the hour", name, flips)
+		if name == "TroveValkeyFailoverFlapping" && flips > 2 {
+			t.Logf("%s fired by its own definition: %.0f primary changes within the hour", name, flips)
 			continue
 		}
 		t.Errorf("R-OPS-046: the alert %s fired during maintenance", name)

@@ -240,7 +240,7 @@ the alert and the report banner agree (R-VULN-004). It is a duration parsed by t
     summary: A replica reaches fewer than two Sentinels.
     description: Without a majority of three Sentinels no failover can be elected (R-HA-056). The gauge counts the answers to a probe of every configured Sentinel (R-HA-057). Check the Sentinel pods and the path from the replica to each of them.
 - alert: TroveValkeyFailoverFlapping
-  expr: max(increase(trove_valkey_primary_changes_total{ {{ $ns }} }[1h])) > 2
+  expr: max(max_over_time(trove_valkey_primary_changes_total{ {{ $ns }} }[1h]) - min_over_time(trove_valkey_primary_changes_total{ {{ $ns }} }[1h])) > 2
   labels:
     severity: warning
   annotations:

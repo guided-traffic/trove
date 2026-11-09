@@ -5299,7 +5299,7 @@ templates over metrics the MVP already exports, so the change adds no backend wo
 | `TroveValkeyUnavailable` | `max(trove_valkey_available) == 0` (every replica degraded, R-HA-057) | 2m | critical |
 | `TroveValkeyUnavailableSingleReplica` | `min(trove_valkey_available) == 0 and max(trove_valkey_available) == 1` | 5m | warning |
 | `TroveValkeySentinelsDegraded` | `min(trove_valkey_sentinels_reachable) < 2` (no majority of three, R-HA-056; the gauge counts the answers to a probe of every configured Sentinel, R-HA-057) | 5m | warning |
-| `TroveValkeyFailoverFlapping` | `max(increase(trove_valkey_primary_changes_total[1h])) > 2` (failovers repeating, [operations-and-observability.md](operations-and-observability.md) Q-OPS-15) | 0m | warning |
+| `TroveValkeyFailoverFlapping` | `max(max_over_time(trove_valkey_primary_changes_total[1h]) - min_over_time(trove_valkey_primary_changes_total[1h])) > 2` (failovers repeating, [operations-and-observability.md](operations-and-observability.md) Q-OPS-15) | 0m | warning |
 | `TroveValkeyPrimaryDisagreement` | `max(trove_valkey_primary_views) > 1`: replicas name different primaries, for example one still bound to a demoted primary (Q-OPS-15, R-ARCH-031) | 5m | critical |
 | `TroveBackupStale` | `time() - max(trove_backup_last_success_timestamp_seconds) > 1.5 * max(trove_backup_expected_interval_seconds)`, or `trove_backup_last_success_timestamp_seconds` absent for longer than `backup.expected_interval` ([backup-and-restore.md](backup-and-restore.md) R-BAK-014). Renamed from `TroveBackupTooOld` | 0m | critical |
 | `TroveBackupFailed` | `max(trove_backup_last_failure_timestamp_seconds) > max(trove_backup_last_success_timestamp_seconds)` (R-BAK-014). Not `kube_job_status_failed > 0`, which keeps firing for as long as `failedJobsHistoryLimit` keeps a failed Job, also after later runs succeeded; an `interrupted` run does not count | 0m | critical |
@@ -9826,11 +9826,11 @@ Live whenever a detached write (the periodic token last-used flush, 10 s; the ro
 the upload paths, up to 30 s, not traced) is running at the close deadline. What makes it real: such a write is cut by the process
 exit, and its effect is lost; the next use records most of them again, a half-finished upload is cleaned up by its sweep.
 
-### H-791 · The Valkey alerts are tested as rules, not as alerts of a running installation
+### H-791 · The Sentinel alert is tested as a rule, not as an alert of a running installation
 
-Component: `TroveValkeySentinelsDegraded` and `TroveValkeyUnavailable` ([_rules.tpl](../../deploy/helm/trove/templates/_rules.tpl), R-OPS-046). Subject: whether the alert fires in an installation when R-HA-057's scenarios run. `promtool test rules` ([rules_test.yaml](../../deploy/helm/trove/tests/rules_test.yaml)) feeds the series of the gauges to the expressions and checks the alert and its `for`; the e2e scenarios check the gauges (`trove_valkey_sentinels_reachable`, `trove_valkey_available`) on the pods. Nothing runs a Prometheus that scrapes the pods through the ServiceMonitor and evaluates the PrometheusRule against the Sentinel quorum loss or the 5-minute outage.
+Component: `TroveValkeySentinelsDegraded` ([_rules.tpl](../../deploy/helm/trove/templates/_rules.tpl), R-OPS-046). Subject: whether the alert fires in an installation when the Sentinel quorum is lost. `promtool test rules` feeds the gauge's series to the expression; the set `ha-faults` checks the gauge `trove_valkey_sentinels_reachable` on the pods. The profile `alerts` runs a Prometheus through the ServiceMonitor and proves `TroveValkeyUnavailable` and the other alerts its tests wait for firing; for this one it only reads that it resolves after the outage (`TestAlerts_R_OPS_046_ValkeyOutage`).
 
-Live today, for both alerts. What makes it real: a wrong label in the ServiceMonitor, a metric the pods do not export under the name the rule reads, or a `PrometheusRule` the operator does not load would leave the alert silent while both tiers stay green.
+Live today, for this alert. What makes it real: a metric the pods do not export under the name the rule reads would leave it silent while both tiers stay green.
 
 ### H-792 · A backup or restore pod cut off from the network is not injected
 

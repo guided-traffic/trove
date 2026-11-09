@@ -1212,7 +1212,7 @@ backup alerts' expressions.
 | HA Valkey with Sentinel | Valkey unavailable for every replica | `trove_valkey_available` | `TroveValkeyUnavailable` |
 | HA Valkey with Sentinel | Valkey unavailable for one replica | `trove_valkey_available` | `TroveValkeyUnavailableSingleReplica` |
 | HA Valkey with Sentinel | Sentinel majority lost | `trove_valkey_sentinels_reachable` | `TroveValkeySentinelsDegraded` |
-| HA Valkey with Sentinel | Failovers repeating (Q-OPS-15) | `trove_valkey_primary_changes_total` | `TroveValkeyFailoverFlapping` (new): `max(increase(trove_valkey_primary_changes_total[1h])) > 2` |
+| HA Valkey with Sentinel | Failovers repeating (Q-OPS-15) | `trove_valkey_primary_changes_total` | `TroveValkeyFailoverFlapping` (new): `max(max_over_time(trove_valkey_primary_changes_total[1h]) - min_over_time(trove_valkey_primary_changes_total[1h])) > 2` |
 | HA Valkey with Sentinel | Replicas writing to different primaries (Q-OPS-15) | `trove_valkey_primary_views` | `TroveValkeyPrimaryDisagreement` (new): `max(trove_valkey_primary_views) > 1` for 5 minutes |
 | HA S3 | Store unreachable | `trove_storage_s3_circuit_open` | `TroveObjectStoreUnreachable`, `TroveObjectStoreUnreachableSingleReplica` |
 | Drain without outage | A role below two ready replicas | kube-state-metrics, `trove_ready` | `TroveReplicasNotReady` |
@@ -6130,6 +6130,19 @@ Context: R-OPS-045 asks for a fault proxy that delays every Valkey command by 2 
 **Rationale:** the criterion's e2e content is that a slow Valkey shows as timeouts and an open circuit. The development agent would revisit it if the histogram gets a bucket above the timeout.
 
 **Applied in the spec:** R-OPS-045 (acceptance criteria). Code: [alerts_test.go](../../test/e2e/alerts_test.go).
+
+### Q-OPS-198 · TroveValkeyFailoverFlapping counts the changes within the hour instead of extrapolating them
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the alert means "more than two primary changes within an hour" (Q-OPS-15). `increase()` extrapolates over the window, so two changes could read above 2 and fire it: the scenario "Maintenance stays quiet" saw the alert after a planned failover and drain variant B.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep `increase()` and let the test tolerate two changes | The test's condition widens | No rule change | The alert fires on what its own definition excludes, in production as well |
+| (b) Count: `max_over_time - min_over_time` of the counter over the hour (chosen) | The exact number of changes a replica saw | The alert says what it is defined to say | A replica that restarts inside the hour starts its count again; the other replicas still count |
+
+**Choice:** (b). **Rationale:** a false page during planned maintenance is the failure this alert must not have. The development agent would revisit it if replicas restart so often that no replica sees a whole hour. **Applied:** [_rules.tpl](../../deploy/helm/trove/templates/_rules.tpl), R-OPS-046's table, the alert table of [ha-and-helm.md](ha-and-helm.md), `TestAlerts_R_OPS_046_MaintenanceStaysQuiet`.
 
 ### Q-OPS-207 · The banner and the maintenance mode propagate through the change area `cache`, and no migration adds an area
 
