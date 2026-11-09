@@ -658,7 +658,7 @@ endpoints: {}                           # only the default endpoint; example:
 #    baseUrl: https://packages.example.com   # required; an origin (scheme, host, optional port)
 #    hosts: []                          # example [pkgs.example.org]
 #    wildcardHost: ""                   # example "*.packages.example.com" (one label, at least two labels in the domain)
-#    hostRoots: {}                      # host -> qualified repository name <projectKey>/<repoKey>, reserved for later formats
+#    hostRoots: {}                      # host -> qualified repository name <projectKey>/<repoKey>; binds the host's /v2/ to an OCI repository (Docker Engine mirror)
 #    surface: [packages]                # ui is not allowed on a further endpoint; api, ci_exchange, files are off by default
 #    auth: {tokenTypes: [sat], boundTokensOnly: true, anonymous: false}   # enforced from the identity milestone
 #    exposure: rules                    # rules | all; enforced from the exposure milestone

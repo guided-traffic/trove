@@ -58,7 +58,7 @@ server:
       base_url: https://packages.example.com   # example; required; an origin
       hosts: []                        # default: only the host of base_url; example [pkgs.example.org]
       wildcard_host: ""                # default: none; example "*.registry.example.com"
-      host_roots: {}                   # default; example {pkgs.example.org: web/docker-hub}: host to <projectKey>/<repoKey>, reserved, no route uses it
+      host_roots: {}                   # default; example {pkgs.example.org: web/docker-hub}: host to <projectKey>/<repoKey>; the OCI registry's bound host (R-OCI-029, BoundRepository in internal/api/dispatch)
       trusted_proxies: []              # default: server.trusted_proxies
       pool: ""                         # default: served by the main web Deployment; example ep-customers
       max_in_flight: 1024              # default, per replica and endpoint

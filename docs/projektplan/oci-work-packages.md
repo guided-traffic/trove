@@ -506,3 +506,30 @@ WP0 ──┬─ WP1 ─────────────┐
   tests that count what the upstream delivered empty the clients' stores first (`pruneClients`); the remote answers 404 `MANIFEST_UNKNOWN` for a name its upstream does not know (Q-OCI-202).
 - Not done: the six manifest `GET` requests at Docker Hub of the closing run are not counted (Q-OCI-203); the browser step of the package screen is the UI package's; no client of another version than the two pins.
 - The criteria of WP7 to WP10 that needed a client are the rows of `docs/developer/e2e.md#the-oci-tests`.
+
+## WP14 as built (the documentation, without the closing FULL.md status)
+
+- README: the status line, the key features of the local, remote, virtual and mirror classes and of the registry tokens, the `/v2/` routes
+  in the URL table, a naming table of image references and registry names (`<host>/<projectKey>/<repoKey>/<name>:<tag>`, the bound host,
+  the cache view, the grammars, the storage layout, `trv_rgt_`, the realm, the scopes, the upload session, the client IDs and snippet IDs),
+  the registry headers, the credential prefix, the metrics (`trove_oci_sweep_blobs_removed_total`, `trove_storage_upload_sessions_total`,
+  and `trove_oci_upstream_token_requests_total` marked planned: the spec names it, no code counts it), the audit events (`oci.reinstate`,
+  `auth.registry_token.denied`), the error code `oci_referenced`, the job `oci-sweep`, the command `trove admin oci reinstate`, the
+  `oci` configuration block and `host_roots` (no longer "reserved"), a TL;DR step for Docker (local, Docker Hub remote, virtual; login,
+  push, pull) and a full-reference block of the repository document of an OCI repository, the token service and the registry errors.
+- Manual: the user page [container-images.md](../manual/user/container-images.md) (references, login with a token, permissions, push,
+  multi-platform with Buildx and Podman, pulls through remote and virtual repositories, Kubernetes image pull secrets, deletes,
+  troubleshooting) and the admin page [container-repositories.md](../manual/admin/container-repositories.md) (local, Docker Hub, GHCR and
+  other remotes, virtual, the mirror mode with `oci.mirror`, the Docker Engine mirror on a bound host, configuration, restore, what is not
+  supported); the contents in `internal/manual/manual.go` and `docs/manual/README.md`; the OCI rows of client setup, repositories, access
+  tokens, permissions, endpoints (`hostRoots`), managing repositories and known limitations.
+- Developer pages: `oci.md` reads as one page in the order of a request (a section of its own for the registry root and the mount of
+  `/v2/`, the upload-session contract with the sessions, one files table, one "built and not built" list; stale rows of the contract table
+  and of the mount source fixed); the OCI rows of `README.md` (status, page table, layout tree), `formats.md` (the upload service is built)
+  and `build-and-test.md` (the OCI integration suites and their shards); `endpoints.md` (`host_roots`). The chart's `values.yaml` comment of
+  `hostRoots` follows. The package comment of `internal/formats/oci/format.go` no longer calls the format a skeleton.
+- Security pages: the gap sections of `oci-remote.md` and `oci-content.md` sorted by number; the index rows of `oci-registry.md` (H-648 to
+  H-650), `oci-virtual.md` (H-755) and the missing row of `oci-content.md`; the status line names every OCI page.
+- Not done here, for the closing change: the FULL.md F4 status; the e2e rows (WP11) in the README status, the TL;DR's "not verified" note,
+  the manual's Docker Engine mirror credential note, `oci.md` "What is built and what is not" and `e2e.md`; the spec gaps H-600, H-601,
+  H-602, H-604, H-609 and H-672 are linked from no security page, because no page describes the manifest push and pull path.

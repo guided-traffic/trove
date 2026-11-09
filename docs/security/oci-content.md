@@ -75,9 +75,9 @@ perspective.
 
 - [H-580](../spec/formats/oci.md#h-580--untagged-manifests-accumulate-until-a-retention-policy-removes-them): untagged manifests accumulate until a retention policy removes them.
 - [H-608](../spec/formats/oci.md#h-608--pushes-and-removals-take-their-locks-in-different-orders-and-rely-on-the-retry): pushes and removals take their locks in different orders and rely on the retry.
+- [H-642](../spec/formats/oci.md#h-642--a-pull-by-digest-names-no-version-so-the-exposure-rules-that-narrow-by-tag-would-not-apply-to-it): a pull by digest names no version, so the exposure rules that narrow by tag would not apply to it.
 - [H-645](../spec/formats/oci.md#h-645--a-list-with-more-than-10000-consecutive-tags-the-caller-may-not-read-is-refused): a list with more than 10,000 consecutive tags the caller may not read is refused.
 - [H-653](../spec/formats/oci.md#h-653--the-cascade-of-a-retention-run-is-not-held-to-a-subjects-grants): the cascade of a retention run is not held to a subject's grants.
-- [H-642](../spec/formats/oci.md#h-642--a-pull-by-digest-names-no-version-so-the-exposure-rules-that-narrow-by-tag-would-not-apply-to-it): a pull by digest names no version, so the exposure rules that narrow by tag would not apply to it.
 
 ### H-606 · A forged journal entry withholds a manifest until an administrator acts
 
@@ -118,4 +118,3 @@ refused. The integration test runs the replicas inside the test process, so it s
 heap before it; it does not see memory the runtime holds without using (stacks, released spans not yet returned) and it cannot see the RSS of a separate process. The refusal itself is structural
 (the parser's bounds run before any blob is looked up, so the work is linear in a document of at most 4 MiB), and the e2e run is the place for an RSS reading of a pod. Live today as a measurement gap,
 not as an observed excess.
-

@@ -19,6 +19,8 @@ Every token has 57 characters: a prefix, 43 random letters and digits, and a 6-c
 | `trv_sat_` | Service-account token (`sat`) | A service account; created by an administrator, or by an Owner of the account's project |
 | `trv_cit_` | CI token (`cit`) | A GitLab CI job, through the token exchange ([GitLab CI pipelines](gitlab-ci-pipelines.md)) |
 
+A container client that signs in with one of these tokens receives a short-lived registry token that starts with `trv_rgt_`, issued for it by trove's token service ([Container images with Docker and Podman](container-images.md#sign-in)). A registry token is not listed among your tokens: it names the token it was issued for, holds no more than that token, and stops working when that token is revoked.
+
 Lists show a token by its description and its **hint**, the prefix plus the first four random characters, such as `trv_pat_Ab3x`.
 
 ## Create a token

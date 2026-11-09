@@ -24,7 +24,11 @@
 > restore with the revocation journal (the backup lane of M5) is built: `trove backup create`, `list`, `verify`, `delete`, `prune` and
 > `restore` against an S3 target of its own, the chart's backup CronJob (off by default, `backup.enabled`), restore Job and post-restore
 > hook Job, and the journal of revocations that a restore replays; the restore drill, the drain and the journal scenarios run in the
-> end-to-end set `backup`, nightly and on dispatch ([backup](docs/developer/backup.md)). Not built yet: the HA hardening of phase 7.
+> end-to-end set `backup`, nightly and on dispatch ([backup](docs/developer/backup.md)). The OCI (Docker) registry (phase T-16) is
+> built: local, remote and virtual repositories for container images at `/v2/<projectKey>/<repoKey>/`, the token service and registry
+> tokens, the mirror mode of a registry and the Docker Engine mirror on a bound host; it passes the distribution conformance suite
+> v1.1.1 and its end-to-end rows with real Docker and Podman clients run on several replicas ([OCI](docs/developer/oci.md)). Not built yet:
+> the HA hardening of phase 7.
 > Everything else is the target design in [docs/spec/](docs/spec/README.md). `v0.1.0` is the last release made before the switch to
 > the organisation's CI and release standard; it was published to `ghcr.io`. Releases from now on are cut by Semantic Release from
 > the conventional commits on `main`, and published to Docker Hub and to the chart repository ([releasing](docs/developer/releasing.md)).
@@ -113,7 +117,11 @@ Built (M2, npm registry):
 Built (M3, NuGet; the phase is open for its [remaining findings](docs/projektplan/promt.md#8--open-findings)):
 
 - 📦 **Debian (APT) packages can be uploaded to a local repository.** `PUT /api/deb/<projectKey>/<repoKey>/upload/<file>.deb?distribution=<suite>&component=<component>` stores a package file with its suites and components (201, or 200 when the identical bytes are stored and only coordinates are added), `PUT /api/v1/projects/<projectKey>/repositories/<repoKey>/deb/coordinates` moves it between suites (an added coordinate needs deploy, a removed one delete), `DELETE` of its pool path removes it, and a restore withholds a deleted file until `trove admin deb reinstate <project>/<repository> <path>` puts it back. The signed indexes `apt-get` reads are not built yet, so the packages are stored and downloadable but a repository is not yet usable as an APT source. The part below is the skeleton this builds on. The format `deb` for local repositories, reached at `/api/deb/<projectKey>/<repoKey>/`: the grammars of packages, versions, architectures, suites and components, the pool layout and the classification of paths, the route table of every class (answering `501 deb_not_implemented` until the work packages of [the plan](docs/projektplan/apt-work-packages.md) fill it), the settings schema (`deb.architectures`, `deb.compression`, `deb.origin`, `deb.label`, `deb.suites`, `deb.components`, `deb.upstreamKeys`, `deb.mirror`), the `deb.*` configuration keys, the tables of the suites, package files, signing keys and remote releases, the management operations of the signing keys, coordinates and index state, and the format contract's additions. The indexes, the signing and the classes are not built yet. See [Debian](docs/developer/deb.md).
-- 🐳 **OCI format registered (skeleton).** The format `oci` for local repositories, the one format that declares the registry root: its client address is `/v2/<projectKey>/<repoKey>/`. The grammars of keys, image names, tags and digests, the storage layout, the native error shape of the distribution specification, the settings schema (`oci.mirror`), the `oci.*` configuration keys, the tables of the upload sessions and of the manifest graph and the format contract's additions are built; the registry protocol is not yet mounted. Repository and project keys now follow the OCI component grammar for every format. See [OCI](docs/developer/oci.md).
+- 🐳 **OCI (Docker) local repositories.** `docker push` and `podman push` of images, multi-platform indexes from Buildx and Podman, and any OCI artifact to `<host>/<projectKey>/<repoKey>/<name>:<tag>`: chunked and monolithic blob uploads that any replica continues (the session lives in PostgreSQL and the object store, never in Valkey), the cross-repository mount, manifests stored byte for byte and pulled by tag or digest, a moved tag that keeps its old manifest pullable by digest, the tags list, the referrers API, deletion with a cascade and an hourly sweep of unreferenced blobs, and a restore that withholds a deleted image until `trove admin oci reinstate`. It passes the distribution conformance suite v1.1.1. Repository and project keys follow the OCI component grammar for every format. See [OCI](docs/developer/oci.md) and [container images](docs/manual/user/container-images.md).
+- 🎟️ **Registry tokens.** `docker login` and `podman login` take a trove token; the token service at `/v2/_token` answers with a short-lived `trv_rgt_` registry token that names the trove token and narrows it to the scopes asked, so revoking the trove token ends it, and every request is decided again on the current grants. See [OCI registry](docs/security/oci-registry.md).
+- 🔁 **OCI remote repositories.** Docker Hub (with the `library/` mapping), GHCR or any registry as an upstream: the token handshake with the upstream's realm, a `HEAD` per stale tag instead of a pull from the quota, every manifest and layer verified against its digest, the quota answer of Docker Hub honoured, and the tags list and referrers passed through. See [OCI remote](docs/security/oci-remote.md).
+- 🧩 **OCI virtual repositories.** One image address over local and remote members: a tag from the first member that has it, a digest from wherever the bytes are, unions of tags lists and referrers, claims against a public image of an internal name, and pushes to the deployment target with the layers a remote member cached linked in. See [OCI virtual](docs/security/oci-virtual.md).
+- 🪞 **Registry mirror and Docker Engine mirror.** A remote OCI repository in mode `mirror` keeps the tags (`oci.mirror.tags`, `excludeTags`) and platforms (`oci.mirror.platforms`) it selects, so they stay pullable while the registry is gone; a host bound to a repository (`host_roots`) is the distribution API of that repository, for a Docker Engine's `registry-mirrors`. See [container repositories](docs/manual/admin/container-repositories.md).
 - 🧱 **NuGet format registered.** The format `nuget` for local repositories, with the settings `deleteMode` and `forwardSearch`, the `nuget.archive`, `nuget.registration` and `nuget.search` configuration keys, the NuGet v3 route table, the service index at its three spellings, the native one-line error shape and the 404 that points a NuGet v2 client at the v3 service index. The other operations answer `501` until they are built. See [NuGet](docs/developer/nuget.md).
 - 📦 **NuGet push, unlist, relist and delete.** `dotnet nuget push` and `nuget push` store a package byte for byte with its generated `.nuspec`; a version never changes, a removed version number is blocked for good by a tombstone, and the identical package pushed again is accepted without a change, so a client's retry after a lost answer succeeds. `dotnet nuget delete` unlists by default, or removes with `deleteMode: delete`. Every change is audited in its transaction and journaled for a restore. See [NuGet](docs/developer/nuget.md#the-write-side) and [NuGet publishing](docs/security/nuget-publish.md).
 - 🔣 **NuGet symbol packages.** `dotnet nuget push` of a `.nupkg` with its `.snupkg` stores both: the symbol package is validated (the entry types, the `.pdb` signatures), stored byte for byte next to its package and indexed by a `nuget-symbol-index` job on the `worker`; serving the symbols to a debugger is not built yet. See [NuGet](docs/developer/nuget.md#symbol-packages).
@@ -149,7 +157,9 @@ Not built yet (see the [roadmap](docs/coverage/roadmap.md)): the symbol server o
 (exploit-probability enrichment, time-limited dismissals, vulnerabilities in NuGet registrations: R-VULN-030 to R-VULN-032) and the
 pass-through of an upstream's NuGet vulnerability information (`vulnerabilityInfo: upstream`, R-NUGET-023); the P1 parts of the
 backup (client-side encryption of the database files, R-BAK-027, and a restore onto an existing blob store, R-BAK-025); the HA
-hardening of phase 7; remote and virtual repositories for the generic format; the UI screens of search, trash, builds and webhooks.
+hardening of phase 7; remote and virtual repositories for the generic format; the UI screens of search, trash, builds and webhooks;
+for OCI the exposure adapter (an endpoint with exposure rules serves no container images), redirects of blob downloads to the
+object store, retention of untagged manifests, mirroring of referrers and the end-to-end rows with real clients.
 
 ## 📛 Naming conventions
 
@@ -182,7 +192,16 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 | `/auth/oidc/{providerId}/start`, `/auth/oidc/{providerId}/callback` | GET | yes (M1; [login](docs/developer/login.md)) |
 | `/auth/local/login`, `/auth/logout` | POST | yes (M1; the break-glass login and logout) |
 | `/api/v1/…` (the management API) | see the [API families](#management-api) | yes (M1; [api/openapi.yaml](api/openapi.yaml)) |
-| `/api/<format>/<projectKey>/<repoKey>/…` | per route (npm: GET, PUT, DELETE, POST; NuGet: GET, HEAD, PUT, DELETE, POST) | yes, npm (M2) and NuGet (M3; [dispatcher](internal/api/dispatch/dispatcher.go)) |
+| `/api/<format>/<projectKey>/<repoKey>/…` | per route (npm: GET, PUT, DELETE, POST; NuGet: GET, HEAD, PUT, DELETE, POST) | yes, npm (M2) and NuGet (M3; [dispatcher](internal/api/dispatch/dispatcher.go)); the OCI format is not served here (`/api/oci/…` answers nothing), it is served below `/v2/` |
+| `/v2`, `/v2/` | GET, HEAD | yes (T-16): the version check of the distribution API, `200 {}`; an anonymous caller without a registry token gets `401` with `WWW-Authenticate: Bearer realm="<base URL>/v2/_token",service="<host>"` ([ping.go](internal/api/registry/ping.go)) |
+| `/v2/_token?service=&scope=` | GET, POST (the OAuth 2.0 form) | yes: the token service; takes one trove token as Basic, as `Bearer`, or as the password of the form, answers `{"token", "access_token", "expires_in", "issued_at"}` with a `trv_rgt_` registry token for the scopes the caller may hold; the route is not authenticated by the chain ([token.go](internal/api/registry/token.go)) |
+| `/v2/_catalog?n=&last=` | GET | yes: the image names the caller may read, in byte order over the repositories, pages with `Link`; a virtual repository lists no names ([catalog.go](internal/api/registry/catalog.go)) |
+| `/v2/<projectKey>/<repoKey>/<name>/manifests/<tag>` or `…/manifests/sha256:<hex>` | GET, HEAD, PUT, DELETE | yes: pull and push of a manifest or index, `DELETE` of a tag or a manifest; a push needs deploy, a moved tag overwrite as well ([routes.go](internal/formats/oci/routes.go)) |
+| `/v2/<projectKey>/<repoKey>/<name>/blobs/sha256:<hex>` | GET, HEAD, DELETE | yes: a layer or configuration of the image name; `Range` works |
+| `/v2/<projectKey>/<repoKey>/<name>/blobs/uploads/` (`?digest=` monolithic, `?mount=<digest>&from=<projectKey>/<repoKey>/<name>` mount), `…/blobs/uploads/<uuid>` | POST; PATCH, PUT (`?digest=`), GET, DELETE | yes: blob uploads in chunks across replicas and the cross-repository mount (local and virtual repositories) |
+| `/v2/<projectKey>/<repoKey>/<name>/tags/list?n=&last=`, `…/<name>/referrers/sha256:<hex>?artifactType=` | GET | yes: the tags list in byte order and the referrers index |
+| `/v2/<projectKey>/<repoKey>~cache/<name>/…` | GET, HEAD | yes: the cache view of a remote OCI repository, what it has stored, without asking the upstream |
+| `/v2/<name>/…` on a host bound with `host_roots` | as above | yes (R-OCI-029): the distribution API of the bound OCI repository with the image name as sent, the token service and the version check of that host; a binding to a repository that does not exist or is of another format is no binding |
 | `/api/nuget/<projectKey>/<repoKey>/v3`, `…/v3/`, `…/v3/index.json` | GET, HEAD | yes, the service index of a local or virtual repository (M3 skeleton; the same body at the three spellings) |
 | `/api/nuget/<projectKey>/<repoKey>/v3/flatcontainer/{id}/index.json`, `…/{version}/{id}.{version}.nupkg`, `…/{version}/{id}.nuspec` | GET, HEAD | yes, the version list, the package and the `.nuspec` of a local repository (M3; [documents](docs/developer/nuget.md#rendered-documents-and-package-files)) |
 | `/api/nuget/<projectKey>/<repoKey>/v3/{registration,registration-gz,registration-semver2}/{id}/index.json`, `…/page/{lower}/{upper}.json`, `…/{version}.json` | GET, HEAD | yes, the registration index, page and leaf in three hives; the gzip hives compress for a client that accepts it |
@@ -218,6 +237,29 @@ The canonical paths under which a NuGet remote repository stores what it fetched
 | `{id}/.registration/page/{lower}/{upper}.json` | a registration page the index does not inline, by its bounds |
 | `{id}/{version}/{id}.{version}.nupkg`, `{id}/{version}/{id}.nuspec` | the package and its `.nuspec` |
 
+### OCI image references and registry names
+
+What a container client, a token and the storage see of an OCI repository ([names.go](internal/formats/oci/names.go),
+[paths.go](internal/formats/oci/paths.go), [setup.go](internal/formats/oci/setup.go)).
+
+| Name | Value | Built |
+|---|---|---|
+| Image reference | `<host>/<projectKey>/<repoKey>/<name>[:<tag>\|@sha256:<hex>]`, for example `trove.example.com/web/docker-local/team/app:1.0`; the login target of the setup snippets is `<host>/<projectKey>/<repoKey>` | yes |
+| Image reference on a bound host | `<bound host>/<name>[:<tag>]`, the host an endpoint's `host_roots` binds to `<projectKey>/<repoKey>` | yes |
+| Cache view of a remote | `<host>/<projectKey>/<repoKey>~cache/<name>`: what the remote has stored, without asking the upstream | yes |
+| Image name | components `^[a-z0-9]+(?:(?:[._]\|__\|-+)[a-z0-9]+)*$` joined by `/`; `<projectKey>/<repoKey>/<name>` at most 255 bytes; the package of the package screens | yes |
+| Tag | `^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$`; the version of the package screens | yes |
+| Digest | `sha256:` and 64 lower-case hexadecimal digits; nothing else is a digest (`400 DIGEST_INVALID`), and a push with a `digest-algorithm` other than `sha256` answers `400 UNSUPPORTED` | yes |
+| Storage layout of a local repository | `<name>/_manifests/sha256:<hex>` (a manifest), `<name>/_tags/<tag>` (the bytes of the manifest the tag points at), `<name>/_blobs/sha256:<hex>` (a layer or configuration), seen through `/files/` and the item API | yes |
+| Registry token | `trv_rgt_` + base64url(`1:<key id>:<claims JSON>`) + `.` + MAC, at most 4 KiB, lifetime `oci.token_lifetime` (default `300s`), never beyond the trove token it names; MAC keys derived from the stored-secret key ring with info `trove registry token v1` ([token.go](internal/auth/registrytoken/token.go)) | yes |
+| Token realm and service | realm `<response base URL>/v2/_token`, service the host of that base URL with its port | yes |
+| Scope of a token request | `repository:<projectKey>/<repoKey>/<name>:<actions>` with the actions `pull`, `push`, `delete` or `*`, and `registry:catalog:*`; on a bound host `repository:<name>:…`; at most 16 entries | yes |
+| Login user name | any; recorded and ignored, the snippets use `trove` | yes |
+| Upload session | `Location: /v2/<projectKey>/<repoKey>/<name>/blobs/uploads/<uuid>`, `Docker-Upload-UUID: <uuid>`; staged at `<storage.s3.prefix>/_uploads/<session id>/data` | yes |
+| Client IDs and setup snippets | `docker` (Docker CLI with Buildx), `podman`; snippets `docker.shell.configure`, `docker.kubernetes.configure` (the image pull secret `trove-registry`), `podman.shell.configure`, `docker.install`, `podman.install`, `docker.publish`, `docker.buildx.publish`, `podman.publish` | yes |
+| Repository document member | `oci.mirror` (remote repositories only; below) | yes |
+| Configuration keys | `oci.token_lifetime`, `oci.unreferenced_blob_grace` ([configuration](#configuration-keys)) | yes |
+
 ### OCI remote cache and mirror paths
 
 The canonical paths under which an OCI remote repository stores what it fetched, in a pass of a mirror as for a client (the cache view and the item API show them). `{name}` is the image name as the upstream knows it (a one-component name on Docker Hub is `library/{name}`), `{digest}` is `sha256:` and 64 lower-case hexadecimal digits.
@@ -244,7 +286,13 @@ The settings of a mirror of a registry are the member `oci.mirror` of the reposi
 | `X-Request-Id` | every response; the same value is `requestId` in problem bodies and the trace ID of the request | yes (`internal/httpserver/chain.go`) |
 | `X-Trove-Replica` | the instance name, on responses where `server.replica_header` allows it (default `authenticated`) | yes (`internal/httpserver/chain.go`) |
 | `X-Forwarded-For` or `Forwarded` | the family the edge rewrites: exactly one, chosen by `server.forwarded_header`; the other is never read | yes (`internal/httpserver/clientaddr.go`) |
-| `Authorization` | `Bearer <token>` with a `trv_pat_`, `trv_sat_` or `trv_cit_` value (the CI token of the exchange); a `trv_bst_` value (a Bastion token) is `401 invalid_token` on every route but the Bastion interface. The status code of a refused value is not restated here | yes (`internal/auth/stage.go`) |
+| `Authorization` | `Bearer <token>` with a `trv_pat_`, `trv_sat_` or `trv_cit_` value (the CI token of the exchange); a `trv_bst_` value (a Bastion token) is `401 invalid_token` on every route but the Bastion interface. Below `/v2/` also `Bearer trv_rgt_…` (a registry token, accepted nowhere else) or a trove token as the password of Basic; never the session cookie there. The status code of a refused value is not restated here | yes (`internal/auth/stage.go`) |
+| `WWW-Authenticate` below `/v2/` | `Bearer realm="<base URL>/v2/_token",service="<host>"[,scope="repository:<name>:<actions>"][,error="invalid_token"\|"insufficient_scope"]`; the challenge of a mount also names `pull` on the source | yes ([challenge.go](internal/auth/registrytoken/challenge.go)) |
+| `Docker-Distribution-API-Version` | `registry/2.0` on every answer below `/v2/` | yes (`internal/api/registry/route/route.go`) |
+| `Docker-Content-Digest`, `ETag` of a manifest or blob | `sha256:<hex>`; the `ETag` is `"sha256:<hex>"` and `If-None-Match` gives `304` | yes (`internal/formats/oci`) |
+| `Docker-Upload-UUID`, `OCI-Chunk-Min-Length`, `Range` of an upload | the session ID; the part size of the session (`storage.uploads.part_size`, default 16 MiB); `0-<received-1>` | yes (`internal/formats/oci/handlers_upload.go`) |
+| `OCI-Filters-Applied` | `artifactType` on a referrers answer that applied the filter | yes |
+| `Trove-Resolved-From` | the key of the member of a virtual NuGet or OCI repository that answered | yes |
 | `X-NuGet-ApiKey` | `<token>` or `<any>:<token>`, read first and only on a route that declares the API key (NuGet's push, delete, relist and symbol push) while `auth.clients.nuget_api_key_header` is on; a value without a well-formed token, such as `az`, is ignored and `Authorization` applies | yes (`internal/auth/stage.go`); the NuGet routes are not registered yet |
 | `X-CSRF-Token` | the value of the `__Host-trv_csrf` cookie, on a state-changing request that the session cookie authenticates; with a same-origin `Origin` or `Sec-Fetch-Site`. Failure: `403 csrf_failed` | yes (`internal/auth/session`) |
 | `Idempotency-Key` | on a create: a replay answers the stored outcome; the same key with another body answers `422 idempotency_key_reused`, a concurrent duplicate `409 idempotency_in_progress` | yes (`internal/api/v1/idempotency.go`) |
@@ -263,6 +311,7 @@ The settings of a mirror of a registry are the member `oci.mirror` of the reposi
 | Personal token prefix | `trv_pat_` (`internal/auth/token/token.go`, `TypePAT`) | yes |
 | Service-account token prefix | `trv_sat_` | yes |
 | CI token prefix | `trv_cit_` (`TypeCIT`); issued by the GitLab CI exchange `POST /api/v1/auth/oidc/token` only | yes ([GitLab CI OIDC](docs/spec/gitlab-ci-oidc.md)) |
+| Registry token prefix | `trv_rgt_` (`internal/auth/registrytoken`); issued by the token service `/v2/_token` for a `trv_pat_`, `trv_sat_` or `trv_cit_` token, accepted as `Bearer` below `/v2/` only, not stored anywhere | yes ([OCI registry](docs/security/oci-registry.md)) |
 | Bastion token prefix | `trv_bst_` (`TypeBST`, 57 characters like every token); issued by `POST /api/v1/bastions/{name}/tokens` or `trove admin bastion token create`; refused as `401 invalid_token` on every route but the Bastion interface | yes ([R-BAS-004](docs/spec/bastion.md), [identity](docs/developer/identity.md#bastion-registrations-and-tokens-r-bas-004-r-bas-005)) |
 
 ### Environment variables
@@ -410,6 +459,9 @@ Built families, all with the `trove_` prefix:
 | `trove_ci_exchanges_total`, `trove_ci_exchange_duration_seconds`, `trove_ci_signing_keys_refresh_total`, `trove_ci_mapping_set_stale_total`, `trove_ci_job_token_lookups_total`, `trove_ci_job_token_lookup_duration_seconds` | `issuer` and, as the name says, `outcome`, `reason`, `trigger` ([internal/ci/metrics.go](internal/ci/metrics.go), R-CI-020); `trove_ci_signing_keys_refresh_total` counts key fetches by `trigger` (`scheduled`, `unknown_kid`, `admin`) and `outcome` (`success`, `error`) since the key store exists; `trove_ci_exchanges_total` counts every exchange by `issuer` (empty before an issuer was resolved), `outcome` (`success`, `denied` for a 400 or 429, `error` for a 5xx) and `reason` (empty on success), `trove_ci_exchange_duration_seconds` times it by `issuer`, `trove_ci_mapping_set_stale_total` counts the exchanges whose copy lagged and evaluated again from PostgreSQL; the two job-token series stay at zero (R-CI-022, P2) |
 | `trove_ci_signing_keys_age_seconds`, `trove_ci_tokens_active` | `issuer`; gauges read from PostgreSQL once per `metrics.db_gauge_interval`, aggregate with `max`; `trove_ci_tokens_active` is 0 for an issuer without a live token ([internal/app/wire_ci.go](internal/app/wire_ci.go), [internal/ci/issuances.go](internal/ci/issuances.go)) |
 | `trove_oci_registry_tokens_total` | `outcome` (`issued`, `anonymous`, `denied`): answers of the OCI registry's token service ([internal/auth/registrytoken/metrics.go](internal/auth/registrytoken/metrics.go), R-OCI-034) | yes |
+| `trove_oci_sweep_blobs_removed_total` | none: blob items of an image name that no manifest referenced after `oci.unreferenced_blob_grace`, removed by the job `oci-sweep` ([wire_formats.go](internal/app/wire_formats.go)) | yes |
+| `trove_storage_upload_sessions_total` | `outcome` (`completed`, `aborted`, `expired`): multi-request upload sessions (OCI blob uploads) by how they ended ([internal/blob/metrics.go](internal/blob/metrics.go)) | yes |
+| `trove_oci_upstream_token_requests_total` | `repo`, `outcome` (`ok`, `denied`, `failed`): token handshakes of OCI remote repositories with their upstream's realm (R-OCI-034) | *Planned*: the spec names it, no code counts it yet |
 | `trove_nuget_push_replayed_total` | `repo`: pushes of the identical package of a stored version, answered `201` without a change | yes |
 | `trove_nuget_remote_unparseable_packages_total` | `repo`: content a NuGet remote cached that is no NuGet package at all (no ZIP archive, no `.nuspec`, a `.nuspec` that is not XML) and served without NuGet rows | yes |
 | `trove_nuget_virtual_member_skipped_total` | `repo`, `reason` (`unavailable`): answers of a virtual NuGet repository that left out a member that could not be asked | yes |
@@ -580,7 +632,7 @@ The names of the event registry ([internal/audit](internal/audit/)). Each event 
 | Repositories and endpoints | `repository.created`, `repository.updated`, `repository.disabled` (an update that sets `disabled`, journaled), `repository.deleted` (journaled: a restore brings the repository back disabled), `repository.moved` (a move to another project, journaled as a narrowing), `endpoint.exposure.created`, `endpoint.exposure.updated`, `endpoint.exposure.deleted` |
 | Mirror | `mirror.pass_requested` (transactional, the caller; `full` and the `job` it enqueued; [internal/audit/events_mirror_api.go](internal/audit/events_mirror_api.go)) |
 | Files | `artifact.deployed`, `artifact.deleted`, `artifact.downloaded` |
-| OCI | `oci.manifest.deleted` (transactional; carries the journal entry `{"repository", "name", "digest"}` of the deleted manifest; the replay handler is built with the deletion; [internal/audit/events_oci.go](internal/audit/events_oci.go)) |
+| OCI | `oci.manifest.deleted` (transactional; a manifest deleted by a `DELETE`, the cascade of a tag, a raw delete or a removal without a request, with `name`, `digest` and the number of items the cascade removed; carries the journal entry `{"repository", "name", "digest"}`, so a restore's replay withholds the manifest), `oci.reinstate` (transactional, `trove admin oci reinstate`; not journaled) ([internal/audit/events_oci.go](internal/audit/events_oci.go)); `auth.registry_token.denied` (asynchronous: a token request whose credential the stage refused, with `reason` `invalid_token`, `credentials_required` or `principal_disabled` and the form of the credential, deduplicated per client address, endpoint, reason and credential within `audit.token_rejection_dedup_window`; no event per issued token, [internal/audit/events_registry_token.go](internal/audit/events_registry_token.go)) |
 | Debian | `deb.package.deleted`, `deb.coordinates.removed`, `deb.signing_key.promoted` and `deb.signing_key.retired` (transactional, journaled: a restore's replay withholds the file or the key and never deletes or erases, R-DEB-032), `deb.coordinates.changed`, `deb.signing_key.created`, `deb.signing_key.reinstated`, `deb.reinstate`, `deb.upstream_signature_invalid` (async, security); the replay handlers of `deb.package.deleted` and `deb.coordinates.removed` are built, those of the signing keys come with their work package; [internal/audit/events_deb.go](internal/audit/events_deb.go) |
 | Packages (NuGet) | `package.published`, `package.deleted`, `package.metadata_changed`; `package.published` and `package.deleted` carry the journal entry `{"repository", "id", "version", "sha512"}` of a local NuGet repository |
 | System and audit | `system.task_triggered`, `system.job.cancelled`, `audit.exported` |
@@ -609,7 +661,7 @@ The code registry is [internal/errs/codes.go](internal/errs/codes.go). Every pro
 - Package ownership and populating (M2): `package_owned_by_other_owner`, `last_owner` (also the last Owner of a project, `409`), `populate_not_permitted`
 - npm (M2): `npm_invalid_name`, `npm_invalid_version`, `npm_invalid_range`, `npm_invalid_tag`, `npm_bad_publish`, `npm_manifest_mismatch`, `npm_too_large`, `npm_class_not_writable`, `npm_version_exists`, `npm_version_unpublished`, `npm_stale_rev`, `npm_not_implemented`, `npm_audit_unavailable`, `npm_invalid_upstream_document`
 - Debian (APT, T-17): `deb_distribution_required`, `deb_invalid_coordinate`, `deb_invalid_file_name`, `deb_members_unreadable`, `deb_not_in_release`, `deb_no_upstream_keys`, `deb_version_exists`, `deb_filename_conflict`, `deb_withheld`, `deb_no_next_key`, `deb_key_in_use`, `deb_key_state`, `deb_invalid_archive`, `deb_invalid_control`, `deb_unsupported_compression`, `deb_key_unsupported`, `deb_upstream_keys_required`, `deb_member_unverified`, `deb_mirror_suites_required`, `deb_not_implemented` (`501`), `deb_upstream_signature_invalid`, `deb_release_invalid`, `deb_index_mismatch` (`502`); `generated_item` and `reindex_running` (`409`) are not the format's
-- OCI registry (T-16): `oci_name_invalid`, `oci_tag_invalid`, `oci_digest_invalid`, `oci_name_unknown`, `oci_manifest_unknown`, `oci_blob_unknown`, `oci_blob_upload_unknown`, `oci_blob_upload_invalid`, `oci_manifest_invalid`, `oci_manifest_blob_unknown`, `oci_size_invalid`, `oci_unsupported`, `oci_insufficient_scope` (`401`, a registry token whose grant lacks the request's scope); the registry's own error shape carries the distribution specification's code next to each
+- OCI registry (T-16): `oci_name_invalid`, `oci_tag_invalid`, `oci_digest_invalid`, `oci_name_unknown`, `oci_manifest_unknown`, `oci_blob_unknown`, `oci_blob_upload_unknown`, `oci_blob_upload_invalid`, `oci_manifest_invalid`, `oci_manifest_blob_unknown`, `oci_size_invalid`, `oci_referenced` (`409`, `DENIED` in the registry's shape: a removal of a manifest an index lists or of a blob a manifest references), `oci_unsupported`, `oci_insufficient_scope` (`401`, a registry token whose grant lacks the request's scope); the registry's own error shape carries the distribution specification's code next to each
 - NuGet (M3): `nuget_invalid_package`, `nuget_invalid_version`, `nuget_invalid_version_range`, `nuget_invalid_id`, `nuget_version_exists`, `nuget_version_deleted`, `nuget_version_reserved`, `nuget_symbol_package_exists`, `nuget_v2_unsupported`, `nuget_not_implemented`, `upstream_package_mismatch`, `nuget_invalid_upstream_document`
 - Remote repositories (M2): `upstream_rate_limited` (`503`, the upstream answered 429; `Retry-After` is its wait), `upstream_secret_unavailable`, `source_network_unavailable`, `foreign_host_denied`; the proxy's `not_cached_offline`, `upstream_assumed_offline`, `upstream_auth_failed`, `upstream_error`, `upstream_unreachable`, `upstream_unexpected_status`, `upstream_item_too_large`, `upstream_integrity_mismatch`, `upstream_digest_missing`, `upstream_content_type_blocked`, `tls_untrusted`, `too_many_redirects`, `insecure_redirect`, `fetch_queue_timeout`, `not_cached_only_if_cached`
 - Mirror mode (phase 6b): `mirror_rate_limited` (`409`, the run operation while the upstream's wait lies ahead, extension `until`), `mirror_unbounded` and `mirror_restricted` (`422`, members of `errors[]` at `/remote/mode` and `/remote/mirror`, R-REPO-050 to R-REPO-052), `mirror_pass_running` (`409`, a pass of the repository is queued or running; the extension `job` names it), `mirror_off` (`409`, the remote runs in mode `pullThrough`), `mirror_paused` (`409`, `remote.mirror.paused` is set)
@@ -645,6 +697,7 @@ Registrations at start-up, in `internal/app/wire_*.go` and in the packages that 
 | `vuln-findings-retention` | `internal/app/wire_vuln_eval.go` | task (`maintenance` queue, exclusive, 3 attempts), `50 3 * * *`: deletes the resolved findings older than `vulnerabilities.findings.resolved_retention` |
 | `mirror-dispatch` | `internal/app/wire_mirror.go` | task, queue `maintenance` (so that passes holding the slots of the queue `mirror` cannot starve it), exclusive, 1 attempt, `* * * * *`; ensures a `mirror_state` row for every remote in mode `mirror` and enqueues `mirror-pass` for each that is due; `maintenance.tasks.mirror-dispatch` overrides the schedule |
 | `mirror-pass` | `internal/app/wire_mirror.go`, `internal/mirror/pass.go` | queue `mirror`, exclusive per repository (`mirror-pass:<repository id>`), 1 attempt, no timeout; enqueued by the dispatch and by the run operation; a failed, released or crashed attempt is continued by the next dispatch; the result is `{"outcome", …}`, `{"deferred": "rate_limited", "until"}` or `{"skipped": "repository_gone" \| "not_mirror" \| "paused" \| "invalid_document" \| "rate_limited"}` |
+| `oci-sweep` | `internal/formatdata/oci/sweep.go` (kind), `internal/app/wire_formats.go` (on a replica that claims jobs) | task (`maintenance` queue, exclusive, 3 attempts), `0 * * * *`: removes the blob items of an image name in a local OCI repository that no manifest references and no open upload session can still reference, once they are older than `oci.unreferenced_blob_grace`, as the system actor `removal` (R-OCI-019) |
 | `deb-index` | `internal/formatdata/deb/jobs.go` (kind), `internal/formatdata/deb/build.go` (handler) | queue `index`, coalesce under the key `index:<repository id>`, 5 attempts, 30 minutes; the build of a Debian repository's indexes (R-DEB-010); the handler answers a permanent `not_implemented` until its work package lands |
 | `deb-remote-parse` | `internal/formatdata/deb/jobs.go`, `internal/formatdata/deb/remote_parse.go` | queue `index`, coalesce per repository, release directory and index path, 5 attempts, 10 minutes (R-DEB-023); a stub until the remote class lands |
 | `deb-index-refresh` | `internal/formatdata/deb/jobs.go`, `internal/formatdata/deb/refresh.go` | task (`maintenance` queue, exclusive, 3 attempts), `* * * * *`: enqueues what is due and deletes nothing (Q-DEB-33); runs the parts the packages register with `RegisterRefreshHook` |
@@ -666,6 +719,9 @@ Registrations at start-up, in `internal/app/wire_*.go` and in the packages that 
 | [docs/manual/](docs/manual/README.md) | The user and administrator manual; the binary embeds it and the UI shows it behind **Documentation** in the top bar |
 | [docs/developer/](docs/developer/README.md) | Contributor entry point; the M1 pages: [login](docs/developer/login.md), [identity](docs/developer/identity.md), [authorization](docs/developer/authorization.md), [files](docs/developer/files.md), [m1-contracts](docs/developer/m1-contracts.md), [audit](docs/developer/audit.md), [repositories](docs/developer/repositories.md); the package screens: [packages](docs/developer/packages.md); projects: [projects](docs/developer/projects.md) |
 | [docs/developer/deb.md](docs/developer/deb.md) | The Debian (APT) format as far as it is built: the address and the layout, the grammars, the classification, the route table, the error shape, the settings, the data port and its tables, the signing-key column, the jobs, the configuration keys and what each work package fills in (R-DEB-001 to R-DEB-005, R-DEB-008) |
+| [docs/developer/oci.md](docs/developer/oci.md) | The OCI (Docker) registry for contributors: the registry root and its dispatch, the token service and registry tokens, manifests and the push path, uploads and the mount, removal and the sweep, the remote, mirror and virtual classes, the tests, the conformance suite and the counting stub registry |
+| [docs/security/oci-registry.md](docs/security/oci-registry.md), [oci-uploads.md](docs/security/oci-uploads.md), [oci-content.md](docs/security/oci-content.md), [oci-remote.md](docs/security/oci-remote.md), [oci-virtual.md](docs/security/oci-virtual.md) | The OCI registry's security: what a client presents and what a registry token is worth; the upload routes and the mount; removal, the sweep and a restore; what an upstream registry can make a remote store and show, and the mirror; how a virtual repository decides and where a push goes |
+| [docs/manual/user/container-images.md](docs/manual/user/container-images.md), [docs/manual/admin/container-repositories.md](docs/manual/admin/container-repositories.md) | User manual: Docker, Podman, Buildx and Kubernetes against trove; administrator manual: local, remote (Docker Hub, GHCR) and virtual OCI repositories, the mirror and the Docker Engine mirror |
 | [docs/developer/ci-oidc.md](docs/developer/ci-oidc.md) | GitLab CI OIDC: the contracts laid for beta phase 5 (schema, packages, the token and evaluation seam, API, configuration, events), the work packages and their files |
 | [docs/developer/vulnerabilities.md](docs/developer/vulnerabilities.md) | Vulnerability scanning (M4b): the packages and layers, the ports, the download policy, the format contract's addition, the schema, the API, the configuration and the work packages with their files |
 | [docs/security/](docs/security/README.md) | Security architecture, one page per perspective, with the open gaps of each page: trust boundaries, transport encryption, data and secret flow, privilege footprint, isolation and coordination, egress, login and sessions, tokens and credentials, permissions, delegated administration, endpoints and exposure, repository model, file transfer, audit, vulnerability scanning, backup and restore |
@@ -888,6 +944,33 @@ end-to-end set `backup` runs this sequence ([restore-ns.sh](deploy/dev/restore-n
 the same `jq` step ([backup_env_test.go](test/e2e/backup_env_test.go)); the commands above were not run for this README. After a
 point-in-time restore of PostgreSQL by your platform, run `postRestore` instead ([the Helm values](#helm-values)).
 
+**7. Push and pull container images with Docker.** Create a local OCI repository, a remote one for Docker Hub and a virtual one
+over both in the project `demo`, sign the Docker CLI in with a trove token, then push to the local repository and pull through the
+virtual one. The Docker daemon has to trust trove's certificate (`/etc/docker/certs.d/<host>/ca.crt` for a certificate of your
+own authority):
+
+```shell
+for body in '{"key":"docker-local","class":"local","format":"oci"}' \
+            '{"key":"docker-hub","class":"remote","format":"oci"}' \
+            '{"key":"docker","class":"virtual","format":"oci","virtual":{"members":["docker-local","docker-hub"],"deployTarget":"docker-local"}}'; do
+  curl -s -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' -d "$body" \
+    https://trove.example.com/api/v1/projects/demo/repositories                                           # example
+done                                                                                                       # docker-hub: the upstream defaults to https://registry-1.docker.io/
+curl -s -u "trove:$TOKEN" https://trove.example.com/v2/                                                   # example: {}
+printf '%s' "$TOKEN" | docker login trove.example.com --username trove --password-stdin                   # example: Login Succeeded
+docker tag myapp:1.0 trove.example.com/demo/docker-local/myapp:1.0                                         # example
+docker push trove.example.com/demo/docker-local/myapp:1.0
+docker pull trove.example.com/demo/docker/myapp:1.0                                                        # from the local member
+docker pull trove.example.com/demo/docker/alpine:3.20                                                      # Docker Hub's library/alpine through the remote member
+```
+
+Podman takes the same commands (`podman login`, `podman push`, `podman pull`); the Client setup page of the UI gives the snippets
+of your installation, a Kubernetes image pull secret among them ([container images](docs/manual/user/container-images.md)). A
+Docker Hub remote without credentials shares the anonymous pull allowance of trove's address; give it an account
+([container repositories](docs/manual/admin/container-repositories.md#a-remote-repository-for-docker-hub)). Not verified in this
+pass: no stack was started for these steps; the same requests run in the e2e set `oci` with real Docker and Podman clients
+([e2e.md](docs/developer/e2e.md#the-oci-tests)), the protocol tests of `test/integration/oci` and the conformance suite.
+
 <details>
 <summary>Upgrade, uninstall and the failure scripts</summary>
 
@@ -933,6 +1016,7 @@ the chart's `backup`, `restore`, `postRestore` and backup Secret values. The con
 | `trove admin post-restore` | `--restored-to <RFC 3339 time>` (required), `--credentials-file <path>` (a credential that may list object versions, so a delete marker cannot hide a journal entry), `--skip-revocation-journal`, `--json` | The clean-up after a point-in-time restore of PostgreSQL by the platform ([R-HA-025](docs/spec/ha-and-helm.md)): jobs back to the queue, a new keyspace and incarnation, the deletion pause, `restored_at`, the journal replay from the restore point; prints one line per step and the quarantined outbox rows. A repeat for the same point runs no step again. Source: [cmd/trove/admin_postrestore.go](cmd/trove/admin_postrestore.go). |
 | `trove admin backup check` | `--json` | Runs the checks of the declared platform protection (`backup.recovery_window`, `backup.object_versioning`) and prints one line per check; changes and stores nothing (the task `backup-check` stores its report). Exit `5` when a declared protection does not hold. Source: [cmd/trove/admin_backupcheck.go](cmd/trove/admin_backupcheck.go). |
 | `trove admin npm reinstate <projectKey>/<repoKey> <name>@<version>` | `--config <file>`, `--log-level <level>` | Puts back an npm version that a journal replay withheld, while the version is stored with the integrity of the replay's tombstone; writes `npm.reinstate` (R-NPM-047). Source: [cmd/trove/admin_npm.go](cmd/trove/admin_npm.go). |
+| `trove admin oci reinstate <projectKey>/<repoKey> <name>@sha256:<hex>` | `--config <file>`, `--log-level <level>` | Puts back an OCI manifest that a journal replay withheld after a restore, while the manifest and its item are stored with that digest; writes `oci.reinstate` (R-OCI-033). Source: [cmd/trove/admin_oci.go](cmd/trove/admin_oci.go). |
 
 Every `trove backup` command, `trove admin post-restore` and `trove admin backup check` take `--config <file>`, `--log-level <level>` and
 `--json` (the result as one JSON document). They load the configuration without a role and never open Valkey; every `trove backup`
@@ -1017,7 +1101,7 @@ server:
       base_url: https://packages.example.com   # example; required; an origin
       hosts: []                         # default: the host of base_url only; example: [pkgs.example.org]
       wildcard_host: ""                 # default: none; example: "*.registry.example.com"
-      host_roots: {}                    # default; example: {pkgs.example.org: web/docker-hub}; an exact host of the endpoint -> a repository's qualified name <projectKey>/<repoKey>; reserved, no route uses it yet
+      host_roots: {}                    # default; example: {pkgs.example.org: web/docker-hub}; an exact host of the endpoint -> a repository's qualified name <projectKey>/<repoKey>; for an OCI repository /v2/<name>/… on that host is its distribution API (R-OCI-029), any other binding has no effect
       trusted_proxies: []               # default: server.trusted_proxies
       pool: ""                          # default: served by the main web Deployment; example: ep-customers
       max_in_flight: 1024               # default, per replica and endpoint
@@ -1221,7 +1305,7 @@ storage:
     commit_attempts: 5                  # default
     commit_deadline: 1h                 # default; below orphans.min_age / 2
     blob_wait_timeout: 120s             # default; above 2 times gc.delete_settle
-  uploads:                              # multi-request upload sessions (R-STOR-011; the keys exist, the sessions are not built yet)
+  uploads:                              # multi-request upload sessions (R-STOR-011)
     part_size: 16MiB                    # default; 5MiB to 5GiB; storage.upload.max_size must not exceed 10,000 parts of it
     writer_lease: 60s                   # default
     session_ttl: 4h                     # default
@@ -1648,7 +1732,7 @@ ui:
   client_setup:
     token_env_var: TROVE_TOKEN          # default; the variable the credentials=env setup snippets read the token from
     token_ttl: 720h                     # default; the lifetime the setup dialog asks for; at most auth.tokens.pat.max_ttl
-oci:                                    # the OCI registry (R-OCI-005, R-OCI-019; the registry is under construction, the keys are read by its work packages)
+oci:                                    # the OCI registry (R-OCI-005, R-OCI-019); the per-repository settings are the repository member oci.mirror, the upload sessions storage.uploads
   token_lifetime: 300s                  # default; 60s to 3600s; the lifetime of a registry token, never beyond the expiry of the trove token it was issued for
   unreferenced_blob_grace: 24h          # default; at least 1m and above storage.uploads.session_max_age; the age a blob of an image name needs before the sweep removes it for being referenced by no manifest
 deb:                                    # the Debian (APT) format (R-DEB-010, R-DEB-012, R-DEB-014, R-DEB-026; the indexes are under construction, the keys are read by its work packages)
@@ -1755,6 +1839,62 @@ nuget:
 
 A change of `enabled`, `matchPublicAdvisories` or the upstream URL enqueues a `vuln-rescan` of the repository in the same
 transaction; `blockMalicious` and `onMissingData` act from the repository snapshot without a job.
+
+</details>
+
+<details>
+<summary>OCI registry: the repository document of an OCI repository, the token service and the registry API (T-16)</summary>
+
+An OCI repository is created like any other (`POST /api/v1/projects/{projectKey}/repositories`, `format: oci`). What is particular
+to the format, as a document (JSON, shown as YAML). Sources: the descriptor in [format.go](internal/formats/oci/format.go), the
+schema [oci/settings.schema.json](internal/formats/oci/settings.schema.json), the remote rules in
+[validate_remote.go](internal/repository/validate_remote.go) and [validate_mirror.go](internal/repository/validate_mirror.go).
+
+```yaml
+key: docker-hub                         # example; the key is a component of every image reference
+class: remote                           # example: local | remote | virtual
+format: oci
+local:
+  packageOwnership: enforce             # default for OCI: the first push of an image name records its owners
+remote:
+  url: https://registry-1.docker.io/    # default; a path is a namespace prefix: https://ghcr.io/acme serves app from ghcr.io/acme/app
+  authMode: none                        # default: none | basic | bearer; bearer sends the password as a static token and runs no handshake
+  username: ""                          # default; basic only
+  password: {value: "<access token>"}   # example; write-only, a read shows {"set": true}
+  extraHosts: [{pattern: auth.docker.io, sendCredentials: true}]   # default for the Docker Hub URL only: its token realm; another registry gets []
+  cache:
+    metadataTtlSeconds: 300             # default for OCI: a tag is revalidated with a HEAD after this period
+    notFoundTtlSeconds: 300             # default for OCI
+  mode: pullThrough                     # default: pullThrough | mirror
+  mirror:
+    discovery: auto                     # default: auto | listing (the registry's catalog) | names (the include patterns without a wildcard); OCI has no change feed
+    maxBytes: null                      # default; a mirror of https://registry-1.docker.io/ needs this or include patterns with a literal prefix
+oci:
+  mirror:                               # remote repositories only (422 not_applicable for another class); read in mode mirror
+    tags: ["latest"]                    # default; 1 to 64 patterns with * and ?, each ^[a-zA-Z0-9_.*?-]{1,128}$; a tag without a wildcard is always kept
+    excludeTags: []                     # default; at most 64 patterns
+    platforms: []                       # default: every platform; at most 32 of os/arch or os/arch/variant; linux/arm64 includes linux/arm64/v8
+virtual:
+  members: [docker-local, docker-hub]   # example; local and remote OCI repositories of the same project, in order
+  deployTarget: docker-local            # example; the local member that receives pushes, uploads and mounts; null: no push (403 DENIED)
+```
+
+An Owner of the project without `repositories:write-config` cannot change `oci.mirror` (`422 mirror_restricted`), as for
+`remote.mirror`. The other members of `remote` and of `virtual` are those of every format ([manual](docs/manual/admin/repositories.md#settings-that-are-set-through-the-api)).
+
+The token service and the registry API, as a client reaches them:
+
+| Request | Answer |
+|---|---|
+| `GET /v2/_token?service=<host>&scope=repository:<projectKey>/<repoKey>/<name>:pull,push` with `Authorization: Basic <any user>:<trove token>` | `200 {"token": "trv_rgt_…", "access_token": "trv_rgt_…", "expires_in": 300, "issued_at": "<RFC 3339>"}` (`expires_in` is `oci.token_lifetime`, less when the trove token expires sooner); the grant holds the actions of each scope the caller may hold, and nothing for the others. Without a credential: an anonymous token where anonymous access is on, else `401` |
+| `POST /v2/_token` with `grant_type=password&username=<any>&password=<trove token>&service=…&scope=…` (containerd) | the same |
+| a malformed request (a wrong `service`, a bad form) | `400` with one body for both kinds of client: the distribution list `{"errors": [{"code": "UNSUPPORTED", …}]}` and OAuth 2.0's `error` and `error_description` |
+| a repository route with a registry token that lacks the action | `401` `UNAUTHORIZED` with `error="insufficient_scope"`, so the client asks for a new token |
+| a repository route with a token that holds the action, but no permission | `403` `DENIED`; a repository the caller may not see answers `404` `NAME_UNKNOWN`, the same as one that does not exist |
+
+The errors of the registry routes are the distribution specification's list, `{"errors": [{"code": "MANIFEST_UNKNOWN", "message": …, "detail": null}]}`
+([errors.go](internal/formats/oci/errors.go)); the message carries what a person needs, and the `oci_*` codes of [the registry](internal/errs/codes.go)
+map onto these codes. The table of codes and statuses is R-OCI-008 of [formats/oci.md](docs/spec/formats/oci.md).
 
 </details>
 
@@ -2480,7 +2620,7 @@ endpoints: {}                           # default: only the default endpoint; th
 #    baseUrl: https://packages.example.com   # example; required; an origin
 #    hosts: []                          # default; example: [pkgs.example.org]
 #    wildcardHost: ""                   # default; example: "*.packages.example.com"
-#    hostRoots: {}                      # default; host -> qualified repository name <projectKey>/<repoKey>, reserved
+#    hostRoots: {}                      # default; host -> qualified repository name <projectKey>/<repoKey>; binds the host's /v2/ to an OCI repository
 #    surface: [packages]                # default: ui is refused on a further endpoint
 #    auth: {tokenTypes: [sat], boundTokensOnly: true, anonymous: false}   # default
 #    exposure: rules                    # default: rules | all

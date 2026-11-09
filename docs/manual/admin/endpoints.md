@@ -73,7 +73,7 @@ config:
       external: {requests_per_second: 50, burst: 200, key: principal}   # default; key: principal | address
 ```
 
-The key `hostRoots` maps an exact host of the endpoint to a repository's qualified name, `<projectKey>/<repoKey>` (for example `{pkgs.example.org: web/docker-hub}`); it is reserved for later package formats and has no effect yet, and a value that is no qualified name fails the start. The complete list, including the Service and Ingress keys, is in the [full reference](https://github.com/guided-traffic/trove/blob/main/README.md#-full-reference).
+The key `hostRoots` maps an exact host of the endpoint to a repository's qualified name, `<projectKey>/<repoKey>` (for example `{pkgs.example.org: web/docker-hub}`); for an OCI repository the host's `/v2/` then is the registry of that one repository, which a Docker Engine can use as its `registry-mirrors` entry ([Container image repositories](container-repositories.md#the-docker-engine-mirror-on-a-bound-host)); a binding to a repository of another format, or to one that does not exist, has no effect. The host must be one of the endpoint's `hosts`, and a value that is no qualified name fails the start. The complete list, including the Service and Ingress keys, is in the [full reference](https://github.com/guided-traffic/trove/blob/main/README.md#-full-reference).
 
 ### What the chart creates
 

@@ -1,6 +1,6 @@
 # Managing repositories
 
-This page explains how administrators create, configure, edit and delete repositories. It covers the Repositories screen and its creation wizard, the settings every repository shares, the settings of generic and npm repositories, how npm remote and virtual repositories are wired to their upstream and members, the protection against dependency confusion, and the file operations an administrator has.
+This page explains how administrators create, configure, edit and delete repositories. It covers the Repositories screen and its creation wizard, the settings every repository shares, the settings of generic, npm, NuGet and OCI repositories, how remote and virtual repositories are wired to their upstream and members, the protection against dependency confusion, and the file operations an administrator has.
 
 ## Formats and classes
 
@@ -9,6 +9,7 @@ This page explains how administrators create, configure, edit and delete reposit
 | Generic | local | `https://trove.example.com/files/<projectKey>/<key>/` |
 | npm | local, remote, virtual | `https://trove.example.com/api/npm/<projectKey>/<key>/` |
 | NuGet | local, remote, virtual | `https://trove.example.com/api/nuget/<projectKey>/<key>/v3/index.json` |
+| OCI (Docker) | local, remote, virtual | `trove.example.com/<projectKey>/<key>` as the start of an image reference; the protocol is below `https://trove.example.com/v2/` ([Container image repositories](container-repositories.md)) |
 
 A **local** repository holds what is uploaded or published to it. A **remote** repository fetches from an upstream registry and caches what it fetched. A **virtual** repository combines local and remote repositories behind one address. How users see the classes is described in [Repositories](../user/repositories.md).
 
@@ -25,7 +26,7 @@ The page of a repository shows its **Project**. A repository is created in its p
 ## Create a repository
 
 1. Select **Create repository**.
-2. **Format**: choose the format of the repository from the tiles, for example **Generic**, **npm** or **NuGet**. **Search by package type** narrows the tiles by name. The format comes first because it decides what the rest of the wizard can offer. With the keyboard, move to the tiles with Tab, move over them with the arrow keys and choose one with Enter or Space.
+2. **Format**: choose the format of the repository from the tiles, for example **Generic**, **npm**, **NuGet** or **OCI (Docker)**. **Search by package type** narrows the tiles by name. The format comes first because it decides what the rest of the wizard can offer. With the keyboard, move to the tiles with Tab, move over them with the arrow keys and choose one with Enter or Space.
 3. **Class**: choose **Local**, **Remote** or **Virtual**. A class that the chosen format does not implement is shown unavailable, with the reason, and cannot be chosen. Going back and choosing another format keeps the class when the new format has it and starts the format settings and the mirror section afresh.
 4. **Basic settings**: enter the **Key**, a **Description** and **Administrator notes**. The wizard checks the key as you type and reports **The key is available.** or **A repository with this key already exists.**
 5. **Access settings** (or **Access and npm settings** for a format with settings of its own): set the patterns and switches described below and the format settings. For a remote repository the step is **Access and upstream settings**, **Access, upstream and npm settings**, or, for a format that can mirror, **Access, upstream and mirror settings** or **Access, upstream, npm and mirror settings**; it adds the [upstream](#the-upstream-of-a-remote-repository) and the [mirror](#mirror).
@@ -40,7 +41,7 @@ The key rules:
 - A key is unique within its project and stays taken there until a deleted repository is completely removed; another project can have a repository of the same key.
 - Key, class and format cannot be changed after creation.
 
-The wizard creates an npm remote repository with the upstream `https://registry.npmjs.org/` and a virtual repository without members. Configure a different upstream, the members and the deployment target afterwards as described in [Settings that are set through the API](#settings-that-are-set-through-the-api).
+The wizard creates a remote repository with the format's well-known upstream unless you enter another (`https://registry.npmjs.org/` for npm, `https://api.nuget.org/v3/index.json` for NuGet, `https://registry-1.docker.io/` for OCI) and a virtual repository without members. Configure a different upstream, the members and the deployment target afterwards as described in [Settings that are set through the API](#settings-that-are-set-through-the-api).
 
 ## Settings every repository has
 
@@ -54,7 +55,7 @@ The wizard creates an npm remote repository with the upstream `https://registry.
 | **Require authentication, even where anonymous read is granted** | `requireAuthentication` | off | Refuses requests without a credential whatever the policies say |
 | **Hide existence from callers without access** | `hideExistence` | **Use the installation setting** | **Hide: answer as if it did not exist** answers 404 to refused reads, **Do not hide: answer 403** answers 403 |
 
-For a generic repository the patterns match paths; for npm they match package names, such as `@acme/*`. Up to 100 patterns per list; **Pattern syntax** in the form explains `*`, `**`, `?` and `\`. Changes to **Require authentication** and **Hide existence** are recorded as `authz.settings.changed` in the audit log.
+For a generic repository the patterns match paths; for npm they match package names, such as `@acme/*`; for OCI they match image names, such as `team/*`. Up to 100 patterns per list; **Pattern syntax** in the form explains `*`, `**`, `?` and `\`. Changes to **Require authentication** and **Hide existence** are recorded as `authz.settings.changed` in the audit log.
 
 ## Format settings
 
@@ -74,6 +75,7 @@ The settings of a format are drawn from the schema the format publishes, so the 
 | npm, every class | **audit** › **timeout**, **maxBodySize** | `30s`, `1MiB` | Limits of one audit request; the body limit applies in every mode, the timeout to `forward` only |
 | npm virtual | **latestStrategy** | `highest-member-latest` | How `latest` is merged: the highest `latest` of the members, or `newest-published` |
 | npm virtual | **distTagStrategy** | `member-order` | How other dist-tags are merged: the first member in order, `highest-semver` or `newest-published` |
+| OCI remote | **mirror** › **tags**, **excludeTags**, **platforms** | `latest`, none, every platform | Which tags and platforms a mirror copies; read in mode **Mirror** only ([The mirror mode](container-repositories.md#the-mirror-mode)). OCI local and virtual repositories have no settings of the format |
 
 ## The upstream of a remote repository
 
@@ -81,12 +83,12 @@ A remote repository has an **Upstream** section in the access settings step of t
 
 | UI label | Document key | Default | Meaning |
 |---|---|---|---|
-| **Upstream URL** | `remote.url` | the format's well-known upstream (`https://registry.npmjs.org/` for npm, `https://api.nuget.org/v3/index.json` for NuGet) | The wizard starts with it filled in; an empty field means it. A format without a well-known upstream needs an address. `http` or `https`, no user information |
+| **Upstream URL** | `remote.url` | the format's well-known upstream (`https://registry.npmjs.org/` for npm, `https://api.nuget.org/v3/index.json` for NuGet, `https://registry-1.docker.io/` for OCI) | The wizard starts with it filled in; an empty field means it. A format without a well-known upstream needs an address. `http` or `https`, no user information |
 | **Authentication** | `remote.authMode` | **None** | **None**, **Username and password** (`basic`) or **Bearer token** (`bearer`) |
 | **Username** | `remote.username` | empty | With **Username and password** only |
 | **Password or token** | `remote.password` | none | Write-only, see below |
-| **Metadata cache period in seconds** | `remote.cache.metadataTtlSeconds` | the format's (npm `7200`, NuGet `300`), shown in the hint | How long fetched metadata is served without asking the upstream again; empty is the default |
-| **Negative cache period in seconds** | `remote.cache.notFoundTtlSeconds` | the format's (`1800`), shown in the hint | How long an upstream "not found" is remembered; empty is the default |
+| **Metadata cache period in seconds** | `remote.cache.metadataTtlSeconds` | the format's (npm `7200`, NuGet `300`, OCI `300`), shown in the hint | How long fetched metadata is served without asking the upstream again; empty is the default |
+| **Negative cache period in seconds** | `remote.cache.notFoundTtlSeconds` | the format's (npm and NuGet `1800`, OCI `300`), shown in the hint | How long an upstream "not found" is remembered; empty is the default |
 | **Offline** | `remote.availability.mode` | off (`online`) | The upstream is not contacted; clients get what is already stored |
 
 A member left empty or at its default is not written. The other members of `remote` (extra hosts, limits, integrity, the source network, the remaining cache members) are not in the form; the [API](#npm-remote-the-upstream) sets them, and a save from the form leaves them as they are.
@@ -97,7 +99,7 @@ A member left empty or at its default is not written. The other members of `remo
 
 ## Mirror
 
-A remote repository of a format whose upstream trove can list, for example npm, has a **Mirror** section in the access settings step of the wizard (the fourth step, below the upstream) and a **Mirror** tab on its page. It is shown only for such formats; a format that cannot list its upstream has none.
+A remote repository of a format whose upstream trove can list (npm, NuGet and OCI) has a **Mirror** section in the access settings step of the wizard (the fourth step, below the upstream) and a **Mirror** tab on its page. It is shown only for such formats; a format that cannot list its upstream has none.
 
 **Mode** is **Pull-through** (the default: fetch and store what clients ask for) or **Mirror** (also store, in background passes, every package of the upstream that the include patterns and the bounds admit). The other members show in mode **Mirror** only:
 
@@ -282,7 +284,7 @@ Deleting needs a recent sign-in. A local or remote repository is marked **being 
 
 ## The How to use tab
 
-**How to use** shows the setup for this repository, with the **Client** to choose: **npm**, **pnpm**, **Yarn Berry (2 and later)** or **Yarn Classic (1.x)** for npm, **curl** for generic. It explains the class, how to point the client at the repository and sign in, and how to install, publish, manage dist-tags or transfer files, depending on the class. **Open the client setup** leads to the setup assistant described in [Connecting a package client](../user/client-setup.md).
+**How to use** shows the setup for this repository, with the **Client** to choose: **npm**, **pnpm**, **Yarn Berry (2 and later)** or **Yarn Classic (1.x)** for npm, **.NET CLI (dotnet)**, **NuGet CLI (nuget.exe)** or **Visual Studio** for NuGet, **Docker CLI (with Buildx)** or **Podman** for OCI, **curl** for generic. It explains the class, how to point the client at the repository and sign in, and how to install, publish, manage dist-tags or transfer files, depending on the class. **Open the client setup** leads to the setup assistant described in [Connecting a package client](../user/client-setup.md).
 
 ## File operations
 
@@ -295,4 +297,4 @@ Administrators hold every repository action, so the browser and the file-transfe
 | Download | **Browse** › **Download**, `GET /files/<projectKey>/<key>/<path>` | `read` |
 | Delete a file or folder | **Browse** › **Delete**, `DELETE /files/<projectKey>/<key>/<path>` | `delete` on every item |
 
-Uploads go to generic local repositories only; npm content is published with the npm client. Deleting npm tarballs this way respects package ownership. A folder with many items is deleted by a background job. Only an administrator can remove, through `DELETE /api/v1/projects/<projectKey>/repositories/<key>/items`, items that lie outside the include patterns or in a disabled repository. Copy, move, item properties and a trash are not available in this version.
+Uploads go to generic local repositories only; npm content is published with the npm client, NuGet content with a NuGet client, and container images with a container client through the registry (a raw upload into an OCI repository answers `409`; a raw delete runs the cascade of the registry's `DELETE`). Deleting npm tarballs this way respects package ownership. A folder with many items is deleted by a background job. Only an administrator can remove, through `DELETE /api/v1/projects/<projectKey>/repositories/<key>/items`, items that lie outside the include patterns or in a disabled repository. Copy, move, item properties and a trash are not available in this version.

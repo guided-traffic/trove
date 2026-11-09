@@ -4,7 +4,7 @@ Status: phases 1 to 6 are built: the foundation (M0), the access core (M1), the 
 the trove Bastion and the vulnerability scanning (M4b). The repository holds the Go binary,
 its configuration, the database and cache layers, the S3 blob layer, the system and management APIs, the ops
 endpoints, the OIDC login and the break-glass account, the tokens, the permission policies and the grant index,
-the endpoints and exposure rules, the generic repository format with raw transfer under `/files/`, the npm and NuGet formats with their local, remote (pull-through proxy) and virtual repositories, the audit
+the endpoints and exposure rules, the generic repository format with raw transfer under `/files/`, the npm and NuGet formats with their local, remote (pull-through proxy) and virtual repositories, the OCI (Docker) registry below `/v2/` with its token service, upload sessions, local, remote, mirror and virtual classes ([oci.md](oci.md)), the audit
 trail, the Angular admin UI with the package screens, client setup and the in-app manual, the Helm chart, the local development profile on kind, the integration, end-to-end
 and chart tests, and the CI workflows. The vulnerability scanning (the advisory mirror, the findings and their triage, the download block, the client audits, the report) is integrated
 and its flow is tested end to end at the integration tier ([vulnerabilities.md](vulnerabilities.md), [test/integration/vulnflow](../../test/integration/vulnflow)); its browser journeys and client runs are the
@@ -71,7 +71,7 @@ end-to-end wave's. The contracts of the backup lane exist (phase 7, [backup.md](
 | [packages.md](packages.md) | The package screens' API: the read model across repositories (`internal/packages/view`), the visibility filter (`authz.ReadScoper`) and the statements that count with it, the format's `ViewAdapter`, the README renderer (`internal/packages/readme`), the client setup snippets and the tests that pin them (R-API-029, R-API-030, R-UI-008, Q-API-164 to Q-API-168) |
 | [npm.md](npm.md) | The npm format: the route table, classification, error shape, publish, the data port and the leaf libraries `name`, `semver`, `manifest`, `tarball`, `publish` (R-NPM-001 to R-NPM-008, R-NPM-041, R-NPM-043, R-NPM-044, R-ARCH-028); the package documents with their validators and rendition cache, tarballs and the serve-time check, dist-tags, unpublish and the removal hooks, whoami and ping (R-NPM-009 to R-NPM-017, R-NPM-019, R-NPM-047); the remote and virtual classes are in its sections; deprecate (P1) is not built |
 | [deb.md](deb.md) | The Debian (APT) format as far as it is built (the skeleton of T-17): the address, the grammars, the classification, the route table, the error shape, the settings, the data port and its stubs, the tables and the sealed key column, the jobs, the configuration keys, and what each work package fills in (R-DEB-001 to R-DEB-005, R-DEB-008, ADR-170 to ADR-172) |
-| [oci.md](oci.md) | The OCI and Docker registry format as far as it is built: the registry root and its address, the grammars, the storage layout, the error shape, the settings, the data port and its tables, the upload-session tables, the key grammar of every format, the configuration keys, and what each work package fills in (R-OCI-001, R-OCI-002, R-OCI-007, R-OCI-008, R-OCI-026, Q-OCI-3, Q-OCI-4) |
+| [oci.md](oci.md) | The OCI (Docker) registry (R-OCI-001 to R-OCI-035): the registry root below `/v2/` and its one match, the token service and registry tokens, manifests and the push path, blob uploads over the upload sessions and the mount, removal, the sweep and the replay, the remote class, the mirror and the virtual class, the configuration keys, the tests, the protocol tests and the conformance suite, and the counting stub registry |
 | [deb.md](deb.md) | The Debian (APT) format as far as it is built: the OpenPGP leaf package (keys, import rules, signing, verification, bounds) and the counting stub archive with its generator of installable `.deb` files, keys, switches and control API (R-DEB-015, R-DEB-016, R-DEB-020, R-DEB-034, R-DEB-035) |
 | [nuget.md](nuget.md) | The foundation of the NuGet format before the format exists: the rule libraries (`id`, `version`, `nupkg`, `nuspec`), the golden vectors and their regeneration, fuzzing, the counting test upstream and the contract additions the format uses |
 | [proxy.md](proxy.md) | The pull-through proxy: the cache invalidation of remote repositories (rows, the per-replica matcher the engine asks, the invalidate and entry-list operations, the fold task); the engine sections are added as it is built |
@@ -152,7 +152,8 @@ trove/
 ├── internal/
 │   ├── app/                  # composition root: components per role, start and stop order
 │   ├── api/edge/             # request-to-domain conversions every entry point shares: SubjectFrom (with the endpoint), Access (the request's index)
-│   ├── api/dispatch/         # the format dispatcher: /api/<format>/<projectKey>/<repoKey>/…, the error shape of a format prefix
+│   ├── api/dispatch/         # the format dispatcher: /api/<format>/<projectKey>/<repoKey>/…, the error shape of a format prefix, and the one match below /v2/ (registry_target.go)
+│   ├── api/registry/         # the OCI registry root: the enforcement point of registry tokens, the token service /v2/_token, the version check, the catalog (oci.md)
 │   ├── api/login/            # the browser login routes under /auth/ (edge of internal/auth/oidc): cookies, redirects, the error page
 │   ├── api/rawfiles/         # the /files/ handler (edge of internal/files)
 │   ├── api/v1/               # management API handlers and the conventions (paging, ETag, merge patch, idempotency, CORS,
@@ -192,7 +193,9 @@ trove/
 │   ├── files/                # the generic layer: decides on the request's index, resolves, admits; over items/
 │   ├── items/                # the item store: spool, the one commit, stat, open, listing, subtree delete, statistics; no authz
 │   ├── formats/              # format contract and registry; catalog/ (the facts of every format, a leaf), untrusted/ (limits of
-│   │                         # untrusted content), generic/ (raw files), all/ registers every format
+│   │                         # untrusted content), generic/ (raw files), npm/, nuget/, oci/, deb/, all/ registers every format
+│   ├── formatdata/           # the data ports of the formats (npm/, nuget/, oci/, deb/): sqlc-backed side tables, jobs such as oci-sweep
+│   ├── uploads/              # the upload-session service of multi-request blob uploads (R-STOR-011): sessions, parts, tails, finalize
 │   ├── secrets/              # key ring and sealed-column registry
 │   ├── vuln/                 # vulnerability scanning (contracts laid, vulnerabilities.md): the domain vocabulary and ports; advisory/, match/, osv/, metrics/ are leaves; store/, sync/, evaluate/, triage/, report/ are the work packages'
 │   ├── mirror/               # the mirror mode of remote repositories (mirror.md): the engine (dispatch, pass, fence, window, bounds, store, metrics) beside the names of its job kinds and queue; discover/ is the leaf contract a format's remote adapter implements
@@ -237,7 +240,7 @@ M2 starts with its schema: the tables of the remote engine, the virtual engine, 
 ([database.md](database.md#m2-tables)), with their configuration keys ([configuration.md](configuration.md#m2-keys)), change
 areas and layer rows in `internal/archtest`. Built, from [R-ARCH-003](../spec/architecture.md): the npm format (`internal/formats/npm`), its store
 (`internal/formatdata/npm`), the remote fetch engine (`internal/proxy/`) and the virtual engine (`internal/virtual/`).
-The NuGet format (`internal/formats/nuget`) followed in phase 4 ([nuget.md](nuget.md)). The OCI format (`internal/formats/oci`, data port `internal/formatdata/oci`) is registered as a skeleton ([oci.md](oci.md)).
+The NuGet format (`internal/formats/nuget`) followed in phase 4 ([nuget.md](nuget.md)). The OCI format (`internal/formats/oci`, data port `internal/formatdata/oci`, registry root `internal/api/registry`, registry tokens `internal/auth/registrytoken`, upload sessions `internal/uploads`) followed in phase T-16 ([oci.md](oci.md)).
 
 ## Test tiers
 

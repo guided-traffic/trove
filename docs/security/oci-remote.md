@@ -92,6 +92,34 @@ The credential goes to the upstream origin and to `extraHosts` entries with `sen
 
 ## What this does not cover
 
+### H-666 · A cut tags list is assumed to be in byte order
+
+A window beyond the stored part of a tags list the upstream cut is passed through, and a window inside it is answered from the stored document, which
+`parseTaglist` sorts. An upstream that cuts a list it does not list in byte order stores a part that is not the first tags in byte order, and a client that
+pages by `last` can miss tags (a tag listed after the cut that sorts before the last stored one). Distribution registries, Docker Hub and GHCR list in byte
+order. Live for such an upstream only; the effect is a missing tag in a listing, never a wrong image, because a pull names its tag.
+
+### H-667 · A tag is checked against the digest the same upstream announces, and against nothing else
+
+The digest of a manifest by digest and of a blob is verified against the path. A tag is verified against the `Docker-Content-Digest` of the same answer, which
+catches an inconsistent upstream, a proxy that changed the bytes or a cut transfer; it does not catch an upstream that serves other bytes with a matching header,
+and an upstream that sends no such header (the distribution specification makes it optional for a `GET`) is believed: the manifest is stored under the digest of
+the bytes received and served by its tag. The control against an attacker on the path is TLS ([transport-encryption.md](transport-encryption.md)), and against a
+hostile upstream the client pinning by digest. Live today for every remote.
+
+### H-668 · The descriptors of a referrers answer are the upstream's claims
+
+A referrers answer is passed through after the caller's readability filter. The `artifactType`, the `annotations` and the sizes of its descriptors are what the
+upstream says; trove does not fetch the manifests to compare them. A client that reads them (a signature verifier selecting by `artifactType`) trusts the
+upstream for the listing and verifies the manifest it then pulls by digest. Live today for every remote; the answer is kept for the metadata period.
+
+### H-669 · A populate grant scoped by package never admits a pass-through query
+
+The tags list window beyond the stored document and the referrers are pass-through queries. Their populate check is built from the path of the query, which names
+no package to the engine (`formathost/query.go`), so a caller whose `cacheFillAction` permission is scoped by package or by path is treated as one who may not
+fill: the stored window answers, and referrers answer 404. It fails closed. Live today for a repository whose fill permission is not the repository-wide one;
+real for such a caller, who sees no referrers and the stored part of a long tags list only.
+
 ### H-710 · A first pass draws on an allowance that other clients of the same address or account share
 
 Docker Hub counts a manifest `GET` as a pull against the allowance of the address (anonymous) or the account (authenticated). A first pass of n kept tags costs about n manifest `GET`
@@ -120,31 +148,3 @@ the effect is an image that is quietly less complete than the settings say.
 
 Items are stored below the image name (`<name>/_blobs/<digest>`), so a layer that two images of the mirror share is requested from the upstream for each, although the object store keeps one copy
 of the bytes. Live for every mirror of images with a common base; the cost is bandwidth and the upstream's request count, not storage.
-
-### H-666 · A cut tags list is assumed to be in byte order
-
-A window beyond the stored part of a tags list the upstream cut is passed through, and a window inside it is answered from the stored document, which
-`parseTaglist` sorts. An upstream that cuts a list it does not list in byte order stores a part that is not the first tags in byte order, and a client that
-pages by `last` can miss tags (a tag listed after the cut that sorts before the last stored one). Distribution registries, Docker Hub and GHCR list in byte
-order. Live for such an upstream only; the effect is a missing tag in a listing, never a wrong image, because a pull names its tag.
-
-### H-667 · A tag is checked against the digest the same upstream announces, and against nothing else
-
-The digest of a manifest by digest and of a blob is verified against the path. A tag is verified against the `Docker-Content-Digest` of the same answer, which
-catches an inconsistent upstream, a proxy that changed the bytes or a cut transfer; it does not catch an upstream that serves other bytes with a matching header,
-and an upstream that sends no such header (the distribution specification makes it optional for a `GET`) is believed: the manifest is stored under the digest of
-the bytes received and served by its tag. The control against an attacker on the path is TLS ([transport-encryption.md](transport-encryption.md)), and against a
-hostile upstream the client pinning by digest. Live today for every remote.
-
-### H-668 · The descriptors of a referrers answer are the upstream's claims
-
-A referrers answer is passed through after the caller's readability filter. The `artifactType`, the `annotations` and the sizes of its descriptors are what the
-upstream says; trove does not fetch the manifests to compare them. A client that reads them (a signature verifier selecting by `artifactType`) trusts the
-upstream for the listing and verifies the manifest it then pulls by digest. Live today for every remote; the answer is kept for the metadata period.
-
-### H-669 · A populate grant scoped by package never admits a pass-through query
-
-The tags list window beyond the stored document and the referrers are pass-through queries. Their populate check is built from the path of the query, which names
-no package to the engine (`formathost/query.go`), so a caller whose `cacheFillAction` permission is scoped by package or by path is treated as one who may not
-fill: the stored window answers, and referrers answer 404. It fails closed. Live today for a repository whose fill permission is not the repository-wide one;
-real for such a caller, who sees no referrers and the stored part of a long tags list only.

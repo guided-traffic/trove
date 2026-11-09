@@ -8,9 +8,9 @@
 // [Store] port and its generic package rows through the PackageWriter of the hook. The leaf package rows holds the values of the
 // data port.
 //
-// This is the skeleton the work packages of T-16 fill: the format registers, the conformance kit runs, the routes answer 501
-// (routes.go), and the descriptor, the grammars, the layout, the error shape and the settings schema are final. The classes
-// remote and virtual join with their adapters.
+// The format registers the classes local, remote and virtual: the local handlers (manifests, blobs, uploads and the mount, the
+// tags list, referrers, deletes), the remote adapter with its token handshake, revalidation and mirror lister, and the virtual
+// adapter that walks the members. docs/developer/oci.md is the contributor's map of the package.
 package oci
 
 import (

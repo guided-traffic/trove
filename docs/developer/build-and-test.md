@@ -299,6 +299,17 @@ only the harness.
 configuration file, the volume or the bucket backend, with or without Valkey); [developer/bastion.md](bastion.md#the-integration-suite-r-bas-048) describes it. It runs in
 shard `b` of `make test-integration` (about 90 s).
 
+The OCI registry's suites use the harness as well: [oci](../../test/integration/oci) (the data port against PostgreSQL, the protocol
+criteria over `/v2/` on three replicas, the action map of R-AUTHZ-007, the registry with Valkey stopped, and the conformance runner behind
+the build tag `ociconformance`), [ocilocal](../../test/integration/ocilocal) (tags in pages, referrers, a raw delete with its cascade, the
+sweep, the replay and the reinstate), [ociremote](../../test/integration/ociremote) and [ocivirtual](../../test/integration/ocivirtual)
+(against the counting stub registry [test/ocistub](../../test/ocistub) in the test process), [registry](../../test/integration/registry)
+(the walk through the endpoint's handler, the version check, the catalog, the bound host), [uploads](../../test/integration/uploads) (the
+upload sessions against PostgreSQL and S3 on three replicas), and the OCI files of [mirror](../../test/integration/mirror) (`oci_test.go`)
+and [identity](../../test/integration/identity) (`registrytoken_test.go`). All of them run in shard `b` except `mirror`, which is in shard
+`a`; `make oci-conformance` builds and runs the distribution conformance suite after `make test-integration` in shard `b`
+([oci.md](oci.md#the-protocol-tests-and-the-conformance-suite)).
+
 Three things a suite should know. A replica's start is a real start-up: a principal that is named like the break-glass
 account (`auth.break_glass.username`, default `admin`) is refused (the `files` and `api` stacks move the account
 or name the user otherwise). The audit table can be made to refuse an insert with

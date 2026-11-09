@@ -24,7 +24,7 @@ For NuGet the default upstream is `https://api.nuget.org/v3/index.json`: trove r
 
 ### Virtual repositories
 
-A virtual repository is one address for several npm repositories, or several NuGet repositories, of its own project, in an order an administrator sets, for example an internal local repository followed by a remote one. Point your package manager at a virtual repository and you get internal and public packages through one address and one token. Keep in mind:
+A virtual repository is one address for several npm repositories, several NuGet repositories or several OCI repositories, of its own project, in an order an administrator sets, for example an internal local repository followed by a remote one. Point your package manager at a virtual repository and you get internal and public packages through one address and one token. Keep in mind:
 
 - You need the read permission on the members too. A member you may not read is left out without notice.
 - Publishing through a virtual repository goes to its deployment target, a local member. A virtual repository without one refuses every publish.
@@ -47,6 +47,7 @@ Your client reaches a repository at an address built from the installation's add
 | npm | `https://trove.example.com/api/npm/<project>/<key>/` | `https://trove.example.com/files/<project>/<key>/` |
 | NuGet | `https://trove.example.com/api/nuget/<project>/<key>/v3/index.json` | `https://trove.example.com/files/<project>/<key>/` |
 | Generic | `https://trove.example.com/files/<project>/<key>/` | the same |
+| OCI (Docker) | `trove.example.com/<project>/<key>/<image>:<tag>`, an image reference without a scheme | `https://trove.example.com/files/<project>/<key>/` (download and delete; uploads go through the registry) |
 
 The repository screen shows these addresses for your installation, so you do not have to build them yourself. A repository that an administrator moves to another project changes its address: the old address answers `404`, and your client configuration needs the new one.
 
@@ -56,9 +57,10 @@ The repository screen shows these addresses for your installation, so you do not
 |---|---|---|---|
 | npm | Local, remote, virtual | npm, pnpm, Yarn Berry (2 and later), Yarn Classic (1.x) | **Packages** and **Browse** |
 | NuGet | Local, remote, virtual | .NET CLI (dotnet), NuGet CLI (nuget.exe), Visual Studio | **Packages** and **Browse** |
+| OCI (Docker) | Local, remote, virtual | Docker CLI (with Buildx), Podman; Kubernetes through an image pull secret | **Packages** (an image name is a package, a tag a version) and **Browse** |
 | Generic | Local | curl | **Browse** only: generic files have no package names, so they are not listed under **Packages** |
 
-Generic repositories store files of any kind at paths you choose: installers, archives, documents, build outputs. Other formats are not built yet; see [Known limitations](../admin/limitations.md).
+Generic repositories store files of any kind at paths you choose: installers, archives, documents, build outputs. OCI repositories hold container images and other OCI artifacts; [Container images with Docker and Podman](container-images.md) explains them. Other formats are not built yet; see [Known limitations](../admin/limitations.md).
 
 ## What you see depends on your permissions
 
@@ -91,7 +93,7 @@ If you may use the repository but not read its configuration, the screen says **
 | Field | Meaning |
 |---|---|
 | **Class** | Local, remote or virtual |
-| **Format** | npm, NuGet or generic |
+| **Format** | npm, NuGet, OCI (Docker) or generic |
 | **Description** | What the repository is for, as its administrator wrote it |
 | **Client address** | Every address of the repository on this installation: for npm the address for your package manager and the raw file address |
 

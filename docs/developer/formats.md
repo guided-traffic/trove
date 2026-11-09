@@ -483,8 +483,8 @@ The contract is frozen since the end of M3 (E3.3; version 1, and version 2 since
 and every change of its exported surface is an ADR (R-ARCH-025, Q-ARCH-256, Q-ARCH-280). Ordered steps for a new behaviour:
 
 The additions of [ADR-161](../decisions.md#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions)
-show the three kinds: `Host.Uploads()` and `Ingestor.Link` are services (the production host answers `not_implemented` until the
-work package of the sessions lands; the in-memory host implements `Link` and takes an `UploadSessions` in `HostOptions.Uploads`),
+show the three kinds: `Host.Uploads()` and `Ingestor.Link` are services (the production host implements both over `internal/uploads` and
+the item store, [oci.md](oci.md#upload-sessions-r-stor-011); the in-memory host implements `Link` and takes an `UploadSessions` in `HostOptions.Uploads`),
 `Authenticator` and `Revalidator` are optional interfaces, and `catalog.Facts.RegistryRoot`, `DefaultCredentialHosts`,
 `Refusal.Base` and `SetupData.ImagePrefix` are facts that every layer reads.
 

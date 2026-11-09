@@ -89,4 +89,3 @@ The conformance suite's content-management category is run through the local add
 What keeps the refusal honest is `TestR_OCI_028_ADeleteThroughAVirtualRepositoryAnswers405AndDeletesNothing` ([test/integration/ocivirtual](../../test/integration/ocivirtual/virtual_test.go)); no test drives the
 suite's delete sequence at a virtual address, so a change that let a delete through (to the target or to a member) would be caught by that one test and by nothing that exercises the other
 specifications of the category. Live today.
-

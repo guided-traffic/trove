@@ -17,9 +17,10 @@ Readers on GitHub can browse the same files here.
 4. [Vulnerabilities](user/vulnerabilities.md)
 5. [Browsing and transferring files](user/files.md)
 6. [Connecting a package client](user/client-setup.md)
-7. [Personal access tokens](user/access-tokens.md)
-8. [GitLab CI pipelines](user/gitlab-ci-pipelines.md)
-9. [Errors and troubleshooting](user/troubleshooting.md)
+7. [Container images with Docker and Podman](user/container-images.md)
+8. [Personal access tokens](user/access-tokens.md)
+9. [GitLab CI pipelines](user/gitlab-ci-pipelines.md)
+10. [Errors and troubleshooting](user/troubleshooting.md)
 
 ## Administrator guide
 
@@ -35,12 +36,13 @@ Readers on GitHub can browse the same files here.
 10. [Managing tokens](admin/tokens.md)
 11. [GitLab CI federation](admin/gitlab-ci.md)
 12. [Managing repositories](admin/repositories.md)
-13. [Advisory sources](admin/vulnerability-sources.md)
-14. [Security dashboard](admin/security-dashboard.md)
-15. [Admin dashboard](admin/dashboard.md)
-16. [Monitoring and operations](admin/operations.md)
-17. [Upgrades](admin/upgrades.md)
-18. [Known limitations](admin/limitations.md)
+13. [Container image repositories](admin/container-repositories.md)
+14. [Advisory sources](admin/vulnerability-sources.md)
+15. [Security dashboard](admin/security-dashboard.md)
+16. [Admin dashboard](admin/dashboard.md)
+17. [Monitoring and operations](admin/operations.md)
+18. [Upgrades](admin/upgrades.md)
+19. [Known limitations](admin/limitations.md)
 
 The order of these two lists is the order of the manual in the UI; a test in
 [internal/manual](../../internal/manual/) fails when this page and the embedded contents disagree.
