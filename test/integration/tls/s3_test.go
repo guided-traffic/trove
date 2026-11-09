@@ -33,6 +33,7 @@ func TestObjectStoreTLS(t *testing.T) {
 	cfg.CAFile = caFile // a copy this test may rewrite
 	cfg.Region, cfg.Bucket, cfg.ForcePathStyle = env.Region, env.BlobsBucket, env.ForcePathStyle
 	cfg.Prefix = "it-tls/" + randHex(5)
+	testenv.RemoveObjectsAtCleanup(t, cfg.Bucket, cfg.Prefix)
 	cfg.Credentials = config.StorageS3Credentials{
 		Source:              "static",
 		AccessKeyIDFile:     filepath.Join(dir, "id"),
@@ -62,7 +63,6 @@ func TestObjectStoreTLS(t *testing.T) {
 		defer cancel()
 		return c.Put(ctx, key, bytes.NewReader([]byte("tls")), 3, blob.Checksum{})
 	}
-	t.Cleanup(func() { _ = c.Delete(context.Background(), key) })
 	stack, err := os.ReadFile(testenv.CAFile(t))
 	if err != nil {
 		t.Fatal(err)

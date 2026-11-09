@@ -187,27 +187,8 @@ func newS3(t *testing.T) (config.Storage, blob.ObjectStore) {
 	if err != nil {
 		t.Fatalf("object store client: %v", err)
 	}
-	t.Cleanup(func() { removeAll(c, cfg.S3.Prefix) })
+	testenv.RemoveObjectsAtCleanup(t, cfg.S3.Bucket, cfg.S3.Prefix)
 	return cfg, c
-}
-
-func removeAll(c blob.ObjectStore, prefix string) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	token := ""
-	for {
-		page, err := c.List(ctx, prefix+"/", blob.ListOptions{Token: token})
-		if err != nil {
-			return
-		}
-		for _, o := range page.Objects {
-			_ = c.Delete(ctx, o.Key)
-		}
-		if page.Next == "" {
-			return
-		}
-		token = page.Next
-	}
 }
 
 func (e *env) exec(sql string, args ...any) {

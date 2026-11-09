@@ -23,7 +23,7 @@ func (s *Stack) objects(tb testing.TB) (blob.ObjectStore, string) {
 	o := S3Config(tb)
 	cfg.Endpoint, cfg.Region, cfg.Bucket, cfg.ForcePathStyle = o.Endpoint, o.Region, o.BlobsBucket, true
 	cfg.CAFile = CAFile(tb)
-	cfg.Prefix = "it/" + s.name
+	cfg.Prefix = s.ObjectPrefix()
 	dir := tb.TempDir()
 	cfg.Credentials = config.StorageS3Credentials{
 		Source: "static", AccessKeyIDFile: WriteFile(tb, dir, "s3-id", o.AccessKey), SecretAccessKeyFile: WriteFile(tb, dir, "s3-secret", o.SecretKey),

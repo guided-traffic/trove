@@ -144,6 +144,8 @@ func NewStack(tb testing.TB, o StackOptions) *Stack {
 	}
 
 	s := &Stack{tb: tb, name: name, dir: dir, pg: cfg, valkey: o.Valkey, admin: conn, val: apitest.New(tb, v1.EmbeddedYAML())}
+	// Registered before any replica starts, so it runs after every replica has stopped (F-113).
+	RemoveObjectsAtCleanup(tb, S3Config(tb).BlobsBucket, s.ObjectPrefix())
 	var pooler []string
 	if PgPooled(tb) {
 		// The replicas' main pool goes through PgBouncer in transaction mode; the
@@ -193,7 +195,7 @@ func (s *Stack) environ(host, port, name, userFile, passFile string) []string {
 		"TROVE_STORAGE_S3_CREDENTIALS_ACCESS_KEY_ID_FILE=" + WriteFile(tb, dir, "s3-id", s3.AccessKey),
 		"TROVE_STORAGE_S3_CREDENTIALS_SECRET_ACCESS_KEY_FILE=" + WriteFile(tb, dir, "s3-secret", s3.SecretKey),
 		// An S3 prefix of the installation keeps parallel suites apart in one bucket.
-		"TROVE_STORAGE_S3_PREFIX=it/" + name,
+		"TROVE_STORAGE_S3_PREFIX=" + s.ObjectPrefix(),
 		"TROVE_SECRETS_ENCRYPTION_KEY_FILES=[" + strconv.Quote(s.sealed) + "]", "TROVE_SECRETS_ACTIVE_KEY_ID=2026-10",
 		"TROVE_SERVER_BASE_URL=http://trove.test", "TROVE_SERVER_LISTEN=127.0.0.1:0",
 		// The management API's own classes are tested where they are the subject;
@@ -211,6 +213,9 @@ func (s *Stack) environ(host, port, name, userFile, passFile string) []string {
 		"TROVE_CONFIG_FILE=" + WriteFile(tb, dir, "trove.yaml", ""),
 	}
 }
+
+// ObjectPrefix is the installation's prefix in the stack's blob bucket, it/<database>.
+func (s *Stack) ObjectPrefix() string { return "it/" + s.name }
 
 // Database returns the name of the installation's database.
 func (s *Stack) Database() string { return s.name }

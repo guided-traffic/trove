@@ -332,28 +332,9 @@ func newS3(t *testing.T) *s3Env {
 	if err != nil {
 		t.Fatalf("object store client: %v", err)
 	}
+	testenv.RemoveObjectsAtCleanup(t, cfg.S3.Bucket, cfg.S3.Prefix)
 	e := &s3Env{cfg: cfg, raw: c, prefix: cfg.S3.Prefix}
-	t.Cleanup(e.removeAll)
 	return e
-}
-
-func (e *s3Env) removeAll() {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	token := ""
-	for {
-		page, err := e.raw.List(ctx, e.prefix+"/", blob.ListOptions{Token: token})
-		if err != nil {
-			return
-		}
-		for _, o := range page.Objects {
-			_ = e.raw.Delete(ctx, o.Key)
-		}
-		if page.Next == "" {
-			return
-		}
-		token = page.Next
-	}
 }
 
 // countingStore counts the requests of one replica's object-store client.

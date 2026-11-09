@@ -282,7 +282,8 @@ func TestR_BAK_006_TargetServerSideCopy(t *testing.T) {
 
 	srcCfg := targetConfig(t, testenv.Get(t, "TROVE_TEST_S3_BUCKET_BLOBS"), "none")
 	src := newTarget(t, srcCfg)
-	cleanup(t, src, srcCfg.Target.Prefix+"/")
+	// The source is in the versioned blob bucket, where a deletion through the target leaves the versions behind (F-113).
+	testenv.RemoveObjectsAtCleanup(t, srcCfg.Target.Bucket, srcCfg.Target.Prefix)
 	ref := func(key string, size int) target.ObjectRef {
 		return target.ObjectRef{Endpoint: testenv.Get(t, "TROVE_TEST_S3_ENDPOINT"), Bucket: src.Bucket(), Key: key, Size: int64(size)}
 	}

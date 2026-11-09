@@ -81,22 +81,9 @@ func newS3(tb testing.TB) *s3Env {
 	if err != nil {
 		tb.Fatalf("object store client: %v", err)
 	}
+	testenv.RemoveObjectsAtCleanup(tb, cfg.Bucket, cfg.Prefix)
 	e := &s3Env{cfg: cfg, raw: c, prefix: cfg.Prefix}
-	tb.Cleanup(func() { e.removeAll(tb) })
 	return e
-}
-
-// removeAll deletes every object and unfinished upload below the test's prefix.
-func (e *s3Env) removeAll(tb testing.TB) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	ups, _ := e.raw.ListMultipart(ctx, e.prefix+"/")
-	for _, u := range ups {
-		_ = e.raw.AbortMultipart(ctx, u.Key, u.UploadID)
-	}
-	for _, k := range e.keys(tb, e.prefix+"/") {
-		_ = e.raw.Delete(ctx, k)
-	}
 }
 
 // keys lists every object below a prefix.

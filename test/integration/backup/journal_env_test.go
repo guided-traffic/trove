@@ -174,6 +174,7 @@ func newJEnv(t *testing.T) *jenv {
 	raw := make([]byte, 4)
 	_, _ = rand.Read(raw)
 	cfg.Prefix = "it/journal-" + hex.EncodeToString(raw)
+	testenv.RemoveObjectsAtCleanup(t, cfg.Bucket, cfg.Prefix)
 	dir := t.TempDir()
 	cfg.Credentials = config.StorageS3Credentials{
 		Source: "static", AccessKeyIDFile: testenv.WriteFile(t, dir, "s3-id", o.AccessKey), SecretAccessKeyFile: testenv.WriteFile(t, dir, "s3-secret", o.SecretKey),

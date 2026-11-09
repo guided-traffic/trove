@@ -126,6 +126,8 @@ func newInstall(t *testing.T) *install {
 	for _, s := range vk.Sentinels {
 		sentinels = append(sentinels, strconv.Quote(s))
 	}
+	prefix := "it-tls/" + randHex(5)
+	testenv.RemoveObjectsAtCleanup(t, s3.BlobsBucket, prefix)
 	key := write(t, dir, "2026-10.key", base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)))
 	env := append(databaseEnv(t, dir, name, testenv.CAFile(t)),
 		"TROVE_VALKEY_SENTINEL_ADDRESSES=["+strings.Join(sentinels, ",")+"]", "TROVE_VALKEY_SENTINEL_PRIMARY_NAME="+vk.PrimaryName,
@@ -134,7 +136,7 @@ func newInstall(t *testing.T) *install {
 		"TROVE_VALKEY_TLS_CA_FILE="+vk.CAFile, "TROVE_VALKEY_KEY_PREFIX="+vk.KeyPrefix,
 		"TROVE_STORAGE_S3_BUCKET="+s3.BlobsBucket, "TROVE_STORAGE_S3_ENDPOINT="+s3.Endpoint, "TROVE_STORAGE_S3_REGION="+s3.Region,
 		"TROVE_STORAGE_S3_FORCE_PATH_STYLE=true", "TROVE_STORAGE_S3_CA_FILE="+testenv.CAFile(t),
-		"TROVE_STORAGE_S3_PREFIX=it-tls/"+randHex(5),
+		"TROVE_STORAGE_S3_PREFIX="+prefix,
 		"TROVE_STORAGE_S3_CREDENTIALS_SOURCE=static",
 		"TROVE_STORAGE_S3_CREDENTIALS_ACCESS_KEY_ID_FILE="+write(t, dir, "s3-id", s3.AccessKey),
 		"TROVE_STORAGE_S3_CREDENTIALS_SECRET_ACCESS_KEY_FILE="+write(t, dir, "s3-secret", s3.SecretKey),

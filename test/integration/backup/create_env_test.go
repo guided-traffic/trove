@@ -124,7 +124,7 @@ func newInstall(t *testing.T) *install {
 		t.Fatal(err)
 	}
 	in.obj = in.client
-	t.Cleanup(func() { removeAll(in.obj, in.prefix) })
+	testenv.RemoveObjectsAtCleanup(t, in.s3cfg.Bucket, in.prefix)
 
 	storage := blobtest.Storage(t, t.TempDir())
 	storage.S3 = in.s3cfg
@@ -156,25 +156,6 @@ func sourceConfig(t testing.TB, dir string) config.StorageS3 {
 		SecretAccessKeyFile: secretFile(t, dir, "src-secret", testenv.Get(t, "TROVE_TEST_S3_SECRET_KEY")),
 	}
 	return cfg
-}
-
-func removeAll(obj blob.ObjectStore, prefix string) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	token := ""
-	for {
-		page, err := obj.List(ctx, prefix+"/", blob.ListOptions{Token: token})
-		if err != nil {
-			return
-		}
-		for _, o := range page.Objects {
-			_ = obj.Delete(ctx, o.Key)
-		}
-		if page.Next == "" {
-			return
-		}
-		token = page.Next
-	}
 }
 
 func (in *install) exec(sql string, args ...any) {

@@ -206,8 +206,13 @@ services:
       # A bucket is a collection and a collection grows several volumes at once, so the
       # volume count, not the disk, ran out after a few runs of the 500 MiB upload test
       # ("Not enough data nodes found"). Volumes are not preallocated; the same count as
-      # deploy/dev/s3.yaml.
+      # deploy/dev/s3.yaml. The count is not what keeps a long-lived stack writable: every
+      # suite removes its prefix with all its versions when its test ends
+      # (testenv.RemoveObjectsAtCleanup), the master's vacuum (every 840 s by default)
+      # compacts what was deleted, and a volume that stays empty is deleted, which
+      # gives its slot back.
       - -volume.max=100
+      - -master.vacuumDeleteEmptyAfterSeconds=600
       - -filer
       - -s3
       - -s3.port=8333
