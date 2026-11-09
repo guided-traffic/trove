@@ -87,7 +87,8 @@ test('R-DEB-014 the index state tab lists the suites of the repository, or says 
   await page.goto(`/ui/en/projects/${e2eProject}/repositories/${localKey}`);
   await page.getByRole('tab', { name: 'Index', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Index state', level: 2 })).toBeVisible();
-  await expect(page.getByTestId('deb-index-table').or(page.getByText('No suite has packages yet.'))).toBeVisible();
+  // The table is always rendered; with no suite yet it shows its empty line inside itself.
+  await expect(page.getByTestId('deb-index-table')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Rebuild all indexes' })).toBeVisible();
   for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme });
