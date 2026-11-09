@@ -47,6 +47,16 @@ func TestHAFaults_ValkeyPlannedFailover(t *testing.T) {
 				}
 			}()
 			script(t, "valkey-failover.sh")
+			// the script returns when the cluster is whole again, which can be before a replica has noticed: poll until the bound
+			for time.Since(asked) < bound+2*time.Second {
+				mu.Lock()
+				n := len(followed)
+				mu.Unlock()
+				if n == len(pods) {
+					break
+				}
+				time.Sleep(250 * time.Millisecond)
+			}
 			close(stop)
 			<-done
 		})
