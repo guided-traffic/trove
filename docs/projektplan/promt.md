@@ -256,6 +256,11 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   makes every entry unusable, also one revalidated a moment ago, so all 72 requests revalidate while they run inside those 15 s.
   Next step (`test/e2e` belonged to the APT e2e builder in this run): a warm-up round inside the test before `before` is read
   removes (a); logging the Bastion's last applied content entry of the repository with a failure would confirm or rule out (b).
+- **F-117 · The self-hosted runners lost the Ubuntu archive for a few minutes** (Test and Release 42553790224, 2026-11-09 03:02):
+  every job that installs `build-essential` at that moment (GoSec, cyclomatic complexity, both builds, the image, the source malware
+  scan, Trivy) failed in `apt-get` with "Could not connect to archive.ubuntu.com:80" over IPv6 and IPv4; jobs that had installed
+  earlier passed. An outage outside the repository; it makes every such job depend on the archive. Done when the runner image carries
+  `make` and the C compiler (the owner's runner) or the jobs keep a local package cache.
 - **F-105 · `TestR_NPM_007_ASlowPublishOf200MiB` fails under load** (seen twice: by the F-83 builder, an S3 UploadPart
   cancellation followed by the package timeout, and by the F-101 builder, "1 connections held a transaction older than 1 s
   while the body arrived"; passes alone). The test asserts that no database transaction stays open longer than 1 s while
