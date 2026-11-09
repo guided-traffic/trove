@@ -3257,7 +3257,7 @@ Priority: **MVP** · Covers: API-082, API-083
   mirror it also keeps the `includePatterns`, `excludePatterns`, `remote.url` and `remote.extraHosts` as stored: they decide what
   the mirror covers and where it reads from, so a write that changes one answers 422 `mirror_restricted` at its pointer
   (Q-REPO-193); a write that turns the mode back to `pullThrough` may change them. What a format's mirror keeps beyond the
-  generic members is the format's member `<format>.mirror` (`oci.mirror`, [formats/oci.md](formats/oci.md) R-OCI-026): an
+  generic members is the format's member `<format>.mirror` (`oci.mirror`, [formats/oci.md](formats/oci.md) R-OCI-026; `deb.mirror`, [formats/debian.md](formats/debian.md) R-DEB-024): an
   Owner keeps it as stored, in either mode, like `remote.mirror` (the format's defaults on a create), and a write that changes
   it answers 422 `mirror_restricted` at `/<format>/mirror` (Q-OCI-22, Q-REPO-295).
 - The well-known upstream of a format needs a bound before a mirror of it is accepted (R-REPO-052, 422 `mirror_unbounded`). The
@@ -3363,7 +3363,7 @@ A mirror of a public registry would be terabytes. The bounds below keep it to wh
 never bounded by them.
 
 - **A bound is required for a well-known upstream.** A mirror whose `url` is the format's well-known upstream (the catalog's
-  default upstream: `https://registry.npmjs.org/`, `https://api.nuget.org/v3/index.json`) is refused with 422
+  default upstream: `https://registry.npmjs.org/`, `https://api.nuget.org/v3/index.json`, `https://deb.debian.org/debian/`) is refused with 422
   `mirror_unbounded` at `/remote/mode` unless the repository has a non-empty include list in which every pattern has a literal
   part before its first wildcard (`@types/*`, `Microsoft.Extensions.*`, `lodash`; not `*`, `**`, `@*/*` or `?x`), or a
   `maxBytes` (Q-REPO-132). A mirror of any other upstream without either is saved with the warning `mirror_unbounded`.
@@ -7942,6 +7942,22 @@ a pass only; a run's answers appear in the upstream log with the job's id.
 
 **Applied in the spec:** R-REPO-055 (the bullet "Runs outside a pass"). Code: [window.go](../../internal/mirror/window.go),
 [background_upstream.go](../../internal/formathost/background_upstream.go).
+
+### Q-REPO-304 · A format without a package document has no document path to test a mirrored name against
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the Debian mirror (T-17 WP7).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The name admission of a pass skips `PackageDocumentPath` for a format whose remote adapter has a `NameServer` (chosen) | The lister returns names its own rule accepted | Debian can be a mirror | The test stays for every format that has documents |
+| (b) Give the format a document path for the mirror | No change in the host | Uniform | An APT archive has no such document; a fake path would be tested for nothing |
+| (c) Drop the test | Simple | No branch | A name no document can name would be asked for in the formats that have them |
+
+**Choice:** (a).
+
+**Rationale:** The test exists to refuse a name the upstream cannot be asked for; a Debian name is read from the upstream's own indexes.
+
+**Applied in the spec:** R-REPO-051. Code: [mirror_host.go](../../internal/formathost/mirror_host.go) `Admits`.
 
 ### Q-REPO-300 · A format is told when an update takes fingerprints out of a remote's keys
 

@@ -9959,6 +9959,22 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied in the spec:** R-ARCH-002. Code: [wire_deb_remote.go](../../internal/app/wire_deb_remote.go).
 
+### Q-ARCH-428 · The upstream of a pass names its repository by an optional capability
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the Debian mirror (T-17 WP7).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `passUpstream` (and with it the background upstream) implements `RepositoryID`; a lister asserts it (chosen) | The `discover.Upstream` interface and its implementors stay as they are | The Debian lister reads its rows by repository id | An assertion at the lister |
+| (b) A method on `discover.Upstream` | Visible | Uniform | Every implementor, in tests too, changes |
+| (c) Derive it from `Base()` | Nothing new | No change | Two repositories can share an upstream URL |
+
+**Choice:** (a).
+
+**Rationale:** See Q-REPO-303 for the same shape.
+
+**Applied in the spec:** R-REPO-051. Code: [mirror_host.go](../../internal/formathost/mirror_host.go).
+
 ## What this does not cover
 
 

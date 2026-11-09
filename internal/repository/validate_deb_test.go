@@ -69,8 +69,19 @@ func TestValidateDebWarnsForARemoteWithoutKeysAndRefusesAMirrorWithout(t *testin
 	}
 	v = &validation{}
 	validateDeb(v, debEntry(), debDoc(Remote, map[string]any{}, `{"mode":"mirror"}`))
-	if len(v.fields) != 1 || v.fields[0].Code != errs.CodeDebUpstreamKeysRequired || v.fields[0].Pointer != "/deb/upstreamKeys" {
-		t.Errorf("a mirror without keys: %+v", v.fields)
+	codes := map[string]string{}
+	for _, f := range v.fields {
+		codes[f.Code] = f.Pointer
+	}
+	if len(v.fields) != 2 || codes[errs.CodeDebUpstreamKeysRequired] != "/deb/upstreamKeys" || codes[errs.CodeDebMirrorSuitesRequired] != "/deb/mirror/suites" {
+		t.Errorf("a mirror without keys and suites: %+v", v.fields)
+	}
+	// With suites and keys it is accepted.
+	k, _ := generated(t)
+	v = &validation{}
+	validateDeb(v, debEntry(), debDoc(Remote, map[string]any{"upstreamKeys": k, "mirror": map[string]any{"suites": []string{"stable"}}}, `{"mode":"mirror"}`))
+	if len(v.fields) != 0 {
+		t.Errorf("a mirror with keys and suites: %+v", v.fields)
 	}
 	// Another class or another format is not this rule's.
 	v = &validation{}

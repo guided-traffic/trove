@@ -98,6 +98,7 @@ func (m *MirrorHost) Admits(ctx context.Context, repo repository.Repository) (fu
 		}
 	}
 	byName := f.Descriptor().PatternSubject == formats.SubjectName
+	hasDocument := formats.RemoteCapabilities(formats.ID(repo.Format)).Names == nil
 	return func(name string) bool {
 		if name == "" {
 			return false
@@ -105,8 +106,12 @@ func (m *MirrorHost) Admits(ctx context.Context, repo repository.Repository) (fu
 		if byName && !repo.Admits(name, false) {
 			return false
 		}
-		if _, ok := f.PackageDocumentPath(name); !ok {
-			return false
+		// A format whose upstream has no document per package (an APT archive, which answers the shadowing check through its NameServer)
+		// has no document path to test; its lister returns names its own name rule accepted.
+		if hasDocument {
+			if _, ok := f.PackageDocumentPath(name); !ok {
+				return false
+			}
 		}
 		if _, ok := catalog.Default().NormalizeName(repo.Format, name); !ok {
 			return false
@@ -280,6 +285,10 @@ var _ discover.Upstream = (*passUpstream)(nil)
 
 // Base implements [discover.Upstream].
 func (u *passUpstream) Base() *url.URL { b := *u.base; return &b }
+
+// RepositoryID is the id of the repository the pass or run is for: a format whose lister reads rows of its own needs it, and the
+// upstream is all the lister is given.
+func (u *passUpstream) RepositoryID() int64 { return u.repo.NumericID() }
 
 // Settings implements [discover.Upstream].
 func (u *passUpstream) Settings() json.RawMessage { return u.settings }

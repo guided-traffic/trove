@@ -103,6 +103,16 @@ func (f *Format) remoteStoreOfBound() RemoteStore {
 	return nil
 }
 
+// mirrorStoreOfBound is the mirror part of the data port bound to this process, nil before Bind.
+func (f *Format) mirrorStoreOfBound() MirrorStore {
+	if b := f.port.Load(); b != nil {
+		if st, ok := b.v.(Store); ok {
+			return st
+		}
+	}
+	return nil
+}
+
 // unverified says that the release document at p is stored and no key of the remote's set verifies it now (R-DEB-020, Q-DEB-42).
 func (f *Format) unverified(ctx context.Context, rc formats.RemoteContext, p formats.Path) bool {
 	rp := analyzeRemote(p.Path)

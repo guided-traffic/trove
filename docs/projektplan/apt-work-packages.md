@@ -753,3 +753,19 @@ Built on the base of section 16. Pages: [deb.md](../developer/deb.md#the-index-b
   `test-performance` gained the delay bound.
 - **Not done:** the `InRelease` with 200 signatures of R-DEB-034 (a remote's input); the e2e sets (WP10); the memory bound is measured on the heap of the test process, which holds the
   replicas, not on a pod; the Valkey-stopped closing run is the stack's default for every other test of the area, not a separate run.
+
+## 19 · WP7 (the mirror) as built (stage 5)
+
+Built on 7d9dc8f9. Page: [docs/developer/deb.md](../developer/deb.md#the-mirror); security page [deb-mirror.md](../security/deb-mirror.md); decisions Q-DEB-91 to Q-DEB-95, Q-REPO-304, Q-ARCH-428.
+
+- **Built:** the lister in `formats/deb/mirror.go`; `MirrorSync` (the index step) in `formatdata/deb/mirror_sync.go`; `mirror_store.go` with `queries/deb_mirror.sql`
+  (no migration: the rows are WP6's); `repository/validate_deb_mirror.go`; the SHA512 section of the release reader; `RepositoryID()` on the pass's upstream; the
+  name admission of `MirrorHost` for a format without a package document (without it every Debian name was refused and a pass stored nothing).
+- **Reused from main:** `discover.Upstream.Artifact` (kept by hash without reading the bytes back), `ReportStored`, the version-counting `SelectItems`, the
+  `<format>.mirror` Owner rule. **No migration** is added; the numbering of the stage-4 migration is unchanged.
+- **Spec edits:** R-REPO-050 (`deb.mirror` beside `oci.mirror`), R-REPO-052 (the Debian well-known upstream), Mirror discovery (SHA512, variants, notes).
+- **Not built:** the `names` method reads the patterns only (no per-name request); the status page does not show the notes of a pass (H-745); the e2e set `mirror`
+  and `mirror-long` rows for Debian (WP9/WP10).
+- **Verified:** `test/integration/mirror/deb_test.go` (six cases), the lister's unit tests; by hand `apt-get update --error-on=any` and `apt-get install` from `debian:13` and
+  `ubuntu:22.04` with the stub stopped.
+

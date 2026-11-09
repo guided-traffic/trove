@@ -189,9 +189,9 @@ builder is a job and the role `web` claims none; the stack seeds repositories by
 ## What is built and what is not
 
 Built: everything above, including the stub archive (WP5), the signing keys (WP2), the background upstream (WP13), the publication
-port and the index builder (WP4) with its metrics, the remote class (WP6), the tests of the local class (WP9) and the UI (WP11). Not built, by
-work package of [apt-work-packages.md](../projektplan/apt-work-packages.md): the mirror (WP7), the virtual class (WP8), the tests of the other
-classes (WP9), the e2e sets (WP10) and the final documentation (WP12).
+port and the index builder (WP4) with its metrics, the remote class (WP6), the mirror (WP7), the tests of the local class (WP9) and the UI
+(WP11). Not built, by work package of [apt-work-packages.md](../projektplan/apt-work-packages.md): the virtual class (WP8), the tests of the
+other classes (WP9), the e2e sets (WP10) and the final documentation (WP12).
 
 ## The OpenPGP library and the counting stub archive (stage 1 of the remote side)
 
@@ -388,6 +388,35 @@ removes the image's sources, installs `key.asc` as `Signed-By`, writes `auth.con
 `apt-get install`. Run on 2026-11-09 against `debian:13` (APT 3.0.4, `sqv`) and `ubuntu:22.04` (APT 2.4.14, `gpgv`): the suite `stable main` of the keyed remote (the
 release passes through with the stub's signatures, the client verifies them with the key `a`; `trove-hello` and its dependency install), the flat directory `binary/` and the flat
 root `./`. The remote hands out the upstream's `InRelease` unchanged; the keyring on the client is the upstream's, never trove's.
+
+## The mirror
+
+A remote in mode `mirror` keeps what the operator names (R-DEB-024, Mirror discovery). The remote adapter is a `discover.Lister`
+([mirror.go](../../internal/formats/deb/mirror.go)), so the catalog fact `Mirror` is true and the repository service accepts `remote.mode: mirror`; the engine, the pass, the bounds and the
+throttling are the core's ([mirror.md](mirror.md)). What the format adds:
+
+| Step | Where |
+|---|---|
+| Methods: `listing` and `names`; no feed, so every pass is full | `MirrorMethods` |
+| The **index step** on the first page of a pass: the release of each suite through the pass's upstream, judged (signature, suite, `Valid-Until`), the index files of the scope kept in every listed variant (by `SHA256` and, when listed, `SHA512` hash with `Acquire-By-Hash`, at the plain path without), and the parse of Packages and Sources in the pass | `MirrorSync` ([mirror_sync.go](../../internal/formatdata/deb/mirror_sync.go)) over `RemoteJobs.parseIndex` |
+| The names: the distinct package names of the rows of the suites whose stored release a key verifies, in the indexes of the components and architectures (and `all`), in pages with the cursor `{"last": name}` | `MirrorNames`, [mirror_store.go](../../internal/formatdata/deb/mirror_store.go), [deb_mirror.sql](../../internal/meta/postgres/queries/deb_mirror.sql) |
+| The plan of a name: its files, one item per file, newest version first by dpkg order; the engine counts versions, so the files of one version are kept or dropped together | `MirrorPlan` |
+| The digests every stored file is verified against | the gate of R-DEB-022, from the same rows |
+| `deb.mirror.suites` required in mode mirror (422 `deb_mirror_suites_required`); keys required (`deb_upstream_keys_required`) | [validate_deb_mirror.go](../../internal/repository/validate_deb_mirror.go), [validate_deb.go](../../internal/repository/validate_deb.go) |
+| An Owner keeps `deb.mirror` as stored | the generic rule of the format's mirror member (`checkDelegatedFormatMirror`) |
+
+The lister is stateless: the rows are the state, and a pass that moves to another worker finds them. The lister learns its repository from the optional `RepositoryID()` of the pass's
+upstream (Q-ARCH-428). `MirrorHost.Admits` skips the test of a package document for a format that has none (Q-REPO-304); before that every name was refused.
+
+**Tests.** [mirror_test.go](../../internal/formats/deb/mirror_test.go) (the lister over fixed rows), [validate_deb_test.go](../../internal/repository/validate_deb_test.go), and the integration cases
+in [test/integration/mirror/deb_test.go](../../test/integration/mirror/deb_test.go): a pass with the defaults and the stub stopped, the version bound over two suites, a quiet second pass and a new generation,
+the byte bound with a pull-through install, an unknown key, sources. They run the pass on one of two worker processes with a third process serving the clients.
+
+### Proven by hand
+
+`TestProofMirrorServer` (set `TROVE_DEB_PROOF_DIR`, as for `TestProofServer`) runs a pass, stops the stub and serves the mirror. Run on 2026-11-09 with the clients of the remote proof: `apt-get update --error-on=any` and
+`apt-get install trove-hello` from `debian:13` (APT 3.0.4, `sqv`) and `ubuntu:22.04` (APT 2.4.14, `gpgv`), the stub's key `a` as the client keyring, the stub stopped. The first attempt failed with 503 on the
+`by-hash/SHA512` paths, which is why the pass keeps the SHA512 variants (Q-DEB-92).
 
 ## test/debstub: the counting stub archive
 

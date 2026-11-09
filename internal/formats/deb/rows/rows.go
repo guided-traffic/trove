@@ -415,7 +415,9 @@ type MirrorScope struct {
 	Suites        []string
 	Components    []string
 	Architectures []string
-	Sources       bool
+	// Translations are the languages of the i18n/Translation-<language> files a pass keeps.
+	Translations []string
+	Sources      bool
 }
 
 // VirtualInputs are what a build of a virtual repository reads in its snapshot (R-DEB-026): its members' stored state.

@@ -1176,7 +1176,7 @@ Acceptance criteria:
 Priority: **P2** · Covers: trove-only
 
 A remote repository of the format runs in either mode of R-REPO-050. What a mirror of an APT archive keeps is in
-[Mirror discovery](#mirror-discovery) (Q-DEB-17); its own settings are `deb.mirror`, present in both modes and effective in mode
+[Mirror discovery](#mirror-discovery) (Q-DEB-17, built: Q-DEB-91); its own settings are `deb.mirror`, present in both modes and effective in mode
 `mirror`:
 
 | Member (`deb.mirror.…`) | Meaning | Default (proposed) | Range |
@@ -1621,9 +1621,12 @@ suites, components and architectures the operator names (Q-DEB-17).
   `Acquire-By-Hash: yes`, else at its plain path through `Document`, in every compression variant the release lists and the upstream
   serves (a listed variant the upstream answers 404 for, such as an uncompressed `Packages`, is skipped); the
   `i18n/Translation-<language>` files of `translations` the same way; then the parse of R-DEB-023 for each `Packages` and `Sources`
-  the pass needs, which the lister runs in the pass through the data port instead of waiting for the job. A suite the upstream does
+  the pass needs, which the lister runs in the pass through the data port instead of waiting for the job (Q-DEB-91). A client takes
+  the strongest hash a release lists, so with a `SHA512` section each index file is kept by that hash as well (Q-DEB-92); every
+  variant the release lists is kept, not only the one the parse reads (Q-DEB-95). A suite the upstream does
   not have is noted (`suite_unavailable: <suite>`) and skipped; a component or architecture its release does not list is noted and
-  skipped.
+  skipped. The notes are `suite_unavailable: <suite>`, `release_unverified: <suite>`, `release_expired: <suite>` and
+  `index_unlisted: <path>`, carried in the note of the first page (Q-DEB-94).
 - **Names.** The distinct package names of the pass's parsed indexes that the scope admits (patterns, claims, the name rule of
   R-DEB-002), in name order, in pages of the engine's limit, with the cursor `{"last": "<name>"}` within the pass (at most 4 KiB);
   there is no cursor between passes.
@@ -3393,6 +3396,86 @@ every format with a scope now includes Debian).
 the format. The development agent revisits this when the dialog offers a variant for any client.
 
 **Applied in the spec:** R-DEB-029 is unchanged; `internal/api/v1/setup_snippet_ids_test.go` lists `deb` among the formats of the fixture.
+
+### Q-DEB-91 · The index step of a pass runs in its first page, through the data port, and the names and plans read the rows
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the Debian mirror (T-17 WP7).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The first page of a pass calls `MirrorStore.MirrorSync`, which fetches the release of each suite through the pass's upstream, keeps the index files of the scope and parses the Packages and Sources indexes into the rows of R-DEB-023 in the pass; every page then reads the names, and every plan the files, from those rows (chosen) | The pass sees its own rows at once; no wait for the queue; the fill hooks and the gate are the pull-through's | One code path for the parse (`RemoteJobs.parseIndex`); a pass resumed on another worker finds the rows | A pass holds the parse of the indexes of its suites before its first name ([H-746](../../security/deb-mirror.md#h-746--the-index-step-parses-every-index-of-the-scope-before-the-first-name-of-a-pass)) |
+| (b) Enqueue the parse jobs and wait for them | The job does it | Existing job | The pass has to poll rows another process writes, and a job that fails stalls the pass without an error of its own |
+| (c) Parse in the lister from memory | No rows | No tables | The plan of a name runs up to the pass's window at once and could not share the parse; the gate needs the rows for the digests anyway |
+
+**Choice:** (a).
+
+**Rationale:** The gate that verifies every file of a pass (R-DEB-022) reads the same rows, so they have to exist before the first plan.
+
+**Applied in the spec:** Mirror discovery. Code: [mirror_sync.go](../../../internal/formatdata/deb/mirror_sync.go), [mirror.go](../../../internal/formats/deb/mirror.go).
+
+### Q-DEB-92 · A release with a SHA512 section has its index files kept by that hash as well
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the Debian mirror (T-17 WP7).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `release.Release.SHA512` reads the SHA512 section; the pass keeps each listed variant of an index at `by-hash/SHA256/…` and, when listed, `by-hash/SHA512/…` (chosen) | APT takes the strongest hash a release lists and asks for exactly that path | An `apt-get update` with the upstream gone works for APT 2.4 and 3.0 | Two copies of one file in the store (the blob is shared by digest, only the item differs) |
+| (b) SHA256 only | Simpler | What R-DEB-021 names | Found by hand: APT asked for the SHA512 path of the stub, got 503 offline and fell back to plain paths that were not stored |
+| (c) Store the plain path as well | The client's fallback works | One more way | A plain path is a metadata entry the pass would have to keep in step with the release |
+
+**Choice:** (a).
+
+**Rationale:** The remote's `by-hash` route already serves SHA512 as content with the digest of its path.
+
+**Applied in the spec:** Mirror discovery, R-DEB-021. Code: [release.go](../../../internal/formats/deb/release/release.go), [mirror_sync.go](../../../internal/formatdata/deb/mirror_sync.go) `fetchVariant`.
+
+### Q-DEB-93 · A pass lists the names of the suites whose stored release a key verifies; expiry is judged when the pass begins
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the Debian mirror (T-17 WP7).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The index step judges each release (signature, suite, `Valid-Until`) and notes `release_unverified` or `release_expired`; the names and the plans read only suites whose stored release has `verified_by` (chosen) | A suite whose keys were removed stops being listed at once | No upstream read per plan | A release that expires in the middle of a pass is still planned from its rows ([H-744](../../security/deb-mirror.md#h-744--a-release-that-expires-during-a-pass-is-still-planned)) |
+| (b) Judge at every call | Exact | No window | The plan of a name runs thousands of times per pass; each would read and verify every release |
+| (c) Keep the judgement in the cursor | No window | Stateless | The cursor is 4 KiB and the engine stores it; a plan has none |
+
+**Choice:** (a).
+
+**Rationale:** The plan of a name has the upstream and a name, nothing of the page.
+
+**Applied in the spec:** R-DEB-024, Q-DEB-32. Code: [mirror_store.go](../../../internal/formatdata/deb/mirror_store.go) `scopeKeys`.
+
+### Q-DEB-94 · The notes of the index step travel in the note of the first page
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the Debian mirror (T-17 WP7).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `suite_unavailable: <suite>`, `release_unverified: <suite>`, `release_expired: <suite>` and `index_unlisted: <path>` are joined in `Page.Note` (chosen) | The only channel the contract has for words | Shown with the status when the discovery is truncated | The engine shows a note only with `Truncated` ([H-745](../../security/deb-mirror.md#h-745--the-notes-of-a-pass-are-shown-only-when-its-discovery-is-truncated)) |
+| (b) An error | Seen | Loud | A suite the upstream does not have is no failure of the pass (R-DEB-024) |
+| (c) A table of notes | Complete | Queryable | A new table for a word per suite |
+
+**Choice:** (a).
+
+**Rationale:** The spec asks for the notes (Mirror discovery); the contract carries them in the page.
+
+**Applied in the spec:** Mirror discovery. Code: [mirror.go](../../../internal/formats/deb/mirror.go).
+
+### Q-DEB-95 · A mirror asks for a suite's indexes in the variants the release lists, not the ones the format prefers
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the Debian mirror (T-17 WP7).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Each listed variant of a Packages, Sources and Translation file of the scope is fetched (by hash or at its plain path); a variant the upstream answers 404 for is skipped; the parse reads the preferred one (chosen) | A client takes any variant its APT prefers (xz, gz, plain), offline | Matches R-DEB-024 | Two to six downloads per index instead of one |
+| (b) Only the preferred variant | One download | Cheap | A client whose APT prefers another compression fails offline |
+| (c) The compressions APT 3.0 prefers | Fewer downloads | Cheap | APT 2.4 and tools with another order would fail; the preference is the client's |
+
+**Choice:** (a).
+
+**Rationale:** Index files are small next to the package files a mirror keeps.
+
+**Applied in the spec:** Mirror discovery. Code: [mirror_sync.go](../../../internal/formatdata/deb/mirror_sync.go) `mirrorIndexes`.
 
 ## What this does not cover
 

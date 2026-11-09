@@ -37,6 +37,9 @@ type Release struct {
 	ByHash bool
 	// Files are the files of the SHA256 section, in the order they are listed.
 	Files []rows.ReleaseFile
+	// SHA512 holds the digest of each file of the SHA512 section, as lower-case hex, by path; empty when the release has none. APT
+	// takes the strongest hash a release lists, so a client of a release with a SHA512 section asks for by-hash/SHA512/<digest>.
+	SHA512 map[string]string
 }
 
 // Error is a document that is not a Release the remote accepts; Reason is a sentence for the answer's detail.
@@ -79,6 +82,11 @@ func Parse(text []byte) (*Release, error) {
 	if r.Files, err = ParseSection(section); err != nil {
 		return nil, err
 	}
+	if v, ok := p.Get("SHA512"); ok {
+		if r.SHA512, err = parseSection512(v); err != nil {
+			return nil, err
+		}
+	}
 	return r, nil
 }
 
@@ -111,6 +119,26 @@ func ParseSection(value string) ([]rows.ReleaseFile, error) {
 		f := rows.ReleaseFile{Path: fields[2], Size: size}
 		copy(f.SHA256[:], sum)
 		out = append(out, f)
+	}
+	return out, nil
+}
+
+// parseSection512 reads the lines of the SHA512 section: " <128 hex digits> <size> <path>".
+func parseSection512(value string) (map[string]string, error) {
+	out := map[string]string{}
+	for line := range strings.SplitSeq(value, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		f := strings.Fields(line)
+		if len(f) != 3 || len(f[0]) != 128 {
+			return nil, refuse("a SHA512 line does not have the form digest, size, path")
+		}
+		if sum, err := hex.DecodeString(f[0]); err != nil || len(sum) != 64 || !validPath(f[2]) {
+			return nil, refuse("a SHA512 line holds a digest or a path that is none")
+		}
+		out[f[2]] = strings.ToLower(f[0])
 	}
 	return out, nil
 }

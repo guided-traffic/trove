@@ -75,6 +75,7 @@ func validateDeb(v *validation, info catalog.Entry, d *Document) {
 			Detail: "the remote has no upstream keys: it stores what its upstream sends and its clients verify with their own keyrings",
 		})
 	}
+	validateDebMirror(v, d)
 	if keys == "" && remoteMode(d) == ModeMirror {
 		v.add(debKeysPointer, errs.CodeDebUpstreamKeysRequired, "a mirror hands the upstream's content on to its clients and needs deb.upstreamKeys to verify it")
 	}
