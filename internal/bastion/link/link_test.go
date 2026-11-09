@@ -736,6 +736,12 @@ func TestR_BAS_026_ARevocationReachesEveryReplicaWithin5SecondsOver100Trials(t *
 	}
 	t.Logf("slowest of 100 trials: %v", worst)
 	for i, r := range replicas {
+		// Record makes an entry effective before the metric counts it (applyEntries), so the last trial can pass while
+		// its count is still on the way: wait for the count, bounded, instead of reading it once.
+		deadline := time.Now().Add(5 * time.Second)
+		for r.applied("token") != 100 && time.Now().Before(deadline) {
+			time.Sleep(5 * time.Millisecond)
+		}
 		if n := r.applied("token"); n != 100 {
 			t.Errorf("replica %d applied %v token entries", i, n)
 		}
