@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/guided-traffic/trove/test/debstub/debgen"
+	"github.com/guided-traffic/trove/test/integration/testenv"
 )
 
 // aptScript is what runs in the client container: the source with the repository's key, the credential in auth.conf.d (never in the
@@ -53,8 +54,9 @@ func runApt(t *testing.T, e *env, images ...string) map[string]string {
 	out := map[string]string{}
 	for _, image := range images {
 		t.Run(image, func(t *testing.T) {
-			cmd := exec.Command("docker", "run", "--rm", "--add-host", "trove.test:host-gateway", "-v", dir+":/cfg:ro",
-				"-e", "TROVE_HOSTPORT="+hostport, "-e", "TROVE_TOKEN="+e.tokA, image, "sh", "-c", aptScript)
+			args := append([]string{"run", "--rm"}, testenv.DockerReachHost("trove.test")...)
+			args = append(args, "-v", dir+":/cfg:ro", "-e", "TROVE_HOSTPORT="+hostport, "-e", "TROVE_TOKEN="+e.tokA, image, "sh", "-c", aptScript)
+			cmd := exec.Command("docker", args...)
 			b, err := cmd.CombinedOutput()
 			if err != nil {
 				t.Fatalf("%v\n%s", err, b)

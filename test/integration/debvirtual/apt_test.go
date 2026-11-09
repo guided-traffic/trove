@@ -78,8 +78,9 @@ func TestR_DEB_025_AptGetUpdateAndInstallThroughAVirtualRepository(t *testing.T)
 	hostport := "trove.test:" + addr[strings.LastIndex(addr, ":")+1:]
 	for _, image := range []string{"debian:13", "ubuntu:22.04"} {
 		t.Run(image, func(t *testing.T) {
-			cmd := exec.Command("docker", "run", "--rm", "--platform", "linux/amd64", "--add-host", "trove.test:host-gateway", "-v", dir+":/cfg:ro",
-				"-e", "TROVE_HOSTPORT="+hostport, "-e", "TROVE_TOKEN="+e.alice, image, "sh", "-c", aptScript)
+			args := append([]string{"run", "--rm", "--platform", "linux/amd64"}, testenv.DockerReachHost("trove.test")...)
+			args = append(args, "-v", dir+":/cfg:ro", "-e", "TROVE_HOSTPORT="+hostport, "-e", "TROVE_TOKEN="+e.alice, image, "sh", "-c", aptScript)
+			cmd := exec.Command("docker", args...)
 			b, err := cmd.CombinedOutput()
 			if err != nil {
 				t.Fatalf("%v\n%s", err, b)
