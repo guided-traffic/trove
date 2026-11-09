@@ -291,8 +291,20 @@ func (w *Worker) Stop(ctx context.Context) error {
 	case <-done:
 		return nil
 	case <-ctx.Done():
-		return fmt.Errorf("jobs: %d handlers still running at the end of the shutdown", w.runningCount())
+		return fmt.Errorf("jobs: %d handlers still running at the end of the shutdown: %s", w.runningCount(), w.runningNames())
 	}
+}
+
+// runningNames names the jobs still running, kind and ID, sorted, for the shutdown error.
+func (w *Worker) runningNames() string {
+	w.mu.Lock()
+	names := make([]string, 0, len(w.running))
+	for _, rj := range w.running {
+		names = append(names, rj.job.Kind+" "+rj.job.ID)
+	}
+	w.mu.Unlock()
+	sort.Strings(names)
+	return strings.Join(names, ", ")
 }
 
 func (w *Worker) runningCount() int {
