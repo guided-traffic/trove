@@ -52,9 +52,29 @@ func avoidPrimary(t *testing.T, node string) {
 	}
 }
 
+// throttleImport makes every batch of a full synchronization take at least perBatch more: a statement trigger on the advisory
+// table sleeps before each upsert statement, and a batch is one statement (1,000 records, sync.BatchSize). The run then lasts at
+// least batches*perBatch whatever the speed of the cluster, which forces the precondition that the job is still running when the
+// test drains the node or kills the worker; the source cannot hold a run in pass 2, which reads the downloaded archive. The
+// trigger lives in the database, so it survives a switchover. It is dropped when the test ends and by the returned func
+// (idempotent), which the test calls before the runs that must be fast.
+func throttleImport(t *testing.T, perBatch time.Duration) (remove func()) {
+	t.Helper()
+	sql(t, `CREATE OR REPLACE FUNCTION trove.e2e_import_throttle() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN PERFORM pg_sleep(`+strconv.FormatFloat(perBatch.Seconds(), 'f', 3, 64)+`); RETURN NULL; END $$;
+DROP TRIGGER IF EXISTS e2e_import_throttle ON trove.vuln_advisory;
+CREATE TRIGGER e2e_import_throttle BEFORE INSERT ON trove.vuln_advisory FOR EACH STATEMENT EXECUTE FUNCTION trove.e2e_import_throttle()`)
+	remove = func() {
+		sql(t, `DROP TRIGGER IF EXISTS e2e_import_throttle ON trove.vuln_advisory; DROP FUNCTION IF EXISTS trove.e2e_import_throttle()`)
+	}
+	t.Cleanup(remove)
+	return remove
+}
+
 // TestVulnLong_R_VULN_004_FullSyncDrainedMidRun is the criterion of R-VULN-004: `kubectl drain` of the node that runs a full
-// synchronization. The test source holds 100,000 filler records (the most the source holds), so that the run outlasts the drain; the drain starts once the
-// run has committed batches. The job is `queued` again with its attempt unchanged, another worker completes it, and the
+// synchronization. The test source holds 100,000 filler records (the most the source holds) and the import takes 2 s a batch
+// (throttleImport), so that the run lasts at least 200 s on every runner and outlasts the switchover and the drain; the drain
+// starts once the run has committed batches. The job is `queued` again with its attempt unchanged, another worker completes it, and the
 // ecosystem holds every record at the end.
 func TestVulnLong_R_VULN_004_FullSyncDrainedMidRun(t *testing.T) {
 	e := vulnFx(t)
@@ -75,6 +95,7 @@ func TestVulnLong_R_VULN_004_FullSyncDrainedMidRun(t *testing.T) {
 	}
 	want := info.Ecosystems["npm"].Records
 	t.Logf("the test source holds %d npm records, an archive of %d bytes", want, info.Ecosystems["npm"].ArchiveBytes)
+	throttleImport(t, 2*time.Second) // registered after the cleanup above: it runs first, so the restoring sync is not throttled
 
 	id, running := e.task(t, "vuln-sync-osv-full", nil)
 	if running {
@@ -93,7 +114,7 @@ func TestVulnLong_R_VULN_004_FullSyncDrainedMidRun(t *testing.T) {
 	t.Logf("the job runs on %s (node %s), attempt %s, %s batches committed", first.replica, node, first.attempt, first.batches)
 	avoidPrimary(t, node)
 	if cur, ok := sampleJob(id); !ok || cur.state != "running" {
-		t.Fatalf("the job is not running any more before the drain started: %+v: the dataset is too small for the cluster's speed", cur)
+		t.Fatalf("the job is not running any more before the drain started: %+v: the throttled import (2 s a batch) did not hold it", cur)
 	}
 
 	// the drain runs in a goroutine, the job is read throughout

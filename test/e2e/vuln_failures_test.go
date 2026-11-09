@@ -432,8 +432,8 @@ func TestVulnLong_R_VULN_015_BlockHoldsDuringFailures(t *testing.T) {
 // ── a worker killed in the middle of a full synchronization ─────────────────
 
 // TestVulnLong_R_VULN_004_FullSyncWorkerKilledMidRun is the other half of R-VULN-004's resumption rule. A drain releases the job
-// and another worker resumes it (TestVulnLong_R_VULN_004_FullSyncDrainedMidRun); a worker that dies (kubectl delete --force with
-// no grace) cannot release anything: the reaper ends the job `failed` with `attempts_exhausted` once its lease has run out
+// and another worker resumes it (TestVulnLong_R_VULN_004_FullSyncDrainedMidRun); a worker that dies (SIGKILL of its process, as a
+// crash or an OOM kill; a deleted pod gets SIGTERM and drains) cannot release anything: the reaper ends the job `failed` with `attempts_exhausted` once its lease has run out
 // (MaxAttempts 1, H-523), the previous data stays in force, and the next run imports the whole source and the evaluation catches up.
 func TestVulnLong_R_VULN_004_FullSyncWorkerKilledMidRun(t *testing.T) {
 	e := vulnFx(t)
@@ -454,8 +454,14 @@ func TestVulnLong_R_VULN_004_FullSyncWorkerKilledMidRun(t *testing.T) {
 		return ok && s.state == "running" && s.batches != "" && s.batches != "0"
 	})
 	t.Logf("job %s runs on %s, attempt %s, %s batches committed; the npm state before the run is %q", id, first.replica, first.attempt, first.batches, before)
+	if cur, ok := sampleJob(id); !ok || cur.state != "running" || cur.replica != first.replica {
+		t.Fatalf("the job is not running on %s any more before the kill: %+v", first.replica, cur)
+	}
+	// A deleted pod is not a killed worker: even `--grace-period=0 --force` has the kubelet send SIGTERM, the worker drains and
+	// releases the job (attempt unchanged), and another worker completes it (run 42571414393 and a local run showed exactly that:
+	// succeeded, attempt 1). The container runtime's SIGKILL is the crash: nothing is released, the lease runs out.
 	killed := time.Now()
-	kn(t, "delete", "pod", first.replica, "--grace-period=0", "--force", "--wait=false")
+	sigkill(t, pod{Name: first.replica, Node: strings.TrimSpace(kn(t, "get", "pod", first.replica, "-o", "jsonpath={.spec.nodeName}"))})
 
 	st := e.waitJob(t, id, 6*time.Minute)
 	t.Logf("the job ended %s %s after the kill", st, time.Since(killed).Round(time.Second))
