@@ -6591,7 +6591,7 @@ is an external test binary that speaks to an address; the criteria need several 
   `TestR_AUTHZ_007_OCIActionMap` has a subtest per row of the OCI table, and a separate test runs the registry with Valkey unreachable.
 - A test name carries a requirement ID when it proves a whole criterion of it ([Q-OCI-213](spec/formats/oci.md#q-oci-213--a-test-name-carries-the-id-of-a-requirement-when-it-proves-a-whole-acceptance-criterion-of-it)).
 
-**Consequences.** CI runs the conformance suite in shard b of the integration job and uploads its reports. The coverage evidence record loses the two OCI requirements whose criteria only real clients prove (R-OCI-014, R-OCI-030) until
+**Consequences.** CI runs the conformance suite in shard c of the integration job and uploads its reports. The coverage evidence record loses the two OCI requirements whose criteria only real clients prove (R-OCI-014, R-OCI-030) until
 the e2e rows name them. The deletion path of a virtual repository is covered by its 405 test only (H-755).
 
 **Alternatives considered.** Running the suite from a container image (a second Go toolchain); a delete through a virtual repository so that the category passes everywhere (reverses ADR-180); one area per criterion family.

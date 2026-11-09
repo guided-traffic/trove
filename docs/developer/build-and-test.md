@@ -298,7 +298,7 @@ only the harness.
 
 [bastion](../../test/integration/bastion) is the harness with a TLS front of its own in front of the web replica and in-process Bastion replicas next to it (the role started from a
 configuration file, the volume or the bucket backend, with or without Valkey); [developer/bastion.md](bastion.md#the-integration-suite-r-bas-048) describes it. It runs in
-shard `b` of `make test-integration` (about 90 s).
+shard `c` of `make test-integration` (about 90 s).
 
 The OCI registry's suites use the harness as well: [oci](../../test/integration/oci) (the data port against PostgreSQL, the protocol
 criteria over `/v2/` on three replicas, the action map of R-AUTHZ-007, the registry with Valkey stopped, and the conformance runner behind
@@ -307,8 +307,8 @@ sweep, the replay and the reinstate), [ociremote](../../test/integration/ociremo
 (against the counting stub registry [test/ocistub](../../test/ocistub) in the test process), [registry](../../test/integration/registry)
 (the walk through the endpoint's handler, the version check, the catalog, the bound host), [uploads](../../test/integration/uploads) (the
 upload sessions against PostgreSQL and S3 on three replicas), and the OCI files of [mirror](../../test/integration/mirror) (`oci_test.go`)
-and [identity](../../test/integration/identity) (`registrytoken_test.go`). All of them run in shard `b` except `mirror`, which is in shard
-`a`; `make oci-conformance` builds and runs the distribution conformance suite after `make test-integration` in shard `b`
+and [identity](../../test/integration/identity) (`registrytoken_test.go`). The `oci*` and `registry` areas run in shard `c`, `uploads` and `identity` in shard `b`, `mirror` in shard
+`a`; `make oci-conformance` builds and runs the distribution conformance suite after `make test-integration` in shard `c`
 ([oci.md](oci.md#the-protocol-tests-and-the-conformance-suite)).
 
 Three things a suite should know. A replica's start is a real start-up: a principal that is named like the break-glass

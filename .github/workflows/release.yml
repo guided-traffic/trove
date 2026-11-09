@@ -727,15 +727,15 @@ jobs:
           retention-days: 30
 
   integration:
-    # Valkey 9.1 only: trove is in development and guarantees no older line (owner, 2026-10-29). The packages run in two
-    # shards with a stack each (make test-integration SHARD=a|b), about half the time each.
+    # Valkey 9.1 only: trove is in development and guarantees no older line (owner, 2026-10-29). The packages run in three
+    # shards with a stack each (make test-integration SHARD=a|b|c, the lists in the Makefile).
     name: integration (Valkey 9.1, shard ${{ matrix.shard }})
     runs-on: self-hosted
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        shard: [a, b]
+        shard: [a, b, c]
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -770,14 +770,14 @@ jobs:
       - name: make test-integration SHARD=${{ matrix.shard }}
         run: make test-integration SHARD=${{ matrix.shard }}
 
-      # The OCI distribution conformance suite (R-OCI-035) on the stack of shard b, which holds the oci area: built from the pinned
+      # The OCI distribution conformance suite (R-OCI-035) on the stack of shard c, which holds the oci area: built from the pinned
       # tag by the job's Go, run against one replica through a local and a virtual repository.
       - name: make oci-conformance
-        if: matrix.shard == 'b'
+        if: matrix.shard == 'c'
         run: make oci-conformance
 
       - name: Upload the OCI conformance reports
-        if: always() && matrix.shard == 'b'
+        if: always() && matrix.shard == 'c'
         uses: actions/upload-artifact@v7
         with:
           name: oci-conformance-junit
@@ -2881,7 +2881,7 @@ jobs:
         run: |
           set -euo pipefail
           # A missing report would drop the requirements only that report proves, so it is an error.
-          for dir in test-unit test-chart test-integration-a test-integration-b; do
+          for dir in test-unit test-chart test-integration-a test-integration-b test-integration-c; do
             if ! compgen -G ".out/reports/$dir/*.json" >/dev/null; then
               echo "::error::report artifact $dir is missing"
               exit 1

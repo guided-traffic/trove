@@ -298,25 +298,29 @@ integration-up: ## Start PostgreSQL, PgBouncer, Valkey with Sentinel (TLS) and S
 integration-down: ## Stop the integration stack and remove its volumes
 	test/integration/down.sh
 
-# SHARD=a|b splits the packages over the two CI jobs, each with its own stack: a holds seven of the slowest
-# packages (about half the time: 1,110 s of 2,315 s in a full local run of 2026-11-05), b everything else, so a new
-# package lands in b. Unset runs all.
+# SHARD=a|b|c splits the packages over the three CI jobs, each with its own stack: a holds seven of the slowest packages
+# (1,477 s in CI on 2026-11-09), c the registry formats that came with the OCI and Debian registries and the areas of the Bastion
+# and the vulnerability scanning, b everything else, so a new package lands in b. Shard b alone passed the job's 45 minutes on
+# 2026-11-09 (Test and Release 42545856458) once the OCI and Debian areas had joined it. Unset runs all.
 INTEGRATION_SHARD_A := $(addprefix $(MODULE)/test/integration/,ci coordination mirror npm nuget repository proxy)
+INTEGRATION_SHARD_C := $(filter $(addprefix $(MODULE)/test/integration/,oci% deb% registry itempublish vuln% bastion%),$(shell go list -tags integration ./test/integration/...))
 ifeq ($(SHARD),)
 INTEGRATION_PKGS = ./test/integration/...
 else ifeq ($(SHARD),a)
 INTEGRATION_PKGS = $(INTEGRATION_SHARD_A)
+else ifeq ($(SHARD),c)
+INTEGRATION_PKGS = $(INTEGRATION_SHARD_C)
 else ifeq ($(SHARD),b)
-INTEGRATION_PKGS = $(filter-out $(INTEGRATION_SHARD_A),$(shell go list -tags integration ./test/integration/...))
+INTEGRATION_PKGS = $(filter-out $(INTEGRATION_SHARD_A) $(INTEGRATION_SHARD_C),$(shell go list -tags integration ./test/integration/...))
 else
-$(error SHARD must be a, b or unset, not $(SHARD))
+$(error SHARD must be a, b, c or unset, not $(SHARD))
 endif
 
 # The coverage profile of the line is named by the Valkey line it ran against (and the shard), so the
 # profiles of the matrix merge into one report. -p 1 serialises the build too, so the test binaries are
 # compiled in parallel first and the run takes them from the build cache.
 .PHONY: test-integration
-test-integration: ## Integration tests against the running stack (make integration-up), SHARD=a|b for one half; .out/test-integration[-<shard>].json and .out/coverage/integration-<line>[-<shard>].out
+test-integration: ## Integration tests against the running stack (make integration-up), SHARD=a|b|c for one third; .out/test-integration[-<shard>].json and .out/coverage/integration-<line>[-<shard>].out
 	@test -f $(INTEGRATION_ENV) || { echo "$(INTEGRATION_ENV) is missing: run 'make integration-up' first"; exit 1; }
 	@mkdir -p .out $(COVERAGE_DIR)
 	go test -c -o .out/integration-bin/ -tags integration -covermode=atomic -coverpkg=./... $(INTEGRATION_PKGS) >/dev/null

@@ -563,7 +563,7 @@ The conformance suite is run by `make oci-conformance` ([build-and-test.md](buil
 3. The virtual run switches content management off: a delete through a virtual repository is refused by design ([Q-OCI-211](../spec/formats/oci.md#q-oci-211--the-conformance-suite-runs-all-four-categories-through-the-local-address-and-pull-push-and-discovery-through-the-virtual-address),
    gap [H-755](../security/oci-virtual.md#what-this-does-not-cover)). The skips the runner accepts are the ones that decision lists, nothing else.
 
-CI runs it in shard b of the `integration` job after `make test-integration` and uploads the reports as the artifact `oci-conformance-junit`. The first run found that the challenge of a mount did not
+CI runs it in shard c of the `integration` job after `make test-integration` and uploads the reports as the artifact `oci-conformance-junit`. The first run found that the challenge of a mount did not
 name the source ([Q-OCI-212](../spec/formats/oci.md#q-oci-212--the-challenge-of-a-mount-names-the-sources-pull-as-well-as-the-targets-push)); to run one specification or a category while working, set the
 `OCI_TEST_*` variables by hand and run `.out/oci-conformance/conformance.test` against a replica of your own.
 

@@ -739,7 +739,7 @@ The tests, by requirement (the file is the one to read; every name carries the I
 | `TestR_BAS_022_R_BAS_023_R_BAS_026_AVersionHiddenByAnExposureRuleIsHiddenAtTheBastion` | a version hidden by an exposure rule after caching, and on a Bastion that never saw it |
 | `TestR_BAS_048_TheWholeRoleServes…_Bucket` | the older scenario against `maintest` ([roletest](../../internal/bastion/roletest/roletest.go)) with the bucket backend |
 
-**Run it.** `make integration-up`, then `make test-integration` (the package is in shard `b`, with the rest) or alone with the stack's environment sourced:
+**Run it.** `make integration-up`, then `make test-integration` (the package is in shard `c`) or alone with the stack's environment sourced:
 `go test -count=1 -tags integration ./test/integration/bastion` (about 90 s). A failing replica prints the tail of its log; the Bastion's and the main installation's logs are
 `replica.logs` and `world.main.Logs`.
 
