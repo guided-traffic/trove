@@ -405,16 +405,26 @@ func TestR_DEB_010_AStoppedBuildLeavesThePreviousGeneration(t *testing.T) {
 	}
 	var mu sync.Mutex
 	stopped := 0
+	// The retry waits until the test has read the index of the stopped build; on a slow runner it publishes before that read otherwise.
+	read := make(chan struct{})
+	var readOnce sync.Once
 	x.BeforeCommit = func(string) error {
 		mu.Lock()
-		defer mu.Unlock()
-		if stopped == 0 {
+		first := stopped == 0
+		if first {
 			stopped++
+		}
+		mu.Unlock()
+		if first {
 			return errors.New("injected fault")
 		}
+		<-read
 		return nil
 	}
-	t.Cleanup(func() { x.BeforeCommit = nil })
+	t.Cleanup(func() {
+		readOnce.Do(func() { close(read) })
+		x.BeforeCommit = nil
+	})
 
 	a = e.mustUpload(e.tokA, "hello_2.11-1_amd64.deb", build(t, "hello", "2.11-1", nil), 201, []string{"stable"})
 	seq := seqOf(e, a, "stable")
@@ -431,6 +441,7 @@ func TestR_DEB_010_AStoppedBuildLeavesThePreviousGeneration(t *testing.T) {
 	if now := e.get("dists/stable/InRelease", e.tokA); !bytes.Equal(now.Body, before.Body) {
 		t.Error("InRelease changed although the build stopped before its commit")
 	}
+	readOnce.Do(func() { close(read) })
 	e.waitIndex("stable", seq) // the retry publishes
 	rel, _ := e.release("stable")
 	if ps := e.packagesOf("stable", rel, "main/binary-amd64/Packages.gz"); len(ps) != 2 {
