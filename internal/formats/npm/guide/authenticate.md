@@ -12,7 +12,7 @@ The snippets read the token from the environment variable `{{.TokenEnvVar}}`, wh
 
 ### In CI
 
-Store a service-account token with only the permissions the job needs as a masked, protected CI/CD variable named `{{.TokenEnvVar}}`, and commit the configuration of the snippet; the job needs nothing else. Coming in a later release: GitLab CI jobs exchange their job ID token for a short-lived trove token, so that no long-lived token is stored in the project at all.
+Store a service-account token with only the permissions the job needs as a masked, protected CI/CD variable named `{{.TokenEnvVar}}`, and commit the configuration of the snippet; the job needs nothing else. In GitLab CI the job needs no stored token at all: it exchanges its job ID token at `/api/v1/auth/oidc/token` for a CI token that lives minutes, exports it as `{{.TokenEnvVar}}` and revokes it as its last step. An Owner of your trove project or an administrator writes the identity mapping that decides what such a token may do; the manual's page GitLab CI pipelines shows the exchange.
 
 ### Checking the sign-in
 

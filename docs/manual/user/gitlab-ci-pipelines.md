@@ -272,7 +272,7 @@ GitLab gives a job one ID token per `id_tokens` entry for its whole run, and doc
 
 ## What the token can do
 
-The token works like any token on the package protocols (npm, NuGet), on `/files/…`, and on the operations of the API that read or change repository content: as a bearer token, as the password of HTTP Basic authentication with any user name (unless an administrator switched Basic authentication off), and as the NuGet API key. It acts as the mappings that granted it, never as a person: it holds no system role, cannot create tokens and gets `403` `ci_token_restricted` on every management operation except `GET` and `DELETE /api/v1/tokens/current`.
+The token works like any token on the package protocols (npm, NuGet, the OCI registry, APT), on `/files/…`, and on the operations of the API that read or change repository content: as a bearer token, as the password of HTTP Basic authentication with any user name (unless an administrator switched Basic authentication off), and as the NuGet API key. It acts as the mappings that granted it, never as a person: it holds no system role, cannot create tokens and gets `403` `ci_token_restricted` on every management operation except `GET` and `DELETE /api/v1/tokens/current`.
 
 ## What never to do
 
