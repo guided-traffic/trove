@@ -210,3 +210,26 @@ func has2(v map[string]string, secret string) bool {
 	}
 	return false
 }
+
+// TestR_HA_025_HoldStopsEveryRole (R-HA-025 step 1, Q-HA-212): postRestore.hold is the supported way to stop every role before a platform restore.
+func TestR_HA_025_HoldStopsEveryRole(t *testing.T) {
+	hold := []string{"postRestore.hold=true", "api.replicaCount=0", "packages.replicaCount=0", "worker.replicaCount=0"}
+	t.Run("zero replicas are accepted with the hold, even with the enforcement of the minimums on, and no Job is rendered", func(t *testing.T) {
+		_, docs := render(t, required(), append(hold, "highAvailability.enforce=true", "backup.enabled=true", "config.backup.target.bucket=trove-backups")...)
+		if postRestoreJob(docs) != nil {
+			t.Error("the hold rendered the post-restore Job")
+		}
+		for _, d := range ofKind(docs, "CronJob") {
+			if got := at(d, "spec", "suspend"); got != true {
+				t.Errorf("the CronJob %s has suspend %v under the hold, want true", str(d, "metadata", "name"), got)
+			}
+		}
+	})
+	t.Run("a replica that runs is refused, and so is autoscaling", func(t *testing.T) {
+		renderFails(t, required(), append(hold, "packages.replicaCount=2"), []string{"postRestore.hold", "packages.replicaCount"}...)
+		renderFails(t, required(), append(hold, "packages.autoscaling.enabled=true"), []string{"postRestore.hold", "packages.autoscaling.enabled"}...)
+	})
+	t.Run("without the hold the minimums apply", func(t *testing.T) {
+		renderFails(t, required(), []string{"api.replicaCount=0"}, "api.replicaCount")
+	})
+}

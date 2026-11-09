@@ -9,6 +9,8 @@ import (
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/backup"
 	"github.com/guided-traffic/trove/internal/backup/postrestore"
+	"github.com/guided-traffic/trove/internal/blob/s3"
+	"github.com/guided-traffic/trove/internal/blob/verify"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/journal"
@@ -104,6 +106,17 @@ func (r postRestoreRunner) PostRestore(ctx context.Context, opts backup.PostRest
 	out := outbound.New(cfg.Proxy.Outbound)
 	pr := postrestore.New(postrestore.Options{
 		DB: db, Recorder: rec, Margin: cfg.Backup.RevocationJournal.ReplayMargin, Log: r.env.log,
+		VerifyStorage: func(ctx context.Context) (postrestore.StorageCheck, error) {
+			client, err := s3.NewFromFactory(ctx, cfg.Storage.S3, out)
+			if err != nil {
+				return postrestore.StorageCheck{}, err
+			}
+			rep, err := verify.Run(ctx, verify.Options{DB: verify.PGSource{DB: db}, Objects: client, Prefix: cfg.Storage.S3.Prefix, Log: r.env.log})
+			if rep == nil {
+				return postrestore.StorageCheck{}, err
+			}
+			return postrestore.StorageCheck{Checked: rep.Checked, Missing: rep.Missing, SizeMismatch: rep.SizeMismatch, Unchecked: int64(len(rep.Unchecked)), ItemsAffected: rep.ItemsAffected}, err
+		},
 		OpenReplayer: func(ctx context.Context, credentialsFile string) (journal.Replayer, error) {
 			reader, err := replay.OpenJournal(ctx, cfg.Storage.S3, out, credentialsFile)
 			if err != nil {

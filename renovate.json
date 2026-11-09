@@ -273,6 +273,17 @@
       "groupSlug": "k6"
     },
     {
+      "description": "The Barman Cloud plugin of the dev profile: the operator image and the sidecar image (DEV_BARMAN_PLUGIN_*_IMAGE) are one release, and so are DEV_BARMAN_PLUGIN_VERSION and the SHA-256 of its manifest.yaml, which are edited by hand; up.sh refuses a pin whose image tags differ from the version, so a pull request of the images alone fails the install of the plugin until the version and the digest follow",
+      "matchDepNames": [
+        "ghcr.io/cloudnative-pg/plugin-barman-cloud",
+        "ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar",
+        "cloudnative-pg/plugin-barman-cloud",
+        "cloudnative-pg/plugin-barman-cloud-sidecar"
+      ],
+      "groupName": "Barman Cloud plugin",
+      "groupSlug": "barman-cloud-plugin"
+    },
+    {
       "description": "syft: SYFT_VERSION and SYFT_IMAGE are one version twice in tools/versions.env; make versions-check (tools/sbom-generator/check-pins.sh) fails when their tags differ, so one pull request carries both",
       "matchDepNames": [
         "anchore/syft",

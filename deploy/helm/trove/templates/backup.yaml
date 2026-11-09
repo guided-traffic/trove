@@ -2,7 +2,7 @@
 {{- /*
 The backup CronJob (R-HA-060, R-BAK-012): trove backup create --trigger schedule, one Job at a time. concurrencyPolicy
 Forbid is fixed and not a value, because the database run row decides in the end (R-BAK-010) and a manual Job from this
-CronJob bypasses the controller. The CronJob is suspended while restore.enabled is set, so no backup runs against a
+CronJob bypasses the controller. The CronJob is suspended while restore.enabled, postRestore.enabled or postRestore.hold is set, so no backup runs against a
 half-restored installation. activeDeadlineSeconds is left out by default: a first backup of a large installation takes
 many hours, and a hung run ends itself after config.backup.stall_timeout (R-BAK-013).
 */ -}}
@@ -44,7 +44,7 @@ spec:
   startingDeadlineSeconds: {{ $b.startingDeadlineSeconds }}
   successfulJobsHistoryLimit: {{ $b.successfulJobsHistoryLimit }}
   failedJobsHistoryLimit: {{ $b.failedJobsHistoryLimit }}
-  suspend: {{ or $b.suspend .Values.restore.enabled }}
+  suspend: {{ or $b.suspend .Values.restore.enabled .Values.postRestore.enabled .Values.postRestore.hold }}
   jobTemplate:
     metadata:
       labels:

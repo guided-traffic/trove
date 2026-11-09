@@ -1,0 +1,40 @@
+# The platform layer of R-HA-023 in the local profile (TROVE_PITR=1, deploy/dev/up.sh): the ObjectStore the Barman Cloud plugin of
+# CloudNativePG archives to. The Cluster trove-db names it in spec.plugins (up.sh adds the entry to postgres.yaml): every WAL
+# segment goes to s3://trove-pg-archive/trove-db/wals, and a Backup of method plugin writes a base backup beside it.
+#
+# HTTPS only, like every link of the profile: the sidecar of the PostgreSQL pods verifies the SeaweedFS certificate against ca.crt of
+# the Secret trove-s3-tls (the dev CA). The login is the SeaweedFS identity of Secret trove-s3, which is also the blob store's: the
+# dev SeaweedFS has one identity, so the separate archive credential R-HA-023 asks of a production installation is not shown here
+# (docs/security/data-and-secret-flow.md). The sidecar's region and checksum settings are the ones an S3-compatible store that is not
+# AWS needs: boto3 of the sidecar sends the CRC32 trailer of the AWS SDK defaults only when the operation requires one.
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: trove-pg-archive
+  labels:
+    app.kubernetes.io/name: trove-pg-archive
+    app.kubernetes.io/part-of: trove-dev
+spec:
+  configuration:
+    destinationPath: s3://trove-pg-archive/
+    endpointURL: https://trove-s3.${NS}.svc:9000
+    endpointCA:
+      name: trove-s3-tls
+      key: ca.crt
+    s3Credentials:
+      accessKeyId:
+        name: trove-s3
+        key: access-key-id
+      secretAccessKey:
+        name: trove-s3
+        key: secret-access-key
+    wal:
+      compression: gzip
+    data:
+      compression: gzip
+  instanceSidecarConfiguration:
+    env:
+      - {name: AWS_DEFAULT_REGION, value: us-east-1}
+      - {name: AWS_REQUEST_CHECKSUM_CALCULATION, value: when_required}
+      - {name: AWS_RESPONSE_CHECKSUM_VALIDATION, value: when_required}
+  retentionPolicy: 7d

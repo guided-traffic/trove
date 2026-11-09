@@ -1,0 +1,50 @@
+# The new PostgreSQL cluster of the point-in-time restore drill (R-HA-025 step 2, docs/developer/e2e.md#the-point-in-time-restore-drill):
+# CloudNativePG never restores in place, so the archive of trove-db (pitr.yaml, the Barman Cloud plugin) is recovered into the Cluster
+# trove-db-pitr, up to ${PITR_TARGET_TIME}. The recovery source is the ObjectStore trove-pg-archive and the server name trove-db, the
+# directory the plugin wrote the archive of the source cluster to. The new cluster does not archive: it would otherwise write the WAL
+# of a new timeline into the directory of trove-db, and the plugin refuses a non-empty archive.
+#
+# The settings that a hot standby must not lower (max_connections) are the source's. The cluster has its own CA and its own Secrets
+# (trove-db-pitr-ca, trove-db-pitr-app): R-HA-025 step 3 points the release at both.
+# ${PITR_TARGET_TIME} and the image are substituted by deploy/dev/pitr.sh.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: trove-db-pitr
+  labels:
+    app.kubernetes.io/part-of: trove-dev
+spec:
+  instances: 1
+  imageName: ${DEV_CNPG_POSTGRES_IMAGE}
+  primaryUpdateStrategy: unsupervised
+  postgresql:
+    parameters:
+      max_connections: "450"
+      tcp_keepalives_idle: "60"
+      tcp_keepalives_interval: "10"
+      tcp_keepalives_count: "6"
+      client_connection_check_interval: "10s"
+      log_parameter_max_length: "0"
+      track_wal_io_timing: "on"
+  bootstrap:
+    recovery:
+      source: trove-db-archive
+      database: trove
+      owner: trove
+      recoveryTarget:
+        targetTime: "${PITR_TARGET_TIME}"
+  externalClusters:
+    - name: trove-db-archive
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: trove-pg-archive
+          serverName: trove-db
+  storage:
+    size: 2Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
