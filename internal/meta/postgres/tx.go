@@ -94,7 +94,7 @@ func (db *DB) RequestTx(ctx context.Context, timeout time.Duration, fn func(meta
 // over on a new connection. Handlers use Read instead of the raw pool, which
 // has no retry (R-ARCH-019, R-ARCH-023).
 func (db *DB) Read(ctx context.Context, fn func(q.DBTX) error) error {
-	err := db.retry.do(ctx, func() error { return readOnce(ctx, db.main, fn) })
+	err := db.retry.doCtx(ctx, func(actx context.Context) error { return readOnce(actx, db.main, fn) })
 	if err != nil && IsStatementTimeout(err) {
 		return Unavailable(err)
 	}
@@ -104,7 +104,7 @@ func (db *DB) Read(ctx context.Context, fn func(q.DBTX) error) error {
 // readOnce is one attempt of Read. A connection that proves wrong is destroyed
 // instead of returned to the pool, so the retry finds the new primary.
 func readOnce(ctx context.Context, pool *pgxpool.Pool, fn func(q.DBTX) error) error {
-	conn, err := pool.Acquire(ctx)
+	conn, err := acquire(ctx, pool)
 	if err != nil {
 		return err
 	}
@@ -134,9 +134,9 @@ func readOnce(ctx context.Context, pool *pgxpool.Pool, fn func(q.DBTX) error) er
 // hooks of the attempt that committed run here, once, after the retry loop.
 func (db *DB) transact(ctx context.Context, pool *pgxpool.Pool, body func(pgx.Tx) (*txn, error)) error {
 	var committed *txn
-	err := db.retry.do(ctx, func() error {
+	err := db.retry.doCtx(ctx, func(actx context.Context) error {
 		var err error
-		committed, err = attempt(ctx, pool, body)
+		committed, err = attempt(actx, pool, body)
 		return err
 	})
 	if err != nil {
@@ -155,7 +155,7 @@ func (db *DB) transact(ctx context.Context, pool *pgxpool.Pool, body func(pgx.Tx
 // demoted primary that is now read-only) is destroyed instead of returned to
 // the pool, so the retry finds the new primary.
 func attempt(ctx context.Context, pool *pgxpool.Pool, body func(pgx.Tx) (*txn, error)) (committed *txn, err error) {
-	conn, err := pool.Acquire(ctx)
+	conn, err := acquire(ctx, pool)
 	if err != nil {
 		return nil, err
 	}

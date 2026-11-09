@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/errs"
@@ -162,11 +163,33 @@ func jitter(d time.Duration) time.Duration {
 // retry.max_elapsed (cut short by the context deadline) for failover errors.
 // The error of an exhausted failover retry is the database being unavailable.
 func (r retrier) do(ctx context.Context, op func() error) error {
+	return r.doCtx(ctx, func(context.Context) error { return op() })
+}
+
+// retryDeadlineKey carries the end of retry.max_elapsed to the attempt, so that the wait for a pooled connection (and
+// with it the dial of a new one) ends with the budget instead of with the request's deadline.
+type retryDeadlineKey struct{}
+
+// acquire takes a connection from the pool. The wait ends at the deadline that doCtx put into ctx, if any: a request
+// that arrives while no connection can be made (every one is dialling a database that does not answer, the pool is
+// full of them) fails with the database being unavailable within retry.max_elapsed, not at the client's timeout.
+func acquire(ctx context.Context, pool *pgxpool.Pool) (*pgxpool.Conn, error) {
+	if by, ok := ctx.Value(retryDeadlineKey{}).(time.Time); ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, by)
+		defer cancel()
+	}
+	return pool.Acquire(ctx)
+}
+
+// doCtx is do for an operation that takes the context of the attempt.
+func (r retrier) doCtx(ctx context.Context, op func(context.Context) error) error {
 	start := r.now()
+	actx := context.WithValue(ctx, retryDeadlineKey{}, start.Add(r.cfg.MaxElapsed))
 	backoff := r.cfg.InitialBackoff
 	serial := 0
 	for {
-		err := op()
+		err := op(actx)
 		if err == nil {
 			return nil
 		}
