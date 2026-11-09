@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/errs"
@@ -25,7 +26,10 @@ func newSpool(t *testing.T, mutate func(*config.StorageSpool), opts ...SpoolOpti
 	if mutate != nil {
 		mutate(&cfg.Spool)
 	}
-	sp, err := NewSpool(cfg.Spool, opts...)
+	// The spool's admission must not depend on the free space of the machine that runs the tests (the default
+	// min_free_bytes is 2 GiB); a test of the volume check passes its own WithFreeBytes, which comes later and wins.
+	plenty := WithFreeBytes(func(string) (uint64, error) { return 1 << 40, nil })
+	sp, err := NewSpool(cfg.Spool, append([]SpoolOption{plenty}, opts...)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,6 +168,16 @@ func TestSpoolAdmission(t *testing.T) {
 		}()
 		if _, err := pw.Write(data(5 << 20)); err != nil {
 			t.Fatal(err)
+		}
+		// The write returns once the first upload has read the bytes; it reserves the budget for the last of them after that
+		// read, in its own goroutine (copyHashed). Until it has, the second upload could take that budget and the first one
+		// fail instead: wait for the first upload's 5 MiB, bounded, before the second starts.
+		deadline := time.Now().Add(10 * time.Second)
+		for sp.Reserved() < 5<<20 && time.Now().Before(deadline) {
+			time.Sleep(time.Millisecond)
+		}
+		if got := sp.Reserved(); got != 5<<20 {
+			t.Fatalf("the first upload reserved %d bytes after reading 5 MiB, want %d", got, 5<<20)
 		}
 		_, err := sp.Ingest(context.Background(), bytes.NewReader(data(5<<20)), IngestOptions{ContentLength: -1})
 		if !errors.Is(err, ErrSpoolFull) {

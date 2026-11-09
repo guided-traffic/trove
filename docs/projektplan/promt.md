@@ -243,11 +243,6 @@ here; remove a finding in the commit that fixes it.
 
 Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 fix and the code reviews of WP4b and WP12:
 
-### Product
-
-- **F-111 · `TestSpoolAdmission` (`internal/blob`) failed once in a full `go test ./internal/...`** on a loaded host and passed
-  alone. Cause not looked at.
-
 ### Tests and tools
 
 - **F-114 · Two npm mirror tests time out under host load** (2026-11-08, load about 48 from four builders):
