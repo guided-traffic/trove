@@ -17,6 +17,7 @@ import (
 
 // npm discovery against the counting npm stub (E6b.2; docs/spec/formats/npm.md "Mirror discovery", R-REPO-051).
 
+// passWithin is how long a pass may make no progress before rig.waitPass fails it (F-114); passCap bounds it in all.
 const passWithin = 90 * time.Second
 
 // wantQuery fails the test unless a raw query holds exactly the parameters.

@@ -406,18 +406,28 @@ func (r *rig) pass(rep *testenv.Replica) time.Time {
 // waitPass waits until a mirror-pass job created after the time has ended with the outcome (kind "" is any): the result of the
 // job is the summary of the attempt, and its creation time has the resolution that the summary's startedAt lacks. While it
 // waits it samples the pass's progress, so that a timeout shows whether the pass stood still or only went slowly (F-79).
-func (r *rig) waitPass(after time.Time, kind, outcome string, within time.Duration) {
+//
+// The spec gives a pass no duration, so the wait is bounded by progress, not by the runner's speed (F-114): it fails when the
+// pass's counters and its pending names have stood still for stall, or when the pass has run for passCap in all. A pass that
+// stands still fails as soon as it did under the former total bound of the same length; a pass that only goes slowly on a
+// loaded host ends.
+func (r *rig) waitPass(after time.Time, kind, outcome string, stall time.Duration) {
 	r.t.Helper()
 	start := time.Now()
-	deadline := start.Add(within)
 	var trail []string
 	nextSample := start
-	for time.Now().Before(deadline) {
+	key, moved := r.progressKey(), start
+	nextKey := start.Add(time.Second)
+	for {
+		now := time.Now()
+		if now.Sub(moved) >= stall || now.Sub(start) >= passCap {
+			break
+		}
 		n, err := r.st.TryNumber(`SELECT count(*) FROM job WHERE kind = 'mirror-pass' AND state = 'succeeded' AND created_at > $1
 			AND result->>'outcome' = $2 AND ($3 = '' OR result->>'kind' = $3)`, after, outcome, kind)
 		if err == nil && n >= 1 {
-			if took := time.Since(start); took > within/4 {
-				r.t.Logf("the pass ended after %s, a quarter of its bound or more; progress, one sample per 5 s:\n%s", took.Round(time.Millisecond), strings.Join(trail, "\n"))
+			if took := time.Since(start); took > stall/4 {
+				r.t.Logf("the pass ended after %s, a quarter of its stall bound or more; progress, one sample per 5 s:\n%s", took.Round(time.Millisecond), strings.Join(trail, "\n"))
 				r.t.Logf("the mirror's rows after the slow pass:\n%s", r.diag())
 				for _, rep := range r.st.Replicas() {
 					r.t.Logf("warnings and errors in the log of %s:\n%s", rep.Name, logLines(rep.Logs.String(), "warn", "error"))
@@ -425,9 +435,15 @@ func (r *rig) waitPass(after time.Time, kind, outcome string, within time.Durati
 			}
 			return
 		}
-		if now := time.Now(); !now.Before(nextSample) {
+		if !now.Before(nextSample) {
 			trail = append(trail, r.progress("+"+now.Sub(start).Round(time.Second).String()))
 			nextSample = now.Add(5 * time.Second)
+		}
+		if !now.Before(nextKey) {
+			if k := r.progressKey(); k != key {
+				key, moved = k, now
+			}
+			nextKey = now.Add(time.Second)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -436,7 +452,25 @@ func (r *rig) waitPass(after time.Time, kind, outcome string, within time.Durati
 	for _, rep := range r.st.Replicas() {
 		r.t.Logf("log of %s (last 60 lines):\n%s", rep.Name, testenv.Tail(rep.Logs.String(), 60))
 	}
-	r.t.Fatalf("a %s pass after %s did not end %s within %s", kind, after.Format(time.TimeOnly), outcome, within)
+	r.t.Fatalf("a %s pass after %s did not end %s: no progress for %s, or %s in all (it ran %s)", kind, after.Format(time.TimeOnly), outcome,
+		stall, passCap, time.Since(start).Round(time.Second))
+}
+
+// passCap bounds a pass that keeps making progress: far above the 27 s a full pass of the stub takes alone, below the package
+// timeout of the long areas.
+const passCap = 10 * time.Minute
+
+// progressKey is what moves while a pass works: its counters, the pending names and the state of the mirror-pass jobs. The
+// holder and updated_at are left out, since a heartbeat changes them while the pass stands still.
+func (r *rig) progressKey() string {
+	k, err := r.st.TryText(`SELECT format('%s/%s/%s/%s/%s/%s/%s', s.pass_names, s.pass_packages_done, s.pass_packages_failed, s.pass_items_stored,
+			s.pass_discovery_done, (SELECT count(*) FROM mirror_pending),
+			(SELECT string_agg(id::text || ':' || state, ',' ORDER BY id) FROM job WHERE kind = 'mirror-pass'))
+		FROM mirror_state s LIMIT 1`)
+	if err != nil {
+		return "sample failed"
+	}
+	return k
 }
 
 // logLines are the lines of a log that contain one of the markers, in any case.
