@@ -74,6 +74,22 @@ func IsConfig(err error) bool {
 	return errors.As(err, &se) && se.Kind == KindConfig
 }
 
+// credentialCodes are the store's answers that name the credential as the cause: a key the store does not know, a
+// signature that does not match the secret, an expired or malformed token. They are the "credential errors" of
+// R-STOR-033 that count against the circuit, unlike an AccessDenied for one operation or a missing bucket, which are
+// answers about the request.
+var credentialCodes = map[string]bool{
+	"InvalidAccessKeyId": true, "SignatureDoesNotMatch": true, "ExpiredToken": true, "InvalidToken": true,
+	"AuthorizationHeaderMalformed": true,
+}
+
+// IsCredentialRejection reports whether err is the store's refusal of the credential trove signed with (a revoked key,
+// a wrong secret, an expired token).
+func IsCredentialRejection(err error) bool {
+	var se *StoreError
+	return errors.As(err, &se) && se.Kind == KindConfig && credentialCodes[se.Code]
+}
+
 // Checksum is the payload checksum a request carries for the store to verify
 // (R-STOR-006, storage.s3.payload_checksum).
 type Checksum struct {

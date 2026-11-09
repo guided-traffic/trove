@@ -50,7 +50,7 @@ func (a *App) wireBlob(ctx context.Context, keys keysArea, pg postgresArea) (blo
 	}
 	bm := blob.NewMetrics(a.tele.metrics)
 	log := a.log.With("component", "blob")
-	objects := blob.NewGuard(client, cfg.S3.CircuitBreaker, blob.WithGuardMetrics(bm))
+	objects := blob.NewGuard(client, cfg.S3.CircuitBreaker, blob.WithGuardMetrics(bm), blob.WithGuardLogger(log, cfg.S3.Credentials.Source))
 	store, err := blob.New(cfg, objects, db, blob.WithLogger(log), blob.WithMetrics(bm), blob.WithMemory(httpserver.SettleMemory))
 	if err != nil {
 		return blobArea{}, err

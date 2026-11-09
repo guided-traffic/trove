@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -12,7 +13,8 @@ import (
 
 // Guard decorates an ObjectStore with the circuit breaker of R-STOR-033 and the
 // request metrics. After circuit_breaker.failure_threshold consecutive failures
-// (network errors, timeouts, 5xx, credential errors; not 404 or other 4xx) the
+// (network errors, timeouts, 5xx, credential errors; not 404 or other 4xx: a credential error is a failure to get
+// a credential or an answer that names the credential as the cause, IsCredentialRejection) the
 // circuit opens for circuit_breaker.open_duration, during which every call
 // fails at once with ErrCircuitOpen; then one probe request goes through and a
 // success closes the circuit.
@@ -24,6 +26,8 @@ type Guard struct {
 	openFor   time.Duration
 	now       func() time.Time
 	metrics   *Metrics
+	log       *slog.Logger
+	source    string // storage.s3.credentials.source, named in the log line of a rejected credential
 
 	mu        sync.Mutex
 	failures  int
@@ -37,6 +41,12 @@ type GuardOption func(*Guard)
 
 // WithGuardMetrics sets the metrics.
 func WithGuardMetrics(m *Metrics) GuardOption { return func(g *Guard) { g.metrics = m } }
+
+// WithGuardLogger sets the logger and the credential source (storage.s3.credentials.source) that the Guard names when the
+// store rejects the credential (R-HA-007). The log line carries the source and the store's code, never a key or a secret.
+func WithGuardLogger(log *slog.Logger, credentialSource string) GuardOption {
+	return func(g *Guard) { g.log, g.source = log, credentialSource }
+}
 
 // WithGuardClock replaces the clock; tests use it.
 func WithGuardClock(now func() time.Time) GuardOption { return func(g *Guard) { g.now = now } }
@@ -97,7 +107,7 @@ func (g *Guard) settle(probe bool, err error) {
 		// transient StoreError and counts.
 		return
 	}
-	if err == nil || !IsTransient(err) {
+	if err == nil || !countsAgainstCircuit(err) {
 		// The store answered; a 404 or another 4xx is an answer too.
 		g.failures = 0
 		if g.open {
@@ -108,11 +118,21 @@ func (g *Guard) settle(probe bool, err error) {
 	}
 	g.failures++
 	if probe || g.failures >= g.threshold {
+		if g.log != nil && IsCredentialRejection(err) && (probe || !g.open) {
+			var se *StoreError
+			_ = errors.As(err, &se)
+			g.log.Warn("the object store rejects the credential; blob operations fail fast until it accepts one",
+				"credential_source", g.source, "code", se.Code, "status", se.Status, "op", se.Op)
+		}
 		g.open = true
 		g.openUntil = g.now().Add(g.openFor)
 		g.metrics.circuit(true)
 	}
 }
+
+// countsAgainstCircuit is whether a failed call is evidence that the store is unavailable to this replica: a transient
+// failure, or an answer that rejects the credential (R-HA-007).
+func countsAgainstCircuit(err error) bool { return IsTransient(err) || IsCredentialRejection(err) }
 
 func requestOutcome(err error) string {
 	switch {
@@ -136,7 +156,7 @@ func (g *Guard) call(op string, f func() error) error {
 	start := g.now()
 	err = f()
 	g.settle(probe, err)
-	if err != nil && IsTransient(err) {
+	if err != nil && countsAgainstCircuit(err) {
 		// the call that opened the circuit, or the probe that kept it open, is answered with the circuit's Retry-After too
 		if after, rejecting := g.Rejecting(); rejecting {
 			err = &retryHintError{err: err, retry: after}

@@ -612,7 +612,10 @@ jobs:
   # Leg ha-suite (the failure suite under the npm load: S3 outage, node loss, PostgreSQL and Valkey primary loss, the npm-audit drain;
   # its set is added to deploy/dev/e2e.sh by another change, so this leg fails at make e2e until then) has the budgets of npm-ha, 120 and
   # 80 minutes, and edge port 8100, the first free one.
-  # Lane 1 (Q-ARCH-431): npm-ha, then ha-suite, one large leg at a time.
+  # Legs ha-faults (the database at 0 instances for 2 minutes, R-HA-057's Sentinel quorum loss, FLUSHALL and slow Valkey, a Valkey credential
+  # mismatch, an object store that rejects trove's credential; E5.10, R-HA-007) and ha-pooler (a pooler instance deleted, gracefully and
+  # forced, in the pooler profile; R-HA-058) run the same steps with the budgets of ha-suite, on edge ports 8110 and 8111.
+  # Lane 1 (Q-ARCH-431): npm-ha, then ha-suite, ha-faults and ha-pooler, one large leg at a time.
   e2e-npm:
     name: e2e-npm on kind (${{ matrix.set }})
     runs-on: large
@@ -626,6 +629,10 @@ jobs:
             port: "8087"
           - set: ha-suite
             port: "8100"
+          - set: ha-faults
+            port: "8110"
+          - set: ha-pooler
+            port: "8111"
     env:
       TROVE_IMAGE: guidedtraffic/trove:dev
       TROVE_DEV_CLUSTER: trove-${{ matrix.set }}-${{ github.run_id }}

@@ -34,6 +34,11 @@
 #                       R-NPM-038 cut by a pod deletion, the object-store outage (30 s, and 5 min with a replica deleted), the PostgreSQL
 #                       and the Valkey primary loss and the loss of a node (docker stop); the scatter profile, three client pods, the counting
 #                       npm test upstream (nightly, dispatch, locally)
+#   e2e.sh ha-faults   the failure scenarios E5.10 adds, under the same npm load (TestHAFaults_...): the database at 0 instances for 2 minutes, the
+#                       Sentinel quorum loss, FLUSHALL and a slow Valkey of R-HA-057, a Valkey credential mismatch and an object store that rejects
+#                       trove's credential (R-HA-007); the scatter profile, three client pods, the counting npm test upstream (nightly, dispatch, locally)
+#   e2e.sh ha-pooler   an instance of the request pooler and of the control pooler deleted, gracefully and forced, under the npm load (TestHAPooler_...,
+#                       R-HA-058, R-HA-007): the scatter profile with the poolers (TROVE_POOLER=1); the cluster stays in the pooler overlay until the next `make dev-up`
 #   e2e.sh nuget-clients  the smoke test of the NuGet client pods (R-NUGET-027: dotnet and nuget.exe run, the base URL reaches the
 #                       cluster with a verified certificate); builds the clients image and starts the pods, which stay up
 #   e2e.sh nuget-clients-down  removes the NuGet client pods
@@ -175,6 +180,12 @@ case "$set_name" in
   # scenarios of R-HA-052 that npm-ha and npm-ha-crash leave out, with the same load (eight npm ci loops, a publish loop, k6).
   # A long set (about 50 minutes): nightly, on dispatch and locally, like the closing run's Valkey outage.
   ha-suite) run='^TestHASuite_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
+  # The failure scenarios E5.10 adds (test/e2e/ha_faults_test.go, docs/developer/e2e.md#the-failure-suite-ha-faults), under the same npm load: the database at
+  # 0 instances for 2 minutes, R-HA-057's Sentinel quorum loss, FLUSHALL and slow Valkey, a Valkey credential mismatch and an object store that rejects
+  # trove's credential (about 45 minutes). `ha-pooler` runs a pooler instance deleted, gracefully and forced, in the pooler profile (TROVE_POOLER=1,
+  # R-HA-058; about 25 minutes). Both are long sets: nightly, on dispatch and locally.
+  ha-faults) run='^TestHAFaults_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
+  ha-pooler) run='^TestHAPooler_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_POOLER=1 ;;
   # >>> M4 ci
   # GitLab CI OIDC (R-CI-028, roadmap M4 E4.1 to E4.7, docs/developer/e2e.md#the-ci-tests): the reference pipeline's steps
   # with the real npm and .NET clients of the client pods against the issuer double, in the scatter profile. `ci` runs on
