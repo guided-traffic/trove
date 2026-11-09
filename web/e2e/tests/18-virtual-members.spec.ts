@@ -38,15 +38,20 @@ test('R-UI-022 with the keyboard only an administrator adds two members, reorder
   const members = page.getByRole('listbox', { name: 'Members in resolution order' });
   const live = page.getByRole('status').filter({ hasText: /added|moved|removed/ });
 
-  /** Picks the option with the keyboard: focus the list, move the active option with the arrow key, select it with Space. */
+  /**
+   * Picks the option with the keyboard: focus the list, Home to its first option (a listbox remembers its last active option),
+   * move the active option with the arrow key, and select it with Space unless it is selected already (Space toggles).
+   */
   async function pick(list: typeof available, key: string): Promise<void> {
     await list.focus();
     const options = list.getByRole('option');
     const names = await options.evaluateAll((els) => els.map((e) => e.querySelector('[translate="no"]')?.textContent?.trim() ?? ''));
     const index = names.indexOf(key);
     expect(index, `${key} among ${names}`).toBeGreaterThanOrEqual(0);
+    await page.keyboard.press('Home');
     for (let i = 0; i < index; i++) await page.keyboard.press('ArrowDown');
-    await page.keyboard.press('Space');
+    if ((await options.nth(index).getAttribute('aria-selected')) !== 'true') await page.keyboard.press('Space');
+    await expect(options.nth(index)).toHaveAttribute('aria-selected', 'true');
   }
   /** Presses a button with the keyboard. */
   async function press(name: string): Promise<void> {
