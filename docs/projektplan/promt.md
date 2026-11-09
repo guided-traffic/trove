@@ -279,8 +279,7 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   before the replicas turned ready) and not the drain (the refusals came five minutes after the last eviction). Open: (1) what stalled the
   whole cluster at 07:50:08 (every `npm ci` took 40 s, the edge's connect time to the pods reached its 5 s bound, the `packages` pods
   served a third of their rate), with no pod event, restart or failover in that minute; the load of the runner was not measured;
-  (2) why a 429 that a pod answers before it reads a 256 KiB body reached the client as `502 SH` in 7 of 16 cases behind HAProxy Ingress,
-  while a plain TLS client against the server got the 429 in 320 of 320 attempts; (3) the 13 of 11,529 requests answered 502 in the
+  (2) is closed ([Q-ARCH-446](../spec/architecture.md#q-arch-446--a-response-to-a-request-whose-body-is-unread-is-sent-first-then-the-body-is-read-and-discarded-within-a-bound): reproduced behind HAProxy 3.0, the pod's close with an unread body sent an RST that destroyed the answer, fixed in the listener); (3) the 13 of 11,529 requests answered 502 in the
   certificate rotation row of the run 42561072166, which the transfer loop does not explain, and the two later runs of the set `push`
   (42563355283: 10 of 3,245 through the scatter edge with a slowest request of 15 s). (4) the p99 conditions of `TestDrainRoles` (R-HA-059, Q-HA-94) failed in two nightly dispatches of the branch of the fix, which had other large legs
   running at the same time (documents 1.64 s against a 755 ms warm-up; then 5.25 s against 840 ms and all requests 13.8 s against 1.7 s), while the transfer loop

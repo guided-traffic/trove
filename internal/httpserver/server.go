@@ -366,10 +366,14 @@ func (s *Server) track(next http.Handler) http.Handler {
 			// cut after one stall timeout, not held for as long as its kernel answers probes.
 			defer arm()
 		}
+		raw := r.Body
 		if a.hasBody {
 			r.Body = &trackedBody{ReadCloser: r.Body, a: a, extend: extend, release: release}
 		}
 		next.ServeHTTP(&stallWriter{ResponseWriter: w, arm: arm}, r)
+		if a.hasBody && !a.bodyDone.Load() {
+			settleUnreadBody(w, r, raw)
+		}
 	})
 }
 

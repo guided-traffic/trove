@@ -10031,6 +10031,25 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied in the spec:** R-REPO-051. Code: [mirror_host.go](../../internal/formathost/mirror_host.go).
 
+### Q-ARCH-446 · A response to a request whose body is unread is sent first, then the body is read and discarded within a bound
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: F-119 (2). In the nightly dispatch 42578594755, 7 of 16 early `429` answers to 256 KiB PUTs reached the client as `502` with the HAProxy flag `SH`, while a plain TLS client got the `429` in 320 of 320 attempts. Reproduced on 2026-11-09 with the real listener (TLS, HTTP/1.1) behind HAProxy 3.0 (`mode http`, `ssl verify none` to the server, 36 concurrent PUTs through the proxy to a handler that answers 429 without reading the body): 16 of 36 answers were `502 SH` at 256 KiB, 13 of 36 at 64 KiB, 23 of 36 at 1 MiB; the same handler with `io.Copy(io.Discard, r.Body)` first gave 36 of 36 `429`. On Linux the cause is the close of a connection whose receive buffer holds unread bytes: the kernel sends an RST, and the proxy, which is still writing the body to the pod, loses the connection before it has parsed the status line. `net/http` discards at most 256 KiB of an unread body (`maxPostHandlerReadBytes`) and closes; the half-close it uses against this (`closeWriteAndWait`) does not cover a body that keeps arriving. A direct client that reads while it writes never sees it, which is why the plain-client test passed.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Configure the edge (`option http-buffer-request`) | The proxy buffers the body before it forwards the request | None in the product | Every deployment behind any proxy must set it; a body over the buffer is not covered; the product stays wrong |
+| (b) Every early-rejecting handler reads its body | Each rejection path drains | Explicit | Many paths (rate limit, authentication, size checks, every format), each can forget it |
+| (c) The listener's `track` wrapper sends the answer, then discards the unread rest of an HTTP/1 body up to 8 MiB and 5 s (chosen) | One place for every handler; a request with `Expect: 100-continue` and every HTTP/2 request is left alone | The connection ends with a FIN; the client has its answer at once (the response is flushed before the discard) | A refused upload of more than 8 MiB, or one slower than 5 s, still ends with the reset |
+| (d) Linger on close for unread bodies (`SO_LINGER`, half-close and wait) | Keep the socket open until the peer has stopped | No body is read | Holds a socket per rejected upload for as long as the peer keeps sending; the receive buffer fills and the sender stalls |
+
+**Choice:** (c). `settleUnreadBody` ([unread_body.go](../../internal/httpserver/unread_body.go)) runs in `track` after the handler returned with a body that was not read to its end: it flushes the response, sets a read deadline of 5 s and discards up to 8 MiB straight from the connection's body (not through the tracked body, so the shutdown does not count the discard as a commit). Verified against the same HAProxy setup: 36 of 36 `429` at 64 KiB, 256 KiB, 1 MiB and 20 MB.
+
+**Rationale:** The product must be correct behind any proxy, and the only place that sees every response is the listener. The bound keeps a rejected multi-gigabyte upload from costing the pod its bandwidth; the clients that matter (a proxy relaying a few hundred KiB, the 256 KiB PUTs of the drain tests) are far below it. The flush costs the response its `Content-Length` (it is sent chunked) and only for a request that arrived with an unread body. The development agent would revisit the bound if a refused upload above 8 MiB shows up as a `502` in a run, or the discard as a measurable load in the write path.
+
+**Applied in the spec:** none (R-ARCH-005 stays as it is). Code: [unread_body.go](../../internal/httpserver/unread_body.go), `track` in [server.go](../../internal/httpserver/server.go); test `TestUnreadBody` ([unread_body_test.go](../../internal/httpserver/unread_body_test.go)). Elsewhere: [architecture.md](../developer/architecture.md) (the `internal/httpserver` row).
+
 ## What this does not cover
 
 
