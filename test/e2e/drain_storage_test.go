@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	gcDrainFiles = 12
+	gcDrainFiles = 6
 	gcDrainSize  = 64 << 10
 )
 
@@ -131,9 +131,9 @@ func (x *storageJobs) beforeDrain(t *testing.T, d *variantDrain) {
 	if len(evicted) == 0 {
 		t.Fatalf("no main worker pod runs on %s: the drain evicts no worker", d.Node)
 	}
-	// gc-full may run only one at a time (409): a run that the other worker claimed is waited out, then the next one is started with
+	// gc-full may run only one at a time (409): a run that the other worker claimed is cancelled, then the next one is started with
 	// fresh garbage. Each round has the same chance to land on the evicted worker.
-	for round := 1; round <= 12; round++ {
+	for round := 1; round <= 16; round++ {
 		x.garbageBlobs(t, adm, round)
 		id := x.startGC(t, adm)
 		var j gcJob
@@ -148,13 +148,18 @@ func (x *storageJobs) beforeDrain(t *testing.T, d *variantDrain) {
 			t.Logf("R-STOR-046: gc-full job %s runs on %s, which the drain of %s evicts (round %d)", id, j.replica(), d.Node, round)
 			return
 		}
-		t.Logf("R-STOR-046: gc-full job %s ran on %q (%s), not on the evicted worker %v; waiting for it to end (round %d)", id, j.replica(), j.State, evicted, round)
+		// the other worker holds the run (in the first run of E5.9 five of six rounds went to the same worker): stop it, so that the next round
+		// does not wait for its settle time of 30 s
+		t.Logf("R-STOR-046: gc-full job %s ran on %q (%s), not on the evicted worker %v; cancelling it (round %d)", id, j.replica(), j.State, evicted, round)
+		if r, err := retrying(func() (reply, error) { return adm.send(http.MethodPost, "/api/v1/system/jobs/"+id+"/cancel", nil) }); err != nil || r.Status/100 != 2 {
+			t.Logf("R-STOR-046: cancel of %s: %v %s", id, err, r)
+		}
 		waitFor(t, "the gc-full job to end", 3*time.Minute, time.Second, func() bool {
 			j = readGCJob(t, adm, id)
 			return j.ended()
 		})
 	}
-	t.Fatalf("R-STOR-046: no gc-full job was claimed by the evicted worker (%v) in 12 rounds", evicted)
+	t.Fatalf("R-STOR-046: no gc-full job was claimed by the evicted worker (%v) in 16 rounds", evicted)
 }
 
 func (x *storageJobs) verify(t *testing.T, d *variantDrain, firstEviction, drainEnd time.Time) {

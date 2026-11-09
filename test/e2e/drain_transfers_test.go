@@ -2,9 +2,10 @@
 
 package e2e
 
-// The long-transfer probes of R-HA-059's load table (E5.9): "curl --limit-rate 2M --retry 5 --retry-all-errors -C - -o big.bin
-// .../files/web/generic-local/1gib.bin (about 512 s, longer than the packages grace period), 2 parallel loops", and a large upload
-// that the client repeats when it is cut (rule 6: "downloads resume with a Range request; uploads are repeated by the client").
+// The long-transfer probes of R-HA-059's load table (E5.9): "curl --limit-rate 2M -C - -o big.bin
+// .../files/web/generic-local/1gib.bin (about 512 s, longer than the packages grace period), 2 parallel loops", run again by the client
+// after a cut (without --retry, which starts at byte 0 instead of resuming: Q-HA-241), and large uploads that the client repeats when they
+// are cut (rule 6: "downloads resume with a Range request; uploads are repeated by the client").
 //
 // Pass conditions (R-HA-059): a probe is cut at most once per evicted packages pod that served it, completes through resume, and its
 // SHA-256 matches; a cut on a pod that was not evicted fails the test.
@@ -13,11 +14,12 @@ package e2e
 // for server.shutdown_timeout (110 s), then resets the connection (R-HA-011, Q-ARCH-187). A probe that no evicted pod serves is cut by
 // nothing, and the test would pass without the path having run. Download probe 0 therefore starts again until the packages pod of the
 // drained node answers it (X-Trove-Replica), so that it is in flight on the evicted pod when the drain starts: its cut is a
-// precondition the test proves (exactly one cut, on that pod). Probe 1 takes whichever replica the edge gives it.
+// precondition the test proves (exactly one cut, on that pod). Probe 1 takes whichever replica the edge gives it. An upload cannot be held
+// on a pod (its answer comes at the end), so four upload probes run and the cuts that happen are judged.
 //
 // Both download probes start with the load and take about 512 s; the drain is the third to fifth minute of the load and the test
 // waits for the probes to finish after the load stops. The upload probes start right before the fault and last 200 s at 2 MiB/s, so
-// the evicted pod's cut (about 115 s after the fault) falls into them; an upload is repeated from the start after a cut.
+// the cut of an evicted receiving pod (about 115 s after the fault) falls into them; an upload is repeated from the start after a cut.
 
 import (
 	"bytes"
@@ -37,7 +39,7 @@ const (
 	dlProbeBytes = 1 << 30   // 1gib.bin: 512 s at 2 MiB/s
 	ulProbeBytes = 400 << 20 // 200 s at 2 MiB/s
 	dlProbes     = 2
-	ulProbes     = 2
+	ulProbes     = 4
 )
 
 var (
@@ -80,39 +82,75 @@ func (x *longTransfers) prepare(t *testing.T) {
 	}
 }
 
-// dlProbe is one download probe: curl with the flags of the table, its header dump (every response of the retries), its result.
+// dlProbe is one download probe: curl -C - at 2 MiB/s, run again by the client when it ends without the whole file (at most six
+// invocations). Each invocation has a header dump of its own: curl opens -D afresh per process.
 type dlProbe struct {
-	idx      int
-	pin      string
-	hdr, out string
-	done     chan struct{}
+	idx  int
+	pin  string // the replica the first invocation must start on ("" = whichever)
+	out  string
+	done chan struct{}
 
 	mu       sync.Mutex
 	pinTries int
-	exit     int
-	stderr   string
-	started  time.Time
-	ended    time.Time
+	attempts []dlAttempt
+}
+
+// dlAttempt is one invocation of curl: the responses it received and how it ended.
+type dlAttempt struct {
+	hdr        string
+	blocks     []responseBlock
+	exit       int
+	stderr     string
+	start, end time.Time
+}
+
+// startAttempt starts one invocation. The first one of a probe deletes the file; a later one continues it with -C -, which sends the
+// Range request of rule 6. The command is that of R-HA-059's table without --retry: curl's own retry throws the partial file away and
+// starts at byte 0 (first run of E5.9: the second response of a cut transfer was 200, and the transfer took 15m52s), so it does not
+// resume; the resume is the client's, as rule 6 says.
+func (p *dlProbe) startAttempt(x *longTransfers, n int) (*exec.Cmd, *bytes.Buffer, chan error, string) {
+	hdr := filepath.Join(dataDir(), fmt.Sprintf("drain-dl-%d.%d.hdr", p.idx, n))
+	_ = os.Remove(hdr)
+	args := []string{"-sS", "--cacert", cfg.caFile, "--limit-rate", "2M", "-C", "-", "-H", x.auth, "-D", hdr, "-o", p.out, x.base + "drain-load/1gib.bin"}
+	cmd := exec.Command("curl", args...)
+	errb := &bytes.Buffer{}
+	cmd.Stderr = errb
+	finished := make(chan error, 1)
+	if err := cmd.Start(); err != nil {
+		finished <- err
+		return cmd, errb, finished, hdr
+	}
+	go func() { finished <- cmd.Wait() }()
+	return cmd, errb, finished, hdr
+}
+
+func exitCode(err error) int {
+	var ee *exec.ExitError
+	switch {
+	case err == nil:
+		return 0
+	case errors.As(err, &ee):
+		return ee.ExitCode()
+	}
+	return -1
+}
+
+func (p *dlProbe) record(a dlAttempt) {
+	raw, _ := os.ReadFile(a.hdr)
+	a.blocks = responseBlocks(raw)
+	p.mu.Lock()
+	p.attempts = append(p.attempts, a)
+	p.mu.Unlock()
 }
 
 func (p *dlProbe) run(x *longTransfers) {
 	defer close(p.done)
-	for try := 1; try <= 60; try++ {
-		_ = os.Remove(p.hdr)
+	// the first invocation: a held probe is dropped and started again until the replica that answers is the pinned one
+	for try := 1; ; try++ {
 		_ = os.Remove(p.out)
-		args := []string{"-sS", "--cacert", cfg.caFile, "--limit-rate", "2M", "--retry", "5", "--retry-all-errors", "-C", "-", "-H", x.auth, "-D", p.hdr, "-o", p.out, x.base + "drain-load/1gib.bin"}
-		cmd := exec.Command("curl", args...)
-		var errb bytes.Buffer
-		cmd.Stderr = &errb
+		cmd, errb, finished, hdr := p.startAttempt(x, 0)
 		start := time.Now()
-		if err := cmd.Start(); err != nil {
-			p.finish(start, -1, err.Error())
-			return
-		}
-		finished := make(chan error, 1)
-		go func() { finished <- cmd.Wait() }()
-		if p.pin != "" {
-			// the pod that answers is in the first response's header; a probe that another replica answers is dropped and started again
+		if p.pin != "" && try <= 60 {
 			var replica string
 			deadline := time.After(20 * time.Second)
 		wait:
@@ -124,10 +162,10 @@ func (p *dlProbe) run(x *longTransfers) {
 				case <-deadline:
 					break wait
 				case <-time.After(200 * time.Millisecond):
-					replica = firstReplica(p.hdr)
+					replica = firstReplica(hdr)
 				}
 			}
-			if replica != p.pin && replica != "" {
+			if replica != "" && replica != p.pin {
 				_ = cmd.Process.Kill()
 				<-finished
 				p.mu.Lock()
@@ -137,23 +175,23 @@ func (p *dlProbe) run(x *longTransfers) {
 			}
 		}
 		err := <-finished
-		code := 0
-		var ee *exec.ExitError
-		if errors.As(err, &ee) {
-			code = ee.ExitCode()
-		} else if err != nil {
-			code = -1
-		}
-		p.finish(start, code, strings.TrimSpace(errb.String()))
-		return
+		p.record(dlAttempt{hdr: hdr, exit: exitCode(err), stderr: strings.TrimSpace(errb.String()), start: start, end: time.Now()})
+		break
 	}
-	p.finish(time.Now(), -1, fmt.Sprintf("no response was served by %s in 60 tries", p.pin))
-}
-
-func (p *dlProbe) finish(start time.Time, exit int, stderr string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.started, p.ended, p.exit, p.stderr = start, time.Now(), exit, stderr
+	// the client resumes: curl -C - again, after a pause, until the file is whole
+	for n := 1; n < 6; n++ {
+		p.mu.Lock()
+		last := p.attempts[len(p.attempts)-1]
+		p.mu.Unlock()
+		if last.exit == 0 {
+			return
+		}
+		time.Sleep(2 * time.Second)
+		_, errb, finished, hdr := p.startAttempt(x, n)
+		start := time.Now()
+		err := <-finished
+		p.record(dlAttempt{hdr: hdr, exit: exitCode(err), stderr: strings.TrimSpace(errb.String()), start: start, end: time.Now()})
+	}
 }
 
 // firstReplica is the X-Trove-Replica header of the first response in a curl header dump, "" while there is none.
@@ -259,7 +297,7 @@ func (x *longTransfers) begin(t *testing.T, d *variantDrain, started time.Time) 
 		t.Fatal(err)
 	}
 	for i := range dlProbes {
-		p := &dlProbe{idx: i, hdr: filepath.Join(dataDir(), fmt.Sprintf("drain-dl-%d.hdr", i)), out: filepath.Join(dataDir(), fmt.Sprintf("drain-dl-%d.bin", i)), done: make(chan struct{})}
+		p := &dlProbe{idx: i, out: filepath.Join(dataDir(), fmt.Sprintf("drain-dl-%d.bin", i)), done: make(chan struct{})}
 		if i == 0 {
 			p.pin = x.pin
 		}
@@ -311,39 +349,51 @@ func (x *longTransfers) verify(t *testing.T, d *variantDrain, firstEviction, dra
 
 func (x *longTransfers) verifyDownload(t *testing.T, p *dlProbe, evicted map[string]time.Time) {
 	t.Helper()
-	raw, _ := os.ReadFile(p.hdr)
-	blocks := responseBlocks(raw)
 	p.mu.Lock()
-	exit, stderr, pinTries, started, ended := p.exit, p.stderr, p.pinTries, p.started, p.ended
+	attempts := append([]dlAttempt{}, p.attempts...)
+	pinTries := p.pinTries
 	p.mu.Unlock()
-	var trail []string
-	for _, b := range blocks {
-		trail = append(trail, fmt.Sprintf("%s from %s", strings.TrimPrefix(b.status, "HTTP/"), b.replica))
+	if len(attempts) == 0 {
+		t.Errorf("R-HA-059: download probe %d never ran", p.idx)
+		return
 	}
-	t.Logf("E5.9: download probe %d: curl exit %d after %s (%d starts to hold it on %s), responses [%s], curl said it would retry %d times (stderr: %q)",
-		p.idx, exit, ended.Sub(started).Round(time.Second), pinTries+1, p.pin, strings.Join(trail, "; "), strings.Count(stderr, "retry in"), tail(stderr, 600))
-	if exit != 0 {
-		t.Errorf("R-HA-059: download probe %d: curl exit %d: %s", p.idx, exit, stderr)
+	var trail []string
+	for i, a := range attempts {
+		var rs []string
+		for _, b := range a.blocks {
+			rs = append(rs, fmt.Sprintf("%s from %s", strings.TrimPrefix(b.status, "HTTP/"), b.replica))
+		}
+		trail = append(trail, fmt.Sprintf("#%d %s to %s exit %d [%s] %s", i, a.start.Format("15:04:05"), a.end.Format("15:04:05"), a.exit, strings.Join(rs, "; "), tail(a.stderr, 200)))
+	}
+	t.Logf("E5.9: download probe %d (%d starts to hold it on %q): %s", p.idx, pinTries+1, p.pin, strings.Join(trail, " | "))
+	last := attempts[len(attempts)-1]
+	if last.exit != 0 {
+		t.Errorf("R-HA-059: download probe %d did not complete in %d invocations of curl: exit %d: %s", p.idx, len(attempts), last.exit, last.stderr)
 		return
 	}
 	if got := fileSHA(t, p.out); got != x.dlSum {
 		t.Errorf("R-HA-059: download probe %d: sha256 %s, want %s", p.idx, got, x.dlSum)
 	}
 	_ = os.Remove(p.out)
+
+	// every invocation but the last was cut: it received a body (200, 206) and ended with an error; the pod that sent that response is
+	// the one that cut it. An invocation without a response, or one answered with something else, is a refusal and no cut.
 	perPod := map[string]int{}
-	for i, b := range blocks {
-		last := i == len(blocks)-1
+	for i, a := range attempts {
+		final := i == len(attempts)-1
+		first := len(a.blocks) > 0 && (a.blocks[0].code == 200 || a.blocks[0].code == 206)
 		switch {
-		case last && i > 0 && b.code != 206:
-			t.Errorf("R-HA-059: download probe %d: the resume after a cut answered %q, want 206", p.idx, b.status)
-		case last && b.code != 200 && b.code != 206:
-			t.Errorf("R-HA-059: download probe %d: the last response is %q", p.idx, b.status)
-		case !last && b.code != 200 && b.code != 206:
-			t.Errorf("R-HA-059: download probe %d: a response of the transfer was refused: %q from %s", p.idx, b.status, b.replica)
-		case !last:
-			perPod[b.replica]++
-			if _, ok := evicted[b.replica]; !ok {
-				t.Errorf("R-HA-059: download probe %d was cut on %s, which was not evicted (evicted: %v)", p.idx, b.replica, evictedNames(evicted))
+		case len(a.blocks) == 0:
+			t.Errorf("R-HA-059: download probe %d, invocation %d: curl exit %d without a response: %s", p.idx, i, a.exit, a.stderr)
+		case !first:
+			t.Errorf("R-HA-059: download probe %d, invocation %d was refused: %q from %s", p.idx, i, a.blocks[0].status, a.blocks[0].replica)
+		case i > 0 && a.blocks[0].code != 206:
+			t.Errorf("R-HA-059: download probe %d, invocation %d: the resume after a cut answered %q, want 206", p.idx, i, a.blocks[0].status)
+		case !final:
+			cutBy := a.blocks[len(a.blocks)-1].replica
+			perPod[cutBy]++
+			if _, ok := evicted[cutBy]; !ok {
+				t.Errorf("R-HA-059: download probe %d was cut on %s, which was not evicted (evicted: %v)", p.idx, cutBy, evictedNames(evicted))
 			}
 		}
 	}
@@ -353,7 +403,7 @@ func (x *longTransfers) verifyDownload(t *testing.T, p *dlProbe, evicted map[str
 		}
 	}
 	if p.pin != "" && perPod[p.pin] != 1 {
-		t.Errorf("R-HA-059: download probe %d was held on %s, the pod the drain evicted, and was cut %d times by it, want once (responses [%s])", p.idx, p.pin, perPod[p.pin], strings.Join(trail, "; "))
+		t.Errorf("R-HA-059: download probe %d was held on %s, the pod the drain evicted, and was cut %d times by it, want once", p.idx, p.pin, perPod[p.pin])
 	}
 }
 

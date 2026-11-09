@@ -8,9 +8,10 @@ package e2e
 //
 //	extras.prepare            before anything is picked: files seeded, nothing running
 //	prepareVariantDrain       the node of the variant (drain_variants_test.go)
-//	load starts, six probe jobs start, two workers each run one
+//	load starts
 //	extras.begin              the probes that run through the warm-up
 //	... the warm-up (before) ...
+//	six probe jobs start, two workers each run one
 //	extras.beforeDrain        forces the precondition of the extras right before the fault (a job in flight on the evicted worker)
 //	d.Run                     the fault: deploy/dev/drain.sh [--also ...] <node>
 //	... after ...
@@ -42,7 +43,7 @@ type drainExtra interface {
 // Q-HA-240). kind ("npm", "nuget", "full") names the artifacts.
 func drainUnderLoad(t *testing.T, kind string, v drainVariant, start func() drainLoad, extras ...drainExtra) {
 	const before, after = 2 * time.Minute, 3 * time.Minute
-	const steps = 330 // probe jobs that run through the warm-up and the drain
+	const steps = 450 // probe jobs that run through the forcing of the extras and the drain: they start after the warm-up and a worker keeps a job until 44 s after its SIGTERM
 	name := kind + "-ha-drain"
 	logPrefix := kind + "-drain-"
 	if v != variantA {
@@ -60,6 +61,12 @@ func drainUnderLoad(t *testing.T, kind string, v drainVariant, start func() drai
 	streams := streamPodLogs(t, logPrefix, d.OnNode)
 
 	load := start()
+	for _, x := range extras {
+		x.begin(t, d, load.begun())
+	}
+	time.Sleep(time.Until(load.begun().Add(before)))
+	// the probe jobs start at the end of the warm-up, so that they are in flight at the eviction whatever the extras take to force their
+	// precondition (the first run of E5.9 started them with the load, and the forcing of the collection run took 3 minutes: they had ended)
 	var ids []string
 	for i := 0; i < 6; i++ {
 		ids = append(ids, strings.TrimSpace(driver(t, "probe", "-steps", fmt.Sprint(steps), "-interval-ms", "1000")))
@@ -68,10 +75,6 @@ func drainUnderLoad(t *testing.T, kind string, v drainVariant, start func() drai
 		rows := sql(t, fmt.Sprintf(`SELECT r.name FROM trove.job j JOIN trove.replica r ON r.instance_uid = j.locked_by WHERE j.kind = 'system.probe' AND j.state = 'running' AND j.progress_total = %d GROUP BY 1`, steps))
 		return len(strings.Fields(rows)) >= 2
 	})
-	for _, x := range extras {
-		x.begin(t, d, load.begun())
-	}
-	time.Sleep(time.Until(load.begun().Add(before)))
 	for _, x := range extras {
 		x.beforeDrain(t, d)
 	}

@@ -1801,10 +1801,11 @@ passes to `up.sh` in place of `scatter`.
 
 1. `prepare` of every extra (below): files made and the source of the downloads uploaded once per process.
 2. `prepareVariantDrain`: the node of the variant (B, C and D may move a primary first), the pod watch, the log streams of the pods on the node.
-3. The load starts (`startFullLoad`: eight `npm ci` loops, four `dotnet restore` loops, the two publish loops, both k6 scripts), six
-   `system.probe` jobs of 330 steps start, and the test waits until both main workers run one.
+3. The load starts (`startFullLoad`: eight `npm ci` loops, four `dotnet restore` loops, the two publish loops, both k6 scripts).
 4. Extras `begin` (the download probes start), then the warm-up: 2 minutes from the start of the load.
-5. Extras `beforeDrain`: the full collection run is started until the evicted worker holds it, then the upload probes start.
+5. Six `system.probe` jobs of 450 steps start, and the test waits until both main workers run one (they start after the warm-up: forcing the
+   collection run took 3 minutes in the first run, and probe jobs started with the load had ended by the eviction). Extras `beforeDrain`: the full
+   collection run is started until the evicted worker holds it (a run the other worker claims is cancelled), then the upload probes start.
 6. `d.Run`: `drain.sh [--also ...] <node>`. Then 3 minutes of load, the load stops, every probe job ends.
 7. `d.Verify` (the variant's own condition and the shared ones), then the load's conditions (every command exits `0`, k6 only `2xx` and
    `304`, the p99 from the first eviction until 2 minutes after the drain at most twice the warm-up's, every acknowledged publish
@@ -1816,20 +1817,23 @@ bytes (`dataFile`, as E1.13) in `generic-local/drain-load/1gib.bin`, uploaded on
 
 | Probe | Command | Started | Conditions |
 |---|---|---|---|
-| download 0 | `curl --limit-rate 2M --retry 5 --retry-all-errors -C - -D <dump> -o <file> .../1gib.bin`, started again (the partial file removed) until the first response's `X-Trove-Replica` names the `packages` pod on the drained node | with the load | exit `0`, SHA-256 of the file, exactly one cut and it by that pod, then a `206`; no response other than `200` and `206` |
+| download 0 | `curl --limit-rate 2M -C - -D <dump> -o <file> .../1gib.bin`, started again (the partial file removed) until the first response's `X-Trove-Replica` names the `packages` pod on the drained node; after a cut the client runs the same command again (2 s later, at most six invocations, a dump per invocation) | with the load | exit `0` of the last invocation, SHA-256 of the file, exactly one cut and it by that pod, the next invocation answered `206`; no response other than `200` and `206` |
 | download 1 | the same, whichever replica answers | with the load | exit `0`, SHA-256; at most one cut per pod, and only by a pod the pod watch saw evicted |
-| upload 0 and 1 | `curl -T` of 400 MiB (`dataFile`) at `--limit-rate 2M` to `drain-load/up-<run>-<variant>-<i>.bin`, repeated from the start after a failure, at most three attempts | right before the fault | the last attempt answers `200`/`201`; at most one failed attempt, ending after the first eviction and after at least 30 s (a faster failure is a refusal, F-119, and fails the test); the file downloads with the SHA-256 of the source |
 
-A cut is a response block of the header dump that carries a body (`200`, `206`) and is followed by another block: curl's `-D` appends the
-headers of each response of a retried transfer, so the dump is the transfer's history (`responseBlocks`). An evicted pod keeps serving a
+| upload 0 to 3 | `curl -T` of 400 MiB (`dataFile`) at `--limit-rate 2M` to `drain-load/up-<run>-<variant>-<i>.bin`, repeated from the start after a failure, at most three attempts | right before the fault | the last attempt answers `200`/`201`; at most one failed attempt, ending after the first eviction and after at least 30 s (a faster failure is a refusal, F-119, and fails the test); the file downloads with the SHA-256 of the source |
+
+A cut is an invocation of curl that received a body (`200`, `206`) and ended with an error; the pod named in its last response (`X-Trove-Replica`) cut it
+(`responseBlocks` reads the dump). The command of the table has `--retry 5 --retry-all-errors`; curl's retry starts at byte 0 and does not resume
+(the first run: the answer to the retry was `200` and the probe took 15m52s), so the probe has no `--retry` and the next invocation is the client's resume
+([Q-HA-241](../spec/ha-and-helm.md#q-ha-241--the-long-transfer-probes-hold-one-download-on-the-evicted-pod-and-the-uploads-are-repeated-by-the-client)). An evicted pod keeps serving a
 transfer for `server.shutdown_timeout` (110 s) and then resets it (R-HA-011), so a 512 s download held on it is cut about 115 s after
 the fault; the held probe makes that a condition and not a chance. The probes run in the test process on the host and reach the cluster through the
 edge, like the E1.13 transfers.
 
-**R-STOR-046's collection run** ([drain_storage_test.go](../../test/e2e/drain_storage_test.go)). Just before the fault the test uploads twelve
+**R-STOR-046's collection run** ([drain_storage_test.go](../../test/e2e/drain_storage_test.go)). Just before the fault the test uploads six
 files of 64 KiB and deletes them (their blobs are unreferenced and, with no grace period, collectable), starts `gc-full`
 (`POST /api/v1/system/tasks/gc-full/run`) and reads the job: when the replica that claimed it is a main `worker` pod on the drained node, the fault
-follows at once; when it is the other worker, the run is waited out and started again with new garbage (at most 12 rounds). A run that deleted
+follows at once; when it is the other worker, the run is cancelled and started again with new garbage (at most 16 rounds; in the first run the claim went five times of six to the same worker, and waiting out each run cost 3 minutes). A run that deleted
 rows ends by waiting `storage.gc.delete_settle` (30 s), so it is in flight when the eviction comes. After the drain the job must be
 `succeeded`, on `attempt` 1, finished on a replica other than the first, and finished after the eviction of the worker that held it. The
 retention run of the criterion is not built (R-STOR-040, the lifecycle work of the full scope): the jobs of the queue `default` the criterion

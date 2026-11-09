@@ -1081,7 +1081,7 @@ it, which is the platform's drain, row 5 above), except where a variant says oth
 | `dotnet restore --no-cache --force` of a fixture with 60 packages through `nuget-all` | 4 parallel loops |
 | `npm publish` of a new version to `npm-local`; `dotnet nuget push` of a new version to `nuget-local` | one each every 10 s |
 | k6 `constant-arrival-rate` against the edge: 50 % npm packument GETs, 30 % npm tarball GETs of 1–5 MB, 20 % NuGet registration and flat-container GETs | 150 requests/s |
-| Long-transfer probes: `curl --limit-rate 2M --retry 5 --retry-all-errors -C - -o big.bin …/files/web/generic-local/1gib.bin` (about 512 s, longer than the `web` grace period) | 2 parallel loops |
+| Long-transfer probes: `curl --limit-rate 2M -C - -o big.bin …/files/web/generic-local/1gib.bin` (about 512 s, longer than the `packages` grace period), run again by the client when it ends before the whole file is there (at most six invocations; [Q-HA-241](#q-ha-241--the-long-transfer-probes-hold-one-download-on-the-evicted-pod-and-the-uploads-are-repeated-by-the-client)) | 2 parallel loops |
 
 The drain is `kubectl drain <node> --ignore-daemonsets --delete-emptydir-data --timeout=20m` of a
 node that hosts at least one `api`, one `packages` and one `worker` pod. Pass conditions:
@@ -1127,7 +1127,7 @@ The two download probes of the table start with the load and take about 512 s; o
 (started again until that pod answers, read from `X-Trove-Replica`), so the cut of rule 6 is exercised on every drain and is
 a condition: that probe is cut exactly once, by that pod, and resumes with `206`. The other takes the replica the edge gives it. A
 cut on a pod that was not evicted, two cuts on one evicted pod, a refused request (`429`, `5xx`) or a SHA-256 that does not match fail the
-test. Two upload probes of 400 MiB at 2 MiB/s (200 s) start right before the fault, so the cut of the receiving pod (about 115 s after the
+test. Four upload probes of 400 MiB at 2 MiB/s (200 s) start right before the fault, so the cut of a receiving pod that is evicted (about 115 s after the
 fault) falls into them; the client repeats a cut upload from the start, at most once, and the stored file must match.
 
 **A drain per role** (phase 6a). For each of `api`, `packages` and `worker` (and a worker pool of the queue `vuln` when the
@@ -9277,9 +9277,16 @@ exists (R-STOR-011 names it as future work), so an upload is repeated from its s
 | (b) Probe 0 held on the evicted pod, probe 1 free, and two upload probes (chosen) | Probe 0 is started again until `X-Trove-Replica` of its first response names the `packages` pod of the drained node; the cut count of each probe is read from curl's header dump (one block per response) | The cut is certain and is a condition (exactly one, by that pod, then `206`); a cut elsewhere or a refusal fails | Probe 0 is a chosen replica, not a random one: it proves the path, probe 1 and the uploads show the distribution |
 | (c) Delete the serving pod instead of draining | Not a drain | Deterministic | Not the test the requirement names (E1.13 has it) |
 
+**The command.** The table named `curl --limit-rate 2M --retry 5 --retry-all-errors -C -`. In the first run of the test (nightly run 42586174028, set
+`drain-load-pooler`) both probes were cut by the evicted pod, and curl's own retry answered `200`, not `206`, and took 15 minutes 52 seconds for a file of
+512 seconds: `--retry` throws the partial file away ("Throwing away N bytes") and starts at byte 0, because `-C -` reads the size of the file
+once, when the transfer starts. The table's command therefore completes without resuming, and its pass condition "completes through resume" cannot
+be judged on it. The probe is `curl --limit-rate 2M -C -` without `--retry`, and the client runs it again after 2 seconds when it ends with an
+error (at most six invocations); the second invocation reads the size of the file and sends the `Range` request of rule 6, and must be answered
+`206`. Verified: the first run's log (two responses `200`, a curl error 92 `HTTP/2 stream 1 was not closed cleanly: CANCEL` as the cut).
 **Choice:** (b). **Rationale:** the requirement is "cut at most once per evicted pod and completes by resume"; (b) keeps the
 condition and removes the way to pass it without the event. The uploads (400 MiB at 2 MiB/s, 200 s, started right before the fault) are
-longer than the 110 s of `server.shutdown_timeout` after the eviction, so the receiving pod's cut falls into them; an upload that fails
+longer than the 110 s of `server.shutdown_timeout` after the eviction, so the cut of a receiving pod that is evicted falls into them (four probes, so that one meets it with a chance of 80 %; an upload cannot be held on a pod, the answer comes at the end); an upload that fails
 after less than 30 s is a refusal (a `429` of a fresh replica or a `502`, F-119) and fails the test rather than counting as a cut. The
 development agent would revisit the held probe when the distribution alone is reported by a run to hit the evicted pod reliably, and the
 upload repetition when a resumable generic upload exists.
