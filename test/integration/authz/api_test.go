@@ -393,7 +393,7 @@ func TestR_AUTHZ_022_RolesAndBindingsOverHTTP(t *testing.T) {
 		wantStatus(t, f.cl.Do(me, "PUT", bindings+"/auditor/group:everyone", nil), 409, "auto_join_admin_conflict")
 		wantStatus(t, f.cl.Do(me, "DELETE", bindings+"/auditor/user:bob", nil), 404, "not_found")
 	})
-	t.Run("R-AUTHZ-022 the last admin binding stays while the break-glass administrator is disabled", func(t *testing.T) {
+	t.Run("R-AUTHZ-022 R-API-033 the last admin binding stays while the break-glass administrator is disabled", func(t *testing.T) {
 		// Two admin bindings exist: sec-alice and group:team-web.
 		wantStatus(t, f.cl.Do(me, "DELETE", bindings+"/admin/group:team-web", nil), 204, "")
 		wantStatus(t, f.cl.Do(me, "DELETE", bindings+"/admin/user:sec-alice", nil), 409, "last_admin")

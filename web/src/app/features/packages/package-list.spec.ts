@@ -204,6 +204,20 @@ describe('Packages list', () => {
     await expectAccessible(r.root);
   });
 
+  it('R-UI-046 changing a filter asks the router for the new URL, and the one API request follows from the URL', async () => {
+    const r = await open({ format: ['npm', 'nuget'] });
+    const navigate = navigateSpy();
+    const before = r.fake.listFilters.length;
+    r.root.querySelector<HTMLButtonElement>('.chip button')!.click();
+    await settle(r.fixture);
+    expect(navigate).toHaveBeenLastCalledWith([], { queryParams: { format: ['nuget'] }, queryParamsHandling: 'merge' });
+    expect(r.fake.listFilters.length).toBe(before);
+    r.fixture.componentRef.setInput('format', ['nuget']);
+    await settle(r.fixture);
+    expect(r.fake.listFilters.length).toBe(before + 1);
+    expect(r.fake.listFilters.at(-1)?.format).toEqual(['nuget']);
+  });
+
   it('R-UI-006 the text filter and the keyword reach the server; the screen filters nothing itself', async () => {
     const r = await open({ q: 'team', keyword: 'components' });
     const sent = r.fake.listFilters.at(-1)!;

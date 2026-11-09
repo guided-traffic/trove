@@ -42,7 +42,7 @@ func TestR_REPO_002_AKeyIsUniqueWithinItsProject(t *testing.T) {
 	one := a.createIn("it", "npm-remote", "remote", "pkgfmt", "")
 	two := a.createIn("other", "npm-remote", "remote", "pkgfmt", "")
 
-	t.Run("R-REPO-002 the same key in two projects is two repositories with two ids", func(t *testing.T) {
+	t.Run("R-REPO-002 R-API-022 the same key in two projects is two repositories with two ids", func(t *testing.T) {
 		if one.Repository.ID == two.Repository.ID {
 			t.Fatalf("one id for it/npm-remote and other/npm-remote: %s", one.Repository.ID)
 		}
@@ -54,7 +54,7 @@ func TestR_REPO_002_AKeyIsUniqueWithinItsProject(t *testing.T) {
 		}
 	})
 
-	t.Run("R-REPO-009 a key taken in the project answers 409 already_exists, in the other project it is free", func(t *testing.T) {
+	t.Run("R-REPO-009 R-API-022 a key taken in the project answers 409 already_exists, in the other project it is free", func(t *testing.T) {
 		_, err := a.svc.Create(ctx, caller, "other", doc("npm-remote", "remote", "pkgfmt", `"remote":{"url":"https://upstream.example.test/"}`))
 		wantCode(t, err, 409, errs.CodeAlreadyExists)
 		if _, err := a.svc.Create(ctx, caller, "nowhere", doc("npm-x", "local", "pkgfmt", "")); err == nil {

@@ -125,7 +125,7 @@ func TestE1_3_AuthorizationAgainstPostgreSQL(t *testing.T) {
 		})
 	})
 
-	t.Run("R-AUTHZ-001 R-AUTHZ-005 policy union, include and exclude", func(t *testing.T) {
+	t.Run("R-AUTHZ-001 R-AUTHZ-005 R-API-033 policy union, include and exclude", func(t *testing.T) {
 		create(authz.PolicyInput{
 			Name: "npm-consumers", Resources: authz.Resources{Repositories: []string{"@any-virtual:npm", "@any-local:npm", "@any-remote:npm"}},
 			Entries: []authz.Entry{{Principal: "group:developers", Actions: []string{"read"}}},

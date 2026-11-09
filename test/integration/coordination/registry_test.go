@@ -60,7 +60,7 @@ func TestReplicaRegistry(t *testing.T) {
 		})
 	})
 
-	t.Run("R-OPS-003 a replica that stops heartbeating is listed as lost, and its replacement is listed", func(t *testing.T) {
+	t.Run("R-OPS-003 R-HA-003 a replica that stops heartbeating is listed as lost, and its replacement is listed", func(t *testing.T) {
 		w2.registry.StopHeartbeat() // as a killed process: the row stays
 		killed := time.Now()
 		if e.list(web, sys)["reg-worker-2"].Lost {

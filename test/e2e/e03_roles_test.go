@@ -144,7 +144,7 @@ func TestE03Roles(t *testing.T) {
 		}
 	})
 
-	t.Run("R-HA-037 E6a.5 the edge splits one host by path: management API requests reach the api pods, package and file requests the packages pods, every replica of a role in turn", func(t *testing.T) {
+	t.Run("R-HA-037 R-HA-001 E6a.5 the edge splits one host by path: management API requests reach the api pods, package and file requests the packages pods, every replica of a role in turn", func(t *testing.T) {
 		api, pkg := map[string]int{}, map[string]int{}
 		for i := 0; i < 90; i++ {
 			code, h, _, err := edge("/api/v1/system/ping")

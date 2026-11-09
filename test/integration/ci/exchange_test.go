@@ -21,7 +21,7 @@ func TestR_CI_007_AnExchangeIssuesACIToken(t *testing.T) {
 	x.issuer(a)
 	x.addMapping(a, releaseMapping("acme-release-publish", 100, map[string]any{"maxTtlSeconds": 1800}))
 
-	t.Run("R-CI-007 a form-encoded exchange answers 200 with the fields of the answer and no-store", func(t *testing.T) {
+	t.Run("R-CI-007 R-CI-006 a form-encoded exchange answers 200 with the fields of the answer and no-store", func(t *testing.T) {
 		g := wantToken(t, x.exchange(a, x.mint(oidcstub.MintOptions{})))
 		if g.Issuer != xIssuer || len(g.Mappings) != 1 || g.Mappings[0] != "acme-release-publish" {
 			t.Errorf("ci_issuer %q, mappings %v", g.Issuer, g.Mappings)

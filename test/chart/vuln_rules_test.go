@@ -41,9 +41,9 @@ func TestR_VULN_024_PromtoolRules(t *testing.T) {
 	}
 
 	t.Run("promtool check rules", func(t *testing.T) { runPromtool(t, dir, promtool, "check", "rules", "rules.yaml") })
-	t.Run("promtool test rules", func(t *testing.T) { runPromtool(t, dir, promtool, "test", "rules", "rules_test.yaml") })
+	t.Run("R-OPS-046 promtool test rules", func(t *testing.T) { runPromtool(t, dir, promtool, "test", "rules", "rules_test.yaml") })
 
-	t.Run("every alert has a test that fires and a test that stays silent", func(t *testing.T) {
+	t.Run("R-OPS-046 every alert has a test that fires and a test that stays silent", func(t *testing.T) {
 		var parsed struct {
 			Tests []struct {
 				AlertRuleTest []struct {

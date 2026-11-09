@@ -188,6 +188,10 @@ spec:
           {{- if eq $.Values.spool.type "ephemeral" }}
           ephemeral:
             volumeClaimTemplate:
+              metadata:
+                {{- /* The claim of a generic ephemeral volume gets the labels of this template, not the pod's (R-HA-048): kubectl get pvc -l app.kubernetes.io/instance=<release> lists one per pod. */}}
+                labels:
+                  {{- include "trove.labels" (dict "root" $ "component" $role "pool" $pool) | nindent 18 }}
               spec:
                 accessModes:
                   {{- toYaml $.Values.spool.ephemeral.accessModes | nindent 18 }}

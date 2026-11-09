@@ -162,7 +162,7 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Run("R-REPO-009 create answers 201 with Location and ETag, defaults applied, and never an upsert", func(t *testing.T) {
+	t.Run("R-REPO-009 R-API-022 create answers 201 with Location and ETag, defaults applied, and never an upsert", func(t *testing.T) {
 		res := a.postJSON("admin", "/api/v1/projects/it/repositories", map[string]any{"key": "gen-one", "class": "local", "format": "generic", "description": "one"})
 		if res.status != 201 || res.header.Get("ETag") != `"1"` || !strings.HasSuffix(res.header.Get("Location"), "/api/v1/projects/it/repositories/gen-one") {
 			t.Fatalf("%d %v\n%s", res.status, res.header, res.body)
@@ -269,7 +269,7 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 		}
 	})
 
-	t.Run("R-REPO-010 a holder of read-config reads the document; a reader gets the consumer view; the rest get the same 404 as for a missing repository", func(t *testing.T) {
+	t.Run("R-REPO-010 R-API-022 a holder of read-config reads the document; a reader gets the consumer view; the rest get the same 404 as for a missing repository", func(t *testing.T) {
 		e.user("carol")
 		e.user("dave")
 		e.grant(a, "gen-one-read", []string{"gen-one"}, authz.PatternLists{}, map[string][]string{"user:carol": {"read"}})

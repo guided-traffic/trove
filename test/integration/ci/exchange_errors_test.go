@@ -121,7 +121,7 @@ func TestR_CI_008_EveryReasonOfTheErrorTable(t *testing.T) {
 		{"a subject token over ci.exchange.max_subject_token_bytes", "invalid_request", "subject_token_malformed", 400, func() testenv.Answer {
 			return x.exchange(a, x.mint(oidcstub.MintOptions{PadTo: 20000}))
 		}},
-		{"a GitLab job token", "invalid_request", "wrong_subject_token_type", 400, func() testenv.Answer { return x.exchange(a, x.mint(oidcstub.MintOptions{JobToken: true})) }},
+		{"a GitLab job token (R-CI-006)", "invalid_request", "wrong_subject_token_type", 400, func() testenv.Answer { return x.exchange(a, x.mint(oidcstub.MintOptions{JobToken: true})) }},
 		{"an iss of no issuer", "invalid_request", "unknown_issuer", 400, func() testenv.Answer {
 			return x.exchange(a, x.mint(oidcstub.MintOptions{Claims: map[string]any{"iss": "https://gitlab.nowhere.example"}}))
 		}},
@@ -140,7 +140,7 @@ func TestR_CI_008_EveryReasonOfTheErrorTable(t *testing.T) {
 		{"a signature of another key", "invalid_request", "signature_invalid", 400, func() testenv.Answer {
 			return x.exchange(a, x.mint(oidcstub.MintOptions{ForeignSignature: true}))
 		}},
-		{"an aud of another service", "invalid_request", "audience_invalid", 400, func() testenv.Answer {
+		{"an aud of another service (R-CI-006)", "invalid_request", "audience_invalid", 400, func() testenv.Answer {
 			return x.exchange(a, x.mint(oidcstub.MintOptions{Claims: map[string]any{"aud": "https://other.example.com"}}))
 		}},
 		{"an aud that also names another service", "invalid_request", "audience_not_exclusive", 400, func() testenv.Answer {

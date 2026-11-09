@@ -70,6 +70,11 @@ Warning: endpoint {{ $name }} has exposure: rules and an empty networkPolicy.fro
 
 The default endpoint answers 421 for a host it does not list. Clients that reach it by another name, such as the in-cluster Service name, need that name in endpoints.default.hosts.
 {{- end }}
+{{- if and (eq .Values.migrations.mode "hook") (not .Values.restore.enabled) }}
+
+The migration hook's ConfigMap and ServiceAccount are not part of the release, so helm uninstall leaves them (the Job removes itself after migrations.ttlSecondsAfterFinished). Remove them with: kubectl -n {{ .Release.Namespace }} delete configmap,serviceaccount,job -l app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=migrate
+Uninstall touches neither the database, nor the buckets, nor Valkey, nor the Secrets; removing that data is separate, manual and irreversible (R-HA-048).
+{{- end }}
 {{- if not .Values.backup.enabled }}
 
 trove's own backup is off (backup.enabled: false, the default), so no backup CronJob runs. Turn it on with backup.enabled: true and a bucket of its own in config.backup.target.bucket (R-HA-060).
