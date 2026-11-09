@@ -25,6 +25,7 @@ type fakeUpstream struct {
 	docs      map[string][]byte
 	artifacts map[string][]byte
 	get       func(u *url.URL) *discover.Response
+	getErr    error // answered by Get instead of a response
 	gets      []string
 	asked     []string
 }
@@ -43,6 +44,9 @@ func (f *fakeUpstream) Settings() json.RawMessage { return f.settings }
 
 func (f *fakeUpstream) Get(_ context.Context, u *url.URL, _ string, _ int64) (*discover.Response, error) {
 	f.gets = append(f.gets, u.RequestURI())
+	if f.getErr != nil {
+		return nil, f.getErr
+	}
 	if f.get == nil {
 		return &discover.Response{Status: http.StatusNotFound}, nil
 	}
@@ -616,5 +620,19 @@ func TestMirrorSettingsMember(t *testing.T) {
 	}
 	if got := mirrorMemberOf(nil); !reflect.DeepEqual(got, defaultMirrorSettings()) {
 		t.Errorf("no member: %+v", got)
+	}
+}
+
+// A registry whose token service refuses the catalog scope (Docker Hub answers 400) offers no catalog; the mirror goes on with the exact names.
+func TestARefusedCatalogTokenMeansNoCatalog(t *testing.T) {
+	f := newFake(t, "https://registry.example.com/", ``)
+	f.getErr = errs.E(errs.UpstreamFailed, errs.CodeUpstreamUnexpectedStatus, "The upstream answered 400, which trove does not act on.")
+	methods, err := adapter().MirrorMethods(context.Background(), f)
+	if err != nil || !reflect.DeepEqual(methods, []discover.Method{discover.MethodNames}) {
+		t.Fatalf("methods %v, error %v", methods, err)
+	}
+	f.getErr = errs.E(errs.UpstreamFailed, errs.CodeUpstreamFailed, "The upstream cannot be reached.")
+	if _, err := adapter().MirrorMethods(context.Background(), f); err == nil {
+		t.Error("an unreachable upstream is no answer about the catalog")
 	}
 }

@@ -57,6 +57,11 @@ func readCatalog(ctx context.Context, u discover.Upstream, n int, last string) (
 // catalogOffered asks for one name: the upstream offers the catalog when it answers with a repositories array.
 func catalogOffered(ctx context.Context, u discover.Upstream) (bool, error) {
 	_, _, offered, err := readCatalog(ctx, u, 1, "")
+	// A registry without a catalog can refuse the token of the catalog scope instead of the catalog itself (Docker Hub's realm answers 400 to
+	// `registry:catalog:*`): the engine reports that as an unexpected status, which here means "no catalog", and the exact names go on.
+	if e, ok := errs.As(err); ok && e.Code == errs.CodeUpstreamUnexpectedStatus {
+		return false, nil
+	}
 	return offered, err
 }
 
