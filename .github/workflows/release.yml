@@ -439,6 +439,18 @@ jobs:
       - name: make web-test
         run: make web-test
 
+      # The JUnit report of the Angular unit tests (angular.json), the evidence of the R-UI requirements the specs name.
+      - name: Upload the Vitest JUnit report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-web
+          path: |
+            .out/test-web.xml
+            .out/test-web-lint.xml
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: make web-embed (build and embed into internal/webui)
         run: make web-embed
 
@@ -1026,7 +1038,7 @@ jobs:
           name: e2e-report-${{ matrix.set }}
           path: .out/test-e2e.json
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload the k6 logs and summaries, the pod watch, the events and the driver output
         if: always()
@@ -1192,7 +1204,7 @@ jobs:
           name: e2e-npm-report-${{ matrix.set }}
           path: .out/test-e2e.json
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload the matrix report, the client logs, the test upstream's counters, the load records and k6 logs
         if: always()
@@ -1352,7 +1364,7 @@ jobs:
           name: e2e-nuget-report-${{ matrix.set }}
           path: .out/test-e2e.json
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload the matrix report, the clients image log, the test upstream's counters, the client logs and the k6 logs
         if: always()
@@ -1552,7 +1564,7 @@ jobs:
           name: e2e-oci-report-${{ matrix.set }}
           path: .out/test-e2e.json
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload the report, the clients image log, the test upstream's counters and the client logs
         if: always() && steps.scope.outputs.run == 'true'
@@ -1752,7 +1764,7 @@ jobs:
           name: e2e-deb-report-${{ matrix.set }}
           path: .out/test-e2e.json
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload the report, the clients image log and the artifacts
         if: always() && steps.scope.outputs.run == 'true'
@@ -1919,7 +1931,7 @@ jobs:
           name: e2e-ci-report-${{ matrix.set }}
           path: .out/test-e2e.json
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload the job logs (ci-job-*.log), the clients image logs and the test output
         if: always()
@@ -2146,7 +2158,7 @@ jobs:
           name: e2e-bastion-report-${{ matrix.set }}
           path: .out/test-e2e.json
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload the job logs (ci-job-*.log), the clients image logs and the test output
         if: always() && steps.scope.outputs.run == 'true'
@@ -2382,7 +2394,7 @@ jobs:
           name: e2e-vuln-report-${{ matrix.set }}
           path: .out/test-e2e.json
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload the job logs (ci-job-*.log), the clients image logs and the test output
         if: always() && steps.scope.outputs.run == 'true'
@@ -2621,7 +2633,7 @@ jobs:
           name: e2e-mirror-report-${{ matrix.set }}
           path: .out/test-e2e.json
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload the job logs (ci-job-*.log), the clients image logs and the test output
         if: always() && steps.scope.outputs.run == 'true'
@@ -2854,12 +2866,18 @@ jobs:
   # The evidence record (docs/developer/coverage.md#how-ci-feeds-it): the generator writes implemented.txt and the pages
   # rendered from it from the test reports of this run, and fails only when the committed list claims a requirement the
   # reports do not prove. Requirements proven for the first time are listed in the job summary; the written files go to
-  # Semantic Release, which commits them with the release, so nobody refreshes them by hand.
+  # Semantic Release, which commits them with the release, so nobody refreshes them by hand. The reports are those of every
+  # tier: unit, Angular, chart, integration and the kind legs of this run, and for each kind leg without a report here the newest
+  # one of that leg on main, from this workflow or from the nightly (Q-ROAD-11). The job waits for the kind legs, so it ends
+  # when they do; Semantic Release waits for them as well.
   coverage-evidence:
     name: coverage evidence (implemented.txt)
-    needs: [unit, integration, chart]
+    needs: [unit, web, integration, chart, e2e, e2e-npm, e2e-nuget, e2e-oci, e2e-deb, e2e-ci, e2e-bastion, e2e-vuln, e2e-mirror]
     runs-on: self-hosted
     timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read  # the reports of the kind legs that did not run in this run (tools/fetch-e2e-reports.sh)
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -2871,11 +2889,23 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Install the tools the report download uses
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq unzip
+
       - name: Download the test reports of this run
         uses: actions/download-artifact@v8
         with:
           pattern: test-*
           path: .out/reports
+
+      # The kind legs of this run that wrote a report. A leg whose steps were skipped (the path filter of the scoped legs) wrote none.
+      - name: Download the end-to-end reports of this run
+        uses: actions/download-artifact@v8
+        with:
+          pattern: e2e-*report*
+          path: .out/reports-e2e
 
       - name: Every expected report is present
         run: |
@@ -2887,18 +2917,42 @@ jobs:
               exit 1
             fi
           done
-          ls -l .out/reports/*/*.json
+          if ! compgen -G ".out/reports/test-web/*.xml" >/dev/null; then
+            echo "::error::report artifact test-web is missing"
+            exit 1
+          fi
+          ls -l .out/reports/*/*.json .out/reports/*/*.xml
+          if compgen -G ".out/reports-e2e/*/*.json" >/dev/null; then ls -l .out/reports-e2e/*/*.json; fi
+
+      # Q-ROAD-11: for every kind leg without a report in this run, the newest report of that leg on main, from Test and Release or
+      # from the nightly. Their failing tests veto like the ones of this run.
+      - name: The newest reports of the kind legs that did not run in this run
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p .out/reports-e2e
+          tools/fetch-e2e-reports.sh .out/reports-e2e .out/reports-carried | tee .out/carried.txt
 
       - name: Rules, no claim without a passing test, and the evidence record written from the reports
         run: |
           set -euo pipefail
+          args=()
+          for f in .out/reports/*/*.json .out/reports/*/*.xml .out/reports-e2e/*/*.json; do args+=(-tests "$f"); done
+          for f in .out/reports-carried/*/*.json; do
+            [ -e "$f" ] && args+=(-carried "$f")
+          done
           rc=0
-          go run ./internal/tools/coverage -claims -tests .out/reports/*/*.json > .out/evidence.txt || rc=$?
+          go run ./internal/tools/coverage -claims "${args[@]}" > .out/evidence.txt || rc=$?
           cat .out/evidence.txt
           {
             echo '### Requirement evidence'
             echo '```'
-            grep -E '^(implemented:|newly proven:|  R-)' .out/evidence.txt || true
+            grep -E '^(implemented:|newly proven:|withdrawn by|  R-)' .out/evidence.txt || true
+            echo '```'
+            echo '### Reports of earlier runs'
+            echo '```'
+            cat .out/carried.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$rc"

@@ -78,7 +78,7 @@ R-NUGET-034. The constraints added 62 requirements (58 MVP, 4 P1), most of them 
 R-AUTHZ-031, R-HA-002, R-HA-023, R-HA-025, R-HA-045, R-HA-054 and R-OPS-021. Every ID in a
 `Covers:` line exists in the catalog. The spec pages carry 178 questions and the security gaps H-1
 to H-52. The development agent decided every one of the questions in the `## Decisions` section of
-its page. This page adds Q-ROAD-1 to Q-ROAD-5, decided in [Decisions](#decisions).
+its page. This page adds Q-ROAD-1 to Q-ROAD-13, decided in [Decisions](#decisions).
 
 Six findings shaped this plan:
 
@@ -1714,7 +1714,10 @@ suffix (`R-NPM-007/2`), and the generator would require one passing test per suf
 
 **Applied in the roadmap:**
 - M0's coverage generator and exit criterion E0.8.
-- E5.6.
+- E5.6; since 2026-11-09 the reports of every tier are read: the unit, Angular, chart and integration reports of the run, the reports of
+  the kind legs of the run and, for each kind leg without one, the newest on `main`
+  ([Q-ROAD-11](#q-road-11--the-evidence-record-reads-the-reports-of-every-test-tier),
+  [Q-ROAD-13](#q-road-13--the-angular-reports-are-evidence)).
 - The rule "A requirement counts as implemented …" under [Why this order](#why-this-order).
 
 Cross-page in the same change: [README.md](README.md#how-the-numbers-are-produced) item 3 states
@@ -1732,8 +1735,10 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Choice:** (b). The committed record `docs/coverage/implemented.txt` is the evidence the checklist is built from, and
 `-tests` recomputes it from every report given, the chart report included. The coverage-evidence job of CI runs
-`go run ./internal/tools/coverage -claims -tests` and Semantic Release commits the record it writes (owner, 2026-11-07:
-[coverage.md](../developer/coverage.md#why-ci-writes-the-record)).
+`go run ./internal/tools/coverage -claims -tests … -carried …` and Semantic Release commits the record it writes (owner, 2026-11-07:
+[coverage.md](../developer/coverage.md#why-ci-writes-the-record)). The veto reaches the reports of earlier runs too; what it takes from the
+record because of such a report does not fail the job
+([Q-ROAD-12](#q-road-12--a-failing-test-in-the-report-of-an-earlier-run-withdraws-the-requirement-and-does-not-fail-the-evidence-job)).
 
 **Rationale:** Q-ROAD-4 ties status to evidence; this block says what counts as evidence. A veto makes a failing test
 visible in the status, not only in CI. The development agent would revisit the veto if flaky tests keep requirements
@@ -1870,6 +1875,82 @@ with Q-ROAD-9, when the reference environment exists.
 **Applied in the roadmap:** none; [perf/k6/npm.js](../../perf/k6/npm.js), [npm_perf_test.go](../../test/e2e/npm_perf_test.go),
 [../developer/e2e.md](../developer/e2e.md#the-load-scripts-of-r-arch-027).
 
+### Q-ROAD-11 · The evidence record reads the reports of every test tier
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: exit criterion E5.6 asks for a passing test that names every MVP requirement. On 2026-11-09, 73 of the 545 MVP requirements were
+not in `implemented.txt`, and for many of them the tests that name them were never read: the `coverage-evidence` job read the unit, chart and
+integration reports of Test and Release, the Angular unit specs (Vitest) wrote no report, and the kind legs are path-filtered per change (a push
+may run none of them) or run in another workflow (`performance.yml`, nightly). The Go end-to-end sets already write `go test -json`
+(`.out/test-e2e.json`, uploaded as `e2e-report-*` and `e2e-<group>-report-*`) and carry the Playwright journeys as subtests named by their titles
+(`test/e2e/e1_11_scatter_test.go`), so the form `-tests` reads exists; the readers and the carrying were missing.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Only the reports of this run | Status quo with the new reports added | Nothing to fetch; the record is exactly this run | A push that runs no kind leg drops every requirement only that leg proves, so `-claims` fails on an unrelated change; the nightly legs would never count |
+| (b) For every leg without a report in this run, the newest report of that leg on `main`, from either workflow (chosen) | `tools/fetch-e2e-reports.sh` lists the last 40 completed runs of Test and Release and the last 14 of the nightly through the Actions API (`actions: read`), takes the newest artifact per name of the shapes `e2e[-<group>]-report[-<set>]` and `test-performance`, and the generator reads them with `-carried`. The veto of Q-ROAD-5 applies to them as well | The record follows the newest evidence of each tier, however the legs are scheduled; no second record; one commit path (Semantic Release) | The record can be one nightly old for a leg a push did not touch; a leg without an unexpired report (30 days) proves nothing until it runs again |
+| (c) A second committed record for the end-to-end tiers | `implemented-e2e.txt`, written by the nightly | The per-change record stays exact | Two records to merge in the generator and the pages; a bot commit from the nightly; the same lag |
+
+**Choice:** (b). The job `coverage-evidence` now waits for the kind legs of its own run and for the Angular job
+([Q-ROAD-13](#q-road-13--the-angular-reports-are-evidence)), so their reports are downloaded with the others. The report artifacts of the
+kind legs live 30 days, so a nightly that runs daily always leaves one per leg. A leg that never produced a report stays absent: the
+requirements only it proves are not proven, and `-claims` says so (exit 3) when the committed record still claims them.
+
+**Rationale:** E5.6 is about evidence, not about when a leg ran. Carrying the newest report of each leg is the smallest change that makes the
+record independent of the path filter, and it keeps the property of Q-ROAD-5 that a requirement is never claimed on the strength of a failing or
+missing report. The development agent revisits this when the newest report of a leg is routinely older than a release; the answer is then a
+tighter nightly or (c), not a looser claim rule.
+
+**Applied in the roadmap:** E5.6, [Q-ROAD-4](#q-road-4--how-the-coverage-generator-learns-implementation-status) and
+[Q-ROAD-5](#q-road-5--evidence-rules-of-the-coverage-generator) (the evidence now includes the end-to-end and Angular reports);
+[../developer/coverage.md](../developer/coverage.md#how-ci-feeds-it), [tools/fetch-e2e-reports.sh](../../tools/fetch-e2e-reports.sh) and
+the `coverage-evidence` job of [release.yml](../../.github/workflows/release.yml).
+
+### Q-ROAD-12 · A failing test in the report of an earlier run withdraws the requirement and does not fail the evidence job
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: with Q-ROAD-11 the veto of Q-ROAD-5 reaches reports of earlier runs, among them the long nightly legs. The owner's rule of 2026-11-01 is
+that a red long leg is a finding and does not hold the release. `-claims` fails (exit 3) when the committed record claims a requirement that
+the reports do not prove, so a red nightly leg would hold every release until it is green.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The veto fails `-claims` whatever report it comes from | Simple | One rule | A red nightly leg blocks the release, against the owner's rule |
+| (b) A veto from a carried report withdraws the requirement from the written record, is listed in the job summary, and does not fail `-claims`; a veto or a missing proof in a report of this run still does (chosen) | `-carried <report>` beside `-tests`; the output lists "withdrawn by a failing test of an earlier run" | The record never claims what a failing report contradicts, and the release rule stands | A requirement can drop out of the record because of a leg that was red yesterday and is green by the next run |
+| (c) Carried reports are read for proof only, their failures are ignored | A red leg changes nothing | No flicker | The record claims a requirement whose newest test is red: the failure Q-ROAD-5 rejects |
+
+**Choice:** (b). A claim that no report proves and no failing test contradicts (the test was removed or renamed, or the artifact expired) is
+still exit 3.
+
+**Rationale:** The record states the newest evidence; whether a red long leg holds a release is the release rule's business, and that rule is the
+owner's. The development agent revisits this when the owner wants a red nightly leg to hold the release: the change is one flag in the
+evidence job.
+
+**Applied in the roadmap:** [../developer/coverage.md](../developer/coverage.md#how-ci-feeds-it); `-carried` in
+[internal/tools/coverage](../../internal/tools/coverage/main.go) and its tests.
+
+### Q-ROAD-13 · The Angular reports are evidence
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: about 500 Vitest specs of `web/src` carry R-UI requirement IDs in their titles (`it('R-UI-002 renders header …')`), and no report of
+them reached the evidence job. R-UI-046 asks that the lint configuration contains four rules and that CI fails on a violation, which no test
+stated.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Name the specs in a Go test | A Go test per UI requirement | One report format | Duplicates the specs; the title of the real test is what the requirement is about |
+| (b) JUnit reports of the Angular job (chosen) | `angular.json` sets the Vitest reporters `default` and `junit` (`.out/test-web.xml`); `web/scripts/lint-rules.test.mjs` runs ESLint on snippets that break the four R-UI-046 rules (`npm run test:lint`, `.out/test-web-lint.xml`); the job `web` uploads both as `test-web` | The specs that exist become evidence without a rename; the generator already reads JUnit | An 8 MB report per run; the evidence job waits for the Angular job |
+
+**Choice:** (b).
+
+**Rationale:** The report is a by-product of a run the job already makes. The development agent revisits the size if the upload becomes
+noticeable.
+
+**Applied in the roadmap:** [../developer/web-ui.md](../developer/web-ui.md), [../developer/coverage.md](../developer/coverage.md#report-formats).
+
 The ADR log's index
 [Decisions by the development agent](../decisions.md#decisions-by-the-development-agent) lists
-Q-ROAD-1 to Q-ROAD-10 after the spec questions.
+Q-ROAD-1 to Q-ROAD-13 after the spec questions.

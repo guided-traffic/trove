@@ -85,8 +85,8 @@ web-lint: ## ESLint and the R-UI-046 rules in web/ (after web-ci)
 	cd web && npm run lint
 
 .PHONY: web-test
-web-test: ## Angular unit tests in web/ (after web-ci)
-	cd web && npm test
+web-test: ## Angular unit tests and the R-UI-046 lint-rule tests in web/ (after web-ci); .out/test-web.xml and .out/test-web-lint.xml (JUnit) for the coverage generator
+	cd web && npm test && npm run test:lint
 
 .PHONY: web-embed
 web-embed: ## Build the Angular workspace and embed it into internal/webui/dist (after web-ci)

@@ -489,6 +489,52 @@ func TestCommandWithTestReports(t *testing.T) {
 			t.Errorf("implemented.txt was rewritten:\n%s", data)
 		}
 	})
+	t.Run("Q-ROAD-11 a failing test in a carried report withdraws the requirement without failing -claims", func(t *testing.T) {
+		repo := setup(t)
+		impl := filepath.Join(repo, "docs", "coverage", "implemented.txt")
+		if err := os.WriteFile(impl, []byte("R-ARCH-002\nR-ARCH-003\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		run1 := write(t, t.TempDir(), `{"Action":"pass","Package":"p","Test":"TestA/R-ARCH-002_passes"}`+"\n"+
+			`{"Action":"pass","Package":"p","Test":"TestA/R-ARCH-003_passes"}`+"\n")
+		earlier := write(t, t.TempDir(), `{"Action":"fail","Package":"p","Test":"TestB/R-ARCH-003_fails"}`+"\n")
+		var stdout, stderr bytes.Buffer
+		if code := run([]string{"-repo", repo, "-claims", "-tests", run1, "-carried", earlier}, strings.NewReader(""), &stdout, &stderr); code != exitOK {
+			t.Fatalf("exit %d:\n%s", code, stderr.String())
+		}
+		if !strings.Contains(stdout.String(), "withdrawn by a failing test of an earlier run: 1\n  R-ARCH-003\n") {
+			t.Errorf("stdout does not list R-ARCH-003 as withdrawn:\n%s", stdout.String())
+		}
+		data, _ := os.ReadFile(impl)
+		if ids, err := parseImplemented(string(data)); err != nil || strings.Join(ids, ",") != "R-ARCH-002" {
+			t.Fatalf("implemented.txt lists %v (%v), want exactly R-ARCH-002", ids, err)
+		}
+	})
+	t.Run("Q-ROAD-11 a failing test of this run still fails -claims, and a carried pass proves a requirement", func(t *testing.T) {
+		repo := setup(t)
+		impl := filepath.Join(repo, "docs", "coverage", "implemented.txt")
+		if err := os.WriteFile(impl, []byte("R-ARCH-002\nR-ARCH-003\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		failing := write(t, t.TempDir(), `{"Action":"fail","Package":"p","Test":"TestA/R-ARCH-003_fails"}`+"\n")
+		earlier := write(t, t.TempDir(), `{"Action":"pass","Package":"p","Test":"TestB/R-ARCH-002_passes"}`+"\n"+
+			`{"Action":"pass","Package":"p","Test":"TestB/R-ARCH-003_passes"}`+"\n")
+		var stdout, stderr bytes.Buffer
+		if code := run([]string{"-repo", repo, "-claims", "-tests", failing, "-carried", earlier}, strings.NewReader(""), &stdout, &stderr); code != exitClaim {
+			t.Fatalf("exit %d, want %d:\n%s", code, exitClaim, stderr.String())
+		}
+		if !strings.Contains(stderr.String(), "R-ARCH-003") || strings.Contains(stderr.String(), "R-ARCH-002") {
+			t.Errorf("stderr does not name exactly R-ARCH-003:\n%s", stderr.String())
+		}
+	})
+	t.Run("Q-ROAD-11 -carried needs -tests and does not combine with -links", func(t *testing.T) {
+		repo := setup(t)
+		for _, args := range [][]string{{"-carried", "x.json"}, {"-carried", "x.json", "-links"}} {
+			if code := run(append([]string{"-repo", repo}, args...), strings.NewReader(""), io.Discard, io.Discard); code != exitUsage {
+				t.Errorf("%v: exit %d, want %d", args, code, exitUsage)
+			}
+		}
+	})
 	t.Run("Q-ROAD-4 -claims needs -tests and does not combine with -check or -links", func(t *testing.T) {
 		repo := setup(t)
 		for _, args := range [][]string{{"-claims"}, {"-claims", "-check", "-tests", "x.json"}, {"-claims", "-links"}} {

@@ -278,3 +278,31 @@ func parseImplemented(text string) ([]string, error) {
 	sort.Strings(ids)
 	return ids, nil
 }
+
+// merged returns the evidence of both: a requirement is proven by either and vetoed by either (Q-ROAD-5).
+func merged(a, b *evidence) *evidence {
+	out := newEvidence()
+	out.Tests = a.Tests + b.Tests
+	for _, e := range []*evidence{a, b} {
+		for id := range e.Passed {
+			out.Passed[id] = true
+		}
+		for id := range e.Failed {
+			out.Failed[id] = true
+		}
+	}
+	return out
+}
+
+// withdrawnByEarlier returns the requirements that only the reports of earlier runs veto: a failing test there names them and no
+// failing test of this run does. Withdrawing such a requirement from the record is the veto rule at work; it is not an unproven
+// claim of this run (Q-ROAD-11).
+func withdrawnByEarlier(run, earlier *evidence) map[string]bool {
+	out := map[string]bool{}
+	for id := range earlier.Failed {
+		if !run.Failed[id] {
+			out[id] = true
+		}
+	}
+	return out
+}

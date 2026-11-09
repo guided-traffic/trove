@@ -10,6 +10,7 @@
     "extract-i18n": "ng extract-i18n --format xlf2 --output-path src/locale --out-file messages.xlf",
     "lint": "eslint . && node scripts/check-rules.mjs",
     "test": "ng test --no-watch",
+    "test:lint": "mkdir -p ../.out && node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=../.out/test-web-lint.xml scripts/lint-rules.test.mjs",
     "test:coverage": "ng test --no-watch --coverage",
     "generate:api": "openapi-typescript ../api/openapi.yaml --output src/app/api/generated/schema.d.ts",
     "build:embed": "node scripts/build-embed.mjs"

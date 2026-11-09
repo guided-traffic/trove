@@ -35,6 +35,9 @@ type options struct {
 	Claims bool
 	Links  bool
 	Tests  []string
+	// Carried are reports of earlier runs of legs that did not run in this one (Q-ROAD-11). They count as evidence like Tests; a
+	// requirement that only they withdraw with a failing test is written out of implemented.txt and is not an unproven claim.
+	Carried []string
 }
 
 func main() {
@@ -44,7 +47,7 @@ func main() {
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("coverage", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	var tests stringList
+	var tests, carried stringList
 	opts := options{}
 	fs.StringVar(&opts.Repo, "repo", "", "repository root (default: nearest parent directory holding go.mod)")
 	fs.BoolVar(&opts.Check, "check", false, "write nothing; exit 2 when a generated file differs from what would be generated")
@@ -53,8 +56,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.BoolVar(&opts.Links, "links", false, "check the relative links and anchors of every Markdown file instead of generating")
 	fs.Var(&tests, "tests", "test report with requirement IDs in test names: `go test -json` stream or JUnit XML; "+
 		"'-' reads stdin; repeatable, further file arguments count too")
+	fs.Var(&carried, "carried", "like -tests, for a report of an earlier run of a leg that did not run in this one; a requirement that "+
+		"such a report alone withdraws with a failing test is written out of implemented.txt and reported, and does not fail -claims; "+
+		"repeatable, needs -tests")
 	fs.Usage = func() {
-		fmt.Fprintf(stderr, "usage: coverage [-repo dir] [-check | -claims] [-tests report]... [report...]\n"+
+		fmt.Fprintf(stderr, "usage: coverage [-repo dir] [-check | -claims] [-tests report]... [-carried report]... [report...]\n"+
 			"       coverage [-repo dir] -links\n\n")
 		fs.PrintDefaults()
 	}
@@ -65,6 +71,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 	opts.Tests = append(append([]string{}, tests...), fs.Args()...)
+	opts.Carried = carried
 	if opts.Repo == "" {
 		root, err := findRepo()
 		if err != nil {
@@ -74,14 +81,18 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		opts.Repo = root
 	}
 	if opts.Links {
-		if len(opts.Tests) > 0 || opts.Check || opts.Claims {
-			fmt.Fprintln(stderr, "coverage: -links does not combine with -check, -claims or -tests")
+		if len(opts.Tests) > 0 || len(opts.Carried) > 0 || opts.Check || opts.Claims {
+			fmt.Fprintln(stderr, "coverage: -links does not combine with -check, -claims, -tests or -carried")
 			return exitUsage
 		}
 		return runLinks(opts.Repo, stdout, stderr)
 	}
 	if opts.Claims && (opts.Check || len(opts.Tests) == 0) {
 		fmt.Fprintln(stderr, "coverage: -claims needs -tests and does not combine with -check")
+		return exitUsage
+	}
+	if len(opts.Carried) > 0 && len(opts.Tests) == 0 {
+		fmt.Fprintln(stderr, "coverage: -carried needs -tests")
 		return exitUsage
 	}
 	return runGenerate(opts, stdin, stdout, stderr)
@@ -151,12 +162,18 @@ func runGenerate(opts options, stdin io.Reader, stdout, stderr io.Writer) int {
 	implemented := committed
 	targets := map[string]string{}
 	if len(opts.Tests) > 0 {
-		ev := newEvidence()
+		fromRun, fromEarlier := newEvidence(), newEvidence()
 		for _, path := range opts.Tests {
-			if err := ev.readFile(path, stdin); err != nil {
+			if err := fromRun.readFile(path, stdin); err != nil {
 				return fail(stderr, []string{err.Error()})
 			}
 		}
+		for _, path := range opts.Carried {
+			if err := fromEarlier.readFile(path, stdin); err != nil {
+				return fail(stderr, []string{err.Error()})
+			}
+		}
+		ev := merged(fromRun, fromEarlier)
 		ids, unknown := ev.implemented(known)
 		if len(unknown) > 0 {
 			return fail(stderr, []string{"test names carry requirement IDs that no spec page defines: " + strings.Join(unknown, ", ")})
@@ -166,7 +183,7 @@ func runGenerate(opts options, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "tests: %d results read, %d requirements with passing evidence, %d with a failing test\n",
 			ev.Tests, len(ids), len(ev.Failed))
 		if opts.Claims {
-			if code := checkClaims(committed, ids, stdout, stderr); code != exitOK {
+			if code := checkClaims(committed, ids, withdrawnByEarlier(fromRun, fromEarlier), stdout, stderr); code != exitOK {
 				return code
 			}
 		}
@@ -246,11 +263,24 @@ func runGenerate(opts options, stdin io.Reader, stdout, stderr io.Writer) int {
 
 // checkClaims is the CI form of the evidence check: the committed list may lag behind the reports (a requirement proven for
 // the first time is written by this run and committed with the release), but it must not claim a requirement the reports no
-// longer prove (a test that named it was removed, renamed or skipped).
-func checkClaims(committed, proven []string, stdout, stderr io.Writer) int {
-	added, unproven := missingFrom(proven, committed), missingFrom(committed, proven)
+// longer prove (a test that named it was removed, renamed or skipped). A claim that only a failing test of an earlier run's
+// report takes away is no such case: the veto rule withdraws it from the written record and the output says so (Q-ROAD-11).
+func checkClaims(committed, proven []string, withdrawnByEarlier map[string]bool, stdout, stderr io.Writer) int {
+	added := missingFrom(proven, committed)
+	var unproven, withdrawn []string
+	for _, id := range missingFrom(committed, proven) {
+		if withdrawnByEarlier[id] {
+			withdrawn = append(withdrawn, id)
+		} else {
+			unproven = append(unproven, id)
+		}
+	}
 	fmt.Fprintf(stdout, "newly proven: %d\n", len(added))
 	for _, id := range added {
+		fmt.Fprintf(stdout, "  %s\n", id)
+	}
+	fmt.Fprintf(stdout, "withdrawn by a failing test of an earlier run: %d\n", len(withdrawn))
+	for _, id := range withdrawn {
 		fmt.Fprintf(stdout, "  %s\n", id)
 	}
 	if len(unproven) == 0 {

@@ -15,7 +15,7 @@ for people who change or run it.
 | `go run ./internal/tools/coverage -check` | Writes nothing. Fails when a generated file differs from what would be generated. This is the `git diff --exit-code` of E0.8 without needing git. | 0, 1 rule violation, 2 stale file |
 | `go run ./internal/tools/coverage -tests <report>` | Reads test reports, recomputes the implemented requirements, rewrites `implemented.txt` and everything rendered from it. | as above |
 | `go run ./internal/tools/coverage -check -tests <report>` | Writes nothing; also fails when `implemented.txt` differs from the reports, in either direction. A local comparison; CI uses `-claims`. | as above |
-| `go run ./internal/tools/coverage -claims -tests <report>` | The CI form on `main`: writes `implemented.txt` and everything rendered from it from the reports, prints the requirements proven for the first time, and fails when the committed `implemented.txt` lists a requirement the reports do not prove (it then writes nothing). | 0, 1 rule violation, 3 unproven claim |
+| `go run ./internal/tools/coverage -claims -tests <report> [-carried <report>]` | The CI form on `main`: writes `implemented.txt` and everything rendered from it from the reports, prints the requirements proven for the first time, and fails when the committed `implemented.txt` lists a requirement the reports do not prove (it then writes nothing). A requirement that only a failing test in a `-carried` report takes away is written out of the record and listed as withdrawn, and does not fail ([Q-ROAD-12](../coverage/roadmap.md#q-road-12--a-failing-test-in-the-report-of-an-earlier-run-withdraws-the-requirement-and-does-not-fail-the-evidence-job)). | 0, 1 rule violation, 3 unproven claim |
 | `go run ./internal/tools/coverage -links` | Checks every relative Markdown link and `#anchor` in the repository. Replaces the interim `check_links.py` and `check_anchors.py`. | 0, or 1 on a broken link |
 
 Flags:
@@ -26,6 +26,7 @@ Flags:
 | `-check` | Compare only, write nothing. |
 | `-claims` | With `-tests`: the committed list may lag behind the reports but must not claim more than they prove. Does not combine with `-check` or `-links`. |
 | `-tests <report>` | A test report; repeatable. File arguments after the flags count as reports too. `-` reads standard input. |
+| `-carried <report>` | A report of an earlier run of a leg that did not run in this one; repeatable; needs `-tests`. It proves and vetoes like a `-tests` report, but a requirement it alone vetoes does not fail `-claims`. |
 | `-links` | Link and anchor check instead of generation. Does not combine with `-check` or `-tests`. |
 
 Usage errors exit with 64. The generator prints the counts per priority, the number of `Covers:`
@@ -119,8 +120,22 @@ generator.
 | `go test -json` stream | anything but `<` | One event per line. `pass` and `fail` events with a `Test` field count; `skip` does not. Lines that are not JSON objects (build output mixed in) are skipped; a file without a single event is an error. |
 | JUnit XML | `<` | Every `<testcase>` (any nesting, `<testsuites>` or `<testsuite>` at the root). `<failure>` or `<error>` child: failed. `<skipped>` child: skipped. Otherwise passed. IDs are searched in `classname` and `name`. |
 
-JUnit XML is the format for the end-to-end reports: Playwright and gotestsum write it, and a Go
-e2e suite can use `go test -json`. The e2e test titles follow the same naming rule.
+What CI produces, by tier:
+
+| Tier | Report | Written by | Artifact |
+|---|---|---|---|
+| Go unit | `go test -json` | `make test` | `test-unit` |
+| Angular unit (Vitest) | JUnit, `.out/test-web.xml` | `ng test` through the reporters in [angular.json](../../web/angular.json) | `test-web` |
+| Angular lint rules (R-UI-046) | JUnit, `.out/test-web-lint.xml` | `npm run test:lint` ([lint-rules.test.mjs](../../web/scripts/lint-rules.test.mjs), `node --test`) | `test-web` |
+| Chart and promtool | `go test -json` | `make chart-test` | `test-chart` |
+| Integration | `go test -json` | `make test-integration` | `test-integration-a`, `-b`, `-c` |
+| Kind legs (Go e2e sets, with the Playwright journeys as subtests named by their titles) | `go test -json`, `.out/test-e2e.json` | `make e2e SET=…` ([e2e.sh](../../deploy/dev/e2e.sh)) | `e2e-report-<set>`, `e2e-<group>-report-<set>`, `e2e-backup-report` |
+| Nightly latency gates | `go test -json` | `make test-performance` | `test-performance` |
+
+The Playwright journeys are run by a Go test (`TestE1_11Journeys` and the bastion, vulnerability, mirror and upgrade counterparts), which
+reads Playwright's JSON report and turns every spec into a subtest named by the spec's title. The Playwright configurations therefore need no
+reporter of their own, and a journey that names a requirement in its title is evidence once the Go test that ran it is in a report. The
+kind-leg reports are kept 30 days.
 
 Pass **all** reports of a run in one invocation. `implemented.txt` is recomputed from exactly the
 reports given, so a run that omits the e2e report drops the requirements only e2e proves.
@@ -131,7 +146,18 @@ reports given, so a run that omits the e2e report drops the requirements only e2
 |---|---|---|
 | Every pull request | `go run ./internal/tools/coverage -check` | Rule violations, and generated files that the change did not regenerate. |
 | Every pull request | `go run ./internal/tools/coverage -links` | Broken relative links and anchors. |
-| `main`, after the test jobs (`coverage evidence`) | `go run ./internal/tools/coverage -claims -tests` over the unit, chart and both integration reports of the run | No requirement is claimed without a passing test; the record written from the reports is uploaded as `coverage-evidence` and committed by Semantic Release with the release. |
+| After the test jobs and the kind legs (`coverage evidence`) | `go run ./internal/tools/coverage -claims -tests …` over the unit, Angular, chart and integration reports and the kind-leg reports of the run, and `-carried …` over the newest report of every kind leg that has none in this run | No requirement is claimed without a passing test; the record written from the reports is uploaded as `coverage-evidence` and committed by Semantic Release with the release. |
+
+The kind legs are path-filtered per change and the long legs run in the nightly workflow, so a run holds only some of the end-to-end
+reports. [fetch-e2e-reports.sh](../../tools/fetch-e2e-reports.sh) fills the rest: it lists the last 40 completed runs of Test and Release and
+the last 14 of the nightly on `main` through the Actions API (the job holds `actions: read`), and for each artifact name that is not in this
+run takes the newest one, whichever workflow wrote it ([Q-ROAD-11](../coverage/roadmap.md#q-road-11--the-evidence-record-reads-the-reports-of-every-test-tier)).
+A leg without an unexpired report proves nothing until it runs again, and the job summary lists what was carried and from which run. A failing
+test in a carried report vetoes its requirement as in a report of this run; the requirement then leaves the record and is listed under
+"withdrawn", and the job does not fail for it, so a red long leg does not hold a release (owner rule of 2026-11-01), while a claim that no
+report proves still does. To see the effect locally, download the reports of a run (`gh run download <run> -p 'test-*' -D <dir>`) and the
+carried ones with `tools/fetch-e2e-reports.sh <dir of this run's e2e reports> <destination>` (it needs `GITHUB_TOKEN`, `GITHUB_REPOSITORY` and
+`GITHUB_RUN_ID`), then run the generator with the `-tests` and `-carried` flags.
 
 Nobody refreshes `implemented.txt` by hand or from a local run: CI writes it from the reports of every run on `main`, and
 Semantic Release commits it, `checklist.md` and the generated blocks of the coverage README with the release (the release

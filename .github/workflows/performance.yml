@@ -553,7 +553,7 @@ jobs:
           name: e2e-report-${{ matrix.set }}
           path: .out/test-e2e.json
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload the k6 logs and summaries, the pod watch, the events and the driver output
         if: always() && steps.leg.outputs.run == 'true'
@@ -745,7 +745,7 @@ jobs:
           name: e2e-npm-report-${{ matrix.set }}
           path: .out/test-e2e.json
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload the matrix report, the client logs, the test upstream's counters, the load records and k6 logs
         if: always() && steps.leg.outputs.run == 'true'
@@ -937,7 +937,7 @@ jobs:
           name: e2e-nuget-report-${{ matrix.set }}
           path: .out/test-e2e.json
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload the matrix report, the clients image log, the test upstream's counters, the client logs and the k6 logs
         if: always() && steps.leg.outputs.run == 'true'
@@ -1123,7 +1123,7 @@ jobs:
           name: e2e-oci-report-${{ matrix.set }}
           path: .out/test-e2e.json
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload the matrix report, the clients image log, the test upstream's counters, the client logs and the k6 logs
         if: always() && steps.leg.outputs.run == 'true'
@@ -1299,7 +1299,7 @@ jobs:
           name: e2e-ci-report-${{ matrix.set }}
           path: .out/test-e2e.json
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload the job logs (ci-job-*.log), the clients image logs and the test output
         if: always() && steps.leg.outputs.run == 'true'
@@ -1497,7 +1497,7 @@ jobs:
           name: e2e-bastion-report-${{ matrix.set }}
           path: .out/test-e2e.json
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload the job logs (ci-job-*.log), the clients image logs and the test output
         if: always() && steps.leg.outputs.run == 'true'
@@ -1710,7 +1710,7 @@ jobs:
           name: e2e-vuln-report-${{ matrix.set }}
           path: .out/test-e2e.json
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload the job logs (ci-job-*.log), the clients image logs and the test output
         if: always() && steps.leg.outputs.run == 'true'
@@ -1928,7 +1928,7 @@ jobs:
           name: e2e-mirror-report-${{ matrix.set }}
           path: .out/test-e2e.json
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload the job logs (ci-job-*.log), the clients image logs and the test output
         if: always() && steps.leg.outputs.run == 'true'
@@ -2107,7 +2107,7 @@ jobs:
           name: e2e-backup-report
           path: .out/test-e2e.json
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload the timings of the drill, the job logs and the test output
         if: always() && steps.leg.outputs.run == 'true'
@@ -2291,7 +2291,7 @@ jobs:
           name: e2e-upgrade-report-upgrade
           path: .out/test-e2e.json
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload the job logs (ci-job-*.log), the clients image logs, the upgrade's records and the test output
         if: always()

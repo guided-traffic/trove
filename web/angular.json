@@ -110,6 +110,7 @@
           "options": {
             "tsConfig": "tsconfig.spec.json",
             "runner": "vitest",
+            "reporters": ["default", ["junit", { "outputFile": "../.out/test-web.xml" }]],
             "buildTarget": "::development",
             "coverageInclude": ["src/app/**/*.ts"],
             "coverageExclude": ["src/app/api/generated/**"],
