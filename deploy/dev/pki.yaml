@@ -78,6 +78,10 @@ spec:
     - trove-packages.${NS}
     - trove-packages.${NS}.svc
     - trove-packages.${NS}.svc.cluster.local
+    - trove-ops
+    - trove-ops.${NS}
+    - trove-ops.${NS}.svc
+    - trove-ops.${NS}.svc.cluster.local
     - localhost
   ipAddresses:
     - 127.0.0.1

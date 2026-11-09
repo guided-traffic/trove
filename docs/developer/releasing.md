@@ -438,6 +438,13 @@ into the namespace `trove-restore` (a database, a Valkey and a bucket of their o
 (E5.1, E5.11, E5.12). It takes about 25 minutes and is a long leg: nightly and on dispatch, not per change (owner, 2026-11-01; Q-HA-154). The artifact `e2e-backup-artifacts` holds `backup-timings.json`, the timings of
 scenario 9. By hand: `make dev-up && make e2e SET=backup` ([e2e.md](e2e.md#the-backup-tests)).
 
+Job `e2e-edge` runs the set `edge` (edge port 8104, cluster `trove-edge-<run id>`, artifacts `e2e-edge-report` and `e2e-edge-artifacts`, kept 14 days, on a `large` runner
+because the 6 GiB file, the spool and the object store need its disk; the end of lane 2 of Q-ARCH-431, after `npm-ha-soak`): R-HA-039's 6 GiB upload, 17-minute download and 1 GiB NuGet push, and R-HA-038's
+criteria, through the chart's Ingress and through its HTTPRoute on Envoy Gateway (E5.5). It takes about 90 minutes and is a long leg. By hand: `make dev-up && make e2e SET=edge`
+([e2e.md](e2e.md#the-edge-and-alert-tests)). Job `e2e-alerts` runs the set `alerts` (edge port 8105, cluster `trove-alerts-<run id>`, artifacts `e2e-alerts-report` and `e2e-alerts-artifacts`, on a GitHub-hosted
+runner with the disk space freed, outside the lanes): the alerts of R-HA-045 in their R-HA-052 scenarios against a Prometheus, and "Maintenance stays quiet" (E5.5). By hand: `make dev-up && make e2e SET=alerts`.
+A dispatch names them by set or by job key (`-f sets=edge,alerts`).
+
 Job `e2e-mirror` runs the sets `mirror` and `mirror-long` (edge ports 8098 and 8099, clusters `trove-mirror-<run id>` and `trove-mirror-long-<run id>`, reports and
 artifacts `e2e-mirror-report-<set>`, `e2e-mirror-artifacts-<set>`, `e2e-mirror-playwright-<set>`, kept 14 days): the short set as in Test and Release, with the install-time ratio of R-REPO-055 enforced (on a `large` runner since
 Q-REPO-211: on the 4 vCPUs of a GitHub-hosted runner the pass's own work took the installs' CPU), and the long set (on a `large` runner), R-REPO-058's drain: `kubectl drain` of the node of the process of the

@@ -87,6 +87,8 @@ deploy/helm/trove/
 ├── values.yaml             defaults; a value is commented only where its name does not say it
 ├── values.schema.json      draft-07, additionalProperties false for everything the chart owns
 ├── tests/rules_test.yaml   promtool test rules for the PrometheusRule (not packaged)
+├── examples/               values an installer starts from (packaged)
+│   └── production.yaml         the production shape: autoscalers, PodDisruptionBudgets, topology spreading, the pooler, Ingress and HTTPRoute, ingress policies, ServiceMonitor and PrometheusRule, the backup (Q-HA-262)
 ├── ci/                     value sets the tests render (not packaged, see .helmignore)
 │   ├── required-only.yaml      only the values R-HA-031 names as required; the backup stays off
 │   ├── ha-ingress.yaml         every optional Secret, Ingress with TLS, ephemeral spool, the backup on
@@ -616,9 +618,16 @@ namespace `default` and run with the pinned promtool (`make chart-test` fetches 
 [values-dev.yaml](../../deploy/dev/values-dev.yaml) is rendered alongside them (E0.7). Adding a
 file to `ci/` adds it to every per-set assertion with no code change.
 
+[examples/production.yaml](../../deploy/helm/trove/examples/production.yaml) is not a `ci/` set: it is the file an operator copies, and every host, bucket, namespace and
+Secret name in it is an example. [test/chart/production_test.go](../../test/chart/production_test.go) renders it and asserts, per Deployment (the three roles and the pool `vuln`), the
+PodDisruptionBudget, the two topology spread constraints with `nodeTaintsPolicy: Honor` and the HorizontalPodAutoscaler that owns the replica count
+(`TestR_HA_032_ProductionExample`); the ingress policies that name the Ingress controller's, the Gateway's and the monitoring namespace
+(`TestR_HA_042_ProductionExample`); the ServiceMonitor, the PrometheusRule with every alert of R-HA-045 and the labels the Prometheus selects on
+(`TestR_HA_045_ProductionExample`); and the HTTPRoute beside the Ingress with a BackendTLSPolicy per Service (`TestR_HA_038_ProductionExample`). `make chart-lint` lints and renders it with the `ci/` sets.
+
 | Command | What it does |
 |---|---|
-| `make chart-lint` → [test/chart/lint.sh](../../test/chart/lint.sh) | `helm lint --strict` and `helm template` for every `ci/` set, `values-dev.yaml`, and `values-dev.yaml` with `values-pooler.yaml` |
+| `make chart-lint` → [test/chart/lint.sh](../../test/chart/lint.sh) | `helm lint --strict` and `helm template` for every `ci/` set, `examples/production.yaml`, `values-dev.yaml`, and `values-dev.yaml` with `values-pooler.yaml` |
 | `make chart-test` → [test/chart/test.sh](../../test/chart/test.sh) | the Go package [test/chart](../../test/chart/chart_test.go) with build tag `chart`; writes `.out/test-chart.json` for the coverage generator |
 | `go test -tags chart ./test/chart/...` | the same, without the wrapper |
 | [test/chart/image_test.go](../../test/chart/image_test.go) | the default image is `docker.io/guidedtraffic/trove` at the appVersion, and `values.yaml` has one `  tag:` line, which the release pipeline rewrites |

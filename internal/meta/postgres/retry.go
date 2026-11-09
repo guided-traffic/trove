@@ -49,7 +49,13 @@ func classify(err error) retryKind {
 		switch {
 		case pe.Code == "40001" || pe.Code == "40P01":
 			return retrySerialization
-		case pe.Code == "08P01": // protocol_violation: a refused startup parameter, never transient
+		case pe.Code == "08P01":
+			// protocol_violation. A refused startup parameter is never transient. PgBouncer answers the same code to a client while its server
+			// connections cannot be made (the database behind it is down or switching over): "server login has been failing, cached error: connect
+			// failed (server_login_retry)". That is an outage, and it passes (Q-HA-266).
+			if strings.Contains(pe.Message, "server login has been failing") {
+				return retryFailover
+			}
 			return retryNo
 		case strings.HasPrefix(pe.Code, "08"), // connection exception
 			pe.Code == "57P01", // admin_shutdown

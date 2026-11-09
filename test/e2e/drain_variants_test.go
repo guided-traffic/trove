@@ -31,6 +31,7 @@ import (
 type drainVariant string
 
 const (
+	variantA drainVariant = "A" // a node with an api, a packages and a worker pod and neither primary (the alerts tests use it; npm-ha runs variant A with its own load)
 	variantB drainVariant = "B" // the Valkey primary and a Sentinel on the node
 	variantC drainVariant = "C" // the PostgreSQL primary on the node
 	variantD drainVariant = "D" // an instance of the request pooler on the node (pooler profile)
@@ -175,6 +176,8 @@ func prepareVariantDrain(t *testing.T, v drainVariant) *variantDrain {
 		restoreNSScript(t, "down")
 	}
 	switch v {
+	case variantA:
+		d.Node = drainNodeVariantA(t)
 	case variantB:
 		d.Node = pickNodeB(t)
 	case variantC:

@@ -1190,6 +1190,10 @@ profile:
 - `valkey-cli --scan --pattern 'trove:<keyspace>:*' | xargs valkey-cli del`, run with an
   administrative credential in the middle of the load, makes no client request fail.
 
+The failover, outage and slow-Valkey criteria run in the profile `alerts` as metric assertions (`TestAlerts_R_OPS_046_ValkeyFailoverFlapping`,
+`TestAlerts_R_OPS_046_ValkeyOutage`, `TestAlerts_R_OPS_045_SlowValkey`, [alerts_test.go](../../test/e2e/alerts_test.go)); the injection of the last is
+`CLIENT PAUSE` and not a fault proxy, and the 50 ms bound is not read from the histogram ([Q-OPS-197](#q-ops-197--the-slow-valkey-criterion-of-r-ops-045-is-injected-with-client-pause-and-asserts-the-timeout-counter-and-the-circuit-not-the-50-ms-bound)).
+
 ### R-OPS-046 · Operational signals for availability, horizontal scale and backup
 Priority: **MVP** · Covers: trove-only
 
@@ -1251,6 +1255,13 @@ Acceptance criteria:
 - Each failure scenario of R-HA-052 that a row names fires that row's alert: PostgreSQL outage,
   Valkey outage, one replica's Valkey path blocked, three Valkey failovers within an hour, a backup
   run that exits `1`, and the backup CronJob suspended with `backup.expected_interval: 1h`.
+
+Evidence: the set `alerts` ([alerts_test.go](../../test/e2e/alerts_test.go), `TestAlerts_R_OPS_046_...`) runs the drain variants A, B, C and E, the planned failover
+and the rolling restarts with a Prometheus that scrapes through the ServiceMonitor and requires no firing alert in the window, and fires
+`TroveValkeyUnavailable`, `TroveValkeyUnavailableSingleReplica`, `TroveValkeyFailoverFlapping`, `TroveDatabaseUnreachable`, `TroveReplicasNotReady`,
+`TroveBackupFailed` and `TroveBackupStale`. The failed backup is a run killed with kill -9, not one that exits `1`, and the interval is a minute, not an
+hour ([Q-OPS-196](#q-ops-196--the-failed-backup-scenario-kills-the-runs-process-with-kill--9-the-run-is-left-abandoned-which-the-gauge-counts-as-a-failure)).
+`TroveValkeyPrimaryDisagreement` and `TroveControlConnectionWaits` are tested by their rule tests only, and drain variant D (the pooler) is not part of the quiet scenario ([H-798](ha-and-helm.md#h-798--a-drained-api-or-packages-pod-can-run-its-whole-grace-period-before-it-is-killed)).
 
 ## Logs
 
@@ -6082,6 +6093,41 @@ queries are a bounded set. The development agent would revisit the single `unnam
 Tests: `TestR_OPS_008_TheStatementMetricsCountByTheNameOfTheQuery` (unit), `TestR_OPS_008_AStatementSlowerThanTheThresholdCountsUnderItsQueryName`
 (integration).
 
+
+### Q-OPS-196 · The failed-backup scenario kills the run's process with kill -9; the run is left abandoned, which the gauge counts as a failure
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OPS-046's acceptance criterion names "a backup run that exits `1`". Verified in this repository: [R-BAK-014](backup-and-restore.md) defines `trove_backup_last_failure_timestamp_seconds` as the newest `finished_at` of a `failed` or `abandoned` create run and the `lease_expires_at` of an active run with an expired lease; the exit code `1` (`ExitFailed`) is reached through `hold_lost`, `superseded`, `pool_damaged` or a store error after retries, none of which the suite can cause without damaging the installation or a defect.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Damage the pool so that the run exits 1 | A removed object of the pool | The exact exit code | The installation is damaged and the repair is the test's business; other alerts (`TroveBlobMissing`) fire too |
+| (b) Kill the process with kill -9 from the node during the copy, with a lease of 20 s and no retry (chosen) | The run stays active with an expired lease and the Job ends Failed | The failure the gauge counts. A force-deleted pod is not enough: its process gets a termination signal first and records the run `interrupted`, which is no failure (measured: the run of the first attempt was `interrupted`) | The run does not exit 1; the alert's path is the lease clause |
+| (c) A run with a wrong target | A usage or foreign-target error | Exits non-zero | Exits 2 or 4, and may write no run row |
+
+**Choice:** (b). `TroveBackupFailed` fires, a later successful run resolves it, and the same test then lowers `config.backup.expected_interval` to its minimum of a minute with the CronJob suspended and sees `TroveBackupStale` fire; the profile with its own interval resolves it.
+
+**Rationale:** the alert reads the gauge, and the gauge counts abandoned runs as failures, so the scenario shows the alert for the failure a crashed pod produces, which is the failure operators meet. The development agent would revisit it if a harmless way to make a run end `failed` with exit 1 appears (a test hook of the backup command).
+
+**Applied in the spec:** R-OPS-046 (acceptance criteria are met by the lease clause for the first of the two backup scenarios). Code: [alerts_test.go](../../test/e2e/alerts_test.go).
+
+### Q-OPS-197 · The slow-Valkey criterion of R-OPS-045 is injected with CLIENT PAUSE and asserts the timeout counter and the circuit, not the 50 ms bound
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OPS-045 asks for a fault proxy that delays every Valkey command by 2 s, `trove_valkey_errors_total{kind="timeout"}` growing, the circuit opening, and no observation of `trove_valkey_command_duration_seconds` above `valkey.command_timeout` plus 50 ms. The dev stack has no fault proxy; E1.8 holds the commands with `CLIENT PAUSE`. The histogram's last bucket is 0.5 s, so an observation of 0.52 s lies in `+Inf`, as one of 5 s does: the bound cannot be read from the buckets.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Add a fault proxy to the dev stack | A TCP proxy with a delay between the replicas and Valkey | The criterion as written | A component of its own on the TLS links of Valkey |
+| (b) `CLIENT PAUSE 4000 ALL` and the counter and the circuit (chosen) | The injection E1.8 uses | No new component; the counter and the circuit are what the criterion's first two clauses ask | The bound of 50 ms is not asserted |
+
+**Choice:** (b), `TestAlerts_R_OPS_045_SlowValkey`. The bound of 50 ms stays with the integration test of the breaker ([breaker_test.go](../../test/integration/valkey/breaker_test.go)), which reads the duration in process.
+
+**Rationale:** the criterion's e2e content is that a slow Valkey shows as timeouts and an open circuit. The development agent would revisit it if the histogram gets a bucket above the timeout.
+
+**Applied in the spec:** R-OPS-045 (acceptance criteria). Code: [alerts_test.go](../../test/e2e/alerts_test.go).
 
 ## What this does not cover
 

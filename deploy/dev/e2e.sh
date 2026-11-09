@@ -103,6 +103,11 @@
 #                       installation and returns the cluster to the current dev release (nightly, dispatch, locally)
 #   e2e.sh release-smoke the scenarios of the post-release check (E5.8, Q-HA-165): the client smoke test and the matrix of E2.1 against the
 #                       published chart and image (TROVE_RELEASE_VERSION and TROVE_RELEASE_DIGEST set, see deploy/dev/up.sh); CI: job smoke-published
+#   e2e.sh edge         R-HA-039 through the chart's Ingress and through an HTTPRoute on a platform Gateway (Envoy Gateway, profile `edge`): a 6 GiB upload, a
+#                       download of 17 minutes at 2 MiB/s, a 1 GiB NuGet push and the scoped npm package, and R-HA-038's criteria (E5.5); nightly, dispatch, locally
+#   e2e.sh alerts       the alerts of R-HA-045 in their R-HA-052 scenarios against the Prometheus of the profile `alerts` (R-OPS-045, R-OPS-046, E5.5): Valkey
+#                       outage, failover flapping, a replica cut off from Valkey, a role below two replicas, a failed and an overdue backup, and "Maintenance
+#                       stays quiet" (a node drain, a planned failover, a rolling restart); nightly, dispatch, locally
 #   e2e.sh <regex>      any other argument is a `go test -run` expression
 #
 # Environment: TROVE_DEV_HTTP_PORT (the port the cluster was created with; read back from the node),
@@ -266,6 +271,17 @@ case "$set_name" in
   # plugin. The cluster stays archiving until it is recreated. A long leg: nightly (step of the job e2e-backup), on dispatch, locally.
   backup-pitr) run='^TestBackupPITR'; export TROVE_PITR=1 ;;
   # <<< M5 backup
+  # >>> M5 edge
+  # The edge requirements of R-HA-039 and the Gateway API of R-HA-038 (docs/developer/e2e.md#the-edge-and-alert-tests, exit criterion E5.5): the profile
+  # `edge` (Envoy Gateway with the Gateway `shared`, an HTTPRoute beside the Ingress, spool and upload limit for 6 GiB; up.sh installs it), one npm and one
+  # NuGet client pod whose forwarders the test points at the Ingress and at the Gateway in turn. The 6 GiB and 2 GiB bodies are streamed from /dev/urandom, no file of them is written.
+  # A long leg: nightly (job e2e-edge), on dispatch, locally (a red long leg is a finding, not a blocker, owner 2026-11-01).
+  edge) run='^TestEdge_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=1; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=1; export TROVE_E2E_TIMEOUT="${TROVE_E2E_TIMEOUT:-160m}" ;;
+  # The alerts of R-HA-045 in their R-HA-052 scenarios (R-OPS-045, R-OPS-046): the profile `alerts` (kube-prometheus-stack in the namespace monitoring,
+  # the ServiceMonitor and the PrometheusRule rendered) on the cluster without the poolers (drain variant D is not part of
+  # "Maintenance stays quiet": H-798), no client pods.
+  alerts) run='^TestAlerts_'; export TROVE_E2E_TIMEOUT="${TROVE_E2E_TIMEOUT:-190m}" ;;
+  # <<< M5 edge
   *) run="$set_name" ;;
 esac
 
@@ -609,7 +625,7 @@ nuget_clients_up() {
   log "starting $NUGET_CLIENTS_COUNT NuGet client pod(s) forwarding localhost:$EDGE_PORT to $target"
   for i in $(seq 0 $((NUGET_CLIENTS_COUNT - 1))); do
     jq -n --arg name "${NUGET_CLIENTS_PREFIX}${i}" --arg ns "$NS" --arg image "$NUGET_CLIENTS_IMAGE" \
-      --arg listen "127.0.0.1:$EDGE_PORT" --arg target "$target" '
+      --arg listen "127.0.0.1:$EDGE_PORT" --arg target "$target" --arg work "${TROVE_E2E_NUGET_CLIENTS_WORK:-4Gi}" '
       { apiVersion: "v1", kind: "Pod",
         metadata: { name: $name, namespace: $ns, labels: { "app.kubernetes.io/name": "trove-e2e", "app.kubernetes.io/component": "e2e-nuget-client" } },
         spec: {
@@ -633,7 +649,7 @@ nuget_clients_up() {
               { name: "tmp", mountPath: "/tmp" } ] }],
           volumes: [
             { name: "ca", configMap: { name: "trove-e2e-nuget-ca" } },
-            { name: "work", emptyDir: { sizeLimit: "4Gi" } },
+            { name: "work", emptyDir: { sizeLimit: $work } },
             { name: "tmp", emptyDir: { sizeLimit: "512Mi" } } ] } }' \
       | kn apply -f - >/dev/null
   done

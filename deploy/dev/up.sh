@@ -28,6 +28,15 @@
 #   TROVE_PROFILE=backup  the `backup` e2e profile (R-BAK-029): garbage collection with a grace period of 0s, so that the consistency
 #                         scenario of the backup suite collects what it deletes at once (values-backup.yaml).
 #                         Run up.sh again without it to switch back.
+#   TROVE_PROFILE=edge    the `edge` e2e profile (R-HA-039, R-HA-038): Envoy Gateway (tools/versions.env DEV_ENVOY_*) with the platform Gateway `shared` in
+#                         the namespace gateway-system (gateway.yaml), and the trove release with an HTTPRoute on it beside the Ingress, the
+#                         BackendTLSPolicies and the spool and upload limit of a 6 GiB transfer (values-edge.yaml). The Gateway is installed for this
+#                         profile only; it stays in the cluster when a later run uses another profile, which removes the HTTPRoute again.
+#                         Run up.sh again without it to switch back.
+#   TROVE_PROFILE=alerts  the `alerts` e2e profile (R-HA-045, R-OPS-045, R-OPS-046): kube-prometheus-stack in the namespace monitoring (the Prometheus
+#                         operator, one Prometheus and kube-state-metrics; DEV_PROMETHEUS_*) and the trove release with the ServiceMonitor and the
+#                         PrometheusRule rendered (values-alerts.yaml). Installed for this profile only; it stays in the cluster afterwards.
+#                         Run up.sh again without it to switch back.
 #   TROVE_POOLER=1        also install the transaction-mode poolers and point the chart at them
 #                         (pooler.yaml, values-pooler.yaml, R-HA-058). The profile carries what the drain of a pooler instance
 #                         needs (R-HA-059 rule 5: PodDisruptionBudgets, node spread, a grace period of 120 s, a pooled connection
@@ -60,7 +69,7 @@ SKIP_RELEASE="${TROVE_SKIP_RELEASE:-0}"
 POOLER="${TROVE_POOLER:-0}"
 PITR="${TROVE_PITR:-0}"
 PROFILE="${TROVE_PROFILE:-default}"
-case "$PROFILE" in default|scatter|bastion|vuln|mirror|backup) ;; *) die "TROVE_PROFILE must be default, scatter, bastion, vuln, mirror or backup, not '$PROFILE'" ;; esac
+case "$PROFILE" in default|scatter|bastion|vuln|mirror|backup|edge|alerts) ;; *) die "TROVE_PROFILE must be default, scatter, bastion, vuln, mirror, backup, edge or alerts, not '$PROFILE'" ;; esac
 IMAGE="${TROVE_IMAGE:-guidedtraffic/trove:dev}"
 # The published mode: both variables or none. A mixed setting would install a local build while the caller expects the release.
 RELEASE_VERSION="${TROVE_RELEASE_VERSION:-}"
@@ -263,6 +272,60 @@ task_keycloak() {
   kn rollout status deployment/trove-keycloak --timeout=10m
 }
 
+# image_tag <ref> and image_hex <ref> split "repo:tag@sha256:hex" for the charts that take the tag and the digest as two values.
+image_tag() { local r="${1%@*}"; printf '%s\n' "${r##*:}"; }
+image_hex() { printf '%s\n' "${1##*@sha256:}"; }
+
+# The Gateway API edge of the profile `edge` (R-HA-038, R-HA-039): Envoy Gateway with the Gateway API CRDs of its chart, the platform Gateway
+# `shared` of gateway.yaml, and the CA ConfigMap of the BackendTLSPolicies. The controller and the proxy image are the pins of tools/versions.env;
+# a pin whose tag is not the chart version is refused.
+task_gateway() {
+  await pki
+  case "$DEV_ENVOY_GATEWAY_IMAGE" in
+    *"gateway:$DEV_ENVOY_GATEWAY_CHART_VERSION@sha256:"*) ;;
+    *) echo "error: $DEV_ENVOY_GATEWAY_IMAGE is pinned in tools/versions.env, but DEV_ENVOY_GATEWAY_CHART_VERSION is $DEV_ENVOY_GATEWAY_CHART_VERSION: the Envoy Gateway pins move together"; return 1 ;;
+  esac
+  helm --kube-context "$CTX" upgrade --install eg "$(envoy_gateway_chart_tgz)" -n envoy-gateway-system --create-namespace \
+    --set global.images.envoyGateway.image="$DEV_ENVOY_GATEWAY_IMAGE" --set global.images.envoyProxy.image="$DEV_ENVOY_PROXY_IMAGE" \
+    --wait --timeout 5m
+  k wait --for=condition=Established crd/gateways.gateway.networking.k8s.io crd/httproutes.gateway.networking.k8s.io \
+    crd/backendtlspolicies.gateway.networking.k8s.io crd/clienttrafficpolicies.gateway.envoyproxy.io --timeout=2m
+  # Gateway API takes the CA of a BackendTLSPolicy from a ConfigMap, and cert-manager writes the dev CA into a Secret.
+  secret_field trove-dev-ca ca.crt | base64 -d > "$LOGS/gateway-ca.crt"
+  kn create configmap trove-tls-ca --from-file=ca.crt="$LOGS/gateway-ca.crt" --dry-run=client -o yaml | kn apply -f -
+  # The controller's admission may refuse the first objects for a moment after its Deployment is ready.
+  local deadline=$(( $(date +%s) + 180 ))
+  until render "$DEV_DIR/gateway.yaml" | k apply -f - 2>"$LOGS/gateway-apply.err"; do
+    [ "$(date +%s)" -lt "$deadline" ] || { cat "$LOGS/gateway-apply.err" >&2; die "gateway.yaml was not accepted within 180s"; }
+    sleep 3
+  done
+  k -n gateway-system wait --for=condition=Programmed gateway/shared --timeout=5m
+}
+
+# Prometheus for the profile `alerts` (R-HA-045, R-OPS-045, R-OPS-046): the operator, one Prometheus and kube-state-metrics, nothing else of the
+# stack. The Prometheus selects every ServiceMonitor and PrometheusRule of the cluster; its web interface is plain HTTP inside the cluster (the
+# tests read it through the API server's Service proxy), the scrape of trove's ops listener is TLS, verified against the dev CA.
+task_monitoring() {
+  helm --kube-context "$CTX" upgrade --install prometheus \
+    "$(chart_tgz https://prometheus-community.github.io/helm-charts kube-prometheus-stack "$DEV_PROMETHEUS_STACK_CHART_VERSION")" \
+    -n monitoring --create-namespace \
+    --set alertmanager.enabled=false --set grafana.enabled=false --set nodeExporter.enabled=false --set windowsMonitoring.enabled=false \
+    --set defaultRules.create=false --set kubeApiServer.enabled=false --set kubelet.enabled=false --set kubeControllerManager.enabled=false \
+    --set coreDns.enabled=false --set kubeDns.enabled=false --set kubeEtcd.enabled=false --set kubeScheduler.enabled=false --set kubeProxy.enabled=false \
+    --set prometheusOperator.admissionWebhooks.enabled=false --set prometheusOperator.tls.enabled=false \
+    --set prometheusOperator.image.tag="$(image_tag "$DEV_PROMETHEUS_OPERATOR_IMAGE")" --set prometheusOperator.image.sha="$(image_hex "$DEV_PROMETHEUS_OPERATOR_IMAGE")" \
+    --set prometheusOperator.prometheusConfigReloader.image.tag="$(image_tag "$DEV_PROMETHEUS_CONFIG_RELOADER_IMAGE")" \
+    --set prometheusOperator.prometheusConfigReloader.image.sha="$(image_hex "$DEV_PROMETHEUS_CONFIG_RELOADER_IMAGE")" \
+    --set prometheus.prometheusSpec.image.tag="$(image_tag "$DEV_PROMETHEUS_IMAGE")" --set prometheus.prometheusSpec.image.sha="$(image_hex "$DEV_PROMETHEUS_IMAGE")" \
+    --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false --set prometheus.prometheusSpec.ruleSelectorNilUsesHelmValues=false \
+    --set prometheus.prometheusSpec.podMonitorSelectorNilUsesHelmValues=false --set prometheus.prometheusSpec.probeSelectorNilUsesHelmValues=false \
+    --set prometheus.prometheusSpec.retention=6h --set prometheus.prometheusSpec.replicas=1 \
+    --set prometheus.prometheusSpec.resources.requests.cpu=100m --set prometheus.prometheusSpec.resources.requests.memory=512Mi \
+    --set kubeStateMetrics.enabled=true --set kube-state-metrics.image.tag="$(image_tag "$DEV_KUBE_STATE_METRICS_IMAGE")" \
+    --set kube-state-metrics.image.sha="${DEV_KUBE_STATE_METRICS_IMAGE##*@}" \
+    --wait --timeout 8m
+}
+
 log "installing HAProxy Ingress, cert-manager + PKI, the secret generator, CloudNativePG + PostgreSQL, the Valkey operator + Valkey, SeaweedFS and the Keycloak test IdP in parallel"
 spawn haproxy task_haproxy
 spawn pki task_pki
@@ -272,6 +335,8 @@ spawn postgres task_postgres
 spawn valkey task_valkey
 spawn s3 task_s3
 spawn keycloak task_keycloak
+[ "$PROFILE" != "edge" ] || spawn gateway task_gateway
+[ "$PROFILE" != "alerts" ] || spawn monitoring task_monitoring
 
 failed=0
 for i in "${!PIDS[@]}"; do

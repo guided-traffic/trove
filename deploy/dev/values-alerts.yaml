@@ -1,0 +1,11 @@
+# The profile `alerts` (R-HA-045, R-OPS-045, R-OPS-046, exit criterion E5.5): the default profile with the ServiceMonitor and the PrometheusRule of the
+# chart, read by the Prometheus that up.sh installs in the namespace monitoring for this profile (TROVE_PROFILE=alerts, kube-prometheus-stack
+# without Alertmanager, Grafana and node exporter). The Prometheus selects every ServiceMonitor and rule of the cluster, so no release label is
+# set. The scrape interval is short so that a scenario sees a change within seconds; the chart's default is 30s.
+metrics:
+  serviceMonitor:
+    enabled: true
+    interval: 10s
+    scrapeTimeout: 5s
+  prometheusRule:
+    enabled: true

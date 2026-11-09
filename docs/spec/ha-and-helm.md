@@ -4824,8 +4824,9 @@ Priority: **MVP** · Covers: HA-040
 **Status.** Rendered for the default endpoint ([httproute.yaml](../../deploy/helm/trove/templates/httproute.yaml), render test
 `TestR_HA_038_GatewayAPIExposure`), reading the table the Ingress reads ([_edge.tpl](../../deploy/helm/trove/templates/_edge.tpl)); the BackendTLSPolicies of
 `tls.backendTLSPolicy` name one Service each (Q-HA-81, Q-HA-85). Not rendered: the HTTPRoute of further endpoints (R-EP-008) and the
-Gateway of `gateway.create` (R-HA-053). `gateway.parentRefs` is required with `gateway.enabled`. The criteria with Envoy Gateway in kind are
-not covered by the render test.
+Gateway of `gateway.create` (R-HA-053). `gateway.parentRefs` is required with `gateway.enabled`. The criteria with Envoy Gateway in kind run in the
+profile `edge` (`TestEdge_R_HA_039_TransfersThroughTheIngressAndTheGateway`, [edge_test.go](../../test/e2e/edge_test.go), Q-HA-260); the production
+example values render the route beside the Ingress (`TestR_HA_038_ProductionExample`, Q-HA-262).
 
 - With `gateway.enabled: true` the chart renders an `HTTPRoute` (`gateway.networking.k8s.io/v1`).
   It attaches to `gateway.parentRefs`, with `hostnames` defaulting to the base URL's host (plus the
@@ -4956,7 +4957,8 @@ Route timeouts come from the HTTPRoute (R-HA-038).
 
 </details>
 
-Acceptance criteria (run through the chart's Ingress and through the HTTPRoute in CI):
+Acceptance criteria (run through the chart's Ingress and through the HTTPRoute in CI, the set `edge`: the Ingress is HAProxy Ingress, the HTTPRoute is
+attached to a Gateway of Envoy Gateway, Q-HA-260; the slow download reads a 2 GiB object, Q-HA-261):
 
 - `curl -T 6gib.bin https://trove.example.com/files/web/generic-local/big.bin` succeeds. 6 GiB is
   above the 5 GiB single-request limit of S3, so the multipart path is covered as well.
@@ -5222,8 +5224,11 @@ platform check and the journal serve the platform restore as well.
 `TroveBackupCheckFailed` reads `trove_backup_check_ok{check}`, which every replica exports from the report that the task `backup-check` stored in
 `system_state` ([Q-OPS-185](operations-and-observability.md#q-ops-185--the-gauge-of-the-platform-check-is-read-from-the-stored-report-by-every-replica));
 a check that is not declared or not readable has no series. The acceptance criteria
-below that need a Prometheus scraping a running profile (object store stopped, Valkey stopped, the suspended backup, the interrupted backup run)
-are not covered by a test: the rule tests prove the expressions against given series, not that a stopped component produces those series.
+below that need a Prometheus scraping a running profile run in the profile `alerts` (Q-HA-263), against a Prometheus that reads the chart's
+ServiceMonitor and PrometheusRule (`TestAlerts_R_OPS_046_...`, [alerts_test.go](../../test/e2e/alerts_test.go)): Valkey stopped, one replica cut off from
+Valkey, three failovers, PostgreSQL fenced for three minutes, a role scaled below two replicas, a killed backup run and a suspended CronJob with the
+interval at a minute, and the scenario "Maintenance stays quiet" (Q-HA-264). The object store stopped is not among them: `TroveObjectStoreUnreachable`
+is tested by its rule tests only. The production example values render the ServiceMonitor and the PrometheusRule with every alert (`TestR_HA_045_ProductionExample`).
 
 MVP since 2026-10-28. INV-12 requires that a Valkey outage is alerted on, the backup alerts of
 [backup-and-restore.md](backup-and-restore.md) R-BAK-014 are MVP, and MVP acceptance criteria
@@ -5682,7 +5687,7 @@ against the local profile (R-HA-051) in CI. Load comes from real clients in para
 | Valkey failover flapping | Three `SENTINEL FAILOVER trove` within one hour | `TroveValkeyFailoverFlapping` fires ([operations-and-observability.md](operations-and-observability.md) R-OPS-046); zero failed iterations |
 | Replica bound to a stale primary | A failover forced while one replica's Sentinel traffic is blocked and the old primary keeps that replica's connections, with `valkey.sentinel.refresh_interval` raised for the test | `TroveValkeyPrimaryDisagreement` fires after 5 minutes; after the block is lifted, the replica moves to the new primary within `valkey.sentinel.refresh_interval` + 1 s and the alert resolves |
 | Control-pool saturation | A test build holds the control connection of every replica (direct profile), or every server connection of the control pooler (pooler profile), with back-to-back `pg_sleep(2)` statements for 6 minutes | `TroveControlConnectionWaits` fires; `TroveDatabasePoolSaturated` does not, because it selects `db_pool="request"`; replicas stay ready, because each wait stays below `cluster.epoch_max_staleness` |
-| Maintenance stays quiet | R-HA-059 variants A to E and the planned failover of R-HA-057, each with a Prometheus scraping through the ServiceMonitor | No alert of R-HA-045 fires (R-OPS-046) |
+| Maintenance stays quiet | R-HA-059 variants A to E and the planned failover of R-HA-057, each with a Prometheus scraping through the ServiceMonitor (variant D is not in the set `alerts`, H-798) | No alert of R-HA-045 fires (R-OPS-046) |
 | Pooler instance loss (pooler profile) | Delete a pooler pod, gracefully and forced | R-HA-058 |
 | Lease holder loss | Kill the worker holding the `scheduler` lease; separately, kill the worker running a GC job mid-run | Another worker holds the `scheduler` lease within `cluster.lease_retry_interval` + 1 s and no occurrence is enqueued twice (R-HA-005, R-HA-006); the GC job is completed by another worker (its exclusive job key, Q-STOR-13); no S3 delete without a committed `deleting` row |
 | Spool exhaustion | Concurrent uploads above the budget | `503` with `Retry-After`; no eviction |
@@ -5697,6 +5702,10 @@ against the local profile (R-HA-051) in CI. Load comes from real clients in para
 
 - The suite records client-side errors per scenario and fails on any deviation from the pass
   condition. Results are published as a CI artifact per run.
+- The scenarios that name an alert (the Valkey outage, the flapping failovers, a replica cut off from Valkey, the PostgreSQL outage, a role below two
+  replicas, the killed and the overdue backup) and "Maintenance stays quiet" run in the set `alerts` against the Prometheus of the profile `alerts`
+  (Q-HA-263, Q-HA-264); the transfers of R-HA-039 and the criteria of R-HA-038 run in the set `edge` (Q-HA-260). Both are long legs of the nightly
+  workflow (jobs `e2e-alerts` and `e2e-edge`).
 - The pod-crash, switchover, rolling-upgrade, object-store and Valkey-primary-loss scenarios and
   variant A of the drain test run every night and on dispatch in the workflow HA and Performance, not on every change to
   `main` (owner, 2026-11-01): the pod crash in its 20-minute form, the rest as before
@@ -9318,6 +9327,131 @@ Context: E5.2 asks for `npm ci` of the 500-package reference lockfile through `n
 
 **Applied in the spec:** exit criterion E5.2 ([roadmap.md](../coverage/roadmap.md)). Code: [cold_crash_test.go](../../test/e2e/cold_crash_test.go), [e2e.sh](../../deploy/dev/e2e.sh) (set `cold-crash`), [performance.yml](../../.github/workflows/performance.yml) (leg `cold-crash` of `e2e-nuget`). Elsewhere: [e2e.md](../developer/e2e.md).
 
+### Q-HA-260 · The Gateway API implementation of the dev stack is Envoy Gateway, installed by the profile `edge`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: exit criterion E5.5 runs R-HA-038's criteria and R-HA-039's transfers through an HTTPRoute on an existing Gateway, so the dev stack needs a Gateway API implementation. The owner's edge is HAProxy Ingress (pinned in [versions.env](../../tools/versions.env)). Verified in this repository: the controller of the pin watches the Gateway API by default (`-watch-gateway`, v0.16.3) and its chart grants the permissions. Verified in its documentation (v0.16): it implements GatewayClass, Gateway, TCPRoute and HTTPRoute only in part, "HTTPRoute's Rules and BackendRefs don't support Filters", the listener's port and protocol are not implemented for HTTPRoute, and resource status is not updated. Not verified: any of this against the cluster, which this decision does not need.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) HAProxy Ingress's own Gateway API support | No new component; the one controller serves both objects | Nothing new to pin or run | The chart renders `timeouts` and `filters` on every rule and BackendTLSPolicies for the Services: the controller supports none of them and writes no status, so the criterion "attached to an existing Gateway" cannot be observed (`Accepted`) and the timeouts of R-HA-038 are not exercised |
+| (b) Envoy Gateway (chosen) | The implementation R-HA-038 and R-HA-039 name, installed from its OCI chart with the Gateway API CRDs it ships | Supports HTTPRoute timeouts, BackendTLSPolicy, `ClientTrafficPolicy` for encoded slashes (the policies R-HA-039 lists), and reports status; the proxy streams bodies without buffering | A second data plane (two Envoy pods and a controller) and two image pins |
+| (c) Another small controller (Traefik, NGINX Gateway Fabric) | A different implementation | Smaller | R-HA-039's examples and the criteria name Envoy Gateway; BackendTLSPolicy and route timeouts are less complete |
+
+**Choice:** (b). `TROVE_PROFILE=edge` installs the chart `oci://docker.io/envoyproxy/gateway-helm` at `DEV_ENVOY_GATEWAY_CHART_VERSION`, checked by the SHA-256 of its archive on every use ([lib.sh](../../deploy/dev/lib.sh) `oci_chart_tgz`), the controller image and the proxy image pinned by digest, the platform Gateway `shared` in the namespace `gateway-system` with a TLS listener whose certificate is the Ingress's `trove-edge-tls` (a `ReferenceGrant` lets the Gateway read it), the `ClientTrafficPolicy` and `BackendTrafficPolicy` of R-HA-039, and the CA ConfigMap of the BackendTLSPolicies ([gateway.yaml](../../deploy/dev/gateway.yaml), [values-edge.yaml](../../deploy/dev/values-edge.yaml)). The Gateway is installed for that profile only (the profile is the opt-in; nothing is installed by a plain `make dev-up`); the Service of the proxy is of type `ClusterIP`, because the clients of the test are pods.
+
+**Rationale:** a test of "an HTTPRoute attached to an existing Gateway" needs a controller that accepts the route and honours what the chart renders into it. The cost, a second edge in the cluster, is paid only in the profile. The development agent would revisit the choice if HAProxy Ingress implements route timeouts, filters and status, because the owner's production edge would then be the one under test.
+
+**Applied in the spec:** R-HA-038 (status and acceptance), R-HA-039 (acceptance). Code: the files named above, [up.sh](../../deploy/dev/up.sh), [edge_test.go](../../test/e2e/edge_test.go). Elsewhere: [e2e.md](../developer/e2e.md#the-edge-and-alert-tests), [local-profile.md](../developer/local-profile.md). The SeaweedFS of the dev stack allows 400 volumes of 128 MB instead of 100 (`-volume.max`, [s3.yaml](../../deploy/dev/s3.yaml)): a 6 GiB object needs 48 and the data of the other suites already filled 100. The nightly workflow gets the job `e2e-edge` as the last job of lane 2 of Q-ARCH-431 (after `npm-ha-soak`; large class, the 6 GiB file and spool need the disk) and the job `e2e-alerts` on a GitHub-hosted runner outside the lanes ([performance.yml](../../.github/workflows/performance.yml)).
+
+### Q-HA-261 · The slow download of R-HA-039 reads a 2 GiB object; the 6 GiB object is downloaded at full speed and compared by its SHA-256
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-039's second criterion reads `big.bin`, the 6 GiB object of the first, at `--limit-rate 2M` and expects "longer than 15 minutes". At 2 MiB/s a 6 GiB object takes 51 minutes, and the test runs through two edges.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The 6 GiB object at 2 MiB/s | The criterion as written | No deviation | 51 minutes per edge, over the leg's budget |
+| (b) A 2 GiB object at 2 MiB/s, and the 6 GiB object at full speed with a SHA-256 (chosen) | 17 minutes, longer than 15, and completes; the large object is read back whole and compared | Both properties of the criterion (a transfer longer than the 900 s of the table, and a body above the S3 single-request limit) are covered, each by the object that can show it | The criterion's "same object" is split in two |
+| (c) A rate of 6 MiB/s on the 6 GiB object | The same 17 minutes | One object | `--limit-rate 2M` is the criterion's own number |
+
+**Choice:** (b). The two edges read their 2 GiB objects side by side; the uploads run one after the other, because the spool of a `packages` pod holds one upload of 6 GiB. The 6 GiB object is the same bytes through both edges: the second upload is deduplicated by SHA-256 in the blob store (R-STOR content addressing), which the edge cannot tell, so the multipart path of S3 is exercised by the first upload only. The 1 GiB package of the NuGet push and the 200 MB npm package are separate files per edge in separate repositories.
+
+**Rationale:** what R-HA-039 protects is the edge (timeouts, buffering, body limits); each of those is shown by a transfer that lasts long enough or is big enough, and 2 GiB at 2 MiB/s lasts. The development agent would revisit it if the edge's idle or request timeout is set to a value between 17 and 51 minutes anywhere: then only the 6 GiB object would find it.
+
+**Applied in the spec:** R-HA-039 (acceptance criteria). Code: [edge_test.go](../../test/e2e/edge_test.go).
+
+### Q-HA-262 · The production example values are `deploy/helm/trove/examples/production.yaml`, packaged with the chart and rendered by the chart tests
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: E5.5 names "production example values" and no page named a file. `ci/` holds test inputs and is left out of the package ([.helmignore](../../deploy/helm/trove/.helmignore)); the reference of R-HA-031 shows every value, not a coherent installation. Q-HA-10 had planned `examples/egress.yaml`, which was not built.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A file of `ci/` | Reuse `ci/ha-ingress.yaml` and add the autoscalers | No new directory | `ci/` is not shipped: an installer cannot read it from the chart, and its sets are shaped to cover options, not to be copied |
+| (b) `examples/production.yaml` (chosen) | One file an operator can start from, in the package | Rendered by the tests, linted by `make chart-lint`, listed in the README | Another file to keep in step with the values |
+| (c) Only in the README | A snippet | No file | Nothing renders it, so it drifts |
+
+**Choice:** (b). The file has the three roles and the worker pool `vuln` on autoscalers, the pooler host and the session host, the ephemeral spool, the backup, an Ingress with the HAProxy settings of R-HA-039, an HTTPRoute with a BackendTLSPolicy per Service, ingress policies that name the Ingress controller's, the Gateway's and the monitoring namespace, and the ServiceMonitor and PrometheusRule. Every host, bucket and Secret name is an example. `TestR_HA_032_ProductionExample`, `TestR_HA_042_ProductionExample`, `TestR_HA_045_ProductionExample` and `TestR_HA_038_ProductionExample` ([production_test.go](../../test/chart/production_test.go)) assert what it renders; [lint.sh](../../test/chart/lint.sh) lints and renders it with the other sets.
+
+**Rationale:** an example nobody renders is a claim. The development agent would revisit it when a second reference installation (an OpenShift or a single-node one) is wanted: then `examples/` gets a file per shape.
+
+**Applied in the spec:** R-HA-031 (the values reference points at the file), R-HA-032, R-HA-042, R-HA-045 (status). Elsewhere: [helm-chart.md](../developer/helm-chart.md), the README.
+
+### Q-HA-263 · The dev stack gets a Prometheus for the profile `alerts`: kube-prometheus-stack without Alertmanager, Grafana and node exporter, plain HTTP on its own interface
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the alerts of R-HA-045 were tested with `promtool` against synthetic series only; the dev profile ran no Prometheus. R-OPS-046 asks that the alerts fire in their R-HA-052 scenarios and that maintenance fire none, in "the Prometheus that scrapes the profile". `TroveReplicasNotReady` reads kube-state-metrics.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A plain Prometheus with a hand-written scrape config | One Deployment | Small | Does not read the chart's ServiceMonitor and PrometheusRule, which are the objects under test |
+| (b) kube-prometheus-stack, reduced to the operator, one Prometheus and kube-state-metrics (chosen) | The stack most installations run | Reads the chart's objects as an operator's cluster does; kube-state-metrics gives `TroveReplicasNotReady` its series | Four images to pin and a large chart |
+| (c) The operator alone with hand-made Prometheus and kube-state-metrics objects | Smaller set of charts | Fewer values | More manifests of our own to keep right |
+
+**Choice:** (b), installed by `TROVE_PROFILE=alerts` into the namespace `monitoring` (the namespace the chart's NetworkPolicy admits to the ops port): chart `DEV_PROMETHEUS_STACK_CHART_VERSION` and the images of the operator, the config reloader, Prometheus and kube-state-metrics by digest. The Prometheus selects every ServiceMonitor and rule of the cluster. It scrapes trove's ops listener over TLS and verifies it against the dev CA; the certificate `trove-tls` therefore carries the name `trove-ops.<ns>.svc` ([pki.yaml](../../deploy/dev/pki.yaml)). The Prometheus's own interface and API stay plain HTTP inside the cluster and the tests reach them through the API server's Service proxy: it is a test instrument and no link of trove (see [H-797](../security/transport-encryption.md#h-797--the-prometheus-of-the-profile-alerts-serves-its-interface-and-api-in-plain-http)).
+
+**Rationale:** the test must read the alert state of the objects the chart renders. The development agent would revisit it if the operator needs more than the reduced set to select the chart's objects, or if a lighter chart reads them.
+
+**Applied in the spec:** R-HA-045 (status). Code: [up.sh](../../deploy/dev/up.sh), [values-alerts.yaml](../../deploy/dev/values-alerts.yaml), [alerts_test.go](../../test/e2e/alerts_test.go). Elsewhere: [e2e.md](../developer/e2e.md#the-edge-and-alert-tests), [local-profile.md](../developer/local-profile.md).
+
+### Q-HA-264 · "Maintenance stays quiet" runs the drain variants A, B, C and E, the planned failover and the rolling restarts without client load, and reads the window back from the Prometheus
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-052's row asks for "R-HA-059 variants A to E and the planned failover of R-HA-057, each with a Prometheus scraping through the ServiceMonitor", and no alert of R-HA-045 firing. Variants B to E are harnessed ([drain_variants_test.go](../../test/e2e/drain_variants_test.go)) and the zero-failure conditions under load are asserted by the tests that carry the load (`npm-ha`, `drain-roles`, the vulnerability and backup sets).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Run the npm and NuGet load beside every variant | The scenario as the row words it | One scenario with both conditions | Two harnesses (load and variants) in one test that are already proved apart; a failed iteration would be reported by a test whose subject is the alerts |
+| (b) The variants with the harness and the Prometheus only (chosen) | Each drain must succeed; its own conditions (no SIGKILL, nothing Pending for more than 60 s, the drain within 10 minutes) stay with the drain tests, then the Prometheus's record of the window | The subject is the alerts; the load conditions stay with their tests | The silence is shown for a cluster without client load |
+| (c) Read the state at the end only | `ALERTS` after the last step | Simple | An alert that fired and resolved in between is missed |
+
+**Choice:** (b), with the window read back by `max_over_time(ALERTS{alertstate="firing"}[<window>])`. Variant A is added to the harness (`variantA`). Variant D needs the poolers of R-HA-058, and on a cluster with them an `api` or `packages` pod was killed after its whole grace period ([H-798](#h-798--a-drained-api-or-packages-pod-can-run-its-whole-grace-period-before-it-is-killed)); the set therefore runs on the cluster without the poolers and leaves variant D to `vuln-pooler`. The finding shows in the nightly run without the poolers too. One alert has no `for`: `TroveValkeyFailoverFlapping` fires on more than two primary changes within an hour by its definition, and the drain of variant B, the planned failover and the moves that prepare a variant can add up to that; the test counts the primary changes of the window (`trove_valkey_primary_changes_total`), allows that alert when the count is two or more (the drain of variant B and the planned failover are two by themselves, and `increase()` extrapolates over the hour, so two changes can read above 2), and logs it.
+
+**Rationale:** the row's weight is "no alert fires on planned maintenance"; the load is the business of the scenarios that already carry it. The development agent would revisit it when a maintenance step is found that fires an alert only under load (a replica that is slow, not down).
+
+**Applied in the spec:** R-HA-052 (the row "Maintenance stays quiet"). Code: [alerts_test.go](../../test/e2e/alerts_test.go).
+
+### Q-HA-265 · An `api` replica holds its spool to the UI's upload limit, not to `storage.upload.max_size`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: found by the profile `edge`, whose `packages` pods spool 10Gi and whose limit `storage.upload.max_size` is 7GiB. The chart accepted the values (R-HA-029 holds `max_size` to the spool budget of the `packages` Deployments and the UI's upload limit, `ui.deploy.max_upload_bytes`, to the budget of the `api` Deployment), and the `api` pods then refused to start: `storage.upload.max_size must not exceed spool.max_bytes (is 7GiB, spool.max_bytes is 2GiB)`. Verified in this repository: [storage.go](../../internal/config/storage.go) `ValidateFor` applied the bound to every role with a client listener, `api` included, while the spec and the chart bound the `api` role by the UI's limit (Q-UI-106).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The binary follows the spec (chosen) | `ValidateFor` leaves `api` out of the `max_size` check; `validateUICoupling` holds the `api` role to the UI's limit (`max_upload_bytes`, or `max_size` where that is 0) | Chart and binary say the same; an `api` pod needs a spool for what it spools | A check moves between two files |
+| (b) The chart asks `api` for the whole `max_size` | The chart refuses the profile's values | No change to the binary | An `api` spool of 7GiB for uploads it never takes; the spec says otherwise |
+
+**Choice:** (a). `TestStorageSpoolRule` ([storage_test.go](../../internal/config/storage_test.go)) has the cases: an `api` replica with a spool below `upload.max_size` passes when it holds the UI's limit, and is refused (naming `ui.deploy.max_upload_bytes`) when the UI's limit, or `max_size` for an unlimited UI, exceeds it.
+
+**Rationale:** a bound that the spool does not need is a limit on how a production installation sizes its `api` pods. The development agent would revisit it if the `api` role gets a route that spools more than the UI's uploads.
+
+**Applied in the spec:** R-HA-029 and R-HA-035 are unchanged (the binary now agrees with them). Code: [storage.go](../../internal/config/storage.go), [ui.go](../../internal/config/ui.go).
+
+### Q-HA-266 · A pooler that cannot make server connections is an outage that the retry rides out, not a refused startup parameter
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: found by `TestAlerts_R_OPS_046_PostgreSQLOutage` on a cluster with the poolers (R-HA-058; the set `alerts` first ran on one). With PostgreSQL stopped, the PgBouncer of the CloudNativePG pooler answers a new client with `FATAL: server login has been failing, cached error: connect failed (server_login_retry)`, SQLSTATE `08P01`. Verified in this repository: `classify` ([retry.go](../../internal/meta/postgres/retry.go)) took every `08P01` for the refusal of a session parameter by a transaction-mode pooler (`ErrSessionState`, never transient), so the request got its `503` at once, `trove_db_retries_total{kind="connection"}` never moved, and `TroveDatabaseUnreachable` (which needs both) could not fire; the request did not wait out `database.retry.max_elapsed` as R-HA-015 says it does for a restart or failover. The unpooled installation was not affected (a refused connection is `retryFailover`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Treat the pooler's login failure as `retryFailover` (chosen) | `08P01` with the text `server login has been failing` is retried; any other `08P01` stays a refusal | A short outage or a switchover behind the pooler is ridden out as R-HA-015 says; the counter and the alert see it | The match is a message of PgBouncer, not a code |
+| (b) Retry every `08P01` | The code decides | No text match | A refused startup parameter would be retried until `max_elapsed` (the preflight and the session classes rely on the immediate refusal) |
+| (c) Change the alert to read the 503s alone | `TroveDatabaseUnreachable` without the retry counter | Fires under the pooler | The counter is what separates an outage from a 503 for another reason (the object store, a bug) |
+
+**Choice:** (a). `TestClassify` ([connect_test.go](../../internal/meta/postgres/connect_test.go)) has both cases: the refused startup parameter stays `retryNo`, the pooler's login failure is `retryFailover`.
+
+**Rationale:** the retry window exists for exactly this state. The development agent would revisit the match if PgBouncer changes the text (the test pins the message of the pinned CloudNativePG pooler image), or if the pooler offers a distinct SQLSTATE.
+
+**Applied in the spec:** R-HA-015 and R-HA-058 are unchanged (the code now follows them). Code: [retry.go](../../internal/meta/postgres/retry.go).
+
 ## What this does not cover
 
 ### H-37 · A database restore revives revoked credentials and removed grants
@@ -9422,3 +9556,11 @@ exit, and its effect is lost; the next use records most of them again, a half-fi
 ### H-767 · The commands of R-HA-025 steps 5 and 7 do not exist
 
 Component: the restore procedure of the platform layer (R-HA-025). Subject: the operator who follows it. Step 5 names `trove admin storage restore-versions --before <t>` and step 7 `trove admin maintenance resume-deletions` (and the pause of a planned drill `pause-deletions`); `trove admin` has none of them, and the post-restore output that points at `resume-deletions` names a command that is not there. Both commands are product commands the procedure requires and are still to be built. Until then the drill stands in for them (an aws-cli Job that removes the delete markers younger than *t*, SQL that clears the pause on `system_state`); that is not an accepted change of the procedure, and the drill switches to the commands as soon as they exist. Live today: an operator has no command and would do by hand what the drill does ([Q-HA-211](#q-ha-211--the-point-in-time-drill-restores-the-installations-own-database-into-a-new-cluster-and-does-steps-5-and-7-of-r-ha-025-with-the-s3-api-and-sql-until-their-commands-exist)). What makes it real: a wrong delete-marker filter or a wrong `UPDATE` on a restore night.
+
+### H-798 · A drained `api` or `packages` pod can run its whole grace period before it is killed
+
+Component: the shutdown of `api` and `packages` replicas under a node drain (R-HA-011, R-HA-059). Subject: every drain, eviction and rollout where it happens.
+
+Live in two observed settings, cause not found. (1) On the cluster with the transaction-mode poolers (`TROVE_POOLER=1`, R-HA-058), measured on 2026-11-09 on arm64 with `kubectl delete pod` of an `api` pod: 120 s (the grace period) with the container still logging, no shutdown record and exit 137; 16 s on the same image without the poolers. (2) In the nightly run `e2e-alerts` of the branch `p7-e55b` (amd64, GitHub-hosted, profile `alerts` without the poolers), the drains of variants A, B, C and E each took about 2 minutes and `api` and `packages` containers of the drained node ended with exit 137, which the variants' own condition (no SIGKILL) reports; a `kubectl delete pod` of an `api` pod in the same profile on the arm64 laptop took 16 s. Not verified: whether the process receives `SIGTERM` and waits on something, what differs between the arm64 and the amd64 runs, and whether the default profile shows it in the nightly's drain sets (E0.14).
+
+What makes it real: a node drain or rollout then cuts the transfers of the draining pod at the end of the grace period instead of letting them finish (R-HA-011). The scenario "Maintenance stays quiet" does not judge it: it requires that each drain ran and then reads the alerts.

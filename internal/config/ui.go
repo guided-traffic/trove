@@ -70,6 +70,17 @@ func (e errString) Error() string { return string(e) }
 // validateUICoupling checks the client setup's token lifetime against the ceiling
 // of personal tokens: the dialog creates a personal token.
 func (c *Config) validateUICoupling(r *Report) {
+	// An api replica spools the UI's uploads and nothing else that upload.max_size bounds: the limit of the content route, or
+	// upload.max_size where that is 0 (unlimited), has to fit its spool (R-HA-029, Q-UI-106). The chart holds the same bound at render time.
+	if r.Role() == RoleAPI {
+		limit := c.UI.Deploy.MaxUploadBytes
+		if limit == 0 {
+			limit = c.Storage.Upload.MaxSize
+		}
+		if limit > c.Storage.Spool.MaxBytes {
+			r.Add("ui.deploy.max_upload_bytes", "(%s, or storage.upload.max_size where it is 0) must not exceed storage.spool.max_bytes (%s): the UI's uploads are spooled", limit, c.Storage.Spool.MaxBytes)
+		}
+	}
 	if c.UI.ClientSetup.TokenTTL > c.Auth.Tokens.PAT.MaxTTL {
 		r.Add("ui.client_setup.token_ttl", "(%s) must not exceed auth.tokens.pat.max_ttl (%s)", c.UI.ClientSetup.TokenTTL, c.Auth.Tokens.PAT.MaxTTL)
 	}

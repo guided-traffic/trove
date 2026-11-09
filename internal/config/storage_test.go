@@ -29,6 +29,20 @@ func TestStorageSpoolRule(t *testing.T) {
 			}
 		}
 	})
+	t.Run("R-HA-029 an api replica spools the UI's uploads only: a spool below upload.max_size passes when it holds the UI's limit", func(t *testing.T) {
+		const ui = "ui:\n  deploy:\n    max_upload_bytes: 512MiB\n"
+		if err := loadStorage(t, small+ui, "api", CommandServe); hasIssue(err, "storage.upload.max_size") || hasIssue(err, "ui.deploy.max_upload_bytes") {
+			t.Fatalf("api with a UI limit below its spool: %v", err)
+		}
+	})
+	t.Run("R-HA-029 an api replica refuses a UI limit above its spool, and 0 means upload.max_size", func(t *testing.T) {
+		if err := loadStorage(t, small+"ui:\n  deploy:\n    max_upload_bytes: 2GiB\n", "api", CommandServe); !hasIssue(err, "ui.deploy.max_upload_bytes") {
+			t.Errorf("a UI limit of 2GiB over a spool of 1GiB: want an issue naming ui.deploy.max_upload_bytes, got %v", err)
+		}
+		if err := loadStorage(t, small+"ui:\n  deploy:\n    max_upload_bytes: 0\n", "api", CommandServe); !hasIssue(err, "ui.deploy.max_upload_bytes") {
+			t.Errorf("an unlimited UI over a spool below upload.max_size: want an issue naming ui.deploy.max_upload_bytes, got %v", err)
+		}
+	})
 	t.Run("R-HA-029 a worker accepts no uploads and its spool need not hold the maximum", func(t *testing.T) {
 		if err := loadStorage(t, small, "worker", CommandServe); hasIssue(err, "storage.upload.max_size") {
 			t.Fatalf("worker: %v", err)
