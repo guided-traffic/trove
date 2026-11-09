@@ -463,6 +463,9 @@ func (d *variantDrain) Run(t *testing.T) {
 		}
 		d.hold = holdValkeyPrimary(t, d.vkBefore)
 	}
+	// The shutdown of the evicted pods is logged by the pods themselves and the logs go with the pods: the streams keep them in the
+	// artifacts, so a pod that runs its whole grace period shows where its shutdown stood (H-798).
+	streamPodLogs(t, "drain-variant-"+string(d.V)+"-", d.OnNode)
 	args := append(d.alsoArgs(), d.Node)
 	cmd := exec.Command(filepath.Join(cfg.repo, "deploy/dev", "drain.sh"), args...)
 	cmd.Dir = cfg.repo

@@ -4392,6 +4392,11 @@ learns of the removal with a delay. The steps cover that delay first:
    The process exits `0` when every close step finished in time. When a pool still holds a
    connection at the close deadline, the error names it and the process exits non-zero: the exit
    itself cuts the holder, because a pool cannot force-close an acquired connection.
+   What follows the close phase, the ops listener, the background goroutines and the tracer, waits at
+   most the 0.5 s ops reserve per step and never past the exit deadline, however early the close
+   phase ended: a peer on the ops listener that does not take its response is reset at that bound
+   and logged, and a goroutine that does not end is logged and left to the exit, together with a dump of
+   the process's goroutines ([Q-ARCH-456](#q-arch-456--the-steps-after-the-close-phase-each-wait-at-most-the-ops-reserve-and-log-what-they-abandon-with-the-goroutines)).
 
 The pod's termination grace period must exceed `health.shutdown_drain_delay` plus
 `server.shutdown_timeout` plus 5 s. The chart passes the grace period to the process and derives
@@ -10031,6 +10036,24 @@ Status: **Decided by the development agent** — selected from the options below
 **Rationale:** See Q-REPO-303 for the same shape.
 
 **Applied in the spec:** R-REPO-051. Code: [mirror_host.go](../../internal/formathost/mirror_host.go).
+
+### Q-ARCH-456 · The steps after the close phase each wait at most the ops reserve and log what they abandon, with the goroutines
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Refines R-ARCH-024 step 6 and [Q-ARCH-331](#q-arch-331--the-quiesce-of-the-shutdown-is-stopped-when-the-server-phase-ends-or-waited-for).
+
+Context: the plan reserves 0.5 s of the margin for the ops listener and the tracer (`OpsReserve`), but the ops listener, the wait for the background goroutines and the tracer were all bounded by the exit deadline, which lies 0.5 s before the end of the grace period. A peer on the ops listener that keeps a connection busy (one that does not read its response) therefore held the whole process until that deadline, 119.5 s of a grace period of 120 s, which leaves the kubelet's `SIGKILL` the same instant. The unit test `R-ARCH-024 R-HA-011 a peer on the ops listener that never reads its responses ...` shows it: before the change `Shutdown` ended exactly at the exit deadline. That this peer is what held the pods of [H-798](ha-and-helm.md#h-798--a-drained-api-or-packages-pod-can-run-its-whole-grace-period-before-it-is-killed) in the observed runs is not verified: the evidence of those runs (the ops listener refused connections from the end of the drain delay on while the process lived to the grace period) fits it, and the logs of the pods were lost with them.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Each step waits at most `OpsReserve` from the moment it starts, never past the exit deadline; what is open then is reset (connections) or abandoned (goroutines) and logged with a goroutine dump (chosen) | The tail costs 0.5 s at most per step when the close phase ended early; the exit deadline still bounds it when the close phase used its time | Uses the existing reserve, no new setting; the dump names the holder of an overrun in the log of the pod | A tracer flush to a slow collector is cut at 0.5 s |
+| (b) A watchdog that exits the process at the exit deadline | A hard stop | Covers a cause nobody found | Exits 0.5 s before the kubelet's kill, a margin a loaded node can use up; hides the holder |
+| (c) Leave the tail bounded by the exit deadline | As before | No change | The defect |
+
+**Choice:** (a). The ops listener's reset connections are not counted as cut transfers (`trove_http_transfers_cut_total` counts clients' transfers).
+
+**Rationale:** The ops listener serves probes and scrapes whose answers are a few KiB, so 0.5 s is generous; the plan stays absolute (the tail never extends past `ExitBy`). Revisit if a tracer export to a healthy collector is seen cut at the bound.
+
+**Applied in the spec:** R-ARCH-024 step 6. Code: `shutdownTail` in `internal/app/app.go`, `shutdownPlan.opsBy` in `internal/app/shutdown.go`. Test: `TestShutdownOpsListener`. Documentation: [architecture.md](../developer/architecture.md).
 
 ### Q-ARCH-446 · A response to a request whose body is unread is sent first, then the body is read and discarded within a bound
 

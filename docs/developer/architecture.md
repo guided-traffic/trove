@@ -341,8 +341,11 @@ start ──drain──▶ ReleaseAt ─▶ QuiesceAt ─▶ ServerBy ──comm
 6. `Flush` (reverse start order), then `Stop`: **signals first** (pending signals are published before the
    leases go), then job worker and leases, replica row, change log, Valkey, pools; until `CloseBy`. A component
    that ignores its context is abandoned 250 ms after `CloseBy` and reported (`close phase overran`).
-   Then the ops listener and the tracer until `ExitBy`. Waiting for background goroutines is bounded by
-   `ExitBy` too. `Registry.Drain` marks the row `draining` in step 1.
+   Then `shutdownTail` runs the ops listener, the wait for the background goroutines and the tracer, each for at most the ops
+   reserve (`shutdownPlan.opsBy`) and never past `ExitBy`; a connection still open on the ops listener at its bound is reset and a
+   goroutine that does not end is left to the exit, both logged with a dump of the goroutines
+   ([Q-ARCH-456](../spec/architecture.md#q-arch-456--the-steps-after-the-close-phase-each-wait-at-most-the-ops-reserve-and-log-what-they-abandon-with-the-goroutines)).
+   `Registry.Drain` marks the row `draining` in step 1.
 
 The budget constants (`defaultBudget`: margin 5 s from `config.ShutdownMargin`, slack 0.5 s, close reserve
 1 s, ops reserve 0.5 s) are a struct on the `App` so tests scale them down

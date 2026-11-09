@@ -615,10 +615,14 @@ func checkAPIRoutes(doc *v1.Document, router *httpserver.Router) error {
 
 func (a *App) newServer(name, addr string, h httpHandler, tls *httpserver.ListenerTLS) (*httpserver.Server, error) {
 	s := a.cfg.Server
+	cut := a.tele.metrics.TransferCut
+	if name == "ops" {
+		cut = nil // a probe or a scrape that is reset at the ops deadline is no transfer of a client
+	}
 	return httpserver.NewServer(httpserver.ServerConfig{
 		Name: name, Addr: addr, Handler: h, TLS: tls, Log: a.log.With("component", "http", "listener", name),
 		ReadHeaderTimeout: s.ReadHeaderTimeout, IdleTimeout: s.IdleTimeout, MaxHeaderBytes: s.MaxHeaderBytes,
-		StallTimeout: s.TransferStallTimeout, OnTransferCut: a.tele.metrics.TransferCut,
+		StallTimeout: s.TransferStallTimeout, OnTransferCut: cut,
 	})
 }
 
@@ -749,30 +753,45 @@ func (a *App) Shutdown(ctx context.Context) error {
 	case e := <-closed:
 		errsOut = append(errsOut, e...)
 	case <-time.After(time.Until(plan.CloseBy.Add(a.budget.Abandon))):
-		a.log.Error("components did not stop before the close deadline; abandoning them to keep the exit deadline", "at", closing.Load())
+		a.log.Error("components did not stop before the close deadline; abandoning them to keep the exit deadline", "at", closing.Load(), "goroutines", health.GoroutineDump())
 		errsOut = append(errsOut, errors.New("close phase overran its deadline"))
 	}
-	octx, ocancel := context.WithDeadline(ctx, plan.ExitBy)
-	defer ocancel()
+	a.shutdownTail(ctx, plan)
+	a.log.Info("stopped", "took", time.Since(start).Round(time.Millisecond).String())
+	return errors.Join(errsOut...)
+}
+
+// shutdownTail is what follows the close phase: the ops listener, the background goroutines and the tracer. Each step
+// waits for at most the ops reserve and never past the exit deadline, whatever the close phase left: a connection that
+// does not finish, a goroutine that does not end or a collector that does not answer must not keep a drained pod to the
+// end of its grace period (R-ARCH-024 step 6, H-798, Q-HA-280). What is still open at its bound is reset or abandoned
+// and logged with the goroutines of the process.
+func (a *App) shutdownTail(ctx context.Context, plan shutdownPlan) {
 	if a.ops != nil {
-		_ = a.ops.Shutdown(octx)
+		by := plan.opsBy(time.Now(), a.budget)
+		octx, cancel := context.WithDeadline(ctx, by)
+		if err := a.ops.ShutdownBy(octx, by); err != nil {
+			a.log.Warn("ops listener: connections still open at the ops deadline were reset", "error", err, "goroutines", health.GoroutineDump())
+		}
+		cancel()
 	}
-	// The check loop goes last: it waits for the checks that are running. The
-	// listeners and the gauge evaluator are done by now; wait for them too, but
-	// not past the exit deadline.
+	// The check loop goes last: it waits for the checks that are running. The listeners and the gauge evaluator are done
+	// by now; wait for them too, but not past the bound of this step.
 	if a.healthStop != nil {
 		a.healthStop()
 	}
 	bgDone := make(chan struct{})
 	go func() { a.bg.Wait(); close(bgDone) }()
+	bctx, bcancel := context.WithDeadline(ctx, plan.opsBy(time.Now(), a.budget))
+	defer bcancel()
 	select {
 	case <-bgDone:
-	case <-octx.Done():
-		a.log.Warn("background goroutines still running at the exit deadline")
+	case <-bctx.Done():
+		a.log.Warn("background goroutines still running at the end of the shutdown", "goroutines", health.GoroutineDump())
 	}
-	a.tele.shutdown(octx)
-	a.log.Info("stopped", "took", time.Since(start).Round(time.Millisecond).String())
-	return errors.Join(errsOut...)
+	tctx, tcancel := context.WithDeadline(ctx, plan.opsBy(time.Now(), a.budget))
+	defer tcancel()
+	a.tele.shutdown(tctx)
 }
 
 // quiesceOrder is the order in which the components that quiesce are asked to (R-ARCH-024 step 4): the job worker first, because its

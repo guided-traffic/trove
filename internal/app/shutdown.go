@@ -31,7 +31,8 @@ type shutdownBudget struct {
 	// CloseReserve is kept free for the flush and the close of the components
 	// after the commit grace.
 	CloseReserve time.Duration
-	// OpsReserve is kept free for the ops listener and the tracer, last of all.
+	// OpsReserve is kept free for the ops listener and the tracer, last of all. It is also the longest the ops listener
+	// waits for a connection of its own, whenever the close phase ends (opsBy).
 	OpsReserve time.Duration
 	// Abandon is how long past the close deadline a component that ignores its
 	// context is waited for; inside OpsReserve.
@@ -101,4 +102,16 @@ func planShutdown(start time.Time, drain, timeout time.Duration, b shutdownBudge
 		p.CommitBy = p.ServerBy
 	}
 	return p
+}
+
+// opsBy is when the ops listener stops waiting for its connections and resets the ones that are still open. The ops
+// listener serves probes and scrapes, whose answers are a few KiB: it gets OpsReserve from the end of the close phase, not
+// the time up to the exit deadline, so one peer that does not take its response cannot keep a drained pod running to the
+// end of its grace period (H-798, Q-HA-280). It is never later than the exit deadline.
+func (p shutdownPlan) opsBy(now time.Time, b shutdownBudget) time.Time {
+	by := now.Add(b.OpsReserve)
+	if by.After(p.ExitBy) {
+		return p.ExitBy
+	}
+	return by
 }

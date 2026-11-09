@@ -1343,6 +1343,8 @@ is `cnpg.io/poolerName`, the CloudNativePG operator's own, and `Verify` fails if
 
 The harness, [drain_variants_test.go](../../test/e2e/drain_variants_test.go), brings no load: the caller's probes or load run between `prepareVariantDrain` and `Verify`. The blocks of the vulnerability scanning (E5.13) run it under their probes, E5.9 under the full load ([below](#the-drain-under-the-full-load)); `variantA` (nothing else on the node, `drainNodeVariantA`) is the fifth value, so one flow serves A to E.
 
+`Run` streams the log of every trove pod on the node into `drain-variant-<variant>-<pod>.log` of the artifacts directory before it starts `drain.sh`, so the shutdown record of an evicted pod (`shutting down`, `draining`, `stopped`, or the lines of an overrun with the goroutines, [Q-ARCH-456](../spec/architecture.md#q-arch-456--the-steps-after-the-close-phase-each-wait-at-most-the-ops-reserve-and-log-what-they-abandon-with-the-goroutines)) outlives the pod ([Q-HA-280](../spec/ha-and-helm.md#q-ha-280--the-drain-variants-keep-the-logs-of-the-evicted-pods-in-the-artifacts)).
+
 ```go
 d := prepareVariantDrain(t, variantB)  // picks the node (moving a primary in the way), records the pods on it, starts the pod watch and the variant's monitors
 // ... start the probes or the load ...

@@ -739,7 +739,7 @@ func (h *Health) Stuck() []string {
 			stuck = append(stuck, name)
 			if !l.reported {
 				l.reported = true
-				h.log.Error("watched loop is stuck", "loop", name, "silent_for", age.String(), "bound", l.max.String(), "goroutines", goroutineDump())
+				h.log.Error("watched loop is stuck", "loop", name, "silent_for", age.String(), "bound", l.max.String(), "goroutines", GoroutineDump())
 			}
 		} else {
 			l.reported = false
@@ -749,8 +749,8 @@ func (h *Health) Stuck() []string {
 	return stuck
 }
 
-// goroutineDump renders the goroutine profile, truncated to 256 KiB.
-func goroutineDump() string {
+// GoroutineDump renders the goroutine profile, truncated to 256 KiB.
+func GoroutineDump() string {
 	var b bytes.Buffer
 	if p := pprof.Lookup("goroutine"); p != nil {
 		_ = p.WriteTo(&b, 2)
