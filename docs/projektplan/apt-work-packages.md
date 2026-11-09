@@ -846,3 +846,21 @@ manual's contents in `internal/manual/manual.go`.
 - **Not verified:** no command of the README's step 8 or of the manual was run for this pass; the local path runs in the e2e set `deb`, the remote of
   `deb.debian.org` has not been run against the real archive (the closing run is not built). The export of an archive keyring with `gpg --export --armor`
   follows from the armor type `internal/openpgp` accepts (`PGP PUBLIC KEY BLOCK`), not from a run against Ubuntu's keyring.
+
+## 24 · Closing
+
+T-17 is closed with the FULL.md block D row "Debian / APT repositories" at 🟢 in all four columns and the T-17 entry removed from section 10 of
+[promt.md](promt.md#10--owner-tasks-of-2026-11-07-the-next-registries). What was built is in sections 9 to 23; what stays is the FULL.md status line
+under block D and [What is built and what is not](../developer/deb.md#what-is-built-and-what-is-not).
+
+| Column | Evidence |
+|---|---|
+| Spec page | [formats/debian.md](../spec/formats/debian.md): R-DEB-001 to R-DEB-035, the decisions Q-DEB-*, the gaps H-620 to H-630 and H-720 to H-722 (the security pages `deb-*.md` hold the rest), the Deferred table |
+| Implementation | the format `deb` with the classes `local`, `remote` and `virtual` (`internal/formats/deb/class_*.go`), the data port without a stub group, the jobs `deb-index`, `deb-remote-parse` and the task `deb-index-refresh` ([deb.md](../developer/deb.md)) |
+| Integration tests | the areas [deblocal](../../test/integration/deblocal), [debkeys](../../test/integration/debkeys), [debremote](../../test/integration/debremote), [debvirtual](../../test/integration/debvirtual) and [itempublish](../../test/integration/itempublish) (shard `c` of the job `integration` of Test and Release), the Debian files of [mirror](../../test/integration/mirror/deb_test.go), [querybudget](../../test/integration/querybudget/deb_test.go) and [postgres](../../test/integration/postgres/deb_test.go); `TestR_DEB_010_DelayBound` in `make test-performance`; the conformance kit over the format (`TestR_ARCH_010_Conformance` in [internal/formats/deb](../../internal/formats/deb/conformance_test.go), no check skipped) and the unit and fuzz tests of the leaves and of `internal/openpgp` |
+| E2E tests | the set `deb` with the real APT of Debian 13 and 12 and Ubuntu 24.04 and 22.04, run by the CI job `e2e-deb` of Test and Release on every change that touches the format ([e2e.md](../developer/e2e.md#the-debian-tests), section 21) |
+
+The closing run of R-DEB-035 (the set `deb` with Valkey stopped, the read-only check against `deb.debian.org`) and the switch-on of the virtual row of
+the e2e set are recorded by the APT e2e builder in its own section of this file. Not proven by this closing: the nightly set `deb-long`, the Debian pass
+in the e2e sets `mirror` and `mirror-long`, `member_expired` and the dropping of a member's recorded `Date` as integration cases (unit rules only), and a
+build trigger on a change of claims (H-725).

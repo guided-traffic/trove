@@ -1,6 +1,6 @@
 # Debian (APT) repositories
 
-This page explains how administrators set up repositories of the format Debian (APT): local repositories that build and sign their own indexes, remote repositories for the Debian and Ubuntu archives with the archive keys that make trove check them, the mirror mode with its choice of suites, components and architectures, the signing keys and their rotation, the index state and the rebuild, what a restore does, the configuration keys, and what this version does not support.
+This page explains how administrators set up repositories of the format Debian (APT): local repositories that build and sign their own indexes, remote repositories for the Debian and Ubuntu archives with the archive keys that make trove check them, the mirror mode with its choice of suites, components and architectures, virtual repositories that merge both into one signed source, the signing keys and their rotation, the index state and the rebuild, what a restore does, the configuration keys, and what this version does not support.
 
 ## What the format serves
 
@@ -10,7 +10,7 @@ The format **Debian (APT)** serves APT repositories in the Debian repository for
 |---|---|---|
 | Local | Holds the `.deb` files teams upload, builds the indexes of its suites and signs them with a key of its own | `https://trove.example.com/api/deb/<projectKey>/<key>/` |
 | Remote | Caches an APT archive and passes its signed release files through unchanged; in mode **Mirror** also copies a selection of it in the background | the same |
-| Virtual | Not available in this version: the wizard shows the class unavailable for the format | |
+| Virtual | Merges the indexes of local and remote members into one index per suite and signs it with a key of its own | the same |
 
 How users configure APT, upload, install and what they see of a key rotation is in [Debian packages with APT](../user/apt-packages.md). The route family is `packages`; every repository of every project is reached on the same host, and no host binding is needed.
 
@@ -25,7 +25,7 @@ curl -X POST https://trove.example.com/api/v1/projects/web/repositories \
   --data '{"key": "deb-local", "class": "local", "format": "deb"}'
 ```
 
-A local repository gets its first signing key in the same transaction that creates it: an OpenPGP key that trove generates (EdDSALegacy over Ed25519, no expiry, user ID `trove <projectKey>/<key>`). There is no unsigned Debian repository and no key shared between repositories. A remote repository gets no key; it signs nothing.
+A local or virtual repository gets its first signing key in the same transaction that creates it: an OpenPGP key that trove generates (EdDSALegacy over Ed25519, no expiry, user ID `trove <projectKey>/<key>`). There is no unsigned Debian repository and no key shared between repositories. A remote repository gets no key; it signs nothing.
 
 ## A local repository
 
@@ -104,9 +104,50 @@ A remote in mode **Mirror** copies, in background passes, the suites, components
 
 Only a holder of `repositories:write-config` sets the mode and changes `deb.mirror`; an Owner of the project without it may pause the mirror or turn it back to pull-through (`422 mirror_restricted` otherwise). The status of a pass, **Run a pass now** and the pass jobs are those of every mirror ([The status of a mirror](repositories.md#the-status-of-a-mirror)). A suite the archive does not have, an unverified or expired release and an index the release does not list are noted in the pass, but the status shows those notes only when the discovery was truncated; a misspelled suite shows as a pass with fewer names.
 
+## A virtual repository
+
+A virtual Debian repository is one APT source over local and remote Debian repositories of its own project. A job merges the members'
+indexes into one index per suite and signs it with the virtual repository's own key, which it gets at its creation like a local
+repository; nothing is merged at request time, so every client and replica reads the same signed generation. The wizard creates it
+without members; set the members, in merge order, and the deployment target through the API:
+
+```bash
+# example values: the project, the keys, the ETag and the token variable
+curl -X PATCH https://trove.example.com/api/v1/projects/web/repositories/apt \
+  -H "Authorization: Bearer $TROVE_TOKEN" \
+  -H 'Content-Type: application/merge-patch+json' \
+  -H 'If-Match: "3"' \
+  --data '{"virtual": {"members": ["deb-local", "debian"], "deployTarget": "deb-local"}}'
+```
+
+| Setting | Document key | Default | Meaning |
+|---|---|---|---|
+| **suites** | `deb.suites` | none | Suites served besides those of the local members, at most 32; a remote member contributes to every served suite its archive has |
+| **components** | `deb.components` | `main` | The components merged, 1 to 32 |
+| **architectures**, **compression**, **origin**, **label** | `deb.architectures`, … | as for a local repository | The architectures of the merged indexes (plus `binary-all`), `xz`, and the `Origin` and `Label` of the `Release` |
+
+- **What a remote member must have.** Its `deb.upstreamKeys`: a remote without keys cannot become a member (`422 deb_member_unverified`), and the last key of a
+  member cannot be removed. The virtual repository signs what it merges with trove's key, so it merges a remote member's release only while
+  a key of the member's current set verified it, its `Valid-Until` has not passed and its `Date` is not older than the one the last build merged.
+- **The merge.** Members in their order; for a package, version and architecture that two members list, the first member's paragraph wins. A name
+  a local member has claimed loses every remote member's paragraph, which keeps a public package of an internal name out of the index. Every
+  `Filename` names the member it came from (`members/<member>/pool/…`), so a client fetches each file from that member (`Trove-Resolved-From`).
+- **When it builds.** At once when it is created or when its members or settings change; after a member's publication, at most every
+  `deb.virtual_index_interval` (60 seconds by default); and when the refresh task finds the last check older than the merged-metadata period
+  (`virtual.mergedMetadataTtlSeconds`). A change of claims has no trigger of its own and reaches the index at the next of these builds.
+- **When a member cannot be merged** the build publishes nothing and the suite keeps its last generation with the state **failed** and the reason
+  `member_unverified: <member>` (no current key verifies its stored release; after a key change the remote fetches and verifies anew),
+  `member_expired: <member>`, `member_rollback: <member>` (an older release than the last one merged; to accept it on purpose, take the member out
+  and add it back) or `member_unavailable: <member>`.
+- **Reading.** The index of a virtual repository needs `read` on it and on every member without a package restriction; otherwise `403
+  deb_members_unreadable` (an anonymous caller `401`). A package file through the member path needs `read` on the member and, for a remote member,
+  its cache-fill action.
+- **Writing.** An upload or a delete through the virtual repository goes to its deployment target; without one it is refused with `403`. The
+  coordinates of a file are changed in the local member that holds it.
+
 ## Signing keys
 
-A local repository's tab **Signing keys** lists its keys with their fingerprint, state, type, origin and times, and the public certificate of each; no private key is ever shown. The same operations are in the API, below `/api/v1/projects/<projectKey>/repositories/<key>/deb/signing-keys`; listing needs `read`, every change `manage` on the repository (the screen offers the changes to holders of `repositories:write-config` and Owners of the project, a holder of `manage` through a policy alone uses the API):
+The tab **Signing keys** of a local or virtual repository lists its keys with their fingerprint, state, type, origin and times, and the public certificate of each; no private key is ever shown. The same operations are in the API, below `/api/v1/projects/<projectKey>/repositories/<key>/deb/signing-keys`; listing needs `read`, every change `manage` on the repository (the screen offers the changes to holders of `repositories:write-config` and Owners of the project, a holder of `manage` through a policy alone uses the API):
 
 | State | Signs | In `signing-key.asc` | Private key |
 |---|---|---|---|
@@ -133,7 +174,7 @@ For an archive whose clients already trust a key, **Import a key** (or `POST …
 
 ## The index state and the rebuild
 
-The tab **Index** of a local repository shows each suite: the number of the last change (`changeSeq`), the number the published generation was built from, the generation, the release date, the keys that signed it, and whether the suite is **current**, **pending** or **failed** with the reason:
+The tab **Index** of a local or virtual repository shows each suite: the number of the last change (`changeSeq`), the number the published generation was built from, the generation, the release date, the keys that signed it, and whether the suite is **current**, **pending** or **failed** with the reason:
 
 | Reason | Meaning | What to do |
 |---|---|---|
@@ -141,17 +182,18 @@ The tab **Index** of a local repository shows each suite: the number of the last
 | `key_too_young` | A key may not sign yet, because its binding self-signature is younger than the build's time | Nothing; the job is retried |
 | `interrupted` | The build was stopped (a drain, a timeout) | Nothing; another worker builds from the rows |
 | `build_error` | Any other failure | Look at the job in **System status › Jobs** and the log of the worker |
+| `member_unverified`, `member_expired`, `member_rollback`, `member_unavailable` | A virtual repository could not merge the member named after the colon | See [A virtual repository](#a-virtual-repository) |
 
-The same state is `GET …/deb/index`, with `?waitFor=<suite>:<changeSeq>` to wait for an upload's change (at most `deb.index_wait_max`).
+The same state is `GET …/deb/index`, with `?waitFor=<suite>:<changeSeq>` to wait for an upload's change (at most `deb.index_wait_max`); a virtual repository has no change number of its own and refuses `waitFor`.
 
-**Rebuild all indexes** (`POST /api/v1/projects/<projectKey>/repositories/<key>/reindex`, `manage`) rebuilds every suite from the stored rows, drops suites without packages and removes rows of items that no longer exist. It answers `202` with the job; while another rebuild waits or runs it answers `409 reindex_running` naming it. A rebuild while an automatic build waits turns that build into the full one. A remote repository has no index of its own (`405 not_applicable`).
+**Rebuild all indexes** (`POST /api/v1/projects/<projectKey>/repositories/<key>/reindex`, `manage`) rebuilds every suite from the stored rows, drops suites without packages and removes rows of items that no longer exist; for a virtual repository it reads the members again. It answers `202` with the job; while another rebuild waits or runs it answers `409 reindex_running` naming it. A rebuild while an automatic build waits turns that build into the full one. A remote repository has no index of its own (`405 not_applicable`).
 
 ## After a restore
 
-- A restore queues a full build of every local Debian repository; it runs when the workers start and its release dates are later than every earlier one, so clients take the rebuilt indexes.
+- A restore queues a full build of every local and virtual Debian repository; it runs when the workers start and its release dates are later than every earlier one, so clients take the rebuilt indexes.
 - **A package file deleted after the restore point** is withheld: no index lists it, its pool path answers `404`, and an upload of the same bytes answers `409 deb_withheld`. To put it back, run `trove admin deb reinstate <projectKey>/<key> <path>`, which works only while the file is stored with the digest of the deletion; to confirm the deletion, delete the file again. A coordinate removed after the restore point is removed again; a file left without coordinates is withheld the same way.
 - **A key retired or replaced after the restore point** is withheld: it neither signs nor is served, and its private key stays. Confirm the retirement (**Confirm retirement**, `DELETE …/deb/signing-keys/<fingerprint>`, which erases it) or **Reinstate** it (`POST …/deb/signing-keys/<fingerprint>/reinstate`: to primary when the repository has none, else to next). When the restore holds the new key of a promotion, the new key becomes the primary by itself. A key created after the newest backup is lost; a repository left without a primary key publishes nothing new until you act, and the replay output names it.
-- **An upstream key removed after the restore point** is removed again. A mirror left without keys is disabled and listed as `suspended`.
+- **An upstream key removed after the restore point** is removed again. A mirror or a member of a virtual repository left without keys is disabled and listed as `suspended`.
 - A backup made without remote caches (`trove backup create --exclude-remote-caches`, `backup.exclude.remote_caches`) restores no cached files and no parsed rows of a Debian remote, and so no record of the newest release each had verified: the first release a remote stores afterwards is taken as it is.
 
 ## Configuration
@@ -161,17 +203,18 @@ The same state is `GET …/deb/index`, with `?waitFor=<suite>:<changeSeq>` to wa
 | `deb.index_delay` | `2s` | Wait after the first change of a suite before its build starts, 1 s to 60 s. The time from an upload to its published index is about this plus 5 s while Valkey is available |
 | `deb.by_hash_keep` | `1h` | How long the files of a superseded generation stay served by hash, 10 m to 168 h |
 | `deb.index_wait_max` | `30s` | The longest wait of an index state read with `waitFor`, 1 s to 120 s |
-| `deb.virtual_index_interval` | `60s` | Read by the virtual class, which this version does not offer |
+| `deb.virtual_index_interval` | `60s` | The least time between two builds of a virtual repository that a member's publication triggers, 10 s to 1 h |
 | `maintenance.tasks.deb-index-refresh` | `{enabled: true, schedule: "* * * * *"}` | Queues the builds, the retention and the housekeeping of remotes that are due; deletes nothing itself |
 
 The complete reference is in the [full reference](https://github.com/guided-traffic/trove/blob/main/README.md#-full-reference). What the format records:
 
-- Metrics: `trove_deb_index_builds_total{class, outcome}`, `trove_deb_index_build_seconds` and `trove_deb_index_delay_seconds` for the builds; `trove_deb_upstream_signature_failures_total{repo, reason}`, `trove_deb_release_rollbacks_total{repo}` and `trove_deb_unverified_fills_total{repo}` for the remotes.
+- Metrics: `trove_deb_index_builds_total{class, outcome}`, `trove_deb_index_build_seconds` and `trove_deb_index_delay_seconds` for the builds (a virtual repository's builds are counted under `class="local"` as well); `trove_deb_upstream_signature_failures_total{repo, reason}`, `trove_deb_release_rollbacks_total{repo}` and `trove_deb_unverified_fills_total{repo}` for the remotes.
 - Audit events: `deb.package.deleted`, `deb.coordinates.removed`, `deb.signing_key.promoted` and `deb.signing_key.retired` (recorded in the revocation journal), `deb.coordinates.changed`, `deb.signing_key.created`, `deb.signing_key.reinstated`, `deb.reinstate`, and the security event `deb.upstream_signature_invalid`.
 
 ## Not supported in this version
 
-- **Virtual repositories** of the format.
+- **No nested virtual repositories**: the members of a virtual Debian repository are local and remote repositories.
+- **A change of claims** reaches a virtual repository's index at its next build, not at once.
 - **Source packages** cannot be uploaded and local repositories build no `Sources`; `deb-src` works through a remote.
 - **No `dput` uploads**, no `.udeb` installer packages and indexes, no debug-symbol packages, no `Contents` or translation files for local repositories.
 - **No `Valid-Until`** in trove's own releases: a party between a client and trove that keeps serving the generation the client already holds can keep it on old packages (it cannot roll the client back). TLS to trove prevents that.

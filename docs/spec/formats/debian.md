@@ -1,9 +1,8 @@
 # Debian and Ubuntu APT repositories
 
-Status: specification — the contracts are built (phase T-17, WP0: the format `deb` registers with its local class, its routes answer 501
-`deb_not_implemented`, the schema, settings and API are declared); the classes are built by the work packages of
-[apt-work-packages.md](../../projektplan/apt-work-packages.md) (FULL.md block D row "Debian / APT repositories"): local, remote (modes
-`pullThrough` and `mirror`) and virtual repositories for `apt` and `apt-get` on Debian and Ubuntu
+Status: specification — built (phase T-17, closed; FULL.md block D row "Debian / APT repositories", the work packages and their evidence in
+[apt-work-packages.md](../../projektplan/apt-work-packages.md)): local, remote (modes `pullThrough` and `mirror`) and virtual repositories for
+`apt` and `apt-get` on Debian and Ubuntu; what stays is in [Deferred](#deferred) and in the gaps below
 
 This page specifies how trove serves APT repositories: the format `deb` for local, remote and virtual repositories in the
 Debian repository format; how a local repository takes `.deb` uploads and lists them in suites and components; how trove

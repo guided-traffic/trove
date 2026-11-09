@@ -118,6 +118,21 @@ A remote repository is a pull-through cache of an APT archive, such as `https://
 
 Any suite the archive has works without configuration: `stable`, `bookworm`, `noble-updates`, a flat directory such as `binary/`, or `./` for a repository whose address is the flat directory itself. Nothing can be uploaded to a remote repository.
 
+### Through a virtual repository
+
+A virtual repository is one source for several local and remote Debian repositories of a project, with one key file and one credential file.
+Its index is the merge of the members' indexes, signed with the virtual repository's own key: install that key with the configure snippet of the
+virtual repository, never a member's or the archive's. Keep in mind:
+
+- Reading the index needs the read permission on the virtual repository and on every member; otherwise `apt-get update` gets `403`
+  (`deb_members_unreadable`). Each package file comes from the member whose index entry you read; the answer header `Trove-Resolved-From` names it.
+- A package that two members list in the same version comes from the first member in the order. A name a local member has claimed is never taken
+  from a remote member.
+- An upload through the virtual repository goes to its deployment target, a local member; a virtual repository without one refuses uploads with
+  `403`. The index wait (`waitFor`) is read on that local member, not on the virtual repository.
+- A new upload reaches the virtual repository's index after the member published it, within about a minute (the installation's
+  `deb.virtual_index_interval`). The virtual repository's **Index** tab shows a suite that could not be built, with the member that stopped it.
+
 ## Delete a package
 
 `DELETE` of the pool path removes a file; it needs the delete permission and the ownership of the package:
@@ -165,13 +180,13 @@ APT prints the status line of a failed request and no body; `curl` shows the bod
 | `413 payload_too_large` | The control archive of the package exceeds a bound (16 MiB compressed, 64 MiB unpacked, 1,000 entries) |
 | `422 deb_invalid_archive`, `deb_invalid_control`, `deb_unsupported_compression` | The file is no Debian package; its control data breaks a rule (the answer names the field, for example `Package: Hello` with an upper-case letter); its control archive is compressed with something other than none, gzip, xz or zstd |
 | `502 upstream_integrity_mismatch` | Through a remote: the archive sent a package file whose digest is not the one its index lists. Nothing was stored |
+| `403 deb_members_unreadable` | Through a virtual repository: the token may not read every member. Ask for read on the members, or use a member directly |
 | `502 deb_upstream_signature_invalid`, `502 deb_release_invalid` | Through a remote with upstream keys: the archive's release is not signed by one of them, or it is malformed or dated ahead. The copy trove had stays; tell an administrator |
 
 Give the `X-Request-Id` of the answer to an administrator when you need help ([Errors and troubleshooting](troubleshooting.md#give-the-request-id-to-an-administrator)).
 
 ## What is not available
 
-- Virtual Debian repositories are not available in this version; use a local or a remote repository directly.
 - Source packages cannot be uploaded; `deb-src` lines work only through a remote repository.
 - `dput` uploads of a signed `.changes` file, `.udeb` installer packages and debug-symbol packages are not supported.
 - An endpoint with exposure rules (a customer endpoint) does not serve Debian repositories, and neither does the trove Bastion.

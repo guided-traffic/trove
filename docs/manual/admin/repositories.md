@@ -10,7 +10,7 @@ This page explains how administrators create, configure, edit and delete reposit
 | npm | local, remote, virtual | `https://trove.example.com/api/npm/<projectKey>/<key>/` |
 | NuGet | local, remote, virtual | `https://trove.example.com/api/nuget/<projectKey>/<key>/v3/index.json` |
 | OCI (Docker) | local, remote, virtual | `trove.example.com/<projectKey>/<key>` as the start of an image reference; the protocol is below `https://trove.example.com/v2/` ([Container image repositories](container-repositories.md)) |
-| Debian (APT) | local, remote | `https://trove.example.com/api/deb/<projectKey>/<key>/` ([Debian (APT) repositories](apt-repositories.md)) |
+| Debian (APT) | local, remote, virtual | `https://trove.example.com/api/deb/<projectKey>/<key>/` ([Debian (APT) repositories](apt-repositories.md)) |
 
 A **local** repository holds what is uploaded or published to it. A **remote** repository fetches from an upstream registry and caches what it fetched. A **virtual** repository combines local and remote repositories behind one address. How users see the classes is described in [Repositories](../user/repositories.md).
 
@@ -78,6 +78,7 @@ The settings of a format are drawn from the schema the format publishes, so the 
 | npm virtual | **distTagStrategy** | `member-order` | How other dist-tags are merged: the first member in order, `highest-semver` or `newest-published` |
 | OCI remote | **mirror** › **tags**, **excludeTags**, **platforms** | `latest`, none, every platform | Which tags and platforms a mirror copies; read in mode **Mirror** only ([The mirror mode](container-repositories.md#the-mirror-mode)). OCI local and virtual repositories have no settings of the format |
 | Debian local | **architectures**, **compression**, **origin**, **label** | `amd64` and `arm64`, none, `trove`, the repository key | The architectures every suite's indexes are built for, `xz` beside gzip, and the `Origin` and `Label` of every `Release` ([A local repository](apt-repositories.md#a-local-repository)) |
+| Debian virtual | **suites**, **components**, and the four settings of a local repository | none, `main` | The suites served besides those of the local members and the components merged ([A virtual repository](apt-repositories.md#a-virtual-repository)) |
 | Debian remote | **upstreamKeys** | none | The archive's ASCII-armored public keys; with them trove checks every release before it stores it, and a mirror needs them ([Upstream keys](apt-repositories.md#upstream-keys)). The fingerprints are shown read-only below the settings |
 | Debian remote | **mirror** › **suites**, **components**, **architectures**, **translations**, **sources** | none, `main`, `amd64`, `en`, off | What a mirror copies; read in mode **Mirror** only, where **suites** is required ([The mirror mode](apt-repositories.md#the-mirror-mode)) |
 

@@ -26,7 +26,7 @@ For Debian (APT) the default upstream is `https://deb.debian.org/debian/`. A Deb
 
 ### Virtual repositories
 
-A virtual repository is one address for several npm repositories, several NuGet repositories or several OCI repositories, of its own project, in an order an administrator sets, for example an internal local repository followed by a remote one. Point your package manager at a virtual repository and you get internal and public packages through one address and one token. Keep in mind:
+A virtual repository is one address for several npm repositories, several NuGet repositories, several OCI repositories or several Debian repositories, of its own project, in an order an administrator sets, for example an internal local repository followed by a remote one. Point your package manager at a virtual repository and you get internal and public packages through one address and one token. Keep in mind:
 
 - You need the read permission on the members too. A member you may not read is left out without notice.
 - Publishing through a virtual repository goes to its deployment target, a local member. A virtual repository without one refuses every publish.
@@ -61,7 +61,7 @@ The repository screen shows these addresses for your installation, so you do not
 | npm | Local, remote, virtual | npm, pnpm, Yarn Berry (2 and later), Yarn Classic (1.x) | **Packages** and **Browse** |
 | NuGet | Local, remote, virtual | .NET CLI (dotnet), NuGet CLI (nuget.exe), Visual Studio | **Packages** and **Browse** |
 | OCI (Docker) | Local, remote, virtual | Docker CLI (with Buildx), Podman; Kubernetes through an image pull secret | **Packages** (an image name is a package, a tag a version) and **Browse** |
-| Debian (APT) | Local, remote | APT (apt, apt-get) on Debian and Ubuntu | **Packages** (a binary package name is a package) and **Browse** |
+| Debian (APT) | Local, remote, virtual | APT (apt, apt-get) on Debian and Ubuntu | **Packages** (a binary package name is a package) and **Browse** |
 | Generic | Local | curl | **Browse** only: generic files have no package names, so they are not listed under **Packages** |
 
 Generic repositories store files of any kind at paths you choose: installers, archives, documents, build outputs. OCI repositories hold container images and other OCI artifacts; [Container images with Docker and Podman](container-images.md) explains them. Debian repositories are APT repositories with signed indexes; [Debian packages with APT](apt-packages.md) explains them. Other formats are not built yet; see [Known limitations](../admin/limitations.md).

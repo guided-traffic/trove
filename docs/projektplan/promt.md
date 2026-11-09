@@ -79,9 +79,9 @@ Hard rules, also for every subagent (put them into every subagent prompt):
 
 1. `git status` must be clean; then `git pull --rebase origin main`.
 2. During the alpha (rule 10) a run works on two fronts at once: the first open task of
-   [section 10](#10--owner-tasks-of-2026-11-07-the-next-registries) (T-17 APT, T-16 Docker is closed; its status line says where an
-   earlier run stopped), cut into work packages with an agent and a branch each, and every open finding of section 8 with an agent
-   each. The open items of BETA.md phase 7 are findings of the same kind. Outside the alpha: open [BETA.md](BETA.md), table
+   [section 10](#10--owner-tasks-of-2026-11-07-the-next-registries), cut into work packages with an agent and a branch each, and
+   every open finding of section 8 with an agent each. No registry task is open there now (T-16 Docker and T-17 APT are closed), so
+   a run takes the findings and then the next unit of item 3. The open items of BETA.md phase 7 are findings of the same kind. Outside the alpha: open [BETA.md](BETA.md), table
    **Where we are**; the current phase is the first row whose status is not 🟢, and a row at 🟡 is resumed (step 2, item 4).
 3. If every row of BETA.md is 🟢, open [FULL.md](FULL.md) and take the first unit that is not 🟢,
    in document order: block A as one phase; in block B each format (F0, F1, …) is one phase; in
@@ -351,21 +351,8 @@ agents. The check step (3) below does not run during ALPHA: a builder lands its 
    finding goes back to a builder, and the checker reads the fix. The development agent integrates, runs the checks of step 3 and
    commits.
 
-- **T-17 · APT registry (Debian and Ubuntu), with pull-through and full mirror.** Scope from the owner: local, remote and virtual
-  repositories for `apt` and `apt-get`; the remote in both modes of R-REPO-050. The planning agent writes `docs/spec/formats/debian.md`
-  from [debian.md](../features/formats/debian.md): the repository layout (`dists/<suite>/Release`, `InRelease`, `Release.gpg`,
-  `Packages` and its compressed forms, `by-hash`, `pool/`), signing of the indexes trove generates for local and virtual repositories
-  (key management is a security decision: where the key lives, rotation, how clients get it) and pass-through of the upstream's signed
-  indexes for a remote, flat repositories, and what a full mirror covers (suites, components, architectures, sources or not, the
-  bounds of R-REPO-051/052). Tests per step 3: integration and e2e with `apt-get update` and `apt-get install` in Debian and Ubuntu
-  containers through local, remote in both modes and virtual repositories, signature verification on the client included.
-  Status 2026-11-08: the spec `docs/spec/formats/debian.md` (R-DEB-001 to R-DEB-035, Q-DEB-1 to Q-DEB-43, H-620 to H-630) and the cut
-  `docs/projektplan/apt-work-packages.md` (WP0 contracts, WP1 to WP13 in four waves) are on main, planned by one agent and checked in
-  three rounds by another that verified the client behaviour on Debian 13, Debian 12, Ubuntu 24.04 and Ubuntu 22.04.
-  Status at the end of 2026-11-08: on `main` are WP0 (the contracts: schema 00060 to 00062, ports, routes answering 501, ADR-170 to
-  ADR-172), WP5 (the counting stub archive `test/debstub`) and the OpenPGP library of WP2 (`internal/openpgp`, verified against `sqv`
-  and `gpgv` on all four client images). Running: WP1 with WP3 (the local class), WP2's key store and rotation. Next: WP4 (index
-  builder), WP13 and WP6 (remote), WP7, WP8, WP9 to WP12. FULL.md block D row "Debian / APT repositories" is 🟡.
+No registry task is open: T-16 (Docker) and T-17 (APT, closed with the FULL.md block D row "Debian / APT repositories" at 🟢,
+evidence in [apt-work-packages.md](apt-work-packages.md#24--closing)) are done. A new registry task of the owner is added here.
 
 ## 11 · Run record
 

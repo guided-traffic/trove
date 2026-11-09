@@ -187,7 +187,7 @@ all four columns green.
 | Chef | ⚪ | ⚪ | ⚪ | ⚪ |
 | CocoaPods | ⚪ | ⚪ | ⚪ | ⚪ |
 | Bower | ⚪ | ⚪ | ⚪ | ⚪ |
-| Debian / APT repositories (Debian and Ubuntu; apt, apt-get) | 🟢 [formats/debian.md](../spec/formats/debian.md) (planned and checked 2026-11-08; cut in [apt-work-packages.md](apt-work-packages.md)) | 🟡 (contracts, stub archive and OpenPGP library on main; classes building) | ⚪ | ⚪ |
+| Debian / APT repositories (Debian and Ubuntu; apt, apt-get) | 🟢 [formats/debian.md](../spec/formats/debian.md) | 🟢 local, remote (`pullThrough`, `mirror`), virtual ([deb.md](../developer/deb.md)) | 🟢 `deblocal`, `debkeys`, `debremote`, `debvirtual`, the Debian files of `mirror`, `querybudget`, `postgres`, `itempublish`; the conformance kit with no skip | 🟢 set `deb`, CI job `e2e-deb` ([apt-work-packages.md](apt-work-packages.md#24--closing)) |
 | RPM | ⚪ | ⚪ | ⚪ | ⚪ |
 | Alpine Linux | ⚪ | ⚪ | ⚪ | ⚪ |
 | Opkg | ⚪ | ⚪ | ⚪ | ⚪ |
@@ -203,6 +203,17 @@ all four columns green.
 | Nix | ⚪ | ⚪ | ⚪ | ⚪ |
 | Bazel modules | ⚪ | ⚪ | ⚪ | ⚪ |
 | Terraform state backend | ⚪ | ⚪ | ⚪ | ⚪ |
+
+- Debian / APT: built — local, remote (`pullThrough` and `mirror`) and virtual repositories; uploads with suites and components;
+  indexes built by a job as signed snapshots served by hash; a signing key per repository with co-signing rotation, imported keys and a
+  restore that withholds keys instead of reviving or erasing them; remotes that pass upstream releases through, verify them against
+  `deb.upstreamKeys` and never store an older one; the mirror of named suites, components and architectures; virtual repositories that
+  merge verified member releases and re-sign; the screens, the setup and the guides; clients Debian 13 and 12, Ubuntu 24.04 and 22.04.
+  Evidence: [apt-work-packages.md, Closing](apt-work-packages.md#24--closing). Stays: local source packages, snapshots, debug-symbol and
+  installer packages, `dput`, translations and `Contents` for local and virtual repositories, mirrors of flat archives, `Valid-Until` on
+  trove's own releases, keys in a key service, Debian vulnerability matching, copy and move, exposure rules, the Bastion and nested virtual
+  repositories (debian.md, Deferred); the nightly set `deb-long`, the Debian pass in the e2e sets `mirror` and `mirror-long`, a build
+  trigger on a change of claims (H-725) and the metric `trove_deb_remote_parse_total`.
 
 ## E · Further platform work (P2)
 

@@ -377,7 +377,7 @@ The fixture ([kit.go](../../internal/formats/formattest/kit.go)) holds what only
 
 A skip without a reason fails the check. So does a skip the format contradicts: checks 1, 3, 7, 12 and 13 with routes, 4 with a remote adapter, 5 with a virtual
 adapter, 6 with an `Upload` route, 8 with clients, setup templates or a guide, 9 with package names or a route that writes, 10 with package names, 11 with a
-view adapter, and check 2 always. npm and NuGet skip nothing (`TestR_ARCH_010_NoCheckIsSkipped` in each package); Debian skips the merge check (5) until its virtual class exists ([conformance_test.go](../../internal/formats/deb/conformance_test.go)). A check with nothing to run over and no skip fails: that is how a later generic remote
+view adapter, and check 2 always. npm and NuGet skip nothing (`TestR_ARCH_010_NoCheckIsSkipped` in each package); Debian's fixture declares no skip either ([conformance_test.go](../../internal/formats/deb/conformance_test.go), the merge check 5 runs over its virtual adapter), though no test of its own pins that. A check with nothing to run over and no skip fails: that is how a later generic remote
 class cannot pass vacuously ([generic's test](../../internal/formats/generic/conformance_test.go) shows the skips of a format with no routes).
 
 ### The in-memory host
