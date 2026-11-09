@@ -282,6 +282,22 @@
       "groupSlug": "syft"
     },
     {
+      "description": "The four APT clients of the Debian e2e set (E2E_APTCLIENTS_*_IMAGE in tools/versions.env) are four releases, Debian 13 and 12 and Ubuntu 24.04 and 22.04, and each stays on its release: only the digest of its tag moves; make versions-check (test/e2e/aptclients/check-pins.mjs) fails when a tag leaves it",
+      "matchFileNames": [
+        "tools/versions.env"
+      ],
+      "matchDepNames": [
+        "docker.io/library/debian",
+        "docker.io/library/ubuntu"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor",
+        "patch"
+      ],
+      "enabled": false
+    },
+    {
       "description": ".NET SDK of the NuGet tests: NUGETVECTORS_SDK_IMAGE (the golden vectors) and E2E_NUGETCLIENTS_SDK_IMAGE (the clients image) are one SDK in tools/versions.env; make versions-check (test/e2e/nugetclients/check-pins.mjs) fails when they differ, so one pull request moves both",
       "matchFileNames": [
         "tools/versions.env"

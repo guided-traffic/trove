@@ -769,3 +769,25 @@ Built on 7d9dc8f9. Page: [docs/developer/deb.md](../developer/deb.md#the-mirror)
 - **Verified:** `test/integration/mirror/deb_test.go` (six cases), the lister's unit tests; by hand `apt-get update --error-on=any` and `apt-get install` from `debian:13` and
   `ubuntu:22.04` with the stub stopped.
 
+
+## 21 · WP10 (the e2e set `deb` and its CI leg) as built (stage 5)
+
+Built on 2ae4e089 (the local, remote and mirror classes; the virtual class was not on main). Pages: [e2e.md](../developer/e2e.md#the-apt-clients) (the counting Debian test upstream in the
+cluster, the APT clients, the Debian tests); decisions Q-DEB-105 to Q-DEB-109.
+
+- **Built:** `test/e2e/aptclients/` (one Dockerfile on the four pinned base images, the entrypoint, the `sudo` shim, `build.sh`, `check-pins.mjs`), the pins
+  `E2E_APTCLIENTS_{DEBIAN13,DEBIAN12,UBUNTU2404,UBUNTU2204}_IMAGE` in `tools/versions.env` (digests of the multi-architecture indexes; a rule of `renovate.json` keeps each on
+  its release), `deploy/dev/apt-clients.yaml` (one pod per image in the namespace `trove-e2e-apt`, Pod Security level `baseline`), the wiring in `deploy/dev/e2e.sh` (the
+  sets `deb`, `apt-clients`, `apt-clients-down`; the markers `T17 deb-stub`, `T17 apt-clients`, `T17 deb`; `debstub.yaml` is applied for the first time), `make apt-clients-image`,
+  the job `e2e-deb` of Test and Release (`runs-on: large`, scoped like `e2e-oci`, port 8107, a `needs` of the release job), and `test/e2e/deb_*_test.go`.
+  No `values-*.yaml` addition was needed: the scatter profile has three `packages` replicas and the main worker has two replicas, which claim the `index` queue.
+- **Rows that ran green on kind** (one run of the set `deb` on the `linux/arm64` images: `go test` 3 min): the four images through a local repository (upload with `curl`, the index state
+  read, `apt-get update --error-on=any`, `apt-get install`, the installed script), a keyring with another key (fails, and the repository's key accepts again), the anonymous read, the
+  pull-through remote over the stub (the three clients after the first cost the stub no request), the flat root on Ubuntu 24.04, the mirror with the stub's connections cut (the stub delivered nothing
+  after the cut), the rotation table of R-DEB-017 on Debian 13, Ubuntu 24.04 and Ubuntu 22.04, and once more on Debian 13 with an imported next key whose only self-signature is 30 s old (36 s).
+- **Switched on when it landed:** `TestDebMirror` (the mirror, WP7, e5945f5e). **Still skipped:** `TestDebVirtual` (the virtual class, WP8, is not on main); the row is written against
+  R-DEB-025 to R-DEB-027 and switches on with `debVirtualBuilt`.
+- **Defects the rows found:** none in the product. The rows' own mistakes: the anonymous grant names its repository by key (a pattern is refused, `anonymous_dynamic_selector`), the flat root reaches the stub
+  as `/flatroot/InRelease`, and a mirror whose include patterns leave a dependency out does not hold it. One mismatch of data: the setup client list names APT 2.7 for Ubuntu 24.04, which ships 2.8.3.
+- **Not done:** the amd64 images were not run (the host is arm64); `deb-long` (the delay bound already runs in `make test-performance`, Q-DEB-59); the closing run (the set `deb` with Valkey stopped and the
+  read-only check against `deb.debian.org`); the Debian pass in the sets `mirror` and `mirror-long`; the virtual row. The clock rules of Q-DEB-30 stay with the integration asserts (one cluster, one clock).

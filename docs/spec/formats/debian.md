@@ -874,9 +874,9 @@ and APT 2.4 with `gpgv` ([Client and library behaviour](#client-and-library-beha
 
 Acceptance criteria:
 
-- e2e rotation row on Debian 13 (`sqv`), Ubuntu 24.04 and Ubuntu 22.04 (`gpgv` 2.2): each cell of the table holds for two client
-  containers per image, one with the old keyring and one whose keyring is replaced in step 2, and a third that holds only the new
-  key from step 1 on. On Debian 13 the row runs once more with an imported next key whose only binding self-signature was made
+- e2e rotation row on Debian 13 (`sqv`), Ubuntu 24.04 and Ubuntu 22.04 (`gpgv` 2.2): each cell of the table holds for a client with
+  the old keyring only, one whose keyring is replaced in step 2 and one that holds only the new key from step 1 on (one client whose
+  keyring file and lists are replaced per cell, Q-DEB-107). On Debian 13 the row runs once more with an imported next key whose only binding self-signature was made
   just before the import (as GnuPG writes one when an expiry is removed): the "new key only" client verifies every signature the
   builds publish, because none predates that self-signature (Q-DEB-40).
 - Integration: after the promotion `InRelease` carries one signature, by the new key; the retired row's `private_key` is `NULL`;
@@ -1579,7 +1579,7 @@ Priority: **P2** · Covers: trove-only
   the stub; mirror passes in `test/integration/mirror` (the Debian criteria of [Mirror discovery](#mirror-discovery)); the
   read budget rows of R-ARCH-027 (`test/integration/querybudget`).
 - **e2e** (kind, the chart, the `scatter` profile, three `packages` replicas, two workers): client pods from the images
-  `debian:13`, `debian:12`, `ubuntu:24.04` and `ubuntu:22.04`, pinned by digest in the Makefile, trusting the dev CA through
+  `debian:13`, `debian:12`, `ubuntu:24.04` and `ubuntu:22.04`, pinned by digest in `tools/versions.env` (Q-DEB-108), trusting the dev CA through
   `Acquire::https::CAInfo`, with the rendered setup snippets (Q-DEB-27). APT runs with `--error-on=any`, so a warning fails the row,
   and never with `trusted=yes`. Set `deb` (every change that touches the format): `apt-get update` and `apt-get install` of a
   package and running it, in each image, through `deb-local` (after an upload by the test and the index wait), `debian` in mode
@@ -3476,6 +3476,84 @@ Status: **Decided by the development agent** — selected from the options below
 **Rationale:** Index files are small next to the package files a mirror keeps.
 
 **Applied in the spec:** Mirror discovery. Code: [mirror_sync.go](../../../internal/formatdata/deb/mirror_sync.go) `mirrorIndexes`.
+
+### Q-DEB-105 · The client images add curl from their own archive; apt and the verifiers are held at the pin
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The pinned image plus `curl` installed from the image's own archive without an exact version, after `apt`, `gpgv` and `sqv` are put on hold (chosen) | `apt-mark hold` first, then `apt-get install curl`; a dependency of curl that would upgrade a held package fails the build | The clients under test stay what the digest says; curl, which only uploads and fetches a key, needs no pin of its own; no pin that a superseded archive version turns into a red build | The curl version and its libraries are those of the archive on the day the image is built |
+| (b) Exact apt versions of curl for each of the four images in `tools/versions.env` | Four more pins, as the npm clients image pins curl and jq | Reproducible down to curl | Four pins that a superseded package breaks without any change of the clients; curl is not under test |
+| (c) The test uploads and fetches the key itself, the pod has no curl | The publish snippet and the configure snippet are not run in the pod | No second tool in the image | The snippets are the user's path (Q-DEB-27); R-DEB-006 and R-DEB-035 name `curl` as the uploader |
+| (d) A static curl binary copied from another pinned image | One more image pin, no apt install | Image untouched but for one file | A third-party static build to trust and keep pinned for a helper |
+
+**Choice:** (a). `test/e2e/aptclients/Dockerfile` holds the packages before it installs curl.
+
+**Rationale:** The rows prove what APT and its verifier do; curl is the transport of two snippet lines. The hold turns the one way curl could change the client into a failed image build. The development agent revisits this when a tested curl behaviour appears in a row.
+
+**Applied in the spec:** R-DEB-035 names the images as the clients; the test plan page ([developer/e2e.md](../../developer/e2e.md#the-apt-clients)) says what the images add.
+
+### Q-DEB-106 · The APT client pods run as root in a namespace of Pod Security level baseline
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A namespace `trove-e2e-apt` of the level `baseline`, pods as root without a privileged container (chosen) | `apt-get install` runs as root; the level refuses privileged containers, host paths and extra capabilities | The least level that lets APT install packages; the OCI clients' privileged namespace is not widened | A third namespace beside `trove` and `trove-e2e-clients` |
+| (b) The namespace `trove-e2e-clients` (level `privileged`) of the OCI clients | One namespace for all client pods | Nothing new to create | The OCI clients' teardown deletes the namespace and the APT pods with it; the Debian clients would run at a level they do not need |
+| (c) The namespace `trove` (level `restricted`) | No new namespace | none | `restricted` refuses root, which `apt-get install` needs |
+
+**Choice:** (a).
+
+**Rationale:** APT drops to the user `_apt` for downloads and writes below `/usr` and `/var` as root: root without any other privilege is the whole need. The development agent revisits this when the Debian clients need a capability the level refuses.
+
+**Applied in the spec:** none; [deploy/dev/apt-clients.yaml](../../../deploy/dev/apt-clients.yaml) carries the level.
+
+### Q-DEB-107 · The rotation table runs one client per cell, in turn
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One client pod per image; for each cell the test replaces the keyring file and clears the lists, then runs `apt-get update --error-on=any` (chosen) | The cells of the table run in turn on the same client | Three pods per image would be nine more pods for what a file replacement shows; the lists are the only state APT keeps between runs, and clearing them gives every cell a client that has fetched nothing | The three clients of R-DEB-017's acceptance criterion are one client three times |
+| (b) Three client containers per image, as the criterion says | Each holds one keyring from the start | Three clients that exist at the same time | Nine pods; a source that two clients read from the same URI is the same file for APT, and the three would share their `/etc/apt` only if they shared a pod |
+
+**Choice:** (a). The "old key only" client is the first cell, "both keys" the second, "new key only" the third, at each of the three points of the table (before the next key, while both sign, after the promotion).
+
+**Rationale:** The table describes what a client with a given keyring file sees; the client holds nothing else. The development agent revisits this when a row needs two clients to fetch at the same moment.
+
+**Applied in the spec:** R-DEB-017's e2e criterion names the cells per client; the line "two client containers per image … and a third" now says one client whose keyring file and lists are replaced per cell (Q-DEB-107).
+
+### Q-DEB-108 · The pins of the four images are in tools/versions.env
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `E2E_APTCLIENTS_DEBIAN13_IMAGE`, `…_DEBIAN12_IMAGE`, `…_UBUNTU2404_IMAGE`, `…_UBUNTU2204_IMAGE` in `tools/versions.env`, each the digest of the multi-architecture index of its tag; Renovate moves the digest only (chosen) | The place every other image pin has; `make versions-check` compares the four tags | One place, read by the Makefile, the shell scripts and the tests; the arm64 laptop and the amd64 runner run one release | none |
+| (b) Pins in the Makefile, as R-DEB-035 first said | Variables of the Makefile | The text of the criterion | The Makefile reads `tools/versions.env` for every other tool (one version of every tool) |
+
+**Choice:** (a). The tag never moves (the clients are four releases): a rule of `renovate.json` disables major, minor and patch updates of the Debian and Ubuntu pins, and `check-pins.mjs` fails a tag that left its release.
+
+**Rationale:** One pin in one file. The development agent revisits this if a fifth release becomes a client.
+
+**Applied in the spec:** R-DEB-035 says `tools/versions.env`.
+
+### Q-DEB-109 · The virtual row is written and skipped until the virtual class is on main
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `TestDebVirtual` is written against this page and skips with the reason while `debVirtualBuilt` is false (chosen) | A one-line switch, flipped by the change that finds the row green | The row exists, is reviewed with the rest and costs one edit to switch on | A row that has not run: its request bodies are the spec's, not a server's |
+| (b) Nothing until the class lands | The row is written later | No code that has not run | The set `deb` would pass without the virtual row being asked for |
+
+**Choice:** (a). A skip is a skip, never a pass: the log of the set names the reason. The mirror row (`TestDebMirror`) was written the same way and switched on when the mirror landed (T-17 WP7), after the same set ran it green on kind.
+
+**Rationale:** The virtual class (WP8) was being built while WP10 was; the row follows its acceptance criteria and the first run on kind after it lands decides what has to change in it. The development agent revisits this when the virtual class is on main.
+
+**Applied in the spec:** none.
 
 ## What this does not cover
 

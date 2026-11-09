@@ -80,6 +80,13 @@
 #   e2e.sh oci-clients  the smoke test of the OCI client pods (the pinned Docker Engine and Podman run, the CA is trusted, the registry answers);
 #                       builds the client images and starts the pods, which stay up
 #   e2e.sh oci-clients-down  removes the OCI client pods and their namespace
+#   e2e.sh deb          the Debian (APT) acceptance tests (every TestDeb... and TestAPTClients): the counting Debian archive test upstream and one client pod per image
+#                       (Debian 13, Debian 12, Ubuntu 24.04, Ubuntu 22.04, each a real APT in the namespace trove-e2e-apt); the scatter profile (three packages
+#                       replicas, two workers); apt-get update --error-on=any and apt-get install through local, remote, mirror and virtual repositories,
+#                       an anonymous read, a wrong keyring, the key rotation of R-DEB-017 and the flat root; CI: job e2e-deb
+#   e2e.sh apt-clients  the smoke test of the APT client pods (every image runs the release and the verifier its pin names, the CA is trusted, the
+#                       edge answers); builds the four images and starts the pods, which stay up
+#   e2e.sh apt-clients-down  removes the APT client pods and their namespace
 #   e2e.sh backup       the backup and restore suite (R-BAK-029, E5.11, E5.12): a backup during a publishing, deleting and collecting load restored into
 #                       the namespace trove-restore, the drain and kill -9 of a backup and of a restore, the journal across a restore with E5.12's CI
 #                       bullets (the issuer double, TROVE_E2E_OIDCSTUB=1) (nightly, dispatch, locally)
@@ -101,6 +108,8 @@
 # TROVE_E2E_REUSE_CLIENTS=1 keeps client pods that are already running in the right number (a test under development).
 # The NuGet client pods (sets nuget*): TROVE_E2E_NUGET_CLIENTS_PODS, TROVE_E2E_NUGET_CLIENTS_TARGET and
 # TROVE_E2E_NUGET_CLIENTS_IMAGE_BUILD=0 as for npm; TROVE_E2E_NUGETSTUB=1 deploys the counting NuGet test upstream.
+# The APT client pods (the set deb): TROVE_E2E_APT_CLIENTS_TARGET and TROVE_E2E_APT_CLIENTS_IMAGE_BUILD=0 as for npm; TROVE_E2E_DEBSTUB=1
+# deploys the counting Debian archive test upstream.
 # The OCI client pods (sets oci*, mirror*): TROVE_E2E_OCI_CLIENTS_PODS (default 3), TROVE_E2E_OCI_CLIENTS_TARGET and
 # TROVE_E2E_OCI_CLIENTS_IMAGE_BUILD=0 as for npm; TROVE_E2E_OCISTUB=1 deploys the counting OCI test upstream.
 set -euo pipefail
@@ -204,6 +213,14 @@ case "$set_name" in
   oci-closing) run='^TestOCIClosing'; OCI_CLIENTS=1; OCI_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_OCISTUB=1 TROVE_E2E_OCI_CLOSING=1 ;;
   oci-long) run='^TestOCILong'; OCI_CLIENTS=1; OCI_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_OCISTUB=1 ;;
   # <<< T16 oci
+  # >>> T17 deb
+  # The Debian (APT) acceptance tests (R-DEB-035, docs/developer/e2e.md#the-debian-tests): the counting Debian archive test upstream, one client pod per
+  # image (Debian 13, Debian 12, Ubuntu 24.04, Ubuntu 22.04 in the namespace trove-e2e-apt), the scatter profile. CI runs `deb` as the job e2e-deb on
+  # every change that touches the format or the registry root.
+  apt-clients) run='^TestAPTClients$'; APT_CLIENTS=1 ;;
+  apt-clients-down) APT_CLIENTS=down ;;
+  deb) run='^Test(Deb|APTClients)'; APT_CLIENTS=1; export TROVE_E2E_DEBSTUB=1 ;;
+  # <<< T17 deb
   # >>> M6b mirror
   # The remote full mirror (R-REPO-059, docs/developer/e2e.md#the-mirror-tests): the `mirror` profile (up.sh, values-mirror.yaml), the two counting
   # test upstreams and three client pods of each kind. `mirror` is the short scenarios (CI: job e2e-mirror on a change to the mirror);
@@ -367,6 +384,26 @@ if [ "${TROVE_E2E_OCISTUB:-0}" = "1" ]; then
   export TROVE_E2E_OCISTUB_HOST="ocistub.$NS.svc" TROVE_E2E_OCISTUB_REALM_HOST="ocistub-auth.$NS.svc" TROVE_E2E_OCISTUB_CDN_HOST="ocistub-cdn.$NS.svc"
 fi
 # <<< T16 oci-stub
+
+# >>> T17 deb-stub
+# ── the counting Debian archive test upstream ────────────────────────────────
+# TROVE_E2E_DEBSTUB=1 builds the image of test/debstub (make deb-stub-image), loads it into kind and (re)starts the stub of
+# deploy/dev/debstub.yaml: Service debstub.<ns>.svc on 443, TLS from the dev CA, control token in Secret trove-debstub. It serves the suites
+# stable and testing under /debian/, the flat repository /flat/ and the flat root /flatroot/ (docs/developer/deb.md). The tests read
+# TROVE_E2E_DEBSTUB_HOST (the upstream URL of a remote repository is https://$TROVE_E2E_DEBSTUB_HOST/debian/). trove trusts the dev CA for upstreams
+# through proxy.outbound.tls.ca_files (values-dev.yaml). Nothing here runs without the switch.
+if [ "${TROVE_E2E_DEBSTUB:-0}" = "1" ]; then
+  log "building the Debian archive test upstream image for linux/$ARCH"
+  (cd "$REPO_ROOT" && make --no-print-directory deb-stub-image IMAGE_ARCH="$ARCH") >"$OUT/debstub-image.log" 2>&1 || { tail -20 "$OUT/debstub-image.log" >&2; die "Debian archive test upstream image build failed"; }
+  kind load docker-image trove-e2e-debstub:dev --name "$CLUSTER" >"$OUT/debstub-load.log" 2>&1 || { tail -20 "$OUT/debstub-load.log" >&2; die "kind load of the Debian archive test upstream failed"; }
+  log "starting the Debian archive test upstream"
+  render "$DEV_DIR/debstub.yaml" | kn apply -f - >/dev/null
+  kn wait --for=condition=Ready certificate/trove-debstub-tls --timeout=3m >/dev/null
+  kn rollout restart deployment/trove-debstub >/dev/null   # same tag, new image content
+  kn rollout status deployment/trove-debstub --timeout=3m >/dev/null || { kn describe pod -l app.kubernetes.io/name=trove-debstub >&2; die "the Debian archive test upstream did not become ready"; }
+  export TROVE_E2E_DEBSTUB_HOST="debstub.$NS.svc"
+fi
+# <<< T17 deb-stub
 
 # >>> M4 oidc-stub
 # ── the GitLab-shaped OIDC issuer double ─────────────────────────────────────
@@ -683,6 +720,65 @@ if [ "${OCI_CLIENTS:-}" = 1 ]; then
   export TROVE_E2E_OCI_CLIENTS_POD_PREFIX="$OCI_CLIENTS_PREFIX" TROVE_E2E_OCI_CLIENTS_PODS="$OCI_CLIENTS_COUNT" TROVE_E2E_OCI_CLIENTS_NAMESPACE="$OCI_CLIENTS_NS" TROVE_E2E_OCI_NODE="${CLUSTER}-control-plane"
 fi
 # <<< T16 oci-clients
+
+# >>> T17 apt-clients
+# The client pods of the Debian acceptance tests (R-DEB-035, Q-DEB-27, docs/developer/e2e.md#the-apt-clients): one pod per image, each a real APT with
+# the verifier of its release, in the namespace trove-e2e-apt (Pod Security level baseline, deploy/dev/apt-clients.yaml). Each pod's forwarder listens on
+# 127.0.0.1:<edge port> and relays to the in-cluster edge, so `https://localhost:<edge port>/api/deb/...` is the repository URL of the setup snippets
+# and the certificate is verified for `localhost`; the dev CA is mounted from a ConfigMap, never baked into the images. The tests run the clients
+# through `kubectl -n trove-e2e-apt exec <pod> -- ...`.
+APT_CLIENTS_NS="trove-e2e-apt"
+APT_CLIENTS_LABEL="app.kubernetes.io/component=e2e-apt-client"
+APT_CLIENTS_PREFIX="trove-e2e-apt-"
+APT_CLIENTS_IMAGE_PREFIX="trove-e2e-aptclients-"
+APT_CLIENTS_NAMES="debian13 debian12 ubuntu2404 ubuntu2204"
+
+apt_kc() { kubectl --context "$CTX" -n "$APT_CLIENTS_NS" "$@"; }
+
+apt_clients_down() {
+  if k get namespace "$APT_CLIENTS_NS" >/dev/null 2>&1; then
+    k delete namespace "$APT_CLIENTS_NS" --ignore-not-found --wait=true >/dev/null
+  fi
+}
+
+# apt_render_pod <name> prints the manifest of one client pod with the variables of deploy/dev/apt-clients.yaml replaced.
+apt_render_pod() {
+  sed -e "s|\${POD}|${APT_CLIENTS_PREFIX}$1|g" -e "s|\${IMAGE}|${APT_CLIENTS_IMAGE_PREFIX}$1:dev|g" -e "s|\${EDGE_PORT}|$EDGE_PORT|g" \
+    -e "s|\${TARGET}|$APT_TARGET|g" "$DEV_DIR/apt-clients.yaml"
+}
+
+apt_clients_up() {
+  local name
+  if [ "${TROVE_E2E_REUSE_CLIENTS:-0}" = 1 ] && [ "$(apt_kc get pods -l "$APT_CLIENTS_LABEL" --field-selector=status.phase=Running -o name 2>/dev/null | wc -l | tr -d ' ')" = "4" ]; then
+    log "reusing the 4 APT client pods (TROVE_E2E_REUSE_CLIENTS=1)"
+    return 0
+  fi
+  APT_TARGET="${TROVE_E2E_APT_CLIENTS_TARGET:-haproxy-ingress.ingress-controller.svc.cluster.local:443}"
+  [ -n "${CA_FILE:-}" ] && [ -s "$CA_FILE" ] || die "the client pods verify the edge against the dev CA, which is missing (TROVE_DEV_CA_FILE, TROVE_DEV_SCHEME=https; run make dev-up)"
+  if [ "${TROVE_E2E_APT_CLIENTS_IMAGE_BUILD:-1}" != 0 ]; then
+    "$REPO_ROOT/test/e2e/aptclients/build.sh" "$APT_CLIENTS_IMAGE_PREFIX" >"$OUT/apt-clients-image.log" 2>&1 || { tail -20 "$OUT/apt-clients-image.log" >&2; die "APT clients image build failed"; }
+  fi
+  # the pods run on the control-plane node only (nodeSelector in the manifest): one copy of each image, not one per node
+  for name in $APT_CLIENTS_NAMES; do
+    kind load docker-image "${APT_CLIENTS_IMAGE_PREFIX}${name}:dev" --name "$CLUSTER" --nodes "${CLUSTER}-control-plane" >>"$OUT/apt-clients-load.log" 2>&1 || { tail -20 "$OUT/apt-clients-load.log" >&2; die "kind load of the $name client image failed"; }
+  done
+  apt_clients_down
+  # the first apply of the file creates the namespace (with the pod, which waits for the ConfigMap); the ConfigMap follows at once
+  apt_render_pod debian13 | k apply -f - >/dev/null
+  apt_kc create configmap trove-e2e-apt-ca --from-file=ca.crt="$CA_FILE" >/dev/null
+  log "starting 4 APT client pods forwarding localhost:$EDGE_PORT to $APT_TARGET"
+  for name in $APT_CLIENTS_NAMES; do
+    [ "$name" = debian13 ] || apt_render_pod "$name" | k apply -f - >/dev/null
+  done
+  apt_kc wait --for=condition=Ready pod -l "$APT_CLIENTS_LABEL" --timeout=300s >/dev/null || { apt_kc describe pod -l "$APT_CLIENTS_LABEL" >&2; die "the APT client pods did not become ready"; }
+}
+
+if [ "${APT_CLIENTS:-}" = down ]; then apt_clients_down; log "APT client pods removed"; exit 0; fi
+if [ "${APT_CLIENTS:-}" = 1 ]; then
+  apt_clients_up
+  export TROVE_E2E_APT_CLIENTS_POD_PREFIX="$APT_CLIENTS_PREFIX" TROVE_E2E_APT_CLIENTS_NAMESPACE="$APT_CLIENTS_NS"
+fi
+# <<< T17 apt-clients
 
 log "go test -tags e2e -run '$run' (report: .out/test-e2e.json, artifacts: $OUT)"
 cd "$REPO_ROOT"

@@ -4,7 +4,7 @@ The suite proves the exit criteria of M0 that need Kubernetes: E0.3, E0.4 (chart
 E0.11, E0.12 (dev-profile parts), E0.13, E0.14, E0.15 and E0.16 of the [roadmap](../coverage/roadmap.md), and the
 end-to-end criteria of the access core of M1: E1.1, E1.8, E1.11 (the API part and the browser journeys), E1.13 and E1.14, and of
 npm in M2: E2.1 to E2.12 and E2.11's drain and failovers under npm load, and of the vulnerability scanning in M4b: E4b.1's drain, E4b.4 to E4b.6 and E4b.8
-([the vulnerability tests](#the-vulnerability-tests)), and of the remote full mirror in phase 6b: E6b.6 ([the mirror tests](#the-mirror-tests)). It runs
+([the vulnerability tests](#the-vulnerability-tests)), and of the remote full mirror in phase 6b: E6b.6 ([the mirror tests](#the-mirror-tests)). The Debian (APT) registry of phase T-17 has its own set with the real APT of four images ([the Debian tests](#the-debian-tests)). It runs
 the real release image on the [dev profile](local-profile.md), over TLS on every connection, and injects the failures of
 [R-HA-051 and R-HA-052](../spec/ha-and-helm.md). This is work package WP0.11 (and its TLS part, WP0.12); the M1 tests are
 [described below](#m1-tests), the npm tests [further down](#the-npm-tests), and WP2.8's harness, which runs the drain and the
@@ -2534,6 +2534,91 @@ the amd64 images were not run.
 - The OCI distribution conformance suite and the protocol criteria that need no client are the integration tier (`test/integration/oci*`, `make oci-conformance`).
 - No client of another version than the pins: `docker` 29 and `podman` 5 are the two rows.
 - The browser step of the package screen (R-OCI-031) is the UI work package's.
+
+## The counting Debian test upstream in the cluster
+
+[test/debstub](../../test/debstub) is the upstream of the Debian tests (T-17, R-DEB-035): a deterministic APT archive that counts every request and fails on command. Its files, the suites, the keys, the switches and the control API are in [deb.md](deb.md#testdebstub-the-counting-stub-archive); this section is how the e2e harness runs it.
+
+| What | Where |
+|---|---|
+| image | `make deb-stub-image` (`DEB_STUB_IMAGE`, default `trove-e2e-debstub:dev`), built from [test/debstub/Containerfile](../../test/debstub/Containerfile) on the release base image |
+| manifest | [deploy/dev/debstub.yaml](../../deploy/dev/debstub.yaml): Service `debstub` on 443, one pod on the control-plane node, a certificate of the dev CA for `debstub.<ns>.svc`, the control token in Secret `trove-debstub` |
+| wiring in `deploy/dev/e2e.sh` | marker `T17 deb-stub`: `TROVE_E2E_DEBSTUB=1` (the set `deb`) builds the image, loads it into kind, applies the manifest, restarts the pod and exports `TROVE_E2E_DEBSTUB_HOST` (`debstub.<ns>.svc`). A remote repository names `https://<host>/debian/` (or `/flatroot/`) as its URL and the stub's key `a`, read from the control API (`GET /-/stub/keyring?names=a`), as `deb.upstreamKeys` (`debFixture.remoteRepo`) |
+
+## The APT clients
+
+The real clients of the Debian tests ([R-DEB-035](../spec/formats/debian.md#r-deb-035--test-suites), Q-DEB-27): the APT of Debian 13, Debian 12, Ubuntu 24.04 and Ubuntu 22.04, each in a pod of its own, each with the verifier of its release. Each image is pinned by the digest of its multi-architecture index in [tools/versions.env](../../tools/versions.env), so that the arm64 laptop and the amd64 runner run the same release.
+
+| Pin | Image | APT | Verifier |
+|---|---|---|---|
+| `E2E_APTCLIENTS_DEBIAN13_IMAGE` | `docker.io/library/debian:13` | 3.0 | `sqv` |
+| `E2E_APTCLIENTS_DEBIAN12_IMAGE` | `docker.io/library/debian:12` | 2.6 | `gpgv` 2.2 |
+| `E2E_APTCLIENTS_UBUNTU2404_IMAGE` | `docker.io/library/ubuntu:24.04` | 2.8 | `gpgv` 2.4 |
+| `E2E_APTCLIENTS_UBUNTU2204_IMAGE` | `docker.io/library/ubuntu:22.04` | 2.4 | `gpgv` 2.2 |
+
+The tag of a pin is the release the client stands for and never moves: [renovate.json](../../renovate.json) takes the digest only, `make versions-check` runs [check-pins.mjs](../../test/e2e/aptclients/check-pins.mjs), and `TestAPTClients` compares `/etc/os-release`, `apt --version` and the verifier with the pin.
+
+```mermaid
+flowchart LR
+  subgraph clients["namespace trove-e2e-apt (Pod Security level baseline)"]
+    subgraph pod["pod trove-e2e-apt-debian13 (and debian12, ubuntu2404, ubuntu2204)"]
+      a["apt, apt-get, curl, sqv or gpgv<br/>fwd on 127.0.0.1:edge port"]
+    end
+  end
+  a -- "https, localhost:edge port" --> h["HAProxy Ingress<br/>round robin per request"]
+  h --> r["packages x3 (scatter)"]
+  r --> s["debstub (trove namespace)"]
+  w["worker x2<br/>deb-index builds"] --- r
+```
+
+| What | Where |
+|---|---|
+| images | `make apt-clients-image` runs [test/e2e/aptclients/build.sh](../../test/e2e/aptclients/build.sh): the forwarder of the npm clients (`test/e2e/clients/fwd`) for `linux/<arch>`, then the one [Dockerfile](../../test/e2e/aptclients/Dockerfile) on each pinned base image (`trove-e2e-aptclients-<debian13\|debian12\|ubuntu2404\|ubuntu2204>:dev`). Test images, never pushed; the base is a build argument without a default |
+| what the image adds | `curl` (the upload of the publish snippet and the key fetch of the configure snippet), a `sudo` that runs its arguments (the snippets write below `/etc/apt` with `sudo` and the pod is root), the forwarder, and an [entrypoint](../../test/e2e/aptclients/entrypoint.sh) that removes the image's own sources (the client talks to trove only) and writes `Acquire::https::CAInfo` and the `cacert` of curl. `apt` and the verifiers are put on hold before curl is installed, so a dependency of curl that would upgrade them fails the build; curl itself is the image's archive version (Q-DEB-105) |
+| pods | [deploy/dev/apt-clients.yaml](../../deploy/dev/apt-clients.yaml), rendered once per image with `sed` by [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) (marker `T17 apt-clients`): pods `trove-e2e-apt-<image>` in the namespace `trove-e2e-apt` (Pod Security `baseline`: root, but no privileged container, no host path and no added capability; Q-DEB-106), on the control-plane node like the other client pods, no ServiceAccount token, no credential. The dev CA is the ConfigMap `trove-e2e-apt-ca`, never in an image |
+| address | the forwarder listens on `127.0.0.1:<edge port>` and relays to `haproxy-ingress.ingress-controller.svc.cluster.local:443`, so a source `https://localhost:<edge port>/api/deb/<project>/<repository>/`, the address of the setup snippets, works unchanged and APT verifies the edge's certificate for `localhost` |
+
+How a command runs: `aptTry` ([deb_clients_test.go](../../test/e2e/deb_clients_test.go)) is `kubectl exec` of `sh -c` in the pod; `aptClient` ([deb_env_test.go](../../test/e2e/deb_env_test.go)) is one scenario in one pod. It starts from a pod without the files of an earlier scenario (the snippets' source, key and credential files, the lists, the test packages) and removes them again at its end, and it passes the publisher's token as `$TROVE_TOKEN`, the variable of the setup snippets. The scenario runs the `apt.configure.shell` snippet the setup API renders for the repository, unchanged; `apt-get update --error-on=any` is the only form of update, so a warning fails the row; nothing sets `trusted=yes`.
+
+What the real clients do that a unit test would not guess:
+
+- **Ubuntu 24.04 ships APT 2.8**, not the 2.7 the format's client list names ([setup_local.go](../../internal/formats/deb/setup_local.go) lists the series 2.4, 2.6, 2.7 and 3.0); the list is display data and the pin decides what the test runs.
+- **A flat root is not a snippet.** The configure snippet writes `Suites: stable`; the flat root `deb <repo URL> ./` has no components, so the test keeps the snippet's key and credential and replaces the source file with `Suites: ./` (without the trailing slash of the address, so that APT asks for `<repo URL>/./InRelease`).
+- **The lists are cleared between the cells of the rotation table.** APT keeps lists it fetched, and a source that two keyrings read would report the second cell from the first one's lists.
+
+## The Debian tests
+
+The e2e tier of [R-DEB-035](../spec/formats/debian.md#r-deb-035--test-suites), T-17 WP10. The suite's fixture is `debFx` ([deb_env_test.go](../../test/e2e/deb_env_test.go)): it switches to the `scatter` profile (three `packages` replicas, every request to another one; the main worker has two replicas, which claim the `index` queue), creates the publisher `e2e-deb` and one policy for every repository named `deb-*` (`read`, `deploy`, `delete`; the anonymous read of `deb-open-*`). A test creates the repositories it needs (`localRepo`, `remoteRepo`; each is deleted with the test and waited for on all three replicas), so the cache a test starts with is empty and no version of an earlier run is in the way: package names carry the run, because the bytes of a stored version are immutable. Test packages are generated by `debgen` with the architecture `all`, so that one file is listed for the arm64 laptop and the amd64 runner alike.
+
+| Test | Criterion | What it does |
+|---|---|---|
+| `TestAPTClients` | R-DEB-035 | the pinned release, APT series and verifier of each image; the edge's certificate is verified with the dev CA |
+| `TestDebLocal` | R-DEB-035, R-DEB-006, R-DEB-016, R-DEB-018 | per image: a package is uploaded with `curl` from the pod, the index state read waits for its `changeSeq`, the configure snippet runs, `apt-get update --error-on=any` and `apt-get install` install it and the installed script prints its line; the credential file has the mode 600 and the source is verified; a keyring that holds the key of another repository must fail with a signature failure, and the repository's key accepts again; an anonymous request for the key of a repository that requires authentication is 401 |
+| `TestDebAnonymous` | R-DEB-035, R-DEB-004 | a repository that grants `read` to anonymous: the configure snippet writes no credential file, and update and install work on all four images |
+| `TestDebRemote` | R-DEB-035, R-DEB-019, R-DEB-021, R-DEB-022 | a pull-through remote over the stub with the key `a`: all four images update and install `trove-hello` (and its dependency `libtrove1`); the three images after the first cost the stub no request |
+| `TestDebFlatRoot` | R-DEB-003, R-DEB-035 | Ubuntu 24.04 installs `trove-flat` from the flat root `deb <repo URL> ./` of a remote whose URL is the stub's `/flatroot/`; the stub counted `GET /flatroot/InRelease`, the canonical path of the directory, which the remote asked for after APT asked it for `/./InRelease` |
+| `TestDebRotation` | R-DEB-017, R-DEB-016, R-DEB-035 | the table of R-DEB-017 on Debian 13 (`sqv`), Ubuntu 24.04 (`gpgv` 2.4) and Ubuntu 22.04 (`gpgv` 2.2): before the next key, while both keys sign and after the promotion, a keyring of the old key only, of both keys and of the new key only updates or fails as the table says; the suite is signed by one, then two, then one key (the `signedBy` of the index state). On Debian 13 once more with an imported next key created an hour ago whose only self-signature is 30 s old (Q-DEB-40): the build waits for the rule of R-DEB-016 and the client that holds only the new key verifies |
+| `TestDebMirror` | R-DEB-024, R-REPO-050, R-REPO-051 | `debian-mirror`: a mirror of the suite `stable` (components `main`, the architecture of the clients, `includePatterns: ["trove-*", "libtrove1"]`) runs a pass on a worker; the stub's connections are cut (`down: reset`); all four images update and install `trove-hello` from the mirror alone |
+| `TestDebVirtual` | R-DEB-025, R-DEB-027, R-REPO-023 | `apt`: a local and a remote member, a package of each installed through the virtual repository, and the claim row (a name the local member published first comes from it, the merged index lists it once). **Skipped**: the virtual class (T-17 WP8) is not on main |
+
+The rotation table runs one client per cell in turn, not three pods: a cell replaces the keyring file of the one client and clears its lists, which is what a client container with that keyring would see (Q-DEB-107). The time rules of Q-DEB-30 are not in this set: one cluster shares one clock, and the integration asserts of R-DEB-010 and R-DEB-016 prove them.
+
+### Running it
+
+```shell
+make image VERSION=dev && make dev-up
+make e2e SET=apt-clients      # build the four client images, start the pods, run TestAPTClients (the pods stay up)
+make e2e SET=deb              # every TestDeb... and TestAPTClients; the counting Debian test upstream and four client pods (CI: job e2e-deb of Test and Release, when the change touches the format)
+make e2e SET=apt-clients-down # remove the pods and their namespace
+make apt-clients-image        # only build the four images into the local Docker
+```
+
+`TROVE_E2E_APT_CLIENTS_TARGET` and `TROVE_E2E_APT_CLIENTS_IMAGE_BUILD=0` act as for the other client pods; `TROVE_E2E_REUSE_CLIENTS=1` keeps pods that already run.
+
+### Not covered by the Debian tests
+
+- `deb-long` (the delay bound under load, the drain of the worker that runs a build of a virtual repository) and the closing run (the set `deb` with Valkey stopped, the read-only check against `https://deb.debian.org/debian/`) are not built: the delay bound already runs in `make test-performance` (Q-DEB-59), and the closing run waits for the virtual class. The Debian pass beside clients in the set `mirror` and the drain during a Debian pass in `mirror-long` are not built yet.
+- The images run the host's architecture; the rows were run on arm64 (`linux/arm64` images), the amd64 images were not run.
 
 ## The test advisory source
 

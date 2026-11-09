@@ -11,7 +11,7 @@
 # hand (make e2e SET=npm-ha-crash).
 # A red long leg is recorded as an open finding and does not hold the release.
 #
-# Runners (owner, 2026-11-05): the kind legs push, access-long, npm and oci run on the organisation's large runners
+# Runners (owner, 2026-11-05): the kind legs push, access-long, npm, oci and deb run on the organisation's large runners
 # (runs-on: large); the kind legs that load the NuGet clients image (e2e-nuget, e2e-ci, e2e-bastion, e2e-vuln, e2e-mirror) need
 # more than the 30 GiB of Docker storage a large pod has and run on GitHub-hosted runners (runs-on: ubuntu-24.04);
 # every other job runs on the standard runners (runs-on: self-hosted). Sizes: docs/developer/releasing.md#ci.
@@ -1594,6 +1594,206 @@ jobs:
         run: make dev-down
   # <<< T16 e2e-oci
 
+  # >>> T17 e2e-deb
+  # The Debian (APT) acceptance suite (R-DEB-035, T-17 WP10) on a kind cluster: a real APT of Debian 13, Debian 12, Ubuntu 24.04 and Ubuntu 22.04 in
+  # client pods of the namespace trove-e2e-apt (Q-DEB-27), against the scatter profile and the counting Debian archive test upstream
+  # (docs/developer/e2e.md#the-debian-tests). Per change that touches the format it runs the leg deb: every TestDeb... and TestAPTClients (local,
+  # remote, mirror and virtual repositories, an anonymous read, a wrong keyring, the rotation table, the flat root). The client images are the four
+  # official images with curl and a forwarder, so the job runs on the large class like the other kind legs. Port 8107 is the first free one of both
+  # workflows.
+  e2e-deb:
+    name: e2e-deb on kind (${{ matrix.set }})
+    runs-on: large
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include: [{"set":"deb","port":"8107"}]
+    env:
+      TROVE_IMAGE: guidedtraffic/trove:dev
+      TROVE_DEV_CLUSTER: trove-${{ matrix.set }}-${{ github.run_id }}
+      TROVE_DEV_HTTP_PORT: ${{ matrix.port }}
+      # The clients images are built once by the step make apt-clients-image; deploy/dev/e2e.sh loads them and does not build them again.
+      TROVE_E2E_APT_CLIENTS_IMAGE_BUILD: "0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0   # the scope step diffs against the base of the push or the pull request
+
+      # Whether the change touches the Debian format (R-DEB-035: every change that touches the format or the registry root): for any other change the
+      # job is green after this step, so that Semantic Release, which needs the job, is not held back by a change that cannot affect it.
+      - name: Does the change touch the Debian format?
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          CLOSING: ${{ inputs.closing }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          base=""
+          case "$EVENT" in
+            pull_request) base="$PR_BASE" ;;
+            push) base="$PUSH_BEFORE" ;;
+          esac
+          paths='^(internal/formats/deb/|internal/formats/(setup|serve|remote|virtual)\.go$|internal/formathost/|internal/formatdata/deb/|internal/openpgp/|internal/api/dispatch/|internal/items/|internal/uploads/|internal/proxy/|internal/virtual/|internal/mirror/|internal/httpserver/|test/debstub/|test/e2e/(deb_|aptclients)|test/e2e/clients/fwd/|deploy/dev/(debstub|apt-clients|values-dev|values-scatter|pki|kind)\.yaml$|deploy/dev/(up|e2e|lib)\.sh$|deploy/helm/trove/|tools/versions\.env$|docs/spec/formats/debian\.md$)'
+          if [ "$CLOSING" = "true" ] || [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            echo "no base to compare with ($EVENT), or a closing run: the Debian suite runs"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "$base" "$GITHUB_SHA" | grep -qE "$paths"; then
+            echo "the change touches the Debian format: the suite runs"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "the change does not touch the Debian format: nothing to run"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Load the tool pins
+        if: steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/load-pins
+
+      - name: Set up Go
+        if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install build tools
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential jq
+
+      - name: Install the pinned helm
+        if: steps.scope.outputs.run == 'true'
+        uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install the pinned kubectl
+        if: steps.scope.outputs.run == 'true'
+        uses: azure/setup-kubectl@v5
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: Install the pinned kind
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin"
+          GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Install the pinned Docker Buildx
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 16
+        uses: ./.github/actions/install-buildx
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
+      - name: Set up Docker Buildx
+        if: steps.scope.outputs.run == 'true'
+        uses: docker/setup-buildx-action@v4
+        with:
+          cache-binary: false
+
+      - name: Log in to Docker Hub (the dev profile's images)
+        if: steps.scope.outputs.run == 'true'
+        uses: docker/login-action@v4
+        with:
+          username: guidedtraffic
+          password: ${{ secrets.DOCKERHUB_PAT }}
+
+      - name: make apt-clients-image
+        if: steps.scope.outputs.run == 'true'
+        run: make apt-clients-image
+
+      - name: The dev profile's dependency pins and the runner architecture
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          [ "$(uname -m)" = "x86_64" ] || { echo "::error::the dev profile needs an amd64 runner (or qemu), got $(uname -m)"; exit 1; }
+          echo "kind $KIND_VERSION, kubectl $KUBECTL_VERSION, helm $HELM_VERSION, clients $E2E_APTCLIENTS_DEBIAN13_IMAGE $E2E_APTCLIENTS_DEBIAN12_IMAGE $E2E_APTCLIENTS_UBUNTU2404_IMAGE $E2E_APTCLIENTS_UBUNTU2204_IMAGE"
+          kind version
+          kubectl version --client
+          helm version --short
+          for u in https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator; do
+            curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
+          done
+
+      - name: make image
+        if: steps.scope.outputs.run == 'true'
+        run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
+
+      - name: Fetch the dev charts that are GitHub release assets
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 16
+        env:
+          # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
+          GITHUB_TOKEN: ${{ github.token }}
+        run: make dev-charts
+
+      - name: make dev-up
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 25
+        run: make dev-up
+
+      - name: make e2e SET=${{ matrix.set }}
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 60
+        run: make e2e SET=${{ matrix.set }}
+
+      - name: Upload the go test -json report
+        if: always() && steps.scope.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-deb-report-${{ matrix.set }}
+          path: .out/test-e2e.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload the report, the clients image log and the artifacts
+        if: always() && steps.scope.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-deb-artifacts-${{ matrix.set }}
+          path: .out/e2e/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Cluster state (failure only)
+        if: failure() && steps.scope.outputs.run == 'true'
+        run: |
+          set -u
+          ctx="kind-${TROVE_DEV_CLUSTER}"
+          mkdir -p .out/cluster-state
+          for ns in trove ingress-controller cert-manager valkey-operator-system internal-secrets-operator-system cnpg-system kube-system; do
+            kubectl --context "$ctx" -n "$ns" get pods -o wide > ".out/cluster-state/pods-$ns.txt" 2>&1 || true
+            kubectl --context "$ctx" -n "$ns" describe pods > ".out/cluster-state/describe-$ns.txt" 2>&1 || true
+            kubectl --context "$ctx" -n "$ns" get events --sort-by=.lastTimestamp > ".out/cluster-state/events-$ns.txt" 2>&1 || true
+          done
+          deploy/dev/cluster-logs.sh .out/cluster-state
+          kubectl --context "$ctx" get nodes -o wide > .out/cluster-state/nodes.txt 2>&1 || true
+          helm --kube-context "$ctx" -n trove status trove > .out/cluster-state/helm-status.txt 2>&1 || true
+          docker ps -a > .out/cluster-state/docker-ps.txt 2>&1 || true
+          cp -r .dev/logs .out/cluster-state/dev-logs 2>/dev/null || true
+
+      - name: Upload the cluster state (failure only)
+        if: failure() && steps.scope.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-deb-cluster-state-${{ matrix.set }}
+          path: .out/cluster-state/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: make dev-down
+        if: always() && steps.scope.outputs.run == 'true'
+        run: make dev-down
+  # <<< T17 e2e-deb
+
   # The GitLab CI OIDC suite (R-CI-028, roadmap M4 E4.1 and E4.4 to E4.6) on a kind cluster: the steps of the reference pipeline run with
   # the real npm and .NET clients of the client pods against the issuer double (test/oidcstub), in the scatter profile
   # (docs/developer/e2e.md#the-ci-tests). The long legs (the drained node, Valkey stopped, the failover, the deleted pod, E4.7) are the
@@ -2813,7 +3013,7 @@ jobs:
   semantic-release:
     name: Semantic Release
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [versions, lint, gosec, govulncheck, cyclomatic-complexity, generate, nuget-vectors, build-no-node, unit, web, malware-scan, chart, image, sbom-generator, container-scan, integration, s3-conformance, e2e, e2e-npm, e2e-nuget, e2e-oci, e2e-ci, e2e-bastion, e2e-vuln, e2e-mirror, workflows, coverage, coverage-evidence, coverage-report, release-tooling]
+    needs: [versions, lint, gosec, govulncheck, cyclomatic-complexity, generate, nuget-vectors, build-no-node, unit, web, malware-scan, chart, image, sbom-generator, container-scan, integration, s3-conformance, e2e, e2e-npm, e2e-nuget, e2e-oci, e2e-deb, e2e-ci, e2e-bastion, e2e-vuln, e2e-mirror, workflows, coverage, coverage-evidence, coverage-report, release-tooling]
     runs-on: self-hosted
     timeout-minutes: 30
     steps:

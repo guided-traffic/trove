@@ -1,7 +1,7 @@
 # The counting test upstream of the Debian e2e tests (test/debstub, docs/developer/deb.md): a stub Debian archive behind one
 # Service on port 443, HTTPS only, with a certificate of the dev CA (pki.yaml). It serves the suites stable and testing, the large
 # index (suite bulk), a flat repository (/flat/binary/) and a flat root (/flatroot/), all signed by the stub's test keys.
-# It is applied by a wiring step of the e2e harness (deploy/dev/e2e.sh), never by up.sh; no step applies it yet.
+# It is applied by a wiring step of the e2e harness (deploy/dev/e2e.sh, marker T17 deb-stub, TROVE_E2E_DEBSTUB=1, set deb), never by up.sh.
 # The image is built by `make deb-stub-image` and must be loaded into kind (tag trove-e2e-debstub:dev), so the pull policy is
 # IfNotPresent.
 #

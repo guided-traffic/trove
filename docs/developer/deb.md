@@ -440,7 +440,7 @@ every document it serves with trove's verifier.
 | [tls.go](../../test/debstub/tls.go) | `Start` (TLS or nothing), a throwaway CA, a certificate reloaded when its files change |
 | [debgen](../../test/debstub/debgen) | `Build(Spec)`: an installable `.deb` (`ar` of `debian-binary`, `control.tar.gz`, `data.tar.gz` holding one script that prints a fixed line); `Hello(name, version, arch)` for the tests that upload |
 | [cmd/debstub](../../test/debstub/cmd/debstub), [Containerfile](../../test/debstub/Containerfile) | the binary and the image (`make deb-stub-image`, tag `DEB_STUB_IMAGE`, default `trove-e2e-debstub:dev`) |
-| [deploy/dev/debstub.yaml](../../deploy/dev/debstub.yaml) | the manifest for kind: Service `debstub`, a certificate of the dev CA, the control token in Secret `trove-debstub`; no step of the e2e harness applies it yet |
+| [deploy/dev/debstub.yaml](../../deploy/dev/debstub.yaml) | the manifest for kind: Service `debstub`, a certificate of the dev CA, the control token in Secret `trove-debstub`; the e2e harness applies it for the set `deb` ([e2e.md](e2e.md#the-counting-debian-test-upstream-in-the-cluster)) |
 
 #### What it serves
 

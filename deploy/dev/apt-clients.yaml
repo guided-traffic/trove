@@ -1,0 +1,62 @@
+# The client pods of the Debian e2e set (R-DEB-035, Q-DEB-27, docs/developer/e2e.md#the-apt-clients): one Pod per image (Debian 13, Debian 12,
+# Ubuntu 24.04, Ubuntu 22.04), each a real APT with its own verifier (sqv or gpgv) that trusts the dev CA through Acquire::https::CAInfo, and a
+# forwarder that carries 127.0.0.1:<edge port> of the pod to the in-cluster edge, so that `https://localhost:<edge port>/api/deb/...`, the
+# address of the setup snippets, works unchanged and the edge's certificate is verified for `localhost`.
+#
+# The pods run as root (apt-get install writes below /usr and /var), which the Pod Security level `restricted` of the namespace trove
+# refuses, so they live in a namespace of their own with the level `baseline` (root allowed; no privileged container, no host path, no extra
+# capability). Nothing else runs there, no ServiceAccount token is mounted, and the pods carry no credential: the tests hand each command the
+# token it needs, and the credential file of a scenario is written by its configure snippet and removed with it.
+#
+# deploy/dev/e2e.sh (marker T17 apt-clients) applies this file once per pod after replacing the variables below with sed; render() does
+# not know them. Nothing applies it but the e2e sets that use the clients.
+#
+#   ${POD}         pod name: trove-e2e-apt-<debian13|debian12|ubuntu2404|ubuntu2204>
+#   ${IMAGE}       the image built by test/e2e/aptclients/build.sh (trove-e2e-aptclients-<name>:dev)
+#   ${EDGE_PORT}   the port of the edge (TROVE_DEV_HTTP_PORT), the forwarder's listener and the port of the repository URL
+#   ${TARGET}      host:port the forwarder relays to (the in-cluster HAProxy Ingress)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: trove-e2e-apt
+  labels:
+    app.kubernetes.io/part-of: trove-dev
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/warn: baseline
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${POD}
+  namespace: trove-e2e-apt
+  labels:
+    app.kubernetes.io/name: trove-e2e
+    app.kubernetes.io/component: e2e-apt-client
+    app.kubernetes.io/part-of: trove-dev
+spec:
+  terminationGracePeriodSeconds: 5
+  # The clients run on the control-plane node like the other client pods: a drain of a worker node never evicts them, and one copy of
+  # each image is loaded into the cluster.
+  nodeSelector: { node-role.kubernetes.io/control-plane: "" }
+  tolerations: [{ key: node-role.kubernetes.io/control-plane, operator: Exists, effect: NoSchedule }]
+  automountServiceAccountToken: false
+  enableServiceLinks: false
+  containers:
+    - name: apt
+      image: ${IMAGE}
+      imagePullPolicy: IfNotPresent
+      args: ["-listen", "127.0.0.1:${EDGE_PORT}", "-to", "${TARGET}", "-target-file", "/tmp/target"]
+      env:
+        - { name: TROVE_CA_FILE, value: /etc/trove-ca/ca.crt }
+      # the entrypoint has finished its setup (the last file it writes before it starts the forwarder)
+      readinessProbe:
+        exec: { command: ["test", "-s", "/root/.curlrc"] }
+        periodSeconds: 2
+        failureThreshold: 60
+      resources:
+        requests: { cpu: 50m, memory: 128Mi }
+      volumeMounts:
+        - { name: ca, mountPath: /etc/trove-ca, readOnly: true }
+  volumes:
+    - { name: ca, configMap: { name: trove-e2e-apt-ca } }
