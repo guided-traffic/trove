@@ -41,6 +41,8 @@
 #                       NuGet test upstream and three client pods; CI: job e2e-nuget
 #   e2e.sh nuget-closing  TestNuGetClosing...: the additions of the run that closes the phase (CI: job e2e-nuget, closing=true)
 #   e2e.sh nuget-ha     TestNuGetHA...: drain variant A and the failovers of R-HA-052 under the npm and NuGet load together
+#   e2e.sh drain-load   TestDrainLoad: drain variants B, C and E of R-HA-059 under that load, the long-transfer probes and R-STOR-046's gc-full (E5.9)
+#   e2e.sh drain-load-pooler  TestDrainLoadPooler: drain variant D (an instance of the request pooler) under the same load, in the pooler profile
 #                       (CI: job e2e-nuget in the nightly HA and Performance workflow); starts the npm and the NuGet client pods
 #                       and both counting test upstreams. A set may name no test (nuget-closing today): then it passes with a notice (Q-ARCH-276)
 #   e2e.sh ci           the reference pipeline of GitLab CI OIDC (TestCI..., not TestCIHA...) against the issuer double with the npm and
@@ -159,7 +161,14 @@ case "$set_name" in
   # empty_ok: the set may name no test yet (Q-ARCH-276); see the check after the case statement.
   nuget-closing) run='^TestNuGetClosing'; empty_ok=1; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NUGETSTUB=1 TROVE_E2E_NUGET_CLOSING=1 ;;
   # The drain runs the npm load and the NuGet load together (R-HA-059): both client pods and both test upstreams, the scatter profile.
-  nuget-ha) run='^TestNuGetHA'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 ;;
+  # The scatter profile with garbage collection without a grace period (TROVE_E2E_SCATTER_PROFILE=drain, deploy/dev/values-drain.yaml): the drain
+  # test starts a full collection run that has blobs to delete (R-STOR-046's drain criterion, E5.9).
+  nuget-ha) run='^TestNuGetHA'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 TROVE_E2E_SCATTER_PROFILE=drain ;;
+  # Drain variants B, C and E of R-HA-059 under the whole load, the long-transfer probes and the full collection run of R-STOR-046 (E5.9,
+  # docs/developer/e2e.md#the-drain-under-the-full-load): TestDrainLoad. `drain-load-pooler` runs variant D in the pooler profile (R-HA-058).
+  # Both start both client pods and both test upstreams; nightly, on dispatch and locally.
+  drain-load) run='^TestDrainLoad$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 TROVE_E2E_SCATTER_PROFILE=drain ;;
+  drain-load-pooler) run='^TestDrainLoadPooler$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 TROVE_E2E_SCATTER_PROFILE=drain TROVE_POOLER=1 ;;
   # <<< M3 nuget-clients
   # Drain and failover under npm load (E2.11, test/e2e/npm_ha_test.go): drain variant A of R-HA-059, the PostgreSQL
   # switchover and the Valkey failover of R-HA-052 under eight npm ci loops, a publish loop and k6 (CI: e2e-npm leg

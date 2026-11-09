@@ -11,7 +11,7 @@ set -euo pipefail
 require_cluster
 
 PROFILE="${1:?usage: release-values.sh <profile> [<values dir>]}"
-case "$PROFILE" in default|scatter|bastion|vuln|mirror|backup) ;; *) die "the profile must be default, scatter, bastion, vuln, mirror or backup, not '$PROFILE'" ;; esac
+case "$PROFILE" in default|scatter|bastion|vuln|mirror|backup|drain) ;; *) die "the profile must be default, scatter, bastion, vuln, mirror, backup or drain, not '$PROFILE'" ;; esac
 POOLER="${TROVE_POOLER:-0}"
 IMAGE="${TROVE_IMAGE:-guidedtraffic/trove:dev}"
 EDGE_PORT="$(docker port "${CLUSTER}-control-plane" 30443/tcp 2>/dev/null | head -1 | sed 's/.*://' || true)"

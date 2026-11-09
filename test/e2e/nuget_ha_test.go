@@ -7,7 +7,8 @@ package e2e
 // and the NuGet part of nuget_load_test.go together, in the scatter profile with three api, three packages and four worker
 // replicas. The drain scenario is also R-ARCH-024's first acceptance criterion (a drain during 100 npm ci, 20 npm publish,
 // 100 dotnet restore and 20 dotnet nuget push). The scenarios are those of TestNPMHA, and so are their pass conditions; the
-// shared harness (drainVariantA, runLoadFault) is in npm_ha_test.go.
+// shared harness (drainVariantA, runLoadFault) is in npm_ha_test.go; the drain flow of every variant is drainUnderLoad (drain_load_test.go), which this test runs with the long-transfer probes and
+// the storage job of R-STOR-046 (E5.9). Variants B to E under the same load: TestDrainLoad, TestDrainLoadPooler.
 
 import (
 	"testing"
@@ -26,8 +27,8 @@ func TestNuGetHA(t *testing.T) {
 	h := npmHAFx(t)
 	nh := nugetHAFx(t)
 
-	t.Run("R-HA-059 R-HA-052 R-ARCH-024 R-NUGET-030 Q-NUGET-73 drain variant A under the npm and NuGet load: every npm and dotnet command exits 0, k6 only 2xx and 304, p99 at most twice the warm-up's, every acknowledged publish and push installs, jobs resume with their attempt, no SIGKILL, nothing Pending for 60 s, and the run reaches 100 npm ci, 20 npm publish, 100 dotnet restore and 20 dotnet nuget push", func(t *testing.T) {
-		drainVariantA(t, "nuget", func() drainLoad { return startFullLoad(t, h, nh, "drain") })
+	t.Run("R-HA-059 R-HA-052 R-STOR-046 R-ARCH-024 R-NUGET-030 Q-NUGET-73 E5.9 drain variant A under the npm and NuGet load: every npm and dotnet command exits 0, k6 only 2xx and 304, p99 at most twice the warm-up's, every acknowledged publish and push installs, a long transfer is cut at most once per evicted packages pod and completes by resume, jobs resume with their attempt, gc-full finishes on the other worker, no SIGKILL, nothing Pending for 60 s, and the run reaches 100 npm ci, 20 npm publish, 100 dotnet restore and 20 dotnet nuget push", func(t *testing.T) {
+		drainVariantA(t, "nuget", func() drainLoad { return startFullLoad(t, h, nh, "drain") }, drainExtras()...)
 	})
 
 	t.Run("R-HA-051 R-HA-052 R-HA-015 R-NUGET-030 dev-failover (PostgreSQL switchover) during the npm ci and dotnet restore loops: no failed iteration, k6 only 2xx and 304", func(t *testing.T) {

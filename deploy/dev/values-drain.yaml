@@ -1,0 +1,9 @@
+# The `drain` e2e profile (R-HA-059 and R-STOR-046, roadmap E5.9, docs/developer/e2e.md#the-drain-under-the-full-load), layered after
+# values-dev.yaml and values-scatter.yaml by up.sh when TROVE_PROFILE=drain: garbage collection without a grace period. The drain
+# test deletes a few files just before it starts a full collection run (gc-full); with a grace period of 24 hours the run would find
+# no candidate and end at once. With none it deletes the blobs, and then waits storage.gc.delete_settle (30 s) for the deleted rows
+# to become removable (R-STOR-024), so the run is still in flight when the drain evicts the worker that holds it.
+config:
+  storage:
+    gc:
+      grace_period: 0s

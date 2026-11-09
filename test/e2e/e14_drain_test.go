@@ -31,11 +31,13 @@ type podWatch struct {
 	raw     *os.File
 	// firstDeleted is when the first pod got a deletion timestamp: the first eviction of a drain.
 	firstDeleted time.Time
+	// deleted holds every pod that got a deletion timestamp, with the time the watch saw it first: the evicted pods.
+	deleted map[string]time.Time
 }
 
 func startPodWatch(t testing.TB, selector string) *podWatch {
 	since := time.Now()
-	w := &podWatch{pending: map[string]time.Time{}, pendFor: map[string]time.Duration{}, seen: map[string]bool{}, done: make(chan struct{})}
+	w := &podWatch{pending: map[string]time.Time{}, pendFor: map[string]time.Duration{}, seen: map[string]bool{}, deleted: map[string]time.Time{}, done: make(chan struct{})}
 	var err error
 	if w.raw, err = os.Create(filepath.Join(cfg.out, "drain-pod-watch.jsonl")); err != nil {
 		t.Fatal(err)
@@ -90,8 +92,13 @@ func startPodWatch(t testing.TB, selector string) *podWatch {
 			name := ev.Object.Metadata.Name
 			w.mu.Lock()
 			w.seen[name] = true
-			if ev.Object.Metadata.DeletionTimestamp != nil && w.firstDeleted.IsZero() {
-				w.firstDeleted = now
+			if ev.Object.Metadata.DeletionTimestamp != nil {
+				if w.firstDeleted.IsZero() {
+					w.firstDeleted = now
+				}
+				if _, ok := w.deleted[name]; !ok {
+					w.deleted[name] = now
+				}
 			}
 			switch ev.Object.Status.Phase {
 			case "Pending":

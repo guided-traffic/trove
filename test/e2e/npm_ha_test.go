@@ -11,7 +11,6 @@ package e2e
 
 import (
 	"encoding/json"
-	"fmt"
 	"maps"
 	"math/rand/v2"
 	"os"
@@ -304,127 +303,10 @@ func npmDrainVariantA(t *testing.T, h *npmHAFixture) {
 }
 
 // drainVariantA is variant A of R-HA-059 under the load start begins: two minutes of load before the drain and three after
-// it. kind ("npm", "nuget") names the artifacts.
-func drainVariantA(t *testing.T, kind string, start func() drainLoad) {
-	const before, after = 2 * time.Minute, 3 * time.Minute
-	const steps = 330 // probe jobs that run through the warm-up and the drain
-	troveSettled(t, 3, 3, 4)
-	node := drainNodeVariantA(t)
-	troveSettled(t, 3, 3, 4)
-	var onNode []pod
-	for _, p := range livePods(t, selTrove) {
-		if p.Node == node {
-			onNode = append(onNode, p)
-		}
-	}
-	t.Logf("draining %s, which hosts %v", node, podNames(onNode))
-	streams := streamPodLogs(t, kind+"-drain-", onNode)
-
-	watch := startPodWatch(t, selTrove)
-	load := start()
-	var ids []string
-	for i := 0; i < 6; i++ {
-		ids = append(ids, strings.TrimSpace(driver(t, "probe", "-steps", fmt.Sprint(steps), "-interval-ms", "1000")))
-	}
-	waitFor(t, "both workers to run a probe job", 60*time.Second, time.Second, func() bool {
-		rows := sql(t, fmt.Sprintf(`SELECT r.name FROM trove.job j JOIN trove.replica r ON r.instance_uid = j.locked_by WHERE j.kind = 'system.probe' AND j.state = 'running' AND j.progress_total = %d GROUP BY 1`, steps))
-		return len(strings.Fields(rows)) >= 2
-	})
-	time.Sleep(time.Until(load.begun().Add(before)))
-
-	drainStart := time.Now()
-	t.Logf("drain starts %s", drainStart.Format("15:04:05"))
-	script(t, "drain.sh", node)
-	drainEnd := time.Now()
-	drainTook := drainEnd.Sub(drainStart)
-	t.Logf("drain.sh returned after %s", drainTook.Round(time.Second))
-	time.Sleep(after)
-	res := load.stop(t)
-
-	finished := map[string]probeJob{}
-	waitFor(t, "every probe job to end", 6*time.Minute, 5*time.Second, func() bool {
-		for _, id := range ids {
-			if _, ok := finished[id]; ok {
-				continue
-			}
-			var j probeJob
-			if err := jsonUnmarshal(driver(t, "job", id), &j); err != nil {
-				t.Fatal(err)
-			}
-			if j.State == "succeeded" || j.State == "failed" || j.State == "cancelled" {
-				finished[id] = j
-			}
-		}
-		return len(finished) == len(ids)
-	})
-	watch.stop()
-	watch.mu.Lock()
-	firstEviction := watch.firstDeleted
-	watch.mu.Unlock()
-	if firstEviction.IsZero() || firstEviction.Before(drainStart) {
-		t.Errorf("no eviction seen after the drain started (first deletion %v)", firstEviction)
-		firstEviction = drainStart
-	}
-
-	// the pass conditions of R-HA-059
-	res.allExitZero(t)
-	res.loopsSpan(t, firstEviction, drainEnd)
-	res.k6Holds(t)
-	warm, nWarm := res.k6P99(res.k6First(), firstEviction)
-	during, nDuring := res.k6P99(firstEviction, drainEnd.Add(2*time.Minute))
-	t.Logf("k6 p99: warm-up %s over %d requests, from the first eviction until 2 minutes after the drain %s over %d", warm, nWarm, during, nDuring)
-	if nWarm < 1000 || nDuring < 1000 {
-		t.Errorf("too few requests for the latency condition: %d in the warm-up, %d in the drain window", nWarm, nDuring)
-	}
-	if during > 2*warm {
-		t.Errorf("R-HA-059: p99 from the first eviction until 2 minutes after the drain is %s, more than twice the warm-up's %s", during, warm)
-	}
-	res.installPublished(t)
-	res.conditions(t, firstEviction, drainEnd)
-
-	moved := 0
-	for _, id := range ids {
-		j := finished[id]
-		t.Logf("job %s: %s attempt %d/%d steps %d hops %d resumed at %v", id, j.State, j.Attempt, j.MaxAttempts, j.Result.Steps, len(j.Result.Hops), j.Result.Resumes)
-		if j.State != "succeeded" || j.Result.Steps != steps {
-			t.Errorf("job %s ended %s with %d steps, want succeeded with %d", id, j.State, j.Result.Steps, steps)
-		}
-		if j.Attempt != 1 {
-			t.Errorf("job %s: attempt %d, want 1 (a release at shutdown does not count an attempt)", id, j.Attempt)
-		}
-		if len(j.Result.Hops) > 1 {
-			moved++
-			if len(j.Result.Resumes) == 0 || j.Result.Resumes[0] <= 0 || j.Result.Resumes[0] >= steps {
-				t.Errorf("job %s moved but did not resume from a cursor inside the run: %v", id, j.Result.Resumes)
-			}
-		}
-	}
-	if moved == 0 {
-		t.Errorf("no probe job moved to the other worker: the drained worker did not release any job")
-	}
-	if drainTook > 10*time.Minute {
-		t.Errorf("R-HA-059: kubectl drain returned after %s, more than 10 minutes", drainTook.Round(time.Second))
-	}
-	if unc := strings.TrimSpace(kn(t, "get", "node", node, "-o", "jsonpath={.spec.unschedulable}")); unc == "true" {
-		t.Errorf("node %s is still cordoned", node)
-	}
-	if len(watch.killed) != 0 {
-		t.Errorf("containers were killed: %v", watch.killed)
-	}
-	if name, d := watch.longestPending(); d > 60*time.Second {
-		t.Errorf("trove pod %s was Pending for %s", name, d.Round(time.Second))
-	} else {
-		t.Logf("longest Pending of a trove pod: %s (%s)", d.Round(100*time.Millisecond), name)
-	}
-	checkEvents(t, onNode)
-	checkEndpointRemoval(t, kind+"-ha-drain", streams)
-	rec := map[string]any{
-		"node": node, "drain_seconds": drainTook.Seconds(), "first_eviction": firstEviction, "p99_warmup_ms": warm.Milliseconds(),
-		"p99_drain_ms": during.Milliseconds(), "moved_jobs": moved, "pending_pods": watch.pendFor,
-	}
-	maps.Copy(rec, res.note())
-	noteResult(t, kind+"-ha-drain", rec)
-	troveSettled(t, 3, 3, 4)
+// it. kind ("npm", "nuget") names the artifacts. The flow is the one of every variant (drainUnderLoad, drain_load_test.go);
+// extras are the parts of E5.9 beside the load.
+func drainVariantA(t *testing.T, kind string, start func() drainLoad, extras ...drainExtra) {
+	drainUnderLoad(t, kind, variantA, start, extras...)
 }
 
 // drainNodeVariantA picks the node of variant A (R-HA-059): it hosts an api, a packages and a worker pod, and neither the

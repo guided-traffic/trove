@@ -199,6 +199,7 @@ release_values() {
   [ "$profile" = "vuln" ] && RELEASE_VALUES+=(-f "$dir/values-scatter.yaml" -f "$dir/values-vuln.yaml")
   [ "$profile" = "mirror" ] && RELEASE_VALUES+=(-f "$dir/values-scatter.yaml" -f "$dir/values-mirror.yaml")
   [ "$profile" = "backup" ] && RELEASE_VALUES+=(-f "$dir/values-backup.yaml")
+  [ "$profile" = "drain" ] && RELEASE_VALUES+=(-f "$dir/values-scatter.yaml" -f "$dir/values-drain.yaml")
   # The Bastions' base URLs (deploy/dev/bastion.sh) carry the edge port the cluster was created with.
   [ "$profile" = "bastion" ] && RELEASE_VALUES+=(-f "$dir/values-bastion.yaml" \
     --set-json "config.server.additional_base_urls=[\"https://trove-api.trove.svc:8080\",\"https://trove-packages.trove.svc:8080\",\"https://bastion-volume.trove.localhost:$EDGE_PORT\",\"https://bastion-bucket.trove.localhost:$EDGE_PORT\"]")
