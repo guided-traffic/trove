@@ -249,6 +249,21 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
 
 ### Tests and tools
 
+- **F-121 · The nightly performance run misses V-7b on a loaded runner** (runs 42571414393 with p99 314.7 ms and 42595813923 with
+  610.957 ms against 300 ms; V-7a 17 to 60 ms in the same runs; both shared the nodes with other kind legs). Not reproduced as a
+  regression, looked at on 2026-11-09: the path is the one [Q-VULN-81](../spec/vulnerability-scanning.md) decided and no commit since
+  2026-11-06 changed the findings list, its queries or the report scope (the authz commits 08eef8ba and 8f192491 touch the
+  version-independence test of `ReadScope`, which a package-pattern grant does not trip: the page still runs the pair read and the
+  page statement). On the integration stack at a load average of about 10, `TestR_VULN_028_TheFirstPageOfAPatternGrantAtTheShapeOfTheRun`
+  with the run's 100 requests, the first included, gives first request 60 ms, median 67 ms, p99 76 ms, slowest 76 ms; without the
+  `ANALYZE` of the seed 74, 76, 102 and 118 ms. Every request runs exactly two statements (`VulnScopePackages`, `VulnFindingsList`).
+  In the log of 42595813923 the 100 requests of V-7b took 9.3 s in all, a mean of 93 ms: the typical request is where it was
+  (112 ms on 2026-11-06), the p99 of 100 is the second slowest request, so two stalls on a shared, CPU-limited VM are enough to
+  miss. The test now asserts the two statements, so a regression of the path fails before a runner does. Open: the cause of the two
+  slow requests on the runner is not measured (a neighbour, the replica's garbage collection, or the autovacuum of the 100,000 rows
+  the run inserts without an `ANALYZE`). Next step: a run of `vuln-perf` alone on the large class (after the kind legs, as
+  [Q-ARCH-325](../spec/architecture.md) set) that logs the slowest five requests with their request IDs; revisit if V-7b misses
+  there as well, which would make it the reference environment's number ([H-491](../security/vulnerability-scanning.md#h-491--the-performance-run-is-not-the-reference-environment)).
 - **F-116 · `TestBastion_R_BAS_049_RoutingByPath` failed once on CI** (Test and Release 42530616876, e2e-bastion): "0 hits for 36
   paths requested twice"; each repeated tarball request went to the main installation as a revalidation (304) instead of being a hit
   on the Bastion replica of its path. Green in the runs before and after with no Bastion change in between. Done when the cause of

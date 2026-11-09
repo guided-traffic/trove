@@ -5,12 +5,14 @@ package vulnapi
 import (
 	"os"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/guided-traffic/trove/internal/auth/scope"
+	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/test/integration/testenv"
 )
 
@@ -53,8 +55,9 @@ func TestR_VULN_020_TheFirstPageAtScale(t *testing.T) {
 
 // TestR_VULN_028_TheFirstPageOfAPatternGrantAtTheShapeOfTheRun: 100,000 findings in the shape of the performance run (90,000 npm
 // in two repositories, 10,000 NuGet, ten versions of every package, one finding per version) and a caller whose grants are the
-// package patterns of V-7b. The median of the first page is logged, and bounded at the V-7 target of R-VULN-028 only with the
-// performance gate (TROVE_PERF_GATE): the shared stack's load is not the reference environment's.
+// package patterns of V-7b. Like the run, it takes 100 requests, the first included, and logs the first, the median and the p99; the
+// p99 is bounded at the V-7 target of R-VULN-028 only with the performance gate (TROVE_PERF_GATE). The statements of the page are
+// asserted always (F-121): the shared stack's load is not the reference environment's.
 func TestR_VULN_028_TheFirstPageOfAPatternGrantAtTheShapeOfTheRun(t *testing.T) {
 	e := newEnv(t)
 	grace := e.st.User("grace")
@@ -74,7 +77,8 @@ func TestR_VULN_028_TheFirstPageOfAPatternGrantAtTheShapeOfTheRun(t *testing.T) 
 	seed("nuget-local", "NuGet", 0, 10000, "trove.test.filler")
 	e.st.Exec(`ANALYZE vuln_finding`)
 	// The policy is read when a replica starts: the one of newEnv started before it.
-	web := e.st.Start(t, testenv.ReplicaOptions{Name: "web2", Env: []string{"TROVE_API_RATE_LIMITS_ENABLED=false"}})
+	rt := testenv.NewRequestTransactions()
+	web := e.st.Start(t, testenv.ReplicaOptions{Name: "web2", Env: []string{"TROVE_API_RATE_LIMITS_ENABLED=false"}, Database: []postgres.Option{rt.Option()}})
 	// The pages of the list hold exactly the findings of the packages the patterns name, every version of them: the pair a
 	// version-independent scope decides once stands for the ten versions of a package (Q-VULN-81).
 	want := map[string]bool{}
@@ -132,18 +136,41 @@ func TestR_VULN_028_TheFirstPageOfAPatternGrantAtTheShapeOfTheRun(t *testing.T) 
 			break
 		}
 	}
+	// The run takes the p99 of 100 requests, the first of them included: that one meets the caller's cold caches.
+	rt.Count(true)
+	defer rt.Count(false)
 	var samples []time.Duration
-	for range 30 {
+	var ids []string
+	for range 100 {
 		start := time.Now()
-		p := e.list(web, tok, q("limit", "50"))
+		a := e.get(web, "/api/v1/vulnerabilities/findings?limit=50", tok)
 		samples = append(samples, time.Since(start))
-		if len(p.Items) != 50 {
-			t.Fatalf("%d items", len(p.Items))
+		if a.Status != 200 {
+			t.Fatalf("list: %d %s", a.Status, a.Body)
+		}
+		ids = append(ids, a.Header.Get("X-Request-Id"))
+	}
+	first := samples[0]
+	sorted := slices.Clone(samples)
+	slices.Sort(sorted)
+	t.Logf("pattern grant at the shape of the run: first request %s, median %s, p90 %s, p99 %s, slowest %s", first, sorted[50], sorted[90], sorted[98], sorted[99])
+	// The page costs two statements in two transactions, the pair read and the page (Q-VULN-77, Q-VULN-81); a third one, or the
+	// triples instead of the pairs, is the regression that would move V-7b before any runner's load does.
+	const wantCost = "[VulnScopePackages] [VulnFindingsList]"
+	for _, i := range []int{0, 50, 99} {
+		if got := describeCost(rt.Of(ids[i])); got != wantCost {
+			t.Errorf("request %d ran %s, want %s", i, got, wantCost)
 		}
 	}
-	slices.Sort(samples)
-	t.Logf("pattern grant at the shape of the run: first page median %s, p90 %s, max %s", samples[len(samples)/2], samples[len(samples)*9/10], samples[len(samples)-1])
-	if os.Getenv("TROVE_PERF_GATE") != "" && samples[len(samples)/2] > 300*time.Millisecond {
-		t.Errorf("the first page took %s, the bound is 300ms", samples[len(samples)/2])
+	if os.Getenv("TROVE_PERF_GATE") != "" && sorted[98] > 300*time.Millisecond {
+		t.Errorf("the p99 of the first page was %s, the bound is 300ms", sorted[98])
 	}
+}
+
+func describeCost(c testenv.RequestCost) string {
+	var parts []string
+	for _, tx := range c.Transactions {
+		parts = append(parts, "["+strings.Join(tx, ", ")+"]")
+	}
+	return strings.Join(parts, " ")
 }

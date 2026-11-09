@@ -530,7 +530,8 @@ remove.
 Two integration tests measure the paths of V-4 and V-7b in minutes and not in the run's tens: `TestR_VULN_028_TheEvaluationOfAPublishIsMeasured`
 ([vulnfindings](../../test/integration/vulnfindings/publish_cost_test.go)) and `TestR_VULN_028_TheFirstPageOfAPatternGrantAtTheShapeOfTheRun`
 ([vulnapi](../../test/integration/vulnapi/scale_test.go): 100,000 findings in the shape of the run and the grants of V-7b). They log the
-median and the tail and fail a miss only with `TROVE_PERF_GATE`. To compare a change, run both versions in one process and alternate
+median and the tail and fail a miss only with `TROVE_PERF_GATE`; the V-7b test takes the 100 requests of the run, the first included, and always asserts that a
+page runs exactly the two statements of Q-VULN-81 (`VulnScopePackages`, `VulnFindingsList`), so a regression of the path shows before a runner's load does. To compare a change, run both versions in one process and alternate
 request by request; the stack is shared and a load average above 20 moves absolute numbers by a factor of two or more.
 
 | [queries/vuln_audits.sql](../../internal/meta/postgres/queries/vuln_audits.sql) | `AuditAdvisoriesForNames` (one query for a body of names, over `vuln_affected_name`) and `AuditAllAdvisories`; one row per affected entry, times as epoch microseconds, so that no driver type leaves the store |
