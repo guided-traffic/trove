@@ -3,6 +3,7 @@ package index
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/md5" //nolint:gosec // the MD5Sum field of a Release is a compatibility field (R-DEB-011)
 	"crypto/sha256"
 	"encoding/hex"
@@ -156,6 +157,9 @@ func MemberFilename(member, filename string) (string, bool) {
 	return "members/" + member + "/" + path.Clean(filename), true
 }
 
+// mergeCheckEvery is how many paragraphs a merge reads between two looks at its context.
+const mergeCheckEvery = 256
+
 // ParagraphSink takes the paragraphs of a merge in order: a PackagesWriter streams them into the compressed variants, Plain keeps them.
 type ParagraphSink interface {
 	Paragraph(p []byte) error
@@ -193,10 +197,17 @@ type MergeResult struct {
 // admits its package name (the member's patterns, the pin rules and claims, R-DEB-025) and no earlier member kept the same package,
 // version and architecture. The Filename of a kept paragraph becomes the member path; every other field stays as the member serves it. A
 // paragraph that does not validate is left out and counted, as the parse of a remote does (R-DEB-034).
-func MergeMember(w ParagraphSink, seen *Seen, memberKey string, r io.Reader, keep func(name string) bool) (MergeResult, error) {
+func MergeMember(ctx context.Context, w ParagraphSink, seen *Seen, memberKey string, r io.Reader, keep func(name string) bool) (MergeResult, error) {
 	var res MergeResult
 	rd := control.NewReader(r, false)
-	for {
+	for n := 0; ; n++ {
+		// A merge of a large index is CPU work between reads: the cancellation of a shutdown is looked at every few paragraphs, so the
+		// job that runs it stops in a moment and is released instead of holding the shutdown past its deadline (F-124).
+		if n%mergeCheckEvery == 0 {
+			if err := ctx.Err(); err != nil {
+				return res, err
+			}
+		}
 		p, err := rd.Next()
 		if errors.Is(err, io.EOF) {
 			return res, nil

@@ -30,7 +30,7 @@ func (virtualAdapter) Strategy(formats.Path) formats.Strategy { return formats.F
 // and within a part its own order; a paragraph is kept when no earlier part kept the same package, version and architecture, and its
 // Filename becomes members/<memberKey>/<Filename>. The job streams its members' indexes through the same function; this is the form
 // the contract's per-request merge takes for a document that is small.
-func (virtualAdapter) Merge(_ context.Context, _ *formats.Request, _ formats.Path, parts []formats.MemberDocument) ([]byte, error) {
+func (virtualAdapter) Merge(ctx context.Context, _ *formats.Request, _ formats.Path, parts []formats.MemberDocument) ([]byte, error) {
 	sorted := slices.Clone(parts)
 	slices.SortStableFunc(sorted, func(a, b formats.MemberDocument) int {
 		if a.Tier != b.Tier {
@@ -41,7 +41,7 @@ func (virtualAdapter) Merge(_ context.Context, _ *formats.Request, _ formats.Pat
 	var out index.Plain
 	seen := index.NewSeen(0)
 	for _, p := range sorted {
-		if _, err := index.MergeMember(&out, seen, p.Member.Name.Key, bytes.NewReader(p.Doc), func(string) bool { return true }); err != nil {
+		if _, err := index.MergeMember(ctx, &out, seen, p.Member.Name.Key, bytes.NewReader(p.Doc), func(string) bool { return true }); err != nil {
 			return nil, errs.E(errs.UpstreamFailed, errs.CodeInternal, "A member's index does not merge.", errs.WithCause(err))
 		}
 	}

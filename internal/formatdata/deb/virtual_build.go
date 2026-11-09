@@ -250,6 +250,9 @@ func (x *Indexer) virtualSuite(ctx context.Context, vr VirtualRepo, in rows.Virt
 	var keepErr error
 	for _, comp := range vr.Components {
 		for _, arch := range append(slices.Clone(archs), index.All) {
+			if err := ctx.Err(); err != nil {
+				return OutcomeFailed, err
+			}
 			base := comp + "/binary-" + arch + "/Packages"
 			w, err := index.NewPackagesWriter(vr.Settings.XZ)
 			if err != nil {
@@ -271,7 +274,7 @@ func (x *Indexer) virtualSuite(ctx context.Context, vr VirtualRepo, in rows.Virt
 					if !ok {
 						continue
 					}
-					_, err = index.MergeMember(w, seen, part.m.Key, r, func(name string) bool {
+					_, err = index.MergeMember(ctx, w, seen, part.m.Key, r, func(name string) bool {
 						allowed, ok := cache[name]
 						if !ok {
 							var aerr error

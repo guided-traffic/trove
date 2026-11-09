@@ -105,3 +105,27 @@ func TestWorkerClaimsOnlyItsQueues(t *testing.T) {
 		}
 	})
 }
+
+func TestQuiesceCancelsAJobClaimedAfterIt(t *testing.T) {
+	t.Run("R-ARCH-016 R-ARCH-024 a job whose claim returned after the quiesce starts with a cancelled context", func(t *testing.T) {
+		root, cancel := context.WithCancelCause(context.Background())
+		defer cancel(nil)
+		w := &Worker{root: root, running: map[string]*runningJob{}, perQueue: map[string]int{}, cancel: cancel}
+		w.o.Config.LeaseDuration = time.Minute
+
+		early, _ := w.register(Job{ID: "early", Queue: "index"}, time.Now())
+		w.Quiesce(context.Background())
+		if early.Err() == nil {
+			t.Fatal("Quiesce did not cancel the job that was running")
+		}
+		late, _ := w.register(Job{ID: "late", Queue: "index"}, time.Now())
+		select {
+		case <-late.Done():
+		case <-time.After(time.Second):
+			t.Fatal("a job registered after the quiesce runs on with nothing to stop it before the end of the shutdown")
+		}
+		if !errors.Is(context.Cause(late), ErrReleased) {
+			t.Fatalf("cause = %v, want ErrReleased: the job is released without counting the attempt", context.Cause(late))
+		}
+	})
+}

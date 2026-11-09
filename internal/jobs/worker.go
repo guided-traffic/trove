@@ -96,6 +96,8 @@ type Worker struct {
 	mu       sync.Mutex
 	running  map[string]*runningJob
 	perQueue map[string]int
+	// quiesced is set by Quiesce under mu: a job registered after it is cancelled at once.
+	quiesced bool
 
 	draining  atomic.Bool
 	wake      chan struct{}
@@ -263,6 +265,9 @@ func (w *Worker) QuiescesFirst() {}
 func (w *Worker) Quiesce(ctx context.Context) {
 	w.draining.Store(true)
 	w.mu.Lock()
+	// A claim that was in flight when the drain began returns its rows after this loop; register (below) cancels those at once,
+	// under the same lock, so no handler starts after the quiesce with nothing to stop it before the end of the shutdown.
+	w.quiesced = true
 	for _, rj := range w.running {
 		rj.cancel(ErrReleased)
 	}
@@ -385,16 +390,27 @@ func (w *Worker) claim() {
 }
 
 func (w *Worker) start(j Job, claimSent time.Time) {
+	ctx, rj := w.register(j, claimSent)
+	w.runWG.Add(1)
+	w.m.claimed.WithLabelValues(j.Kind).Inc()
+	w.m.running.WithLabelValues(j.Kind).Inc()
+	go w.execute(ctx, rj)
+}
+
+// register books a claimed job as running and returns its context. After Quiesce the context is cancelled at once (F-124): the
+// handler of a job claimed by a claim that was in flight at the drain stops at its first call that observes the context, and the job
+// is released without counting the attempt.
+func (w *Worker) register(j Job, claimSent time.Time) (context.Context, *runningJob) {
 	ctx, cancel := context.WithCancelCause(w.root)
 	rj := &runningJob{job: j, cancel: cancel, validUntil: claimSent.Add(w.o.Config.LeaseDuration)}
 	w.mu.Lock()
 	w.running[j.ID] = rj
 	w.perQueue[j.Queue]++
+	if w.quiesced {
+		cancel(ErrReleased)
+	}
 	w.mu.Unlock()
-	w.runWG.Add(1)
-	w.m.claimed.WithLabelValues(j.Kind).Inc()
-	w.m.running.WithLabelValues(j.Kind).Inc()
-	go w.execute(ctx, rj)
+	return ctx, rj
 }
 
 func (w *Worker) setResult(rj *runningJob, result string) {

@@ -3,6 +3,7 @@ package index
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -26,11 +27,11 @@ func TestMergeMemberTheFirstMemberKeepsAVersionAndFilenamesAreMemberPaths(t *tes
 	var out Plain
 	first := para("hello", "1.0", "amd64", "pool/h/hello/hello_1.0_amd64.deb") + "\n" + para("hello", "2.0", "amd64", "pool/h/hello/hello_2.0_amd64.deb")
 	second := para("hello", "2.0", "amd64", "pool/main/h/hello/other.deb") + "\n" + para("hello", "3.0", "amd64", "pool/main/h/hello/hello_3.0_amd64.deb")
-	r1, err := MergeMember(&out, seen, "local", strings.NewReader(first), keepAll)
+	r1, err := MergeMember(context.Background(), &out, seen, "local", strings.NewReader(first), keepAll)
 	if err != nil || r1.Kept != 2 {
 		t.Fatalf("first: %+v %v", r1, err)
 	}
-	r2, err := MergeMember(&out, seen, "remote", strings.NewReader(second), keepAll)
+	r2, err := MergeMember(context.Background(), &out, seen, "remote", strings.NewReader(second), keepAll)
 	if err != nil || r2.Kept != 1 || r2.Others != 1 {
 		t.Fatalf("second: %+v %v", r2, err)
 	}
@@ -78,7 +79,7 @@ func TestMergeMemberSkipsWhatDoesNotValidateAndWhatIsNotKept(t *testing.T) {
 		para("other", "1.0", "amd64", "pool/o/other/other_1.0_amd64.deb"),
 	}, "\n")
 	var out Plain
-	res, err := MergeMember(&out, NewSeen(0), "m", strings.NewReader(doc), func(n string) bool { return n != "other" })
+	res, err := MergeMember(context.Background(), &out, NewSeen(0), "m", strings.NewReader(doc), func(n string) bool { return n != "other" })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +98,7 @@ func TestMergeMemberIsBoundedByTheSeenSet(t *testing.T) {
 		doc.WriteString(para(fmt.Sprintf("pkg%d", i), "1.0", "amd64", fmt.Sprintf("pool/p/pkg%d.deb", i)))
 	}
 	var out Plain
-	_, err := MergeMember(&out, NewSeen(3), "m", strings.NewReader(doc.String()), keepAll)
+	_, err := MergeMember(context.Background(), &out, NewSeen(3), "m", strings.NewReader(doc.String()), keepAll)
 	if !errors.Is(err, ErrTooMany) {
 		t.Fatalf("err = %v, want ErrTooMany", err)
 	}
@@ -111,7 +112,7 @@ func TestMergeIsDeterministic(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := MergeMember(w, NewSeen(0), "m", strings.NewReader(doc), keepAll); err != nil {
+		if _, err := MergeMember(context.Background(), w, NewSeen(0), "m", strings.NewReader(doc), keepAll); err != nil {
 			t.Fatal(err)
 		}
 		listed, files, err := w.Close("main/binary-amd64/Packages")
@@ -136,7 +137,7 @@ func TestPackagesWriterWritesTheVariants(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := MergeMember(w, NewSeen(0), "m", strings.NewReader(para("a-pkg", "1.0", "amd64", "pool/a/a.deb")), keepAll); err != nil {
+	if _, err := MergeMember(context.Background(), w, NewSeen(0), "m", strings.NewReader(para("a-pkg", "1.0", "amd64", "pool/a/a.deb")), keepAll); err != nil {
 		t.Fatal(err)
 	}
 	if w.Paragraphs() != 1 {
@@ -190,7 +191,7 @@ func FuzzMergeMember(f *testing.F) {
 	f.Add("Package: x\n\n\n\nVersion")
 	f.Fuzz(func(t *testing.T, doc string) {
 		var out Plain
-		_, _ = MergeMember(&out, NewSeen(100), "m", strings.NewReader(doc), keepAll)
+		_, _ = MergeMember(context.Background(), &out, NewSeen(100), "m", strings.NewReader(doc), keepAll)
 		rd := control.NewReader(bytes.NewReader(out.Bytes()), false)
 		for {
 			p, err := rd.Next()
