@@ -1858,6 +1858,11 @@ jobs:
           username: guidedtraffic
           password: ${{ secrets.DOCKERHUB_PAT }}
 
+      # TROVE_E2E_OCI_CLIENTS_IMAGE_BUILD=0 above: deploy/dev/e2e.sh loads the clients images of the OCI pass and does not build them.
+      - name: make oci-clients-image
+        if: steps.leg.outputs.run == 'true'
+        run: make oci-clients-image
+
       - name: The dev profile's dependency pins and the runner architecture
         if: steps.leg.outputs.run == 'true'
         run: |
