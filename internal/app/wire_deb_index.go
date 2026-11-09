@@ -103,17 +103,17 @@ func debBuildBuckets() []float64 { return []float64{0.01, 0.05, 0.1, 0.25, 0.5, 
 
 func debDelayBuckets() []float64 { return []float64{0.5, 1, 2, 3, 4, 5, 7, 10, 15, 30, 60, 120} }
 
-// debObserver records the measurements of the index builds (R-DEB-033); the class is always local until the virtual class builds.
+// debObserver records the measurements of the index builds (R-DEB-033), labelled with the class of the repository.
 type debObserver struct {
 	builds         *prometheus.CounterVec
 	seconds, delay *prometheus.HistogramVec
 }
 
-func (o debObserver) Build(outcome string, seconds float64) {
-	o.builds.WithLabelValues("local", outcome).Inc()
+func (o debObserver) Build(class, outcome string, seconds float64) {
+	o.builds.WithLabelValues(class, outcome).Inc()
 	if outcome != debdata.OutcomeUnchanged {
-		o.seconds.WithLabelValues("local").Observe(seconds)
+		o.seconds.WithLabelValues(class).Observe(seconds)
 	}
 }
 
-func (o debObserver) Delay(seconds float64) { o.delay.WithLabelValues("local").Observe(seconds) }
+func (o debObserver) Delay(class string, seconds float64) { o.delay.WithLabelValues(class).Observe(seconds) }

@@ -179,7 +179,7 @@ func (x *Indexer) buildVirtual(ctx context.Context, vr VirtualRepo, args IndexJo
 		vs := byName[s]
 		started := time.Now()
 		outcome, err := x.virtualSuite(ctx, vr, in, vs, keys, args.Full)
-		x.built(outcome, started)
+		x.built("virtual", outcome, started)
 		if err == nil {
 			continue
 		}

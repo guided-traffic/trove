@@ -208,7 +208,7 @@ The same state is `GET …/deb/index`, with `?waitFor=<suite>:<changeSeq>` to wa
 
 The complete reference is in the [full reference](https://github.com/guided-traffic/trove/blob/main/README.md#-full-reference). What the format records:
 
-- Metrics: `trove_deb_index_builds_total{class, outcome}`, `trove_deb_index_build_seconds` and `trove_deb_index_delay_seconds` for the builds (a virtual repository's builds are counted under `class="local"` as well); `trove_deb_upstream_signature_failures_total{repo, reason}`, `trove_deb_release_rollbacks_total{repo}` and `trove_deb_unverified_fills_total{repo}` for the remotes.
+- Metrics: `trove_deb_index_builds_total{class, outcome}`, `trove_deb_index_build_seconds` and `trove_deb_index_delay_seconds` for the builds, by the class of the repository (`local` or `virtual`); `trove_deb_upstream_signature_failures_total{repo, reason}`, `trove_deb_release_rollbacks_total{repo}` and `trove_deb_unverified_fills_total{repo}` for the remotes.
 - Audit events: `deb.package.deleted`, `deb.coordinates.removed`, `deb.signing_key.promoted` and `deb.signing_key.retired` (recorded in the revocation journal), `deb.coordinates.changed`, `deb.signing_key.created`, `deb.signing_key.reinstated`, `deb.reinstate`, and the security event `deb.upstream_signature_invalid`.
 
 ## Not supported in this version

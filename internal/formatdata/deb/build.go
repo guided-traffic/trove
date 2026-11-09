@@ -90,17 +90,17 @@ const (
 )
 
 // Observer receives what the metrics of R-DEB-033 count: trove_deb_index_builds_total, trove_deb_index_build_seconds and
-// trove_deb_index_delay_seconds. All are of the class local.
+// trove_deb_index_delay_seconds, each labelled with the class of the repository (local or virtual).
 type Observer interface {
-	// Build is one build of one suite and its outcome; Seconds the time it took.
-	Build(outcome string, seconds float64)
+	// Build is one build of one suite of a repository of class and its outcome; Seconds the time it took.
+	Build(class, outcome string, seconds float64)
 	// Delay is the time from the first change a published generation covers to its commit.
-	Delay(seconds float64)
+	Delay(class string, seconds float64)
 }
 
-func (x *Indexer) built(outcome string, started time.Time) {
+func (x *Indexer) built(class, outcome string, started time.Time) {
 	if x.Observe != nil {
-		x.Observe.Build(outcome, time.Since(started).Seconds())
+		x.Observe.Build(class, outcome, time.Since(started).Seconds())
 	}
 }
 
@@ -196,7 +196,7 @@ func (x *Indexer) Build(ctx context.Context, repoID int64, args IndexJobArgs) er
 	in, err := x.snapshotInputs(ctx, repoID, args.Full)
 	if err != nil || len(in.Suites) == 0 {
 		if err == nil {
-			x.built(OutcomeUnchanged, time.Now())
+			x.built(repo.Ref.Class, OutcomeUnchanged, time.Now())
 		}
 		return err
 	}
@@ -217,7 +217,7 @@ func (x *Indexer) Build(ctx context.Context, repoID int64, args IndexJobArgs) er
 	for _, s := range in.Suites {
 		started := time.Now()
 		outcome, err := x.buildSuite(ctx, repo, s, keys, args.Full)
-		x.built(outcome, started)
+		x.built(repo.Ref.Class, outcome, started)
 		if err != nil {
 			x.log().Error("the build of a suite failed", "repository", repo.Project+"/"+repo.Key, "suite", s.Suite.Suite, "error", err)
 			if ferr := x.Store.FailBuild(ctx, rows.BuildFailure{RepoID: repoID, Suite: s.Suite.Suite, ReadSeq: s.Suite.ChangeSeq, Reason: reasonOf(err)}); ferr != nil {
@@ -444,7 +444,7 @@ func (x *Indexer) publishBuilt(ctx context.Context, pub items.Publisher, repo In
 	}
 	if x.Observe != nil && dirty != nil {
 		if dbNow, nerr := x.databaseNow(ctx); nerr == nil {
-			x.Observe.Delay(dbNow.Sub(*dirty).Seconds())
+			x.Observe.Delay(repo.Ref.Class, dbNow.Sub(*dirty).Seconds())
 		}
 	}
 	if repo.Ref.Class == classLocal {

@@ -612,8 +612,7 @@ Not built, or not proven:
   are unit rules, not integration cases.
 - The nightly set `deb-long` (the delay bound of R-DEB-010 runs in `make test-performance`, Q-DEB-59; the bound of R-DEB-026 with `compression: ["xz"]` is
   an integration case of `debvirtual`) and the Debian pass in the e2e sets `mirror` and `mirror-long`.
-- The metric `trove_deb_remote_parse_total` of R-DEB-033; the `class` label of the build metrics is always `local`, also for a virtual repository's build
-  (`debObserver` in [wire_deb_index.go](../../internal/app/wire_deb_index.go)).
+- The metric `trove_deb_remote_parse_total` of R-DEB-033.
 - What the spec defers ([Deferred](../spec/formats/debian.md#deferred)): source package uploads, snapshots, `.udeb`, `dput`, debug symbols, `Valid-Until`
   on trove's own releases, an external key service, vulnerability matching, copy and move, endpoints with exposure rules, the Bastion and nested
   virtual repositories.
