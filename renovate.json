@@ -284,6 +284,32 @@
       "groupSlug": "barman-cloud-plugin"
     },
     {
+      "description": "The platform matrix of R-HA-049: HELM3_VERSION stays on Helm 3 (the latest Helm 3 is what the requirement supports until 2027-02-10), HELM_VERSION is the Helm 4 pin and moves freely",
+      "matchFileNames": [
+        "tools/versions.env"
+      ],
+      "matchDepNames": [
+        "helm/helm"
+      ],
+      "matchCurrentVersion": "/^v3\\./",
+      "allowedVersions": "/^v3\\./",
+      "groupName": "Helm 3 (platform matrix)",
+      "groupSlug": "helm-3"
+    },
+    {
+      "description": "The platform matrix of R-HA-049: K8S_MIN_KIND_NODE_IMAGE is the oldest Kubernetes the chart is tested on and stays on 1.34 until the range of the requirement changes, by hand; DEV_KIND_NODE_IMAGE is the newest and moves freely",
+      "matchFileNames": [
+        "tools/versions.env"
+      ],
+      "matchDepNames": [
+        "docker.io/kindest/node"
+      ],
+      "matchCurrentVersion": "/^v1\\.34\\./",
+      "allowedVersions": "/^v1\\.34\\./",
+      "groupName": "kind node image 1.34 (platform matrix)",
+      "groupSlug": "kind-node-134"
+    },
+    {
       "description": "syft: SYFT_VERSION and SYFT_IMAGE are one version twice in tools/versions.env; make versions-check (tools/sbom-generator/check-pins.sh) fails when their tags differ, so one pull request carries both",
       "matchDepNames": [
         "anchore/syft",

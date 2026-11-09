@@ -35,40 +35,19 @@ worker:
     requests: {cpu: 50m, memory: 128Mi, ephemeral-storage: 128Mi}
     limits: {memory: 512Mi}
 
-# The dev CA at the path the source mounts it (values-dev.yaml): the Secret trove-tls of this namespace carries only the CA certificate
-# in ca.crt, not the CA's key.
-extraVolumes:
-  - name: dev-auth
-    secret:
-      secretName: trove-tls
-      defaultMode: 0440
-      items: [{key: ca.crt, path: keycloak-ca.crt}]
-extraVolumeMounts:
-  - {name: dev-auth, mountPath: /var/run/secrets/trove-dev, readOnly: true}
+# The dev CA, as in values-dev.yaml: the Secret trove-tls of this namespace carries only the CA certificate in ca.crt, not the CA's key. A restored
+# CI issuer (caBundleRef) and the test advisory source verify against it; the chart mounts it in every pod of the release, the Jobs included.
+trustedCA:
+  existingSecret: trove-tls
+  keys: [ca.crt]
 
 restore:
-  extraVolumes:                          # the Jobs take their own volumes, not the global ones (Q-HA-149): the restore Job checks ca_files at start; the post-restore Job has its own postRestore.extraVolumes
-    - name: dev-auth
-      secret:
-        secretName: trove-tls
-        defaultMode: 0440
-        items: [{key: ca.crt, path: keycloak-ca.crt}]
-  extraVolumeMounts:
-    - {name: dev-auth, mountPath: /var/run/secrets/trove-dev, readOnly: true}
   resources:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {memory: 1Gi}
 
 backup:
   enabled: true
-  extraVolumes:
-    - name: dev-auth
-      secret:
-        secretName: trove-tls
-        defaultMode: 0440
-        items: [{key: ca.crt, path: keycloak-ca.crt}]
-  extraVolumeMounts:
-    - {name: dev-auth, mountPath: /var/run/secrets/trove-dev, readOnly: true}
   resources:
     requests: {cpu: 50m, memory: 128Mi}
     limits: {memory: 1Gi}
@@ -99,9 +78,6 @@ config:
   proxy:
     metadata_cache_bytes: 32MiB
     merged_metadata_cache_bytes: 64MiB
-    outbound:
-      tls:
-        ca_files: [/var/run/secrets/trove-dev/keycloak-ca.crt]   # as the source: a restored CI issuer (caBundleRef) and the test advisory source verify against the dev CA
   database:
     host: trove-db-rw.${RESTORE_NS}.svc
     name: trove

@@ -18,6 +18,8 @@ commands:
   user disable <username> [--keep-tokens]      disable a user (R-AUTH-015)
   post-restore --restored-to <time> [--credentials-file <path>]   clean up after a point-in-time restore (R-HA-025)
   storage verify [--since <time>] [--json]     check that the object of every stored blob is in the object store (R-HA-024, R-HA-025)
+  storage restore-versions --before <time> [--credentials-file <path>] [--dry-run]   make the objects deleted after a point-in-time restore point current again (R-HA-025)
+  maintenance pause-deletions --reason <text> | resume-deletions   set or clear the deletion pause (R-HA-025)
   backup check [--json]                        verify the declared platform protection: archive_mode, bucket versioning (R-HA-023)
   npm reinstate <projectKey>/<repoKey> <name>@<version>   put back a version a journal replay withheld (R-NPM-047)
   oci reinstate <projectKey>/<repoKey> <name>@<digest>   put back a manifest a journal replay withheld (R-OCI-033)
@@ -55,6 +57,8 @@ func adminCmd(args []string, s streams) error {
 		return adminBackupCmd(args[1:], s)
 	case "storage":
 		return storageCmd(args[1:], s)
+	case "maintenance":
+		return maintenanceCmd(args[1:], s)
 	case "post-restore":
 		return postRestoreCmd(args[1:], s)
 	case "npm":

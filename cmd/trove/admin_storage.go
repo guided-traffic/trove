@@ -15,15 +15,22 @@ import (
 )
 
 const storageUsage = `usage: trove admin storage verify [--since <RFC 3339 time>] [--concurrency N] [--max-items N] [--json] [--config <file>]
+       trove admin storage restore-versions --before <RFC 3339 time> [--credentials-file <path>] [--dry-run] [--concurrency N] [--json] [--config <file>]
 
-verify   check that the object of every live blob is in the object store, and list the items that reference each blob without one (R-HA-024, R-HA-025)
+verify            check that the object of every live blob is in the object store, and list the items that reference each blob without one (R-HA-024, R-HA-025)
+restore-versions  remove the delete markers younger than t from the objects of the blobs that have none, so that a point-in-time restore of the database finds its objects again (R-HA-025 step 5)
 
 exit codes: 0 every object is there, 1 failed, 2 usage or configuration, 5 a blob has no object or another size, 75 temporary (the database or the store could not be reached or answered)`
 
 // storageCmd dispatches trove admin storage <command>.
 func storageCmd(args []string, s streams) error {
-	if len(args) >= 1 && args[0] == "verify" {
-		return storageVerifyCmd(args[1:], s)
+	if len(args) >= 1 {
+		switch args[0] {
+		case "verify":
+			return storageVerifyCmd(args[1:], s)
+		case "restore-versions":
+			return storageRestoreVersionsCmd(args[1:], s)
+		}
 	}
 	return usageError{storageUsage}
 }

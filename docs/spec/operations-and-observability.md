@@ -1895,6 +1895,9 @@ asynchronous. "Hook" marks events that webhooks may select (R-OPS-037).
 | `system.backup.target_adopted` | T | — | A run adopted a target of an earlier incarnation (R-BAK-002); actor `system:backup` | `previousIncarnation` |
 | `system.restored` | T | — | A restore finished; written into the restored database ([backup-and-restore.md](backup-and-restore.md) R-BAK-021, [ha-and-helm.md](ha-and-helm.md) R-HA-025 for a point-in-time restore) | `source` (`backup`, `pitr`), `backupId`, `snapshotAt`, `journal` (`replayed`, or `skipped` with `--skip-revocation-journal`) |
 | `system.restore.journal_replayed` | T | — | The revocation journal was replayed after a restore (R-BAK-024, [ha-and-helm.md](ha-and-helm.md) R-HA-054) | counts per outcome |
+| `system.deletions_paused` | T | — | The deletion pause was set by hand with `trove admin maintenance pause-deletions` ([ha-and-helm.md](ha-and-helm.md) R-HA-025, Q-HA-271); actor `system:admin`; none when it was already set | `reason` |
+| `system.deletions_resumed` | T | — | The deletion pause was cleared with `trove admin maintenance resume-deletions` (R-HA-025 step 7); actor `system:admin`; none when it was not set | `pausedAt`, `reason` |
+| `system.storage.versions_restored` | T | — | `trove admin storage restore-versions` removed delete markers from the blob bucket (R-HA-025 step 5, Q-HA-270); actor `system:admin`; none for a dry run or a run that removed nothing | `before`, `markersRemoved`, `restored`, `remaining` |
 | `audit.exported` | T | — | R-OPS-017 | `from`, `to`, `filters`, `format` |
 | `webhook.created`, `webhook.updated`, `webhook.deleted` | T | — | R-OPS-038 | `changes` |
 | `webhook.secret_rotated`, `webhook.tested`, `webhook.redelivered` | T | — | R-OPS-040, R-OPS-041, R-OPS-043, R-OPS-044 | `secret_name` |

@@ -159,7 +159,8 @@ func layerTable() []layerRule {
 		{"internal/jobs", layerDomain},
 		{"internal/audit", layerDomain},
 		{"internal/backup", layerDomain},
-		{"internal/journal", layerDomain}, // the revocation journal: object, ports, replay handlers (R-HA-054)
+		{"internal/maintenance", layerDomain}, // the deletion pause: pause-deletions, resume-deletions (R-HA-025)
+		{"internal/journal", layerDomain},     // the revocation journal: object, ports, replay handlers (R-HA-054)
 		// The main installation's side of the Bastion (seams, recognition, registrations, marking) and the Bastion's
 		// guard and download buffer.
 		{"internal/bastionmain", layerDomain},

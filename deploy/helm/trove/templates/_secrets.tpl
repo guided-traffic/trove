@@ -26,6 +26,19 @@ backup (R-BAK-020).
 {{- if $s.databaseCA.existingSecret -}}
 {{- $out = append $out (dict "name" "database-ca" "secret" $s.databaseCA.existingSecret "path" "/var/run/secrets/trove/database-ca" "items" (list (dict "key" $s.databaseCA.key "path" "ca.crt"))) -}}
 {{- end -}}
+{{- /* The trusted CA bundle (R-HA-043) reaches every pod that reads the shared configuration file, because its paths are in it: the roles and all Jobs. A public certificate, never a key. */ -}}
+{{- $ca := .root.Values.trustedCA -}}
+{{- if or $ca.existingSecret $ca.existingConfigMap -}}
+{{- $caItems := list -}}
+{{- range $ca.keys -}}
+{{- $caItems = append $caItems (dict "key" . "path" .) -}}
+{{- end -}}
+{{- if $ca.existingSecret -}}
+{{- $out = append $out (dict "name" "trusted-ca" "secret" $ca.existingSecret "path" "/etc/trove/ca" "items" $caItems) -}}
+{{- else -}}
+{{- $out = append $out (dict "name" "trusted-ca" "configMap" $ca.existingConfigMap "path" "/etc/trove/ca" "items" $caItems) -}}
+{{- end -}}
+{{- end -}}
 {{- if $s.databaseClientCert.existingSecret -}}
 {{- $out = append $out (dict "name" "database-client" "secret" $s.databaseClientCert.existingSecret "path" "/var/run/secrets/trove/database-client" "items" (list (dict "key" $s.databaseClientCert.certKey "path" "tls.crt") (dict "key" $s.databaseClientCert.keyKey "path" "tls.key"))) -}}
 {{- end -}}
@@ -142,6 +155,16 @@ that loads none of them does not get the private key.
 {{- define "trove.secretVolumes" -}}
 {{- range fromYamlArray (include "trove.secretMounts" .) }}
 - name: secret-{{ .name }}
+  {{- if .configMap }}
+  configMap:
+    name: {{ .configMap }}
+    defaultMode: 0440
+    items:
+    {{- range .items }}
+    - key: {{ .key }}
+      path: {{ .path }}
+    {{- end }}
+  {{- else }}
   secret:
     secretName: {{ .secret }}
     defaultMode: 0440
@@ -150,6 +173,7 @@ that loads none of them does not get the private key.
     - key: {{ .key }}
       path: {{ .path }}
     {{- end }}
+  {{- end }}
 {{- end }}
 {{- end -}}
 

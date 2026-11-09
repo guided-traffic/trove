@@ -1,0 +1,39 @@
+# Sizing profile small (R-HA-050): up to 50 concurrent clients and 500 GB of blobs. Layer it before your own values file:
+#   helm upgrade --install trove ./trove -f profiles/small.yaml -f my-values.yaml
+# The numbers are starting points taken from the table of R-HA-050, not measurements. The database and Valkey sizes are the operator's:
+# PostgreSQL 2 vCPU, 4 GiB, 3 instances with max_connections 150; Valkey maxmemory 256 MiB; no connection pooler.
+api:
+  replicaCount: 2
+  autoscaling:
+    enabled: false
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  spool:
+    sizeLimit: 5Gi
+packages:
+  replicaCount: 3
+  autoscaling:
+    enabled: false
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  spool:
+    sizeLimit: 10Gi
+worker:
+  replicaCount: 2
+  autoscaling:
+    enabled: false
+config:
+  database:
+    pool:
+      max_conns: 10
+  storage:
+    upload:
+      max_size: 8GiB                    # the spool of a packages pod (10Gi) less spool.headroom (2GiB): the largest upload one pod can hold

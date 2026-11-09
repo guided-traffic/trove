@@ -2758,6 +2758,29 @@
       },
       "additionalProperties": false
     },
+    "trustedCA": {
+      "type": "object",
+      "properties": {
+        "existingSecret": {
+          "type": "string"
+        },
+        "existingConfigMap": {
+          "type": "string"
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+          },
+          "uniqueItems": true
+        },
+        "useForObjectStore": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
     "serviceAccount": {
       "type": "object",
       "properties": {
