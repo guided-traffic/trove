@@ -78,13 +78,22 @@ var (
 	scatterErr  error
 )
 
+// scatterProfile is the profile useScatter switches to: scatter, or the profile named by TROVE_E2E_SCATTER_PROFILE (the sets of the
+// drain test of E5.9 name `drain`: the scatter profile with garbage collection without a grace period).
+func scatterProfile() string {
+	if p := os.Getenv("TROVE_E2E_SCATTER_PROFILE"); p != "" {
+		return p
+	}
+	return "scatter"
+}
+
 // useScatter puts the cluster into the scatter profile (three api and three packages replicas, every request to another
 // one) for the tests of E1.8 to E1.14 and waits for the six replicas. It runs once per process; TestMain returns the cluster
 // to the default profile at the end (TROVE_E2E_SCATTER_RETURN=0 keeps it).
 func useScatter(t testing.TB) {
 	t.Helper()
 	scatterOnce.Do(func() {
-		if err := runUp("scatter"); err != nil {
+		if err := runUp(scatterProfile()); err != nil {
 			scatterErr = err
 			return
 		}

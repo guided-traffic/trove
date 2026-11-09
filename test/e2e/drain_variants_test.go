@@ -70,6 +70,8 @@ type variantDrain struct {
 
 	// E: the backup Job
 	job string
+	// BackupFiles files of BackupFileMiB MiB are put into the installation before variant E's Job starts (16 of 1 MiB by default)
+	BackupFiles, BackupFileMiB int
 
 	runErr   error
 	runOut   string
@@ -166,9 +168,12 @@ func nodeOf(t testing.TB, podName string) string { return podNode(t, cfg.namespa
 // prepareVariantDrain picks the node of the variant (moving a primary that is in the way), records the pods on it and starts the
 // watches the variant's conditions read. Call it before the caller's load or probes start: the moves of a primary are not part of
 // the measured window.
-func prepareVariantDrain(t *testing.T, v drainVariant) *variantDrain {
+func prepareVariantDrain(t *testing.T, v drainVariant, opts ...func(*variantDrain)) *variantDrain {
 	t.Helper()
 	d := &variantDrain{V: v}
+	for _, o := range opts {
+		o(d)
+	}
 	// kubectl drain --pod-selector matches pods of every namespace: an installation left in trove-restore (its PostgreSQL cluster is
 	// named trove-db too, and its PodDisruptionBudget would hold the drain) is removed first
 	if out, err := kubectl("get", "namespace", restoreNS, "-o", "name"); err == nil && strings.TrimSpace(out) != "" {
@@ -375,10 +380,14 @@ func (d *variantDrain) prepareBackupJob(t *testing.T) {
 	adm := adminAPI(t)
 	repo := "vdrain-" + run
 	ensureRepo(t, adm, repo)
-	for i := range 16 {
+	files, mib := 16, 1
+	if d.BackupFiles > 0 {
+		files, mib = d.BackupFiles, d.BackupFileMiB
+	}
+	for i := range files {
 		p := fmt.Sprintf("variant-e/%02d.bin", i)
 		if r, err := retrying(func() (reply, error) {
-			return adm.send("PUT", filesAddr(repo)+"/"+p, randomBytes(1<<20), "Content-Type", "application/octet-stream")
+			return adm.send("PUT", filesAddr(repo)+"/"+p, randomBytes(mib<<20), "Content-Type", "application/octet-stream")
 		}); err != nil || r.Status != 201 {
 			t.Fatalf("put %s/%s: %v %s", repo, p, err, r)
 		}

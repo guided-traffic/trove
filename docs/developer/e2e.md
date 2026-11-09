@@ -130,7 +130,10 @@ test/e2e/                   the Go tests, build tag `e2e`, package e2e
   mirror_long_test.go       the long set `mirror-long`: the drain of the node of the process that runs a pass
   mirror_long_fault_test.go the failure suite of R-HA-052 on a pass (`mirror-long`): the process lost three ways, the upstream throttling across a drain and a kill, a PostgreSQL switchover and a Valkey failover
   vuln_failures_test.go     the vulnerability scanning under the failure suite (E5.13): a switchover during an evaluation, the block through a drain and the primaries' failovers, a killed worker
-  drain_variants_test.go    the harness of drain variants B to E of R-HA-059: the node pick, `drain.sh --also`, each variant's condition (Drain variants B to E, below)
+  drain_variants_test.go    the harness of drain variants A to E of R-HA-059: the node pick, `drain.sh --also`, each variant's condition (Drain variants B to E, below)
+  drain_load_test.go        E5.9: the drain flow of every variant under the full load (drainUnderLoad), TestDrainLoad (B, C, E), TestDrainLoadPooler (D) (The drain under the full load, below)
+  drain_transfers_test.go   E5.9: the long-transfer probes (downloads held on the evicted pod, repeated uploads)
+  drain_storage_test.go     E5.9: R-STOR-046's gc-full running on the evicted worker
   drain_variants_hold_test.go  the hold of variant B: the evicted Valkey primary stays lost until the Sentinels name another primary (Q-HA-181)
   vuln_drain_variants_test.go  E5.13: the blocks through drain variants B, C and E (set vuln-long)
   vuln_pooler_test.go       E5.13: the block through drain variant D on the cluster without the poolerss (set vuln-pooler)
@@ -185,6 +188,8 @@ make e2e SET=nuget-clients-down  # remove the NuGet client pods
 make e2e SET=nuget           # every TestNuGet... but TestNuGetClosing... and TestNuGetHA...: local, remote and virtual repositories, a project's partner (TestNuGetProjectPartner), E3.2, E3.6 and E3.7 with the real clients; the test upstream and three client pods (Q-NUGET-34, Q-NUGET-70); CI job e2e-nuget on every change
 make e2e SET=nuget-closing   # the additions of the closing run (TestNuGetClosing: R-NUGET-030 and R-NUGET-031 with Valkey stopped; TestNuGetClosingPublic: the read-only subset against nuget.org; exports TROVE_E2E_NUGET_CLOSING=1); CI leg of a closing dispatch
 make e2e SET=nuget-ha        # TestNuGetHA: drain variant A, the PostgreSQL switchover and the Valkey failover under the npm and NuGet load together (R-HA-059, R-ARCH-024); CI job e2e-nuget in the nightly workflow; starts both client pods and both test upstreams
+make e2e SET=drain-load      # E5.9: TestDrainLoad, drain variants B, C and E under the full load, the long-transfer probes and R-STOR-046's gc-full; both client pods; profile `drain`; all three variants in one cluster, for local runs; CI runs the legs drain-load-b, -c and -e (one variant each; needs about 12 cores and 10 GiB)
+make e2e SET=drain-load-pooler  # E5.9: TestDrainLoadPooler, drain variant D (an instance of the request pooler) under the same load, in the pooler profile (TROVE_POOLER=1, set by the set); CI job e2e-drain-pooler, nightly
 make nuget-clients-image     # only build the NuGet clients image into the local Docker
 make nuget-clients-smoke     # the image like a pod against the counting NuGet test upstream, without a cluster
 make nuget-reference-check   # perf/nuget/reference against a regeneration (no cluster, no Docker)
@@ -1219,7 +1224,7 @@ the pod watch sees with a deletion timestamp; the warm-up is every k6 request be
 
 **Not built in M2, with where it lands:** the NuGet rows of the load (`dotnet restore`, `dotnet nuget push`, k6's 20 %) are built
 ([Drain and failover under NuGet load](#drain-and-failover-under-nuget-load)); the
-long-transfer probes of R-HA-059 and variants B to E in E5.9; R-HA-057's "every replica writes to the new primary within 10 s", the alerts
+long-transfer probes of R-HA-059 and variants B to E are built ([The drain under the full load](#the-drain-under-the-full-load)); R-HA-057's "every replica writes to the new primary within 10 s", the alerts
 (`TroveValkeyUnavailable`; the dev profile runs no Prometheus) and the other Valkey rows in E5.10; the cold install with a replica killed, and `trove admin storage verify` after it, are built ([A replica killed during a cold install](#a-replica-killed-during-a-cold-install)). The
 (`TroveValkeyUnavailable`; the dev profile runs no Prometheus, [H-791](../spec/ha-and-helm.md#h-791--the-sentinel-alert-is-tested-as-a-rule-not-as-an-alert-of-a-running-installation)) and the other Valkey rows in E5.10, which
 are built now ([The failure suite ha-faults](#the-failure-suite-ha-faults)); `trove admin storage verify` in E5.2. The
@@ -1336,7 +1341,7 @@ whole again (its volume, where it has one, is bound to the node, so it cannot re
 variant drains; `TestVulnLong_R_VULN_026_RestoreKeepsBlocksAndTriage` removes it when it ends. The labels of the Valkey and CloudNativePG pods were read from the cluster (`kubectl get pods --show-labels`); the pooler label
 is `cnpg.io/poolerName`, the CloudNativePG operator's own, and `Verify` fails if a pod of the dependency that was on the node is still the same pod afterwards, so a selector that matched nothing cannot pass.
 
-The harness, [drain_variants_test.go](../../test/e2e/drain_variants_test.go), brings no load: the caller's probes or load run between `prepareVariantDrain` and `Verify`.
+The harness, [drain_variants_test.go](../../test/e2e/drain_variants_test.go), brings no load: the caller's probes or load run between `prepareVariantDrain` and `Verify`. The blocks of the vulnerability scanning (E5.13) run it under their probes, E5.9 under the full load ([below](#the-drain-under-the-full-load)); `variantA` (nothing else on the node, `drainNodeVariantA`) is the fifth value, so one flow serves A to E.
 
 ```go
 d := prepareVariantDrain(t, variantB)  // picks the node (moving a primary in the way), records the pods on it, starts the pod watch and the variant's monitors
@@ -1846,6 +1851,82 @@ stub (the cluster was in use by another agent), and the pod itself (only the ima
 
 `make npm-reference` writes [perf/npm/reference](../../perf/npm/reference); [perf/README.md](../../perf/README.md) says
 how and why. `make npm-reference-check` regenerates and diffs; it needs Docker, not the cluster.
+
+## The drain under the full load
+
+E5.9 ([R-HA-059](../spec/ha-and-helm.md#r-ha-059--node-drain-without-outage), [R-STOR-046](../spec/storage.md#r-stor-046--storage-work-per-role-and-across-replicas)'s
+drain criterion): variants A to E of the drain test under the whole load of R-HA-059's table. Every variant is the same flow,
+`drainUnderLoad` in [drain_load_test.go](../../test/e2e/drain_load_test.go) (the body that was `drainVariantA`; `TestNPMHA` still calls
+`drainVariantA`, which now calls it with `variantA`), with the node, the fault and the variant's own condition from the harness of
+[Drain variants B to E](#drain-variants-b-to-e). Decisions:
+[Q-HA-240](../spec/ha-and-helm.md#q-ha-240--the-variants-b-to-e-under-the-full-load-run-as-long-as-variant-a-and-judge-attempt-unchanged-on-the-jobs-that-moved)
+(lengths, the attempt check),
+[Q-HA-241](../spec/ha-and-helm.md#q-ha-241--the-long-transfer-probes-hold-one-download-on-the-evicted-pod-and-the-uploads-are-repeated-by-the-client)
+(the probes),
+[Q-HA-242](../spec/ha-and-helm.md#q-ha-242--the-variants-under-the-full-load-run-in-the-nightly-in-five-legs) (the legs),
+[Q-STOR-211](../spec/storage.md#q-stor-211--r-stor-046s-drain-criterion-runs-a-real-full-collection-run-on-the-evicted-worker-and-judges-the-retention-half-on-the-probe-jobs-until-retention-runs-exist)
+(R-STOR-046).
+
+| Set | Test | Variants | Cluster | CI leg (nightly and dispatch) |
+|---|---|---|---|---|
+| `nuget-ha` | `TestNuGetHA` | A, and the PostgreSQL switchover and Valkey failover of R-HA-052 | profile `drain`, both client pods | job `e2e-nuget`, lane 1 |
+| `drain-load` | `TestDrainLoad` | B, C, E in one cluster (local) | profile `drain`, both client pods | none: CI runs the three legs below |
+| `drain-load-b`, `-c`, `-e` | `TestDrainLoad`, one subtest each | B, C, E | as `drain-load`, a cluster per variant | job `e2e-nuget`, legs after `nuget-ha` (`max-parallel: 1`), lane 1, ports 8113, 8114, 8115 |
+| `drain-load-pooler` | `TestDrainLoadPooler` | D | profile `drain` and `TROVE_POOLER=1` | job `e2e-drain-pooler`, lane 2 after `e2e-edge`, port 8116 |
+
+The profile `drain` ([values-drain.yaml](../../deploy/dev/values-drain.yaml), `up.sh`, `lib.sh`) is the scatter profile with
+`storage.gc.grace_period: 0s`; the sets export `TROVE_E2E_SCATTER_PROFILE=drain`, which `useScatter` ([m1_env_test.go](../../test/e2e/m1_env_test.go))
+passes to `up.sh` in place of `scatter`.
+
+**The flow of one drain**, in `drainUnderLoad`:
+
+1. `prepare` of every extra (below): files made and the source of the downloads uploaded once per process. In variant E the preparation of the variant comes first: its backup Job starts with 200 MiB of its own (10 files of 20 MiB) before the 1 GiB file goes in, so that the Job does not copy the file ([Q-HA-245](../spec/ha-and-helm.md#q-ha-245--the-backup-of-variant-e-is-started-before-the-1-gib-file-is-put-into-the-installation)). Variant C judges its p99 outside the window of the switchover ([Q-HA-243](../spec/ha-and-helm.md#q-ha-243--variant-c-judges-its-latency-outside-the-switchover-window-and-bounds-the-requests-inside-it)); the job writes of a handler ride out the switchover ([Q-HA-244](../spec/ha-and-helm.md#q-ha-244--a-jobs-checkpoint-and-progress-writes-ride-out-a-postgresql-switchover)).
+2. `prepareVariantDrain`: the node of the variant (B, C and D may move a primary first), the pod watch, the log streams of the pods on the node.
+3. The load starts (`startFullLoad`: eight `npm ci` loops, four `dotnet restore` loops, the two publish loops, both k6 scripts).
+4. Extras `begin` (the download probes start), then the warm-up: 2 minutes from the start of the load.
+5. Six `system.probe` jobs of 450 steps start, and the test waits until both main workers run one (they start after the warm-up: forcing the
+   collection run took 3 minutes in the first run, and probe jobs started with the load had ended by the eviction). Extras `beforeDrain`: the full
+   collection run is started until the evicted worker holds it (a run the other worker claims is cancelled), then the upload probes start.
+6. `d.Run`: `drain.sh [--also ...] <node>`. Then 3 minutes of load, the load stops, every probe job ends.
+7. `d.Verify` (the variant's own condition and the shared ones), then the load's conditions (every command exits `0`, k6 only `2xx` and
+   `304`, the p99 from the first eviction until 2 minutes after the drain at most twice the warm-up's, every acknowledged publish
+   installs, the minimum counts of R-ARCH-024), the probe jobs (state, steps, resume from a cursor inside the run, `attempt` 1 for a job that
+   moved, and for every job in variant A), `checkEndpointRemoval`, the extras' `verify`, `noteResult` (`<kind>-ha-drain[-<variant>].json`), `d.Settle`.
+
+**The long-transfer probes** ([drain_transfers_test.go](../../test/e2e/drain_transfers_test.go)). Download source: a 1 GiB file of pseudo-random
+bytes (`dataFile`, as E1.13) in `generic-local/drain-load/1gib.bin`, uploaded once per process at full speed with the administrator's token.
+
+| Probe | Command | Started | Conditions |
+|---|---|---|---|
+| download 0 | `curl --limit-rate 2M -C - -D <dump> -o <file> .../1gib.bin`, started again (the partial file removed) until the first response's `X-Trove-Replica` names the `packages` pod on the drained node; after a cut the client runs the same command again (2 s later, at most six invocations, a dump per invocation) | with the load | exit `0` of the last invocation, SHA-256 of the file, exactly one cut and it by that pod, the next invocation answered `206`; no response other than `200` and `206` |
+| download 1 | the same, whichever replica answers | with the load | exit `0`, SHA-256; at most one cut per pod, and only by a pod the pod watch saw evicted |
+
+| upload 0 to 3 | `curl -T` of 400 MiB (`dataFile`) at `--limit-rate 2M` to `drain-load/up-<run>-<variant>-<i>.bin`, repeated from the start after a failure, at most three attempts | right before the fault | the last attempt answers `200`/`201`; at most one failed attempt, ending after the first eviction and after at least 30 s (a faster failure is a refusal, F-119, and fails the test); the file downloads with the SHA-256 of the source |
+
+A cut is an invocation of curl that received a body (`200`, `206`) and ended with an error; the pod named in its last response (`X-Trove-Replica`) cut it
+(`responseBlocks` reads the dump). The command of the table has `--retry 5 --retry-all-errors`; curl's retry starts at byte 0 and does not resume
+(the first run: the answer to the retry was `200` and the probe took 15m52s), so the probe has no `--retry` and the next invocation is the client's resume
+([Q-HA-241](../spec/ha-and-helm.md#q-ha-241--the-long-transfer-probes-hold-one-download-on-the-evicted-pod-and-the-uploads-are-repeated-by-the-client)). An evicted pod keeps serving a
+transfer for `server.shutdown_timeout` (110 s) and then resets it (R-HA-011), so a 512 s download held on it is cut about 115 s after
+the fault; the held probe makes that a condition and not a chance. The probes run in the test process on the host and reach the cluster through the
+edge, like the E1.13 transfers.
+
+**R-STOR-046's collection run** ([drain_storage_test.go](../../test/e2e/drain_storage_test.go)). Just before the fault the test uploads six
+files of 64 KiB and deletes them (their blobs are unreferenced and, with no grace period, collectable), starts `gc-full`
+(`POST /api/v1/system/tasks/gc-full/run`) and reads the job: when the replica that claimed it is a main `worker` pod on the drained node, the fault
+follows at once; when it is the other worker, the run is cancelled and started again with new garbage (at most 16 rounds; in the first run the claim went five times of six to the same worker, and waiting out each run cost 3 minutes). A run that deleted
+rows ends by waiting `storage.gc.delete_settle` (30 s), so it is in flight when the eviction comes. After the drain the job must be
+`succeeded`, on `attempt` 1, finished on a replica other than the first, and finished after the eviction of the worker that held it. The
+retention run of the criterion is not built (R-STOR-040, the lifecycle work of the full scope): the jobs of the queue `default` the criterion
+stands for are the probe jobs of step 3, and the retention run joins `storageJobs` when it exists.
+
+**Artifacts.** `full-ha-drain-b.json`, `-c.json`, `-e.json`, `-d.json` and `nuget-ha-drain.json` (the conditions' numbers), the logs of the
+evicted pods (`full-drain-<variant>-<pod>.log`), the header dumps of the download probes (`.out/e2e-data/drain-dl-<i>.hdr`, overwritten by
+the next variant), `drain-pod-watch.jsonl`, `drain-events.json`, the load's own files (`npm-load-drain-<variant>.json`, `nuget-load-drain-<variant>.json`, `k6-npm-drain-<variant>/`, `k6-nuget-drain-<variant>/`).
+
+**Not built.** The 5 minutes before and 10 minutes after of the table (the variants run 2 and 3, Q-HA-240); the retention run of R-STOR-046
+(not built in the product); a cut upload is repeated from its start, because no resumable generic upload exists. **Not yet measured.** No run
+of these legs is recorded on this page yet; the first nightly numbers go here with the run ids.
 
 ## The counting NuGet test upstream
 
@@ -3324,7 +3405,7 @@ Measured on kind after the fixes: `R_VULN_004` drained 42 s (released at 14 batc
 - The reference lockfile's recorded public answer (R-VULN-017's first criterion, E4b.5): no recorded answer exists in the repository (H-494).
 - Mode `repository` and the offline import (R-VULN-005), the fault cases of R-VULN-004, the matching corpus and the lifecycle's re-detection are the integration tier's.
 - `pg_stat_statements` over 10,000 cached downloads (R-VULN-015) and the object-store GET counters of a late advisory (R-VULN-011): the e2e profile has neither.
-- Drain variants under the full load are E5.9's.
+- Drain variants under the full load are E5.9's ([The drain under the full load](#the-drain-under-the-full-load)).
 - A worker killed mid-sync is not resumed (Q-VULN-89): the test asserts the specified outcome, a `failed` job and a clean next run; H-523 is the missing failure record.
 - A Windows row and Visual Studio: the NuGet clients image is Linux.
 

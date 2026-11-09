@@ -4,9 +4,38 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
+	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 )
+
+// A PostgreSQL switchover ends every connection for some seconds. The two writes a handler makes while it runs, its checkpoint and its
+// progress, ride it out: they repeat on a failover error with a growing pause for up to failoverWindow, so the attempt is not lost
+// (R-HA-059 variant C: every job kept its attempt; the first run of E5.9 showed attempt 2 on all six probe jobs).
+const (
+	failoverWindow = 30 * time.Second
+	failoverPause  = 200 * time.Millisecond
+	failoverMax    = 2 * time.Second
+)
+
+// retryFailover runs write until it does not fail with a failover error, the window is used up or ctx ends.
+func retryFailover(ctx context.Context, write func() (int64, error)) (int64, error) {
+	deadline := time.Now().Add(failoverWindow)
+	pause := failoverPause
+	for {
+		n, err := write()
+		if err == nil || !postgres.IsFailoverError(err) || time.Now().Add(pause).After(deadline) {
+			return n, err
+		}
+		select {
+		case <-ctx.Done():
+			return n, err
+		case <-time.After(pause):
+		}
+		pause = min(pause*2, failoverMax)
+	}
+}
 
 // Run is the handle a handler gets for the attempt it runs. The job's row is
 // Run.Job as claimed; Checkpoint is the state the previous attempt persisted.
@@ -41,8 +70,10 @@ func (r *Run) SaveCheckpoint(ctx context.Context, v any) error {
 	if err != nil {
 		return fmt.Errorf("jobs: checkpoint of %s: %w", r.ID, err)
 	}
-	n, err := q.New(r.w.o.Main).SaveJobCheckpoint(ctx, q.SaveJobCheckpointParams{
-		Checkpoint: string(b), ID: r.ID, LockedBy: r.w.o.UID, Attempt: int32(r.Attempt), //nolint:gosec // attempts are small
+	n, err := retryFailover(ctx, func() (int64, error) {
+		return q.New(r.w.o.Main).SaveJobCheckpoint(ctx, q.SaveJobCheckpointParams{
+			Checkpoint: string(b), ID: r.ID, LockedBy: r.w.o.UID, Attempt: int32(r.Attempt), //nolint:gosec // attempts are small
+		})
 	})
 	if err != nil {
 		return err
@@ -55,8 +86,10 @@ func (r *Run) SaveCheckpoint(ctx context.Context, v any) error {
 
 // SaveProgress records progress for the job API. total 0 means unknown.
 func (r *Run) SaveProgress(ctx context.Context, done, total int64, unit string) error {
-	n, err := q.New(r.w.o.Main).SaveJobProgress(ctx, q.SaveJobProgressParams{
-		Done: done, Total: total, Unit: unit, ID: r.ID, LockedBy: r.w.o.UID, Attempt: int32(r.Attempt), //nolint:gosec // attempts are small
+	n, err := retryFailover(ctx, func() (int64, error) {
+		return q.New(r.w.o.Main).SaveJobProgress(ctx, q.SaveJobProgressParams{
+			Done: done, Total: total, Unit: unit, ID: r.ID, LockedBy: r.w.o.UID, Attempt: int32(r.Attempt), //nolint:gosec // attempts are small
+		})
 	})
 	if err != nil {
 		return err

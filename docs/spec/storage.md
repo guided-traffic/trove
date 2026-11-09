@@ -3364,7 +3364,9 @@ Acceptance criteria:
   replicas and collection running on two `worker` replicas.
 - During [ha-and-helm.md](ha-and-helm.md) R-HA-059's drain test, one `worker` runs `gc-full` and
   another a retention run; both finish on the remaining `worker` replicas, and no client operation
-  of the test's load fails.
+  of the test's load fails. The drain test (E5.9) runs the
+  full collection run of this criterion; the retention run is not built yet, and the jobs of the queue `default` it stands for are
+  judged on the drain test's probe jobs ([Q-STOR-211](#q-stor-211--r-stor-046s-drain-criterion-runs-a-real-full-collection-run-on-the-evicted-worker-and-judges-the-retention-half-on-the-probe-jobs-until-retention-runs-exist)).
 - A source test fails when a package below `internal/blob` or the storage job handlers imports the
   Valkey client or calls a session-level advisory-lock function.
 
@@ -5226,6 +5228,29 @@ Context: R-HA-024 and R-HA-025 name `trove admin storage verify --since <t − s
 **Rationale:** the question after a crash or a restore is "which item cannot be served", and an operator cannot ask the API for it while the replicas are held not ready (R-HA-025). The command is a report: it leaves `content_status` to the scrub so that running it in the middle of an incident changes nothing a replica reads. Not verified: that the rows a point-in-time restore brings back and a GC deleted after *t* are exactly the rows that `--since <t − grace_period>` selects. They are the rows that were `deleting` or unreferenced at the time of the delete, which `blobs` does not date; `--since` therefore narrows a run, and a restore procedure that wants every lost object runs the command without it. The development agent revisits this when `blobs` gains a column that dates the last reference, or when a table is large enough that a full run is too slow (then a per-prefix split of the digest range, `--concurrency` aside).
 
 **Applied in the spec:** R-STOR-027 (the operator check and its acceptance criterion), R-HA-052's pod-crash row. Code and tests: [verify.go](../../internal/blob/verify/verify.go), [admin_storage.go](../../cmd/trove/admin_storage.go), `test/integration/storageverify`.
+### Q-STOR-211 · R-STOR-046's drain criterion runs a real full collection run on the evicted worker and judges the retention half on the probe jobs until retention runs exist
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the criterion has one `worker` run `gc-full` and another a retention run during the drain test of R-HA-059; both finish on the
+remaining workers. Two things stand in the way. A full run on an installation of a few thousand blobs ends in seconds, and a drain that
+meets no run in flight tests nothing. Retention runs (R-STOR-040) are not built; they belong to the lifecycle work of the full scope.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Start `gc-full` and hope the drain meets it | A run on the existing data | No new profile | A full run with no candidates ends at once; the precondition (a run in flight on the evicted worker) is a matter of timing |
+| (b) A profile without a grace period, fresh garbage, and a start of the run until the evicted worker claims it (chosen) | Profile `drain` (the scatter profile with `storage.gc.grace_period: 0s`); the test uploads and deletes six files, starts `gc-full`, and reads the job's replica; a run on another worker is cancelled and started again with fresh garbage. A run that deleted rows ends by waiting `delete_settle` (30 s, R-STOR-024), so the drain meets it in flight; the test then requires: `succeeded`, `attempt` 1, a different final replica, and a finish after the eviction of the worker that held it | The precondition is forced and proved, not hoped for; the product is unchanged | A profile with a grace period of 0 for these legs (the backup profile has it too); the number of rounds is probabilistic (up to 16; in the first run five of six rounds went to the same worker) |
+| (c) A test hook in the collector that slows the run | A fault-injection build | Deterministic length | A build other than the one that ships; the criterion is about the shipped release at shutdown |
+| (d) Wait for retention runs | Do not build the criterion | Honest | Leaves the collection half, which is real today, unjudged |
+
+**Choice:** (b), with the retention half judged on the `default` queue's probe jobs: the drain test runs six `system.probe` jobs through
+every drain, and each that moves must resume from its cursor with `attempt` 1 (R-HA-011); that is the claim "a job of the queue `default`
+finishes on another worker", with the job kind that exists. **Rationale:** the criterion's point is that the release at shutdown hands a
+long job over without an attempt and without a loss; the collection run is the storage job with the most state at that moment (claimed rows,
+S3 calls in flight, R-STOR-024). The retention run joins the test when R-STOR-040 is built: `drain_storage_test.go` starts it beside
+`gc-full` and applies the same four checks. The development agent would revisit (b) if a run shows the settle wait shorter than the time
+from the start of the run to the eviction (the test then fails with the finish time and the eviction time, not silently).
+**Applied:** `deploy/dev/values-drain.yaml`, `deploy/dev/up.sh` (profile `drain`), `test/e2e/drain_storage_test.go`, `docs/developer/e2e.md`.
 
 ## What this does not cover
 

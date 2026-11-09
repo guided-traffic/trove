@@ -36,6 +36,9 @@
 #   TROVE_PROFILE=alerts  the `alerts` e2e profile (R-HA-045, R-OPS-045, R-OPS-046): kube-prometheus-stack in the namespace monitoring (the Prometheus
 #                         operator, one Prometheus and kube-state-metrics; DEV_PROMETHEUS_*) and the trove release with the ServiceMonitor and the
 #                         PrometheusRule rendered (values-alerts.yaml). Installed for this profile only; it stays in the cluster afterwards.
+#   TROVE_PROFILE=drain   the `drain` e2e profile (R-HA-059, R-STOR-046, roadmap E5.9): the scatter profile with garbage collection without a grace
+#                         period, so that the full collection run the drain test starts has blobs to delete and is still waiting for them to
+#                         settle (storage.gc.delete_settle) when its worker is evicted (values-drain.yaml).
 #                         Run up.sh again without it to switch back.
 #   TROVE_POOLER=1        also install the transaction-mode poolers and point the chart at them
 #                         (pooler.yaml, values-pooler.yaml, R-HA-058). The profile carries what the drain of a pooler instance
@@ -69,7 +72,7 @@ SKIP_RELEASE="${TROVE_SKIP_RELEASE:-0}"
 POOLER="${TROVE_POOLER:-0}"
 PITR="${TROVE_PITR:-0}"
 PROFILE="${TROVE_PROFILE:-default}"
-case "$PROFILE" in default|scatter|bastion|vuln|mirror|backup|edge|alerts) ;; *) die "TROVE_PROFILE must be default, scatter, bastion, vuln, mirror, backup, edge or alerts, not '$PROFILE'" ;; esac
+case "$PROFILE" in default|scatter|bastion|vuln|mirror|backup|edge|alerts|drain) ;; *) die "TROVE_PROFILE must be default, scatter, bastion, vuln, mirror, backup, edge, alerts or drain, not '$PROFILE'" ;; esac
 IMAGE="${TROVE_IMAGE:-guidedtraffic/trove:dev}"
 # The published mode: both variables or none. A mixed setting would install a local build while the caller expects the release.
 RELEASE_VERSION="${TROVE_RELEASE_VERSION:-}"

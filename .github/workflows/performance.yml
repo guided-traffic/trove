@@ -7,8 +7,10 @@
 # npm load); job e2e-upgrade runs the set upgrade (published releases upgraded to the commit's image under the npm and NuGet loads, with a
 # browser journey; switched off in the nightly run until the first stable release, Q-ARCH-340, and run by a dispatch with sets=upgrade); job npm-ha-soak runs the 20-minute pod crash of R-HA-052 under the npm load and the npm load scripts of R-ARCH-027
 # (Q-HA-67); job e2e-nuget runs nuget-ha (TestNuGetHA: the drain and failover under the NuGet load and the npm load, on the large class,
-# Q-HA-102) and cold-crash (TestColdCrash, E5.2: a replica force-deleted during a cold npm ci and dotnet restore, then trove admin storage verify,
-# Q-HA-220; the two legs run one at a time); job e2e-ci runs ci-ha (E4.7); job e2e-bastion runs the sets bastion and
+# Q-HA-102), drain-load-b, -c and -e (TestDrainLoad: drain variants B, C and E of R-HA-059 under that load, one cluster each, E5.9, Q-HA-242)
+# and cold-crash (TestColdCrash, E5.2: a replica force-deleted during a cold npm ci and dotnet restore, then trove admin storage verify,
+# Q-HA-220; the legs run one at a time); job e2e-drain-pooler runs drain-load-pooler (TestDrainLoadPooler: variant D in the pooler profile);
+# job e2e-ci runs ci-ha (E4.7); job e2e-bastion runs the sets bastion and
 # bastion-long (R-BAS-049); job e2e-vuln runs vuln, vuln-long and vuln-pooler (R-VULN-029; vuln-pooler is the blocks through drain variant D on the cluster
 # with the poolers of R-HA-058, on large); job e2e-mirror runs mirror and mirror-long (R-REPO-059, an OCI pass among them); job e2e-oci runs oci-long (R-OCI-011: a push cut by the drain of the receiving pod); job e2e-backup runs the set backup (R-BAK-029: the restore
 # drill, the drain and the kill -9 of a backup and a restore, the revocation journal across a restore); job e2e-edge runs the set edge (R-HA-039's large and
@@ -32,7 +34,7 @@
 # Sizes: docs/developer/releasing.md#ci.
 # Q-ARCH-431: the kind legs on the large class run in three lanes, so at most three large legs of this run are active at once
 # (one per worker node of the class: three nodes of 16 CPUs, a kind leg about 12 cores). Lane 1: e2e-npm (npm-ha, then ha-suite, ha-faults and ha-pooler; Q-HA-250),
-# then e2e-nuget. Lane 2: e2e (drain-roles, then failover), then npm-ha-soak, then e2e-edge. Lane 3: e2e-vuln (its large leg vuln-pooler, the
+# then e2e-nuget (nuget-ha, drain-load-b, -c, -e, cold-crash). Lane 2: e2e (drain-roles, then failover), then npm-ha-soak, then e2e-edge, then e2e-drain-pooler. Lane 3: e2e-vuln (its large leg vuln-pooler, the
 # GitHub-hosted legs are not in the lanes), then e2e-backup, e2e-mirror (mirror, then mirror-long), e2e-oci. Each lane job
 # needs its predecessor with `!cancelled()`, so a leg the dispatch does not select, or a failed one, does not stop the lane.
 name: HA and Performance (nightly)
@@ -159,7 +161,7 @@ jobs:
   # after latency, so that no perf job shares the large VM with another job of this workflow or with the other perf job.
   latency:
     name: P-13 and P-14 latency (Valkey 9.1)
-    needs: [e2e, e2e-npm, npm-ha-soak, e2e-nuget, e2e-ci, e2e-bastion, e2e-vuln, e2e-mirror, e2e-backup, e2e-edge, e2e-alerts, e2e-upgrade]
+    needs: [e2e, e2e-npm, npm-ha-soak, e2e-nuget, e2e-drain-pooler, e2e-ci, e2e-bastion, e2e-vuln, e2e-mirror, e2e-backup, e2e-edge, e2e-alerts, e2e-upgrade]
     if: ${{ !cancelled() && (!inputs.sets || contains(format(',{0},', inputs.sets), ',latency,')) }}
     runs-on: large
     timeout-minutes: 45
@@ -229,7 +231,7 @@ jobs:
   # TROVE_PERF_GATE=1 makes a value above its target fail the job; a failed job opens an issue that lists the misses.
   vuln-perf:
     name: R-VULN-028 vulnerability scanning performance (V-1 to V-9)
-    needs: [e2e, e2e-npm, npm-ha-soak, e2e-nuget, e2e-ci, e2e-bastion, e2e-vuln, e2e-mirror, e2e-edge, e2e-alerts, e2e-upgrade, latency]
+    needs: [e2e, e2e-npm, npm-ha-soak, e2e-nuget, e2e-drain-pooler, e2e-ci, e2e-bastion, e2e-vuln, e2e-mirror, e2e-edge, e2e-alerts, e2e-upgrade, latency]
     if: ${{ !cancelled() && (!inputs.sets || contains(format(',{0},', inputs.sets), ',vuln-perf,')) }}
     runs-on: large
     timeout-minutes: 150
@@ -895,11 +897,12 @@ jobs:
   # and the set loads them without building them again (Q-ARCH-327). TestNuGetHA needs about 16 cores under its load (Q-HA-102), far more
   # than a GitHub-hosted runner's 4, so the job runs on the large class; the set loads the 2.3 GB clients images into the control-plane
   # node only (the node of the client pods), which keeps them inside a large pod's Docker storage. Edge port 8090 is the first free port of
-  # both workflows.
+  # both workflows. The legs drain-load-b, -c and -e (TestDrainLoad, E5.9, edge ports 8113 to 8115) run the variants B, C and E of R-HA-059 under the same load,
+  # with the long-transfer probes and R-STOR-046's full collection run, one variant per cluster.
   # Leg cold-crash (E5.2, TestColdCrash: a packages replica force-deleted during a cold npm ci and a cold dotnet restore of three clients
   # each, then trove admin storage verify) needs the same two clients images and both test upstreams, so it is a leg of this job; edge
   # port 8110 is the first free port of both workflows.
-  # Lane 1 (Q-ARCH-431): after e2e-npm, whatever its result; the legs nuget-ha and cold-crash run one at a time (max-parallel: 1).
+  # Lane 1 (Q-ARCH-431): after e2e-npm, whatever its result; the legs nuget-ha, drain-load-b, -c, -e and cold-crash run one at a time (max-parallel: 1).
   e2e-nuget:
     name: e2e-nuget on kind (${{ matrix.set }})
     needs: e2e-npm
@@ -915,6 +918,12 @@ jobs:
             port: "8090"
           - set: cold-crash
             port: "8110"
+          - set: drain-load-b
+            port: "8113"
+          - set: drain-load-c
+            port: "8114"
+          - set: drain-load-e
+            port: "8115"
     env:
       TROVE_IMAGE: guidedtraffic/trove:dev
       TROVE_DEV_CLUSTER: trove-${{ matrix.set }}-${{ github.run_id }}
@@ -1078,6 +1087,194 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: e2e-nuget-cluster-state-${{ matrix.set }}
+          path: .out/cluster-state/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: make dev-down
+        if: always() && steps.leg.outputs.run == 'true'
+        run: make dev-down
+
+  # Drain variant D of R-HA-059 (an instance of the transaction-mode pooler on the drained node, R-HA-058) under the whole load, the long-transfer probes
+  # and the full collection run of R-STOR-046 (set drain-load-pooler, TestDrainLoadPooler, roadmap E5.9): the cluster in the scatter profile with the
+  # poolers and garbage collection without a grace period. The steps are those of e2e-nuget, whose legs run variant A (nuget-ha) and the variants B, C
+  # and E (drain-load) under the same load. Edge port 8116 is the first free port of both workflows.
+  # Lane 2 (Q-ARCH-431): after e2e-edge, whatever its result.
+  e2e-drain-pooler:
+    name: e2e-drain-pooler on kind (${{ matrix.set }})
+    needs: e2e-edge
+    if: ${{ !cancelled() }}
+    runs-on: large
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - set: drain-load-pooler
+            port: "8116"
+    env:
+      TROVE_IMAGE: guidedtraffic/trove:dev
+      TROVE_DEV_CLUSTER: trove-${{ matrix.set }}-${{ github.run_id }}
+      TROVE_DEV_HTTP_PORT: ${{ matrix.port }}
+      # Both clients images are built once by the steps make npm-clients-image and make nuget-clients-image; deploy/dev/e2e.sh loads them
+      # and does not build them again.
+      TROVE_E2E_NPM_CLIENTS_IMAGE_BUILD: "0"
+      TROVE_E2E_NUGET_CLIENTS_IMAGE_BUILD: "0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Select the leg (the dispatch input sets)
+        id: leg
+        uses: ./.github/actions/select-leg
+        with:
+          leg: ${{ matrix.set }}
+          job: e2e-drain-pooler
+          sets: ${{ inputs.sets }}
+
+      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
+      # nodes, the images and the build caches need; no job here uses them.
+      - name: Load the tool pins
+        if: steps.leg.outputs.run == 'true'
+        uses: ./.github/actions/load-pins
+
+      - name: Set up Go
+        if: steps.leg.outputs.run == 'true'
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install build tools
+        if: steps.leg.outputs.run == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential jq
+
+      - name: Install the pinned helm
+        if: steps.leg.outputs.run == 'true'
+        uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install the pinned kubectl
+        if: steps.leg.outputs.run == 'true'
+        uses: azure/setup-kubectl@v5
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: Install the pinned kind
+        if: steps.leg.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin"
+          GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Install the pinned Docker Buildx
+        timeout-minutes: 16
+        if: steps.leg.outputs.run == 'true'
+        uses: ./.github/actions/install-buildx
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
+      - name: Set up Docker Buildx
+        if: steps.leg.outputs.run == 'true'
+        uses: docker/setup-buildx-action@v4
+        with:
+          cache-binary: false
+
+      - name: Log in to Docker Hub (the dev profile's images)
+        if: steps.leg.outputs.run == 'true'
+        uses: docker/login-action@v4
+        with:
+          username: guidedtraffic
+          password: ${{ secrets.DOCKERHUB_PAT }}
+
+      - name: make npm-clients-image
+        if: steps.leg.outputs.run == 'true'
+        run: make npm-clients-image
+
+      - name: make nuget-clients-image
+        if: steps.leg.outputs.run == 'true'
+        run: make nuget-clients-image
+
+      - name: The dev profile's dependency pins and the runner architecture
+        if: steps.leg.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          [ "$(uname -m)" = "x86_64" ] || { echo "::error::the dev profile needs an amd64 runner (or qemu), got $(uname -m)"; exit 1; }
+          echo "kind $KIND_VERSION, kubectl $KUBECTL_VERSION, helm $HELM_VERSION, NuGet SDK $E2E_NUGETCLIENTS_SDK_IMAGE"
+          kind version
+          kubectl version --client
+          helm version --short
+          for u in https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator; do
+            curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
+          done
+
+      - name: make image
+        if: steps.leg.outputs.run == 'true'
+        run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
+
+      - name: Fetch the dev charts that are GitHub release assets
+        timeout-minutes: 16
+        if: steps.leg.outputs.run == 'true'
+        env:
+          # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
+          GITHUB_TOKEN: ${{ github.token }}
+        run: make dev-charts
+
+      - name: make dev-up
+        if: steps.leg.outputs.run == 'true'
+        timeout-minutes: 25
+        run: make dev-up
+
+      - name: make e2e SET=${{ matrix.set }}
+        if: steps.leg.outputs.run == 'true'
+        timeout-minutes: 80
+        run: make e2e SET=${{ matrix.set }}
+
+      - name: Upload the go test -json report
+        if: always() && steps.leg.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-drain-pooler-report-${{ matrix.set }}
+          path: .out/test-e2e.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload the matrix report, the clients image log, the test upstream's counters, the client logs and the k6 logs
+        if: always() && steps.leg.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-drain-pooler-artifacts-${{ matrix.set }}
+          path: .out/e2e/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Cluster state (failure only)
+        if: failure() && steps.leg.outputs.run == 'true'
+        run: |
+          set -u
+          ctx="kind-${TROVE_DEV_CLUSTER}"
+          mkdir -p .out/cluster-state
+          for ns in trove ingress-controller cert-manager valkey-operator-system internal-secrets-operator-system cnpg-system kube-system; do
+            kubectl --context "$ctx" -n "$ns" get pods -o wide > ".out/cluster-state/pods-$ns.txt" 2>&1 || true
+            kubectl --context "$ctx" -n "$ns" describe pods > ".out/cluster-state/describe-$ns.txt" 2>&1 || true
+            kubectl --context "$ctx" -n "$ns" get events --sort-by=.lastTimestamp > ".out/cluster-state/events-$ns.txt" 2>&1 || true
+          done
+          deploy/dev/cluster-logs.sh .out/cluster-state
+          kubectl --context "$ctx" get nodes -o wide > .out/cluster-state/nodes.txt 2>&1 || true
+          helm --kube-context "$ctx" -n trove status trove > .out/cluster-state/helm-status.txt 2>&1 || true
+          docker ps -a > .out/cluster-state/docker-ps.txt 2>&1 || true
+          cp -r .dev/logs .out/cluster-state/dev-logs 2>/dev/null || true
+
+      - name: Upload the cluster state (failure only)
+        if: failure() && steps.leg.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-drain-pooler-cluster-state-${{ matrix.set }}
           path: .out/cluster-state/
           if-no-files-found: warn
           retention-days: 14
@@ -2277,7 +2474,7 @@ jobs:
   # (Q-ARCH-431). A red leg is a finding and holds nothing (owner, 2026-11-01). Edge port 8104.
   e2e-edge:
     name: e2e-edge on kind (edge)
-    # Lane 2 (Q-ARCH-431): after npm-ha-soak, whatever its result.
+    # Lane 2 (Q-ARCH-431): after e2e-edge, whatever its result.
     needs: npm-ha-soak
     if: ${{ !cancelled() }}
     runs-on: large

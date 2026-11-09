@@ -68,7 +68,7 @@ selects are never touched.
 | `make dev-pg-kill` | `pg-kill.sh` | force-deletes the PostgreSQL primary pod, waits until the operator reports a healthy cluster |
 | `make dev-pg-stop DURATION=30s` | `pg-stop.sh 30s` | fences every instance of `trove-db` (`cnpg.io/fencedInstances`, PostgreSQL stops, pods and volumes stay), waits, removes the fence, waits for a healthy cluster |
 | `make dev-drain` | `drain.sh` | the E0.14 test: drains a node with an `api`, a `packages` and a `worker` pod under the k6 load and cursor-persisting jobs; `drain.sh <node>` is the drain alone, `drain.sh --pick` prints the node; `drain.sh --also valkey\|postgres\|pooler <node>` also drains that dependency's pods on the node in a run of its own and waits until it is whole again (drain variants B, C and D of R-HA-059, [e2e.md](e2e.md#drain-variants-b-to-e)) |
-| `make e2e SET=push\|failover\|access-long\|full\|drain\|npm\|npm-ha\|npm-ha-crash\|nuget\|nuget-ha\|<regexp>` | `e2e.sh` | the end-to-end suite, see [e2e.md](e2e.md); `npm-ha` drains a node and fails PostgreSQL and Valkey over under the npm load, `npm-ha-crash` force-deletes pods under it ([E2.11](e2e.md#drain-and-failover-under-npm-load)); `nuget-clients`, `nuget`, `nuget-closing`, `nuget-ha` start NuGet client pods (the .NET SDK and nuget.exe on Mono) and, but for the first, the counting NuGet test upstream ([the NuGet clients](e2e.md#the-nuget-clients)) |
+| `make e2e SET=push\|failover\|access-long\|full\|drain\|npm\|npm-ha\|npm-ha-crash\|nuget\|nuget-ha\|<regexp>` | `e2e.sh` | the end-to-end suite, see [e2e.md](e2e.md); `npm-ha` drains a node and fails PostgreSQL and Valkey over under the npm load, `npm-ha-crash` force-deletes pods under it ([E2.11](e2e.md#drain-and-failover-under-npm-load)); `drain-load` and `drain-load-pooler` run drain variants B to E under the full load ([E5.9](e2e.md#the-drain-under-the-full-load)); `nuget-clients`, `nuget`, `nuget-closing`, `nuget-ha` start NuGet client pods (the .NET SDK and nuget.exe on Mono) and, but for the first, the counting NuGet test upstream ([the NuGet clients](e2e.md#the-nuget-clients)) |
 | `make release-smoke VERSION=x.y.z`, `make release-smoke-guard` | `release-smoke.sh verify`, `release-smoke.sh guard` | the post-release check of E5.8: `release-smoke` needs no cluster (the published chart, image digest, attestations and SPDX asset of a release); `release-smoke-guard` needs a cluster installed in the published mode and checks that every pod runs the digest ([e2e.md](e2e.md#the-published-mode)) |
 | `make chart-lint`, `make chart-test` | `test/chart/lint.sh`, `test/chart/test.sh` | see [helm-chart.md](helm-chart.md#value-sets-and-tests) |
 
@@ -99,6 +99,13 @@ for this backend only, so HAProxy keeps no idle connection to a pod and balances
 own. Run `up.sh` without the variable to switch back. [TestE99Scatter](../../test/e2e/e99_scatter_test.go) (E0.11)
 switches to the profile, runs the M0 checks, shows sixty sequential requests reaching the three pods twenty times each
 and runs the 100 requests/s load; `e2e.sh` returns the cluster to the default profile afterwards.
+
+### The `drain` profile
+
+`TROVE_PROFILE=drain deploy/dev/up.sh` is the `scatter` profile with `storage.gc.grace_period: 0s` ([values-drain.yaml](../../deploy/dev/values-drain.yaml)): a blob that nothing
+references is collectable at once, so the full collection run that the drain test of E5.9 starts has blobs to delete and is still waiting for them to settle when its
+worker is evicted ([the drain under the full load](e2e.md#the-drain-under-the-full-load), R-STOR-046). The sets `nuget-ha`, `drain-load` and `drain-load-pooler` select it with
+`TROVE_E2E_SCATTER_PROFILE=drain`. Run `up.sh` without the variable to switch back.
 
 ### The `bastion` profile
 

@@ -98,6 +98,11 @@ func classify(err error) retryKind {
 	return retryNo
 }
 
+// IsFailoverError reports whether err is what a failover or a restart of the server or pooler produces (a connection that is gone,
+// refused or read-only, SQLSTATE 57P01, 57P02, 57P03, 25006, 53300, class 08): the statement can run again once a new connection finds the
+// new primary. A statement whose outcome is unknown (a lost COMMIT) is not one.
+func IsFailoverError(err error) bool { return classify(err) == retryFailover }
+
 // isTLSVerification reports a failed verification of the server's certificate or
 // of the chain it presented: unknown authority, wrong host name, expired, not
 // yet valid. pgconn wraps it in a ConnectError, which classify would take for an
