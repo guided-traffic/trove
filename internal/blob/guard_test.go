@@ -150,7 +150,9 @@ func TestGuardBreaker(t *testing.T) {
 		now = time.Now()
 		g, mem, _ := newGuard(t)
 		for _, code := range []string{"AccessDenied", "NoSuchBucket"} {
-			mem.SetFault(func(op, _ string) error { return &blob.StoreError{Op: op, Status: 403, Code: code, Kind: blob.KindConfig} })
+			mem.SetFault(func(op, _ string) error {
+				return &blob.StoreError{Op: op, Status: 403, Code: code, Kind: blob.KindConfig}
+			})
 			for i := 0; i < 20; i++ {
 				_ = head(g)
 			}

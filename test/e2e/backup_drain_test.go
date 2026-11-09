@@ -206,7 +206,7 @@ func TestBackupDrain(t *testing.T) {
 	zero := 0
 	var drainBackupID string
 
-	t.Run("R-BAK-012 a node drain during a backup: the Job completes with backoffLimit 0 and the eviction is no failure", func(t *testing.T) {
+	t.Run("R-HA-007 R-HA-052 R-HA-060 R-BAK-012 a node drain during a backup: the Job completes with backoffLimit 0 and the eviction is no failure", func(t *testing.T) {
 		node := bakDrainNode(t)
 		job := "bak-drain-" + run
 		bakCreateJob(t, bakJob{name: job, backoff: &zero, env: slow(bakFreshPrefix(run, "drain")), node: node})
@@ -229,7 +229,7 @@ func TestBackupDrain(t *testing.T) {
 		timings.set("drainDuringBackup", map[string]any{"node": node, "pods": end.Pods, "exits": end.Exits})
 	})
 
-	t.Run("R-BAK-010 kill -9 of the backup pod during copying: the retry pod takes over after the lease and the Job completes", func(t *testing.T) {
+	t.Run("R-HA-007 R-HA-052 R-HA-060 R-BAK-010 kill -9 of the backup pod during copying: the retry pod takes over after the lease and the Job completes", func(t *testing.T) {
 		job := "bak-kill-" + run
 		two := 2
 		env := slow(bakFreshPrefix(run, "kill"))
@@ -265,7 +265,7 @@ func TestBackupDrain(t *testing.T) {
 		restoreNSScript(t, args...)
 	}
 
-	t.Run("R-BAK-012 a node drain during the blob copy of a restore: the Job completes with restore.backoffLimit 0", func(t *testing.T) {
+	t.Run("R-HA-007 R-HA-052 R-HA-060 R-BAK-012 a node drain during the blob copy of a restore: the Job completes with restore.backoffLimit 0", func(t *testing.T) {
 		restoreNSScript(t, "infra")
 		// The restore Job has no scheduling values, so the pod is steered: every worker node but one is cordoned while the Job is created,
 		// and the one that stays open holds neither database primary (a PodDisruptionBudget refuses their eviction).
@@ -324,7 +324,7 @@ func TestBackupDrain(t *testing.T) {
 		timings.set("drainDuringRestore", map[string]any{"node": node, "pods": end.Pods, "exits": end.Exits})
 	})
 
-	t.Run("R-BAK-021 kill -9 of the restore pod during the blob copy: the next pod resumes and the Job completes", func(t *testing.T) {
+	t.Run("R-HA-007 R-HA-052 R-HA-060 R-BAK-021 kill -9 of the restore pod during the blob copy: the next pod resumes and the Job completes", func(t *testing.T) {
 		restoreNSScript(t, "infra")
 		restoreWith(t, "2")
 		pod, rlog := restoreCopyStarted(t)

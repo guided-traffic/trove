@@ -676,7 +676,7 @@ trove MUST behave as in this table. Each row is exercised by the failure-injecti
 | Object storage unreachable from all replicas, for any duration | Circuit breaker (R-STOR-033), `objectStore` check, alert `TroveObjectStoreUnreachable` | Behavior per [storage.md](storage.md) R-STOR-036: new uploads `503`, downloads of stored content `503`, metadata, listings, deletes, deduplicated uploads and the API keep working. Running replicas stay ready (R-HA-008, Q-HA-1). A replica that starts during the outage stays not ready until its startup check (R-STOR-035) succeeds; it retries without exiting, so it becomes ready as soon as the store returns | Degraded: reads of metadata, the UI, logins and CI token exchange succeed; blob transfers fail with retryable `503` | Automatic; no blob is marked missing because of errors |
 | Object storage unreachable from one replica only | Its circuit opens; peers' do not; alert `TroveObjectStoreUnreachableSingleReplica` | That replica's blob requests fail fast with `503` and `Retry-After`; it stays ready | Blob requests that hit it fail; clients' retries are balanced by the edge proxy and usually reach another replica | Automatic when its network path heals; otherwise the responder deletes the pod |
 | S3 throttling (`503 SlowDown`) | SDK retryer | Retries with backoff (R-STOR-033) | Higher latency | The content-addressed key layout spreads load across prefixes (R-HA-050) |
-| S3 credentials fail (expired web identity, revoked key) | `AccessDenied`, refresh error | Counted as object-store failure; logged with the credential source, never the secret | As the outage rows | Fix the credential; static key files are re-read (R-STOR-031) |
+| S3 credentials fail (expired web identity, revoked key) | `InvalidAccessKeyId`, `SignatureDoesNotMatch`, `ExpiredToken` and the other answers that name the credential, or a refresh error; a plain `AccessDenied` for one operation is an answer about the request and does not count ([Q-HA-254](#q-ha-254--a-store-answer-that-rejects-the-credential-counts-against-the-object-store-circuit)) | Counted as object-store failure: the circuit opens after `failure_threshold` of them; one `WARN` line when it opens, with the credential source and the store's code, never the secret | As the outage rows | Fix the credential; static key files are re-read (R-STOR-031) |
 | Valkey primary lost or switched over (Sentinel failover) | Command errors, timeouts, `READONLY`, closed connections; Sentinel's `switch-master` event as an early hint | Each Valkey use falls back for that call (R-HA-057); the client re-resolves the primary through Sentinel and checks its `ROLE` (R-HA-056); after `valkey.circuit_breaker.failure_threshold` failures the circuit skips Valkey for `open_duration`; replicas stay ready (Q-HA-13) | None; latency rises; a concurrent cache miss may be fetched upstream once per replica instead of once | Automatic, within Sentinel's `down-after-milliseconds` plus the failover and one reconnect backoff; when the election of the remaining Sentinels is split (two Sentinels left after a drain or a node loss), Sentinel starts the next automatic failover only after twice `failover-timeout` (2 minutes at the default), and trove runs degraded until then or until the primary returns (R-HA-057) |
 | Sentinel quorum lost (fewer than a majority of Sentinels reachable) | Sentinel queries fail or time out; `trove_valkey_sentinels_reachable`, the number of configured Sentinels that answered the last probe of all of them (R-HA-056 step 4, R-HA-057) | Existing connections to the primary keep working; a reconnect needs one reachable Sentinel; no failover can happen meanwhile | None while the primary is healthy; if the primary fails too, as the next row | Restore the Sentinels; alert `TroveValkeySentinelsDegraded` |
 | Valkey unavailable for every replica, for any duration | Circuit open on every replica, `valkey` check, alert `TroveValkeyUnavailable` | Degraded mode (R-HA-057): fetch collapse and negative caching per replica, rate limits approximated per replica, changes applied at the next change-log poll (R-HA-004); replicas stay ready; a replica started during the outage becomes ready (Q-HA-13) | None; upstream load rises, changes take up to `cluster.epoch_poll_interval` | Automatic; nothing to repair in Valkey |
@@ -2096,13 +2096,15 @@ k6 records only `2xx` and `304`:
   then to 0, while the primary stays healthy. Zero failed; running replicas do not degrade; the
   gauge drops to 1 and then 0 within `valkey.sentinel.refresh_interval` plus 1 s;
   `TroveValkeySentinelsDegraded` fires.
-- **Content loss:** `FLUSHALL` on the primary with a test credential. Zero failed; a counting
-  upstream stub records at most one fetch per replica for each object that was in flight.
+- **Content loss:** `FLUSHALL` on the primary with a test credential. Zero failed; `/readyz` answers `200` throughout; a counting
+  upstream stub records at most one fetch per replica for each object that was in flight (measured on three documents that are in flight when the flush comes, [Q-HA-255](#q-ha-255--the-flushall-criterion-is-run-on-documents-that-are-in-flight)).
 - **Stale content:** a negative-cache entry written straight into Valkey with a creation time in
   the future, and another older than a covering invalidation, are both ignored, and the request
   reaches the upstream (R-ARCH-030).
-- **Slow Valkey:** a fault proxy delays every Valkey command by 2 s. The circuits open, and the p99
-  of the k6 load stays below its baseline plus twice `valkey.command_timeout`.
+- **Slow Valkey:** every Valkey command waits up to 2 s (a `CLIENT PAUSE 2000 ALL` on the primary, renewed after a gap of 300 ms,
+  [Q-HA-252](#q-ha-252--the-slow-valkey-is-a-repeated-client-pause-on-the-primary-not-a-fault-proxy)). Zero failed; `/readyz` answers `200`
+  throughout; the circuit opens on every serving replica; the p99 of the k6 load stays below its baseline plus twice
+  `valkey.command_timeout`; after the end `degraded` clears within `open_duration` plus `health_check_interval` plus 5 s.
 
 ## Upgrades and migrations
 
@@ -5660,7 +5662,7 @@ against the local profile (R-HA-051) in CI. Load comes from real clients in para
 | PostgreSQL switchover | `kubectl cnpg promote` | Zero failed iterations |
 | PostgreSQL primary loss | Force-delete the primary pod | Failures only within `retry.maxElapsed`, all `503`; recovery without intervention |
 | PostgreSQL partition of one replica | NetworkPolicy denying egress to PostgreSQL for one pod | That pod unready within 15 s; no failed iteration overall; its leases move |
-| PostgreSQL outage | Scale the database to 0 instances for 2 min (hibernation) | No container restart; full recovery within 30 s of return |
+| PostgreSQL outage | PostgreSQL stopped in every instance for 2 min (the cluster fenced, so no instance serves; [Q-HA-251](#q-ha-251--what-the-clients-may-see-of-the-database-at-0-instances-for-2-minutes)), under the npm load | No container restart and `/healthz` `200` throughout; every replica turns unready and ready again; every replica ready and the edge answering within 30 s of the cluster reporting two ready instances again; a k6 request fails only with `503` and only between the start of the outage and that bound; an `npm` command that overlaps the outage and the bound may fail, with the `503` in its output, and every other one exits `0` ([Q-HA-251](#q-ha-251--what-the-clients-may-see-of-the-database-at-0-instances-for-2-minutes)); every acknowledged publish installs |
 | Object-store outage | The S3 store scaled to 0 and kept stopped for 30 s and for 5 min, counted from the return of the stop ([Q-STOR-150](storage.md#q-stor-150--how-long-the-outage-test-keeps-the-store-stopped-and-what-a-k6-failure-inside-it-is)); during the 5-minute run one replica is deleted | Metadata, UI and API succeed throughout; blob transfers answer `503` with `Retry-After` (R-STOR-036); no running replica turns unready (R-HA-008); the replacement pod started during the outage stays not ready with its container restart count unchanged, because the startup check retries without exiting (R-STOR-035), and becomes ready within 60 s after the store returns; full recovery within `storage.s3.circuit_breaker.open_duration` + 10 s. The store keeps its objects over the outage ([Q-STOR-147](storage.md#q-stor-147--the-dev-profiles-object-store-keeps-its-objects-over-an-outage)); an `npm` command that overlaps the outage may fail, with the `503`, and every other one exits `0` ([Q-STOR-148](storage.md#q-stor-148--what-the-npm-loops-may-see-of-an-object-store-outage)) |
 | Node drain | R-HA-059's drain test, variants A to E | R-HA-059's pass conditions |
 | Node loss | `docker stop` of a kind worker node that hosts an `api`, a `packages` and a `worker` pod and no primary and no operator ([Q-HA-104](#q-ha-104--the-node-of-the-node-loss-scenario)) | Replacement pods ready within `nodeFailureTolerationSeconds` + 60 s of the node being declared lost ([Q-HA-103](#q-ha-103--the-node-loss-bound-is-counted-from-the-moment-the-cluster-declares-the-node-lost)); no duplicate singleton work (the lease sessions of R-HA-006); a client command that was running at the loss may fail with a network error, every later one exits `0` ([Q-HA-105](#q-ha-105--what-the-npm-loops-may-see-of-a-lost-node)) |
@@ -5671,7 +5673,9 @@ against the local profile (R-HA-051) in CI. Load comes from real clients in para
 | Valkey outage | Valkey and Sentinels scaled to 0 for 5 min; one `web` pod deleted meanwhile | R-HA-057 |
 | Sentinel quorum loss | Sentinels scaled to 1, then to 0 | R-HA-057 |
 | Valkey content loss | `FLUSHALL` on the primary | R-HA-057 |
-| Slow Valkey | Fault proxy adds 2 s to every Valkey command | R-HA-057 |
+| Slow Valkey | A `CLIENT PAUSE 2000 ALL` on the primary, renewed after a gap of 300 ms, for 3 min ([Q-HA-252](#q-ha-252--the-slow-valkey-is-a-repeated-client-pause-on-the-primary-not-a-fault-proxy)) | R-HA-057 |
+| Valkey credential mismatch | The password of the default user changed on the Valkey pods, and the connections of the trove pods closed ([Q-HA-253](#q-ha-253--the-valkey-credential-mismatch-is-injected-on-the-server-not-by-editing-the-secret)) | R-HA-007: running replicas stay ready with `valkey` degraded and no client fails; a replacement pod is not ready until the password matches again; both clear after the fix |
+| Object store rejects the credential | The secret key in the Secret `trove-s3` replaced by a wrong one, then put back ([Q-HA-254](#q-ha-254--a-store-answer-that-rejects-the-credential-counts-against-the-object-store-circuit)) | R-HA-007: the circuit opens, the log names the credential source and no secret, documents and the API keep answering, blob requests answer `503`, no replica turns unready, the circuits close after the key is back |
 | Valkey failover flapping | Three `SENTINEL FAILOVER trove` within one hour | `TroveValkeyFailoverFlapping` fires ([operations-and-observability.md](operations-and-observability.md) R-OPS-046); zero failed iterations |
 | Replica bound to a stale primary | A failover forced while one replica's Sentinel traffic is blocked and the old primary keeps that replica's connections, with `valkey.sentinel.refresh_interval` raised for the test | `TroveValkeyPrimaryDisagreement` fires after 5 minutes; after the block is lifted, the replica moves to the new primary within `valkey.sentinel.refresh_interval` + 1 s and the alert resolves |
 | Control-pool saturation | A test build holds the control connection of every replica (direct profile), or every server connection of the control pooler (pooler profile), with back-to-back `pg_sleep(2)` statements for 6 minutes | `TroveControlConnectionWaits` fires; `TroveDatabasePoolSaturated` does not, because it selects `db_pool="request"`; replicas stay ready, because each wait stays below `cluster.epoch_max_staleness` |
@@ -9226,6 +9230,127 @@ deadline but holds nothing is not named, and when no pool holds anything the clo
 H-693.
 **Applied:** R-ARCH-024 step 6; `internal/meta/postgres/db.go` (`CloseContext`), `internal/app/wire_postgres.go`.
 
+### Q-HA-250 · Where the scenarios of E5.10 run, and in which lane
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: E5.10 asks for the database at 0 instances for 2 minutes, Valkey's Sentinel quorum loss, `FLUSHALL` and a slow Valkey under R-HA-052's load, and R-HA-007 has rows with no R-HA-052 scenario (a rejected object-store credential, a Valkey credential mismatch, a lost pooler instance). The set `ha-suite` already takes about 36 minutes (Q-ARCH-431) and the pooler scenario needs another profile.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Add the tests to `ha-suite` | One set | No new leg | A leg of about 80 minutes; a red scenario hides the ones behind it; the pooler profile cannot share a cluster with the scatter profile |
+| (b) A set `ha-faults` for the non-pooler scenarios and a set `ha-pooler` for the pooler profile, both legs of the job `e2e-npm` after `ha-suite` (chosen) | Two new `go test` expressions (`^TestHAFaults_`, `^TestHAPooler_`) in [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh), two matrix entries | Lane 1 of Q-ARCH-431 keeps one large leg at a time; every leg has the steps of `npm-ha`; a dispatch names one set | Lane 1 grows by about 70 minutes to roughly 157; the other lanes are 82 and 86 |
+| (c) A new job in lane 2 or 3 | Copy of the steps of `e2e-npm` | Balances the lanes | About 170 lines of copied steps for two legs |
+
+**Choice:** (b). **Rationale:** the lane limit of Q-ARCH-431 is about the number of active legs, which (b) keeps; its revisit condition (a kind leg wall time beyond 100 minutes) is met by lane 1 as a whole, and the decision moves a leg to another lane if a nightly shows a leg red with a runner cause. Not verified: the durations of the two legs on a runner (the first dispatch measures them). **Applied in the spec:** R-HA-052's table. Code: [performance.yml](../../.github/workflows/performance.yml) (matrix of `e2e-npm`), [e2e.sh](../../deploy/dev/e2e.sh), [ha_faults_test.go](../../test/e2e/ha_faults_test.go), [ha_pooler_test.go](../../test/e2e/ha_pooler_test.go).
+
+### Q-HA-251 · What the clients may see of the database at 0 instances for 2 minutes
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-052 says "no container restart; full recovery within 30 s of return" and E5.10 asks for "every client iteration succeeding after its own retries or the documented `503`s". With no database every replica turns unready (R-HA-007), so the Service has no endpoint for 2 minutes, and npm's default retries (two retries, 10 s to 60 s apart) end after about half a minute: a command that overlaps the outage cannot succeed (the same shape as Q-STOR-148).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every npm command exits `0` | The rule of the switchover | One rule | Cannot hold: the contract requires the `503` that npm gives up on |
+| (b) A command that overlaps the outage and the 30 s may fail, and then only with the registry's `503` in its output; every other command exits `0`; every npm ci loop completes a command afterwards; a k6 request fails only with `503` inside the same window (chosen) | `outageCommands` and `k6OnlyIn` with the window [start of the hibernation, cluster healthy + 30 s] | States R-HA-007's "`503` for everything" as the pass condition; a network error or a failure outside the window is a finding | The loops are idle during the outage |
+
+**Choice:** (b). The outage is a fence of every instance of the CloudNativePG cluster (`cnpg.io/fencedInstances: ["*"]`: the operator stops PostgreSQL in the pods and keeps the pods and their volumes), 2 minutes ([pg-stop.sh](../../deploy/dev/pg-stop.sh) `2m`); "the return" is the moment the cluster reports two ready instances again, and the 30 s are counted from there. **Rationale:** R-HA-052 names a hibernation (instance pods deleted). The first version of the test hibernated the cluster (`cnpg.io/hibernation: "on"`) and the instance pods of `trove-db` were still there 180 s later on CloudNativePG 1.30.1 (nightly dispatch 42587147342, job ha-faults); why is not established, so no hibernation is claimed. For trove the effect is the same: no database answers on any instance. Not verified: that the edge answers `503`, not a connection error, for every request while no pod is ready (the run tells). Revisit when a hibernation of the cluster is shown to delete the pods, to match the row to the letter. **Applied in the spec:** R-HA-052's table.
+
+### Q-HA-252 · The slow Valkey is a repeated client pause on the primary, not a fault proxy
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-052 and R-HA-057 say "a fault proxy delays every Valkey command by 2 s". trove reaches the primary through the address Sentinel names, so a proxy in front of Valkey would need the Sentinels to announce the proxy's address, and the failover scenarios would then run against a different topology than the others.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A TCP proxy announced as the primary | A delaying proxy in the cluster | Delays only trove's traffic | Changes what the Sentinels announce; a second thing to keep running |
+| (b) `DEBUG SLEEP` | The server stops for 2 s, repeatedly | A real stall | Stops the Sentinels' PING too, and the replication stream; refused unless `enable-debug-command` is set |
+| (c) `CLIENT PAUSE 2000 ALL`, then 300 ms open, then again, from one connection inside the pod (chosen) | Every command of every normal client that arrives in a pause waits until it ends; replicas are not held | E1.8 already uses a pause (R-ARCH-034's circuit-breaker criterion); no change of topology; the Sentinels' PING is answered at the latest 2.3 s after it was sent, below `down-after-milliseconds`, so they see a slow primary, not a dead one | The wait is up to 2 s, not exactly 2 s (a command that arrives 1 s into a pause waits 1 s), and a command that arrives in the 300 ms gap is not delayed |
+
+**Choice:** (c), [valkey-slow.sh](../../deploy/dev/valkey-slow.sh). **Rationale:** a pause renewed with no gap starved every client, the Sentinels included: the first version of the script renewed it from the held connection, and in the nightly dispatch 42587147342 the Sentinels declared the primary down 6 s in (`+sdown`, `+odown`, `+switch-master`), so the scenario became a failover. With the gap, a command that arrives in a pause waits for more than `valkey.command_timeout` (500 ms) unless it arrives in the last 500 ms of it, which is the condition that opens the circuits and bounds the p99. Not verified: that no Sentinel declares the primary down with the gap (the run tells; `trove_valkey_primary_changes_total` would rise). **Applied in the spec:** R-HA-052's table, R-HA-057's slow-Valkey criterion.
+
+### Q-HA-253 · The Valkey credential mismatch is injected on the server, not by editing the Secret
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-007's row is a rotation mistake: the Secret and the Valkey user disagree. The Valkey operator reads the Secret `trove-valkey-auth` (`auth.secretName`), and what it does with a change of the Secret is not established here.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Edit the Secret | `kubectl patch secret trove-valkey-auth` | The mistake as an operator makes it | The operator may follow the change and rotate the server too, so the scenario may not happen; every other consumer of the Secret moves |
+| (b) Change the password of the default user on the Valkey pods and close the connections of the trove pods (chosen) | `ACL SETUSER default resetpass`, then `CLIENT KILL` for the trove pods' addresses | The server alone changes; the Sentinels and the replica keep their authenticated connections, so no failover starts | The Secret is not touched, so the kubelet's propagation of a Secret is not part of the scenario |
+
+**Choice:** (b), [valkey-credential.sh](../../deploy/dev/valkey-credential.sh) `break` and `fix`. **Rationale:** the contract is about what trove does when Valkey answers `WRONGPASS`; both ends are the same either way. The new-replica half of the row (a configuration error gates the first readiness) is also proven by `TestValkeyStartup` ("a wrong password is a startup error and the log names WRONGPASS") against a real Valkey. Not verified: the clearing time after the fix, which no requirement bounds; the run logs it. **Applied in the spec:** R-HA-052's table.
+
+### Q-HA-254 · A store answer that rejects the credential counts against the object-store circuit
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-007 says a failing S3 credential is "counted as object-store failure; logged with the credential source, never the secret", and R-STOR-033 counts "credential errors" against the circuit. The code counted only transient failures: the store's `InvalidAccessKeyId`, `SignatureDoesNotMatch` and `ExpiredToken` are `403` or `400` answers mapped to the kind "config", which the guard treated as an answer, like a `404`. With a revoked key every blob request failed with `503` after its own round trip, the circuit stayed closed (`trove_storage_s3_circuit_open` 0, so `TroveObjectStoreUnreachable` stayed silent), and nothing logged the credential source. Reproduced by the guard test "a store that rejects the credential counts as an object-store failure".
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every `KindConfig` answer counts | AccessDenied and a missing bucket too | Simple | A bucket policy that denies one operation would open the circuit for every blob operation |
+| (b) Only the answers that name the credential count (chosen) | `InvalidAccessKeyId`, `SignatureDoesNotMatch`, `ExpiredToken`, `InvalidToken`, `AuthorizationHeaderMalformed` | Matches "credential errors"; a plain `AccessDenied` stays an answer about the request, as the existing test of R-STOR-033 requires | A store that answers a revoked key with a plain `AccessDenied` does not open the circuit |
+| (c) Leave it and change the contract | Write that the circuit stays closed | No code | The alert and the fast failure the row promises would not exist |
+
+**Choice:** (b): `blob.IsCredentialRejection`, counted by the guard, one `WARN` line when the circuit opens (and when a probe fails) with `credential_source` and `code`. **Rationale:** the failure the row describes is the credential's; a missing permission is not. Revisit when a supported store answers a revoked key with a plain `AccessDenied`. **Applied in the spec:** R-HA-007's row, R-STOR-033's circuit bullet. Code: [guard.go](../../internal/blob/guard.go), [objects.go](../../internal/blob/objects.go), [wire_blob.go](../../internal/app/wire_blob.go).
+
+### Q-HA-255 · The FLUSHALL criterion is run on documents that are in flight
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-057 says the counting upstream "records at most one fetch per replica for each object that was in flight". Under the load, trove's cache serves the documents, and a first version that counted the upstream's fetches in a window before and after the flush saw none in either (nightly dispatch 42587147342: 0 over 0 objects), so it proved nothing.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Count fetches of the load's documents around the flush | Two equal windows | No extra setup | Vacuous when the cache is warm |
+| (b) Put documents in flight (chosen) | Three documents of a fresh remote repository that the upstream answers after 4 s are requested through two `packages` replicas (ten requests each); `FLUSHALL` comes 2 s in, while the flights wait; the upstream's counter for each document must be between 1 and 2 (one per replica asked) and every request must answer `200` (the pattern of E2.9) | The objects are in flight by construction | Two replicas are asked, not all three (the helper `burstOver` asks two) |
+
+**Choice:** (b). **Rationale:** the loss of a fetch lock costs one duplicate per replica (R-ARCH-033, INV-11), which is what the counter shows; the load runs beside it, so the criterion holds under R-HA-052's load. **Applied in the spec:** R-HA-057's content-loss criterion.
+
+### Q-HA-256 · The alerts of the Valkey scenarios are proven by the rule tests, not by a Prometheus in the e2e run
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-057 asks that `TroveValkeySentinelsDegraded` stays silent with three Sentinels and fires when the Sentinels are scaled to 1 and 0. The dev profile installs no Prometheus.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Install a Prometheus in the e2e profile | A scraping stack for one alert | The alert fires in the cluster | A new component in the setup of every leg, in a profile that has none (see H-791) |
+| (b) The gauge in the e2e run, the alert in the rule tests (chosen) | The e2e run asserts `trove_valkey_sentinels_reachable` 3, 1, 0; `promtool test rules` ([rules_test.yaml](../../deploy/helm/trove/tests/rules_test.yaml)) asserts the alert's expression, its `for` and its silence at 3 | Both halves are tested where they are cheap | The wiring from the pod's `/metrics` through a ServiceMonitor to the rule is not run end to end |
+
+**Choice:** (b). **Rationale:** the gauge is what the alert reads; the rule test fixes the expression. See H-791 for the gap.
+
+### Q-HA-257 · Where each remaining row of R-HA-007 is proven
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-007 rows without an R-HA-052 scenario: Sentinel quorum lost, S3 credentials failing, spool full, a lost pooler instance, a Valkey credential mismatch, and the backup and restore pod rows.
+
+| Row | Proof (chosen) |
+|---|---|
+| Sentinel quorum lost | e2e `TestHAFaults_ValkeySentinelQuorumLoss` (R-HA-057) |
+| S3 credentials fail | unit `TestGuardBreaker` ("a store that rejects the credential…"), `TestErrorMapping` (the codes), e2e `TestHAFaults_ObjectStoreCredentialRejected` |
+| Spool volume full | integration `TestR_HA_052_SpoolExhaustionAnswers503AndEvictsNothing` (a replica with a 6 MiB budget: `503` with `Retry-After`, `413`, no eviction, the retry succeeds); the dev profile's budget is 2 GiB per replica, so an e2e run would upload gigabytes to prove the same admission |
+| Pooler instance lost | e2e `TestHAPooler_InstanceLoss` (R-HA-058) |
+| Valkey credential mismatch | e2e `TestHAFaults_ValkeyCredentialMismatch` (running replicas, the replacement pod) and integration `TestValkeyStartup` (the first readiness) |
+| Backup and restore pod evicted or crashed | e2e `TestBackupDrain` (R-BAK-012, R-BAK-010, R-BAK-021: the drain of the node, `kill -9` of the pod), named with R-HA-007 and R-HA-052 as well; "cut off" is a network fault and is not built (H-792) |
+
+**Rationale:** each row at the cheapest tier that shows the contract; the e2e runs where the contract involves several processes. **Applied in the spec:** none.
+
+### Q-HA-258 · A lost pooler instance is deleted gracefully and forced, for both poolers, under the full npm load
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-058 asks: `kubectl delete pod <pooler pod>` during an `npm ci` loop: no failed iteration; with `--grace-period=0 --force`, only requests whose `COMMIT` was in flight answer `503` with `Retry-After`, and every client iteration succeeds after its own retries.
+
+**Choice:** four runs in `TestHAPooler_InstanceLoss`: the request pooler and the control pooler, each deleted gracefully and force-deleted, under the eight npm ci loops, the publish loop and k6. Graceful: every command exits `0`, k6 only `2xx` and `304`, `/readyz` `200` throughout. Forced: every command exits `0`, and a k6 failure is a `503` within `retry.max_elapsed` of the kill. Each run waits until the pooler has two ready instances on two nodes again. The `Retry-After` header is not read from k6's records (the script keeps the status and the time); the `503` is the answer of R-HA-007's row. **Rationale:** the control pooler carries the change-log poll and the job heartbeats, so its loss is a different path from the request pooler's. **Found by the first run (nightly dispatch 42587147342, job ha-pooler): a product defect, fixed.** The force-delete of an instance of the request pooler made 10 requests answer `500 internal` (3 of 15,310 in k6's records, the npm clients retried the rest) with the cause `FATAL: server shutting down (SQLSTATE 08P01)`. PgBouncer answers the clients of a stopping instance with that message, and `classify` ([retry.go](../../internal/meta/postgres/retry.go)) took every `08P01` for a refused startup parameter and did not retry it, so the request failed instead of reaching the other instance. `08P01` with "server shutting down" or "pgbouncer cannot connect to server" is now a failover error, retried within `retry.max_elapsed` and `503` after it; any other `08P01` stays no outage. Unit test `TestClassify` (the cases named R-HA-007 R-HA-058). The graceful stops of both poolers and the forced stop of the control pooler passed in that run.
+
+Not verified: that the preStop sleep of the graceful stop (80 s with a 120 s grace period) fits the 6-minute wait (the graceful runs of that dispatch took 146 s each). **Applied in the spec:** none (R-HA-058's criterion is built as written, with k6's `503` standing for "with `Retry-After`").
+
 ## What this does not cover
 
 ### H-37 · A database restore revives revoked credentials and removed grants
@@ -9326,3 +9451,15 @@ and `schema` checks hold the control connection for up to `health.check_timeout`
 Live whenever a detached write (the periodic token last-used flush, 10 s; the rollback of `InTx`, 5 s; the detached writes of
 the upload paths, up to 30 s, not traced) is running at the close deadline. What makes it real: such a write is cut by the process
 exit, and its effect is lost; the next use records most of them again, a half-finished upload is cleaned up by its sweep.
+
+### H-791 · The Valkey alerts are tested as rules, not as alerts of a running installation
+
+Component: `TroveValkeySentinelsDegraded` and `TroveValkeyUnavailable` ([_rules.tpl](../../deploy/helm/trove/templates/_rules.tpl), R-OPS-046). Subject: whether the alert fires in an installation when R-HA-057's scenarios run. `promtool test rules` ([rules_test.yaml](../../deploy/helm/trove/tests/rules_test.yaml)) feeds the series of the gauges to the expressions and checks the alert and its `for`; the e2e scenarios check the gauges (`trove_valkey_sentinels_reachable`, `trove_valkey_available`) on the pods. Nothing runs a Prometheus that scrapes the pods through the ServiceMonitor and evaluates the PrometheusRule against the Sentinel quorum loss or the 5-minute outage.
+
+Live today, for both alerts. What makes it real: a wrong label in the ServiceMonitor, a metric the pods do not export under the name the rule reads, or a `PrometheusRule` the operator does not load would leave the alert silent while both tiers stay green.
+
+### H-792 · A backup or restore pod cut off from the network is not injected
+
+Component: the Jobs `trove-backup` and the restore Job (R-HA-007 rows "Backup pod evicted, crashed or cut off", "Restore pod evicted, crashed or cut off"). Subject: the "cut off" part of the rows. `TestBackupDrain` evicts the pod by a node drain and crashes it with `kill -9` (R-BAK-010, R-BAK-012, R-BAK-021); no scenario denies the pod PostgreSQL or the object store with a NetworkPolicy while the run is under way. The copy loops end on a failed call and the Job controller starts a new pod, which the crash scenarios show, but a hung connection that never fails (a black-holed route) is a different path (the client timeouts of R-STOR-033, the lease of the run).
+
+Live today for the backup and the restore Job. Not verified, and this is the gap: what a run does when its connection stalls without an error (a black-holed route), as opposed to one that is refused or reset; the client timeouts of R-STOR-033 and the run's lease bound it on paper.

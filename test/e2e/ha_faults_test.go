@@ -11,6 +11,7 @@ package e2e
 import (
 	"encoding/base64"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -173,12 +174,12 @@ func (r npmLoadResult) k6OnlyIn(t *testing.T, w haWindow, kinds ...string) int {
 func TestHAFaults_PostgresOutage(t *testing.T) {
 	h := npmHAFx(t)
 
-	t.Run("R-HA-052 R-HA-007 R-HA-008 E5.10 the database at 0 instances for 2 minutes under the npm load: no container restarts, /healthz 200, every replica turns unready and ready again, back within 30 s of the database's return, failures only inside the outage and that bound and only 503, every acknowledged publish installs", func(t *testing.T) {
+	t.Run("R-HA-052 R-HA-007 R-HA-008 E5.10 PostgreSQL stopped in every instance for 2 minutes under the npm load: no container restarts, /healthz 200, every replica turns unready and ready again, back within 30 s of the database's return, failures only inside the outage and that bound and only 503, every acknowledged publish installs", func(t *testing.T) {
 		const outage, recovery = 2 * time.Minute, 30 * time.Second
 		var backAt time.Time
 		var back time.Duration
 		r := runNPMFault(t, h, "pg-outage", haFullLoad(), time.Minute, 90*time.Second, func() {
-			script(t, "pg-hibernate.sh", "2m")
+			script(t, "pg-stop.sh", "2m")
 			backAt = time.Now() // the cluster reports two ready instances again
 			back = waitFor(t, "every trove pod ready and the edge answering again", 5*time.Minute, 500*time.Millisecond, func() bool { return allReady(t) })
 		})
@@ -193,7 +194,7 @@ func TestHAFaults_PostgresOutage(t *testing.T) {
 			t.Errorf("R-HA-007: %d of %d replicas turned unready while the database had no instance: %v", turned, len(r.initial), r.mon.ready)
 		}
 		w := haWindow{r.faultAt, backAt.Add(recovery)}
-		t.Logf("the database was away %s to %s (hibernate and resume %s); every pod ready %s after the cluster reported healthy", r.faultAt.Format("15:04:05"), backAt.Format("15:04:05"), r.faultEnd.Sub(r.faultAt).Round(time.Second), back.Round(100*time.Millisecond))
+		t.Logf("PostgreSQL was away %s to %s (fence and unfence %s); every pod ready %s after the cluster reported healthy", r.faultAt.Format("15:04:05"), backAt.Format("15:04:05"), r.faultEnd.Sub(r.faultAt).Round(time.Second), back.Round(100*time.Millisecond))
 		if back > recovery {
 			t.Errorf("R-HA-052: full recovery took %s after the database returned, bound %s", back.Round(100*time.Millisecond), recovery)
 		}
@@ -271,19 +272,37 @@ func TestHAFaults_ValkeySentinelQuorumLoss(t *testing.T) {
 func TestHAFaults_ValkeyFlushAll(t *testing.T) {
 	h := npmHAFx(t)
 
-	t.Run("R-HA-052 R-HA-057 R-HA-007 E5.10 FLUSHALL on the Valkey primary under the npm load: every npm command exits 0, k6 only 2xx and 304, /readyz 200 throughout, the counting upstream sees at most one more fetch per replica for each object than in a window of the same length without the flush", func(t *testing.T) {
+	t.Run("R-HA-052 R-HA-057 R-HA-007 E5.10 FLUSHALL on the Valkey primary while documents are in flight, under the npm load: every npm command exits 0, k6 only 2xx and 304, /readyz 200 throughout, every request for an in-flight document answers 200 and the counting upstream records at most one fetch per replica asked for it", func(t *testing.T) {
 		s := stub(t)
-		const window = 30 * time.Second
-		replicas := len(livePods(t, selPackages))
-		var base, flush map[string]int
+		names := []string{"@cobalt/lucid-dial", "@cobalt/nimble-ledger", "@cobalt/ivory-ember"}
+		const asked = 2 // burstOver asks two packages replicas
+		repos := h.fx.upstreamRepos(t, "e510f", nil)
+		statuses := map[string][]int{}
+		fetches := map[string]int{}
 		r := runNPMFault(t, h, "valkey-flushall", haFullLoad(), time.Minute, time.Minute, func() {
-			c0 := documentFetches(s.counts(t))
-			time.Sleep(window)
-			c1 := documentFetches(s.counts(t))
+			s.resetAll(t)
+			s.setMode(t, npmstub.Mode{DelayMS: map[string]int{"document": 4000}})
+			defer s.resetAll(t)
+			webs := packagesReplicas(t, 3)
+			var mu sync.Mutex
+			var wg sync.WaitGroup
+			for _, name := range names {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					got := burstOver(t, webs, npmAddr(repos.remote)+"/"+url.PathEscape(name), h.fx.token, 10)
+					mu.Lock()
+					statuses[name] = got
+					mu.Unlock()
+				}()
+			}
+			time.Sleep(2 * time.Second) // one replica leads each flight and waits for the upstream, the others wait for it
 			t.Logf("FLUSHALL: %s", strings.TrimSpace(valkeyPrimaryCLI(t, "FLUSHALL")))
-			time.Sleep(window)
-			c2 := documentFetches(s.counts(t))
-			base, flush = diffFetches(c1, c0), diffFetches(c2, c1)
+			wg.Wait()
+			c := s.counts(t)
+			for _, name := range names {
+				fetches[name] = c.Documents(name)
+			}
 		})
 		r.steady(t)
 		r.res.allExitZero(t)
@@ -292,51 +311,20 @@ func TestHAFaults_ValkeyFlushAll(t *testing.T) {
 		if len(r.mon.ready) != 0 {
 			t.Errorf("R-HA-057: /readyz answered non-200 around the FLUSHALL: %v", r.mon.ready)
 		}
-		worst, extra := "", 0
-		for name, n := range flush {
-			if d := n - base[name]; d > extra {
-				worst, extra = name, d
+		for _, name := range names {
+			for i, st := range statuses[name] {
+				if st != 200 {
+					t.Errorf("R-HA-057: request %d for %s answered %d", i, name, st)
+				}
 			}
-		}
-		t.Logf("document fetches of the upstream in %s without the flush: %d over %d objects; with it: %d over %d; the largest increase for one object: %d (%s); packages replicas %d",
-			window, sumFetches(base), len(base), sumFetches(flush), len(flush), extra, worst, replicas)
-		for name, n := range flush {
-			if n-base[name] > replicas {
-				t.Errorf("R-HA-057: the upstream saw %d fetches of %s in the window after the flush and %d in the window before, more than %d more (one per replica)", n, name, base[name], replicas)
+			t.Logf("the upstream recorded %d document requests for %s (replicas asked: %d)", fetches[name], name, asked)
+			if fetches[name] < 1 || fetches[name] > asked {
+				t.Errorf("R-HA-057: the upstream recorded %d document requests for %s, want between 1 and %d (one per replica asked)", fetches[name], name, asked)
 			}
 		}
 		r.res.installPublished(t, h)
 		troveSettled(t, 3, 3, 4)
 	})
-}
-
-// documentFetches sums the document requests the counting upstream recorded, per package name.
-func documentFetches(c npmstub.Counts) map[string]int {
-	out := map[string]int{}
-	for _, e := range c.Entries {
-		if e.Kind == npmstub.KindDocument {
-			out[e.Name] += e.Count
-		}
-	}
-	return out
-}
-
-func diffFetches(after, before map[string]int) map[string]int {
-	out := map[string]int{}
-	for name, n := range after {
-		if d := n - before[name]; d > 0 {
-			out[name] = d
-		}
-	}
-	return out
-}
-
-func sumFetches(m map[string]int) int {
-	n := 0
-	for _, v := range m {
-		n += v
-	}
-	return n
 }
 
 func TestHAFaults_ValkeySlow(t *testing.T) {
@@ -497,13 +485,29 @@ func TestHAFaults_ObjectStoreCredentialRejected(t *testing.T) {
 		r := runNPMFault(t, h, "s3-credential-rejected", haFullLoad(), time.Minute, 2*time.Minute, func() {
 			peaks = startSeriesPeaks(serving, "trove_storage_s3_circuit_open")
 			restored := false
+			// The internal-secrets-operator owns the field (annotation iso.gtrfc.com/autogenerate); the annotations come off while
+			// the key is wrong, so that the operator has nothing to put back, and go back on with the key (secrets.yaml)
+			kn(t, "annotate", "secret", "trove-s3", "iso.gtrfc.com/autogenerate-", "iso.gtrfc.com/length-")
+			putBack := func() {
+				patch(orig)
+				kn(t, "annotate", "secret", "trove-s3", "--overwrite", "iso.gtrfc.com/autogenerate=secret-access-key", "iso.gtrfc.com/length=40")
+			}
 			defer func() {
 				if !restored { // a failure below ends the test; the key comes back all the same
-					patch(orig)
+					putBack()
 				}
 			}()
 			patchedAt = time.Now()
 			patch(base64.StdEncoding.EncodeToString([]byte(wrong)))
+			go func() { // says whether anything puts the Secret back while the test waits
+				for i := 0; i < 12; i++ {
+					time.Sleep(20 * time.Second)
+					if got, err := kubectl("-n", cfg.namespace, "get", "secret", "trove-s3", "-o", `go-template={{index .data "`+field+`"}}`); err == nil && strings.TrimSpace(got) != base64.StdEncoding.EncodeToString([]byte(wrong)) {
+						fmt.Printf("the Secret trove-s3 no longer holds the wrong key %ds after the patch\n", (i+1)*20)
+						return
+					}
+				}
+			}()
 			// the kubelet writes the new file into the pods within a minute or two; the store rejects every request signed with it
 			waitFor(t, "the circuit open on a serving replica", 5*time.Minute, time.Second, func() bool {
 				for _, p := range serving {
@@ -514,7 +518,7 @@ func TestHAFaults_ObjectStoreCredentialRejected(t *testing.T) {
 				return false
 			})
 			time.Sleep(30 * time.Second)
-			patch(orig)
+			putBack()
 			restored = true
 			restoredAt = time.Now()
 			waitFor(t, "the circuit closed on every serving replica", 5*time.Minute, time.Second, func() bool {

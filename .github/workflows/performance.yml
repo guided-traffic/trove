@@ -28,7 +28,7 @@
 # control-plane node only: nuget-ha (Q-HA-102) and the set mirror, whose install-time ratio is enforced here (Q-REPO-211).
 # Sizes: docs/developer/releasing.md#ci.
 # Q-ARCH-431: the kind legs on the large class run in three lanes, so at most three large legs of this run are active at once
-# (one per worker node of the class: three nodes of 16 CPUs, a kind leg about 12 cores). Lane 1: e2e-npm (npm-ha, then ha-suite),
+# (one per worker node of the class: three nodes of 16 CPUs, a kind leg about 12 cores). Lane 1: e2e-npm (npm-ha, then ha-suite, ha-faults and ha-pooler; Q-HA-250),
 # then e2e-nuget. Lane 2: e2e (drain-roles, then failover), then npm-ha-soak. Lane 3: e2e-vuln (its large leg vuln-pooler, the
 # GitHub-hosted legs are not in the lanes), then e2e-backup, e2e-mirror (mirror, then mirror-long), e2e-oci. Each lane job
 # needs its predecessor with `!cancelled()`, so a leg the dispatch does not select, or a failed one, does not stop the lane.

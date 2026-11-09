@@ -42,7 +42,7 @@ func TestStartupErrors(t *testing.T) {
 			t.Fatalf("R-OPS-001 reason code = %q, want config_error", code)
 		}
 	})
-	t.Run("R-HA-056 a wrong password is a startup error and the log names WRONGPASS, not the password", func(t *testing.T) {
+	t.Run("R-HA-007 R-HA-056 a wrong password is a startup error and the log names WRONGPASS, not the password", func(t *testing.T) {
 		cfg := stackConfig(t, 2*time.Second)
 		cfg.PasswordFile = writeFile(t, "password", "not-the-password-0451\n")
 		c := newClient(t, cfg)

@@ -331,11 +331,11 @@ Test and Release runs `push` and `access-long` (job `e2e`), `npm` (job `e2e-npm`
 `failover` set (job `e2e`, E0.13 and E1.8), the drain per role (job `e2e`, set `drain-roles`, E6a.6, edge port 8097: the evictions run
 under the npm load of `npm-ha` too, so the set starts the npm client pods and the counting test upstream,
 [Q-HA-94](../spec/ha-and-helm.md#q-ha-94--the-load-of-the-drain-per-role)), the `npm-ha` leg (job `e2e-npm`, E2.11), `npm-ha-soak` and
-the `ha-suite` leg (job `e2e-npm`, the failure suite under the npm load), the `upgrade` leg (job `e2e-upgrade`, below; switched off in the nightly run until the first stable release, [the switches](#switched-off-until-the-first-stable-release)), the `nuget-ha` leg (job `e2e-nuget`,
+the `ha-suite`, `ha-faults` and `ha-pooler` legs (job `e2e-npm`, the failure suite under the npm load and its additions of E5.10), the `upgrade` leg (job `e2e-upgrade`, below; switched off in the nightly run until the first stable release, [the switches](#switched-off-until-the-first-stable-release)), the `nuget-ha` leg (job `e2e-nuget`,
 Q-ARCH-277, which starts the npm client pods too), and last the perf jobs `latency` and `vuln-perf`, which start after every kind leg
 ([Q-ARCH-325](../spec/architecture.md#q-arch-325--where-do-the-perf-jobs-run-relative-to-the-kind-legs)). Dispatch it with `gh workflow run "HA and Performance (nightly)" --ref main`, or one leg of it with `-f sets=` ([below](#dispatching-one-leg)).
 Locally, from the repository root, after `make image VERSION=dev` and `make dev-up`: `make e2e SET=failover`, `make e2e SET=drain-roles`, `make e2e SET=npm-ha`,
-`make e2e SET=npm-ha-crash` (the three-force-delete crash, which has no CI job), `make e2e SET=npm-ha-soak`, `make e2e SET=nuget-ha`, `make e2e SET=ha-suite` or `make e2e SET=upgrade`,
+`make e2e SET=npm-ha-crash` (the three-force-delete crash, which has no CI job), `make e2e SET=npm-ha-soak`, `make e2e SET=nuget-ha`, `make e2e SET=ha-suite`, `make e2e SET=ha-faults`, `make e2e SET=ha-pooler` or `make e2e SET=upgrade`,
 then `make dev-down`; the latency tests need `make integration-up && make test-performance`.
 A red long leg does not hold the release: it is recorded as an open finding instead (owner, 2026-11-01).
 
@@ -362,7 +362,7 @@ The input exists on `main` once the change is merged, because `gh` runs the work
 
 The large legs run in three lanes, so at most three of them are active at once, one per worker node of the class
 ([Q-ARCH-431](../spec/architecture.md#q-arch-431--how-many-large-legs-of-the-nightly-run-start-at-once-and-in-what-order)):
-lane 1 is `npm-ha` then `ha-suite` (job `e2e-npm`, one leg at a time) then `nuget-ha` (job `e2e-nuget`); lane 2 is `drain-roles` then
+lane 1 is `npm-ha`, `ha-suite`, `ha-faults` then `ha-pooler` (job `e2e-npm`, one leg at a time, [Q-HA-250](../spec/ha-and-helm.md#q-ha-250--where-the-scenarios-of-e510-run-and-in-which-lane)) then `nuget-ha` (job `e2e-nuget`); lane 2 is `drain-roles` then
 `failover` (job `e2e`) then `npm-ha-soak`; lane 3 is the job `e2e-vuln` (its `vuln-pooler` leg; its GitHub-hosted legs run beside the lanes), then
 `backup`, then `mirror` and `mirror-long` (job `e2e-mirror`, one at a time), then `oci-long`. Each lane job waits for its predecessor with `!cancelled()`,
 so an unselected or failed leg does not stop its lane. The estimate, from the durations of run 42571414393 (measured under six-way contention): the lanes take
@@ -416,6 +416,8 @@ budgets are 120 minutes for the job and 90 for the set. Not verified on this com
 Set `ha-suite` (job `e2e-npm`, edge port 8100, the budgets of `npm-ha`: 120 minutes for the job, 80 for the set) runs the failure suite under the npm load: the S3 outage,
 the loss of a kind worker node with `docker stop`, the loss of the PostgreSQL and of the Valkey primary, and the npm-audit drain. Not verified on this commit: the set is not
 in [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) yet, so its scenarios are the ones the plan names, not the ones the code runs.
+
+Sets `ha-faults` (edge port 8110) and `ha-pooler` (edge port 8111, the pooler profile through `TROVE_POOLER=1`) are legs of the same job with the same budgets: the database at 0 instances for 2 minutes, the Sentinel quorum loss, `FLUSHALL` and a slow Valkey, a Valkey credential mismatch and an object store that rejects the credential; and a pooler instance deleted, gracefully and forced. [The failure suite ha-faults](e2e.md#the-failure-suite-ha-faults) describes them.
 
 Job `e2e-ci` runs `make e2e SET=ci-ha` on a kind cluster
 
