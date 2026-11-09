@@ -68,9 +68,10 @@ type variantDrain struct {
 	oldPrimary string
 	poll       *primaryPoll
 
-	// E: the backup Job, and the rate its copy is slowed to (512 KiB/s by default: the installation of the vulnerability tests is small)
-	job        string
-	BackupRate string
+	// E: the backup Job
+	job string
+	// BackupFiles files of BackupFileMiB MiB are put into the installation before variant E's Job starts (16 of 1 MiB by default)
+	BackupFiles, BackupFileMiB int
 
 	runErr   error
 	runOut   string
@@ -379,10 +380,14 @@ func (d *variantDrain) prepareBackupJob(t *testing.T) {
 	adm := adminAPI(t)
 	repo := "vdrain-" + run
 	ensureRepo(t, adm, repo)
-	for i := range 16 {
+	files, mib := 16, 1
+	if d.BackupFiles > 0 {
+		files, mib = d.BackupFiles, d.BackupFileMiB
+	}
+	for i := range files {
 		p := fmt.Sprintf("variant-e/%02d.bin", i)
 		if r, err := retrying(func() (reply, error) {
-			return adm.send("PUT", filesAddr(repo)+"/"+p, randomBytes(1<<20), "Content-Type", "application/octet-stream")
+			return adm.send("PUT", filesAddr(repo)+"/"+p, randomBytes(mib<<20), "Content-Type", "application/octet-stream")
 		}); err != nil || r.Status != 201 {
 			t.Fatalf("put %s/%s: %v %s", repo, p, err, r)
 		}
@@ -393,7 +398,7 @@ func (d *variantDrain) prepareBackupJob(t *testing.T) {
 		bakCreateJob(t, bakJob{
 			name: d.job, backoff: &zero, preferNode: d.Node,
 			env: map[string]string{
-				"TROVE_BACKUP_TARGET_PREFIX": bakFreshPrefix(run, "var-e"), "TROVE_BACKUP_COPY_BYTES_PER_SECOND": d.backupRate(), "TROVE_BACKUP_COPY_CONCURRENCY": "1",
+				"TROVE_BACKUP_TARGET_PREFIX": bakFreshPrefix(run, "var-e"), "TROVE_BACKUP_COPY_BYTES_PER_SECOND": "512KiB", "TROVE_BACKUP_COPY_CONCURRENCY": "1",
 			},
 		})
 		bakWaitLog(t, cfg.namespace, d.job, "backup run started", 3*time.Minute)
@@ -411,16 +416,6 @@ func (d *variantDrain) prepareBackupJob(t *testing.T) {
 		job := d.job
 		waitFor(t, "the pod of Job "+job+" to be gone", 2*time.Minute, time.Second, func() bool { return len(podsOf(t, "job-name="+job)) == 0 })
 	}
-}
-
-// backupRate is the copy rate of variant E's backup Job. A pod that is evicted copies the whole installation again in the second pod
-// (and the Job must end within 15 minutes), so the rate must let a copy of the installation end in about 6 minutes: the load of E5.9
-// keeps a 1 GiB file in it, which at 512 KiB/s would take 35 minutes (the first runs of the leg lost their runner there, Q-HA-241).
-func (d *variantDrain) backupRate() string {
-	if d.BackupRate != "" {
-		return d.BackupRate
-	}
-	return "512KiB"
 }
 
 func (d *variantDrain) stopMonitor() {

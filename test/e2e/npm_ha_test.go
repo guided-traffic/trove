@@ -262,6 +262,8 @@ type drainOutcome interface {
 	// k6P99 is the 99th percentile of the duration of every k6 request started in [from, to), and their number
 	k6P99(from, to time.Time) (time.Duration, int)
 	k6First() time.Time
+	// k6Lines are the k6 requests of the load, every stream
+	k6Lines() []npmK6Line
 	installPublished(t *testing.T)
 	// conditions are the load's own further conditions and reports (the minimum counts of R-ARCH-024, the p99 of one stream)
 	conditions(t *testing.T, firstEviction, drainEnd time.Time)
@@ -290,6 +292,7 @@ func (o npmDrainOutcome) k6P99(from, to time.Time) (time.Duration, int) {
 	return o.res.K6.p99(from, to)
 }
 func (o npmDrainOutcome) k6First() time.Time                          { return o.res.K6.First }
+func (o npmDrainOutcome) k6Lines() []npmK6Line                        { return o.res.K6.Lines }
 func (o npmDrainOutcome) installPublished(t *testing.T)               { o.res.installPublished(t, o.h) }
 func (o npmDrainOutcome) conditions(*testing.T, time.Time, time.Time) {}
 func (o npmDrainOutcome) note() map[string]any {

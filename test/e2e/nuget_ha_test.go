@@ -142,6 +142,8 @@ func (r fullHAResult) k6P99(from, to time.Time) (time.Duration, int) {
 
 func (r fullHAResult) k6First() time.Time { return r.mixed().First }
 
+func (r fullHAResult) k6Lines() []npmK6Line { return r.mixed().Lines }
+
 func (r fullHAResult) installPublished(t *testing.T) {
 	t.Helper()
 	r.npm.installPublished(t, r.h)

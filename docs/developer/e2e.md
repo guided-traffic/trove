@@ -1800,7 +1800,7 @@ passes to `up.sh` in place of `scatter`.
 
 **The flow of one drain**, in `drainUnderLoad`:
 
-1. `prepare` of every extra (below): files made and the source of the downloads uploaded once per process.
+1. `prepare` of every extra (below): files made and the source of the downloads uploaded once per process. In variant E the preparation of the variant comes first: its backup Job starts with 200 MiB of its own (10 files of 20 MiB) before the 1 GiB file goes in, so that the Job does not copy the file ([Q-HA-245](../spec/ha-and-helm.md#q-ha-245--the-backup-of-variant-e-is-started-before-the-1-gib-file-is-put-into-the-installation)). Variant C judges its p99 outside the window of the switchover ([Q-HA-243](../spec/ha-and-helm.md#q-ha-243--variant-c-judges-its-latency-outside-the-switchover-window-and-bounds-the-requests-inside-it)); the job writes of a handler ride out the switchover ([Q-HA-244](../spec/ha-and-helm.md#q-ha-244--a-jobs-checkpoint-and-progress-writes-ride-out-a-postgresql-switchover)).
 2. `prepareVariantDrain`: the node of the variant (B, C and D may move a primary first), the pod watch, the log streams of the pods on the node.
 3. The load starts (`startFullLoad`: eight `npm ci` loops, four `dotnet restore` loops, the two publish loops, both k6 scripts).
 4. Extras `begin` (the download probes start), then the warm-up: 2 minutes from the start of the load.

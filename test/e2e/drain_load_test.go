@@ -50,12 +50,24 @@ func drainUnderLoad(t *testing.T, kind string, v drainVariant, start func() drai
 		name = fmt.Sprintf("%s-ha-drain-%s", kind, strings.ToLower(string(v)))
 		logPrefix = fmt.Sprintf("%s-drain-%s-", kind, strings.ToLower(string(v)))
 	}
-	for _, x := range extras {
-		x.prepare(t)
-	}
 	troveSettled(t, 3, 3, 4)
-	// the installation holds the 1 GiB file of the download probes: the backup of variant E copies it at 3 MiB/s (about 6 minutes) and not at 512 KiB/s
-	d := prepareVariantDrain(t, v, func(d *variantDrain) { d.BackupRate = "3MiB" })
+	// Variant E starts its backup in the preparation, and the Job copies what the installation holds then, at 512 KiB/s. The installation
+	// holds 200 MiB for it (a copy of about 7 minutes, longer than the 4 to 5 minutes to the eviction, and the Job that starts again in
+	// the second pod ends within the 15 minutes), and the 1 GiB file of the download probes is put after the Job has started, so that the
+	// copy does not take it: it would take 35 minutes. The first runs of the leg lost their runner in variant E, with the 1 GiB file in the
+	// backup (Q-HA-245).
+	var d *variantDrain
+	if v == variantE {
+		d = prepareVariantDrain(t, v, func(d *variantDrain) { d.BackupFiles, d.BackupFileMiB = 10, 20 })
+		for _, x := range extras {
+			x.prepare(t)
+		}
+	} else {
+		for _, x := range extras {
+			x.prepare(t)
+		}
+		d = prepareVariantDrain(t, v)
+	}
 	// the pick may have moved the PostgreSQL and the Valkey primary and the backup Job may be running: the replicas are unready for
 	// a few seconds after that, and the load is the drain's, not the pick's
 	troveSettled(t, 3, 3, 4)
@@ -123,6 +135,12 @@ func drainUnderLoad(t *testing.T, kind string, v drainVariant, start func() drai
 	t.Logf("k6 p99: warm-up %s over %d requests, from the first eviction until 2 minutes after the drain %s over %d", warm, nWarm, during, nDuring)
 	if nWarm < 1000 || nDuring < 1000 {
 		t.Errorf("too few requests for the latency condition: %d in the warm-up, %d in the drain window", nWarm, nDuring)
+	}
+	if v == variantC {
+		// the switchover stalls the requests that meet it (they wait in the retry loop of R-HA-009 for the new primary); the stall is
+		// bounded by database.retry.max_elapsed, and the p99 is judged on the requests outside it (Q-HA-243)
+		target, switched, _ := d.poll.times()
+		during = judgeSwitchoverWindow(t, res.k6Lines(), firstEviction, drainEnd.Add(2*time.Minute), target.Add(-time.Second), switched.Add(10*time.Second))
 	}
 	if during > 2*warm {
 		t.Errorf("R-HA-059: p99 from the first eviction until 2 minutes after the drain is %s, more than twice the warm-up's %s", during, warm)
@@ -212,4 +230,35 @@ func TestDrainLoadPooler(t *testing.T) {
 	t.Run("R-HA-059 R-HA-058 R-STOR-046 E5.9 drain variant D (an instance of the request pooler on the node) under the full load: every npm and dotnet command exits 0, k6 only 2xx and 304, every acknowledged publish installs, a long transfer is cut at most once per evicted packages pod and completes by resume, no SIGKILL, jobs resume with their attempt, gc-full finishes on the other worker", func(t *testing.T) {
 		drainUnderLoad(t, "full", variantD, fullLoadStarter(t, h, nh, variantD), drainExtras()...)
 	})
+}
+
+// judgeSwitchoverWindow is the p99 of the k6 requests started in [from, to) but outside [exFrom, exTo), the window of the PostgreSQL
+// switchover of variant C. The requests that started inside it must have ended within database.retry.max_elapsed (30 s) and 5 s more,
+// the bound of the retry loop that carries them over the switchover (R-HA-009); it logs the longest of them and the number.
+func judgeSwitchoverWindow(t *testing.T, lines []npmK6Line, from, to, exFrom, exTo time.Time) time.Duration {
+	t.Helper()
+	var outside []time.Duration
+	var longest time.Duration
+	inside := 0
+	for _, l := range lines {
+		if l.At.Before(from) || !l.At.Before(to) {
+			continue
+		}
+		d := time.Duration(l.MS) * time.Millisecond
+		if !exFrom.IsZero() && !l.At.Before(exFrom) && l.At.Before(exTo) {
+			inside++
+			longest = max(longest, d)
+			continue
+		}
+		outside = append(outside, d)
+	}
+	t.Logf("variant C: %d k6 requests started during the switchover window %s to %s, the longest took %s; p99 of the %d others judged", inside,
+		exFrom.Format("15:04:05"), exTo.Format("15:04:05"), longest, len(outside))
+	if longest > 35*time.Second {
+		t.Errorf("R-HA-059: a request that met the PostgreSQL switchover took %s, more than database.retry.max_elapsed (30 s) and 5 s", longest)
+	}
+	if len(outside) == 0 {
+		return 0
+	}
+	return percentile(outside, 0.99)
 }
