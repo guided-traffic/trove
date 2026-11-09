@@ -249,6 +249,11 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
 
 ### Tests and tools
 
+- **F-123 · `TestR_DEB_035_LargeIndex` timed out once in the unit tests** (Test and Release 42582225034, 2026-11-09, job unit tests;
+  the run was cancelled by a later push before a re-run): the test's client gave up after its 30 s timeout while it waited for the
+  headers of `Packages.gz` of the stub's `bulk` suite (test/debstub/stub_test.go:275), under `-race` and coverage on the self-hosted
+  runner. Green in every other run of the day. Read, not reproduced: the stub builds the large index on the first request. Done when a
+  recurrence shows whether the build or the runner took the time; next step: log the stub's build time of the index with a failure.
 - **F-121 · The nightly performance run misses V-7b on a loaded runner** (runs 42571414393 with p99 314.7 ms and 42595813923 with
   610.957 ms against 300 ms; V-7a 17 to 60 ms in the same runs; both shared the nodes with other kind legs). Not reproduced as a
   regression, looked at on 2026-11-09: the path is the one [Q-VULN-81](../spec/vulnerability-scanning.md) decided and no commit since
