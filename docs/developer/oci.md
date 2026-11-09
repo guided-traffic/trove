@@ -192,7 +192,7 @@ bucket of the client address (Q-OCI-51, H-650).
 R-OCI-009, R-OCI-010, R-OCI-013 and R-OCI-031;
 [ADR-164](../decisions.md#adr-164--the-oci-push-path-is-one-transaction-with-its-reference-check-under-row-locks-and-the-formats-data-port-reads-items).
 The local class serves `GET`/`HEAD` of manifests and blobs and `PUT` of manifests here; the uploads, the lists and the deletes, and the remote and
-virtual classes are the sections below.
+virtual classes are the sections below. The security view is [oci-manifests.md](../security/oci-manifests.md).
 
 **Pull** ([handlers_manifest.go](../../internal/formats/oci/handlers_manifest.go) `handleManifestGet`, [handlers_blob.go](../../internal/formats/oci/handlers_blob.go)).
 The tag or digest is validated, the read is decided for the name (and the tag), the item is looked up and served by the core
