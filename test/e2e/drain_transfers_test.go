@@ -320,7 +320,8 @@ func (x *longTransfers) verifyDownload(t *testing.T, p *dlProbe, evicted map[str
 	for _, b := range blocks {
 		trail = append(trail, fmt.Sprintf("%s from %s", strings.TrimPrefix(b.status, "HTTP/"), b.replica))
 	}
-	t.Logf("E5.9: download probe %d: curl exit %d after %s (%d starts to hold it on %s), responses [%s]", p.idx, exit, ended.Sub(started).Round(time.Second), pinTries+1, p.pin, strings.Join(trail, "; "))
+	t.Logf("E5.9: download probe %d: curl exit %d after %s (%d starts to hold it on %s), responses [%s], curl said it would retry %d times (stderr: %q)",
+		p.idx, exit, ended.Sub(started).Round(time.Second), pinTries+1, p.pin, strings.Join(trail, "; "), strings.Count(stderr, "retry in"), tail(stderr, 600))
 	if exit != 0 {
 		t.Errorf("R-HA-059: download probe %d: curl exit %d: %s", p.idx, exit, stderr)
 		return

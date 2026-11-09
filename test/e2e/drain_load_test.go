@@ -166,9 +166,11 @@ func drainUnderLoad(t *testing.T, kind string, v drainVariant, start func() drai
 	d.Settle(t)
 }
 
-// fullLoadStarter is the whole load of R-HA-059's table that the two clients make, as the drain starts it.
-func fullLoadStarter(t *testing.T, h *npmHAFixture, nh *nugetHAFixture) func() drainLoad {
-	return func() drainLoad { return startFullLoad(t, h, nh, "drain") }
+// fullLoadStarter is the whole load of R-HA-059's table that the two clients make, as the drain of variant v starts it. The load's name
+// carries the variant: the packages the publish loops push and the files of the load are named after it, and a second variant in the
+// same run would otherwise push the versions of the first again.
+func fullLoadStarter(t *testing.T, h *npmHAFixture, nh *nugetHAFixture, v drainVariant) func() drainLoad {
+	return func() drainLoad { return startFullLoad(t, h, nh, "drain-"+strings.ToLower(string(v))) }
 }
 
 // drainExtras are the parts of E5.9 beside the clients' load: the long-transfer probes and R-STOR-046's storage jobs.
@@ -190,7 +192,7 @@ func TestDrainLoad(t *testing.T) {
 		{variantE, "R-HA-059 R-HA-060 R-STOR-046 E5.9 drain variant E (a running backup pod on the node) under the full load: every npm and dotnet command exits 0, k6 only 2xx and 304, every acknowledged publish installs, a long transfer is cut at most once per evicted packages pod and completes by resume, no SIGKILL, jobs resume with their attempt, gc-full finishes on the other worker"},
 	} {
 		t.Run(v.name, func(t *testing.T) {
-			drainUnderLoad(t, "full", v.variant, fullLoadStarter(t, h, nh), drainExtras()...)
+			drainUnderLoad(t, "full", v.variant, fullLoadStarter(t, h, nh, v.variant), drainExtras()...)
 		})
 	}
 }
@@ -204,6 +206,6 @@ func TestDrainLoadPooler(t *testing.T) {
 	requirePoolerProfile(t)
 
 	t.Run("R-HA-059 R-HA-058 R-STOR-046 E5.9 drain variant D (an instance of the request pooler on the node) under the full load: every npm and dotnet command exits 0, k6 only 2xx and 304, every acknowledged publish installs, a long transfer is cut at most once per evicted packages pod and completes by resume, no SIGKILL, jobs resume with their attempt, gc-full finishes on the other worker", func(t *testing.T) {
-		drainUnderLoad(t, "full", variantD, fullLoadStarter(t, h, nh), drainExtras()...)
+		drainUnderLoad(t, "full", variantD, fullLoadStarter(t, h, nh, variantD), drainExtras()...)
 	})
 }

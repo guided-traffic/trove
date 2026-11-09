@@ -1837,7 +1837,7 @@ stands for are the probe jobs of step 3, and the retention run joins `storageJob
 
 **Artifacts.** `full-ha-drain-b.json`, `-c.json`, `-e.json`, `-d.json` and `nuget-ha-drain.json` (the conditions' numbers), the logs of the
 evicted pods (`full-drain-<variant>-<pod>.log`), the header dumps of the download probes (`.out/e2e-data/drain-dl-<i>.hdr`, overwritten by
-the next variant), `drain-pod-watch.jsonl`, `drain-events.json`, the load's own files (`npm-load-drain.json`, `nuget-load-drain.json`, `k6-npm-drain/`, `k6-nuget-drain/`).
+the next variant), `drain-pod-watch.jsonl`, `drain-events.json`, the load's own files (`npm-load-drain-<variant>.json`, `nuget-load-drain-<variant>.json`, `k6-npm-drain-<variant>/`, `k6-nuget-drain-<variant>/`).
 
 **Not built.** The 5 minutes before and 10 minutes after of the table (the variants run 2 and 3, Q-HA-240); the retention run of R-STOR-046
 (not built in the product); a cut upload is repeated from its start, because no resumable generic upload exists. **Not yet measured.** No run
