@@ -15,6 +15,7 @@ package deb
 
 import (
 	"context"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/errs"
@@ -41,6 +42,8 @@ type Options struct {
 	KeysChanged func(ctx context.Context, tx meta.Tx, repoID int64) error
 	// Jobs enqueues the index build (enqueue.go): after a key change when KeysChanged is nil, and for a reindex. nil enqueues nothing.
 	Jobs Jobs
+	// IndexDelay is deb.index_delay: the time a change waits before its build starts. Zero means DefaultIndexDelay.
+	IndexDelay time.Duration
 }
 
 // Store implements the data port of the format: the groups, each embedded from the file of the package that builds it.

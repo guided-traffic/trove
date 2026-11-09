@@ -57,7 +57,7 @@ func (a *App) wireFormatPorts(ctx context.Context, in infra) (formatPortsArea, e
 	if err := requireInputs(AreaFormatPorts, given("database", in.db), given("audit recorder", in.rec)); err != nil {
 		return formatPortsArea{}, err
 	}
-	ports, err := formatPorts(in.db, in.rec, in.blobs, in.queue, in.ring)
+	ports, err := formatPorts(in.db, in.rec, in.blobs, in.queue, in.ring, a.cfg.Deb)
 	if err != nil {
 		return formatPortsArea{}, err
 	}
@@ -72,6 +72,7 @@ func (a *App) wireFormatPorts(ctx context.Context, in infra) (formatPortsArea, e
 		if err := a.startOCISweep(in, ports); err != nil {
 			return formatPortsArea{}, err
 		}
+		a.startDebIndexer(ports)
 	}
 	return formatPortsArea{bindings: b, views: formathost.NewViewAdapters(formats.List(), b)}, nil
 }
@@ -176,7 +177,7 @@ var _ nugetformat.Scanner = (*nugetdata.Store)(nil)
 // either package, because neither imports the other.
 var _ debformat.Store = (*debdata.Store)(nil)
 
-func formatPorts(db meta.Runner, rec audit.Recorder, blobs *blob.Store, queue nugetdata.Jobs, ring *secrets.KeyRing) (map[formats.ID]any, error) {
+func formatPorts(db meta.Runner, rec audit.Recorder, blobs *blob.Store, queue nugetdata.Jobs, ring *secrets.KeyRing, debCfg config.Deb) (map[formats.ID]any, error) {
 	st, err := npm.New(npm.Options{
 		DB: db, Recorder: rec, Source: httpserver.SourceFrom,
 		Actor: func(ctx context.Context) audit.Actor { return edge.ActorFrom(httpserver.PrincipalFrom(ctx)) },
@@ -199,7 +200,7 @@ func formatPorts(db meta.Runner, rec audit.Recorder, blobs *blob.Store, queue nu
 		return nil, fmt.Errorf("formats: oci data port: %w", err)
 	}
 	debOpts := debdata.Options{
-		DB: db, Recorder: rec, Source: httpserver.SourceFrom, Ring: ring,
+		DB: db, Recorder: rec, Source: httpserver.SourceFrom, Ring: ring, IndexDelay: debCfg.IndexDelay,
 		Actor: func(ctx context.Context) audit.Actor { return edge.ActorFrom(httpserver.PrincipalFrom(ctx)) },
 	}
 	// The index build's queue: the restore's refusing queue has no Running and enqueues no build, as it enqueues no job.

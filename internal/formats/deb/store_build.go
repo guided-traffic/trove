@@ -20,8 +20,11 @@ type BuildStore interface {
 	// (every suite when full) with the paragraphs of their coordinates (R-DEB-010). A build never reads a package file.
 	GenerationInputs(ctx context.Context, tx formats.Tx, repoID int64, full bool) (rows.BuildInputs, error)
 	// RecordGeneration writes a build's own rows in the publication's transaction: the deb_generations row, the previous generation
-	// marked superseded, and built_seq, generation, release_date, published_at and state of the suite, each only while the suite's
-	// built_seq is still below the change_seq the build read (rows.GenerationRecord.ReadSeq). applied is false when a newer build
-	// has published already; the caller then returns items.ErrSuperseded from its commit function.
+	// marked superseded, the generations retention gave up deleted, and built_seq, generation, release_date, published_at and state
+	// of the suite, each only while the suite's built_seq is still below the change_seq the build read
+	// (rows.GenerationRecord.ReadSeq). applied is false when a newer build has published already; the caller then returns
+	// items.ErrSuperseded from its commit function.
 	RecordGeneration(ctx context.Context, tx formats.Tx, in rows.GenerationRecord) (applied bool, err error)
+	// FailBuild records that a build published nothing for a suite: state failed with the reason, the generation kept (R-DEB-010).
+	FailBuild(ctx context.Context, in rows.BuildFailure) error
 }

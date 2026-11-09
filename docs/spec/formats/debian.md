@@ -621,7 +621,8 @@ SHA256:
 
   `Origin` and `Label` come from the settings (R-DEB-008); `Architectures` lists the suite's architectures without `all` (APT
   finds the `all` files in every architecture's index); every index file of the suite is listed under both checksum fields with
-  its size, sorted by path. A local repository's `Release` has no `Valid-Until`
+  its size, sorted by path, and with them the size and checksums of each `Packages` before its compression, which is not a file of the
+  repository (Q-DEB-56). A local repository's `Release` has no `Valid-Until`
   ([H-624](#h-624--troves-own-release-files-carry-no-valid-until)); a virtual repository's carries the earliest `Valid-Until` of
   the member releases it merged, when any has one (R-DEB-025, Q-DEB-32). There is no `Signed-By` field.
 - `InRelease` and `Release.gpg` are R-DEB-016.
@@ -641,7 +642,7 @@ Priority: **P2** · Covers: PKG-DEB-013
   `Release` says `Acquire-By-Hash: yes`. APT then fetches every index file by its SHA-256, so the file it gets after reading an
   `InRelease` is the one that `InRelease` names, whichever replica answers and whichever generation is current by then.
 - **Retention.** A by-hash file stays while a kept generation names it: the current one, the superseded ones for
-  `deb.by_hash_keep` after they were superseded, and the last three whatever their age (Q-DEB-8). Files no kept generation names
+  `deb.by_hash_keep` after they were superseded, and the three newest superseded ones whatever their age (Q-DEB-8, Q-DEB-51). Files no kept generation names
   are removed only in the commit of a `deb-index` job of the repository (R-DEB-010, Q-DEB-33): the next build, or the job the
   periodic task `deb-index-refresh` enqueues when a repository's retention is due and no change triggers a build.
 - Only SHA-256: APT asks for the strongest hash a `Release` lists; `MD5Sum` in the `Release` serves other tools.
@@ -2705,6 +2706,140 @@ need the foreign key. The development agent would revisit (c) if a second format
 **Applied in the spec:** R-DEB-013. Code: `internal/meta/postgres/migrations/00063_deb_binaries_detached.sql`, `Removed` in
 `internal/formatdata/deb/local_store.go`, `OnItemsRemoved` in `internal/formats/deb/hooks.go`. Test: `test/integration/postgres/deb_test.go`.
 
+### Q-DEB-51 · Retention keeps the current generation, the superseded ones within the keep time and the three newest superseded ones
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-DEB-012 says "the last three whatever their age". It does not say whether the current generation is one of the three.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The current generation, every superseded one younger than `deb.by_hash_keep`, and the three newest superseded ones (chosen) | Four generations stay at least | A client that read `InRelease` three builds ago can still fetch its files | One generation more than the other reading |
+| (b) The three newest generations including the current one | Two superseded ones stay | Less to keep | A burst of three builds in seconds takes the first generation's files away from a client that is still fetching them |
+
+**Choice:** (a).
+
+**Rationale:** the by-hash files are small and a client that is slow loses an `apt-get update`. The development agent would revisit it if
+the retained files grew a cost.
+
+**Applied in the spec:** R-DEB-012. Code: `Retain` in `internal/formats/deb/index/retention.go`. Test: `TestR_DEB_012_Retention`.
+
+### Q-DEB-52 · A build without a usable key marks its suites failed and succeeds; any other failure is retried
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-DEB-010 says a failed build is retried by R-ARCH-016 and R-DEB-016 says a build without a primary key publishes nothing and the
+suite is `failed` with `no_signing_key`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `no_signing_key` marks the suites failed and ends the job without an error; every other failure marks the suite failed and fails the job, which is retried (chosen) | Five attempts for what can pass | No retry of what only a person can fix; a key change or the restore's fix-up enqueues a build | The job list shows a success for a repository that cannot publish; the state read and the metric show it |
+| (b) Fail the job for a missing key as well | Uniform | Visible in the job list | Five identical failures, then a dead job, for a condition no retry changes |
+
+**Choice:** (a).
+
+**Rationale:** a missing key is a state, not a fault of the attempt. The development agent would revisit it if operators looked for the
+condition in the job list.
+
+**Applied in the spec:** R-DEB-010, R-DEB-016. Code: `Indexer.Build` in `internal/formatdata/deb/build.go`.
+
+### Q-DEB-53 · Each suite is published in a transaction of its own
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-DEB-010 says "one transaction publishes every file of a generation". A build can be for several suites.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One publication per suite (chosen) | The generation is a suite's | A reader sees a suite's previous generation or its new one; a failure of one suite does not hold back another; the monotonic condition is per suite | A client that reads two suites may see one new and one old |
+| (b) One publication for all suites of a build | Atomic across suites | A consistent view of the repository | A suite that cannot be built (a bad row) blocks every other; `built_seq` is per suite anyway |
+
+**Choice:** (a).
+
+**Rationale:** `Release` documents are per suite and a client reads one suite. The development agent would revisit it if a client needed
+two suites to agree.
+
+**Applied in the spec:** R-DEB-010. Code: `buildSuite` in `internal/formatdata/deb/build.go`.
+
+### Q-DEB-54 · A new suite starts at change_seq 1 and its upload enqueues the build; the periodic task is the safety net
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `deb_suites.change_seq` defaults to 1 and `built_seq` to 0, so a created suite is already due and the upload that creates it
+does not raise it. The enqueue of the build must not hang on the raise.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every writer of a change enqueues the build when it changed anything, raised or not; the task `deb-index-refresh` enqueues a build for a local repository with a suite that has changes no build published (chosen) | A lost job (a restore, a queue purge) is repaired within a minute | Both cases are covered | A second path to the same job; the coalescing key makes it harmless |
+| (b) Raise a created suite as well | One rule | change_seq 2 for a new suite | The default of the schema would be pointless |
+
+**Choice:** (a).
+
+**Rationale:** the first upload of a suite is the case that must not be missed; the integration tests found it. The development agent
+would revisit it if the task's cost showed.
+
+**Applied in the spec:** R-DEB-010. Code: `group.raise` in `internal/formatdata/deb/changes.go`, `EnqueueDue` in `refresh.go`.
+
+### Q-DEB-55 · The index state is pending whenever changes are unpublished, and a wait for an unknown suite does not wait
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-DEB-014 lists the states `pending`, `current` and `failed` and a `waitFor` that waits "until every named suite's
+`publishedSeq` reaches its value".
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `pending` is computed: `changeSeq` above `publishedSeq` unless the last build failed; a suite the repository does not have is absent and its wait ends at once (chosen) | The state is never stale | A client that polls sees the truth between a change and the build's start | A wait for a suite that an upload is about to create does not wait; the upload's answer names its suite |
+| (b) Wait for a suite that does not exist yet until the maximum | Tolerant | A client may start waiting before the upload | A typo costs `deb.index_wait_max` |
+
+**Choice:** (a). The waits of one request share one budget of `deb.index_wait_max`.
+
+**Rationale:** the upload answer carries the suite and its number, so a client never waits for a suite it did not just write. The
+development agent would revisit it if a client had to wait before it wrote.
+
+**Applied in the spec:** R-DEB-014. Code: `buildStore.Suites`, `WaitPublished`, `GetDebIndexState`.
+
+### Q-DEB-56 · The Release lists the checksums of each Packages before its compression
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-DEB-011 lists the index files a suite serves, `Packages.gz` and optionally `Packages.xz`. A first `apt-get update` against a repository
+built that way (Debian 13 with `sqv`, Ubuntu 22.04 with `gpgv`, 2026-11-09) verified `InRelease` and then fetched no index and installed nothing:
+`apt-get indextargets` listed none and `apt-get install` answered "Unable to locate package". The same repository with the checksums of the
+uncompressed `Packages` added to the `Release` worked on both.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) List `Packages` (uncompressed) in the hash lists with its size and digests, and serve no such file (chosen) | The `Release` names a path that answers 404 | What APT needs: it fetches the compressed file and checks the decompressed content against this entry | A `Release` entry without a file; a tool that fetches every listed path sees a 404 |
+| (b) Also serve the uncompressed file as a generated item | Every listed path exists | Consistent | A third copy of every index, and R-DEB-011's "no uncompressed file" changes |
+
+**Choice:** (a).
+
+**Rationale:** it is the smallest thing the verified client needs, and APT never requests the uncompressed path when a compressed one is listed
+(by hash or not). The development agent would revisit it if a client was found that requests it.
+
+**Applied in the spec:** R-DEB-011. Code: `Suite.Listed` in `internal/formats/deb/index/release.go`. Test: `TestR_DEB_011_BuildLayoutAndRelease`, the integration test
+`TestR_DEB_016_AptGetUpdateAndInstallAgainstALocalRepository`.
+
+### Q-DEB-57 · The snapshot of an index build is a REPEATABLE READ transaction, an exception to R-ARCH-019
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-DEB-010 reads the suites, their files and their published generations "in one `REPEATABLE READ` snapshot", and R-ARCH-019 allows that isolation
+level only for the backup and the grant-index build.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The snapshot is a transaction of the request pool that sets `REPEATABLE READ` before its first statement; R-ARCH-019 and its archtest rule name it as a third exception (chosen) | One consistent view of the rows a generation lists | The generation never lists a file without its coordinates, or a suite with the numbers of another moment | A third exception to a rule that had two |
+| (b) `READ COMMITTED` reads in sequence | No exception | None | A file added between the reads of the coordinates and the binaries could be listed without a row, or a `change_seq` could be read after the files it covers |
+
+**Choice:** (a). The transaction only reads and ends before anything is rendered, compressed, signed or written (R-ARCH-019).
+
+**Rationale:** the numbers a build writes back (`built_seq`) must be those of the rows it listed. The development agent would revisit it if the reads
+became one statement.
+
+**Applied in the spec:** R-ARCH-019, R-DEB-010. Code: `snapshot` in `internal/formatdata/deb/build_store.go`, `isolationExempt` in `internal/archtest/sqlrules.go`.
+
 ### Q-DEB-70 · The stub's test keys have a fixed creation date, not "an hour back"
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with
@@ -3037,6 +3172,22 @@ rows (R-BAK-008), so the first release a remote stores afterwards is taken as it
 served before. A virtual repository still refuses it by its own record (R-DEB-025), and each client's APT keeps its newer list
 (verified), but a pull-through client that never saw the newer release and a mirror pass accept it. Live once the remote class is
 built; real for restores without remote caches while an upstream mirror serves an old release.
+
+### H-721 · The index of a deleted package stays fetchable by hash for the keep time
+
+A deleted package file is gone from the next generation, and the `.deb` answers 404. The index files of the generations before it are
+kept by hash for `deb.by_hash_keep` and for the three newest superseded generations whatever their age (R-DEB-012, Q-DEB-51), so the
+paragraph that describes the deleted package (its control fields, size and digests, not its content) can be fetched by anyone who may read
+the index and knows the hash of an older `Release`. A deletion for a reason that makes the description sensitive is therefore not complete
+for at least the keep time. Live today for local repositories; an operator shortens `deb.by_hash_keep` to ten minutes at the lowest.
+
+### H-722 · A repository whose builds fail keeps serving its last generation
+
+A build that fails (no usable key, a row that does not render, a signing failure) publishes nothing: the suite keeps its previous signed
+generation and the state read says `failed` with the reason (R-DEB-010). Clients keep getting the old index, so a change that was meant
+to take a package away (a deletion, a moved coordinate) does not reach them until a build succeeds. Nothing but the state read, the job
+list and the metric shows it. Live whenever a key is withheld or retired without a replacement (R-DEB-032, H-622) and for a suite whose
+rows no longer render.
 
 ### H-720 · A path pattern that hides a package file does not hide its version from the package screens
 

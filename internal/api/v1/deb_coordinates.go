@@ -18,6 +18,8 @@ import (
 type DebServices struct {
 	// Coordinates changes the coordinates of a stored package file.
 	Coordinates DebCoordinateService
+	// Index reads the index state of a local repository (deb_index.go).
+	Index DebIndexService
 }
 
 // DebCoordinateChange is one replacement of the coordinates of a stored package file (R-DEB-009). The handler has resolved the

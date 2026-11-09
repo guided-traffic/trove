@@ -680,3 +680,24 @@ package; no suite field in the setup dialog (Q-DEB-104).
 - The journey `17-deb.spec.ts` was not run (the kind cluster was in use by another builder); it type-checks and passes the lint. Its steps for the key rotation need only the built key API.
 - The German texts were written without a native review.
 - A real `apt-get` against a repository set up with the rendered snippets is WP10's.
+
+## 16 · WP4b (the index builder) as built (stage 3)
+
+Built on the base with WP4a merged. Pages: [deb.md](../developer/deb.md#the-index-builder-wp4b), [security/deb-index.md](../security/deb-index.md); decisions Q-DEB-51 to
+Q-DEB-57, H-721 and H-722.
+
+- **Built:** `internal/formats/deb/index/{packages,release,retention}.go` (pure renderers, retention and the `Date` rule, a fuzz target), the job `deb-index`
+  (`Indexer.Build`: snapshot, keys, `Date` with the wait on the database clock, signing, one publication per suite, supersession, drop of an empty suite by a full build),
+  `build_store.go` (suites, `WaitPublished`, the snapshot's inputs, `RecordGeneration`, `FailBuild`), `queries/deb_build.sql`, the handlers of `dists/…` and by-hash for the
+  local class, `GET …/deb/index` with `waitFor`, the enqueueing from every writer of a change, the task's safety net and retention, the restore's fix-up, and the
+  composition root's binding of the builder.
+- **Differences from the plan (Q-DEB-56):** the Release lists the checksums of each uncompressed Packages, which APT needs and the plan did not say; each suite is published in its own transaction (Q-DEB-53); the first upload of a suite enqueues the build although it raises nothing (Q-DEB-54);
+  retention keeps four generations at least (Q-DEB-51); a build without a key ends without an error (Q-DEB-52).
+- **Verified:** the integration tests in `test/integration/deblocal` on the real publication port (signatures with the repository's key, `InRelease` signs `Release` byte
+  for byte, `Release` lists every file with matching sizes and digests, the `Date` at least 30 s behind the database time and equal to the `Last-Modified` of `InRelease`,
+  a later generation has a later `Date`, earlier generations stay by hash, a deletion and a reindex, `waitFor`, thirty parallel uploads coalesced, a build stopped before its
+  commit leaves the previous generation byte for byte, co-signing while a next key exists), and `apt-get update --error-on=any` with `apt-get install` in `debian:13` and
+  `ubuntu:22.04` (see the report of the change for what ran).
+- **Not built or not verified:** the metric `trove_deb_index_delay_seconds`; the delay-bound test under the reference load (`TestR_DEB_010_DelayBound`, the nightly set `deb-long`);
+  the twenty key changes in five seconds and the imported key with a fresh self-signature are covered by the pure test of `PickDate` and by the library's tests, not by an
+  integration test; the virtual class (WP8); `Packages.xz` is rendered and tested as bytes, but no client fetched it.

@@ -66,7 +66,7 @@ A route of a class the format has not registered is left out of `Format.Routes()
 | [items/publish.go](../../internal/items/publish.go) | `Publisher`, `GeneratedFile`, `ErrSuperseded`; `Store.Publish` answers `not_implemented` |
 | [formathost/background_upstream.go](../../internal/formathost/background_upstream.go), [name_servers.go](../../internal/formathost/name_servers.go) | `Host.BackgroundUpstream` (built: a job run of one remote repository fetches under the pass's egress, credential, share and throttling rules, without a pass; Q-REPO-272, [mirror.md](mirror.md)) and the virtual engine's `NameServers` (undetermined until the remote class lands; Q-REPO-270) |
 | [repository/create_hooks.go](../../internal/repository/create_hooks.go) | `RegisterCreateHook`: rows of a format's port in the transaction that creates its repository (Q-REPO-273); nothing is bound yet |
-| [api/v1/deb_*.go](../../internal/api/v1/deb_keys.go), [reindex.go](../../internal/api/v1/reindex.go), [deb_stub.go](../../internal/api/v1/deb_stub.go) | The handlers of the management operations that are not built: 501, or 503 on a replica without a database |
+| [api/v1/deb_keys.go](../../internal/api/v1/deb_keys.go), [deb_index.go](../../internal/api/v1/deb_index.go), [reindex.go](../../internal/api/v1/reindex.go) | The management operations of the signing keys, the index state and the reindex |
 | [api/v1/deb_coordinates.go](../../internal/api/v1/deb_coordinates.go), [app/wire_deb_api.go](../../internal/app/wire_deb_api.go) | `PUT …/deb/coordinates` (R-DEB-009): the handler resolves the repository and the caller; `debCoordinates` in the composition root decides deploy and delete per side, enforces ownership and writes in one transaction (Q-DEB-48) |
 | [audit/events_deb.go](../../internal/audit/events_deb.go) | The audit events; four are journaled |
 
@@ -139,13 +139,49 @@ and a source file named by `SetupData.Project` and `Key`, Q-ARCH-420, and an `au
 ([handlers_local_test.go](../../internal/formats/deb/handlers_local_test.go)); the SQL, the ownership and the permissions per side are in
 `test/integration/deblocal`.
 
+## The index builder (WP4b)
+
+**The job.** `deb-index` ([build.go](../../internal/formatdata/deb/build.go), `Indexer.Build`) reads the repository from the job's target key and
+`IndexJobArgs` from its arguments. One build: a `REPEATABLE READ` snapshot reads the suites whose `change_seq` exceeds `built_seq` (every suite
+for a full build) with their live, unwithheld files, the blobs' digests and the published generations; no transaction is open from there on. The
+keys are opened for the build and their secrets cleared at once; the `Date` is chosen with `index.PickDate` (the database time minus 60 s, one
+second after the previous `Date`, not before a key may sign, never later than the time minus 59 s: when the rules ask for more, the build waits on
+the database clock and reads it again); the suite is rendered, compressed, signed (`ClearSign`, `DetachSign`) and handed to the publication port
+([items.Publisher](../../internal/items/publish.go)), whose commit function writes the generation (`RecordGeneration`) and returns
+`items.ErrSuperseded` when a newer build has published.
+
+**Renderers.** [formats/deb/index](../../internal/formats/deb/index) is pure and a leaf: `Packages` (the paragraphs ordered by name, dpkg version
+and architecture, the computed fields appended), `Gzip` and `XZ` (equal content, equal bytes), `Build` (the layout of a suite: every component, every
+architecture and `binary-all`; the `all` files under every architecture; the empty indexes of a component whose last file left), the `Release` text,
+`Retain`, `GivenUp` and `PickDate`.
+
+**What is stored.** Per generation, as generated items at `dists/<suite>/…`: `Release`, `InRelease`, `Release.gpg`, every `Packages.gz` (and
+`.xz` with `deb.compression: ["xz"]`) and the by-hash copy of each index file. `deb_generations.files` maps the index files to their SHA-256; retention
+([index/retention.go](../../internal/formats/deb/index/retention.go)) decides from it which by-hash paths the commit removes (Q-DEB-51), and only a build
+removes (Q-DEB-33). `modified_at` of every item is the `Date`.
+
+**Enqueueing.** Every writer of a change calls `group.raise` ([changes.go](../../internal/formatdata/deb/changes.go)): upload, change of coordinates, deletion,
+restore from the trash, withholding and reinstating a file. It enqueues after `deb.index_delay` (a waiting job is moved to the earlier time, Q-ARCH-384); a
+key change enqueues at once (`Options.KeysChanged`). The task `deb-index-refresh` ([refresh.go](../../internal/formatdata/deb/refresh.go)) enqueues for a local repository
+whose retention is due or that has changes no build published. The restore's fix-up ([backup/fixup/deb.go](../../internal/backup/fixup/deb.go)) enqueues a full build of
+every local and virtual repository with `jobs.EnqueueTx`, which needs no queue (R-DEB-032).
+
+**Reads.** `GET dists/…` and `…/by-hash/SHA256/<hex>` of a local repository ([handlers_dists.go](../../internal/formats/deb/handlers_dists.go)) authorize a read on a path that
+belongs to no package, stat the generated item and serve it with the core's streaming and conditional rules; the `Cache-Control` is the format's (R-DEB-005).
+`GET …/deb/index` ([api/v1/deb_index.go](../../internal/api/v1/deb_index.go)) reads the state, with `waitFor` through `buildStore.WaitPublished` (a poll every 250 ms, no
+transaction). The composition root binds the builder on a replica that claims jobs (`startDebIndexer`, [wire_deb_index.go](../../internal/app/wire_deb_index.go)).
+
+**Tests.** The renderers: [index_test.go](../../internal/formats/deb/index/index_test.go) and `FuzzPackages`. The SQL, the signatures, the times, the retention, the
+parallel uploads, the stopped build and the co-signing: `test/integration/deblocal/index_test.go`. A real client: `apt_test.go` runs `apt-get update --error-on=any` and
+`apt-get install` in `debian:13` and `ubuntu:22.04` against a replica (skipped without docker). The replicas of these tests run with the role `all`, because the
+builder is a job and the role `web` claims none; the stack seeds repositories by SQL, so the test creates and promotes a key where the creation hook would have.
+
 ## What is built and what is not
 
-Built: everything above. Not built, by work package of [apt-work-packages.md](../projektplan/apt-work-packages.md): the OpenPGP library, the signing
-keys and their API (WP2, built beside this by another builder), the index builder and the publication port (WP4: `dists/…`, `by-hash` and
-`signing-key.asc` answer 501), the stub archive (WP5), the remote class (WP6), the mirror (WP7), the virtual class (WP8), the background
-upstream (WP13), the tests and the e2e sets (WP9, WP10), the final documentation (WP12). A repository has no `InRelease`
-until WP4 lands, so `apt-get update` cannot use it yet; the packages are stored and downloadable.
+Built: everything above, including the stub archive (WP5), the signing keys (WP2), the background upstream (WP13), the publication
+port and the index builder (WP4) and the UI (WP11). Not built, by work package of [apt-work-packages.md](../projektplan/apt-work-packages.md): the
+remote class (WP6), the mirror (WP7), the virtual class (WP8), the tests of the other classes (WP9), the e2e sets (WP10) and the final
+documentation (WP12). The metric `trove_deb_index_delay_seconds` is not recorded yet.
 
 ## The OpenPGP library and the counting stub archive (stage 1 of the remote side)
 

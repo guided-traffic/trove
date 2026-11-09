@@ -34,6 +34,7 @@ type env struct {
 
 	alice, bob, carol testenv.Person
 	tokA, tokB, tokC  string
+	tokAdmin          string
 }
 
 // newEnv is the installation with package ownership off; newOwnedEnv enforces it, so the first upload of a name claims it.
@@ -51,8 +52,25 @@ func newEnvWith(t *testing.T, cfg string) *env {
 	st.Policy("deb-deployers", []string{"read", "deploy"}, []string{repo}, e.bob)
 	st.Policy("deb-readers", []string{"read"}, []string{repo}, e.carol)
 	e.tokA, e.tokB, e.tokC = st.Token(e.alice, scope.Default()), st.Token(e.bob, scope.Default()), st.Token(e.carol, scope.Default())
-	e.r = st.Start(t, testenv.ReplicaOptions{Name: "web-1"})
+	admin := st.User("ops")
+	st.Bind("admin", admin)
+	e.tokAdmin = st.Token(admin, scope.Scope{Inherit: true, Admin: true})
+	e.r = st.Start(t, testenv.ReplicaOptions{Name: "web-1", Role: "all", Env: []string{"TROVE_DEB_INDEX_WAIT_MAX=2s", "TROVE_DEB_INDEX_DELAY=1s"}})
+	e.primaryKey()
 	return e
+}
+
+// primaryKey gives the repository its first signing key. The stack seeds the repository by SQL, so the creation hook that generates
+// the key did not run: a generated next key is promoted, which a repository without a primary allows (R-DEB-017).
+func (e *env) primaryKey() {
+	e.t.Helper()
+	keys := "/api/v1/projects/" + project + "/repositories/" + repo + "/deb/signing-keys"
+	if a := e.st.Do(e.r, "POST", keys, e.tokAdmin, map[string]any{"generate": true}); a.Status/100 != 2 {
+		e.t.Fatalf("create the first key: %d %s", a.Status, a.Body)
+	}
+	if a := e.st.Do(e.r, "POST", keys+"/promote", e.tokAdmin, nil); a.Status/100 != 2 {
+		e.t.Fatalf("promote the first key: %d %s", a.Status, a.Body)
+	}
 }
 
 func build(t *testing.T, name, version string, mod func(*debgen.Spec)) []byte {

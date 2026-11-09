@@ -2,9 +2,12 @@ package deb
 
 import (
 	"context"
+	"slices"
 	"sync"
 
 	"github.com/guided-traffic/trove/internal/jobs"
+	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 )
 
 // RefreshHook is one part of the periodic task deb-index-refresh (Q-DEB-33): it enqueues what is due and deletes nothing. The local
@@ -24,10 +27,15 @@ func RegisterRefreshHook(h RefreshHook) {
 	refreshHooks.l = append(refreshHooks.l, h)
 }
 
-// RunRefreshJob is the handler of the task deb-index-refresh (R-DEB-010, R-DEB-026): it enqueues a deb-index job for each repository
-// whose retention is due and calls the registered hooks. It is the stub the work package of the index builder replaces (WP4); it runs
-// the hooks and nothing more until then.
+// RunRefreshJob is the handler of the task deb-index-refresh (R-DEB-010, R-DEB-026, Q-DEB-33): it enqueues a deb-index job for each
+// local repository whose retention is due or that has changes no build has published, and calls the registered hooks. It deletes
+// nothing itself: the removals happen in the commit of the build.
 func RunRefreshJob(ctx context.Context, run *jobs.Run) error {
+	if x := bound.Load(); x != nil {
+		if err := x.EnqueueDue(ctx); err != nil {
+			return err
+		}
+	}
 	refreshHooks.mu.Lock()
 	hooks := append([]RefreshHook(nil), refreshHooks.l...)
 	refreshHooks.mu.Unlock()
@@ -37,4 +45,35 @@ func RunRefreshJob(ctx context.Context, run *jobs.Run) error {
 		}
 	}
 	return nil
+}
+
+// EnqueueDue enqueues the builds that are due without a change to trigger them: retention gives up a generation's by-hash files only in
+// a build (Q-DEB-33), and a change whose build never ran (a lost job, a restore) is built here (the safety net of R-DEB-010).
+func (x *Indexer) EnqueueDue(ctx context.Context) error {
+	var ids []int64
+	err := x.Store.buildStore.read(ctx, nil, func(qs *q.Queries) error {
+		due, err := qs.DebRetentionDue(ctx, x.ByHashKeep.Seconds())
+		if err != nil {
+			return err
+		}
+		changed, err := qs.DebChangedRepositories(ctx)
+		if err != nil {
+			return err
+		}
+		ids = append(due, changed...)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	slices.Sort(ids)
+	ids = slices.Compact(ids)
+	return x.Store.buildStore.o.DB.InTx(ctx, func(tx meta.Tx) error {
+		for _, id := range ids {
+			if err := x.Store.EnqueueBuild(ctx, tx, id, 0); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

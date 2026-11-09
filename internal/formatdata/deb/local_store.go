@@ -127,7 +127,7 @@ func (s localStore) RecordUpload(ctx context.Context, tx meta.Tx, in rows.Upload
 			touched[c.Suite] = !fresh[c.Suite]
 		}
 	}
-	if err := raise(ctx, qs, in.RepoID, mapKeys(touched)); err != nil {
+	if err := s.raise(ctx, tx, qs, in.RepoID, mapKeys(touched), len(res.Added) > 0); err != nil {
 		return res, err
 	}
 	all, err := qs.DebCoordinatesOf(ctx, in.ItemID)
@@ -206,7 +206,7 @@ func (s localStore) SetCoordinates(ctx context.Context, tx meta.Tx, in rows.Coor
 		out.Added = append(out.Added, c)
 		touched[c.Suite] = !fresh[c.Suite]
 	}
-	if err := raise(ctx, qs, in.RepoID, mapKeys(touched)); err != nil {
+	if err := s.raise(ctx, tx, qs, in.RepoID, mapKeys(touched), len(out.Added)+len(out.Removed) > 0); err != nil {
 		return out, err
 	}
 	if err := checkBounds(ctx, qs, in.RepoID, len(in.Coordinates), suitesOf(out.Added)); err != nil {
@@ -265,7 +265,7 @@ func (s localStore) Removed(ctx context.Context, tx meta.Tx, repoID, itemID int6
 		return out, false, err
 	}
 	b := list[0]
-	return s.leaveRow(ctx, qs, repoID, itemID, purge, rows.RemovedFile{
+	return s.leaveRow(ctx, tx, qs, repoID, itemID, purge, rows.RemovedFile{
 		ItemID: itemID, Path: path, SHA256: sha256, Package: b.Package, Version: b.Version, Architecture: b.Architecture,
 	})
 }
@@ -282,20 +282,20 @@ func (s localStore) Restored(ctx context.Context, tx meta.Tx, repoID, itemID int
 		return out, false, err
 	}
 	b := binaryOf(list[0])
-	return s.leaveRow(ctx, qs, repoID, itemID, false, rows.RemovedFile{
+	return s.leaveRow(ctx, tx, qs, repoID, itemID, false, rows.RemovedFile{
 		ItemID: itemID, Path: b.Path, SHA256: b.SHA256, Package: b.Package, Version: b.Version, Architecture: b.Architecture,
 	})
 }
 
 // leaveRow raises the suites of a file that leaves or returns, deletes its rows for a permanent removal and counts the files of its
 // version that remain.
-func (s localStore) leaveRow(ctx context.Context, qs *q.Queries, repoID, itemID int64, purge bool, out rows.RemovedFile) (rows.RemovedFile, bool, error) {
+func (s localStore) leaveRow(ctx context.Context, tx meta.Tx, qs *q.Queries, repoID, itemID int64, purge bool, out rows.RemovedFile) (rows.RemovedFile, bool, error) {
 	cs, err := qs.DebCoordinatesOf(ctx, itemID)
 	if err != nil {
 		return out, false, err
 	}
 	out.Suites = suitesOf(toCoords(cs))
-	if err := raise(ctx, qs, repoID, out.Suites); err != nil {
+	if err := s.raise(ctx, tx, qs, repoID, out.Suites, len(out.Suites) > 0); err != nil {
 		return out, false, err
 	}
 	if purge {

@@ -3457,13 +3457,15 @@ Priority: **MVP** · Covers: HA-062
   connection while that connection serves trove. The lock diagnostics of
   [operations-and-observability.md](operations-and-observability.md) depend on it.
 - Transactions run at `READ COMMITTED`.
-  - Two exceptions run at `REPEATABLE READ READ ONLY`. The first is the backup's snapshot and
+  - Three exceptions run at `REPEATABLE READ`. The first is the backup's snapshot and
     export transactions on the `backup` class ([backup-and-restore.md](backup-and-restore.md)
     R-BAK-005). The second is the grant-index build of [authorization.md](authorization.md)
     R-AUTHZ-028: one transaction on the request pool of the `main` class, never on the control
     connection. It is transaction-scoped and therefore pooler-safe, and it runs with a context
     deadline and `SET LOCAL statement_timeout` equal to `authz.cache.max_staleness`. A read-only
-    transaction never meets a serialization failure.
+    transaction never meets a serialization failure. The third is the snapshot of a Debian index build
+    ([formats/debian.md](formats/debian.md) R-DEB-010, Q-DEB-57): one read of the suites and their files on the request pool,
+    closed before anything is rendered or signed.
   - `meta.InTx` retries SQLSTATE `40001` and `40P01` up to three times.
   - **Every read of the main pool on a request path retries like a transaction.** A handler that reads
     without a transaction uses `DB.Read`, never the raw pool. It repeats the read on a failover error
@@ -3511,8 +3513,8 @@ Acceptance criteria:
   - on `CREATE TEMP` outside the restore load, which fills `CycleBreak` columns from a temporary
     table (R-BAK-021);
   - on an isolation level other than `READ COMMITTED` (`REPEATABLE READ`, `SERIALIZABLE`) outside
-    the backup snapshot and export code and the grant-index build of
-    [authorization.md](authorization.md) R-AUTHZ-028;
+    the backup snapshot and export code, the grant-index build of
+    [authorization.md](authorization.md) R-AUTHZ-028 and the Debian index build's snapshot (R-DEB-010);
   - on `LISTEN` and `WITH HOLD` anywhere.
 - A load test exhausts the request pool of every `web` replica for 30 s. `/readyz` stays `200` on
   every replica throughout, and no job of a `worker` replica returns to `queued` because a

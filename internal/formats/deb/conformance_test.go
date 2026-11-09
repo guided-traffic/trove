@@ -108,7 +108,7 @@ func conformanceChanges() []formattest.ChangeCase {
 // answer 501 until the work packages of the index builder and of the keys build them, so those routes are listed as not built, each with
 // its reason, and the work package that builds the operation removes the entry (the kit refuses a skip the format contradicts).
 func conformance() formattest.Fixture {
-	const notBuilt = "the handler is built by a later work package of T-17 (apt-work-packages.md); it answers 501 deb_not_implemented"
+	const generated = "the files are generated items that only the publication port writes, which the kit's host does not have; test/integration/deblocal serves them"
 	versions := []string{"1.0-1", "1.0-2", "1.1-1"}
 	return formattest.Fixture{
 		Rejects: []string{"pool/%2e%2e/x", "../pool/h/hello/hello_2.10-3_amd64.deb", "dists/stable/InRelease%00"},
@@ -123,15 +123,15 @@ func conformance() formattest.Fixture {
 		Names:      []formattest.NameCase{{Spellings: []string{"hello"}}, {Spellings: []string{"libxml2-utils"}}},
 		Inspect:    inspectDeb("pool/h/hello/hello_1.0-1_amd64.deb"),
 		Content: []formattest.ContentCase{
-			{Name: "release document", Path: "dists/stable/InRelease", Status: http.StatusNotImplemented},
-			{Name: "index", Path: "dists/stable/main/binary-amd64/Packages.gz", Status: http.StatusNotImplemented},
-			{Name: "by-hash file", Path: "dists/stable/main/binary-amd64/by-hash/SHA256/" + strings.Repeat("0", 64), Status: http.StatusNotImplemented},
+			{Name: "release document", Path: "dists/stable/InRelease", Status: http.StatusNotFound},
+			{Name: "index", Path: "dists/stable/main/binary-amd64/Packages.gz", Status: http.StatusNotFound},
+			{Name: "by-hash file", Path: "dists/stable/main/binary-amd64/by-hash/SHA256/" + strings.Repeat("0", 64), Status: http.StatusNotFound},
 			{Name: "package file", Path: poolPath("1.0-1"), Seed: upload("1.0-1", "stable")},
 			{Name: "package file that is not stored", Path: poolPath("9.9-9"), Status: http.StatusNotFound},
 			{Name: "signing key", Path: "signing-key.asc", Status: http.StatusOK},
 		},
 		NoContent: map[string]string{
-			routeDists: notBuilt, routeByHash: notBuilt,
+			routeDists: generated, routeByHash: generated,
 		},
 		Changes: conformanceChanges(),
 		View: &formattest.ViewFixture{

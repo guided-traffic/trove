@@ -42,9 +42,9 @@ func restoreFile(rel string) bool {
 
 // isolationExempt are the trees R-ARCH-019 lets run at REPEATABLE READ READ ONLY:
 // the backup's snapshot (R-BAK-005, whose pgx half is internal/meta/postgres/backup_snapshot.go) and the grant-index build
-// (R-AUTHZ-028).
+// (R-AUTHZ-028), and the snapshot of a Debian index build (R-DEB-010, Q-DEB-57).
 func isolationExempt(rel string) bool {
-	return underAny(rel, []string{"internal/backup", "internal/authz", "internal/meta/postgres/backup_snapshot.go"})
+	return underAny(rel, []string{"internal/backup", "internal/authz", "internal/meta/postgres/backup_snapshot.go", "internal/formatdata/deb/build_store.go"})
 }
 
 // sqlBuilders are the only places that assemble SQL text at run time: the

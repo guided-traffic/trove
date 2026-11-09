@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"slices"
+	"time"
 
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/authz"
@@ -28,8 +29,42 @@ func (a *App) debAPI() v1.DebServices {
 	if !ok {
 		return v1.DebServices{}
 	}
-	return v1.DebServices{Coordinates: debCoordinates{st: st, run: db}}
+	return v1.DebServices{Coordinates: debCoordinates{st: st, run: db}, Index: debIndex{st: st, max: a.cfg.Deb.IndexWaitMax}}
 }
+
+// debIndex reads the index state of a local repository (R-DEB-014).
+type debIndex struct {
+	st  debformat.Store
+	max time.Duration
+}
+
+var _ v1.DebIndexService = debIndex{}
+
+func stateOf(s rows.Suite) v1.DebSuiteState {
+	return v1.DebSuiteState{
+		Suite: s.Suite, ChangeSeq: s.ChangeSeq, PublishedSeq: s.BuiltSeq, Generation: s.Generation, ReleaseDate: s.ReleaseDate,
+		State: s.State, Reason: s.Reason, SignedBy: s.SignedBy,
+	}
+}
+
+// State lists the suites of the repository.
+func (d debIndex) State(ctx context.Context, repoID int64) ([]v1.DebSuiteState, error) {
+	list, err := d.st.Suites(ctx, repoID)
+	out := make([]v1.DebSuiteState, 0, len(list))
+	for _, s := range list {
+		out = append(out, stateOf(s))
+	}
+	return out, err
+}
+
+// Wait waits for the suite's published number without holding a transaction.
+func (d debIndex) Wait(ctx context.Context, repoID int64, suite string, seq int64, max time.Duration) (v1.DebSuiteState, bool, error) {
+	s, found, err := d.st.WaitPublished(ctx, repoID, suite, seq, max)
+	return stateOf(s), found, err
+}
+
+// MaxWait is deb.index_wait_max.
+func (d debIndex) MaxWait() time.Duration { return d.max }
 
 // debCoordinates replaces the coordinates of a stored package file (R-DEB-009).
 type debCoordinates struct {

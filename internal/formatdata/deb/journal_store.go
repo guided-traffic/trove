@@ -109,7 +109,11 @@ func (s journalStore) Withhold(ctx context.Context, tx meta.Tx, in rows.Tombston
 	if err != nil {
 		return "", err
 	}
-	return withhold(ctx, qs, in, time.Time{})
+	res, err := withhold(ctx, qs, in, time.Time{})
+	if err == nil && res == rows.Applied {
+		err = s.enqueueDefault(ctx, tx, in.RepoID)
+	}
+	return res, err
 }
 
 func withhold(ctx context.Context, qs *q.Queries, in rows.Tombstone, now time.Time) (rows.ReplayResult, error) {
@@ -241,7 +245,10 @@ func (s journalStore) ReinstateFile(ctx context.Context, tx meta.Tx, repoID int6
 	if err != nil || len(list) == 0 {
 		return true, err
 	}
-	return true, bumpFile(ctx, qs, repoID, list[0])
+	if err := bumpFile(ctx, qs, repoID, list[0]); err != nil {
+		return true, err
+	}
+	return true, s.enqueueDefault(ctx, tx, repoID)
 }
 
 // Tombstone reads the mark of a path; found is false when there is none.

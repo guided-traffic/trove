@@ -184,6 +184,8 @@ type Suite struct {
 	// Inputs is the fingerprint of each member's input of a virtual suite (R-DEB-026).
 	Inputs    json.RawMessage
 	CheckedAt *time.Time
+	// SignedBy are the fingerprints of the keys that signed the current generation.
+	SignedBy []string
 }
 
 // Key is a signing key of a repository without its private part (deb_signing_keys, R-DEB-015).
@@ -268,15 +270,26 @@ type IndexEntry struct {
 // BuildInputs are what a build reads in its snapshot (R-DEB-010): the suites it builds and the paragraphs of each.
 type BuildInputs struct {
 	Suites []BuildSuite
+	// Now is the database time of the snapshot.
+	Now time.Time
 }
 
-// BuildSuite is one suite of a build: its sequence numbers, the previous Release Date and the paragraphs of its coordinates.
+// BuildSuite is one suite of a build: its sequence numbers, the paragraphs of its coordinates and the generations published so far.
 type BuildSuite struct {
-	Suite              Suite
-	PreviousDate       *time.Time
-	PreviousFiles      map[string]string
-	Entries            []IndexEntry
-	ExtraArchitectures []string
+	Suite   Suite
+	Entries []IndexEntry
+	// Generations are the suite's published generations, oldest first; the one with SupersededAt nil is the current one.
+	Generations []GenerationRow
+	// Now is the database time of the snapshot.
+	Now time.Time
+}
+
+// GenerationRow is a published generation of a suite as retention reads it (deb_generations).
+type GenerationRow struct {
+	Generation   int64
+	SupersededAt *time.Time
+	// Files maps the path of each index file relative to dists/<suite>/ to its SHA-256 (hex).
+	Files map[string]string
 }
 
 // GenerationRecord is the outcome of a build for one suite, written in the publication's transaction (R-DEB-010, R-DEB-012).
@@ -286,11 +299,21 @@ type GenerationRecord struct {
 	ReadSeq     int64
 	Generation  int64
 	ReleaseDate time.Time
-	// Files maps the path relative to dists/<suite>/ to the SHA-256 (hex) of the file.
+	// Files maps the path relative to dists/<suite>/ to the SHA-256 (hex) of the index file.
 	Files    map[string]string
 	SignedBy []string
-	State    string
-	Reason   string
+	// DropGenerations are the generations retention gives up; their rows go.
+	DropGenerations []int64
+	// Drop removes the suite instead (a full build of a suite without files, R-DEB-014); Files and SignedBy are empty then.
+	Drop bool
+}
+
+// BuildFailure is a build that published nothing for a suite: the suite keeps its generation and gets state failed with the reason.
+type BuildFailure struct {
+	RepoID  int64
+	Suite   string
+	ReadSeq int64
+	Reason  string
 }
 
 // Release is the stored release document of a release directory of a remote (deb_remote_releases).
