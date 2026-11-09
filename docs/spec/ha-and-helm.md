@@ -1103,10 +1103,10 @@ Variants, with the same load and pass conditions:
 | Variant | The drained node also hosts | Additional pass condition | Runs |
 |---|---|---|---|
 | A | nothing else | — | every night and on dispatch, in HA and Performance (2 minutes of load before and 3 after; every change to `main` until the owner's decision of 2026-11-01, [Q-HA-67](#q-ha-67--where-and-how-often-the-scenarios-under-npm-load-run)) |
-| B | the Valkey primary and one Sentinel | `trove_valkey_primary_changes_total` rises on every replica; no replica turns unready | a green full run of Test and Release on the commit that closes the phase |
-| C | the PostgreSQL primary | CloudNativePG has requested the switchover (`.status.targetPrimary` names another instance or the operator's failover marker `pending`) when the old primary is evicted; the traffic sees no failed request | a green full run of Test and Release on the commit that closes the phase |
-| D | an instance of the transaction-mode pooler (pooler profile, R-HA-058) | — | a green full run of Test and Release on the commit that closes the phase |
-| E | a running backup pod (R-HA-060) | the backup Job completes, and the eviction is not counted against `backoffLimit` | a green full run of Test and Release on the commit that closes the phase |
+| B | the Valkey primary and one Sentinel | `trove_valkey_primary_changes_total` rises on every replica; no replica turns unready | nightly and on dispatch, in HA and Performance (leg `drain-load`, [Q-HA-242](#q-ha-242--the-variants-under-the-full-load-run-in-the-nightly-in-three-legs)) |
+| C | the PostgreSQL primary | CloudNativePG has requested the switchover (`.status.targetPrimary` names another instance or the operator's failover marker `pending`) when the old primary is evicted; the traffic sees no failed request | nightly and on dispatch (leg `drain-load`, Q-HA-242) |
+| D | an instance of the transaction-mode pooler (pooler profile, R-HA-058) | — | nightly and on dispatch (leg `drain-load-pooler`, Q-HA-242) |
+| E | a running backup pod (R-HA-060) | the backup Job completes, and the eviction is not counted against `backoffLimit` | nightly and on dispatch (leg `drain-load`, Q-HA-242) |
 
 **How the test drains variants B to E** ([Q-HA-170](#q-ha-170--a-variant-drain-evicts-the-releases-pods-and-the-variants-dependency-by-their-own-selectors-in-parallel-drains-and-nothing-else-on-the-node)
 to Q-HA-174). `deploy/dev/drain.sh [--also valkey|postgres|pooler]… <node>` drains the release's pods and, for B, C and D, the
@@ -1115,8 +1115,20 @@ is evicted, and the script returns once the node is uncordoned and the evicted d
 and the Sentinel without a planned failover first and keeps the evicted primary lost until the Sentinels name another one
 ([Q-HA-181](#q-ha-181--variant-b-keeps-the-evicted-valkey-primary-lost-until-the-sentinels-name-another-one-and-asks-for-the-failover-when-they-do-not)); C lets CloudNativePG switch the primary over at the cordon and evicts the demoted
 instance; D runs in the pooler profile with the prerequisites of rule 5; E places a backup pod on the node through a preferred node
-affinity. The harness that picks the node, drains it and judges the variant's own condition (`test/e2e/drain_variants_test.go`) does
-not bring a load: the blocks of the vulnerability scanning run it under their probes (roadmap E5.13), and E5.9 runs it under the load above.
+affinity. The harness that picks the node, drains it and judges the variant's own condition (`test/e2e/drain_variants_test.go`) brings
+no load of its own: the blocks of the vulnerability scanning run it under their probes (roadmap E5.13), and E5.9 runs it under the load
+above, with the variants A to E in one flow (`test/e2e/drain_load_test.go`,
+[Q-HA-240](#q-ha-240--the-variants-b-to-e-under-the-full-load-run-as-long-as-variant-a-and-judge-attempt-unchanged-on-the-jobs-that-moved)
+to Q-HA-242).
+
+**The long-transfer probes in the test**
+([Q-HA-241](#q-ha-241--the-long-transfer-probes-hold-one-download-on-the-evicted-pod-and-the-uploads-are-repeated-by-the-client)).
+The two download probes of the table start with the load and take about 512 s; one is held on the `packages` pod of the drained node
+(started again until that pod answers, read from `X-Trove-Replica`), so the cut of rule 6 is exercised on every drain and is
+a condition: that probe is cut exactly once, by that pod, and resumes with `206`. The other takes the replica the edge gives it. A
+cut on a pod that was not evicted, two cuts on one evicted pod, a refused request (`429`, `5xx`) or a SHA-256 that does not match fail the
+test. Two upload probes of 400 MiB at 2 MiB/s (200 s) start right before the fault, so the cut of the receiving pod (about 115 s after the
+fault) falls into them; the client repeats a cut upload from the start, at most once, and the stored file must match.
 
 **A drain per role** (phase 6a). For each of `api`, `packages` and `worker` (and a worker pool of the queue `vuln` when the
 run configures one), the pods of that role alone are evicted one after the other through the eviction API, each after the
@@ -9225,6 +9237,74 @@ step finished; a pool cannot force-close an acquired connection, so the exit its
 deadline but holds nothing is not named, and when no pool holds anything the close reports no error. The development agent would revisit (a) for the holders found by
 H-693.
 **Applied:** R-ARCH-024 step 6; `internal/meta/postgres/db.go` (`CloseContext`), `internal/app/wire_postgres.go`.
+
+### Q-HA-240 · The variants B to E under the full load run as long as variant A and judge "attempt unchanged" on the jobs that moved
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-059 gives the load 5 minutes before the drain and 10 minutes after it, and variant A runs 2 and 3 minutes (Q-HA-67). The
+variants B to E are four more drains under the same load. Its last pass condition says every job that ran on an evicted `worker` pod
+finishes on another with `attempt` unchanged; in variant C CloudNativePG's switchover ends every database connection, which the lease
+of a job on the worker that is not evicted may notice.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) 5 and 10 minutes for B to E | The table's lengths | As written | About 19 minutes of load plus the preparation per variant: B, C and E in one leg alone take over an hour, beside two clients images and the fixtures; the leg's 80 minutes of test time do not hold them |
+| (b) 2 and 3 minutes, as variant A (chosen) | Every variant has the length that Q-HA-67 accepted for A | A leg of three variants fits in its time (about 15 minutes each); one length for all five variants | Less post-drain time: a slow recovery that shows only after 3 minutes is not seen |
+
+Attempts: (i) every probe job must end with `attempt` 1 in every variant; (ii) the jobs that moved to another worker must (chosen), and
+in variant A every job, because A touches no dependency. (ii) is the condition's own wording ("a job that ran on an evicted `worker`").
+**Choice:** (b) and (ii). **Rationale:** the load and the conditions are those of the table; only the length and the scope of the
+attempt check are the development agent's. A job that stayed on its worker and lost its lease to a switchover is not the drain's
+effect, but it is logged with its attempt in every run. The development agent would revisit (b) when a failure appears only after the
+third minute (a finding of a run) and (ii) when a moved job shows `attempt` above 1 in variant C: that would be a defect of the
+release at shutdown, not of the check.
+**Applied:** `test/e2e/drain_load_test.go` (`drainUnderLoad`).
+
+### Q-HA-241 · The long-transfer probes hold one download on the evicted pod, and the uploads are repeated by the client
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the table asks for two parallel loops of a download with `curl --limit-rate 2M --retry 5 --retry-all-errors -C -` of a
+1 GiB file (512 s) and passes a probe that is "cut at most once per evicted `packages` pod that served it". The edge gives each request
+one of the three replicas, so two probes meet the evicted pod with a chance of about 5 in 9; a drain in which none did passes the
+condition without the cut of rule 6 having run. Rule 6 says uploads are repeated by the client; no resumable upload of a generic file
+exists (R-STOR-011 names it as future work), so an upload is repeated from its start.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Two free download probes | As the table | No test code beyond the loops | A drain can pass without a cut: the path is hoped for |
+| (b) Probe 0 held on the evicted pod, probe 1 free, and two upload probes (chosen) | Probe 0 is started again until `X-Trove-Replica` of its first response names the `packages` pod of the drained node; the cut count of each probe is read from curl's header dump (one block per response) | The cut is certain and is a condition (exactly one, by that pod, then `206`); a cut elsewhere or a refusal fails | Probe 0 is a chosen replica, not a random one: it proves the path, probe 1 and the uploads show the distribution |
+| (c) Delete the serving pod instead of draining | Not a drain | Deterministic | Not the test the requirement names (E1.13 has it) |
+
+**Choice:** (b). **Rationale:** the requirement is "cut at most once per evicted pod and completes by resume"; (b) keeps the
+condition and removes the way to pass it without the event. The uploads (400 MiB at 2 MiB/s, 200 s, started right before the fault) are
+longer than the 110 s of `server.shutdown_timeout` after the eviction, so the receiving pod's cut falls into them; an upload that fails
+after less than 30 s is a refusal (a `429` of a fresh replica or a `502`, F-119) and fails the test rather than counting as a cut. The
+development agent would revisit the held probe when the distribution alone is reported by a run to hit the evicted pod reliably, and the
+upload repetition when a resumable generic upload exists.
+**Applied:** `test/e2e/drain_transfers_test.go`.
+
+### Q-HA-242 · The variants under the full load run in the nightly, in three legs
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the variants table says B to E run "in a green full run of Test and Release on the commit that closes the phase". The owner's rule
+of 2026-11-01 keeps long tests out of the release path: they run nightly, on dispatch and locally, and a red long leg is a finding. The
+full load needs about 12 cores and 10 GiB (Q-HA-102), and Q-ARCH-431 allows three large legs at a time in three lanes.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) In Test and Release | Four more drains in the release path | As the table says | Over an hour on the release path; the large class is shared with the push legs (Q-ARCH-432) |
+| (b) Nightly, three legs (chosen) | Variant A in `nuget-ha` (job `e2e-nuget`, lane 1), B, C and E in `drain-load` (the same job, after `nuget-ha`, `max-parallel: 1`), D in `drain-load-pooler` (job `e2e-drain-pooler`, lane 2 after `npm-ha-soak`, the pooler profile) | A heavy leg keeps at most one heavy neighbour (the lanes 1 and 2 are the heavy ones); D needs the cluster in the pooler profile, so it cannot share a cluster with B, C, E | Lane 1 grows by the leg `drain-load` (about 55 minutes) and lane 2 by D (about 25 minutes) |
+| (c) One leg for all five | One cluster | One job | A leg of over two hours; D needs the poolers, the others do not |
+
+**Choice:** (b). **Rationale:** the lanes and the owner's rule decide; the cost is wall time of the nightly, which Q-ARCH-431 said to revisit
+at 100 minutes for the kind legs (it is passed by the two additions, and recorded here). The closing run's wording "a green full run on the
+commit that closes the phase" is met by dispatching `sets=nuget-ha,drain-load,drain-load-pooler` on that commit; the nightly keeps them
+current. The profile of the three sets is `drain` (the scatter profile with garbage collection without a grace period, for R-STOR-046's
+criterion, Q-STOR-211). The development agent would revisit the lanes when a nightly shows the heavy legs red with a runner cause.
+**Applied:** `.github/workflows/performance.yml`, `deploy/dev/e2e.sh`, `docs/developer/releasing.md`, `docs/developer/e2e.md`, Q-ARCH-431's lane list.
 
 ## What this does not cover
 
