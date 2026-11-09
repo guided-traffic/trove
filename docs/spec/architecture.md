@@ -10282,3 +10282,15 @@ and the first needs a Bastion's credential. What would close it is the question 
 interface path or a forwardable family the endpoint does not serve leaves the request ordinary) and in the shape lookup of
 `httpserver.Problem` together with the dispatcher's family check (an unserved family below a format prefix renders
 `problem+json`).
+
+### H-821 · Most targets of R-ARCH-027 are not measured, because the reference environment does not exist
+
+Stage: the performance targets P-1 to P-17 of R-ARCH-027 and exit criterion E5.3 of the roadmap
+([Q-ROAD-14](../coverage/roadmap.md#q-road-14--e53-closes-the-beta-on-the-nightly-measurements-and-the-gate-on-the-reference-environment-stays-open)).
+Subject: an operator who sizes an installation from these numbers.
+
+Live from the beta. The nightly run gates P-13 and P-14 (job `latency`) and reports P-1, P-3, P-5, P-7 and P-8 without a gate
+(`TestNPMPerf`, on a kind cluster on a shared runner). Not verified, and this is the gap: P-2, P-4, P-6, P-9 to P-12 and P-15 to P-17,
+among them the scale-out from three to six `web` replicas (P-16) and the latency with Valkey down (P-17), and every target at the
+reference size. What makes it real: a fleet sized from a number nobody measured at that size. It closes with the first run on a
+reference environment with `TROVE_PERF_GATE=1` for P-1 to P-17.

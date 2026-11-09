@@ -1960,6 +1960,33 @@ noticeable.
 
 **Applied in the roadmap:** [../developer/web-ui.md](../developer/web-ui.md), [../developer/coverage.md](../developer/coverage.md#report-formats).
 
+### Q-ROAD-14 · E5.3 closes the beta on the nightly measurements, and the gate on the reference environment stays open
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: E5.3 asks that P-1 to P-17 of R-ARCH-027 are met "on the reference environment" in the run that closes M5. That environment
+does not exist ([Q-ROAD-9](#q-road-9--what-wp28-builds-of-r-arch-027s-load-scripts-and-where-they-run), H-491). What runs is the nightly:
+`latency` gates P-13 and P-14 (green in runs 42571414393 and 42595813923), `TestNPMPerf` reports P-1, P-3, P-5, P-7 and P-8 on kind
+without a gate (leg `npm-ha-soak`), and `vuln-perf` gates V-1 to V-9 of R-VULN-028. The runner class is three shared 16-CPU nodes
+([Q-ARCH-431](../spec/architecture.md#q-arch-431--how-many-large-legs-of-the-nightly-run-start-at-once-and-in-what-order)); a
+target missed there says nothing about the product (the miss of V-7b in F-121 was the runner, not a regression), and one met there
+proves nothing about the reference size.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Hold the beta until a reference environment exists | E5.3 stays open | The criterion as written | Blocks the beta on infrastructure trove does not own; nothing in the product changes by waiting |
+| (b) Run the load on the owner's installation | k6 against wds18-k8s-main | A real cluster | It shares nodes with the owner's own apps and is not sized like the reference; a load test there is a cost outside this mandate |
+| (c) Close E5.3 on what the nightly gates and reports, and keep the reference gate as an open gap (chosen) | P-13, P-14 and V-1 to V-9 gated nightly; P-1, P-3, P-5, P-7, P-8 reported; P-2, P-4, P-6, P-9 to P-12 and P-15 to P-17 not measured | The beta is not held by a missing environment; nothing is claimed that was not measured | The scale-out (P-16) and the Valkey-outage latency (P-17) stay unmeasured until the environment exists |
+
+**Choice:** (c). E5.3 counts as met for the beta in this reduced form: the nightly gates hold, and every target not measured is listed
+under [H-821](../spec/architecture.md#h-821--most-targets-of-r-arch-027-are-not-measured-because-the-reference-environment-does-not-exist) as not verified.
+
+**Rationale:** The criterion's purpose is a product that meets its targets where the targets mean something, and no such place exists
+yet; claiming it met on kind would be false, and holding the beta for it changes no line of code. The development agent revisits this
+as soon as a reference environment exists: the run there sets `TROVE_PERF_GATE=1` for P-1 to P-17, and its first miss is a finding.
+
+**Applied in the roadmap:** E5.3's evidence in [BETA.md](../projektplan/BETA.md#phase-7--ha-hardening-backup-and-helm-m5) names this block.
+
 The ADR log's index
 [Decisions by the development agent](../decisions.md#decisions-by-the-development-agent) lists
-Q-ROAD-1 to Q-ROAD-13 after the spec questions.
+Q-ROAD-1 to Q-ROAD-14 after the spec questions.
