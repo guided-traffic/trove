@@ -173,9 +173,11 @@ func TestR_STOR_018_TheDeleteJobDecidesEveryBatchOnTheStandingOfItsSubject(t *te
 		if res := web.do("admin", http.MethodDelete, "/api/v1/tokens/"+id, nil); res.status != http.StatusNoContent {
 			t.Fatalf("revoke: %d %s", res.status, res.body)
 		}
+		// The revocation committed while files were left, so it fell between two batches. The job may already have read it and
+		// failed by the time this line runs; that is the behaviour under test, which endedJob checks below.
 		removedAtRevoke := many - filesLeft(e)
-		if s := e.text("SELECT state::text FROM job WHERE kind = 'items-delete'"); s != "running" || removedAtRevoke >= many {
-			t.Fatalf("the job is %s with %d of %d files removed when the revocation committed: the scenario needs it between two batches", s, removedAtRevoke, many)
+		if removedAtRevoke >= many {
+			t.Fatalf("all %d files were removed when the revocation committed: the scenario needs it between two batches", many)
 		}
 		state, failure := endedJob(t, e)
 		removed := many - filesLeft(e)
