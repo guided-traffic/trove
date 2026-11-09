@@ -31,6 +31,11 @@ func (f *Format) serveSigningKey(ctx context.Context, rq *formats.Request, w htt
 	if err := rq.Host.Authorize(ctx, rq, formats.Target{Path: SigningKeyFile, Actions: []formats.Action{formats.ActionRead}}); err != nil {
 		return err
 	}
+	if rq.Repo.Class == formats.Virtual {
+		if err := f.virtualGate(ctx, rq, SigningKeyFile); err != nil {
+			return err
+		}
+	}
 	var (
 		armored []byte
 		sum     [32]byte

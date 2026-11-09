@@ -87,10 +87,27 @@ func Build(suite string, entries []rows.IndexEntry, extraComponents []string, s 
 			}
 		}
 	}
+	return assemble(suite, out, s, date, nil)
+}
+
+// Assemble is the Release of a suite whose index files were written as streams (a merge): archs and comps are the lists it carries,
+// files the compressed index files and listed the uncompressed ones that APT checks the decompressed content against (Q-DEB-56). A
+// validUntil is the earliest Valid-Until of the member releases merged (R-DEB-025); a local repository's Release has none.
+func Assemble(suite string, archs, comps []string, listed, files []File, s Settings, date time.Time, validUntil *time.Time) (*Suite, error) {
+	if len(archs) > MaxArchitectures {
+		return nil, fmt.Errorf("index: the suite %s lists %d architectures, at most %d", suite, len(archs), MaxArchitectures)
+	}
+	out := &Suite{Architectures: slices.Clone(archs), Components: slices.Clone(comps), Files: slices.Clone(files), Listed: slices.Clone(listed)}
+	slices.Sort(out.Architectures)
+	slices.Sort(out.Components)
+	return assemble(suite, out, s, date, validUntil)
+}
+
+func assemble(suite string, out *Suite, s Settings, date time.Time, validUntil *time.Time) (*Suite, error) {
 	slices.SortFunc(out.Files, func(a, b File) int { return compareStrings(a.Path, b.Path) })
 	out.Listed = append(out.Listed, out.Files...)
 	slices.SortFunc(out.Listed, func(a, b File) int { return compareStrings(a.Path, b.Path) })
-	rel, err := releaseText(suite, out, s, date)
+	rel, err := releaseText(suite, out, s, date, validUntil)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +142,7 @@ func suiteLists(entries []rows.IndexEntry, extraComponents []string, s Settings)
 	return archs, slices.Compact(comps)
 }
 
-func releaseText(suite string, st *Suite, s Settings, date time.Time) ([]byte, error) {
+func releaseText(suite string, st *Suite, s Settings, date time.Time, validUntil *time.Time) ([]byte, error) {
 	md5s, sha256s := make([]string, 0, len(st.Listed)), make([]string, 0, len(st.Listed))
 	for _, f := range st.Listed {
 		md5s = append(md5s, fmt.Sprintf("%s %d %s", f.MD5, f.Size, f.Path))
@@ -142,6 +159,13 @@ func releaseText(suite string, st *Suite, s Settings, date time.Time) ([]byte, e
 		{Name: "Acquire-By-Hash", Value: "yes"},
 		{Name: "Description", Value: s.Description},
 	}}
+	if validUntil != nil {
+		// Valid-Until follows the Date, where APT's own repositories put it.
+		fields := p.Fields
+		p.Fields = append([]control.Field{}, fields[:5]...)
+		p.Fields = append(p.Fields, control.Field{Name: "Valid-Until", Value: ReleaseDate(*validUntil)})
+		p.Fields = append(p.Fields, fields[5:]...)
+	}
 	if len(st.Listed) > 0 {
 		p.Fields = append(p.Fields,
 			control.Field{Name: "MD5Sum", Value: "\n" + strings.Join(md5s, "\n")},

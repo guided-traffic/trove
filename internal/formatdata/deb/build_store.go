@@ -189,7 +189,7 @@ func (s buildStore) RecordGeneration(ctx context.Context, tx meta.Tx, in rows.Ge
 	}
 	n, err := qs.DebApplyGeneration(ctx, q.DebApplyGenerationParams{
 		RepoID: in.RepoID, Suite: in.Suite, ReadSeq: in.ReadSeq, Generation: in.Generation,
-		ReleaseUnix: in.ReleaseDate.UTC().Unix(), PrevGeneration: in.PrevGeneration, EverySuite: in.Full,
+		ReleaseUnix: in.ReleaseDate.UTC().Unix(), PrevGeneration: in.PrevGeneration, EverySuite: in.Full, Inputs: in.Inputs,
 	})
 	if err != nil || n == 0 {
 		return false, err

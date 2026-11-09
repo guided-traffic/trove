@@ -791,3 +791,30 @@ cluster, the APT clients, the Debian tests); decisions Q-DEB-105 to Q-DEB-109.
   as `/flatroot/InRelease`, and a mirror whose include patterns leave a dependency out does not hold it. One mismatch of data: the setup client list names APT 2.7 for Ubuntu 24.04, which ships 2.8.3.
 - **Not done:** the amd64 images were not run (the host is arm64); `deb-long` (the delay bound already runs in `make test-performance`, Q-DEB-59); the closing run (the set `deb` with Valkey stopped and the
   read-only check against `deb.debian.org`); the Debian pass in the sets `mirror` and `mirror-long`; the virtual row. The clock rules of Q-DEB-30 stay with the integration asserts (one cluster, one clock).
+
+## 22 · WP8 (the virtual class) and WP9 (virtual rows) as built (stage 5)
+
+Built on f364571a (stage 4 merged). Pages: [deb.md](../developer/deb.md#the-virtual-class); security [deb-virtual.md](../security/deb-virtual.md); decisions Q-DEB-62 to Q-DEB-68,
+Q-REPO-271, Q-STOR-215, ADR-184, ADR-185; gaps H-725 to H-728. Spec edits: R-DEB-014, R-DEB-025, R-DEB-026, R-DEB-028, R-REPO-019, R-REPO-020, R-ARCH-015, R-AUTHZ-009, R-STOR-028.
+
+- **Built, format side:** `class_virtual.go` (the class and its `VirtualAdapter`), `handlers_virtual.go` (`members/<key>/<path>`, `pool/`), `virtual_gate.go` (the gate of R-DEB-027),
+  `guide_virtual.go` with `what-virtual.md` and `maintain-virtual.md`, the virtual branches of `handlers_dists.go`, `handlers_keys.go` and `handlers_local.go`, `index/merge.go` (the streaming merge
+  with the bounded hash set, `PackagesWriter`, `MemberFilename`) and `Assemble` in `index/release.go` (the earliest `Valid-Until`). **No `setup_virtual.go`:** the setup templates do not depend on the class.
+- **Built, data side:** `virtual_build.go` (the build, the member rules of R-DEB-025, `admitRelease`), `virtual_store.go`, `refresh_virtual.go`, `queries/deb_virtual.sql`, the `inputs` and
+  `checked_at` columns in `DebApplyGeneration`, `Indexer` fields `Virtual`, `Local`, `Remote` and `VirtualInterval`, and `internal/items/publish_virtual.go` (`checkPublishTarget`).
+  No migration: the columns are WP0's.
+- **Built beside the list:** `wire_deb_virtual.go` (the routing and the claims for the build, `debRepositoryHook`), the first build at the creation of a virtual repository, and the index state of a
+  virtual repository in `internal/api/v1/deb_index.go` (no `waitFor`, Q-DEB-66).
+- **Changed contracts other packages see:** `rows.VirtualInputs`, `VirtualSuite`, `LocalSuite`, `RepositoryMeta` and `GenerationRecord.Inputs`; `VirtualStore` has `VirtualInputs`, `EnsureSuites`,
+  `RecordCheck`, `VirtualsOfMember`, `LastBuild`, `Repositories`, `ClaimsFingerprint`; `wire_repository.go` has `debRepositoryHook{}` in its hook list.
+- **Proved, as the plan asked:** the shadowing check through a real virtual repository (`TestR_DEB_029_ALocalMemberCannotShadowTheNamesOfItsRemoteMember`: an upload of a name the stub lists answers
+  403 `shadows_remote_package` for a caller without `manage`, a name only the local member has answers 201); the bound of R-DEB-026 with `compression: ["xz"]` and the stub's 70,000-paragraph
+  index (the first build merges them, a package published to the local member is listed 14 s later; the bound is `deb.virtual_index_interval` + 60 s, here 10 s + 60 s); the member rules (a key change
+  takes the verification away: `member_unverified`; a release older than the recorded `Date`: `member_rollback`; the earliest `Valid-Until`); the virtual rows of the action map.
+- **By hand and as a test:** `apt-get update --error-on=any` and `apt-get install` through `apt` over a local and a remote member, from `debian:13` (verified by `sqv`, as the client log shows) and `ubuntu:22.04`, the client holding the virtual repository's key only: `hello-trove` from the local member and `trove-hello` with `libtrove1` from the remote member, through the member paths.
+  The same run is `TestR_DEB_025_AptGetUpdateAndInstallThroughAVirtualRepository`.
+- **Found while building:** a newer release that no current key verifies is not stored by the remote engine, which serves its last verified copy, so a build does not fail on it (the plan's
+  "unverified" case is a stored copy whose verification a key change took away; Q-DEB-64). The decision point refuses a deploy to a virtual repository without a target with 403 before the format
+  can answer 405 (Q-DEB-67). A shadowing check by a principal with `manage` is approved by design, so the test uses a deployer.
+- **Not done:** a claims-change trigger (H-725, Q-DEB-65); the trigger of a publication in the member's transaction (H-726); `member_expired` as an integration case (the stub cannot serve a release
+  that expires between two builds; the rule is a unit test); the dropping of the recorded `Date` when a member leaves, as its own case; the e2e sets (WP10); the mirror (WP7).

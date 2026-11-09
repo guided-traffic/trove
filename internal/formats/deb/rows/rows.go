@@ -308,6 +308,8 @@ type GenerationRecord struct {
 	// Files maps the path relative to dists/<suite>/ to the SHA-256 (hex) of the index file.
 	Files    map[string]string
 	SignedBy []string
+	// Inputs is what a virtual build compared (R-DEB-026), stored with the generation; nil for a local suite.
+	Inputs json.RawMessage
 	// DropGenerations are the generations retention gives up; their rows go.
 	DropGenerations []int64
 	// Drop removes the suite instead (a full build of a suite without files, R-DEB-014); Files and SignedBy are empty then.
@@ -420,22 +422,30 @@ type MirrorScope struct {
 	Sources      bool
 }
 
-// VirtualInputs are what a build of a virtual repository reads in its snapshot (R-DEB-026): its members' stored state.
+// VirtualInputs are what a build of a virtual repository reads in its snapshot (R-DEB-026): the repository's own suites with their
+// generations, and the published generations of its local members.
 type VirtualInputs struct {
-	Suites  []Suite
-	Members []VirtualMember
+	// Now is the database time of the snapshot.
+	Now time.Time
+	// Suites are the suites the virtual repository has.
+	Suites []VirtualSuite
+	// Locals maps the id of a local member to its published suites.
+	Locals map[int64][]LocalSuite
 }
 
-// VirtualMember is one member of a virtual repository as a build merges it, in member order.
-type VirtualMember struct {
-	RepoID int64
-	Key    string
-	// Local is true for a local member, whose published generation is merged.
-	Local bool
-	// Releases are the stored releases of a remote member's directories.
-	Releases []Release
-	// Date is the Date of the member's release the previous generation merged (Q-DEB-43).
-	Date *time.Time
+// VirtualSuite is a suite row of a virtual repository with what its last build compared (Inputs, CheckedAt) and its generations.
+type VirtualSuite struct {
+	Suite       Suite
+	Generations []GenerationRow
+}
+
+// LocalSuite is the published generation of one suite of a local member: the number and Date of its Release and the index files it names
+// (path relative to dists/<suite>/ to SHA-256).
+type LocalSuite struct {
+	Suite      string
+	Generation int64
+	Date       *time.Time
+	Files      map[string]string
 }
 
 // VersionView is what a package screen shows of one version (R-DEB-030).
@@ -445,4 +455,15 @@ type VersionView struct {
 	Coordinates   []Coordinate
 	Description   string
 	Fields        map[string]string
+}
+
+// RepositoryMeta is the key, class and upstream of a repository as a virtual build names its members.
+type RepositoryMeta struct {
+	ID      int64
+	Project string
+	Key     string
+	Class   string
+	Format  string
+	// URL is remote.url of a remote repository: its upstream identity (R-REPO-011, Q-DEB-43).
+	URL string
 }

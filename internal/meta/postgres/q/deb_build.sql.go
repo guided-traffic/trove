@@ -14,15 +14,18 @@ const debApplyGeneration = `-- name: DebApplyGeneration :execrows
 UPDATE deb_suites
    SET built_seq = $1::bigint, generation = $2::bigint, release_date = to_timestamp($3::bigint),
        published_at = now(), state = 'current', reason = NULL,
-       dirty_since = CASE WHEN change_seq > $1::bigint THEN now() ELSE NULL END
- WHERE repo_id = $4::bigint AND suite = $5::text AND generation = $6::bigint
-   AND (built_seq < $1::bigint OR ($7::boolean AND built_seq = $1::bigint))
+       dirty_since = CASE WHEN change_seq > $1::bigint THEN now() ELSE NULL END,
+       inputs = COALESCE($4::jsonb, inputs),
+       checked_at = CASE WHEN $4::jsonb IS NULL THEN checked_at ELSE now() END
+ WHERE repo_id = $5::bigint AND suite = $6::text AND generation = $7::bigint
+   AND (built_seq < $1::bigint OR ($8::boolean AND built_seq = $1::bigint))
 `
 
 type DebApplyGenerationParams struct {
 	ReadSeq        int64
 	Generation     int64
 	ReleaseUnix    int64
+	Inputs         json.RawMessage
 	RepoID         int64
 	Suite          string
 	PrevGeneration int64
@@ -37,6 +40,7 @@ func (q *Queries) DebApplyGeneration(ctx context.Context, arg DebApplyGeneration
 		arg.ReadSeq,
 		arg.Generation,
 		arg.ReleaseUnix,
+		arg.Inputs,
 		arg.RepoID,
 		arg.Suite,
 		arg.PrevGeneration,

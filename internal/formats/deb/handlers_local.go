@@ -23,6 +23,9 @@ func errNoSuchFile() error {
 // (ServeCheck), which the core runs for every item it serves. A remote or virtual repository's pool is served by the work packages of
 // those classes.
 func (f *Format) handlePoolGet(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
+	if rq.Repo.Class == formats.Virtual {
+		return f.handleVirtualPool(ctx, rq, w)
+	}
 	if rq.Repo.Class != formats.Local {
 		return notImplemented()
 	}

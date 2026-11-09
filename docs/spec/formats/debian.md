@@ -265,7 +265,7 @@ APT shows the status line of a failed request and does not read bodies; other to
 | 400 | `deb_distribution_required`, `deb_invalid_coordinate`, `deb_invalid_file_name`, `invalid_path` | upload parameters (R-DEB-006); a dot segment other than the flat root (R-DEB-003) |
 | 403 | `deb_members_unreadable` | a virtual's index read by a caller who cannot read every member (R-DEB-027) |
 | 404 | `deb_not_in_release`, `deb_no_upstream_keys` | a remote index path the stored release does not list (R-DEB-021); `signing-key.asc` of a remote without keys (R-DEB-018) |
-| 405 | `no_deploy_target` | an upload through a virtual repository without a deploy target (R-DEB-028) |
+| 403, 405 | `forbidden`, `no_deploy_target` | an upload through a virtual repository without a deploy target: the decision point refuses `deploy` on it with 403 before the format runs, and a target that is gone by then answers 405 (R-DEB-028, Q-DEB-67) |
 | 409 | `deb_version_exists`, `deb_filename_conflict`, `deb_withheld`, `generated_item`, `deb_no_next_key`, `deb_key_in_use`, `deb_key_state`, `reindex_running` | R-DEB-006, R-DEB-013, R-DEB-014, R-DEB-015, R-DEB-017, R-DEB-032 |
 | 413 | `payload_too_large` | a bound of R-DEB-034 (the code of the bounded readers, `untrusted.TooLarge`, Q-DEB-44) |
 | 422 | `deb_invalid_archive`, `deb_invalid_control`, `deb_unsupported_compression`, `deb_key_unsupported`, `deb_upstream_keys_required`, `deb_member_unverified`, `deb_mirror_suites_required` | R-DEB-007, R-DEB-015, R-DEB-020, R-DEB-024 |
@@ -680,8 +680,8 @@ Priority: **P2** · Covers: PKG-DEB-016
 
 | Method and path | Purpose | Permission |
 |---|---|---|
-| `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/deb/index` | Each suite's state | `read` on the repository |
-| The same with `?waitFor=<suite>:<changeSeq>[,…]` | Waits until every named suite's `publishedSeq` reaches its value, or `deb.index_wait_max` passed; answers the state either way | `read` |
+| `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/deb/index` | Each suite's state (a virtual repository answers too, Q-DEB-66) | `read` on the repository |
+| The same with `?waitFor=<suite>:<changeSeq>[,…]` | Waits until every named suite's `publishedSeq` reaches its value, or `deb.index_wait_max` passed; answers the state either way. A virtual repository has no change number of its own: `waitFor` answers 400 `validation_failed` | `read` |
 | `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/reindex` | A full build ([repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-016): every suite rebuilt from the rows, suites without files dropped, rows of items that no longer exist removed; for a virtual repository the members read again | as R-REPO-016 |
 
 ```json
@@ -1230,6 +1230,11 @@ Priority: **P2** · Covers: PKG-DEB-023
     new `remote.url` is another archive) and when the member leaves the virtual repository (Q-DEB-43); taking a member out and
     adding it back is therefore the deliberate, audited way to accept an older release of its upstream. A reindex does not reset
     it.
+  - Every build asks the remote engine for the release of the suite as a background request (R-DEB-026): the engine serves its stored
+    copy while it is fresh and revalidates it when it is not, and it stores a newer document only when a current key verifies it
+    (R-DEB-020). A newer release that no current key verifies is therefore not stored and the build keeps merging the last verified
+    copy, as it does when the upstream is down; `member_unverified` is the answer for a stored copy that no current key verifies (a
+    key change took the verification away) and for a member without keys (Q-DEB-64).
 - **Freshness carried over.** The virtual repository's `Release` carries the earliest `Valid-Until` of the member releases it
   merged, when any has one, so a frozen upstream suite expires for the virtual repository's clients as it would for the
   upstream's: trove re-signs no staleness into a fresh signature.
@@ -1278,7 +1283,9 @@ Priority: **P2** · Covers: PKG-DEB-023
   items of the virtual repository (Q-STOR-180), with the snapshot, monotony and retention rules of R-DEB-010 and R-DEB-012.
 - **Triggers.** A local member's publication: its build's commit enqueues every virtual Debian repository that lists the member,
   with a delay that keeps `deb.virtual_index_interval` since the virtual repository's last build; a change of the members, pin
-  rules, claims or settings, without delay (an earlier run time moves a waiting job, Q-ARCH-384); and the periodic task
+  rules or settings, and a change of a member that is a remote's keys or patterns, without delay (an earlier run time moves a
+  waiting job, Q-ARCH-384); a change of claims is seen by the next check, because the claim revisions are part of the inputs
+  (Q-DEB-65); and the periodic task
   `deb-index-refresh` (queue `maintenance`, every minute, `exclusive`), which enqueues a `deb-index` job for each virtual
   repository whose last check is older than its `virtual.mergedMetadataTtlSeconds`, so a change upstream reaches the virtual
   repository without a client request (Q-DEB-21). The task enqueues and deletes nothing itself (Q-DEB-33).
@@ -1292,8 +1299,9 @@ Priority: **P2** · Covers: PKG-DEB-023
   member that answers 404 for the suite contributes nothing and is no failure.
 - The build enqueues `deb-remote-parse` for every remote member index it merged whose rows are missing or older, so the shadowing
   check has rows in the virtual repository's scope (R-DEB-023).
-- A build whose inputs did not change (each member's published generation or stored release digest and `Date`, the settings, the
-  claims, recorded in `deb_suites.inputs`) commits only its check time.
+- A build whose inputs did not change (each member's published generation or stored release digest and `Date`, the settings, a
+  digest of the claim revisions of the Debian repositories, the fingerprints of the signing keys, recorded in `deb_suites.inputs`)
+  commits only its check time (Q-DEB-65).
 - Each index file is merged as a stream (R-DEB-025); no build holds a whole index in memory.
 - **Delay bound** (proposed): from a local member's publication to the virtual repository's, p99 at most
   `deb.virtual_index_interval` + 60 s, with a remote member whose index holds 70,000 paragraphs and `deb.compression: ["xz"]` (the
@@ -1334,14 +1342,16 @@ Acceptance criteria:
 ### R-DEB-028 · Virtual repository: uploads through the deploy target
 Priority: **P2** · Covers: PKG-DEB-023
 
-- `PUT <virtual repo URL>/upload/<file>` runs R-DEB-006 on the deploy target (R-REPO-021, R-AUTHZ-009 rule 5); without one it
-  answers 405 `no_deploy_target`. The answer's `index` entries name the target's suites; the virtual repository publishes by
-  R-DEB-026.
+- `PUT <virtual repo URL>/upload/<file>` runs R-DEB-006 on the deploy target (R-REPO-021, R-AUTHZ-009 rule 5); the dispatcher sends
+  the write to the target and the format has no code of its own for it (Q-DEB-67). Without a target the decision point refuses
+  `deploy` on the virtual repository with 403 before the format runs, as it does for npm and NuGet; 405 `no_deploy_target` is the
+  core's answer when the target is gone after the decision. The answer's `index` entries name the target's suites; the virtual
+  repository publishes by R-DEB-026.
 
 Acceptance criteria:
 
 - An upload through `apt` is stored in `deb-local` and listed through `apt` within the bound of R-DEB-026; through a virtual
-  repository without a deploy target it answers 405.
+  repository without a deploy target it answers 403 (Q-DEB-67).
 
 ### R-DEB-029 · Client setup snippets and guide
 Priority: **P2** · Covers: PKG-DEB-026, PKG-DEB-027
@@ -2943,6 +2953,117 @@ Context: R-DEB-010 lets the build's commit write only while the suite's `built_s
 development agent would revisit it if a reindex had to leave the revision numbers alone for another reason.
 
 **Applied in the spec:** R-DEB-010, R-DEB-014. Code: `DebApplyGeneration` in `queries/deb_build.sql`, `GenerationRecord.PrevGeneration` and `Full`.
+
+### Q-DEB-62 · A local member contributes the index file of its published generation, not its rows
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the virtual class (T-17 WP8).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The index file of the member's published generation, read from its generated items (chosen) | The member's `Packages.gz`, as the member serves it | The virtual repository never lists a file its member does not list yet; the member's own filters are already applied; one gzip stream per index, no row read | The virtual index follows the member by one build |
+| (b) The member's rows at the time of the build | Read `deb_index_entries` of the member | No wait for the member's build | Lists files the member's own index does not list yet; a second renderer of the member's paragraphs |
+| (c) Render the member's index again per build | The index builder on the member's snapshot | Independent of the member's publication | Two builds of one thing; the digests differ from the member's |
+
+**Choice:** (a).
+
+**Rationale:** a client that reads the virtual index and the member's index must see one description of a file, and the member path serves the member's file. The development agent would revisit it if the lag of one build showed.
+
+**Applied in the spec:** R-DEB-025. Code: `openMemberIndex` in [virtual_build.go](../../../internal/formatdata/deb/virtual_build.go), `VirtualInputs` in [virtual_store.go](../../../internal/formatdata/deb/virtual_store.go).
+
+### Q-DEB-63 · The order of the members and the names each serves are decided on stored configuration, one name at a time with a cache per build
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the virtual class (T-17 WP8).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The member order from the routing with no name; per paragraph name, the members the patterns, pin rules and claims allow, remembered for the build (chosen) | `Routing.Route(virtual, {})` gives the order (priority first, disabled members dropped); `debVirtualRepos.Allowed` answers a name | The rules of R-REPO-019 are the routing's, not copied; caller independent; one lookup per distinct name | One routing call per distinct name of the archive (tens of thousands for a large one) |
+| (b) A copy of the rules in the format | Patterns, pins and claims read from the document | No call into the routing | Two implementations of R-REPO-019 that drift |
+| (c) Decide by the caller who triggered the build | The routing of the caller | Nothing to build | A signed snapshot that varies by caller (Q-DEB-19) |
+
+**Choice:** (a).
+
+**Rationale:** the claim that protects an internal name must be the claim of the routing. The development agent would revisit it if the routing call per name showed in the build time of a 70,000-paragraph index, which the bound test ran without it.
+
+**Applied in the spec:** R-DEB-025. Code: `Allowed` in [wire_deb_virtual.go](../../../internal/app/wire_deb_virtual.go), `virtualSuite`.
+
+### Q-DEB-64 · A remote member's release is asked of the remote engine at every build, and its stored verified copy is the member's release
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the virtual class (T-17 WP8).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Through the engine as a background request, which serves its stored copy while fresh and revalidates it otherwise; the verified stored copy is merged (chosen) | `fetchRelease` and the `Document` of the background upstream; the rules of R-DEB-025 on what is stored | The engine's freshness, throttling and anti-rollback apply; a newer document no key verifies is never stored; a down upstream costs nothing | A newer unverifiable release does not fail the build: the last verified copy keeps being merged ([H-727](../../security/deb-virtual.md#h-727--a-member-whose-release-has-no-valid-until-can-be-held-at-its-last-verified-copy-for-as-long-as-the-upstream-is-unreachable-or-unverifiable)) |
+| (b) Only the stored copy, never a request | Read the rows | No request from a build | A member is as old as the last client request or refresh job |
+| (c) The build verifies the upstream's document itself | A second verification | A failed verification fails the build | Two verifiers; the engine would still store or refuse its own |
+
+**Choice:** (a). `member_unverified` is the answer for a stored copy no current key verifies and for a member without keys; `member_expired` and `member_rollback` are checked on the stored copy against the `Date` the last build recorded for the same upstream address.
+
+**Rationale:** the virtual repository trusts what the remote already decided to store. The development agent would revisit it if an operator needed the build to fail on an upstream that signs with a key the member does not hold, which H-626 already names for the remote.
+
+**Applied in the spec:** R-DEB-025, R-DEB-026. Code: `remoteMember`, `admitRelease`, `releaseText` in [virtual_build.go](../../../internal/formatdata/deb/virtual_build.go).
+
+### Q-DEB-65 · A build whose inputs did not change commits only its check time, and a change of claims is seen at the next check
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the virtual class (T-17 WP8).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A fingerprint of the settings, the claim revisions of the Debian repositories, the keys and each member's generation or release digest; the periodic check builds when the last check is older than `virtual.mergedMetadataTtlSeconds` (chosen) | `deb_suites.inputs`, `DebClaimsFingerprint`, `DebVirtualsDue` | No new seam in the repository service; a rebuild of unchanged inputs costs a check | A change of claims waits for the next check ([H-725](../../security/deb-virtual.md#h-725--a-change-of-claims-reaches-the-merged-index-at-the-next-check-not-at-once)) |
+| (b) A hook of the claims service that enqueues the builds | `repository.Hooks` gets `OnClaimsChanged` | A claim reaches the index at once | A change of the repository package for one format; the claims of an automatic claim fall inside a publication that builds anyway |
+| (c) Build every time the task runs | No fingerprint | Simple | Signs a new generation every period; by-hash files pile up |
+
+**Choice:** (a).
+
+**Rationale:** the signed generation changes only when what it vouches for changes. The development agent would revisit (b) when a second format needs to hear of claims.
+
+**Applied in the spec:** R-DEB-026. Code: `fingerprintOf`, `virtualSuite`, `RecordCheck`, `ClaimsFingerprint`.
+
+### Q-DEB-66 · The index state of a virtual repository is readable and does not wait
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the virtual class (T-17 WP8).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The state of its suites; `waitFor` is refused with 400 (chosen) | The same read as for a local repository | An operator sees `failed` and its reason (`member_unverified: debian`); one endpoint | A caller cannot wait for a virtual build by change number |
+| (b) 400 `unsupported_class` as before | The route stays local | Nothing to change | The reason of a failed virtual build would be visible in the job list only |
+| (c) `waitFor` waits for the next generation | A wait on the generation number | A script can wait | A second meaning of `changeSeq`; a virtual repository has no change number |
+
+**Choice:** (a).
+
+**Rationale:** a build that fails for a member is the case an operator has to see. The development agent would revisit (c) if the e2e sets needed to wait for a virtual build.
+
+**Applied in the spec:** R-DEB-014. Code: `GetDebIndexState` in [deb_index.go](../../../internal/api/v1/deb_index.go).
+
+### Q-DEB-67 · An upload through a virtual repository needs no code of the format
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the virtual class (T-17 WP8).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The dispatcher sends it to the deploy target and the format's local handler runs there (chosen) | `redirectClass` of the dispatcher (R-REPO-021), as for npm and NuGet | The target's permissions, ownership, shadowing check and rules apply by construction; the answer's `index` entries are the target's | A virtual repository without a target is refused at the decision point with 403, not by the handler with 405 |
+| (b) A virtual handler for the upload route | The format resolves the target | Could answer 405 `no_deploy_target` | A second copy of the upload path (the OCI format needs one for its upload sessions) |
+
+**Choice:** (a).
+
+**Rationale:** the upload route of the local class is the only writer of rows. The development agent would revisit it if a Debian write needed the virtual repository itself.
+
+**Applied in the spec:** R-DEB-028. Tests: `TestR_DEB_028_UploadsGoToTheDeploymentTarget`, `TestR_AUTHZ_007_DebActionMapOfTheVirtualClass`.
+
+### Q-DEB-68 · A virtual build is enqueued by a publication of a member, by a change of the repository or a member, at creation, and by the period
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the virtual class (T-17 WP8).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The commit of a local member's build (after it, with the delay that keeps `deb.virtual_index_interval` since the last build); an update of the virtual repository or of one of its members and the creation of a virtual repository (in their transactions, without delay); the task `deb-index-refresh` for a check older than the period (chosen) | `triggerVirtuals`, `debRepositoryHook`, the creation hook, `EnqueueVirtualsDue` | Each change reaches the index in the time R-DEB-026 names; a lost trigger is found by the period | The trigger of a publication is not in the publication's transaction ([H-726](../../security/deb-virtual.md#h-726--the-build-after-a-local-publication-is-enqueued-after-the-commit-that-published-not-in-it)) |
+| (b) Only the period | The task alone | One path | An upload is listed after up to the period |
+| (c) The publication of the member enqueues in its transaction | A call into the virtual store from the commit of the member | No lost trigger | The member's build knows virtual repositories; a failure of the virtual enqueue fails the member's publication |
+
+**Choice:** (a).
+
+**Rationale:** the period is the safety net and the events the speed. The development agent would revisit (c) if H-726 showed in practice.
+
+**Applied in the spec:** R-DEB-026. Code: [virtual_build.go](../../../internal/formatdata/deb/virtual_build.go), [wire_deb_virtual.go](../../../internal/app/wire_deb_virtual.go), [refresh_virtual.go](../../../internal/formatdata/deb/refresh_virtual.go).
 
 ### Q-DEB-70 · The stub's test keys have a fixed creation date, not "an hour back"
 

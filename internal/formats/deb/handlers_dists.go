@@ -22,19 +22,31 @@ const (
 // R-DEB-010). Every other path below dists/ is a 404; no path below it is an upload target. The remote and the virtual class are served
 // by the work packages of those classes.
 func (f *Format) handleDists(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	if rq.Repo.Class != formats.Local {
-		return notImplemented()
-	}
-	return f.serveGenerated(ctx, rq, w, cacheRevalidate)
+	return f.serveIndexFile(ctx, rq, w, cacheRevalidate)
 }
 
 // handleByHash is GET dists/<suite>/<dir>/by-hash/SHA256/<hex>: an index file by its digest, in every generation that retention keeps
 // (R-DEB-012).
 func (f *Format) handleByHash(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	if rq.Repo.Class != formats.Local {
+	return f.serveIndexFile(ctx, rq, w, cacheImmutable)
+}
+
+// serveIndexFile serves a generated file of a local or a virtual repository; the virtual one passes the gate on its members first
+// (R-DEB-027). The class that is neither is the remote's, answered by its own handler.
+func (f *Format) serveIndexFile(ctx context.Context, rq *formats.Request, w http.ResponseWriter, cache string) error {
+	switch rq.Repo.Class {
+	case formats.Local:
+	case formats.Virtual:
+		if err := rq.Host.Authorize(ctx, rq, formats.Target{Path: rq.Path.Path, Actions: []formats.Action{formats.ActionRead}}); err != nil {
+			return err
+		}
+		if err := f.virtualGate(ctx, rq, rq.Path.Path); err != nil {
+			return err
+		}
+	default:
 		return notImplemented()
 	}
-	return f.serveGenerated(ctx, rq, w, cacheImmutable)
+	return f.serveGenerated(ctx, rq, w, cache)
 }
 
 // serveGenerated authorizes the read of a path that belongs to no package (R-DEB-004: only a grant without package patterns covers an

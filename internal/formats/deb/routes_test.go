@@ -30,8 +30,8 @@ func TestRoutesFollowTheRegisteredClasses(t *testing.T) {
 	f := New()
 	for _, r := range f.Routes() {
 		for _, c := range r.Classes {
-			if c != formats.Local && c != formats.Remote {
-				t.Errorf("route %s serves class %s, and only the local and the remote class are registered", r.Name, c)
+			if c != formats.Local && c != formats.Remote && c != formats.Virtual {
+				t.Errorf("route %s serves class %s, which is no class of the format", r.Name, c)
 			}
 		}
 		// A route that serves every class names none; the others name the classes that are registered.
@@ -43,8 +43,8 @@ func TestRoutesFollowTheRegisteredClasses(t *testing.T) {
 			}
 		}
 	}
-	if f.Remote() == nil || f.Virtual() != nil {
-		t.Error("the format has the remote adapter and no virtual adapter until the virtual class registers")
+	if f.Remote() == nil || f.Virtual() == nil {
+		t.Error("the format has a remote and a virtual adapter")
 	}
 }
 

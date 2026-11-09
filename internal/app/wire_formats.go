@@ -72,10 +72,10 @@ func (a *App) wireFormatPorts(ctx context.Context, in infra) (formatPortsArea, e
 		if err := a.startOCISweep(in, ports); err != nil {
 			return formatPortsArea{}, err
 		}
-		a.startDebIndexer(ports)
 		if err := a.startDebRemote(ports); err != nil {
 			return formatPortsArea{}, err
 		}
+		a.startDebIndexer(ports)
 	}
 	return formatPortsArea{bindings: b, views: formathost.NewViewAdapters(formats.List(), b)}, nil
 }
@@ -394,7 +394,14 @@ func bindDebCreateHook(s *debdata.Store) {
 			if st == nil {
 				return fmt.Errorf("formats: the Debian data port is not composed")
 			}
-			return st.CreateFirstKey(ctx, tx, repo.ID, repo.Name.String())
+			if err := st.CreateFirstKey(ctx, tx, repo.ID, repo.Name.String()); err != nil {
+				return err
+			}
+			if class == string(repository.Virtual) {
+				// The first index of a virtual repository is built at once (R-DEB-026).
+				return st.EnqueueBuild(ctx, tx, repo.ID, 0)
+			}
+			return nil
 		})
 		// A change of deb.upstreamKeys that takes fingerprints out clears verified_by of the releases they verified and enqueues the
 		// remote's job that verifies them again from the stored bytes (R-DEB-020, Q-DEB-42). The restore's replay runs it too.

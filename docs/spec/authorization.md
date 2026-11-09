@@ -748,6 +748,10 @@ Priority: **MVP** · Covers: IAM-024, PKG-NPM-042, PKG-NPM-045, PKG-NUGET-027
    public package of the same name. A listing of the members' rows for the virtual repository (a
    merged search) decides each row as a read through it, so its exposure (Q-EP-11) and the lift of
    rule 2 apply as they do to its documents (Q-AUTHZ-168).
+   A format whose merged index is one signed file for every caller (the Debian format, Q-DEB-19) raises the gate for
+   that file: it needs `read` without package restriction on every member (R-DEB-027), because rule 2 cannot
+   apply to a file that is not built per caller. A caller who lacks it gets 403 `deb_members_unreadable`, an anonymous
+   caller 401 (rule 6).
 5. **Writes through a virtual repository** go to its deploy target (R-REPO-021 in
    [repositories-and-proxy.md](repositories-and-proxy.md)). Actions and ownership are checked on
    that target with the same coordinate, and the gate of rule 1 applies as well. Grants of

@@ -49,7 +49,7 @@ A route of a class the format has not registered is left out of `Format.Routes()
 | File | Responsibility |
 |---|---|
 | [format.go](../../internal/formats/deb/format.go) | `Format`, `Descriptor`, `New`, the registry of classes (`registerClass`) |
-| [class_local.go](../../internal/formats/deb/class_local.go), [class_remote.go](../../internal/formats/deb/class_remote.go) | Register the local and the remote class; `class_virtual.go` is created by its package |
+| [class_local.go](../../internal/formats/deb/class_local.go), [class_remote.go](../../internal/formats/deb/class_remote.go), [class_virtual.go](../../internal/formats/deb/class_virtual.go) | Register the local, the remote and the virtual class |
 | [names.go](../../internal/formats/deb/names.go) | The grammars of R-DEB-002 (`ValidPackage`, `ValidVersion`, `ValidArchitecture`, `ValidSuite`) and the package-name rule |
 | [paths.go](../../internal/formats/deb/paths.go) | The pool layout (`PoolPath`, `PoolPrefix`, `PackagesPath`, `ByHashPath`), `Classify`, `IsIndexName`; `PackageDocumentPath` reports no document |
 | [routes.go](../../internal/formats/deb/routes.go) | The route table and its matchers; `Match` reads a leading `./` as the flat root (Q-DEB-39) |
@@ -186,12 +186,60 @@ parallel uploads, the stopped build and the co-signing: `test/integration/debloc
 `apt-get install` in `debian:13` and `ubuntu:22.04` against a replica (skipped without docker). The replicas of these tests run with the role `all`, because the
 builder is a job and the role `web` claims none; the stack seeds repositories by SQL, so the test creates and promotes a key where the creation hook would have.
 
+## The virtual class
+
+A virtual repository merges the package indexes of its local and remote members into one index per suite, signs it with its own key and serves it
+as generated items (R-DEB-025 to R-DEB-028, Q-STOR-180, Q-REPO-271). Nothing is merged at request time. Security view:
+[deb-virtual.md](../security/deb-virtual.md).
+
+**Request path.** The generated files (`dists/…`, `signing-key.asc`) are served by the local class's handlers ([handlers_dists.go](../../internal/formats/deb/handlers_dists.go),
+[handlers_keys.go](../../internal/formats/deb/handlers_keys.go)) after `virtualGate` ([virtual_gate.go](../../internal/formats/deb/virtual_gate.go)): `read` without package
+restriction on every active member, else 403 `deb_members_unreadable`. `members/<memberKey>/<path>` is `handleMember`
+([handlers_virtual.go](../../internal/formats/deb/handlers_virtual.go)): the member must belong to the repository, `Resolver().Plan` applies the patterns, pin rules, claims and the
+caller's rights, and the file is served from the local member's items or the remote member's cache or fill (`Trove-Resolved-From`). `pool/<path>` is `handleVirtualPool`, the artifact
+tiers of R-REPO-019. A write is redirected by the dispatcher to the deploy target and needs no code of the format (Q-DEB-67).
+
+**The build** ([virtual_build.go](../../internal/formatdata/deb/virtual_build.go)). The job is `deb-index` under the key `index:<repository id>`, the same as for a local repository;
+`Indexer.Build` dispatches on the class (`buildVirtual`). For each wanted suite (`deb.suites` and the suites of the local members) `virtualSuite`:
+
+| Step | Where |
+|---|---|
+| Read the inputs in one transaction: the suites, the local members' published generations and their files | `VirtualStore.VirtualInputs` ([virtual_store.go](../../internal/formatdata/deb/virtual_store.go)) |
+| For each member in the order of the routing: a local member's generation, or a remote member's verified release (`fetchRelease` through the background upstream, then the rules of R-DEB-025) | `memberInput`, `remoteMember`, `admitRelease` |
+| Fingerprint of the settings, the claim revisions, the keys and the members' records; equal to the last one: commit the check time and stop | `fingerprintOf`, `RecordCheck` |
+| For each component and architecture (and `all`): stream the members' indexes through `index.MergeMember` into `index.PackagesWriter` (gzip, xz when set) | `openMemberIndex`, [index/merge.go](../../internal/formats/deb/index/merge.go) |
+| Choose the `Date`, assemble the `Release` with the earliest `Valid-Until`, sign, publish through the port with the generation record (`inputs` included) | `index.Assemble`, `publishBuilt` (shared with the local build) |
+| Enqueue the parse of every merged remote index whose rows are missing, so the shadowing check has rows in this scope | `enqueueParses` |
+
+A member that may not be merged is a `memberError` with its reason; the suite is recorded failed with it and keeps its last generation. Other failures are retried by the job.
+
+**Triggers** (Q-DEB-68): the commit of a local member's build (`triggerVirtuals`, with the delay that keeps `deb.virtual_index_interval` since the last build); an update of a
+repository (`debRepositoryHook` in [wire_deb_virtual.go](../../internal/app/wire_deb_virtual.go), registered in `wire_repository.go`, ADR-185); the creation of the virtual repository
+(the format's creation hook); the refresh task (`EnqueueVirtualsDue`, [refresh_virtual.go](../../internal/formatdata/deb/refresh_virtual.go)) for a last check older than
+`virtual.mergedMetadataTtlSeconds`. A change of claims has no trigger of its own (Q-DEB-65, H-725).
+
+**Rows and queries** ([deb_virtual.sql](../../internal/meta/postgres/queries/deb_virtual.sql)): `deb_suites.inputs` and `checked_at` (the record of the last build, in `DebApplyGeneration` and
+`DebRecordCheck`), `DebVirtualSuiteRows`, `DebVirtualsOfMember`, `DebVirtualLastBuild`, `DebVirtualsDue`, `DebRepositoryMeta`, `DebClaimsFingerprint`. No migration: the columns exist since WP0.
+
+**Where it hooks in.** `class_virtual.go` registers the class and its `VirtualAdapter` (`Strategy` is `FirstMatch`; `Merge` applies the job's rule to documents, which the conformance kit
+checks); `internal/items/publish_virtual.go` lets a virtual repository hold generated items and nothing else write them; `internal/api/v1/deb_index.go` answers the index state of a
+virtual repository (no `waitFor`, Q-DEB-66). There is no `setup_virtual.go`: the setup templates of `setup_local.go` do not depend on the class, and the publish snippet works through the
+deploy target. The guide is [guide_virtual.go](../../internal/formats/deb/guide_virtual.go) with `what-virtual.md` and `maintain-virtual.md`.
+
+**Tests.** Unit: [index/merge_test.go](../../internal/formats/deb/index/merge_test.go) (member order, the first member keeps a version, `Filename`, the grammar, the bound, determinism, a fuzz target),
+[virtual_build_test.go](../../internal/formatdata/deb/virtual_build_test.go) (`admitRelease`), the conformance kit's merge fixture. Integration, the area
+[test/integration/debvirtual](../../test/integration/debvirtual) (production composition root in the role `all`, a local member, a remote member that reads the counting stub, repositories
+seeded by SQL so that each gets its key by the API): the merge and its signature, the claim, the gate, the member paths and the cache-fill check, the upload and the delete through the
+deploy target, the shadowing check through the virtual repository, a key change, a rollback, the carried-over `Valid-Until`, unchanged inputs, `TestR_AUTHZ_007_DebActionMapOfTheVirtualClass`,
+the delay bound with a 70,000-paragraph member index and `compression: ["xz"]` (14 s on the author's host against 70 s), and `apt-get update --error-on=any` with `apt-get install` from
+`debian:13` and `ubuntu:22.04` (needs docker). Run it through the slot wrapper (`go test -tags integration ./test/integration/debvirtual/`).
+
 ## What is built and what is not
 
 Built: everything above, including the stub archive (WP5), the signing keys (WP2), the background upstream (WP13), the publication
-port and the index builder (WP4) with its metrics, the remote class (WP6), the mirror (WP7), the tests of the local class (WP9) and the UI
-(WP11). Not built, by work package of [apt-work-packages.md](../projektplan/apt-work-packages.md): the virtual class (WP8), the tests of the
-other classes (WP9), the e2e sets (WP10) and the final documentation (WP12).
+port and the index builder (WP4) with its metrics, the remote class (WP6), the mirror (WP7), the virtual class (WP8), the tests of the local and
+the virtual class (WP9), the e2e set `deb` (WP10) and the UI (WP11). Not built, by work package of [apt-work-packages.md](../projektplan/apt-work-packages.md):
+the virtual row of the e2e set (switched on by the closing change) and the final documentation (WP12).
 
 ## The OpenPGP library and the counting stub archive (stage 1 of the remote side)
 

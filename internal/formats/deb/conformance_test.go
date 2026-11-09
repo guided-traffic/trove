@@ -12,6 +12,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/formattest"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/test/debstub/debgen"
 )
 
@@ -132,10 +133,12 @@ func conformance() formattest.Fixture {
 			{Name: "signing key", Path: "signing-key.asc", Status: http.StatusOK},
 			{Name: "release document of a flat directory", Path: "binary/InRelease", Status: http.StatusNotFound},
 			{Name: "index of a flat directory", Path: "binary/Packages.gz", Status: http.StatusNotFound},
+			{Name: "member path outside a virtual repository", Path: "members/deb-local/pool/h/hello/hello_1.0-1_amd64.deb", Status: http.StatusNotFound},
 			{Name: "package file of a flat directory", Path: "binary/hello_1.0_all.deb", Status: http.StatusNotFound},
 		},
 		NoContent: map[string]string{
-			routeDists: generated, routeByHash: generated,
+			routeMemberGet: "a package file of a member is served through a virtual repository, whose members the kit's host does not have; test/integration/debvirtual serves it",
+			routeDists:     generated, routeByHash: generated,
 			routeFlatRelease: remoteOnly, routeFlatIndex: remoteOnly, routeFlatFile: remoteOnly,
 		},
 		Remote: &formattest.RemoteFixture{
@@ -158,8 +161,37 @@ func conformance() formattest.Fixture {
 			},
 		},
 		OptionNames: optionNames(),
-		Skip: map[formattest.Check]string{
-			formattest.CheckMerge: "local class only: the virtual adapter joins with its work package (R-DEB-025)",
+		// The merge of a virtual repository's indexes is the job's; the adapter applies its rule to documents (Q-DEB-38): the first member in
+		// the order of the tiers keeps a package, version and architecture, and its Filename becomes the member path (R-DEB-025).
+		Merge: &formattest.MergeFixture{
+			Cases: []formattest.MergeCase{{
+				Name: "two members that list a version in common", Path: "dists/stable/main/binary-amd64/Packages",
+				Parts: []formats.MemberDocument{
+					{Member: formats.RepoRef{Name: qname.Repo{Project: "it", Key: "deb-local"}}, Tier: formats.TierLocal, Position: 0, Doc: packagesDoc("1.0", "2.0")},
+					{Member: formats.RepoRef{Name: qname.Repo{Project: "it", Key: "debian"}}, Tier: formats.TierRemote, Position: 1, Doc: packagesDoc("2.0", "3.0")},
+				},
+				Sources: []string{"deb-local", "debian"},
+			}},
+			Versions: func(doc []byte) []string {
+				var out []string
+				for _, p := range strings.Split(string(doc), "\n\n") {
+					if v := fieldOf(p, "Version"); v != "" {
+						out = append(out, v)
+					}
+				}
+				return out
+			},
+			VersionSource: func(merged []byte, version string) string {
+				for _, p := range strings.Split(string(merged), "\n\n") {
+					if fieldOf(p, "Version") == version {
+						parts := strings.Split(fieldOf(p, "Filename"), "/")
+						if len(parts) > 2 {
+							return parts[1]
+						}
+					}
+				}
+				return ""
+			},
 		},
 	}
 }
@@ -171,3 +203,24 @@ func TestR_ARCH_010_Conformance(t *testing.T) {
 
 // FuzzR_ARCH_028_Match: Match never resolves a path that is not clean and never panics.
 func FuzzR_ARCH_028_Match(f *testing.F) { formattest.FuzzMatch(f, New()) }
+
+// packagesDoc is a Packages document with one paragraph per version of the package hello.
+func packagesDoc(versions ...string) []byte {
+	var b strings.Builder
+	for i, v := range versions {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "Package: hello\nVersion: %s\nArchitecture: amd64\nFilename: pool/h/hello/hello_%s_amd64.deb\nSize: 1\nSHA256: %s\n", v, v, strings.Repeat("a", 64))
+	}
+	return []byte(b.String())
+}
+
+func fieldOf(paragraph, name string) string {
+	for _, l := range strings.Split(paragraph, "\n") {
+		if v, ok := strings.CutPrefix(l, name+": "); ok {
+			return v
+		}
+	}
+	return ""
+}

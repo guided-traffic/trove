@@ -30,9 +30,11 @@ func (a *App) startDebIndexer(ports map[formats.ID]any) {
 		seconds: m.NewHistogramVec("trove_deb_index_build_seconds", "Duration of the build of a Debian suite's indexes (R-DEB-033).", debBuildBuckets(), "class"),
 		delay:   m.NewHistogramVec("trove_deb_index_delay_seconds", "From the first change a published Debian generation covers to its commit (R-DEB-010, R-DEB-033).", debDelayBuckets(), "class"),
 	}
+	remote, _ := a.debRemote.get()
 	debdata.BindIndexer(&debdata.Indexer{
-		Observe: obs,
-		Store:   st,
+		Observe: obs, Remote: remote, Virtual: debVirtualRepos{a: a, st: st}, Local: debMemberIndexes{a: a},
+		VirtualInterval: a.cfg.Deb.VirtualIndexInterval,
+		Store:           st,
 		Publisher: func() items.Publisher {
 			if s, ok := a.itemStore.get(); ok {
 				return s

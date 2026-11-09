@@ -26,6 +26,7 @@ func (f *Format) Guide() []formats.GuideSection {
 		{ID: "deb.troubleshooting", Topic: formats.GuideTroubleshooting, Title: "Troubleshooting", Markdown: guideText("troubleshooting")},
 	}
 	secs = append(secs, remoteGuideSections()...)
+	secs = append(secs, virtualGuideSections()...)
 	return supportedOnly(f.Descriptor(), secs)
 }
 

@@ -2357,13 +2357,13 @@ Priority: **P1** · Covers: STOR-039
   | Member | Definition |
   |---|---|
   | `blobs` | `live` blob rows: the physical content, including content referenced only from the trash can and content awaiting collection. |
-  | `logical` | Untrashed file items and folders of all local and remote repositories; every reference counts, so one blob in two repositories counts twice. |
+  | `logical` | Untrashed file items and folders of all repositories that hold items: the local and remote ones and a virtual repository's generated items (Q-STOR-215); every reference counts, so one blob in two repositories counts twice. |
   | `deduplicationRatio` | `blobs.bytes / logical.bytes`; `0` when `logical.bytes` is 0. |
   | `trash` | Trashed items and their logical bytes (R-STOR-022). |
   | `pendingCollection` | Digests in `blob_gc_queue` plus rows in state `deleting`, with their sizes. |
   | `damaged` | Blob counts per `content_status` other than `ok` (R-STOR-027). |
   | `quota` | The system quota settings of R-STOR-029 and `usedRatio = blobs.bytes / capacityBytes`; `capacityBytes` and `usedRatio` are `null` when no capacity is configured. |
-  | `repositories[]` | One entry per local and remote repository; virtual repositories hold no items and are not listed. `packages` and `versions` count untrashed rows. |
+  | `repositories[]` | One entry per local and remote repository, and per virtual repository that holds generated items (Q-STOR-215); a virtual repository without items is not listed. `packages` and `versions` count untrashed rows. |
 
 - **Per-repository share (STOR-039).** `shareOfLogicalBytes` is the repository's logical bytes
   divided by `logical.bytes` of the whole installation, a ratio from 0 to 1 rounded to four
@@ -5163,6 +5163,28 @@ publications.
 
 **Applied in the spec:** R-STOR-018 (above), Q-STOR-182. Code: [publish.go](../../internal/items/publish.go), [commit.go](../../internal/items/commit.go),
 [delete.go](../../internal/items/delete.go), [files.sql](../../internal/meta/postgres/queries/files.sql). Tests: `test/integration/itempublish`.
+
+### Q-STOR-215 · The storage summary counts the generated items of a virtual repository and lists the repository
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the virtual class of the Debian format (T-17 WP8).
+
+Context: a Debian virtual repository holds the generated items of its merged indexes (Q-STOR-180). R-STOR-028 said that virtual repositories hold no items
+and are not listed.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The summary counts the items of every repository and lists a virtual repository that holds any (chosen) | `logical` and `repositories[]` follow the items table whatever the class | The figures add up to the usage the counters keep (R-STOR-003); an operator sees what a virtual repository stores | A virtual repository appears in the list with the bytes of its indexes |
+| (b) Leave virtual repositories out | The old rule | The list holds the repositories that hold packages | The indexes are logical bytes that no entry owns; the shares do not sum to 1 |
+| (c) Add the indexes to the member that built them | An owner for the bytes | Sums | The bytes of a merged index belong to no member |
+
+**Choice:** (a). The usage counters are kept by the items table whatever the class (R-STOR-003), so the figures of a virtual repository are those
+of its generated items. Verified: the publication port accepts a virtual repository and no remote one (`TestQ_STOR_180_PublishTargetClasses`).
+Not verified: the summary task itself (R-STOR-028) is not built yet, so this decision is for it.
+
+**Rationale:** the usage of an installation is the sum of the usage of its repositories. The development agent would revisit it if the list became
+long for installations with many virtual repositories.
+
+**Applied in the spec:** R-STOR-028. Code: [publish_virtual.go](../../internal/items/publish_virtual.go).
 
 ## What this does not cover
 

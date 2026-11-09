@@ -63,6 +63,9 @@ const maxPublishFiles = 20000
 func (s *Store) Publish(ctx context.Context, repo RepoRef, files []GeneratedFile, remove []repository.Cleaned,
 	commit func(ctx context.Context, tx meta.Tx) error,
 ) error {
+	if err := checkPublishTarget(repo); err != nil {
+		return err
+	}
 	if err := checkPublication(files, remove); err != nil {
 		return err
 	}

@@ -111,8 +111,13 @@ func (s *Server) GetDebIndexState(w http.ResponseWriter, r *http.Request, projec
 	if err == nil {
 		repoID, err = parseRepositoryID(repo.ID)
 	}
-	if err == nil && (repo.Format != "deb" || repo.Class == repository.Virtual) {
-		err = errs.E(errs.Invalid, errs.CodeUnsupportedClass, "The index state is read from a local Debian repository.")
+	if err == nil && (repo.Format != "deb" || repo.Class == repository.Remote) {
+		err = errs.E(errs.Invalid, errs.CodeUnsupportedClass, "The index state is read from a local or a virtual Debian repository.")
+	}
+	if err == nil && repo.Class == repository.Virtual && len(targets) > 0 {
+		// A virtual repository has no change number of its own to wait for: its index follows the members (R-DEB-026).
+		err = errs.E(errs.Invalid, errs.CodeValidation, "A virtual repository has no change number to wait for.",
+			errs.WithFields(errs.FieldError{Pointer: "/waitFor", Code: "invalid_value", Detail: "not supported for a virtual repository"}))
 	}
 	var list []DebSuiteState
 	if err == nil {

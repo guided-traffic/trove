@@ -2640,6 +2640,9 @@ components act in this order:
    - `Merge` collects each eligible member's document. Local documents come from
      R-ARCH-012, remote documents from R-ARCH-013, with stale serving and the circuit applying. The
      format then merges them under the per-version source rule.
+   A format whose virtual index is built by a job (the Debian format, Q-REPO-271) uses neither the per-request merge
+   of step 3 nor the cache of step 4: the job's stored merged item is served on the format's routes after the format's
+   gate, and the exemptions from the cache, the `rev_seq` check and the partial result are those of Q-REPO-271.
 4. The merged result is cached as the proxy page specifies. The cache key includes the eligible
    member set with the caller's cache-fill right on each remote member, and the endpoint
    (Q-REPO-110). The base URL is not part of the key: the merge holds no absolute link, the

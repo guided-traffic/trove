@@ -34,6 +34,9 @@ const (
 // ReasonNoSigningKey is the reason of a suite whose build found no usable primary key (R-DEB-016).
 const ReasonNoSigningKey = "no_signing_key"
 
+// classLocal is the class of a repository whose publication triggers the builds of the virtual repositories that list it.
+const classLocal = "local"
+
 // maxDateWaits bounds the loop that waits for the clock: a Release Date is never later than the database time minus 59 s, so the wait
 // is at most a minute and a half for a key bound a moment ago (Q-DEB-40).
 const maxDateWaits = 4
@@ -64,6 +67,14 @@ type Indexer struct {
 	Log        *slog.Logger
 	// Sleep waits for d or until ctx ends; nil waits on a timer. A test replaces it.
 	Sleep func(ctx context.Context, d time.Duration) error
+	// Virtual finds a virtual repository and the members that serve a name; Local reads the index files of a local member; Remote gives a
+	// remote member's release and index through the background path. Without Virtual the indexer builds local repositories only.
+	Virtual VirtualRepos
+	Local   MemberIndexes
+	Remote  *RemoteJobs
+	// VirtualInterval is deb.virtual_index_interval: the least time between two builds of a virtual repository that a member's
+	// publication triggers (R-DEB-026).
+	VirtualInterval time.Duration
 	// Observe receives the measurements of R-DEB-033; nil records none.
 	Observe Observer
 	// BeforeCommit, if set, runs after the blobs are written and before the commit's transaction would run (fault injection of the
@@ -169,6 +180,15 @@ func (x *Indexer) databaseNow(ctx context.Context) (time.Time, error) {
 // no_signing_key, which a key change or a restore's replay fixes by enqueueing a build again (R-DEB-016).
 func (x *Indexer) Build(ctx context.Context, repoID int64, args IndexJobArgs) error {
 	args = args.normalized()
+	if x.Virtual != nil {
+		vr, ok, err := x.Virtual.Virtual(ctx, repoID)
+		if err != nil {
+			return err
+		}
+		if ok {
+			return x.buildVirtual(ctx, vr, args)
+		}
+	}
 	repo, found, err := x.Repos.IndexRepo(ctx, repoID)
 	if err != nil || !found {
 		return err
@@ -212,7 +232,11 @@ func (x *Indexer) Build(ctx context.Context, repoID int64, args IndexJobArgs) er
 }
 
 func reasonOf(err error) string {
+	var me *memberError
 	switch {
+	case errors.As(err, &me):
+		return me.reason + ": " + me.member
+
 	case errors.Is(err, openpgp.ErrTooEarly):
 		return "key_too_young"
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
@@ -321,13 +345,12 @@ func (x *Indexer) publishSuite(ctx context.Context, repo IndexRepo, bs rows.Buil
 			current = g
 		}
 	}
-	prefix := "dists/" + suite + "/"
 	pub := x.Publisher()
 	if pub == nil {
 		return OutcomeFailed, errors.New("deb: the publication port is not available on this replica")
 	}
 	if len(bs.Entries) == 0 && full {
-		return OutcomePublished, x.dropSuite(ctx, pub, repo, bs, gens)
+		return OutcomePublished, x.dropSuite(ctx, pub, repo, bs.Suite, gens)
 	}
 	date, err := x.chooseDate(ctx, bs.Now, bs.Suite.ReleaseDate, earliestOf(keys))
 	if err != nil {
@@ -339,6 +362,18 @@ func (x *Indexer) publishSuite(ctx context.Context, repo IndexRepo, bs rows.Buil
 	if err != nil {
 		return OutcomeFailed, err
 	}
+	return x.publishBuilt(ctx, pub, repo, bs.Suite, bs.Generations, bs.Now, built, date, keys, full, nil, bs.Suite.DirtySince, current.Files)
+}
+
+// publishBuilt signs a rendered suite and publishes it through the port in one transaction with the record of its generation (R-DEB-010,
+// R-DEB-016). row is the suite's row as the snapshot read it, gens its generations, currentFiles the index files of the generation it
+// replaces; inputs is what a virtual build compared (R-DEB-026). The blobs are written by the port before its transaction.
+func (x *Indexer) publishBuilt(ctx context.Context, pub items.Publisher, repo IndexRepo, row rows.Suite, genRows []rows.GenerationRow, now time.Time,
+	built *index.Suite, date time.Time, keys []*openpgp.Key, full bool, inputs json.RawMessage, dirty *time.Time, currentFiles map[string]string,
+) (string, error) {
+	suite := row.Suite
+	gens := generationsOf(genRows)
+	prefix := "dists/" + suite + "/"
 	inRelease, err := openpgp.ClearSign(built.Release, keys, date)
 	if err != nil {
 		return OutcomeFailed, err
@@ -361,24 +396,24 @@ func (x *Indexer) publishSuite(ctx context.Context, repo IndexRepo, bs rows.Buil
 	}
 
 	// Retention runs here and nowhere else (Q-DEB-33): the generation this build replaces is superseded now, the new one is current.
-	next := bs.Suite.Generation + 1
+	next := row.Generation + 1
 	all := make([]index.Generation, 0, len(gens)+1)
 	for _, g := range gens {
 		if g.SupersededAt == nil {
-			t := bs.Now
+			t := now
 			g.SupersededAt = &t
 		}
 		all = append(all, g)
 	}
 	all = append(all, index.Generation{Number: next, Files: newFiles})
-	kept, dropped := index.Retain(all, bs.Now, x.ByHashKeep)
-	given := index.GivenUp(kept, dropped, current.Files, newFiles)
+	kept, dropped := index.Retain(all, now, x.ByHashKeep)
+	given := index.GivenUp(kept, dropped, currentFiles, newFiles)
 	remove := make([]repository.Cleaned, 0, len(given))
 	for _, p := range given {
 		remove = append(remove, repository.Cleaned{Path: prefix + p})
 	}
 	rec := rows.GenerationRecord{
-		RepoID: bs.Suite.RepoID, Suite: suite, ReadSeq: bs.Suite.ChangeSeq, Generation: next, PrevGeneration: bs.Suite.Generation, Full: full,
+		RepoID: row.RepoID, Suite: suite, ReadSeq: row.ChangeSeq, Generation: next, PrevGeneration: row.Generation, Full: full, Inputs: inputs,
 		ReleaseDate: date, Files: newFiles,
 		SignedBy: fingerprints(keys),
 	}
@@ -407,17 +442,20 @@ func (x *Indexer) publishSuite(ctx context.Context, repo IndexRepo, bs rows.Buil
 	if err != nil {
 		return OutcomeFailed, err
 	}
-	if x.Observe != nil && bs.Suite.DirtySince != nil {
-		if now, nerr := x.databaseNow(ctx); nerr == nil {
-			x.Observe.Delay(now.Sub(*bs.Suite.DirtySince).Seconds())
+	if x.Observe != nil && dirty != nil {
+		if dbNow, nerr := x.databaseNow(ctx); nerr == nil {
+			x.Observe.Delay(dbNow.Sub(*dirty).Seconds())
 		}
+	}
+	if repo.Ref.Class == classLocal {
+		x.triggerVirtuals(ctx, repo)
 	}
 	return OutcomePublished, nil
 }
 
 // dropSuite removes a suite that has no files from a full build: its generated items and its rows (R-DEB-014).
-func (x *Indexer) dropSuite(ctx context.Context, pub items.Publisher, repo IndexRepo, bs rows.BuildSuite, gens []index.Generation) error {
-	suite := bs.Suite.Suite
+func (x *Indexer) dropSuite(ctx context.Context, pub items.Publisher, repo IndexRepo, row rows.Suite, gens []index.Generation) error {
+	suite := row.Suite
 	prefix := "dists/" + suite + "/"
 	paths := map[string]bool{"Release": true, "InRelease": true, "Release.gpg": true}
 	for _, g := range gens {
@@ -431,7 +469,7 @@ func (x *Indexer) dropSuite(ctx context.Context, pub items.Publisher, repo Index
 		remove = append(remove, repository.Cleaned{Path: prefix + p})
 	}
 	slices.SortFunc(remove, func(a, b repository.Cleaned) int { return strings.Compare(a.Path, b.Path) })
-	rec := rows.GenerationRecord{RepoID: bs.Suite.RepoID, Suite: suite, ReadSeq: bs.Suite.ChangeSeq, Drop: true}
+	rec := rows.GenerationRecord{RepoID: row.RepoID, Suite: suite, ReadSeq: row.ChangeSeq, Drop: true}
 	err := pub.Publish(ctx, repo.Ref, nil, remove, func(ctx context.Context, tx meta.Tx) error {
 		_, err := x.Store.RecordGeneration(ctx, tx, rec)
 		return err

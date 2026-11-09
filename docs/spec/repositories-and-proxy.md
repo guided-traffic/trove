@@ -1141,7 +1141,10 @@ For a request to virtual repository V with descriptor d (R-REPO-003) by caller c
      upstreams included, are consulted and the newest version wins (REPO-036).
    - `metadata`: collect the document from every remaining member that knows the package (remote
      members through R-REPO-025, which refreshes expired entries for callers that pass the
-     cache-fill check) and merge them (R-REPO-020).
+     cache-fill check) and merge them (R-REPO-020). A format whose merged index is built by a job
+     and stored (the Debian format, Q-REPO-271) does not merge per request: the job applies steps 2, 3
+     and 5 on stored configuration, for no caller, and step 4 is replaced by the format's gate, which
+     asks `read` on every member for the generated files.
    - `search` and `other`: format page.
    - `write`: route to the deploy target (R-REPO-021).
 7. When nothing was found: answer 404 if every consulted member answered "not found"; otherwise
@@ -1240,6 +1243,11 @@ Priority: **MVP** · Covers: REPO-037
   and a remote refresh made on another replica reaches a merged entry at the latest when that entry
   expires, which is never later than the contributing remote entries. Claim changes reach the merged
   entries through their change area `claims` (R-REPO-023), whose bound does not depend on Valkey.
+- **A merged index built by a job (Q-REPO-271).** A format whose virtual index is built by a job and
+  stored as generated items is exempt from the cache, its key, the `rev_seq` check, the early eviction and
+  the partial result above: the stored item is the merged document, the job's inputs record each local
+  member's generation and each remote member's release, and a build that cannot merge a member publishes
+  nothing, so no partial merge is served.
 - A remote member that fails transiently (502, 503 or 504 of the remote request path) and has no
   stored copy is left out of the merge; the result MUST NOT be cached, and the response carries
   `Cache-Status: trove; detail=partial` (R-REPO-047). A member that answers "not found", or that
@@ -7894,6 +7902,30 @@ different question.
 
 **Applied in the spec:** R-REPO-003, R-REPO-048 (the Debian work package edits its text), [formats/debian.md](formats/debian.md) R-DEB-023. Code:
 `formats.NameServer`, `formats.RemoteCaps.Names`, `virtual.NameServers` (`Options.Names`), `formathost.NewNameServers`.
+
+### Q-REPO-271 · A format with a job-built index serves one stored merged index per suite, outside the merged-metadata cache
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the virtual class of the Debian format (T-17 WP8).
+
+Context: R-REPO-020 and R-ARCH-015 describe a merge per request, cached per replica, with a `rev_seq` check of every eligible local member. A Debian virtual
+repository's index is one signed snapshot for every caller (Q-DEB-19), tens of megabytes large, signed with the virtual repository's key and served by hash
+(R-DEB-025, R-DEB-026): it is built by a job and stored, so there is nothing to merge or to cache at request time.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The job's stored merged item replaces the cache for such a format; the exemptions are named here (chosen) | The adapter's `Strategy` is `FirstMatch`; `Merge` applies the job's rule to documents and the core's cache holds none of the index | Every replica serves the same bytes; one signature per snapshot; a change of a local member reaches the index through the job's inputs, which record each member's generation, not through a `rev_seq` check | The visibility of a local publication through the virtual repository is the job's delay (R-DEB-026), not "as soon as the commit has returned" |
+| (b) Cache the merged index per replica as for npm | The core merges per request | No exemption | A merge of 50 MB per request and per set of readable members; replicas could sign and serve different bytes |
+| (c) Make the `rev_seq` check a property of the stored item | The job records the revisions and a request compares them | Immediate visibility | A query per request of an index file, to hide a delay the job bounds |
+
+**Choice:** (a). The exemptions from R-REPO-020 and R-ARCH-015 are: the merged-metadata cache and its key, the `rev_seq` check, the early eviction
+signal and the partial result with `Cache-Status: trove; detail=partial`. A build that cannot merge a member publishes nothing (R-DEB-025), so no partial
+merge is ever served; the gate of R-AUTHZ-009 is applied to the generated files by the format (R-DEB-027) because the index is one for every caller.
+
+**Rationale:** the requirements protect a merge that depends on the caller and on the moment; this merge does neither. The development agent would
+revisit it if a second format built a merged document by job, which would then share these exemptions.
+
+**Applied in the spec:** R-REPO-019 (step 6), R-REPO-020, R-ARCH-015, R-AUTHZ-009, [formats/debian.md](formats/debian.md) R-DEB-025 to R-DEB-027.
+Code: `virtualAdapter` in [class_virtual.go](../../internal/formats/deb/class_virtual.go).
 
 ### Q-REPO-272 · A job run of a remote repository gets an upstream outside a mirror pass
 

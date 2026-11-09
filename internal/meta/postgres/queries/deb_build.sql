@@ -56,7 +56,9 @@ SELECT (extract(epoch FROM now()) * 1000000)::bigint;
 UPDATE deb_suites
    SET built_seq = sqlc.arg(read_seq)::bigint, generation = sqlc.arg(generation)::bigint, release_date = to_timestamp(sqlc.arg(release_unix)::bigint),
        published_at = now(), state = 'current', reason = NULL,
-       dirty_since = CASE WHEN change_seq > sqlc.arg(read_seq)::bigint THEN now() ELSE NULL END
+       dirty_since = CASE WHEN change_seq > sqlc.arg(read_seq)::bigint THEN now() ELSE NULL END,
+       inputs = COALESCE(sqlc.narg(inputs)::jsonb, inputs),
+       checked_at = CASE WHEN sqlc.narg(inputs)::jsonb IS NULL THEN checked_at ELSE now() END
  WHERE repo_id = sqlc.arg(repo_id)::bigint AND suite = sqlc.arg(suite)::text AND generation = sqlc.arg(prev_generation)::bigint
    AND (built_seq < sqlc.arg(read_seq)::bigint OR (sqlc.arg(every_suite)::boolean AND built_seq = sqlc.arg(read_seq)::bigint));
 

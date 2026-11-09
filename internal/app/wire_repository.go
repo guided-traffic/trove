@@ -40,7 +40,7 @@ func (a *App) wireRepository(_ context.Context, in infra, ex exposureArea) (repo
 		// the policy hook moves the epoch and the policy versions the deletion changes (R-AUTHZ-028);
 		// the ownership hook removes the ownership rows of the deleted repository (wire_ownership.go).
 		// The scanning's hook enqueues a vuln-rescan in the transaction of a change of a repository's scanning inputs (R-VULN-002).
-		Hooks: repository.MultiHooks(authz.NewSettingsHook(in.rec), authz.NewExposureHook(ex.rules), authz.NewPolicyHook(in.changes), ownershipHook(),
+		Hooks: repository.MultiHooks(authz.NewSettingsHook(in.rec), authz.NewExposureHook(ex.rules), authz.NewPolicyHook(in.changes), ownershipHook(), debRepositoryHook{},
 			evaluate.NewRepositoryHook(in.queue)),
 	})
 	if err != nil {
