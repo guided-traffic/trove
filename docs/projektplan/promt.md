@@ -295,7 +295,20 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   served a third of their rate), with no pod event, restart or failover in that minute; the load of the runner was not measured;
   (2) is closed ([Q-ARCH-446](../spec/architecture.md#q-arch-446--a-response-to-a-request-whose-body-is-unread-is-sent-first-then-the-body-is-read-and-discarded-within-a-bound): reproduced behind HAProxy 3.0, the pod's close with an unread body sent an RST that destroyed the answer, fixed in the listener); (3) the 13 of 11,529 requests answered 502 in the
   certificate rotation row of the run 42561072166, which the transfer loop does not explain, and the two later runs of the set `push`
-  (42563355283: 10 of 3,245 through the scatter edge with a slowest request of 15 s). (4) the p99 conditions of `TestDrainRoles` (R-HA-059, Q-HA-94) failed in two nightly dispatches of the branch of the fix, which had other large legs
+  (42563355283: 10 of 3,245 through the scatter edge with a slowest request of 15 s). Looked at on 2026-11-09 in the recurrence
+  42618038153 (job `e2e on kind (push)`, 13 of 9,476): **the reload is not the cause.** The 502s are GETs of `/system/ping` and
+  `/system/replicas` that the edge logged with flag `SH` and connect time 1.4 to 2.8 s, at 12:54:37; the first pod reload is at
+  12:55:12 (`TLS material reloaded`, trove_tls_reloads_total 0 to 2 per pod), 35 s later, and the test's own log dates the 502s
+  at 12:54:20 to 12:54:23, the first seconds of its open-loop load of 100 requests a second (`startK6`, `load.js`), which piled up to about 1,000 connections at the edge (k6: p99 13 s, slowest request 19.4 s, avg 1 s for a ping).
+  The pods logged `http: TLS handshake error ... i/o timeout` for 8 connections from the two edge pods at 12:54:34 to 12:54:36,
+  which is the 10 s `read_header_timeout` expiring on a handshake that did not finish: the pod was starved of CPU by the ramp
+  (valkey circuit open at 12:54:27, pings of 1.6 to 3.5 s), the listener gave up on the handshake, the edge saw the abort before
+  any header. Reproduced no 502 with the real listener behind HAProxy 3.0 under 1,000 and 2,500 closed-loop GET clients on 1 and 0.3 CPU
+  (13,164 and 12,896 answers, all 200), so the starvation of the kind node is the precondition and was not rebuilt. Nothing in a
+  reload closes a connection: `ListenerTLS` swaps the certificate pair through `GetConfigForClient` and keeps the listener and
+  every established connection. Same family as (1) and (4): the rotation row is run with the load that stalls the cluster. Next
+  step: measure what starves the pods at the ramp (the row's own k6 on the same node, and whether the open loop piles up as the transfer loop did) before the product is touched; a closed loop (the change of Q-HA-230 for the transfer loop) for `load.js` would remove the pile-up, which is a change of the
+  test's load, not of the product. (4) the p99 conditions of `TestDrainRoles` (R-HA-059, Q-HA-94) failed in two nightly dispatches of the branch of the fix, which had other large legs
   running at the same time (documents 1.64 s against a 755 ms warm-up; then 5.25 s against 840 ms and all requests 13.8 s against 1.7 s), while the transfer loop
   had 0 failures in both. Revisit when a run shows the stall again.
 - **F-105 · `TestR_NPM_007_ASlowPublishOf200MiB` fails under load** (seen twice: by the F-83 builder, an S3 UploadPart
