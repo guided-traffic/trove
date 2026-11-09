@@ -148,13 +148,15 @@ func TestOCIClosingPublic(t *testing.T) {
 		mirror := "oci-hub-mirror-" + fx.run
 		fx.adm.do("POST", reposRoute, map[string]any{
 			"key": mirror, "class": "remote", "format": "oci", "requireAuthentication": true,
-			"includePatterns": []string{"library/busybox"},
+			// both spellings: a read of a Docker Hub name is decided on `busybox` and on `library/busybox` (Q-OCI-129, H-752)
+			"includePatterns": []string{"busybox", "library/busybox"},
 			"remote": map[string]any{
 				"url": "https://registry-1.docker.io/", "mode": "mirror",
 				"extraHosts": []map[string]any{{"pattern": "auth.docker.io", "sendCredentials": false}},
 				"mirror":     map[string]any{"concurrency": 1, "maxVersionsPerPackage": 1},
 			},
-			"oci": map[string]any{"mirror": map[string]any{"tags": []string{"latest"}}},
+			// one platform: the index of busybox lists some twenty, and every platform manifest is a manifest GET that Docker Hub counts (Q-OCI-203)
+			"oci": map[string]any{"mirror": map[string]any{"tags": []string{"latest"}, "platforms": []string{"linux/" + ociArch(t)}}},
 		}).want(t, "create "+mirror, 201)
 		t.Cleanup(func() { deleteRepository(t, fx.adm, mirror) })
 		ensurePolicy(t, fx.adm, "e2e-oci-hub-mirror-"+fx.run, []string{mirror}, [2]any{"sa:" + ociPublisher, []string{"read"}})
@@ -162,8 +164,8 @@ func TestOCIClosingPublic(t *testing.T) {
 		e := &mirrorEnv{adm: fx.adm}
 		e.run_(t, mirror, false)
 		done := e.awaitComplete(t, mirror, 10*time.Minute)
-		if sum := done.LastCompletePass; sum.Outcome != "complete" || sum.PackagesFailed != 0 || sum.Packages != 1 {
-			t.Fatalf("the pass ended %+v, want complete with one package", *sum)
+		if sum := done.LastCompletePass; sum.Outcome != "complete" || sum.PackagesFailed != 0 || sum.Packages < 1 {
+			t.Fatalf("the pass ended %+v, want complete with a package", *sum)
 		}
 		c := fx.client(t, 1, ociDocker, "hub-mirror")
 		c.login(host)

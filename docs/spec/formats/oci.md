@@ -3582,6 +3582,12 @@ one referrers request (a `504`), longer than the header timeout of a Docker clie
 are then answered at once, so the stall is the cost of the first requests of an outage. Live for every remote and mirror whose upstream outage looks like this, not for one that refuses or resets
 the connection (the test uses the stub's `down: reset` for that case). The remedy is a lower `connectTimeoutMs` of the repository's `remote` section; a default that fits both is not decided.
 
+### H-752 · An include pattern of a Docker Hub mirror admits the spelling it names, and a read is decided on both
+
+A read of a Docker Hub name is decided on `busybox` and on `library/busybox` (Q-OCI-129), so a mirror whose `includePatterns` is `["library/busybox"]` runs its pass and stores the image,
+and then answers 404 `MANIFEST_UNKNOWN` to every pull of it: `busybox` is not admitted. The closing run found it; its mirror names both spellings. Live for every mirror of Docker Hub that lists one
+spelling. The remedy is to list both, or a pattern that matches both (`*busybox`); a rule that an include admits the other spelling of a name it admits is not decided.
+
 ### Q-OCI-102 · The pull check on a mount's source is made by the enforcement point and answers as an unreadable source
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.

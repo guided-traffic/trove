@@ -2530,7 +2530,7 @@ the amd64 images were not run.
 
 ### Not covered by the OCI tests
 
-- The six manifest `GET` requests at Docker Hub of the closing run are not counted (`TestOCIClosingPublic`).
+- The six manifest `GET` requests at Docker Hub of the closing run are not asserted (`TestOCIClosingPublic`). Counted once from the upstream request log of the packages and worker pods (`registry-1.docker.io/v2/library/busybox/manifests/...`, answered 200): 4 for the pull-through remote and the mirror of one platform together.
 - The OCI distribution conformance suite and the protocol criteria that need no client are the integration tier (`test/integration/oci*`, `make oci-conformance`).
 - No client of another version than the pins: `docker` 29 and `podman` 5 are the two rows.
 - The browser step of the package screen (R-OCI-031) is the UI work package's.
