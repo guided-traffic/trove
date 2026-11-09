@@ -1,6 +1,12 @@
-// The raw-transfer load of E1.13 (R-HA-011, R-ARCH-024): a constant arrival rate of iterations, each uploading a
-// file to generic-local with PUT /files/e2e/generic-local/..., downloading it again and comparing the SHA-256 of what came back, through
+// The raw-transfer load of E1.13 (R-HA-011, R-ARCH-024): RATE clients, each looping an iteration that uploads a
+// file to generic-local with PUT /files/e2e/generic-local/..., downloads it again and compares the SHA-256 of what came back, through
 // the Ingress. Run next to load.js in the drain test of E0.14.
+//
+// The loop is closed: a client starts its next iteration when the last one has ended and at the earliest one second after the
+// last one started, so RATE clients make at most RATE iterations a second and never more. An open loop (a constant arrival
+// rate) starts its iterations on a clock whatever the answers do, and when the edge or the pods stop answering for ten seconds
+// it releases the iterations that piled up in one burst; that burst is more than the 50 requests per 5 s that the write
+// class of R-API-016 admits for one principal, and the limiter refuses it with a 429 that no drain caused (F-119, Q-HA-230).
 //
 // Every request becomes one line on the console, which test/e2e parses:
 //
@@ -13,9 +19,10 @@
 // random, so an overwrite is a new blob. The token is the file /out/token (a service account with write rights on
 // generic-local), not an argument: a command line is visible to every process of the machine.
 //
-// Environment: TARGET, HOST, HOSTS_ADDR (as load.js), RATE (iterations/s, default 4), DURATION, TIMEOUT, SIZE (bytes of
-// each body, default 262144).
+// Environment: TARGET, HOST, HOSTS_ADDR (as load.js), RATE (clients, which is iterations/s when the answers are quick;
+// default 4), DURATION, TIMEOUT, SIZE (bytes of each body, default 262144).
 import http from 'k6/http';
+import { sleep } from 'k6';
 import exec from 'k6/execution';
 import crypto from 'k6/crypto';
 
@@ -28,12 +35,9 @@ export const options = {
   hosts: __ENV.HOSTS_ADDR ? { [HOST]: __ENV.HOSTS_ADDR } : {},
   scenarios: {
     transfer: {
-      executor: 'constant-arrival-rate',
-      rate: Number(__ENV.RATE || 4),
-      timeUnit: '1s',
+      executor: 'constant-vus',
+      vus: Number(__ENV.RATE || 4),
       duration: __ENV.DURATION || '60s',
-      preAllocatedVUs: 200,
-      maxVUs: 800,
       gracefulStop: '60s',
     },
   },
@@ -51,6 +55,13 @@ function line(op, t0, res, path, note) {
 }
 
 export default function () {
+  const began = Date.now();
+  transfer();
+  // Also after a failed PUT: a client that is refused waits out its second like one that was served.
+  sleep(Math.max(0, 1 - (Date.now() - began) / 1000));
+}
+
+function transfer() {
   const n = exec.scenario.iterationInTest;
   // One path per iteration: two iterations on one path overlap when a PUT is slow (a drain held one for 10.7 s on CI), and the
   // GET of the first then reads the second's bytes, which is the last writer winning and not a wrong download.
