@@ -259,7 +259,8 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
 - **F-117 · The self-hosted runners lost the Ubuntu archive for a few minutes** (Test and Release 42553790224, 2026-11-09 03:02):
   every job that installs `build-essential` at that moment (GoSec, cyclomatic complexity, both builds, the image, the source malware
   scan, Trivy) failed in `apt-get` with "Could not connect to archive.ubuntu.com:80" over IPv6 and IPv4; jobs that had installed
-  earlier passed. An outage outside the repository; it makes every such job depend on the archive. Done when the runner image carries
+  earlier passed. An outage outside the repository (at 03:10 UTC `archive.ubuntu.com` did not answer from the owner's network either,
+  `security.ubuntu.com` did); it makes every such job depend on the archive. Done when the runner image carries
   `make` and the C compiler (the owner's runner) or the jobs keep a local package cache.
 - **F-105 · `TestR_NPM_007_ASlowPublishOf200MiB` fails under load** (seen twice: by the F-83 builder, an S3 UploadPart
   cancellation followed by the package timeout, and by the F-101 builder, "1 connections held a transaction older than 1 s
