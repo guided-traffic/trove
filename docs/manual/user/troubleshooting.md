@@ -147,6 +147,10 @@ Cached packages are served while the upstream is down. Content that is no NuGet 
 - `npm audit` through trove lists the advisories of the public advisory database for the versions in your lockfile. A package whose name your organisation has claimed in a local repository is not matched against public advisories, and npm says how many names were left out.
 - `502`, `503` and `504` with an `upstream_` code concern a package that is not cached while the remote repository's upstream fails; what is cached is still served. Retry later, and tell an administrator if it persists.
 
+### Debian: apt-get update, upload and install
+
+APT prints the status line of a failed request and no body; a signature that cannot be verified, a client clock that trails trove's, a `Hash Sum mismatch` and the answers of an upload are explained in [Debian packages with APT](apt-packages.md#when-something-goes-wrong). The upload's answers carry a code in the body, which `curl -fsS` hides: drop `-f` to read it.
+
 ## Session ended and re-authentication
 
 A browser session ends after a period without activity and after a maximum length (one and twelve hours unless an administrator set other values), or when it is ended under **Profile › Sessions**.
@@ -197,6 +201,8 @@ Each code with its status and meaning. `GET /api/v1/problems/<code>` gives the d
 | `nuget_version_exists` | 409 | The NuGet version is stored with other bytes |
 | `nuget_version_deleted` | 409 | The NuGet version was deleted and is never accepted again |
 | `nuget_version_reserved` | 409 | After a restore, the number is kept for one exact package |
+| `deb_version_exists`, `deb_filename_conflict`, `deb_withheld` | 409 | A Debian package file is stored with other bytes, another version has its file name, or a restore withheld these bytes |
+| `generated_item` | 409 | A write or delete of a file that trove generates, such as a Debian index below `dists/` |
 | `token_limit_reached` | 409 | You hold the maximum number of active tokens |
 | `idempotency_in_progress` | 409 | The same request is still running; retry after `Retry-After` |
 | `precondition_failed` | 412 | A condition header did not match |
@@ -207,6 +213,8 @@ Each code with its status and meaning. `GET /api/v1/problems/<code>` gives the d
 | `malformed_request`, `invalid_path`, `invalid_header` | 400 | The request, the path or a header is not valid |
 | `npm_invalid_name`, `npm_invalid_tag`, `npm_bad_publish`, `npm_manifest_mismatch` | 400 | A name, a dist-tag or a publish request that npm's rules or trove's checks refuse |
 | `nuget_invalid_package`, `nuget_invalid_id`, `nuget_invalid_version`, `nuget_invalid_version_range` | 400 | A NuGet package, ID, version or dependency range that the rules refuse |
+| `deb_distribution_required`, `deb_invalid_coordinate`, `deb_invalid_file_name` | 400 | A Debian upload without a suite, with a suite or component outside the rules, or with a file name that does not end in `.deb` |
+| `deb_invalid_archive`, `deb_invalid_control`, `deb_unsupported_compression` | 422 | A Debian package that is no `ar` archive, whose control data breaks a rule (the answer names the field), or whose control archive trove cannot read |
 | `invalid_scope`, `invalid_ttl`, `ttl_exceeds_maximum`, `description_required` | 400 | A token request with an invalid scope, lifetime or description |
 | `validation_failed` | 422 | A field of the request is invalid; the answer names it |
 | `rate_limited` | 429 | Too many requests; wait for `Retry-After` |

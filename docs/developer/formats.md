@@ -230,7 +230,7 @@ after the format (R-REPO-004). Four pieces make it one mechanism, and none of th
 served as `settingsSchema` of `GET /api/v1/formats`, and the repository wizard and edit form render the member from it (R-ARCH-004, [web-ui.md](web-ui.md#the-repository-settings-form-rendered-from-the-formats-schema)):
 a setting needs no UI code as long as it uses the rendered subset (objects, booleans, enums, strings, integers, numbers; `title`, `description`,
 `default`, `x-trove-classes`), and its `description` is the text the form shows. The OpenAPI schema of the
-member (`NpmSettings`, `NugetSettings`) is written by hand and `TestR_ARCH_008_NpmSettingsSchemaEqualsTheOpenAPIMember` and `TestR_ARCH_008_NugetSettingsSchemaEqualsTheOpenAPIMember` fail on any difference to the registered schema. A format with settings adds its member to `repository.Settings` and to `formatMembers` (npm: `NPM`; NuGet: `NuGet`).
+member (`NpmSettings`, `NugetSettings`, `OciSettings`, `DebSettings`) is written by hand and `TestR_ARCH_008_NpmSettingsSchemaEqualsTheOpenAPIMember`, `…Nuget…`, `…Oci…` and `…Deb…` ([format_settings_test.go](../../internal/api/v1/format_settings_test.go)) fail on any difference to the registered schema. A format with settings adds its member to `repository.Settings` and to `formatMembers` (npm: `NPM`; NuGet: `NuGet`; OCI: `OCI`; Debian: `Deb`).
 
 ## The guide of a format
 
@@ -377,7 +377,7 @@ The fixture ([kit.go](../../internal/formats/formattest/kit.go)) holds what only
 
 A skip without a reason fails the check. So does a skip the format contradicts: checks 1, 3, 7, 12 and 13 with routes, 4 with a remote adapter, 5 with a virtual
 adapter, 6 with an `Upload` route, 8 with clients, setup templates or a guide, 9 with package names or a route that writes, 10 with package names, 11 with a
-view adapter, and check 2 always. npm and NuGet skip nothing (`TestR_ARCH_010_NoCheckIsSkipped` in each package). A check with nothing to run over and no skip fails: that is how a later generic remote
+view adapter, and check 2 always. npm and NuGet skip nothing (`TestR_ARCH_010_NoCheckIsSkipped` in each package); Debian skips the merge check (5) until its virtual class exists ([conformance_test.go](../../internal/formats/deb/conformance_test.go)). A check with nothing to run over and no skip fails: that is how a later generic remote
 class cannot pass vacuously ([generic's test](../../internal/formats/generic/conformance_test.go) shows the skips of a format with no routes).
 
 ### The in-memory host

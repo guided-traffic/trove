@@ -55,6 +55,9 @@ Give each tool its own token with only what it needs. The actions a client needs
 | Unpublish a package version | `read`, `delete` |
 | Push a NuGet package, or list a NuGet version again | `read`, `deploy` |
 | Unlist or delete a NuGet version | `read`, `delete` |
+| Read a Debian repository with APT | `read`, with no package patterns: the index lists every package of a suite |
+| Upload a Debian package, or add a suite to it | `deploy` |
+| Remove a Debian package from a suite, or delete it | `delete` |
 | Delete a file | `delete` |
 
 Through a virtual repository a client reads the members as well, so list the members next to the virtual repository, or use a pattern that covers them. [Permissions](../admin/permissions.md) explains the actions.

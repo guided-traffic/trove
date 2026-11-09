@@ -27,8 +27,12 @@
 > end-to-end set `backup`, nightly and on dispatch ([backup](docs/developer/backup.md)). The OCI (Docker) registry (phase T-16) is
 > built: local, remote and virtual repositories for container images at `/v2/<projectKey>/<repoKey>/`, the token service and registry
 > tokens, the mirror mode of a registry and the Docker Engine mirror on a bound host; it passes the distribution conformance suite
-> v1.1.1 and its end-to-end rows with real Docker and Podman clients run on several replicas ([OCI](docs/developer/oci.md)). Not built yet:
-> the HA hardening of phase 7.
+> v1.1.1 and its end-to-end rows with real Docker and Podman clients run on several replicas ([OCI](docs/developer/oci.md)). The APT
+> registry for Debian and Ubuntu (phase T-17) is built for local and remote repositories at `/api/deb/<projectKey>/<repoKey>/`: uploads
+> with suites and components, indexes built and signed by a job with a key of each repository's own and its rotation, and the
+> pull-through and mirror of an APT archive whose release is checked against the archive's keys; its end-to-end rows run the real APT
+> of Debian 13 and 12 and Ubuntu 24.04 and 22.04 ([Debian](docs/developer/deb.md)). Not built yet: the virtual class of the Debian
+> format and the HA hardening of phase 7.
 > Everything else is the target design in [docs/spec/](docs/spec/README.md). `v0.1.0` is the last release made before the switch to
 > the organisation's CI and release standard; it was published to `ghcr.io`. Releases from now on are cut by Semantic Release from
 > the conventional commits on `main`, and published to Docker Hub and to the chart repository ([releasing](docs/developer/releasing.md)).
@@ -116,7 +120,6 @@ Built (M2, npm registry):
 
 Built (M3, NuGet; the phase is open for its [remaining findings](docs/projektplan/promt.md#8--open-findings)):
 
-- 📦 **Debian (APT) packages can be uploaded to a local repository.** `PUT /api/deb/<projectKey>/<repoKey>/upload/<file>.deb?distribution=<suite>&component=<component>` stores a package file with its suites and components (201, or 200 when the identical bytes are stored and only coordinates are added), `PUT /api/v1/projects/<projectKey>/repositories/<repoKey>/deb/coordinates` moves it between suites (an added coordinate needs deploy, a removed one delete), `DELETE` of its pool path removes it, and a restore withholds a deleted file until `trove admin deb reinstate <project>/<repository> <path>` puts it back. A job (`deb-index`) then publishes the signed indexes `apt-get` reads (`dists/<suite>/InRelease`, `Release`, `Release.gpg`, `Packages.gz` and by-hash copies, signed with the repository's key), so `apt-get update` and `apt-get install` work against a local repository; `GET /api/v1/projects/<projectKey>/repositories/<repoKey>/deb/index?waitFor=<suite>:<changeSeq>` waits until an upload is published. The part below is the skeleton this builds on. The format `deb` for local repositories, reached at `/api/deb/<projectKey>/<repoKey>/`: the grammars of packages, versions, architectures, suites and components, the pool layout and the classification of paths, the route table of every class (answering `501 deb_not_implemented` until the work packages of [the plan](docs/projektplan/apt-work-packages.md) fill it), the settings schema (`deb.architectures`, `deb.compression`, `deb.origin`, `deb.label`, `deb.suites`, `deb.components`, `deb.upstreamKeys`, `deb.mirror`), the `deb.*` configuration keys, the tables of the suites, package files, signing keys and remote releases, the management operations of the signing keys, coordinates and index state, and the format contract's additions. The indexes, the signing and the classes are not built yet. See [Debian](docs/developer/deb.md).
 - 🧩 **Debian (APT) virtual repositories.** One APT source over local and remote repositories: a job merges the members' indexes, in member order, with the first member keeping a version two members share, the claims of a local member keeping an internal name away from a remote one, and signs the result with the virtual repository's own key. Every package file is fetched from the member whose paragraph the client read (`members/<member>/pool/…`, `Trove-Resolved-From`); a remote member's release is merged only while a current upstream key verifies it, it has not expired and is not older than the last one merged, and a build that cannot merge a member keeps the last index and says why (`GET …/deb/index`). Reading the index needs `read` on every member; an upload goes to the deployment target. `apt-get update` and `apt-get install` are proven from `debian:13` and `ubuntu:22.04`. See [Debian](docs/developer/deb.md#the-virtual-class) and [Debian virtual repositories](docs/security/deb-virtual.md).
 - 🐳 **OCI (Docker) local repositories.** `docker push` and `podman push` of images, multi-platform indexes from Buildx and Podman, and any OCI artifact to `<host>/<projectKey>/<repoKey>/<name>:<tag>`: chunked and monolithic blob uploads that any replica continues (the session lives in PostgreSQL and the object store, never in Valkey), the cross-repository mount, manifests stored byte for byte and pulled by tag or digest, a moved tag that keeps its old manifest pullable by digest, the tags list, the referrers API, deletion with a cascade and an hourly sweep of unreferenced blobs, and a restore that withholds a deleted image until `trove admin oci reinstate`. It passes the distribution conformance suite v1.1.1. Repository and project keys follow the OCI component grammar for every format. See [OCI](docs/developer/oci.md) and [container images](docs/manual/user/container-images.md).
 - 🎟️ **Registry tokens.** `docker login` and `podman login` take a trove token; the token service at `/v2/_token` answers with a short-lived `trv_rgt_` registry token that names the trove token and narrows it to the scopes asked, so revoking the trove token ends it, and every request is decided again on the current grants. See [OCI registry](docs/security/oci-registry.md).
@@ -135,6 +138,15 @@ Built (M3, NuGet; the phase is open for its [remaining findings](docs/projektpla
 - 🖥️ **NuGet package screens, setup and guides.** The package pages of NuGet repositories, setup snippets for `dotnet`, nuget.exe and `nuget.config` with the token in each shell's spelling, and a guide for local, remote and virtual repositories with the .NET CLI, nuget.exe and Visual Studio. See [NuGet](docs/developer/nuget.md) and [web UI](docs/developer/web-ui.md).
 - 🪪 **GitLab CI OIDC federation (M4).** A GitLab job exchanges its ID token for a `trv_cit_` token that lives minutes: issuers with discovery and rotating signing keys, ordered mappings with claim conditions, templated grants and ownership binding, replay protection, issuance records, revocation (also by the job itself as its last step), the dry run and the claim tester, and the admin screens. The reference pipeline runs with the real npm and .NET clients against an issuer double on kind. See [GitLab CI pipelines](docs/manual/user/gitlab-ci-pipelines.md), [GitLab CI federation](docs/manual/admin/gitlab-ci.md) and [ci-oidc.md](docs/developer/ci-oidc.md).
 - 🔒 **Format contract frozen.** The contract between the core and a format is at version 1, its surface is recorded and checked, and npm and NuGet pass all eleven conformance checks; every later change is an ADR ([ADR-141](docs/decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)). See [formats](docs/developer/formats.md).
+
+Built (T-17, the APT registry for Debian and Ubuntu; [spec](docs/spec/formats/debian.md), [contracts](docs/developer/deb.md), [security](docs/security/deb-signing.md)):
+
+- 📦 **Debian local repositories.** `curl --upload-file` of a `.deb` to `/api/deb/<projectKey>/<repoKey>/upload/<file>.deb?distribution=<suite>&component=<component>` stores it at its pool path with its suites and components (`201`, or `200` when the identical bytes only gain coordinates); a package, version and architecture is stored once (`409 deb_version_exists`); `PUT …/deb/coordinates` moves a file between suites (adding needs deploy, removing delete); the control data is read under strict bounds and a package trove cannot index is refused. See [Debian](docs/developer/deb.md#the-local-class).
+- 🗂️ **Signed indexes built by a job.** The job `deb-index` builds `Packages.gz` (and `Packages.xz`), `Release`, `InRelease` and `Release.gpg` of each suite from one snapshot of the rows and publishes the whole suite in one transaction, with every index file also by hash, so `apt-get update` sees one generation on any replica; `GET …/deb/index?waitFor=<suite>:<changeSeq>` waits for an upload, `POST …/reindex` rebuilds. See [index builds](docs/security/deb-index.md).
+- 🔑 **A signing key per repository, and its rotation.** Every local repository gets an EdDSALegacy key in the transaction that creates it, sealed with the stored-secret key ring and opened only to sign; a next key co-signs until it is promoted, so clients replace their key file without an outage; imported keys, and a restore that withholds a retired key instead of reviving it. See [signing keys](docs/security/deb-signing.md).
+- 🔁 **Debian and Ubuntu archives through a remote.** A pull-through cache of an APT archive (`https://deb.debian.org/debian/` by default) that passes the archive's signed release files through byte for byte, serves only the index files that release lists, checks package files against the parsed indexes and, with `deb.upstreamKeys`, stores only releases a key of the archive verifies and never an older one. See [Debian remote](docs/security/deb-remote.md).
+- 🪞 **Mirror of an APT archive.** A remote in mode `mirror` keeps the suites, components and architectures of `deb.mirror` so that `apt-get install` keeps working with the archive unreachable. See [Debian mirror](docs/security/deb-mirror.md) and [Debian (APT) repositories](docs/manual/admin/apt-repositories.md).
+- 🖥️ **Debian screens, setup and guides.** The package pages, the tabs **Signing keys** and **Index** of a local repository, setup snippets for APT that install the key under `Signed-By` and the token in `/etc/apt/auth.conf.d/`, and a guide per class. See [Debian packages with APT](docs/manual/user/apt-packages.md).
 
 Built (M4b, vulnerability scanning, beta phase 6; [spec](docs/spec/vulnerability-scanning.md), [contracts](docs/developer/vulnerabilities.md), [security](docs/security/vulnerability-scanning.md)):
 
@@ -160,7 +172,8 @@ pass-through of an upstream's NuGet vulnerability information (`vulnerabilityInf
 backup (client-side encryption of the database files, R-BAK-027, and a restore onto an existing blob store, R-BAK-025); the HA
 hardening of phase 7; remote and virtual repositories for the generic format; the UI screens of search, trash, builds and webhooks;
 for OCI the exposure adapter (an endpoint with exposure rules serves no container images), redirects of blob downloads to the
-object store, retention of untagged manifests, mirroring of referrers and the end-to-end rows with real clients.
+object store, retention of untagged manifests, mirroring of referrers and the end-to-end rows with real clients; for Debian the virtual class (R-DEB-025 to R-DEB-028), the nightly set
+`deb-long`, the closing run against `deb.debian.org`, uploads of source packages and snapshots of a suite.
 
 ## 📛 Naming conventions
 
@@ -177,7 +190,7 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 | Further endpoint listener | any free port, one per endpoint, name `^[a-z][a-z0-9-]{0,19}$` (`server.endpoints.<name>.listen`) | `internal/config/endpoints.go` |
 | Endpoint name in metrics, logs and spans | `default` for the default endpoint, the configured name otherwise; a name outside the configured set folds into `_other` | `internal/observability` |
 | Backup commands | `trove backup create`, `list`, `verify`, `delete`, `prune`, `restore`; commands of the binary, not roles: they serve nothing and open no port but the ops port of a `create` run, which exports its counters for as long as it lasts | `cmd/trove/backup*.go` |
-| Recovery commands of the backup lane | `trove admin post-restore`, `trove admin backup check`, `trove admin npm reinstate` | `cmd/trove/admin_postrestore.go`, `admin_backupcheck.go`, `admin_npm.go` |
+| Recovery commands of the backup lane | `trove admin post-restore`, `trove admin backup check`, `trove admin npm reinstate`, `trove admin oci reinstate`, `trove admin deb reinstate` | `cmd/trove/admin_postrestore.go`, `admin_backupcheck.go`, `admin_npm.go`, `admin_oci.go`, `admin_deb.go` |
 | Backup ID | `<yyyymmdd>T<hhmmss>Z-<4 lower-case hex>`, the UTC start of the run and 16 random bits, for example `20261028T020000Z-7f3a`; lexical order is chronological | `internal/backup/format/id.go` |
 | Backup actor | `system:backup`, the actor of the `system.backup.*` audit events | `internal/audit/events_backup.go` |
 
@@ -214,8 +227,9 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 | `/api/nuget/<projectKey>/<repoKey>/v3/…` of a remote repository (and `<projectKey>/<repoKey>~cache`, the cache view) | GET, HEAD | yes, the service index, version list, registrations and package files of a cached NuGet feed; a push, unlist or delete answers `405` ([NuGet](docs/developer/nuget.md#the-remote-class)) |
 | `/api/nuget/<projectKey>/<repoKey>/v3/vulnerabilities/index.json`, `…/v3/vulnerabilities/trove.json` | GET, HEAD | yes (M4b), every class: the index of the `VulnerabilityInfo/6.7.0` resource and its one page, trove's NuGet advisory data keyed by the lower-case ID, `Cache-Control: private, max-age=1800`; listed in the service index while `nuget.vulnerabilityInfo` is `local` and the NuGet data is complete; a request answers `404` when the mode is not `local`, on the cache view and on an endpoint with exposure rules, and `503 vulnerability_data_unavailable` before the data is complete ([vuln_documents.go](internal/formats/nuget/vuln_documents.go)) |
 | any other path below `/api/nuget/<projectKey>/<repoKey>/` (every NuGet v2 shape) | any | `404 nuget_v2_unsupported`, the message names `…/v3/index.json` of the repository |
-| `/api/deb/<projectKey>/<repoKey>/{dists/…, pool/…, signing-key.asc, members/…, upload/<file>}` and the flat-repository paths of a remote | GET, HEAD, PUT, DELETE | `upload/<file>` (PUT), `pool/…` (GET, DELETE), `dists/…` (the published generation of a local repository) and `signing-key.asc` are served; the paths of a mirror answer `501 deb_not_implemented` until its work package lands ([Debian](docs/developer/deb.md#the-routes)); `Packages.bz2` and every other variant a local repository does not build reach the same route and are answered `404` by its handler |
-| `/api/v1/projects/{projectKey}/repositories/{repoKey}/deb/{signing-keys, signing-keys/promote, signing-keys/{fingerprint}, signing-keys/{fingerprint}/reinstate, coordinates, index}`, `…/reindex` | GET, POST, PUT, DELETE | declared in the API document, answer `501 deb_not_implemented` until their work packages land ([deb_keys.go](internal/api/v1/deb_keys.go), [deb_coordinates.go](internal/api/v1/deb_coordinates.go), [deb_index.go](internal/api/v1/deb_index.go), [reindex.go](internal/api/v1/reindex.go)) |
+| `/api/deb/<projectKey>/<repoKey>/dists/<suite>/…`, `…/by-hash/SHA256/<hex>`, `pool/…`, `signing-key.asc`, `members/…` (a virtual repository's member paths) | GET, HEAD | yes (T-17): a local repository serves its published generation (`InRelease`, `Release`, `Release.gpg`, `Packages.gz`, `Packages.xz` with `deb.compression: ["xz"]`, the by-hash copies) and its package files; a remote serves its archive's files (also `SHA512` by-hash paths, pdiffs and every other file of any suite) and the flat-repository paths of a source line `<dir>/` or `./`; `Packages.bz2` and every variant a local repository does not build answer `404`, a path a remote's stored release does not list `404 deb_not_in_release` ([Debian](docs/developer/deb.md#the-routes)) |
+| `/api/deb/<projectKey>/<repoKey>/upload/<file>.deb?distribution=&component=`, `…/pool/…` | PUT; DELETE | yes: the upload of a package file to a local repository (`201`, `200` for the identical bytes) and its deletion; a remote answers `405`. `members/<memberKey>/…` belongs to the virtual class, which is not built |
+| `/api/v1/projects/{projectKey}/repositories/{repoKey}/deb/{signing-keys, signing-keys/promote, signing-keys/{fingerprint}, signing-keys/{fingerprint}/reinstate, coordinates, index}`, `…/reindex` | GET, POST, PUT, DELETE | yes (T-17): the signing keys, the coordinates of a file, the index state with `waitFor` and the rebuild ([the operations](#management-api)) |
 | `/api/npm/<projectKey>/<repoKey>/-/npm/v1/security/advisories/bulk` | POST | yes: the bulk audit, answered from trove's data (mode `local`, M4b) or forwarded (`npm.audit.mode: forward`, M2); `…/-/npm/v1/security/audits` and `…/audits/quick` answer `501 npm_audit_unavailable` in every mode ([routes.go](internal/formats/npm/routes.go)) |
 | `/api/v1/vulnerabilities/findings`, `…/findings/export`, `…/findings/{id}`, `…/findings/set-status`, `…/advisories/{ecosystem}/{id}`, `…/summary`, `…/trend`, `…/sources`, `…/claimed-name-matches` | GET; PATCH on `…/findings/{id}`, POST on `…/set-status` | yes (M4b; [the operations](#management-api)) |
 | `/api/v1/packages/{packageId}/vulnerabilities`, `/api/v1/packages/{packageId}/versions/{version}/vulnerabilities`, `/api/v1/projects/{projectKey}/repositories/{repoKey}/vulnerabilities/rescan` | GET; POST for the rescan | yes (M4b) |
@@ -279,6 +293,42 @@ The settings of a mirror of a registry are the member `oci.mirror` of the reposi
 | `oci.mirror.tags` | `["latest"]` | tag patterns (`*`, `?`); a tag without a wildcard is always kept |
 | `oci.mirror.excludeTags` | `[]` | tag patterns never mirrored |
 | `oci.mirror.platforms` | `[]` | `os/arch` or `os/arch/variant` of the index entries to keep; empty is all, `linux/arm64` includes `linux/arm64/v8` |
+
+### Debian (APT) names and paths
+
+What an APT client, a token and the storage see of a Debian repository ([names.go](internal/formats/deb/names.go),
+[paths.go](internal/formats/deb/paths.go), [setup_local.go](internal/formats/deb/setup_local.go), [setup_remote.go](internal/formats/deb/setup_remote.go)).
+
+| Name | Value | Built |
+|---|---|---|
+| Repository address | `<base URL>/api/deb/<projectKey>/<repoKey>/`, the URI of a source line; APT appends `dists/<suite>/…` and the `Filename` of an index entry | yes |
+| Package | `^[a-z0-9][a-z0-9+.-]{1,127}$`, the `Package` field; upper case is refused, never folded; the package of permissions, patterns, claims and ownership | yes |
+| Version | `[<epoch>:]<upstream>[-<revision>]` (epoch `[0-9]{1,9}`, upstream starting with a digit, at most 128 characters), ordered by dpkg's rules; no pre-release marker | yes |
+| Architecture | `^[a-z0-9][a-z0-9-]{0,31}$`; `all` for architecture-independent packages; `any` and wildcards are refused | yes |
+| Suite and component of a local repository | `^[a-z0-9][a-z0-9._+-]{0,63}$`, no `/`; a remote serves any suite name its archive has, `<dir>/` of a flat repository and `./` | yes |
+| Pool path of a stored file | `pool/<prefix>/<source>/<package>_<version without epoch>_<architecture>.deb`; `<source>` is the `Source` field or the package, `<prefix>` its first character, or its first four for a source starting with `lib` (`pool/h/hello/hello_2.10-3_amd64.deb`, `pool/libx/libxml2/…`) | yes |
+| Generated files of a local repository | `dists/<suite>/InRelease`, `Release`, `Release.gpg`, `dists/<suite>/<component>/binary-<arch>/Packages.gz` (`.xz` with `deb.compression: ["xz"]`), and each index file at `<directory>/by-hash/SHA256/<hex>`; package-less generated items, written only by the job `deb-index` | yes |
+| Public keys | `signing-key.asc` below the repository address: a local repository's primary and next key, a remote's `deb.upstreamKeys` (`404 deb_no_upstream_keys` without them) | yes |
+| Signing key | OpenPGP v4, algorithm 22 (EdDSALegacy) over Ed25519, user ID `trove <projectKey>/<repoKey>`, no expiry, created an hour before the creating transaction; states `primary`, `next`, `withheld`, `retired` | yes |
+| Client ID and setup snippets | `apt` ("APT (apt, apt-get)"); snippets `apt.shell.configure`, `apt.list.configure`, `apt.install`, `apt.curl.publish`, and for a remote without upstream keys `apt.shell.configure.upstream-keyring`; the variant of a configure snippet is the suite, `stable` without one | yes |
+| Files the setup writes | `/etc/apt/keyrings/trove-<projectKey>-<repoKey>.asc` (the keys, named in `Signed-By`), `/etc/apt/sources.list.d/trove-<projectKey>-<repoKey>.sources` (deb822) or `….list` (the one-line form), `/etc/apt/auth.conf.d/trove-<projectKey>-<repoKey>.conf` (mode `0600`, `machine <host>/api/deb/<projectKey>/<repoKey>/`); a remote without keys names `/usr/share/keyrings/debian-archive-keyring.gpg` (Ubuntu: `ubuntu-archive-keyring.gpg`) | yes |
+| Read-only properties | `deb.package`, `deb.version`, `deb.architecture`, `deb.source`, `deb.coordinate` (the coordinates as `<distribution>/<component>`, sorted, comma-separated) | yes |
+| Repository document member | `deb`: `architectures`, `compression`, `origin`, `label` (local), `suites`, `components` (virtual, not built), `upstreamKeys`, the read-only `upstreamKeyFingerprints` and `mirror.{suites,components,architectures,translations,sources}` (remote); [the reference](#configuration-keys) | yes |
+| Configuration keys | `deb.index_delay`, `deb.virtual_index_interval`, `deb.by_hash_keep`, `deb.index_wait_max` ([configuration](#configuration-keys)) | yes |
+| Job kinds and task | `deb-index` (key `index:<repository id>`), `deb-remote-parse`, the task `deb-index-refresh` ([job kinds](#job-kinds-and-tasks)) | yes |
+| Admin command | `trove admin deb reinstate <projectKey>/<repoKey> <path>` | yes |
+
+### Debian remote cache paths
+
+A remote Debian repository stores what it fetched at the path the client asked for, relative to `remote.url`, and requests the same path upstream; the `./` of a flat root is dropped. The cache view and the item API show these paths.
+
+| Path | Holds |
+|---|---|
+| `dists/<suite>/InRelease`, `Release`, `Release.gpg`; `<dir>/InRelease` … of a flat repository, `InRelease` … of a flat root | the archive's release files, byte for byte (metadata documents, revalidated after the metadata period) |
+| `dists/<suite>/<path the release lists>`, `<dir>/<index name>` | an index file, served only while it is the file the stored release lists |
+| `<directory>/by-hash/SHA256/<hex>`, `…/by-hash/SHA512/<hex>` | an index file by its digest, immutable; `MD5Sum` and `SHA1` paths answer `404` without an upstream request |
+| `<directory>/<name>.diff/…` | a pdiff patch, passed through as content |
+| `pool/…`, any other path of a flat directory | a package or source file, immutable, checked against the digest of the newest parsed index that lists it |
 
 ### Headers
 
@@ -407,7 +457,7 @@ only if its `manifest.json` exists.
 | Backup tables | `backup_run` (one row per `create`, `delete` or `verify` run: state, lease, heartbeat, progress, result; at most one active `create` or `delete`), `backup_blob_pin` (the blobs a running backup still has to copy, kept from garbage collection); both export class `transient`. `revocation_outbox` (the journal entries not yet shipped, written in the transaction of the change; export class `data`) | yes (migrations 00006, 00046; [tables_backup.go](internal/meta/postgres/tables_backup.go)) |
 | Upload session tables | `upload_sessions` (one row per multi-request upload: the repository written to, the repository addressed, the format's binding, the principal, the received count, the hash state, the multipart upload, the tail, the writer claim and the state) and `upload_session_parts`; both export class `transient`: staged bytes are not backed up, a client restarts its upload after a restore | yes (migration 00054, [tables_uploads.go](internal/meta/postgres/tables_uploads.go)); the sessions that use them are not built yet |
 | OCI tables | `oci_manifests` (a row per manifest of an image name), `oci_references` (a manifest's references to manifests and blobs of the same name; the platform of an index entry is on the edge) and `oci_tombstones` (a manifest the journal replay withheld after a restore); export class `data`. Migration 00055 also adds `remote_cache_entries.media_type` | yes (migration 00055, [tables.go](internal/formatdata/oci/tables.go)); the data port answers `not_implemented` until its work package lands |
-| Debian tables | `deb_suites` (a suite of a local or virtual repository with `change_seq`, `built_seq`, the published generation and its state), `deb_binaries` (a stored package file with its normalized control paragraph), `deb_coordinates` (the suites and components a file is listed in), `deb_generations`, `deb_tombstones` (a package file the journal replay withheld), `deb_signing_keys` (a repository's signing keys; `private_key` is a sealed column, `secrets-reencrypt` walks it) and the remote's cache rows `deb_remote_releases`, `deb_remote_files`, `deb_remote_indexes`, `deb_remote_entries`; export class `data`; `deb_suites.change_seq` and `built_seq` are revision columns | yes (migrations 00060 to 00065, [tables_deb.go](internal/formatdata/deb/tables_deb.go)); the local, key and remote groups of the data port are built, the others answer `not_implemented` until their work packages land |
+| Debian tables | `deb_suites` (a suite of a local or virtual repository with `change_seq`, `built_seq`, the published generation and its state), `deb_binaries` (a stored package file with its normalized control paragraph), `deb_coordinates` (the suites and components a file is listed in), `deb_generations`, `deb_tombstones` (a package file the journal replay withheld), `deb_signing_keys` (a repository's signing keys; `private_key` is a sealed column, `secrets-reencrypt` walks it) and the remote's cache rows `deb_remote_releases`, `deb_remote_files`, `deb_remote_indexes`, `deb_remote_entries`; export class `data`; `deb_suites.change_seq` and `built_seq` are revision columns | yes (migrations 00060 to 00065, [tables_deb.go](internal/formatdata/deb/tables_deb.go)); every group of the data port is built but the virtual one, which answers `not_implemented` until the virtual class lands |
 | Key grammar | `repositories.key` and `project.key` carry the checks of the OCI component grammar (`repositories_key_check`, `project_key_check`), and the checks of the composite names that embed a project key (`principal_check`, `authz_policy_name_check`, `ci_mappings_tier_check`) follow it; the step is a contract step (`requires-app >= 0.1.0`, so the compatibility floor does not move: pre-alpha, no replica of an older release has to keep serving) and stops at a key it refuses | yes (migration 00056) |
 | Mirror tables | `mirror_state` (one row per remote in mode `mirror`: the pass in progress with its fence `pass_job_id` and `pass_holder`, the cursor of the last complete pass, failures, rate-limit waits, the bound; export class `data`), `mirror_pending` (the names a pass has discovered and not filled; export class `transient`) | yes (migration 00040) |
 | Advisory-lock categories | two-`int4` form: `1` lease, `2` fetch (retired, never reused), `3` migration, `4` configuration | yes (`internal/cluster/locks.go`) |
@@ -462,6 +512,8 @@ Built families, all with the `trove_` prefix:
 | `trove_oci_registry_tokens_total` | `outcome` (`issued`, `anonymous`, `denied`): answers of the OCI registry's token service ([internal/auth/registrytoken/metrics.go](internal/auth/registrytoken/metrics.go), R-OCI-034) | yes |
 | `trove_oci_sweep_blobs_removed_total` | none: blob items of an image name that no manifest referenced after `oci.unreferenced_blob_grace`, removed by the job `oci-sweep` ([wire_formats.go](internal/app/wire_formats.go)) | yes |
 | `trove_deb_index_builds_total`, `trove_deb_index_build_seconds`, `trove_deb_index_delay_seconds` | `class` (`local`), `outcome` (`published`, `unchanged`, `failed`) on the counter: the builds of the indexes of a Debian suite, their duration and the delay from the first unpublished change to the commit of the generation that lists it ([wire_deb_index.go](internal/app/wire_deb_index.go), R-DEB-010, R-DEB-033) | yes |
+| `trove_deb_upstream_signature_failures_total`, `trove_deb_release_rollbacks_total`, `trove_deb_unverified_fills_total` | `repo` and, on the first, `reason` (`bad_signature`, `key_invalid`, `signature_expired`, `future`, `weak_hash`, `hash_header`, `unknown_key`, `malformed`, `no_signature`, `too_many`): releases of a Debian remote that failed the verification against `deb.upstreamKeys`, older releases kept out below a verified one, package files stored without a digest to check them against ([bind.go](internal/formats/deb/bind.go), R-DEB-019, R-DEB-020, R-DEB-022) | yes; a failure only a job meets is logged and not counted ([H-738](docs/security/deb-remote.md#h-738--a-failed-verification-is-written-once-an-hour-per-replica-and-only-where-a-client-meets-it)) |
+| `trove_deb_remote_parse_total` | `outcome` (`parsed`, `skipped`, `failed`): runs of `deb-remote-parse` (R-DEB-033) | *Planned*: the spec names it, no code counts it yet |
 | `trove_storage_upload_sessions_total` | `outcome` (`completed`, `aborted`, `expired`): multi-request upload sessions (OCI blob uploads) by how they ended ([internal/blob/metrics.go](internal/blob/metrics.go)) | yes |
 | `trove_oci_upstream_token_requests_total` | `repo`, `outcome` (`ok`, `denied`, `failed`): token handshakes of OCI remote repositories with their upstream's realm (R-OCI-034) | *Planned*: the spec names it, no code counts it yet |
 | `trove_nuget_push_replayed_total` | `repo`: pushes of the identical package of a stored version, answered `201` without a change | yes |
@@ -636,7 +688,7 @@ The names of the event registry ([internal/audit](internal/audit/)). Each event 
 | Mirror | `mirror.pass_requested` (transactional, the caller; `full` and the `job` it enqueued; [internal/audit/events_mirror_api.go](internal/audit/events_mirror_api.go)) |
 | Files | `artifact.deployed`, `artifact.deleted`, `artifact.downloaded` |
 | OCI | `oci.manifest.deleted` (transactional; a manifest deleted by a `DELETE`, the cascade of a tag, a raw delete or a removal without a request, with `name`, `digest` and the number of items the cascade removed; carries the journal entry `{"repository", "name", "digest"}`, so a restore's replay withholds the manifest), `oci.reinstate` (transactional, `trove admin oci reinstate`; not journaled) ([internal/audit/events_oci.go](internal/audit/events_oci.go)); `auth.registry_token.denied` (asynchronous: a token request whose credential the stage refused, with `reason` `invalid_token`, `credentials_required` or `principal_disabled` and the form of the credential, deduplicated per client address, endpoint, reason and credential within `audit.token_rejection_dedup_window`; no event per issued token, [internal/audit/events_registry_token.go](internal/audit/events_registry_token.go)) |
-| Debian | `deb.package.deleted`, `deb.coordinates.removed`, `deb.signing_key.promoted` and `deb.signing_key.retired` (transactional, journaled: a restore's replay withholds the file or the key and never deletes or erases, R-DEB-032), `deb.coordinates.changed`, `deb.signing_key.created`, `deb.signing_key.reinstated`, `deb.reinstate`, `deb.upstream_signature_invalid` (async, security); the replay handlers of `deb.package.deleted` and `deb.coordinates.removed` are built, those of the signing keys come with their work package; [internal/audit/events_deb.go](internal/audit/events_deb.go) |
+| Debian | `deb.package.deleted`, `deb.coordinates.removed`, `deb.signing_key.promoted` and `deb.signing_key.retired` (transactional, journaled: a restore's replay withholds the file or the key and never deletes or erases, R-DEB-032), `deb.coordinates.changed`, `deb.signing_key.created`, `deb.signing_key.reinstated`, `deb.reinstate`, `deb.upstream_signature_invalid` (async, security); the replay handlers of all four are built; [internal/audit/events_deb.go](internal/audit/events_deb.go) |
 | Packages (NuGet) | `package.published`, `package.deleted`, `package.metadata_changed`; `package.published` and `package.deleted` carry the journal entry `{"repository", "id", "version", "sha512"}` of a local NuGet repository |
 | System and audit | `system.task_triggered`, `system.job.cancelled`, `audit.exported` |
 | Backup and restore | `system.backup.completed`, `system.backup.failed`, `system.backup.deleted` (`reason` `retention` or `manual`), `system.backup.target_adopted`, written by the backup commands as `system:backup` into the source database through `backup_record_event()`; `system.restored` (`source` `backup` or `pitr`) and `system.restore.journal_replayed` (the counts per outcome), written into the restored database ([internal/audit/events_backup.go](internal/audit/events_backup.go)) |
@@ -701,8 +753,8 @@ Registrations at start-up, in `internal/app/wire_*.go` and in the packages that 
 | `mirror-dispatch` | `internal/app/wire_mirror.go` | task, queue `maintenance` (so that passes holding the slots of the queue `mirror` cannot starve it), exclusive, 1 attempt, `* * * * *`; ensures a `mirror_state` row for every remote in mode `mirror` and enqueues `mirror-pass` for each that is due; `maintenance.tasks.mirror-dispatch` overrides the schedule |
 | `mirror-pass` | `internal/app/wire_mirror.go`, `internal/mirror/pass.go` | queue `mirror`, exclusive per repository (`mirror-pass:<repository id>`), 1 attempt, no timeout; enqueued by the dispatch and by the run operation; a failed, released or crashed attempt is continued by the next dispatch; the result is `{"outcome", …}`, `{"deferred": "rate_limited", "until"}` or `{"skipped": "repository_gone" \| "not_mirror" \| "paused" \| "invalid_document" \| "rate_limited"}` |
 | `oci-sweep` | `internal/formatdata/oci/sweep.go` (kind), `internal/app/wire_formats.go` (on a replica that claims jobs) | task (`maintenance` queue, exclusive, 3 attempts), `0 * * * *`: removes the blob items of an image name in a local OCI repository that no manifest references and no open upload session can still reference, once they are older than `oci.unreferenced_blob_grace`, as the system actor `removal` (R-OCI-019) |
-| `deb-index` | `internal/formatdata/deb/jobs.go` (kind), `internal/formatdata/deb/build.go` (handler) | queue `index`, coalesce under the key `index:<repository id>`, 5 attempts, 30 minutes; the build of a local Debian repository's indexes (R-DEB-010): one snapshot, signed, published through the publication port in one transaction per suite; the build of a virtual repository's follows with its class |
-| `deb-remote-parse` | `internal/formatdata/deb/jobs.go`, `internal/formatdata/deb/remote_parse.go` | queue `index`, coalesce per repository, release directory and index path, 5 attempts, 10 minutes (R-DEB-023); a stub until the remote class lands |
+| `deb-index` | `internal/formatdata/deb/jobs.go` (kind), `internal/formatdata/deb/build.go` (handler) | queue `index`, coalesce under the key `index:<repository id>`, 5 attempts, 30 minutes; the build of a local Debian repository's indexes (R-DEB-010): one snapshot, signed, published through the publication port in one transaction per suite; for a remote repository the re-verification of its stored releases and the removal of the by-hash files no remembered release names; the build of a virtual repository's follows with its class |
+| `deb-remote-parse` | `internal/formatdata/deb/jobs.go`, `internal/formatdata/deb/remote_parse.go` | queue `index`, coalesce per repository, release directory and index path, 5 attempts, 10 minutes (R-DEB-023): reads the `Packages` (and a mirror's `Sources`) index the stored release of a remote names into rows, at most 1 GiB and 1,000,000 paragraphs; without an index path it fetches the release of its directory and queues the parses of its scope |
 | `deb-index-refresh` | `internal/formatdata/deb/jobs.go`, `internal/formatdata/deb/refresh.go` | task (`maintenance` queue, exclusive, 3 attempts), `* * * * *`: enqueues what is due and deletes nothing (Q-DEB-33); runs the parts the packages register with `RegisterRefreshHook` |
 | `session-cleanup` | `internal/auth/session/cleanup.go` | task |
 | `audit-retention` | `internal/app/wire_audit.go` | task |
@@ -721,7 +773,9 @@ Registrations at start-up, in `internal/app/wire_*.go` and in the packages that 
 |---|---|
 | [docs/manual/](docs/manual/README.md) | The user and administrator manual; the binary embeds it and the UI shows it behind **Documentation** in the top bar |
 | [docs/developer/](docs/developer/README.md) | Contributor entry point; the M1 pages: [login](docs/developer/login.md), [identity](docs/developer/identity.md), [authorization](docs/developer/authorization.md), [files](docs/developer/files.md), [m1-contracts](docs/developer/m1-contracts.md), [audit](docs/developer/audit.md), [repositories](docs/developer/repositories.md); the package screens: [packages](docs/developer/packages.md); projects: [projects](docs/developer/projects.md) |
-| [docs/developer/deb.md](docs/developer/deb.md) | The Debian (APT) format as far as it is built: the address and the layout, the grammars, the classification, the route table, the error shape, the settings, the data port and its tables, the signing-key column, the jobs, the configuration keys and what each work package fills in (R-DEB-001 to R-DEB-005, R-DEB-008) |
+| [docs/developer/deb.md](docs/developer/deb.md) | The Debian (APT) format for contributors, in the order of a request: the address and the routes, the files, the upload and the coordinates of the local class, the index builder, the signing keys and the OpenPGP library, the remote class and its jobs, the mirror, the screens, the tests and the counting stub archive (R-DEB-001 to R-DEB-035) |
+| [docs/security/deb-signing.md](docs/security/deb-signing.md), [deb-index.md](docs/security/deb-index.md), [deb-remote.md](docs/security/deb-remote.md), [deb-mirror.md](docs/security/deb-mirror.md) | The Debian format's security: the custody, rotation and restore of the signing keys; what turns rows into a signed index; what a remote checks of its archive; what a mirror stores; and the gaps of each |
+| [docs/manual/user/apt-packages.md](docs/manual/user/apt-packages.md), [docs/manual/admin/apt-repositories.md](docs/manual/admin/apt-repositories.md) | User manual: APT on Debian and Ubuntu against trove, uploads, suites, key rotation and the client's errors; administrator manual: local and remote repositories, upstream keys, the mirror, signing keys, the index state and a restore |
 | [docs/developer/oci.md](docs/developer/oci.md) | The OCI (Docker) registry for contributors: the registry root and its dispatch, the token service and registry tokens, manifests and the push path, uploads and the mount, removal and the sweep, the remote, mirror and virtual classes, the tests, the conformance suite and the counting stub registry |
 | [docs/security/oci-registry.md](docs/security/oci-registry.md), [oci-uploads.md](docs/security/oci-uploads.md), [oci-content.md](docs/security/oci-content.md), [oci-remote.md](docs/security/oci-remote.md), [oci-virtual.md](docs/security/oci-virtual.md) | The OCI registry's security: what a client presents and what a registry token is worth; the upload routes and the mount; removal, the sweep and a restore; what an upstream registry can make a remote store and show, and the mirror; how a virtual repository decides and where a push goes |
 | [docs/manual/user/container-images.md](docs/manual/user/container-images.md), [docs/manual/admin/container-repositories.md](docs/manual/admin/container-repositories.md) | User manual: Docker, Podman, Buildx and Kubernetes against trove; administrator manual: local, remote (Docker Hub, GHCR) and virtual OCI repositories, the mirror and the Docker Engine mirror |
@@ -974,6 +1028,45 @@ Docker Hub remote without credentials shares the anonymous pull allowance of tro
 pass: no stack was started for these steps; the same requests run in the e2e set `oci` with real Docker and Podman clients
 ([e2e.md](docs/developer/e2e.md#the-oci-tests)), the protocol tests of `test/integration/oci` and the conformance suite.
 
+**8. Serve Debian packages to APT.** Create a local Debian repository in the project `demo`, upload a `.deb`, wait until its
+index lists it, and configure a Debian or Ubuntu client with the repository's key and a credential file; then add a remote of the
+Debian archive whose releases trove checks against the archive's keys:
+
+```shell
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"key":"deb-local","class":"local","format":"deb"}' https://trove.example.com/api/v1/projects/demo/repositories   # example; the first signing key is made with it
+curl -fsS -u "trove:$TOKEN" --upload-file ./hello_2.10-3_amd64.deb \
+  'https://trove.example.com/api/deb/demo/deb-local/upload/hello_2.10-3_amd64.deb?distribution=stable&component=main'   # example: 201, "index":[{"distribution":"stable","changeSeq":1,…}]
+curl -s -u "trove:$TOKEN" \
+  'https://trove.example.com/api/v1/projects/demo/repositories/deb-local/deb/index?waitFor=stable:1'                   # example: returns once publishedSeq reaches 1
+
+# on the Debian or Ubuntu client, with TROVE_TOKEN set
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL -u trove:"${TROVE_TOKEN}" https://trove.example.com/api/deb/demo/deb-local/signing-key.asc \
+  | sudo tee /etc/apt/keyrings/trove-demo-deb-local.asc >/dev/null
+printf 'Types: deb\nURIs: %s\nSuites: stable\nComponents: main\nSigned-By: %s\n' https://trove.example.com/api/deb/demo/deb-local/ \
+  /etc/apt/keyrings/trove-demo-deb-local.asc | sudo tee /etc/apt/sources.list.d/trove-demo-deb-local.sources >/dev/null
+sudo install -m 0600 /dev/null /etc/apt/auth.conf.d/trove-demo-deb-local.conf
+printf 'machine %s\nlogin trove\npassword %s\n' trove.example.com/api/deb/demo/deb-local/ "${TROVE_TOKEN}" \
+  | sudo tee /etc/apt/auth.conf.d/trove-demo-deb-local.conf >/dev/null
+sudo apt-get update --error-on=any && sudo apt-get install hello
+
+# a remote of deb.debian.org with the archive's keys, exported on a Debian machine with gpg installed
+gpg --no-default-keyring --keyring /usr/share/keyrings/debian-archive-keyring.gpg --export --armor > debian-archive.asc
+jq -n --rawfile k debian-archive.asc '{key:"debian",class:"remote",format:"deb",deb:{upstreamKeys:$k}}' | \
+  curl -s -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' -d @- \
+  https://trove.example.com/api/v1/projects/demo/repositories                                                        # example; remote.url defaults to https://deb.debian.org/debian/
+```
+
+The Client setup page gives these snippets for your repository and suite, and for the remote a source whose `Signed-By` is the
+remote's `signing-key.asc`, which serves the archive's keys ([Debian packages with APT](docs/manual/user/apt-packages.md)). Compare the
+fingerprints of `deb.upstreamKeys` with the ones Debian publishes before you trust them
+([Debian (APT) repositories](docs/manual/admin/apt-repositories.md#upstream-keys)). Not verified in this pass: no stack was started for
+these steps. The local path (upload with `curl` from the client, the index wait, the rendered snippets, `apt-get update --error-on=any`
+and `apt-get install`) runs in the e2e set `deb` on Debian 13 and 12 and Ubuntu 24.04 and 22.04 ([e2e.md](docs/developer/e2e.md#the-debian-tests));
+the remote of `deb.debian.org` was not run against the real archive (the closing run of R-DEB-035 is not built), only against the
+counting stub archive.
+
 <details>
 <summary>Upgrade, uninstall and the failure scripts</summary>
 
@@ -1019,6 +1112,7 @@ the chart's `backup`, `restore`, `postRestore` and backup Secret values. The con
 | `trove admin post-restore` | `--restored-to <RFC 3339 time>` (required), `--credentials-file <path>` (a credential that may list object versions, so a delete marker cannot hide a journal entry), `--skip-revocation-journal`, `--json` | The clean-up after a point-in-time restore of PostgreSQL by the platform ([R-HA-025](docs/spec/ha-and-helm.md)): jobs back to the queue, a new keyspace and incarnation, the deletion pause, `restored_at`, the journal replay from the restore point; prints one line per step and the quarantined outbox rows. A repeat for the same point runs no step again. Source: [cmd/trove/admin_postrestore.go](cmd/trove/admin_postrestore.go). |
 | `trove admin backup check` | `--json` | Runs the checks of the declared platform protection (`backup.recovery_window`, `backup.object_versioning`) and prints one line per check; changes and stores nothing (the task `backup-check` stores its report). Exit `5` when a declared protection does not hold. Source: [cmd/trove/admin_backupcheck.go](cmd/trove/admin_backupcheck.go). |
 | `trove admin npm reinstate <projectKey>/<repoKey> <name>@<version>` | `--config <file>`, `--log-level <level>` | Puts back an npm version that a journal replay withheld, while the version is stored with the integrity of the replay's tombstone; writes `npm.reinstate` (R-NPM-047). Source: [cmd/trove/admin_npm.go](cmd/trove/admin_npm.go). |
+| `trove admin deb reinstate <projectKey>/<repoKey> <path>` | `--config <file>`, `--log-level <level>` | Puts back a Debian package file that a journal replay withheld after a restore, while the file is stored with the digest of the replay's mark; raises the file's suites so the next build lists it again, and writes `deb.reinstate` (R-DEB-032). Source: [cmd/trove/admin_deb.go](cmd/trove/admin_deb.go) |
 | `trove admin oci reinstate <projectKey>/<repoKey> <name>@sha256:<hex>` | `--config <file>`, `--log-level <level>` | Puts back an OCI manifest that a journal replay withheld after a restore, while the manifest and its item are stored with that digest; writes `oci.reinstate` (R-OCI-033). Source: [cmd/trove/admin_oci.go](cmd/trove/admin_oci.go). |
 
 Every `trove backup` command, `trove admin post-restore` and `trove admin backup check` take `--config <file>`, `--log-level <level>` and
@@ -1738,9 +1832,9 @@ ui:
 oci:                                    # the OCI registry (R-OCI-005, R-OCI-019); the per-repository settings are the repository member oci.mirror, the upload sessions storage.uploads
   token_lifetime: 300s                  # default; 60s to 3600s; the lifetime of a registry token, never beyond the expiry of the trove token it was issued for
   unreferenced_blob_grace: 24h          # default; at least 1m and above storage.uploads.session_max_age; the age a blob of an image name needs before the sweep removes it for being referenced by no manifest
-deb:                                    # the Debian (APT) format (R-DEB-010, R-DEB-012, R-DEB-014, R-DEB-026; the indexes are under construction, the keys are read by its work packages)
+deb:                                    # the Debian (APT) format (R-DEB-010, R-DEB-012, R-DEB-014, R-DEB-026); the per-repository settings are the repository member deb
   index_delay: 2s                       # default; 1s to 60s; the wait after the first change of a suite before its build starts
-  virtual_index_interval: 60s           # default; 10s to 1h; the least time between two builds of a virtual repository that a local member's publication triggers
+  virtual_index_interval: 60s           # default; 10s to 1h; the least time between two builds of a virtual repository that a local member's publication triggers; read by the virtual class, which is not built
   by_hash_keep: 1h                      # default; 10m to 168h; how long the files of a superseded index generation stay served by hash
   index_wait_max: 30s                   # default; 1s to 120s; the longest wait of an index state read with waitFor
 ```
@@ -1901,6 +1995,87 @@ map onto these codes. The table of codes and statuses is R-OCI-008 of [formats/o
 
 </details>
 
+<details>
+<summary>Debian (APT): the repository document, the signing keys, the coordinates and the index state (T-17)</summary>
+
+A Debian repository is created like any other (`POST /api/v1/projects/{projectKey}/repositories`, `format: deb`); the classes are
+`local` and `remote` (the virtual class is not built). What is particular to the format, as a document (JSON, shown as YAML).
+Sources: the descriptor in [format.go](internal/formats/deb/format.go), the schema
+[deb/settings.schema.json](internal/formats/deb/settings.schema.json), the rules in [validate_deb.go](internal/repository/validate_deb.go)
+and [validate_deb_mirror.go](internal/repository/validate_deb_mirror.go).
+
+```yaml
+# a local repository
+key: deb-local                          # example
+class: local
+format: deb
+local:
+  packageOwnership: enforce             # default for Debian: the first upload of a package name records its owners
+deb:                                    # a change of any member rebuilds every suite at once
+  architectures: [amd64, arm64]         # default; 1 to 32 of ^[a-z0-9][a-z0-9-]{0,31}$, not all; the architectures of stored files are added
+  compression: []                       # default; [xz] adds Packages.xz beside the Packages.gz that is always built
+  origin: trove                         # default; the Origin of every Release, 1 to 64 printable ASCII characters without ':'
+  label: deb-local                      # default: the repository key; the Label of every Release, same rule
+---
+# a remote repository
+key: debian                             # example
+class: remote
+format: deb
+remote:
+  url: https://deb.debian.org/debian/   # default; the root of the archive (the directory holding dists/ and pool/); example: http://archive.ubuntu.com/ubuntu/
+  cache:
+    metadataTtlSeconds: 600             # default for Debian: a release file is revalidated after this period
+    notFoundTtlSeconds: 300             # default for Debian
+  integrity:
+    checksumPolicy: verify-if-available # example; require refuses a package file no parsed index lists (502 upstream_digest_missing)
+  mode: pullThrough                     # default: pullThrough | mirror
+  mirror:
+    maxBytes: null                      # default; a mirror of https://deb.debian.org/debian/ needs this or include patterns with a literal prefix (422 mirror_unbounded)
+deb:
+  upstreamKeys: null                    # default: the releases are stored unverified; an ASCII-armored block of 1 to 32 public certificates, at most 256 KiB
+  upstreamKeyFingerprints: []           # read-only: the fingerprints of upstreamKeys, derived on save
+  mirror:                               # present in both modes, read in mode mirror
+    suites: []                          # default; 1 to 32, required in mode mirror (422 deb_mirror_suites_required); example: [trixie, trixie-updates]
+    components: [main]                  # default; 1 to 32
+    architectures: [amd64]              # default; 1 to 16, not all (always kept)
+    translations: [en]                  # default; at most 16 languages of i18n/Translation-<language>
+    sources: false                      # default; true keeps the Sources indexes and the source package files
+```
+
+- `deb.upstreamKeys` is checked on save: a block that does not parse (only `PGP PUBLIC KEY BLOCK` armor), holds secret key material, or
+  holds a revoked, expired or non-signing key or an RSA key below 2048 bits answers `422 invalid_value` at `/deb/upstreamKeys`. A
+  remote without keys carries the warning `deb_upstream_unverified` and cannot be a mirror (`422 deb_upstream_keys_required`). An
+  update that removes fingerprints is journaled as the part `debUpstreamKeysRemoved` of `repository.narrowed`.
+- An Owner of the project without `repositories:write-config` cannot change `deb.mirror` (`422 mirror_restricted`), as for
+  `remote.mirror`. The other members of `local` and `remote` are those of every format
+  ([manual](docs/manual/admin/repositories.md#settings-that-are-set-through-the-api)).
+
+The management operations of the format, below `/api/v1/projects/{projectKey}/repositories/{repoKey}`
+([deb_keys.go](internal/api/v1/deb_keys.go), [deb_coordinates.go](internal/api/v1/deb_coordinates.go),
+[deb_index.go](internal/api/v1/deb_index.go), [reindex.go](internal/api/v1/reindex.go)); a remote repository answers the key
+operations with `400 not_applicable` and the reindex with `405 not_applicable`:
+
+| Request | Permission | Answer |
+|---|---|---|
+| `GET deb/signing-keys` | `read` | `200 {"keys": [{"fingerprint", "algorithm" (1 or 22), "bits", "keyCreatedAt", "boundSince", "state" (primary, next, withheld, retired), "origin" (generated, imported), "publicKey", "createdAt", "promotedAt", "withheldAt", "retiredAt"}]}`; never a private key |
+| `POST deb/signing-keys` with `{"generate": true}`, or `{"privateKey": "<armored secret key>", "passphrase": "…"}` (at most 64 KiB and 1 KiB; the passphrase is used once) | `manage` | `201` with the next key; from the next build every suite is signed by the primary and the next key. `409 deb_key_state` while a next key exists, `409 deb_key_in_use` for a fingerprint known in any state of any repository, `422 deb_key_unsupported` for a key the import rules refuse (only EdDSALegacy over Ed25519 or RSA of at least 3072 bits, no expiry, no signing subkey, created and bound no later than the request) |
+| `POST deb/signing-keys/promote` | `manage` | `200` with the new primary; the old primary is retired and its private key erased; journaled `deb.signing_key.promoted`. `409 deb_no_next_key` without a next key |
+| `DELETE deb/signing-keys/{fingerprint}` | `manage` | `204`: the next key is retired, or the retirement of a withheld key is confirmed; the private key is erased; journaled `deb.signing_key.retired`. The primary answers `409 deb_key_state` |
+| `POST deb/signing-keys/{fingerprint}/reinstate` | `manage` | `200`: a withheld key returns to `primary` when there is none, else to `next` when there is none, else `409 deb_key_state`; `deb.signing_key.reinstated` |
+| `PUT deb/coordinates` with `{"path": "pool/…", "coordinates": [{"distribution", "component"}]}` | an added coordinate `deploy`, a removed one `delete`, both with ownership | `200` with the body of an upload; `422 validation_failed` for an empty list (`invalid_value`) or a crossed bound (`out_of_range`: 64 suites per repository, 32 components per suite, 32 coordinates per file); `409 deb_withheld`; `409 conflict` when the coordinates changed while the request was decided; a removed coordinate is journaled (`deb.coordinates.removed`) |
+| `GET deb/index[?waitFor=<suite>:<changeSeq>[,…]]` | `read` | `200 {"suites": [{"distribution", "changeSeq", "publishedSeq", "generation", "releaseDate", "state" (pending, current, failed), "reason" (failed only: no_signing_key, key_too_young, interrupted, build_error), "signedBy"}]}`; with `waitFor` (at most 64 suites) after every named suite published its number or `deb.index_wait_max` passed; the wait holds no transaction |
+| `POST reindex` (optional `Idempotency-Key`) | `manage` | `202` with the job: every suite rebuilt from the rows, suites without files dropped, rows of items that no longer exist removed; a waiting automatic build becomes this full build; `409 reindex_running` naming a reindex that waits or runs |
+
+The format's own route answers a client, below `/api/deb/{projectKey}/{repoKey}/`: `PUT upload/<file>.deb?distribution=<suite>[&component=<component>]`
+(both repeatable or comma-separated, at most 16 each; `component` defaults to `main`) answers `201` or `200` with
+`{"path", "package", "version", "architecture", "sha256", "coordinates", "index": [{"distribution", "changeSeq", "publishedSeq"}]}`,
+and the problem details of R-ARCH-023 with the `deb_*` codes of [error codes](#error-codes) otherwise. `Cache-Control` is
+`private, max-age=0, must-revalidate` on `InRelease`, `Release`, `Release.gpg`, the plain index paths and `signing-key.asc`, and
+`private, max-age=31536000, immutable` on by-hash and package files; the table of codes and headers is R-DEB-005 of
+[formats/debian.md](docs/spec/formats/debian.md#r-deb-005--errors-and-response-headers).
+
+</details>
+
 ### Security-relevant settings
 
 | Setting | Default | What changes | Decision |
@@ -1936,6 +2111,7 @@ map onto these codes. The table of codes and statuses is R-OCI-008 of [formats/o
 | Repository member `vulnerabilities.matchPublicAdvisories` | `auto` | `always` on a local repository applies public advisories to its claimed names: a public package published under an internal name can then make trove report, and with `blockMalicious` block, the internal package, and the name is no longer withheld from the audits. | [R-VULN-010](docs/spec/vulnerability-scanning.md#r-vuln-010--which-stored-versions-public-advisories-apply-to) |
 | Repository member `npm.audit.mode` (`local`, `forward`, `disabled`) | left out: `local` while scanning is on | `local` answers from trove's data and sends nothing out; withheld internal names are counted in `npm-notice`, so a reader can tell them apart (H-486). `forward` sends the audited names that nothing marks internal to the provider. | [client audits](docs/security/vulnerability-scanning.md#client-audits), [H-486](docs/security/vulnerability-scanning.md#h-486--a-reader-of-an-npm-repository-can-tell-internal-names-from-the-audit) |
 | Repository member `nuget.vulnerabilityInfo` | left out: local while scanning is on | `local` serves the public NuGet advisory set, without internal names, to every reader of a NuGet repository; the absences tell internal names apart (H-487). `off` lists nothing. | [H-487](docs/security/vulnerability-scanning.md#h-487--the-nuget-pages-absences-tell-internal-names-apart) |
+| Repository member `deb.upstreamKeys` (Debian remote) | `null` | Without keys a Debian remote stores the release files its archive sends unchecked and only the clients verify them; it cannot be a mirror. With keys it stores only releases a key of the set verifies and never an older one than it verified; removing a key is journaled and re-verifies what it verified. Compare the fingerprints (`deb.upstreamKeyFingerprints`) through a second channel. | [Debian remote](docs/security/deb-remote.md), [H-623](docs/spec/formats/debian.md#h-623--a-pull-through-remote-without-upstream-keys-stores-what-its-upstream-sends) |
 | `backup.target.allow_same_bucket` | `false` | `true` accepts a target in the blob store's bucket on the same endpoint: the backups then share the bucket's failure modes (a deleted bucket, a lifecycle rule, a compromised runtime credential), and every run warns. The prefixes still must not contain each other, or the orphan sweep of the blob store would delete the backups. | [R-BAK-002](docs/spec/backup-and-restore.md#r-bak-002--target-layout-backup-id-and-target-marker) |
 | `backup.target.allow_insecure_endpoint`, `backup.target.ca_file`, `backup.target.sse.mode` | `false`, empty, `s3` | An `http://` target is refused without the switch; `ca_file` is the target client's whole trust store; every write repeats the server-side encryption, and a preflight compares what the store reports with it. | [who holds what](docs/security/backup-and-restore.md#who-holds-what), [R-BAK-026](docs/spec/backup-and-restore.md#r-bak-026--encryption-in-transit-and-at-rest-on-the-target) |
 | `backup.revocation_journal.enabled` | `true` | `false` deletes the journal entries unshipped, so a restore brings back the revoked tokens, disabled users and removed permissions of everything after its snapshot. | [the revocation journal](docs/security/backup-and-restore.md#the-revocation-journal) |
@@ -2193,6 +2369,7 @@ The operations of GitLab CI federation ([docs/developer/ci-oidc.md](docs/develop
 | `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/resolution` | `getRepositoryResolution` | action `read` on `path.projectKey`/`path.repoKey` |
 | `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/mirror` | `getRepositoryMirror` | authenticated; `repositories:read-config`, an Owner of the project, or `manage` on the repository, decided in the handler; `404` where the repository is hidden from the caller, `400 not_applicable` for a local or virtual repository |
 | `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/mirror/run` | `runRepositoryMirror` | authenticated; `repositories:write-config`, an Owner of the project, or `manage` on the repository, decided in the handler · idempotent; optional body `{"full": false}` (`MirrorRunRequest`); `202` with the `mirror-pass` job; `409 mirror_pass_running` naming it while one is queued or running, `409 mirror_off`, `409 mirror_paused`, `400 not_applicable` |
+| `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/reindex` | `reindexRepository` | action `manage` on `path.projectKey`/`path.repoKey` · idempotent; `202` with the job; `409 reindex_running`; `405 not_applicable` for a format without a job-built index and for a remote repository |
 
 **items**
 
@@ -2276,6 +2453,18 @@ The operations of GitLab CI federation ([docs/developer/ci-oidc.md](docs/develop
 | `POST /api/v1/bastion/check` | `bastionCheck` | a recognized Bastion (the Bastion interface) |
 | `GET /api/v1/bastion/feed` | `bastionFeed` | a recognized Bastion (the Bastion interface) |
 | `POST /api/v1/bastion/downloads` | `bastionDownloads` | a recognized Bastion (the Bastion interface) |
+
+**deb**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/deb/signing-keys` | `listDebSigningKeys` | action `read` on `path.projectKey`/`path.repoKey` |
+| `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/deb/signing-keys` | `createDebSigningKey` | action `manage` on `path.projectKey`/`path.repoKey` |
+| `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/deb/signing-keys/promote` | `promoteDebSigningKey` | action `manage` on `path.projectKey`/`path.repoKey` |
+| `DELETE /api/v1/projects/{projectKey}/repositories/{repoKey}/deb/signing-keys/{fingerprint}` | `retireDebSigningKey` | action `manage` on `path.projectKey`/`path.repoKey` |
+| `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/deb/signing-keys/{fingerprint}/reinstate` | `reinstateDebSigningKey` | action `manage` on `path.projectKey`/`path.repoKey` |
+| `PUT /api/v1/projects/{projectKey}/repositories/{repoKey}/deb/coordinates` | `putDebCoordinates` | authenticated; `deploy` for an added coordinate and `delete` for a removed one, with ownership, decided in the handler |
+| `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/deb/index` | `getDebIndexState` | action `read` on `path.projectKey`/`path.repoKey`; `waitFor` |
 
 **vulnerabilities**
 

@@ -110,6 +110,15 @@ common case (a key created before the snapshot and promoted after it) is repaire
 - [H-627](../spec/formats/debian.md#h-627--an-imported-signing-key-stays-known-to-whoever-imported-it): an imported signing key stays known to whoever imported it.
 - [H-629](../spec/formats/debian.md#h-629--a-forged-journal-entry-can-withhold-a-repositorys-signing-key-until-an-administrator-acts): a forged journal entry can withhold a repository's signing key until an administrator acts.
 
+### H-735 · The secret key of an import and its passphrase stay in process memory until the collector frees them
+
+An import arrives as a JSON string. The handler wipes the byte copy it hands to the store, and the store wipes the armored secret it
+serializes for sealing, but the decoded request body and the Go strings made from it cannot be overwritten, and the module's parsed key
+holds the private scalar until it is collected. A reader of the process's memory (a core dump, a debugger, a swap file on a node without
+encrypted swap) can find a key that was imported, a passphrase that was sent, and the opened key of every build that is running. Live
+whenever a key is imported or a build signs; real for an attacker who already reads a replica's memory, who also holds the stored-secret
+key ring of that replica and so every sealed key it can open ([H-620](../spec/formats/debian.md#h-620--a-holder-of-the-stored-secret-key-ring-and-a-database-copy-can-sign-for-every-debian-repository)).
+
 ### H-765 · An imported secret key passes through the operator's browser
 
 The screen's **Import a key** takes the armored secret key and its passphrase in two form fields and sends them once over the connection to
@@ -128,12 +137,3 @@ The API enforces `manage` on the repository for every key change and for the reb
 through a permission policy and is neither sees the key list and the index state read-only in the UI, and has to use the API for a
 promotion. Not a bypass (the server decides, a button shown to someone without `manage` answers 403); a gap in what the screen offers.
 Live for every project whose policies grant `manage` below the Owner role.
-
-### H-735 · The secret key of an import and its passphrase stay in process memory until the collector frees them
-
-An import arrives as a JSON string. The handler wipes the byte copy it hands to the store, and the store wipes the armored secret it
-serializes for sealing, but the decoded request body and the Go strings made from it cannot be overwritten, and the module's parsed key
-holds the private scalar until it is collected. A reader of the process's memory (a core dump, a debugger, a swap file on a node without
-encrypted swap) can find a key that was imported, a passphrase that was sent, and the opened key of every build that is running. Live
-whenever a key is imported or a build signs; real for an attacker who already reads a replica's memory, who also holds the stored-secret
-key ring of that replica and so every sealed key it can open ([H-620](../spec/formats/debian.md#h-620--a-holder-of-the-stored-secret-key-ring-and-a-database-copy-can-sign-for-every-debian-repository)).

@@ -683,7 +683,7 @@ package; no suite field in the setup dialog (Q-DEB-104).
 
 ## 16 · WP4b (the index builder) as built (stage 3)
 
-Built on the base with WP4a merged. Pages: [deb.md](../developer/deb.md#the-index-builder-wp4b), [security/deb-index.md](../security/deb-index.md); decisions Q-DEB-51 to
+Built on the base with WP4a merged. Pages: [deb.md](../developer/deb.md#the-index-builder), [security/deb-index.md](../security/deb-index.md); decisions Q-DEB-51 to
 Q-DEB-57, H-721 and H-722.
 
 - **Built:** `internal/formats/deb/index/{packages,release,retention}.go` (pure renderers, retention and the `Date` rule, a fuzz target), the job `deb-index`
@@ -740,7 +740,7 @@ Built on 027ec488 (stage 3 merged). Page: [docs/developer/deb.md](../developer/d
 
 ## 18 · WP4b open items and WP9 (local rows), stage 4
 
-Built on the base of section 16. Pages: [deb.md](../developer/deb.md#the-index-builder-wp4b); decisions Q-DEB-58 to Q-DEB-61.
+Built on the base of section 16. Pages: [deb.md](../developer/deb.md#the-index-builder); decisions Q-DEB-58 to Q-DEB-61.
 
 - **Open items of WP4b:** the metrics `trove_deb_index_builds_total`, `trove_deb_index_build_seconds` and `trove_deb_index_delay_seconds` (migration 00065 adds
   `deb_suites.dirty_since`); `TestR_DEB_010_DelayBound` (three replicas, with and without Valkey, small per change, 10,000 files and ten uploads per second in
@@ -818,3 +818,31 @@ Q-REPO-271, Q-STOR-215, ADR-184, ADR-185; gaps H-725 to H-728. Spec edits: R-DEB
   can answer 405 (Q-DEB-67). A shadowing check by a principal with `manage` is approved by design, so the test uses a deployer.
 - **Not done:** a claims-change trigger (H-725, Q-DEB-65); the trigger of a publication in the member's transaction (H-726); `member_expired` as an integration case (the stub cannot serve a release
   that expires between two builds; the rule is a unit test); the dropping of the recorded `Date` when a member leaves, as its own case; the e2e sets (WP10); the mirror (WP7).
+
+## 23 · WP12 (the documentation) as built
+
+Built on 3136f4ea (the local, remote and mirror classes on main; the virtual class was being built by WP8 at the same time). No code changed but the
+manual's contents in `internal/manual/manual.go`.
+
+- **README:** the status line and a feature group of T-17 (replacing the bullet of the skeleton under M3); the naming tables `Debian (APT) names and paths`
+  (the address, the grammars, the pool path, the generated files, `signing-key.asc`, the key, the client `apt` and its snippet ids, the `/etc/apt` files of
+  the setup, the `deb.*` properties, the `deb` member, the configuration keys, the jobs, the admin command) and `Debian remote cache paths`; the URL rows of
+  the format and its management operations as built; the remote metrics and the planned `trove_deb_remote_parse_total`; the job rows; the audit row;
+  `trove admin deb reinstate` in the command table; TL;DR step 8 (a local repository, an upload, the index wait, a client with key and `auth.conf.d`, a
+  remote of `deb.debian.org` with the archive's keys); the full reference of the repository document (local and remote, `deb.mirror`), the key, coordinate,
+  index and reindex operations, the `deb` family of the management API and the reindex row; `deb.upstreamKeys` in the security-relevant settings.
+- **Manual:** [user/apt-packages.md](../manual/user/apt-packages.md) and [admin/apt-repositories.md](../manual/admin/apt-repositories.md), registered in
+  `internal/manual/manual.go` and the manual's README; Debian rows in the client setup, repositories (user and admin), access tokens, permissions,
+  troubleshooting and limitations pages.
+- **Developer:** [deb.md](../developer/deb.md) rewritten as one page in request order (routes, files, schema, local class, index builder, signing keys and
+  the OpenPGP library, reads, remote, mirror, restore, screens, tests, stub; the stub's reference collapsed); one row in the developer README instead of two;
+  `formats.md` (the schema-equality tests of OCI and Debian, Debian's skip of the merge check); `build-and-test.md` (three shards, the delay bound in
+  `test-performance`, `apt-clients-image`, the Debian integration areas).
+- **Security:** the index rows of both tables of the security README sorted, the gap table naming each page's own headings only; `deb-signing.md` gap
+  headings in number order; `deb-index.md` links H-624 and H-720, which no security page linked.
+- **Left to the closing change:** the FULL.md status; the virtual class in every place above (README, manual pages, `deb.md`'s "What is built and what is
+  not", the conformance skip in `formats.md`), which this pass describes as not built; the status line at the top of
+  [formats/debian.md](../spec/formats/debian.md), which still describes the skeleton of WP0.
+- **Not verified:** no command of the README's step 8 or of the manual was run for this pass; the local path runs in the e2e set `deb`, the remote of
+  `deb.debian.org` has not been run against the real archive (the closing run is not built). The export of an archive keyring with `gpg --export --armor`
+  follows from the armor type `internal/openpgp` accepts (`PGP PUBLIC KEY BLOCK`), not from a run against Ubuntu's keyring.

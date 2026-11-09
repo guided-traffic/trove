@@ -42,6 +42,8 @@ For npm and NuGet repositories, use package-name patterns: a path pattern can ad
 
 For OCI repositories the package name is the image name (`team/*` covers `team/app`, `team/**` also `team/app/base`) and the version is the tag. Each tag is decided on its own path (`team/app/_tags/1.0`), the tags list on `team/app/_taglist`, and a layer or manifest by digest on the image name, so a package-name pattern covers an image with all its tags and layers.
 
+For Debian repositories the package name is the binary package name (`acme-*` covers `acme-tool`), and a package file below `pool/` is decided on the package and version its file name carries. The release files, the indexes and `signing-key.asc` belong to no package, because an index lists every package of its suite: a grant narrowed by package patterns lets its holder download the package files it covers, but not use the repository as an APT source (`404` on `dists/<suite>/InRelease`). Give APT clients `read` without package patterns. Uploading and adding a suite to a file needs `deploy`, removing a suite from a file or deleting it `delete`, both with the package's ownership; the signing keys and the rebuild need `manage`.
+
 ## Actions
 
 | Action | What it allows in this version |
@@ -49,9 +51,9 @@ For OCI repositories the package name is the image name (`team/*` covers `team/a
 | `read` | Download and list files and packages, read package metadata, see the repository. On a remote repository, also fetch uncached content when the repository's cache-fill action is `read`. On a virtual repository, use it as an address |
 | `annotate` | Reserved for descriptive metadata; no operation of this version requires it |
 | `deploy` | Upload new files and publish new versions; change npm dist-tags. On a remote repository whose cache-fill action is `deploy`, fetch uncached content |
-| `overwrite` | Replace an existing file with different bytes, together with `deploy`; point an existing OCI tag at another image. npm versions can never be replaced |
+| `overwrite` | Replace an existing file with different bytes, together with `deploy`; point an existing OCI tag at another image. npm versions and Debian package files can never be replaced |
 | `delete` | Delete files, folders, versions and packages (npm unpublish); evict cached content of a remote repository |
-| `manage` | Change package owners and publish names owned by others; publish a first version that shadows a package of a remote member; set namespace claims; list the cache of a remote repository and invalidate the cache of a remote or virtual repository |
+| `manage` | Change package owners and publish names owned by others; publish a first version that shadows a package of a remote member; set namespace claims; list the cache of a remote repository and invalidate the cache of a remote or virtual repository; manage the signing keys of a Debian repository and rebuild its indexes |
 
 `manage` does not change repository configuration; that needs the capability `repositories:write-config`. The editor offers presets that expand when the policy is saved: **read** (`read`), **write** (`read`, `annotate`, `deploy`), **maintain** (adds `overwrite`, `delete`) and **full** (adds `manage`).
 

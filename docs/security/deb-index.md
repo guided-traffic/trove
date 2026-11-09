@@ -69,6 +69,9 @@ withheld answers 404 on its pool path in the meantime.
 
 ## What this does not cover
 
-- [H-621 … H-629](../spec/formats/debian.md#r-deb-015--signing-keys-one-per-repository-where-the-private-key-lives): the gaps of the keys and the restore are on [deb-signing.md](deb-signing.md).
+- [H-624](../spec/formats/debian.md#h-624--troves-own-release-files-carry-no-valid-until): trove's own Release files carry no Valid-Until.
+- [H-720](../spec/formats/debian.md#h-720--a-path-pattern-that-hides-a-package-file-does-not-hide-its-version-from-the-package-screens): a path pattern that hides a package file does not hide its version from the package screens.
 - [H-721](../spec/formats/debian.md#h-721--the-index-of-a-deleted-package-stays-fetchable-by-hash-for-the-keep-time): the index of a deleted package stays fetchable by hash for the keep time.
 - [H-722](../spec/formats/debian.md#h-722--a-repository-whose-builds-fail-keeps-serving-its-last-generation): a repository whose builds fail keeps serving its last generation.
+
+The gaps of the signing keys and of their restore (H-620, H-621, H-622, H-627, H-629, H-735) are on [deb-signing.md](deb-signing.md#what-this-does-not-cover).

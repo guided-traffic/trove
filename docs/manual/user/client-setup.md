@@ -1,6 +1,6 @@
 # Connecting a package client
 
-How to point npm, pnpm, Yarn, the .NET CLI, nuget.exe, Visual Studio, the Docker CLI, Podman and curl at a trove repository, sign them in with a token from an environment variable, and install, publish and maintain packages and files through it. The page explains the concepts and the places in the UI that give you the exact configuration of your installation: the Client setup page, the Guides area and the How to use tab of a repository.
+How to point npm, pnpm, Yarn, the .NET CLI, nuget.exe, Visual Studio, the Docker CLI, Podman, APT and curl at a trove repository, sign them in with a token from an environment variable, and install, publish and maintain packages and files through it. The page explains the concepts and the places in the UI that give you the exact configuration of your installation: the Client setup page, the Guides area and the How to use tab of a repository.
 
 ## Where the instructions are
 
@@ -34,8 +34,9 @@ Every repository belongs to a project, and has one client address, built from th
 | NuGet | `<base URL>/api/nuget/<project key>/<repository key>/v3/index.json` (the service index) | `https://trove.example.com/api/nuget/web/nuget-all/v3/index.json` |
 | Generic | `<base URL>/files/<project key>/<repository key>/` | `https://trove.example.com/files/web/generic-local/` |
 | OCI (Docker) | `<host>/<project key>/<repository key>` as the start of every image reference, without a scheme | `trove.example.com/web/docker/team/app:1.0` |
+| Debian (APT) | `<base URL>/api/deb/<project key>/<repository key>/`, the URI of the source, with the suite named beside it | `https://trove.example.com/api/deb/web/deb-local/` |
 
-The trailing slash belongs to the address of npm and generic repositories; a NuGet address ends in `index.json`; a container image reference names the host and no scheme ([Container images with Docker and Podman](container-images.md)). Two projects can each have a repository of the same key, so the project key is always part of the address; a repository that an administrator moves to another project gets a new address, and the old one answers `404`. Which class of repository to use:
+The trailing slash belongs to the address of npm, Debian and generic repositories; a NuGet address ends in `index.json`; a container image reference names the host and no scheme ([Container images with Docker and Podman](container-images.md)). Two projects can each have a repository of the same key, so the project key is always part of the address; a repository that an administrator moves to another project gets a new address, and the old one answers `404`. Which class of repository to use:
 
 - **Virtual** repositories are the recommended address: internal and public packages through one address and one credential. A publish through a virtual repository goes to its deployment target, a local member.
 - **Local** repositories hold what your teams publish and serve nothing else.
@@ -46,12 +47,12 @@ The trailing slash belongs to the address of npm and generic repositories; a NuG
 ## Use the Client setup page
 
 1. Under **Package type**, choose the format.
-2. Under **Client**, choose your client: **npm**, **pnpm**, **Yarn Berry (2 and later)** or **Yarn Classic (1.x)** for npm, **.NET CLI (dotnet)**, **NuGet CLI (nuget.exe)** or **Visual Studio** for NuGet, **Docker CLI (with Buildx)** or **Podman** for OCI (Docker), **curl** for generic repositories.
+2. Under **Client**, choose your client: **npm**, **pnpm**, **Yarn Berry (2 and later)** or **Yarn Classic (1.x)** for npm, **.NET CLI (dotnet)**, **NuGet CLI (nuget.exe)** or **Visual Studio** for NuGet, **Docker CLI (with Buildx)** or **Podman** for OCI (Docker), **APT (apt, apt-get)** for Debian (APT), **curl** for generic repositories.
 3. Under **Repository**, choose one of the repositories you can read. Virtual repositories come first and are marked **recommended**; each entry says **Read only**, **Publishing goes to its default deployment target**, **You can publish** or **You cannot publish**.
 4. Under **Credentials**, choose how the snippets sign in (next section). Without a session this step only says that the snippets contain no authentication.
 5. Copy the snippets from the tabs **Configure**, **Install** and **Publish** with **Copy snippet**, or save a configuration file with **Download**.
 
-The **Publish** tab shows how to publish through the repository you chose, once for your client: `npm publish --registry <address>`, `pnpm publish --registry <address>`, `yarn publish --registry <address>` for Yarn Classic, `npmPublishRegistry: "<address>"` in `.yarnrc.yml` for Yarn Berry, `dotnet nuget push` and `nuget push` with the service index of the repository as the source and the token as the API key for NuGet (Visual Studio has no push), or `docker push`, `docker buildx build --push` and `podman push` of an image tagged with the repository's address for OCI. The address is the one of the repository you chose; for a virtual repository the publish reaches its default deployment target. The tab has no snippet when you cannot publish: for a remote repository, for a virtual repository without a default deployment target, and when you do not hold the deploy permission on the target. The hint of step 3 tells you which case it is; the guide's section **Publish a package** has the rest of the commands.
+The **Publish** tab shows how to publish through the repository you chose, once for your client: `npm publish --registry <address>`, `pnpm publish --registry <address>`, `yarn publish --registry <address>` for Yarn Classic, `npmPublishRegistry: "<address>"` in `.yarnrc.yml` for Yarn Berry, `dotnet nuget push` and `nuget push` with the service index of the repository as the source and the token as the API key for NuGet (Visual Studio has no push), `docker push`, `docker buildx build --push` and `podman push` of an image tagged with the repository's address for OCI, or the `curl --upload-file` of a `.deb` to `upload/<file>?distribution=<suite>` for Debian. The address is the one of the repository you chose; for a virtual repository the publish reaches its default deployment target. The tab has no snippet when you cannot publish: for a remote repository, for a virtual repository without a default deployment target, and when you do not hold the deploy permission on the target. The hint of step 3 tells you which case it is; the guide's section **Publish a package** has the rest of the commands.
 
 ### Credentials
 
@@ -194,6 +195,10 @@ The integrity and hash values stay valid because a version's bytes never change 
 ## Sign in container clients
 
 For an OCI (Docker) repository the **Configure** tab holds the login of the Docker CLI or Podman, which reads the token from `TROVE_TOKEN` on standard input, and, for the Docker CLI client, a `kubectl` command that creates a Kubernetes image pull secret from the same variable. **Install** pulls an image by its tag, **Publish** tags and pushes one, and for the Docker CLI builds and pushes a multi-platform image with Buildx. [Container images with Docker and Podman](container-images.md) explains the login, the permissions, multi-platform images, virtual repositories and Kubernetes.
+
+## Configure APT
+
+For a Debian (APT) repository the **Configure** tab installs the repository's public key from `signing-key.asc` as `/etc/apt/keyrings/trove-<project>-<repository>.asc`, writes the source as `/etc/apt/sources.list.d/trove-<project>-<repository>.sources` with that key in `Signed-By`, and writes the token into `/etc/apt/auth.conf.d/trove-<project>-<repository>.conf`, a file only root can read, never into the source line. A one-line `.list` form is shown as well, and for a remote repository without upstream keys a source that names the archive's own keyring instead of a key of trove's. **Install** runs `apt-get update` and `apt-get install`, **Publish** uploads a package with `curl`. [Debian packages with APT](apt-packages.md) explains the suites, the upload, the index wait, key rotation and the client's error messages.
 
 ## Download and upload files with curl
 
