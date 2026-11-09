@@ -116,4 +116,6 @@ func (o debObserver) Build(class, outcome string, seconds float64) {
 	}
 }
 
-func (o debObserver) Delay(class string, seconds float64) { o.delay.WithLabelValues(class).Observe(seconds) }
+func (o debObserver) Delay(class string, seconds float64) {
+	o.delay.WithLabelValues(class).Observe(seconds)
+}
