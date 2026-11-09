@@ -348,18 +348,23 @@ func TestR_BAS_014_ThousandWritesToOnePathCauseOneProbe(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			if w := s.do(http.MethodPut, "/api/npm/web/npm-all/acme-sdk", strings.NewReader("x")); w.Code != 403 {
-				t.Errorf("%d", w.Code)
+				t.Errorf("%d %s", w.Code, w.Body)
 			}
 		}()
 	}
 	wg.Wait()
 	for i := 0; i < 950; i++ {
 		if w := s.do(http.MethodPut, "/api/npm/web/npm-all/acme-sdk", strings.NewReader("x")); w.Code != 403 || !strings.Contains(w.Body.String(), "bastion_read_only") {
-			t.Fatalf("%d", w.Code)
+			t.Fatalf("%d %s", w.Code, w.Body)
 		}
 	}
 	if n := m.count(); n != 1 {
-		t.Fatalf("%d probes for 1000 writes, want 1", n)
+		// Name every request the main installation saw, so a failure says which kind came twice (F-102).
+		var seen []string
+		for _, r := range m.requests() {
+			seen = append(seen, fmt.Sprintf("%v %s %s probe=%v", r.Kind, r.Method, r.Target, r.Probe))
+		}
+		t.Fatalf("%d probes for 1000 writes, want 1: %s", n, strings.Join(seen, "; "))
 	}
 	// another method and another path are probes of their own
 	s.do(http.MethodDelete, "/api/npm/web/npm-all/acme-sdk", nil)

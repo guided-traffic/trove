@@ -269,7 +269,12 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   `bodySent` closes only after the client goroutine returns from its last write. The test now names the transactions it counted;
   next step: read that name in a recurrence and narrow the watch to it, or measure the request's own transactions instead.
 - **F-102 · `TestR_BAS_014_ThousandWritesToOnePathCauseOneProbe` failed once under host load** (seen once, by the WP5
-  builder; passes alone and three times in a row). Done when the cause is found and fixed.
+  builder; passes alone and three times in a row). Done when the cause is found and fixed. Read on 2026-11-09, no structural
+  defect found: the writes share one flight per key and its leader reads the kept answer again before it probes (`write` in
+  `engine/probe.go`), and the kept answer is a synchronous LRU on the harness's fake clock, so a second probe needs a first flight
+  that failed or was cancelled, which answers the waiting writes with an error instead of 403; the failure's message was not
+  recorded. The test now prints the body of a non-403 answer and every request the main double saw; next step: read those in a
+  recurrence.
 - **F-95 · One Angular unit test failed once in 1,080, its name not recorded** (seen once, by the F-86 builder on a loaded
   host; the second run and the reviewer's run passed all 1,080). Done when the failing test is identified and its cause
   fixed; until then a recurrence is reported with the test's name and output.
