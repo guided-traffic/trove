@@ -47,7 +47,10 @@ Hard rules, also for every subagent (put them into every subagent prompt):
    [docs/developer/](../developer/README.md), [docs/security/](../security/README.md), spec,
    project plans. English for code, comments, commits and docs. German for messages to the owner.
 7. **No shortcuts to green.** Never skip, disable or weaken a test or a check to make the pipeline
-   pass, never use `--no-verify`, never retry a flaky test until it happens to pass: fix the cause.
+   pass, never use `--no-verify`. A red job of a CI run may be started again up to three times to reach a green run
+   (owner, 2026-11-09: `gh run rerun <run-id> --failed`); every re-run and its result is noted, and the red runs of a job
+   that turned green on a re-run are recorded as a finding in [section 8](#8--open-findings) with what failed. A job still red
+   after its third re-run is fixed at its cause. Local test runs are not repeated until they pass: fix the cause.
    The one exception is the owner's: the compatibility checks are switched off until the first stable
    release ([Q-ARCH-340](../spec/architecture.md#q-arch-340--no-backward-compatibility-until-the-first-stable-release),
    the checklist in [releasing.md](../developer/releasing.md)); they stay off, and no other check joins them.
@@ -194,9 +197,10 @@ The phase is done only when all of the following hold:
 1. `git push origin main`.
 2. Watch every workflow run the push triggered in the background, job by job (`gh api repos/guided-traffic/trove/actions/runs/<id>/jobs`
    every 60 s), and keep building meanwhile; never sit idle on a run (rule 10).
-3. On failure: `gh run view <run-id> --log-failed`, let `voltagent-qa-sec:debugger` or the fitting
-   specialist find the cause, fix it, commit, push, and wait again. Repeat until every run is
-   green.
+3. On failure: `gh run view <run-id> --log-failed` (or the job's log while the run goes on). A failure the change caused is
+   fixed at once: find the cause, fix it, commit, push, and watch again. A failure the change did not cause (an outage, a row
+   that fails under the runner's load) may be started again up to three times with `gh run rerun <run-id> --failed` (rule 7);
+   the re-runs are noted and the red runs recorded as a finding. Repeat until every run is green.
 
 ## 6 · Release
 
