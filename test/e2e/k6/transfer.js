@@ -52,7 +52,9 @@ function line(op, t0, res, path, note) {
 
 export default function () {
   const n = exec.scenario.iterationInTest;
-  const path = `/files/e2e/generic-local/e2e-drain/f${n % 40}.bin`;
+  // One path per iteration: two iterations on one path overlap when a PUT is slow (a drain held one for 10.7 s on CI), and the
+  // GET of the first then reads the second's bytes, which is the last writer winning and not a wrong download.
+  const path = `/files/e2e/generic-local/e2e-drain/${exec.vu.idInTest}-${n}.bin`;
   const body = crypto.randomBytes(SIZE);
   const want = crypto.sha256(body, 'hex');
   const headers = { Host: HOST, Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/octet-stream' };

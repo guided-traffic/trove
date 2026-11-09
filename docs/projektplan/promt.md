@@ -267,6 +267,11 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   merged architecture indexes hold only what the members list there. Debian and Ubuntu list `all` packages in every architecture index,
   so their archives are served whole; an upstream that keeps them in `binary-all` only (as the stub does) loses them through a virtual
   repository. Decide whether the merge reads `binary-all` into the architecture indexes or publishes it as its own index.
+- **F-119 · The drain and TLS e2e rows of the set `push` see 429 and 502 under load** (Test and Release 42561072166, 2026-11-09;
+  green in three of the four runs before): during the node drain 18 PUTs of the transfer loop answered 429 (`RateLimit-Policy="write";q=50;w=5`)
+  although the loop starts 4 PUTs a second as one service account, and the certificate rotation row saw 13 of 11,529 requests answered
+  502. The loop's one wrong checksum of the same run was two iterations writing one path (fixed: a path per iteration). Done when it is
+  known what the write limiter counts during a drain and where the 502s of the rotation come from.
 - **F-105 · `TestR_NPM_007_ASlowPublishOf200MiB` fails under load** (seen twice: by the F-83 builder, an S3 UploadPart
   cancellation followed by the package timeout, and by the F-101 builder, "1 connections held a transaction older than 1 s
   while the body arrived"; passes alone). The test asserts that no database transaction stays open longer than 1 s while
