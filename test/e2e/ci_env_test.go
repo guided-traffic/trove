@@ -59,10 +59,10 @@ const (
 	ciNugetAll   = ciProject + "/nuget-all"
 	ciPolicyName = "ci-read-internal"
 	ciSetupSA    = "e2e-ci-setup"
-	// The dev CA, which signs the double's certificate, as the pods of trove see it (deploy/dev/values-dev.yaml mounts it for
-	// proxy.outbound.tls.ca_files). The issuer names it as its ca_bundle_ref, the way an instance behind a private CA is
+	// The dev CA, which signs the double's certificate, as the pods of trove see it (deploy/dev/values-dev.yaml mounts it through
+	// trustedCA, R-HA-043, at /etc/trove/ca). The issuer names it as its ca_bundle_ref, the way an instance behind a private CA is
 	// registered (R-CI-001, Q-CI-31).
-	ciCABundleRef = "file:/var/run/secrets/trove-dev/keycloak-ca.crt"
+	ciCABundleRef = "file:/etc/trove/ca/ca.crt"
 
 	ciNpmVersionTag = "v1.4.0" // the protected tag of the reference pipeline
 )

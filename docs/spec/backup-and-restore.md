@@ -2700,7 +2700,8 @@ answers `subject_token_predates_restore` (R-CI-018, R-CI-029). The integration t
 cluster they need the issuer double of `deploy/dev/oidcstub.yaml`, which the sets `full`, `access`, `access-long`, `ci` and `ci-ha`
 start and `backup` does not. The second installation is configured by `values-restore.yaml`, whose base URL is
 `https://localhost:8080` whatever port the source's edge has (8102 in the nightly leg `e2e-backup`), and which has no copy of the dev
-CA at the path the source mounts it (`/var/run/secrets/trove-dev/keycloak-ca.crt`, named by the issuer's `caBundleRef`): a restored
+CA at the path the source mounted it then (`/var/run/secrets/trove-dev/keycloak-ca.crt`, named by the issuer's `caBundleRef`; since R-HA-043 both
+installations mount the dev CA at `/etc/trove/ca/ca.crt` through `trustedCA`): a restored
 issuer could neither accept the source's audience nor fetch its keys.
 
 | Option | What it means | For | Against |

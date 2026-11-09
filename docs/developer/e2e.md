@@ -2383,8 +2383,8 @@ as `OIDCSTUB_CONTROL_TOKEN`), TCP probes. The issuer it announces is `https://${
 `TROVE_E2E_OIDCSTUB=1`: `STUB=oidcstub` always, and `STUB=oidcstub-single` as well when `TROVE_E2E_OIDCSTUB_SINGLE=1` (the second issuer of the
 single-use tests, with keys, counters and control token of its own). It exports `TROVE_E2E_OIDCSTUB_HOST` (`oidcstub.<ns>.svc`),
 `TROVE_E2E_OIDCSTUB_CONTROL_URL` (`https://oidcstub.<ns>.svc:8444`) and `TROVE_E2E_OIDCSTUB_SINGLE_HOST`. The sets `ci`, `ci-ha`, `access-long`,
-`access` and `full` set the switch. trove trusts the dev CA through `proxy.outbound.tls.ca_files` ([values-dev.yaml](../../deploy/dev/values-dev.yaml)),
-and the CI issuer names the same file as its `ca_bundle_ref` (`file:/var/run/secrets/trove-dev/keycloak-ca.crt`), as an instance behind a private CA is
+`access` and `full` set the switch. trove trusts the dev CA through `trustedCA` ([values-dev.yaml](../../deploy/dev/values-dev.yaml), R-HA-043, mounted at `/etc/trove/ca/ca.crt`),
+and the CI issuer names the same file as its `ca_bundle_ref` (`file:/etc/trove/ca/ca.crt`), as an instance behind a private CA is
 registered (R-CI-001, Q-CI-31).
 
 Verified on kind (2026-11-03): the manifest applies and the pod serves; the certificate of the dev CA takes about 15 s to be issued on the first start;

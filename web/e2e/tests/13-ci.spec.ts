@@ -18,7 +18,7 @@ function env(name: string): string {
 const issuerUrl = env('TROVE_E2E_OIDCSTUB_ISSUER');
 const pasteToken = env('TROVE_E2E_CI_TOKEN_PASTE');
 const exchangeToken = env('TROVE_E2E_CI_TOKEN_EXCHANGE');
-const caRef = 'file:/var/run/secrets/trove-dev/keycloak-ca.crt'; // the dev CA, mounted into the replicas (deploy/dev/values-dev.yaml)
+const caRef = 'file:/etc/trove/ca/ca.crt'; // the dev CA, mounted into every pod through trustedCA (deploy/dev/values-dev.yaml, R-HA-043)
 
 const run = unique('ui-ci')
   .replace(/[^a-z0-9-]/g, '')
