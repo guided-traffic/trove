@@ -53,9 +53,9 @@ test('R-UI-022 with the keyboard only an administrator adds two members, reorder
     if ((await options.nth(index).getAttribute('aria-selected')) !== 'true') await page.keyboard.press('Space');
     await expect(options.nth(index)).toHaveAttribute('aria-selected', 'true');
   }
-  /** Presses a button with the keyboard. */
+  /** Presses a button of the Members tab with the keyboard (the other tabs' forms have buttons of the same name). */
   async function press(name: string): Promise<void> {
-    const b = page.getByRole('button', { name, exact: true });
+    const b = page.getByRole('tabpanel', { name: 'Members' }).getByRole('button', { name, exact: true });
     await b.focus();
     await page.keyboard.press('Enter');
   }
