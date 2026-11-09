@@ -5,7 +5,6 @@ package deblocal
 import (
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -20,7 +19,8 @@ mkdir -p /etc/apt/auth.conf.d
 umask 077
 printf 'machine http://%s login x password %s\n' "$TROVE_HOSTPORT" "$TROVE_TOKEN" > /etc/apt/auth.conf.d/trove.conf
 umask 022
-echo "deb [signed-by=/cfg/key.asc] http://$TROVE_HOSTPORT/api/deb/it/deb-local stable main" > /etc/apt/sources.list.d/trove.list
+mkdir -p /etc/apt/keyrings && printf '%s\n' "$TROVE_KEY" > /etc/apt/keyrings/trove.asc
+echo "deb [signed-by=/etc/apt/keyrings/trove.asc] http://$TROVE_HOSTPORT/api/deb/it/deb-local stable main" > /etc/apt/sources.list.d/trove.list
 rm -f /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list.d/ubuntu.sources
 apt-get update --error-on=any -o Debug::pkgAcquire::Worker=1
 apt-get install -y --no-install-recommends hello-trove=2.10-3
@@ -42,20 +42,16 @@ func runApt(t *testing.T, e *env, images ...string) map[string]string {
 	a := e.mustUpload(e.tokA, "hello-trove_2.10-3_amd64.deb", d.Bytes, 201, []string{"stable"})
 	e.waitIndex("stable", seqOf(e, a, "stable"))
 
-	dir := t.TempDir()
 	key := e.get("signing-key.asc", e.tokA)
 	if key.Status != 200 {
 		t.Fatalf("signing-key.asc = %d", key.Status)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "key.asc"), key.Body, 0o644); err != nil {
-		t.Fatal(err)
 	}
 	hostport := "trove.test:" + e.r.Addr("default")[strings.LastIndex(e.r.Addr("default"), ":")+1:]
 	out := map[string]string{}
 	for _, image := range images {
 		t.Run(image, func(t *testing.T) {
 			args := append([]string{"run", "--rm"}, testenv.DockerReachHost("trove.test")...)
-			args = append(args, "-v", dir+":/cfg:ro", "-e", "TROVE_HOSTPORT="+hostport, "-e", "TROVE_TOKEN="+e.tokA, image, "sh", "-c", aptScript)
+			args = append(args, "-e", "TROVE_KEY="+string(key.Body), "-e", "TROVE_HOSTPORT="+hostport, "-e", "TROVE_TOKEN="+e.tokA, image, "sh", "-c", aptScript)
 			cmd := exec.Command("docker", args...)
 			b, err := cmd.CombinedOutput()
 			if err != nil {
