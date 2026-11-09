@@ -9,26 +9,30 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/auth/scope"
+	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/test/integration/testenv"
 )
 
-// firstRequestStatements serves a path once and returns the statements of its window that are not the replica's own, by
-// name: the statements of the first request after a write, which renders what no cache holds yet.
-func firstRequestStatements(t *testing.T, e *env, r *testenv.Replica, path, token string) map[string]int {
+// firstRequestStatements serves a path once and returns the statements that request ran, by name: the statements of the first
+// request after a write, which renders what no cache holds yet. They are the ones the replica's query tracer attributes to the
+// request's ID (X-Request-Id), so a statement of the replica's own loops (the readiness check reads system_state twice, the
+// registration, the change-log poll) or of the stack's other writers never falls into the count, whatever instant it ran in
+// (F-125). The pause before the request only lets what the write set off (the change-log poll that invalidates the caches)
+// arrive; it counts nothing.
+func firstRequestStatements(t *testing.T, e *env, r *testenv.Replica, rt *testenv.RequestTransactions, path, token string) map[string]int {
 	t.Helper()
-	time.Sleep(time.Second) // the write's own statements, and what its commit sets off, land before the window opens
-	start := time.Now()
-	if a := e.st.Do(r, "GET", path, token, nil); a.Status != http.StatusOK {
+	time.Sleep(time.Second)
+	rt.Count(true)
+	defer rt.Count(false)
+	a := e.st.Do(r, "GET", path, token, nil)
+	if a.Status != http.StatusOK {
 		t.Fatalf("%s: %d %.200s", path, a.Status, a.Body)
 	}
-	time.Sleep(300 * time.Millisecond)
-	names := map[string]int{}
-	for _, s := range testenv.StatementsSince(t, start.Add(-20*time.Millisecond)) {
-		if name := testenv.StatementName(s); !background[name] {
-			names[name]++
-		}
+	id := a.Header.Get("X-Request-Id")
+	if id == "" {
+		t.Fatalf("%s: the answer carries no X-Request-Id", path)
 	}
-	return names
+	return rt.Of(id).Statements()
 }
 
 // leastOf keeps, per statement name, the smallest count of the rounds: a statement another part of the replica sent into
@@ -58,14 +62,15 @@ func leastOf(rounds []map[string]int) (map[string]int, int) {
 // the revision in one statement.
 func TestR_ARCH_027_ADocumentOfACallerWithPathPatternsCostsOneStatement(t *testing.T) {
 	e := newEnv(t)
-	e.st.LogStatements(t)
+	e.st.LogStatements(t) // the cached subtests count from the database log
 	narrowed := e.st.User("narrowed")
 	e.st.Policy("narrowed-read", []string{"read"}, []string{rNPM, rNuGet}, narrowed)
 	for _, p := range []string{"budget-doc/-/budget-doc-2.0.0.tgz", "budget.doc/2.0.0/**"} {
 		e.st.Exec(`INSERT INTO authz_policy_pattern (policy_id, dimension, mode, pattern) SELECT id, 'path', 'exclude', $1 FROM authz_policy WHERE name = 'narrowed-read'`, p)
 	}
 	tokNarrowed := e.st.Token(narrowed, scope.Default())
-	r := e.st.Start(t, testenv.ReplicaOptions{Name: "web-doc"})
+	rt := testenv.NewRequestTransactions()
+	r := e.st.Start(t, testenv.ReplicaOptions{Name: "web-doc", Database: []postgres.Option{rt.Option()}})
 	for _, v := range []string{"1.0.0", "2.0.0"} {
 		e.publish(r, rNPM, "budget-doc", v)
 		e.push(r, rNuGet, "Budget.Doc", v)
@@ -101,11 +106,11 @@ func TestR_ARCH_027_ADocumentOfACallerWithPathPatternsCostsOneStatement(t *testi
 			for round := range 4 {
 				d.write("3." + string(rune('0'+i)) + "." + string(rune('0'+round)))
 				if round%2 == 0 {
-					narrowedRounds = append(narrowedRounds, firstRequestStatements(t, e, r, d.path, tokNarrowed))
-					readerRounds = append(readerRounds, firstRequestStatements(t, e, r, d.path, e.tokReader))
+					narrowedRounds = append(narrowedRounds, firstRequestStatements(t, e, r, rt, d.path, tokNarrowed))
+					readerRounds = append(readerRounds, firstRequestStatements(t, e, r, rt, d.path, e.tokReader))
 				} else {
-					readerRounds = append(readerRounds, firstRequestStatements(t, e, r, d.path, e.tokReader))
-					narrowedRounds = append(narrowedRounds, firstRequestStatements(t, e, r, d.path, tokNarrowed))
+					readerRounds = append(readerRounds, firstRequestStatements(t, e, r, rt, d.path, e.tokReader))
+					narrowedRounds = append(narrowedRounds, firstRequestStatements(t, e, r, rt, d.path, tokNarrowed))
 				}
 			}
 			narrowedLeast, narrowedMin := leastOf(narrowedRounds)
@@ -117,5 +122,41 @@ func TestR_ARCH_027_ADocumentOfACallerWithPathPatternsCostsOneStatement(t *testi
 					"patterns (%d); the bound is one more (the version list of the revision)", narrowedMin, narrowedMin-readerMin, readerMin)
 			}
 		})
+	}
+}
+
+// R-ARCH-027: the statements of a request are the ones that ran with its own context, whatever else the database logs in the
+// same instants. The replica's readiness check reads system_state (GetSystemState twice) on its own schedule; the first-request
+// measurement counted that read when it fell into the window (F-125). A statement another connection sends while the request
+// runs, named like one of the replica's, is not the request's.
+func TestR_ARCH_027_AStatementOfAnotherConnectionIsNotTheRequests(t *testing.T) {
+	e := newEnv(t)
+	rt := testenv.NewRequestTransactions()
+	r := e.st.Start(t, testenv.ReplicaOptions{Name: "web-foreign", Database: []postgres.Option{rt.Option()}})
+	e.publish(r, rNPM, "budget-foreign", "1.0.0")
+	path := "/api/npm/it/" + rNPM + "/budget-foreign"
+
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				e.st.Exec("-- name: GetSystemState :one\nSELECT 1")
+				time.Sleep(5 * time.Millisecond)
+			}
+		}
+	}()
+	got := firstRequestStatements(t, e, r, rt, path, e.tokReader)
+	close(stop)
+	<-done
+	if n := got["GetSystemState"]; n != 0 {
+		t.Errorf("the request is charged %d GetSystemState it did not run (%s)", n, describe(got))
+	}
+	if len(got) == 0 {
+		t.Errorf("the request ran no statement the measurement saw; it reads nothing")
 	}
 }

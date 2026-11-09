@@ -28,6 +28,11 @@ At the scale of the performance run of R-VULN-028 (100,000 stored versions, 10,0
 A remote hit whose package document is expired, or was validated before a restore, revalidates the document first (one conditional request in one flight,
 [Q-NPM-13](../spec/formats/npm.md#q-npm-13--removal-marks-after-a-restore-and-for-cached-tarballs)) and then reads the facts again; that request is outside the budget and costs the statements of the revalidation.
 
+The first-request measurement of `TestR_ARCH_027_ADocumentOfACallerWithPathPatternsCostsOneStatement` (a document after a write) does not use the log:
+it starts the replica with `testenv.RequestTransactions` and reads the statements of the one request by its `X-Request-Id`, so a statement of the replica's
+own loops (the readiness check reads `system_state` twice) never falls into the count. The log window stays where a test counts many identical requests
+and tolerates a lost line (`perRequestAs`).
+
 ## How the one statement is built
 
 `GetLiveItem` ([files.sql](../../internal/meta/postgres/queries/files.sql)) is the item lookup of every download route. Besides the item, the blob digests and the blocking
