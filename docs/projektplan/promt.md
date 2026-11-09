@@ -281,11 +281,6 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   earlier passed. An outage outside the repository (at 03:10 UTC `archive.ubuntu.com` did not answer from the owner's network either,
   `security.ubuntu.com` did); it makes every such job depend on the archive. Done when the runner image carries
   `make` and the C compiler (the owner's runner) or the jobs keep a local package cache.
-- **F-118 · A virtual Debian repository does not carry a remote member's architecture `all` packages that the upstream lists in
-  `binary-all` only** (found by the e2e builder of T-17 WP10 on 2026-11-09): the merged `Release` lists no `all` architecture, and the
-  merged architecture indexes hold only what the members list there. Debian and Ubuntu list `all` packages in every architecture index,
-  so their archives are served whole; an upstream that keeps them in `binary-all` only (as the stub does) loses them through a virtual
-  repository. Decide whether the merge reads `binary-all` into the architecture indexes or publishes it as its own index.
 - **F-119 · The transfer loop of the drain tests saw 429 and 502 when the cluster stalled** (Test and Release 42561072166, 2026-11-09, and
   the nightly dispatch 42578594755 of the set `drain-roles` alone on the large class). Cause found and fixed for the transfer loop (Q-HA-230):
   the cluster stalled for about 40 s (07:50:08 to 07:50:50), the open-loop `transfer.js` released its piled-up iterations in one burst of

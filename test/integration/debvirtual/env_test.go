@@ -257,7 +257,13 @@ func (e *venv) published(repo, suite string, within time.Duration, cond func(sui
 // packages reads the merged Packages.gz of a suite as paragraphs.
 func (e *venv) packages(repo, suite, token string) []control.Paragraph {
 	e.t.Helper()
-	a := e.get(repo, "dists/"+suite+"/main/binary-amd64/Packages.gz", token)
+	return e.packagesOf(repo, suite, "amd64", token)
+}
+
+// packagesOf reads the merged Packages.gz of the main component for an architecture ("all" included) as paragraphs.
+func (e *venv) packagesOf(repo, suite, arch, token string) []control.Paragraph {
+	e.t.Helper()
+	a := e.get(repo, "dists/"+suite+"/main/binary-"+arch+"/Packages.gz", token)
 	if a.Status != 200 {
 		e.t.Fatalf("Packages.gz of %s = %d %s", repo, a.Status, a.Body)
 	}

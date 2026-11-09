@@ -256,31 +256,39 @@ func (x *Indexer) virtualSuite(ctx context.Context, vr VirtualRepo, in rows.Virt
 				return OutcomeFailed, err
 			}
 			seen := index.NewSeen(0)
+			// The index of an architecture lists the architecture all packages too (Q-DEB-110): a member's own index of the architecture
+			// first, then its binary-all, in which an upstream may keep them alone. The set of kept packages drops what both list.
+			sources := []string{base}
+			if arch != index.All {
+				sources = append(sources, comp+"/binary-"+index.All+"/Packages")
+			}
 			for _, part := range parts {
-				r, ok, err := x.openMemberIndex(ctx, part, suite, base)
-				if err != nil {
-					return OutcomeFailed, err
-				}
-				if !ok {
-					continue
-				}
-				_, err = index.MergeMember(w, seen, part.m.Key, r, func(name string) bool {
-					allowed, ok := cache[name]
-					if !ok {
-						var aerr error
-						if allowed, aerr = x.Virtual.Allowed(ctx, vr.Ref.ID, name); aerr != nil {
-							keepErr = aerr
-						}
-						cache[name] = allowed
+				for _, source := range sources {
+					r, ok, err := x.openMemberIndex(ctx, part, suite, source)
+					if err != nil {
+						return OutcomeFailed, err
 					}
-					return allowed[part.m.Key]
-				})
-				_ = r.Close()
-				if err == nil {
-					err = keepErr
-				}
-				if err != nil {
-					return OutcomeFailed, err
+					if !ok {
+						continue
+					}
+					_, err = index.MergeMember(w, seen, part.m.Key, r, func(name string) bool {
+						allowed, ok := cache[name]
+						if !ok {
+							var aerr error
+							if allowed, aerr = x.Virtual.Allowed(ctx, vr.Ref.ID, name); aerr != nil {
+								keepErr = aerr
+							}
+							cache[name] = allowed
+						}
+						return allowed[part.m.Key]
+					})
+					_ = r.Close()
+					if err == nil {
+						err = keepErr
+					}
+					if err != nil {
+						return OutcomeFailed, err
+					}
 				}
 			}
 			l, fs, err := w.Close(base)

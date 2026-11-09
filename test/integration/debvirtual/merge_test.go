@@ -65,3 +65,41 @@ func TestR_DEB_025_TheIndexMergesTheMembersAndIsSignedWithItsOwnKey(t *testing.T
 		t.Errorf("state = %+v", s)
 	}
 }
+
+// R-DEB-025 (Q-DEB-110, F-118): a remote member whose upstream lists its architecture all packages in binary-all only (the stub does)
+// is carried whole: the virtual repository lists them in binary-all and in the index of every architecture, as a local repository does and
+// as the archives of Debian do, so a client of one architecture finds the dependencies of its packages that are architecture all.
+func TestR_DEB_025_ThePackagesOfArchitectureAllOfARemoteMemberAreInEveryArchitectureIndex(t *testing.T) {
+	e := newEnv(t, options{})
+	testenv.WaitFor(t, "the virtual index to list the stub's packages", 90*time.Second, func() bool {
+		s, ok := e.suite(rApt, "stable")
+		if !ok || s.Generation == 0 {
+			return false
+		}
+		_, found := find(e.packages(rApt, "stable", e.admin), "trove-hello", "")
+		return found
+	})
+	for _, arch := range []string{"all", "amd64"} {
+		list := e.packagesOf(rApt, "stable", arch, e.admin)
+		cfg, ok := find(list, "trove-config", "1.0-1")
+		if !ok {
+			t.Errorf("binary-%s of the virtual repository does not list trove-config (architecture all, in the stub's binary-all only); %d paragraphs", arch, len(list))
+			continue
+		}
+		if cfg.Value("Architecture") != "all" || !strings.HasPrefix(cfg.Value("Filename"), "members/debian/pool/") {
+			t.Errorf("binary-%s: the paragraph of trove-config = %v", arch, cfg.Fields)
+		}
+		n := 0
+		for _, p := range list {
+			if p.Value("Package") == "trove-config" {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Errorf("binary-%s lists trove-config %d times, want once", arch, n)
+		}
+	}
+	if _, ok := find(e.packagesOf(rApt, "stable", "amd64", e.admin), "libtrove1", ""); !ok {
+		t.Error("binary-amd64 lost the architecture packages of the member")
+	}
+}

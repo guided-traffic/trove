@@ -24,7 +24,7 @@ The security views are [deb-signing.md](../security/deb-signing.md), [deb-index.
 - **A key belongs to one repository** (ADR-171). The private key is the sealed column `deb_signing_keys.private_key`, opened only by the build
   for one signing call; `secrets-reencrypt` walks it ([reseal.go](../../internal/formatdata/deb/reseal.go)).
 - **A virtual repository merges at build time, never at request time.** Its index is one stored generation for every caller, signed with its own
-  key; reading it needs `read` on every member, and each paragraph's `Filename` names the member it came from (`members/<memberKey>/…`).
+  key; reading it needs `read` on every member, and each paragraph's `Filename` names the member it came from (`members/<memberKey>/…`). The index of an architecture merges each member's index of that architecture and then its `binary-all`, so an upstream that keeps its `all` packages in `binary-all` only is carried whole ([Q-DEB-110](../spec/formats/debian.md#q-deb-110--the-merged-index-of-an-architecture-lists-the-architecture-all-packages-of-the-members)).
 - **A remote signs nothing.** It passes its archive's release files through byte for byte (the adapter's `Rewrite` is the identity) and, with
   `deb.upstreamKeys`, verifies them before it stores them; the client verifies the archive's signature with the archive's key.
 - **The format has no package document.** `PackageDocumentPath` reports `ok` false; a remote answers the shadowing check from its parsed index

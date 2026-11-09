@@ -1213,7 +1213,8 @@ Acceptance criteria:
 Priority: **P2** · Covers: PKG-DEB-023
 
 - **What it serves.** The suites of `deb.suites` and those of its local members; for each, the components of `deb.components`
-  and the architectures of `deb.architectures`, plus `binary-all`. A remote member contributes to every served suite its
+  and the architectures of `deb.architectures`, plus `binary-all`. The index of every architecture also lists the architecture `all`
+  packages of the members, as a local repository's does (Q-DEB-110). A remote member contributes to every served suite its
   upstream has; a member whose upstream answers 404 for a suite (or a local member without the suite) contributes nothing to it
   and is no failure (R-DEB-026).
 - **Which member releases may be merged** (Q-DEB-32). A remote member's release document is merged only when all of these hold;
@@ -1239,6 +1240,10 @@ Priority: **P2** · Covers: PKG-DEB-023
   upstream's: trove re-signs no staleness into a fresh signature.
 - **Members** are local and remote Debian repositories of the project (R-REPO-017); a remote member without `deb.upstreamKeys` is
   refused (422 `deb_member_unverified`, R-DEB-020). Nested virtual repositories wait for R-REPO-018.
+- **Architecture `all`** (Q-DEB-110). The merged `binary-all` index is the merge of the members' `binary-all` indexes. The merged index of an
+  architecture is the merge, per member and in member order, of the member's index of that architecture and then its `binary-all`; a
+  package that both list (Debian and Ubuntu list `all` packages in both) is kept once. An upstream that keeps its `all` packages in
+  `binary-all` only is therefore carried whole, and a client of one architecture finds the `all` dependencies of its packages.
 - **Merge** (Q-DEB-18). For each suite, component and architecture, the members are walked in the order of R-REPO-019 steps 2, 3
   and 5 (patterns, pin rules and claims, priority members) on stored configuration only, never by the caller (Q-DEB-19). A local
   member contributes the paragraphs of its **published** generation's index (so the virtual repository never lists a file its
@@ -3669,11 +3674,29 @@ Status: **Decided by the development agent** — selected from the options below
 | (a) `TestDebMirror` and `TestDebVirtual` written against this page, skipped with the reason while `debMirrorBuilt` and `debVirtualBuilt` were false, switched on by the change that found them green (chosen) | A one-line switch each | The rows were reviewed with the rest and cost one edit | Rows that had not run when written |
 | (b) Nothing until the classes land | The rows are written later | No code that has not run | The set `deb` would have passed without them |
 
-**Choice:** (a). Both rows are on and green; the switches are `true` in `test/e2e/deb_mirror_test.go` and `test/e2e/deb_virtual_test.go`. The first run of the virtual row found that its expectations, not the product, were wrong: the merged architecture index does not carry the stub's `all` packages (the stub keeps them in `binary-all` only; the real archives list them in both).
+**Choice:** (a). Both rows are on and green; the switches are `true` in `test/e2e/deb_mirror_test.go` and `test/e2e/deb_virtual_test.go`. The first run of the virtual row found that the merged architecture index did not carry the stub's `all` packages (the stub keeps them in `binary-all` only; the real archives list them in both); [Q-DEB-110](#q-deb-110--the-merged-index-of-an-architecture-lists-the-architecture-all-packages-of-the-members) changed the product.
 
 **Rationale:** The classes were built while WP10 was; the first run on kind after each landed decided what had to change in the row.
 
 **Applied in the spec:** none.
+
+### Q-DEB-110 · The merged index of an architecture lists the architecture all packages of the members
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: F-118. The merge of a virtual repository read, for `main/binary-amd64/Packages`, only the members' `main/binary-amd64/Packages`. The archives of Debian and Ubuntu list their `all` packages in every architecture index and in `binary-all`, so nothing was lost through them; an upstream that keeps them in `binary-all` only (the test archive does) lost them from the merged architecture index. Reproduced on 2026-11-09 (`TestR_DEB_025_ThePackagesOfArchitectureAllOfARemoteMemberAreInEveryArchitectureIndex`): `trove-config`, an `all` package of the stub, was in the merged `binary-all` and missing from the merged `binary-amd64`. The merged `Release` lists `binary-all` among its hashed files and does not list `all` under `Architectures`, as a local repository's does not.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Each member's `binary-all` is also read into the index of every architecture, after the member's own index of that architecture (chosen) | The merge of `binary-<arch>` walks two sources per member; the kept set drops a package both list | The merged repository looks like a local one and like Debian's own archives; no assumption about how an APT version treats `binary-all`; equal inputs still give equal bytes and an upstream that lists `all` in both gives the bytes it gave before | The `all` packages are in every architecture index (as in a local repository) |
+| (b) Publish only `binary-all` and rely on the client | The merged `binary-all` is the only home of `all` packages | Smallest indexes | The client's behaviour depends on its APT version and on the `Architectures` field of the `Release`; the e2e row of the virtual repository showed a client that did not install the `all` dependencies |
+| (c) State `No-Support-for-Architecture-all` in the merged `Release` and list `all` in every architecture index | The field tells APT not to fetch `binary-all` | Clients fetch one index less | A second statement of the same fact; the merged `binary-all` would still have to be served for clients that read it, and the local repository would have to change too |
+
+**Choice:** (a). In `virtualSuite` ([virtual_build.go](../../../internal/formatdata/deb/virtual_build.go)) the sources of an index of an architecture other than `all` are the member's `binary-<arch>` and then its `binary-all`; the index of `all` stays the member's `binary-all`.
+
+**Rationale:** A virtual repository is meant to be indistinguishable from a repository that holds the files itself, and a local repository already lists `all` in both places (R-DEB-009). The cost is the second read of the member's `binary-all` per architecture, which is a stored document read as a stream. The development agent would revisit it if an upstream lists a different set in `binary-all` than in its architecture indexes for the same package and version (the first one read would win, the architecture index of the member).
+
+**Applied in the spec:** R-DEB-025 (what it serves, architecture `all`). Code: `virtualSuite` in [virtual_build.go](../../../internal/formatdata/deb/virtual_build.go). Test: `TestR_DEB_025_ThePackagesOfArchitectureAllOfARemoteMemberAreInEveryArchitectureIndex` ([merge_test.go](../../../test/integration/debvirtual/merge_test.go)), and the row `TestDebVirtual` ([deb_virtual_test.go](../../../test/e2e/deb_virtual_test.go)).
 
 ## What this does not cover
 

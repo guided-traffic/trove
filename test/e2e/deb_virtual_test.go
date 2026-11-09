@@ -65,8 +65,7 @@ func TestDebVirtual(t *testing.T) {
 			c.configure(virtual)
 			c.mustUpdate()
 			c.mustInstallAndRun(only.name+"="+only.version, only.name, only.line())
-			// a package of the remote member (with its dependency): the stub keeps its architecture all packages in binary-all only, which
-			// the merged architecture indexes do not carry, so the row takes packages of the client's architecture
+			// a package of the remote member (with its dependency)
 			if out, err := c.install("trove-hello"); err != nil {
 				t.Fatalf("apt-get install trove-hello on %s: %v\n%s", img.name, err, tailLines(out, 30))
 			}
@@ -82,6 +81,13 @@ func TestDebVirtual(t *testing.T) {
 			c.mustInstallAndRun("trove-tools", claimed.name, claimed.line())
 		})
 	}
+
+	t.Run("R-DEB-025 the merged index of an architecture lists the architecture all packages the stub keeps in binary-all only", func(t *testing.T) {
+		idx, ok := fx.mergedPackages(t, virtual, arch)
+		if !ok || countParagraphs(idx, "trove-config") != 1 {
+			t.Fatalf("the merged Packages of %s lists trove-config %d times, want once (ok=%v)", arch, countParagraphs(idx, "trove-config"), ok)
+		}
+	})
 
 	t.Run("R-DEB-025 the merged index lists the claimed name once, from the local member", func(t *testing.T) {
 		idx, ok := fx.mergedPackages(t, virtual, arch)
