@@ -9,13 +9,13 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 520 of 765 spec requirements are implemented: a passing test names them and no
+**Status.** 552 of 765 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 773 specified (379 of them implemented), 1,466 open.
+**Totals.** 2,239 catalog features on 60 pages: 773 specified (402 of them implemented), 1,466 open.
 765 spec requirements: 603 cover catalog features, 162 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
@@ -49,8 +49,8 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Package formats: matrix and cross-format behavior](#package-formats-matrix-and-cross-format-behavior-fmt) | `FMT` | 14 | 8 of 8 | 9 | 5 | 6 |
 | [npm package format](#npm-package-format-pkg-npm) | `PKG-NPM` | 62 | 37 of 37 | 52 | 10 | 36 |
 | [NuGet](#nuget-pkg-nuget) | `PKG-NUGET` | 56 | 35 of 35 | 42 | 14 | 35 |
-| [Docker image format](#docker-image-format-pkg-docker) | `PKG-DOCKER` | 52 | – | 33 | 19 | 19 |
-| [OCI images and artifacts](#oci-images-and-artifacts-pkg-oci) | `PKG-OCI` | 20 | – | 14 | 6 | 8 |
+| [Docker image format](#docker-image-format-pkg-docker) | `PKG-DOCKER` | 52 | – | 33 | 19 | 20 |
+| [OCI images and artifacts](#oci-images-and-artifacts-pkg-oci) | `PKG-OCI` | 20 | – | 14 | 6 | 9 |
 | [Helm chart format](#helm-chart-format-pkg-helm) | `PKG-HELM` | 25 | – | 0 | 25 | 0 |
 | [Maven package format](#maven-package-format-pkg-maven) | `PKG-MAVEN` | 39 | – | 0 | 39 | 0 |
 | [PyPI package format](#pypi-package-format-pkg-pypi) | `PKG-PYPI` | 29 | – | 0 | 29 | 0 |
@@ -67,7 +67,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Conan (C/C++) format](#conan-cc-format-pkg-conan) | `PKG-CONAN` | 14 | – | 0 | 14 | 0 |
 | [Conda package format](#conda-package-format-pkg-conda) | `PKG-CONDA` | 15 | – | 0 | 15 | 0 |
 | [CRAN package format](#cran-package-format-pkg-cran) | `PKG-CRAN` | 16 | – | 0 | 16 | 0 |
-| [Debian package format](#debian-package-format-pkg-deb) | `PKG-DEB` | 28 | – | 23 | 5 | 0 |
+| [Debian package format](#debian-package-format-pkg-deb) | `PKG-DEB` | 28 | – | 23 | 5 | 21 |
 | [Git LFS format](#git-lfs-format-pkg-lfs) | `PKG-LFS` | 9 | – | 0 | 9 | 0 |
 | [Gradle, Ivy, sbt and Eclipse P2 formats](#gradle-ivy-sbt-and-eclipse-p2-formats-pkg-jvm) | `PKG-JVM` | 24 | – | 0 | 24 | 0 |
 | [Hex package format (Elixir and Erlang)](#hex-package-format-elixir-and-erlang-pkg-hex) | `PKG-HEX` | 18 | – | 0 | 18 | 0 |
@@ -106,7 +106,7 @@ Catalog page: [repositories.md](../features/repositories.md) · specified by pri
 | REPO-006 | Format support per repository class | MVP | implemented | [R-ARCH-008](../spec/architecture.md) (implemented), [R-REPO-003](../spec/repositories-and-proxy.md) (implemented) |
 | REPO-007 | Repository administration list | MVP | specified | [R-UI-020](../spec/api-and-ui.md), [R-REPO-012](../spec/repositories-and-proxy.md) (implemented) |
 | REPO-008 | Quick repository setup wizard | P1 | specified | [R-UI-023](../spec/api-and-ui.md), [R-REPO-015](../spec/repositories-and-proxy.md) |
-| REPO-009 | Recalculate repository index | P1 | specified | [R-NPM-035](../spec/formats/npm.md), [R-REPO-016](../spec/repositories-and-proxy.md) |
+| REPO-009 | Recalculate repository index | P1 | specified | [R-NPM-035](../spec/formats/npm.md), [R-REPO-016](../spec/repositories-and-proxy.md) (implemented) |
 | REPO-010 | Public description and internal notes | MVP | implemented | [R-REPO-004](../spec/repositories-and-proxy.md) (implemented) |
 | REPO-011 | Include and exclude patterns | MVP | implemented | [R-NPM-033](../spec/formats/npm.md) (implemented), [R-REPO-005](../spec/repositories-and-proxy.md) (implemented) |
 | REPO-012 | Repository layout reference | P1 | implemented | [R-REPO-006](../spec/repositories-and-proxy.md) (implemented) |
@@ -1906,7 +1906,7 @@ Catalog page: [formats/nuget.md](../features/formats/nuget.md) · specified by p
 Catalog page: [formats/docker.md](../features/formats/docker.md) · specified by priority: P1 28 of 34 · P2 5 of 13 · Later 0 of 3 · Out of scope 0 of 2
 
 <details>
-<summary>52 features: 33 specified, 19 open, 19 implemented</summary>
+<summary>52 features: 33 specified, 19 open, 20 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -1948,7 +1948,7 @@ Catalog page: [formats/docker.md](../features/formats/docker.md) · specified by
 | PKG-DOCKER-036 | Foreign layers | P2 | open | – |
 | PKG-DOCKER-037 | Project scope for Google registries | P2 | open | – |
 | PKG-DOCKER-038 | Chaining to another instance | P2 | implemented | [R-OCI-021](../spec/formats/oci.md) (implemented) |
-| PKG-DOCKER-039 | Virtual Docker registry | P1 | specified | [R-OCI-027](../spec/formats/oci.md), [R-OCI-028](../spec/formats/oci.md) (implemented) |
+| PKG-DOCKER-039 | Virtual Docker registry | P1 | implemented | [R-OCI-027](../spec/formats/oci.md) (implemented), [R-OCI-028](../spec/formats/oci.md) (implemented) |
 | PKG-DOCKER-040 | Resolve tags by latest timestamp | P1 | open | – |
 | PKG-DOCKER-052 | Upstream for a cloud registry's pass-through repository | P2 | implemented | [R-OCI-004](../spec/formats/oci.md) (implemented) |
 | PKG-DOCKER-041 | Image tag details | P1 | implemented | [R-OCI-031](../spec/formats/oci.md) (implemented) |
@@ -1970,14 +1970,14 @@ Catalog page: [formats/docker.md](../features/formats/docker.md) · specified by
 Catalog page: [formats/oci.md](../features/formats/oci.md) · specified by priority: P1 12 of 15 · P2 2 of 4 · Later 0 of 1
 
 <details>
-<summary>20 features: 14 specified, 6 open, 8 implemented</summary>
+<summary>20 features: 14 specified, 6 open, 9 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
 | PKG-OCI-001 | OCI repositories in all three repository classes | P1 | specified | [R-OCI-001](../spec/formats/oci.md), [R-OCI-002](../spec/formats/oci.md) (implemented) |
 | PKG-OCI-002 | Local OCI repository settings | P1 | open | – |
 | PKG-OCI-003 | Proxying OCI-compliant registries | P1 | implemented | [R-OCI-021](../spec/formats/oci.md) (implemented) |
-| PKG-OCI-004 | Virtual OCI repositories | P1 | specified | [R-OCI-027](../spec/formats/oci.md) |
+| PKG-OCI-004 | Virtual OCI repositories | P1 | implemented | [R-OCI-027](../spec/formats/oci.md) (implemented) |
 | PKG-OCI-005 | How OCI clients address a repository | P1 | specified | [R-OCI-001](../spec/formats/oci.md), [R-OCI-004](../spec/formats/oci.md) (implemented) |
 | PKG-OCI-006 | Distribution specification endpoints | P1 | implemented | [R-OCI-008](../spec/formats/oci.md) (implemented), [R-OCI-010](../spec/formats/oci.md) (implemented), [R-OCI-011](../spec/formats/oci.md) (implemented), [R-OCI-012](../spec/formats/oci.md) (implemented), [R-OCI-015](../spec/formats/oci.md) (implemented), [R-OCI-018](../spec/formats/oci.md) (implemented) |
 | PKG-OCI-007 | Manifest kinds and content negotiation | P1 | implemented | [R-OCI-009](../spec/formats/oci.md) (implemented), [R-OCI-013](../spec/formats/oci.md) (implemented), [R-OCI-020](../spec/formats/oci.md) (implemented) |
@@ -2407,37 +2407,37 @@ Catalog page: [formats/cran.md](../features/formats/cran.md) · specified by pri
 Catalog page: [formats/debian.md](../features/formats/debian.md) · specified by priority: P2 22 of 27 · Later 1 of 1
 
 <details>
-<summary>28 features: 23 specified, 5 open, 0 implemented</summary>
+<summary>28 features: 23 specified, 5 open, 21 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
 | PKG-DEB-001 | Debian repositories in all three repository classes | P2 | specified | [R-DEB-001](../spec/formats/debian.md) |
-| PKG-DEB-002 | Automatic layout and package coordinates | P2 | specified | [R-DEB-002](../spec/formats/debian.md), [R-DEB-003](../spec/formats/debian.md), [R-DEB-008](../spec/formats/debian.md) |
-| PKG-DEB-003 | Legacy trivial (flat) layout | Later | specified | [R-DEB-021](../spec/formats/debian.md) |
-| PKG-DEB-004 | Deploy a binary package with its coordinates | P2 | specified | [R-DEB-006](../spec/formats/debian.md) |
-| PKG-DEB-005 | Several coordinate sets for one package | P2 | specified | [R-DEB-006](../spec/formats/debian.md), [R-DEB-009](../spec/formats/debian.md) |
-| PKG-DEB-006 | Architecture-independent packages | P2 | specified | [R-DEB-009](../spec/formats/debian.md), [R-DEB-011](../spec/formats/debian.md), [R-DEB-013](../spec/formats/debian.md) |
+| PKG-DEB-002 | Automatic layout and package coordinates | P2 | specified | [R-DEB-002](../spec/formats/debian.md), [R-DEB-003](../spec/formats/debian.md) (implemented), [R-DEB-008](../spec/formats/debian.md) (implemented) |
+| PKG-DEB-003 | Legacy trivial (flat) layout | Later | implemented | [R-DEB-021](../spec/formats/debian.md) (implemented) |
+| PKG-DEB-004 | Deploy a binary package with its coordinates | P2 | implemented | [R-DEB-006](../spec/formats/debian.md) (implemented) |
+| PKG-DEB-005 | Several coordinate sets for one package | P2 | implemented | [R-DEB-006](../spec/formats/debian.md) (implemented), [R-DEB-009](../spec/formats/debian.md) (implemented) |
+| PKG-DEB-006 | Architecture-independent packages | P2 | implemented | [R-DEB-009](../spec/formats/debian.md) (implemented), [R-DEB-011](../spec/formats/debian.md) (implemented), [R-DEB-013](../spec/formats/debian.md) (implemented) |
 | PKG-DEB-007 | Source packages | P2 | open | – |
-| PKG-DEB-008 | Automatic index calculation for local repositories | P2 | specified | [R-DEB-010](../spec/formats/debian.md) |
-| PKG-DEB-009 | Package metadata validation and index status | P2 | specified | [R-DEB-007](../spec/formats/debian.md) |
-| PKG-DEB-010 | Package metadata as searchable properties | P2 | specified | [R-DEB-007](../spec/formats/debian.md), [R-DEB-030](../spec/formats/debian.md) |
-| PKG-DEB-011 | Index compression formats | P2 | specified | [R-DEB-011](../spec/formats/debian.md) |
+| PKG-DEB-008 | Automatic index calculation for local repositories | P2 | implemented | [R-DEB-010](../spec/formats/debian.md) (implemented) |
+| PKG-DEB-009 | Package metadata validation and index status | P2 | implemented | [R-DEB-007](../spec/formats/debian.md) (implemented) |
+| PKG-DEB-010 | Package metadata as searchable properties | P2 | implemented | [R-DEB-007](../spec/formats/debian.md) (implemented), [R-DEB-030](../spec/formats/debian.md) (implemented) |
+| PKG-DEB-011 | Index compression formats | P2 | implemented | [R-DEB-011](../spec/formats/debian.md) (implemented) |
 | PKG-DEB-012 | Debug-symbol package indexing | P2 | open | – |
-| PKG-DEB-013 | Acquire-by-hash | P2 | specified | [R-DEB-003](../spec/formats/debian.md), [R-DEB-012](../spec/formats/debian.md), [R-DEB-021](../spec/formats/debian.md) |
-| PKG-DEB-014 | MD5 checksums in the Packages index | P2 | specified | [R-DEB-011](../spec/formats/debian.md) |
-| PKG-DEB-015 | Origin and Label of the Release file | P2 | specified | [R-DEB-011](../spec/formats/debian.md) |
-| PKG-DEB-016 | Recalculate Debian metadata | P2 | specified | [R-DEB-014](../spec/formats/debian.md) |
-| PKG-DEB-017 | Release signing with GPG | P2 | specified | [R-DEB-016](../spec/formats/debian.md) |
-| PKG-DEB-018 | Signing keys per repository and key rotation | P2 | specified | [R-DEB-015](../spec/formats/debian.md), [R-DEB-017](../spec/formats/debian.md) |
-| PKG-DEB-019 | Instance-wide default GPG key | P2 | specified | [R-DEB-015](../spec/formats/debian.md) |
-| PKG-DEB-020 | Public key for client trust | P2 | specified | [R-DEB-018](../spec/formats/debian.md) |
-| PKG-DEB-021 | Remote Debian repositories | P2 | specified | [R-DEB-019](../spec/formats/debian.md), [R-DEB-020](../spec/formats/debian.md), [R-DEB-021](../spec/formats/debian.md), [R-DEB-022](../spec/formats/debian.md) |
-| PKG-DEB-022 | Coordinate calculation for cached remote packages | P2 | specified | [R-DEB-023](../spec/formats/debian.md) |
-| PKG-DEB-023 | Virtual Debian repositories | P2 | specified | [R-DEB-025](../spec/formats/debian.md), [R-DEB-026](../spec/formats/debian.md), [R-DEB-027](../spec/formats/debian.md), [R-DEB-028](../spec/formats/debian.md) |
+| PKG-DEB-013 | Acquire-by-hash | P2 | implemented | [R-DEB-003](../spec/formats/debian.md) (implemented), [R-DEB-012](../spec/formats/debian.md) (implemented), [R-DEB-021](../spec/formats/debian.md) (implemented) |
+| PKG-DEB-014 | MD5 checksums in the Packages index | P2 | implemented | [R-DEB-011](../spec/formats/debian.md) (implemented) |
+| PKG-DEB-015 | Origin and Label of the Release file | P2 | implemented | [R-DEB-011](../spec/formats/debian.md) (implemented) |
+| PKG-DEB-016 | Recalculate Debian metadata | P2 | implemented | [R-DEB-014](../spec/formats/debian.md) (implemented) |
+| PKG-DEB-017 | Release signing with GPG | P2 | implemented | [R-DEB-016](../spec/formats/debian.md) (implemented) |
+| PKG-DEB-018 | Signing keys per repository and key rotation | P2 | implemented | [R-DEB-015](../spec/formats/debian.md) (implemented), [R-DEB-017](../spec/formats/debian.md) (implemented) |
+| PKG-DEB-019 | Instance-wide default GPG key | P2 | implemented | [R-DEB-015](../spec/formats/debian.md) (implemented) |
+| PKG-DEB-020 | Public key for client trust | P2 | implemented | [R-DEB-018](../spec/formats/debian.md) (implemented) |
+| PKG-DEB-021 | Remote Debian repositories | P2 | implemented | [R-DEB-019](../spec/formats/debian.md) (implemented), [R-DEB-020](../spec/formats/debian.md) (implemented), [R-DEB-021](../spec/formats/debian.md) (implemented), [R-DEB-022](../spec/formats/debian.md) (implemented) |
+| PKG-DEB-022 | Coordinate calculation for cached remote packages | P2 | implemented | [R-DEB-023](../spec/formats/debian.md) (implemented) |
+| PKG-DEB-023 | Virtual Debian repositories | P2 | implemented | [R-DEB-025](../spec/formats/debian.md) (implemented), [R-DEB-026](../spec/formats/debian.md) (implemented), [R-DEB-027](../spec/formats/debian.md) (implemented), [R-DEB-028](../spec/formats/debian.md) (implemented) |
 | PKG-DEB-024 | Create a Debian snapshot | P2 | open | – |
 | PKG-DEB-025 | Resolve and delete snapshots | P2 | open | – |
-| PKG-DEB-026 | APT source configuration | P2 | specified | [R-DEB-029](../spec/formats/debian.md) |
-| PKG-DEB-027 | Authenticated APT access | P2 | specified | [R-DEB-029](../spec/formats/debian.md) |
+| PKG-DEB-026 | APT source configuration | P2 | implemented | [R-DEB-029](../spec/formats/debian.md) (implemented) |
+| PKG-DEB-027 | Authenticated APT access | P2 | implemented | [R-DEB-029](../spec/formats/debian.md) (implemented) |
 | PKG-DEB-028 | Companion CLI integration for APT | P2 | open | – |
 
 </details>
@@ -3063,12 +3063,12 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-EP-020 (implemented) | Exposure changes in the revocation journal | MVP | [endpoints.md](../spec/endpoints.md) |
 | R-DEB-004 | Permissions per operation | P2 | [formats/debian.md](../spec/formats/debian.md) |
 | R-DEB-005 | Errors and response headers | P2 | [formats/debian.md](../spec/formats/debian.md) |
-| R-DEB-024 | Mirror settings of a Debian remote | P2 | [formats/debian.md](../spec/formats/debian.md) |
+| R-DEB-024 (implemented) | Mirror settings of a Debian remote | P2 | [formats/debian.md](../spec/formats/debian.md) |
 | R-DEB-031 | Debian on n replicas, without Valkey and during a drain | P2 | [formats/debian.md](../spec/formats/debian.md) |
-| R-DEB-032 | Debian data in backups and restores | P2 | [formats/debian.md](../spec/formats/debian.md) |
+| R-DEB-032 (implemented) | Debian data in backups and restores | P2 | [formats/debian.md](../spec/formats/debian.md) |
 | R-DEB-033 | Audit events and metrics | P2 | [formats/debian.md](../spec/formats/debian.md) |
-| R-DEB-034 | Limits for untrusted content | P2 | [formats/debian.md](../spec/formats/debian.md) |
-| R-DEB-035 | Test suites | P2 | [formats/debian.md](../spec/formats/debian.md) |
+| R-DEB-034 (implemented) | Limits for untrusted content | P2 | [formats/debian.md](../spec/formats/debian.md) |
+| R-DEB-035 (implemented) | Test suites | P2 | [formats/debian.md](../spec/formats/debian.md) |
 | R-NPM-026 (implemented) | Versions removed upstream | MVP | [formats/npm.md](../spec/formats/npm.md) |
 | R-NPM-044 (implemented) | npm audit events and metrics | MVP | [formats/npm.md](../spec/formats/npm.md) |
 | R-NPM-046 | npm across replicas: no state between requests, Valkey degradation, drain | MVP | [formats/npm.md](../spec/formats/npm.md) |
@@ -3081,7 +3081,7 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-NUGET-032 | Pushes and deletes across drains, restarts and client retries | MVP | [formats/nuget.md](../spec/formats/nuget.md) |
 | R-NUGET-033 (implemented) | NuGet data in backups and restores | MVP | [formats/nuget.md](../spec/formats/nuget.md) |
 | R-NUGET-034 (implemented) | NuGet documents on an endpoint with exposure rules | MVP | [formats/nuget.md](../spec/formats/nuget.md) |
-| R-OCI-026 | Mirror settings of an OCI remote | P1 | [formats/oci.md](../spec/formats/oci.md) |
+| R-OCI-026 (implemented) | Mirror settings of an OCI remote | P1 | [formats/oci.md](../spec/formats/oci.md) |
 | R-OCI-032 (implemented) | OCI on n replicas, without Valkey and during a drain | P1 | [formats/oci.md](../spec/formats/oci.md) |
 | R-OCI-033 (implemented) | OCI data in backups and restores | P1 | [formats/oci.md](../spec/formats/oci.md) |
 | R-OCI-034 | Audit events and metrics | P1 | [formats/oci.md](../spec/formats/oci.md) |
