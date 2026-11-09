@@ -9,6 +9,7 @@ package e2e
 import (
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -135,9 +136,10 @@ func TestOCIClosingPublic(t *testing.T) {
 		c.login(host)
 		short, long := fx.image(t, key, "busybox", "latest"), fx.image(t, key, "library/busybox", "latest")
 		c.pull(short)
-		d1 := c.digests(short)
+		id := func(ref string) string { return strings.Fields(c.digests(ref))[0] } // the image ID; the repo digests name the spelling
+		d1 := id(short)
 		c.pull(long) // the one cached copy: library/ maps the one-component name (Q-OCI-14)
-		if d2 := c.digests(long); d1 != d2 {
+		if d2 := id(long); d1 != d2 {
 			t.Errorf("busybox and library/busybox are %q and %q: one cached copy is expected", d1, d2)
 		}
 	})
