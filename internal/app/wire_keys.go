@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/outbound"
 	"github.com/guided-traffic/trove/internal/secrets"
+	"github.com/guided-traffic/trove/internal/sysstate"
 )
 
 // wireKeys loads the key ring and builds the outbound factory (R-ARCH-024 step
@@ -46,8 +48,39 @@ func (a *App) wireInfra(_ context.Context, keys keysArea, pg postgresArea, au au
 	}
 	// The exported accessors of the replica (Blobs, Queue, Caches, Changes, Signals)
 	// read these; wireInfra is their only writer.
+	in.sys = sysstate.New(sysstate.Options{
+		DB: in.db, Notifier: in.changes, Recorder: in.rec, Cache: in.caches, Fresh: in.changes, Bound: a.cfg.Auth.RevocationBound,
+	})
 	a.mu.Lock()
 	a.signals, a.changes, a.caches, a.queue, a.blobs = co.signals, co.changes, co.caches, co.queue, bl.store
 	a.mu.Unlock()
 	return in, nil
+}
+
+// readOnlyMode reports whether the installation is in read-only maintenance mode (R-OPS-024), for the scheduler. The store is built by
+// wireInfra, after the worker; the answer is read when it is asked. An error reading the mode is no reason to skip a task.
+func (a *App) readOnlyMode(ctx context.Context) bool {
+	sys := part[infra](a.parts).sys
+	if sys == nil {
+		return false
+	}
+	m, err := sys.Maintenance(ctx)
+	return err == nil && m.ReadOnly()
+}
+
+// offlineForMaintenance is proxy.Options.GlobalOffline: the configured global offline mode, or read-only maintenance mode with
+// cache filling switched off (R-OPS-024: "remote repositories serve only what they already cache, as in global offline mode").
+func (a *App) offlineForMaintenance(sys *sysstate.Store) func() bool {
+	return func() bool {
+		if a.cfg.Proxy.GlobalOffline {
+			return true
+		}
+		if sys == nil {
+			return false
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		m, err := sys.Maintenance(ctx)
+		return err == nil && m.ReadOnly() && !m.CacheFill
+	}
 }

@@ -1830,7 +1830,7 @@
     <unit id="nav.repositories">
       <notes>
         <note category="location">src/app/core/navigation.ts:59</note>
-        <note category="location">src/app/core/navigation.ts:133</note>
+        <note category="location">src/app/core/navigation.ts:134</note>
       </notes>
       <segment>
         <source>Repositories</source>
@@ -1879,7 +1879,7 @@
     <unit id="nav.service-accounts">
       <notes>
         <note category="location">src/app/core/navigation.ts:72</note>
-        <note category="location">src/app/core/navigation.ts:122</note>
+        <note category="location">src/app/core/navigation.ts:123</note>
       </notes>
       <segment>
         <source>Service accounts</source>
@@ -1896,7 +1896,7 @@
     <unit id="nav.ci">
       <notes>
         <note category="location">src/app/core/navigation.ts:75</note>
-        <note category="location">src/app/core/navigation.ts:125</note>
+        <note category="location">src/app/core/navigation.ts:126</note>
       </notes>
       <segment>
         <source>CI identity</source>
@@ -1913,7 +1913,7 @@
     <unit id="nav.permissions">
       <notes>
         <note category="location">src/app/core/navigation.ts:85</note>
-        <note category="location">src/app/core/navigation.ts:119</note>
+        <note category="location">src/app/core/navigation.ts:120</note>
       </notes>
       <segment>
         <source>Permission policies</source>
@@ -1951,9 +1951,17 @@
         <source>Audit log</source>
       </segment>
     </unit>
+    <unit id="nav.settings-general">
+      <notes>
+        <note category="location">src/app/core/navigation.ts:98</note>
+      </notes>
+      <segment>
+        <source>General settings</source>
+      </segment>
+    </unit>
     <unit id="nav.advisory-sources">
       <notes>
-        <note category="location">src/app/core/navigation.ts:99</note>
+        <note category="location">src/app/core/navigation.ts:100</note>
       </notes>
       <segment>
         <source>Advisory sources</source>
@@ -1961,7 +1969,7 @@
     </unit>
     <unit id="nav.project.members">
       <notes>
-        <note category="location">src/app/core/navigation.ts:117</note>
+        <note category="location">src/app/core/navigation.ts:118</note>
       </notes>
       <segment>
         <source>Members</source>
@@ -1969,7 +1977,7 @@
     </unit>
     <unit id="nav.packages">
       <notes>
-        <note category="location">src/app/core/navigation.ts:130</note>
+        <note category="location">src/app/core/navigation.ts:131</note>
         <note category="location">src/app/features/projects/project-context.routes.ts:30</note>
       </notes>
       <segment>
@@ -1978,7 +1986,7 @@
     </unit>
     <unit id="nav.browse">
       <notes>
-        <note category="location">src/app/core/navigation.ts:132</note>
+        <note category="location">src/app/core/navigation.ts:133</note>
         <note category="location">src/app/features/projects/project-context.routes.ts:35</note>
       </notes>
       <segment>
@@ -1987,7 +1995,7 @@
     </unit>
     <unit id="nav.vulnerabilities">
       <notes>
-        <note category="location">src/app/core/navigation.ts:135</note>
+        <note category="location">src/app/core/navigation.ts:136</note>
       </notes>
       <segment>
         <source>Vulnerabilities</source>
@@ -1995,7 +2003,7 @@
     </unit>
     <unit id="nav.section.project-access">
       <notes>
-        <note category="location">src/app/core/navigation.ts:141</note>
+        <note category="location">src/app/core/navigation.ts:142</note>
       </notes>
       <segment>
         <source>Access</source>
@@ -2003,7 +2011,7 @@
     </unit>
     <unit id="nav.project.settings">
       <notes>
-        <note category="location">src/app/core/navigation.ts:144</note>
+        <note category="location">src/app/core/navigation.ts:145</note>
       </notes>
       <segment>
         <source>Settings</source>
@@ -3766,7 +3774,7 @@
     <unit id="repo.deleting">
       <notes>
         <note category="location">src/app/features/browse/browse.html:371,372</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:281,282</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:295,296</note>
         <note category="location">src/app/features/repositories/repository-list.html:116,117</note>
       </notes>
       <segment>
@@ -7833,7 +7841,7 @@
     <unit id="repo.action.delete">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:177,178</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:257,259</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:271,273</note>
         <note category="location">src/app/features/repositories/repository-list.html:110,111</note>
       </notes>
       <segment>
@@ -8340,7 +8348,7 @@
     <unit id="repo.edit.reset">
       <notes>
         <note category="location">src/app/features/endpoints/exposure-rule-editor.html:417,418</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:248,249</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:262,263</note>
       </notes>
       <segment>
         <source> Discard changes </source>
@@ -8349,7 +8357,7 @@
     <unit id="repo.edit.unsaved">
       <notes>
         <note category="location">src/app/features/endpoints/exposure-rule-editor.html:422,424</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:252,254</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:266,268</note>
       </notes>
       <segment>
         <source>You have unsaved changes.</source>
@@ -9545,7 +9553,7 @@
     </unit>
     <unit id="login.heading">
       <notes>
-        <note category="location">src/app/features/login/login.ts:29,31</note>
+        <note category="location">src/app/features/login/login.ts:31,33</note>
       </notes>
       <segment>
         <source>Sign in</source>
@@ -9553,7 +9561,7 @@
     </unit>
     <unit id="login.reauth">
       <notes>
-        <note category="location">src/app/features/login/login.ts:33,35</note>
+        <note category="location">src/app/features/login/login.ts:35,37</note>
       </notes>
       <segment>
         <source> The action you tried needs a recent sign-in. Sign in again, then repeat it. Your entries are kept. </source>
@@ -9561,7 +9569,7 @@
     </unit>
     <unit id="login.loading">
       <notes>
-        <note category="location">src/app/features/login/login.ts:40,41</note>
+        <note category="location">src/app/features/login/login.ts:42,43</note>
       </notes>
       <segment>
         <source>Loading the sign-in options.</source>
@@ -9569,7 +9577,7 @@
     </unit>
     <unit id="login.redirecting">
       <notes>
-        <note category="location">src/app/features/login/login.ts:43,45</note>
+        <note category="location">src/app/features/login/login.ts:45,47</note>
       </notes>
       <segment>
         <source>Redirecting to the identity provider.</source>
@@ -9577,7 +9585,7 @@
     </unit>
     <unit id="login.no-providers">
       <notes>
-        <note category="location">src/app/features/login/login.ts:46,49</note>
+        <note category="location">src/app/features/login/login.ts:48,51</note>
       </notes>
       <segment>
         <source>No sign-in method is configured.</source>
@@ -9585,7 +9593,7 @@
     </unit>
     <unit id="login.local.heading">
       <notes>
-        <note category="location">src/app/features/login/login.ts:53,54</note>
+        <note category="location">src/app/features/login/login.ts:55,56</note>
       </notes>
       <segment>
         <source>Local administrator</source>
@@ -9593,7 +9601,7 @@
     </unit>
     <unit id="login.local.username">
       <notes>
-        <note category="location">src/app/features/login/login.ts:57,59</note>
+        <note category="location">src/app/features/login/login.ts:59,61</note>
       </notes>
       <segment>
         <source>Username</source>
@@ -9601,7 +9609,7 @@
     </unit>
     <unit id="login.local.password">
       <notes>
-        <note category="location">src/app/features/login/login.ts:68,70</note>
+        <note category="location">src/app/features/login/login.ts:70,72</note>
       </notes>
       <segment>
         <source>Password</source>
@@ -9609,7 +9617,7 @@
     </unit>
     <unit id="login.local.submit">
       <notes>
-        <note category="location">src/app/features/login/login.ts:83,84</note>
+        <note category="location">src/app/features/login/login.ts:85,86</note>
       </notes>
       <segment>
         <source> Sign in </source>
@@ -9617,7 +9625,7 @@
     </unit>
     <unit id="login.or">
       <notes>
-        <note category="location">src/app/features/login/login.ts:90,91</note>
+        <note category="location">src/app/features/login/login.ts:92,93</note>
       </notes>
       <segment>
         <source>or sign in with</source>
@@ -9625,7 +9633,7 @@
     </unit>
     <unit id="login.with">
       <notes>
-        <note category="location">src/app/features/login/login.ts:105,106</note>
+        <note category="location">src/app/features/login/login.ts:107,108</note>
       </notes>
       <segment>
         <source>Sign in with</source>
@@ -9633,7 +9641,7 @@
     </unit>
     <unit id="login.unavailable">
       <notes>
-        <note category="location">src/app/features/login/login.ts:110,112</note>
+        <note category="location">src/app/features/login/login.ts:112,114</note>
       </notes>
       <segment>
         <source>Currently unavailable</source>
@@ -9641,7 +9649,7 @@
     </unit>
     <unit id="login.anonymous">
       <notes>
-        <note category="location">src/app/features/login/login.ts:119,121</note>
+        <note category="location">src/app/features/login/login.ts:121,123</note>
       </notes>
       <segment>
         <source>Continue without signing in</source>
@@ -15508,7 +15516,7 @@
     <unit id="repo.tab.guide">
       <notes>
         <note category="location">src/app/features/repositories/repository-detail.html:46,47</note>
-        <note category="location">src/app/features/repositories/repository-detail.ts:529</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:558</note>
       </notes>
       <segment>
         <source>How to use</source>
@@ -15565,7 +15573,7 @@
     </unit>
     <unit id="mirror.status.unsaved">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:176,177</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:190,191</note>
       </notes>
       <segment>
         <source> The status appears once the repository is saved in mode mirror. </source>
@@ -15573,7 +15581,7 @@
     </unit>
     <unit id="repo.detail.api.document">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:218,219</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:232,233</note>
       </notes>
       <segment>
         <source>Stored document</source>
@@ -15581,7 +15589,7 @@
     </unit>
     <unit id="repo.detail.api.patch">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:220,222</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:234,236</note>
       </notes>
       <segment>
         <source>Your change as a request</source>
@@ -15589,7 +15597,7 @@
     </unit>
     <unit id="repo.detail.api.nochange">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:225,227</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:239,241</note>
       </notes>
       <segment>
         <source> Change a setting to see the request that saves it. </source>
@@ -15597,7 +15605,7 @@
     </unit>
     <unit id="repo.edit.save">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:240,241</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:254,255</note>
       </notes>
       <segment>
         <source> Save changes </source>
@@ -15605,7 +15613,7 @@
     </unit>
     <unit id="repo.move.heading">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:262,263</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:276,277</note>
       </notes>
       <segment>
         <source>Move to another project</source>
@@ -15613,7 +15621,7 @@
     </unit>
     <unit id="repo.move.hint">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:264,265</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:278,279</note>
       </notes>
       <segment>
         <source> The repository keeps its key and its content; its address changes. You must be Owner of the target project too. </source>
@@ -15621,7 +15629,7 @@
     </unit>
     <unit id="repo.move.target">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:268,269</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:282,283</note>
       </notes>
       <segment>
         <source>Target project</source>
@@ -15629,16 +15637,24 @@
     </unit>
     <unit id="repo.move.action">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:274,275</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:288,289</note>
       </notes>
       <segment>
         <source> Move repository </source>
       </segment>
     </unit>
+    <unit id="repo.members.saved">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:298</note>
+      </notes>
+      <segment>
+        <source>Members saved.</source>
+      </segment>
+    </unit>
     <unit id="repo.edit.saved">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:302</note>
-        <note category="location">src/app/features/repositories/repository-detail.ts:411</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:330</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:439</note>
       </notes>
       <segment>
         <source>Repository saved.</source>
@@ -15646,7 +15662,7 @@
     </unit>
     <unit id="mirror.paused-notice">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:329</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:357</note>
       </notes>
       <segment>
         <source>Mirror paused.</source>
@@ -15654,7 +15670,7 @@
     </unit>
     <unit id="mirror.resumed-notice">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:330</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:358</note>
       </notes>
       <segment>
         <source>Mirror resumed.</source>
@@ -15662,7 +15678,7 @@
     </unit>
     <unit id="repo.delete.title">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:436</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:464</note>
         <note category="location">src/app/features/repositories/repository-list.ts:208</note>
       </notes>
       <segment>
@@ -15671,7 +15687,7 @@
     </unit>
     <unit id="repo.delete.text">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:438</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:466</note>
         <note category="location">src/app/features/repositories/repository-list.ts:210</note>
       </notes>
       <segment>
@@ -15680,7 +15696,7 @@
     </unit>
     <unit id="repo.delete.confirm">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:440</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:468</note>
         <note category="location">src/app/features/repositories/repository-list.ts:212</note>
       </notes>
       <segment>
@@ -15689,7 +15705,7 @@
     </unit>
     <unit id="repo.move.choose">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:464</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:492</note>
       </notes>
       <segment>
         <source>Choose a project</source>
@@ -15697,7 +15713,7 @@
     </unit>
     <unit id="repo.move.title">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:481</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:509</note>
       </notes>
       <segment>
         <source>Move repository <ph id="0" equiv="key" disp="this.ref()"/> to project <ph id="1" equiv="project" disp="target"/>?</source>
@@ -15705,7 +15721,7 @@
     </unit>
     <unit id="repo.move.text">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:483</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:511</note>
       </notes>
       <segment>
         <source>The repository gets a new address; clients must switch to it. Policies, pins, virtual memberships and CI mappings that name it in this project stop applying, and the move is refused while any of them exists.</source>
@@ -15713,7 +15729,7 @@
     </unit>
     <unit id="repo.move.confirm">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:485</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:513</note>
       </notes>
       <segment>
         <source>Move repository</source>
@@ -15721,7 +15737,7 @@
     </unit>
     <unit id="repo.move.done">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:492</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:520</note>
       </notes>
       <segment>
         <source>Repository moved to project <ph id="0" equiv="project" disp="target"/>.</source>
@@ -15729,7 +15745,7 @@
     </unit>
     <unit id="repo.delete.failed">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:506</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:534</note>
         <note category="location">src/app/features/repositories/repository-list.ts:255</note>
       </notes>
       <segment>
@@ -15738,7 +15754,7 @@
     </unit>
     <unit id="repo.delete.done">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:511</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:539</note>
         <note category="location">src/app/features/repositories/repository-list.ts:245</note>
       </notes>
       <segment>
@@ -15747,7 +15763,7 @@
     </unit>
     <unit id="repo.delete.progress">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:516</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:544</note>
         <note category="location">src/app/features/repositories/repository-list.ts:176</note>
       </notes>
       <segment>
@@ -15756,7 +15772,7 @@
     </unit>
     <unit id="repo.copy-address">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:517</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:545</note>
         <note category="location">src/app/features/repositories/repository-list.ts:175</note>
       </notes>
       <segment>
@@ -15765,7 +15781,7 @@
     </unit>
     <unit id="repo.tab.general">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:518</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:546</note>
       </notes>
       <segment>
         <source>General</source>
@@ -15773,15 +15789,23 @@
     </unit>
     <unit id="repo.tab.access">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:519</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:547</note>
       </notes>
       <segment>
         <source>Access</source>
       </segment>
     </unit>
+    <unit id="repo.tab.members">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:548</note>
+      </notes>
+      <segment>
+        <source>Members</source>
+      </segment>
+    </unit>
     <unit id="repo.tab.format">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:522</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:551</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="format" disp="this.format()?.displayName ?? this.member().name"/> settings</source>
@@ -15789,7 +15813,7 @@
     </unit>
     <unit id="repo.tab.upstream">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:524</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:553</note>
       </notes>
       <segment>
         <source>Upstream</source>
@@ -15797,7 +15821,7 @@
     </unit>
     <unit id="repo.tab.mirror">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:525</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:554</note>
       </notes>
       <segment>
         <source>Mirror</source>
@@ -15805,7 +15829,7 @@
     </unit>
     <unit id="repo.tab.deb-keys">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:526</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:555</note>
       </notes>
       <segment>
         <source>Signing keys</source>
@@ -15813,7 +15837,7 @@
     </unit>
     <unit id="repo.tab.deb-index">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:527</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:556</note>
       </notes>
       <segment>
         <source>Index</source>
@@ -15821,7 +15845,7 @@
     </unit>
     <unit id="repo.tab.api">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:528</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:557</note>
       </notes>
       <segment>
         <source>API</source>
@@ -16921,6 +16945,438 @@
         <source>None</source>
       </segment>
     </unit>
+    <unit id="virtual.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:2,3</note>
+      </notes>
+      <segment>
+        <source>Members</source>
+      </segment>
+    </unit>
+    <unit id="virtual.intro">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:4,8</note>
+      </notes>
+      <segment>
+        <source> A virtual repository asks its members in this order and serves the first answer. It offers the local and remote repositories of its own project and format. </source>
+      </segment>
+    </unit>
+    <unit id="virtual.reload">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:12,15</note>
+      </notes>
+      <segment>
+        <source>Load the stored repository</source>
+      </segment>
+    </unit>
+    <unit id="virtual.available">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:20,22</note>
+      </notes>
+      <segment>
+        <source>Available repositories</source>
+      </segment>
+    </unit>
+    <unit id="virtual.available-empty">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:39,43</note>
+      </notes>
+      <segment>
+        <source>No other local or remote repository of this project and format is left to add.</source>
+      </segment>
+    </unit>
+    <unit id="virtual.actions">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:44,45</note>
+      </notes>
+      <segment>
+        <source>Change the members</source>
+      </segment>
+    </unit>
+    <unit id="virtual.add">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:45,46</note>
+      </notes>
+      <segment>
+        <source>Add</source>
+      </segment>
+    </unit>
+    <unit id="virtual.remove">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:46,47</note>
+      </notes>
+      <segment>
+        <source>Remove</source>
+      </segment>
+    </unit>
+    <unit id="virtual.move-up">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:47,48</note>
+      </notes>
+      <segment>
+        <source>Move up</source>
+      </segment>
+    </unit>
+    <unit id="virtual.move-down">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:48,49</note>
+      </notes>
+      <segment>
+        <source>Move down</source>
+      </segment>
+    </unit>
+    <unit id="virtual.move-top">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:49,52</note>
+      </notes>
+      <segment>
+        <source>Move to top</source>
+      </segment>
+    </unit>
+    <unit id="virtual.selected">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:53,55</note>
+      </notes>
+      <segment>
+        <source>Members in resolution order</source>
+      </segment>
+    </unit>
+    <unit id="virtual.selected-empty">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:77,79</note>
+      </notes>
+      <segment>
+        <source>The repository has no member. Every request for a package answers not found.</source>
+      </segment>
+    </unit>
+    <unit id="virtual.keys-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:80,82</note>
+      </notes>
+      <segment>
+        <source> Alt with the arrow up or down key moves the selected member, Alt with Home moves it to the top. </source>
+      </segment>
+    </unit>
+    <unit id="virtual.target">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:90,91</note>
+      </notes>
+      <segment>
+        <source>Default deployment target</source>
+      </segment>
+    </unit>
+    <unit id="virtual.target-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:98,102</note>
+      </notes>
+      <segment>
+        <source> Publishing to the virtual repository stores the package in this local member. Without one the repository is read-only. </source>
+      </segment>
+    </unit>
+    <unit id="virtual.save">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:104,105</note>
+      </notes>
+      <segment>
+        <source>Save members</source>
+      </segment>
+    </unit>
+    <unit id="virtual.discard">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:106,108</note>
+      </notes>
+      <segment>
+        <source> Discard changes </source>
+      </segment>
+    </unit>
+    <unit id="virtual.unsaved">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:109,111</note>
+      </notes>
+      <segment>
+        <source>You have unsaved changes to the members.</source>
+      </segment>
+    </unit>
+    <unit id="virtual.effective">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:117,118</note>
+      </notes>
+      <segment>
+        <source>Effective resolution order</source>
+      </segment>
+    </unit>
+    <unit id="virtual.effective-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:119,121</note>
+      </notes>
+      <segment>
+        <source> The stored members in the order in which they are asked. Virtual repositories cannot be members yet, so nothing is flattened. </source>
+      </segment>
+    </unit>
+    <unit id="virtual.effective-empty">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:122,124</note>
+      </notes>
+      <segment>
+        <source>The stored repository has no member.</source>
+      </segment>
+    </unit>
+    <unit id="virtual.effective-target">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:130,133</note>
+      </notes>
+      <segment>
+        <source>Default deployment target</source>
+      </segment>
+    </unit>
+    <unit id="virtual.explain-path">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:140,142</note>
+      </notes>
+      <segment>
+        <source>Explain a path</source>
+      </segment>
+    </unit>
+    <unit id="virtual.explain-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:144,146</note>
+      </notes>
+      <segment>
+        <source>The path as a package client sends it, for example lodash or @acme/util/-/util-1.4.0.tgz.</source>
+      </segment>
+    </unit>
+    <unit id="virtual.explain">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:147,150</note>
+      </notes>
+      <segment>
+        <source> Explain </source>
+      </segment>
+    </unit>
+    <unit id="virtual.decided-claim">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:158</note>
+      </notes>
+      <segment>
+        <source>The name matches the claim</source>
+      </segment>
+    </unit>
+    <unit id="virtual.decided-pin">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:160</note>
+      </notes>
+      <segment>
+        <source>The name matches the pin rule</source>
+      </segment>
+    </unit>
+    <unit id="virtual.explanation-caption">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:165,168</note>
+      </notes>
+      <segment>
+        <source>How each member is asked for the path</source>
+      </segment>
+    </unit>
+    <unit id="virtual.col-member">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:168,169</note>
+      </notes>
+      <segment>
+        <source>Member</source>
+      </segment>
+    </unit>
+    <unit id="virtual.col-decision">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:169,171</note>
+      </notes>
+      <segment>
+        <source>Decision</source>
+      </segment>
+    </unit>
+    <unit id="virtual.unreadable-one">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:184,186</note>
+      </notes>
+      <segment>
+        <source>One member is not shown because you may not read it.</source>
+      </segment>
+    </unit>
+    <unit id="virtual.unreadable-many">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.html:186,187</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="INTERPOLATION" disp="{{ x.unreadableMembers }}"/> members are not shown because you may not read them.</source>
+      </segment>
+    </unit>
+    <unit id="virtual.decision.hit">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.ts:25</note>
+      </notes>
+      <segment>
+        <source>Holds it and would serve it</source>
+      </segment>
+    </unit>
+    <unit id="virtual.decision.miss">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.ts:27</note>
+      </notes>
+      <segment>
+        <source>Does not hold it</source>
+      </segment>
+    </unit>
+    <unit id="virtual.decision.negative">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.ts:29</note>
+      </notes>
+      <segment>
+        <source>Remembered as not having it</source>
+      </segment>
+    </unit>
+    <unit id="virtual.decision.disabled">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.ts:31</note>
+      </notes>
+      <segment>
+        <source>Disabled, so not asked</source>
+      </segment>
+    </unit>
+    <unit id="virtual.decision.not-admitted">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.ts:33</note>
+      </notes>
+      <segment>
+        <source>Its include and exclude patterns do not admit the path</source>
+      </segment>
+    </unit>
+    <unit id="virtual.decision.pinned-out">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.ts:35</note>
+      </notes>
+      <segment>
+        <source>Not asked: a pin rule names other members for this package</source>
+      </segment>
+    </unit>
+    <unit id="virtual.decision.claimed-elsewhere">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.ts:37</note>
+      </notes>
+      <segment>
+        <source>Not asked: another repository claims this name</source>
+      </segment>
+    </unit>
+    <unit id="virtual.decision.refused-claimed">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.ts:39</note>
+      </notes>
+      <segment>
+        <source>Refused: a local repository claims this name</source>
+      </segment>
+    </unit>
+    <unit id="virtual.decision.no-read">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.ts:41</note>
+      </notes>
+      <segment>
+        <source>You may not read it</source>
+      </segment>
+    </unit>
+    <unit id="virtual.decision.no-cache-fill">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.ts:43</note>
+      </notes>
+      <segment>
+        <source>Not asked: you may not fill its cache</source>
+      </segment>
+    </unit>
+    <unit id="virtual.decision.offline">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.ts:45</note>
+      </notes>
+      <segment>
+        <source>Offline, so not asked</source>
+      </segment>
+    </unit>
+    <unit id="virtual.decision.circuit-open">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.ts:47</note>
+      </notes>
+      <segment>
+        <source>Not asked: its upstream circuit is open</source>
+      </segment>
+    </unit>
+    <unit id="virtual.target.none">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.ts:125</note>
+      </notes>
+      <segment>
+        <source>None: the repository is read-only</source>
+      </segment>
+    </unit>
+    <unit id="virtual.class.local">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.ts:164</note>
+      </notes>
+      <segment>
+        <source>Local</source>
+      </segment>
+    </unit>
+    <unit id="virtual.class.remote">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.ts:166</note>
+      </notes>
+      <segment>
+        <source>Remote</source>
+      </segment>
+    </unit>
+    <unit id="virtual.announce.added">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.ts:191</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="key" disp="last"/> added at position <ph id="1" equiv="position" disp="total"/> of <ph id="2" equiv="total" disp="total"/></source>
+      </segment>
+    </unit>
+    <unit id="virtual.announce.added-many">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.ts:192</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="count" disp="keys.length"/> repositories added, <ph id="1" equiv="total" disp="total"/> members in all</source>
+      </segment>
+    </unit>
+    <unit id="virtual.announce.removed">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.ts:202</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="key" disp="key"/> removed, <ph id="1" equiv="total" disp="this.members().length"/> members left</source>
+      </segment>
+    </unit>
+    <unit id="virtual.announce.target-cleared">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.ts:205</note>
+      </notes>
+      <segment>
+        <source>The default deployment target is now none.</source>
+      </segment>
+    </unit>
+    <unit id="virtual.announce.moved">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.ts:231</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="key" disp="key!"/> moved to position <ph id="1" equiv="position" disp="position"/> of <ph id="2" equiv="total" disp="total"/></source>
+      </segment>
+    </unit>
+    <unit id="virtual.announce.discarded">
+      <notes>
+        <note category="location">src/app/features/repositories/virtual-members.ts:262</note>
+      </notes>
+      <segment>
+        <source>Changes discarded.</source>
+      </segment>
+    </unit>
     <unit id="roles.heading">
       <notes>
         <note category="location">src/app/features/roles/role-bindings.html:2,4</note>
@@ -17837,9 +18293,321 @@
         <source>Settings saved.</source>
       </segment>
     </unit>
+    <unit id="general.heading">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:2,4</note>
+      </notes>
+      <segment>
+        <source>General settings</source>
+      </segment>
+    </unit>
+    <unit id="general.base-url">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:12,14</note>
+      </notes>
+      <segment>
+        <source>Public base URL</source>
+      </segment>
+    </unit>
+    <unit id="general.base-url.value">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:14,15</note>
+      </notes>
+      <segment>
+        <source>Address</source>
+      </segment>
+    </unit>
+    <unit id="general.base-url.source">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:16,17</note>
+      </notes>
+      <segment>
+        <source>Source</source>
+      </segment>
+    </unit>
+    <unit id="general.banner">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:25,26</note>
+      </notes>
+      <segment>
+        <source>Banner</source>
+      </segment>
+    </unit>
+    <unit id="general.banner.intro">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:27,29</note>
+      </notes>
+      <segment>
+        <source> The banner is shown at the top of every screen for every user, including the sign-in page, within a minute after you save. </source>
+      </segment>
+    </unit>
+    <unit id="general.banner.legend">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:35,36</note>
+      </notes>
+      <segment>
+        <source>Banner settings</source>
+      </segment>
+    </unit>
+    <unit id="general.banner.enabled">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:37,38</note>
+      </notes>
+      <segment>
+        <source>Show the banner</source>
+      </segment>
+    </unit>
+    <unit id="general.banner.severity">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:41,43</note>
+      </notes>
+      <segment>
+        <source>Severity</source>
+      </segment>
+    </unit>
+    <unit id="general.banner.title">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:50,52</note>
+      </notes>
+      <segment>
+        <source>Title (optional)</source>
+      </segment>
+    </unit>
+    <unit id="general.banner.message">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:57,59</note>
+      </notes>
+      <segment>
+        <source>Banner message</source>
+      </segment>
+    </unit>
+    <unit id="general.banner.preview">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:67,69</note>
+      </notes>
+      <segment>
+        <source>Preview of the message</source>
+      </segment>
+    </unit>
+    <unit id="general.banner.save">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:82,84</note>
+      </notes>
+      <segment>
+        <source> Save banner </source>
+      </segment>
+    </unit>
+    <unit id="general.mode">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:93,94</note>
+      </notes>
+      <segment>
+        <source>Maintenance mode</source>
+      </segment>
+    </unit>
+    <unit id="general.mode.intro">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:95,98</note>
+      </notes>
+      <segment>
+        <source> In read-only mode every write is refused with 503 and the message below, for example during a storage migration or an incident. Downloads, sign-in, creating and revoking tokens, and this switch keep working. </source>
+      </segment>
+    </unit>
+    <unit id="general.mode.state-on">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:102,103</note>
+      </notes>
+      <segment>
+        <source>Read-only mode is on.</source>
+      </segment>
+    </unit>
+    <unit id="general.mode.since">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:105</note>
+      </notes>
+      <segment>
+        <source>Since</source>
+      </segment>
+    </unit>
+    <unit id="general.mode.by">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:108</note>
+      </notes>
+      <segment>
+        <source>by</source>
+      </segment>
+    </unit>
+    <unit id="general.mode.state-off">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:113,115</note>
+      </notes>
+      <segment>
+        <source>Normal mode: writes are accepted.</source>
+      </segment>
+    </unit>
+    <unit id="general.mode.legend">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:123,124</note>
+      </notes>
+      <segment>
+        <source>Maintenance mode settings</source>
+      </segment>
+    </unit>
+    <unit id="general.mode.enabled">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:125,126</note>
+      </notes>
+      <segment>
+        <source>Read-only maintenance mode</source>
+      </segment>
+    </unit>
+    <unit id="general.mode.message">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:130,131</note>
+      </notes>
+      <segment>
+        <source>Maintenance message</source>
+      </segment>
+    </unit>
+    <unit id="general.mode.cache-fill">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:138,139</note>
+      </notes>
+      <segment>
+        <source>Remote repositories keep filling their cache</source>
+      </segment>
+    </unit>
+    <unit id="general.mode.retry-after">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:142,144</note>
+      </notes>
+      <segment>
+        <source>Retry after (seconds)</source>
+      </segment>
+    </unit>
+    <unit id="general.mode.save">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:153,155</note>
+      </notes>
+      <segment>
+        <source> Save maintenance mode </source>
+      </segment>
+    </unit>
+    <unit id="general.banner.severity.info">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.ts:69</note>
+      </notes>
+      <segment>
+        <source>Notice</source>
+      </segment>
+    </unit>
+    <unit id="general.banner.severity.warning">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.ts:70</note>
+      </notes>
+      <segment>
+        <source>Warning</source>
+      </segment>
+    </unit>
+    <unit id="general.banner.severity.critical">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.ts:71</note>
+      </notes>
+      <segment>
+        <source>Critical</source>
+      </segment>
+    </unit>
+    <unit id="general.base-url.config">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.ts:105</note>
+      </notes>
+      <segment>
+        <source>Set in the configuration file (server.base_url).</source>
+      </segment>
+    </unit>
+    <unit id="general.base-url.request">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.ts:106</note>
+      </notes>
+      <segment>
+        <source>Derived from the request, because server.base_url is not set. This is for development only.</source>
+      </segment>
+    </unit>
+    <unit id="general.banner.message-hint">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.ts:109</note>
+      </notes>
+      <segment>
+        <source>Plain text. A link is written [text](https://example.com). Other links stay text. At most <ph id="0" equiv="max" disp="MESSAGE_MAX"/> characters.</source>
+      </segment>
+    </unit>
+    <unit id="general.mode.message-hint">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.ts:110</note>
+      </notes>
+      <segment>
+        <source>Shown to every user and sent with every refused write. At most <ph id="0" equiv="max" disp="MAINTENANCE_MESSAGE_MAX"/> characters.</source>
+      </segment>
+    </unit>
+    <unit id="general.banner.saved">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.ts:170</note>
+      </notes>
+      <segment>
+        <source>Banner saved.</source>
+      </segment>
+    </unit>
+    <unit id="general.mode.saved-on">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.ts:199</note>
+      </notes>
+      <segment>
+        <source>Read-only maintenance mode is on.</source>
+      </segment>
+    </unit>
+    <unit id="general.mode.saved-off">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.ts:200</note>
+      </notes>
+      <segment>
+        <source>Read-only maintenance mode is off.</source>
+      </segment>
+    </unit>
+    <unit id="general.mode.confirm-title">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.ts:211</note>
+      </notes>
+      <segment>
+        <source>Switch to read-only maintenance mode?</source>
+      </segment>
+    </unit>
+    <unit id="general.mode.confirm-1">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.ts:213</note>
+      </notes>
+      <segment>
+        <source>Every user&apos;s writes are refused with 503 until you switch the mode off again: publishing, pushing, deleting and every change of the configuration.</source>
+      </segment>
+    </unit>
+    <unit id="general.mode.confirm-2">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.ts:214</note>
+      </notes>
+      <segment>
+        <source>Downloads, sign-in, creating and revoking tokens, and this switch keep working.</source>
+      </segment>
+    </unit>
+    <unit id="general.mode.confirm">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.ts:216</note>
+      </notes>
+      <segment>
+        <source>Switch on</source>
+      </segment>
+    </unit>
     <unit id="route.settings.auth.title">
       <notes>
-        <note category="location">src/app/features/settings/settings.routes.ts:9</note>
+        <note category="location">src/app/features/settings/settings.routes.ts:8</note>
       </notes>
       <segment>
         <source>Authentication settings</source>
@@ -17847,7 +18615,7 @@
     </unit>
     <unit id="route.settings.general.title">
       <notes>
-        <note category="location">src/app/features/settings/settings.routes.ts:12</note>
+        <note category="location">src/app/features/settings/settings.routes.ts:13</note>
       </notes>
       <segment>
         <source>General settings</source>
@@ -25100,12 +25868,76 @@
         <source>Select <ph id="0" equiv="description" disp="t.description"/></source>
       </segment>
     </unit>
+    <unit id="banner.maintenance-label">
+      <notes>
+        <note category="location">src/app/shared/banner.ts:84</note>
+      </notes>
+      <segment>
+        <source>Maintenance notice</source>
+      </segment>
+    </unit>
     <unit id="banner.label">
       <notes>
-        <note category="location">src/app/shared/banner.ts:13,15</note>
+        <note category="location">src/app/shared/banner.ts:85</note>
       </notes>
       <segment>
         <source>System notice</source>
+      </segment>
+    </unit>
+    <unit id="banner.maintenance-lead">
+      <notes>
+        <note category="location">src/app/shared/banner.ts:91</note>
+      </notes>
+      <segment>
+        <source>Read-only maintenance mode.</source>
+      </segment>
+    </unit>
+    <unit id="banner.critical">
+      <notes>
+        <note category="location">src/app/shared/banner.ts:97</note>
+      </notes>
+      <segment>
+        <source>Critical.</source>
+      </segment>
+    </unit>
+    <unit id="banner.critical-title">
+      <notes>
+        <note category="location">src/app/shared/banner.ts:98</note>
+      </notes>
+      <segment>
+        <source>Critical: <ph id="0" equiv="title" disp="title"/>.</source>
+      </segment>
+    </unit>
+    <unit id="banner.warning">
+      <notes>
+        <note category="location">src/app/shared/banner.ts:101</note>
+      </notes>
+      <segment>
+        <source>Warning.</source>
+      </segment>
+    </unit>
+    <unit id="banner.warning-title">
+      <notes>
+        <note category="location">src/app/shared/banner.ts:102</note>
+      </notes>
+      <segment>
+        <source>Warning: <ph id="0" equiv="title" disp="title"/>.</source>
+      </segment>
+    </unit>
+    <unit id="banner.info">
+      <notes>
+        <note category="location">src/app/shared/banner.ts:105</note>
+      </notes>
+      <segment>
+        <source>Notice.</source>
+      </segment>
+    </unit>
+    <unit id="banner.info-title">
+      <notes>
+        <note category="location">src/app/shared/banner.ts:106</note>
+      </notes>
+      <segment>
+        <source>Notice: <ph id="0" equiv="title" disp="title"/>.</source>
       </segment>
     </unit>
     <unit id="confirm.type-name">
@@ -25387,14 +26219,6 @@
       </notes>
       <segment>
         <source> Dismiss </source>
-      </segment>
-    </unit>
-    <unit id="placeholder.text">
-      <notes>
-        <note category="location">src/app/shared/screen-placeholder.ts:13,16</note>
-      </notes>
-      <segment>
-        <source>This screen is not available yet.</source>
       </segment>
     </unit>
     <unit id="session.ended.title">

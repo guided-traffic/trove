@@ -246,7 +246,7 @@ func (a *App) startWorker(ctx context.Context, db *postgres.DB, registry *jobs.R
 	worker, err := jobs.NewWorker(jobs.WorkerOptions{
 		Role: a.id.Role, Instance: a.id.Instance, UID: a.id.UID, Main: db.Main(), Control: db.ControlPool(),
 		Registry: registry, Config: a.cfg.Jobs, Maintenance: a.cfg.Maintenance, Signals: signals, Leases: leases,
-		Ready: a.health.Ready, Watchdog: a.health, WatchdogTimeout: wd, Log: a.log, Metrics: a.tele.metrics.Registry(),
+		Ready: a.health.Ready, ReadOnly: a.readOnlyMode, Watchdog: a.health, WatchdogTimeout: wd, Log: a.log, Metrics: a.tele.metrics.Registry(),
 	})
 	if err != nil {
 		return nil, nil, err

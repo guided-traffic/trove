@@ -40,7 +40,9 @@ func JobSpec(h jobs.Handler) jobs.KindSpec {
 }
 
 // TaskSpec is the task of the fold with the given schedule.
-func TaskSpec(schedule string) jobs.TaskSpec { return jobs.TaskSpec{Schedule: schedule} }
+func TaskSpec(schedule string) jobs.TaskSpec {
+	return jobs.TaskSpec{Schedule: schedule, Mutating: true}
+}
 
 // FolderOptions configure [NewFolder].
 type FolderOptions struct {

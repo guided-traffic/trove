@@ -1,0 +1,121 @@
+.members {
+  margin-block: var(--trove-space-4);
+
+  h2 {
+    margin-block: 0 var(--trove-space-2);
+    font: var(--trove-type-title-medium);
+  }
+
+  h3 {
+    margin-block: 0 var(--trove-space-1);
+    font: var(--trove-type-title-small);
+  }
+}
+
+.lists {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--trove-space-4);
+}
+
+.list {
+  flex: 1 1 16rem;
+  min-inline-size: 14rem;
+}
+
+.listbox {
+  min-block-size: 8rem;
+  max-block-size: 20rem;
+  overflow-y: auto;
+  border: 1px solid var(--trove-border);
+  border-radius: var(--trove-radius-m);
+}
+
+.option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--trove-space-2);
+  padding: var(--trove-space-1) var(--trove-space-3);
+  cursor: pointer;
+
+  &[aria-selected='true'] {
+    background: var(--trove-btn-tertiary-bg-hover);
+    font-weight: 600;
+  }
+
+  &:focus-visible,
+  &[data-active='true'] {
+    outline: 2px solid var(--trove-focus-ring, currentColor);
+    outline-offset: -2px;
+  }
+}
+
+.position {
+  min-inline-size: 2ch;
+  color: var(--trove-text-muted);
+}
+
+.class-tag {
+  color: var(--trove-text-muted);
+  font: var(--trove-type-body-small);
+}
+
+.buttons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--trove-space-2);
+  align-self: center;
+}
+
+.field-error {
+  flex-basis: 100%;
+  color: var(--trove-status-bad);
+  font: var(--trove-type-body-small);
+}
+
+.target {
+  margin-block: var(--trove-space-3);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--trove-space-2);
+}
+
+.effective {
+  margin-block: var(--trove-space-2);
+  padding-inline-start: var(--trove-space-5);
+}
+
+.explain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--trove-space-3);
+  max-inline-size: 40rem;
+}
+
+table.decisions {
+  border-collapse: collapse;
+  margin-block: var(--trove-space-2);
+
+  th,
+  td {
+    padding: var(--trove-space-1) var(--trove-space-3);
+    text-align: start;
+    border-block-end: 1px solid var(--trove-border);
+  }
+}
+
+.visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

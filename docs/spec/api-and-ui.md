@@ -3739,6 +3739,8 @@ Acceptance criteria:
 
 - With the keyboard only, a user adds two members, reorders them and saves; the API shows that order.
 
+Built as [Q-UI-210](#q-ui-210--the-member-editor-is-a-tab-with-its-own-save-offers-what-the-api-accepts-and-explains-the-saved-order); the journey is `R-UI-022` in [18-virtual-members.spec.ts](../../web/e2e/tests/18-virtual-members.spec.ts).
+
 ### R-UI-023 · Quick repository setup
 Priority: **P1** · Covers: UI-033, REPO-008
 
@@ -3987,6 +3989,8 @@ P2 on [operations-and-observability.md](operations-and-observability.md).
 Acceptance criteria:
 
 - An enabled banner appears on every screen for every user within one minute after saving.
+
+Built as [Q-UI-211](#q-ui-211--general-settings-save-the-banner-and-the-mode-separately-ask-before-read-only-and-the-shell-reads-both-every-30-seconds); the journey is `R-UI-033` in [19-general-settings.spec.ts](../../web/e2e/tests/19-general-settings.spec.ts).
 
 ### R-UI-034 · Storage and proxy settings
 Priority: **P1** · Covers: UI-045
@@ -4547,6 +4551,8 @@ Acceptance criteria:
 
 - The CI workflow runs every tier at the stated cadence, and a deliberately broken snippet template
   fails the end-to-end client-setup test.
+
+The second half is proved by [Q-UI-212](#q-ui-212--a-broken-snippet-template-is-proved-to-fail-by-a-test-on-the-apis-renderer-beside-the-journey-that-holds-the-page-against-the-written-out-text).
 
 ### R-UI-048 · Backups
 Priority: **MVP** · Covers: OPS-032
@@ -9255,6 +9261,66 @@ On this sequence two bounded answers exist. `503 authz_stale` with `Retry-After`
 
 **Rationale:** the product already keeps its promise (no `404` for a new repository, a body read from PostgreSQL); what a loaded host changes is whether the grant index of the answering replica is confirmed within 2 s, and the specified answer to "not yet" is a retryable `503`. The repeat is limited to the one place where the spec says a replica may legitimately not be ready. F-90 can still recur as `503 unavailable` (option a3). The development agent revisits this when the replica's catch-up is found to need more than the stack's 2 s on an idle host (then the build, not the test, is the finding), when the repeat is logged for most creates of a run, or when a client of the product other than the contract helper meets the `503` on this sequence in practice.
 **Applied:** R-API-004 (acceptance criterion); `internal/api/v1/apitest/contract.go` (`readBack`, `staleBudget`), `internal/api/v1/apitest/call_test.go`; [http-api.md](../developer/http-api.md) (the tests step of the extension checklist).
+
+### Q-UI-210 · The member editor is a tab with its own save, offers what the API accepts, and explains the saved order
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-UI-022 asks for two listboxes, five buttons, an effective resolution order that flattens nested virtual repositories, a default deployment target, a live region and the member of a 422 marked. The repository screen saves one document with one button; nested virtual repositories (R-REPO-018) and an `effectiveMembers` member do not exist (a virtual member answers `invalid_member`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The members join the form of the General tab | One dirty state, one Save | One button | A reorder would be mixed with the settings of the other tabs; the conflict dialog compares whole forms |
+| (b) A tab "Members" with its own Save, patching `virtual.members` and `virtual.deployTarget` only (chosen) | The patch carries these two members with the loaded `ETag`; the form's other edits stay | The editor is one component with one purpose; the 412 and the 422 belong to it | Two save buttons on one screen |
+| (c) A separate route | `/repositories/<key>/members` | Own address | The repository detail has the stored document, the `ETag` and the permission already |
+
+**Choice:** (b). [virtual-members.ts](../../web/src/app/features/repositories/virtual-members.ts) offers the repositories of the same project and format that are local or remote, not the repository itself, not a member and not being deleted (a virtual repository never lists another project's repository, Q-REPO-212; a virtual member is refused by the API, so none is offered, which is also what excludes a cycle today). The buttons Add, Remove, Move up, Move down and Move to top work with the pointer and with Enter or Space on a focused button; Alt with the arrow up or down key and Alt with Home move the selected member inside the list; drag and drop is not built (it is optional in R-UI-022 and every drag has the buttons, WCAG 2.5.7). The live region says "npm-remote moved to position 2 of 3", "added at position", "removed". Removing the member that is the default deployment target clears the target and says so. A 422 whose pointer is `/virtual/members/<n>` is shown on that member with `aria-invalid`; any other refusal is the error notice; a 412 offers "Load the stored repository". The effective resolution order is the saved member list with the deployment target marked, because nothing is nested yet; the explanation of a path is `GET …/resolution?path=` shown as a table of members and decisions, in words for every decision the document lists.
+
+**Rationale:** the editor cannot show a flattening the API cannot produce, and a tab with its own save keeps a reorder from being swallowed by an unrelated edit. The development agent would revisit the flattening when R-REPO-018 is built and the API returns `effectiveMembers`, and the drag option if the owner asks for it.
+
+**Applied in the spec:** none (R-UI-022 is met within these bounds). Code: [virtual-members.ts](../../web/src/app/features/repositories/virtual-members.ts), [repository-detail.ts](../../web/src/app/features/repositories/repository-detail.ts) (`saveMembers`), [repositories-api.ts](../../web/src/app/api/repositories-api.ts) (`resolution`). Tests: [virtual-members.spec.ts](../../web/src/app/features/repositories/virtual-members.spec.ts), the journey [18-virtual-members.spec.ts](../../web/e2e/tests/18-virtual-members.spec.ts) (CI, kind).
+
+### Q-UI-211 · General settings save the banner and the mode separately, ask before read-only, and the shell reads both every 30 seconds
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-UI-033 shows the base URL, the banner and the maintenance mode on `/admin/settings/general`, and asks that an enabled banner appears on every screen for every user within a minute after saving. R-OPS-025 asks that the sign-in page shows it. The banner store was a stub with no API behind it.
+
+**Choice:** [general-settings.ts](../../web/src/app/features/settings/general-settings.ts) has one form and one Save for the banner (enabled, severity, optional title, message with a preview that shows only `https` links) and one for the mode (switch, message, cache-fill switch, retry hint), because they are two documents. Switching the mode on opens a confirmation that says every user's writes are refused; switching it off does not. A caller without `settings:write` sees the values in a disabled fieldset with the reason. [banner-store.ts](../../web/src/app/core/banner-store.ts) reads `GET /system/banner` for everyone and `GET /system/maintenance` for a signed-in caller when a screen with the banner starts watching and every 30 s ([BANNER_POLL_MS](../../web/src/app/core/banner-store.ts)); a save puts the answer into the store at once, so the writer sees it without waiting. [banner.ts](../../web/src/app/shared/banner.ts) is in the shell and on the sign-in page; severity is an icon and a word as well as the colours of the badge tokens, the maintenance notice comes first. The message is bound as text and as `href` of `https` links only; a link to anything else stays in the text as typed ([banner-text.ts](../../web/src/app/shared/banner-text.ts)). The sidebar gets the entry "General settings".
+
+**Rationale:** one poll of 30 s meets the minute with room for a missed one and costs a request per signed-in tab per half minute, answered from PostgreSQL by a primary-key read of two rows. The development agent would revisit the poll if the load shows or if the system notification channel (a server-sent stream) is built.
+
+**Applied in the spec:** none (R-UI-033, R-OPS-025). Code as linked. Tests: [general-settings.spec.ts](../../web/src/app/features/settings/general-settings.spec.ts), [banner-store.spec.ts](../../web/src/app/core/banner-store.spec.ts), [banner.spec.ts](../../web/src/app/shared/banner.spec.ts), the journey [19-general-settings.spec.ts](../../web/e2e/tests/19-general-settings.spec.ts) (CI, kind).
+
+### Q-UI-212 · A broken snippet template is proved to fail by a test on the API's renderer, beside the journey that holds the page against the written-out text
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the acceptance criterion of R-UI-047 asks that a deliberately broken snippet template fails the end-to-end client-setup test. The journey of Q-UI-82 compares the page with the snippets of the npm matrix written out in the journey, character for character. Nothing showed that a broken template makes that comparison fail, and a cluster run that rebuilds the image with a broken template for it is expensive and tests the comparison, not the template.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A kind run with a broken template | Build an image with a mutated template, run the journey, expect red | The literal criterion | An image build and a cluster run for a fact a string comparison decides; the run would need an inverted result in the report |
+| (b) A test on the renderer with the journey's texts and mutated templates (chosen) | `renderSnippets` renders the real npm templates for the journey's data and equals the written-out texts; six mutations (a dropped registry line, a dropped credential line, a misspelled key, a lost newline, a lost always-auth switch, an unwritten URL) each differ | The proof runs on every pull request; the comparison is the journey's, so what fails here fails there | The texts are written down a third time |
+| (c) Read the journey's texts from a shared file | One statement for the Go test and the journey | Nothing written twice | The independent statement of Q-UI-82 becomes a shared one |
+
+**Choice:** (b). The journey stays as Q-UI-82 decided; the Go test carries the same four texts.
+
+**Rationale:** the criterion exists to catch a page and a client configuration that disagree; the mutation test shows that the comparison has the power to, and the journey runs it against the real page in CI. The development agent would revisit this with option (a) if the journey ever stops comparing exact text.
+
+**Applied in the spec:** none. Code: [setup_broken_template_test.go](../../internal/api/v1/setup_broken_template_test.go). Tests: `TestR_UI_047_TheShippedSnippetTemplatesRenderTheTextsOfTheClientSetupJourney`, `TestR_UI_047_ADeliberatelyBrokenSnippetTemplateFailsTheClientSetupComparison`.
+
+### Q-API-246 · An operation that is allowed while the installation is read-only declares `x-trove-maintenance: allowed`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context and options are those of [Q-OPS-208](operations-and-observability.md#q-ops-208--the-read-only-mode-is-refused-at-four-places-by-a-default-of-refusal-and-the-banner-write-is-refused-with-the-rest); this block fixes the contract of the document.
+
+**Choice:** the member `x-trove-maintenance` of an operation has the single value `allowed`, is valid only on a method other than GET, HEAD and OPTIONS (the document refuses it elsewhere), and is read into `Operation.MaintenanceAllowed`. The `info.description` of the document states the rule. `GET /api/v1/system/banner` is `public`, `GET /api/v1/system/maintenance` is `authenticated`, both `PUT` operations need `settings:write`. `422` is documented on both `PUT`s.
+
+**Rationale:** the document is the one place that already says, per operation, who may call it (R-API-008), so what stays callable in maintenance belongs next to it. The development agent would revisit the single value if an operation needs "allowed for administrators only".
+
+**Applied in the spec:** R-API-008 (declarations), R-API-037 (the two rows of the settings index now exist). Code: [document.go](../../internal/api/v1/document.go). Tests: `TestR_OPS_024_MaintenanceDeclarationIsValidated`, `TestR_OPS_024_OperationsAllowedInMaintenanceMode`.
 
 ## What this does not cover
 

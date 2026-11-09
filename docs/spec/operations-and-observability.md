@@ -658,10 +658,7 @@ replica registry (R-OPS-003) holds the per-replica view of every replica.
 `all`), the pools of a role counting in it. `answeredBy.role` is the role of the replica that answered, in the same vocabulary
 (Q-ARCH-341).
 
-`maintenanceMode` is `normal` or the mode of R-OPS-024. Only `normal` exists in this build, because the
-read-only mode is P1: the member is part of the contract so that clients need no change when the mode
-arrives, and the screen of the system status shows no row for it while the value is `normal`
-(Q-OPS-156).
+`maintenanceMode` is `normal` or `read_only`, the mode of R-OPS-024 (Q-OPS-209); the screen of the system status shows a row for it only while the value is not `normal` (Q-OPS-156).
 
 *(example values)*
 
@@ -2513,7 +2510,7 @@ MVP requirements keep keys in it from the first release:
   restore ([backup-and-restore.md](backup-and-restore.md) R-BAK-021, R-BAK-022);
 - `restored_at` ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-018).
 
-The keys `maintenance_mode`, `banner` and `log_level_override` arrive with their P1 requirements.
+The keys `maintenance_mode` and `banner` are written by the operations of this requirement and R-OPS-025 (built for R-UI-033, [Q-OPS-207](#q-ops-207--the-banner-and-the-maintenance-mode-propagate-through-the-change-area-cache-and-no-migration-adds-an-area), [Q-OPS-208](#q-ops-208--the-read-only-mode-is-refused-at-four-places-by-a-default-of-refusal-and-the-banner-write-is-refused-with-the-rest)); `log_level_override` arrives with its P1 requirement.
 The owning page of a key defines its value.
 
 ```sql
@@ -2563,7 +2560,7 @@ In `read_only` mode:
 - **UI.** The UI shows the mode as a banner (R-OPS-025).
 
 The mode is stored under `system_state` key `maintenance_mode` and written to the change area
-`system_state` ([architecture.md](architecture.md) R-ARCH-018), so it is in force on every `web`
+`cache` (kind `system_state`, Q-OPS-207) ([architecture.md](architecture.md) R-ARCH-018), so it is in force on every `web`
 and `worker` replica within `cluster.epoch_poll_interval` plus 1 s, whether Valkey is available or
 not. Its in-process copy is a registered cache with a `SafetyTTL` of 30 s. Each change writes
 `system.maintenance_mode_changed`. `system_state` has the backup export class `data`
@@ -2591,7 +2588,7 @@ An administrator sets a message that the UI shows at the top of every screen.
 - **Message format.** The message is plain text with links in Markdown inline syntax
   `[text](https://…)`. The UI renders only text and `https` links, never HTML.
 - **Storage.** It is stored under `system_state` key `banner` and propagated through the change area
-  `system_state`, like the maintenance mode (R-OPS-024).
+  `cache` (kind `system_state`, Q-OPS-207), like the maintenance mode (R-OPS-024).
 - **Maintenance mode.** While read-only mode is on, the UI also shows the maintenance message with
   severity `warning`, whether or not a banner is set.
 
@@ -2607,6 +2604,8 @@ Audit: `system.banner_changed`.
 - A banner with message `see [status](javascript:alert(1))` is stored, but the UI renders the link
   as plain text.
 - A banner set through one replica is returned by every replica within 2 s, also with Valkey stopped.
+
+Built: `TestR_OPS_025_SystemBanner` ([test/integration/api](../../test/integration/api/system_state_test.go)); the rendering of the link is `TestR_OPS_025` in [banner-text.spec.ts](../../web/src/app/shared/banner-text.spec.ts).
 
 ### R-OPS-026 · Coordination lock diagnostics
 Priority: **P1** · Covers: ADMAPI-078, OPS-009
@@ -5594,7 +5593,7 @@ description says so; the screen renders the row only when the value is not `norm
 limitations.
 
 **Rationale:** the field is a contract the spec has fixed, and the screen should not display a state for a feature that is not there.
-The development agent would revisit this when R-OPS-024 is built: the handler then reads the mode, and the row appears with it.
+The development agent would revisit this when R-OPS-024 is built: the handler then reads the mode, and the row appears with it. Revisited by [Q-OPS-209](#q-ops-209--the-settings-answer-422-with-the-member-that-is-wrong-take-no-if-match-and-report-maintenancemode-from-the-store): the handler reads the store.
 
 **Applied in the spec:** R-OPS-004 (note on the member). Code: `internal/api/v1/handlers.go` (`SystemInfo`),
 `web/src/app/features/system/system-status.html`.
@@ -6085,6 +6084,62 @@ queries are a bounded set. The development agent would revisit the single `unnam
 Tests: `TestR_OPS_008_TheStatementMetricsCountByTheNameOfTheQuery` (unit), `TestR_OPS_008_AStatementSlowerThanTheThresholdCountsUnderItsQueryName`
 (integration).
 
+
+### Q-OPS-207 · The banner and the maintenance mode propagate through the change area `cache`, and no migration adds an area
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OPS-024 and R-OPS-025 say the two settings "are propagated through the change area `system_state`", and the area table of R-ARCH-018 lists `system_state` as an area. No such area is registered: the first migrations seed the epoch rows of `cache`, `auth`, `authz` and the later areas, and a change area needs its `cluster_epoch` row from a migration. The same table gives `cache` the purpose "System settings, and flush requests". R-UI-033 (MVP) needs the two settings now.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Register the area `system_state` | A migration seeds its epoch row; `internal/sysstate` registers the area | The names agree with the text | A migration for one row; a second area for two keys that change a few times a year |
+| (b) Use the area `cache` with the payload `{"kind":"system_state"}` (chosen) | The store notes the change in `cache`; its cache flushes on that kind and on a payload it cannot read | No migration; the table already gives `cache` this purpose; the poll of the change log carries it without Valkey | The text of two requirements names another area |
+| (c) A poll of the table | Every replica reads `system_state` every second | No area | A query per replica and second for a value that almost never changes; not the mechanism of R-ARCH-018 |
+
+**Choice:** (b). [internal/sysstate](../../internal/sysstate/store.go) keeps one cached copy of both keys (`MaxEntries` 1, `SafetyTTL` 30 s, as R-OPS-024 says), registered as the cache `system_state`; `Notify` in the writing transaction raises the epoch of `cache`, and the copy is flushed by a change of that area whose kind is `system_state`, whose kind is empty, or whose payload is unreadable, so the coarse reaction is the safe one. While the replica's poll of the change log is older than `auth.revocation_bound` the copy is not used and every question goes to PostgreSQL (the freshness gate of R-AUTH-023). The management API's reads (`GET /api/v1/system/banner` and `/maintenance`) always read PostgreSQL (R-API-052).
+
+**Rationale:** the area exists for system settings, and a seed migration would only move the name. The development agent would revisit this when a third setting of the same kind arrives that needs a payload the flush cannot read coarsely, or when the table of R-ARCH-018 is regenerated from the registry.
+
+**Applied in the spec:** R-OPS-024, R-OPS-025 (area name), the area table of [architecture.md](architecture.md) (row `system_state` replaced). Code: [internal/sysstate](../../internal/sysstate/store.go), [system_state.sql](../../internal/meta/postgres/queries/system_state.sql). Tests: `TestR_OPS_024_ReadOnlyMaintenanceMode`, `TestR_OPS_025_SystemBanner` ([test/integration/api](../../test/integration/api/system_state_test.go)).
+
+### Q-OPS-208 · The read-only mode is refused at four places, by a default of refusal, and the banner write is refused with the rest
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OPS-024 lists what is refused and what still works. The writes enter through four doors: the management API's shared step (R-API-008), the format dispatcher (R-ARCH-011) for every package protocol and the registry root, the files service (`/files/`, the content routes), and the scheduler. The list "every mutating operation except those listed" can be a list of the refused or a list of the allowed.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A list of the refused operations | Each write declares that it is refused | Nothing new is refused by accident | A new write is allowed until someone remembers; the mode fails open |
+| (b) A list of the allowed operations (chosen) | `x-trove-maintenance: allowed` on the operations the spec lists; every other write is refused | A new write is refused until it is added on purpose; the default is the safe one | A new credential operation must be declared |
+| (c) One middleware on the method | Every non-safe method is refused except a path list | One place | The evaluating POSTs of the API (policy validation, permission checks) and the Bastion probes would need a path list that duplicates the document |
+
+**Choice:** (b).
+
+- **Management API.** `x-trove-maintenance: allowed` is parsed with the other declarations ([document.go](../../internal/api/v1/document.go)) and is accepted on a method that is refused only. `maintenanceGate` in the shared step runs after the permission was decided and the owner-rights gate, so a caller who may not write is told 401 or 403 and learns nothing from the mode. The allowed operations are those the spec names (minting, rotating and revoking tokens of users, service accounts and Bastions, ending sessions, the CI token exchange, `PUT /system/maintenance`, the invalidation of a remote cache) and those that only evaluate (policy validation, permission check, exposure and mapping evaluation, upstream tests, the Bastion probes); `TestR_OPS_024_OperationsAllowedInMaintenanceMode` pins the list. `PUT /system/banner` is not listed by R-OPS-024 and is refused like every configuration write; an administrator who wants to change the banner switches the mode off first.
+- **Format dispatcher.** After the coarse check, a route of kind Upload, Delete or Admin is refused in the format's own error shape ([dispatcher.go](../../internal/api/dispatch/dispatcher.go)).
+- **Files service.** `Deploy` and `Delete` refuse after the decision and before the body is read ([files.go](../../internal/files/files.go)).
+- **Scheduler.** A task with `Mutating` (`gc`, `gc-full`, the OCI sweep, the fold of cache invalidations) and every schedule a cleanup policy supplies is not enqueued; the slot is missed, not caught up. Runs in progress finish. The tasks of the sign-in, the audit retention and the advisory sync write their own data and continue.
+- **Refusal.** `503 unavailable`, `Retry-After` from `retryAfterSeconds` (default 300), the operator's message as the detail (a default text when it is empty). A failure to read the mode refuses the write (fail closed); the scheduler treats it as "not read-only".
+- **`cacheFill: false`.** The proxy engines take a `GlobalOffline` function that is true when the configured global offline mode is on or the mode is read-only without cache filling.
+- **Not the deletion pause.** `trove admin maintenance pause-deletions` (R-HA-025, `internal/maintenance`) stops garbage collection only and is set by a restore; it is a different flag with a different key and is not shown here.
+
+**Rationale:** the safe default is the reason for the list of the allowed. The development agent would revisit the banner exception if operators ask to post a notice while the mode is on, and the list when a write path appears that none of the four doors sees ([security/api-edge.md](../security/api-edge.md), H-809).
+
+**Applied in the spec:** R-OPS-024 (the four doors, the fail-closed read), R-API-008 (the declaration), the OpenAPI document (`x-trove-maintenance`, the `info` text). Code: [system_state_api.go](../../internal/api/v1/system_state_api.go), [authorize.go](../../internal/api/v1/authorize.go), [scheduler.go](../../internal/jobs/scheduler.go), [wire_keys.go](../../internal/app/wire_keys.go). Tests: `TestR_OPS_024_ReadOnlyMaintenanceMode` (integration, three web replicas and a worker, Valkey stopped).
+
+### Q-OPS-209 · The settings answer 422 with the member that is wrong, take no `If-Match` and report `maintenanceMode` from the store
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OPS-024 and R-OPS-025 give `PUT` with a body and a `200`. R-API-012 asks every `PUT` and `PATCH` for `If-Match` unless exempt. R-OPS-004 lists `maintenanceMode` in the system information and Q-OPS-156 held it at `normal` until the mode exists.
+
+**Choice:** both documents are single rows an administrator replaces, so the two `PUT` operations are exempt from `If-Match` (the last write wins, a repeat of the stored values changes nothing, writes no event and keeps the time and the name of the switch); a body that parses and fails validation answers `422 validation_failed` with the JSON pointer of the member (`/severity`, `/title`, `/message`, `/enabled`, `/mode`, `/retryAfterSeconds`); `enabled` and `mode` are required. The input schemas carry their defaults in the description, not as `default:`, because the generated types make a member with a default required. `GET /api/v1/system/info` reads `maintenanceMode` from the store, so the row of the system status (Q-OPS-156) now appears while the mode is `read_only`.
+
+**Rationale:** a precondition on a document with no other writer protects nothing, and the audit event records what changed. The development agent would revisit the exemption if two administrators edit the banner concurrently often enough to need the conflict dialog of R-UI-042.
+
+**Applied in the spec:** Q-OPS-156 (the revisit condition has come: the handler reads the mode), R-OPS-004. Code: [system_state_api.go](../../internal/api/v1/system_state_api.go), [handlers.go](../../internal/api/v1/handlers.go).
 
 ## What this does not cover
 

@@ -23,6 +23,8 @@ type TaskInfo struct {
 	Enabled  bool
 	// ManualOnly is true for a task without a schedule.
 	ManualOnly bool
+	// Mutating is TaskSpec.Mutating.
+	Mutating bool
 	// DedupKey is the exclusive key a run carries: the task's own, or the name.
 	DedupKey string
 	// Args are the task's default job args, JSON-encoded ("{}" when none).
@@ -58,7 +60,7 @@ func (r *Registry) ResolveTasks(m config.Maintenance) ([]TaskInfo, error) {
 		if key == "" {
 			key = name
 		}
-		ti := TaskInfo{Name: name, Kind: spec.Kind, DedupKey: key, Args: args, ManualOnly: spec.ManualOnly}
+		ti := TaskInfo{Name: name, Kind: spec.Kind, DedupKey: key, Args: args, ManualOnly: spec.ManualOnly, Mutating: spec.Mutating}
 		if _, ok := m.Tasks[name]; ok && spec.ManualOnly {
 			return nil, fmt.Errorf("maintenance.tasks.%s: %s is a manual-only task and has no schedule", name, name)
 		}

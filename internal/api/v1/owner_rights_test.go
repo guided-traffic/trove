@@ -58,6 +58,8 @@ var ownerRightsReads = map[string]string{
 	"getWhoami":       "the principal and the presenting credential itself (R-AUTH-028)",
 	"getAuthzMe":      "the capabilities and memberships the decision point computes for the presenting credential, its scope included (R-AUTHZ-022)",
 	"getCurrentToken": "the presenting token itself (R-AUTH-028)",
+	"getSystemMaintenance": "the installation's maintenance mode, which holds nothing of the owner's account; every client that is refused a " +
+		"write reads it to learn why (R-OPS-024)",
 	"listTokens": "a narrowed token lists only its line, itself and the tokens derived from it or from its rotation predecessors; " +
 		"more only with tokens:read through the decision point (ListFilter.Line, Q-AUTH-199)",
 	"getToken": "a narrowed token sees only its line; any other token of its owner is a 404 unless tokens:read admits it " +

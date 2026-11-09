@@ -25,6 +25,7 @@ import (
 	"github.com/guided-traffic/trove/internal/project"
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/secrets"
+	"github.com/guided-traffic/trove/internal/sysstate"
 )
 
 // The typed results of the wiring steps (steps.go). Each is the product of one
@@ -90,6 +91,8 @@ type infra struct {
 	ring    *secrets.KeyRing
 	out     *outbound.Factory
 	rec     audit.Recorder
+	// sys is the banner and the read-only maintenance mode (R-OPS-024, R-OPS-025), the one store every enforcement point asks.
+	sys *sysstate.Store
 }
 
 // The results of the domain steps. A member is nil only in a type that a role

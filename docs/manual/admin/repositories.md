@@ -271,6 +271,12 @@ A restore does not re-apply the settings of how a repository talks to its upstre
 credential, the checksum and content-type policy of a remote, offline mode, a local repository's client checksum policy and upload
 limits, and the settings of the npm and NuGet members. See [Known limitations](limitations.md#backup-and-restore).
 
+## Members of a virtual repository
+
+A virtual repository has the tab **Members**. **Available repositories** lists the local and remote repositories of its own project and format that are not members yet; **Members in resolution order** lists the members in the order in which they are asked, and the first answer wins. Select repositories and use **Add**; select a member and use **Remove**, **Move up**, **Move down** or **Move to top** (or Alt with the arrow keys or Home). Everything works with the keyboard alone: Tab to a list, arrow keys to move, Space to select, Tab to a button, Enter to press it. A message under the lists announces each change, for example "npm-remote moved to position 2 of 3". **Default deployment target** names the local member that takes a publish; **None** makes the repository read-only. **Save members** stores the order; **Discard changes** goes back to the stored one. A refusal of the server, such as a member that would create a cycle, is shown on that member.
+
+Below, **Effective resolution order** lists the stored members, and **Explain a path** shows, for a path as a package client sends it, what each member would do: serve it, not hold it, or not be asked because of a claim or a pin rule.
+
 ## Edit a repository
 
 1. Open the repository from the list or with **Edit**.

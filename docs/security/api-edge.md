@@ -112,6 +112,17 @@ stored. Nothing detects an operation that forgets the declaration: its secret is
 for the retention period. The check for it is a review item and the E1.2 database dump scan, not code in `Idempotency.Do`. What makes
 it real: a new operation that returns a credential behind an `Idempotency-Key` without the declaration.
 
+### H-809 · A write path that does not pass the four doors of the read-only mode is not refused
+
+Live today for no known path: the management API's shared step, the format dispatcher (every package protocol and the registry root), the
+files service (`/files/` and the content routes) and the scheduler refuse writes in read-only maintenance mode
+([Q-OPS-208](../spec/operations-and-observability.md#q-ops-208--the-read-only-mode-is-refused-at-four-places-by-a-default-of-refusal-and-the-banner-write-is-refused-with-the-rest)),
+and a new management operation is refused until it declares otherwise. The mode is a second decision made outside the decision point,
+so a route registered on the router directly (as the login routes and the test resource of the integration suite are) or a new background
+writer that does not ask the store is not covered; tasks that write their own data (the audit retention, the advisory sync, the sign-in
+cleanup) continue by design. What makes it real: a new listener route, or a job kind that deletes content, added without a call to
+`sysstate.Store.RefuseWrite` or the `Mutating` mark. Nothing detects the omission; a review of every new route and task is the control.
+
 ### H-273 · A preflight is answered without authentication and is not counted by the rate limits
 
 Live today when `api.cors.allowed_origins` is not empty, for every allowed origin on every API path. The answer is constant and carries

@@ -68,7 +68,7 @@ func (a *App) registerGC(r *jobs.Registry) {
 		fallback string
 	}{{"gc", blob.GCIncremental, defaultGCSchedule}, {"gc-full", blob.GCFull, defaultGCFullSchedule}} {
 		r.RegisterKind(k.kind, jobs.KindSpec{Queue: "maintenance", DedupMode: jobs.Exclusive, Handler: handler(k.mode)})
-		spec := jobs.TaskSpec{Schedule: k.fallback, DedupKey: "gc"}
+		spec := jobs.TaskSpec{Schedule: k.fallback, DedupKey: "gc", Mutating: true}
 		if t, ok := a.cfg.Maintenance.Tasks[k.kind]; ok && t.Schedule != "" {
 			spec.Schedule, spec.Disabled = t.Schedule, !t.Enabled
 		}

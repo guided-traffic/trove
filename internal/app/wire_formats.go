@@ -142,7 +142,7 @@ func (a *App) registerFormatJobs(r *jobs.Registry) {
 		a.ociSweep.handler("OCI sweep", func(ctx context.Context, sw *ocidata.Sweeper, run *jobs.Run) error {
 			return sw.Run(ctx, run)
 		})))
-	spec := jobs.TaskSpec{Schedule: ocidata.SweepSchedule}
+	spec := jobs.TaskSpec{Schedule: ocidata.SweepSchedule, Mutating: true}
 	if t, ok := a.cfg.Maintenance.Tasks[ocidata.SweepJobKind]; ok && t.Schedule != "" {
 		spec.Schedule, spec.Disabled = t.Schedule, !t.Enabled
 	}
@@ -342,7 +342,8 @@ func (a *App) wireFormatHost(_ context.Context, in infra, fm formatsArea, repo r
 	}
 	disp, err := dispatch.New(dispatch.Options{
 		Host: host, Decider: fa.decider, Repos: repo.reader, Ceiling: ex.ceiling,
-		Label: func(ctx context.Context, name string) { observability.RequestInfoFrom(ctx).SetHandler(name) },
+		Label:  func(ctx context.Context, name string) { observability.RequestInfoFrom(ctx).SetHandler(name) },
+		Writes: in.sys,
 	})
 	if err != nil {
 		return formatHostArea{}, err

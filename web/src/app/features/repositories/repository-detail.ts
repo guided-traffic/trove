@@ -1,3 +1,4 @@
+import { MemberChange, VirtualMembers } from './virtual-members';
 import { DatePipe } from '@angular/common';
 import {
   Component,
@@ -73,6 +74,7 @@ import { UpstreamSettings, upstreamTarget } from './upstream-settings';
 @Component({
   selector: 'trove-repository-detail',
   imports: [
+    VirtualMembers,
     DatePipe,
     TabContent, TabGroup, TabPage,
     RouterLink,
@@ -273,6 +275,32 @@ export class RepositoryDetail implements HasUnsavedChanges {
     this.baseline.set(stored);
     this.form.set(this.drafts.take<RepositoryForm>() ?? stored);
     this.warnings.set([]);
+  }
+
+  protected readonly membersSaving = signal(false);
+  protected readonly membersFailure = signal<ApiError | null>(null);
+
+  /**
+   * Stores the members and the default deployment target of a virtual repository (R-UI-022) with the loaded `ETag`. The patch carries
+   * these two members only, so other unsaved edits of the form stay; a 412 or a refusal is shown by the member editor.
+   */
+  protected async saveMembers(change: MemberChange): Promise<void> {
+    if (this.membersSaving() || !this.stored()) return;
+    this.membersSaving.set(true);
+    this.membersFailure.set(null);
+    try {
+      const saved = await this.api.patch(
+        this.ref(),
+        { virtual: { members: [...change.members], deployTarget: change.deployTarget } },
+        this.etag,
+      );
+      this.takeStored(saved.value, saved.etag);
+      this.notifier.status($localize`:@@repo.members.saved:Members saved.`);
+    } catch (e) {
+      this.membersFailure.set(asApiError(e));
+    } finally {
+      this.membersSaving.set(false);
+    }
   }
 
   protected async save(): Promise<void> {
@@ -517,6 +545,7 @@ export class RepositoryDetail implements HasUnsavedChanges {
   protected readonly copyAddress = $localize`:@@repo.copy-address:Copy client address`;
   protected readonly tabGeneral = $localize`:@@repo.tab.general:General`;
   protected readonly tabAccess = $localize`:@@repo.tab.access:Access`;
+  protected readonly tabMembers = $localize`:@@repo.tab.members:Members`;
   protected readonly tabFormat = computed(
     () =>
       $localize`:@@repo.tab.format:${this.format()?.displayName ?? this.member().name}:format: settings`,

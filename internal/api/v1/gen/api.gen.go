@@ -106,6 +106,48 @@ func (e BackgroundMigrationState) Valid() bool {
 	}
 }
 
+// Defines values for BannerSeverity.
+const (
+	BannerSeverityCritical BannerSeverity = "critical"
+	BannerSeverityInfo     BannerSeverity = "info"
+	BannerSeverityWarning  BannerSeverity = "warning"
+)
+
+// Valid indicates whether the value is a known member of the BannerSeverity enum.
+func (e BannerSeverity) Valid() bool {
+	switch e {
+	case BannerSeverityCritical:
+		return true
+	case BannerSeverityInfo:
+		return true
+	case BannerSeverityWarning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BannerInputSeverity.
+const (
+	BannerInputSeverityCritical BannerInputSeverity = "critical"
+	BannerInputSeverityInfo     BannerInputSeverity = "info"
+	BannerInputSeverityWarning  BannerInputSeverity = "warning"
+)
+
+// Valid indicates whether the value is a known member of the BannerInputSeverity enum.
+func (e BannerInputSeverity) Valid() bool {
+	switch e {
+	case BannerInputSeverityCritical:
+		return true
+	case BannerInputSeverityInfo:
+		return true
+	case BannerInputSeverityWarning:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for BastionFeedEntryKind.
 const (
 	BastionFeedEntryKindContent   BastionFeedEntryKind = "content"
@@ -1453,6 +1495,42 @@ func (e LocalFormatName) Valid() bool {
 	case LocalFormatNameNuget:
 		return true
 	case LocalFormatNameOci:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MaintenanceInputMode.
+const (
+	MaintenanceInputModeNormal   MaintenanceInputMode = "normal"
+	MaintenanceInputModeReadOnly MaintenanceInputMode = "read_only"
+)
+
+// Valid indicates whether the value is a known member of the MaintenanceInputMode enum.
+func (e MaintenanceInputMode) Valid() bool {
+	switch e {
+	case MaintenanceInputModeNormal:
+		return true
+	case MaintenanceInputModeReadOnly:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MaintenanceModeMode.
+const (
+	MaintenanceModeModeNormal   MaintenanceModeMode = "normal"
+	MaintenanceModeModeReadOnly MaintenanceModeMode = "read_only"
+)
+
+// Valid indicates whether the value is a known member of the MaintenanceModeMode enum.
+func (e MaintenanceModeMode) Valid() bool {
+	switch e {
+	case MaintenanceModeModeNormal:
+		return true
+	case MaintenanceModeModeReadOnly:
 		return true
 	default:
 		return false
@@ -4432,6 +4510,34 @@ type BackupSummary struct {
 	Target *string `json:"target"`
 }
 
+// Banner defines model for Banner.
+type Banner struct {
+	Enabled bool `json:"enabled"`
+
+	// Message Plain text; links in Markdown inline syntax `[text](https://...)`.
+	Message  *string         `json:"message,omitempty"`
+	Severity *BannerSeverity `json:"severity,omitempty"`
+	Title    *string         `json:"title,omitempty"`
+}
+
+// BannerSeverity defines model for Banner.Severity.
+type BannerSeverity string
+
+// BannerInput defines model for BannerInput.
+type BannerInput struct {
+	Enabled bool `json:"enabled"`
+
+	// Message Required while the banner is enabled.
+	Message *string `json:"message,omitempty"`
+
+	// Severity Defaults to `info`.
+	Severity *BannerInputSeverity `json:"severity,omitempty"`
+	Title    *string              `json:"title,omitempty"`
+}
+
+// BannerInputSeverity Defaults to `info`.
+type BannerInputSeverity string
+
 // Bastion A Bastion registration, a principal of the kind `bastion` (R-BAS-004).
 type Bastion struct {
 	// Contacts The last contact of each replica, the most recent first (R-BAS-010).
@@ -6179,6 +6285,42 @@ type LoginProvider struct {
 	StartUrl string `json:"startUrl"`
 }
 
+// MaintenanceInput defines model for MaintenanceInput.
+type MaintenanceInput struct {
+	// CacheFill Defaults to `true`.
+	CacheFill *bool `json:"cacheFill,omitempty"`
+
+	// Message Shown to the users and sent with every refused write.
+	Message *string              `json:"message,omitempty"`
+	Mode    MaintenanceInputMode `json:"mode"`
+
+	// RetryAfterSeconds Defaults to 300.
+	RetryAfterSeconds *int `json:"retryAfterSeconds,omitempty"`
+}
+
+// MaintenanceInputMode defines model for MaintenanceInput.Mode.
+type MaintenanceInputMode string
+
+// MaintenanceMode defines model for MaintenanceMode.
+type MaintenanceMode struct {
+	// By The name of the administrator who switched it on; present while the mode is `read_only`.
+	By *string `json:"by,omitempty"`
+
+	// CacheFill Whether remote repositories still fetch from their upstream while the mode is `read_only`.
+	CacheFill bool                `json:"cacheFill"`
+	Message   *string             `json:"message,omitempty"`
+	Mode      MaintenanceModeMode `json:"mode"`
+
+	// RetryAfterSeconds The `Retry-After` of a refused write; present while the mode is `read_only`.
+	RetryAfterSeconds *int `json:"retryAfterSeconds,omitempty"`
+
+	// Since When the mode was switched on; present while the mode is `read_only`.
+	Since *time.Time `json:"since,omitempty"`
+}
+
+// MaintenanceModeMode defines model for MaintenanceMode.Mode.
+type MaintenanceModeMode string
+
 // ManualContents defines model for ManualContents.
 type ManualContents struct {
 	Sections []ManualSection `json:"sections"`
@@ -7881,7 +8023,7 @@ type SystemInfo struct {
 	// InstallationId UUID generated by the first migration; `null` until this replica has read `system_state`.
 	InstallationId *string `json:"installationId"`
 
-	// MaintenanceMode Open enum; always `normal` until the read-only maintenance mode (R-OPS-024) exists. The system status screen shows no row for `normal` (Q-OPS-156).
+	// MaintenanceMode The read-only maintenance mode (R-OPS-024), `normal` or `read_only`; open enum. The system status screen shows a row only while it is not `normal` (Q-OPS-156).
 	MaintenanceMode string           `json:"maintenanceMode"`
 	ObjectStore     ObjectStoreFacts `json:"objectStore"`
 	Replicas        ReplicaSummary   `json:"replicas"`
@@ -10330,6 +10472,12 @@ type CreateServiceAccountTokenJSONRequestBody = CreateTokenRequest
 // UpdateAuthSettingsApplicationMergePatchPlusJSONRequestBody defines body for UpdateAuthSettings for application/merge-patch+json ContentType.
 type UpdateAuthSettingsApplicationMergePatchPlusJSONRequestBody = AuthSettingsPatch
 
+// PutSystemBannerJSONRequestBody defines body for PutSystemBanner for application/json ContentType.
+type PutSystemBannerJSONRequestBody = BannerInput
+
+// PutSystemMaintenanceJSONRequestBody defines body for PutSystemMaintenance for application/json ContentType.
+type PutSystemMaintenanceJSONRequestBody = MaintenanceInput
+
 // RunTaskJSONRequestBody defines body for RunTask for application/json ContentType.
 type RunTaskJSONRequestBody = TaskRunRequest
 
@@ -10978,6 +11126,12 @@ type ServerInterface interface {
 	// GetBackupRun Read a backup run
 	// (GET /api/v1/system/backups/{runId})
 	GetBackupRun(w http.ResponseWriter, r *http.Request, runId BackupRunId)
+	// GetSystemBanner The system banner
+	// (GET /api/v1/system/banner)
+	GetSystemBanner(w http.ResponseWriter, r *http.Request)
+	// PutSystemBanner Set the system banner
+	// (PUT /api/v1/system/banner)
+	PutSystemBanner(w http.ResponseWriter, r *http.Request)
 	// GetEncryptionStatus Status of the stored-secret key ring
 	// (GET /api/v1/system/encryption)
 	GetEncryptionStatus(w http.ResponseWriter, r *http.Request)
@@ -10993,6 +11147,12 @@ type ServerInterface interface {
 	// CancelJob Cancel a job
 	// (POST /api/v1/system/jobs/{id}/cancel)
 	CancelJob(w http.ResponseWriter, r *http.Request, id JobId)
+	// GetSystemMaintenance The maintenance mode
+	// (GET /api/v1/system/maintenance)
+	GetSystemMaintenance(w http.ResponseWriter, r *http.Request)
+	// PutSystemMaintenance Switch the maintenance mode
+	// (PUT /api/v1/system/maintenance)
+	PutSystemMaintenance(w http.ResponseWriter, r *http.Request)
 	// GetMigrationStatus The schema migrations and the background data migrations
 	// (GET /api/v1/system/migrations)
 	GetMigrationStatus(w http.ResponseWriter, r *http.Request)
@@ -19349,6 +19509,34 @@ func (siw *ServerInterfaceWrapper) GetBackupRun(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// GetSystemBanner operation middleware
+func (siw *ServerInterfaceWrapper) GetSystemBanner(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSystemBanner(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutSystemBanner operation middleware
+func (siw *ServerInterfaceWrapper) PutSystemBanner(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutSystemBanner(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetEncryptionStatus operation middleware
 func (siw *ServerInterfaceWrapper) GetEncryptionStatus(w http.ResponseWriter, r *http.Request) {
 
@@ -19505,6 +19693,34 @@ func (siw *ServerInterfaceWrapper) CancelJob(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CancelJob(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSystemMaintenance operation middleware
+func (siw *ServerInterfaceWrapper) GetSystemMaintenance(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSystemMaintenance(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutSystemMaintenance operation middleware
+func (siw *ServerInterfaceWrapper) PutSystemMaintenance(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutSystemMaintenance(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -21774,6 +21990,10 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/ping", wrapper.GetPing)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/version", wrapper.GetVersion)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/banner", wrapper.GetSystemBanner)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/system/banner", wrapper.PutSystemBanner)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/maintenance", wrapper.GetSystemMaintenance)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/system/maintenance", wrapper.PutSystemMaintenance)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/info", wrapper.GetSystemInfo)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/replicas", wrapper.ListReplicas)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/migrations", wrapper.GetMigrationStatus)

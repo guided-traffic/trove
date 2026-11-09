@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 
@@ -52,6 +53,11 @@ type Operation struct {
 	// operations, and on the operations that declare this (GET and DELETE /tokens/current, R-CI-013,
 	// R-CI-017). Every other operation refuses it with 403 ci_token_restricted (Q-CI-18).
 	CIAdmitted bool
+	// MaintenanceAllowed is x-trove-maintenance: allowed. While the installation is in read-only maintenance mode (R-OPS-024) the
+	// shared step refuses every operation with a method other than GET, HEAD and OPTIONS with 503 unavailable, unless it declares
+	// this: the operations that keep the installation usable (credentials, sessions, the CI exchange, cache invalidation, the
+	// switch itself) and the ones that only evaluate.
+	MaintenanceAllowed bool
 	// BastionInterface is x-trove-bastion-interface: the interface version the operation belongs to
 	// (R-BAS-008, R-BAS-009); 0 for every other operation. It is set exactly on the operations whose
 	// x-trove-permission is {bastion: true}, and equals iface.InterfaceVersion.
@@ -134,13 +140,18 @@ func LoadDocument(raw []byte) (*Document, error) {
 			if err != nil {
 				problems = append(problems, fmt.Errorf("%s (%s): x-trove-ci: %w", pattern, id, err))
 			}
+			allowed, err := parseMaintenanceAllowed(op, m)
+			if err != nil {
+				problems = append(problems, fmt.Errorf("%s (%s): x-trove-maintenance: %w", pattern, id, err))
+			}
 			bastionVersion, err := parseBastionInterface(op, req)
 			if err != nil {
 				problems = append(problems, fmt.Errorf("%s (%s): x-trove-bastion-interface: %w", pattern, id, err))
 			}
 			o := Operation{
 				ID: id, Pattern: pattern, Permission: perm, Requirement: req, RecentAuth: recent, OwnerRights: ownerRights,
-				IfMatchRequired: op["x-trove-if-match"] == "required", CIAdmitted: admitted, BastionInterface: bastionVersion,
+				IfMatchRequired: op["x-trove-if-match"] == "required", CIAdmitted: admitted, MaintenanceAllowed: allowed,
+				BastionInterface: bastionVersion,
 			}
 			if isFilesPattern(pattern) {
 				d.files[pattern] = o
@@ -190,6 +201,31 @@ func parseOwnerRights(op map[string]any, req Requirement, pattern string) (bool,
 		return false, fmt.Errorf("only an operation declared {authenticated: true} needs it; the decision point applies the token scope to %s", req)
 	}
 	return true, nil
+}
+
+// parseMaintenanceAllowed reads x-trove-maintenance of an operation: absent is false, and the only other accepted value is "allowed".
+// It is meaningless on a method that is never refused in maintenance mode, which the document refuses.
+func parseMaintenanceAllowed(op map[string]any, method string) (bool, error) {
+	raw, has := op["x-trove-maintenance"]
+	if !has {
+		return false, nil
+	}
+	if v, ok := raw.(string); !ok || v != "allowed" {
+		return false, fmt.Errorf("must be allowed (leave it out on an operation that is refused in maintenance mode), not %v", raw)
+	}
+	if !refusedInMaintenance(strings.ToUpper(method)) {
+		return false, fmt.Errorf("%s is never refused in maintenance mode", strings.ToUpper(method))
+	}
+	return true, nil
+}
+
+// refusedInMaintenance reports whether a request with this method is a write for the read-only maintenance mode (R-OPS-024).
+func refusedInMaintenance(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return false
+	}
+	return true
 }
 
 // parseCIAdmitted reads x-trove-ci of an operation: absent is false, and the only other accepted

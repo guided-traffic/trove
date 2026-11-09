@@ -18,6 +18,8 @@ member that is virtual answers `invalid_member`) and `effectiveMembers`. The eng
 catalog and the fakes of [virtualtest](../../internal/virtual/virtualtest/); npm's virtual class is tested in
 [test/integration/npm](../../test/integration/npm/).
 
+The member editor of the UI (R-UI-022, a tab of the repository screen) patches `virtual.members` and `virtual.deployTarget` with the loaded `ETag` and explains a path through `GET …/resolution`; see [web-ui.md](web-ui.md#the-member-editor-the-general-settings-and-the-banner).
+
 ## Files
 
 | File | Responsibility |

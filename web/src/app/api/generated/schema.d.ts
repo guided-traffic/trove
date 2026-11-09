@@ -49,6 +49,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/system/banner": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The system banner
+         * @description The banner the UI shows at the top of every screen (R-OPS-025), or `{"enabled": false}` while none is set. Served
+         *     to anonymous callers, because the sign-in page shows it; it holds no secret. The message is plain text with links
+         *     in Markdown inline syntax `[text](https://...)`: a client renders text and `https` links only, never HTML, and shows any
+         *     other link as plain text. Read from PostgreSQL, so an answer shows a change another replica committed (R-API-052).
+         */
+        get: operations["getSystemBanner"];
+        /**
+         * Set the system banner
+         * @description Replaces the banner (R-OPS-025). An enabled banner needs a message of at most 2000 characters; the title has at most
+         *     120; the severity defaults to `info`. A disabled banner keeps its text. Writes `system.banner_changed`, and only
+         *     when the banner changed. Every replica returns the new banner within `cluster.epoch_poll_interval` plus 1 s, also
+         *     while Valkey is stopped. Refused in read-only maintenance mode like every other write.
+         */
+        put: operations["putSystemBanner"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/maintenance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The maintenance mode
+         * @description The read-only maintenance mode (R-OPS-024): `normal`, or `read_only` with the operator's message, the time it was
+         *     switched on and who did it. Any authenticated caller reads it, because a client that is refused a write wants to
+         *     know why. Read from PostgreSQL (R-API-052). This is not the deletion pause of `trove admin maintenance
+         *     pause-deletions` (R-HA-025), which stops garbage collection only.
+         */
+        get: operations["getSystemMaintenance"];
+        /**
+         * Switch the maintenance mode
+         * @description Sets the mode (R-OPS-024). In `read_only` mode every write of content and configuration answers `503 unavailable`
+         *     with `Retry-After` (`retryAfterSeconds`, default 300) and the message: publishes, pushes, deletes and
+         *     every mutating operation of this API that does not declare `x-trove-maintenance: allowed`. Downloads, metadata reads,
+         *     sign-in, credential creation and revocation, and this operation continue. With `cacheFill: false` remote repositories
+         *     serve only what they already cache. The scheduler enqueues no mutating task while the mode is on. Setting the mode that is
+         *     stored changes nothing and writes no event; otherwise it writes `system.maintenance_mode_changed`. All replicas enforce
+         *     the change within `cluster.epoch_poll_interval` plus 1 s, also while Valkey is stopped.
+         */
+        put: operations["putSystemMaintenance"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/system/info": {
         parameters: {
             query?: never;
@@ -4359,8 +4422,10 @@ export interface paths {
         /**
          * Replace the suites and components a package file is listed in
          * @description Replaces the coordinates of a stored package file (R-DEB-009): an added coordinate needs `deploy`, a removed one `delete`,
-         *     both with ownership of the package. An empty list answers `422 invalid_value` (a file without coordinates is deleted
-         *     instead); more than 64 suites, 32 components or 32 coordinates `422 out_of_range`. A removed coordinate is journaled
+         *     both with ownership of the package. An empty list answers `422 validation_failed` with the field error `invalid_value` (a
+         *     file without coordinates is deleted instead); more than 64 suites, 32 components or 32 coordinates answer `422
+         *     validation_failed` with the field error `out_of_range`. A file the journal replay withheld answers `409 deb_withheld`, and
+         *     a file whose coordinates changed while the request was decided `409 conflict`. A removed coordinate is journaled
          *     (`deb.coordinates.removed`) and a restore removes it again. The answer is the upload answer of R-DEB-006.
          */
         put: operations["putDebCoordinates"];
@@ -4514,7 +4579,7 @@ export interface components {
              */
             baseUrlSource: "config" | "request";
             /**
-             * @description Open enum; always `normal` until the read-only maintenance mode (R-OPS-024) exists. The system status screen shows no row for `normal` (Q-OPS-156).
+             * @description The read-only maintenance mode (R-OPS-024), `normal` or `read_only`; open enum. The system status screen shows a row only while it is not `normal` (Q-OPS-156).
              * @example normal
              */
             maintenanceMode: string;
@@ -4539,6 +4604,51 @@ export interface components {
             };
             /** @description From M4b (R-VULN-024): the advisory data's state; `null` where the scanning is not wired on this replica. */
             vulnerabilityData?: components["schemas"]["VulnerabilityDataFacts"] | null;
+        };
+        Banner: {
+            enabled: boolean;
+            /** @enum {string} */
+            severity?: "info" | "warning" | "critical";
+            title?: string;
+            /** @description Plain text; links in Markdown inline syntax `[text](https://...)`. */
+            message?: string;
+        };
+        BannerInput: {
+            enabled: boolean;
+            /**
+             * @description Defaults to `info`.
+             * @enum {string}
+             */
+            severity?: "info" | "warning" | "critical";
+            title?: string;
+            /** @description Required while the banner is enabled. */
+            message?: string;
+        };
+        MaintenanceMode: {
+            /** @enum {string} */
+            mode: "normal" | "read_only";
+            /** @description Whether remote repositories still fetch from their upstream while the mode is `read_only`. */
+            cacheFill: boolean;
+            message?: string;
+            /** @description The `Retry-After` of a refused write; present while the mode is `read_only`. */
+            retryAfterSeconds?: number;
+            /**
+             * Format: date-time
+             * @description When the mode was switched on; present while the mode is `read_only`.
+             */
+            since?: string;
+            /** @description The name of the administrator who switched it on; present while the mode is `read_only`. */
+            by?: string;
+        };
+        MaintenanceInput: {
+            /** @enum {string} */
+            mode: "normal" | "read_only";
+            /** @description Defaults to `true`. */
+            cacheFill?: boolean;
+            /** @description Shown to the users and sent with every refused write. */
+            message?: string;
+            /** @description Defaults to 300. */
+            retryAfterSeconds?: number;
         };
         ReplicaSummary: {
             live: number;
@@ -9191,6 +9301,137 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
+        };
+    };
+    getSystemBanner: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The banner. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "enabled": true,
+                     *       "severity": "warning",
+                     *       "title": "Planned downtime",
+                     *       "message": "The registry is read-only on Saturday from 22:00 UTC, see [status](https://status.example.com)."
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Banner"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    putSystemBanner: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BannerInput"];
+            };
+        };
+        responses: {
+            /** @description The banner after the change. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Banner"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getSystemMaintenance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The mode. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "mode": "read_only",
+                     *       "cacheFill": true,
+                     *       "message": "Storage migration until 14:00 UTC",
+                     *       "retryAfterSeconds": 300,
+                     *       "since": "2026-11-09T12:00:00Z",
+                     *       "by": "alice"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["MaintenanceMode"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    putSystemMaintenance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MaintenanceInput"];
+            };
+        };
+        responses: {
+            /** @description The mode after the change. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaintenanceMode"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
         };
     };
     getSystemInfo: {
@@ -18562,6 +18803,7 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
@@ -18599,6 +18841,7 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             501: components["responses"]["DebNotImplemented"];

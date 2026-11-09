@@ -56,7 +56,7 @@ func (a *App) wireProxyEngine(ctx context.Context, in infra, px proxyArea, inv i
 		Changes: in.changes, Clients: px.clients, Invalid: inv.set, Caches: in.caches,
 		Replicas: fill.Get, Audit: in.rec, Config: a.cfg.Proxy, Enforce: vz.enforcer, SafetyTTL: a.cfg.Cache.SnapshotSafetyTTL,
 		Metrics: a.tele.metrics.Registry(), Log: a.log.With("component", "proxy"),
-		Detach: httpserver.WithoutTicket,
+		Detach: httpserver.WithoutTicket, GlobalOffline: a.offlineForMaintenance(in.sys),
 	}
 	if in.vk != nil { // a nil *cluster.Valkey in the interface would not be nil
 		opts.Lookups = in.vk

@@ -1,0 +1,191 @@
+<section class="members" aria-labelledby="vm-heading">
+  <h2 id="vm-heading" i18n="@@virtual.heading">Members</h2>
+  <p class="hint" i18n="@@virtual.intro">
+    A virtual repository asks its members in this order and serves the first answer. It offers the local and remote repositories of
+    its own project and format.
+  </p>
+
+  @if (generalFailure(); as f) {
+    <trove-error-notice [error]="f" />
+    @if (stale()) {
+      <p>
+        <button class="btn btn-default" type="button" (click)="reload.emit()" i18n="@@virtual.reload">Load the stored repository</button>
+      </p>
+    }
+  }
+
+  <form (submit)="submit($event)" novalidate>
+    <div class="lists">
+      <div class="list">
+        <h3 id="vm-available-label" i18n="@@virtual.available">Available repositories</h3>
+        <div
+          ngListbox
+          class="listbox"
+          [multi]="true"
+          selectionMode="explicit"
+          aria-labelledby="vm-available-label"
+          [value]="pickedAvailable()"
+          (valueChange)="pickedAvailable.set($event)"
+          data-testid="vm-available"
+        >
+          @for (s of available(); track s.key) {
+            <div ngOption class="option" [value]="s.key" [label]="s.key">
+              <span translate="no">{{ s.key }}</span>&ngsp;
+              <span class="class-tag">{{ classText(s.key) }}</span>
+            </div>
+          }
+        </div>
+        @if (available().length === 0) {
+          <p class="hint" i18n="@@virtual.available-empty">No other local or remote repository of this project and format is left to add.</p>
+        }
+      </div>
+
+      <div class="buttons" role="group" aria-labelledby="vm-actions-label">
+        <h3 id="vm-actions-label" class="visually-hidden" i18n="@@virtual.actions">Change the members</h3>
+        <button class="btn btn-default" type="button" [disabled]="!canWrite() || pickedAvailable().length === 0" (click)="add()" i18n="@@virtual.add">Add</button>
+        <button class="btn btn-default" type="button" [disabled]="!canWrite() || selectedIndex() < 0" (click)="remove()" i18n="@@virtual.remove">Remove</button>
+        <button class="btn btn-default" type="button" [disabled]="!canMoveUp()" (click)="moveUp()" i18n="@@virtual.move-up">Move up</button>
+        <button class="btn btn-default" type="button" [disabled]="!canMoveDown()" (click)="moveDown()" i18n="@@virtual.move-down">Move down</button>
+        <button class="btn btn-default" type="button" [disabled]="!canMoveUp()" (click)="moveToTop()" i18n="@@virtual.move-top">Move to top</button>
+      </div>
+
+      <div class="list">
+        <h3 id="vm-members-label" i18n="@@virtual.selected">Members in resolution order</h3>
+        <div
+          ngListbox
+          class="listbox"
+          selectionMode="explicit"
+          aria-labelledby="vm-members-label"
+          aria-describedby="vm-keys-hint"
+          [value]="pickedMember()"
+          (valueChange)="pickedMember.set($event)"
+          data-testid="vm-members"
+        >
+          @for (key of members(); track key; let i = $index) {
+            <div ngOption class="option" [value]="key" [label]="key" [attr.aria-invalid]="memberError(i) ? 'true' : null">
+              <span class="position">{{ i + 1 }}.</span>&ngsp;
+              <span translate="no">{{ key }}</span>&ngsp;
+              <span class="class-tag">{{ classText(key) }}</span>
+              @if (memberError(i); as message) {
+                <span class="field-error" role="alert" data-testid="vm-member-error">{{ message }}</span>
+              }
+            </div>
+          }
+        </div>
+        @if (members().length === 0) {
+          <p class="hint" i18n="@@virtual.selected-empty">The repository has no member. Every request for a package answers not found.</p>
+        }
+        <p id="vm-keys-hint" class="hint" i18n="@@virtual.keys-hint">
+          Alt with the arrow up or down key moves the selected member, Alt with Home moves it to the top.
+        </p>
+      </div>
+    </div>
+
+    <p class="visually-hidden" role="status" aria-live="polite" data-testid="vm-live">{{ announcement() }}</p>
+
+    <div class="target">
+      <trove-select-field
+        i18n-label="@@virtual.target"
+        label="Default deployment target"
+        name="deployTarget"
+        [options]="targetOptions()"
+        [value]="deployTarget() ?? ''"
+        (valueChange)="setTarget($event)"
+        [error]="targetError()"
+      />
+      <p class="hint" i18n="@@virtual.target-hint">
+        Publishing to the virtual repository stores the package in this local member. Without one the repository is read-only.
+      </p>
+    </div>
+
+    @if (canWrite()) {
+      <div class="actions">
+        <button class="btn btn-confirm" type="submit" [disabled]="!dirty() || saving()" i18n="@@virtual.save">Save members</button>
+        <button class="btn btn-tertiary" type="button" [disabled]="!dirty() || saving()" (click)="discard()" i18n="@@virtual.discard">
+          Discard changes
+        </button>
+        @if (dirty()) {
+          <span class="hint" role="status" i18n="@@virtual.unsaved">You have unsaved changes to the members.</span>
+        }
+      </div>
+    }
+  </form>
+</section>
+
+<section class="members" aria-labelledby="vm-effective-heading">
+  <h2 id="vm-effective-heading" i18n="@@virtual.effective">Effective resolution order</h2>
+  <p class="hint" i18n="@@virtual.effective-hint">
+    The stored members in the order in which they are asked. Virtual repositories cannot be members yet, so nothing is flattened.
+  </p>
+  @if (effective().length === 0) {
+    <p class="hint" i18n="@@virtual.effective-empty">The stored repository has no member.</p>
+  } @else {
+    <ol class="effective" data-testid="vm-effective">
+      @for (m of effective(); track m.key) {
+        <li>
+          <span translate="no">{{ m.key }}</span>&ngsp;
+          <span class="class-tag">{{ classText(m.key) }}</span>&ngsp;
+          @if (m.target) {
+            <span class="class-tag" i18n="@@virtual.effective-target">Default deployment target</span>
+          }
+        </li>
+      }
+    </ol>
+  }
+
+  <form class="explain" (submit)="explain($event)" novalidate>
+    <trove-text-field
+      i18n-label="@@virtual.explain-path"
+      label="Explain a path"
+      name="samplePath"
+      [(value)]="samplePath"
+      i18n-hint="@@virtual.explain-hint"
+      hint="The path as a package client sends it, for example lodash or @acme/util/-/util-1.4.0.tgz."
+    />
+    <button class="btn btn-default" type="submit" [disabled]="explaining() || samplePath().trim() === ''" i18n="@@virtual.explain">
+      Explain
+    </button>
+  </form>
+  @if (explainError(); as e) {
+    <trove-error-notice [error]="e" />
+  }
+  @if (explanation(); as x) {
+    <div data-testid="vm-explanation">
+      @if (x.decidedBy?.claim || x.decidedBy?.pin) {
+        <p>
+          @if (x.decidedBy.claim; as claim) {
+            <ng-container i18n="@@virtual.decided-claim">The name matches the claim</ng-container>&ngsp;<code translate="no">{{ claim }}</code>.
+          } @else if (x.decidedBy.pin; as pin) {
+            <ng-container i18n="@@virtual.decided-pin">The name matches the pin rule</ng-container>&ngsp;<code translate="no">{{ pin }}</code>.
+          }
+        </p>
+      }
+      <table class="decisions">
+        <caption class="visually-hidden" i18n="@@virtual.explanation-caption">How each member is asked for the path</caption>
+        <thead>
+          <tr>
+            <th scope="col" i18n="@@virtual.col-member">Member</th>
+            <th scope="col" i18n="@@virtual.col-decision">Decision</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (m of x.members; track m.key) {
+            <tr>
+              <th scope="row" translate="no">{{ m.key }}</th>
+              <td>{{ decision(m.decision) }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+      @if (x.unreadableMembers > 0) {
+        <p class="hint">
+          @if (x.unreadableMembers === 1) {
+            <ng-container i18n="@@virtual.unreadable-one">One member is not shown because you may not read it.</ng-container>
+          } @else {
+            <ng-container i18n="@@virtual.unreadable-many">{{ x.unreadableMembers }} members are not shown because you may not read them.</ng-container>
+          }
+        </p>
+      }
+    </div>
+  }
+</section>

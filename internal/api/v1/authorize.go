@@ -251,6 +251,9 @@ func (s *Server) authorize(pattern string, next http.Handler) http.Handler {
 		if err == nil {
 			err = ownerRightsGate(r, op)
 		}
+		if err == nil {
+			err = s.maintenanceGate(r, op)
+		}
 		if err != nil {
 			httpserver.Problem(w, r, err)
 			return

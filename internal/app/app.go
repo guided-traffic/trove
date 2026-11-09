@@ -550,6 +550,8 @@ func (a *App) startClient() error {
 			Backup: a.backupAPI(),
 			// The signing keys of the Debian repositories (wire_formats.go).
 			DebKeys: a.debKeyStore(), Reindexers: a.reindexers(),
+			// The banner and the read-only maintenance mode (R-OPS-024, R-OPS-025).
+			SystemState: part[infra](a.parts).sys,
 		})
 		// The router drops the routes of a family the endpoint's surface does not hold.
 		api.Register(router)

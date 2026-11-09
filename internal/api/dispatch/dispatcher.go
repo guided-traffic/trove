@@ -57,6 +57,16 @@ type Options struct {
 	// the dispatcher calls it with the route name (R-ARCH-005 step 3). Nil does not
 	// label.
 	Label func(ctx context.Context, name string)
+	// Writes refuses the routes that change packages (kinds Upload, Delete and Admin) while the installation is in read-only
+	// maintenance mode (R-OPS-024); nil allows them. The refusal is rendered in the format's own error shape, after the
+	// coarse check, so a caller who may not write is told 403 and not the mode.
+	Writes WriteGate
+}
+
+// WriteGate is the question the read-only maintenance mode puts to a write: nil while writes are allowed, the 503 otherwise.
+// *sysstate.Store implements it.
+type WriteGate interface {
+	RefuseWrite(ctx context.Context) error
 }
 
 // Dispatcher serves the format prefixes.
@@ -267,6 +277,12 @@ func (d *Dispatcher) serveRoute(w http.ResponseWriter, r *http.Request, f format
 	if !dec.Allowed() {
 		fail(dec.Err())
 		return
+	}
+	if d.o.Writes != nil && route.Kind.RequestKind() == formats.KindWrite {
+		if err := d.o.Writes.RefuseWrite(ctx); err != nil {
+			fail(err)
+			return
+		}
 	}
 	repo, err := d.resolve(ctx, f, key)
 	if err != nil {

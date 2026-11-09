@@ -22,6 +22,7 @@ import {
   RepositoriesApi,
   RepositoryConsumerView,
   RepositoryFilters,
+  RepositoryResolution,
   RepositorySummary,
   UpstreamTestBody,
   UpstreamTestResult,
@@ -367,7 +368,7 @@ export class FakeRepositoriesApi extends RepositoriesApi {
         description: r.description ?? '',
         addresses: [`https://trove.example.net/files/${refOf(r)}/`],
         disabled: r.disabled ?? false,
-        lifecycle: 'active' as const,
+        lifecycle: (r.lifecycle ?? 'active') as 'active' | 'deleting',
         lastActivityAt: r.lastActivityAt ?? null,
         project: r.project ?? '',
       }));
@@ -502,6 +503,30 @@ export class FakeRepositoriesApi extends RepositoriesApi {
     this.mirrorRuns.push({ key, full, idempotencyKey });
     if (this.runMirrorError) throw this.runMirrorError;
     return this.runMirrorResult;
+  }
+
+  /** The answers of `GET …/resolution`; `resolutionFor` decides per repository and path, the default lists every member as a hit. */
+  resolutionCalls: { ref: string; path: string }[] = [];
+  resolutionError: ApiError | null = null;
+  resolutionFor: ((ref: string, path: string, members: readonly string[]) => RepositoryResolution) | null = null;
+
+  override async resolution(ref: string, path: string): Promise<RepositoryResolution> {
+    this.resolutionCalls.push({ ref, path });
+    if (this.resolutionError) throw this.resolutionError;
+    const repo = this.repositories.find((r) => refOf(r) === ref);
+    if (!repo) throw notFound();
+    const members = (repo.virtual?.members ?? []) as readonly string[];
+    if (this.resolutionFor) return this.resolutionFor(ref, path, members);
+    return {
+      repository: ref,
+      descriptor: { path, kind: 'artifact' },
+      members: members.map((key) => ({
+        key,
+        class: this.repositories.find((r) => r.project === repo.project && r.key === key)?.class === 'remote' ? 'remote' : 'local',
+        decision: 'hit' as const,
+      })),
+      unreadableMembers: 0,
+    };
   }
 
   override async testUpstream(project: string, body: UpstreamTestBody): Promise<UpstreamTestResult> {

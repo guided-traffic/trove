@@ -36,6 +36,13 @@ info:
     role is read in any project the caller is a member of, and the handler narrows. The action form
     `action: <action>, repository: path.repoKey, project: path.projectKey[, path: …]` asks for a repository action on
     the coordinate the request names, which the role of a project member grants (Q-AUTHZ-208).
+
+    While the installation is in read-only maintenance mode (`PUT /api/v1/system/maintenance`, R-OPS-024) every operation
+    with a method other than GET, HEAD and OPTIONS answers `503 unavailable` with `Retry-After` and the operator's message
+    after the permission was decided, unless it declares `x-trove-maintenance: allowed`. The operations that declare it
+    keep the installation usable: minting, rotating and revoking credentials, ending sessions, the CI token exchange,
+    the invalidation of a remote cache, this switch itself, and the operations that only evaluate (policy validation,
+    permission checks, exposure and mapping evaluation, upstream tests, the Bastion probes).
   license:
     name: Apache-2.0
     identifier: Apache-2.0
@@ -248,6 +255,148 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/Internal"
+  /api/v1/system/banner:
+    get:
+      operationId: getSystemBanner
+      tags: [system]
+      summary: The system banner
+      description: |
+        The banner the UI shows at the top of every screen (R-OPS-025), or `{"enabled": false}` while none is set. Served
+        to anonymous callers, because the sign-in page shows it; it holds no secret. The message is plain text with links
+        in Markdown inline syntax `[text](https://...)`: a client renders text and `https` links only, never HTML, and shows any
+        other link as plain text. Read from PostgreSQL, so an answer shows a change another replica committed (R-API-052).
+      x-trove-permission:
+        public: true
+      responses:
+        "200":
+          description: The banner.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Banner"
+              example: {enabled: true, severity: warning, title: Planned downtime, message: "The registry is read-only on Saturday from 22:00 UTC, see [status](https://status.example.com)."}
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    put:
+      operationId: putSystemBanner
+      tags: [system]
+      summary: Set the system banner
+      description: |
+        Replaces the banner (R-OPS-025). An enabled banner needs a message of at most 2000 characters; the title has at most
+        120; the severity defaults to `info`. A disabled banner keeps its text. Writes `system.banner_changed`, and only
+        when the banner changed. Every replica returns the new banner within `cluster.epoch_poll_interval` plus 1 s, also
+        while Valkey is stopped. Refused in read-only maintenance mode like every other write.
+      x-trove-permission:
+        permission: settings:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BannerInput"
+      responses:
+        "200":
+          description: The banner after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Banner"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/system/maintenance:
+    get:
+      operationId: getSystemMaintenance
+      tags: [system]
+      summary: The maintenance mode
+      description: |
+        The read-only maintenance mode (R-OPS-024): `normal`, or `read_only` with the operator's message, the time it was
+        switched on and who did it. Any authenticated caller reads it, because a client that is refused a write wants to
+        know why. Read from PostgreSQL (R-API-052). This is not the deletion pause of `trove admin maintenance
+        pause-deletions` (R-HA-025), which stops garbage collection only.
+      x-trove-permission:
+        authenticated: true
+      responses:
+        "200":
+          description: The mode.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaintenanceMode"
+              example: {mode: read_only, cacheFill: true, message: "Storage migration until 14:00 UTC", retryAfterSeconds: 300, since: "2026-11-09T12:00:00Z", by: alice}
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    put:
+      operationId: putSystemMaintenance
+      tags: [system]
+      summary: Switch the maintenance mode
+      description: |
+        Sets the mode (R-OPS-024). In `read_only` mode every write of content and configuration answers `503 unavailable`
+        with `Retry-After` (`retryAfterSeconds`, default 300) and the message: publishes, pushes, deletes and
+        every mutating operation of this API that does not declare `x-trove-maintenance: allowed`. Downloads, metadata reads,
+        sign-in, credential creation and revocation, and this operation continue. With `cacheFill: false` remote repositories
+        serve only what they already cache. The scheduler enqueues no mutating task while the mode is on. Setting the mode that is
+        stored changes nothing and writes no event; otherwise it writes `system.maintenance_mode_changed`. All replicas enforce
+        the change within `cluster.epoch_poll_interval` plus 1 s, also while Valkey is stopped.
+      x-trove-maintenance: allowed
+      x-trove-permission:
+        permission: settings:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MaintenanceInput"
+      responses:
+        "200":
+          description: The mode after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaintenanceMode"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
   /api/v1/system/info:
     get:
       operationId: getSystemInfo
@@ -2576,6 +2725,7 @@ paths:
   /api/v1/tokens:
     post:
       operationId: createToken
+      x-trove-maintenance: allowed
       tags: [tokens]
       summary: Create a personal access token
       description: |
@@ -2734,6 +2884,7 @@ paths:
           $ref: "#/components/responses/Unavailable"
     delete:
       operationId: revokeCurrentToken
+      x-trove-maintenance: allowed
       tags: [tokens]
       summary: Revoke the token that authenticates the request
       description: |
@@ -2759,6 +2910,7 @@ paths:
   /api/v1/tokens/current/rotate:
     post:
       operationId: rotateCurrentToken
+      x-trove-maintenance: allowed
       tags: [tokens]
       summary: Rotate the token that authenticates the request
       description: |
@@ -2813,6 +2965,7 @@ paths:
   /api/v1/tokens/revoke:
     post:
       operationId: revokeTokenByValue
+      x-trove-maintenance: allowed
       tags: [tokens]
       summary: Revoke a token by its value
       description: |
@@ -2888,6 +3041,7 @@ paths:
           $ref: "#/components/responses/Unavailable"
     delete:
       operationId: revokeToken
+      x-trove-maintenance: allowed
       tags: [tokens]
       summary: Revoke a token
       description: |
@@ -2925,6 +3079,7 @@ paths:
   /api/v1/tokens/{id}/rotate:
     post:
       operationId: rotateToken
+      x-trove-maintenance: allowed
       tags: [tokens]
       summary: Rotate a token
       description: |
@@ -2996,6 +3151,7 @@ paths:
   /api/v1/users/me/tokens:
     delete:
       operationId: revokeOwnTokens
+      x-trove-maintenance: allowed
       tags: [tokens]
       summary: Revoke all own tokens
       description: |
@@ -3021,6 +3177,7 @@ paths:
   /api/v1/users/{username}/tokens:
     delete:
       operationId: revokeUserTokens
+      x-trove-maintenance: allowed
       tags: [tokens]
       summary: Revoke all tokens of a user
       description: |
@@ -3054,6 +3211,7 @@ paths:
   /api/v1/service-accounts/{name}/tokens:
     post:
       operationId: createServiceAccountToken
+      x-trove-maintenance: allowed
       tags: [tokens]
       summary: Create a service-account token
       description: |
@@ -3120,6 +3278,7 @@ paths:
           $ref: "#/components/responses/Unavailable"
     delete:
       operationId: revokeServiceAccountTokens
+      x-trove-maintenance: allowed
       tags: [tokens]
       summary: Revoke all tokens of a service account
       description: |
@@ -3152,6 +3311,7 @@ paths:
       - $ref: "#/components/parameters/ProjectKey"
     post:
       operationId: createProjectServiceAccountToken
+      x-trove-maintenance: allowed
       tags: [tokens]
       summary: Create a token of a project service account
       description: |
@@ -3219,6 +3379,7 @@ paths:
           $ref: "#/components/responses/Unavailable"
     delete:
       operationId: revokeProjectServiceAccountTokens
+      x-trove-maintenance: allowed
       tags: [tokens]
       summary: Revoke all tokens of a project service account
       description: |
@@ -3427,6 +3588,7 @@ paths:
           $ref: "#/components/responses/Unavailable"
     delete:
       operationId: endOwnSessions
+      x-trove-maintenance: allowed
       tags: [sessions]
       summary: End all of the caller's sessions
       description: |
@@ -3462,6 +3624,7 @@ paths:
   /api/v1/users/me/sessions/{id}:
     delete:
       operationId: endOwnSession
+      x-trove-maintenance: allowed
       tags: [sessions]
       summary: End one of the caller's sessions
       description: |
@@ -3533,6 +3696,7 @@ paths:
           $ref: "#/components/responses/Unavailable"
     delete:
       operationId: endUserSessions
+      x-trove-maintenance: allowed
       tags: [sessions]
       summary: End all sessions of a user
       description: |
@@ -4434,6 +4598,7 @@ paths:
   /api/v1/authz/validate-policy:
     post:
       operationId: validatePermissionPolicy
+      x-trove-maintenance: allowed
       tags: [permissions]
       summary: Validate a permission policy without storing it
       description: |
@@ -4734,6 +4899,7 @@ paths:
   /api/v1/authz/check:
     post:
       operationId: checkPermissions
+      x-trove-maintenance: allowed
       tags: [permissions]
       summary: Check repository actions for the caller
       description: |
@@ -6458,6 +6624,7 @@ paths:
           pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
     post:
       operationId: evaluateCiMappings
+      x-trove-maintenance: allowed
       tags: [ci]
       summary: Dry-run the mappings of a CI issuer against a claim set
       description: |
@@ -6645,6 +6812,7 @@ paths:
   /api/v1/ci/issuances/revoke:
     post:
       operationId: revokeCiIssuances
+      x-trove-maintenance: allowed
       tags: [ci]
       summary: Revoke the unexpired CI tokens that match a filter
       description: |
@@ -6688,6 +6856,7 @@ paths:
   /api/v1/auth/oidc/token:
     post:
       operationId: exchangeCiToken
+      x-trove-maintenance: allowed
       tags: [ci]
       summary: Exchange a CI ID token for a short-lived CI token
       description: |
@@ -7085,6 +7254,7 @@ paths:
           pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
     post:
       operationId: evaluateProjectCiMappings
+      x-trove-maintenance: allowed
       tags: [ci]
       summary: Dry-run the project's mappings against a claim set
       description: |
@@ -8595,6 +8765,7 @@ paths:
   /api/v1/endpoints/{endpoint}/check-exposure:
     post:
       operationId: checkExposure
+      x-trove-maintenance: allowed
       tags: [endpoints]
       summary: Check what an endpoint exposes
       description: |
@@ -9441,6 +9612,7 @@ paths:
       - $ref: "#/components/parameters/ProjectKey"
     post:
       operationId: invalidateRepositoryCache
+      x-trove-maintenance: allowed
       tags: [repositories]
       summary: Invalidate the cached metadata or misses of a remote or virtual repository
       description: |
@@ -9594,6 +9766,7 @@ paths:
           x-trove-reserved-names: [batch-create, batch-update, batch-get, batch-delete, quick-setup]
     post:
       operationId: testRepositoryUpstream
+      x-trove-maintenance: allowed
       tags: [repositories]
       summary: Test the saved upstream of a remote repository
       description: |
@@ -9649,6 +9822,7 @@ paths:
       - $ref: "#/components/parameters/ProjectKey"
     post:
       operationId: testUpstream
+      x-trove-maintenance: allowed
       tags: [repositories]
       summary: Test an upstream configuration that is not saved
       description: |
@@ -10363,6 +10537,7 @@ paths:
   /api/v1/bastions/{name}/tokens:
     post:
       operationId: createBastionToken
+      x-trove-maintenance: allowed
       tags: [bastions]
       summary: Issue a Bastion token
       description: |
@@ -10434,6 +10609,7 @@ paths:
   /api/v1/bastions/{name}/tokens/{id}:
     delete:
       operationId: revokeBastionToken
+      x-trove-maintenance: allowed
       tags: [bastions]
       summary: Revoke a Bastion token
       description: |
@@ -10515,6 +10691,7 @@ paths:
   /api/v1/bastion/check:
     post:
       operationId: bastionCheck
+      x-trove-maintenance: allowed
       tags: [bastion]
       summary: Check a caller's credential and read shape
       description: |
@@ -10616,6 +10793,7 @@ paths:
   /api/v1/bastion/downloads:
     post:
       operationId: bastionDownloads
+      x-trove-maintenance: allowed
       tags: [bastion]
       summary: Report downloads served from a Bastion's cache
       description: |
@@ -12402,7 +12580,7 @@ components:
           description: "`request` means `server.base_url` is unset and the origin was derived from the request (development only)."
         maintenanceMode:
           type: string
-          description: Open enum; always `normal` until the read-only maintenance mode (R-OPS-024) exists. The system status screen shows no row for `normal` (Q-OPS-156).
+          description: The read-only maintenance mode (R-OPS-024), `normal` or `read_only`; open enum. The system status screen shows a row only while it is not `normal` (Q-OPS-156).
           example: normal
         replicas:
           $ref: "#/components/schemas/ReplicaSummary"
@@ -12452,6 +12630,85 @@ components:
             - $ref: "#/components/schemas/VulnerabilityDataFacts"
             - type: "null"
               description: The container memory limit; 0 when none is known.
+    Banner:
+      type: object
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+        severity:
+          type: string
+          enum: [info, warning, critical]
+        title:
+          type: string
+          maxLength: 120
+        message:
+          type: string
+          maxLength: 2000
+          description: Plain text; links in Markdown inline syntax `[text](https://...)`.
+    BannerInput:
+      type: object
+      required: [enabled]
+      additionalProperties: false
+      properties:
+        enabled:
+          type: boolean
+        severity:
+          type: string
+          enum: [info, warning, critical]
+          description: Defaults to `info`.
+        title:
+          type: string
+          maxLength: 120
+        message:
+          type: string
+          maxLength: 2000
+          description: Required while the banner is enabled.
+    MaintenanceMode:
+      type: object
+      required: [mode, cacheFill]
+      properties:
+        mode:
+          type: string
+          enum: [normal, read_only]
+        cacheFill:
+          type: boolean
+          description: Whether remote repositories still fetch from their upstream while the mode is `read_only`.
+        message:
+          type: string
+          maxLength: 500
+        retryAfterSeconds:
+          type: integer
+          minimum: 1
+          maximum: 86400
+          description: The `Retry-After` of a refused write; present while the mode is `read_only`.
+        since:
+          type: string
+          format: date-time
+          description: When the mode was switched on; present while the mode is `read_only`.
+        by:
+          type: string
+          description: The name of the administrator who switched it on; present while the mode is `read_only`.
+    MaintenanceInput:
+      type: object
+      required: [mode]
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          enum: [normal, read_only]
+        cacheFill:
+          type: boolean
+          description: Defaults to `true`.
+        message:
+          type: string
+          maxLength: 500
+          description: Shown to the users and sent with every refused write.
+        retryAfterSeconds:
+          type: integer
+          minimum: 1
+          maximum: 86400
+          description: Defaults to 300.
     ReplicaSummary:
       type: object
       required: [live, ready, versions, roles]

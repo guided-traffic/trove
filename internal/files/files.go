@@ -90,7 +90,15 @@ type Options struct {
 	// Enforce applies the download policy of the vulnerability scanning (R-VULN-015); nil is a replica that has not wired
 	// the scanning: nothing is refused.
 	Enforce *enforce.Enforcer
-	Log     *slog.Logger
+	// Writes refuses a deploy and a delete while the installation is in read-only maintenance mode (R-OPS-024); nil allows both.
+	Writes WriteGate
+	Log    *slog.Logger
+}
+
+// WriteGate is the question the read-only maintenance mode puts to every write: nil while writes are allowed, the 503 otherwise.
+// *sysstate.Store implements it.
+type WriteGate interface {
+	RefuseWrite(ctx context.Context) error
 }
 
 // Service is the generic layer over the item store.
@@ -99,7 +107,16 @@ type Service struct {
 	repos   repository.Reader
 	formats Formats
 	enforce *enforce.Enforcer
+	writes  WriteGate
 	log     *slog.Logger
+}
+
+// refuseWrite is the refusal of R-OPS-024; it runs after the decision, so a caller who may not write is told 403 and not the mode.
+func (s *Service) refuseWrite(ctx context.Context) error {
+	if s.writes == nil {
+		return nil
+	}
+	return s.writes.RefuseWrite(ctx)
 }
 
 // New creates the service.
@@ -113,7 +130,7 @@ func New(o Options) (*Service, error) {
 	if o.Log == nil {
 		o.Log = slog.Default()
 	}
-	return &Service{items: o.Items, repos: o.Repos, formats: o.Formats, enforce: o.Enforce, log: o.Log}, nil
+	return &Service{items: o.Items, repos: o.Repos, formats: o.Formats, enforce: o.Enforce, writes: o.Writes, log: o.Log}, nil
 }
 
 // Caller is who acts: the request's decision holder, the subject behind it (whose

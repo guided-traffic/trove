@@ -17,6 +17,10 @@ var ifMatchExempt = map[string]string{
 	"patchUserGroups":   "membership delta (R-API-012)",
 	"patchGroupMembers": "membership delta (R-API-012)",
 	"bindRole":          "binds one pair (R-API-012)",
+	// R-OPS-024, R-OPS-025: a banner and a mode are single documents an administrator replaces; the last write wins, as the spec's PUT
+	// has no precondition, and a repeated write of the same values changes nothing.
+	"putSystemBanner":      "replaces the one banner document; the last write wins (R-OPS-025)",
+	"putSystemMaintenance": "sets the one maintenance mode; the last write wins and a repeat changes nothing (R-OPS-024)",
 	// R-AUTHZ-026: adding an administrator binds one pair and an assignment binds a repository to a
 	// project; the version of a project covers its fields only (Q-AUTHZ-185).
 	"setProjectMember": "binds one pair (R-API-012)",

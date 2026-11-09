@@ -35,6 +35,7 @@ type ScheduleSource interface {
 
 type scheduledTask struct {
 	name, kind, dedupKey string
+	mutating             bool
 	sched                *Schedule
 	args                 []byte
 }
@@ -53,7 +54,7 @@ func (w *Worker) resolveTasks() ([]scheduledTask, error) {
 		if !ti.Enabled || ti.ManualOnly {
 			continue
 		}
-		out = append(out, scheduledTask{name: ti.Name, kind: ti.Kind, dedupKey: ti.DedupKey, sched: ti.Sched, args: ti.Args})
+		out = append(out, scheduledTask{name: ti.Name, kind: ti.Kind, dedupKey: ti.DedupKey, mutating: ti.Mutating, sched: ti.Sched, args: ti.Args})
 	}
 	return out, nil
 }
@@ -140,15 +141,20 @@ func (w *Worker) Tick(ctx context.Context, h *cluster.Held) error {
 			if key == "" {
 				key = ts.Name
 			}
-			tasks = append(tasks, scheduledTask{name: ts.Name, kind: ts.Kind, dedupKey: key, sched: sched, args: args})
+			// A schedule another page keeps in PostgreSQL is a cleanup policy: it deletes.
+			tasks = append(tasks, scheduledTask{name: ts.Name, kind: ts.Kind, dedupKey: key, mutating: true, sched: sched, args: args})
 		}
 	}
 	var first error
 	woke := map[string]bool{}
+	readOnly := w.o.ReadOnly != nil && w.o.ReadOnly(ctx)
 	for _, task := range tasks {
 		slot, ok := task.sched.Prev(now.Time)
 		if !ok {
 			continue
+		}
+		if readOnly && task.mutating {
+			continue // R-OPS-024: no mutating task is enqueued in read-only mode; its slot is missed, not caught up
 		}
 		spec, ok := w.o.Registry.Kind(task.kind)
 		if !ok {

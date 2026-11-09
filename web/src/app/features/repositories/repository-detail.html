@@ -120,6 +120,20 @@
             />
           </div>
         </trove-tab>
+        @if (repo.class === 'virtual') {
+          <trove-tab [label]="tabMembers">
+            <div class="tab">
+              <trove-virtual-members
+                [repo]="repo"
+                [canWrite]="canWrite() && repo.lifecycle !== 'deleting'"
+                [saving]="membersSaving()"
+                [failure]="membersFailure()"
+                (save)="saveMembers($event)"
+                (reload)="loaded.reload()"
+              />
+            </div>
+          </trove-tab>
+        }
         <trove-tab [label]="tabAccess">
           <div class="tab">
             <trove-repository-fields

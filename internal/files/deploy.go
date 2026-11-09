@@ -64,6 +64,9 @@ func (s *Service) Deploy(ctx context.Context, c Caller, req DeployRequest) (Depl
 	if err != nil {
 		return DeployResult{}, err
 	}
+	if err := s.refuseWrite(ctx); err != nil {
+		return DeployResult{}, err
+	}
 	repo, err := t.resolved(true)
 	if err != nil {
 		return DeployResult{}, err

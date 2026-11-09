@@ -8,6 +8,7 @@ import { BrowserNavigation, safeReturnTo } from '../../core/browser-navigation';
 import { describeProblem } from '../../core/http/problem-messages';
 import { PreferencesStore } from '../../core/preferences-store';
 import { SessionStore } from '../../core/session-store';
+import { Banner } from '../../shared/banner';
 import { ErrorNotice } from '../../shared/error-notice';
 import { LogoPreview } from './logo-preview';
 
@@ -22,8 +23,9 @@ import { LogoPreview } from './logo-preview';
  */
 @Component({
   selector: 'trove-login',
-  imports: [RouterLink, ErrorNotice, LogoPreview],
+  imports: [RouterLink, Banner, ErrorNotice, LogoPreview],
   template: `
+    <trove-banner />
     <div class="bare-panel">
       <img class="bare-logo" src="brand/trove-horizontal.svg" alt="trove" width="190" height="64" />
       <h1 tabindex="-1" i18n="@@login.heading">Sign in</h1>

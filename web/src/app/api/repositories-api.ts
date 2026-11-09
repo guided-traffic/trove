@@ -12,6 +12,7 @@ export type RepositoryClass = Repository['class'];
 export type MirrorStatus = Schema<'MirrorStatus'>;
 export type MirrorState = MirrorStatus['state'];
 export type UpstreamTestResult = Schema<'UpstreamTestResult'>;
+export type RepositoryResolution = Schema<'RepositoryResolution'>;
 
 /**
  * The body of `POST /api/v1/projects/{projectKey}/upstream-tests`: the format and an unsaved `remote` section. Secret values in
@@ -112,6 +113,8 @@ export abstract class RepositoriesApi {
   abstract mirrorStatus(ref: string): Promise<MirrorStatus>;
   /** `POST …/repositories/{key}/mirror/run`: requests a pass now; the job that was queued (R-REPO-056). */
   abstract runMirror(ref: string, full: boolean, idempotencyKey: string): Promise<JobReference>;
+  /** `GET …/repositories/{key}/resolution?path=`: how a virtual repository resolves a client path, member by member (R-REPO-019). */
+  abstract resolution(ref: string, path: string): Promise<RepositoryResolution>;
   /** `POST /api/v1/projects/{project}/upstream-tests`: probes an unsaved `remote` section (R-REPO-024). */
   abstract testUpstream(project: string, body: UpstreamTestBody): Promise<UpstreamTestResult>;
 }
@@ -194,6 +197,10 @@ export class HttpRepositoriesApi extends RepositoriesApi {
       { idempotencyKey },
     );
     return r.body.job;
+  }
+
+  async resolution(ref: string, path: string): Promise<RepositoryResolution> {
+    return (await this.client.getJson<RepositoryResolution>(`${repositoryUrl(ref)}/resolution`, { params: { path } })).body;
   }
 
   async testUpstream(project: string, body: UpstreamTestBody): Promise<UpstreamTestResult> {

@@ -4,7 +4,8 @@ import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter, withComponentInputBinding } from '@angular/router';
 import { App } from './app';
 import { routes } from './app.routes';
-import { FakeSessionApi, provideFakeApis } from './api/testing/fakes';
+import { FakeSessionApi, FakeSystemApi, provideFakeApis } from './api/testing/fakes';
+import { SystemApi } from './api/system-api';
 import { ApiError } from './api/problem';
 import { SessionApi } from './api/session-api';
 import { BannerStore } from './core/banner-store';
@@ -58,11 +59,13 @@ describe('App shell', () => {
     root.remove();
   });
 
-  it('R-UI-002 shows the banner area only while a banner text is set', async () => {
+  it('R-UI-002 shows the banner area only while an enabled banner is stored', async () => {
     const { fixture, root } = await render();
     expect(root.querySelector('trove-banner [role="region"]')).toBeNull();
-    TestBed.inject(BannerStore).set('Maintenance tonight');
-    await fixture.whenStable();
+    const api = TestBed.inject(SystemApi) as FakeSystemApi;
+    api.bannerResult = { enabled: true, severity: 'warning', message: 'Maintenance tonight' };
+    await TestBed.inject(BannerStore).refresh();
+    fixture.detectChanges();
     const banner = root.querySelector('trove-banner [role="region"]');
     expect(banner?.getAttribute('aria-label')).toBeTruthy();
     expect(banner?.textContent).toContain('Maintenance tonight');

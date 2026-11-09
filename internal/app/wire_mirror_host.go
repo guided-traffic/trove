@@ -221,6 +221,7 @@ func (b *mirrorHostBuilder) buildEngine() error {
 			Replicas: nil,
 			Audit:    b.in.rec, Config: backgroundProxyConfig(a.cfg.Proxy), Enforce: b.vz.enforcer, SafetyTTL: a.cfg.Cache.SnapshotSafetyTTL,
 			Metrics: a.tele.metrics.Registry(), Log: a.log.With("component", "proxy"),
+			GlobalOffline: a.offlineForMaintenance(b.in.sys),
 		}
 		if b.in.vk != nil { // a nil *cluster.Valkey in the interface would not be nil
 			opts.Lookups = b.in.vk

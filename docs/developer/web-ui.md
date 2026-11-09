@@ -1010,7 +1010,7 @@ user who sees the project; what a caller may read is narrowed by the API, so a c
 
 ## What is not done yet
 
-- `GET /api/v1/system/banner` is not wired to `BannerStore`. The catalog services, `system/encryption`, `whoami`, `login-options`, `authz/me`, `authz/check` and `users/me/preferences` use the generated types (Q-UI-12).
+- The catalog services, `system/encryption`, `whoami`, `login-options`, `authz/me`, `authz/check` and `users/me/preferences` use the generated types (Q-UI-12).
 - System status: the backups card and route are placeholders (R-UI-048).
 - What the API lacks for the catalog screens, and the UI works around (Q-UI-15, Q-UI-18, Q-UI-19): the values of `ui.browser.page_size` and
   `ui.deploy.max_upload_bytes`; a creation time and a sort by creation on the repository summary view; a flag for
@@ -1045,3 +1045,14 @@ R-UI-007, R-UI-018 and R-UI-019 need no NuGet screen (Q-UI-93 to Q-UI-95). What 
 | [11-nuget.spec.ts](../../web/e2e/tests/11-nuget.spec.ts) | The browser journey ([e2e.md](e2e.md#browser-journeys)) |
 
 The settings form, the wizard step and the edit tab render the NuGet schema without NuGet code (`format-settings.spec.ts` shows `deleteMode` on a local repository and `forwardSearch` on a remote one).
+
+## The member editor, the general settings and the banner
+
+| File | Responsibility |
+|---|---|
+| [virtual-members.ts](../../web/src/app/features/repositories/virtual-members.ts), `.html`, `.scss` | `<trove-virtual-members [repo] [canWrite] [saving] [failure] (save) (reload)>`, the tab "Members" of a virtual repository (R-UI-022, [Q-UI-210](../spec/api-and-ui.md#q-ui-210--the-member-editor-is-a-tab-with-its-own-save-offers-what-the-api-accepts-and-explains-the-saved-order)): two `@angular/aria` listboxes (the available repositories, multi-select; the members in order), the buttons Add, Remove, Move up, Move down and Move to top, Alt+arrow and Alt+Home on the member list, a live region, the default deployment target among the local members, the effective order and the explanation of a path (`RepositoriesApi.resolution`). The screen owns the `ETag` and the patch: `RepositoryDetail.saveMembers` sends `{virtual: {members, deployTarget}}` and keeps the other unsaved edits |
+| [general-settings.ts](../../web/src/app/features/settings/general-settings.ts), `.html` | `/admin/settings/general` (R-UI-033, [Q-UI-211](../spec/api-and-ui.md#q-ui-211--general-settings-save-the-banner-and-the-mode-separately-ask-before-read-only-and-the-shell-reads-both-every-30-seconds)): the base URL and its source from `SystemApi.info`, the banner form with a preview, the maintenance-mode form with a confirmation before it is switched on |
+| [core/banner-store.ts](../../web/src/app/core/banner-store.ts) | `BannerStore`: `GET /system/banner` for everyone and `GET /system/maintenance` for a signed-in caller, read on `watch` and every `BANNER_POLL_MS` (30 s); `notices` (the maintenance notice first); `adopt` after a save |
+| [shared/banner.ts](../../web/src/app/shared/banner.ts), [banner-text.ts](../../web/src/app/shared/banner-text.ts) | `<trove-banner>` in the shell and on the sign-in page; `parseBannerText` splits a message into text and `https` links, everything else stays text |
+
+Specs: [virtual-members.spec.ts](../../web/src/app/features/repositories/virtual-members.spec.ts), [general-settings.spec.ts](../../web/src/app/features/settings/general-settings.spec.ts), [banner-store.spec.ts](../../web/src/app/core/banner-store.spec.ts), [banner.spec.ts](../../web/src/app/shared/banner.spec.ts), [banner-text.spec.ts](../../web/src/app/shared/banner-text.spec.ts). The journeys `18-virtual-members.spec.ts` and `19-general-settings.spec.ts` run in CI on the kind cluster ([e2e.md](e2e.md#browser-journeys)); they were not run locally.

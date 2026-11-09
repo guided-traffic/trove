@@ -95,6 +95,7 @@ export const NAV_AREAS: readonly NavArea[] = [
           { route: '/admin/system', icon: 'speed', label: $localize`:@@nav.system:System status`, capability: 'settings:read' },
           { route: '/admin/audit', icon: 'history', label: $localize`:@@nav.audit:Audit log`, capability: 'audit:read' },
           { route: '/admin/settings/auth', icon: 'tune', label: $localize`:@@nav.settings:Settings`, capability: 'settings:read' },
+          { route: '/admin/settings/general', icon: 'settings', label: $localize`:@@nav.settings-general:General settings`, capability: 'settings:read' },
           // >>> M4b vulnerabilities
           { route: '/admin/advisory-sources', icon: 'rss_feed', label: $localize`:@@nav.advisory-sources:Advisory sources`, capability: 'settings:read' },
           // <<< M4b vulnerabilities

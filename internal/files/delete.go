@@ -45,6 +45,9 @@ func (s *Service) Delete(ctx context.Context, c Caller, req DeleteRequest) (item
 	if err != nil {
 		return items.DeleteResult{}, err
 	}
+	if err := s.refuseWrite(ctx); err != nil {
+		return items.DeleteResult{}, err
+	}
 	repo, err := t.resolved(req.Strict)
 	if err != nil {
 		return items.DeleteResult{}, err

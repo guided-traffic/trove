@@ -98,7 +98,7 @@ func (a *App) wireFiles(ctx context.Context, in infra, repo repositoryArea, id i
 	if err != nil {
 		return filesArea{}, err
 	}
-	svc, err := files.New(files.Options{Items: store, Repos: repo.reader, Formats: fm.seam, Enforce: vz.enforcer, Log: log})
+	svc, err := files.New(files.Options{Items: store, Repos: repo.reader, Formats: fm.seam, Enforce: vz.enforcer, Writes: in.sys, Log: log})
 	if err != nil {
 		return filesArea{}, err
 	}

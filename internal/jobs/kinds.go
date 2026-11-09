@@ -68,6 +68,10 @@ type TaskSpec struct {
 	// (R-OPS-019, for example secrets-reencrypt). Schedule must be empty, and a
 	// maintenance.tasks.<name> entry for it is a configuration error.
 	ManualOnly bool
+	// Mutating marks a task that deletes or rewrites content or caches (garbage collection, sweeps, the fold of cache
+	// invalidations). The scheduler enqueues none of them while the installation is in read-only maintenance mode (R-OPS-024); a run
+	// already in progress finishes, and a missed slot is not caught up.
+	Mutating bool
 }
 
 var namePattern = regexp.MustCompile(`^[a-z][a-z0-9_.:-]{0,62}$`)

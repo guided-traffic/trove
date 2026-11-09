@@ -10,7 +10,19 @@ import {
   SessionApi,
   Whoami,
 } from '../session-api';
-import { EncryptionApi, EncryptionStatus, Replica, ReplicaRuntime, SystemApi, SystemInfo, SystemOverview } from '../system-api';
+import {
+  Banner,
+  BannerInput,
+  EncryptionApi,
+  EncryptionStatus,
+  MaintenanceInput,
+  MaintenanceMode,
+  Replica,
+  ReplicaRuntime,
+  SystemApi,
+  SystemInfo,
+  SystemOverview,
+} from '../system-api';
 // >>> M1 ui-b
 import { provideAccessFakes } from './access-fakes';
 // <<< M1 ui-b
@@ -283,6 +295,57 @@ export class FakeSystemApi extends SystemApi {
   override async overview(): Promise<SystemOverview> {
     if (this.overviewResult instanceof ApiError) throw this.overviewResult;
     return this.overviewResult;
+  }
+
+  /** The stored banner and mode, which the setters replace the way the API does (R-OPS-024, R-OPS-025). */
+  bannerResult: Banner | ApiError = { enabled: false };
+  maintenanceResult: MaintenanceMode | ApiError = { mode: 'normal', cacheFill: true };
+  bannerWrites: BannerInput[] = [];
+  maintenanceWrites: MaintenanceInput[] = [];
+  bannerReads = 0;
+  maintenanceReads = 0;
+  /** Set to make the next write answer this problem. */
+  writeError: ApiError | null = null;
+
+  override async banner(): Promise<Banner> {
+    this.bannerReads++;
+    if (this.bannerResult instanceof ApiError) throw this.bannerResult;
+    return structuredClone(this.bannerResult);
+  }
+
+  override async setBanner(input: BannerInput): Promise<Banner> {
+    this.bannerWrites.push(structuredClone(input));
+    if (this.writeError) throw this.writeError;
+    this.bannerResult = {
+      enabled: input.enabled,
+      severity: input.severity ?? 'info',
+      ...(input.title ? { title: input.title } : {}),
+      ...(input.message ? { message: input.message } : {}),
+    };
+    return structuredClone(this.bannerResult);
+  }
+
+  override async maintenance(): Promise<MaintenanceMode> {
+    this.maintenanceReads++;
+    if (this.maintenanceResult instanceof ApiError) throw this.maintenanceResult;
+    return structuredClone(this.maintenanceResult);
+  }
+
+  override async setMaintenance(input: MaintenanceInput): Promise<MaintenanceMode> {
+    this.maintenanceWrites.push(structuredClone(input));
+    if (this.writeError) throw this.writeError;
+    this.maintenanceResult =
+      input.mode === 'normal'
+        ? { mode: 'normal', cacheFill: true }
+        : {
+            mode: 'read_only',
+            cacheFill: input.cacheFill ?? true,
+            ...(input.message ? { message: input.message } : {}),
+            retryAfterSeconds: input.retryAfterSeconds ?? 300,
+            since: '2026-11-09T12:00:00Z',
+            by: 'alice',
+          };
+    return structuredClone(this.maintenanceResult);
   }
 }
 
