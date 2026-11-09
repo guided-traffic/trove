@@ -271,17 +271,18 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   merged architecture indexes hold only what the members list there. Debian and Ubuntu list `all` packages in every architecture index,
   so their archives are served whole; an upstream that keeps them in `binary-all` only (as the stub does) loses them through a virtual
   repository. Decide whether the merge reads `binary-all` into the architecture indexes or publishes it as its own index.
-- **F-119 · The drain and TLS e2e rows of the set `push` see 429 and 502 under load** (Test and Release 42561072166, 2026-11-09;
-  green in three of the four runs before): during the node drain 18 PUTs of the transfer loop answered 429 (`RateLimit-Policy="write";q=50;w=5`)
-  although the loop starts 4 PUTs a second as one service account, and the certificate rotation row saw 13 of 11,529 requests answered
-  502. The loop's one wrong checksum of the same run was two iterations writing one path (fixed: a path per iteration). Done when it is
-  known what the write limiter counts during a drain and where the 502s of the rotation come from. The next run (42563355283, on
-  a6d8767a, no product change since the green run 42557795728) failed other rows of the same set the same way: 10 of 3,245 requests
-  through the scatter edge answered 502 with a slowest request of 15 s, and a replica with a wrong Valkey primary name turned ready
-  while its database check took 2 s. Both point at a starved cluster on the runner rather than at trove; the runner's load was not
-  measured. Read on 2026-11-09 (Q-ARCH-432): the first run did not share the cluster with the nightly (no nightly was active at its
-  04:18 UTC start), so the nightly's bound does not reach it; its neighbours were its own five large legs (push, access-long, npm,
-  oci, deb). Cause not settled; revisit when a run with four or more large legs of Test and Release fails the same way.
+- **F-119 · The transfer loop of the drain tests saw 429 and 502 when the cluster stalled** (Test and Release 42561072166, 2026-11-09, and
+  the nightly dispatch 42578594755 of the set `drain-roles` alone on the large class). Cause found and fixed for the transfer loop (Q-HA-230):
+  the cluster stalled for about 40 s (07:50:08 to 07:50:50), the open-loop `transfer.js` released its piled-up iterations in one burst of
+  36 PUTs in a second, and the write class (50 per 5 s for one principal) refused 16 of them; 7 of the 16 reached the client as `502`
+  with the edge's flag `SH`. Not the fallback of a fresh replica (the policy header shows the shared counters, Valkey was available
+  before the replicas turned ready) and not the drain (the refusals came five minutes after the last eviction). Open: (1) what stalled the
+  whole cluster at 07:50:08 (every `npm ci` took 40 s, the edge's connect time to the pods reached its 5 s bound, the `packages` pods
+  served a third of their rate), with no pod event, restart or failover in that minute; the load of the runner was not measured;
+  (2) why a 429 that a pod answers before it reads a 256 KiB body reached the client as `502 SH` in 7 of 16 cases behind HAProxy Ingress,
+  while a plain TLS client against the server got the 429 in 320 of 320 attempts; (3) the 13 of 11,529 requests answered 502 in the
+  certificate rotation row of the run 42561072166, which the transfer loop does not explain, and the two later runs of the set `push`
+  (42563355283: 10 of 3,245 through the scatter edge with a slowest request of 15 s). Revisit when a run shows the stall again.
 - **F-105 · `TestR_NPM_007_ASlowPublishOf200MiB` fails under load** (seen twice: by the F-83 builder, an S3 UploadPart
   cancellation followed by the package timeout, and by the F-101 builder, "1 connections held a transaction older than 1 s
   while the body arrived"; passes alone). The test asserts that no database transaction stays open longer than 1 s while

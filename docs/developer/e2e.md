@@ -78,7 +78,7 @@ test/e2e/                   the Go tests, build tag `e2e`, package e2e
   e99_scatter_test.go       E0.11, last because it switches the profile
   monitor_test.go           /healthz and /readyz of every replica, once a second
   k6/load.js                the load: 100 requests/s on /system/ping and /system/replicas
-  k6/transfer.js            the transfer loop of E1.13: PUT, GET and SHA-256 of 256 KiB bodies on generic-local
+  k6/transfer.js            the transfer loop of E1.13: PUT, GET and SHA-256 of 256 KiB bodies on generic-local, a closed loop of RATE clients (Q-HA-230)
   cmd/driver/               the driver (main.go: connections, probe and job commands; load.go: the load loop)
   Dockerfile                the driver image: a static binary on the release image's base
   npm_clients_test.go       the smoke test of the npm client pods (R-NPM-045), and npmClientExec, the helper the matrix builds on
