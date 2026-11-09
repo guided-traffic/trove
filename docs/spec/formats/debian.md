@@ -3660,18 +3660,18 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied in the spec:** R-DEB-035 says `tools/versions.env`.
 
-### Q-DEB-109 · The virtual row is written and skipped until the virtual class is on main
+### Q-DEB-109 · The mirror and virtual rows were written before their classes and switched on when the classes landed
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) `TestDebVirtual` is written against this page and skips with the reason while `debVirtualBuilt` is false (chosen) | A one-line switch, flipped by the change that finds the row green | The row exists, is reviewed with the rest and costs one edit to switch on | A row that has not run: its request bodies are the spec's, not a server's |
-| (b) Nothing until the class lands | The row is written later | No code that has not run | The set `deb` would pass without the virtual row being asked for |
+| (a) `TestDebMirror` and `TestDebVirtual` written against this page, skipped with the reason while `debMirrorBuilt` and `debVirtualBuilt` were false, switched on by the change that found them green (chosen) | A one-line switch each | The rows were reviewed with the rest and cost one edit | Rows that had not run when written |
+| (b) Nothing until the classes land | The rows are written later | No code that has not run | The set `deb` would have passed without them |
 
-**Choice:** (a). A skip is a skip, never a pass: the log of the set names the reason. The mirror row (`TestDebMirror`) was written the same way and switched on when the mirror landed (T-17 WP7), after the same set ran it green on kind.
+**Choice:** (a). Both rows are on and green; the switches are `true` in `test/e2e/deb_mirror_test.go` and `test/e2e/deb_virtual_test.go`. The first run of the virtual row found that its expectations, not the product, were wrong: the merged architecture index does not carry the stub's `all` packages (the stub keeps them in `binary-all` only; the real archives list them in both).
 
-**Rationale:** The virtual class (WP8) was being built while WP10 was; the row follows its acceptance criteria and the first run on kind after it lands decides what has to change in it. The development agent revisits this when the virtual class is on main.
+**Rationale:** The classes were built while WP10 was; the first run on kind after each landed decided what had to change in the row.
 
 **Applied in the spec:** none.
 

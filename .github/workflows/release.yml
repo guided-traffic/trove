@@ -1599,8 +1599,8 @@ jobs:
   # client pods of the namespace trove-e2e-apt (Q-DEB-27), against the scatter profile and the counting Debian archive test upstream
   # (docs/developer/e2e.md#the-debian-tests). Per change that touches the format it runs the leg deb: every TestDeb... and TestAPTClients (local,
   # remote, mirror and virtual repositories, an anonymous read, a wrong keyring, the rotation table, the flat root). The client images are the four
-  # official images with curl and a forwarder, so the job runs on the large class like the other kind legs. Port 8107 is the first free one of both
-  # workflows.
+  # official images with curl and a forwarder, so the job runs on the large class like the other kind legs. A dispatch with closing=true adds the leg
+  # deb-closing (TestDebClosing...: Valkey stopped, the read-only check against deb.debian.org). The ports 8107 and 8108 are the first free ones of both workflows.
   e2e-deb:
     name: e2e-deb on kind (${{ matrix.set }})
     runs-on: large
@@ -1608,7 +1608,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: [{"set":"deb","port":"8107"}]
+        include: ${{ fromJSON(inputs.closing && '[{"set":"deb","port":"8107"},{"set":"deb-closing","port":"8108"}]' || '[{"set":"deb","port":"8107"}]') }}
     env:
       TROVE_IMAGE: guidedtraffic/trove:dev
       TROVE_DEV_CLUSTER: trove-${{ matrix.set }}-${{ github.run_id }}

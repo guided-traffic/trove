@@ -262,6 +262,11 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   earlier passed. An outage outside the repository (at 03:10 UTC `archive.ubuntu.com` did not answer from the owner's network either,
   `security.ubuntu.com` did); it makes every such job depend on the archive. Done when the runner image carries
   `make` and the C compiler (the owner's runner) or the jobs keep a local package cache.
+- **F-118 · A virtual Debian repository does not carry a remote member's architecture `all` packages that the upstream lists in
+  `binary-all` only** (found by the e2e builder of T-17 WP10 on 2026-11-09): the merged `Release` lists no `all` architecture, and the
+  merged architecture indexes hold only what the members list there. Debian and Ubuntu list `all` packages in every architecture index,
+  so their archives are served whole; an upstream that keeps them in `binary-all` only (as the stub does) loses them through a virtual
+  repository. Decide whether the merge reads `binary-all` into the architecture indexes or publishes it as its own index.
 - **F-105 · `TestR_NPM_007_ASlowPublishOf200MiB` fails under load** (seen twice: by the F-83 builder, an S3 UploadPart
   cancellation followed by the package timeout, and by the F-101 builder, "1 connections held a transaction older than 1 s
   while the body arrived"; passes alone). The test asserts that no database transaction stays open longer than 1 s while
@@ -418,5 +423,9 @@ answers again, F-117).
   between 15 and 50 on 20 cores, and the timing failures under it were fixed in the tests (F-114, F-115) instead of being chased.
 - Merges: every builder branch was cherry-picked onto `main`, the touched gates rerun on the merged tree; the conflicts were the shared
   plan and documentation pages, two migrations that both took 00064 (renumbered), and doc links one directory too short.
+- Evidence of the closing: the e2e set `deb` (52 rows, the virtual row on) and the closing set `deb-closing` (Valkey stopped on all
+  four images; `apt-get install hello` from `deb.debian.org` through a remote, 3 upstream requests, Debian's archive key checked against
+  its pinned fingerprint) ran green on kind (`linux/arm64`); `oci-closing` 7 of 7. Left as findings: F-118 (architecture `all` through
+  a virtual repository); the Debian passes of the sets `mirror` and `mirror-long` are not built.
 - Next run: T-17 has no open package. Section 10 holds no registry task, so the next unit of FULL.md follows (step 1, item 3), with
   the open findings of section 8 in one batch at the end.

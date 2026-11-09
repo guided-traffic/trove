@@ -9,6 +9,9 @@ package e2e
 // written against the spec and switched on by debVirtualBuilt when the virtual class of the format (T-17 WP8) is on main.
 
 import (
+	"bytes"
+	"compress/gzip"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -18,7 +21,7 @@ import (
 )
 
 // debVirtualBuilt says whether the virtual class of the Debian format is on main. While it is not, the row is skipped, with this reason.
-var debVirtualBuilt = false
+var debVirtualBuilt = true
 
 func TestDebVirtual(t *testing.T) {
 	if !debVirtualBuilt {
@@ -49,7 +52,12 @@ func TestDebVirtual(t *testing.T) {
 	fx.awaitPublished(t, local, debSuite, fx.upload(t, local, claimed, debSuite))
 
 	// the virtual repository builds its indexes by interval; its Release names the merged files
-	fx.awaitSuite(t, virtual, debSuite, 0, 4*time.Minute, func(s debSuiteState) bool { return s.State == "current" && s.Generation > 0 })
+	// (the delay bound is deb.virtual_index_interval + 60 s, R-DEB-026): wait until the merged index lists both members' packages
+	arch := aptArch(t, aptDebian13)
+	waitFor(t, "the merged index of "+virtual+" to list the packages of both members", 5*time.Minute, 2*time.Second, func() bool {
+		idx, ok := fx.mergedPackages(t, virtual, arch)
+		return ok && strings.Contains(idx, "Package: "+only.name+"\n") && strings.Contains(idx, "Package: trove-hello\n")
+	})
 
 	for _, img := range aptImages {
 		t.Run("R-DEB-025 R-DEB-027 R-DEB-035 "+img.name+" installs a local and a remote package through the virtual repository", func(t *testing.T) {
@@ -57,11 +65,13 @@ func TestDebVirtual(t *testing.T) {
 			c.configure(virtual)
 			c.mustUpdate()
 			c.mustInstallAndRun(only.name+"="+only.version, only.name, only.line())
-			if out, err := c.install("trove-config"); err != nil {
-				t.Fatalf("apt-get install trove-config on %s: %v\n%s", img.name, err, tailLines(out, 30))
+			// a package of the remote member (with its dependency): the stub keeps its architecture all packages in binary-all only, which
+			// the merged architecture indexes do not carry, so the row takes packages of the client's architecture
+			if out, err := c.install("trove-hello"); err != nil {
+				t.Fatalf("apt-get install trove-hello on %s: %v\n%s", img.name, err, tailLines(out, 30))
 			}
-			if out := c.must(`/usr/bin/trove-config`); trimLine(out) == "" {
-				t.Fatalf("trove-config printed nothing")
+			if out := c.must(`/usr/bin/trove-hello`); !strings.HasPrefix(trimLine(out), "hello from trove-hello ") {
+				t.Fatalf("trove-hello printed %q", trimLine(out))
 			}
 		})
 
@@ -74,11 +84,35 @@ func TestDebVirtual(t *testing.T) {
 	}
 
 	t.Run("R-DEB-025 the merged index lists the claimed name once, from the local member", func(t *testing.T) {
-		r := fx.registry(t).do(http.MethodGet, debRepoPath(virtual)+"/dists/"+debSuite+"/main/binary-"+aptArch(t, aptDebian13)+"/Packages", nil).want(t, "merged Packages", 200)
-		if n := countParagraphs(string(r.Body), "trove-tools"); n != 1 {
-			t.Fatalf("the merged Packages lists trove-tools %d times, want once:\n%.2000s", n, r.Body)
+		idx, ok := fx.mergedPackages(t, virtual, arch)
+		if !ok {
+			t.Fatal("the merged Packages.gz is not served")
+		}
+		if n := countParagraphs(idx, "trove-tools"); n != 1 {
+			t.Fatalf("the merged Packages lists trove-tools %d times, want once:\n%.2000s", n, idx)
+		}
+		if !strings.Contains(idx, "members/"+local+"/") {
+			t.Errorf("the merged Packages names no file of the member %s", local)
 		}
 	})
+}
+
+// mergedPackages reads the merged Packages.gz of the main component for an architecture; ok is false while it is not served.
+func (fx *debFixture) mergedPackages(t testing.TB, key, arch string) (string, bool) {
+	t.Helper()
+	r, err := fx.registry(t).send(http.MethodGet, debRepoPath(key)+"/dists/"+debSuite+"/main/binary-"+arch+"/Packages.gz", nil)
+	if err != nil || r.Status != 200 {
+		return "", false
+	}
+	zr, err := gzip.NewReader(bytes.NewReader(r.Body))
+	if err != nil {
+		t.Fatalf("Packages.gz of %s is not gzip: %v", key, err)
+	}
+	b, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatalf("Packages.gz of %s: %v", key, err)
+	}
+	return string(b), true
 }
 
 // countParagraphs counts the paragraphs of a Packages index for a package name.

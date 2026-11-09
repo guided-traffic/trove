@@ -84,6 +84,8 @@
 #                       (Debian 13, Debian 12, Ubuntu 24.04, Ubuntu 22.04, each a real APT in the namespace trove-e2e-apt); the scatter profile (three packages
 #                       replicas, two workers); apt-get update --error-on=any and apt-get install through local, remote, mirror and virtual repositories,
 #                       an anonymous read, a wrong keyring, the key rotation of R-DEB-017 and the flat root; CI: job e2e-deb
+#   e2e.sh deb-closing  TestDebClosing...: the additions of the run that closes the phase (CI: job e2e-deb, closing=true): uploads, update and install
+#                       through local, remote and virtual repositories with Valkey stopped, and the read-only check against https://deb.debian.org/debian/
 #   e2e.sh apt-clients  the smoke test of the APT client pods (every image runs the release and the verifier its pin names, the CA is trusted, the
 #                       edge answers); builds the four images and starts the pods, which stay up
 #   e2e.sh apt-clients-down  removes the APT client pods and their namespace
@@ -219,7 +221,9 @@ case "$set_name" in
   # every change that touches the format or the registry root.
   apt-clients) run='^TestAPTClients$'; APT_CLIENTS=1 ;;
   apt-clients-down) APT_CLIENTS=down ;;
-  deb) run='^Test(Deb|APTClients)'; APT_CLIENTS=1; export TROVE_E2E_DEBSTUB=1 ;;
+  deb) run='^Test(Deb|APTClients)'; skip='^TestDebClosing'; APT_CLIENTS=1; export TROVE_E2E_DEBSTUB=1 ;;
+  # The additions of the run that closes the phase: the set deb with Valkey stopped, and the read-only check against the Debian archive (R-DEB-031, R-DEB-035).
+  deb-closing) run='^TestDebClosing'; APT_CLIENTS=1; export TROVE_E2E_DEBSTUB=1 TROVE_E2E_DEB_CLOSING=1 ;;
   # <<< T17 deb
   # >>> M6b mirror
   # The remote full mirror (R-REPO-059, docs/developer/e2e.md#the-mirror-tests): the `mirror` profile (up.sh, values-mirror.yaml), the two counting

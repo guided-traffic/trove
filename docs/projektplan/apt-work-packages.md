@@ -772,25 +772,34 @@ Built on 7d9dc8f9. Page: [docs/developer/deb.md](../developer/deb.md#the-mirror)
 
 ## 21 · WP10 (the e2e set `deb` and its CI leg) as built (stage 5)
 
-Built on 2ae4e089 (the local, remote and mirror classes; the virtual class was not on main). Pages: [e2e.md](../developer/e2e.md#the-apt-clients) (the counting Debian test upstream in the
+Built on 2ae4e089 (the local, remote and mirror classes), completed on 4398e93e (the virtual class and the closing run). Pages: [e2e.md](../developer/e2e.md#the-apt-clients) (the counting Debian test upstream in the
 cluster, the APT clients, the Debian tests); decisions Q-DEB-105 to Q-DEB-109.
 
 - **Built:** `test/e2e/aptclients/` (one Dockerfile on the four pinned base images, the entrypoint, the `sudo` shim, `build.sh`, `check-pins.mjs`), the pins
   `E2E_APTCLIENTS_{DEBIAN13,DEBIAN12,UBUNTU2404,UBUNTU2204}_IMAGE` in `tools/versions.env` (digests of the multi-architecture indexes; a rule of `renovate.json` keeps each on
   its release), `deploy/dev/apt-clients.yaml` (one pod per image in the namespace `trove-e2e-apt`, Pod Security level `baseline`), the wiring in `deploy/dev/e2e.sh` (the
   sets `deb`, `apt-clients`, `apt-clients-down`; the markers `T17 deb-stub`, `T17 apt-clients`, `T17 deb`; `debstub.yaml` is applied for the first time), `make apt-clients-image`,
-  the job `e2e-deb` of Test and Release (`runs-on: large`, scoped like `e2e-oci`, port 8107, a `needs` of the release job), and `test/e2e/deb_*_test.go`.
+  the job `e2e-deb` of Test and Release (`runs-on: large`, scoped like `e2e-oci`, port 8107, a `needs` of the release job; a `closing=true` dispatch adds the leg `deb-closing` on port 8108), and `test/e2e/deb_*_test.go`.
   No `values-*.yaml` addition was needed: the scatter profile has three `packages` replicas and the main worker has two replicas, which claim the `index` queue.
 - **Rows that ran green on kind** (one run of the set `deb` on the `linux/arm64` images: `go test` 3 min): the four images through a local repository (upload with `curl`, the index state
   read, `apt-get update --error-on=any`, `apt-get install`, the installed script), a keyring with another key (fails, and the repository's key accepts again), the anonymous read, the
   pull-through remote over the stub (the three clients after the first cost the stub no request), the flat root on Ubuntu 24.04, the mirror with the stub's connections cut (the stub delivered nothing
   after the cut), the rotation table of R-DEB-017 on Debian 13, Ubuntu 24.04 and Ubuntu 22.04, and once more on Debian 13 with an imported next key whose only self-signature is 30 s old (36 s).
-- **Switched on when it landed:** `TestDebMirror` (the mirror, WP7, e5945f5e). **Still skipped:** `TestDebVirtual` (the virtual class, WP8, is not on main); the row is written against
-  R-DEB-025 to R-DEB-027 and switches on with `debVirtualBuilt`.
+- **Switched on when the classes landed:** `TestDebMirror` (WP7, e5945f5e) and `TestDebVirtual` (WP8). The virtual row: a virtual repository over a local member and the verified remote, all four images install a
+  local and a remote package through it (the test waits for the merged `Packages.gz`, the delay bound is the interval + 60 s), and the claim row (`trove-tools` 0.1 published first is installed although the remote has a
+  higher version; the merged index lists it once). Set `deb` complete on `linux/arm64`: `make e2e SET=deb`, 52 tests and subtests, none skipped, `go test` 229 s (`TestDebVirtual` 72 s, `TestDebRotation` 58 s, `TestDebLocal` 63 s).
+- **The closing run:** `make e2e SET=deb-closing` (`TROVE_E2E_DEB_CLOSING=1`), 164 s of `go test` (15 tests and subtests), 188 s with the images and pods. `TestDebClosing` (142 s): with Valkey stopped, on each of the four images an upload to a
+  local repository and its install, an install through the pull-through remote and one through a virtual repository, all green. `TestDebClosingPublic` (5 s): the archive key fetched from `ftp-master.debian.org`, refused
+  unless its fingerprint is the pinned `04B54C3CDCA79751B16BC6B5225629DF75B188BD`, a pull-through remote of `https://deb.debian.org/debian/`, `apt-get update --error-on=any` and `apt-get install hello` in `debian:13` (suite
+  trixie), anonymously: 3 upstream requests by the remote's own counter (bound 30; the archive's count is not observable from outside). A first run of the public check read 0 requests because the metric's `repo` label
+  carries the qualified name; the test matches the key and the label now.
 - **Defects the rows found:** none in the product. The rows' own mistakes: the anonymous grant names its repository by key (a pattern is refused, `anonymous_dynamic_selector`), the flat root reaches the stub
-  as `/flatroot/InRelease`, and a mirror whose include patterns leave a dependency out does not hold it. One mismatch of data: the setup client list names APT 2.7 for Ubuntu 24.04, which ships 2.8.3.
-- **Not done:** the amd64 images were not run (the host is arm64); `deb-long` (the delay bound already runs in `make test-performance`, Q-DEB-59); the closing run (the set `deb` with Valkey stopped and the
-  read-only check against `deb.debian.org`); the Debian pass in the sets `mirror` and `mirror-long`; the virtual row. The clock rules of Q-DEB-30 stay with the integration asserts (one cluster, one clock).
+  as `/flatroot/InRelease`, and a mirror whose include patterns leave a dependency out does not hold it. One mismatch of data: the setup client list names APT 2.7 for Ubuntu 24.04, which ships 2.8.3. A fact about the virtual class that the virtual row met: a virtual
+  repository's `Release` lists no `all` architecture and its architecture indexes carry a remote member's `all` packages only when the upstream lists them there (Debian and Ubuntu do; the stub keeps them in `binary-all` only), so
+  the rows install architecture-specific packages of the remote.
+- **Not done:** the amd64 images were not run (the host is arm64); `deb-long` (the delay bound already runs in `make test-performance`, Q-DEB-59); the Debian pass in the set `mirror` and the drain during a Debian pass in
+  `mirror-long`: they need the APT client pods and the Debian test upstream in the `mirror` profile and a throttled stub for the drain, a long build of its own, so they are left out. The clock rules of Q-DEB-30 stay with
+  the integration asserts (one cluster, one clock).
 
 ## 22 · WP8 (the virtual class) and WP9 (virtual rows) as built (stage 5)
 
