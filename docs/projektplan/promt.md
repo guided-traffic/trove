@@ -271,7 +271,11 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   green in three of the four runs before): during the node drain 18 PUTs of the transfer loop answered 429 (`RateLimit-Policy="write";q=50;w=5`)
   although the loop starts 4 PUTs a second as one service account, and the certificate rotation row saw 13 of 11,529 requests answered
   502. The loop's one wrong checksum of the same run was two iterations writing one path (fixed: a path per iteration). Done when it is
-  known what the write limiter counts during a drain and where the 502s of the rotation come from.
+  known what the write limiter counts during a drain and where the 502s of the rotation come from. The next run (42563355283, on
+  a6d8767a, no product change since the green run 42557795728) failed other rows of the same set the same way: 10 of 3,245 requests
+  through the scatter edge answered 502 with a slowest request of 15 s, and a replica with a wrong Valkey primary name turned ready
+  while its database check took 2 s. Both point at a starved cluster on the runner rather than at trove; the runner's load was not
+  measured.
 - **F-105 · `TestR_NPM_007_ASlowPublishOf200MiB` fails under load** (seen twice: by the F-83 builder, an S3 UploadPart
   cancellation followed by the package timeout, and by the F-101 builder, "1 connections held a transaction older than 1 s
   while the body arrived"; passes alone). The test asserts that no database transaction stays open longer than 1 s while
