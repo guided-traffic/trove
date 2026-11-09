@@ -248,7 +248,14 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
 - **F-116 · `TestBastion_R_BAS_049_RoutingByPath` failed once on CI** (Test and Release 42530616876, e2e-bastion): "0 hits for 36
   paths requested twice"; each repeated tarball request went to the main installation as a revalidation (304) instead of being a hit
   on the Bastion replica of its path. Green in the runs before and after with no Bastion change in between. Done when the cause of
-  the revalidations is known.
+  the revalidations is known. Read on 2026-11-09, two candidates in `engine.fresh` (`internal/bastion/engine/entries.go`), not
+  settled: (a) the e2e Bastion keeps an artifact for `artifact_revalidate_after: 90s` (`deploy/dev/bastion-chart-common.yaml`), and
+  the test relies on the tarballs the scenario before it fetched, whose last runs refresh the npm tarballs and then run the other
+  clients; past 90 s every npm tarball is stale, which explains the first round of revalidations but not the second, since a
+  304 sets `validatedAt` anew; (b) a content entry of the feed that names the npm repository and arrived less than 15 s before
+  makes every entry unusable, also one revalidated a moment ago, so all 72 requests revalidate while they run inside those 15 s.
+  Next step (`test/e2e` belonged to the APT e2e builder in this run): a warm-up round inside the test before `before` is read
+  removes (a); logging the Bastion's last applied content entry of the repository with a failure would confirm or rule out (b).
 - **F-105 · `TestR_NPM_007_ASlowPublishOf200MiB` fails under load** (seen twice: by the F-83 builder, an S3 UploadPart
   cancellation followed by the package timeout, and by the F-101 builder, "1 connections held a transaction older than 1 s
   while the body arrived"; passes alone). The test asserts that no database transaction stays open longer than 1 s while
@@ -269,10 +276,14 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   recurrence.
 - **F-95 · One Angular unit test failed once in 1,080, its name not recorded** (seen once, by the F-86 builder on a loaded
   host; the second run and the reviewer's run passed all 1,080). Done when the failing test is identified and its cause
-  fixed; until then a recurrence is reported with the test's name and output.
+  fixed; until then a recurrence is reported with the test's name and output. Looked at on 2026-11-09: without the test's name
+  there is no test to read; the next step stays the recurrence with its name.
 - **F-96 · The registry's anonymous test failed once after 85 s, its message not captured** (seen once, by the WP3
   builder on a loaded host; 10 of 10 later runs passed). The settings wait it was suspected of takes under 1 ms; the test now
   logs that wait and fails with the replica's last answer. Done when a recurrence names its cause and that cause is fixed.
+  Read on 2026-11-09 (`setAnonymous` in `test/integration/registry/anonymous_test.go`): the wait is on the replica's own answer to an
+  anonymous token request, bounded by five times `auth.revocation_bound` and naming the last answer; no further structural
+  defect found, so the next step stays the recurrence with that message.
 
 Found on 2026-11-03 while closing phase 5:
 
