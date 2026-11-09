@@ -438,6 +438,15 @@ works only together with the restore package's fix-ups.
   replay, hand-written forged entries and a replay without a notifier. The restore-level runs (an `npm view` on every replica, a merge
   request pipeline exchanging against the restored installation) are the end-to-end suite's.
 
+## The platform layer and the point-in-time drill
+
+The platform layer of R-HA-023 (WAL archive and base backups through the Barman Cloud plugin) is part of the dev stack behind `TROVE_PITR=1`, and the
+point-in-time restore of R-HA-025 is drilled by the set `backup-pitr`. Nothing of it is code of the product except the commands the drill calls
+(`trove admin post-restore`, [internal/backup/postrestore](../../internal/backup/postrestore)) and the chart's post-restore Job; the dev stack side is
+[deploy/dev/pitr.sh](../../deploy/dev/pitr.sh), [pitr.yaml](../../deploy/dev/pitr.yaml) and [pitr-restore.yaml](../../deploy/dev/pitr-restore.yaml). What the drill does, its stages
+and what it leaves out: [e2e.md](e2e.md#the-point-in-time-restore-drill). `trove admin storage restore-versions` and `maintenance resume-deletions` do not exist
+([H-767](../spec/ha-and-helm.md#h-767--the-commands-of-r-ha-025-steps-5-and-7-do-not-exist)): the drill rolls the bucket back with the S3 API and clears the deletion pause with SQL.
+
 ## The create pipeline
 
 `trove backup create` is [internal/backup/create](../../internal/backup/create), written against the ports of `internal/backup` and

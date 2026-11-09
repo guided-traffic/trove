@@ -8,7 +8,7 @@
 #   2. starts the driver pod next to the release (same ConfigMap, Secrets and security contexts as a
 #      worker pod; it only writes changes and enqueues jobs, it claims nothing),
 #   3. checks that the pinned k6 image is present,
-#   4. runs `go test -tags e2e`, writes the machine-readable report to .out/test-e2e.json and the
+#   4. runs `go test -tags e2e`, writes the machine-readable report to .out/test-e2e.json (TROVE_E2E_REPORT names another file below .out/) and the
 #      artifacts (k6 logs and summaries, pod watch, events, driver output) to .out/e2e/.
 #
 #   e2e.sh              every test except the profile switch of E0.11 (the default profile)
@@ -95,6 +95,8 @@
 #   e2e.sh backup       the backup and restore suite (R-BAK-029, E5.11, E5.12): a backup during a publishing, deleting and collecting load restored into
 #                       the namespace trove-restore, the drain and kill -9 of a backup and of a restore, the journal across a restore with E5.12's CI
 #                       bullets (the issuer double, TROVE_E2E_OIDCSTUB=1) (nightly, dispatch, locally)
+#   e2e.sh backup-pitr  the point-in-time restore drill (R-HA-025, E5.1): the platform layer of R-HA-023 (TROVE_PITR=1) recovered into a new PostgreSQL
+#                       cluster up to a time t, the post-restore Job with the journal replay, the object versions rolled back (nightly, dispatch, locally)
 #   e2e.sh upgrade      the upgrade tests (E6a.7 and R-HA-020): the cut into roles in the two steps of R-HA-064 from v0.16.0, the rolling
 #                       upgrade and rollback from the latest release, and the rolling upgrade of the working tree from its second UI
 #                       bundle (make image-marked) to the image under test, each under npm, NuGet and browser loops; it replaces the
@@ -258,7 +260,11 @@ case "$set_name" in
   # backs up while a load publishes, deletes and collects, restores into the second installation and judges it. A long leg: nightly,
   # on dispatch, locally (a red long leg is a finding, not a blocker, owner 2026-11-01).
   # The double of the CI issuer (TROVE_E2E_OIDCSTUB=1) is for E5.12's CI bullets in TestBackupJournal (Q-BAK-60): a disabled mapping and a single-use token across a restore.
-  backup) run='^TestBackup'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=1; export TROVE_E2E_OIDCSTUB=1 ;;
+  backup) run='^TestBackup'; skip='^TestBackupPITR'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=1; export TROVE_E2E_OIDCSTUB=1 ;;
+  # The point-in-time restore drill (R-HA-025, R-HA-023, R-HA-054, E5.1, docs/developer/e2e.md#the-point-in-time-restore-drill): the `backup` profile on a
+  # cluster whose PostgreSQL archives its WAL through the Barman Cloud plugin (TROVE_PITR=1, up.sh), so the profile switch of the test installs the
+  # plugin. The cluster stays archiving until it is recreated. A long leg: nightly (step of the job e2e-backup), on dispatch, locally.
+  backup-pitr) run='^TestBackupPITR'; export TROVE_PITR=1 ;;
   # <<< M5 backup
   *) run="$set_name" ;;
 esac
@@ -789,16 +795,17 @@ if [ "${APT_CLIENTS:-}" = 1 ]; then
 fi
 # <<< T17 apt-clients
 
-log "go test -tags e2e -run '$run' (report: .out/test-e2e.json, artifacts: $OUT)"
+REPORT_REL="${TROVE_E2E_REPORT:-.out/test-e2e.json}"
+log "go test -tags e2e -run '$run' (report: $REPORT_REL, artifacts: $OUT)"
 cd "$REPO_ROOT"
 set -o pipefail
 if ! go test -count=1 -tags e2e -timeout "${TROVE_E2E_TIMEOUT:-90m}" -json -run "$run" ${skip:+-skip "$skip"} ./test/e2e \
-  | tee "$REPO_ROOT/.out/test-e2e.json" \
+  | tee "$REPO_ROOT/$REPORT_REL" \
   | jq -r --unbuffered 'select(.Action=="output") | .Output' | { grep -v -E '^(=== |PASS$)' || true; }; then
-  log "e2e FAILED (report: .out/test-e2e.json, artifacts: $OUT)"
+  log "e2e FAILED (report: $REPORT_REL, artifacts: $OUT)"
   exit 1
 fi
 # A -run expression that matches nothing is a pass for `go test`; for this suite it is a mistake.
-ran="$(jq -s '[.[] | select(.Action == "pass" and .Test != null)] | length' "$REPO_ROOT/.out/test-e2e.json")"
+ran="$(jq -s '[.[] | select(.Action == "pass" and .Test != null)] | length' "$REPO_ROOT/$REPORT_REL")"
 [ "$ran" -gt 0 ] || { log "e2e FAILED: the expression '$run' matched no test"; exit 1; }
 log "e2e passed ($ran tests and subtests)"

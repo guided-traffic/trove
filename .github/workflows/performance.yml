@@ -2107,6 +2107,11 @@ jobs:
         timeout-minutes: 90
         run: make e2e SET=backup
 
+      - name: make e2e SET=backup-pitr (the point-in-time restore drill, R-HA-025)
+        if: always() && steps.leg.outputs.run == 'true'
+        timeout-minutes: 40
+        run: make e2e SET=backup-pitr TROVE_E2E_REPORT=.out/test-e2e-backup-pitr.json
+
       - name: Upload the go test -json report
         if: always() && steps.leg.outputs.run == 'true'
         uses: actions/upload-artifact@v7
@@ -2115,6 +2120,15 @@ jobs:
           path: .out/test-e2e.json
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Upload the go test -json report of the point-in-time drill
+        if: always() && steps.leg.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-backup-pitr-report
+          path: .out/test-e2e-backup-pitr.json
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Upload the timings of the drill, the job logs and the test output
         if: always() && steps.leg.outputs.run == 'true'

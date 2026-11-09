@@ -3965,6 +3965,9 @@
     "postRestore": {
       "type": "object",
       "properties": {
+        "hold": {
+          "type": "boolean"
+        },
         "enabled": {
           "type": "boolean"
         },

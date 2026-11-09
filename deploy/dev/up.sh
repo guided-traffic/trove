@@ -34,6 +34,11 @@
 #                         lifetime of 60 s + 15 s) and the role defaults that preflight reads on a pooled connection, which this
 #                         script sets with ALTER ROLE trove IN DATABASE trove SET ... (statement_timeout 30s, lock_timeout 5s,
 #                         idle_in_transaction_session_timeout 60s, search_path trove: the configuration's defaults).
+#   TROVE_PITR=1          also install the Barman Cloud plugin of CloudNativePG (tools/versions.env DEV_BARMAN_PLUGIN_*) and archive the WAL
+#                         of trove-db to the bucket trove-pg-archive (pitr.yaml, R-HA-023); the point-in-time restore drill needs it
+#                         (docs/developer/e2e.md#the-point-in-time-restore-drill). It is off by default: the plugin adds a Deployment and a
+#                         sidecar container to both PostgreSQL pods. The setting is sticky for a cluster that exists: the plugin entry
+#                         stays in the Cluster when a later run leaves the variable out, and down.sh removes it with the cluster.
 #   TROVE_IMAGE=<ref>     the trove image to load into the cluster (default guidedtraffic/trove:dev,
 #                         built by `make image`). It must be present in the local Docker.
 #   TROVE_DEV_HTTP_PORT=n the host port of the edge, default 8080 (https://localhost:8080). Set it when
@@ -53,6 +58,7 @@ set -euo pipefail
 
 SKIP_RELEASE="${TROVE_SKIP_RELEASE:-0}"
 POOLER="${TROVE_POOLER:-0}"
+PITR="${TROVE_PITR:-0}"
 PROFILE="${TROVE_PROFILE:-default}"
 case "$PROFILE" in default|scatter|bastion|vuln|mirror|backup) ;; *) die "TROVE_PROFILE must be default, scatter, bastion, vuln, mirror or backup, not '$PROFILE'" ;; esac
 IMAGE="${TROVE_IMAGE:-guidedtraffic/trove:dev}"
@@ -164,6 +170,17 @@ task_vko() {
     --wait --timeout 5m
 }
 
+# pg_cluster_manifest prints postgres.yaml; with TROVE_PITR=1 the Cluster also archives through the Barman Cloud plugin (kubectl patch --local
+# edits the document on stdin and needs no server).
+pg_cluster_manifest() {
+  if [ "$PITR" = "1" ]; then
+    render "$DEV_DIR/postgres.yaml" | kubectl patch --local -f - --type merge -o yaml \
+      -p '{"spec":{"plugins":[{"name":"barman-cloud.cloudnative-pg.io","isWALArchiver":true,"parameters":{"barmanObjectName":"trove-pg-archive"}}]}}'
+  else
+    render "$DEV_DIR/postgres.yaml"
+  fi
+}
+
 task_postgres() {
   local image="${DEV_CNPG_OPERATOR_IMAGE#*:}"   # 1.30.1@sha256:...
   helm --kube-context "$CTX" upgrade --install cnpg \
@@ -179,7 +196,18 @@ task_postgres() {
     [ "$(date +%s)" -lt "$deadline" ] || die "the CloudNativePG webhook has no ready endpoint after 300s"
     sleep 2
   done
-  until render "$DEV_DIR/postgres.yaml" | kn apply -f - 2>"$LOGS/postgres-apply.err"; do
+  if [ "$PITR" = "1" ]; then
+    # The plugin needs cert-manager (its own mTLS certificates, issued from a self-signed Issuer) and registers itself with the operator
+    # through the Service it labels; the Cluster that names it in spec.plugins is applied after both.
+    await pki
+    barman_plugin_manifest > "$LOGS/barman-plugin.yaml"
+    kubectl --context "$CTX" apply -f "$LOGS/barman-plugin.yaml"
+    kubectl --context "$CTX" wait --for=condition=Established crd/objectstores.barmancloud.cnpg.io --timeout=2m
+    kubectl --context "$CTX" -n cnpg-system rollout status deployment/barman-cloud --timeout=5m
+    kubectl --context "$CTX" -n cnpg-system wait --for=condition=Ready certificate/barman-cloud-client certificate/barman-cloud-server --timeout=3m
+    render "$DEV_DIR/pitr.yaml" | kn apply -f -
+  fi
+  until pg_cluster_manifest | kn apply -f - 2>"$LOGS/postgres-apply.err"; do
     grep -q 'failed calling webhook' "$LOGS/postgres-apply.err" || { cat "$LOGS/postgres-apply.err" >&2; return 1; }
     [ "$(date +%s)" -lt "$deadline" ] || { cat "$LOGS/postgres-apply.err" >&2; die "the CloudNativePG webhook still refuses the Cluster after 300s"; }
     sleep 3

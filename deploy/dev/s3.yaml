@@ -2,7 +2,7 @@
 # (master, volume server, filer and S3 gateway) with a PersistentVolumeClaim (Q-STOR-147), behind Service trove-s3 on
 # port 9000, plus a Job that creates the buckets:
 #   trove-blobs       blob store, versioning enabled
-#   trove-pg-archive  PostgreSQL WAL archive (created; CloudNativePG archiving is wired with PITR in M5)
+#   trove-pg-archive  PostgreSQL WAL archive and base backups (CloudNativePG archives to it with TROVE_PITR=1, pitr.yaml)
 #   trove-backups     backup target
 #
 # HTTPS only: the S3 gateway serves the certificate of Secret trove-s3-tls (cert-manager, pki.yaml), which

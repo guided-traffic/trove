@@ -35,12 +35,23 @@ type Options struct {
 	// Replayer replays the revocation journal; a call to OpenReplayer builds it with the credentials of the file the
 	// operator passed, or the runtime credential when empty.
 	OpenReplayer func(ctx context.Context, credentialsFile string) (journal.Replayer, error)
+	// VerifyStorage checks that the object of every live blob is in the object store (`trove admin storage verify`, R-HA-025 step 4);
+	// nil leaves the check out of the report. It checks every blob and not only those changed since t, because an object that
+	// the old database's collector deleted after t belongs to a row of any age (Q-HA-213).
+	VerifyStorage func(ctx context.Context) (StorageCheck, error)
 	// Margin is backup.revocation_journal.replay_margin.
 	Margin time.Duration
 	// Recorder writes system.restored.
 	Recorder audit.Recorder
 	Log      *slog.Logger
 	Now      func() time.Time
+}
+
+// StorageCheck is the result of [Options.VerifyStorage].
+type StorageCheck struct {
+	// Checked is the number of blobs whose object was asked for; Missing those without an object; SizeMismatch those of another
+	// size; Unchecked those the store did not answer for; ItemsAffected the items that reference a damaged blob.
+	Checked, Missing, SizeMismatch, Unchecked, ItemsAffected int64
 }
 
 // PostRestorer is the [backup.PostRestorer].
@@ -132,9 +143,7 @@ func (p *PostRestorer) PostRestore(ctx context.Context, opts backup.PostRestoreO
 		return nil, backup.Fail(backup.ExitFailed, backup.CodeInternal, err)
 	}
 	step("the replicas are held not ready until the replay and system.restored are done (" + MarkerKey + ")")
-	// The reference to the blobs that are missing is the job of `trove admin storage verify`, which this release does not
-	// have; the line says so rather than report zero.
-	step("storage verification not run: `trove admin storage verify` is not available in this release")
+	p.verifyStorage(ctx, step)
 	p.reportQuarantine(ctx, step)
 
 	journalState := "skipped"
@@ -284,6 +293,24 @@ func (p *PostRestorer) cleanUp(ctx context.Context, fx []fixup.Fixup, t string, 
 		step("restored_at set: single-use CI issuers refuse subject tokens issued before the restore")
 		return nil
 	})
+}
+
+// verifyStorage reports the referenced blobs whose objects are missing (R-HA-025 step 4). A check that cannot run is a line, not an
+// error: the restore is done, and the operator repeats `trove admin storage verify` after step 5.
+func (p *PostRestorer) verifyStorage(ctx context.Context, step func(string)) {
+	if p.o.VerifyStorage == nil {
+		return
+	}
+	c, err := p.o.VerifyStorage(ctx)
+	if err != nil {
+		step(fmt.Sprintf("storage verify failed: %v; run `trove admin storage verify` before step 6", err))
+		return
+	}
+	step(fmt.Sprintf("storage verify: %d blobs checked, %d without object, %d of another size, %d not checked, %d items affected",
+		c.Checked, c.Missing, c.SizeMismatch, c.Unchecked, c.ItemsAffected))
+	if c.Missing > 0 || c.SizeMismatch > 0 {
+		step("referenced blobs without their object: repair them (step 5, `trove admin storage restore-versions` on a versioned bucket) and run `trove admin storage verify` before step 6")
+	}
 }
 
 // reportQuarantine says when the journal has rows that could never be shipped (audit finding L4): the revocations they

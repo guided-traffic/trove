@@ -25,7 +25,8 @@ fetch() {
   "$2" >/dev/null
 }
 
-log "dev charts: fetching the haproxy-ingress and cloudnative-pg archives into $STATE_DIR/charts ($budget s in all)"
+log "dev charts: fetching the haproxy-ingress and cloudnative-pg archives and the Barman Cloud plugin manifest into $STATE_DIR/charts ($budget s in all)"
 fetch haproxy-ingress haproxy_chart_tgz
 fetch cloudnative-pg cnpg_chart_tgz
-log "dev charts: both archives are in place and match their digests"
+fetch barman-cloud-plugin barman_plugin_manifest
+log "dev charts: the archives and the manifest are in place and match their digests"

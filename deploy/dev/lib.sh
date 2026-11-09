@@ -110,6 +110,44 @@ cnpg_chart_tgz() {
     cloudnative-pg "$CNPG_CHART_VERSION" "$CNPG_CHART_SHA256"
 }
 
+# barman_plugin_manifest prints the manifest of the Barman Cloud plugin of CloudNativePG (DEV_BARMAN_PLUGIN_VERSION) with both of its images
+# replaced by the digests of tools/versions.env: the operator image of the Deployment and the sidecar image, which the manifest keeps in a
+# Secret by tag. The manifest is a GitHub release asset, fetched once into $STATE_DIR/charts with tools/github-download.sh and checked
+# against DEV_BARMAN_PLUGIN_MANIFEST_SHA256 on every use (as chart_release_tgz). The image pins must carry the tag of the version.
+barman_plugin_manifest() {
+  local v="$DEV_BARMAN_PLUGIN_VERSION" dir="$STATE_DIR/charts" file tmp got ref sidecar_b64
+  for ref in "$DEV_BARMAN_PLUGIN_IMAGE" "$DEV_BARMAN_PLUGIN_SIDECAR_IMAGE"; do
+    case "$ref" in
+      *":$v@sha256:"*) ;;
+      *) echo "error: $ref is pinned in tools/versions.env, but DEV_BARMAN_PLUGIN_VERSION is $v: the plugin pins move together" >&2; return 1 ;;
+    esac
+  done
+  file="$dir/barman-cloud-plugin-$v.yaml"
+  if ! { [ -s "$file" ] && [ "$(sha256_file "$file")" = "$DEV_BARMAN_PLUGIN_MANIFEST_SHA256" ]; }; then
+    rm -f "$file"
+    mkdir -p "$dir"
+    tmp="$(mktemp -d "$dir/.pull.XXXXXX")"
+    if ! "$REPO_ROOT/tools/github-download.sh" "https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/$v/manifest.yaml" "$tmp/manifest.yaml" >&2; then
+      echo "error: the manifest of the Barman Cloud plugin $v could not be downloaded" >&2
+      rm -rf "$tmp"; return 1
+    fi
+    got="$(sha256_file "$tmp/manifest.yaml")"
+    if [ "$got" != "$DEV_BARMAN_PLUGIN_MANIFEST_SHA256" ]; then
+      echo "error: the manifest of the Barman Cloud plugin $v has SHA-256 $got, tools/versions.env pins $DEV_BARMAN_PLUGIN_MANIFEST_SHA256" >&2
+      rm -rf "$tmp"; return 1
+    fi
+    mv "$tmp/manifest.yaml" "$file"
+    rm -rf "$tmp"
+  fi
+  sidecar_b64="$(printf '%s' "$DEV_BARMAN_PLUGIN_SIDECAR_IMAGE" | base64 | tr -d '\n')"
+  awk -v op="$DEV_BARMAN_PLUGIN_IMAGE" -v sc="$sidecar_b64" '
+    skip > 0 { skip--; next }
+    /^ *SIDECAR_IMAGE: \|$/ { match($0, /^ */); printf "%sSIDECAR_IMAGE: %s\n", substr($0, 1, RLENGTH), sc; skip = 2; next }
+    /^ *image: ghcr.io\/cloudnative-pg\/plugin-barman-cloud:/ { match($0, /^ */); printf "%simage: %s\n", substr($0, 1, RLENGTH), op; next }
+    { print }
+  ' "$file"
+}
+
 os() { uname -s | tr '[:upper:]' '[:lower:]'; }
 arch() {
   case "$(uname -m)" in

@@ -8,8 +8,9 @@
 # directly (secrets.database, secrets.databaseCA), so the profile runs verify-full like
 # production. The image is substituted by lib.sh (render) from DEV_CNPG_POSTGRES_IMAGE.
 #
-# WAL archiving to the bucket trove-pg-archive is not configured: point-in-time recovery
-# (R-HA-023) belongs to the backup milestone.
+# WAL archiving to the bucket trove-pg-archive is off here: TROVE_PITR=1 (up.sh) adds the Barman Cloud plugin
+# entry of spec.plugins to this Cluster and applies pitr.yaml, which point-in-time recovery (R-HA-023,
+# R-HA-025) needs.
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:

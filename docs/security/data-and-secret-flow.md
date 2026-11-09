@@ -241,6 +241,16 @@ The gaps of the spec pages whose mechanism this page describes:
 - [H-79](../spec/ha-and-helm.md#h-79--artifacts-are-unsigned-and-nothing-checks-their-origin): the image and the chart are unsigned, and nothing checks their origin.
 - [H-80](../spec/ha-and-helm.md#h-80--self-hosted-runners-build-the-code-of-every-pull-request): self-hosted runners build the code of every pull request, and its jobs hold `DOCKERHUB_PAT`.
 
+### H-768 · The dev stack archives PostgreSQL with the blob bucket's login
+
+Stage: the WAL archive and the base backups of `TROVE_PITR=1` ([pitr.yaml](../../deploy/dev/pitr.yaml)), which R-HA-023 asks to keep in a bucket
+other than the blob bucket and under different credentials.
+
+Live in the dev profile only: the `ObjectStore trove-pg-archive` reads the Secret `trove-s3`, the one SeaweedFS identity that also writes and
+deletes the blob bucket and the backup target, so a compromised trove replica that holds that login could delete the archive. The bucket is
+separate, the link is TLS against the dev CA. A production installation gives the archive its own login; the dev SeaweedFS identity file
+(one identity) has no second one. Subject: the archive of the dev cluster, which holds nothing but test data.
+
 ### H-70 · The standard-output log carries every record in full
 
 Stage: every log record written to standard output, which the platform's log stack collects

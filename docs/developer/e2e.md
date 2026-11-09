@@ -54,6 +54,7 @@ deploy/dev/valkey-cli.sh    valkey-cli against the current primary (FLUSHALL of 
 deploy/dev/bastion.sh       the e2e Bastions of R-BAS-049: infra, install <volume|bucket>, status, down (the Bastion tests, below)
 deploy/dev/bastion*.yaml    their manifests and chart values; values-bastion.yaml is the main installation's `bastion` profile
 deploy/dev/restore-ns.sh    the second installation of the restore drill (namespace trove-restore): infra, install <backup id>, serve, down; restore-ns.yaml and values-restore.yaml are its manifests and chart values, values-restore-vuln.yaml the overlay of `TROVE_RESTORE_PROFILE=vuln` (the backup tests and the vulnerability tests, below)
+deploy/dev/pitr.sh, pitr.yaml, pitr-restore.yaml  the platform layer of R-HA-023 and the new cluster of the point-in-time drill (TROVE_PITR=1, below)
 deploy/dev/values-backup.yaml  the profile `backup`: garbage collection without a grace period (TROVE_PROFILE=backup)
 test/e2e/                   the Go tests, build tag `e2e`, package e2e
   env_test.go               kubectl, the API-server proxy to :8081, the driver and k6 helpers
@@ -130,6 +131,7 @@ test/e2e/                   the Go tests, build tag `e2e`, package e2e
   backup_drill_test.go      the restore drill: a backup during the load, the restore Job into the second namespace, the restored installation judged by its bytes, npm view and verify --deep, two overlapping Jobs
   backup_drain_test.go      a node drain and a kill -9 of a backup and of a restore (R-BAK-012, R-BAK-010, R-BAK-021)
   backup_journal_test.go    E5.12: the revocation journal across a restore
+  backup_pitr_test.go       E5.1: the point-in-time restore drill of R-HA-025 (set backup-pitr)
   backup_ci_test.go         E5.12's CI bullets: the issuer, the mappings and the exchange against the source and the restored installation
   clients/                  the npm client matrix image (below): package.json + package-lock.json, bin/ wrappers, shim/npm, fwd/ forwarder,
                             Dockerfile, build.sh, check-pins.mjs
@@ -185,6 +187,7 @@ make e2e SET=mirror          # the mirror (R-REPO-059, E6b.6): npm ci and dotnet
 make e2e SET=mirror-long     # the drain of the node of the process that runs a pass of 300 packages, and the failure suite on a pass of 100 (a process lost, a throttling upstream, a switchover and a failover) (CI: nightly and on dispatch; a red long leg is a finding, not a blocker)
 make e2e SET=upgrade         # the upgrade across the cut from v0.16.0 (E6a.7) and the rolling upgrade with its rollback from the latest release (R-HA-020), under npm, NuGet and browser loops; replaces the installation and puts the current dev release back (CI: nightly and on dispatch; a red long leg is a finding, not a blocker)
 make e2e SET=vuln-pooler     # E5.13: the block through drain variant D on the cluster with the poolers of R-HA-058 (TROVE_POOLER=1, set by the set); no client pods; about 6 minutes of `make e2e` (the variant takes 2.5 to 3.5 minutes: the pooler pod stops after its 90 s `preStop` sleep); the cluster stays in the pooler overlay until the next `make dev-up` (CI: job e2e-vuln, nightly)
+make e2e SET=backup-pitr      # the point-in-time restore drill of R-HA-025 (TROVE_PITR=1: the Barman Cloud plugin; CI: a step of the job e2e-backup; about 15 minutes)
 make e2e SET=backup          # the backup and restore suite (R-BAK-029): the drill into the namespace trove-restore, the drain and the kill -9 of a backup and a restore, the journal across a restore with E5.12's CI bullets (starts the issuer double); the profile backup, one npm client pod (CI: job e2e-backup of the nightly workflow, on dispatch; about 25 minutes)
 make fuzz-npm FUZZ=FuzzMatch FUZZTIME=1m   # npm's fuzz targets (CI: 30 minutes, closing run only)
 ```
@@ -198,7 +201,7 @@ no host install and no host port is involved. `e2e.sh` refuses a `K6_IMAGE` whos
 neither `major.minor.patch` nor `dev`: with a commit hash the replicas would wait for the schema forever and never
 become ready, and it now logs an ERROR at start saying so ([Findings of the suite](#findings-of-the-suite)).
 
-Output: the machine-readable report is `.out/test-e2e.json` (`go test -json`, test names carry the
+Output: the machine-readable report is `.out/test-e2e.json` (`TROVE_E2E_REPORT=<file below .out/>` names another one; the nightly job `e2e-backup` writes the drill of `backup-pitr` to `.out/test-e2e-backup-pitr.json`) (`go test -json`, test names carry the
 requirement IDs), the artifacts are in `.out/e2e/`: per k6 run the console log (one line per request:
 `R <unix ms> <status> <replica> <ms> <path>`) and k6's own `summary.json`, the driver's JSON per run, the
 pod watch and the events of the drain, the logs of the drained pods, and the result files `e13-*.json`,
@@ -3706,6 +3709,40 @@ The runs of 2026-11-07 each ran on this cluster after `make image`; `TestBackupD
 - The browser journey `16-backups.spec.ts` runs against the source installation (the restored one has no edge and no identity provider); the restored installation's side of the screen is the summary
   of the API (`restoredFrom`), which `TestBackupJournal` reads.
 - The trash can has no API (R-STOR-022 is P1): a trashed item is marked in its row, and its blob is judged through the restored bucket (Q-BAK-46).
+
+## The point-in-time restore drill
+
+The second restore drill of exit criterion E5.1 ([roadmap](../coverage/roadmap.md)): the platform layer of [R-HA-023](../spec/ha-and-helm.md#r-ha-023--backup-of-postgresql-object-storage-and-keys)
+restored by the steps of [R-HA-025](../spec/ha-and-helm.md#r-ha-025--restore-procedure), on the installation itself. The trove-backup drill into an empty namespace is
+[above](#the-backup-tests). Decisions: [Q-HA-210](../spec/ha-and-helm.md#q-ha-210--the-platform-layer-of-r-ha-023-in-the-dev-stack-is-opt-in-trove_pitr1-installs-the-barman-cloud-plugin-by-pinned-manifest-and-keeps-the-archive-on-the-dev-seaweedfs-over-tls)
+and [Q-HA-211](../spec/ha-and-helm.md#q-ha-211--the-point-in-time-drill-restores-the-installations-own-database-into-a-new-cluster-and-does-steps-5-and-7-of-r-ha-025-with-the-s3-api-and-sql-until-their-commands-exist).
+
+**The platform layer in the dev stack.** `TROVE_PITR=1 make dev-up` (the set `backup-pitr` exports it) installs the Barman Cloud plugin of CloudNativePG
+(`DEV_BARMAN_PLUGIN_*` in [versions.env](../../tools/versions.env): the release manifest by SHA-256, the operator and sidecar images by digest, fetched by
+`make dev-charts` in CI), applies the `ObjectStore` [pitr.yaml](../../deploy/dev/pitr.yaml) and adds `spec.plugins` to the Cluster `trove-db`. The WAL goes to
+`s3://trove-pg-archive/` on the dev SeaweedFS over TLS (the dev CA as `endpointCA`). It is off by default: it adds a Deployment, a sidecar to both PostgreSQL pods
+and a rolling restart of the cluster. The switch is sticky for a cluster that exists. [pitr.sh](../../deploy/dev/pitr.sh) is the PostgreSQL side: `backup` (a `Backup`
+of method `plugin`), `archive-wal` (`pg_switch_wal` and wait for the archiver), `restore <time>` (the Cluster `trove-db-pitr` from
+[pitr-restore.yaml](../../deploy/dev/pitr-restore.yaml): `bootstrap.recovery` from the plugin's external cluster with `recoveryTarget.targetTime`), `down`.
+
+**The drill** (`TestBackupPITR_R_HA_025_R_HA_023_R_HA_054_PointInTimeRestoreOfThePlatformLayer`, [backup_pitr_test.go](../../test/e2e/backup_pitr_test.go), `make e2e SET=backup-pitr`,
+CI: a step of the nightly job `e2e-backup`). Stages, each stops the drill when it fails:
+
+| Stage | What it does | What it asserts |
+|---|---|---|
+| base backup | `pitr.sh backup`, records `system_state.keyspace_id` | the archiver has shipped a segment without failure |
+| before *t* | two 512 KiB files (`keep`, `gone`), an npm package 1.0.0, a service-account token | the token works |
+| after *t* | *t* from `clock_timestamp()` of the primary, then the token is revoked, `post.bin` and npm 1.1.0 are written, `gone` is deleted and collected (grace 0 s, so the versioned bucket gets a delete marker), the revocation journal is shipped, `pitr.sh archive-wal` | the blob row of `gone` is collected |
+| step 1 | `helm upgrade` with `postRestore.hold=true` and every role and pool at zero (Q-HA-212), then the running backup Job is deleted | no replica is left |
+| step 2 | `pitr.sh restore <t>` | the new database holds `keep` and `gone`, not `post`; the token is **not** revoked in it |
+| steps 3 and 4 | `helm upgrade` with `config.database.host`, `secrets.database` and `secrets.databaseCA` of `trove-db-pitr`, `postRestore.enabled` (journal credentials `static`, the dev login) | the Job's output lists `token.revoked` as applied and a `storage verify:` line with at least one blob without object (Q-HA-213); the token is revoked in the new database; `keyspace_id` differs; the deletion pause is set |
+| step 5 | a Job of the aws-cli image removes the delete markers younger than *t* from the blob prefix | at least one removed, `keep` and `gone` present |
+| step 6 | `helm upgrade` with the normal values on the new cluster | the roles are live and the administrator's token works; `trove admin storage verify` in the worker pod exits 0 with no blob without its object |
+| the result | reads through the edge | `keep` and `gone` answer 200 with their SHA-256; `post.bin` 404; the packument lists only 1.0.0; the revoked token answers 401 |
+| step 7 | an S3 Job, SQL on `system_state`, a collection run | the object written after *t* was not deleted while the pause was set; the pause is cleared |
+
+The test's cleanup returns the release to `trove-db` (`helm upgrade` with the profile's values) and deletes `trove-db-pitr`. **Not verified by the drill:** the ETag
+bullet, the orphan sweep after the resume and the run with `backup.revocation_journal.enabled: false` of R-HA-025's acceptance criteria; **Steps without a command:** 5 and 7 ([H-767](../spec/ha-and-helm.md#h-767--the-commands-of-r-ha-025-steps-5-and-7-do-not-exist)).
 
 ## Extension checklist
 

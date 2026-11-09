@@ -2994,8 +2994,14 @@ Priority: **MVP** · Covers: OPS-033
 **Status.** Step 4 is built: `trove admin post-restore` ([internal/backup/postrestore](../../internal/backup/postrestore)) and the
 hook Job of the chart ([post-restore.yaml](../../deploy/helm/trove/templates/post-restore.yaml), `postRestore.*`,
 [Q-HA-150](#q-ha-150--the-post-restore-job-is-a-post-upgrade-hook-with-a-credentials-file-the-chart-renders)); the Job passes
-`--credentials-file` for step 5's credential, so the journal replay lists object versions. The drill against the local profile is the
-end-to-end suite's.
+`--credentials-file` for step 5's credential, so the journal replay lists object versions. The drill against the local profile is built
+(phase 7): `TestBackupPITR_R_HA_025_R_HA_023_R_HA_054_PointInTimeRestoreOfThePlatformLayer`
+([backup_pitr_test.go](../../test/e2e/backup_pitr_test.go), set `backup-pitr`, nightly in the job `e2e-backup`), on the dev stack with
+`TROVE_PITR=1` ([Q-HA-210](#q-ha-210--the-platform-layer-of-r-ha-023-in-the-dev-stack-is-opt-in-trove_pitr1-installs-the-barman-cloud-plugin-by-pinned-manifest-and-keeps-the-archive-on-the-dev-seaweedfs-over-tls)).
+It follows steps 1 to 7; steps 5 and 7 have no command yet and the drill does their effect by hand
+([Q-HA-211](#q-ha-211--the-point-in-time-drill-restores-the-installations-own-database-into-a-new-cluster-and-does-steps-5-and-7-of-r-ha-025-with-the-s3-api-and-sql-until-their-commands-exist),
+[H-767](#h-767--the-commands-of-r-ha-025-steps-5-and-7-do-not-exist)). The acceptance bullets it does not cover: the orphan sweep after
+the resume, the ETag after one publish, and the run with the journal disabled.
 
 Restores are whole-installation, point-in-time operations. Restoring a single repository is
 Deferred (repository export and import, OPS-036 and OPS-037, are P2). This procedure restores the
@@ -3006,7 +3012,7 @@ needed with a blob prefix that starts empty and ends holding exactly the referen
 (Q-HA-19), and except a Valkey flush, which neither path performs: both replace it by a new
 keyspace.
 
-1. **Stop writers and backups.** `helm upgrade … --set web.replicaCount=0 --set worker.replicaCount=0 --set api.replicaCount=0 --set packages.replicaCount=0 --set web.autoscaling.enabled=false --set worker.autoscaling.enabled=false --set api.autoscaling.enabled=false --set packages.autoscaling.enabled=false --set highAvailability.enforce=false --set backup.suspend=true`, and the same `replicaCount=0` and `autoscaling.enabled=false` for every entry of `api.pools`, `packages.pools` and `worker.pools`. Every role that serves a request or claims a job must be at zero: a replica that is Ready on the restored database serves the access the restore brought back until the replay has run (Q-HA-157).
+1. **Stop writers and backups.** `helm upgrade … --set postRestore.hold=true --set api.replicaCount=0 --set packages.replicaCount=0 --set worker.replicaCount=0 --set api.autoscaling.enabled=false --set packages.autoscaling.enabled=false --set worker.autoscaling.enabled=false`, and the same `replicaCount=0` and `autoscaling.enabled=false` for every entry of `api.pools`, `packages.pools` and `worker.pools`. `postRestore.hold` is what lets the chart accept zero replicas (without it the role minimums of R-HA-002 and `highAvailability.enforce` refuse them), suspends the backup CronJob and renders no Job; the chart refuses the hold while any role has a replica or an autoscaler (Q-HA-212). Every role that serves a request or claims a job must be at zero: a replica that is Ready on the restored database serves the access the restore brought back until the replay has run (Q-HA-157). The hold lives in the release, so a later `helm upgrade` or a GitOps sync with the same values keeps the roles stopped; the upgrade of step 3 and 4 carries it on (`postRestore.enabled` has the same effect), and the upgrade of step 6 ends it.
    Wait `system.heartbeat_stale_after`. A backup run that is already going is deleted
    (`kubectl delete job -l app.kubernetes.io/component=backup`), so it cannot record a
    half-restored state.
@@ -3039,7 +3045,7 @@ keyspace.
    - sets the `system_state` key `restored_at` to the current time; single-use CI issuers refuse
      subject tokens issued up to `clock_skew` after it ([gitlab-ci-oidc.md](gitlab-ci-oidc.md)
      R-CI-018);
-   - runs `trove admin storage verify --since <t − storage.gc.grace_period>` and prints the
+   - runs `trove admin storage verify` over every live blob (no `--since`, Q-HA-213) and prints the
      number of referenced blobs whose objects are missing;
    - re-applies the revocation journal entries newer than *t* (R-HA-054) and prints one line per
      entry, including every object it suspended;
@@ -4387,6 +4393,7 @@ migrations:
   extraEnv: []
 
 postRestore:
+  hold: false                           # R-HA-025 step 1: every role and pool may be at zero (replicaCount 0 and autoscaling off are required), the backup CronJob is suspended, no Job is rendered
   enabled: false                        # renders the post-restore hook Job once
   restoredTo: ""                        # required with enabled, the time t the platform restore went to, RFC 3339; example: "2026-10-28T09:15:00Z"
   skipRevocationJournal: false          # only when the source's bucket is gone (R-BAK-024)
@@ -9233,6 +9240,65 @@ deadline but holds nothing is not named, and when no pool holds anything the clo
 H-693.
 **Applied:** R-ARCH-024 step 6; `internal/meta/postgres/db.go` (`CloseContext`), `internal/app/wire_postgres.go`.
 
+### Q-HA-210 · The platform layer of R-HA-023 in the dev stack is opt-in (`TROVE_PITR=1`), installs the Barman Cloud plugin by pinned manifest and keeps the archive on the dev SeaweedFS over TLS
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: E5.1 needs a CloudNativePG cluster that archives its WAL and takes base backups to the bucket `trove-pg-archive` (R-HA-023). The plugin is a Deployment in `cnpg-system`, a Secret with the sidecar image, two cert-manager certificates and an `ObjectStore` CRD; the sidecar is a second container in every PostgreSQL pod, and adding `spec.plugins` to the Cluster rolls both instances.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Always on in every profile | `postgres.yaml` carries the plugin entry | One dev stack | Every `make dev-up` pays the plugin, the sidecar memory and a longer first start; every e2e profile switch runs against an archiving cluster |
+| (b) Opt-in with `TROVE_PITR=1`, as `TROVE_POOLER=1` (chosen) | `up.sh` installs the plugin and patches the Cluster; the set `backup-pitr` exports it | The default start is unchanged; the drill has its own set; same convention as the pooler | The setting is sticky for an existing cluster (the plugin entry stays until the cluster is recreated) |
+| (c) A second PostgreSQL cluster for the drill | The drill archives a cluster of its own | The main cluster never rolls | The drill would not restore the installation's own database, which is what R-HA-025 is about |
+
+**Choice:** (b). **Pins (one place, `tools/versions.env`):** `DEV_BARMAN_PLUGIN_VERSION` v0.15.1 (needs CloudNativePG 1.30 or later, the pinned operator is 1.30.1), the SHA-256 of the release's `manifest.yaml` (a GitHub release asset fetched with `tools/github-download.sh`, checked on every use, fetched by `make dev-charts` in CI), and the operator image and the sidecar image as multi-arch index digests; `up.sh` refuses image tags that differ from the version, and the manifest's sidecar Secret is rewritten to the digest. **Archive:** `ObjectStore trove-pg-archive` (`deploy/dev/pitr.yaml`) names `https://trove-s3.<ns>.svc:9000` and the dev CA (`endpointCA`), so every link is TLS. The dev SeaweedFS has one identity, so the archive uses the same login as the blob bucket; the separate credential R-HA-023 asks of a production installation is not shown ([data-and-secret-flow.md](../security/data-and-secret-flow.md), H-768). **Revisit:** when the drill has run green for a release cycle, (a) is worth a measurement of the start time.
+**Applied:** `tools/versions.env`, `renovate.json`, `deploy/dev/{lib.sh,up.sh,charts.sh,pitr.yaml,postgres.yaml,s3.yaml}`.
+
+### Q-HA-211 · The point-in-time drill restores the installation's own database into a new cluster, and does steps 5 and 7 of R-HA-025 with the S3 API and SQL until their commands exist
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-025 is a procedure on one installation: stop the roles, recover PostgreSQL into a new cluster, point the release at it, post-restore, roll the bucket back, start, resume deletions. Step 5 names `trove admin storage restore-versions` and step 7 `trove admin maintenance resume-deletions`; neither command exists in the code (H-767).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Restore into the second namespace `trove-restore` as the backup drill does | A new installation with its own bucket | Leaves the main installation alone | The versioned bucket of R-HA-024 and R-HA-025 is the installation's own; a copy of it would not test the roll back |
+| (b) Restore the main installation in place of its database (chosen) | The release is repointed at `trove-db-pitr` (host, credentials Secret, CA Secret) and repointed back by the cleanup of the test | The steps of the spec as written, on the real bucket | The test changes the release; its cleanup must run |
+| (c) Skip steps 5 and 7 | Judge the database only | Smaller | The roll back of blobs deleted after *t* is the point of R-HA-024 |
+
+**Choice:** (b). **Stand-ins until the commands exist ([H-767](#h-767--the-commands-of-r-ha-025-steps-5-and-7-do-not-exist); the procedure itself is unchanged):** step 5 is done by a Job of the aws-cli image that removes every delete marker under the blob prefix that is younger than *t* (the dev SeaweedFS login has the permissions the runtime credential of production lacks); it rolls the bucket back to *t* and is a superset of "the delete markers of missing referenced objects", the surplus being objects the orphan sweep or GC collects after the resume. Step 7 clears `deletions_paused_at` and `deletions_paused_reason` in `system_state` by SQL. The new cluster does not archive (it would write a new timeline into the directory of `trove-db`, which the plugin refuses) and a production restore names a new `serverName` for the cluster's own archive. Not covered by the drill: the ETag acceptance bullet of R-HA-025, the orphan sweep after the resume, `backup.revocation_journal.enabled: false`. **Revisit:** when the two commands exist, the drill calls them.
+**Applied:** `test/e2e/backup_pitr_test.go`, `deploy/dev/{pitr.sh,pitr-restore.yaml,e2e.sh}`, `.github/workflows/performance.yml` (job `e2e-backup`).
+
+### Q-HA-212 · Step 1 of R-HA-025 is a value of the chart, `postRestore.hold`, not a command behind Helm's back
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the drill of E5.1 found that the step-1 command of R-HA-025 (`helm upgrade` with `replicaCount=0`, `autoscaling.enabled=false`, `highAvailability.enforce=false`) is refused by the chart: the role minimums of R-HA-002 accept zero replicas only while `restore.enabled` or `postRestore.enabled` is set, and the second of them renders the hook Job against the database the release points at, which at step 1 is still the old one.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `kubectl scale` and a patch of the CronJob | Spec step 1 names the commands | No chart change | Behind Helm's back: the next `helm upgrade` or GitOps sync with the old values starts the roles on the database that is about to be replaced |
+| (b) Run step 1 as the upgrade of step 3 and 4 | One upgrade stops the roles, repoints the database and runs the Job | No new value | The roles are not stopped before PostgreSQL is restored, and a backup run cannot be deleted first |
+| (c) `postRestore.hold` (chosen) | A value that makes the chart accept and require zero replicas and autoscaling off, suspends the CronJob and renders no Job | The stop is a release state that survives upgrades and syncs; the validation message names the value | One more value |
+
+**Choice:** (c). **Rationale:** a stop that a routine upgrade undoes is a hazard on a restore night, and the chart already has the state (zero replicas under `postRestore.enabled`); the hold is that state without the Job. **Consequence:** the drill runs step 1 as the written `helm upgrade`. The hold needs neither `highAvailability.enforce: false` nor `backup.suspend`. **Revisit:** when a restore tool needs to start some roles (a read-only role) while the hold is on.
+**Applied:** R-HA-025 step 1 and the `postRestore` block of this page; `deploy/helm/trove/{values.yaml,values.schema.json,templates/_validate_roles.tpl,templates/_validate_backup.tpl,templates/backup.yaml}`; `test/chart/postrestore_test.go` (`TestR_HA_025_HoldStopsEveryRole`).
+
+### Q-HA-213 · Post-restore verifies every blob, not only those changed since t minus the grace period
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-025 step 4 named `trove admin storage verify --since <t − storage.gc.grace_period>`. The command selects rows by `GREATEST(created_at, state_changed_at) >= since`. The objects that matter after a platform restore are those the old database's collector deleted after *t*; in the restored database their rows are live and as old as the blob, so the filter misses every blob created before `t − grace`. With `storage.gc.grace_period: 0s` (the `backup` profile) the filter is `t` itself and the drill's own deleted blob is outside it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep `--since t − grace` | As written | Cheap on a large installation | Unsound for any blob older than the window; reports zero missing where blobs are missing |
+| (b) Verify every live blob (chosen) | `post-restore` calls the check without `since`; the operator may still run the command with `--since` by hand | The count R-HA-025 step 4 prints is the true one | One existence check per live blob (16 at a time): minutes for millions of blobs, in a Job that runs once |
+
+**Choice:** (b). **Consequence:** the post-restore output has the line `storage verify: N blobs checked, M without object, …`, and a hint to repair and verify again when M is not zero; a check that cannot run is a line, not a failed restore. The drill asserts the line and, after step 5, runs `trove admin storage verify` by hand with exit 0. **Revisit:** when a restore of a very large installation makes the full check too slow; then a bound that is provably complete (the rows deleted after *t* in the old database are not known to the new one, so none exists today).
+**Applied:** R-HA-025 step 4; `internal/backup/postrestore` (`Options.VerifyStorage`), `cmd/trove/admin_postrestore.go`, `test/e2e/backup_pitr_test.go`.
+
 ### Q-HA-220 · The cold-install crash of exit criterion E5.2 kills one packages replica once the upstream has served a share of the packages, and the clients go through the edge
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -9352,3 +9418,7 @@ and `schema` checks hold the control connection for up to `health.check_timeout`
 Live whenever a detached write (the periodic token last-used flush, 10 s; the rollback of `InTx`, 5 s; the detached writes of
 the upload paths, up to 30 s, not traced) is running at the close deadline. What makes it real: such a write is cut by the process
 exit, and its effect is lost; the next use records most of them again, a half-finished upload is cleaned up by its sweep.
+
+### H-767 · The commands of R-HA-025 steps 5 and 7 do not exist
+
+Component: the restore procedure of the platform layer (R-HA-025). Subject: the operator who follows it. Step 5 names `trove admin storage restore-versions --before <t>` and step 7 `trove admin maintenance resume-deletions` (and the pause of a planned drill `pause-deletions`); `trove admin` has none of them, and the post-restore output that points at `resume-deletions` names a command that is not there. Both commands are product commands the procedure requires and are still to be built. Until then the drill stands in for them (an aws-cli Job that removes the delete markers younger than *t*, SQL that clears the pause on `system_state`); that is not an accepted change of the procedure, and the drill switches to the commands as soon as they exist. Live today: an operator has no command and would do by hand what the drill does ([Q-HA-211](#q-ha-211--the-point-in-time-drill-restores-the-installations-own-database-into-a-new-cluster-and-does-steps-5-and-7-of-r-ha-025-with-the-s3-api-and-sql-until-their-commands-exist)). What makes it real: a wrong delete-marker filter or a wrong `UPDATE` on a restore night.

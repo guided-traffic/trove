@@ -111,8 +111,8 @@ holds for any configured target, the backup on or off: the configuration check o
 {{- end -}}
 
 {{- /* Nothing may write to the installation, and no replica may serve it, while a restore runs or its clean-up has not (R-HA-029, R-HA-060, R-HA-025 step 1). */ -}}
-{{- if or $r.enabled $v.postRestore.enabled -}}
-{{- $by := ternary "restore.enabled" "postRestore.enabled" $r.enabled -}}
+{{- if or $r.enabled $v.postRestore.enabled $v.postRestore.hold -}}
+{{- $by := ternary "restore.enabled" (ternary "postRestore.enabled" "postRestore.hold" $v.postRestore.enabled) $r.enabled -}}
 {{- range $u := include "trove.units" . | fromYamlArray -}}
 {{- if dig "autoscaling" "enabled" false $u.r -}}
 {{- fail (printf "trove: %s needs %s.autoscaling.enabled: false (and %s.replicaCount: 0): no replica may run while the restore writes the installation or its clean-up is outstanding; the final helm upgrade without %s starts them" $by $u.key $u.key $by) -}}

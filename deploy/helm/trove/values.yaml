@@ -706,6 +706,7 @@ migrations:
 # The clean-up after a platform (point-in-time) restore: a post-install and post-upgrade hook that Helm waits for. Run it while every
 # role is at zero. A restore with restore.enabled runs the same clean-up itself.
 postRestore:
+  hold: false                           # R-HA-025 step 1: every role and pool may be at zero (replicaCount 0 and autoscaling off are required, nothing else of the role minimums applies) and the backup CronJob is suspended, with no Job; the upgrade of the steps after it keeps it until the final one without it
   enabled: false
   restoredTo: ""                        # required with enabled, the time t the platform restore went to, RFC 3339; example: "2026-10-28T09:15:00Z"
   skipRevocationJournal: false          # only when the source's bucket is gone (R-BAK-024)
