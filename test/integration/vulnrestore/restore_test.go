@@ -24,7 +24,7 @@ const (
 // (R-VULN-026): the backup job is phase 7 and does not exist, so the restore is a SQL emulation of its effect on this
 // feature's tables. Before: the advisory data of npm was complete, advisories, affected entries, a KEV row, a pending
 // evaluation and a claimed-name match existed, and three findings with their history: one dismissed, one blocked, one
-// open and malicious. After: the seven transient tables are empty and the two data tables are as they were (export class
+// open and malicious. After: the ten transient tables are empty and the two data tables are as they were (export class
 // data restores them). Three versions are published through a replica before that, so the stored items are real.
 func (e *env) seedInstallation() {
 	e.t.Helper()
@@ -129,13 +129,13 @@ func requireHeld(t *testing.T, when string, before, after snapshot) {
 }
 
 // TestR_VULN_026_TheStateARestoreLeaves: the export classes and the emulated state (R-VULN-026). The export of a database
-// carries the findings and their events and none of the seven transient tables.
+// carries the findings and their events and none of the ten transient tables.
 func TestR_VULN_026_TheStateARestoreLeaves(t *testing.T) {
 	e := newEnv(t)
 	e.seedInstallation()
 
 	transient, data := transientTables()
-	if got := strings.Join(sorted(transient), ","); got != "vuln_advisory,vuln_affected,vuln_claimed_match,vuln_kev,vuln_pending_evaluation,vuln_source_state,vuln_sync_touched" {
+	if got := strings.Join(sorted(transient), ","); got != "vuln_advisory,vuln_affected,vuln_claimed_match,vuln_image_db,vuln_image_sbom,vuln_image_scan,vuln_kev,vuln_pending_evaluation,vuln_source_state,vuln_sync_touched" {
 		t.Errorf("transient tables = %s", got)
 	}
 	if got := strings.Join(sorted(data), ","); got != "vuln_finding,vuln_finding_event" {
