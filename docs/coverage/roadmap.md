@@ -365,9 +365,8 @@ end-to-end reports.
   without an export class, and the first migration leaves `system_state` holding
   `installation_id`, `keyspace_id` and `incarnation`.
 - **E0.5** The S3 conformance check of R-STOR-035 passes on every change against SeaweedFS, the
-  CI store chosen in Q-HA-3 (the integration tier of Test and Release), and against MinIO (built from
-  source at the commit of `MINIO_COMMIT`, served over TLS only; the job `s3-conformance` of Test and
-  Release, on every change, owner decision of 2026-10-29). The AWS S3 check does not run until the owner
+  CI store chosen in Q-HA-3 (the integration tier of Test and Release), and against Silo (the image pinned as `SILO_IMAGE`, served over TLS only; the job `s3-conformance` of
+  Test and Release, on every change, Q-HA-282). The AWS S3 check does not run until the owner
   provides an AWS account and a CI role. No run reports AWS S3 as passed or as skipped, because no run
   includes it (R-HA-051), and M0 exits without it. The
   race test of R-STOR-005 passes, and so does R-STOR-024's variant with the collector killed at

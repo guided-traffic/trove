@@ -835,10 +835,9 @@ jobs:
         if: always()
         run: make integration-down
 
-  # S3 conformance (R-STOR-035) against MinIO, built from source at MINIO_COMMIT and served over TLS only
-  # (INV-20). This is the leg that ran nightly; it runs on every change now.
+  # S3 conformance (R-STOR-035) against Silo (SILO_IMAGE), served over TLS only (INV-20).
   s3-conformance:
-    name: S3 conformance (MinIO at the pinned commit)
+    name: S3 conformance
     runs-on: self-hosted
     timeout-minutes: 60
     steps:
@@ -855,33 +854,33 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install build tools
+      - name: Install jq
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential jq
+          sudo apt-get install -y jq
 
-      - name: Log in to Docker Hub (the openssl image of the certificates)
+      - name: Log in to Docker Hub (the openssl and Silo images)
         uses: docker/login-action@v4
         with:
           username: guidedtraffic
           password: ${{ secrets.DOCKERHUB_PAT }}
 
-      - name: make minio-up (build MinIO at the pin, serve it over TLS, seed the buckets)
-        run: make minio-up
+      - name: make silo-up (serve Silo over TLS and seed the buckets)
+        run: make silo-up
 
       - name: make s3-conformance
         run: make s3-conformance
 
-      - name: make minio-down
+      - name: make silo-down
         if: always()
-        run: make minio-down
+        run: make silo-down
 
-      - name: Upload the MinIO server log (failure only)
+      - name: Upload the Silo server log (failure only)
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: minio-server-log
-          path: .out/minio.log
+          name: silo-server-log
+          path: .out/silo.log
           if-no-files-found: warn
           retention-days: 14
 

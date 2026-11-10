@@ -350,21 +350,20 @@ test-performance: ## Latency targets of the per-change tier enforced (P-13, P-14
 	    -json ./internal/avatar/ | tee -a .out/test-performance.json | $(TESTLOG) || rc=$$?; \
 	  exit $$rc
 
-# S3 conformance against MinIO, the leg that used to run nightly: MinIO is built from source at
-# MINIO_COMMIT and served over TLS only (INV-20). The tests are the same as against any store.
-.PHONY: minio-up
-minio-up: ## Build MinIO at MINIO_COMMIT, serve it over TLS and create the buckets; writes .dev/minio/env
-	test/integration/minio.sh up
+# S3 conformance against Silo (SILO_IMAGE), served over TLS only (INV-20). The tests are the same as against any store.
+.PHONY: silo-up
+silo-up: ## Start Silo at SILO_IMAGE, serve it over TLS and create the buckets; writes .dev/silo/env
+	test/integration/silo.sh up
 
-.PHONY: minio-down
-minio-down: ## Stop the MinIO started by minio-up
-	test/integration/minio.sh down
+.PHONY: silo-down
+silo-down: ## Stop the Silo started by silo-up
+	test/integration/silo.sh down
 
 .PHONY: s3-conformance
-s3-conformance: ## S3 conformance tests (R-STOR-035) against the MinIO of minio-up (CI: s3-conformance)
-	@test -f .dev/minio/env || { echo ".dev/minio/env is missing: run 'make minio-up' first"; exit 1; }
-	@set -a; . .dev/minio/env; set +a; \
-	  .github/scripts/s3-conformance.sh "MinIO at $$(echo $(MINIO_COMMIT) | cut -c1-12)"
+s3-conformance: ## S3 conformance tests (R-STOR-035) against the Silo of silo-up (CI: s3-conformance)
+	@test -f .dev/silo/env || { echo ".dev/silo/env is missing: run 'make silo-up' first"; exit 1; }
+	@set -a; . .dev/silo/env; set +a; \
+	  .github/scripts/s3-conformance.sh "Silo"
 
 .PHONY: coverage
 coverage: ## Regenerate the requirement coverage checklist from the committed evidence record

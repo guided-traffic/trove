@@ -2560,7 +2560,7 @@ storage:
 Acceptance criteria:
 
 - The CI matrix runs the storage integration suite against SeaweedFS on every change and against
-  MinIO (pinned source build, on every change since the owner's decision of 2026-10-29) and, once an AWS account exists, AWS S3, with the documented settings
+  Silo, the maintained fork of the MinIO server (the image pinned as `SILO_IMAGE`, on every change, Q-HA-282) and, once an AWS account exists, AWS S3, with the documented settings
   for each ([ha-and-helm.md](ha-and-helm.md) R-HA-051, Q-HA-3). Ceph RGW and other stores are
   qualified by the conformance check of R-STOR-035, not by a CI job.
 - A prefix of `/` or `a//b` stops startup with a configuration error naming the key.

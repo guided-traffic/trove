@@ -138,7 +138,7 @@ One fact per line; each links to the page that explains it.
 
 ```text
 trove/
-├── Makefile                  # the task runner: build, generate, lint, scans, test, web, chart, image, dev profile, integration, MinIO
+├── Makefile                  # the task runner: build, generate, lint, scans, test, web, chart, image, dev profile, integration, Silo
 ├── go.mod                    # go 1.27.3; sqlc and oapi-codegen as tool directives
 ├── tools/versions.env        # pins of every tool and image that is not a Go module or an npm package
 ├── tools/github-download.sh  # downloads a GitHub release asset, with the job's token when there is one (Q-ARCH-356)
@@ -249,7 +249,7 @@ The NuGet format (`internal/formats/nuget`) followed in phase 4 ([nuget.md](nuge
 |---|---|---|
 | Unit | `make test` (`go test -race`, JSON to `.out/test-unit.json`) | next to the code; `_test.go` |
 | Architecture | part of unit: `go test ./internal/archtest` | `internal/archtest/` |
-| Integration | `make integration-up`, then `make test-integration`; build tag `integration`; `-p 1`; S3 conformance against MinIO: `make minio-up`, `make s3-conformance` | `test/integration/<area>/` |
+| Integration | `make integration-up`, then `make test-integration`; build tag `integration`; `-p 1`; S3 conformance against Silo: `make silo-up`, `make s3-conformance` | `test/integration/<area>/` |
 | Chart | `make chart-lint`, `make chart-test`; build tag `chart` | `test/chart/` |
 | End-to-end | `make e2e` against the dev cluster; build tag `e2e` | `test/e2e/` |
 | Web unit | Angular's `unit-test` builder with Vitest and jsdom | `web/` |

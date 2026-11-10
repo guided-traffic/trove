@@ -9609,6 +9609,16 @@ Context: the logs of a pod go with the pod. The drain test of E0.14 and the drai
 
 **Applied in the spec:** none beyond H-798. Code: `Run` in `test/e2e/drain_variants_test.go`.
 
+### Q-HA-282 · The conformance leg runs against Silo instead of MinIO
+
+Status: **Decided by the owner** (2026-11-10): "Wir testen auch nicht länger gegen minio sondern wir nutzen Silo".
+
+Context: the job `s3-conformance` built MinIO from source at a pinned commit, because upstream has stopped distributing the community server (Q-HA-3). [Silo](https://github.com/pgsty/silo) is a maintained fork of that server with the same protocol and the same `MINIO_*` settings, published as a multi-architecture image.
+
+**Choice:** `test/integration/silo.sh` runs the image of `SILO_IMAGE` (tools/versions.env, pinned by digest) over TLS only, in a container whose data is a tmpfs; `make silo-up`, `make s3-conformance` and `make silo-down` replace the `minio-*` targets. **Rationale:** a maintained image with security fixes replaces a source build of an archived project, and the leg no longer needs a compiler. Silo is AGPL-3.0: it is a test server here, and trove neither ships nor links it. SeaweedFS stays the store of the dev profile and the integration stack (Q-HA-3). **Verified:** the 20 conformance tests pass against it locally.
+
+**Applied:** R-STOR-035 acceptance; roadmap E0.5; [releasing.md](../developer/releasing.md); [build-and-test.md](../developer/build-and-test.md).
+
 ### Q-HA-281 · Tests run before a release, not after it
 
 Status: **Decided by the owner** (2026-11-10): "Ein Test des Releases? Woll wir nicht. Es wird vor einem Release getestet. Ein veröffentlichtes Release ist schon öffentlich, ein Test der Fehlschlagen kann an dieser Stelle ist bereits zu spät."
