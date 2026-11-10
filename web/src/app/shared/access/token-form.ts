@@ -10,6 +10,9 @@ import { fieldMessage } from '../field-errors';
 export const TOKEN_ACTIONS = ['read', 'annotate', 'deploy', 'overwrite', 'delete', 'manage'] as const;
 type TokenAction = (typeof TOKEN_ACTIONS)[number];
 
+/** The three things a token can be (Q-UI-213): everything on the installation, the owner's repository permissions, or a list. */
+export type TokenScopeChoice = 'admin' | 'inherit' | 'restricted';
+
 const DAY = 86_400;
 
 /** Lifetime choices; the numbers are seconds, `default` leaves the server's default, `0` never expires. */
@@ -25,7 +28,7 @@ export interface TokenDraft {
   readonly description: string;
   readonly lifetime: string;
   readonly customDate: string;
-  readonly restricted: boolean;
+  readonly scope: TokenScopeChoice;
   readonly repositories: string;
   readonly packages: string;
   readonly actions: readonly string[];
@@ -35,7 +38,8 @@ export interface TokenDraft {
 /**
  * The create form of a personal or service-account token (R-UI-029, R-UI-026): description,
  * lifetime (presets, a custom date, or "never" where the owner may have a non-expiring token) and
- * scope (everything the owner may do, or repositories and actions; grammar of R-AUTH-024). It
+ * scope (administrator rights for a caller who is one, the owner's repository permissions, or repositories and
+ * actions; grammar of R-AUTH-024, Q-UI-213). It
  * validates what it can before the request and shows server field errors next to the fields. The
  * idempotency key is the parent's, generated when the form opens. Where the caller may read the
  * endpoints (`endpoints:read`), the form offers the binding of the token to endpoints
@@ -83,12 +87,18 @@ export interface TokenDraft {
 
       <fieldset class="scope">
         <legend i18n="@@token-form.scope">Scope</legend>
+        @if (offerAdmin()) {
+          <label class="radio">
+            <input type="radio" name="scope" [checked]="scopeChoice() === 'admin'" (change)="scopeChoice.set('admin')" />
+            <span i18n="@@token-form.scope-admin">Administrator: everything on this installation</span>
+          </label>
+        }
         <label class="radio">
-          <input type="radio" name="scope" [checked]="!restricted()" (change)="restricted.set(false)" />
-          <span i18n="@@token-form.scope-all">All permissions of the owner</span>
+          <input type="radio" name="scope" [checked]="scopeChoice() === 'inherit'" (change)="scopeChoice.set('inherit')" />
+          <span i18n="@@token-form.scope-all">All repository permissions of the owner, without administration</span>
         </label>
         <label class="radio">
-          <input type="radio" name="scope" [checked]="restricted()" (change)="restricted.set(true)" />
+          <input type="radio" name="scope" [checked]="restricted()" (change)="scopeChoice.set('restricted')" />
           <span i18n="@@token-form.scope-restricted">Only the repositories and actions below</span>
         </label>
         @if (restricted()) {
@@ -201,6 +211,8 @@ export class TokenForm {
   readonly lifetimeCapped = input(false);
   /** The type of the token this form creates; it decides which endpoints can be offered. */
   readonly tokenType = input<'pat' | 'sat'>('pat');
+  /** Offers administrator rights: only for the personal token of a caller who holds the administrator role (Q-UI-213). */
+  readonly offerAdmin = input(false);
   readonly submitLabel = input.required<string>();
   readonly busy = input(false);
   /** The last failed submit; its field errors appear next to the fields. */
@@ -220,7 +232,8 @@ export class TokenForm {
   protected readonly description = signal('');
   protected readonly lifetime = signal('default');
   protected readonly customDate = signal('');
-  protected readonly restricted = signal(false);
+  protected readonly scopeChoice = signal<TokenScopeChoice>('inherit');
+  protected readonly restricted = computed(() => this.scopeChoice() === 'restricted');
   protected readonly repositories = signal('');
   protected readonly packages = signal('');
   protected readonly actions = signal<readonly TokenAction[]>(['read']);
@@ -265,7 +278,7 @@ export class TokenForm {
         this.description.set(d.description);
         this.lifetime.set(d.lifetime);
         this.customDate.set(d.customDate);
-        this.restricted.set(d.restricted);
+        this.scopeChoice.set(d.scope === 'admin' && !this.offerAdmin() ? 'inherit' : d.scope);
         this.repositories.set(d.repositories);
         this.packages.set(d.packages);
         this.endpoints.set(d.endpoints ?? []);
@@ -297,7 +310,7 @@ export class TokenForm {
       description: this.description(),
       lifetime: this.lifetime(),
       customDate: this.customDate(),
-      restricted: this.restricted(),
+      scope: this.scopeChoice(),
       repositories: this.repositories(),
       packages: this.packages(),
       actions: this.actions(),
@@ -350,6 +363,9 @@ export class TokenForm {
           },
         ],
       };
+    } else if (this.scopeChoice() === 'admin' && this.offerAdmin()) {
+      // With inherit, so that the token also acts on the owner's own account (R-AUTH-024).
+      request.scope = { inherit: true, admin: true };
     } else {
       request.scope = { inherit: true };
     }

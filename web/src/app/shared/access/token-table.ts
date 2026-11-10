@@ -10,8 +10,10 @@ export const EXPIRING_SOON_DAYS = 7;
 /** One-line summary of what a token may do (R-AUTH-024); the full scope is in the API. */
 export function scopeSummary(scope: TokenScope): string {
   const parts: string[] = [];
-  if (scope.inherit) {
-    parts.push($localize`:@@token-table.scope.inherit:All permissions of the owner`);
+  if (scope.admin) {
+    parts.push($localize`:@@token-table.scope.admin:Administrator: everything on this installation`);
+  } else if (scope.inherit) {
+    parts.push($localize`:@@token-table.scope.inherit:All repository permissions of the owner, without administration`);
   } else {
     const grants = scope.repositories ?? [];
     parts.push(
@@ -20,7 +22,6 @@ export function scopeSummary(scope: TokenScope): string {
         : $localize`:@@token-table.scope.grants:Repository grants: ${grants.length}:count:`,
     );
   }
-  if (scope.admin) parts.push($localize`:@@token-table.scope.admin:administrator roles`);
   const system = scope.system ?? [];
   if (system.length > 0) parts.push($localize`:@@token-table.scope.system:system: ${system.join(', ')}:list:`);
   return parts.join('; ');
@@ -75,6 +76,14 @@ export function expiresSoon(token: Pick<Token, 'state' | 'expiresAt'>, now: numb
           }
           <td>
             {{ summary(t) }}
+            @if (adminInactive(t)) {
+              <br /><span class="badge warn"
+                ><span class="material-icons" aria-hidden="true">warning</span
+                ><ng-container i18n="@@token-table.admin-inactive"
+                  >Administrator rights inactive: the owner is no administrator now</ng-container
+                ></span
+              >
+            }
             @if (t.unknownEndpoints.length > 0) {
               <br /><span class="badge warn"
                 ><span class="material-icons" aria-hidden="true">warning</span
@@ -145,6 +154,8 @@ export function expiresSoon(token: Pick<Token, 'state' | 'expiresAt'>, now: numb
 export class TokenTable {
   readonly tokens = input.required<readonly Token[]>();
   readonly showOwner = input(false);
+  /** Whether the owner holds the administrator role now; null where the table does not know it (the tokens of others). */
+  readonly ownerIsAdmin = input<boolean | null>(null);
   readonly selectable = input(false);
   readonly canRotate = input(false);
   readonly canRevoke = input(true);
@@ -190,6 +201,11 @@ export class TokenTable {
     this.tokens();
     return Date.now();
   });
+
+  /** An admin token whose owner lost the role has no administrator rights until the owner holds it again (R-AUTH-024). */
+  protected adminInactive(t: Token): boolean {
+    return t.state === 'active' && t.scope.admin === true && this.ownerIsAdmin() === false;
+  }
 
   protected summary(t: Token): string {
     return scopeSummary(t.scope);

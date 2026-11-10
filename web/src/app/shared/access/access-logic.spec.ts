@@ -82,7 +82,8 @@ describe('token table helpers', () => {
   });
 
   it('R-UI-029 summarizes a scope in one line', () => {
-    expect(scopeSummary({ inherit: true })).toContain('All permissions');
+    expect(scopeSummary({ inherit: true })).toBe('All repository permissions of the owner, without administration');
+    expect(scopeSummary({ inherit: true, admin: true })).toBe('Administrator: everything on this installation');
     expect(scopeSummary({ repositories: [{ repositories: ['npm-*'], actions: ['read'] }] })).toContain('1');
     expect(scopeSummary({ inherit: false, system: ['audit:read'], admin: true })).toContain('audit:read');
   });

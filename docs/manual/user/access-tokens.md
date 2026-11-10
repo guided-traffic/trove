@@ -35,7 +35,7 @@ Lists show a token by its description and its **hint**, the prefix plus the firs
 | **Description** | What the token is for, for example the machine or the job. Required, at most 1024 characters |
 | **Lifetime** | **Server default**, **7 days**, **30 days**, **90 days**, **1 year** or **Custom date** |
 | **Expires on (UTC)** | With **Custom date**: the token expires at the end of that day, in UTC |
-| **Scope** | **All permissions of the owner**, or **Only the repositories and actions below** |
+| **Scope** | **All repository permissions of the owner, without administration** (preselected), **Only the repositories and actions below**, or, if you are an administrator, **Administrator: everything on this installation**. Only the last one can administer the installation or act on every repository; such a token loses that power while you are no administrator |
 | **Repositories** | With a restricted scope: one repository per line with its project, for example `web/npm-internal`, or a pattern such as `web/npm-team-*`; a key without its project is refused (`invalid_scope`) |
 | **Package patterns (optional)** | One pattern per line, for example `@team-a/*`; empty means every package |
 | **Actions** | With a restricted scope: `read`, `annotate`, `deploy`, `overwrite`, `delete`, `manage` |
@@ -84,7 +84,7 @@ You can hold 50 active personal tokens unless the administrator set another numb
 |---|---|
 | **Description** | Your description and the hint of the value |
 | **Type** | `pat` |
-| **Scope** | **All permissions of the owner**, or the number of repository grants; a warning when the token is bound to an endpoint that is no longer configured |
+| **Scope** | **All repository permissions of the owner, without administration**, **Administrator: everything on this installation** (with **Administrator rights inactive** while you do not hold the role), or the number of repository grants; a warning when the token is bound to an endpoint that is no longer configured |
 | **Created**, **Expires** | Times; **Expires soon** within seven days of the expiry |
 | **Last used** | When the token last authenticated a request, recorded in batches, so it can be a few minutes behind; **Not used yet** for a token without a recorded use |
 | **Created via** | `ui`, `api` or `rotation` |
@@ -136,7 +136,7 @@ Useful calls with a token:
 
 A token created from another one is revoked when its parent is revoked.
 
-A token with a restricted scope (not **All permissions of the owner**) acts on your repositories as its scope allows, and on nothing else of your account. It cannot change your profile picture or your preferences, list or end your sessions, or revoke all your tokens (`403` `forbidden`); it reads your user record and preferences. Of your tokens it lists, reads, revokes and rotates only itself and the tokens created with it, also those its predecessor created before you rotated it; your other tokens answer `404` to it, so a leaked token made for one repository can neither see nor end them. If you are an administrator and give such a token the administrator scope (`admin: true`) or a capability such as revoking tokens, it can still reach your sessions and tokens through the administration routes (`/api/v1/users/<your username>/…`), as it can every user's. It does not cancel a job you started (`403`) and does not change the owners of your packages unless its scope lists `manage` on them. Sign in, or use a token with **All permissions of the owner**, for the rest.
+A token with a restricted scope (neither **All repository permissions of the owner, without administration** nor **Administrator: everything on this installation**) acts on your repositories as its scope allows, and on nothing else of your account. It cannot change your profile picture or your preferences, list or end your sessions, or revoke all your tokens (`403` `forbidden`); it reads your user record and preferences. Of your tokens it lists, reads, revokes and rotates only itself and the tokens created with it, also those its predecessor created before you rotated it; your other tokens answer `404` to it, so a leaked token made for one repository can neither see nor end them. If you are an administrator and give such a token the administrator scope (`admin: true`) or a capability such as revoking tokens, it can still reach your sessions and tokens through the administration routes (`/api/v1/users/<your username>/…`), as it can every user's. It does not cancel a job you started (`403`) and does not change the owners of your packages unless its scope lists `manage` on them. Sign in, or use a token with **All repository permissions of the owner, without administration**, for the rest.
 
 ## When a token expires
 

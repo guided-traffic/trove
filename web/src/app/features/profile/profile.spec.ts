@@ -11,12 +11,25 @@ import {
   sampleToken,
   sampleUser,
 } from '../../api/testing/access-fakes';
-import { FakePreferencesApi } from '../../api/testing/fakes';
+import { FakePreferencesApi, FakeSessionApi } from '../../api/testing/fakes';
+import { SessionApi } from '../../api/session-api';
 import { buttonByText, renderScreen, settle, text, typeInto, browserStorage, storedText, sleep } from '../../testing/screen';
 import { seriousViolations } from '../../testing/axe';
 import { Profile } from './profile';
 import { ProfileSessions } from './profile-sessions';
 import { ProfileTokens } from './profile-tokens';
+
+const scopeLabels = (form: HTMLElement): (string | undefined)[] =>
+  Array.from(form.querySelectorAll('.scope > .radio')).map((l) => l.textContent?.trim());
+
+function chooseScope(form: HTMLElement, label: string): void {
+  const option = Array.from(form.querySelectorAll('.scope > .radio')).find((l) => l.textContent?.includes(label));
+  option!.querySelector('input')!.dispatchEvent(new Event('change'));
+}
+
+function noAdministrator(get: <A>(token: abstract new (...args: never[]) => A) => A): void {
+  (get(SessionApi) as FakeSessionApi).meResult = { roles: [], capabilities: [] };
+}
 
 const overlay = (): HTMLElement => document.querySelector('.cdk-overlay-container') as HTMLElement;
 
@@ -159,13 +172,65 @@ describe('Personal tokens (R-UI-029)', () => {
     expect(root.innerHTML).not.toContain(SECRET_VALUE);
   });
 
+  it('R-UI-029 R-AUTH-024 an administrator chooses administrator rights, and the default stays without them', async () => {
+    const { fixture, root, get } = await renderScreen(ProfileTokens);
+    buttonByText(root, 'Create token').click();
+    await settle(fixture);
+    const form = root.querySelector('trove-token-form') as HTMLElement;
+    expect(scopeLabels(form)).toEqual([
+      'Administrator: everything on this installation',
+      'All repository permissions of the owner, without administration',
+      'Only the repositories and actions below',
+    ]);
+    expect(form.querySelectorAll<HTMLInputElement>('.scope > .radio input')[1]!.checked).toBe(true);
+    typeInto(form, 'Description', 'docker');
+    chooseScope(form, 'Administrator');
+    await settle(fixture);
+    buttonByText(form, 'Create token').click();
+    await settle(fixture);
+    expect((get(TokensApi) as FakeTokensApi).lastRequest?.scope).toEqual({ inherit: true, admin: true });
+    expect(await seriousViolations(root)).toEqual([]);
+  });
+
+  it('R-UI-029 R-AUTH-024 a caller without the administrator role is not offered administrator rights', async () => {
+    const { fixture, root } = await renderScreen(ProfileTokens, { setup: noAdministrator });
+    buttonByText(root, 'Create token').click();
+    await settle(fixture);
+    expect(scopeLabels(root.querySelector('trove-token-form') as HTMLElement)).toEqual([
+      'All repository permissions of the owner, without administration',
+      'Only the repositories and actions below',
+    ]);
+  });
+
+  it('R-UI-029 R-AUTH-024 an admin token of an owner who lost the role says that its administrator rights are inactive', async () => {
+    const admin = sampleToken({ description: 'old admin', scope: { inherit: true, admin: true, repositories: [], system: [] } });
+    const { root } = await renderScreen(ProfileTokens, {
+      setup: (get) => {
+        noAdministrator(get);
+        (get(TokensApi) as FakeTokensApi).tokenList = [admin];
+      },
+    });
+    expect(text(root)).toContain('Administrator rights inactive');
+  });
+
+  it('R-UI-029 an administrator\'s own admin token shows no such notice', async () => {
+    const admin = sampleToken({ description: 'admin', scope: { inherit: true, admin: true, repositories: [], system: [] } });
+    const { root } = await renderScreen(ProfileTokens, {
+      setup: (get) => {
+        (get(TokensApi) as FakeTokensApi).tokenList = [admin];
+      },
+    });
+    expect(text(root)).toContain('Administrator: everything on this installation');
+    expect(text(root)).not.toContain('Administrator rights inactive');
+  });
+
   it('R-UI-029 a restricted scope sends the repositories and actions', async () => {
     const { fixture, root, get } = await renderScreen(ProfileTokens);
     buttonByText(root, 'Create token').click();
     await settle(fixture);
     const form = root.querySelector('trove-token-form') as HTMLElement;
     typeInto(form, 'Description', 'ci');
-    (form.querySelectorAll('input[type="radio"]')[1] as HTMLInputElement).dispatchEvent(new Event('change'));
+    chooseScope(form, 'Only the repositories');
     await settle(fixture);
     typeInto(form, 'Repositories', 'npm-internal\nnpm-team-*');
     await settle(fixture);

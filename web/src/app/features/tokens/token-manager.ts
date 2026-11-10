@@ -109,6 +109,7 @@ export class RotateDialog {
           [allowNonExpiring]="allowNonExpiring()"
           [lifetimeCapped]="projectIssues() && !allowNonExpiring()"
           [tokenType]="scope().kind === 'service-account' ? 'sat' : 'pat'"
+          [offerAdmin]="scope().kind === 'own' && session.hasRole('admin')"
           [busy]="busy()"
           [failure]="formError()"
           [restore]="restored()"
@@ -128,6 +129,7 @@ export class RotateDialog {
     @if (list.loaded()) {
       <trove-token-table
         [tokens]="list.items()"
+        [ownerIsAdmin]="scope().kind === 'own' ? session.hasRole('admin') : null"
         [canRotate]="canRotate()"
         [canRevoke]="canRevoke()"
         [hasMore]="list.hasMore()"
@@ -146,7 +148,7 @@ export class TokenManager {
   readonly scope = input.required<TokenOwnerScope>();
 
   private readonly api = inject(TokensApi);
-  private readonly session = inject(SessionStore);
+  protected readonly session = inject(SessionStore);
   private readonly confirmer = inject(Confirm);
   private readonly notifier = inject(Notifier);
   private readonly drafts = inject(DraftStore);

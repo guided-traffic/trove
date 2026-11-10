@@ -63,7 +63,7 @@ A scope is a ceiling on the owner's permissions; it never grants anything. Its m
 | `system` | System capabilities the token may exercise, of those the owner's roles grant |
 | `endpoints` | Up to 16 endpoint names the token is valid on; empty means unbound |
 
-A scope document holds at most 16 KiB; an unknown member, action, capability or endpoint answers `400` `invalid_scope`. The form of the UI offers `inherit` (**All permissions of the owner**) or one grant with repositories, package patterns and actions; it sets neither `admin`, `system` nor `paths`, and `endpoints` only through the field **Endpoints** (see [Binding tokens to endpoints](#binding-tokens-to-endpoints)). A token from the form therefore never exercises a system role, and never the administration of a project.
+A scope document holds at most 16 KiB; an unknown member, action, capability or endpoint answers `400` `invalid_scope`. The form of the UI offers `inherit` (**All repository permissions of the owner, without administration**), for an administrator's personal token `inherit` with `admin` (**Administrator: everything on this installation**), or one grant with repositories, package patterns and actions; it sets neither `system` nor `paths`, and `endpoints` only through the field **Endpoints** (see [Binding tokens to endpoints](#binding-tokens-to-endpoints)). A token from the form therefore never exercises a system role, and never the administration of a project.
 
 A token can create another token of the same type and owner through the API. The new one has a scope no broader, an expiry no later and, if its parent is bound to endpoints, a subset of them (`403` `derivation_exceeds_parent` otherwise); it is revoked with its parent.
 

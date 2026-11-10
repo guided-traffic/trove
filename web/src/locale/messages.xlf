@@ -17043,7 +17043,7 @@
     </unit>
     <unit id="virtual.selected-empty">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.html:77,79</note>
+        <note category="location">src/app/features/repositories/virtual-members.html:76,78</note>
       </notes>
       <segment>
         <source>The repository has no member. Every request for a package answers not found.</source>
@@ -17051,7 +17051,7 @@
     </unit>
     <unit id="virtual.keys-hint">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.html:80,82</note>
+        <note category="location">src/app/features/repositories/virtual-members.html:79,81</note>
       </notes>
       <segment>
         <source> Alt with the arrow up or down key moves the selected member, Alt with Home moves it to the top. </source>
@@ -17059,7 +17059,7 @@
     </unit>
     <unit id="virtual.target">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.html:90,91</note>
+        <note category="location">src/app/features/repositories/virtual-members.html:89,90</note>
       </notes>
       <segment>
         <source>Default deployment target</source>
@@ -17067,7 +17067,7 @@
     </unit>
     <unit id="virtual.target-hint">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.html:98,102</note>
+        <note category="location">src/app/features/repositories/virtual-members.html:97,101</note>
       </notes>
       <segment>
         <source> Publishing to the virtual repository stores the package in this local member. Without one the repository is read-only. </source>
@@ -17075,7 +17075,7 @@
     </unit>
     <unit id="virtual.save">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.html:104,105</note>
+        <note category="location">src/app/features/repositories/virtual-members.html:103,104</note>
       </notes>
       <segment>
         <source>Save members</source>
@@ -17083,7 +17083,7 @@
     </unit>
     <unit id="virtual.discard">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.html:106,108</note>
+        <note category="location">src/app/features/repositories/virtual-members.html:105,107</note>
       </notes>
       <segment>
         <source> Discard changes </source>
@@ -17091,7 +17091,7 @@
     </unit>
     <unit id="virtual.unsaved">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.html:109,111</note>
+        <note category="location">src/app/features/repositories/virtual-members.html:108,110</note>
       </notes>
       <segment>
         <source>You have unsaved changes to the members.</source>
@@ -17099,7 +17099,7 @@
     </unit>
     <unit id="virtual.effective">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.html:117,118</note>
+        <note category="location">src/app/features/repositories/virtual-members.html:116,117</note>
       </notes>
       <segment>
         <source>Effective resolution order</source>
@@ -17107,7 +17107,7 @@
     </unit>
     <unit id="virtual.effective-hint">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.html:119,121</note>
+        <note category="location">src/app/features/repositories/virtual-members.html:118,120</note>
       </notes>
       <segment>
         <source> The stored members in the order in which they are asked. Virtual repositories cannot be members yet, so nothing is flattened. </source>
@@ -17115,7 +17115,7 @@
     </unit>
     <unit id="virtual.effective-empty">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.html:122,124</note>
+        <note category="location">src/app/features/repositories/virtual-members.html:121,123</note>
       </notes>
       <segment>
         <source>The stored repository has no member.</source>
@@ -17123,7 +17123,7 @@
     </unit>
     <unit id="virtual.effective-target">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.html:130,133</note>
+        <note category="location">src/app/features/repositories/virtual-members.html:129,132</note>
       </notes>
       <segment>
         <source>Default deployment target</source>
@@ -17131,7 +17131,7 @@
     </unit>
     <unit id="virtual.explain-path">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.html:140,142</note>
+        <note category="location">src/app/features/repositories/virtual-members.html:139,141</note>
       </notes>
       <segment>
         <source>Explain a path</source>
@@ -17139,7 +17139,7 @@
     </unit>
     <unit id="virtual.explain-hint">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.html:144,146</note>
+        <note category="location">src/app/features/repositories/virtual-members.html:143,145</note>
       </notes>
       <segment>
         <source>The path as a package client sends it, for example lodash or @acme/util/-/util-1.4.0.tgz.</source>
@@ -17147,7 +17147,7 @@
     </unit>
     <unit id="virtual.explain">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.html:147,150</note>
+        <note category="location">src/app/features/repositories/virtual-members.html:146,149</note>
       </notes>
       <segment>
         <source> Explain </source>
@@ -17155,7 +17155,7 @@
     </unit>
     <unit id="virtual.decided-claim">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.html:158</note>
+        <note category="location">src/app/features/repositories/virtual-members.html:157</note>
       </notes>
       <segment>
         <source>The name matches the claim</source>
@@ -17163,7 +17163,7 @@
     </unit>
     <unit id="virtual.decided-pin">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.html:160</note>
+        <note category="location">src/app/features/repositories/virtual-members.html:159</note>
       </notes>
       <segment>
         <source>The name matches the pin rule</source>
@@ -17171,7 +17171,7 @@
     </unit>
     <unit id="virtual.explanation-caption">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.html:165,168</note>
+        <note category="location">src/app/features/repositories/virtual-members.html:164,167</note>
       </notes>
       <segment>
         <source>How each member is asked for the path</source>
@@ -17179,7 +17179,7 @@
     </unit>
     <unit id="virtual.col-member">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.html:168,169</note>
+        <note category="location">src/app/features/repositories/virtual-members.html:167,168</note>
       </notes>
       <segment>
         <source>Member</source>
@@ -17187,7 +17187,7 @@
     </unit>
     <unit id="virtual.col-decision">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.html:169,171</note>
+        <note category="location">src/app/features/repositories/virtual-members.html:168,170</note>
       </notes>
       <segment>
         <source>Decision</source>
@@ -17195,7 +17195,7 @@
     </unit>
     <unit id="virtual.unreadable-one">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.html:184,186</note>
+        <note category="location">src/app/features/repositories/virtual-members.html:183,185</note>
       </notes>
       <segment>
         <source>One member is not shown because you may not read it.</source>
@@ -17203,7 +17203,7 @@
     </unit>
     <unit id="virtual.unreadable-many">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.html:186,187</note>
+        <note category="location">src/app/features/repositories/virtual-members.html:185,186</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="INTERPOLATION" disp="{{ x.unreadableMembers }}"/> members are not shown because you may not read them.</source>
@@ -17307,7 +17307,7 @@
     </unit>
     <unit id="virtual.target.none">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.ts:125</note>
+        <note category="location">src/app/features/repositories/virtual-members.ts:126</note>
       </notes>
       <segment>
         <source>None: the repository is read-only</source>
@@ -17315,7 +17315,7 @@
     </unit>
     <unit id="virtual.class.local">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.ts:164</note>
+        <note category="location">src/app/features/repositories/virtual-members.ts:165</note>
       </notes>
       <segment>
         <source>Local</source>
@@ -17323,7 +17323,7 @@
     </unit>
     <unit id="virtual.class.remote">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.ts:166</note>
+        <note category="location">src/app/features/repositories/virtual-members.ts:167</note>
       </notes>
       <segment>
         <source>Remote</source>
@@ -17331,7 +17331,7 @@
     </unit>
     <unit id="virtual.announce.added">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.ts:191</note>
+        <note category="location">src/app/features/repositories/virtual-members.ts:192</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="key" disp="last"/> added at position <ph id="1" equiv="position" disp="total"/> of <ph id="2" equiv="total" disp="total"/></source>
@@ -17339,7 +17339,7 @@
     </unit>
     <unit id="virtual.announce.added-many">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.ts:192</note>
+        <note category="location">src/app/features/repositories/virtual-members.ts:193</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="count" disp="keys.length"/> repositories added, <ph id="1" equiv="total" disp="total"/> members in all</source>
@@ -17347,7 +17347,7 @@
     </unit>
     <unit id="virtual.announce.removed">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.ts:202</note>
+        <note category="location">src/app/features/repositories/virtual-members.ts:203</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="key" disp="key"/> removed, <ph id="1" equiv="total" disp="this.members().length"/> members left</source>
@@ -17355,7 +17355,7 @@
     </unit>
     <unit id="virtual.announce.target-cleared">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.ts:205</note>
+        <note category="location">src/app/features/repositories/virtual-members.ts:206</note>
       </notes>
       <segment>
         <source>The default deployment target is now none.</source>
@@ -17363,7 +17363,7 @@
     </unit>
     <unit id="virtual.announce.moved">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.ts:231</note>
+        <note category="location">src/app/features/repositories/virtual-members.ts:232</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="key" disp="key!"/> moved to position <ph id="1" equiv="position" disp="position"/> of <ph id="2" equiv="total" disp="total"/></source>
@@ -17371,7 +17371,7 @@
     </unit>
     <unit id="virtual.announce.discarded">
       <notes>
-        <note category="location">src/app/features/repositories/virtual-members.ts:262</note>
+        <note category="location">src/app/features/repositories/virtual-members.ts:263</note>
       </notes>
       <segment>
         <source>Changes discarded.</source>
@@ -22112,7 +22112,7 @@
     </unit>
     <unit id="tokens.loading">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:140,143</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:142,145</note>
       </notes>
       <segment>
         <source>Loading tokens.</source>
@@ -22120,7 +22120,7 @@
     </unit>
     <unit id="tokens.create-submit">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:164</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:166</note>
       </notes>
       <segment>
         <source>Create token</source>
@@ -22128,7 +22128,7 @@
     </unit>
     <unit id="tokens.draft-restored">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:224</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:226</note>
       </notes>
       <segment>
         <source>Your entries were restored. Create the token again.</source>
@@ -22136,7 +22136,7 @@
     </unit>
     <unit id="tokens.revoke-title">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:288</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:290</note>
       </notes>
       <segment>
         <source>Revoke this token?</source>
@@ -22144,7 +22144,7 @@
     </unit>
     <unit id="tokens.revoke-text">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:289</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:291</note>
       </notes>
       <segment>
         <source>“<ph id="0" equiv="description" disp="token.description"/>” stops working at once on every replica. This cannot be undone.</source>
@@ -22152,7 +22152,7 @@
     </unit>
     <unit id="tokens.revoke-confirm">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:290</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:292</note>
       </notes>
       <segment>
         <source>Revoke</source>
@@ -22160,7 +22160,7 @@
     </unit>
     <unit id="tokens.revoked">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:295</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:297</note>
       </notes>
       <segment>
         <source>Token revoked.</source>
@@ -22168,7 +22168,7 @@
     </unit>
     <unit id="tokens.revoke-all-title">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:301</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:303</note>
       </notes>
       <segment>
         <source>Revoke all tokens?</source>
@@ -22176,7 +22176,7 @@
     </unit>
     <unit id="tokens.revoke-all-text">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:302</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:304</note>
       </notes>
       <segment>
         <source>Every token of this owner stops working at once. This cannot be undone.</source>
@@ -22184,7 +22184,7 @@
     </unit>
     <unit id="tokens.revoke-all-confirm">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:303</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:305</note>
       </notes>
       <segment>
         <source>Revoke all</source>
@@ -22192,7 +22192,7 @@
     </unit>
     <unit id="tokens.revoked-all">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:311</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:313</note>
       </notes>
       <segment>
         <source>All tokens revoked.</source>
@@ -25334,7 +25334,7 @@
     </unit>
     <unit id="token-form.description">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:51,53</note>
+        <note category="location">src/app/shared/access/token-form.ts:55,57</note>
       </notes>
       <segment>
         <source>Description</source>
@@ -25342,7 +25342,7 @@
     </unit>
     <unit id="token-form.description-hint">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:57,60</note>
+        <note category="location">src/app/shared/access/token-form.ts:61,64</note>
       </notes>
       <segment>
         <source>What the token is for, for example the machine or the job.</source>
@@ -25350,7 +25350,7 @@
     </unit>
     <unit id="token-form.lifetime">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:61,63</note>
+        <note category="location">src/app/shared/access/token-form.ts:65,67</note>
       </notes>
       <segment>
         <source>Lifetime</source>
@@ -25358,7 +25358,7 @@
     </unit>
     <unit id="token-form.life.capped">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:69,72</note>
+        <note category="location">src/app/shared/access/token-form.ts:73,76</note>
       </notes>
       <segment>
         <source> The installation caps the lifetime of service-account tokens. A longer lifetime is refused. </source>
@@ -25366,7 +25366,7 @@
     </unit>
     <unit id="token-form.expires">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:75,77</note>
+        <note category="location">src/app/shared/access/token-form.ts:79,81</note>
       </notes>
       <segment>
         <source>Expires on (UTC)</source>
@@ -25374,23 +25374,31 @@
     </unit>
     <unit id="token-form.scope">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:85,86</note>
+        <note category="location">src/app/shared/access/token-form.ts:89,90</note>
       </notes>
       <segment>
         <source>Scope</source>
       </segment>
     </unit>
-    <unit id="token-form.scope-all">
+    <unit id="token-form.scope-admin">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:88,90</note>
+        <note category="location">src/app/shared/access/token-form.ts:93,96</note>
       </notes>
       <segment>
-        <source>All permissions of the owner</source>
+        <source>Administrator: everything on this installation</source>
+      </segment>
+    </unit>
+    <unit id="token-form.scope-all">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:98,100</note>
+      </notes>
+      <segment>
+        <source>All repository permissions of the owner, without administration</source>
       </segment>
     </unit>
     <unit id="token-form.scope-restricted">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:92,94</note>
+        <note category="location">src/app/shared/access/token-form.ts:102,104</note>
       </notes>
       <segment>
         <source>Only the repositories and actions below</source>
@@ -25398,7 +25406,7 @@
     </unit>
     <unit id="token-form.repositories">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:97,99</note>
+        <note category="location">src/app/shared/access/token-form.ts:107,109</note>
       </notes>
       <segment>
         <source>Repositories</source>
@@ -25406,7 +25414,7 @@
     </unit>
     <unit id="token-form.repositories-hint">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:104,107</note>
+        <note category="location">src/app/shared/access/token-form.ts:114,117</note>
       </notes>
       <segment>
         <source>One project/key or pattern per line, for example web/npm-internal or web/npm-team-*; or a class such as @any-local.</source>
@@ -25414,7 +25422,7 @@
     </unit>
     <unit id="token-form.packages">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:108,110</note>
+        <note category="location">src/app/shared/access/token-form.ts:118,120</note>
       </notes>
       <segment>
         <source>Package patterns (optional)</source>
@@ -25422,7 +25430,7 @@
     </unit>
     <unit id="token-form.packages-hint">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:113,115</note>
+        <note category="location">src/app/shared/access/token-form.ts:123,125</note>
       </notes>
       <segment>
         <source>One pattern per line, for example @team-a/*. Empty means every package.</source>
@@ -25430,7 +25438,7 @@
     </unit>
     <unit id="token-form.actions">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:116,117</note>
+        <note category="location">src/app/shared/access/token-form.ts:126,127</note>
       </notes>
       <segment>
         <source>Actions</source>
@@ -25438,7 +25446,7 @@
     </unit>
     <unit id="token-form.endpoints">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:129,130</note>
+        <note category="location">src/app/shared/access/token-form.ts:139,140</note>
       </notes>
       <segment>
         <source>Endpoints</source>
@@ -25446,7 +25454,7 @@
     </unit>
     <unit id="token-form.endpoints-hint">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:131,134</note>
+        <note category="location">src/app/shared/access/token-form.ts:141,144</note>
       </notes>
       <segment>
         <source> Valid only on the endpoints you tick. Tick none and the token is accepted wherever its type is accepted. A further endpoint accepts only service-account tokens bound to it. </source>
@@ -25454,7 +25462,7 @@
     </unit>
     <unit id="token-form.cancel">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:143,145</note>
+        <note category="location">src/app/shared/access/token-form.ts:153,155</note>
       </notes>
       <segment>
         <source> Cancel </source>
@@ -25462,7 +25470,7 @@
     </unit>
     <unit id="token-form.life.default">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:242</note>
+        <note category="location">src/app/shared/access/token-form.ts:255</note>
       </notes>
       <segment>
         <source>Server default</source>
@@ -25470,7 +25478,7 @@
     </unit>
     <unit id="token-form.life.d7">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:243</note>
+        <note category="location">src/app/shared/access/token-form.ts:256</note>
       </notes>
       <segment>
         <source>7 days</source>
@@ -25478,7 +25486,7 @@
     </unit>
     <unit id="token-form.life.d30">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:244</note>
+        <note category="location">src/app/shared/access/token-form.ts:257</note>
       </notes>
       <segment>
         <source>30 days</source>
@@ -25486,7 +25494,7 @@
     </unit>
     <unit id="token-form.life.d90">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:245</note>
+        <note category="location">src/app/shared/access/token-form.ts:258</note>
       </notes>
       <segment>
         <source>90 days</source>
@@ -25494,7 +25502,7 @@
     </unit>
     <unit id="token-form.life.d365">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:246</note>
+        <note category="location">src/app/shared/access/token-form.ts:259</note>
       </notes>
       <segment>
         <source>1 year</source>
@@ -25502,7 +25510,7 @@
     </unit>
     <unit id="token-form.life.custom">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:247</note>
+        <note category="location">src/app/shared/access/token-form.ts:260</note>
       </notes>
       <segment>
         <source>Custom date</source>
@@ -25510,7 +25518,7 @@
     </unit>
     <unit id="token-form.life.never">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:249</note>
+        <note category="location">src/app/shared/access/token-form.ts:262</note>
       </notes>
       <segment>
         <source>Never expires</source>
@@ -25518,7 +25526,7 @@
     </unit>
     <unit id="token-form.err.description">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:314</note>
+        <note category="location">src/app/shared/access/token-form.ts:327</note>
       </notes>
       <segment>
         <source>Enter a description.</source>
@@ -25526,7 +25534,7 @@
     </unit>
     <unit id="token-form.err.date">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:318</note>
+        <note category="location">src/app/shared/access/token-form.ts:331</note>
       </notes>
       <segment>
         <source>Pick the expiry date.</source>
@@ -25534,7 +25542,7 @@
     </unit>
     <unit id="token-form.err.repositories">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:323</note>
+        <note category="location">src/app/shared/access/token-form.ts:336</note>
       </notes>
       <segment>
         <source>Name at least one repository.</source>
@@ -25542,7 +25550,7 @@
     </unit>
     <unit id="token-form.err.actions">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:326</note>
+        <note category="location">src/app/shared/access/token-form.ts:339</note>
       </notes>
       <segment>
         <source>Choose at least one action.</source>
@@ -25620,17 +25628,25 @@
         <source>The token could not be copied. Show it and copy it by hand.</source>
       </segment>
     </unit>
-    <unit id="token-table.scope.inherit">
+    <unit id="token-table.scope.admin">
       <notes>
         <note category="location">src/app/shared/access/token-table.ts:14</note>
       </notes>
       <segment>
-        <source>All permissions of the owner</source>
+        <source>Administrator: everything on this installation</source>
+      </segment>
+    </unit>
+    <unit id="token-table.scope.inherit">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:16</note>
+      </notes>
+      <segment>
+        <source>All repository permissions of the owner, without administration</source>
       </segment>
     </unit>
     <unit id="token-table.scope.none">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:19</note>
+        <note category="location">src/app/shared/access/token-table.ts:21</note>
       </notes>
       <segment>
         <source>No repository access</source>
@@ -25638,23 +25654,15 @@
     </unit>
     <unit id="token-table.scope.grants">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:20</note>
+        <note category="location">src/app/shared/access/token-table.ts:22</note>
       </notes>
       <segment>
         <source>Repository grants: <ph id="0" equiv="count" disp="grants.length"/></source>
       </segment>
     </unit>
-    <unit id="token-table.scope.admin">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:23</note>
-      </notes>
-      <segment>
-        <source>administrator roles</source>
-      </segment>
-    </unit>
     <unit id="token-table.scope.system">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:25</note>
+        <note category="location">src/app/shared/access/token-table.ts:26</note>
       </notes>
       <segment>
         <source>system: <ph id="0" equiv="list" disp="system.join(&apos;, &apos;)"/></source>
@@ -25662,15 +25670,23 @@
     </unit>
     <unit id="token-table.empty">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:50,52</note>
+        <note category="location">src/app/shared/access/token-table.ts:51,53</note>
       </notes>
       <segment>
         <source>No tokens match.</source>
       </segment>
     </unit>
+    <unit id="token-table.admin-inactive">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:83,85</note>
+      </notes>
+      <segment>
+        <source>Administrator rights inactive: the owner is no administrator now</source>
+      </segment>
+    </unit>
     <unit id="token-table.unknown-endpoints">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:82,84</note>
+        <note category="location">src/app/shared/access/token-table.ts:91,93</note>
       </notes>
       <segment>
         <source>Bound to an endpoint that is not configured:</source>
@@ -25678,7 +25694,7 @@
     </unit>
     <unit id="token-table.soon">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:95,96</note>
+        <note category="location">src/app/shared/access/token-table.ts:104,105</note>
       </notes>
       <segment>
         <source>Expires soon</source>
@@ -25686,7 +25702,7 @@
     </unit>
     <unit id="token-table.never">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:99,101</note>
+        <note category="location">src/app/shared/access/token-table.ts:108,110</note>
       </notes>
       <segment>
         <source>Never</source>
@@ -25694,7 +25710,7 @@
     </unit>
     <unit id="token-table.not-used">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:106,108</note>
+        <note category="location">src/app/shared/access/token-table.ts:115,117</note>
       </notes>
       <segment>
         <source>Not used yet</source>
@@ -25702,7 +25718,7 @@
     </unit>
     <unit id="token-table.state.active">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:113,115</note>
+        <note category="location">src/app/shared/access/token-table.ts:122,124</note>
       </notes>
       <segment>
         <source>Active</source>
@@ -25710,7 +25726,7 @@
     </unit>
     <unit id="token-table.state.expired">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:116,118</note>
+        <note category="location">src/app/shared/access/token-table.ts:125,127</note>
       </notes>
       <segment>
         <source>Expired</source>
@@ -25718,7 +25734,7 @@
     </unit>
     <unit id="token-table.state.revoked">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:119,121</note>
+        <note category="location">src/app/shared/access/token-table.ts:128,130</note>
       </notes>
       <segment>
         <source>Revoked</source>
@@ -25726,7 +25742,7 @@
     </unit>
     <unit id="token-table.rotate">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:127,128</note>
+        <note category="location">src/app/shared/access/token-table.ts:136,137</note>
       </notes>
       <segment>
         <source>Rotate</source>
@@ -25734,7 +25750,7 @@
     </unit>
     <unit id="token-table.revoke">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:133,134</note>
+        <note category="location">src/app/shared/access/token-table.ts:142,143</note>
       </notes>
       <segment>
         <source>Revoke</source>
@@ -25742,7 +25758,7 @@
     </unit>
     <unit id="token-table.caption">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:160</note>
+        <note category="location">src/app/shared/access/token-table.ts:171</note>
       </notes>
       <segment>
         <source>Tokens</source>
@@ -25750,7 +25766,7 @@
     </unit>
     <unit id="token-table.select">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:163</note>
+        <note category="location">src/app/shared/access/token-table.ts:174</note>
       </notes>
       <segment>
         <source>Select</source>
@@ -25758,7 +25774,7 @@
     </unit>
     <unit id="token-table.description">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:165</note>
+        <note category="location">src/app/shared/access/token-table.ts:176</note>
       </notes>
       <segment>
         <source>Description</source>
@@ -25766,7 +25782,7 @@
     </unit>
     <unit id="token-table.type">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:168</note>
+        <note category="location">src/app/shared/access/token-table.ts:179</note>
       </notes>
       <segment>
         <source>Type</source>
@@ -25774,7 +25790,7 @@
     </unit>
     <unit id="token-table.help.type">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:169</note>
+        <note category="location">src/app/shared/access/token-table.ts:180</note>
       </notes>
       <segment>
         <source>pat is a personal token, sat belongs to a service account, cit was issued to a CI pipeline.</source>
@@ -25782,7 +25798,7 @@
     </unit>
     <unit id="token-table.owner">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:171</note>
+        <note category="location">src/app/shared/access/token-table.ts:182</note>
       </notes>
       <segment>
         <source>Owner</source>
@@ -25790,7 +25806,7 @@
     </unit>
     <unit id="token-table.scope">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:174</note>
+        <note category="location">src/app/shared/access/token-table.ts:185</note>
       </notes>
       <segment>
         <source>Scope</source>
@@ -25798,7 +25814,7 @@
     </unit>
     <unit id="token-table.help.scope">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:175</note>
+        <note category="location">src/app/shared/access/token-table.ts:186</note>
       </notes>
       <segment>
         <source>What the token may do: all permissions of its owner, or only the listed repository grants.</source>
@@ -25806,7 +25822,7 @@
     </unit>
     <unit id="token-table.created">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:177</note>
+        <note category="location">src/app/shared/access/token-table.ts:188</note>
       </notes>
       <segment>
         <source>Created</source>
@@ -25814,7 +25830,7 @@
     </unit>
     <unit id="token-table.expires">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:178</note>
+        <note category="location">src/app/shared/access/token-table.ts:189</note>
       </notes>
       <segment>
         <source>Expires</source>
@@ -25822,7 +25838,7 @@
     </unit>
     <unit id="token-table.last-used">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:181</note>
+        <note category="location">src/app/shared/access/token-table.ts:192</note>
       </notes>
       <segment>
         <source>Last used</source>
@@ -25830,7 +25846,7 @@
     </unit>
     <unit id="token-table.help.last-used">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:182</note>
+        <note category="location">src/app/shared/access/token-table.ts:193</note>
       </notes>
       <segment>
         <source>The last time the token authenticated a request. Not every use is recorded immediately.</source>
@@ -25838,7 +25854,7 @@
     </unit>
     <unit id="token-table.via">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:184</note>
+        <note category="location">src/app/shared/access/token-table.ts:195</note>
       </notes>
       <segment>
         <source>Created via</source>
@@ -25846,7 +25862,7 @@
     </unit>
     <unit id="token-table.state">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:185</note>
+        <note category="location">src/app/shared/access/token-table.ts:196</note>
       </notes>
       <segment>
         <source>State</source>
@@ -25854,7 +25870,7 @@
     </unit>
     <unit id="token-table.actions">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:186</note>
+        <note category="location">src/app/shared/access/token-table.ts:197</note>
       </notes>
       <segment>
         <source>Actions</source>
@@ -25862,7 +25878,7 @@
     </unit>
     <unit id="token-table.select-one">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:207</note>
+        <note category="location">src/app/shared/access/token-table.ts:223</note>
       </notes>
       <segment>
         <source>Select <ph id="0" equiv="description" disp="t.description"/></source>

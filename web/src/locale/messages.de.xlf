@@ -25337,13 +25337,22 @@
         <target>Geltungsbereich</target>
       </segment>
     </unit>
+    <unit id="token-form.scope-admin">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:96</note>
+      </notes>
+      <segment>
+        <source>Administrator: everything on this installation</source>
+        <target>Administrator: alles auf dieser Installation</target>
+      </segment>
+    </unit>
     <unit id="token-form.scope-all">
       <notes>
         <note category="location">src/app/shared/access/token-form.ts:88,90</note>
       </notes>
       <segment>
-        <source>All permissions of the owner</source>
-        <target>Alle Berechtigungen des Besitzers</target>
+        <source>All repository permissions of the owner, without administration</source>
+        <target>Alle Repository-Rechte des Besitzers, ohne Administration</target>
       </segment>
     </unit>
     <unit id="token-form.scope-restricted">
@@ -25607,13 +25616,22 @@
         <target>Das Token konnte nicht kopiert werden. Zeigen Sie es an und kopieren Sie es von Hand.</target>
       </segment>
     </unit>
+    <unit id="token-table.admin-inactive">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:82</note>
+      </notes>
+      <segment>
+        <source>Administrator rights inactive: the owner is no administrator now</source>
+        <target>Administratorrechte inaktiv: Der Besitzer ist derzeit kein Administrator</target>
+      </segment>
+    </unit>
     <unit id="token-table.scope.inherit">
       <notes>
         <note category="location">src/app/shared/access/token-table.ts:14</note>
       </notes>
       <segment>
-        <source>All permissions of the owner</source>
-        <target>Alle Berechtigungen des Besitzers</target>
+        <source>All repository permissions of the owner, without administration</source>
+        <target>Alle Repository-Rechte des Besitzers, ohne Administration</target>
       </segment>
     </unit>
     <unit id="token-table.scope.none">
@@ -25639,8 +25657,8 @@
         <note category="location">src/app/shared/access/token-table.ts:23</note>
       </notes>
       <segment>
-        <source>administrator roles</source>
-        <target>Administratorrollen</target>
+        <source>Administrator: everything on this installation</source>
+        <target>Administrator: alles auf dieser Installation</target>
       </segment>
     </unit>
     <unit id="token-table.scope.system">

@@ -3900,9 +3900,11 @@ Priority: **MVP** · Covers: UI-053, AUTHN-039, AUTHN-040
   display name through `PATCH /api/v1/users/{username}` (R-API-031) lasts until the user's next
   login. SSH keys and linked accounts are P2 on the identity page and not shown.
 - Personal tokens: list with description, scope summary, created, expires and last used; tokens
-  expiring within 7 days are marked. Create dialog: description (required), expiry (presets and a
-  custom date, bounded by R-AUTH-040), scope (all own permissions, or restricted to repositories and
-  actions; grammar of R-AUTH-024) and, for a caller with `endpoints:read`, the endpoints the token
+  expiring within 7 days are marked, and a token with `admin: true` whose owner does not hold the administrator role now says that
+  its administrator rights are inactive. Create dialog: description (required), expiry (presets and a
+  custom date, bounded by R-AUTH-040), scope (three choices, Q-UI-213: administrator rights, only for a caller who holds the
+  administrator role; all repository permissions of the owner without administration, the preselected one; or restricted to
+  repositories and actions; grammar of R-AUTH-024) and, for a caller with `endpoints:read`, the endpoints the token
   is bound to (Q-UI-91). Recent authentication applies. The result is shown once with a
   copy button and the notice that it cannot be shown again. Revoke and rotate with confirmation;
   rotate is P1 and, like creation, needs recent authentication (R-AUTH-030).
@@ -9309,6 +9311,26 @@ Context: the acceptance criterion of R-UI-047 asks that a deliberately broken sn
 **Rationale:** the criterion exists to catch a page and a client configuration that disagree; the mutation test shows that the comparison has the power to, and the journey runs it against the real page in CI. The development agent would revisit this with option (a) if the journey ever stops comparing exact text.
 
 **Applied in the spec:** none. Code: [setup_broken_template_test.go](../../internal/api/v1/setup_broken_template_test.go). Tests: `TestR_UI_047_TheShippedSnippetTemplatesRenderTheTextsOfTheClientSetupJourney`, `TestR_UI_047_ADeliberatelyBrokenSnippetTemplateFailsTheClientSetupComparison`.
+
+### Q-UI-213 · The token form names what a token can be in three choices, and only an administrator is offered the first
+
+Status: **Decided by the owner** (2026-11-10), on a proposal of the development agent.
+
+Context: the owner created a personal token with **All permissions of the owner** and `docker push` answered `denied`. The form sent `{"inherit": true}`, which R-AUTH-024 defines as the owner's repository permissions without administration, and the owner holds no repository permission other than through the administrator role, so the registry token carried no `push`. The label promised more than the token held, and the form had no way to set `admin: true`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Three radio buttons (chosen) | **Administrator: everything on this installation**, only for a caller with the role; **All repository permissions of the owner, without administration**, preselected; **Only the repositories and actions below** | Only valid states; the list uses the same words | One more line in the form |
+| (b) The radio buttons plus an administrator checkbox | A switch beside the scope | Closest to the two API fields | Administrator rights next to a repository list reads as a limit, while `content:bypass` passes every repository check |
+| (c) A token of an administrator is one by default | `{"inherit": true, "admin": true}` when no scope is given | Nothing to choose | Every token an administrator makes without thinking administers the installation, also one in a CI secret |
+
+**Choice:** (a). The first choice sends `{"inherit": true, "admin": true}`, so that the token also acts on the owner's own account (R-AUTH-024). **Rationale:** a token is one of three things, and a control that can only be in those three states cannot promise what the token does not hold. The default of R-AUTH-024 stands: administrator power is an explicit choice.
+
+**A token is not revoked when its owner loses the role** (recommended by the development agent; the owner did not object). The role is checked at every use (R-AUTHZ-010), so the power ends with the role. A revocation would add nothing to that and would end every such token for good if one login through the identity provider carried no group claim (R-AUTH-008). What remains is that the token holds the power again if the owner regains the role; its lifetime bounds that, and the list of the owner's tokens says that the rights are inactive.
+
+Not covered: the form of a service-account token offers no administrator rights (the account's role is not known to the form; `trove admin token create --scope-file` and the API set them), and the token administration (R-UI-030) does not know the role of each owner, so it shows no such notice.
+
+**Applied in the spec:** R-UI-029. Code: `TokenForm` and `scopeSummary` in `web/src/app/shared/access/`.
 
 ### Q-API-246 · An operation that is allowed while the installation is read-only declares `x-trove-maintenance: allowed`
 
