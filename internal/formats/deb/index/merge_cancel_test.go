@@ -14,11 +14,14 @@ type countdown struct {
 	n      int
 	cancel context.CancelFunc
 	seen   int
+	// cancelled is when the context was cancelled: "soon after the cancellation" is measured from here.
+	cancelled time.Time
 }
 
 func (c *countdown) Paragraph([]byte) error {
 	c.seen++
 	if c.seen == c.n {
+		c.cancelled = time.Now()
 		c.cancel()
 	}
 	return nil
@@ -34,13 +37,12 @@ func TestMergeMemberStopsWhenItsContextEnds(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		sink := &countdown{n: 10, cancel: cancel}
-		start := time.Now()
 		_, err := MergeMember(ctx, sink, NewSeen(0), "m", strings.NewReader(doc.String()), keepAll)
 		if !errors.Is(err, context.Canceled) {
 			t.Fatalf("err = %v, want context.Canceled", err)
 		}
-		if sink.seen > 10+mergeCheckEvery || time.Since(start) > time.Second {
-			t.Fatalf("the merge kept %d paragraphs in %s after the cancellation at 10", sink.seen, time.Since(start))
+		if took := time.Since(sink.cancelled); sink.seen > 10+mergeCheckEvery || took > time.Second {
+			t.Fatalf("the merge read up to paragraph %d and took %s after the cancellation at 10", sink.seen, took)
 		}
 	})
 }
