@@ -49,11 +49,11 @@ follow the [roadmap's format order](../coverage/roadmap.md#p1-format-expansion-o
 - 🟢 Local: publish (multipart or raw body, import tasks) and install of collections, immutability and tombstones, reindex, the package screens; integration area `ansiblelocal`. Roles only through remote and virtual repositories (Q-ANS-6)
 - 🟢 Remote: proxy of the public Galaxy: pull-through of collections (paged version lists, the announced digest verified, the identity inside the archive checked) and of roles by translation from allowed hosts, the mirror of the collections the patterns select (Q-ANS-52); integration areas `ansibleremote` and `mirror`. 🟡 The Automation Hub's token exchange (Q-ANS-51), also for the mirror's listing, is tested against the stub realm only (H-842)
 - 🟢 Virtual: one endpoint for internal and public content: merged version lists, first match, publish through the deploy target, versions a path grant hides stay hidden through the virtual repository; integration area `ansiblevirtual`
-- 🟡 Authentication with trove tokens (`ansible.cfg`, `ansible-galaxy --token`): the `Token` scheme, Basic and Bearer work on the local class (R-ANS-006); netrc for roles comes with the remote class
-- 🟡 Migration of the content of the existing Galaxy instance (`trove admin import ansible` for collections, unit-tested; integration tests and a dry run against the owner's Galaxy open, H-847)
-- ⚪ Integration tests
-- ⚪ E2E tests: `ansible-galaxy collection install/publish`, `ansible-galaxy role install`, `requirements.yml` through local, remote and virtual repositories
-- ⚪ Client setup instructions in the UI
+- 🟢 Authentication with trove tokens: `ansible.cfg` with the token variable, `--token` with `--server`, Basic, and netrc for roles (R-ANS-006, Q-ANS-54); e2e row `Auth` on both clients
+- 🟡 Migration of the content of the existing Galaxy instance: `trove admin import ansible` for collections, integration-tested against the stub (`test/integration/importer`); a dry run against the owner's Galaxy is open (H-847)
+- 🟢 Integration tests: `ansiblelocal`, `ansibleremote`, `ansiblevirtual`, the mirror rows of `mirror`, the importer, the conformance kit for all three classes, against the counting stub `test/ansiblestub`
+- 🟡 E2E tests: the set `ansible` with ansible-core 2.17.14 and 2.21.6 (collection publish and install, `requirements.yml`, `role install`, digest refusal, pasted snippets, Valkey stopped, virtual and mirror rows) passed on kind on 2026-11-10, 67 tests and subtests; the CI leg `e2e (ansible)` has not yet run green on a push. One name with versions in both a local and a remote member is not run with the real clients (H-868)
+- 🟢 Client setup instructions in the UI: the setup page offers `ansible-galaxy` with eight snippets, the guide per class, the repository screens with import tasks and tombstones; journey `20-ansible`
 
 ### F1 · Generic files: remote and virtual
 - ⚪ Spec page `formats/generic.md` extended
