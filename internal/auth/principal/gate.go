@@ -3,10 +3,14 @@ package principal
 import (
 	"context"
 	"errors"
+	"fmt"
+	"runtime/debug"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/guided-traffic/trove/internal/errs"
 )
 
 // Freshness tells whether the replica's last completed change-log poll started
@@ -132,45 +136,54 @@ type flight[V any] struct {
 	err   error
 }
 
-// Do runs fn for k, or joins the running call. A joined call whose leader failed
-// because the leader's context ended runs again with the caller's own context.
+// flightTimeout bounds a shared lookup, which no request's end can cancel. It is above the retry budget (database.retry.max_elapsed, 30 s by
+// default) plus one statement, because the budget is what ends a lookup during an outage: a bound below it would answer 503 in the middle of a
+// failover that the budget rides out. It only ends a statement that hangs on a connection whose route is gone.
+const flightTimeout = time.Minute
+
+// Do returns the result of fn for k, from the running call or from a new one. The call runs on its own and every caller, the one that started it
+// too, waits for it under its own context (Q-AUTH-208): a caller that goes away stops waiting and takes the answer from nobody, and a caller that
+// stays gets the answer of the lookup it joined, within that lookup's retry budget.
 func (f *Flights[K, V]) Do(ctx context.Context, k K, bound time.Duration, fn func(context.Context) (V, error)) (V, error) {
-	for attempt := 0; ; attempt++ {
-		f.mu.Lock()
-		if f.m == nil {
-			f.m = map[K]*flight[V]{}
-		}
-		if cur, ok := f.m[k]; ok && time.Since(cur.start) < bound {
-			f.mu.Unlock()
-			select {
-			case <-cur.done:
-				if isContextErr(cur.err) && ctx.Err() == nil && attempt == 0 {
-					continue
-				}
-				return cur.val, cur.err
-			case <-ctx.Done():
-				var zero V
-				return zero, ctx.Err()
-			}
-		}
-		fl := &flight[V]{start: time.Now(), done: make(chan struct{})}
+	f.mu.Lock()
+	if f.m == nil {
+		f.m = map[K]*flight[V]{}
+	}
+	fl, ok := f.m[k]
+	if !ok || time.Since(fl.start) >= bound {
+		fl = &flight[V]{start: time.Now(), done: make(chan struct{})}
 		f.m[k] = fl
-		f.mu.Unlock()
+		go f.run(ctx, k, fl, fn)
+	}
+	f.mu.Unlock()
+	select {
+	case <-fl.done:
+		return fl.val, fl.err
+	case <-ctx.Done():
+		var zero V
+		return zero, ctx.Err()
+	}
+}
 
-		fl.val, fl.err = fn(ctx)
-
+// run is the shared lookup. Its context keeps the values of the request that started it and not that request's end.
+func (f *Flights[K, V]) run(ctx context.Context, k K, fl *flight[V], fn func(context.Context) (V, error)) {
+	defer func() {
+		// No net/http goroutine recovers a panic here: it would end the process and leave every waiter without an answer.
+		if p := recover(); p != nil {
+			var zero V
+			fl.val, fl.err = zero, errs.E(errs.Internal, errs.CodeInternal, "The request failed.", errs.WithCause(fmt.Errorf("a shared lookup panicked: %v\n%s", p, debug.Stack())))
+		}
+		// Leave the map before the answer is out: a caller that comes after the answer starts its own lookup instead of joining one that has ended.
 		f.mu.Lock()
 		if f.m[k] == fl {
 			delete(f.m, k)
 		}
 		f.mu.Unlock()
 		close(fl.done)
-		return fl.val, fl.err
-	}
-}
-
-func isContextErr(err error) bool {
-	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+	}()
+	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), flightTimeout)
+	defer cancel()
+	fl.val, fl.err = fn(fctx)
 }
 
 func (m *Metrics) claimMissing(provider, reason string) {

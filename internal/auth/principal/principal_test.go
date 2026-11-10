@@ -167,22 +167,83 @@ func TestR_AUTH_023_FlightsShareOnlyYoungLookups(t *testing.T) {
 			t.Fatalf("v=%d err=%v lookups=%d", v, err, n.Load())
 		}
 	})
-	t.Run("a joined caller whose leader was cancelled runs again", func(t *testing.T) {
+	t.Run("R-AUTH-023 a caller that goes away takes the lookup from nobody: the others get its answer", func(t *testing.T) {
 		var g Flights[string, int]
 		leaderCtx, cancel := context.WithCancel(context.Background())
 		started := make(chan struct{})
-		leader := func(ctx context.Context) (int, error) { close(started); <-ctx.Done(); return 0, ctx.Err() }
-		go func() { _, _ = g.Do(leaderCtx, "k", time.Minute, leader) }()
+		release := make(chan struct{})
+		var lookupCtx atomic.Pointer[context.Context]
+		leader := func(ctx context.Context) (int, error) {
+			lookupCtx.Store(&ctx)
+			close(started)
+			<-release
+			return 7, ctx.Err()
+		}
+		leaderErr := make(chan error, 1)
+		go func() { _, err := g.Do(leaderCtx, "k", time.Minute, leader); leaderErr <- err }()
 		<-started
 		res := make(chan int, 1)
 		go func() {
-			v, _ := g.Do(context.Background(), "k", time.Minute, func(context.Context) (int, error) { return 9, nil })
+			v, err := g.Do(context.Background(), "k", time.Minute, func(context.Context) (int, error) { return 9, nil })
+			if err != nil {
+				t.Error(err)
+			}
 			res <- v
 		}()
 		time.Sleep(20 * time.Millisecond)
 		cancel()
-		if v := <-res; v != 9 {
-			t.Fatalf("got %d", v)
+		if err := <-leaderErr; !errors.Is(err, context.Canceled) {
+			t.Fatalf("the caller that went away got %v, want its own cancellation at once", err)
+		}
+		close(release)
+		if v := <-res; v != 7 {
+			t.Fatalf("the caller that stayed got %d, want the answer of the running lookup", v)
+		}
+		if _, ok := (*lookupCtx.Load()).Deadline(); !ok {
+			t.Error("the shared lookup has no deadline of its own")
+		}
+	})
+	t.Run("R-HA-007 R-AUTH-023 a caller that joined a lookup which used up the retry budget gets that 503 and does not start another", func(t *testing.T) {
+		var g Flights[string, int]
+		var runs atomic.Int32
+		started := make(chan struct{})
+		release := make(chan struct{})
+		exhausted := errs.E(errs.Unavailable, errs.CodeDatabaseUnavailable, "the database is not available", errs.WithCause(context.DeadlineExceeded))
+		go func() {
+			_, _ = g.Do(context.Background(), "k", time.Minute, func(context.Context) (int, error) {
+				runs.Add(1)
+				close(started)
+				<-release
+				return 0, exhausted
+			})
+		}()
+		<-started
+		joined := make(chan error, 1)
+		go func() {
+			_, err := g.Do(context.Background(), "k", time.Minute, func(context.Context) (int, error) {
+				runs.Add(1)
+				return 0, exhausted
+			})
+			joined <- err
+		}()
+		time.Sleep(20 * time.Millisecond)
+		close(release)
+		err := <-joined
+		if e, ok := errs.As(err); !ok || e.Kind != errs.Unavailable {
+			t.Fatalf("the joined caller got %v, want the 503", err)
+		}
+		if n := runs.Load(); n != 1 {
+			t.Fatalf("%d lookups: the joined caller started another with a retry budget of its own, and waited twice as long", n)
+		}
+	})
+	t.Run("R-AUTH-023 a lookup that panics is an internal error for its callers and the next caller starts a new one", func(t *testing.T) {
+		var g Flights[string, int]
+		_, err := g.Do(context.Background(), "k", time.Minute, func(context.Context) (int, error) { panic("boom") })
+		if e, ok := errs.As(err); !ok || e.Kind != errs.Internal {
+			t.Fatalf("got %v, want an internal error", err)
+		}
+		if v, err := g.Do(context.Background(), "k", time.Minute, func(context.Context) (int, error) { return 3, nil }); err != nil || v != 3 {
+			t.Fatalf("v=%d err=%v after the panic", v, err)
 		}
 	})
 	t.Run("errors are shared too", func(t *testing.T) {

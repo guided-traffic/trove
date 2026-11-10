@@ -1885,6 +1885,11 @@ than the bound, so sharing keeps the revocation bound. While lookups finish with
 replica therefore has one lookup per credential in flight, and a gate that trips on every replica
 during a slow PostgreSQL does not multiply the database's load by the request rate.
 
+The shared query belongs to no request: it runs on its own under the retry budget of `database.retry`, every request of it, the
+one that started it too, waits under its own context, and a request whose client goes away neither ends the query nor hands its
+end to the others. A request that joined a query gets that query's answer, a `503` too, so it waits for one retry budget and not
+for one per query it joined (Q-AUTH-208).
+
 **Revocation latency.** A revoked token, an ended session or a disabled principal MUST be rejected
 by every replica within `auth.revocation_bound` (2 s) after the change committed. The bound holds
 whatever Valkey does: available, unavailable, failed over, emptied, partitioned from one replica
@@ -5748,6 +5753,20 @@ are not restored.
 convenience. The development agent would revisit (c) if a default became binding for some creation path.
 **Applied:** R-AUTH-026, R-AUTH-040, R-AUTH-041 (the table, the comparator, the not-journaled bullet); [ha-and-helm.md](ha-and-helm.md)
 R-HA-054; `internal/auth/token/settings.go` (`Update`), `journal_replay.go`.
+
+### Q-AUTH-208 · A shared credential lookup belongs to no request
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a finding of `TestHAFaults_PostgresOutage` (nightly runs 42677190569 and 42716465112): 1,893 and 2,137 requests during the outage ended at the client's 45 s or with a `500`, where R-HA-007 says a request stalls for up to `database.retry.max_elapsed` (30 s) and then answers `503`. The server's log places them all in the authentication stage: 484 `503` and 217 `500` on one replica, no principal, durations of 41 to 45 s, against requests past authentication that ended at 30.0 s. `principal.Flights`, which shares the token, principal and settings lookups while the freshness gate is closed, ran the lookup on the context of the request that started it and let a joined request run again if the error was a context error. The error of a used-up budget is one, as `Unavailable` keeps `context.DeadlineExceeded` as its cause: every joined request started a second lookup with a budget of its own, 60 s in all. And a starter whose client left at 45 s handed its `context.Canceled` to the requests that had joined it, which `DBErr` maps to a `500`. Reproduced by `TestR_AUTH_023_FlightsShareOnlyYoungLookups` (two lookups where one is due). The session store had this rule since Q-AUTH-181; `Flights` had not followed.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Tell a budget that ended from a starter that left, and run again only for the second | A flag on the flight | Smallest change | A joined request still waits two budgets when the starter leaves, and the query still dies with one client |
+| (b) The lookup runs on its own and every request waits under its own context, as Q-AUTH-181 (chosen) | A goroutine per started flight, the context keeps the request's values and not its end, a recovered panic is an internal error | One rule for the three lookups and the session store; a client that leaves takes nothing from the others; no second run, so the wait is one budget | A goroutine per flight while the gate is closed; a lookup that a client left still runs to its end |
+| (c) Do not share while the gate is closed | Every request queries | No flight | The load the shared lookup exists to keep off a slow PostgreSQL |
+
+**Choice:** (b). The lookup is bound by one minute, above the default budget and one statement, and not by the 10 s of the session store: a gate closes in exactly the failover that the budget rides out, so a shorter bound would turn that failover into `503`. The minute only ends a statement that hangs on a connection whose route is gone. **Rationale:** the flight is shared state, so it must not belong to one request. The development agent would revisit the fixed minute if `database.retry.max_elapsed` were ever set near it. Not verified: a run of `TestHAFaults_PostgresOutage` with the change. **Applied in the spec:** R-AUTH-023 (the shared lookup). Code: `Flights` in `internal/auth/principal/gate.go`.
 
 ## What this does not cover
 

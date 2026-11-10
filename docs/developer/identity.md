@@ -163,8 +163,8 @@ lookup key and does not allow authentication.
 
 **The freshness gate** (`principal.Gate`, wired to `cluster.Changes.FreshWithin(auth.revocation_bound)`): while the last
 completed poll started more than the bound ago, `Open()` is false, every lookup reads PostgreSQL and nothing is cached;
-concurrent lookups of one key share a query only if it started less than the bound before (`Flights`). A lookup that
-PostgreSQL does not answer is 503. `trove_auth_cache_bypassed_total{reason="changes_stale"}` counts them.
+concurrent lookups of one key share a query only if it started less than the bound before (`Flights`; the query runs on its own and each
+caller waits under its own context, Q-AUTH-208). A lookup that PostgreSQL does not answer is 503. `trove_auth_cache_bypassed_total{reason="changes_stale"}` counts them.
 
 **The fill rule** is the cache package's (`Load` reads the applied epoch before the query and caches only if it is
 unchanged), so a fill that raced a revocation serves one request and is not cached.
