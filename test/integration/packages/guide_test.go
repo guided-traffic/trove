@@ -97,7 +97,7 @@ func TestR_API_053_TheGuideThroughTheStack(t *testing.T) {
 			for _, c := range m["clients"].([]any) {
 				ids = append(ids, c.(map[string]any)["id"].(string))
 			}
-			want := map[string][]string{"npm": {"npm", "pnpm", "yarn", "yarn-classic"}, "nuget": {"dotnet", "nuget", "visual-studio"}, "generic": {"curl"}, "oci": {"docker", "podman"}, "deb": {"apt"}}[m["name"].(string)]
+			want := map[string][]string{"npm": {"npm", "pnpm", "yarn", "yarn-classic"}, "nuget": {"dotnet", "nuget", "visual-studio"}, "generic": {"curl"}, "oci": {"docker", "podman"}, "deb": {"apt"}, "ansible": {"ansible-galaxy"}}[m["name"].(string)]
 			if !slices.Equal(ids, want) {
 				t.Errorf("%s: clients %v", m["name"], ids)
 			}
