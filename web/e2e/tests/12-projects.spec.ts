@@ -58,11 +58,14 @@ test('R-UI-041 an administrator creates a project; a member of its Owner group a
     // The new project opens on its settings, inside the project (Q-UI-129).
     await expect(page).toHaveURL(new RegExp(`/projects/${key}/settings$`));
     await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
+    await page.getByRole('button', { name: 'Details', exact: true }).click();
     await expect(page.getByText(`group:${groupName}`).first()).toBeVisible();
     // The repository is created in the project (R-REPO-001), through the API as the journey's data.
     const created = await admin.post(repositories(key), { data: { key: repoKey, class: 'local', format: 'generic' } });
     expect(created.status(), await created.text()).toBe(201);
     await page.reload();
+    await page.getByRole('button', { name: 'Details', exact: true }).click();
+    await page.getByRole('button', { name: 'Advanced', exact: true }).click();
     // A project that holds a repository cannot be deleted; the page says why.
     await expect(page.getByRole('button', { name: 'Delete project' })).toBeDisabled();
     // The project shows the logical size it is charged (R-STOR-049): nothing is stored in it yet.
@@ -111,7 +114,7 @@ test('R-UI-041 an administrator creates a project; a member of its Owner group a
     await nav.getByRole('link', { name: 'Repositories', exact: true }).click();
     await expect(bob.getByRole('link', { name: 'Create repository' })).toBeVisible();
     await nav.getByRole('link', { name: 'Settings', exact: true }).click();
-    await expect(bob.getByRole('button', { name: 'Edit project' })).toBeVisible();
+    await expect(bob.getByRole('button', { name: 'Save changes' })).toBeVisible();
     await expect(bob.getByRole('button', { name: 'Delete project' })).toHaveCount(0);
     // The members screen shows the group as Owner; the last Owner cannot be removed (Q-AUTHZ-217).
     await nav.getByRole('link', { name: 'Members', exact: true }).click();

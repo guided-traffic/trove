@@ -68,10 +68,9 @@ export class InstallPanel {
   );
   protected readonly lines = computed(() => this.command().split('\n'));
   protected readonly collapsible = computed(() => this.lines().length > COLLAPSE_AFTER_LINES);
-  protected readonly shown = computed(() =>
-    this.collapsible() && !this.expanded()
-      ? this.lines().slice(0, COLLAPSE_AFTER_LINES).join('\n')
-      : this.command(),
+  /** How many lines the command shows; the height follows it with the animation of the style guide. */
+  protected readonly shownLines = computed(() =>
+    this.collapsible() && !this.expanded() ? COLLAPSE_AFTER_LINES : this.lines().length,
   );
   protected readonly failure = computed(() => {
     const e = this.answer.error();

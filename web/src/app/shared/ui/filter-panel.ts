@@ -72,11 +72,11 @@ export class FilterToggle {
             <span class="category-dot" aria-hidden="true"></span>
             <span class="visually-hidden" i18n="@@filters.category-active">(active)</span>
           }
-          <span class="material-icons chevron" aria-hidden="true">{{ expanded() ? 'expand_less' : 'chevron_right' }}</span>
+          <span class="material-icons chevron expand-chevron" aria-hidden="true">expand_more</span>
         </button>
       </h3>
-      <div class="category-body" [id]="bodyId" [hidden]="!expanded()">
-        <ng-content />
+      <div class="collapse-region" [class.open]="expanded()" [id]="bodyId">
+        <div class="category-body"><ng-content /></div>
       </div>
     </section>
   `,
@@ -108,6 +108,8 @@ export class FilterCategory {
     @if (open()) {
       <form
         class="panel"
+        animate.enter="panel-in"
+        animate.leave="panel-out"
         role="search"
         [id]="panelId"
         [attr.aria-labelledby]="panelId + '-title'"

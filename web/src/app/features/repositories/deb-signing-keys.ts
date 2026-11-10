@@ -176,6 +176,7 @@ export function keyErrorText(error: ApiError): string | null {
               </button>
             </div>
             @if (importing()) {
+              <div class="collapse-animated" animate.enter="collapse-in" animate.leave="collapse-out">
               <form class="import" (submit)="$event.preventDefault(); doImport()" data-testid="deb-import">
                 <div class="field">
                   <label class="field-label" for="deb-import-key" i18n="@@deb.keys.import.key">Armored secret key</label>
@@ -213,6 +214,7 @@ export function keyErrorText(error: ApiError): string | null {
                   Import as next key
                 </button>
               </form>
+              </div>
             }
           }
         }

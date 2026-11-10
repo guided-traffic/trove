@@ -128,9 +128,9 @@ describe('Projects overview (R-UI-041)', () => {
 describe('Project settings (R-UI-041, Q-UI-129)', () => {
   it('R-UI-041 shows the facts of the project and passes axe', async () => {
     const { root } = await renderScreen(ProjectSettings, { inputs: { project: 'web' } });
-    expect(text(root)).toContain('Web platform');
+    expect(root.querySelector<HTMLInputElement>('input[name="displayName"]')!.value).toBe('Web platform');
     expect(text(root)).toContain('group:web-leads');
-    expect([...root.querySelectorAll('h2')].some((h) => text(h) === 'General')).toBe(true);
+    expect([...root.querySelectorAll('h2')].some((h) => text(h).endsWith('Details'))).toBe(true);
     // The members, repositories, policies and service accounts have screens of their own (Q-UI-129).
     for (const heading of ['Members', 'Repositories', 'Permission policies', 'Service accounts']) {
       expect([...root.querySelectorAll('h2')].some((h) => text(h) === heading)).toBe(false);
@@ -152,6 +152,34 @@ describe('Project settings (R-UI-041, Q-UI-129)', () => {
     expect(text(value)).toBe('1.5 GiB');
     expect(value.getAttribute('title')).toContain('1,610,612,736 bytes');
     expect(value.getAttribute('title')).toContain('also where another project holds the same content');
+  });
+
+  it('R-UI-041 Q-UI-215 the settings are edited in place: the key is read-only and Save changes waits for a change', async () => {
+    const { fixture, root, get } = await renderScreen(ProjectSettings, { inputs: { project: 'web' } });
+    expect(root.querySelector<HTMLInputElement>('input[name="key"]')!.readOnly).toBe(true);
+    const save = buttonByText(root, 'Save changes') as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    typeInto(root, 'Display name', 'The web team');
+    await settle(fixture);
+    expect(save.disabled).toBe(false);
+    save.click();
+    await sleep(fixture, 100);
+    const api = get(ProjectsApi) as FakeProjectsApi;
+    expect(api.calls.some((c) => c.startsWith('replace web'))).toBe(true);
+    expect(save.disabled).toBe(true);
+    expect(await seriousViolations(root)).toEqual([]);
+  });
+
+  it('R-UI-041 Q-UI-215 a settings section folds and says whether it is open', async () => {
+    const { fixture, root } = await renderScreen(ProjectSettings, { inputs: { project: 'web' } });
+    const toggle = buttonByText(root, 'Advanced');
+    const region = root.querySelector<HTMLElement>(`#${toggle.getAttribute('aria-controls')}`)!;
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(region.classList.contains('open')).toBe(false);
+    toggle.click();
+    await settle(fixture);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(region.classList.contains('open')).toBe(true);
   });
 
   it('R-UI-041 delete is offered only for an empty project, with the reason otherwise', async () => {
@@ -197,7 +225,7 @@ describe('Project settings (R-UI-041, Q-UI-129)', () => {
       capabilities: [],
       setup: asProjectAdministrator(),
     });
-    expect(root.textContent).toContain('Edit project');
+    expect(root.textContent).toContain('Save changes');
     expect(root.textContent).not.toContain('Delete project');
     expect(await seriousViolations(root)).toEqual([]);
   });
@@ -211,7 +239,8 @@ describe('Project settings (R-UI-041, Q-UI-129)', () => {
       },
     });
     expect(text(root)).toContain('Read only: changing this needs the permission projects:write');
-    expect(root.textContent).not.toContain('Edit project');
+    expect(root.textContent).not.toContain('Save changes');
+    expect(root.querySelector<HTMLInputElement>('input[name="displayName"]')!.readOnly).toBe(true);
   });
 
   it('R-UI-041 a project that is not visible answers 404 and says so', async () => {

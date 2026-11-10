@@ -71,7 +71,7 @@ existing ones are moved over ([What does not follow this page yet](#what-does-no
 
 - **One column**, at most 56 rem wide, on the page and without a card around it.
 - **The most used settings are open at the top**, without a section title: the name, the description, the avatar.
-- **Further groups are collapsible sections**, closed by default: a chevron on the left, the title at `--trove-heading-2` weight
+- **Further groups are collapsible sections** (`<trove-settings-section>`), closed by default: a chevron on the left, the title at `--trove-heading-2` weight
   600, one muted sentence under it, a hairline between sections. The title names the group (**Permissions**, **Advanced**).
 - **Everything is edited in place.** A settings page has no read-only view with an **Edit** button that opens a dialog, and no
   key-value list of values that could be fields.
@@ -81,6 +81,21 @@ existing ones are moved over ([What does not follow this page yet](#what-does-no
   something changed.
 - **Destructive actions come last**, in a section **Advanced**, with a `btn btn-danger` and a sentence that says what it destroys.
   A disabled destructive action says why it is disabled, next to the button.
+
+## Opening and closing
+
+**Everything that folds, folds with an animation** ([Q-UI-215](../spec/api-and-ui.md#q-ui-215--settings-are-fields-in-one-column-and-everything-that-folds-is-animated)), with one duration and easing (`--trove-motion-duration`, 200 ms, and `--trove-motion-easing`). Never write another one, and never hide a region with `[hidden]` or `@if` alone. Pick by the kind of element; the classes are in [_controls.scss](../../web/src/styles/_controls.scss#L1):
+
+| Element | How |
+|---|---|
+| A region that stays in the page | `<div class="collapse-region" [class.open]="open()"><div>…</div></div>`; the second element is required |
+| A collapsible section of a page | `<trove-settings-section heading description>` ([settings-section.ts](../../web/src/app/shared/ui/settings-section.ts)) |
+| Something added and removed with `@if` | A wrapper with `class="collapse-animated" animate.enter="collapse-in" animate.leave="collapse-out"` around one child |
+| A side panel, a drop-down panel, the sidebar | `panel-in`, `panel-out`; `dropdown-in`, `dropdown-out`; `sidebar-in`, `sidebar-out` |
+| A native `<details>` | Nothing: it animates by itself where the browser can |
+| The chevron of the toggle | `class="expand-chevron"` on `expand_more` inside the button with `aria-expanded`; it turns with the same timing |
+
+The button has `aria-expanded` and `aria-controls`. A closed region is `visibility: hidden`, so nothing in it can be focused. `prefers-reduced-motion` sets the duration to 0 in one place. Dialogs and CDK menus are not folding elements.
 
 ## Forms
 
@@ -153,11 +168,7 @@ These differ from the reference on the owner's decision. Everything else that di
 The guide was written on 2026-11-10 from the owner's screenshots of the reference's member list and general settings. Screens
 written earlier were not reviewed against it, so this list is what is known, not all there is.
 
-- The project's **Settings** ([project-settings.ts](../../web/src/app/features/projects/project-settings.ts)) is a card of keys and
-  values with an **Edit project** dialog. It should be fields in one column, the key read-only, and **Delete project** under
-  **Advanced**.
-- Collapsible settings sections have no shared component yet. The first screen that needs one builds it in `web/src/app/shared/ui/`
-  and adds it to this page.
+- No other settings page has been moved to one column yet; the worked example is [project-settings.ts](../../web/src/app/features/projects/project-settings.ts).
 
 ## What this does not cover
 

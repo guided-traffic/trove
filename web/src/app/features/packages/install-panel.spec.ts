@@ -90,11 +90,12 @@ describe('Install command panel', () => {
         };
       },
     });
-    expect(r.root.querySelector('pre')?.textContent).toBe('yarn add a\nyarn add b\nyarn add c');
+    expect(r.root.querySelector('pre')?.style.getPropertyValue('--lines')).toBe('3');
     const expander = button(r.root, 'Show the whole command');
     expect(expander.getAttribute('aria-expanded')).toBe('false');
     expander.click();
     await settle(r.fixture);
+    expect(r.root.querySelector('pre')?.style.getPropertyValue('--lines')).toBe('5');
     expect(r.root.querySelector('pre')?.textContent).toBe(lines);
     expect(button(r.root, 'Show less').getAttribute('aria-expanded')).toBe('true');
     await expectAccessible(r.root);

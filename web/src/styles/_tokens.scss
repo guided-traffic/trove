@@ -126,6 +126,10 @@
   // reference's measures (32 px, 8 px round, label weight 400) and colours. The default button is white with a grey
   // hairline (light) or a grey veil without one (dark); the confirm button the reference's blue; a field white with a
   // grey outline (light) or a dark veil (dark). Translucent fills are measured over what they sit on (palette.spec.ts).
+  // Everything that folds (the style guide's "Opening and closing"); 0 under prefers-reduced-motion.
+  --trove-motion-duration: 200ms;
+  --trove-motion-easing: cubic-bezier(0.4, 0, 0.2, 1);
+
   --trove-control-height: 32px;
   --trove-control-radius: var(--trove-radius-m);
   --trove-control-bg: light-dark(#ffffff, rgb(5 5 6 / 40%));
@@ -190,4 +194,10 @@
 
 :root[data-theme='dark'] {
   color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --trove-motion-duration: 0ms;
+  }
 }

@@ -300,3 +300,192 @@ input[type='radio'] {
     outline-offset: 2px;
   }
 }
+
+// ---- Opening and closing ---------------------------------------------------------------
+//
+// Everything that folds, folds with an animation (docs/developer/ui-style-guide.md#opening-and-closing). A region that stays
+// in the page:
+//
+//   <button [attr.aria-expanded]="open()" aria-controls="x">…<span class="material-icons expand-chevron">expand_more</span></button>
+//   <div id="x" class="collapse-region" [class.open]="open()"><div>the content</div></div>
+//
+// A closed region is `visibility: hidden`, so its content is out of the tab order and out of the accessibility tree. An
+// element that a screen adds and removes with @if takes animate.enter="collapse-in" animate.leave="collapse-out" and the
+// class collapse-animated, and a native <details> animates by itself. --trove-motion-duration is 0 for prefers-reduced-motion.
+
+[hidden] {
+  display: none !important;
+}
+
+.collapse-region {
+  display: grid;
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition:
+    grid-template-rows var(--trove-motion-duration) var(--trove-motion-easing),
+    visibility 0s linear var(--trove-motion-duration);
+
+  > * {
+    min-block-size: 0;
+    overflow: hidden;
+  }
+
+  &.open {
+    grid-template-rows: 1fr;
+    visibility: visible;
+    transition:
+      grid-template-rows var(--trove-motion-duration) var(--trove-motion-easing),
+      visibility 0s;
+
+    // Once it is open nothing clips the content, a focus ring included.
+    > * {
+      animation: trove-collapse-settle 0s linear var(--trove-motion-duration) forwards;
+    }
+  }
+}
+
+@keyframes trove-collapse-settle {
+  to {
+    overflow: visible;
+  }
+}
+
+.expand-chevron {
+  transition: transform var(--trove-motion-duration) var(--trove-motion-easing);
+}
+
+[aria-expanded='true'] > .expand-chevron {
+  transform: rotate(180deg);
+}
+
+.collapse-animated {
+  display: grid;
+
+  > * {
+    min-block-size: 0;
+    overflow: hidden;
+  }
+}
+
+.collapse-in {
+  animation: trove-collapse-in var(--trove-motion-duration) var(--trove-motion-easing);
+}
+
+.collapse-out {
+  animation: trove-collapse-out var(--trove-motion-duration) var(--trove-motion-easing) forwards;
+}
+
+@keyframes trove-collapse-in {
+  from {
+    grid-template-rows: 0fr;
+  }
+  to {
+    grid-template-rows: 1fr;
+  }
+}
+
+@keyframes trove-collapse-out {
+  from {
+    grid-template-rows: 1fr;
+  }
+  to {
+    grid-template-rows: 0fr;
+  }
+}
+
+.panel-in {
+  animation: trove-panel-in var(--trove-motion-duration) var(--trove-motion-easing);
+}
+
+.panel-out {
+  animation: trove-panel-out var(--trove-motion-duration) var(--trove-motion-easing) forwards;
+}
+
+@keyframes trove-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(var(--trove-space-6));
+  }
+}
+
+@keyframes trove-panel-out {
+  to {
+    opacity: 0;
+    transform: translateX(var(--trove-space-6));
+  }
+}
+
+.dropdown-in {
+  animation: trove-dropdown-in var(--trove-motion-duration) var(--trove-motion-easing);
+}
+
+.dropdown-out {
+  animation: trove-dropdown-out var(--trove-motion-duration) var(--trove-motion-easing) forwards;
+}
+
+@keyframes trove-dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-1 * var(--trove-space-2)));
+  }
+}
+
+@keyframes trove-dropdown-out {
+  to {
+    opacity: 0;
+    transform: translateY(calc(-1 * var(--trove-space-2)));
+  }
+}
+
+// A sidebar folds to nothing beside the panel, which takes the space as it goes.
+.sidebar-in {
+  overflow: hidden;
+  animation: trove-sidebar-in var(--trove-motion-duration) var(--trove-motion-easing);
+}
+
+.sidebar-out {
+  overflow: hidden;
+  animation: trove-sidebar-out var(--trove-motion-duration) var(--trove-motion-easing) forwards;
+}
+
+@keyframes trove-sidebar-in {
+  from {
+    inline-size: 0;
+  }
+}
+
+@keyframes trove-sidebar-out {
+  to {
+    inline-size: 0;
+  }
+}
+
+// A <pre> whose visible lines change: --lines is the number of lines it shows.
+.code-block.folding {
+  max-block-size: calc(var(--lines) * 1lh + 2 * var(--trove-space-3) + 1lh);
+  overflow: hidden auto;
+  transition: max-block-size var(--trove-motion-duration) var(--trove-motion-easing);
+}
+
+details {
+  interpolate-size: allow-keywords;
+
+  &::details-content {
+    block-size: 0;
+    overflow: clip;
+    transition:
+      block-size var(--trove-motion-duration) var(--trove-motion-easing),
+      content-visibility var(--trove-motion-duration) allow-discrete;
+  }
+
+  &[open]::details-content {
+    block-size: auto;
+  }
+}
+
+// A value that cannot change: selectable and copyable, the disabled fill without a border, the text at full contrast.
+.text-input[readonly],
+.area-input[readonly] {
+  border-color: transparent;
+  background: var(--trove-control-disabled-bg);
+}

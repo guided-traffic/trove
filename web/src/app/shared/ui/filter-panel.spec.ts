@@ -104,10 +104,10 @@ describe('Filter panel', () => {
     second!.click();
     await settle();
     expect(second!.getAttribute('aria-expanded')).toBe('true');
-    expect(root.querySelector(`#${second!.getAttribute('aria-controls')}`)!.hasAttribute('hidden')).toBe(false);
+    expect(root.querySelector(`#${second!.getAttribute('aria-controls')}`)!.classList.contains('open')).toBe(true);
     first!.click();
     await settle();
-    expect(root.querySelector(`#${first!.getAttribute('aria-controls')}`)!.hasAttribute('hidden')).toBe(true);
+    expect(root.querySelector(`#${first!.getAttribute('aria-controls')}`)!.classList.contains('open')).toBe(false);
   });
 
   it('R-UI-020 "Clear all" is disabled without active filters and asks the screen to clear them', async () => {

@@ -36,7 +36,7 @@ const SHOWN = 20;
       <span class="material-icons switcher-chevron" aria-hidden="true">unfold_more</span>
     </button>
     @if (open()) {
-      <div id="project-switcher-panel" class="switcher-panel" role="group" aria-labelledby="project-switcher-title">
+      <div id="project-switcher-panel" animate.enter="dropdown-in" animate.leave="dropdown-out" class="switcher-panel" role="group" aria-labelledby="project-switcher-title">
         <p id="project-switcher-title" class="visually-hidden" i18n="@@switcher.title">Projects</p>
         <input
           #search

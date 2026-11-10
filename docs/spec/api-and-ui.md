@@ -4300,7 +4300,7 @@ the model gives the screens:
   project's repositories as bare keys, key globs and classes, and the principal lookup), its service accounts
   (`/projects/{project}/service-accounts`, named within the project, shown as `sa:<projectKey>/<name>`; create, enable,
   disable and delete) and their tokens (issue, with the lifetime cap and without a `system` scope, and revoke), its CI
-  mappings (`/projects/{project}/ci`, R-UI-035) and its settings (display name and description). An Owner without a
+  mappings (`/projects/{project}/ci`, R-UI-035) and its settings (display name and description, edited in place, Q-UI-215). An Owner without a
   capability has no admin area (Q-UI-129). A member with another role sees the project's settings and members read-only. An
   action the caller's role does not allow is not offered; the policies, service accounts and CI identity are listed in the
   side bar only for the holder of their capability and for the Owner.
@@ -9347,6 +9347,21 @@ Context: the screen showed `user:name` in a plain table with a labelled select p
 **Choice:** (a). Every project reader sees the display name and the avatar of the project's members: the avatar image is available to every authenticated caller by its digest (R-API-055), and the display name comes from the identity provider and is shown to the same readers next to the user name they already see. **Rationale:** the reference's list is about people, and a list of references is not. The source is always **Direct member**, because a project has no other kind of membership. The badge **It's you** is blue, not the reference's green, because green is a positive status alone (Q-UI-96). The development agent would add Expiration or Activity with a feature that stores them.
 
 **Applied in the spec:** R-UI-041. Code: `web/src/app/features/projects/project-members.ts`, `project-member-dialog.ts`, `toProjectMember`'s caller in `internal/api/v1/projects_api.go`.
+
+### Q-UI-215 · Settings are fields in one column, and everything that folds is animated
+
+Status: **Decided by the owner** (2026-11-10): the screenshot of the reference's general settings, "Ja settings bitte umbauen", and "Auf und Zu-klapp Aktionen sind bitte immer Annimationen".
+
+Context: the project's settings were a card of keys and values with an **Edit project** dialog. The reference edits in place, in one column, with further groups as collapsible sections. Elements folded at once, without animation, and the sidebar's groups did not fold at all: the list had the attribute `hidden`, but the rule `display: flex` of `.nav-list` overrode the browser's `display: none`, so only the chevron changed.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One CSS mechanism for everything that folds (chosen) | `.collapse-region` for what stays in the page, `collapse-in` and `collapse-out` through `animate.enter` and `animate.leave` for what is added and removed, a rule on `<details>`, one duration and easing in tokens | One rule, one place to change it; a closed region is out of the tab order; `prefers-reduced-motion` sets the duration to 0 in one line | Grid rows instead of a height, which needs a wrapper element |
+| (b) Each component animates itself | A height computed in TypeScript | No wrapper | Measuring on every toggle, and as many implementations as components |
+
+**Choice:** (a). The page is the display name and the description with **Save changes** (disabled until something changed; `PUT` with `If-Match`, a 412 opens the conflict dialog), the key as a read-only field, then **Details** with the facts and **Advanced** with the deletion, both closed. A global `[hidden] { display: none !important; }` closes the class of defect the sidebar had. Menus and dialogs are not folding elements and keep their behaviour. **Rationale:** a state that folds is one concept, so it has one implementation. Not verified: the animation of `<details>` where the browser has no `::details-content` (it opens at once there) and every folding element by hand; the sidebar group and the settings sections were measured in Chromium.
+
+**Applied in the spec:** R-UI-041. Code: `SettingsSection`, `ProjectSettings`, the section "Opening and closing" of `_controls.scss`.
 
 ### Q-API-246 · An operation that is allowed while the installation is read-only declares `x-trove-maintenance: allowed`
 

@@ -164,12 +164,12 @@ describe('App shell', () => {
     const identity = toggles[0]!;
     const list = root.querySelector<HTMLElement>(`#${identity.getAttribute('aria-controls')}`)!;
     expect(identity.getAttribute('aria-expanded')).toBe('true');
-    expect(list.hidden).toBe(false);
+    expect(list.classList.contains('open')).toBe(true);
     // The group that holds the current page is marked when it is folded.
     identity.click();
     await fixture.whenStable();
     expect(identity.getAttribute('aria-expanded')).toBe('false');
-    expect(list.hidden).toBe(true);
+    expect(list.classList.contains('open')).toBe(false);
     expect(identity.classList.contains('has-active')).toBe(true);
   });
 

@@ -301,6 +301,7 @@
   </form>
 
   @if (snippetOpen()) {
+    <div class="collapse-animated" animate.enter="collapse-in" animate.leave="collapse-out">
     <section class="card" id="ci-m-snippet" aria-labelledby="ci-m-snippet-title">
       <h2 id="ci-m-snippet-title" i18n="@@ci.editor.snippet-title">CI snippet</h2>
       <p class="muted" i18n="@@ci.editor.snippet-hint">
@@ -318,5 +319,6 @@
         <pre class="snippet" translate="no" tabindex="0" aria-label="CI snippet" i18n-aria-label="@@ci.editor.snippet-aria">{{ text }}</pre>
       }
     </section>
+    </div>
   }
 }

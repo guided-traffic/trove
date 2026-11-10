@@ -14564,15 +14564,6 @@
         <target>Einstellungen</target>
       </segment>
     </unit>
-    <unit id="project.general">
-      <notes>
-        <note category="location">src/app/features/projects/project-settings.ts:42,43</note>
-      </notes>
-      <segment>
-        <source>General</source>
-        <target>Allgemein</target>
-      </segment>
-    </unit>
     <unit id="project.key">
       <notes>
         <note category="location">src/app/features/projects/project-settings.ts:45</note>
@@ -14580,24 +14571,6 @@
       <segment>
         <source>Key</source>
         <target>Schlüssel</target>
-      </segment>
-    </unit>
-    <unit id="project.display-name">
-      <notes>
-        <note category="location">src/app/features/projects/project-settings.ts:46,47</note>
-      </notes>
-      <segment>
-        <source>Display name</source>
-        <target>Anzeigename</target>
-      </segment>
-    </unit>
-    <unit id="project.description">
-      <notes>
-        <note category="location">src/app/features/projects/project-settings.ts:48,49</note>
-      </notes>
-      <segment>
-        <source>Description</source>
-        <target>Beschreibung</target>
       </segment>
     </unit>
     <unit id="project.owners">
@@ -14661,15 +14634,6 @@
       <segment>
         <source>Last changed</source>
         <target>Zuletzt geändert</target>
-      </segment>
-    </unit>
-    <unit id="project.edit">
-      <notes>
-        <note category="location">src/app/features/projects/project-settings.ts:74,75</note>
-      </notes>
-      <segment>
-        <source>Edit project</source>
-        <target>Projekt bearbeiten</target>
       </segment>
     </unit>
     <unit id="project.delete">
@@ -29732,6 +29696,60 @@
       <segment>
         <source>Notice: <ph id="0" equiv="title" disp="title"/>.</source>
         <target>Hinweis: <ph id="0" equiv="title" disp="title"/>.</target>
+      </segment>
+    </unit>
+    <unit id="project.description-optional">
+      <notes>
+        <note category="location">src/app/features/projects/project-settings.ts:60,62</note>
+      </notes>
+      <segment>
+        <source>Description (optional)</source>
+        <target>Beschreibung (optional)</target>
+      </segment>
+    </unit>
+    <unit id="project.save-changes">
+      <notes>
+        <note category="location">src/app/features/projects/project-settings.ts:68,70</note>
+      </notes>
+      <segment>
+        <source>Save changes</source>
+        <target>Änderungen speichern</target>
+      </segment>
+    </unit>
+    <unit id="project.details">
+      <notes>
+        <note category="location">src/app/features/projects/project-settings.ts:77</note>
+      </notes>
+      <segment>
+        <source>Details</source>
+        <target>Details</target>
+      </segment>
+    </unit>
+    <unit id="project.details-hint">
+      <notes>
+        <note category="location">src/app/features/projects/project-settings.ts:78,80</note>
+      </notes>
+      <segment>
+        <source>Who owns the project, your role in it and what it holds.</source>
+        <target>Wer das Projekt besitzt, deine Rolle darin und was es enthält.</target>
+      </segment>
+    </unit>
+    <unit id="project.advanced">
+      <notes>
+        <note category="location">src/app/features/projects/project-settings.ts:110,111</note>
+      </notes>
+      <segment>
+        <source>Advanced</source>
+        <target>Erweitert</target>
+      </segment>
+    </unit>
+    <unit id="project.advanced-hint">
+      <notes>
+        <note category="location">src/app/features/projects/project-settings.ts:112,114</note>
+      </notes>
+      <segment>
+        <source>Delete this project.</source>
+        <target>Dieses Projekt löschen.</target>
       </segment>
     </unit>
   </file>

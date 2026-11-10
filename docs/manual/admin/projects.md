@@ -64,7 +64,7 @@ A member is named `user:<name>` or `group:<name>`; the role is `reader`, `develo
 | Permission policies | Create, change and delete the project's policies, granting any action to users, groups, the project's service accounts, service accounts of no project and CI mappings, never to `anonymous`, `authenticated` or an automatically joined group |
 | Service accounts | Create, change, disable, enable and delete the project's service accounts; issue and revoke their tokens within the limits below |
 | CI mappings | Manage the GitLab CI mappings of the tier `project:<projectKey>`, dry-run them and read the issuances of tokens through them ([GitLab CI federation](gitlab-ci.md)) |
-| Settings | Change the display name and the description (`PUT /api/v1/projects/<projectKey>` with `If-Match`) |
+| Settings | Change the display name and the description in place with **Save changes** (`PUT /api/v1/projects/<projectKey>` with `If-Match`); **Details** shows the facts of the project and **Advanced** its deletion |
 
 An Owner cannot create or delete projects, bind system roles, see global permission policies (unless it holds the permission to read policies), see or change anything of a project in which its role does not allow it, create users, groups or service accounts of no project, or add an entry for `anonymous` or `authenticated`.
 

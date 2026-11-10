@@ -218,7 +218,7 @@
           <ng-container i18n="@@policy.preview-show">Show preview</ng-container>
         }
       </button>
-      <div id="preview-body" class="preview-body" [hidden]="!previewOpen()">
+      <div id="preview-body" class="collapse-region" [class.open]="previewOpen()"><div class="preview-body">
         @if (!canValidate()) {
           <p class="muted" i18n="@@policy.preview-denied">The preview needs the permission to read policies.</p>
         } @else if (validation(); as v) {
@@ -294,7 +294,7 @@
             }
           </div>
         }
-      </div>
+      </div></div>
     </aside>
 
     <div class="save-bar">

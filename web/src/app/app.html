@@ -167,6 +167,8 @@
     <aside
       id="sidebar"
       class="sidebar"
+      animate.enter="sidebar-in"
+      animate.leave="sidebar-out"
       [class.drawer]="!layout.pinned()"
       [cdkTrapFocus]="!layout.pinned()"
       [cdkTrapFocusAutoCapture]="!layout.pinned()"
@@ -205,11 +207,10 @@
                   >
                     <span class="material-icons nav-icon" aria-hidden="true">{{ entry.icon }}</span>
                     <span class="nav-label">{{ entry.label }}</span>
-                    <span class="material-icons chevron" aria-hidden="true">{{
-                      navState.isOpen(entry.id) ? 'expand_less' : 'expand_more'
-                    }}</span>
+                    <span class="material-icons chevron expand-chevron" aria-hidden="true">expand_more</span>
                   </button>
-                  <ul class="nav-list nested" [id]="'nav-group-' + entry.id" [hidden]="!navState.isOpen(entry.id)">
+                  <div class="collapse-region" [class.open]="navState.isOpen(entry.id)" [id]="'nav-group-' + entry.id">
+                  <ul class="nav-list nested">
                     @for (item of entry.items; track item.route) {
                       <li>
                         <a
@@ -225,6 +226,7 @@
                       </li>
                     }
                   </ul>
+                  </div>
                 </li>
               }
             }
