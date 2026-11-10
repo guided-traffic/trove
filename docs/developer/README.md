@@ -90,6 +90,7 @@ end-to-end wave's. The contracts of the backup lane exist (phase 7, [backup.md](
 | [m1-contracts.md](m1-contracts.md) | The M1 package map, shared Go contracts, marked sections in shared files, error codes, Valkey and audit names, API path prefixes per work package |
 | [web-ui.md](web-ui.md) | The Angular workspace, the local UI development profile with hot reload, the embedded build, the budget and the UI tests |
 | [design-language.md](design-language.md) | The look of the UI: the measured colours of both schemes, what was adjusted for WCAG AA, where the values live and how to change one |
+| [ui-style-guide.md](ui-style-guide.md) | How to build and style a screen: page anatomy, lists, settings pages, forms, buttons, text, and the checklist before a commit |
 | [manual.md](manual.md) | The user and administrator manual: embedding, rendering and link checks, the manual operations, the help area of the UI, how to add a page |
 
 ## Core flows

@@ -6,7 +6,7 @@ since [Q-UI-128](../spec/api-and-ui.md#q-ui-128--the-references-type-colours-and
 measures are the reference's, the owner's GitLab, where [Q-UI-96](../spec/api-and-ui.md#q-ui-96--cogpit-blue-as-the-primary-colour-green-only-for-positive-status)
 had cogpit's blue; the shell and list layout it dresses is [Q-UI-68](../spec/api-and-ui.md#q-ui-68--layout-of-the-application-shell-and-the-list-screens)
 and [Q-UI-127](../spec/api-and-ui.md#q-ui-127--the-admin-area-has-a-sidebar-of-its-own-behind-an-admin-button-and-the-shell-takes-the-references-frame).
-The tokens and how components use them are in [web-ui.md](web-ui.md#design-tokens).
+The tokens and how components use them are in [web-ui.md](web-ui.md#design-tokens). How to build a screen with them is in [ui-style-guide.md](ui-style-guide.md).
 
 ## Where it comes from
 
