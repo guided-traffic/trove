@@ -30241,15 +30241,6 @@
         <target>Einstellungen</target>
       </segment>
     </unit>
-    <unit id="repo.content.oci.no-scanning">
-      <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:40</note>
-      </notes>
-      <segment>
-        <source>Images are not scanned for vulnerabilities yet.</source>
-        <target>Images werden noch nicht auf Schwachstellen geprüft.</target>
-      </segment>
-    </unit>
     <unit id="repo.content.oci-remote-note">
       <notes>
         <note category="location">src/app/features/repositories/content/repository-content.html:53,55</note>

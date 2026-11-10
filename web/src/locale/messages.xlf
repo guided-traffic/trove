@@ -13828,12 +13828,13 @@
         <source>Pull command</source>
       </segment>
     </unit>
-    <unit id="repo.content.oci.no-scanning">
+    <unit id="repo.content.no-scanning">
       <notes>
         <note category="location">src/app/features/repositories/content/content-shape.ts:40</note>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:57</note>
       </notes>
       <segment>
-        <source>Images are not scanned for vulnerabilities yet.</source>
+        <source>This package type is not scanned for vulnerabilities yet.</source>
       </segment>
     </unit>
     <unit id="repo.content.files">
@@ -13914,14 +13915,6 @@
       </notes>
       <segment>
         <source>Install command</source>
-      </segment>
-    </unit>
-    <unit id="repo.content.no-scanning">
-      <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:57</note>
-      </notes>
-      <segment>
-        <source>This package type is not scanned for vulnerabilities yet.</source>
       </segment>
     </unit>
     <unit id="repo.content.upstream">

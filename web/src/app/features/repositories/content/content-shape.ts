@@ -37,6 +37,7 @@ export function contentShapeOf(format: string): ContentShape {
       publishedLabel: $localize`:@@repo.content.oci.published:Pushed`,
       digest: true,
       commandLabel: $localize`:@@repo.content.oci.command:Pull command`,
+      notScannedText: $localize`:@@repo.content.no-scanning:This package type is not scanned for vulnerabilities yet.`,
     };
   }
   if (format === 'generic') {
