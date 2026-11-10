@@ -173,5 +173,4 @@ The remote adapter implements `FillCommitter` (the commit of a cached archive) a
 
 Built: the skeleton, the leaves, the scheme, the tables, the data port, the local, remote and virtual classes, the setup, the guide, the
 screens (the import tasks and tombstones tabs, the package details; `web/src/app/features/repositories/ansible-*.ts`), the mirror, the hub
-exchange and the end-to-end set with the two ansible-core clients ([e2e.md](e2e.md#the-ansible-tests)); its virtual and mirror rows wait
-(H-868). Not built yet: the restore from the trash (H-852). The deploy dialog is not offered (Q-ANS-34).
+exchange and the end-to-end set with the two ansible-core clients ([e2e.md](e2e.md#the-ansible-tests)); the virtual and mirror rows run (H-868 narrows what they do not prove). Not built yet: the restore from the trash (H-852). The deploy dialog is not offered (Q-ANS-34).

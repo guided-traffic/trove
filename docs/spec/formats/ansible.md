@@ -2185,9 +2185,10 @@ e2e set: a line that held a wrong password turned every install into a 401 altho
 the line because roles need it (R-ANS-015), and trove cannot change the order of the client. Live for a user who keeps an old or wrong line
 for the host; the guide and the manual say so, and no check of trove can see it, because the request arrives with the wrong credential.
 
-### H-868 · The virtual and mirror rows of the end-to-end set are written and skipped
+### H-868 · The versions of one name in two members are not run with the real clients
 
-`TestAnsibleVirtual` and `TestAnsibleMirror` are listed in the set with a skip that names the work package they wait for (the virtual class
-and the mirror of the remote class). Until they are written and run, nothing proves with the real clients that a virtual repository merges
-local and remote versions, that a publish through it reaches the deploy target, or that installs after a mirror pass cost the upstream nothing.
-Live until the classes land.
+`TestAnsibleVirtual` and `TestAnsibleMirror` run (R-ANS-032), but a name that a local member published first is claimed by it (R-REPO-023,
+the default `local.autoClaim`), so the end-to-end set never has one name with versions in a local and in a remote member at once, and nothing
+runs with the real clients that the merged list of such a name is the union, first tier winning per version (R-ANS-022, Q-ANS-18). The kit and
+the integration area `ansiblevirtual` prove the merge; the clients' view of it, and of a conflict of digests, is not run. Live for a virtual
+repository whose local member has the claim switched off.

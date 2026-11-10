@@ -243,6 +243,11 @@ func (remoteAdapter) MirrorPlan(ctx context.Context, u discover.Upstream, name s
 	if err != nil || !found {
 		return discover.Plan{Name: name}, err
 	}
+	// The collection document is the first thing a client asks for (ansible-galaxy reads its dates before it lists the versions); a mirror
+	// that kept the versions and not this document could not serve an install with the upstream away (found by the e2e set).
+	if _, _, err := u.Document(ctx, CollectionDocumentPath(ns, n), documentVariant); err != nil {
+		return discover.Plan{}, err
+	}
 	type pv struct {
 		raw string
 		v   version.Semver

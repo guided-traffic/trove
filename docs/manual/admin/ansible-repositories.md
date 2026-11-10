@@ -12,11 +12,15 @@ What an administrator decides for repositories of the format Ansible Galaxy: the
 
 A remote verifies the SHA-256 that the upstream announces for every collection archive, whatever the checksum policy says, so the policies that skip the check are refused for this format. Signatures of a version pass through unchanged; trove neither signs nor verifies them. A role archive has no announced digest and is stored as fetched, within the limit below.
 
-The virtual class and the mirror mode of the remote class are in the specification and are not built yet; until they are, offer clients a local or a remote repository.
+Give clients a virtual repository: one `server_list` entry then reads your own collections and the public ones. The first publish of a name into a local member claims the name for it, so a remote member's versions of that name are not offered through the virtual repository (a public collection cannot slip in under the name of one of yours). A grant with a path pattern that excludes an archive hides that version from the list and from the install of the principal it is granted to.
+
+## Mirror
+
+A remote in mode `mirror` keeps the collections its include patterns select (`acme.*`, `community.general`), so that they stay installable while the upstream is away. A pattern that bounds the set is required. A pass stores the collection documents, the version lists and version documents, and every archive of the selected collections within the version bounds; installs afterwards make no request to the upstream. Roles and the index of a hub are not read. A mirror of the whole public Galaxy is a configuration of its own and not measured, so plan its storage before you start one; start and watch a pass on the edit form of the repository.
 
 ## Settings
 
-`ansible.authUrl` (the token endpoint of the identity realm of a hub behind single sign-on, an `https` URL) and `ansible.clientId` (default `cloud-services`) are accepted for remote repositories only. The exchange of the offline token that they describe is not built yet; setting them does not change what the repository sends upstream.
+`ansible.authUrl` (the token endpoint of the identity realm of a hub behind single sign-on, an `https` URL) and `ansible.clientId` (default `cloud-services`) are accepted for remote repositories only: with `authUrl`, the offline token stored in the repository's credential is exchanged for a short-lived access token before the upstream is called. The exchange is specified from documentation and has never run against a real hub, so try it with a test token first.
 
 ## Limits and retention
 

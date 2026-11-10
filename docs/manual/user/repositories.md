@@ -63,7 +63,7 @@ The **Set up client** tab of a repository shows these addresses for your install
 | NuGet | Local, remote, virtual | .NET CLI (dotnet), NuGet CLI (nuget.exe), Visual Studio | **Packages** and **Browse** |
 | OCI (Docker) | Local, remote, virtual | Docker CLI (with Buildx), Podman; Kubernetes through an image pull secret | **Packages** (an image name is a package, a tag a version) and **Browse** |
 | Debian (APT) | Local, remote, virtual | APT (apt, apt-get) on Debian and Ubuntu | **Packages** (a binary package name is a package) and **Browse** |
-| Ansible Galaxy | Local, remote | ansible-galaxy (ansible-core 2.17 and 2.21) | **Packages** (a collection is a package) and **Browse** |
+| Ansible Galaxy | Local, remote, virtual | ansible-galaxy (ansible-core 2.17 and 2.21) | **Packages** (a collection is a package) and **Browse** |
 | Generic | Local | curl | **Browse** only: generic files have no package names, so they are not listed under **Packages** |
 
 Generic repositories store files of any kind at paths you choose: installers, archives, documents, build outputs. OCI repositories hold container images and other OCI artifacts; [Container images with Docker and Podman](container-images.md) explains them. Debian repositories are APT repositories with signed indexes; [Debian packages with APT](apt-packages.md) explains them. Other formats are not built yet; see [Known limitations](../admin/limitations.md).
