@@ -93,7 +93,7 @@ Hard rules, also for every subagent (put them into every subagent prompt):
 4. Release numbers are not planned and not recorded: the pipeline releases (step 6), and BETA.md and FULL.md
    track only what is built (owner, 2026-11-02).
 5. If a job that gates Semantic Release is red on `main` (`gh run list --workflow "Test and Release" --branch main --limit 5`; until the first stable release the
-   `integration` and `e2e` legs do not gate it and a red one is a finding, [releasing.md](../developer/releasing.md#until-the-first-stable-release)),
+   `integration` and `e2e` legs do not gate it, [releasing.md](../developer/releasing.md#until-the-first-stable-release), and a red one is still worked on),
    repairing it is the first task of this run, done by an agent beside the feature work, not instead of it. A red leg of `HA and Performance (nightly)`
    (`gh run list --workflow "HA and Performance (nightly)" --limit 3`) is not: it becomes an open finding in
    [section 8](#8--open-findings), unless the phase's own exit criteria are that leg.
@@ -202,7 +202,7 @@ The phase is done only when all of the following hold:
 3. On failure: `gh run view <run-id> --log-failed` (or the job's log while the run goes on). A failure the change caused is
    fixed at once: find the cause, fix it, commit, push, and watch again. A failure the change did not cause (an outage, a row
    that fails under the runner's load) may be started again up to three times with `gh run rerun <run-id> --failed` (rule 7);
-   the re-runs are noted and the red runs recorded as a finding. Repeat until the jobs that gate Semantic Release are green; a red `integration` or `e2e` leg is a finding and is not waited for (Q-ARCH-457).
+   the re-runs are noted and the red runs recorded as a finding. Repeat until the jobs that gate Semantic Release are green; a red `integration` or `e2e` leg does not hold the release and is still worked on until its cause is fixed (owner, 2026-11-10, Q-ARCH-457).
 
 ## 6 · Release
 
