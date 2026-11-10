@@ -88,7 +88,7 @@ func (r *remoteResolver) checkMirrorBound(s *RemoteSettings) {
 	if s.Mirror.MaxBytes != nil || boundingIncludes(r.include) {
 		return
 	}
-	known, _ := normalizeUpstreamURL(r.info.DefaultUpstreamURL)
+	known, _ := NormalizeUpstreamURL(r.info.DefaultUpstreamURL)
 	if u, err := url.Parse(s.URL); known != "" && err == nil && discover.SameUpstream(u, known) {
 		r.v.add("/remote/mode", errs.CodeMirrorUnbounded,
 			"a mirror of "+known+" needs a bound: include patterns that each have a literal prefix (such as @types/* or Microsoft.Extensions.*), or remote.mirror.maxBytes")

@@ -189,10 +189,10 @@ func (r *remoteResolver) resolve(in remoteInput) RemoteSettings {
 // upstream is that well-known one (Q-REPO-91).
 func (r *remoteResolver) url(s *RemoteSettings, in remoteInput) {
 	raw := stringOr(in.URL, r.info.DefaultUpstreamURL)
-	known, _ := normalizeUpstreamURL(r.info.DefaultUpstreamURL)
+	known, _ := NormalizeUpstreamURL(r.info.DefaultUpstreamURL)
 	if raw == "" {
 		r.v.add("/remote/url", codeInvalidUpstreamURL, "is required: the "+string(r.info.ID)+" format has no default upstream")
-	} else if norm, why := normalizeUpstreamURL(raw); why != "" {
+	} else if norm, why := NormalizeUpstreamURL(raw); why != "" {
 		r.v.add("/remote/url", codeInvalidUpstreamURL, why)
 	} else {
 		s.URL = norm
@@ -235,10 +235,11 @@ func checkHostPattern(p string) string {
 	return ""
 }
 
-// normalizeUpstreamURL checks the upstream URL and returns it normalized: scheme
+// NormalizeUpstreamURL checks the upstream URL and returns it normalized: scheme
 // and host in lower case, the default port removed, an empty path "/" (R-REPO-024).
-// The reason is empty when the URL is valid.
-func normalizeUpstreamURL(raw string) (norm, why string) {
+// The reason is empty when the URL is valid. The import tooling applies the same
+// rule to the source it copies from (R-IMP-002).
+func NormalizeUpstreamURL(raw string) (norm, why string) {
 	if raw == "" {
 		return "", "is empty"
 	}

@@ -155,6 +155,8 @@ func layerTable() []layerRule {
 		{"internal/vuln", layerDomain},
 		// The mirror engine of remote repositories (R-REPO-053 to R-REPO-058): dispatch, passes, throttling, status.
 		{"internal/mirror", layerDomain},
+		// The import tooling (R-IMP-001 to R-IMP-010): a client of a source registry and of a trove repository's publish protocol.
+		{"internal/importer", layerDomain},
 		{"internal/auth", layerDomain},
 		{"internal/jobs", layerDomain},
 		{"internal/audit", layerDomain},

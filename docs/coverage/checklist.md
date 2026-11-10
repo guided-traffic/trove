@@ -9,14 +9,14 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 620 of 772 spec requirements are implemented: a passing test names them and no
+**Status.** 620 of 781 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
 **Totals.** 2,239 catalog features on 60 pages: 774 specified (521 of them implemented), 1,465 open.
-772 spec requirements: 606 cover catalog features, 166 cover none (`trove-only`, [listed at the
+781 spec requirements: 606 cover catalog features, 175 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
 ## Pages
@@ -2969,7 +2969,7 @@ Requirements whose `Covers:` line says `trove-only`: trove's own design work tha
 catalog feature measures. They count toward the requirement total, not toward any share.
 
 <details>
-<summary>166 requirements</summary>
+<summary>175 requirements</summary>
 
 | Requirement | Title | Priority | Spec page |
 |---|---|---|---|
@@ -3099,6 +3099,15 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-AUTH-012 (implemented) | CSRF protection for cookie-authenticated requests | MVP | [identity-and-authentication.md](../spec/identity-and-authentication.md) |
 | R-AUTH-021 (implemented) | Dormant-user deactivation | P1 | [identity-and-authentication.md](../spec/identity-and-authentication.md) |
 | R-AUTH-043 (implemented) | Scheduled authentication tasks | MVP | [identity-and-authentication.md](../spec/identity-and-authentication.md) |
+| R-IMP-001 | The command, and what it is | P1 | [import.md](../spec/import.md) |
+| R-IMP-002 | The source and the credentials | P1 | [import.md](../spec/import.md) |
+| R-IMP-003 | Which packages | P1 | [import.md](../spec/import.md) |
+| R-IMP-004 | The road into trove, and what it guarantees | P1 | [import.md](../spec/import.md) |
+| R-IMP-005 | What is kept, and what is not | P1 | [import.md](../spec/import.md) |
+| R-IMP-006 | Outcomes, idempotence and conflicts | P1 | [import.md](../spec/import.md) |
+| R-IMP-007 | Resume after an interruption | P1 | [import.md](../spec/import.md) |
+| R-IMP-008 | Politeness towards the source | P1 | [import.md](../spec/import.md) |
+| R-IMP-009 | The seam for a format | P1 | [import.md](../spec/import.md) |
 | R-OPS-045 (implemented) | Valkey and coordination observability | MVP | [operations-and-observability.md](../spec/operations-and-observability.md) |
 | R-OPS-046 | Operational signals for availability, horizontal scale and backup | MVP | [operations-and-observability.md](../spec/operations-and-observability.md) |
 | R-OPS-013 (implemented) | Secret redaction | MVP | [operations-and-observability.md](../spec/operations-and-observability.md) |

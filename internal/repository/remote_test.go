@@ -155,7 +155,7 @@ func TestRemoteURL(t *testing.T) {
 	}
 	for in, want := range good {
 		t.Run("R-REPO-024 normalizes "+in, func(t *testing.T) {
-			got, why := normalizeUpstreamURL(in)
+			got, why := NormalizeUpstreamURL(in)
 			if why != "" || got != want {
 				t.Fatalf("got %q (%s), want %q", got, why, want)
 			}
@@ -167,7 +167,7 @@ func TestRemoteURL(t *testing.T) {
 		"https://registry.example.com/" + strings.Repeat("a", 2100),
 	} {
 		t.Run("R-REPO-008 refuses "+in[:min(len(in), 40)], func(t *testing.T) {
-			if _, why := normalizeUpstreamURL(in); why == "" {
+			if _, why := NormalizeUpstreamURL(in); why == "" {
 				t.Fatal("accepted")
 			}
 		})

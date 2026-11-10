@@ -1,7 +1,7 @@
 # trove · Full product plan after the beta
 
 **Status:** ⚪ not started · 🟡 in progress or partly done · 🟢 done
-**Last updated:** 2026-11-09
+**Last updated:** 2026-11-10
 
 Everything that goes beyond the beta release in [BETA.md](BETA.md): the beta phase, the remaining
 registry types, and platform features. Releases after the beta are cut by Semantic Release from the
@@ -20,7 +20,7 @@ repositories) before it counts as done.
 
 | Block | Content | Status |
 |---|---|---|
-| [A · Beta phase](#a--beta-phase) | Beta feedback, upgrade path, import tooling, user documentation | ⚪ |
+| [A · Beta phase](#a--beta-phase) | Beta feedback, upgrade path, import tooling, user documentation | 🟡 |
 | [B · Registries after the beta](#b--registries-after-the-beta-p1) | Ansible Galaxy first, then generic, PyPI, Helm, OCI/Docker, Go, Maven | ⚪ |
 | [C · Platform features](#c--platform-features-p1) | npm/NuGet completion, retention, search, webhooks, identity breadth, HA breadth, curation | ⚪ |
 | [D · Further registries](#d--further-registries-p2) | 37 more registry types | ⚪ |
@@ -34,7 +34,7 @@ repositories) before it counts as done.
 
 - ⚪ Beta feedback collected, triaged and worked off
 - ⚪ Upgrade path from the beta to the next releases tested (rolling upgrade, data kept)
-- ⚪ Import tooling: copy existing packages from the registries trove replaces (npm, NuGet, Ansible Galaxy) into trove (spec page to write)
+- 🟡 Import tooling: copy existing packages from the registries trove replaces into trove ([import.md](../spec/import.md), R-IMP-001 to R-IMP-009). Built: `trove admin import` for npm and NuGet, with integration tests. Open: Ansible Galaxy (waits for that format), and e2e rows with real clients installing imported packages
 - ⚪ User documentation: getting started, client setup per registry, administration, operations runbook
 - ⚪ The release that closes the beta phase (cut by Semantic Release)
 

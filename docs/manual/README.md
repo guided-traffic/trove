@@ -39,12 +39,13 @@ Readers on GitHub can browse the same files here.
 12. [Managing repositories](admin/repositories.md)
 13. [Container image repositories](admin/container-repositories.md)
 14. [Debian (APT) repositories](admin/apt-repositories.md)
-15. [Advisory sources](admin/vulnerability-sources.md)
-16. [Security dashboard](admin/security-dashboard.md)
-17. [Admin dashboard](admin/dashboard.md)
-18. [Monitoring and operations](admin/operations.md)
-19. [Upgrades](admin/upgrades.md)
-20. [Known limitations](admin/limitations.md)
+15. [Importing from another registry](admin/import.md)
+16. [Advisory sources](admin/vulnerability-sources.md)
+17. [Security dashboard](admin/security-dashboard.md)
+18. [Admin dashboard](admin/dashboard.md)
+19. [Monitoring and operations](admin/operations.md)
+20. [Upgrades](admin/upgrades.md)
+21. [Known limitations](admin/limitations.md)
 
 The order of these two lists is the order of the manual in the UI; a test in
 [internal/manual](../../internal/manual/) fails when this page and the embedded contents disagree.
