@@ -660,6 +660,19 @@ deb-stub-image: ## Build the counting Debian archive test upstream image (DEB_ST
 	  -f test/debstub/Containerfile -t $(DEB_STUB_IMAGE) .out/debstub
 # <<< T17 deb-stub
 
+# >>> B2 ansible-stub
+# The counting Ansible Galaxy test upstream (test/ansiblestub, R-ANS-032, docs/developer/ansible-remote.md): the Galaxy v3 and v1
+# APIs, the GitHub stand-in for role archives and the single-sign-on realm of the hub, on five host names. Edit only between the markers.
+ANSIBLE_STUB_IMAGE ?= trove-e2e-ansiblestub:dev
+
+.PHONY: ansible-stub-image
+ansible-stub-image: ## Build the counting Ansible Galaxy test upstream image (ANSIBLE_STUB_IMAGE, IMAGE_ARCH) on the release base image
+	@mkdir -p .out/ansiblestub
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(IMAGE_ARCH) go build -trimpath -ldflags '-s -w' -o .out/ansiblestub/ansiblestub-linux-$(IMAGE_ARCH) ./test/ansiblestub/cmd/ansiblestub
+	docker buildx build --load --platform linux/$(IMAGE_ARCH) --build-arg RUNTIME_BASE_IMAGE=$(RUNTIME_BASE_IMAGE) \
+	  -f test/ansiblestub/Containerfile -t $(ANSIBLE_STUB_IMAGE) .out/ansiblestub
+# <<< B2 ansible-stub
+
 # >>> T16 oci-conformance
 # The OCI distribution conformance suite (R-OCI-035, docs/developer/oci.md): the module at the pinned tag is downloaded into
 # .out/oci-conformance/mod, its test package is compiled with the repository's Go toolchain (GOTOOLCHAIN=local, so no second Go is
