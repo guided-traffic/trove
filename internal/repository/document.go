@@ -70,6 +70,8 @@ type Settings struct {
 	OCI json.RawMessage `json:"oci,omitempty"`
 	// Deb is the settings member of the Debian (APT) format (R-DEB-008, R-DEB-024), under the same rules as NPM.
 	Deb json.RawMessage `json:"deb,omitempty"`
+	// Ansible is the settings member of the Ansible Galaxy format (R-ANS-019), under the same rules as NPM.
+	Ansible json.RawMessage `json:"ansible,omitempty"`
 	// Vulnerabilities is the member owned by vulnerability-scanning.md (R-VULN-002): local and remote repositories of a
 	// format with the vulnerability adapter. It is absent until set, and an absent member means the defaults of
 	// [vuln.DefaultSettings]; a member set with a few fields takes the defaults of the others (Q-VULN-26). Virtual
@@ -181,6 +183,7 @@ func (s *Settings) normalize() {
 	s.NuGet = canonicalObject(emptyToNil(s.NuGet))
 	s.OCI = canonicalObject(emptyToNil(s.OCI))
 	s.Deb = canonicalObject(emptyToNil(s.Deb))
+	s.Ansible = canonicalObject(emptyToNil(s.Ansible))
 }
 
 // formatMembers are the members of a document that hold the settings of one format,
@@ -191,6 +194,7 @@ func formatMembers() []formatMember {
 		{"nuget", func(s *Settings) json.RawMessage { return s.NuGet }},
 		{"oci", func(s *Settings) json.RawMessage { return s.OCI }},
 		{"deb", func(s *Settings) json.RawMessage { return s.Deb }},
+		{"ansible", func(s *Settings) json.RawMessage { return s.Ansible }},
 	}
 }
 

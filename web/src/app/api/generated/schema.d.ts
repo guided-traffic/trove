@@ -4499,6 +4499,89 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/ansible/imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List the import tasks of an Ansible Galaxy repository
+         * @description The import tasks of the publishes of a local Ansible Galaxy repository, newest first (R-ANS-009), optionally of one state. A
+         *     virtual repository lists the tasks of its deployment target; a remote repository answers `405 not_applicable`. A task is kept for
+         *     `ansible.import_task_keep`. Needs `read` on the repository.
+         */
+        get: operations["listAnsibleImportTasks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/ansible/tombstones": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List the tombstones of an Ansible Galaxy repository
+         * @description The versions of a local Ansible Galaxy repository that were deleted and whose numbers are not accepted again (R-ANS-012), in
+         *     collection and version order. Other classes answer `405 not_applicable`. Needs `manage` on the repository.
+         */
+        get: operations["listAnsibleTombstones"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/ansible/tombstones/{collection}/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
+                /** @description The collection, `<namespace>.<name>`. */
+                collection: string;
+                /** @description The version as written. */
+                version: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Clear the tombstone of a deleted version
+         * @description Clears the tombstone of a version, so that its number can be published again, with other bytes (R-ANS-012). Writes the
+         *     journaled audit event `ansible.tombstone.cleared`. Needs `manage` on the repository.
+         */
+        delete: operations["clearAnsibleTombstone"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -6770,12 +6853,12 @@ export interface components {
          *     any difference; no list of formats per class is kept by hand anywhere.
          * @enum {string}
          */
-        FormatName: "deb" | "generic" | "npm" | "nuget" | "oci";
+        FormatName: "ansible" | "deb" | "generic" | "npm" | "nuget" | "oci";
         /**
          * @description The formats whose classes contain `local`. The create form offers these for a local repository.
          * @enum {string}
          */
-        LocalFormatName: "deb" | "generic" | "npm" | "nuget" | "oci";
+        LocalFormatName: "ansible" | "deb" | "generic" | "npm" | "nuget" | "oci";
         /**
          * @description The formats whose classes contain `remote`. The create form offers these for a remote repository.
          * @enum {string}
@@ -6837,6 +6920,7 @@ export interface components {
             nuget?: components["schemas"]["NugetSettings"];
             oci?: components["schemas"]["OciSettings"];
             deb?: components["schemas"]["DebSettings"];
+            ansible?: components["schemas"]["AnsibleSettings"];
             vulnerabilities?: components["schemas"]["VulnerabilitySettings"];
             /** @enum {string} */
             readonly lifecycle?: "active" | "deleting";
@@ -8884,6 +8968,74 @@ export interface components {
             manualRun: components["schemas"]["BackupManualRun"];
         };
         /**
+         * @description The settings of the Ansible Galaxy format, the `ansible` member of a repository document (R-REPO-004, R-ANS-019). The document
+         *     of the format's JSON Schema is `settingsSchema` of `GET /api/v1/formats`; `TestR_ARCH_008_AnsibleSettingsSchemaEqualsTheOpenAPIMember`
+         *     fails on any difference between the two. Both settings are for remote repositories; local and virtual repositories have no
+         *     settings of the format, and a setting that does not apply to the class of the repository answers 422 `not_applicable`. An
+         *     omitted setting takes its default.
+         */
+        AnsibleSettings: {
+            /**
+             * @description Remote repositories of a Galaxy-compatible hub behind single sign-on (R-ANS-019). The https URL of the token endpoint of
+             *     the hub's identity realm, where the offline token stored in the repository's credential is exchanged for a short-lived
+             *     access token. Left out, the upstream is called with the credential as it is (a static token).
+             */
+            authUrl?: string;
+            /**
+             * @description Remote repositories with `authUrl` (R-ANS-019). The client id the exchange presents to the realm.
+             * @default cloud-services
+             */
+            clientId: string;
+        };
+        /** @description The import task of a publish (R-ANS-009), final when it is created. */
+        AnsibleImportTask: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            state: "completed" | "failed";
+            namespace: string;
+            name: string;
+            version: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            finishedAt: string;
+            /** @description The id of the principal that published. */
+            createdBy?: string;
+            error: {
+                code: string;
+                description: string;
+            } | null;
+            messages: {
+                level: string;
+                message: string;
+                /** Format: date-time */
+                time: string;
+            }[];
+        };
+        AnsibleImportTaskList: {
+            items: components["schemas"]["AnsibleImportTask"][];
+            /** @description Opaque; `null` on the last page. */
+            nextCursor: string | null;
+        };
+        /** @description A deleted version whose number is not accepted again (R-ANS-012). */
+        AnsibleTombstone: {
+            /** @description The collection, `<namespace>.<name>`. */
+            name: string;
+            version: string;
+            /** @description The SHA-256 of the archive that was deleted. */
+            sha256: string;
+            /** Format: date-time */
+            deletedAt: string;
+            /** @description The id of the principal that deleted the version. */
+            deletedBy: string;
+        };
+        AnsibleTombstoneList: {
+            items: components["schemas"]["AnsibleTombstone"][];
+            /** @description Opaque; `null` on the last page. */
+            nextCursor: string | null;
+        };
+        /**
          * @description The settings of the Debian (APT) format, the `deb` member of a repository document (R-REPO-004, R-DEB-008, R-DEB-024). The
          *     document of the format's JSON Schema is `settingsSchema` of `GET /api/v1/formats`; `TestR_ARCH_008_DebSettingsSchemaEqualsTheOpenAPIMember`
          *     fails on any difference between the two. A setting that does not apply to the class of the repository answers 422
@@ -9097,6 +9249,15 @@ export interface components {
         };
         /** @description The operation belongs to the Debian (APT) format and is not built in this release yet (`deb_not_implemented`). */
         DebNotImplemented: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description The operation belongs to the Ansible Galaxy format and is not built in this release yet (`ansible_not_implemented`). */
+        AnsibleNotImplemented: {
             headers: {
                 [name: string]: unknown;
             };
@@ -18968,6 +19129,148 @@ export interface operations {
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             501: components["responses"]["DebNotImplemented"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listAnsibleImportTasks: {
+        parameters: {
+            query?: {
+                /** @description Only the tasks in this state. */
+                state?: "completed" | "failed";
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of import tasks. */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnsibleImportTaskList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description The repository is a remote repository or not an Ansible Galaxy repository (`not_applicable`). */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["AnsibleNotImplemented"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listAnsibleTombstones: {
+        parameters: {
+            query?: {
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of tombstones. */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnsibleTombstoneList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description The repository is not a local Ansible Galaxy repository (`not_applicable`). */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["AnsibleNotImplemented"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    clearAnsibleTombstone: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
+                /** @description The collection, `<namespace>.<name>`. */
+                collection: string;
+                /** @description The version as written. */
+                version: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The tombstone is cleared. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description The repository is not a local Ansible Galaxy repository (`not_applicable`). */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["AnsibleNotImplemented"];
             503: components["responses"]["Unavailable"];
         };
     };

@@ -141,7 +141,8 @@ func (s *Stage) Authenticate(r *http.Request, ep EndpointRules) (Result, error) 
 	if raw, ok := s.apiKey(r, &route); ok {
 		return s.byToken(r, p, ep, raw, MethodAPIKey, "")
 	}
-	if secret, method, user, present := credentialHeader(r); present {
+	galaxy := routeAnswer{ask: ep.TokenSchemeRoute, r: r}
+	if secret, method, user, present := credentialHeader(r, &galaxy); present {
 		// A rule that opens something reads the escaped path too: /v2%2Fx is no registry route.
 		if method == MethodBearer && registrytoken.Is(secret) && isRegistryPath(p) && isRegistryPath(raw) {
 			return s.byRegistryToken(r, p, ep, secret)
@@ -320,7 +321,11 @@ func (s *Stage) unauthenticated(r *http.Request, path, code, detail string, toke
 // credentialHeader extracts the token of an Authorization header. present is
 // true when the header carries any value, so that a header the stage cannot read
 // is a rejection and not a fall-through to anonymous. user is the Basic username.
-func credentialHeader(r *http.Request) (raw string, method Method, user string, present bool) {
+// The scheme "Token" of the Galaxy clients is a trove token on a route that declares
+// it (galaxy asks [EndpointRules.TokenSchemeRoute], at most once and only when the
+// header has that scheme); on every other route it is "not a trove token" (R-ANS-006,
+// Q-ANS-4).
+func credentialHeader(r *http.Request, galaxy *routeAnswer) (raw string, method Method, user string, present bool) {
 	h := strings.TrimSpace(r.Header.Get("Authorization"))
 	if h == "" {
 		return "", MethodNone, "", false
@@ -330,6 +335,8 @@ func credentialHeader(r *http.Request) (raw string, method Method, user string, 
 	switch {
 	case strings.EqualFold(scheme, "Bearer"):
 		return rest, MethodBearer, "", true
+	case strings.EqualFold(scheme, "Token") && galaxy.is():
+		return rest, MethodGalaxyToken, "", true
 	case strings.EqualFold(scheme, "Basic"):
 		dec, err := base64.StdEncoding.DecodeString(rest)
 		if err != nil {
@@ -680,7 +687,7 @@ const methodUnreadable Method = "unreadable"
 // Bearer or Basic with any user name; a header the stage cannot read is a credential that will be rejected. Without the
 // header it is none.
 func PresentedFrom(r *http.Request) Presented {
-	raw, method, user, present := credentialHeader(r)
+	raw, method, user, present := credentialHeader(r, &routeAnswer{})
 	if !present {
 		return Presented{}
 	}

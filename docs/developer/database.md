@@ -497,6 +497,15 @@ refuses (`docker-`, `a.-b`, `web-`) stops the migration; the operator renames or
 added `NOT VALID` and validated with `VALIDATE CONSTRAINT`, which lets reads and writes through. The statements the data port reads are in
 [oci.sql](../../internal/meta/postgres/queries/oci.sql); `test/integration/postgres/oci_test.go` pins the tables, the phases and both grammars at the database.
 
+## Ansible Galaxy tables (00068, 00069)
+
+Two expand migrations of unit F0 ([ansible.md](ansible.md)), registered in [tables.go](../../internal/formatdata/ansible/tables.go) as export class `data`:
+
+| Table | Migration | What it holds |
+|---|---|---|
+| `ansible_collection_versions`, `ansible_tombstones` | [00068_ansible_collections](../../internal/meta/postgres/migrations/00068_ansible_collections.sql) | A row per stored version of a local repository with the metadata read from its archive and a `sort_key` that orders the version list in one index scan, and the versions that were deleted and whose numbers are not accepted again (R-ANS-011, R-ANS-012). No blob column and no revision column (Q-ANS-31) |
+| `ansible_import_tasks` | [00069_ansible_import_tasks](../../internal/meta/postgres/migrations/00069_ansible_import_tasks.sql) | The final import task of every publish, deleted after `ansible.import_task_keep` (R-ANS-009). The table of the digests a remote announces, `ansible_upstream_versions`, comes with the remote class |
+
 ## Debian tables (00060 to 00065)
 
 Five expand migrations of phase T-17 ([deb.md](deb.md)); the numbers are the next free ones, because the runner needs numbers without a gap.

@@ -1,0 +1,19 @@
+{
+  "id": "6f1c0000-0000-4000-8000-000000000002",
+  "state": "completed",
+  "namespace": "acme",
+  "name": "tools",
+  "version": "1.0.0",
+  "created_at": "2026-11-10T12:30:45.123456Z",
+  "started_at": "2026-11-10T12:30:45.123456Z",
+  "updated_at": "2026-11-10T12:30:45.123456Z",
+  "finished_at": "2026-11-10T12:30:45.123456Z",
+  "error": null,
+  "messages": [
+    {
+      "level": "INFO",
+      "message": "Collection acme.tools 1.0.0 stored (sha256 d3499c)",
+      "time": "2026-11-10T12:30:45.123456Z"
+    }
+  ]
+}

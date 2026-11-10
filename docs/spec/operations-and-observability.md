@@ -2179,6 +2179,7 @@ shared key is offered again on the next scheduler tick, so it is postponed, neve
 | `support-bundle-expiry` | R-OPS-027 | `0 4 * * *` (proposed) |
 | `replica-registry-prune` | R-OPS-003 | `*/10 * * * *` (proposed) |
 | `oci-sweep` | [formats/oci.md](formats/oci.md) R-OCI-019: removes the blob items of an image name that no manifest of the name references after `oci.unreferenced_blob_grace`; queue `maintenance`, exclusive | `0 * * * *` (proposed, formats/oci.md) |
+| `ansible-import-task-sweep` | [formats/ansible.md](formats/ansible.md) R-ANS-009: deletes the import tasks of publishes older than `ansible.import_task_keep` and keeps the versions; queue `maintenance`, exclusive; the job kind `ansible-reindex` (queue `index`, coalesce) is enqueued by the reindex endpoint | `17 3 * * *` (formats/ansible.md) |
 | `remote-cache-cleanup` | [storage.md](storage.md) R-STOR-045; the per-repository expiry setting belongs to [repositories-and-proxy.md](repositories-and-proxy.md) (RET-036, RMT-021) | `0 3 * * *` (proposed, storage.md) |
 | `token-cleanup`, `session-cleanup` | [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-043 (R-AUTH-023; R-AUTH-005, R-AUTH-010, R-AUTH-034) | `40 3 * * *` and `*/10 * * * *` (proposed, identity-and-authentication.md) |
 | `token-expiry-notice` | [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-043, R-AUTH-032: writes `token.expiring` for tokens entering the notice period | `0 6 * * *` (proposed, identity-and-authentication.md) |

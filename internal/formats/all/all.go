@@ -4,6 +4,7 @@ package all
 
 import (
 	"github.com/guided-traffic/trove/internal/formats"
+	"github.com/guided-traffic/trove/internal/formats/ansible"
 	"github.com/guided-traffic/trove/internal/formats/deb"
 	"github.com/guided-traffic/trove/internal/formats/generic"
 	"github.com/guided-traffic/trove/internal/formats/npm"
@@ -17,4 +18,5 @@ func init() {
 	formats.Register(nuget.New())
 	formats.Register(oci.New())
 	formats.Register(deb.New())
+	formats.Register(ansible.New())
 }

@@ -646,6 +646,12 @@ Acceptance criteria:
 - A user with `read` only on `Acme.*` in `nuget-internal` gets search results without any ID
   outside `acme.*`, and the total hit count counts only those.
 
+**Ansible Galaxy.** The table of [formats/ansible.md](formats/ansible.md) R-ANS-007 follows the same rules: discovery, collection,
+version list, version, download and import task are `read` (the package and the archive path); `POST v3/artifacts/collections/` and an
+upload through `/files/` are `deploy` on `<ns>.<name>` and the archive path with ownership and the shadowing check of a first publish;
+the role routes are `read` on the repository, because a role document has no package name a grant can name; the removal of a version is
+`delete` and the clearing of a tombstone `manage`. `TestR_AUTHZ_007_AnsibleActionMap` has a subtest per row.
+
 ### R-AUTHZ-008 · Remote repositories: who may populate the cache
 Priority: **MVP** · Covers: IAM-023, PKG-NPM-038, PKG-NUGET-019
 

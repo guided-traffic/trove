@@ -12,6 +12,44 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AnsibleCollectionVersion struct {
+	RepoID          int64
+	Name            string
+	Version         string
+	SortKey         []byte
+	ItemID          int64
+	Sha256          []byte
+	Size            int64
+	RequiresAnsible string
+	Dependencies    json.RawMessage
+	CollectionInfo  json.RawMessage
+	PublishedBy     string
+	PublishedAt     pgtype.Timestamptz
+}
+
+type AnsibleImportTask struct {
+	ID               pgtype.UUID
+	RepoID           int64
+	Name             string
+	Version          string
+	State            string
+	ErrorCode        pgtype.Text
+	ErrorDescription pgtype.Text
+	Messages         json.RawMessage
+	CreatedBy        string
+	CreatedAt        pgtype.Timestamptz
+	FinishedAt       pgtype.Timestamptz
+}
+
+type AnsibleTombstone struct {
+	RepoID    int64
+	Name      string
+	Version   string
+	Sha256    []byte
+	DeletedAt pgtype.Timestamptz
+	DeletedBy string
+}
+
 type ApiIdempotencyKey struct {
 	PrincipalID     pgtype.UUID
 	IdemKey         string

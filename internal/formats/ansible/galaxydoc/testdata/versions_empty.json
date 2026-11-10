@@ -1,0 +1,12 @@
+{
+  "meta": {
+    "count": 0
+  },
+  "links": {
+    "first": "https://trove.example.com/api/ansible/web/ansible-local/v3/collections/acme/tools/versions/?limit=100&offset=0",
+    "previous": null,
+    "next": null,
+    "last": "https://trove.example.com/api/ansible/web/ansible-local/v3/collections/acme/tools/versions/?limit=100&offset=0"
+  },
+  "data": []
+}

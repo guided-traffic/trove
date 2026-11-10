@@ -447,7 +447,7 @@ Normative rules:
   1. Edge: `httpserver`, `api/v1`, `api/edge`, `api/dispatch`, `webui`, `formats` (the contract and the format handlers), `formathost`.
   2. Domain: `repository`, `files`, `items`, `packages`, `proxy`, `virtual`, `formatdata`, `authz`, `auth`, `jobs`, `audit`, `backup`, `journal`.
   3. Infrastructure: `meta/postgres`, `blob` (the store and its spool; the S3 client is `blob/s3`), `cluster`, `outbound`, `secrets`.
-  4. Leaf: `config`, `errs`, `buildinfo`, `observability`, `cache`, `meta`, `backup/tables`, `backup/target` (the port of the backup target, Q-BAK-15), `tlsfiles`, `formats/catalog`, `formats/nuget/id`, `formats/nuget/version`, `formats/nuget/nupkg`, `formats/nuget/nuspec`, `formats/deb/control`, `formats/deb/debfile`, `formats/deb/version`, `formats/deb/index` (the Debian rule libraries: the deb822 parser and writer, the package archive reader, dpkg's version order and the index renderers, shared by the format, its data port and its jobs, Q-ARCH-383), `formats/npm/semver` (the version order and the dist-tag rule, shared by the format and its data port's journal replay, R-NPM-047), `formats/<id>/rows`, `auth/scope`, `auth/jws` (the compact-JWS verifier the login and the CI exchange share, Q-CI-19), `ci/reason`, `ci/claims`, `ci/subject` (the pure parts of the CI federation, Q-CI-21). Every layer may import them, and they import only each other.
+  4. Leaf: `config`, `errs`, `buildinfo`, `observability`, `cache`, `meta`, `backup/tables`, `backup/target` (the port of the backup target, Q-BAK-15), `tlsfiles`, `formats/catalog`, `formats/nuget/id`, `formats/nuget/version`, `formats/nuget/nupkg`, `formats/nuget/nuspec`, `formats/deb/control`, `formats/deb/debfile`, `formats/deb/version`, `formats/deb/index` (the Debian rule libraries: the deb822 parser and writer, the package archive reader, dpkg's version order and the index renderers, shared by the format, its data port and its jobs, Q-ARCH-383), `formats/ansible/version`, `formats/ansible/collection`, `formats/ansible/galaxydoc`, `formats/ansible/merge` (the Ansible Galaxy rule libraries: semantic versions and their sort key, the collection archive reader, the Galaxy documents and the merge of version lists, shared by the format, its data port and the importer, R-ANS-002, R-ANS-004, R-ANS-010), `formats/npm/semver` (the version order and the dist-tag rule, shared by the format and its data port's journal replay, R-NPM-047), `formats/<id>/rows`, `auth/scope`, `auth/jws` (the compact-JWS verifier the login and the CI exchange share, Q-CI-19), `ci/reason`, `ci/claims`, `ci/subject` (the pure parts of the CI federation, Q-CI-21). Every layer may import them, and they import only each other.
      `formats/<id>/rows` is the values of a format's data port, shared by the format and `formatdata/<id>` (Q-ARCH-193). It is a leaf by rule, not by a
      list entry: archtest's `layerOf` gives every `internal/formats/<id>/rows` the leaf layer, and `CheckLayers` fails it when it imports anything but `errs` and
      the standard library (npm and NuGet each have one).
@@ -852,8 +852,9 @@ Middleware, outermost first:
    reaches the handler unauthenticated
    ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-001). Whether a
    package request reaches a route that declares the API-key header (`Route.APIKey`, R-ARCH-008)
+   or the scheme `Token` of the Galaxy clients (`Route.TokenScheme`, R-ARCH-008, R-ANS-006)
    the stage learns from the format dispatcher's own match, before the dispatcher runs
-   ([identity-and-authentication.md](identity-and-authentication.md) Q-AUTH-186).
+   ([identity-and-authentication.md](identity-and-authentication.md) Q-AUTH-186, Q-ANS-4).
 7. The endpoint's rate-limit class, on every route of a further endpoint
    ([endpoints.md](endpoints.md) R-EP-015), then the rate limits on `/api/v1/`, `/files/`, the
    package protocols under `/api/<format>/` and `/auth/` ([api-and-ui.md](api-and-ui.md)). Their
@@ -1312,6 +1313,7 @@ type Route struct {
 	Handler  HandlerFunc
 	PackageParam string // the placeholder of Params that holds the package name the route acts on ("name" for OCI), "" for none; the core reads the package through it
 	APIKey   bool     // the route accepts a credential in the format's API-key header besides Authorization (NuGet X-NuGet-ApiKey, R-NUGET-012); examined only there, first (Q-ARCH-266)
+	TokenScheme bool  // the route accepts "Authorization: Token <trove token>", the scheme the Galaxy clients send (R-ANS-006); examined only there, from the dispatcher's own match (Q-ANS-4, ADR-191)
 }
 
 // ServesClass reports whether the route serves repositories of a class (Classes empty: every class).

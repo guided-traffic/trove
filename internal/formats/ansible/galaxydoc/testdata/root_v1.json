@@ -1,0 +1,8 @@
+{
+  "available_versions": {
+    "v3": "v3/",
+    "v1": "v1/"
+  },
+  "current_version": "v3",
+  "description": "trove Ansible Galaxy API"
+}

@@ -230,6 +230,7 @@ func (a *App) credentialRules(rt *endpointRuntime) auth.EndpointRules {
 	// A route of a family this process does not serve is not always open: it is decided like an unknown path (Q-ARCH-302).
 	rules.Served = func(r *http.Request) bool { return rt.ep.ServesRequest(r.URL.Path) }
 	rules.APIKeyRoute = a.apiKeyRoute()
+	rules.TokenSchemeRoute = a.tokenSchemeRoute()
 	rules.Refused = a.credentialRefused(rt)
 	return rules
 }
@@ -319,6 +320,16 @@ func (a *App) apiKeyRoute() func(*http.Request) bool {
 		return nil
 	}
 	return disp.APIKeyRoute
+}
+
+// tokenSchemeRoute tells the stage which requests reach a format route that declares the scheme "Token" (R-ANS-006, Q-ANS-4): the
+// dispatcher's own match, as for the API-key header.
+func (a *App) tokenSchemeRoute() func(*http.Request) bool {
+	disp := part[formatHostArea](a.parts).disp
+	if disp == nil {
+		return nil
+	}
+	return disp.TokenSchemeRoute
 }
 
 // emptyTokens is the token store of a replica without a database: no token is

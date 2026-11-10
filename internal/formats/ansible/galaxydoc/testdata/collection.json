@@ -1,0 +1,13 @@
+{
+  "href": "https://trove.example.com/api/ansible/web/ansible-local/v3/collections/acme/tools/",
+  "namespace": "acme",
+  "name": "tools",
+  "deprecated": false,
+  "versions_url": "https://trove.example.com/api/ansible/web/ansible-local/v3/collections/acme/tools/versions/",
+  "highest_version": {
+    "href": "https://trove.example.com/api/ansible/web/ansible-local/v3/collections/acme/tools/versions/1.2.0/",
+    "version": "1.2.0"
+  },
+  "created_at": "2026-11-10T12:30:45.123456Z",
+  "updated_at": "2026-11-11T08:00:00.000000Z"
+}

@@ -98,6 +98,16 @@ func layerTable() []layerRule {
 		// The reader of a Release document of an APT archive (Date, names, checksum section): control and rows only, shared by the
 		// remote's format, its jobs and the builds that merge remote members (R-DEB-019, R-DEB-021).
 		{"internal/formats/deb/release", layerLeaf},
+		// The Ansible Galaxy rule libraries import only errs, internal/formats/untrusted, the standard library, the YAML module (one
+		// scalar of meta/runtime.yml) and each other: semantic versions and their sort key (version), the collection archive reader
+		// (collection, with collectiontest, its builder of archives for tests), the Galaxy documents (galaxydoc) and the pure merge of
+		// version lists (merge). They are leaves so that the format (edge), its data port and the importer share one reader and one
+		// renderer (R-ANS-002, R-ANS-004, R-ANS-010, R-ANS-022). The values of the data port are internal/formats/ansible/rows, a leaf
+		// by the rule below.
+		{"internal/formats/ansible/version", layerLeaf},
+		{"internal/formats/ansible/collection", layerLeaf},
+		{"internal/formats/ansible/galaxydoc", layerLeaf},
+		{"internal/formats/ansible/merge", layerLeaf},
 		{"internal/auth/scope", layerLeaf},
 		// The CI federation's pure parts (R-CI-004, R-CI-010 to R-CI-014): reason names, the claim engine
 		// and the subject-token validation import only the standard library and each other, so that the

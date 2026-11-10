@@ -193,6 +193,37 @@ func (t *TarReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// Stream copies the content of the current entry to dst and keeps none of it: a digest of a member, a count. The bytes count
+// against the inflated cap of Limits.StreamBytes, which is the bound of a pass that keeps nothing, and not against
+// Limits.UncompressedBytes, which bounds what is read into memory; the compression ratio of the entry is checked as Read does.
+// It returns the bytes copied.
+func (t *TarReader) Stream(dst io.Writer) (int64, error) {
+	if t.cur == nil || t.cur.Dir {
+		return 0, Refused("the current entry has no content")
+	}
+	buf := make([]byte, 32<<10)
+	var total int64
+	for {
+		n, err := t.tr.Read(buf)
+		if n > 0 {
+			total += int64(n)
+			t.curRead += int64(n)
+			if t.curRead > int64(t.l.Ratio)*(t.cr.n-t.curStart)+ratioSlack {
+				return total, TooLarge(fmt.Sprintf("entry %q compresses by more than %d:1", shorten(t.cur.Name), t.l.Ratio))
+			}
+			if _, werr := dst.Write(buf[:n]); werr != nil {
+				return total, werr
+			}
+		}
+		if errors.Is(err, io.EOF) {
+			return total, nil
+		}
+		if err != nil {
+			return total, t.classify(err)
+		}
+	}
+}
+
 // ReadEntry reads the whole current entry into memory. max is the bound for this
 // entry, Limits.ManifestEntryBytes when it is not positive; a declared size above
 // it, or above what remains of Limits.UncompressedBytes, fails before a byte is

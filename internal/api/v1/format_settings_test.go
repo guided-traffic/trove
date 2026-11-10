@@ -39,6 +39,11 @@ func TestR_ARCH_008_DebSettingsSchemaEqualsTheOpenAPIMember(t *testing.T) {
 	settingsSchemaEqualsOpenAPI(t, "deb", "DebSettings")
 }
 
+// TestR_ARCH_008_AnsibleSettingsSchemaEqualsTheOpenAPIMember is the same comparison for the ansible member (R-ANS-019).
+func TestR_ARCH_008_AnsibleSettingsSchemaEqualsTheOpenAPIMember(t *testing.T) {
+	settingsSchemaEqualsOpenAPI(t, "ansible", "AnsibleSettings")
+}
+
 func settingsSchemaEqualsOpenAPI(t *testing.T, format, schema string) {
 	t.Helper()
 	type property struct {

@@ -411,6 +411,7 @@ formats.Route: field Method string
 formats.Route: field Name string
 formats.Route: field PackageParam string
 formats.Route: field Template string
+formats.Route: field TokenScheme bool
 formats.Route: method ServesClass(Class) bool
 formats.RouteKind: method RequestKind() RequestKind
 formats.RouteKind: method ServesContent() bool

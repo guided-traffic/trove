@@ -14,12 +14,14 @@ import (
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/files"
+	ansibledata "github.com/guided-traffic/trove/internal/formatdata/ansible"
 	debdata "github.com/guided-traffic/trove/internal/formatdata/deb"
 	"github.com/guided-traffic/trove/internal/formatdata/npm"
 	nugetdata "github.com/guided-traffic/trove/internal/formatdata/nuget"
 	ocidata "github.com/guided-traffic/trove/internal/formatdata/oci"
 	"github.com/guided-traffic/trove/internal/formathost"
 	"github.com/guided-traffic/trove/internal/formats"
+	ansibleformat "github.com/guided-traffic/trove/internal/formats/ansible"
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 	debformat "github.com/guided-traffic/trove/internal/formats/deb"
 	npmformat "github.com/guided-traffic/trove/internal/formats/npm"
@@ -148,6 +150,7 @@ func (a *App) registerFormatJobs(r *jobs.Registry) {
 	}
 	r.RegisterTask(ocidata.SweepJobKind, spec)
 	debdata.RegisterJobs(r, a.debRemoteHandlers())
+	ansibledata.RegisterJobs(r)
 	a.registerDebRemoteRefresh()
 }
 
@@ -180,6 +183,9 @@ var _ nugetformat.Scanner = (*nugetdata.Store)(nil)
 // The PostgreSQL store implements the Debian data port the format declares (D-1): the format cannot be checked against the store from
 // either package, because neither imports the other.
 var _ debformat.Store = (*debdata.Store)(nil)
+
+// The same for the Ansible Galaxy data port.
+var _ ansibleformat.Store = (*ansibledata.Store)(nil)
 
 func formatPorts(db meta.Runner, rec audit.Recorder, blobs *blob.Store, queue nugetdata.Jobs, ring *secrets.KeyRing, debCfg config.Deb) (map[formats.ID]any, error) {
 	st, err := npm.New(npm.Options{
@@ -216,7 +222,14 @@ func formatPorts(db meta.Runner, rec audit.Recorder, blobs *blob.Store, queue nu
 		return nil, fmt.Errorf("formats: deb data port: %w", err)
 	}
 	bindDebCreateHook(deb)
-	return map[formats.ID]any{npmformat.ID: st, nugetformat.ID: nuget, ociformat.ID: oci, debformat.ID: deb}, nil
+	ansible, err := ansibledata.New(ansibledata.Options{
+		DB: db, Recorder: rec, Source: httpserver.SourceFrom,
+		Actor: func(ctx context.Context) audit.Actor { return edge.ActorFrom(httpserver.PrincipalFrom(ctx)) },
+	})
+	if err != nil {
+		return nil, fmt.Errorf("formats: ansible data port: %w", err)
+	}
+	return map[formats.ID]any{npmformat.ID: st, nugetformat.ID: nuget, ociformat.ID: oci, debformat.ID: deb, ansibleformat.ID: ansible}, nil
 }
 
 // bindFormatPorts binds the ports and checks them against the formats: a format that

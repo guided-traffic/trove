@@ -1,0 +1,49 @@
+{
+  "version": "1.2.0",
+  "href": "https://trove.example.com/api/ansible/web/ansible-local/v3/collections/acme/tools/versions/1.2.0/",
+  "created_at": "2026-11-10T12:30:45.123456Z",
+  "updated_at": "2026-11-11T08:00:00.000000Z",
+  "requires_ansible": ">=2.14.0",
+  "marks": [],
+  "artifact": {
+    "filename": "acme-tools-1.2.0.tar.gz",
+    "sha256": "abababababababababababababababababababababababababababababababab",
+    "size": 4096
+  },
+  "collection": {
+    "id": "8f1c2a4e-0000-4000-8000-000000000001",
+    "name": "tools",
+    "href": "https://trove.example.com/api/ansible/web/ansible-local/v3/collections/acme/tools/"
+  },
+  "download_url": "https://trove.example.com/api/ansible/web/ansible-local/v3/artifacts/collections/acme-tools-1.2.0.tar.gz",
+  "name": "tools",
+  "namespace": {
+    "name": "acme"
+  },
+  "signatures": [],
+  "metadata": {
+    "authors": [
+      "A <a@example.com>"
+    ],
+    "dependencies": {
+      "ansible.posix": "*",
+      "community.general": ">=1.0.0"
+    },
+    "description": "Tools & more",
+    "documentation": "",
+    "homepage": "",
+    "issues": "",
+    "license": [
+      "MIT"
+    ],
+    "license_file": null,
+    "readme": "README.md",
+    "repository": "",
+    "tags": [
+      "tools"
+    ],
+    "x_extra": {
+      "k": 1
+    }
+  }
+}

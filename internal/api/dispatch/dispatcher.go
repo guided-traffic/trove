@@ -76,6 +76,8 @@ type Dispatcher struct {
 	// keyed holds the IDs of the formats with a route that declares the API-key
 	// header ([Dispatcher.APIKeyRoute]).
 	keyed map[string]bool
+	// tokened holds the IDs of the formats with a route that declares the Token scheme ([Dispatcher.TokenSchemeRoute]).
+	tokened map[string]bool
 }
 
 // New creates the dispatcher over the formats that have routes below /api/<id>/. The format that declares the registry root has
@@ -93,7 +95,7 @@ func New(o Options) (*Dispatcher, error) {
 	if o.Formats == nil {
 		o.Formats = formats.List
 	}
-	d := &Dispatcher{o: o, formats: map[string]formats.Format{}, keyed: map[string]bool{}}
+	d := &Dispatcher{o: o, formats: map[string]formats.Format{}, keyed: map[string]bool{}, tokened: map[string]bool{}}
 	for _, f := range o.Formats() {
 		routes := f.Routes()
 		if len(routes) == 0 || f.Descriptor().RegistryRoot {
@@ -102,6 +104,7 @@ func New(o Options) (*Dispatcher, error) {
 		id := string(f.Descriptor().ID)
 		d.formats[id] = f
 		d.keyed[id] = slices.ContainsFunc(routes, func(r formats.Route) bool { return r.APIKey })
+		d.tokened[id] = slices.ContainsFunc(routes, func(r formats.Route) bool { return r.TokenScheme })
 	}
 	return d, nil
 }
@@ -117,24 +120,45 @@ func New(o Options) (*Dispatcher, error) {
 // authentication, as on every route. A format without such a route costs a map
 // lookup.
 func (d *Dispatcher) APIKeyRoute(r *http.Request) bool {
+	route := d.matchedRoute(r, d.keyed)
+	return route != nil && route.APIKey
+}
+
+// TokenSchemeRoute reports whether the request reaches a route that declares [formats.Route.TokenScheme] (Q-ANS-4, ADR-191): the
+// route of a format whose clients send a configured token as "Authorization: Token <token>". The authentication stage asks it to know
+// where that scheme is a credential (R-ANS-006), with the same match as [Dispatcher.APIKeyRoute], so the stage and the dispatcher agree
+// on the route. A format without such a route costs a map lookup.
+func (d *Dispatcher) TokenSchemeRoute(r *http.Request) bool {
+	route := d.matchedRoute(r, d.tokened)
+	return route != nil && route.TokenScheme
+}
+
+// matchedRoute is the route the request reaches, or nil: the dispatcher's own match, which the stage asks before the dispatcher runs.
+// It reads the request line only (the endpoint's surface, the prefix, the key shape, the clean path and the format's Match, the steps
+// [Dispatcher.ServeHTTP] takes before the coarse check); whether the key names a repository of the format is decided after
+// authentication, as on every route. flagged holds the IDs of the formats that have a route with the flag asked about.
+func (d *Dispatcher) matchedRoute(r *http.Request, flagged map[string]bool) *formats.Route {
 	id, addr, ok := splitPath(r.URL.EscapedPath())
 	f := d.formats[id]
-	if !ok || f == nil || !d.keyed[id] {
-		return false
+	if !ok || f == nil || !flagged[id] {
+		return nil
 	}
 	rest := addr.Rest
 	if ep := httpserver.EndpointFrom(r.Context()); ep != nil &&
 		(!ep.Serves(config.SurfacePackages) || !ep.Serves(httpserver.FamilyOfPath(r.URL.Path))) {
-		return false
+		return nil
 	}
 	if strings.HasPrefix(rest, "/") {
-		return false
+		return nil
 	}
 	if _, err := repository.CleanPath(cleanable(rest)); err != nil {
-		return false
+		return nil
 	}
 	route, _, err := f.Match(r.Method, rest)
-	return err == nil && route.APIKey
+	if err != nil {
+		return nil
+	}
+	return route
 }
 
 // Prefixes returns the format IDs the dispatcher serves, sorted.

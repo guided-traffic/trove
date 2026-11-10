@@ -129,6 +129,10 @@ type Route struct {
 	// it learns the route from the dispatcher's match. The field does not name the
 	// header; auth.clients.nuget_api_key_header switches its examination off.
 	APIKey bool
+	// TokenScheme marks a route that accepts "Authorization: Token <trove token>", the scheme the Galaxy clients send a configured
+	// token with (Ansible Galaxy, R-ANS-006). The authentication stage reads that scheme only on such a route, from the
+	// dispatcher's own match like APIKey, and treats the header as "not a trove token" everywhere else (Q-ANS-4, ADR-191).
+	TokenScheme bool
 }
 
 // matcher returns the route's matcher: Match, or the compiled Template.

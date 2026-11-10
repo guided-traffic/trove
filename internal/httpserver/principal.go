@@ -52,6 +52,9 @@ const (
 	// read only on a route that declares it (R-AUTH-033, Q-AUTH-186). The audit
 	// records it as api_key; the request log and the metrics name it nuget_apikey.
 	MethodAPIKey AuthMethod = "api_key"
+	// MethodGalaxyToken is "Authorization: Token <token>", the scheme of the Ansible Galaxy clients, read only on a route that
+	// declares it (R-ANS-006, Q-ANS-4). The request log, the metrics and the audit name it galaxy_token.
+	MethodGalaxyToken AuthMethod = "galaxy_token"
 	// MethodBearer is "Authorization: Bearer <token>".
 	MethodBearer AuthMethod = "bearer"
 	// MethodBasic is "Authorization: Basic base64(<any>:<token>)".

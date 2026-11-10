@@ -16,6 +16,24 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for AnsibleImportTaskState.
+const (
+	AnsibleImportTaskStateCompleted AnsibleImportTaskState = "completed"
+	AnsibleImportTaskStateFailed    AnsibleImportTaskState = "failed"
+)
+
+// Valid indicates whether the value is a known member of the AnsibleImportTaskState enum.
+func (e AnsibleImportTaskState) Valid() bool {
+	switch e {
+	case AnsibleImportTaskStateCompleted:
+		return true
+	case AnsibleImportTaskStateFailed:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AppliedMigrationStepClass.
 const (
 	AppliedMigrationStepClassContract AppliedMigrationStepClass = "contract"
@@ -1179,6 +1197,7 @@ func (e FormatDescriptorPatternSubject) Valid() bool {
 
 // Defines values for FormatName.
 const (
+	FormatNameAnsible FormatName = "ansible"
 	FormatNameDeb     FormatName = "deb"
 	FormatNameGeneric FormatName = "generic"
 	FormatNameNpm     FormatName = "npm"
@@ -1189,6 +1208,8 @@ const (
 // Valid indicates whether the value is a known member of the FormatName enum.
 func (e FormatName) Valid() bool {
 	switch e {
+	case FormatNameAnsible:
+		return true
 	case FormatNameDeb:
 		return true
 	case FormatNameGeneric:
@@ -1476,6 +1497,7 @@ func (e JobState) Valid() bool {
 
 // Defines values for LocalFormatName.
 const (
+	LocalFormatNameAnsible LocalFormatName = "ansible"
 	LocalFormatNameDeb     LocalFormatName = "deb"
 	LocalFormatNameGeneric LocalFormatName = "generic"
 	LocalFormatNameNpm     LocalFormatName = "npm"
@@ -1486,6 +1508,8 @@ const (
 // Valid indicates whether the value is a known member of the LocalFormatName enum.
 func (e LocalFormatName) Valid() bool {
 	switch e {
+	case LocalFormatNameAnsible:
+		return true
 	case LocalFormatNameDeb:
 		return true
 	case LocalFormatNameGeneric:
@@ -3889,6 +3913,24 @@ func (e ListProjectRepositoriesParamsView) Valid() bool {
 	}
 }
 
+// Defines values for ListAnsibleImportTasksParamsState.
+const (
+	ListAnsibleImportTasksParamsStateCompleted ListAnsibleImportTasksParamsState = "completed"
+	ListAnsibleImportTasksParamsStateFailed    ListAnsibleImportTasksParamsState = "failed"
+)
+
+// Valid indicates whether the value is a known member of the ListAnsibleImportTasksParamsState enum.
+func (e ListAnsibleImportTasksParamsState) Valid() bool {
+	switch e {
+	case ListAnsibleImportTasksParamsStateCompleted:
+		return true
+	case ListAnsibleImportTasksParamsStateFailed:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListCacheEntriesParamsKind.
 const (
 	ListCacheEntriesParamsKindArtifact ListCacheEntriesParamsKind = "artifact"
@@ -4217,6 +4259,78 @@ func (e ExportVulnerabilityFindingsParamsSort) Valid() bool {
 	default:
 		return false
 	}
+}
+
+// AnsibleImportTask The import task of a publish (R-ANS-009), final when it is created.
+type AnsibleImportTask struct {
+	CreatedAt time.Time `json:"createdAt"`
+
+	// CreatedBy The id of the principal that published.
+	CreatedBy *string `json:"createdBy,omitempty"`
+	Error     *struct {
+		Code        string `json:"code"`
+		Description string `json:"description"`
+	} `json:"error"`
+	FinishedAt time.Time          `json:"finishedAt"`
+	Id         openapi_types.UUID `json:"id"`
+	Messages   []struct {
+		Level   string    `json:"level"`
+		Message string    `json:"message"`
+		Time    time.Time `json:"time"`
+	} `json:"messages"`
+	Name      string                 `json:"name"`
+	Namespace string                 `json:"namespace"`
+	State     AnsibleImportTaskState `json:"state"`
+	Version   string                 `json:"version"`
+}
+
+// AnsibleImportTaskState defines model for AnsibleImportTask.State.
+type AnsibleImportTaskState string
+
+// AnsibleImportTaskList defines model for AnsibleImportTaskList.
+type AnsibleImportTaskList struct {
+	Items []AnsibleImportTask `json:"items"`
+
+	// NextCursor Opaque; `null` on the last page.
+	NextCursor *string `json:"nextCursor"`
+}
+
+// AnsibleSettings The settings of the Ansible Galaxy format, the `ansible` member of a repository document (R-REPO-004, R-ANS-019). The document
+// of the format's JSON Schema is `settingsSchema` of `GET /api/v1/formats`; `TestR_ARCH_008_AnsibleSettingsSchemaEqualsTheOpenAPIMember`
+// fails on any difference between the two. Both settings are for remote repositories; local and virtual repositories have no
+// settings of the format, and a setting that does not apply to the class of the repository answers 422 `not_applicable`. An
+// omitted setting takes its default.
+type AnsibleSettings struct {
+	// AuthUrl Remote repositories of a Galaxy-compatible hub behind single sign-on (R-ANS-019). The https URL of the token endpoint of
+	// the hub's identity realm, where the offline token stored in the repository's credential is exchanged for a short-lived
+	// access token. Left out, the upstream is called with the credential as it is (a static token).
+	AuthUrl *string `json:"authUrl,omitempty"`
+
+	// ClientId Remote repositories with `authUrl` (R-ANS-019). The client id the exchange presents to the realm.
+	ClientId *string `json:"clientId,omitempty"`
+}
+
+// AnsibleTombstone A deleted version whose number is not accepted again (R-ANS-012).
+type AnsibleTombstone struct {
+	DeletedAt time.Time `json:"deletedAt"`
+
+	// DeletedBy The id of the principal that deleted the version.
+	DeletedBy string `json:"deletedBy"`
+
+	// Name The collection, `<namespace>.<name>`.
+	Name string `json:"name"`
+
+	// Sha256 The SHA-256 of the archive that was deleted.
+	Sha256  string `json:"sha256"`
+	Version string `json:"version"`
+}
+
+// AnsibleTombstoneList defines model for AnsibleTombstoneList.
+type AnsibleTombstoneList struct {
+	Items []AnsibleTombstone `json:"items"`
+
+	// NextCursor Opaque; `null` on the last page.
+	NextCursor *string `json:"nextCursor"`
 }
 
 // AppliedMigrationStep defines model for AppliedMigrationStep.
@@ -7640,6 +7754,13 @@ type Repository struct {
 	// AdminNotes Only for holders of `repositories:read-config`.
 	AdminNotes *string `json:"adminNotes,omitempty"`
 
+	// Ansible The settings of the Ansible Galaxy format, the `ansible` member of a repository document (R-REPO-004, R-ANS-019). The document
+	// of the format's JSON Schema is `settingsSchema` of `GET /api/v1/formats`; `TestR_ARCH_008_AnsibleSettingsSchemaEqualsTheOpenAPIMember`
+	// fails on any difference between the two. Both settings are for remote repositories; local and virtual repositories have no
+	// settings of the format, and a setting that does not apply to the class of the repository answers 422 `not_applicable`. An
+	// omitted setting takes its default.
+	Ansible *AnsibleSettings `json:"ansible,omitempty"`
+
 	// Class Fixed at creation.
 	Class     RepositoryClass `json:"class"`
 	CreatedAt *time.Time      `json:"createdAt,omitempty"`
@@ -9070,6 +9191,9 @@ type ProjectKey = string
 // RepoKey defines model for RepoKey.
 type RepoKey = string
 
+// AnsibleNotImplemented RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
+type AnsibleNotImplemented = Problem
+
 // BadGateway RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type BadGateway = Problem
 
@@ -9825,6 +9949,30 @@ type UpdateRepositoryParams struct {
 type ReplaceRepositoryParams struct {
 	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
 	IfMatch IfMatch `json:"If-Match"`
+}
+
+// ListAnsibleImportTasksParams defines parameters for ListAnsibleImportTasks.
+type ListAnsibleImportTasksParams struct {
+	// State Only the tasks in this state.
+	State *ListAnsibleImportTasksParamsState `form:"state,omitempty" json:"state,omitempty"`
+
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListAnsibleImportTasksParamsState defines parameters for ListAnsibleImportTasks.
+type ListAnsibleImportTasksParamsState string
+
+// ListAnsibleTombstonesParams defines parameters for ListAnsibleTombstones.
+type ListAnsibleTombstonesParams struct {
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
 // ListCacheEntriesParams defines parameters for ListCacheEntries.
@@ -11108,6 +11256,15 @@ type ServerInterface interface {
 	// ReplaceRepository Replace a repository configuration
 	// (PUT /api/v1/projects/{projectKey}/repositories/{repoKey})
 	ReplaceRepository(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey RepoKey, params ReplaceRepositoryParams)
+	// ListAnsibleImportTasks List the import tasks of an Ansible Galaxy repository
+	// (GET /api/v1/projects/{projectKey}/repositories/{repoKey}/ansible/imports)
+	ListAnsibleImportTasks(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey RepoKey, params ListAnsibleImportTasksParams)
+	// ListAnsibleTombstones List the tombstones of an Ansible Galaxy repository
+	// (GET /api/v1/projects/{projectKey}/repositories/{repoKey}/ansible/tombstones)
+	ListAnsibleTombstones(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey RepoKey, params ListAnsibleTombstonesParams)
+	// ClearAnsibleTombstone Clear the tombstone of a deleted version
+	// (DELETE /api/v1/projects/{projectKey}/repositories/{repoKey}/ansible/tombstones/{collection}/{version})
+	ClearAnsibleTombstone(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey RepoKey, collection string, version string)
 	// ListCacheEntries List the cache entries of a remote repository
 	// (GET /api/v1/projects/{projectKey}/repositories/{repoKey}/cache/entries)
 	ListCacheEntries(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string, params ListCacheEntriesParams)
@@ -16833,6 +16990,200 @@ func (siw *ServerInterfaceWrapper) ReplaceRepository(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// ListAnsibleImportTasks operation middleware
+func (siw *ServerInterfaceWrapper) ListAnsibleImportTasks(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey RepoKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListAnsibleImportTasksParams
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAnsibleImportTasks(w, r, projectKey, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListAnsibleTombstones operation middleware
+func (siw *ServerInterfaceWrapper) ListAnsibleTombstones(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey RepoKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListAnsibleTombstonesParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAnsibleTombstones(w, r, projectKey, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ClearAnsibleTombstone operation middleware
+func (siw *ServerInterfaceWrapper) ClearAnsibleTombstone(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey RepoKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "collection" -------------
+	var collection string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "collection", r.PathValue("collection"), &collection, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "collection", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "version" -------------
+	var version string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "version", r.PathValue("version"), &version, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "version", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ClearAnsibleTombstone(w, r, projectKey, repoKey, collection, version)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListCacheEntries operation middleware
 func (siw *ServerInterfaceWrapper) ListCacheEntries(w http.ResponseWriter, r *http.Request) {
 
@@ -22399,6 +22750,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/deb/coordinates", wrapper.PutDebCoordinates)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/deb/index", wrapper.GetDebIndexState)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/reindex", wrapper.ReindexRepository)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/ansible/imports", wrapper.ListAnsibleImportTasks)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/ansible/tombstones", wrapper.ListAnsibleTombstones)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/ansible/tombstones/{collection}/{version}", wrapper.ClearAnsibleTombstone)
 
 	return m
 }

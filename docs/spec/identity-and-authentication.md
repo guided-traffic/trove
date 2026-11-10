@@ -100,6 +100,11 @@ The stage MUST select the credential in this order and MUST evaluate only the fi
    R-OCI-005): the stage verifies its MAC, its expiry and its endpoint without any lookup, and then the
    trove token it was issued for exactly as if that token were presented, with the endpoint's rules
    (R-AUTH-023, R-EP-010). Everywhere else, and as a Basic password, `trv_rgt_` is no trove token and
+   is rejected without a lookup. On a route that declares the scheme (`Route.TokenScheme`, every route of
+   the Ansible Galaxy format, [architecture.md](architecture.md) R-ARCH-008,
+   [formats/ansible.md](formats/ansible.md) R-ANS-006, Q-ANS-4) `Token <token>` is a trove token too, with
+   the checks of a `Bearer` token and the method `galaxy_token`; the stage learns the route from the
+   dispatcher's own match, as for the API key, and everywhere else the scheme `Token` is no trove token and
    is rejected without a lookup.
 3. **Session cookie** `__Host-trv_session` (Q-AUTH-2). It is accepted on `/api/v1/…` for every
    method, with the CSRF rules of R-AUTH-012. On `/files/…` it is accepted for `GET` and `HEAD`, and for `PUT` and
@@ -2642,6 +2647,8 @@ endpoint routes themselves belong to the format pages.
 | npm interactive | `npm login --registry=https://trove.example.com/api/npm/web/npm-all/` | web login (R-AUTH-034) or legacy login (R-AUTH-035); stores `_authToken` | P1 |
 | NuGet (dotnet, nuget.exe, Visual Studio) | `packageSourceCredentials` with `Username=<any>` and `ClearTextPassword=<token>` in `nuget.config` ([reference](https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file#packagesourcecredentials)) | Basic after a 401 challenge ([authenticated feeds](https://learn.microsoft.com/en-us/nuget/consume-packages/consuming-packages-authenticated-feeds)) | yes |
 | NuGet push, delete, relist | `dotnet nuget push … --api-key <token>` or `nuget setapikey <user>:<token>` | `X-NuGet-ApiKey` ([publish resource](https://learn.microsoft.com/en-us/nuget/api/package-publish-resource)) | yes; rules below |
+| ansible-galaxy | `token=` in `ansible.cfg`, `ANSIBLE_GALAXY_SERVER_<NAME>_TOKEN` or `--token` ([formats/ansible.md](formats/ansible.md) R-ANS-006) | `Authorization: Token <token>`, on the routes that declare the scheme only; method `galaxy_token` | yes |
+| ansible-galaxy | `username=` and `password=`, or `~/.netrc` for a role archive | Basic | yes; the username is ignored |
 | Generic (curl, CI scripts, other formats) | — | Bearer or Basic | yes |
 | Browser UI | — | `__Host-trv_session` cookie | `/api/v1` all methods; `/files` `GET` and `HEAD`, and `PUT` and `DELETE` with CSRF (R-AUTH-012); package-protocol endpoints `GET` and `HEAD` only |
 

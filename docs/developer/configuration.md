@@ -316,6 +316,10 @@ deb:
   virtual_index_interval: 60s      # default; 10s to 1h, the least time between two builds of a virtual repository that a local member's publication triggers (R-DEB-026)
   by_hash_keep: 1h                 # default; 10m to 168h, how long the files of a superseded index generation stay served by hash (R-DEB-012)
   index_wait_max: 30s              # default; 1s to 120s, the longest wait of an index state read with waitFor (R-DEB-014)
+ansible:
+  max_archive_bytes: 1GiB          # default; 1MiB to 16GiB, the largest collection archive a publish or an upload through /files/ accepts (R-ANS-008, R-ANS-031)
+  role_archive_max_bytes: 256MiB   # default; 1MiB to 4GiB, the largest role archive a remote fetches and keeps (R-ANS-020)
+  import_task_keep: 720h           # default; 24h to 8760h, how long an import task stays readable (R-ANS-009)
 ui:
   readme:
     max_source_bytes: 512KiB         # default; 1KiB to 16MiB, a longer README is cut and flagged (R-UI-008)

@@ -204,6 +204,10 @@ Priority: **MVP** · Covers: REPO-006
   (an APT archive lists its packages in repository-wide indexes) reports no package document, and its remote adapter then
   names a `NameServer` that answers R-REPO-048 from the rows of the indexes the remote holds, in the scope of the virtual
   repository whose exposure the check decides ([Q-REPO-270](#q-repo-270--a-format-without-a-package-document-answers-the-shadowing-check-from-its-index-rows-in-the-scope-of-the-virtual-repository), [formats/debian.md](formats/debian.md) R-DEB-023).
+- The Ansible Galaxy format registers its default upstream (the API root `https://galaxy.ansible.com/api/`, no probe path: the URL itself
+  answers the discovery document), the extra hosts `github.com` and `codeload.github.com` for role archives, `ChecksumAlwaysVerified`,
+  lower-case canonical paths, `enforce` ownership and the package document `collections/<ns>/<name>/collection.json`
+  ([formats/ansible.md](formats/ansible.md) R-ANS-001, R-ANS-002).
 - The MVP formats are `npm` and `nuget`, each with all three classes (INV-14).
 - For every package-protocol and `/files/` request the plug-in MUST produce a request descriptor:
   canonical path; request kind; normalized package name and version where the request concerns a
@@ -979,7 +983,9 @@ Priority: **P1** · Covers: REPO-009
   documents to rebuild: for them a reindex rebuilds the package and version rows from the
   repository's items, incrementing `rev_seq` on every package row it changes, and the next request
   renders from the rebuilt rows. A format with a job-built repository-wide index (the exception
-  of R-ARCH-012) also rebuilds that index. On a virtual repository the operation drops its
+  of R-ARCH-012) also rebuilds that index. The Ansible Galaxy format keeps a row per stored version
+  that is read from the archive: its reindex (`ansible-reindex`) rereads the archives and rewrites
+  those rows ([formats/ansible.md](formats/ansible.md) R-ANS-012, Q-ANS-26, Q-ANS-32). On a virtual repository the operation drops its
   merged-metadata cache (R-REPO-020) on every replica.
 - **The drop travels through a change area.** The transaction that records a virtual
   repository's reindex calls `cluster.Notify("cache_invalidation", …)` with the virtual

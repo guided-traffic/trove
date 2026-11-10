@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/guided-traffic/trove/internal/formats/ansible/settings.schema.json",
+  "title": "Ansible Galaxy repository settings",
+  "description": "The ansible member of a repository document (R-REPO-004, R-ANS-019). A member lists the classes it applies to in x-trove-classes; a member of another class is refused as not applicable. Local and virtual repositories have no settings of the format.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "authUrl": {
+      "description": "Remote repositories of a Galaxy-compatible hub behind single sign-on (R-ANS-019). The https URL of the token endpoint of the hub's identity realm, where the offline token stored in the repository's credential is exchanged for a short-lived access token. Left out, the upstream is called with the credential as it is (a static token).",
+      "type": "string",
+      "pattern": "^https://",
+      "maxLength": 2048,
+      "x-trove-classes": ["remote"]
+    },
+    "clientId": {
+      "description": "Remote repositories with authUrl (R-ANS-019). The client id the exchange presents to the realm.",
+      "type": "string",
+      "default": "cloud-services",
+      "pattern": "^[A-Za-z0-9._-]{1,128}$",
+      "x-trove-classes": ["remote"]
+    }
+  }
+}

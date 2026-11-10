@@ -1251,6 +1251,8 @@ Acceptance criteria (fixture of R-EP-012):
 - No response body or header captured on `customers` during the e2e run contains `trove.example.com`
   or the key of a member of `web/npm-customers`.
 
+The Ansible Galaxy format has no exposure adapter (Q-ANS-25): its repositories are served on an endpoint without exposure rules.
+
 ### R-EP-019 · Cache-fill policy per endpoint
 Priority: **MVP** · Covers: trove-only
 

@@ -15,17 +15,22 @@ import (
 // values match httpserver.AuthMethod. The stage evaluates only the first source
 // present, in this order: [MethodAPIKey] (on the routes of
 // [EndpointRules.APIKeyRoute] only), then the Authorization header
-// ([MethodBearer] or [MethodBasic]), then [MethodSession], then none.
+// ([MethodBearer], [MethodBasic], or [MethodGalaxyToken] on the routes of
+// [EndpointRules.TokenSchemeRoute] only), then [MethodSession], then none.
 type Method string
 
 // The credential sources.
 const (
 	MethodNone Method = ""
 	// MethodAPIKey is a trove token in [HeaderAPIKey] (R-AUTH-033).
-	MethodAPIKey  Method = "api_key"
-	MethodBearer  Method = "bearer"
-	MethodBasic   Method = "basic"
-	MethodSession Method = "session"
+	MethodAPIKey Method = "api_key"
+	// MethodGalaxyToken is a trove token in "Authorization: Token <token>", the scheme the Ansible Galaxy clients send a configured
+	// token with, read only on a route that declares it (R-ANS-006, Q-ANS-4). It is the label of the request log and of
+	// trove_auth_attempts_total as well as the audit method.
+	MethodGalaxyToken Method = "galaxy_token"
+	MethodBearer      Method = "bearer"
+	MethodBasic       Method = "basic"
+	MethodSession     Method = "session"
 )
 
 // HeaderAPIKey is the NuGet API-key header (R-AUTH-001 item 1, R-AUTH-033). The
@@ -100,6 +105,12 @@ type EndpointRules struct {
 	// on it (Q-AUTH-186). The stage asks it only when a credential depends on the
 	// answer. Nil: no route is.
 	APIKeyRoute func(*http.Request) bool
+	// TokenSchemeRoute reports whether the request matches a package-protocol route that declares the scheme "Token"
+	// (formats.Route.TokenScheme: every route of the Ansible Galaxy format, R-ANS-006). Only there is "Authorization: Token
+	// <trove token>" a credential, with the checks of a Bearer token and the method [MethodGalaxyToken]; on every other route
+	// that header is not a trove token and is rejected without a lookup. The composition root hands the dispatcher's own match,
+	// as for APIKeyRoute, and the stage asks it only for a request whose header has that scheme. Nil: no route is.
+	TokenSchemeRoute func(*http.Request) bool
 	// Refused, when set, is told of every request the endpoint's rules refused
 	// (R-EP-010): a token type the endpoint does not accept, a token bound
 	// elsewhere or an unbound token where only bound ones are accepted, and a

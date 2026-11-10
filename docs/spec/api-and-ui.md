@@ -3697,6 +3697,11 @@ Priority: **MVP** · Covers: UI-031
   checkbox per option; an empty list leaves the setting to its default. A string setting that may be longer than 1 KiB (a pasted key
   block) is an area. A read-only member of the document that is not in the schema (`deb.upstreamKeyFingerprints`) is shown by the
   format's own panel and never written back.
+- Ansible Galaxy repositories ([formats/ansible.md](formats/ansible.md) R-ANS-009, R-ANS-012, R-ANS-026): the operations `listAnsibleImportTasks`
+  (`read`; the import tasks of a local repository, of the deployment target for a virtual one, 405 `not_applicable` for a remote one),
+  `listAnsibleTombstones` and `clearAnsibleTombstone` (`manage`; local only, the clearing writes the journaled event
+  `ansible.tombstone.cleared`) are in `api/openapi.yaml` and answer 501 `ansible_not_implemented` until the local class builds them; the
+  `ansible` member of the repository document holds `authUrl` and `clientId` for remote repositories.
 - Debian (APT) repositories ([formats/debian.md](formats/debian.md) R-DEB-030, Q-DEB-100 to Q-DEB-102): a local or virtual repository
   has the tabs **Signing keys** (the keys in every state with fingerprint in groups of four, state in words, type, origin, times and
   the public certificate; **Generate a next key**, **Import a key** with a write-only secret key and passphrase, **Promote**,

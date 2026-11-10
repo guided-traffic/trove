@@ -47,6 +47,8 @@ type Config struct {
 	OCI OCI `yaml:"oci"`
 	// The Debian (APT) format's index timing (deb.go).
 	Deb Deb `yaml:"deb"`
+	// The Ansible Galaxy format's limits and retention (ansible.go).
+	Ansible Ansible `yaml:"ansible"`
 
 	// The M4 section: the GitLab CI OIDC federation (ci.go).
 	CI CI `yaml:"ci"`

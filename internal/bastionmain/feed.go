@@ -67,19 +67,21 @@ func FeedActions() []string { return feedActions() }
 // the feed or listed here; TestR_BAS_015_EveryJournaledEventIsClassified holds the two lists to the registry.
 func noFeedEntry() map[string]string {
 	return map[string]string{
-		"authz.ownership.removed":        "bounds who may publish a package name (R-AUTHZ-018); a read is never decided by ownership",
-		"authz.ownership.released":       "bounds who may publish a package name (R-AUTHZ-018); a read is never decided by ownership",
-		audit.EventOCIManifestDeleted:    "withdraws an OCI manifest, and a Bastion does not serve /v2/ (Q-OCI-23)",
-		audit.EventDebPackageDeleted:     "withholds a Debian package file, and a Bastion does not serve the Debian format (Q-DEB-26)",
-		audit.EventDebCoordinatesRemoved: "narrows where a Debian package is listed, and a Bastion does not serve the Debian format (Q-DEB-26)",
-		audit.EventDebSigningKeyPromoted: "changes the key that signs a Debian repository's indexes, and a Bastion does not serve the Debian format (Q-DEB-26)",
-		audit.EventDebSigningKeyRetired:  "withdraws a Debian signing key, and a Bastion does not serve the Debian format (Q-DEB-26)",
-		audit.EventPackagePublished:      "reserves the version numbers a publish took (R-HA-054); a Bastion never publishes",
-		audit.EventProjectDeleted:        "a project is deleted only when it holds no repository and no service account, and its policies are deleted before it, each journaled as authz.policy.deleted (grants)",
-		audit.EventBastionDisabled:       "a registration is no caller a Bastion answers; the Bastion learns of its own disable from 401 bastion_token_invalid on its next call (R-BAS-006, Q-BAS-145)",
-		audit.EventBastionDeleted:        "a registration is no caller a Bastion answers; its tokens' token.revoked entries come before it, and the Bastion learns of its end from 401 bastion_token_invalid (R-BAS-006, Q-BAS-145)",
-		audit.EventGroupUpdated:          "clearing auto-join removes no membership that exists (R-AUTH-019): only users created afterwards stay out of the group; a rename or a description changes no grant",
-		audit.EventUserUpdated:           "removes a pending identity link, which no caller holds until a login completes it; a profile change changes no grant",
+		"authz.ownership.removed":          "bounds who may publish a package name (R-AUTHZ-018); a read is never decided by ownership",
+		"authz.ownership.released":         "bounds who may publish a package name (R-AUTHZ-018); a read is never decided by ownership",
+		audit.EventOCIManifestDeleted:      "withdraws an OCI manifest, and a Bastion does not serve /v2/ (Q-OCI-23)",
+		audit.EventDebPackageDeleted:       "withholds a Debian package file, and a Bastion does not serve the Debian format (Q-DEB-26)",
+		audit.EventDebCoordinatesRemoved:   "narrows where a Debian package is listed, and a Bastion does not serve the Debian format (Q-DEB-26)",
+		audit.EventDebSigningKeyPromoted:   "changes the key that signs a Debian repository's indexes, and a Bastion does not serve the Debian format (Q-DEB-26)",
+		audit.EventDebSigningKeyRetired:    "withdraws a Debian signing key, and a Bastion does not serve the Debian format (Q-DEB-26)",
+		audit.EventAnsibleVersionDeleted:   "withholds the number of a deleted Ansible Galaxy version, and a Bastion does not serve the Ansible Galaxy format (Q-ANS-25)",
+		audit.EventAnsibleTombstoneCleared: "frees the number of a deleted Ansible Galaxy version, and a Bastion does not serve the Ansible Galaxy format (Q-ANS-25)",
+		audit.EventPackagePublished:        "reserves the version numbers a publish took (R-HA-054); a Bastion never publishes",
+		audit.EventProjectDeleted:          "a project is deleted only when it holds no repository and no service account, and its policies are deleted before it, each journaled as authz.policy.deleted (grants)",
+		audit.EventBastionDisabled:         "a registration is no caller a Bastion answers; the Bastion learns of its own disable from 401 bastion_token_invalid on its next call (R-BAS-006, Q-BAS-145)",
+		audit.EventBastionDeleted:          "a registration is no caller a Bastion answers; its tokens' token.revoked entries come before it, and the Bastion learns of its end from 401 bastion_token_invalid (R-BAS-006, Q-BAS-145)",
+		audit.EventGroupUpdated:            "clearing auto-join removes no membership that exists (R-AUTH-019): only users created afterwards stay out of the group; a rename or a description changes no grant",
+		audit.EventUserUpdated:             "removes a pending identity link, which no caller holds until a login completes it; a profile change changes no grant",
 	}
 }
 

@@ -108,6 +108,8 @@ tags:
     description: Repository configuration (create, read, update, list, delete) and the format catalog.
   - name: deb
     description: The Debian (APT) format's management operations - signing keys, coordinates of package files and the index state (T-17).
+  - name: ansible
+    description: The Ansible Galaxy format's management operations - import tasks and tombstones (F0).
   # <<< M1 repository
   #
   # >>> M1 files
@@ -12146,6 +12148,173 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
   # <<< T-17 deb
+  # >>> F0 ansible
+  #
+  # The management operations of the Ansible Galaxy format (R-ANS-009, R-ANS-012, R-ANS-026). The Galaxy protocol routes are not
+  # operations of this document: they are the format's route table (docs/spec/formats/ansible.md). The operations answer 501
+  # `ansible_not_implemented` until the local class that builds them lands.
+  /api/v1/projects/{projectKey}/repositories/{repoKey}/ansible/imports:
+    parameters:
+      - $ref: "#/components/parameters/ProjectKey"
+      - $ref: "#/components/parameters/RepoKey"
+    get:
+      operationId: listAnsibleImportTasks
+      tags: [ansible]
+      summary: List the import tasks of an Ansible Galaxy repository
+      description: |
+        The import tasks of the publishes of a local Ansible Galaxy repository, newest first (R-ANS-009), optionally of one state. A
+        virtual repository lists the tasks of its deployment target; a remote repository answers `405 not_applicable`. A task is kept for
+        `ansible.import_task_keep`. Needs `read` on the repository.
+      x-trove-permission:
+        action: read
+        repository: path.repoKey
+        project: path.projectKey
+      parameters:
+        - name: state
+          in: query
+          description: Only the tasks in this state.
+          schema:
+            type: string
+            enum: [completed, failed]
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of import tasks.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnsibleImportTaskList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          description: The repository is a remote repository or not an Ansible Galaxy repository (`not_applicable`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "501":
+          $ref: "#/components/responses/AnsibleNotImplemented"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/projects/{projectKey}/repositories/{repoKey}/ansible/tombstones:
+    parameters:
+      - $ref: "#/components/parameters/ProjectKey"
+      - $ref: "#/components/parameters/RepoKey"
+    get:
+      operationId: listAnsibleTombstones
+      tags: [ansible]
+      summary: List the tombstones of an Ansible Galaxy repository
+      description: |
+        The versions of a local Ansible Galaxy repository that were deleted and whose numbers are not accepted again (R-ANS-012), in
+        collection and version order. Other classes answer `405 not_applicable`. Needs `manage` on the repository.
+      x-trove-permission:
+        action: manage
+        repository: path.repoKey
+        project: path.projectKey
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of tombstones.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnsibleTombstoneList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          description: The repository is not a local Ansible Galaxy repository (`not_applicable`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "501":
+          $ref: "#/components/responses/AnsibleNotImplemented"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/projects/{projectKey}/repositories/{repoKey}/ansible/tombstones/{collection}/{version}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectKey"
+      - $ref: "#/components/parameters/RepoKey"
+      - name: collection
+        in: path
+        required: true
+        description: The collection, `<namespace>.<name>`.
+        schema:
+          type: string
+          pattern: "^[a-z0-9_]{1,64}[.][a-z0-9_]{1,64}$"
+      - name: version
+        in: path
+        required: true
+        description: The version as written.
+        schema:
+          type: string
+          maxLength: 128
+    delete:
+      operationId: clearAnsibleTombstone
+      tags: [ansible]
+      summary: Clear the tombstone of a deleted version
+      description: |
+        Clears the tombstone of a version, so that its number can be published again, with other bytes (R-ANS-012). Writes the
+        journaled audit event `ansible.tombstone.cleared`. Needs `manage` on the repository.
+      x-trove-permission:
+        action: manage
+        repository: path.repoKey
+        project: path.projectKey
+      responses:
+        "204":
+          description: The tombstone is cleared.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          description: The repository is not a local Ansible Galaxy repository (`not_applicable`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "501":
+          $ref: "#/components/responses/AnsibleNotImplemented"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  # <<< F0 ansible
 components:
   securitySchemes:
     bearerAuth:
@@ -12348,6 +12517,12 @@ components:
     # <<< M13 bastion
     DebNotImplemented:
       description: The operation belongs to the Debian (APT) format and is not built in this release yet (`deb_not_implemented`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    AnsibleNotImplemented:
+      description: The operation belongs to the Ansible Galaxy format and is not built in this release yet (`ansible_not_implemented`).
       content:
         application/problem+json:
           schema:
@@ -15665,11 +15840,11 @@ components:
         A package format of this build (R-ARCH-010): the names of `GET /api/v1/formats`. The four enums of
         this block are generated from the format registry and `TestR_ARCH_010_PerClassFormatEnums` fails on
         any difference; no list of formats per class is kept by hand anywhere.
-      enum: [deb, generic, npm, nuget, oci]
+      enum: [ansible, deb, generic, npm, nuget, oci]
     LocalFormatName:
       type: string
       description: The formats whose classes contain `local`. The create form offers these for a local repository.
-      enum: [deb, generic, npm, nuget, oci]
+      enum: [ansible, deb, generic, npm, nuget, oci]
     RemoteFormatName:
       type: string
       description: The formats whose classes contain `remote`. The create form offers these for a remote repository.
@@ -15768,6 +15943,8 @@ components:
           $ref: "#/components/schemas/OciSettings"
         deb:
           $ref: "#/components/schemas/DebSettings"
+        ansible:
+          $ref: "#/components/schemas/AnsibleSettings"
         vulnerabilities:
           $ref: "#/components/schemas/VulnerabilitySettings"
         lifecycle:
@@ -18849,6 +19026,122 @@ components:
         manualRun:
           $ref: "#/components/schemas/BackupManualRun"
     # <<< M5 backup
+    # >>> F0 ansible
+    AnsibleSettings:
+      type: object
+      additionalProperties: false
+      description: |
+        The settings of the Ansible Galaxy format, the `ansible` member of a repository document (R-REPO-004, R-ANS-019). The document
+        of the format's JSON Schema is `settingsSchema` of `GET /api/v1/formats`; `TestR_ARCH_008_AnsibleSettingsSchemaEqualsTheOpenAPIMember`
+        fails on any difference between the two. Both settings are for remote repositories; local and virtual repositories have no
+        settings of the format, and a setting that does not apply to the class of the repository answers 422 `not_applicable`. An
+        omitted setting takes its default.
+      properties:
+        authUrl:
+          type: string
+          pattern: "^https://"
+          maxLength: 2048
+          description: |
+            Remote repositories of a Galaxy-compatible hub behind single sign-on (R-ANS-019). The https URL of the token endpoint of
+            the hub's identity realm, where the offline token stored in the repository's credential is exchanged for a short-lived
+            access token. Left out, the upstream is called with the credential as it is (a static token).
+        clientId:
+          type: string
+          default: cloud-services
+          pattern: "^[A-Za-z0-9._-]{1,128}$"
+          description: Remote repositories with `authUrl` (R-ANS-019). The client id the exchange presents to the realm.
+    AnsibleImportTask:
+      type: object
+      required: [id, state, namespace, name, version, createdAt, finishedAt, error, messages]
+      description: The import task of a publish (R-ANS-009), final when it is created.
+      properties:
+        id:
+          type: string
+          format: uuid
+        state:
+          type: string
+          enum: [completed, failed]
+        namespace:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+          description: The id of the principal that published.
+        error:
+          oneOf:
+            - type: object
+              required: [code, description]
+              properties:
+                code:
+                  type: string
+                description:
+                  type: string
+            - type: "null"
+        messages:
+          type: array
+          items:
+            type: object
+            required: [level, message, time]
+            properties:
+              level:
+                type: string
+              message:
+                type: string
+              time:
+                type: string
+                format: date-time
+    AnsibleImportTaskList:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnsibleImportTask"
+        nextCursor:
+          type: [string, "null"]
+          description: Opaque; `null` on the last page.
+    AnsibleTombstone:
+      type: object
+      required: [name, version, sha256, deletedAt, deletedBy]
+      description: A deleted version whose number is not accepted again (R-ANS-012).
+      properties:
+        name:
+          type: string
+          description: The collection, `<namespace>.<name>`.
+        version:
+          type: string
+        sha256:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+          description: The SHA-256 of the archive that was deleted.
+        deletedAt:
+          type: string
+          format: date-time
+        deletedBy:
+          type: string
+          description: The id of the principal that deleted the version.
+    AnsibleTombstoneList:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnsibleTombstone"
+        nextCursor:
+          type: [string, "null"]
+          description: Opaque; `null` on the last page.
+    # <<< F0 ansible
     # >>> T-17 deb
     DebSettings:
       type: object

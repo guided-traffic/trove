@@ -312,10 +312,11 @@ Actions ([authorization.md](../authorization.md) R-AUTHZ-007 gains the Ansible t
 | Upload through `/files/` (the deploy dialog) | `deploy` | as the publish |
 | Removal of a version (management API and package screens) | `delete` | R-ANS-012 |
 
-**Errors.** `WriteError` renders in the shape the client reads, chosen by the route (R-ARCH-023):
+**Errors.** `WriteError` renders in the shape the client reads, chosen by the route (R-ARCH-023, [Q-ANS-29](#q-ans-29--the-galaxy-error-shape-renders-the-registry-code-without-its-prefix)):
 
 - below `v3/` and at the root: `{"errors":[{"status":"404","code":"not_found","title":"Not found.","detail":"…"}]}` with
-  `Content-Type: application/json`; `code` is trove's error code (`not_authenticated`, `permission_denied`, `not_found`,
+  `Content-Type: application/json`; `code` is trove's registry code without the format's prefix (`ansible_version_exists` is `version_exists`), and the generic
+  codes under the names a Galaxy uses (`not_authenticated`, `permission_denied`, `not_found`,
   `invalid_name`, `invalid_version`, `version_exists`, `version_tombstoned`, `sha256_mismatch`, `invalid_archive`,
   `payload_too_large`, `no_deploy_target`, `upstream_unavailable`); `detail` is a sentence a person can act on;
 - below `v1/`: `{"default": "<sentence>"}` (the client reads `default`).
@@ -428,9 +429,11 @@ for gzip-compressed tar archives (`formattest.InspectTarGz`) is the crafted-inpu
   and `format`. The SHA-256 of every `file` entry listed must equal the digest of the archive member of that name, and an archive
   member that FILES.json does not list (other than the two documents) is refused: the archive is internally consistent, so the
   client's `collection verify` has something to verify against.
-- **`meta/runtime.yml`** (optional, at most 64 KiB): its `requires_ansible` string becomes the version's `requires_ansible`; the
-  value is stored as text and not interpreted; a YAML document with anchors, tags or more than 1,000 nodes is ignored for this field
-  (the version then has `requires_ansible` empty) and the task carries a warning message.
+- **`meta/runtime.yml`** (optional, at most 64 KiB, a file above it is a bound crossed): its `requires_ansible` string becomes the version's
+  `requires_ansible`; the value is stored as text and not interpreted (at most 256 characters, no control character); the file is
+  decoded into a node tree and walked, never into Go values (Q-ANS-30), and a document with an anchor, an alias, a tag, a merge key or
+  more than 1,000 nodes, that is not a mapping or whose `requires_ansible` is not a plain string is ignored for this field (the version
+  then has `requires_ansible` empty) and the task carries a warning message.
 - **What is stored** in the version row (R-ANS-011): the manifest's `collection_info` without `readme` text beyond 64 KiB, the
   dependencies, `requires_ansible`, the SHA-256, size and file count. The README text of the archive (`readme` names its path) is read
   on demand by the package screens through ranged reads, as NuGet does (R-ANS-026).
@@ -992,7 +995,7 @@ The archive a client uploads, an upstream's archive that a fill inspects and the
 | Bound | Default | Where |
 |---|---|---|
 | Archive size (`ansible.max_archive_bytes`) | 1 GiB | publish, `/files/` |
-| Archive entries / total expanded bytes / one entry | 100,000 / 4 GiB / 512 MiB | `Inspect`, `InspectFill` |
+| Archive entries / total expanded bytes (streamed through a digest) | 10,000 / 2 GiB, the core's defaults: a format may lower a bound and not raise it (Q-ANS-30, [H-851](#h-851--a-collection-archive-beyond-the-cores-reader-bounds-is-refused)) | `Inspect`, `InspectFill` |
 | `MANIFEST.json` / `FILES.json` / `meta/runtime.yml` | 1 MiB / 16 MiB / 64 KiB | `Inspect` |
 | Dependencies in a manifest | 256 | `Inspect` |
 | README text read for a screen | 64 KiB | the view |
@@ -1593,6 +1596,87 @@ is refused (the e2e images build one).
 
 **Applied in the spec:** R-ANS-010.
 
+### Q-ANS-29 · The Galaxy error shape renders the registry code without its prefix
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Registry codes `ansible_*`; the Galaxy shape strips the prefix and names the generic kinds its own way (chosen) | `ansible_version_exists` is `version_exists`; `unauthenticated` is `not_authenticated`, `forbidden` is `permission_denied`, `malformed_request` is `invalid_request`, a 502 or 503 of an upstream is `upstream_unavailable` | The codes of this page are what a client sees; the problem catalog (`/api/v1/problems/<code>`) keeps unique, prefixed codes | A mapping function (`galaxyCode`) |
+| (b) Register `version_exists`, `invalid_name`, … unprefixed | One name everywhere | No mapping | The registry's codes are global and prefixed per format (R-ARCH-025); a second format could not use the names |
+
+**Choice:** (a). **Rationale:** the registry cannot hold the unprefixed names without taking them from every format, and the client prints
+only `detail` and `title`. A local repository has no `v1` API (R-ANS-014): its route table lacks the `v1` routes, so a `v1` request
+answers 404 in the `v1` shape with the sentence that says why, whether the dispatcher found no route or refused the class. Revisit if a
+client reads `code`.
+
+**Applied in the spec:** R-ANS-007 (the codes are the registry's without the prefix). Code: `internal/formats/ansible/errors.go`,
+`internal/errs/codes.go`.
+
+### Q-ANS-30 · A collection archive is read in one pass under the core's bounds
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One streaming pass with the core's tar reader; the format keeps the core's bounds and reads the three documents with bounds of their own (chosen) | Every member goes through a digest (`TarReader.Stream`, which counts against the inflated cap and not against the bytes read into memory); `MANIFEST.json` (1 MiB), `FILES.json` (16 MiB) and `meta/runtime.yml` (64 KiB) are kept; entries at most 10,000 and inflated bytes at most 2 GiB | The reader of R-ARCH-028 is used as it is; no random access, so a fill can hand it the body it stores; the consistency check of Q-ANS-28 needs one pass | A collection of more than 10,000 files or 2 GiB expanded is refused ([H-851](#h-851--a-collection-archive-beyond-the-cores-reader-bounds-is-refused)) |
+| (b) Raise the core's limits for this format | 100,000 entries, 4 GiB | Room for the largest collections | A format may lower the core's defaults and not raise them (R-ARCH-028): the rule would change for every format |
+| (c) A tar reader of the format's own | Own bounds | Any bound | A second reader of untrusted archives to keep correct |
+
+**Choice:** (a). **Rationale:** the collections of the public Galaxy are far below both bounds (the largest version document describes
+2.6 MB of archive); the one addition to the core is `TarReader.Stream`. `meta/runtime.yml` is read through the YAML module already in
+`go.mod`, decoded into a node tree and walked, never into Go values: an anchor, an alias, an explicit tag, a merge key, more than 1,000
+nodes, a top level that is not a mapping or a `requires_ansible` that is not a short plain string leave the field empty with a warning in
+the task, and a file above 64 KiB is a bound crossed. `ReadArchive` takes an `io.Reader` and not the `io.ReaderAt` of the plan, because
+the crafted inputs of the kit are streams. Revisit if a real collection is refused by the entry or byte bound.
+
+**Applied in the spec:** R-ANS-010 (the runtime file), R-ANS-031 (the table).
+
+### Q-ANS-31 · The tables carry no revision column; the ETag follows the generic package row
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) No revision column on the format's tables (chosen) | The documents are rendered from the version rows; their ETag is derived from the generic package row's `rev_seq`, which the commit hook raises (R-ARCH-009) | `rev_seq` is already restored with a gap by the generic restore; one number to keep | A change of a version row that raises no package row would not change the ETag: there is none (every writer raises it) |
+| (b) A revision column on `ansible_collection_versions` registered with `meta.RegisterRevisionColumn` | A second counter | | The reindex and the commit would have to raise two |
+
+**Choice:** (a). **Rationale:** the reindex raises `rev_seq` of the packages it changes (R-ANS-012), which is all the ETag needs. Revisit if
+a document is rendered from a row that no package change touches.
+
+**Applied in the spec:** R-ANS-011 (the columns are the contract; no revision column).
+
+### Q-ANS-32 · The reindex is an optional interface of the data port, not a hook of the contract
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The data port implements `api/v1.Reindexer`, which the endpoint already finds by format ID; the port's step is `RebuildRows` (chosen) | `POST …/reindex` enqueues `ansible-reindex` (queue `index`, coalesce, key `index:<repository id>`) exactly as Debian's does | No change to the format contract; ADR-191's consequences stay as written | The port has two methods about one job (the enqueue, the step) |
+| (b) A new optional interface `formats.Reindexer` | A hook the core calls | The core knows the format's job | A contract addition for a job the endpoint already reaches |
+
+**Choice:** (a). **Rationale:** the endpoint (`internal/api/v1/reindex.go`) takes any data port that implements `Reindex(ctx, tx,
+repoID, by)`; the plan's `Store.Reindex(ctx, repo, reader, checkpoint)` would have collided with that name, so the step is `RebuildRows`.
+A remote repository answers 405 `not_applicable`; a virtual repository drops its merged-document cache (R-REPO-016). Revisit if a second
+format needs the same shape.
+
+**Applied in the spec:** R-ANS-012.
+
+### Q-ANS-33 · The data port speaks repository ids and the values of a rows leaf
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The port's methods take the repository id (`int64`) and the values of `internal/formats/ansible/rows`, a leaf (chosen) | As Debian's | The data port is a domain package and may not import the format (edge); `formats.RepoRef` is the format's | The plan's sketch used `formats.RepoRef` |
+| (b) `formats.RepoRef` in the port | As the plan wrote it | | A layer breach (R-ARCH-002): the port could not implement the interface |
+
+**Choice:** (a). **Rationale:** the archtest layer rule. `Task` and `CollectionSummary` live in `rows` and are aliased by `galaxydoc`, whose
+signatures the plan fixed; `RecordAnnounced` returns the rows whose offered digest differs from the one that stays, so the remote class
+can write its event (R-ANS-018). Revisit never: the rule is architectural.
+
+**Applied in the spec:** none (a code-level contract of the plan, section 2.2).
+
 ## What this does not cover
 
 ### H-839 · A remote's signatures are passed through and not verified by trove
@@ -1658,3 +1742,9 @@ runs a `--dry-run` against the first real source and records them.
 `TracksVersionRemoval` is false (R-ANS-017): a version that disappears from the upstream's list disappears from the served list at the next
 revalidation, and its cached archive stays downloadable by path. Live for any upstream that removes versions; the cached copy can outlive
 a withdrawal the upstream made for a security reason.
+
+### H-851 · A collection archive beyond the core's reader bounds is refused
+
+The archive reader runs under the core's bounds, 10,000 entries and 2 GiB inflated (R-ANS-031, Q-ANS-30), and a format cannot raise them. A
+collection with more files or more expanded bytes is refused at publish, in a fill and by the reindex, with a failed task that names the bound.
+Dormant: the collections of the public Galaxy are far below both; real for an internal collection that vendors a large tree.

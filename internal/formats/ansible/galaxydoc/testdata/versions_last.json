@@ -1,0 +1,21 @@
+{
+  "meta": {
+    "count": 5
+  },
+  "links": {
+    "first": "https://trove.example.com/api/ansible/web/ansible-local/v3/collections/acme/tools/versions/?limit=2&offset=0",
+    "previous": "https://trove.example.com/api/ansible/web/ansible-local/v3/collections/acme/tools/versions/?limit=2&offset=2",
+    "next": null,
+    "last": "https://trove.example.com/api/ansible/web/ansible-local/v3/collections/acme/tools/versions/?limit=2&offset=4"
+  },
+  "data": [
+    {
+      "version": "1.0.0",
+      "href": "https://trove.example.com/api/ansible/web/ansible-local/v3/collections/acme/tools/versions/1.0.0/",
+      "created_at": "2026-11-10T12:30:45.123456Z",
+      "updated_at": "2026-11-11T08:00:00.000000Z",
+      "requires_ansible": ">=2.14",
+      "marks": []
+    }
+  ]
+}
