@@ -3932,6 +3932,40 @@ make e2e SET=alerts    # about 2.5 hours: the quiet scenario about 30 minutes, t
 The legs run in the nightly workflow as the jobs `e2e-edge` (a large runner, the end of lane 2 of Q-ARCH-431) and `e2e-alerts` (a GitHub-hosted runner), and on a
 dispatch (`-f sets=e2e-edge,e2e-alerts`). A red leg is a finding, not a blocker (owner, 2026-11-01).
 
+## The Ansible tests
+
+The Ansible Galaxy registry ([R-ANS-032](../spec/formats/ansible.md#r-ans-032--test-suites), Q-ANS-23) has a set of its own, `ansible`, with the real `ansible-galaxy`. This page describes what exists; the tests themselves are listed with the set as they land.
+
+### The Ansible clients
+
+Two clients, each in a pod of its own ([Q-ANS-49](../spec/formats/ansible.md#q-ans-49--the-client-images-the-python-each-release-supports-every-dependency-pinned-no-credential-and-no-ca-baked-in), [Q-ANS-50](../spec/formats/ansible.md#q-ans-50--the-client-pods-the-dev-ca-by-environment-variable-every-command-in-a-clean-home)):
+
+| Pin | Image | ansible-core | Python |
+|---|---|---|---|
+| `E2E_ANSIBLECLIENTS_CORE217_VERSION`, `E2E_ANSIBLECLIENTS_CORE217_IMAGE` | `docker.io/library/python:3.11-slim-bookworm` | 2.17.14 (supports Python 3.10 to 3.12) | 3.11 |
+| `E2E_ANSIBLECLIENTS_CORE221_VERSION`, `E2E_ANSIBLECLIENTS_CORE221_IMAGE` | `docker.io/library/python:3.13-slim-trixie` | 2.21.6 (supports Python 3.12 to 3.14) | 3.13 |
+
+The tag of an image pin is the Python the release runs on and never moves ([renovate.json](../../renovate.json) takes the digest only). The ansible-core versions are edited by hand together with the constraints files [constraints-2.17.txt](../../test/e2e/ansibleclients/constraints-2.17.txt) and [constraints-2.21.txt](../../test/e2e/ansibleclients/constraints-2.21.txt), which pin every dependency (`pip freeze` of the built image; H-865). `make versions-check` runs [check-pins.mjs](../../test/e2e/ansibleclients/check-pins.mjs), and `TestAnsibleClients` compares `ansible-galaxy --version` with the pins.
+
+| Part | What it is |
+|---|---|
+| images | `make ansible-clients-image` runs [test/e2e/ansibleclients/build.sh](../../test/e2e/ansibleclients/build.sh): the forwarder of the npm clients for `linux/<arch>`, then the one [Dockerfile](../../test/e2e/ansibleclients/Dockerfile) per client (`trove-e2e-ansibleclients-<core217\|core221>:dev`). Test images, never pushed; the base, the version and the series are build arguments without a default |
+| what the image adds | `curl` (the upload through `/files/`), the forwarder, the entrypoint, and `trove-clean` ([clean.sh](../../test/e2e/ansibleclients/clean.sh)): it runs a command in a new home that is removed afterwards, so that no `ansible.cfg`, `~/.netrc`, galaxy cache or installed collection of an earlier scenario reaches it |
+| trust | the pod's environment sets `SSL_CERT_FILE` to the mounted dev CA; `ansible-galaxy` has no CA option and uses the default verify paths of Python. Nothing is baked into an image |
+| pods | [deploy/dev/ansible-clients.yaml](../../deploy/dev/ansible-clients.yaml), rendered once per image with `sed` by [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) (marker `F0 ansible`): pods `trove-e2e-ansible-<core217\|core221>` in the namespace `trove-e2e-ansible` (Pod Security `baseline`), on the control-plane node, no ServiceAccount token, no credential. The dev CA is the ConfigMap `trove-e2e-ansible-ca` |
+| tests | [ansible_clients_test.go](../../test/e2e/ansible_clients_test.go): `ansiblePod`, `ansibleTry` (a script in a clean home through `kubectl exec`), `ansibleEdge`, and `TestAnsibleClients` |
+
+### Running the Ansible clients
+
+```shell
+make image VERSION=dev && make dev-up
+make e2e SET=ansible-clients       # build the two client images, start the pods, run TestAnsibleClients (the pods stay up)
+make e2e SET=ansible-clients-down  # remove the pods and their namespace
+make ansible-clients-image         # only build the two images into the local Docker
+```
+
+`TROVE_E2E_ANSIBLE_CLIENTS_TARGET` and `TROVE_E2E_ANSIBLE_CLIENTS_IMAGE_BUILD=0` act as for the other client pods. The set `ansible` (`TROVE_E2E_ANSIBLESTUB=1` deploys the counting Galaxy test upstream of [ansible-remote.md](ansible-remote.md)) and `ansible-closing` are selected in the same marker; their tests are written with the scenarios.
+
 ## Extension checklist
 
 - **A new failure case of the npm upstream.** A field in `Mode` ([mode.go](../../test/npmstub/mode.go)) with its

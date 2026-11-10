@@ -96,6 +96,13 @@
 #   e2e.sh apt-clients  the smoke test of the APT client pods (every image runs the release and the verifier its pin names, the CA is trusted, the
 #                       edge answers); builds the four images and starts the pods, which stay up
 #   e2e.sh apt-clients-down  removes the APT client pods and their namespace
+#   e2e.sh ansible      the Ansible Galaxy acceptance tests (every TestAnsible... and TestAnsibleClients): the counting Galaxy test upstream and one client pod per
+#                       image (ansible-core 2.17 and 2.21, each a real ansible-galaxy in the namespace trove-e2e-ansible); the scatter profile; publish and install
+#                       through local, remote, mirror and virtual repositories, the credentials of R-ANS-006, a changed digest; CI: job e2e-ansible
+#   e2e.sh ansible-closing  TestAnsibleClosing: the addition of the run that closes the phase: publish and install with Valkey stopped
+#   e2e.sh ansible-clients  the smoke test of the Ansible client pods (every image runs the ansible-core release and the Python its pin names, the CA is
+#                       trusted, the edge answers); builds the two images and starts the pods, which stay up
+#   e2e.sh ansible-clients-down  removes the Ansible client pods and their namespace
 #   e2e.sh backup       the backup and restore suite (R-BAK-029, E5.11, E5.12): a backup during a publishing, deleting and collecting load restored into
 #                       the namespace trove-restore, the drain and kill -9 of a backup and of a restore, the journal across a restore with E5.12's CI
 #                       bullets (the issuer double, TROVE_E2E_OIDCSTUB=1) (nightly, dispatch, locally)
@@ -124,6 +131,8 @@
 # TROVE_E2E_NUGET_CLIENTS_IMAGE_BUILD=0 as for npm; TROVE_E2E_NUGETSTUB=1 deploys the counting NuGet test upstream.
 # The APT client pods (the set deb): TROVE_E2E_APT_CLIENTS_TARGET and TROVE_E2E_APT_CLIENTS_IMAGE_BUILD=0 as for npm; TROVE_E2E_DEBSTUB=1
 # deploys the counting Debian archive test upstream.
+# The Ansible client pods (the set ansible): TROVE_E2E_ANSIBLE_CLIENTS_TARGET and TROVE_E2E_ANSIBLE_CLIENTS_IMAGE_BUILD=0 as for npm;
+# TROVE_E2E_ANSIBLESTUB=1 deploys the counting Galaxy test upstream.
 # The OCI client pods (sets oci*): TROVE_E2E_OCI_CLIENTS_PODS (default 3), TROVE_E2E_OCI_CLIENTS_TARGET and
 # TROVE_E2E_OCI_CLIENTS_IMAGE_BUILD=0 as for npm; TROVE_E2E_OCISTUB=1 deploys the counting OCI test upstream.
 set -euo pipefail
@@ -250,6 +259,15 @@ case "$set_name" in
   # The additions of the run that closes the phase: the set deb with Valkey stopped, and the read-only check against the Debian archive (R-DEB-031, R-DEB-035).
   deb-closing) run='^TestDebClosing'; APT_CLIENTS=1; export TROVE_E2E_DEBSTUB=1 TROVE_E2E_DEB_CLOSING=1 ;;
   # <<< T17 deb
+  # >>> F0 ansible
+  # The Ansible Galaxy acceptance tests (R-ANS-032, docs/developer/e2e.md#the-ansible-tests): the counting Galaxy test upstream, one client pod per
+  # image (ansible-core 2.17 and 2.21 in the namespace trove-e2e-ansible), the scatter profile. CI runs `ansible` as the job e2e-ansible.
+  ansible-clients) run='^TestAnsibleClients$'; ANSIBLE_CLIENTS=1 ;;
+  ansible-clients-down) ANSIBLE_CLIENTS=down ;;
+  ansible) run='^TestAnsible'; skip='^TestAnsibleClosing'; ANSIBLE_CLIENTS=1; export TROVE_E2E_ANSIBLESTUB=1 ;;
+  # The addition of the run that closes the phase: the set ansible with Valkey stopped.
+  ansible-closing) run='^TestAnsibleClosing'; ANSIBLE_CLIENTS=1; export TROVE_E2E_ANSIBLESTUB=1 TROVE_E2E_ANSIBLE_CLOSING=1 ;;
+  # <<< F0 ansible
   # >>> M6a upgrade
   # The upgrade tests (R-HA-020, R-HA-064, E6a.7, docs/developer/e2e.md#the-upgrade-tests): the release is removed, the database
   # and Valkey are emptied, an older release is installed from the published chart and image (v0.16.0 for the cut into roles, the
@@ -815,6 +833,84 @@ if [ "${APT_CLIENTS:-}" = 1 ]; then
   export TROVE_E2E_APT_CLIENTS_POD_PREFIX="$APT_CLIENTS_PREFIX" TROVE_E2E_APT_CLIENTS_NAMESPACE="$APT_CLIENTS_NS"
 fi
 # <<< T17 apt-clients
+
+# >>> F0 ansible
+# ── the counting Galaxy test upstream ────────────────────────────────────────
+# TROVE_E2E_ANSIBLESTUB=1 builds the image of test/ansiblestub (make ansible-stub-image), loads it into kind and (re)starts the stub of
+# deploy/dev/ansiblestub.yaml: Service ansiblestub.<ns>.svc on 443 and the four host names of its role and realm hosts, TLS from the dev CA, control
+# token in Secret trove-ansiblestub (docs/developer/ansible-remote.md). The tests read TROVE_E2E_ANSIBLESTUB_HOST (the upstream URL of a remote
+# repository is https://$TROVE_E2E_ANSIBLESTUB_HOST/api/). trove trusts the dev CA for upstreams through proxy.outbound.tls.ca_files
+# (values-dev.yaml). Nothing here runs without the switch.
+if [ "${TROVE_E2E_ANSIBLESTUB:-0}" = "1" ]; then
+  log "building the Galaxy test upstream image for linux/$ARCH"
+  (cd "$REPO_ROOT" && make --no-print-directory ansible-stub-image IMAGE_ARCH="$ARCH") >"$OUT/ansiblestub-image.log" 2>&1 || { tail -20 "$OUT/ansiblestub-image.log" >&2; die "Galaxy test upstream image build failed"; }
+  kind load docker-image trove-e2e-ansiblestub:dev --name "$CLUSTER" >"$OUT/ansiblestub-load.log" 2>&1 || { tail -20 "$OUT/ansiblestub-load.log" >&2; die "kind load of the Galaxy test upstream failed"; }
+  log "starting the Galaxy test upstream"
+  render "$DEV_DIR/ansiblestub.yaml" | kn apply -f - >/dev/null
+  kn wait --for=condition=Ready certificate/trove-ansiblestub-tls --timeout=3m >/dev/null
+  kn rollout restart deployment/trove-ansiblestub >/dev/null   # same tag, new image content
+  kn rollout status deployment/trove-ansiblestub --timeout=3m >/dev/null || { kn describe pod -l app.kubernetes.io/name=trove-ansiblestub >&2; die "the Galaxy test upstream did not become ready"; }
+  export TROVE_E2E_ANSIBLESTUB_HOST="ansiblestub.$NS.svc"
+fi
+
+# ── the Ansible client pods ──────────────────────────────────────────────────
+# The client pods of the Ansible acceptance tests (R-ANS-032, docs/developer/e2e.md#the-ansible-clients): one pod per image, each a real ansible-galaxy,
+# in the namespace trove-e2e-ansible (Pod Security level baseline, deploy/dev/ansible-clients.yaml). Each pod's forwarder listens on
+# 127.0.0.1:<edge port> and relays to the in-cluster edge, so `https://localhost:<edge port>/api/ansible/...` is the repository URL of the setup
+# snippets and the certificate is verified for `localhost`; the dev CA is mounted from a ConfigMap, never baked into the images. The tests run the
+# clients through `kubectl -n trove-e2e-ansible exec <pod> -- ...`.
+ANSIBLE_CLIENTS_NS="trove-e2e-ansible"
+ANSIBLE_CLIENTS_LABEL="app.kubernetes.io/component=e2e-ansible-client"
+ANSIBLE_CLIENTS_PREFIX="trove-e2e-ansible-"
+ANSIBLE_CLIENTS_IMAGE_PREFIX="trove-e2e-ansibleclients-"
+ANSIBLE_CLIENTS_NAMES="core217 core221"
+
+ansible_kc() { kubectl --context "$CTX" -n "$ANSIBLE_CLIENTS_NS" "$@"; }
+
+ansible_clients_down() {
+  if k get namespace "$ANSIBLE_CLIENTS_NS" >/dev/null 2>&1; then
+    k delete namespace "$ANSIBLE_CLIENTS_NS" --ignore-not-found --wait=true >/dev/null
+  fi
+}
+
+# ansible_render_pod <name> prints the manifest of one client pod with the variables of deploy/dev/ansible-clients.yaml replaced.
+ansible_render_pod() {
+  sed -e "s|\${POD}|${ANSIBLE_CLIENTS_PREFIX}$1|g" -e "s|\${IMAGE}|${ANSIBLE_CLIENTS_IMAGE_PREFIX}$1:dev|g" -e "s|\${EDGE_PORT}|$EDGE_PORT|g" \
+    -e "s|\${TARGET}|$ANSIBLE_TARGET|g" "$DEV_DIR/ansible-clients.yaml"
+}
+
+ansible_clients_up() {
+  local name
+  if [ "${TROVE_E2E_REUSE_CLIENTS:-0}" = 1 ] && [ "$(ansible_kc get pods -l "$ANSIBLE_CLIENTS_LABEL" --field-selector=status.phase=Running -o name 2>/dev/null | wc -l | tr -d ' ')" = "2" ]; then
+    log "reusing the 2 Ansible client pods (TROVE_E2E_REUSE_CLIENTS=1)"
+    return 0
+  fi
+  ANSIBLE_TARGET="${TROVE_E2E_ANSIBLE_CLIENTS_TARGET:-haproxy-ingress.ingress-controller.svc.cluster.local:443}"
+  [ -n "${CA_FILE:-}" ] && [ -s "$CA_FILE" ] || die "the client pods verify the edge against the dev CA, which is missing (TROVE_DEV_CA_FILE, TROVE_DEV_SCHEME=https; run make dev-up)"
+  if [ "${TROVE_E2E_ANSIBLE_CLIENTS_IMAGE_BUILD:-1}" != 0 ]; then
+    "$REPO_ROOT/test/e2e/ansibleclients/build.sh" "$ANSIBLE_CLIENTS_IMAGE_PREFIX" >"$OUT/ansible-clients-image.log" 2>&1 || { tail -20 "$OUT/ansible-clients-image.log" >&2; die "Ansible clients image build failed"; }
+  fi
+  # the pods run on the control-plane node only (nodeSelector in the manifest): one copy of each image, not one per node
+  for name in $ANSIBLE_CLIENTS_NAMES; do
+    kind load docker-image "${ANSIBLE_CLIENTS_IMAGE_PREFIX}${name}:dev" --name "$CLUSTER" --nodes "${CLUSTER}-control-plane" >>"$OUT/ansible-clients-load.log" 2>&1 || { tail -20 "$OUT/ansible-clients-load.log" >&2; die "kind load of the $name client image failed"; }
+  done
+  ansible_clients_down
+  # the first apply of the file creates the namespace (with the pod, which waits for the ConfigMap); the ConfigMap follows at once
+  ansible_render_pod core217 | k apply -f - >/dev/null
+  ansible_kc create configmap trove-e2e-ansible-ca --from-file=ca.crt="$CA_FILE" >/dev/null
+  log "starting 2 Ansible client pods forwarding localhost:$EDGE_PORT to $ANSIBLE_TARGET"
+  for name in $ANSIBLE_CLIENTS_NAMES; do
+    [ "$name" = core217 ] || ansible_render_pod "$name" | k apply -f - >/dev/null
+  done
+  ansible_kc wait --for=condition=Ready pod -l "$ANSIBLE_CLIENTS_LABEL" --timeout=300s >/dev/null || { ansible_kc describe pod -l "$ANSIBLE_CLIENTS_LABEL" >&2; die "the Ansible client pods did not become ready"; }
+}
+
+if [ "${ANSIBLE_CLIENTS:-}" = down ]; then ansible_clients_down; log "Ansible client pods removed"; exit 0; fi
+if [ "${ANSIBLE_CLIENTS:-}" = 1 ]; then
+  ansible_clients_up
+  export TROVE_E2E_ANSIBLE_CLIENTS_POD_PREFIX="$ANSIBLE_CLIENTS_PREFIX" TROVE_E2E_ANSIBLE_CLIENTS_NAMESPACE="$ANSIBLE_CLIENTS_NS"
+fi
+# <<< F0 ansible
 
 REPORT_REL="${TROVE_E2E_REPORT:-.out/test-e2e.json}"
 log "go test -tags e2e -run '$run' (report: $REPORT_REL, artifacts: $OUT)"

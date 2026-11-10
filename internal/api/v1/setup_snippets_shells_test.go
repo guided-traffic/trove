@@ -126,6 +126,23 @@ func TestR_API_030_PowerShellAndCmdValuesAreQuoted(t *testing.T) {
 	}
 }
 
+// TestR_API_030_HostnameKeepsTheHostOfTheRegistryURL: a template derives the key of a ~/.netrc line, which binds to a host name
+// alone, with hostname: no scheme, port or path (Q-ANS-48).
+func TestR_API_030_HostnameKeepsTheHostOfTheRegistryURL(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://trove.example.com/api/ansible/p/k/": "trove.example.com",
+		"http://127.0.0.1:8080/api/ansible/p/k/":     "127.0.0.1",
+		"https://[::1]:8443/api/ansible/p/k/":        "::1",
+		"//no-scheme.example.com/":                   "//no-scheme.example.com/",
+		"ftp://x.example.com/":                       "ftp://x.example.com/",
+		"":                                           "",
+	} {
+		if got := hostname(in); got != want {
+			t.Errorf("hostname(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 // TestR_API_030_SchemelessDropsTheSchemeOfTheRegistryURL: a template derives the key of a
 // keyed credential line (R-NPM-041) from RegistryURL with schemeless, so SetupData needs
 // no field for it (Q-ARCH-257).

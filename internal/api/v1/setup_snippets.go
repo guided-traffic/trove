@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"html"
+	"net/url"
 	"regexp"
 	"slices"
 	"sort"
@@ -157,6 +158,7 @@ func parseSetupTemplate(t formats.SetupTemplate) (*template.Template, error) {
 		"cmd":        cmdQuote,
 		"xml":        html.EscapeString,
 		"schemeless": schemeless,
+		"hostname":   hostname,
 	}).Parse(t.Template)
 }
 
@@ -234,6 +236,16 @@ func schemeless(u string) string {
 		}
 	}
 	return u
+}
+
+// hostname is the host name of a URL without its port, brackets or path: the key of a client that binds a credential to a host
+// name alone (a ~/.netrc line, R-ANS-025, Q-ANS-48). A value that is not an http or https URL with a host is returned as it is.
+func hostname(u string) string {
+	p, err := url.Parse(u)
+	if err != nil || (p.Scheme != "https" && p.Scheme != "http") || p.Hostname() == "" {
+		return u
+	}
+	return p.Hostname()
 }
 
 // applyCredentials rewrites the token reference of a rendered snippet by the

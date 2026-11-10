@@ -125,6 +125,7 @@ func (f *Format) Descriptor() formats.Descriptor {
 		},
 		ContractVersion:        formats.ContractVersion,
 		Names:                  names{},
+		Clients:                clients(),
 		PropertyPrefix:         "ansible.",
 		MaxDocumentBytes:       MaxDocumentBytes,
 		VerifyAnnouncedDigests: true,

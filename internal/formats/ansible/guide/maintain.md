@@ -1,0 +1,5 @@
+`ansible-galaxy` has no command to delete a version. An operator removes one in the web interface or through the management API; the archive goes to the trash and the version leaves the version list.
+
+- **Tombstones.** A removed version leaves a tombstone of its name, version and SHA-256. The same number cannot be published again, so that a client or a cache that saw it never meets other bytes under it. Restoring the archive from the trash drops the tombstone; a person who may manage the repository can also clear one, which is recorded in the audit log.
+- **Import tasks.** Every publish that got as far as reading the archive has a task, which the repository form lists newest first with its state and messages. The task is already final when the client first asks. It is kept for 30 days by default and then deleted; the version stays.
+- **Recalculate.** The reindex of the repository reads the two documents of every stored archive again and rewrites the rows that the version list is built from. Use it after a restore or a copy of archives into the repository. It never changes stored bytes.

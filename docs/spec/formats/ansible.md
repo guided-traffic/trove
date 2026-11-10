@@ -862,14 +862,14 @@ Priority: **P1** · Covers: PKG-ANSIBLE-012
 The setup templates (R-API-030) and the guide (R-UI-049) of the format ([Q-ANS-22](#q-ans-22--the-setup-writes-the-token-as-an-environment-variable-not-into-ansiblecfg)). The format declares one client, `ansible-galaxy`
 (`Descriptor.Clients`, versions `2.17` and `2.21`), listed in the UI's table of clients per format (`FORMAT_CLIENTS`, `web/src/app/features/setup/clients.ts`).
 
-| Template id | Section | File or language | Content |
+| Template id ([Q-ANS-48](#q-ans-48--the-setup-snippets-ids-by-the-cores-convention-a-hostname-template-function-and-powershell-and-cmd-forms-of-the-token-variable)) | Section | File or language | Content |
 |---|---|---|---|
-| `ansible-galaxy.configure.ansible-cfg` | configure | `ansible.cfg`, ini | `[galaxy]` `server_list = trove` and `[galaxy_server.trove]` `url=<repo URL>`; the token line is **not** written (below) |
-| `ansible-galaxy.configure.token-env` | configure | shell | `export ANSIBLE_GALAXY_SERVER_TROVE_TOKEN=${TROVE_TOKEN}` (for a repository that is not anonymously readable); PowerShell and cmd forms |
-| `ansible-galaxy.configure.netrc` | configure | `~/.netrc`, text | `machine <host> login trove password ${TROVE_TOKEN}` with a hint to `chmod 600` (needed for roles, R-ANS-015) |
-| `ansible-galaxy.install.collection` | install | shell | `ansible-galaxy collection install <package>` with the version spec `:<version>`; the package placeholder is the collection |
-| `ansible-galaxy.install.requirements` | install | yaml | a `requirements.yml` with `collections:` and (remote and virtual) `roles:` examples, `source:` naming the server |
-| `ansible-galaxy.publish.collection` | publish | shell | `ansible-galaxy collection publish <archive> -s <repo URL> --token=${TROVE_TOKEN}`, shown only to a caller who holds `deploy` on the publish target |
+| `ansible-galaxy.ansible-cfg.configure` | configure | `ansible.cfg`, ini | `[galaxy]` `server_list = trove` and `[galaxy_server.trove]` `url=<repo URL>`; the token line is **not** written (below) |
+| `ansible-galaxy.token-env.configure`, `ansible-galaxy.token-env-powershell.configure`, `ansible-galaxy.token-env-cmd.configure` | configure | shell, PowerShell, cmd | `export ANSIBLE_GALAXY_SERVER_TROVE_TOKEN="${TROVE_TOKEN}"` and the forms of the other two shells; for a repository that is not anonymously readable, else a comment that none is needed |
+| `ansible-galaxy.netrc.configure` | configure | `~/.netrc`, ini | `machine <host name> login trove password ${TROVE_TOKEN}` (the host name alone, by the template function `hostname`) with a hint to `chmod 600` (needed for roles, R-ANS-015); for a repository that is not anonymously readable |
+| `ansible-galaxy.collection.install` | install | shell | `ansible-galaxy collection install <package>` with the version spec `:<version>`; the package placeholder is the collection |
+| `ansible-galaxy.requirements.install` | install | yaml, `requirements.yml` | `collections:` with the package, `source: trove` naming the server and the version as a key of the entry; the `roles:` example is a comment (remote and virtual repositories only) |
+| `ansible-galaxy.collection.publish` | publish | shell | `ansible-galaxy collection publish <archive> --server <repo URL> --token=${TROVE_TOKEN}`, shown only to a caller who holds `deploy` on the publish target |
 
 - **Why the token is an environment variable, not a line in `ansible.cfg`.** The setup never receives a credential (R-API-030) and
   `ansible.cfg` has no variable expansion for `token` (verified), so a literal reference there would be sent as the token. The client
@@ -1697,6 +1697,54 @@ source and not to a package: a run-level note then earns the report field of (b)
 
 **Applied in the spec:** R-ANS-027.
 
+### Q-ANS-48 · The setup snippets: ids by the core's convention, a `hostname` template function, and PowerShell and cmd forms of the token variable
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Template ids `ansible-galaxy.<name>.<section>`, a template function `hostname` in the API and the kit, `ini` as the language of the `~/.netrc` snippet, the token variable also in PowerShell and cmd (chosen) | The snippet ids come out as `ansible-galaxy.<section>.<name>` | The core derives the snippet id from `<client>.<name>.<section>`; the netrc line carries the host name alone, which is what the client looks up, also on the dev edge with its port | A new function in the template contract (a few lines in the API, one in the kit) |
+| (b) The ids as the table of R-ANS-025 first wrote them (`ansible-galaxy.<section>.<name>`) | | Matches the earlier table | The core reads the middle part as the name and would render the id `ansible-galaxy.configure.configure` for all of them |
+| (c) `machine <host>` as a placeholder the reader fills | No new function | | A line that is wrong until edited, and a test that cannot run it unchanged |
+| (d) `schemeless` of the registry URL as the machine | No new function | | Carries the port and the path; the client's lookup is by host name, so the line never matches |
+
+**Choice:** (a). **Rationale:** the id convention and the lookup by host name are facts of the core and of the client, not of taste. `hostname`
+returns the host of an http or https URL without port, brackets or path, and the value unchanged for anything else. Revisit when a second
+format needs a host-bound credential in a form `hostname` cannot give.
+
+**Applied in the spec:** R-ANS-025 (the table), api-and-ui.md (R-API-030, the template functions).
+
+### Q-ANS-49 · The client images: the Python each release supports, every dependency pinned, no credential and no CA baked in
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One image per release on the official Python image of a Python the release supports, `ansible-core==<exact>` installed under a constraints file that pins every dependency (chosen) | ansible-core 2.17.14 on Python 3.11 (the release supports 3.10 to 3.12), 2.21.6 on Python 3.13 (3.12 to 3.14); the constraints are frozen from the first build | The same bytes of the client on every run; a floating dependency cannot turn a client failure into a trove finding | The constraints files are edited by hand when the release moves |
+| (b) The newest of each series, unpinned dependencies | | Nothing to maintain | A run that is red tomorrow for a reason in jinja2 or cryptography |
+| (c) The newest ansible-core (2.22.0, which needs Python 3.13) as the second client | | The newest client | The catalog and R-ANS-001 name 2.17 and 2.21; a third release is H-864 |
+
+**Choice:** (a). **Rationale:** the tags of the Python images never move (digest only, renovate.json); `make versions-check` runs
+`test/e2e/ansibleclients/check-pins.mjs`, which compares the versions, the tags and the constraints; `TestAnsibleClients` compares
+`ansible-galaxy --version` with the pins. Revisit when a release of the matrix reaches its end of support.
+
+**Applied in the spec:** R-ANS-032.
+
+### Q-ANS-50 · The client pods: the dev CA by environment variable, every command in a clean home
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `SSL_CERT_FILE` in the pod's environment points at the mounted dev CA; the tests run each command through `trove-clean`, which makes a new home and removes it (chosen) | The environment of the pod reaches every exec | `ansible-galaxy` has no option for a CA file and uses Python's default verify paths, which OpenSSL reads from this variable; no ansible.cfg, `~/.netrc`, galaxy cache or collection of an earlier scenario can reach a command | The CA file replaces the system store for the pod; only the edge is asked, and trove asks the stub and the public Galaxy itself |
+| (b) The CA in the system store of the image | | No variable | The CA is baked into an image, or an entrypoint edits the system store at start |
+| (c) `--ignore-certs` | | Nothing to mount | Does not test the certificate path the setup snippets describe |
+
+**Choice:** (a). **Rationale:** the pods stay long-lived like the other clients, and a scenario that fails never poisons the next. Revisit if a
+scenario needs the public store (a client that reaches a host outside the cluster).
+
+**Applied in the spec:** R-ANS-032.
+
 ## What this does not cover
 
 ### H-839 · A remote's signatures are passed through and not verified by trove
@@ -1768,3 +1816,21 @@ a withdrawal the upstream made for a security reason.
 The archive reader runs under the core's bounds, 10,000 entries and 2 GiB inflated (R-ANS-031, Q-ANS-30), and a format cannot raise them. A
 collection with more files or more expanded bytes is refused at publish, in a fill and by the reindex, with a failed task that names the bound.
 Dormant: the collections of the public Galaxy are far below both; real for an internal collection that vendors a large tree.
+
+### H-864 · Only two ansible-core releases are tested
+
+The e2e set runs ansible-core 2.17.14 and 2.21.6 (R-ANS-032, Q-ANS-49). The releases between them, and 2.22, which PyPI offers and which needs
+Python 3.13, are not run. Live: a change of the client between 2.17 and 2.21, in how it reads a document or retries, would meet trove for the
+first time in a user's pipeline. The differences in the source (`api.py`, `token.py`, the role code) were compared for 2.17.14 and 2.21.6 only.
+
+### H-865 · The dependencies of the client images are pinned by version, not by hash
+
+`constraints-2.17.txt` and `constraints-2.21.txt` pin every package by exact version. A file that PyPI replaced under the same version would
+not be noticed by the build. Dormant: PyPI refuses a replacement of a file; real when a project is yanked and re-uploaded by another party.
+
+### H-866 · The guide's statements about the client are not run
+
+The guide says what `ansible-galaxy` caches (`~/.ansible/galaxy_cache`, `--clear-response-cache`), which server a role install takes and that a
+role with a Git source bypasses trove. They are read from the documentation and the source (the verification table above); the tests prove the
+install, publish and credential paths, not these sentences. Live for the cache statement: a client release that renames the flag makes the
+guide wrong without a test failing.

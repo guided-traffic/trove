@@ -1682,7 +1682,8 @@ on:
   spells the token as `${TROVE_TOKEN}` (POSIX shell), `%TROVE_TOKEN%` (a `nuget.config` value or cmd) or
   `$env:TROVE_TOKEN` (PowerShell), whichever the syntax of its file or shell expands, and the package as `<package>`,
   and receives the functions `shell`, `powershell`, `cmd` and `xml` (quoting) and `schemeless` (a URL without its scheme, the
-  key of a keyed credential line; Q-ARCH-257). An install template may carry a `VersionSpec`, the
+  key of a keyed credential line; Q-ARCH-257) and `hostname` (the host name of a URL without port and path, the key of a
+  credential line that binds to a host name alone, such as a `~/.netrc` line; Q-ANS-48). An install template may carry a `VersionSpec`, the
   form in which the version follows the package (default `@<version>`, dotnet ` --version <version>`; Q-API-188). Its
   language fixes the quoting of what the API substitutes: `shell`, `powershell`, `cmd` or `xml` (Q-API-189).
   A `package`, `version` or `scope` above 256 bytes, with a control character or in the shape of a token is

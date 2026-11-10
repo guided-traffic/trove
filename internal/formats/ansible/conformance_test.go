@@ -38,7 +38,8 @@ func conformance() formattest.Fixture {
 		Names: []formattest.NameCase{
 			{Spellings: []string{"acme.tools"}}, {Spellings: []string{"community.general", "Community.General", "COMMUNITY.general"}},
 		},
-		Inspect: formattest.InspectTarGz("collections/acme/tools/acme-tools-1.0.0.tar.gz", "MANIFEST.json"),
+		OptionNames: optionNames(),
+		Inspect:     formattest.InspectTarGz("collections/acme/tools/acme-tools-1.0.0.tar.gz", "MANIFEST.json"),
 		Content: []formattest.ContentCase{
 			{Name: "root", Path: "", Status: http.StatusNotImplemented},
 			{Name: "collection", Path: "v3/collections/acme/tools/", Status: http.StatusNotImplemented},
@@ -55,7 +56,6 @@ func conformance() formattest.Fixture {
 		Skip: map[formattest.Check]string{
 			formattest.CheckRewrite: "the remote adapter joins with the remote class (R-ANS-017)",
 			formattest.CheckMerge:   "the virtual adapter joins with the virtual class (R-ANS-022)",
-			formattest.CheckSetup:   "the format declares no client yet: the setup templates and the guide come with the client surface (R-ANS-025)",
 			formattest.CheckView:    "the package screens come with the local class (R-ANS-026)",
 		},
 	}
