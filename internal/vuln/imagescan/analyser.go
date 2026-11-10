@@ -63,7 +63,7 @@ type Analyser interface {
 
 // javaArchives are left out of the analysis: reading them needs a second database, of Java artifacts, which trove does not mirror (H-810).
 // Without the option the analyser stops on the first image that holds a JAR, because it refuses to work offline without that database.
-var javaArchives = []string{"**/*.jar", "**/*.war", "**/*.ear", "**/*.par"}
+const javaArchives = "**/*.jar,**/*.war,**/*.ear,**/*.par"
 
 // Trivy runs the pinned binary in client mode: a process per step, with an empty environment, a working directory of its own and the flags
 // that keep it from reaching anything outside the installation (R-VULN-005).
@@ -119,7 +119,7 @@ func (t *Trivy) Version() string { return t.AnalyserVersion }
 func (t *Trivy) Analyse(ctx context.Context, layout, sbom, scratch string, lim Limits) error {
 	args := []string{
 		"image", "--input", layout, "--format", "cyclonedx", "--output", sbom, "--cache-dir", filepath.Join(scratch, "cache"),
-		"--timeout", timeoutArg(lim.Timeout), "--skip-files", strings.Join(javaArchives, ","),
+		"--timeout", timeoutArg(lim.Timeout), "--skip-files", javaArchives,
 	}
 	args = append(args, quietFlags()...)
 	if _, err := t.run(ctx, scratch, lim, args); err != nil {
