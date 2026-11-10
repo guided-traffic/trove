@@ -10055,6 +10055,16 @@ Context: the plan reserves 0.5 s of the margin for the ops listener and the trac
 
 **Applied in the spec:** R-ARCH-024 step 6. Code: `shutdownTail` in `internal/app/app.go`, `shutdownPlan.opsBy` in `internal/app/shutdown.go`. Test: `TestShutdownOpsListener`. Documentation: [architecture.md](../developer/architecture.md).
 
+### Q-ARCH-457 · Until the first stable release a minimal set of jobs gates Semantic Release
+
+Status: **Decided by the owner** (2026-11-10): "während der aktuellen Entwicklung bis zu stable wird semantic-release nur von einem minimalen set an job gegated. Du lässt lokal gerne entsprechende Tests laufen, aber e2e und integration gaten nicht länger semantic-release."
+
+Context: Semantic Release needed all 31 jobs of a run. One intermittent leg held a release of an unused pre-alpha back for hours.
+
+**Choice:** Semantic Release needs `versions`, `lint`, `gosec`, `govulncheck`, `cyclomatic-complexity`, `generate`, `nuget-vectors`, `build-no-node`, `unit`, `web`, `malware-scan`, `chart`, `image`, `sbom-generator`, `container-scan`, `workflows`, `coverage` and `release-tooling`. `integration`, `s3-conformance`, every `e2e*` leg, `coverage-evidence` and `coverage-report` keep running on every push and gate nothing: the two coverage jobs need those legs, so they would hold the release back indirectly. **Consequence:** the release job no longer has the badge and the evidence record, because the jobs that write them may not have finished, so a release commits neither and they stand still until the first stable release. A red integration or kind leg is a finding, and a release can carry the defect it found. The rule ends with the first stable release, when reliability comes first and the full gate returns.
+
+**Applied:** `.github/workflows/release.yml`; [releasing.md](../developer/releasing.md).
+
 ### Q-ARCH-446 · A response to a request whose body is unread is sent first, then the body is read and discarded within a bound
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.

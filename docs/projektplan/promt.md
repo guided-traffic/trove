@@ -215,7 +215,7 @@ and `Release Docker & Helm` publishes the image `guidedtraffic/trove` and the ch
    or three sentences and names the requirement, decision and finding IDs on its last line. A subject such as
    "the registry root serves /v2/ through one enforcement point (R-OCI-003, …, T-16 WP3)" is what the owner
    called useless: nobody can tell from it what changed.
-2. Push, and wait until `Test and Release` is green on that commit. Semantic Release has then cut the
+2. Push, and wait until the jobs that gate Semantic Release are green on that commit; until the first stable release e2e and integration do not gate it and are run locally as needed (owner, 2026-11-10, Q-ARCH-457). Semantic Release has then cut the
    release of the push, if the commits held a `feat` or a `fix`, and `Release Docker & Helm` has run for
    it: `gh run list --workflow "Release Docker & Helm" --limit 3`, then `gh run watch <run-id> --exit-status`.
    Push nothing to `main` while that run is going, not even a `[skip ci]` commit: Semantic Release publishes only when the

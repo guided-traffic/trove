@@ -1,7 +1,7 @@
 # Releasing
 
-Every push to `main` and every pull request runs the checks ([CI](#ci)). Once every job of a push
-run on `main` passed, Semantic Release publishes a GitHub release ([release flow](#release-flow)),
+Every push to `main` and every pull request runs the checks ([CI](#ci)). Once the jobs that gate it passed ([Q-ARCH-457](../spec/architecture.md#q-arch-457--until-the-first-stable-release-a-minimal-set-of-jobs-gates-semantic-release)),
+Semantic Release publishes a GitHub release ([release flow](#release-flow)),
 and [`build.yml`](../../.github/workflows/build.yml) builds the product from that tag: the image
 `guidedtraffic/trove` on Docker Hub, and the Helm charts `trove` and `trove-bastion` in the chart repository on GitHub Pages
 ([the release pipeline](#the-release-pipeline)). What the release contains and how the image is
@@ -99,7 +99,7 @@ at its pin (`make promtool`, below).
 | coverage evidence (implemented.txt) | `go run ./internal/tools/coverage -claims -tests …` over the unit, Angular, chart, integration and kind-leg reports of this run, and `-carried` over the newest report of each kind leg without one (Q-ROAD-11) | [implemented.txt](../coverage/implemented.txt) claims no requirement the reports do not prove; writes the record and the pages rendered from it, lists the requirements proven for the first time in the job summary and uploads the files as `coverage-evidence` for Semantic Release; needs `unit`, `web`, the `integration` shards, `chart` and the kind legs, and holds `actions: read` for the reports of earlier runs; a failing test in such a report withdraws its requirement from the record without failing the job (Q-ROAD-12) |
 | Combined Coverage Report | `make coverage-report` | merges the unit and integration profiles; the job summary and the badge `coverage-badge` |
 | Release Tooling | `make test-release-tooling` | `npm ci`, `npm audit signatures`, and [hack/verify-release-tooling.mjs](../../hack/verify-release-tooling.mjs), which renders release notes with the installed plugins |
-| Semantic Release | – | needs every job above; runs only on a push to `main`; publishes the release ([release flow](#release-flow)) |
+| Semantic Release | – | needs the static checks, unit, web, chart, image, the scans, `workflows`, `coverage` and `release-tooling`; the integration, S3 conformance and kind legs and the two coverage jobs that need them still run and do not gate it until the first stable release (Q-ARCH-457); runs only on a push to `main`; publishes the release ([release flow](#release-flow)) |
 
 A kind leg that fails keeps its cluster state as the artifact `e2e-cluster-state-<set>` (14 days): per namespace the pods, their
 descriptions and the events, and the logs of every pod of `trove` and of the edge (`ingress-controller`) whole, with the kubelet's
@@ -178,11 +178,11 @@ it reaches. [`test/coverage/report.sh`](../../test/coverage/report.sh) merges th
 covered when any profile covered it. It writes `coverage.txt` (`go tool cover -func`), `summary.md`
 for the job summary, and [`coverage.json`](../../.github/badges/coverage.json) (the README badge; green
 from 80 %, brightgreen from 90 %, yellow from 70 %, orange from 60 %, red below). Semantic Release
-commits the badge with the release.
+committed the badge with the release until Q-ARCH-457; the badge is not updated by a release until the first stable release.
 
 The requirement evidence of [docs/coverage](../coverage/README.md) is a different thing: the
 `coverage evidence` job writes `implemented.txt`, `checklist.md` and the generated blocks of the coverage README from the
-test reports of the run, and Semantic Release commits them with the release, beside the badge. Nobody refreshes them by
+test reports of the run. Since Q-ARCH-457 no release commits them, so the committed evidence stands still until the first stable release. Nobody refreshes them by
 hand; the job fails only when the committed record claims a requirement that no passing test of the run names
 ([coverage.md](coverage.md#how-ci-feeds-it)). A push that makes no release leaves the record as it is until the next release.
 
@@ -512,7 +512,7 @@ tooling pinned in [package.json](../../package.json) and [package-lock.json](../
    (`releaseRules`).
 2. Once every job of a push run on `main` passed, the job Semantic Release takes a token of the
    organisation's GitHub App (`permission-contents: write`), runs `npm ci` and `npm audit signatures`,
-   puts the coverage badge in place (the artifact `coverage-badge`) and runs `npx semantic-release`: the
+   runs `npx semantic-release`: the
    version from the commits since the last tag, the notes, the badge committed as
    `chore(release): <version> [skip ci]` with the notes in its body, the tag `v<version>` on that commit,
    and the GitHub release. `[skip ci]` keeps the release commit from starting a run.

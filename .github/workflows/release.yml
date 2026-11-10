@@ -3060,14 +3060,15 @@ jobs:
       - name: make test-release-tooling
         run: make test-release-tooling
 
-  # The version from the commits since the last tag, the release notes, the release commit with the
-  # badge and the evidence record ([skip ci]), the tag and the GitHub release (.releaserc.json; docs/developer/releasing.md).
+  # The version from the commits since the last tag, the release notes, the tag and the GitHub release (.releaserc.json;
+  # docs/developer/releasing.md). Until the first stable release only the jobs below gate it (owner, 2026-11-10, Q-ARCH-457): the
+  # integration and kind legs, and the coverage jobs that need them, still run on every push and do not hold a release back.
   # `compat` is out of these needs while that job is switched off (Q-ARCH-340): a skipped need would skip the release. It goes back in, after
   # `workflows`, when the job is switched on.
   semantic-release:
     name: Semantic Release
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [versions, lint, gosec, govulncheck, cyclomatic-complexity, generate, nuget-vectors, build-no-node, unit, web, malware-scan, chart, image, sbom-generator, container-scan, integration, s3-conformance, e2e, e2e-npm, e2e-nuget, e2e-oci, e2e-deb, e2e-ci, e2e-bastion, e2e-vuln, e2e-mirror, workflows, coverage, coverage-evidence, coverage-report, release-tooling]
+    needs: [versions, lint, gosec, govulncheck, cyclomatic-complexity, generate, nuget-vectors, build-no-node, unit, web, malware-scan, chart, image, sbom-generator, container-scan, workflows, coverage, release-tooling]
     runs-on: self-hosted
     timeout-minutes: 30
     steps:
@@ -3087,18 +3088,6 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
-
-      - name: Download the coverage badge
-        uses: actions/download-artifact@v8
-        with:
-          name: coverage-badge
-          path: .github/badges
-
-      - name: Download the evidence record
-        uses: actions/download-artifact@v8
-        with:
-          name: coverage-evidence
-          path: docs/coverage
 
       - name: Install the shared library the pinned Node.js loads
         run: |
