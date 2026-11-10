@@ -245,7 +245,7 @@ tests:
           - exp_labels: {severity: warning, repo: npm-types}
             exp_annotations:
               summary: The mirror npm-types has failed three pass attempts in a row.
-              description: The last error is in GET /api/v1/repositories/{key}/mirror and in the audit event mirror.pass_failed (R-REPO-053, R-REPO-057). The pass in progress stays, and the dispatch continues it after the back-off; a complete pass resets the count. A paused mirror is not reported.
+              description: The last error is in GET /api/v1/projects/{projectKey}/repositories/{repoKey}/mirror and in the audit event mirror.pass_failed (R-REPO-053, R-REPO-057). The pass in progress stays, and the dispatch continues it after the back-off; a complete pass resets the count. A paused mirror is not reported.
       # Ten hours later, with the back-off spacing the attempts six hours apart, it still fires.
       - eval_time: 600m
         alertname: TroveMirrorFailing
@@ -253,14 +253,14 @@ tests:
           - exp_labels: {severity: warning, repo: npm-types}
             exp_annotations:
               summary: The mirror npm-types has failed three pass attempts in a row.
-              description: The last error is in GET /api/v1/repositories/{key}/mirror and in the audit event mirror.pass_failed (R-REPO-053, R-REPO-057). The pass in progress stays, and the dispatch continues it after the back-off; a complete pass resets the count. A paused mirror is not reported.
+              description: The last error is in GET /api/v1/projects/{projectKey}/repositories/{repoKey}/mirror and in the audit event mirror.pass_failed (R-REPO-053, R-REPO-057). The pass in progress stays, and the dispatch continues it after the back-off; a complete pass resets the count. A paused mirror is not reported.
 
   - name: TroveMirrorFailing resolves when a complete pass resets the count
     interval: 1m
     input_series:
       - {series: 'trove_mirror_consecutive_failures{namespace="default",repo="npm-types",pod="w1"}', values: '3x30 0x100'}
     alert_rule_test:
-      - {eval_time: 20m, alertname: TroveMirrorFailing, exp_alerts: [{exp_labels: {severity: warning, repo: npm-types}, exp_annotations: {summary: The mirror npm-types has failed three pass attempts in a row., description: 'The last error is in GET /api/v1/repositories/{key}/mirror and in the audit event mirror.pass_failed (R-REPO-053, R-REPO-057). The pass in progress stays, and the dispatch continues it after the back-off; a complete pass resets the count. A paused mirror is not reported.'}}]}
+      - {eval_time: 20m, alertname: TroveMirrorFailing, exp_alerts: [{exp_labels: {severity: warning, repo: npm-types}, exp_annotations: {summary: The mirror npm-types has failed three pass attempts in a row., description: 'The last error is in GET /api/v1/projects/{projectKey}/repositories/{repoKey}/mirror and in the audit event mirror.pass_failed (R-REPO-053, R-REPO-057). The pass in progress stays, and the dispatch continues it after the back-off; a complete pass resets the count. A paused mirror is not reported.'}}]}
       - {eval_time: 60m, alertname: TroveMirrorFailing, exp_alerts: []}
 
   # --- TroveMirrorStale -----------------------------------------------------------------------------------
