@@ -364,6 +364,13 @@ func startNuGetLoad(t *testing.T, h *nugetHAFixture, name string, o nugetLoadOpt
 		l.loops = append(l.loops, &nugetLoop{name: "push", c: c})
 		envs = append(envs, loopEnv(c, "PKGID="+l.pubPkg, "FEED="+h.feed(t, nugetHALocal)))
 	}
+	// registered before the first loop starts: a test that fails while the loops start, or while k6 starts, or before stop leaves no loop
+	// running into the next scenario (a loop is detached from the exec session and from the test process)
+	t.Cleanup(func() {
+		for _, lp := range l.loops {
+			touchStop(nugetClientPod(t, lp.c.pod), lp.c.dir()+"/stop")
+		}
+	})
 	l.started = time.Now()
 	for i, lp := range l.loops {
 		// setsid and the redirections detach the loop from the exec session, which ends at once
@@ -374,12 +381,6 @@ func startNuGetLoad(t *testing.T, h *nugetHAFixture, name string, o nugetLoadOpt
 	if o.k6 {
 		l.k6 = startK6Script(t, "nuget-"+name, "nuget.js", time.Hour, k6Opts{rate: nugetK6Rate, prefix: "G ", token: strings.Join(h.k6Tokens(), "\n"), files: map[string][]byte{"nuget-fixture.json": h.k6Input}})
 	}
-	t.Cleanup(func() {
-		// a test that fails before stop leaves no loop running into the next scenario
-		for _, lp := range l.loops {
-			touchStop(nugetClientPod(t, lp.c.pod), lp.c.dir()+"/stop")
-		}
-	})
 	t.Logf("NuGet load %s: %d dotnet restore loops, push %v, k6 %v", name, o.restoreLoops, o.push, o.k6)
 	return l
 }

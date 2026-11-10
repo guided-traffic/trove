@@ -82,7 +82,7 @@ test/e2e/                   the Go tests, build tag `e2e`, package e2e
   e1_14_exposure_test.go    E1.14: exposure rules on the endpoint `customers`, bound tokens, R-EP-015
   e99_scatter_test.go       E0.11, last because it switches the profile
   monitor_test.go           /healthz and /readyz of every replica, once a second
-  k6/load.js                the load: 100 requests/s on /system/ping and /system/replicas
+  k6/load.js                the load: 100 requests/s on /system/ping and /system/replicas; an open loop (arrivals on a clock) by default, a closed loop of 100 clients with LOOP=closed (Q-HA-288)
   k6/transfer.js            the transfer loop of E1.13: PUT, GET and SHA-256 of 256 KiB bodies on generic-local, a closed loop of RATE clients (Q-HA-230)
   cmd/driver/               the driver (main.go: connections, probe and job commands; load.go: the load loop)
   Dockerfile                the driver image: a static binary on the release image's base
@@ -408,13 +408,20 @@ nightly run is its first.
      `/proc/1/root`), and the serial `openssl s_client` receives from `127.0.0.1:8080` and `:8081` of that pod. It logs
      a line with the kernel uptime whenever one of the three changes, so *file arrival* and *served* are timed by the
      same clock inside one pod, which is what `reload_interval` bounds. (A worker serves `:8081` only.)
-   - k6 runs at 100 requests/s through the edge; after 20 s the test triggers the renewal the way `cmctl renew`
+   - k6 runs through the edge with 100 clients that each start their next request a second after the last one
+     started (`startK6Closed`, `LOOP=closed` in [load.js](../../test/e2e/k6/load.js), Q-HA-288): at most 100 requests and
+     connections are open, so a stall of the cluster slows the load down and does not pile it up (the open loop held
+     about 1,000 connections at the edge). After 20 s the test triggers the renewal the way `cmctl renew`
      does: it adds the `Issuing` condition to the status of the `Certificate` `trove-tls` (a JSON patch on the status
      subresource; `privateKey.rotationPolicy: Always` makes it a new key too).
    - Asserted: k6 only `200` (and the rate held); on every pod the new serial is served within
      `server.tls.reload_interval + 1 s` (2 s + 1 s from the dev values) of the file changing, on both listeners;
      `trove_tls_reloads_total{kind="listener"}` rose and `trove_tls_reload_errors_total` did not; pod UID, restart
      count and `process_start_time_seconds` of every pod are unchanged.
+   - A request that k6 has not been answered when the test stops it ends as `context canceled` with status 0. Only
+     those started in the last two seconds are set aside (the harness's own doing); an older one was unanswered for more
+     than two seconds and fails the row. In run 42839263211 that was a stall of the whole cluster for the last 10 s of
+     the load (Q-HA-288).
    - The kubelet needs up to about a minute to refresh a Secret volume; that part is not bounded by trove and not
      asserted, only logged (`everywhere_after_s`).
 

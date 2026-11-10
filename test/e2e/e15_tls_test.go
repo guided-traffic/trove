@@ -239,7 +239,7 @@ func TestE15TLS(t *testing.T) {
 			return true
 		})
 
-		k := startK6(t, "rotate", 10*time.Minute)
+		k := startK6Closed(t, "rotate", 10*time.Minute)
 		time.Sleep(20 * time.Second)
 
 		// cert-manager's own renewal trigger, what `cmctl renew` does: the Issuing condition on the Certificate.

@@ -181,6 +181,12 @@ func startNuGetLoops(t *testing.T, fx *upgradeFx, n int) []*upNuGetLoop {
 		}
 		loops = append(loops, &upNuGetLoop{name: fmt.Sprintf("nuget%d", i), c: c})
 	}
+	// registered before the first loop starts: a test that fails while the loops start leaves none running into the next scenario
+	t.Cleanup(func() {
+		for _, lp := range loops {
+			lp.halt()
+		}
+	})
 	for _, lp := range loops {
 		// setsid and the redirections detach the loop from the exec session, which ends at once
 		if out, err := lp.c.try("sh", "-c", "setsid nohup sh ./loop.sh </dev/null >loop.log 2>&1 &"); err != nil {

@@ -464,10 +464,20 @@ type k6result struct {
 }
 
 // startK6 runs the load of test/e2e/k6/load.js in a container on the kind Docker network, at
-// 100 requests/s through the Ingress, and returns once the first responses are in.
+// 100 requests/s through the Ingress, and returns once the first responses are in. The requests start on a
+// clock (an open loop): a request that the server holds does not slow the others down.
 func startK6(t testing.TB, name string, d time.Duration) *k6run {
 	t.Helper()
 	return startK6Script(t, name, "load.js", d, k6Opts{rate: 100, prefix: "R "})
+}
+
+// startK6Closed runs load.js with 100 clients that each start their next request a second after the last one
+// started, or when it ended if that is later (a closed loop, Q-HA-288): never more than 100 requests and
+// connections open, and a stall of the cluster slows the load down instead of piling it up. For a test that
+// does not hold requests on purpose.
+func startK6Closed(t testing.TB, name string, d time.Duration) *k6run {
+	t.Helper()
+	return startK6Script(t, name, "load.js", d, k6Opts{rate: 100, prefix: "R ", closed: true})
 }
 
 // k6Opts parameterizes startK6Script: the iterations per second, the console lines that show the load runs
@@ -478,6 +488,8 @@ type k6Opts struct {
 	prefix string
 	token  string
 	files  map[string][]byte
+	// closed makes load.js a closed loop (LOOP=closed): rate clients instead of rate arrivals a second.
+	closed bool
 }
 
 // startK6Script runs a script of test/e2e/k6 the way startK6 runs load.js.
@@ -510,6 +522,9 @@ func startK6Script(t testing.TB, name, scriptName string, d time.Duration, o k6O
 	}
 	if cfg.k6HostsAddr != "" {
 		args = append(args, "-e", "HOSTS_ADDR="+cfg.k6HostsAddr)
+	}
+	if o.closed {
+		args = append(args, "-e", "LOOP=closed")
 	}
 	if cfg.caFile != "" {
 		args = append(args, "-v", cfg.caFile+":/ca/ca.crt:ro", "-e", "SSL_CERT_FILE=/ca/ca.crt")

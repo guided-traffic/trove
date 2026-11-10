@@ -387,6 +387,13 @@ func startNPMLoad(t *testing.T, h *npmHAFixture, name string, o npmLoadOpts) *np
 		c.write(dir+"/loop.sh", publishLoopScript)
 		l.loops = append(l.loops, &npmLoop{name: "publish", c: c, dir: dir})
 	}
+	// registered before the first loop starts: a test that fails while the loops start, or while k6 starts, or before stop leaves no loop
+	// running into the next scenario (a loop is detached from the exec session and from the test process)
+	t.Cleanup(func() {
+		for _, lp := range l.loops {
+			touchStop(npmClientPod(t, lp.c.pod), lp.dir+"/stop")
+		}
+	})
 	l.started = time.Now()
 	for _, lp := range l.loops {
 		// setsid and the redirections detach the loop from the exec session, which ends at once
@@ -401,12 +408,6 @@ func startNPMLoad(t *testing.T, h *npmHAFixture, name string, o npmLoadOpts) *np
 		}
 		l.k6 = startK6Script(t, "npm-"+name, "npm.js", time.Hour, k6Opts{rate: haK6Rate, prefix: "N ", token: strings.Join(h.k6Tokens(), "\n"), files: map[string][]byte{"npm-fixture.json": input}})
 	}
-	t.Cleanup(func() {
-		// a test that fails before stop leaves no loop running into the next scenario
-		for _, lp := range l.loops {
-			touchStop(npmClientPod(t, lp.c.pod), lp.dir+"/stop")
-		}
-	})
 	t.Logf("npm load %s: %d npm ci loops, publish %v, k6 %v, every locked package's document %v", name, o.ciLoops, o.publish, o.k6, o.allDocuments)
 	return l
 }
