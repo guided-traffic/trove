@@ -49,6 +49,9 @@ import { provideVulnerabilityFakes } from './fakes-vulnerabilities';
 // >>> G2 backups
 import { provideBackupFakes } from './fakes-backups';
 // <<< G2 backups
+// >>> F0 ansible
+import { provideAnsibleFakes } from './fakes-ansible';
+// <<< F0 ansible
 // >>> T17 deb
 import { provideDebFakes } from './fakes-deb';
 // <<< T17 deb
@@ -424,6 +427,9 @@ export function provideFakeApis(): Provider[] {
     // >>> G2 backups
     ...provideBackupFakes(),
     // <<< G2 backups
+    // >>> F0 ansible
+    ...provideAnsibleFakes(),
+    // <<< F0 ansible
     // >>> T17 deb
     ...provideDebFakes(),
     // <<< T17 deb

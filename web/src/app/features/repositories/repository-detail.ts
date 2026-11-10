@@ -41,6 +41,8 @@ import { JsonObject, mergePatchOf } from '../../shared/merge-patch';
 import { asApiError, valueOf } from '../../shared/paged-resource';
 import { HasUnsavedChanges } from '../../shared/unsaved-guard';
 import { FormatClient } from '../../api/guides-api';
+import { AnsibleImportTasks } from './ansible-import-tasks';
+import { AnsibleTombstones } from './ansible-tombstones';
 import { DebIndexStatePanel } from './deb-index-state';
 import { DebSigningKeys } from './deb-signing-keys';
 import { DebUpstreamKeys } from './deb-upstream-keys';
@@ -83,6 +85,8 @@ import { UpstreamSettings, upstreamTarget } from './upstream-settings';
     ErrorSummary,
     JobProgress,
     SelectField,
+    AnsibleImportTasks,
+    AnsibleTombstones,
     DebIndexStatePanel,
     DebSigningKeys,
     DebUpstreamKeys,
@@ -185,6 +189,16 @@ export class RepositoryDetail implements HasUnsavedChanges {
   protected readonly debSection = computed(() => {
     const repo = this.stored();
     return repo?.format === 'deb' && repo.class !== 'remote';
+  });
+  /** The import tasks: a local or virtual Ansible Galaxy repository; a remote one has none (R-ANS-009, R-ANS-026). */
+  protected readonly ansibleImportsSection = computed(() => {
+    const repo = this.stored();
+    return repo?.format === 'ansible' && repo.class !== 'remote';
+  });
+  /** The tombstones: a local Ansible Galaxy repository (R-ANS-012, R-ANS-026). */
+  protected readonly ansibleTombstonesSection = computed(() => {
+    const repo = this.stored();
+    return repo?.format === 'ansible' && repo.class === 'local';
   });
   /** The fingerprints of a remote Debian repository's upstream keys, read back beside `upstreamKeys` (R-DEB-020). */
   protected readonly debUpstreamFingerprints = computed<readonly string[]>(() => {
@@ -552,6 +566,8 @@ export class RepositoryDetail implements HasUnsavedChanges {
   );
   protected readonly tabUpstream = $localize`:@@repo.tab.upstream:Upstream`;
   protected readonly tabMirror = $localize`:@@repo.tab.mirror:Mirror`;
+  protected readonly tabAnsibleImports = $localize`:@@repo.tab.ansible-imports:Import tasks`;
+  protected readonly tabAnsibleTombstones = $localize`:@@repo.tab.ansible-tombstones:Tombstones`;
   protected readonly tabDebKeys = $localize`:@@repo.tab.deb-keys:Signing keys`;
   protected readonly tabDebIndex = $localize`:@@repo.tab.deb-index:Index`;
   protected readonly tabApi = $localize`:@@repo.tab.api:API`;

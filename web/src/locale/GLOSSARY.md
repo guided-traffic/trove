@@ -95,3 +95,4 @@ before using a new term in a German text.
 | signing key (primary, next, withheld, retired), fingerprint, certificate (public) | Signaturschlüssel (primär, nächster, zurückgehalten, außer Dienst), Fingerabdruck, öffentliches Zertifikat |
 | promote (a next key), reinstate (a withheld key), confirm the retirement | hochstufen, wieder einsetzen, Außerdienststellung bestätigen |
 | suite, component, architecture, index (of a suite), release (APT), generation | Suite, Komponente, Architektur, Index, Release, Generation |
+| collection (Ansible), import task, tombstone (a deleted version number) | Collection, Import-Aufgabe, Grabstein |

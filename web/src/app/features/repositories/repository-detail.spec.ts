@@ -3,11 +3,14 @@ import { ApiError } from '../../api/problem';
 import { RepositoriesApi } from '../../api/repositories-api';
 import { FakeGuidesApi } from '../../api/testing/fakes-guides';
 import {
+  ANSIBLE_FORMAT,
   DEB_FORMAT,
   FakeRepositoriesApi,
   GENERIC_FORMAT,
   PACKAGE_FORMAT,
 } from '../../api/testing/fakes-catalog';
+import { AnsibleApi } from '../../api/ansible-api';
+import { FakeAnsibleApi } from '../../api/testing/fakes-ansible';
 import { DebApi } from '../../api/deb-api';
 import { FakeDebApi } from '../../api/testing/fakes-deb';
 import { button, expectAccessible, renderScreen, settle, text, type } from '../../testing/screen';
@@ -373,6 +376,64 @@ describe('Repository edit form', () => {
       button(r.root, 'Save changes').click();
       await settle(r.fixture);
       expect(fake.patches[0]?.patch).toEqual({ deb: { mirror: { suites: ['stable'] } } });
+    });
+  });
+
+  describe('Ansible Galaxy', () => {
+    const withAnsible = (cls: 'local' | 'remote' | 'virtual', ansible?: Record<string, unknown>) => (fake: FakeRepositoriesApi) => {
+      fake.formatsResult = [GENERIC_FORMAT, ANSIBLE_FORMAT];
+      fake.repositories.push({
+        key: `ansible-${cls}`,
+        project: 'web',
+        class: cls,
+        format: 'ansible',
+        description: 'Galaxy',
+        ...(ansible ? { ansible: ansible as never } : {}),
+      });
+    };
+    const openAnsible = (cls: 'local' | 'remote' | 'virtual', ansible?: Record<string, unknown>, capabilities?: string[]) =>
+      renderScreen(RepositoryDetail, {
+        inputs: { project: 'web', key: `ansible-${cls}` },
+        ...(capabilities ? { capabilities } : {}),
+        setup: (get) => withAnsible(cls, ansible)(get(RepositoriesApi) as FakeRepositoriesApi),
+      });
+    const tabNames = (r: Awaited<ReturnType<typeof openAnsible>>) =>
+      [...r.root.querySelectorAll('[role="tab"]')].map((t) => text(t));
+
+    it('R-ANS-026 a local repository has the tabs for its import tasks, its tombstones and the ansible-galaxy guide, loaded when opened', async () => {
+      const r = await openAnsible('local');
+      expect(tabNames(r)).toEqual(expect.arrayContaining(['Import tasks', 'Tombstones', 'How to use']));
+      const api = r.get(AnsibleApi) as FakeAnsibleApi;
+      expect(api.calls).toEqual([]);
+      await openTab(r, 'Import tasks');
+      expect(api.calls).toEqual(['importTasks']);
+      expect(text(r.root)).toContain('acme.tools');
+      await openTab(r, 'Tombstones');
+      expect(api.calls).toContain('tombstones');
+      await expectAccessible(r.root);
+    });
+
+    it('R-ANS-026 a virtual repository shows the import tasks of its deployment target and has no tombstones', async () => {
+      const r = await openAnsible('virtual');
+      expect(tabNames(r)).toContain('Import tasks');
+      expect(tabNames(r)).not.toContain('Tombstones');
+    });
+
+    it('R-ANS-026 a remote repository has neither tab, and its hub settings are the format settings', async () => {
+      const r = await openAnsible('remote', { authUrl: 'https://sso.example.com/token', clientId: 'cloud-services' });
+      expect(tabNames(r)).not.toContain('Import tasks');
+      expect(tabNames(r)).not.toContain('Tombstones');
+      const settings = tabNames(r).find((n) => n.includes('Ansible Galaxy'))!;
+      await openTab(r, settings);
+      expect(r.root.querySelector<HTMLInputElement>('#f-ansible-authUrl')?.value).toBe('https://sso.example.com/token');
+      expect(r.root.querySelector<HTMLInputElement>('#f-ansible-clientId')?.value).toBe('cloud-services');
+    });
+
+    it('R-ANS-012 someone who cannot write the configuration sees the tombstones without the clearing', async () => {
+      const r = await openAnsible('local', undefined, ['repositories:read-config']);
+      await openTab(r, 'Tombstones');
+      expect(text(r.root)).toContain('acme.tools');
+      expect([...r.root.querySelectorAll('button')].map((b) => text(b))).not.toContain('Clear');
     });
   });
 });

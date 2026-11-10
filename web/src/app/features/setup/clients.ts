@@ -12,7 +12,7 @@ export interface ClientChoice {
  * no setup screen yet and is not offered. NuGet offers the .NET CLI, nuget.exe
  * and Visual Studio (R-UI-018, Q-UI-93). OCI offers the Docker CLI and Podman (R-OCI-030); a Kubernetes cluster
  * signs in with the image pull secret of the Docker CLI's configure section. Debian offers APT: apt and apt-get read
- * one source format, so they are one client (R-DEB-029).
+ * one source format, so they are one client (R-DEB-029). Ansible Galaxy offers ansible-galaxy (R-ANS-025).
  */
 export const FORMAT_CLIENTS: Readonly<Record<string, readonly ClientChoice[]>> = {
   generic: [{ id: 'curl', label: 'curl' }],
@@ -32,6 +32,7 @@ export const FORMAT_CLIENTS: Readonly<Record<string, readonly ClientChoice[]>> =
     { id: 'podman', label: 'Podman' },
   ],
   deb: [{ id: 'apt', label: 'APT (apt, apt-get)' }],
+  ansible: [{ id: 'ansible-galaxy', label: 'Ansible Galaxy (ansible-galaxy)' }],
 };
 
 export function clientsOf(format: string): readonly ClientChoice[] {
@@ -126,6 +127,20 @@ export function snippetExplanation(id: string): string | null {
       return $localize`:@@setup.snippet.apt-install:Reads the repository's indexes and installs the package through APT. Replace the package name with yours.`;
     case 'apt.publish.curl':
       return $localize`:@@setup.snippet.apt-publish:Uploads a .deb file to the repository that receives uploads, into the suite and component named in the address. An index that lists the package follows within moments.`;
+    case 'ansible-galaxy.configure.ansible-cfg':
+      return $localize`:@@setup.snippet.ansible-cfg:Save this as ansible.cfg next to your playbooks, or as ~/.ansible.cfg for the whole machine. It names this repository as the server trove. The token is not written into the file, because ansible.cfg does not expand variables: set it in the environment as shown below.`;
+    case 'ansible-galaxy.configure.token-env':
+    case 'ansible-galaxy.configure.token-env-powershell':
+    case 'ansible-galaxy.configure.token-env-cmd':
+      return $localize`:@@setup.snippet.ansible-token-env:ansible-galaxy reads the token of the server trove from this environment variable. Set it in the shell or the CI job that runs the command, and keep it out of version control.`;
+    case 'ansible-galaxy.configure.netrc':
+      return $localize`:@@setup.snippet.ansible-netrc:Needed to install roles: the client downloads a role archive without its token header and falls back to ~/.netrc. One line serves every repository on this host. Run chmod 600 ~/.netrc.`;
+    case 'ansible-galaxy.install.collection':
+      return $localize`:@@setup.snippet.ansible-install:Installs a collection through this repository once the client is configured. Replace the collection name with yours.`;
+    case 'ansible-galaxy.install.requirements':
+      return $localize`:@@setup.snippet.ansible-requirements:A requirements.yml for ansible-galaxy collection install -r requirements.yml. Roles are served by remote and virtual repositories of a Galaxy only and are installed with ansible-galaxy role install -r.`;
+    case 'ansible-galaxy.publish.collection':
+      return $localize`:@@setup.snippet.ansible-publish:Publishes a collection archive built with ansible-galaxy collection build to the repository that receives uploads. The archive names its own namespace, name and version.`;
     default:
       return null;
   }

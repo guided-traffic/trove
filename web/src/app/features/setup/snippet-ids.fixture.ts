@@ -2,6 +2,16 @@
 // regenerate with: go test ./internal/api/v1 -run RenderedSnippetIds -update-snippet-ids
 // The ids the API sends for every client of a format (<client>.<section>[.<name>], Q-API-160); a UI spec checks that each has an explanation.
 export const RENDERED_SNIPPET_IDS: Readonly<Record<string, readonly string[]>> = {
+  'ansible:ansible-galaxy': [
+    'ansible-galaxy.configure.ansible-cfg',
+    'ansible-galaxy.configure.netrc',
+    'ansible-galaxy.configure.token-env',
+    'ansible-galaxy.configure.token-env-cmd',
+    'ansible-galaxy.configure.token-env-powershell',
+    'ansible-galaxy.install.collection',
+    'ansible-galaxy.install.requirements',
+    'ansible-galaxy.publish.collection',
+  ],
   'deb:apt': [
     'apt.configure.list',
     'apt.configure.list-scoped',

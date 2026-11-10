@@ -288,6 +288,39 @@ export const DEB_FORMAT: FormatDescriptor = {
   settingsSchema: DEB_SETTINGS_SCHEMA,
 };
 
+/** The settings of the Ansible Galaxy format (internal/formats/ansible/settings.schema.json): two members, both for remote repositories. */
+export const ANSIBLE_SETTINGS_SCHEMA = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    authUrl: {
+      description: "Remote repositories of a Galaxy-compatible hub behind single sign-on. The https URL of the token endpoint of the hub's identity realm.",
+      type: 'string',
+      pattern: '^https://',
+      maxLength: 2048,
+      'x-trove-classes': ['remote'],
+    },
+    clientId: {
+      description: 'Remote repositories with authUrl. The client id the exchange presents to the realm.',
+      type: 'string',
+      default: 'cloud-services',
+      pattern: '^[A-Za-z0-9._-]{1,128}$',
+      'x-trove-classes': ['remote'],
+    },
+  },
+};
+
+/** Ansible Galaxy as the catalog lists it (internal/formats/ansible/format.go): the three classes, one client. */
+export const ANSIBLE_FORMAT: FormatDescriptor = {
+  ...PACKAGE_FORMAT,
+  name: 'ansible',
+  displayName: 'Ansible Galaxy',
+  clients: [{ id: 'ansible-galaxy', displayName: 'Ansible Galaxy (ansible-galaxy)' }],
+  protocolBasePath: '/api/ansible/{project}/{key}/',
+  settingsSchema: ANSIBLE_SETTINGS_SCHEMA,
+};
+
 /** A repository of the fake: the project is writable so that a test can move one. */
 export type FakeRepository = { -readonly [K in keyof Repository]: Repository[K] };
 

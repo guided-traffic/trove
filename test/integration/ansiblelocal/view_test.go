@@ -54,7 +54,7 @@ func TestR_ANS_026_ThePackageScreensShowACollection(t *testing.T) {
 	}
 	detail := d.JSON(t)
 	md, _ := detail["metadata"].(map[string]any)
-	if detail["hasReadme"] != true || md["requiresAnsible"] != ">=2.14.0" || md["repository"] != "https://git.example/acme/tools" {
+	if detail["hasReadme"] != true || md["requiresAnsible"] != ">=2.14.0" || md["repositoryUrl"] != "https://git.example/acme/tools" {
 		t.Errorf("details %v", detail)
 	}
 	if licenses, _ := detail["licenses"].([]any); len(licenses) != 1 || licenses[0] != "MIT" {

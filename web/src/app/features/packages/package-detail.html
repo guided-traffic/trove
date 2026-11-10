@@ -241,6 +241,15 @@
                       }
                     </dl>
                   }
+                  @if (ansibleFacts().length > 0) {
+                    <h2 i18n="@@pkg.meta.facts">Package details</h2>
+                    <dl class="facts" data-testid="ansible-facts">
+                      @for (f of ansibleFacts(); track f[0]) {
+                        <dt>{{ f[0] }}</dt>
+                        <dd translate="no">{{ f[1] }}</dd>
+                      }
+                    </dl>
+                  }
                   @if (engines().length > 0) {
                     <h2 i18n="@@pkg.meta.engines">Required runtimes</h2>
                     <dl class="facts" translate="no">

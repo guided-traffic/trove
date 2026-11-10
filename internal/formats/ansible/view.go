@@ -90,7 +90,8 @@ func versionIDs(ids []int64) []formats.VersionID {
 }
 
 // Describe reads the description and the tags of the versions and, with ViewDetails, the licenses, the README flag and the Galaxy
-// metadata; the README text only when asked for. A collection has no member that names other versions, so the visibility function is
+// metadata; the README text only when asked for. The links carry the names the other formats use (homepage, repositoryUrl, bugsUrl, and
+// documentationUrl in the same style), and the licenses and tags travel in the generic fields (R-ANS-026). A collection has no member that names other versions, so the visibility function is
 // not needed.
 func (viewAdapter) Describe(ctx context.Context, ports formats.DataPorts, vs []formats.ViewVersion, want formats.ViewFields, _ func(string) bool) (map[formats.VersionID]formats.ViewData, error) {
 	p, err := viewOf(ports)
@@ -147,7 +148,7 @@ func describe(d rows.ViewDetail) formats.ViewData {
 	if len(info.Authors) > 0 {
 		md["authors"] = info.Authors
 	}
-	for k, v := range map[string]string{"repository": info.Repository, "homepage": info.Homepage, "documentation": info.Documentation, "issues": info.Issues} {
+	for k, v := range map[string]string{"repositoryUrl": info.Repository, "homepage": info.Homepage, "documentationUrl": info.Documentation, "bugsUrl": info.Issues} {
 		if v != "" {
 			md[k] = v
 		}

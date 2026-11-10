@@ -351,6 +351,71 @@ export function debFixture(fake: FakePackagesApi): void {
   );
 }
 
+/** The package of the Ansible fakes. It is not in the default list of {@link FakePackagesApi}; a test adds it with {@link ansibleFixture}. */
+export const ANSIBLE_PACKAGE: PackageSummary = {
+  id: 'pkg_01JBQ9ANSANS',
+  format: 'ansible',
+  name: 'acme.tools',
+  description: 'Tools of the Acme playbooks',
+  latestVersion: '1.2.0',
+  keywords: ['tools', 'linux'],
+  repositories: ['web/ansible-local'],
+  createdAt: '2026-11-01T00:00:00.000Z',
+  updatedAt: '2026-11-08T00:00:00.000Z',
+  versionCount: 2,
+  downloadCount: 0,
+};
+
+/**
+ * An Ansible collection version as the view adapter describes it (formats/ansible.md R-ANS-026): `requiresAnsible`, the
+ * dependencies on other collections, the authors and the links; the licences and the tags are the generic fields.
+ */
+function ansibleVersion(v: string, metadata: Record<string, unknown>, over: Partial<FakeVersion> = {}): FakeVersion {
+  const path = `collections/acme/tools/acme-tools-${v}.tar.gz`;
+  return {
+    packageId: ANSIBLE_PACKAGE.id,
+    format: 'ansible',
+    name: 'acme.tools',
+    version: v,
+    prerelease: false,
+    publishedAt: '2026-11-08T00:00:00.000Z',
+    licenses: [],
+    sizeBytes: 20_480,
+    downloadCount: 0,
+    hasReadme: false,
+    metadata,
+    repositories: [{ key: 'web/ansible-local', class: 'local', publishedAt: '2026-11-08T00:00:00.000Z' }],
+    files: [
+      {
+        path,
+        sizeBytes: 20_480,
+        sha256: sha(0x4a1),
+        downloadUrl: `${BASE}/api/ansible/web/ansible-local/v3/artifacts/collections/acme-tools-${v}.tar.gz`,
+        contentUrl: `/api/v1/projects/web/repositories/ansible-local/content/${path}`,
+      },
+    ],
+    readme: null,
+    ...over,
+  };
+}
+
+/** Adds the collection `acme.tools` with `1.2.0` (full manifest data) and `1.0.0` (a bare version). */
+export function ansibleFixture(fake: FakePackagesApi): void {
+  fake.packages.push(ANSIBLE_PACKAGE);
+  fake.versionList.push(
+    ansibleVersion('1.0.0', {}, { publishedAt: '2026-10-01T00:00:00.000Z' }),
+    ansibleVersion('1.2.0', {
+      requiresAnsible: '>=2.15.0',
+      dependencies: { 'community.general': '>=8.0.0' },
+      authors: ['Jane Maintainer'],
+      documentationUrl: 'https://example.com/acme/tools/docs',
+      homepage: 'https://example.com/acme/tools',
+      repositoryUrl: 'https://example.com/acme/tools',
+      bugsUrl: 'https://example.com/acme/tools/issues',
+    }, { licenses: ['Apache-2.0', 'MIT'] }),
+  );
+}
+
 export class FakePackagesApi extends PackagesApi {
   packages: PackageSummary[] = [
     {

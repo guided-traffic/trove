@@ -358,6 +358,23 @@ export class PackageDetail {
     ];
     return entries.filter((e) => e[1] !== '');
   });
+  /**
+   * The facts of an Ansible collection version (R-ANS-026): the Ansible versions it needs, its licences and its tags. The licences are
+   * the generic field of the version and the tags the generic keywords of the package, which every format carries; the rest is the
+   * metadata the view adapter sends. Its dependencies on other collections, its authors and its links are the generic members shown
+   * with the other formats.
+   */
+  protected readonly ansibleFacts = computed<readonly [string, string][]>(() => {
+    const d = this.detail();
+    if (d?.format !== 'ansible') return [];
+    const text = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+    const entries: [string, string][] = [
+      [$localize`:@@pkg.meta.ansible-requires:Requires Ansible`, text(d.metadata['requiresAnsible'])],
+      [$localize`:@@pkg.meta.ansible-license:License`, d.licenses.join(', ')],
+      [$localize`:@@pkg.meta.ansible-tags:Tags`, (valueOf(this.summary)?.keywords ?? []).join(', ')],
+    ];
+    return entries.filter((e) => e[1] !== '');
+  });
   protected readonly deprecated = computed(() => {
     const d = this.detail()?.metadata['deprecated'];
     return typeof d === 'string' && d !== '' ? d : null;
@@ -367,6 +384,7 @@ export class PackageDetail {
     const entries: [string, unknown][] = [
       [$localize`:@@pkg.meta.homepage:Homepage`, m['homepage']],
       [$localize`:@@pkg.meta.license-url:License`, m['licenseUrl']],
+      [$localize`:@@pkg.meta.documentation:Documentation`, m['documentationUrl']],
       [$localize`:@@pkg.meta.source:Source repository`, m['repositoryUrl']],
       [$localize`:@@pkg.meta.bugs:Issue tracker`, m['bugsUrl']],
     ];
@@ -388,6 +406,7 @@ export class PackageDetail {
       this.authors().length > 0 ||
       this.nugetFacts().length > 0 ||
       this.debFacts().length > 0 ||
+      this.ansibleFacts().length > 0 ||
       this.links().length > 0 ||
       this.deprecated() !== null,
   );

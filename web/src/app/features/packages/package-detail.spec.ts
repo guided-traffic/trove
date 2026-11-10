@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { PackagesApi } from '../../api/packages-api';
-import { FakePackagesApi, debFixture, ociFixture } from '../../api/testing/fakes-packages';
+import { FakePackagesApi, ansibleFixture, debFixture, ociFixture } from '../../api/testing/fakes-packages';
 import { expectAccessible, inProject, renderScreen, settle, text } from '../../testing/screen';
 import { PackageDetail } from './package-detail';
 import { PackageMemory } from './package-memory';
@@ -481,6 +481,50 @@ describe('Package details', () => {
     it('R-DEB-030 a version without metadata shows the empty-state sentence', async () => {
       const r = await deb({ tab: 'metadata' }, (fake) => {
         for (const v of fake.versionList) if (v.format === 'deb') v.metadata = {};
+      });
+      expect(text(r.root)).toContain('This version declares no further metadata.');
+    });
+  });
+
+  describe('Ansible Galaxy', () => {
+    const collection = (inputs: Record<string, unknown> = {}, setup?: (fake: FakePackagesApi) => void) =>
+      open(
+        { format: 'ansible', name: 'acme.tools', ...inputs },
+        (fake) => {
+          ansibleFixture(fake);
+          setup?.(fake);
+        },
+        'acme.tools',
+      );
+    const facts = (r: Opened) =>
+      Object.fromEntries(
+        [...r.root.querySelectorAll('[data-testid="ansible-facts"] dt')].map((dt) => [text(dt), text(dt.nextElementSibling!)]),
+      );
+
+    it('R-ANS-026 the collection opens on the newest version by semantic version and shows the repositories it is in', async () => {
+      const r = await collection();
+      expect(text(r.root.querySelector('h1')!)).toBe('acme.tools');
+      expect(versionInput(r).value).toBe('1.2.0');
+      expect(r.root.querySelector('.chips')?.textContent).toContain('ansible-local');
+      await expectAccessible(r.root);
+    });
+
+    it('R-ANS-026 the metadata lists the Ansible versions it needs, the licences and tags of the generic fields, the dependencies on other collections, the authors and the links', async () => {
+      const r = await collection({ tab: 'metadata' });
+      expect(facts(r)).toEqual({ 'Requires Ansible': '>=2.15.0', License: 'Apache-2.0, MIT', Tags: 'tools, linux' });
+      const t = text(r.root);
+      expect(t).toContain('community.general');
+      expect(t).toContain('>=8.0.0');
+      expect(t).toContain('Jane Maintainer');
+      expect(r.root.querySelector<HTMLAnchorElement>('a[href="https://example.com/acme/tools/issues"]')).not.toBeNull();
+      expect(r.root.querySelector<HTMLAnchorElement>('a[href="https://example.com/acme/tools/docs"]')).not.toBeNull();
+      await expectAccessible(r.root);
+    });
+
+    it('R-ANS-026 a version without metadata shows the empty-state sentence', async () => {
+      const r = await collection({ tab: 'metadata' }, (fake) => {
+        for (const v of fake.versionList) if (v.format === 'ansible') Object.assign(v, { metadata: {}, licenses: [] });
+        for (const pkg of fake.packages) if (pkg.format === 'ansible') pkg.keywords = [];
       });
       expect(text(r.root)).toContain('This version declares no further metadata.');
     });

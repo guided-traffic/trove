@@ -30540,5 +30540,365 @@
         <target>Die an diesen Principal gebundenen Systemrollen.</target>
       </segment>
     </unit>
+    <unit id="pkg.meta.ansible-requires">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:369</note>
+      </notes>
+      <segment>
+        <source>Requires Ansible</source>
+        <target>Benötigt Ansible</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.ansible-license">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:370</note>
+      </notes>
+      <segment>
+        <source>License</source>
+        <target>Lizenz</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.ansible-tags">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:371</note>
+      </notes>
+      <segment>
+        <source>Tags</source>
+        <target>Tags</target>
+      </segment>
+    </unit>
+    <unit id="ansible.imports.state.completed">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-import-tasks.ts:10</note>
+      </notes>
+      <segment>
+        <source>Completed</source>
+        <target>Abgeschlossen</target>
+      </segment>
+    </unit>
+    <unit id="ansible.imports.state.failed">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-import-tasks.ts:11</note>
+      </notes>
+      <segment>
+        <source>Failed</source>
+        <target>Fehlgeschlagen</target>
+      </segment>
+    </unit>
+    <unit id="ansible.imports.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-import-tasks.ts:24,25</note>
+      </notes>
+      <segment>
+        <source>Import tasks</source>
+        <target>Import-Aufgaben</target>
+      </segment>
+    </unit>
+    <unit id="ansible.imports.intro">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-import-tasks.ts:26,29</note>
+      </notes>
+      <segment>
+        <source> Every publish that got as far as reading the archive has a task. It is already final when ansible-galaxy first asks, and it is kept for a limited time; the published version stays. </source>
+        <target> Jede Veröffentlichung, die bis zum Lesen des Archivs gekommen ist, hat eine Aufgabe. Sie ist schon abgeschlossen, wenn ansible-galaxy zum ersten Mal fragt, und wird nur begrenzt aufbewahrt; die veröffentlichte Version bleibt bestehen. </target>
+      </segment>
+    </unit>
+    <unit id="ansible.imports.caption">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-import-tasks.ts:100</note>
+      </notes>
+      <segment>
+        <source>Import tasks of this repository, newest first</source>
+        <target>Import-Aufgaben dieses Repositorys, neueste zuerst</target>
+      </segment>
+    </unit>
+    <unit id="ansible.imports.empty">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-import-tasks.ts:101</note>
+      </notes>
+      <segment>
+        <source>No collection has been published to this repository yet, or the tasks have been deleted.</source>
+        <target>In dieses Repository wurde noch keine Collection veröffentlicht, oder die Aufgaben wurden gelöscht.</target>
+      </segment>
+    </unit>
+    <unit id="ansible.imports.col.collection">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-import-tasks.ts:103</note>
+      </notes>
+      <segment>
+        <source>Collection</source>
+        <target>Collection</target>
+      </segment>
+    </unit>
+    <unit id="ansible.imports.col.version">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-import-tasks.ts:104</note>
+      </notes>
+      <segment>
+        <source>Version</source>
+        <target>Version</target>
+      </segment>
+    </unit>
+    <unit id="ansible.imports.col.state">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-import-tasks.ts:105</note>
+      </notes>
+      <segment>
+        <source>State</source>
+        <target>Status</target>
+      </segment>
+    </unit>
+    <unit id="ansible.imports.col.created">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-import-tasks.ts:106</note>
+      </notes>
+      <segment>
+        <source>Published</source>
+        <target>Veröffentlicht</target>
+      </segment>
+    </unit>
+    <unit id="ansible.imports.col.messages">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-import-tasks.ts:109</note>
+      </notes>
+      <segment>
+        <source>Messages</source>
+        <target>Meldungen</target>
+      </segment>
+    </unit>
+    <unit id="ansible.imports.help.messages">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-import-tasks.ts:110</note>
+      </notes>
+      <segment>
+        <source>The number of messages of the import. Open the row to read them.</source>
+        <target>Die Anzahl der Meldungen des Imports. Öffnen Sie die Zeile, um sie zu lesen.</target>
+      </segment>
+    </unit>
+    <unit id="ansible.tombstones.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-tombstones.ts:21,22</note>
+      </notes>
+      <segment>
+        <source>Tombstones</source>
+        <target>Grabsteine</target>
+      </segment>
+    </unit>
+    <unit id="ansible.tombstones.intro">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-tombstones.ts:23,26</note>
+      </notes>
+      <segment>
+        <source> A deleted version leaves a tombstone, and its number cannot be published again. Clear the tombstone to allow a new publish of that version number with other bytes. </source>
+        <target> Eine gelöschte Version hinterlässt einen Grabstein, und ihre Nummer kann nicht erneut veröffentlicht werden. Entfernen Sie den Grabstein, um diese Versionsnummer mit anderen Bytes neu zu veröffentlichen. </target>
+      </segment>
+    </unit>
+    <unit id="ansible.tombstones.clear">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-tombstones.ts:49,50</note>
+      </notes>
+      <segment>
+        <source> Clear </source>
+        <target> Entfernen </target>
+      </segment>
+    </unit>
+    <unit id="ansible.tombstones.caption">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-tombstones.ts:80</note>
+      </notes>
+      <segment>
+        <source>Tombstones of this repository</source>
+        <target>Grabsteine dieses Repositorys</target>
+      </segment>
+    </unit>
+    <unit id="ansible.tombstones.empty">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-tombstones.ts:81</note>
+      </notes>
+      <segment>
+        <source>No version has been deleted, so no number is blocked.</source>
+        <target>Es wurde keine Version gelöscht, also ist keine Nummer gesperrt.</target>
+      </segment>
+    </unit>
+    <unit id="ansible.tombstones.col.collection">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-tombstones.ts:83</note>
+      </notes>
+      <segment>
+        <source>Collection</source>
+        <target>Collection</target>
+      </segment>
+    </unit>
+    <unit id="ansible.tombstones.col.version">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-tombstones.ts:84</note>
+      </notes>
+      <segment>
+        <source>Version</source>
+        <target>Version</target>
+      </segment>
+    </unit>
+    <unit id="ansible.tombstones.col.sha256">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-tombstones.ts:87</note>
+      </notes>
+      <segment>
+        <source>SHA-256</source>
+        <target>SHA-256</target>
+      </segment>
+    </unit>
+    <unit id="ansible.tombstones.help.sha256">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-tombstones.ts:88</note>
+      </notes>
+      <segment>
+        <source>The first digits of the SHA-256 of the archive that was deleted. Hover to read all of it.</source>
+        <target>Die ersten Stellen des SHA-256 des gelöschten Archivs. Mit der Maus darüber sehen Sie ihn vollständig.</target>
+      </segment>
+    </unit>
+    <unit id="ansible.tombstones.col.deleted">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-tombstones.ts:90</note>
+      </notes>
+      <segment>
+        <source>Deleted</source>
+        <target>Gelöscht</target>
+      </segment>
+    </unit>
+    <unit id="ansible.tombstones.col.by">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-tombstones.ts:91</note>
+      </notes>
+      <segment>
+        <source>Deleted by</source>
+        <target>Gelöscht von</target>
+      </segment>
+    </unit>
+    <unit id="ansible.tombstones.col.actions">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-tombstones.ts:92</note>
+      </notes>
+      <segment>
+        <source>Actions</source>
+        <target>Aktionen</target>
+      </segment>
+    </unit>
+    <unit id="ansible.tombstones.clear.title">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-tombstones.ts:109</note>
+      </notes>
+      <segment>
+        <source>Clear the tombstone of <ph id="0" equiv="collection" disp="t.name"/> <ph id="1" equiv="version" disp="t.version"/></source>
+        <target>Grabstein von <ph id="0" equiv="collection" disp="t.name"/> <ph id="1" equiv="version" disp="t.version"/> entfernen</target>
+      </segment>
+    </unit>
+    <unit id="ansible.tombstones.clear.line">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-tombstones.ts:111</note>
+      </notes>
+      <segment>
+        <source>The number can then be published again with other bytes. Clients and caches that have seen the deleted version may still hold the old archive.</source>
+        <target>Die Nummer kann danach mit anderen Bytes erneut veröffentlicht werden. Clients und Caches, die die gelöschte Version gesehen haben, halten möglicherweise noch das alte Archiv.</target>
+      </segment>
+    </unit>
+    <unit id="ansible.tombstones.clear.confirm">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-tombstones.ts:113</note>
+      </notes>
+      <segment>
+        <source>Clear tombstone</source>
+        <target>Grabstein entfernen</target>
+      </segment>
+    </unit>
+    <unit id="ansible.tombstones.cleared">
+      <notes>
+        <note category="location">src/app/features/repositories/ansible-tombstones.ts:120</note>
+      </notes>
+      <segment>
+        <source>The tombstone was cleared.</source>
+        <target>Der Grabstein wurde entfernt.</target>
+      </segment>
+    </unit>
+    <unit id="repo.tab.ansible-imports">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:569</note>
+      </notes>
+      <segment>
+        <source>Import tasks</source>
+        <target>Import-Aufgaben</target>
+      </segment>
+    </unit>
+    <unit id="repo.tab.ansible-tombstones">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:570</note>
+      </notes>
+      <segment>
+        <source>Tombstones</source>
+        <target>Grabsteine</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.ansible-cfg">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:131</note>
+      </notes>
+      <segment>
+        <source>Save this as ansible.cfg next to your playbooks, or as ~/.ansible.cfg for the whole machine. It names this repository as the server trove. The token is not written into the file, because ansible.cfg does not expand variables: set it in the environment as shown below.</source>
+        <target>Speichern Sie dies als ansible.cfg neben Ihren Playbooks oder als ~/.ansible.cfg für den ganzen Rechner. Es benennt dieses Repository als Server trove. Das Token wird nicht in die Datei geschrieben, weil ansible.cfg keine Variablen auflöst: Setzen Sie es wie unten gezeigt in der Umgebung.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.ansible-token-env">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:135</note>
+      </notes>
+      <segment>
+        <source>ansible-galaxy reads the token of the server trove from this environment variable. Set it in the shell or the CI job that runs the command, and keep it out of version control.</source>
+        <target>ansible-galaxy liest das Token des Servers trove aus dieser Umgebungsvariable. Setzen Sie sie in der Shell oder im CI-Job, der den Befehl ausführt, und halten Sie sie aus der Versionsverwaltung heraus.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.ansible-netrc">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:137</note>
+      </notes>
+      <segment>
+        <source>Needed to install roles: the client downloads a role archive without its token header and falls back to ~/.netrc. One line serves every repository on this host. Run chmod 600 ~/.netrc.</source>
+        <target>Zum Installieren von Rollen nötig: Der Client lädt ein Rollenarchiv ohne seinen Token-Header herunter und greift auf ~/.netrc zurück. Eine Zeile gilt für alle Repositorys dieses Hosts. Führen Sie chmod 600 ~/.netrc aus.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.ansible-install">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:139</note>
+      </notes>
+      <segment>
+        <source>Installs a collection through this repository once the client is configured. Replace the collection name with yours.</source>
+        <target>Installiert eine Collection über dieses Repository, sobald der Client eingerichtet ist. Ersetzen Sie den Collection-Namen durch Ihren.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.ansible-requirements">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:141</note>
+      </notes>
+      <segment>
+        <source>A requirements.yml for ansible-galaxy collection install -r requirements.yml. Roles are served by remote and virtual repositories of a Galaxy only and are installed with ansible-galaxy role install -r.</source>
+        <target>Eine requirements.yml für ansible-galaxy collection install -r requirements.yml. Rollen liefern nur Remote- und virtuelle Repositorys eines Galaxy aus; sie werden mit ansible-galaxy role install -r installiert.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.ansible-publish">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:143</note>
+      </notes>
+      <segment>
+        <source>Publishes a collection archive built with ansible-galaxy collection build to the repository that receives uploads. The archive names its own namespace, name and version.</source>
+        <target>Veröffentlicht ein mit ansible-galaxy collection build gebautes Collection-Archiv im Repository, das Uploads annimmt. Das Archiv nennt Namespace, Name und Version selbst.</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.documentation">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:387</note>
+      </notes>
+      <segment>
+        <source>Documentation</source>
+        <target>Dokumentation</target>
+      </segment>
+    </unit>
   </file>
 </xliff>

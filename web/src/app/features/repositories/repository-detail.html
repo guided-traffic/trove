@@ -203,6 +203,24 @@
             </ng-template>
           </trove-tab>
         }
+        @if (ansibleImportsSection()) {
+          <trove-tab [label]="tabAnsibleImports">
+            <ng-template troveTabContent>
+              <div class="tab">
+                <trove-ansible-import-tasks [key]="ref()" />
+              </div>
+            </ng-template>
+          </trove-tab>
+        }
+        @if (ansibleTombstonesSection()) {
+          <trove-tab [label]="tabAnsibleTombstones">
+            <ng-template troveTabContent>
+              <div class="tab">
+                <trove-ansible-tombstones [key]="ref()" [canManage]="canWrite() && repo.lifecycle !== 'deleting'" />
+              </div>
+            </ng-template>
+          </trove-tab>
+        }
         @if (debSection()) {
           <trove-tab [label]="tabDebKeys">
             <ng-template troveTabContent>

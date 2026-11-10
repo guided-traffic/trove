@@ -898,11 +898,16 @@ Priority: **P1** · Covers: PKG-ANSIBLE-004
 - A `ViewAdapter` gives the package screens (R-API-029): the versions of a collection ordered by semver, the metadata block
   (`requires_ansible`, dependencies, authors, license, tags, repository and issue links), the README of a version read from the archive
   by streaming up to it (the entry named by `collection_info.readme`, text limit 64 KiB, never executed or rendered as HTML by trove), the
-  size of a version, and (local) the publisher and time.
+  size of a version, and (local) the publisher and time. The metadata members `describe` (`view.go`) emits are `sha256`, `requiresAnsible`
+  (string), `dependencies` (object, collection to version range), `authors` (list) and the links `homepage`, `repositoryUrl`,
+  `documentationUrl` and `bugsUrl` (the names the other formats use); the licenses and the tags travel in the generic `licenses` and
+  `keywords` fields of the version. A member that is empty is left out and not shown.
 - The **deploy dialog** (UI-013) is not offered for the format: `/files/` deploys nothing into a repository with a protocol of its own
   (R-STOR-007), so the screens show `ansible-galaxy collection publish` and the raw-body publish of R-ANS-008 instead (Q-ANS-34).
 - The UI shows the import tasks of a local repository on its edit form (a lazy tab, newest first, state and messages) through the
-  management operation `listAnsibleImportTasks`; and the tombstones with the action to clear one.
+  management operation `listAnsibleImportTasks` (a virtual repository shows the tasks of its deploy target); and, on a local repository,
+  a second lazy tab with the tombstones and the action to clear one (`manage`, after a confirmation). A remote repository has neither
+  tab. The settings of the format (`authUrl`, `clientId`, remote only) come from the format's settings schema, like every format's.
 
 ### R-ANS-027 · Import of the content of an existing Galaxy
 Priority: **P1** · Covers: trove-only
