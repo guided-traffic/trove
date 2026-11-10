@@ -9332,6 +9332,34 @@ What the bound is for. `only200` demands "at least 95 % of 100 requests a second
 
 **Applied:** [env_test.go](../../test/e2e/env_test.go), [e15_tls_test.go](../../test/e2e/e15_tls_test.go), [load.js](../../test/e2e/k6/load.js), [e2e.md](../developer/e2e.md) (E0.15).
 
+### Q-HA-292 · The 502 bursts at the edge are not dropped SYNs; the certificate probe of E0.15 no longer spends the node's CPU
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: H-795 and F-119 items 1 and 4. The edge logs `502` with the flags `SH--` after a connect time of 1.4 to 3.3 s, and k6 measures requests of 12 to 14 s where HAProxy measures 2 to 3 s. The connect times look like TCP SYN retransmit steps (a dropped SYN is retried after about 1 s, then after a further 2 s), which would put the cause between the edge and the pod: the pod's listen backlog overflowing, conntrack, or the node.
+
+Evidence, from five runs of `TestE15TLS` on the local kind cluster (2026-11-10; one 502 `SH--` after a connect time of 3,301 ms at 3.4 s after the trigger in the first, bursts of requests of 1.0 to 2.7 s in two of the others), with the counters read once a second in the network namespace of every api and packages pod, of both edge pods and of the nodes (`/proc/net/netstat`, `/proc/net/stat/nf_conntrack`):
+
+- **The SYN lead is refuted.** In the run with 292 requests over 1 s (bursts at 20:00:27 and 20:00:51, up to 2.7 s) `ListenOverflows`, `ListenDrops`, `TCPReqQFullDrop`, `TCPReqQFullDoCookies` and `TCPBacklogDrop` did not move on any pod, edge pod or node, and `TCPSynRetrans` did not move on any pod or node-hosted pod namespace in that window; the only two retransmitted SYNs of the run were on one edge pod at 20:01:33 and 20:01:58, after the load, and the node-level ones are at other seconds. Conntrack `drop`, `insert_failed` and `early_drop` stayed 0. `net.core.somaxconn` is 4096 in the pods' namespace and on the nodes, `tcp_syncookies` is 1. The server's accept is `net/http.Server.ServeTLS` on a plain `net.Listen` listener ([server.go](../../internal/httpserver/server.go) `Bind`, `Serve`, [linger.go](../../internal/httpserver/linger.go) `Accept` only wraps the accepted connection); there is no connection limiter, no shedding and no wait in front of Accept, and the TLS handshake runs in the connection's own goroutine. So a slow accept cannot come from the code, only from a process that does not get the CPU.
+- **The slow requests come in synchronous bursts, not as single losses.** 14 requests started in the same second (20:00:27) all took 1.02 to 1.28 s; 74 requests started at 20:00:51 took 1.0 to 1.5 s. The whole path paused and resumed together, which is what a stall of the CPU looks like, not a dropped packet (a lost SYN delays one connection by a fixed 1 or 3 s).
+- **The node is CPU-starved at those moments.** The kernel's pressure-stall figure for CPU (`/proc/pressure/cpu`, shared by all kind nodes because they are containers of one Docker VM) read `some` 450 ms/s on average over the run and up to 1,565 ms/s; the load average of the VM was 50 to 79 on 20 cores (other builders' containers run there). The one run on a quiet VM (load average 23 at the end) had a slowest request of 22 ms, and a later one at load 13 had 25 ms.
+- **The test itself was the largest CPU consumer.** The probe of E0.15 ran five `openssl` processes ten times a second in an ephemeral container of each of nine pods. Measured through the cgroups of the nodes over the same window, the probes used 2.5 cores on each of two nodes and 0.65 on the third, while all trove containers of the installation together used 0.3 cores; the probes were 5.7 of the 7.2 busy cores of the VM. The product is not what loads the node.
+
+Not verified: that the probes' load caused the stalls. A run with the lean probe below, on a VM at load 50, still had a slowest request of 2.7 s, so the VM's other load is enough to stall the path. The 502 with `SH--` itself was seen once and not reproduced with the counters running; why HAProxy reports `SH--` (the server closed before the response header) after a long connect time was not traced further. The CPU request of 100 m of the trove pods (the pods' share under contention) was not varied.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Change the product: a larger listen backlog, an accept pool, SYN cookies | Treat the lead as the cause | Would act on dropped SYNs | There are none; code changes without a cause |
+| (b) Leave the probe as it is and the runner as the cause | | No change | The probe takes ten times the CPU of the product on the nodes it measures, in the one row that stalls most often |
+| (c) The probe reads the file with the shell's builtins and starts openssl only while the listeners have not caught up with the file (chosen) | The 100 ms resolution of the measurement is kept where it is needed (from a change of the file until both listeners serve it) | The probes now use 0.10, 0.02 and 0.09 cores of the three nodes (measured the same way, 12 to 25 times less); the timings measured are the same kind (0.1 to 1.9 s after the file, bound 3 s) | A change of the listener's certificate that is not preceded by a change of the file is not seen until the file changes |
+| (d) Poll less often | e.g. every second | Simple | The measured time would be 1 s coarser than the bound's margin of 1 s |
+
+**Choice:** (c), in `probeScript` of [e15_tls_test.go](../../test/e2e/e15_tls_test.go). The probe prints the same lines as before, from the start and on every change of the three serials. No change of the product; no change of the rule that loads of the node are to be small beside what the node is measured for: the load of the edge tests (npm, NuGet, drains) is their subject and is left as it is.
+
+**Rationale:** The lead was tested with the counters that would show it and they did not move; the next candidate (the cert-manager issuance at the trigger) did not coincide with the slow seconds in the run with the counters (the bursts were at 20:00:27 and 20:00:51, the trigger at about 20:00:04, 23 s and 47 s earlier, and the issuance 0.1 s after it). The remaining cause is the shared runner. Revisit when a run with the lean probe on a quiet VM shows an `SH--` or a request over 1 s, or when `ListenOverflows` or `TCPSynRetrans` moves at a stall on any pod.
+
+**Applied:** [e15_tls_test.go](../../test/e2e/e15_tls_test.go) (`probeScript`), [e2e.md](../developer/e2e.md) (E0.15).
+
 ### Q-HA-204 · The SPDX file of the release is written by the pinned syft image from the registry tag
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.

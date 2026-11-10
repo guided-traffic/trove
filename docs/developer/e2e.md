@@ -403,7 +403,8 @@ nightly run is its first.
    E0.12. PostgreSQL's plaintext refusal is a CloudNativePG default that this suite does not probe.)
 2. **The listener certificate is renewed under load.**
    - Per trove pod (two api, three packages, four worker) an *ephemeral container* with the pinned openssl image
-     (`OPENSSL_IMAGE`, same user as trove, `--target=trove`) polls every 100 ms: the serial of
+     (`OPENSSL_IMAGE`, same user as trove, `--target=trove`) looks at the certificate file every 100 ms with shell builtins
+     and, from a change of the file until both listeners serve it, reads every 100 ms ([Q-HA-292](../spec/ha-and-helm.md#q-ha-292--the-502-bursts-at-the-edge-are-not-dropped-syns-the-certificate-probe-of-e015-no-longer-spends-the-nodes-cpu): a probe that started five `openssl` processes every 100 ms took more CPU than the installation). It reads the serial of
      `/var/run/secrets/trove/tls/tls.crt` as the kubelet mounts it into the trove container (read through
      `/proc/1/root`), and the serial `openssl s_client` receives from `127.0.0.1:8080` and `:8081` of that pod. It logs
      a line with the kernel uptime whenever one of the three changes, so *file arrival* and *served* are timed by the

@@ -22,19 +22,35 @@ import (
 // certificate (R-ARCH-035, R-HA-063).
 
 // probeScript runs inside an ephemeral container next to the trove container of one pod (image: the
-// pinned openssl image, same user as trove, process namespace shared with it). Every 100 ms it reads the
-// serial of the certificate file the kubelet mounts into the trove container (through /proc/1/root) and
-// the serial that the pod's two listeners hand out in a TLS handshake (openssl s_client, no session
-// reuse; "-" when nothing listens, as on a worker's :8080). It prints a line when any of the three changes: "<uptime s> <file> <:8080> <:8081>". The clock is
-// the kernel's uptime, so lines of one container are comparable to 10 ms. The loop ends after %d seconds.
+// pinned openssl image, same user as trove, process namespace shared with it). It reads the serial of the
+// certificate file the kubelet mounts into the trove container (through /proc/1/root) and the serial that
+// the pod's two listeners hand out in a TLS handshake (openssl s_client, no session reuse; "-" when nothing
+// listens, as on a worker's :8080), and prints a line when any of the three changes: "<uptime s> <file>
+// <:8080> <:8081>". The clock is the kernel's uptime, so lines of one container are comparable to 10 ms.
+// The loop ends after %d seconds.
+//
+// The probe must not load the node it measures (Q-HA-292: five openssl processes ten times a second took
+// more cores of a node than the trove containers of the whole installation used). So it looks at the file ten
+// times a second with the shell's own builtins (read, no process), and starts openssl only at the start and
+// from a change of the file until both listeners serve the certificate of the file (plus one second).
 const probeScript = `
 f=/proc/1/root/var/run/secrets/trove/tls/tls.crt
 serial() { openssl x509 -noout -serial 2>/dev/null | cut -d= -f2; }
 dial() { s="$(echo | openssl s_client -connect 127.0.0.1:"$1" -servername trove.trove.svc 2>/dev/null | serial)"; echo "${s:--}"; }
-start=$(cut -d. -f1 /proc/uptime); last=""
-while [ $(( $(cut -d. -f1 /proc/uptime) - start )) -lt %d ]; do
-  now="$(serial < $f) $(dial 8080) $(dial 8081)"
-  if [ "$now" != "$last" ]; then echo "$(cut -d' ' -f1 /proc/uptime) $now"; last="$now"; fi
+filetext() { c=""; while IFS= read -r l; do c="$c$l"; done < $f; }
+read start _ < /proc/uptime; start=${start%%.*}; last=""; settle=1; filetext; prev="$c"
+while :; do
+  read up _ < /proc/uptime
+  [ $(( ${up%%.*} - start )) -lt %d ] || break
+  filetext
+  if [ "$c" != "$prev" ]; then prev="$c"; settle=10; fi
+  if [ $settle -gt 0 ]; then
+    now="$(serial < $f) $(dial 8080) $(dial 8081)"
+    read up _ < /proc/uptime
+    if [ "$now" != "$last" ]; then echo "$up $now"; last="$now"; fi
+    set -- $now
+    if [ "$3" != "$1" ] || { [ "$2" != "$1" ] && [ "$2" != "-" ]; }; then settle=10; else settle=$((settle - 1)); fi
+  fi
   sleep 0.1
 done
 `
