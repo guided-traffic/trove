@@ -10,7 +10,9 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
+	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -63,24 +65,49 @@ func TestStartupErrors(t *testing.T) {
 			t.Fatalf("R-OPS-001 reason code = %q, want auth_failed", code)
 		}
 	})
-	t.Run("Q-HA-13 a wrong password behind a first attempt that runs into its deadline is not a startup error: the verdict needs an answer", func(t *testing.T) {
-		// The Sentinels answer and name the primary; the connection to the primary does not complete within the connect
-		// timeout (here 1 ms; on a starved node the same: F-119, E0.12 in Test and Release 42885398204, where the replica
-		// with the wrong password reported reason "timeout" and became ready after 29 s). Unreachability never holds back the
-		// first readiness (Q-HA-13 (d)), and a rejected credential is only seen when the server answers, so the client is
-		// degraded and has no startup error, however wrong the password is.
-		cfg := stackConfig(t, 2*time.Second)
+	t.Run("Q-HA-13 a wrong password behind a server that never answers is not a startup error: the verdict needs an answer", func(t *testing.T) {
+		// The server accepts the TCP connection and never says a word, so the first attempt ends at its deadline and cannot
+		// be answered, however fast the machine is (F-119, E0.12 in Test and Release 42885398204: the replica with the wrong
+		// password reported reason "timeout" and became ready). Unreachability never holds back the first readiness
+		// (Q-HA-13 (d)), and a rejected credential is only seen when the server answers, so the client is degraded and has
+		// no startup error, however wrong the password is. The companion case above gets its answer: WRONGPASS.
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var held []net.Conn
+		var mu sync.Mutex
+		go func() {
+			for {
+				c, err := ln.Accept()
+				if err != nil {
+					return
+				}
+				mu.Lock()
+				held = append(held, c) // kept open, never read, never answered
+				mu.Unlock()
+			}
+		}()
+		t.Cleanup(func() {
+			_ = ln.Close()
+			mu.Lock()
+			defer mu.Unlock()
+			for _, c := range held {
+				_ = c.Close()
+			}
+		})
+		cfg := standalone(t, ln.Addr().String())
 		cfg.PasswordFile = writeFile(t, "password", "not-the-password-0451\n")
-		cfg.ConnectTimeout = time.Millisecond
+		cfg.ConnectTimeout = 500 * time.Millisecond
 		c := newClient(t, cfg)
+		eventually(t, "the first attempt to end at its deadline", 15*time.Second, func() bool {
+			return c.Status().ReasonCode == cluster.ReasonTimeout
+		})
 		if err := c.StartupError(); err != nil {
-			t.Fatalf("StartupError = %v: a deadline is not an answer, the premise of the test does not hold", err)
+			t.Fatalf("StartupError = %v: a deadline is not an answer", err)
 		}
 		if c.Available() {
-			t.Fatal("available with a wrong password")
-		}
-		if code := c.Status().ReasonCode; code != cluster.ReasonTimeout && code != cluster.ReasonConnecting {
-			t.Fatalf("reason code = %q, want timeout or connecting (status %+v)", code, c.Status())
+			t.Fatal("available with a server that never answers")
 		}
 	})
 	t.Run("R-HA-056 a wrong Sentinel password is a startup error", func(t *testing.T) {
