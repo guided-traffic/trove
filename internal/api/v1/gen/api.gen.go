@@ -3634,6 +3634,21 @@ func (e ListGroupsParamsSort) Valid() bool {
 	}
 }
 
+// Defines values for ListPackagesParamsInclude.
+const (
+	Vulnerabilities ListPackagesParamsInclude = "vulnerabilities"
+)
+
+// Valid indicates whether the value is a known member of the ListPackagesParamsInclude enum.
+func (e ListPackagesParamsInclude) Valid() bool {
+	switch e {
+	case Vulnerabilities:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListPackagesParamsSort.
 const (
 	ListPackagesParamsSortCreatedAt      ListPackagesParamsSort = "createdAt"
@@ -3658,6 +3673,21 @@ func (e ListPackagesParamsSort) Valid() bool {
 	case ListPackagesParamsSortName:
 		return true
 	case ListPackagesParamsSortUpdatedAt:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListPackageVersionsParamsInclude.
+const (
+	Digest ListPackageVersionsParamsInclude = "digest"
+)
+
+// Valid indicates whether the value is a known member of the ListPackageVersionsParamsInclude enum.
+func (e ListPackageVersionsParamsInclude) Valid() bool {
+	switch e {
+	case Digest:
 		return true
 	default:
 		return false
@@ -5961,6 +5991,9 @@ type FormatDescriptor struct {
 	// against (R-ARCH-008). Its properties may carry `x-trove-classes`, the classes the setting applies to;
 	// a setting of another class answers `not_applicable`. `null` for a format without settings.
 	SettingsSchema *map[string]interface{} `json:"settingsSchema"`
+
+	// VulnerabilityScanning Whether stored versions of the format are matched against advisories (the format has the vulnerability adapter, R-VULN-009); a format without it has no vulnerability counts anywhere (R-UI-052).
+	VulnerabilityScanning bool `json:"vulnerabilityScanning"`
 }
 
 // FormatDescriptorClasses defines model for FormatDescriptor.Classes.
@@ -6932,6 +6965,11 @@ type PackageSummary struct {
 	// Name The name as the format stores it; NuGet IDs in their original casing.
 	Name string `json:"name"`
 
+	// OpenVulnerabilities With `include=vulnerabilities` only, and only for a signed-in caller of an installation that scans (R-UI-052): the open
+	// findings of the entry's visible versions that the caller can read, in the repositories the list is filtered by, by
+	// severity. A package without one counts zero. Summed over the versions, so a finding present in two versions counts twice.
+	OpenVulnerabilities *VulnerabilitySeverityCounts `json:"openVulnerabilities,omitempty"`
+
 	// Repositories The keys of the repositories that hold a visible version.
 	Repositories []string `json:"repositories"`
 
@@ -6989,7 +7027,9 @@ type PackageVersionRepositoryClass string
 
 // PackageVersionSummary defines model for PackageVersionSummary.
 type PackageVersionSummary struct {
-	DownloadCount int64 `json:"downloadCount"`
+	// Digest With `include=digest` only, the version's content digest from the format's metadata (an OCI tag - `sha256:` and the hex digest of its manifest); absent for a format without one.
+	Digest        *string `json:"digest,omitempty"`
+	DownloadCount int64   `json:"downloadCount"`
 
 	// Prerelease By the format's version rules.
 	Prerelease  bool      `json:"prerelease"`
@@ -9366,6 +9406,9 @@ type ListPackagesParams struct {
 	NamePrefix *string `form:"namePrefix,omitempty" json:"namePrefix,omitempty"`
 	Keyword    *string `form:"keyword,omitempty" json:"keyword,omitempty"`
 
+	// Include `vulnerabilities`: also answer the counts of open findings per entry (`openVulnerabilities`).
+	Include *[]ListPackagesParamsInclude `form:"include,omitempty" json:"include,omitempty"`
+
 	// CreatedFrom Inclusive lower bound of the creation time of the first visible version.
 	CreatedFrom *time.Time `form:"createdFrom,omitempty" json:"createdFrom,omitempty"`
 
@@ -9379,6 +9422,9 @@ type ListPackagesParams struct {
 	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
+
+// ListPackagesParamsInclude defines parameters for ListPackages.
+type ListPackagesParamsInclude string
 
 // ListPackagesParamsSort defines parameters for ListPackages.
 type ListPackagesParamsSort string
@@ -9403,8 +9449,11 @@ type ListPackageVersionsParams struct {
 	Prerelease *bool `form:"prerelease,omitempty" json:"prerelease,omitempty"`
 
 	// Repository Repeat the parameter for several repository keys.
-	Repository *[]string                      `form:"repository,omitempty" json:"repository,omitempty"`
-	Sort       *ListPackageVersionsParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
+	Repository *[]string `form:"repository,omitempty" json:"repository,omitempty"`
+
+	// Include `digest`: also read each version's content digest from the format (`digest`).
+	Include *[]ListPackageVersionsParamsInclude `form:"include,omitempty" json:"include,omitempty"`
+	Sort    *ListPackageVersionsParamsSort      `form:"sort,omitempty" json:"sort,omitempty"`
 
 	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
@@ -9412,6 +9461,9 @@ type ListPackageVersionsParams struct {
 	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
+
+// ListPackageVersionsParamsInclude defines parameters for ListPackageVersions.
+type ListPackageVersionsParamsInclude string
 
 // ListPackageVersionsParamsSort defines parameters for ListPackageVersions.
 type ListPackageVersionsParamsSort string
@@ -9426,6 +9478,12 @@ type GetPackageVersionParams struct {
 type GetPackageVersionReadmeParams struct {
 	// IfNoneMatch An ETag the client holds; a match answers `304` (R-API-012).
 	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
+// GetPackageVulnerabilitiesParams defines parameters for GetPackageVulnerabilities.
+type GetPackageVulnerabilitiesParams struct {
+	// Repository Repeat the parameter for several repository names `<project>/<key>`.
+	Repository *[]string `form:"repository,omitempty" json:"repository,omitempty"`
 }
 
 // ListPermissionPoliciesParams defines parameters for ListPermissionPolicies.
@@ -10854,7 +10912,7 @@ type ServerInterface interface {
 	GetPackageVersionVulnerabilities(w http.ResponseWriter, r *http.Request, packageId PackageId, version PackageVersionPath)
 	// GetPackageVulnerabilities The open findings of a package, per version
 	// (GET /api/v1/packages/{packageId}/vulnerabilities)
-	GetPackageVulnerabilities(w http.ResponseWriter, r *http.Request, packageId PackageId)
+	GetPackageVulnerabilities(w http.ResponseWriter, r *http.Request, packageId PackageId, params GetPackageVulnerabilitiesParams)
 	// ListPermissionPolicies List permission policies
 	// (GET /api/v1/permission-policies)
 	ListPermissionPolicies(w http.ResponseWriter, r *http.Request, params ListPermissionPoliciesParams)
@@ -14127,6 +14185,19 @@ func (siw *ServerInterfaceWrapper) ListPackages(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// ------------- Optional query parameter "include" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "include", r.URL.Query(), &params.Include, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "include"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "include", Err: err})
+		}
+		return
+	}
+
 	// ------------- Optional query parameter "createdFrom" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "createdFrom", r.URL.Query(), &params.CreatedFrom, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
@@ -14364,6 +14435,19 @@ func (siw *ServerInterfaceWrapper) ListPackageVersions(w http.ResponseWriter, r 
 		return
 	}
 
+	// ------------- Optional query parameter "include" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "include", r.URL.Query(), &params.Include, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "include"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "include", Err: err})
+		}
+		return
+	}
+
 	// ------------- Optional query parameter "sort" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "sort", r.URL.Query(), &params.Sort, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
@@ -14582,8 +14666,24 @@ func (siw *ServerInterfaceWrapper) GetPackageVulnerabilities(w http.ResponseWrit
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetPackageVulnerabilitiesParams
+
+	// ------------- Optional query parameter "repository" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "repository", r.URL.Query(), &params.Repository, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "repository"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repository", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetPackageVulnerabilities(w, r, packageId)
+		siw.Handler.GetPackageVulnerabilities(w, r, packageId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {

@@ -24,6 +24,9 @@ import (
 	"github.com/guided-traffic/trove/internal/packages/readme"
 	"github.com/guided-traffic/trove/internal/packages/view"
 	"github.com/guided-traffic/trove/internal/repository"
+	"github.com/guided-traffic/trove/internal/vuln"
+	"github.com/guided-traffic/trove/internal/vuln/report"
+	"github.com/guided-traffic/trove/internal/vuln/store"
 )
 
 // The packages operations of R-API-029 and the client setup operation of R-API-030.
@@ -129,6 +132,50 @@ func writeTagged(w http.ResponseWriter, r *http.Request, v any) {
 	_, _ = w.Write(append(b, '\n'))
 }
 
+// includes reports whether a list's `include` parameter names want.
+func includes(lq ListQuery, want string) bool {
+	return slices.Contains(splitValues(lq.Filter["include"]), want)
+}
+
+// addVulnerabilityCounts adds the open findings of each package of the page to its entry (R-UI-052), in one statement whatever the page
+// holds. It is an addition to a public list: a caller who is anonymous, or an installation without vulnerability scanning, gets the
+// list without counts, and counts that cannot be read leave the page without them rather than failing it.
+func (s *Server) addVulnerabilityCounts(r *http.Request, lq ListQuery, page []view.Package, out []gen.PackageSummary) {
+	if len(page) == 0 || httpserver.PrincipalFrom(r.Context()).Anonymous {
+		return
+	}
+	rep, err := s.vulnReport()
+	if err != nil {
+		return
+	}
+	ctx, sn, caller, err := s.vulnRequest(r, rep)
+	if err != nil {
+		return
+	}
+	repos, hasRepos, err := findingRepos(lq, sn, caller)
+	if err != nil {
+		return
+	}
+	f := store.Filter{Repos: repos, HasRepos: hasRepos, Formats: splitValues(lq.Filter["format"]), Statuses: vuln.OpenStatuses()}
+	f.Packages = make([]string, 0, len(page))
+	for _, p := range page {
+		f.Packages = append(f.Packages, p.Key)
+	}
+	sc, err := rep.Scope(ctx, sn, caller, f)
+	if err != nil {
+		return
+	}
+	counts, err := rep.PackageList(ctx, sc, f)
+	if err != nil {
+		return
+	}
+	for i, p := range page {
+		c := counts[report.PackageListKey(p.Format, p.Key)]
+		open := toSeverityCounts(c)
+		out[i].OpenVulnerabilities = &open
+	}
+}
+
 func summaryOf(p view.Package) gen.PackageSummary {
 	return gen.PackageSummary{
 		Id: p.ID, Format: p.Format, Name: p.Name, Description: p.Description, LatestVersion: p.LatestVersion,
@@ -191,7 +238,7 @@ func (s *Server) ListPackages(w http.ResponseWriter, r *http.Request, _ gen.List
 		return
 	}
 	lq, err := ParseList(r, ListSpec{
-		Filters:     []string{"format", "project", "repository", "q", "namePrefix", "keyword", "createdFrom", "createdTo"},
+		Filters:     []string{"format", "project", "repository", "q", "namePrefix", "keyword", "createdFrom", "createdTo", "include"},
 		Sorts:       []string{"name", "createdAt", "updatedAt"},
 		DefaultSort: "name",
 	}, s.o.API.Config)
@@ -219,7 +266,11 @@ func (s *Server) ListPackages(w http.ResponseWriter, r *http.Request, _ gen.List
 		httpserver.Problem(w, r, err)
 		return
 	}
-	WritePage(w, r, MapPage(NewPage(lq, rows, order.Key), summaryOf))
+	page := MapPage(NewPage(lq, rows, order.Key), summaryOf)
+	if includes(lq, "vulnerabilities") {
+		s.addVulnerabilityCounts(r, lq, rows[:min(len(page.Items), len(rows))], page.Items)
+	}
+	WritePage(w, r, page)
 }
 
 // LookupPackage implements GET /api/v1/packages/lookup (R-API-029).
@@ -298,7 +349,7 @@ func (s *Server) ListPackageVersions(w http.ResponseWriter, r *http.Request, id 
 		return
 	}
 	lq, err := ParseList(r, ListSpec{
-		Filters: []string{"prerelease", "repository"}, Sorts: []string{"publishedAt", "version"}, DefaultSort: "-publishedAt",
+		Filters: []string{"prerelease", "repository", "include"}, Sorts: []string{"publishedAt", "version"}, DefaultSort: "-publishedAt",
 	}, s.o.API.Config)
 	var f view.VersionFilter
 	if err == nil {
@@ -312,6 +363,7 @@ func (s *Server) ListPackageVersions(w http.ResponseWriter, r *http.Request, id 
 		if reps, ok := lq.Filter["repository"]; ok {
 			f.Repositories, f.HasRepositories = repoFilter(splitValues(reps)), true
 		}
+		f.WithDigest = includes(lq, "digest")
 	}
 	if err != nil {
 		httpserver.Problem(w, r, err)
@@ -335,10 +387,15 @@ func (s *Server) ListPackageVersions(w http.ResponseWriter, r *http.Request, id 
 		return
 	}
 	WritePage(w, r, MapPage(NewPage(lq, rows, order.VersionKey), func(v view.VersionSummary) gen.PackageVersionSummary {
-		return gen.PackageVersionSummary{
+		summary := gen.PackageVersionSummary{
 			Version: v.Version, Prerelease: v.Prerelease, PublishedAt: v.PublishedAt, SizeBytes: v.SizeBytes,
 			Repositories: repoTexts(v.Repositories), DownloadCount: v.DownloadCount,
 		}
+		if v.Digest != "" {
+			digest := v.Digest
+			summary.Digest = &digest
+		}
+		return summary
 	}))
 }
 

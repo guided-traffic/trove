@@ -153,7 +153,24 @@ test('E2.8 R-UI-006 R-UI-008 R-UI-016 the published version in the list, its san
     await expectAccessible(page, 'package list filtered by the repository');
   });
 
+  await test.step('the repository content page lists the package and opens its version with the install command (R-UI-052)', async () => {
+    await page.goto(`/ui/en/projects/${e2eProject}/repositories/${repoKey}`);
+    await expect(page.getByRole('heading', { name: repoKey, level: 1 })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Packages' })).toHaveAttribute('aria-selected', 'true');
+    const row = page.getByRole('table', { name: 'Packages' }).getByRole('row', { name: new RegExp(pkgName) });
+    await row.getByRole('button', { name: `Show the versions of ${pkgName}` }).click();
+    await expect(page.locator('trove-repository-item-versions pre')).toHaveText(new RegExp(`install ${pkgName}@${version}`));
+    await expectAccessible(page, 'repository content, package and its version');
+    await page.getByRole('tab', { name: 'Set up client' }).click();
+    await expect(page.locator('trove-client-setup pre').first()).toBeVisible();
+    await expectAccessible(page, 'repository content, client setup');
+  });
+
   await test.step('the README renders, and what the sanitizer must drop is gone', async () => {
+    await page.goto(`/ui/en/projects/${e2eProject}/packages`);
+    await openFilter(page, 'Repository');
+    await page.getByRole('checkbox', { name: qualified(repoKey), exact: true }).check();
+    await page.getByRole('button', { name: 'Search' }).click();
     await page.getByRole('link', { name: pkgName }).click();
     await expect(page.getByRole('heading', { name: pkgName, level: 1 }).first()).toBeVisible();
     await expect(page.getByRole('tab', { name: 'README', selected: true })).toBeVisible();
@@ -233,7 +250,7 @@ test('R-UI-021 R-ARCH-004 the npm settings in the wizard and on the edit form, r
   });
 
   await test.step('the edit form reads it back and setting the default back removes it from the document', async () => {
-    await page.reload();
+    await page.goto(`/ui/en/projects/${e2eProject}/repositories/${wizardKey}/settings`);
     await page.getByRole('tab', { name: 'npm settings' }).click();
     await expect(guard).not.toBeChecked();
     await expectAccessible(page, 'repository detail, npm settings');
@@ -318,6 +335,7 @@ test('R-UI-021 R-REPO-050 the Mirror section of a remote npm repository in the w
   });
 
   await test.step('the edit form has a Mirror tab with the mode read back and nothing to save', async () => {
+    await page.goto(`/ui/en/projects/${e2eProject}/repositories/${mirrorKey}/settings`);
     await page.getByRole('tab', { name: 'Mirror' }).click();
     await expect(mode(/^Pull-through/)).toBeChecked();
     await expect(page.getByRole('button', { name: 'Save changes' })).toBeDisabled();

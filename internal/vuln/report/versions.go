@@ -181,11 +181,11 @@ type VersionCounts struct {
 
 // Package returns the versions of a package the caller can read with their open findings counted by severity; every readable
 // version is listed, one without a finding with zero counts. found is false when the caller can read no version of it.
-func (s *Service) Package(ctx context.Context, sc Scope, format, name string) ([]VersionCounts, bool, error) {
+func (s *Service) Package(ctx context.Context, sc Scope, format, name string, f store.Filter) ([]VersionCounts, bool, error) {
 	if len(sc.Holders) == 0 {
 		return nil, false, nil
 	}
-	counts, err := s.st.PackageCounts(ctx, sc.Scope, format, name)
+	counts, err := s.st.PackageCounts(ctx, sc.Scope, format, name, f)
 	if err != nil {
 		return nil, false, err
 	}
@@ -201,7 +201,9 @@ func (s *Service) Package(ctx context.Context, sc Scope, format, name string) ([
 		return c
 	}
 	for _, h := range sc.Holders {
-		add(h.Version)
+		if !f.HasRepos || slices.Contains(f.Repos, h.RepoID) {
+			add(h.Version)
+		}
 	}
 	for _, c := range counts {
 		add(c.Version).Open.Add(c.Severity, c.N)
@@ -212,4 +214,25 @@ func (s *Service) Package(ctx context.Context, sc Scope, format, name string) ([
 		out = append(out, *byVersion[v])
 	}
 	return out, true, nil
+}
+
+// PackageListKey identifies one package of a page of the packages list.
+func PackageListKey(format, name string) string { return format + "\x1f" + name }
+
+// PackageList returns the open findings of the packages named in f.Packages over the findings the caller can read, narrowed by f's
+// repositories, counted by severity, by PackageListKey, for a page of the packages list (R-UI-052). A package without a finding the
+// caller can read has no entry: the caller reads that as zero.
+func (s *Service) PackageList(ctx context.Context, sc Scope, f store.Filter) (map[string]Counts, error) {
+	rows, err := s.st.PackageListCounts(ctx, sc.Scope, f)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]Counts, len(rows))
+	for _, r := range rows {
+		key := PackageListKey(r.Format, r.Package)
+		c := out[key]
+		c.Add(r.Severity, r.N)
+		out[key] = c
+	}
+	return out, nil
 }

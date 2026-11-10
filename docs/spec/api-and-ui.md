@@ -39,7 +39,7 @@ OPS-032),
 ## Reading this page
 
 - Part A (R-API-001 to R-API-019, R-API-051, R-API-052): conventions. Part B (R-API-020 to
-  R-API-050, R-API-053): endpoint surface. Part C (R-UI-001 to R-UI-051): UI.
+  R-API-050, R-API-053): endpoint surface. Part C (R-UI-001 to R-UI-052): UI.
 - Every `web` replica answers every request, and the Kubernetes Service picks one at random without
   session affinity (INV-2, INV-12). "A request" on this page therefore never means "the same
   replica as the previous request" (INV-18, R-API-051).
@@ -1532,10 +1532,10 @@ remain as their owners define them.)
 
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
-| GET | `/api/v1/packages` | Packages; filters `format`, `repository` (both repeatable; the qualified name `<projectKey>/<repoKey>`), `project`, `q` (name and description), `namePrefix`, `keyword`, `createdFrom` / `createdTo` (first visible version); `sort` `name`, `createdAt`, `updatedAt` and their descending forms (default `name`) | visible versions (below); anonymous where allowed |
+| GET | `/api/v1/packages` | Packages; filters `format`, `repository` (both repeatable; the qualified name `<projectKey>/<repoKey>`), `project`, `q` (name and description), `namePrefix`, `keyword`, `createdFrom` / `createdTo` (first visible version); `sort` `name`, `createdAt`, `updatedAt` and their descending forms (default `name`); `include=vulnerabilities` (R-UI-052) | visible versions (below); anonymous where allowed |
 | GET | `/api/v1/packages/lookup?format=npm&name=@team-a/ui` | Resolve a name to the package | as list |
 | GET | `/api/v1/packages/{packageId}` | Package summary | as list |
-| GET | `/api/v1/packages/{packageId}/versions` | Versions; filters `prerelease`, `repository`; `sort` `-publishedAt` (default), `publishedAt`, `-version`, `version` (the format's version precedence) | as list |
+| GET | `/api/v1/packages/{packageId}/versions` | Versions; filters `prerelease`, `repository`; `sort` `-publishedAt` (default), `publishedAt`, `-version`, `version` (the format's version precedence); `include=digest` (R-UI-052) | as list |
 | GET | `/api/v1/packages/{packageId}/versions/{version}` | Version details | as list |
 | GET | `/api/v1/packages/{packageId}/versions/{version}/readme` | Sanitized README HTML | as list |
 
@@ -1565,7 +1565,11 @@ remain as their owners define them.)
   which reports the size of its versions: an OCI tag's file is the manifest document, so its `sizeBytes` is the image's (R-OCI-031,
   Q-OCI-130). The UI shows the value as received.
 - The `versions` list entries hold `version`, `prerelease`, `publishedAt`, `sizeBytes`, `repositories`
-  (the qualified names `<projectKey>/<repoKey>` of the repositories the caller may read) and `downloadCount`. The details and the README answer carry a strong `ETag`
+  (the qualified names `<projectKey>/<repoKey>` of the repositories the caller may read) and `downloadCount`; with `include=digest` also
+  `digest`, the content digest the format's version metadata names (an OCI tag: `sha256:…` of its manifest, R-UI-052), absent for a format without one.
+  With `include=vulnerabilities`, `GET /api/v1/packages` adds `openVulnerabilities` to each entry for a signed-in caller of an installation
+  that scans: the open findings the caller can read, of the entry's visible versions in the repositories the filter names, by severity, in
+  one statement per page; a caller who is anonymous or a failure to read the counts leaves the member absent and the list is answered anyway. The details and the README answer carry a strong `ETag`
   and honour `If-None-Match`; the README tag covers the README source, the renderer version and the hash of
   the image origin list.
 - The visibility filter is decided per repository by the decision point and passed into the statements that
@@ -2821,12 +2825,14 @@ selected tab and selected version live in query parameters.
 |---|---|---|
 | `/` | Start: the only project of the caller, else the list of projects | R-UI-041 |
 | `/projects` | The projects of the caller (start page) | R-UI-041 |
-| `/projects/{project}` | Answers with the packages of the project | R-UI-041 |
+| `/projects/{project}` | Answers with the repositories of the project (Q-UI-216) | R-UI-041, R-UI-052 |
 | `/projects/{project}/packages` | Packages list | R-UI-006 |
 | `/projects/{project}/packages/{format}/{name…}` (`?version=`) | Package details | R-UI-007 |
 | `/projects/{project}/vulnerabilities` (`?repository=&severity=&status=&…`), `/projects/{project}/vulnerabilities/findings/{id}`, `/projects/{project}/vulnerabilities/advisories/{ecosystem}/{id}` | Vulnerability report of the project, finding, advisory (from M4b) | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-022 |
 | `/projects/{project}/browse/{repo}/{path…}` | File tree with selection | R-UI-010 |
-| `/projects/{project}/repositories`, `/projects/{project}/repositories/new`, `/projects/{project}/repositories/{key}` | Repositories of the project | R-UI-020, R-UI-021 |
+| `/projects/{project}/repositories`, `/projects/{project}/repositories/new` | Repositories of the project | R-UI-020, R-UI-021 |
+| `/projects/{project}/repositories/{key}` (`?tab=setup&q=&sort=&path=`) | Content of the repository | R-UI-052 |
+| `/projects/{project}/repositories/{key}/settings` | Settings of the repository | R-UI-020 |
 | `/projects/{project}/members`, `/projects/{project}/settings` | Members and roles, settings of the project | R-UI-041 |
 | `/projects/{project}/policies`, `/projects/{project}/policies/new`, `/projects/{project}/policies/{name}` | Permission policies of the project | R-UI-027 |
 | `/projects/{project}/service-accounts`, `/projects/{project}/service-accounts/{name}` | Service accounts of the project | R-UI-026 |
@@ -2866,7 +2872,7 @@ selected tab and selected version live in query parameters.
 - A repository is named in a route by the project of the route and its key, and in a query parameter (`?repository=`)
   by the qualified name `<projectKey>/<repoKey>`. The content routes live under `/projects/{project}/…`
   ([Q-UI-129](#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects)); `/projects/{project}`
-  answers with the packages, so that the step of the project in the breadcrumb links to a route that exists. A route
+  answers with the repositories (Q-UI-216), so that the step of the project in the breadcrumb links to a route that exists. A route
   that existed before the project was the context (`/packages`, `/browse`, `/vulnerabilities`,
   `/admin/repositories/{project}/{key}`, `/admin/projects/{project}`) is not found.
 - Route guards only shape navigation; the API decides (R-UI-005). When a screen's first API call
@@ -2968,7 +2974,7 @@ Priority: **MVP** · Covers: UI-008, ART-048
 - The list uses the shared data table and the shared filter panel of R-UI-002 (Q-UI-68): the
   filters below are the panel's categories, the sort control is a column header, "Load more" is the
   table's.
-- Start page, backed by R-API-029. Filters, as the categories of the panel: package type (multi-select),
+- Backed by R-API-029 (the start page of a project is its repositories, R-UI-052, Q-UI-216). Filters, as the categories of the panel: package type (multi-select),
   repository (multi-select), name or description (`q`), keyword, created period (last 7, 30, 90 days,
   custom; a custom end day is included). Applied filters appear as removable chips and live in the URL.
 - Table: type (icon plus text, never icon alone), name, latest version, one-line description, first
@@ -3133,6 +3139,54 @@ Acceptance criteria:
 
 - Copying the npm command for `@team-a/ui@1.4.0` and running it in a project configured by the
   client setup installs that version.
+
+### R-UI-052 · Repository content page
+Priority: **MVP** · Covers: trove-only
+
+`/projects/{project}/repositories/{key}` is what a repository holds, on the logical level (Q-UI-216); its settings moved to
+`…/settings`. One shell serves every format; what differs per format is a small table of words and columns, not a screen per format
+([content-shape.ts](../../web/src/app/features/repositories/content/content-shape.ts)).
+
+- Header: the key (the `h1`), one muted sentence (the repository's description, else what the class means), the format and the class as
+  badges, the upstream of a remote repository and the members of a virtual repository, each linked to its content page, as far as
+  the caller may read them (the consumer view of R-REPO-010 has neither), and to the right the quiet actions Browse files (not for
+  generic, whose content is its files) and Vulnerabilities (not for generic and virtual) and the action Settings for a caller who can
+  read the configuration (`repositories:read-config`, or the Owner of the project).
+- Tabs (query `tab`): the content (labelled Images, Packages or Files) and **Set up client**.
+- A package format (npm, NuGet, OCI, Debian, every format with a view adapter) lists its items from `GET /api/v1/packages` with
+  `repository=<qualified name>` and `format=<format>`, the filter `q` (query, server-side, name and description) and the sort `name`
+  or `updatedAt`, paged with "Load more". A column of open findings appears only for a format whose versions are matched against
+  advisories (`FormatDescriptor.vulnerabilityScanning`, a format with the vulnerability adapter, R-VULN-009); for any other a muted
+  sentence says so (OCI and Debian today). The counts come from `include=vulnerabilities` in one statement per page, summed over the
+  versions of the item in this repository, and the versions list of an item is `…/versions?repository=…` with its
+  `…/vulnerabilities?repository=…` report, one request each per opened item.
+- The row of an item opens in place (`collapse-region`) to its versions: for an image, the tags with digest (`include=digest`), size and
+  pushed time; for a package, its versions with size and published time; each with the open findings of the version in this repository.
+  Above the versions, the install command of the version chosen in the list (default: the item's latest version) from the install
+  snippet of R-API-030 for this repository and the client picked in the panel (`credentials=none`, so it never holds a token): `docker
+  pull`/`podman pull` with this installation's real address for OCI, the install command of the format elsewhere. The item's name links
+  to the package details (R-UI-007), a version's name to the details at that version.
+- A generic repository lists its files through `GET …/children` (R-API-025): folders open in place (query `path`, with a trail back up), a
+  file links to its detail in the file browser (R-UI-010) and offers a copy of its download address; the filter narrows what is loaded,
+  because children have no name filter on the server.
+- A virtual repository shows what it resolves: the same list, whose `repository` filter expands to its members (R-API-029). A remote repository
+  lists what it holds: what the format has stored for it (a cached npm or NuGet version, for example); a note says that only what
+  clients have fetched appears. **An OCI remote lists nothing yet:** a remote's tags are metadata entries and own no version row (Q-OCI-121,
+  R-OCI-031), so `GET /api/v1/packages` has nothing to list for it and the screen says so instead of implying an empty cache.
+- **Set up client** is the client setup of R-UI-016 for this one repository, on the page: the format and the repository are fixed by the page,
+  so the steps that choose them are left out and the client is chosen in the component (Q-UI-216); the token, paste and snippet behaviour is
+  R-UI-016's unchanged, because it is the same component. Hidden for a disabled repository.
+- Opening the page records it in the recently viewed repositories (R-UI-020).
+
+Acceptance criteria:
+
+- `/projects/web` opens the repositories of the project; the sidebar lists Repositories first; the project switcher and the start page lead there.
+- `/projects/web/repositories/<oci-key>` lists the images; opening one shows its tags with digest, size and pushed time and a
+  `docker pull <host>/web/<oci-key>/<image>:<tag>` copy; Podman in the client picker switches it to `podman pull`.
+- `/projects/web/repositories/<npm-key>` lists the packages with the highest open severity and the number of open findings, and the open version
+  row shows `npm install <name>@<version>`; a reader without `repositories:read-config` sees no Settings action.
+- The Edit action of the repository list and the Settings action of the content page open `…/settings`, and leaving it with unsaved changes asks first.
+- A generic repository shows Files, a folder opens in place and a file links to its detail.
 
 ### R-UI-010 · File tree browser
 Priority: **MVP** · Covers: UI-011, ART-040, ART-041
@@ -3584,7 +3638,8 @@ Priority: **MVP** · Covers: UI-030, REPO-007
   for one project, without the project column and the project filter. The list is ordered by key; the API takes
   no `sort` parameter yet, so the table has no sort control (sorting by creation arrives with the
   API, and the creation time with the summary, Q-UI-18). "Recently viewed" (browser storage, 20).
-- Row actions: edit, browse, client setup, reindex (P1), invalidate cache (remote and virtual),
+- The key links to the repository's content page (R-UI-052); the Settings action opens `…/settings`.
+- Row actions: settings, browse, client setup, reindex (P1), invalidate cache (remote and virtual),
   from M4b vulnerabilities (local and remote repositories of a format with the vulnerability
   adapter: the repository's view of the report, `/projects/<projectKey>/vulnerabilities?repository=<projectKey>/<repoKey>`,
   [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-022),
@@ -3608,7 +3663,7 @@ Priority: **MVP** · Covers: UI-031
   settings, from the projects in which the caller may create repositories (every project for
   `repositories:write-config`, the projects it owns otherwise); inside a project (`/projects/{project}/repositories/new`) the
   project is given, shown as text and not chosen. It is read-only on the edit form, where a move to another project is its
-  own action (R-UI-020). A repository's own screen is `/projects/{project}/repositories/{key}`.
+  own action (R-UI-020). After the create the wizard opens the new repository's content page (R-UI-052); its settings are `/projects/{project}/repositories/{key}/settings`.
 - The format step is a grid of tiles from `GET /api/v1/formats`, each with the format's icon and its
   name, under a search field ("Search by package type") that filters the tiles by name, a title and
   a one-line hint. Only the formats the installation has appear. The grid is a single-choice listbox
@@ -9362,6 +9417,31 @@ Context: the project's settings were a card of keys and values with an **Edit pr
 **Choice:** (a). The page is the display name and the description with **Save changes** (disabled until something changed; `PUT` with `If-Match`, a 412 opens the conflict dialog), the key as a read-only field, then **Details** with the facts and **Advanced** with the deletion, both closed. A global `[hidden] { display: none !important; }` closes the class of defect the sidebar had. Menus and dialogs are not folding elements and keep their behaviour. **Rationale:** a state that folds is one concept, so it has one implementation. Not verified: the animation of `<details>` where the browser has no `::details-content` (it opens at once there) and every folding element by hand; the sidebar group and the settings sections were measured in Chromium.
 
 **Applied in the spec:** R-UI-041. Code: `SettingsSection`, `ProjectSettings`, the section "Opening and closing" of `_controls.scss`.
+
+### Q-UI-216 · A project opens on its repositories, and a repository opens on what it holds
+
+Status: **Decided by the owner** (2026-11-10): "Wenn ich in ein Projekt gehe, will ich zuerst die ganzen repositories im Projekt sehen. Und wenn ich auf ein Repository klicke, dann will ich nicht in die Settings des Repositories, sondern in den Inhalt des Repositories. [...] Niemand will das Repo auf dateiebene oder physikalischer ebene sehen. Es interessiert nur die logische und inhaltliche ebene. Wenn ich in ein oci repo hinein gehe, will ich eine Darstellung der vorhandenen Images, welche Tags gibt es pro Image. Welche Vulnerabilities hat welches Image? Wie kann ich ein Image herunterladen, Beispiel kommandos. Wie richte ich dieses Repo in meiner Workstation ein. Das gleiche gilt für alle anderen Repositorie typen, nur das die Darstellung zwischen den Typen natürlich deutlich abweichen kann."
+
+Context: the repository screen of R-UI-020 was the settings, and the content a reader wants was in the packages list and the file tree of R-UI-010, across which a reader had to assemble what one repository holds and how to pull from it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `/repositories/{key}` is the content, the settings move below it (chosen) | The route of a repository is what it holds | What the owner asked; a link to a repository from anywhere shows what is in it | Every link to the settings had to move |
+| (b) A second route for the content, the settings stay | `/repositories/{key}` keeps the settings | No link moves | A click on a repository still lands in the settings |
+
+**Choice:** (a). The sub-decisions the owner did not make, taken by the development agent and open to change at the walkthrough:
+
+- The client setup is a tab of the page, not a section below the list and not a dialog: it stays on the page without pushing the list down, and a token created in it dies with the tab (R-UI-043, R-UI-016).
+- The open findings of an item are summed over its versions in this repository: a finding present in two versions counts twice, as everywhere else findings are counted per version. The row's badge shows the highest open severity and the count.
+- OCI and Debian have no vulnerability adapter today, so their pages have no column of findings and say so in one sentence (`vulnerabilityScanning` of the format catalog); the column appears the day an adapter exists, and the digest of a tag and the counts need no other change.
+- The digest of a version in the list comes from the format's existing `metadata.digest` behind `include=digest`, not from a new format contract member: only the OCI screens ask for it, so no adapter pays for it otherwise.
+- A remote OCI repository lists nothing: its tags are no version rows (Q-OCI-121), and adding one would change a reliability-critical path; the screen says so. It is an open item for the owner (below).
+
+**Rationale:** the screen follows the mental model the owner named (images, tags, vulnerabilities, how to pull), and it reuses what exists (the install snippets of R-API-030, the client setup of R-UI-016, the list API of R-API-029) instead of a parallel set of format screens.
+
+**Applied in the spec:** R-UI-052 (new), R-UI-003, R-UI-006, R-UI-020, R-UI-041, R-API-029, [R-VULN-020](vulnerability-scanning.md#r-vuln-020--findings-api); [web-ui.md](../developer/web-ui.md); [repositories.md](../manual/user/repositories.md). Code: [repository-content.ts](../../web/src/app/features/repositories/content/repository-content.ts).
+
+**Open:** a remote OCI repository's cached images are not listed (no version rows, Q-OCI-121); listing them needs either a format adapter that reads the manifests of a remote or version rows for its tags, a decision for the owner. Vulnerability counts for OCI need the image scanning of [vulnerability-scanning.md](vulnerability-scanning.md) (F4).
 
 ### Q-API-246 · An operation that is allowed while the installation is read-only declares `x-trove-maintenance: allowed`
 

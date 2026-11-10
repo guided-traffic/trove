@@ -28,8 +28,8 @@ import { classLabel } from './repository-wizard';
 /**
  * The repository list (R-UI-020): key, project, format, class, description, client address with a copy
  * button, last activity. Filters live in the query parameters (R-UI-003) and restart the cursor
- * walk; "Load more" continues it. A repository is addressed inside its project (R-REPO-002): its row links to
- * `/projects/<project>/repositories/<key>`. Delete asks for the key, may offer to detach the repository from
+ * walk; "Load more" continues it. A repository is addressed inside its project (R-REPO-002): its key links to
+ * the content page `/projects/<project>/repositories/<key>` (R-UI-052), its Settings action to `…/settings`. Delete asks for the key, may offer to detach the repository from
  * the virtual repositories that include it, and follows the deletion job until the row is gone.
  */
 @Component({

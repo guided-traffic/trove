@@ -31,7 +31,7 @@ test('R-UI-022 with the keyboard only an administrator adds two members, reorder
   replicas,
 }) => {
   await signInLocal(page);
-  await page.goto(`/ui/en/projects/${e2eProject}/repositories/${virtualKey}`);
+  await page.goto(`/ui/en/projects/${e2eProject}/repositories/${virtualKey}/settings`);
   await page.getByRole('tab', { name: 'Members' }).click();
 
   const available = page.getByRole('listbox', { name: 'Available repositories' });

@@ -756,7 +756,7 @@ export class Browse {
   /** The repository's own screen in its project. */
   protected repositoryCommands(repo: string): string[] {
     const { project, key } = splitRef(repo);
-    return ['/projects', project, 'repositories', key];
+    return ['/projects', project, 'repositories', key, 'settings'];
   }
 
   // --- actions ------------------------------------------------------------------------------

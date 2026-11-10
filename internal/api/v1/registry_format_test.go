@@ -75,3 +75,37 @@ func TestImagePrefixIsTheHostAndTheRepositoryOfARegistryRootFormat(t *testing.T)
 		t.Errorf("a format without the registry root has the image prefix %q", got)
 	}
 }
+
+// TestR_UI_052_TheFormatListSaysWhichFormatsAreScanned: the screens show a column of vulnerabilities only for a format whose versions
+// are matched against advisories.
+func TestR_UI_052_TheFormatListSaysWhichFormatsAreScanned(t *testing.T) {
+	val := apitest.New(t, EmbeddedYAML())
+	s := newSetup(t, func(o *Options) { o.Access = allowAll{} }, authed)
+	s.handler = val.Handler(t, s.handler)
+	w := s.get("/api/v1/formats")
+	if w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	var body struct {
+		Formats []struct {
+			Name                  string `json:"name"`
+			VulnerabilityScanning bool   `json:"vulnerabilityScanning"`
+		} `json:"formats"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{"npm": true, "nuget": true, "oci": false, "deb": false, "generic": false}
+	seen := 0
+	for _, f := range body.Formats {
+		if w, ok := want[f.Name]; ok {
+			seen++
+			if f.VulnerabilityScanning != w {
+				t.Errorf("%s: vulnerabilityScanning = %v, want %v", f.Name, f.VulnerabilityScanning, w)
+			}
+		}
+	}
+	if seen != len(want) {
+		t.Errorf("saw %d of the formats %v", seen, want)
+	}
+}

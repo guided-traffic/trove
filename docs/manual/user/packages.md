@@ -92,7 +92,7 @@ Links in **Metadata** open in a new tab and only for `http` and `https` addresse
 
 npm packages carry distribution tags, names such as `latest` or `next` that point at a version. **Metadata**, section **Distribution tags**, lists each tag with its version, and only tags that point at a version you may see.
 
-You change tags with your package manager, not in the UI, for example `npm dist-tag add @team-a/ui@1.4.0 next`. That needs the deploy permission and, where the package has owners, ownership of it. The **How to use** guide of a repository has the commands for each client; see [Repositories](repositories.md#the-how-to-use-guide).
+You change tags with your package manager, not in the UI, for example `npm dist-tag add @team-a/ui@1.4.0 next`. That needs the deploy permission and, where the package has owners, ownership of it. The **How to use** guide of a repository has the commands for each client; see [Repositories](repositories.md#the-how-to-use-guide). The content page of a repository also lists its packages with their install commands; see [Repositories](repositories.md#the-content-of-a-repository).
 
 ## The install panel
 

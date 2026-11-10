@@ -472,6 +472,7 @@ export class FakePackagesApi extends PackagesApi {
           sizeBytes: v.sizeBytes,
           repositories: v.repositories.map((r) => r.key),
           downloadCount: v.downloadCount,
+          ...(filters.include?.includes('digest') && typeof v.metadata['digest'] === 'string' ? { digest: v.metadata['digest'] } : {}),
         }),
       )
       .sort(order);

@@ -115,7 +115,7 @@ export abstract class VulnerabilitiesApi {
   /** The CSV document of a filter; `422 export_too_large` rejects before anything is streamed. */
   abstract exportCsv(filters: FindingFilters): Promise<string>;
   abstract versionReport(packageId: string, version: string): Promise<VulnerabilityVersionReport>;
-  abstract packageReport(packageId: string): Promise<VulnerabilityPackageReport>;
+  abstract packageReport(packageId: string, repository?: readonly string[]): Promise<VulnerabilityPackageReport>;
 }
 
 @Injectable()
@@ -177,7 +177,11 @@ export class HttpVulnerabilitiesApi extends VulnerabilitiesApi {
     ).body;
   }
 
-  override async packageReport(packageId: string): Promise<VulnerabilityPackageReport> {
-    return (await this.client.getJson<VulnerabilityPackageReport>(`/api/v1/packages/${seg(packageId)}/vulnerabilities`)).body;
+  override async packageReport(packageId: string, repository?: readonly string[]): Promise<VulnerabilityPackageReport> {
+    return (
+      await this.client.getJson<VulnerabilityPackageReport>(`/api/v1/packages/${seg(packageId)}/vulnerabilities`, {
+        params: cleanQuery({ repository }),
+      })
+    ).body;
   }
 }

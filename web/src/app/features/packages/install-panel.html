@@ -4,15 +4,13 @@
   @if (clients().length === 0) {
     <p i18n="@@pkg.install.no-clients">There are no install instructions for this package type yet.</p>
   } @else {
-    <div class="pickers">
-      <label class="picker">
-        <span i18n="@@pkg.install.client">Client</span>
-        <select class="select-input" (change)="pickClient($event)">
-          @for (c of clients(); track c.id) {
-            <option [value]="c.id" [selected]="c.id === selectedClient()" translate="no">{{ c.label }}</option>
-          }
-        </select>
-      </label>
+    <trove-install-command
+      [format]="format()"
+      [name]="name()"
+      [version]="version().version"
+      [repository]="repository()"
+      [(client)]="client"
+    >
       @if (version().repositories.length > 1) {
         <label class="picker">
           <span i18n="@@pkg.install.repository">Repository</span>
@@ -23,37 +21,12 @@
           </select>
         </label>
       }
-    </div>
-
-    @if (failure(); as f) {
-      <trove-error-notice [error]="f" (retry)="answer.reload()" />
-    } @else if (answer.isLoading()) {
-      <p role="status" i18n="@@pkg.install.loading">Loading the command.</p>
-    } @else if (command()) {
-      <div class="command">
-        <pre class="code-block folding" translate="no" tabindex="0" [style.--lines]="shownLines()">{{ command() }}</pre>
-        <trove-copy-button [value]="command()" [label]="copyLabel" />
-      </div>
-      @if (collapsible()) {
-        <button
-          type="button"
-          class="btn btn-tertiary expander"
-          [attr.aria-expanded]="expanded()"
-          (click)="expanded.set(!expanded())"
-        >
-          @if (expanded()) {
-            <ng-container i18n="@@pkg.install.collapse">Show less</ng-container>
-          } @else {
-            <ng-container i18n="@@pkg.install.expand">Show the whole command</ng-container>
-          }
-        </button>
-      }
-    }
+    </trove-install-command>
 
     <p class="setup-link">
       <a
         routerLink="/setup"
-        [queryParams]="{ repository: repository(), client: selectedClient() }"
+        [queryParams]="{ repository: repository(), client: client() ?? clients()[0]?.id }"
         i18n="@@pkg.install.setup-link"
         >Set up your client for this repository</a
       >

@@ -1,6 +1,6 @@
 # Repositories
 
-Everything trove stores lives in a repository, and every repository belongs to a project and has a key, a format and a class. This page explains the local, remote and virtual classes from a user's point of view, how projects and keys become addresses, which formats this version serves, what you see depending on your permissions, and how the repository screen and its How to use guide help you connect a client.
+Everything trove stores lives in a repository, and every repository belongs to a project and has a key, a format and a class. This page explains the local, remote and virtual classes from a user's point of view, how projects and keys become addresses, which formats this version serves, what you see depending on your permissions, and how the content page of a repository and its setup help you connect a client.
 
 ## Repository classes
 
@@ -52,7 +52,7 @@ Your client reaches a repository at an address built from the installation's add
 | OCI (Docker) | `trove.example.com/<project>/<key>/<image>:<tag>`, an image reference without a scheme | `https://trove.example.com/files/<project>/<key>/` (download and delete; uploads go through the registry) |
 | Debian (APT) | `https://trove.example.com/api/deb/<project>/<key>/`, with a suite in the source line | `https://trove.example.com/files/<project>/<key>/` (download and delete; uploads go to `upload/<file>` of the APT address) |
 
-The repository screen shows these addresses for your installation, so you do not have to build them yourself. A repository that an administrator moves to another project changes its address: the old address answers `404`, and your client configuration needs the new one.
+The **Set up client** tab of a repository shows these addresses for your installation, so you do not have to build them yourself. A repository that an administrator moves to another project changes its address: the old address answers `404`, and your client configuration needs the new one.
 
 ## Formats in this version
 
@@ -73,43 +73,45 @@ trove shows you only what you may read. A repository you may not read is not lis
 | What you hold | What you see and can do |
 |---|---|
 | A role in the repository's project | **Reader** reads every repository of the project, **Developer** also publishes and uploads, **Maintainer** and **Owner** also replace, delete and manage; [Projects](../admin/projects.md#members-and-roles) explains the roles |
-| Read on a repository | It appears in the **Browse** tree and, for npm, NuGet, OCI and Debian, under **Packages**; you can open its repository screen, download, and install from it |
+| Read on a repository | It appears in the **Browse** tree and, for npm, NuGet, OCI and Debian, under **Packages**; you can open its content page, download, and install from it |
 | Deploy, overwrite or delete | Upload or publish, replace, and delete, on the paths and packages your permission names |
-| The permission to read repository configuration | Every repository, the full repository screen with all settings, the **Find a repository** search in the top bar, and **Admin area › Repositories** |
+| The permission to read repository configuration | Every repository, the settings of every repository, the **Find a repository** search in the top bar, and **Admin area › Repositories** |
 | Nothing, as an anonymous reader | Only the repositories open to anonymous readers, and nothing you can change |
 
 Permissions can be narrower than a whole repository: a permission may cover only some paths or package names, and you then see only those. Ask an Owner of the repository's project if something you need is missing.
 
-## The repository screen
+## The content of a repository
 
-Open a repository in one of these ways:
+Open a project and you land on its **Repositories**. Select a repository to see what it holds, on the level you think in: images and tags, packages and versions, or files. You get there from the project's **Repositories**, from **Admin area › Repositories** (every project, each row naming its project), and with **Find a repository** in the top bar if you may read repository configuration.
 
-1. In **Browse**, select the repository at the top of the tree, then select **Repository configuration** in the details.
-2. Select it in the project's **Repositories**.
-3. If you may read repository configuration, select it in **Admin area › Repositories** (every project, each row naming its project) or search for it with **Find a repository**.
+The page is titled with the repository's key and says what the repository is. The tabs are:
 
-The screen is titled **Repository** and shows the key. **Browse** opens the repository in the file browser.
+- **Images**, **Packages** or **Files**, depending on the format, with a filter.
+- **Set up client**, which shows how to connect this repository to your package manager, with a choice of client and of how to handle the token, on the page itself.
 
-### The consumer view
+**Settings**, at the top, opens the repository's settings, if you may read them. **Browse files** opens the same repository in the file tree.
 
-If you may use the repository but not read its configuration, the screen says **You may use this repository but not read or change its configuration.** It shows:
+Depending on the format, the content shows:
 
-| Field | Meaning |
-|---|---|
-| **Class** | Local, remote or virtual |
-| **Format** | npm, NuGet, OCI (Docker) or generic |
-| **Description** | What the repository is for, as its administrator wrote it |
-| **Client address** | Every address of the repository on this installation: for npm the address for your package manager and the raw file address |
+| Format | What is listed | Open a row to see |
+|---|---|---|
+| **OCI (Docker)** | Images, each with its latest tag, the number of tags, and when it was last pushed. A remote repository does not list the images it has cached yet; pull them with the commands under **Set up client** | The tags with digest, size and pushed time, and a copyable `docker pull` or `podman pull` command for the tag you choose, with this installation's address |
+| **npm, NuGet, Debian** | Packages, each with its latest version, the number of versions, open vulnerabilities where the format is scanned (npm and NuGet today) and downloads | The versions with size and published time, the open findings of each, and the install command for the version you choose |
+| **Generic** | The files of the repository, folder by folder | Selecting a folder opens it in place; selecting a file opens it in the file browser with all its details; the copy button copies its download address |
 
-Below the facts follows the **How to use** guide.
+Select a package or image name to open the [package page](packages.md) for details, the README and all versions. A virtual repository lists what it resolves through its members, which are named above the list. A remote repository lists what has been fetched through it, marked in a note.
 
-### The full view
+Vulnerabilities are not scanned for container images and Debian packages yet; the page says so and shows no vulnerability column for those.
 
-If you may read repository configuration, the screen also shows the layout, the client address with a copy button, and when the repository was created, last changed and last used. The tabs **General**, **Access**, the format's settings (for example **npm settings**), **How to use** and **API** hold the configuration. Changing it needs a further permission and is described in [Managing repositories](../admin/repositories.md).
+## Repository settings
+
+**Settings** on the content page opens the settings of the repository at `…/settings`. Editing it needs a further permission and is described in [Managing repositories](../admin/repositories.md). If you may use the repository but not read its configuration, the page says **You may use this repository but not read or change its configuration.** and shows the facts and the **How to use** guide instead of the form.
+
+The settings page has the tabs **General**, **Access**, the format's settings (for example **npm settings**), **How to use** and **API**.
 
 ## The How to use guide
 
-**How to use** is a guide written for the repository you are looking at: it uses this installation's addresses and the repository's key, and it describes what the repository's class allows. It is a tab on the full view and a section on the consumer view.
+**How to use** is a guide written for the repository you are looking at: it uses this installation's addresses and the repository's key, and it describes what the repository's class allows. It is a tab on the settings page and a section on the consumer view.
 
 1. Under **Client**, choose your package manager or curl. The guide changes to that client.
 2. Read the sections in order, or jump to one from **On this page**.

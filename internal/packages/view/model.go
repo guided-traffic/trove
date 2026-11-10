@@ -97,10 +97,13 @@ type Package struct {
 
 // VersionSummary is one entry of the version list.
 type VersionSummary struct {
-	Version       string
-	Prerelease    bool
-	PublishedAt   time.Time
-	SizeBytes     int64
+	Version     string
+	Prerelease  bool
+	PublishedAt time.Time
+	SizeBytes   int64
+	// Digest is the version's content digest (an OCI tag: `sha256:…` of its manifest), read from the format's metadata when the caller
+	// asks (VersionFilter.WithDigest); "" for none.
+	Digest        string
 	Repositories  []qname.Repo
 	DownloadCount int64
 }

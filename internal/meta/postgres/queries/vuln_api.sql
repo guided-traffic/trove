@@ -342,18 +342,35 @@ SELECT rep.ecosystem, rep.canonical_id AS id, rep.kind, rep.summary, rep.details
   FROM rep;
 
 -- name: VulnPackageCounts :many
--- The open findings of one package the caller can read, per version and severity.
+-- The open findings of one package the caller can read, per version and severity; has_repos narrows them to the repositories in repos.
 SELECT f.version, f.severity, count(*)::bigint AS n
   FROM vuln_finding f
   JOIN repositories r ON r.id = f.repo_id
  WHERE r.format = sqlc.arg(format)::text
    AND f.package_name = sqlc.arg(name)::text
    AND f.status IN ('needs_triage', 'confirmed', 'blocked')
+   AND (NOT sqlc.arg(has_repos)::boolean OR f.repo_id = ANY(sqlc.arg(repos)::bigint[]))
    AND (f.repo_id = ANY(sqlc.arg(whole)::bigint[])
           OR concat_ws(chr(31), f.repo_id::text, f.package_name, f.version) = ANY(sqlc.arg(rows)::text[])
           OR concat_ws(chr(31), f.repo_id::text, f.package_name) = ANY(sqlc.arg(package_rows)::text[]))
  GROUP BY f.version, f.severity
  ORDER BY f.version, f.severity;
+
+-- name: VulnPackageListCounts :many
+-- The open findings of the named packages the caller can read, per format, package and severity, for a page of the packages list
+-- (R-UI-052): one statement however many packages the page holds. has_repos narrows them to the repositories in repos.
+SELECT r.format, f.package_name, f.severity, count(*)::bigint AS n
+  FROM vuln_finding f
+  JOIN repositories r ON r.id = f.repo_id
+ WHERE f.package_name = ANY(sqlc.arg(packages)::text[])
+   AND (cardinality(sqlc.arg(formats)::text[]) = 0 OR r.format = ANY(sqlc.arg(formats)::text[]))
+   AND f.status IN ('needs_triage', 'confirmed', 'blocked')
+   AND (NOT sqlc.arg(has_repos)::boolean OR f.repo_id = ANY(sqlc.arg(repos)::bigint[]))
+   AND (f.repo_id = ANY(sqlc.arg(whole)::bigint[])
+          OR concat_ws(chr(31), f.repo_id::text, f.package_name, f.version) = ANY(sqlc.arg(rows)::text[])
+          OR concat_ws(chr(31), f.repo_id::text, f.package_name) = ANY(sqlc.arg(package_rows)::text[]))
+ GROUP BY r.format, f.package_name, f.severity
+ ORDER BY r.format, f.package_name, f.severity;
 
 -- name: VulnSummaryCounts :many
 -- The open findings the caller can read, per severity and kind, with the share that needs triage and the share with a fix.

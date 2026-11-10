@@ -86,7 +86,7 @@ test('R-UI-041 an administrator creates a project; a member of its Owner group a
     await expectAccessible(bob, 'start page (project member)');
 
     await bob.getByRole('link', { name: key, exact: true }).click();
-    await expect(bob).toHaveURL(new RegExp(`/projects/${key}/packages$`));
+    await expect(bob).toHaveURL(new RegExp(`/projects/${key}/repositories$`));
     const nav = bob.getByRole('navigation', { name: 'Main navigation' });
     for (const entry of ['Packages', 'Browse', 'Repositories', 'Members', 'Permission policies', 'Service accounts', 'Settings']) {
       await expect(nav.getByRole('link', { name: entry, exact: true })).toBeVisible();
@@ -95,7 +95,7 @@ test('R-UI-041 an administrator creates a project; a member of its Owner group a
       await expect(nav.getByRole('link', { name: global, exact: true })).toHaveCount(0);
     }
     await expect(bob.getByRole('navigation', { name: 'Breadcrumb' })).toContainText(key);
-    await expectAccessible(bob, 'project packages (project member)');
+    await expectAccessible(bob, 'project repositories (project member)');
 
     // The switcher names the project, lists it and closes with Escape, the focus back on its button.
     const switcher = bob.getByRole('button', { name: /Switch project/ });

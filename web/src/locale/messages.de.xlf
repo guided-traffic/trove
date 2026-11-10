@@ -16017,8 +16017,8 @@
         <note category="location">src/app/features/repositories/repository-detail.html:2,3</note>
       </notes>
       <segment>
-        <source>Repository</source>
-        <target>Repository</target>
+        <source>Repository settings</source>
+        <target>Repository-Einstellungen</target>
       </segment>
     </unit>
     <unit id="repo.detail.back">
@@ -29750,6 +29750,513 @@
       <segment>
         <source>Delete this project.</source>
         <target>Dieses Projekt löschen.</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.oci.items">
+      <notes>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:28</note>
+      </notes>
+      <segment>
+        <source>Images</source>
+        <target>Images</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.oci.item">
+      <notes>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:29</note>
+      </notes>
+      <segment>
+        <source>Image</source>
+        <target>Image</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.oci.versions">
+      <notes>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:30</note>
+      </notes>
+      <segment>
+        <source>Tags</source>
+        <target>Tags</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.oci.version">
+      <notes>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:31</note>
+      </notes>
+      <segment>
+        <source>Tag</source>
+        <target>Tag</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.oci.filter">
+      <notes>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:32</note>
+      </notes>
+      <segment>
+        <source>Filter images</source>
+        <target>Images filtern</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.oci.empty">
+      <notes>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:33</note>
+      </notes>
+      <segment>
+        <source>This repository holds no images yet. Push an image, or set up your client first.</source>
+        <target>Dieses Repository enthält noch keine Images. Pushen Sie ein Image oder richten Sie zuerst Ihren Client ein.</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.oci.empty-filtered">
+      <notes>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:34</note>
+      </notes>
+      <segment>
+        <source>No image matches the filter.</source>
+        <target>Kein Image passt zum Filter.</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.oci.published">
+      <notes>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:35</note>
+      </notes>
+      <segment>
+        <source>Pushed</source>
+        <target>Gepusht</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.oci.command">
+      <notes>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:37</note>
+      </notes>
+      <segment>
+        <source>Pull command</source>
+        <target>Pull-Befehl</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.items">
+      <notes>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:41</note>
+      </notes>
+      <segment>
+        <source>Packages</source>
+        <target>Pakete</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.item">
+      <notes>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:42</note>
+      </notes>
+      <segment>
+        <source>Package</source>
+        <target>Paket</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.versions">
+      <notes>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:43</note>
+      </notes>
+      <segment>
+        <source>Versions</source>
+        <target>Versionen</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.version">
+      <notes>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:44</note>
+      </notes>
+      <segment>
+        <source>Version</source>
+        <target>Version</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.filter">
+      <notes>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:45</note>
+      </notes>
+      <segment>
+        <source>Filter packages</source>
+        <target>Pakete filtern</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.empty">
+      <notes>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:46</note>
+      </notes>
+      <segment>
+        <source>This repository holds no packages yet. Publish a package, or set up your client first.</source>
+        <target>Dieses Repository enthält noch keine Pakete. Veröffentlichen Sie ein Paket oder richten Sie zuerst Ihren Client ein.</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.empty-filtered">
+      <notes>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:47</note>
+      </notes>
+      <segment>
+        <source>No package matches the filter.</source>
+        <target>Kein Paket passt zum Filter.</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.published">
+      <notes>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:48</note>
+      </notes>
+      <segment>
+        <source>Published</source>
+        <target>Veröffentlicht</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.command">
+      <notes>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:50</note>
+      </notes>
+      <segment>
+        <source>Install command</source>
+        <target>Installationsbefehl</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.upstream">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-content.html:20</note>
+      </notes>
+      <segment>
+        <source>Caches</source>
+        <target>Zwischenspeicher von</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.resolves-from">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-content.html:25,26</note>
+      </notes>
+      <segment>
+        <source>Resolves from</source>
+        <target>Löst auf aus</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.browse">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-content.html:34,36</note>
+      </notes>
+      <segment>
+        <source>Browse files</source>
+        <target>Dateien durchsuchen</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.settings">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-content.html:40,44</note>
+      </notes>
+      <segment>
+        <source>Settings</source>
+        <target>Einstellungen</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.remote-note">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-content.html:52,54</note>
+      </notes>
+      <segment>
+        <source>Only what clients have fetched is listed here.</source>
+        <target>Hier steht nur, was Clients bereits abgerufen haben.</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.no-scanning">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-content.html:55,57</note>
+      </notes>
+      <segment>
+        <source>This package type is not scanned for vulnerabilities yet.</source>
+        <target>Dieser Pakettyp wird noch nicht auf Schwachstellen geprüft.</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.setup-disabled">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-content.html:73,75</note>
+      </notes>
+      <segment>
+        <source>This repository is disabled, so clients cannot use it.</source>
+        <target>Dieses Repository ist deaktiviert, Clients können es daher nicht verwenden.</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.sentence.remote">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-content.ts:85</note>
+      </notes>
+      <segment>
+        <source>A cache of another registry. It lists what clients have fetched through it.</source>
+        <target>Ein Zwischenspeicher einer anderen Registry. Hier steht, was Clients darüber abgerufen haben.</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.sentence.virtual">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-content.ts:87</note>
+      </notes>
+      <segment>
+        <source>Combines other repositories behind one address. It lists what they resolve to.</source>
+        <target>Fasst andere Repositories unter einer Adresse zusammen. Hier steht, wohin sie auflösen.</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.sentence.local">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-content.ts:89</note>
+      </notes>
+      <segment>
+        <source>Holds what you publish here.</source>
+        <target>Enthält, was Sie hier veröffentlichen.</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.tab.setup">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-content.ts:129</note>
+      </notes>
+      <segment>
+        <source>Set up client</source>
+        <target>Client einrichten</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.folder-path">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-files.ts:28,29</note>
+      </notes>
+      <segment>
+        <source>Folder path</source>
+        <target>Ordnerpfad</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.root">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-files.ts:29,30</note>
+      </notes>
+      <segment>
+        <source>All files</source>
+        <target>Alle Dateien</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.filter-files">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-files.ts:42,43</note>
+        <note category="location">src/app/features/repositories/content/repository-files.ts:44,46</note>
+      </notes>
+      <segment>
+        <source>Filter files</source>
+        <target>Dateien filtern</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.files">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-files.ts:125</note>
+      </notes>
+      <segment>
+        <source>Files</source>
+        <target>Dateien</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.files-empty">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-files.ts:126</note>
+      </notes>
+      <segment>
+        <source>This repository holds no files yet.</source>
+        <target>Dieses Repository enthält noch keine Dateien.</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.files-empty-filtered">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-files.ts:127</note>
+      </notes>
+      <segment>
+        <source>No file matches the filter.</source>
+        <target>Keine Datei passt zum Filter.</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.copy-url">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-files.ts:128</note>
+      </notes>
+      <segment>
+        <source>Copy the download address</source>
+        <target>Download-Adresse kopieren</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.col.name">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-files.ts:130</note>
+      </notes>
+      <segment>
+        <source>Name</source>
+        <target>Name</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.col.size">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-files.ts:131</note>
+        <note category="location">src/app/features/repositories/content/repository-item-versions.ts:165</note>
+      </notes>
+      <segment>
+        <source>Size</source>
+        <target>Größe</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.col.modified">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-files.ts:132</note>
+      </notes>
+      <segment>
+        <source>Last change</source>
+        <target>Letzte Änderung</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.prerelease">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-item-versions.ts:61,64</note>
+      </notes>
+      <segment>
+        <source>pre-release</source>
+        <target>Vorabversion</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.show-command">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-item-versions.ts:89,91</note>
+      </notes>
+      <segment>
+        <source>Show command</source>
+        <target>Befehl anzeigen</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.copy-digest">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-item-versions.ts:158</note>
+      </notes>
+      <segment>
+        <source>Copy digest</source>
+        <target>Digest kopieren</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.col.digest">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-item-versions.ts:163</note>
+      </notes>
+      <segment>
+        <source>Digest</source>
+        <target>Digest</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.col.vulnerabilities">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-item-versions.ts:168</note>
+        <note category="location">src/app/features/repositories/content/repository-items.ts:141</note>
+      </notes>
+      <segment>
+        <source>Vulnerabilities</source>
+        <target>Schwachstellen</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.col.latest">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-items.ts:135</note>
+      </notes>
+      <segment>
+        <source>Latest</source>
+        <target>Neueste</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.help.vulnerabilities">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-items.ts:142</note>
+      </notes>
+      <segment>
+        <source>The open findings of all versions in this repository, with the highest severity.</source>
+        <target>Die offenen Befunde aller Versionen in diesem Repository mit dem höchsten Schweregrad.</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.col.updated">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-items.ts:146</note>
+      </notes>
+      <segment>
+        <source>Updated</source>
+        <target>Aktualisiert</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.col.downloads">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-items.ts:147</note>
+      </notes>
+      <segment>
+        <source>Downloads</source>
+        <target>Downloads</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.open-versions">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-items.ts:191</note>
+      </notes>
+      <segment>
+        <source>Show the versions of <ph id="0" equiv="name" disp="p.name"/></source>
+        <target>Versionen von <ph id="0" equiv="name" disp="p.name"/> anzeigen</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.no-findings">
+      <notes>
+        <note category="location">src/app/features/repositories/content/vuln-counts.ts:23,26</note>
+      </notes>
+      <segment>
+        <source>None open</source>
+        <target>Keine offen</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.findings">
+      <notes>
+        <note category="location">src/app/features/repositories/content/vuln-counts.ts:52</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="count" disp="this.total()"/> open findings, highest <ph id="1" equiv="severity" disp="severityLabel(this.highest() ?? &apos;unknown&apos;)"/></source>
+        <target><ph id="0" equiv="count" disp="this.total()"/> offene Befunde, höchster <ph id="1" equiv="severity" disp="severityLabel(this.highest() ?? &apos;unknown&apos;)"/></target>
+      </segment>
+    </unit>
+    <unit id="route.repositories.settings.title">
+      <notes>
+        <note category="location">src/app/features/repositories/repositories.routes.ts:50</note>
+      </notes>
+      <segment>
+        <source>Repository settings</source>
+        <target>Repository-Einstellungen</target>
+      </segment>
+    </unit>
+    <unit id="repo.detail.content">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:4,5</note>
+      </notes>
+      <segment>
+        <source>Content</source>
+        <target>Inhalt</target>
+      </segment>
+    </unit>
+    <unit id="repo.action.settings">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-list.html:92,94</note>
+      </notes>
+      <segment>
+        <source>Settings</source>
+        <target>Einstellungen</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.oci.no-scanning">
+      <notes>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:40</note>
+      </notes>
+      <segment>
+        <source>Images are not scanned for vulnerabilities yet.</source>
+        <target>Images werden noch nicht auf Schwachstellen geprüft.</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.oci-remote-note">
+      <notes>
+        <note category="location">src/app/features/repositories/content/repository-content.html:53,55</note>
+      </notes>
+      <segment>
+        <source>The images a remote registry has cached are not listed here yet. Pull them through this repository with the commands under Set up client.</source>
+        <target>Die Images, die eine entfernte Registry zwischengespeichert hat, werden hier noch nicht aufgeführt. Rufen Sie sie über dieses Repository mit den Befehlen unter „Client einrichten“ ab.</target>
       </segment>
     </unit>
   </file>

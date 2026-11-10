@@ -22,7 +22,7 @@ export const REPOSITORIES_ROUTES: Routes = [
 
 /**
  * The repositories of one project, mounted at `/projects/:project/repositories` (Q-UI-129): the list, the wizard with the
- * project given, and a repository's screen. `new` precedes `:key`.
+ * project given, a repository's content (R-UI-052) and its settings. `new` precedes `:key`.
  */
 export const PROJECT_REPOSITORIES_ROUTES: Routes = [
   {
@@ -39,7 +39,20 @@ export const PROJECT_REPOSITORIES_ROUTES: Routes = [
   {
     path: ':key',
     title: $localize`:@@route.repositories.detail.title:Repository`,
-    loadComponent: () => import('./repository-detail').then((m) => m.RepositoryDetail),
-    canDeactivate: [unsavedChangesGuard],
+    children: [
+      {
+        path: '',
+        pathMatch: 'full',
+        // The page is named after the repository, as its heading is; the breadcrumb step comes from the parent route.
+        title: (route) => route.paramMap.get('key') ?? '',
+        loadComponent: () => import('./content/repository-content').then((m) => m.RepositoryContent),
+      },
+      {
+        path: 'settings',
+        title: $localize`:@@route.repositories.settings.title:Repository settings`,
+        loadComponent: () => import('./repository-detail').then((m) => m.RepositoryDetail),
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
   },
 ];

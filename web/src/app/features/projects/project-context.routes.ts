@@ -11,7 +11,7 @@ const section = (label: string): { crumbs: CrumbSpec[] } => ({ crumbs: [{ label,
  * The screens of one project, `/projects/<project>/…` (Q-UI-129): the start page lists the caller's projects; below a
  * project every content screen of that project, with the project's sidebar. The parameter is named `project`, as the
  * inputs of the screens are, and reaches them through the componentless parent. `/projects/<project>` itself answers with
- * the packages, so that the breadcrumb step of the project links to a route that exists.
+ * the repositories (Q-UI-216), so that the breadcrumb step of the project links to a route that exists.
  */
 export const PROJECT_CONTEXT_ROUTES: Routes = [
   {
@@ -24,7 +24,7 @@ export const PROJECT_CONTEXT_ROUTES: Routes = [
     path: ':project',
     data: { crumbParam: 'project' },
     children: [
-      { path: '', pathMatch: 'full', redirectTo: 'packages' },
+      { path: '', pathMatch: 'full', redirectTo: 'repositories' },
       {
         path: 'packages',
         data: section($localize`:@@nav.packages:Packages`),

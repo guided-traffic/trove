@@ -71,9 +71,20 @@ export class ClientSetupPage {
   readonly repository = input<string | undefined>();
   /** A Bastion registration to render the snippets for (R-BAS-007); a link from the Bastions screen or the guide sets it. */
   readonly bastion = input<string | undefined>();
+  /**
+   * The setup of one given repository, shown inside that repository's content page (R-UI-052): the repository and its format are
+   * fixed by the host, so the steps that choose them are left out and the client is chosen in the component, not in the URL. `known`
+   * is the repository the host already loaded, so nothing is read twice.
+   */
+  readonly embedded = input(false);
+  readonly known = input<RepositorySummary | undefined>();
 
   protected readonly formats = resource({ loader: () => this.repositories.formats() });
-  protected readonly allRepositories = resource({ loader: () => this.repositories.listAll() });
+  /** The repositories of the steps; empty for an embedded setup, whose repository the host gives. */
+  protected readonly allRepositories = resource({
+    params: () => (this.embedded() ? undefined : true),
+    loader: () => this.repositories.listAll(),
+  });
 
   protected readonly anonymous = computed(() => this.session.state() === 'anonymous');
   protected readonly mode = signal<CredentialMode>('env');
@@ -91,7 +102,10 @@ export class ClientSetupPage {
   protected readonly formatOptions = computed(() =>
     (valueOf(this.formats) ?? []).filter((f) => f.name in FORMAT_CLIENTS),
   );
-  protected readonly repositoryOptionsAll = computed(() => valueOf(this.allRepositories) ?? []);
+  protected readonly repositoryOptionsAll = computed(() => {
+    const known = this.known();
+    return known ? [known] : (valueOf(this.allRepositories) ?? []);
+  });
   protected readonly activeFormat = computed<string | null>(() => {
     const names = this.formatOptions().map((f) => f.name);
     const given = this.format();
@@ -101,9 +115,11 @@ export class ClientSetupPage {
     return names[0] ?? null;
   });
   protected readonly clients = computed(() => clientsOf(this.activeFormat() ?? ''));
+  /** The client chosen inside an embedded setup, which keeps out of the host's URL. */
+  private readonly chosenClient = signal<string | null>(null);
   protected readonly activeClient = computed<string | null>(() => {
     const ids = this.clients().map((c) => c.id);
-    const given = this.client();
+    const given = this.chosenClient() ?? this.client();
     return given && ids.includes(given) ? given : (ids[0] ?? null);
   });
   protected readonly repositoryOptions = computed<readonly RepositorySummary[]>(() =>
@@ -132,7 +148,10 @@ export class ClientSetupPage {
   protected readonly activeBastion = computed<string | null>(() => this.bastion()?.trim() || null);
   /** The target step is shown when there is a Bastion to choose or one is chosen. */
   protected readonly showTarget = computed(() => this.bastionOptions().length > 0 || this.activeBastion() !== null);
-  protected readonly credentialsStep = computed(() => (this.showTarget() ? 5 : 4));
+  /** The steps are numbered in sequence; an embedded setup has neither the format nor the repository step. */
+  protected readonly clientStep = computed(() => (this.embedded() ? 1 : 2));
+  protected readonly targetStep = computed(() => (this.embedded() ? 2 : 4));
+  protected readonly credentialsStep = computed(() => (this.showTarget() ? this.targetStep() + 1 : this.targetStep()));
 
   protected readonly credentials = computed<'none' | 'env' | 'placeholder'>(() =>
     this.anonymous() ? 'none' : this.mode() === 'env' ? 'env' : 'placeholder',
@@ -243,6 +262,10 @@ export class ClientSetupPage {
     repository?: string | null;
     bastion?: string | null;
   }): void {
+    if (this.embedded()) {
+      if (change.client !== undefined) this.chosenClient.set(change.client);
+      return;
+    }
     void this.router.navigate([], { queryParams: change, queryParamsHandling: 'merge', replaceUrl: true });
   }
 

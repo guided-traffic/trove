@@ -484,9 +484,9 @@ export class FakeVulnerabilitiesApi extends VulnerabilitiesApi {
     throw problem(503, 'unavailable');
   }
 
-  override async packageReport(packageId: string): Promise<VulnerabilityPackageReport> {
+  override async packageReport(packageId: string, repository?: readonly string[]): Promise<VulnerabilityPackageReport> {
     this.fail();
-    this.calls.push(`packageReport ${packageId}`);
+    this.calls.push(repository?.length ? `packageReport ${packageId} in ${repository.join(',')}` : `packageReport ${packageId}`);
     const given = this.packageReports.get(packageId);
     if (given) return given;
     throw problem(503, 'unavailable');

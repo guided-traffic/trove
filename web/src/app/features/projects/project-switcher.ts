@@ -10,7 +10,7 @@ const SHOWN = 20;
  * The project switcher on top of a project's sidebar (Q-UI-129): the project the screens are in, and a panel with a search
  * field, the recently visited projects and the matches. It is a disclosure, not a menu: the panel holds a text field, so
  * the button announces `aria-expanded`, Escape closes the panel and returns the focus to the button, and a choice is a
- * link to the project (its packages). `label` names the project in the button.
+ * link to the project (its repositories). `label` names the project in the button.
  */
 @Component({
   selector: 'trove-project-switcher',

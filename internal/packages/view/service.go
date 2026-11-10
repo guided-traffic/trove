@@ -612,6 +612,8 @@ type VersionFilter struct {
 	Prerelease      *bool
 	Repositories    []qname.Repo
 	HasRepositories bool
+	// WithDigest asks for the digest of each listed version from the format's metadata (R-UI-052).
+	WithDigest bool
 }
 
 // VersionOrder is the sort of the version list: publishedAt or version.
@@ -695,6 +697,11 @@ func (s *Service) Versions(ctx context.Context, sc Scope, format, name string, f
 	if err := s.adapterSizes(ctx, sc, a, format, groupOf, out); err != nil {
 		return nil, true, err
 	}
+	if f.WithDigest {
+		if err := s.fillDigests(ctx, sc, a, format, groupOf, out); err != nil {
+			return nil, true, err
+		}
+	}
 	return out, true, nil
 }
 
@@ -720,6 +727,30 @@ func (s *Service) adapterSizes(ctx context.Context, sc Scope, a Adapter, format 
 	for i, v := range vs {
 		if n, ok := got[v.ID]; ok {
 			page[i].SizeBytes = n
+		}
+	}
+	return nil
+}
+
+// fillDigests sets the digest of the listed versions from the format's metadata (the member `digest` of Describe's details, R-UI-052):
+// the adapter is asked once for the page, after the cut; a version absent from the answer, or a format whose metadata has no
+// `digest`, has none. Only a caller that asks pays for the read (VersionFilter.WithDigest).
+func (s *Service) fillDigests(ctx context.Context, sc Scope, a Adapter, format string, groupOf map[string]versionGroup, page []VersionSummary) error {
+	if len(page) == 0 {
+		return nil
+	}
+	vs := make([]Version, 0, len(page))
+	for _, v := range page {
+		pri := groupOf[v.Version].primary()
+		vs = append(vs, Version{ID: pri.VersionID, Format: format, Repo: sc.topo.Name(pri.RepoID).String(), Package: pri.Name, Version: v.Version})
+	}
+	got, err := a.Describe(ctx, vs, FieldDetails, func(version string) bool { _, ok := groupOf[version]; return ok })
+	if err != nil {
+		return err
+	}
+	for i, v := range vs {
+		if digest, ok := got[v.ID].Metadata["digest"].(string); ok {
+			page[i].Digest = digest
 		}
 	}
 	return nil

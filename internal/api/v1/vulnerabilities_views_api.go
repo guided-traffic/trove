@@ -335,7 +335,9 @@ func (s *Server) GetPackageVersionVulnerabilities(w http.ResponseWriter, r *http
 
 // GetPackageVulnerabilities implements GET /api/v1/packages/{packageId}/vulnerabilities (R-VULN-020): the open findings per
 // version, counted by severity, over the findings the caller can read.
-func (s *Server) GetPackageVulnerabilities(w http.ResponseWriter, r *http.Request, id gen.PackageId) {
+// A repository named in `repository` narrows the counts to that repository (a virtual one to its members), as the repository's content
+// page counts them (R-UI-052).
+func (s *Server) GetPackageVulnerabilities(w http.ResponseWriter, r *http.Request, id gen.PackageId, params gen.GetPackageVulnerabilitiesParams) {
 	rep, err := s.vulnReport()
 	if err != nil {
 		httpserver.Problem(w, r, err)
@@ -346,6 +348,11 @@ func (s *Server) GetPackageVulnerabilities(w http.ResponseWriter, r *http.Reques
 		httpserver.Problem(w, r, err)
 		return
 	}
+	var repoNames []string
+	if params.Repository != nil {
+		repoNames = *params.Repository
+	}
+	names := repoFilter(repoNames)
 	ctx, sn, caller, err := s.vulnRequest(r, rep)
 	var sc report.Scope
 	if err == nil {
@@ -353,8 +360,12 @@ func (s *Server) GetPackageVulnerabilities(w http.ResponseWriter, r *http.Reques
 	}
 	var versions []report.VersionCounts
 	if err == nil {
+		f := store.Filter{}
+		if params.Repository != nil {
+			f.Repos, f.HasRepos = sn.ExpandFor(caller, sn.Topo.IDs(names)), true
+		}
 		var found bool
-		if versions, found, err = rep.Package(ctx, sc, format, name); err == nil && !found {
+		if versions, found, err = rep.Package(ctx, sc, format, name, f); err == nil && !found {
 			err = packageNotFound()
 		}
 	}

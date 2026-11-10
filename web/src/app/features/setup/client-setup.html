@@ -1,10 +1,12 @@
-<header class="page-header">
-  <h1 tabindex="-1" i18n="@@setup.heading">Client setup</h1>
-</header>
-<p class="intro" i18n="@@setup.intro">
-  Choose your package manager and a repository. You get the configuration and the commands that point the
-  client at trove. Nothing is changed on the server.
-</p>
+@if (!embedded()) {
+  <header class="page-header">
+    <h1 tabindex="-1" i18n="@@setup.heading">Client setup</h1>
+  </header>
+  <p class="intro" i18n="@@setup.intro">
+    Choose your package manager and a repository. You get the configuration and the commands that point the
+    client at trove. Nothing is changed on the server.
+  </p>
+}
 <p class="intro">
   <a
     routerLink="/guides"
@@ -19,6 +21,7 @@
 }
 
 <ol class="steps">
+  @if (!embedded()) {
   <li>
     <fieldset>
       <legend><span class="step-no">1</span> <span i18n="@@setup.step.format">Package type</span></legend>
@@ -41,10 +44,11 @@
       </div>
     </fieldset>
   </li>
+  }
 
   <li>
     <fieldset>
-      <legend><span class="step-no">2</span> <span i18n="@@setup.step.client">Client</span></legend>
+      <legend><span class="step-no">{{ clientStep() }}</span> <span i18n="@@setup.step.client">Client</span></legend>
       <div class="choices">
         @for (c of clients(); track c.id) {
           <label class="choice">
@@ -62,6 +66,7 @@
     </fieldset>
   </li>
 
+  @if (!embedded()) {
   <li>
     <fieldset>
       <legend><span class="step-no">3</span> <span i18n="@@setup.step.repository">Repository</span></legend>
@@ -93,11 +98,12 @@
       </div>
     </fieldset>
   </li>
+  }
 
   @if (showTarget()) {
     <li>
       <fieldset>
-        <legend><span class="step-no">4</span> <span i18n="@@setup.step.target">Install from</span></legend>
+        <legend><span class="step-no">{{ targetStep() }}</span> <span i18n="@@setup.step.target">Install from</span></legend>
         <div class="choices vertical">
           <label class="choice">
             <input type="radio" name="target" value="" [checked]="activeBastion() === null" (change)="pick({ bastion: null })" />
@@ -320,7 +326,7 @@
               </p>
               @if (canReadConfig()) {
                 <p>
-                  <a [routerLink]="repositoryLink(s.repository)" i18n="@@setup.publish.members">Open the repository to see its members</a>
+                  <a [routerLink]="repositoryLink(s.repository).concat('settings')" i18n="@@setup.publish.members">Open the repository to see its members</a>
                 </p>
               }
             } @else {

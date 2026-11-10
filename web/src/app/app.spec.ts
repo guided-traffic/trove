@@ -45,8 +45,8 @@ describe('App shell', () => {
     expect(root.querySelector('nav[aria-label]')).toBeTruthy();
     expect(root.querySelector('main#main')).toBeTruthy();
     // The caller has exactly one project: the start page sends the caller into it (Q-UI-129).
-    expect(TestBed.inject(Router).url).toBe('/projects/web/packages');
-    expect(root.querySelector('main h1')?.textContent).toContain('Packages');
+    expect(TestBed.inject(Router).url).toBe('/projects/web/repositories');
+    expect(root.querySelector('main h1')?.textContent).toContain('Repositories');
   });
 
   it('R-UI-002 the skip link is the first focusable element and focuses the main heading', async () => {
@@ -105,7 +105,7 @@ describe('App shell', () => {
   it('R-UI-002 shows only the entries whose capability the caller holds, in each area', async () => {
     const { fixture, root } = await render('/', (api) => (api.meResult = { capabilities: ['audit:read'] }));
     const links = () => [...root.querySelectorAll('nav a .nav-label')].map((a) => a.textContent?.trim());
-    expect(links()).toEqual(['Packages', 'Browse', 'Repositories', 'Vulnerabilities', 'Members', 'Settings']);
+    expect(links()).toEqual(['Repositories', 'Packages', 'Browse', 'Vulnerabilities', 'Members', 'Settings']);
     await TestBed.inject(Router).navigateByUrl('/admin/audit');
     await fixture.whenStable();
     expect(links()).toEqual(['Audit log']);

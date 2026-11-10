@@ -86,10 +86,10 @@
           <td class="actions">
             <div class="row-actions">
               <a class="btn btn-tertiary"
-                [routerLink]="['/projects', row.project, 'repositories', row.key]"
+                [routerLink]="['/projects', row.project, 'repositories', row.key, 'settings']"
                 (click)="visit(refOf(row))"
-                i18n="@@repo.action.edit"
-                >Edit</a
+                i18n="@@repo.action.settings"
+                >Settings</a
               >
               <a class="btn btn-tertiary" [routerLink]="['/projects', row.project, 'browse', row.key]" i18n="@@repo.action.browse"
                 >Browse</a

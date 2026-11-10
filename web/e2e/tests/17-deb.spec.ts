@@ -38,7 +38,7 @@ test('R-DEB-015 R-DEB-017 the signing key panel lists the generated key, rotates
   const table = page.getByTestId('deb-key-table');
 
   await test.step('the panel lists the one generated primary key', async () => {
-    await page.goto(`/ui/en/projects/${e2eProject}/repositories/${localKey}`);
+    await page.goto(`/ui/en/projects/${e2eProject}/repositories/${localKey}/settings`);
     await page.getByRole('tab', { name: 'Signing keys' }).click();
     await expect(page.getByRole('heading', { name: 'Signing keys', level: 2 })).toBeVisible();
     await expect(table.locator('tbody tr')).toHaveCount(1);
@@ -84,7 +84,7 @@ test('R-DEB-015 R-DEB-017 the signing key panel lists the generated key, rotates
 
 test('R-DEB-014 the index state tab lists the suites of the repository, or says that none has packages yet', async ({ page, replicas }) => {
   await signInLocal(page);
-  await page.goto(`/ui/en/projects/${e2eProject}/repositories/${localKey}`);
+  await page.goto(`/ui/en/projects/${e2eProject}/repositories/${localKey}/settings`);
   await page.getByRole('tab', { name: 'Index', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Index state', level: 2 })).toBeVisible();
   // The table is always rendered; with no suite yet it shows its empty line inside itself.
@@ -126,7 +126,7 @@ test('R-UI-021 R-DEB-008 the wizard offers Debian and the edit form reads the se
   });
 
   await test.step('the edit form shows the lines and the default back is saved', async () => {
-    await page.reload();
+    await page.goto(`/ui/en/projects/${e2eProject}/repositories/${wizardKey}/settings`);
     await page.getByRole('tab', { name: 'Debian (APT) settings' }).click();
     await expect(page.getByLabel('architectures', { exact: true })).toHaveValue('arm64\nriscv64');
     await expectAccessible(page, 'repository detail, Debian settings');

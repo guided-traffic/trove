@@ -1,0 +1,125 @@
+.heading {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+
+  h1 {
+    margin: 0;
+  }
+}
+
+.sentence {
+  margin: var(--trove-space-1) 0 var(--trove-space-2);
+  color: var(--trove-text-muted);
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--trove-space-2);
+}
+
+.resolves {
+  margin: var(--trove-space-2) 0 0;
+  color: var(--trove-text-muted);
+}
+
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--trove-space-2);
+}
+
+.content-note {
+  margin: var(--trove-space-3) 0 0;
+  color: var(--trove-text-muted);
+}
+
+.setup-tab {
+  padding-block-start: var(--trove-space-4);
+}
+
+.toolbar {
+  display: flex;
+  gap: var(--trove-space-2);
+  align-items: center;
+  padding-block: var(--trove-space-3);
+}
+
+.filter {
+  position: relative;
+  flex: 1;
+
+  input {
+    inline-size: 100%;
+    box-sizing: border-box;
+    padding-inline-end: var(--trove-space-6);
+  }
+
+  .material-icons {
+    position: absolute;
+    inset-inline-end: var(--trove-space-2);
+    inset-block-start: 50%;
+    transform: translateY(-50%);
+    color: var(--trove-text-muted);
+    font-size: 1.125rem;
+    pointer-events: none;
+  }
+}
+
+.path-trail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--trove-space-1);
+  margin-block-start: var(--trove-space-3);
+  color: var(--trove-text-muted);
+}
+
+.name-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--trove-space-1);
+}
+
+.item-name {
+  font-weight: 600;
+}
+
+.item-description {
+  display: block;
+  color: var(--trove-text-muted);
+  font-weight: 400;
+}
+
+.file-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--trove-space-2);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--trove-link);
+  font: inherit;
+  cursor: pointer;
+
+  .material-icons {
+    color: var(--trove-text-muted);
+    font-size: 1.125rem;
+  }
+}
+
+.num {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.actions {
+  text-align: end;
+  white-space: nowrap;
+}
+
+tr.expansion td {
+  padding: 0;
+  border-block-end: 0;
+}

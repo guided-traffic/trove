@@ -1,0 +1,86 @@
+@if (failure(); as f) {
+  <trove-error-notice [error]="f" (retry)="loaded.reload()" />
+} @else if (repository(); as r) {
+  <header class="page-header">
+    <div class="heading">
+      <h1 tabindex="-1" translate="no">{{ r.key }}</h1>
+      <p class="sentence">{{ sentence() }}</p>
+      <div class="facts">
+        <span class="badge" translate="no">{{ formatName() }}</span>
+        <span class="badge">
+          <span class="material-icons" aria-hidden="true">{{ r.class === 'local' ? 'storage' : r.class === 'remote' ? 'cloud_download' : 'layers' }}</span>
+          {{ classText() }}
+        </span>
+        @if (disabled()) {
+          <span class="badge warn" i18n="@@repo.badge.disabled">disabled</span>
+        }
+      </div>
+      @if (upstream(); as u) {
+        <p class="resolves">
+          <ng-container i18n="@@repo.content.upstream">Caches</ng-container>&ngsp;<code translate="no">{{ u }}</code>
+        </p>
+      }
+      @if (members().length > 0) {
+        <p class="resolves">
+          <ng-container i18n="@@repo.content.resolves-from">Resolves from</ng-container>&ngsp;
+          @for (m of members(); track m; let last = $last) {
+            <a [routerLink]="['/projects', project(), 'repositories', m]" translate="no">{{ m }}</a>@if (!last) {,&ngsp;}
+          }
+        </p>
+      }
+    </div>
+    <div class="header-actions">
+      @if (!isGeneric()) {
+        <a class="btn btn-tertiary" [routerLink]="['/projects', project(), 'browse', key()]" i18n="@@repo.content.browse">Browse files</a>
+      }
+      @if (scanned() && r.class !== 'virtual' && canReadFindings()) {
+        <a class="btn btn-tertiary" [routerLink]="['/projects', project(), 'vulnerabilities']" [queryParams]="{ repository: ref() }" i18n="@@repo.action.vulnerabilities">Vulnerabilities</a>
+      }
+      @if (canConfigure()) {
+        <a class="btn btn-default" [routerLink]="settingsLink()" i18n="@@repo.content.settings">Settings</a>
+      }
+    </div>
+  </header>
+
+  <trove-tab-group [selectedIndex]="tabIndex()" (selectedIndexChange)="selectTab($event)">
+    <trove-tab [label]="shape().itemsLabel">
+      <ng-template troveTabContent>
+        @if (isGeneric()) {
+          <trove-repository-files [repository]="ref()" [format]="descriptor()" [path]="folder()" (pathChange)="setPath($event)" />
+        } @else {
+          @if (r.class === 'remote') {
+            @if (r.format === 'oci') {
+              <p class="content-note" i18n="@@repo.content.oci-remote-note">The images a remote registry has cached are not listed here yet. Pull them through this repository with the commands under Set up client.</p>
+            } @else {
+              <p class="content-note" i18n="@@repo.content.remote-note">Only what clients have fetched is listed here.</p>
+            }
+          }
+          @if (!scanned()) {
+            <p class="content-note">{{ shape().notScannedText }}</p>
+          }
+          <trove-repository-items
+            [repository]="ref()"
+            [format]="r.format"
+            [shape]="shape()"
+            [scanned]="scanned()"
+            [q]="filter()"
+            [sortParam]="order()"
+            (filterChange)="setFilter($event)"
+            (sortParamChange)="setSort($event)"
+          />
+        }
+      </ng-template>
+    </trove-tab>
+    <trove-tab [label]="setupTabLabel">
+      <ng-template troveTabContent>
+        @if (disabled()) {
+          <p class="content-note" i18n="@@repo.content.setup-disabled">This repository is disabled, so clients cannot use it.</p>
+        } @else {
+          <div class="setup-tab">
+            <trove-client-setup [embedded]="true" [repository]="ref()" [format]="r.format" [known]="summary()" />
+          </div>
+        }
+      </ng-template>
+    </trove-tab>
+  </trove-tab-group>
+}

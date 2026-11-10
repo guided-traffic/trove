@@ -843,9 +843,10 @@ SELECT f.version, f.severity, count(*)::bigint AS n
  WHERE r.format = $1::text
    AND f.package_name = $2::text
    AND f.status IN ('needs_triage', 'confirmed', 'blocked')
-   AND (f.repo_id = ANY($3::bigint[])
-          OR concat_ws(chr(31), f.repo_id::text, f.package_name, f.version) = ANY($4::text[])
-          OR concat_ws(chr(31), f.repo_id::text, f.package_name) = ANY($5::text[]))
+   AND (NOT $3::boolean OR f.repo_id = ANY($4::bigint[]))
+   AND (f.repo_id = ANY($5::bigint[])
+          OR concat_ws(chr(31), f.repo_id::text, f.package_name, f.version) = ANY($6::text[])
+          OR concat_ws(chr(31), f.repo_id::text, f.package_name) = ANY($7::text[]))
  GROUP BY f.version, f.severity
  ORDER BY f.version, f.severity
 `
@@ -853,6 +854,8 @@ SELECT f.version, f.severity, count(*)::bigint AS n
 type VulnPackageCountsParams struct {
 	Format      string
 	Name        string
+	HasRepos    bool
+	Repos       []int64
 	Whole       []int64
 	Rows        []string
 	PackageRows []string
@@ -864,11 +867,13 @@ type VulnPackageCountsRow struct {
 	N        int64
 }
 
-// The open findings of one package the caller can read, per version and severity.
+// The open findings of one package the caller can read, per version and severity; has_repos narrows them to the repositories in repos.
 func (q *Queries) VulnPackageCounts(ctx context.Context, arg VulnPackageCountsParams) ([]VulnPackageCountsRow, error) {
 	rows, err := q.db.Query(ctx, vulnPackageCounts,
 		arg.Format,
 		arg.Name,
+		arg.HasRepos,
+		arg.Repos,
 		arg.Whole,
 		arg.Rows,
 		arg.PackageRows,
@@ -881,6 +886,73 @@ func (q *Queries) VulnPackageCounts(ctx context.Context, arg VulnPackageCountsPa
 	for rows.Next() {
 		var i VulnPackageCountsRow
 		if err := rows.Scan(&i.Version, &i.Severity, &i.N); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const vulnPackageListCounts = `-- name: VulnPackageListCounts :many
+SELECT r.format, f.package_name, f.severity, count(*)::bigint AS n
+  FROM vuln_finding f
+  JOIN repositories r ON r.id = f.repo_id
+ WHERE f.package_name = ANY($1::text[])
+   AND (cardinality($2::text[]) = 0 OR r.format = ANY($2::text[]))
+   AND f.status IN ('needs_triage', 'confirmed', 'blocked')
+   AND (NOT $3::boolean OR f.repo_id = ANY($4::bigint[]))
+   AND (f.repo_id = ANY($5::bigint[])
+          OR concat_ws(chr(31), f.repo_id::text, f.package_name, f.version) = ANY($6::text[])
+          OR concat_ws(chr(31), f.repo_id::text, f.package_name) = ANY($7::text[]))
+ GROUP BY r.format, f.package_name, f.severity
+ ORDER BY r.format, f.package_name, f.severity
+`
+
+type VulnPackageListCountsParams struct {
+	Packages    []string
+	Formats     []string
+	HasRepos    bool
+	Repos       []int64
+	Whole       []int64
+	Rows        []string
+	PackageRows []string
+}
+
+type VulnPackageListCountsRow struct {
+	Format      string
+	PackageName string
+	Severity    string
+	N           int64
+}
+
+// The open findings of the named packages the caller can read, per format, package and severity, for a page of the packages list
+// (R-UI-052): one statement however many packages the page holds. has_repos narrows them to the repositories in repos.
+func (q *Queries) VulnPackageListCounts(ctx context.Context, arg VulnPackageListCountsParams) ([]VulnPackageListCountsRow, error) {
+	rows, err := q.db.Query(ctx, vulnPackageListCounts,
+		arg.Packages,
+		arg.Formats,
+		arg.HasRepos,
+		arg.Repos,
+		arg.Whole,
+		arg.Rows,
+		arg.PackageRows,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []VulnPackageListCountsRow{}
+	for rows.Next() {
+		var i VulnPackageListCountsRow
+		if err := rows.Scan(
+			&i.Format,
+			&i.PackageName,
+			&i.Severity,
+			&i.N,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

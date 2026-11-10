@@ -326,6 +326,29 @@ func TestR_VULN_020_PackageViews(t *testing.T) {
 	if a.Status != 200 || len(p.Versions) != 2 || p.Versions[0].Open.Critical != 1 || p.Versions[1].Open.Low != 1 {
 		t.Errorf("package counts: %d %s", a.Status, a.Body)
 	}
+	// The content page of a repository (R-UI-052): the counts of one repository, per package, in one request of the list, and per
+	// version with the repository's own findings.
+	list := e.get(e.r, "/api/v1/packages?repository=it/npm-local&format=npm&include=vulnerabilities", e.tokAlice)
+	var page struct {
+		Items []struct {
+			Name                string
+			OpenVulnerabilities *struct{ Critical, Low int64 } `json:"openVulnerabilities"`
+		}
+	}
+	if err := json.Unmarshal(list.Body, &page); err != nil || list.Status != 200 {
+		t.Fatalf("list: %d %s", list.Status, list.Body)
+	}
+	if len(page.Items) != 1 || page.Items[0].OpenVulnerabilities == nil || page.Items[0].OpenVulnerabilities.Critical != 1 || page.Items[0].OpenVulnerabilities.Low != 1 {
+		t.Errorf("the list counts the open findings of the repository (the dismissed one is not open): %s", list.Body)
+	}
+	if plain := e.get(e.r, "/api/v1/packages?repository=it/npm-local&format=npm", e.tokAlice); strings.Contains(string(plain.Body), "openVulnerabilities") {
+		t.Errorf("without include the list carries no counts: %s", plain.Body)
+	}
+	a = e.get(e.r, "/api/v1/packages/"+id+"/vulnerabilities?repository=it/npm-mirror", e.tokAlice)
+	_ = json.Unmarshal(a.Body, &p)
+	if a.Status != 200 || len(p.Versions) != 2 || p.Versions[0].Open.Critical != 0 || p.Versions[1].Open.Low != 0 {
+		t.Errorf("the counts narrowed to a repository without findings: %d %s", a.Status, a.Body)
+	}
 	if a := e.get(e.r, "/api/v1/packages/"+id+"/versions/9.9.9/vulnerabilities", e.tokAlice); a.Status != 404 {
 		t.Errorf("a version nobody holds: %d", a.Status)
 	}

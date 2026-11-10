@@ -77,6 +77,7 @@ test('R-REPO-059 R-UI-021 Q-UI-104 Q-UI-105 the status of a mirror, pause, resum
   });
 
   await test.step('the Mirror tab shows the status above the settings, with the facts of every part, in words', async () => {
+    await page.goto(`/ui/en/projects/${e2eProject}/repositories/${mirrorKey}/settings`);
     await page.getByRole('tab', { name: 'Mirror' }).click();
     await expect(page.getByRole('heading', { name: 'Mirror status', level: 2 })).toBeVisible();
     // A new mirror starts its first pass by itself, so the state is one of these; the word, not the colour, says which.
@@ -194,6 +195,7 @@ test('F-54 R-UI-021 R-REPO-024 R-REPO-033 a remote with a non-default upstream, 
   });
 
   await test.step('the edit form reads the upstream back with an empty password field; the stored password survives a save of another member', async () => {
+    await page.goto(`/ui/en/projects/${e2eProject}/repositories/${upstreamKey}/settings`);
     await page.getByRole('tab', { name: 'Upstream' }).click();
     await expect(page.getByRole('textbox', { name: 'Upstream URL' })).toHaveValue(stubUrl);
     await expect(page.getByRole('textbox', { name: 'Username' })).toHaveValue('journey');

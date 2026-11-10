@@ -1,0 +1,165 @@
+import { ClientSetupApi, PackagesApi } from '../../../api/packages-api';
+import { RepositoriesApi } from '../../../api/repositories-api';
+import { VulnerabilitiesApi } from '../../../api/vulnerabilities-api';
+import { FakeClientSetupApi, FakePackagesApi, ociFixture } from '../../../api/testing/fakes-packages';
+import { FakeRepositoriesApi, GENERIC_FORMAT, OCI_FORMAT, PACKAGE_FORMAT } from '../../../api/testing/fakes-catalog';
+import { FakeFilesApi } from '../../../api/testing/fakes-catalog';
+import { FakeVulnerabilitiesApi } from '../../../api/testing/fakes-vulnerabilities';
+import { FilesApi } from '../../../api/files-api';
+import { expectAccessible, renderScreen, settle, text } from '../../../testing/screen';
+import { RepositoryContent } from './repository-content';
+import { RepositoryItems } from './repository-items';
+
+const NONE = { critical: 0, high: 0, medium: 0, low: 0, none: 0, unknown: 0 };
+
+interface RepoDoc {
+  readonly key: string;
+  readonly project: string;
+  readonly class: 'local' | 'remote' | 'virtual';
+  readonly format: string;
+  readonly description?: string;
+  readonly disabled?: boolean;
+  readonly virtual?: { members: string[] };
+}
+
+async function open(repo: RepoDoc, setup?: (fakes: {
+  catalog: FakeRepositoriesApi;
+  packages: FakePackagesApi;
+  vulnerabilities: FakeVulnerabilitiesApi;
+}) => void, capabilities?: readonly string[], inputs: Record<string, unknown> = {}) {
+  const r = await renderScreen(RepositoryContent, {
+    inputs: { project: repo.project, key: repo.key, ...inputs },
+    capabilities,
+    setup: (get) => {
+      const catalog = get(RepositoriesApi) as FakeRepositoriesApi;
+      catalog.repositories = [...catalog.repositories, repo as never];
+      catalog.formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT, OCI_FORMAT];
+      setup?.({ catalog, packages: get(PackagesApi) as FakePackagesApi, vulnerabilities: get(VulnerabilitiesApi) as FakeVulnerabilitiesApi });
+    },
+  });
+  await settle(r.fixture);
+  return r;
+}
+
+const OCI_REPO: RepoDoc = { key: 'oci-local', project: 'web', class: 'local', format: 'oci', description: 'Images of the web team' };
+const NPM_REPO: RepoDoc = { key: 'npm-local', project: 'web', class: 'local', format: 'npm', description: 'Internal packages' };
+
+describe('Repository content page', () => {
+  it('R-UI-052 an OCI repository lists its images, opens the tags with digest, size and pushed time, and shows the pull command of this installation', async () => {
+    const r = await open(OCI_REPO, ({ packages }) => ociFixture(packages));
+    expect(r.root.querySelector('h1')?.textContent).toContain('oci-local');
+    expect(text(r.root)).toContain('Images of the web team');
+    expect(text(r.root)).toContain('Images are not scanned for vulnerabilities yet.');
+    expect(r.root.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain('Images');
+    const opener = r.root.querySelector<HTMLButtonElement>('button[aria-expanded]')!;
+    expect(opener.getAttribute('aria-expanded')).toBe('false');
+    opener.click();
+    await settle(r.fixture);
+    expect(opener.getAttribute('aria-expanded')).toBe('true');
+    // Newest push first, with the digest of the format.
+    const rows = [...r.root.querySelectorAll('trove-repository-item-versions tbody tr')];
+    expect(rows[0]?.textContent).toContain('1.2.0');
+    expect(rows[0]?.textContent).toContain('sha256:');
+    expect(r.root.querySelector('trove-repository-item-versions pre')?.textContent).toMatch(/^docker pull \S*web\/oci-local\/team\/app:1\.2\.0$/);
+    await expectAccessible(r.root);
+  });
+
+  it('R-UI-052 the pull command follows the tag chosen in the list and switches between docker and podman', async () => {
+    const r = await open(OCI_REPO, ({ packages }) => ociFixture(packages));
+    r.root.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click();
+    await settle(r.fixture);
+    const setup = r.get(ClientSetupApi) as FakeClientSetupApi;
+    const rows = [...r.root.querySelectorAll('trove-repository-item-versions tbody tr')];
+    rows.at(-1)!.querySelector<HTMLButtonElement>('button[aria-pressed]')!.click();
+    await settle(r.fixture);
+    expect(setup.calls.at(-1)?.query).toMatchObject({ client: 'docker', version: '1.1.0', credentials: 'none' });
+    const client = r.root.querySelector<HTMLSelectElement>('trove-repository-item-versions select')!;
+    client.value = 'podman';
+    client.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle(r.fixture);
+    expect(setup.calls.at(-1)?.query).toMatchObject({ client: 'podman', version: '1.1.0' });
+    expect(setup.calls.at(-1)?.repository).toBe('web/oci-local');
+    expect(setup.calls.every((c) => c.query.credentials === 'none')).toBe(true);
+  });
+
+  it('R-UI-052 an npm repository shows the packages with their open findings and the install command of the version, with one request for the counts of the page', async () => {
+    const r = await open(NPM_REPO, ({ packages, vulnerabilities }) => {
+      packages.packages = packages.packages.map((p) =>
+        p.name === '@team-a/ui' ? { ...p, repositories: ['web/npm-local'], openVulnerabilities: { ...NONE, high: 2 } } : { ...p, repositories: ['web/npm-local'] },
+      );
+      vulnerabilities.packageReports.set('pkg_01JBQ6V7S3K9', {
+        packageId: 'pkg_01JBQ6V7S3K9',
+        versions: [{ version: '1.4.0', open: { ...NONE, high: 2 } }],
+      });
+    });
+    const packages = r.get(PackagesApi) as FakePackagesApi;
+    expect(packages.listFilters.at(-1)).toMatchObject({ repository: ['web/npm-local'], format: ['npm'], include: ['vulnerabilities'] });
+    const row = [...r.root.querySelectorAll('tbody tr')].find((tr) => tr.textContent?.includes('@team-a/ui'))!;
+    expect(row.textContent).toContain('High');
+    row.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click();
+    await settle(r.fixture);
+    const vulnerabilities = r.get(VulnerabilitiesApi) as FakeVulnerabilitiesApi;
+    expect(vulnerabilities.calls).toEqual(expect.arrayContaining(['packageReport pkg_01JBQ6V7S3K9 in web/npm-local']));
+    expect(r.root.querySelector('trove-repository-item-versions pre')?.textContent).toBe('npm install @team-a/ui@1.4.0');
+    await expectAccessible(r.root);
+  });
+
+  it('R-UI-052 a generic repository lists its files with a link to the file and a copyable address, and a folder opens in place', async () => {
+    const generic: RepoDoc = { key: 'generic-local', project: 'web', class: 'local', format: 'generic', description: 'Files' };
+    const r = await renderScreen(RepositoryContent, {
+      inputs: { project: 'web', key: 'generic-local' },
+      setup: (get) => {
+        (get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [GENERIC_FORMAT];
+        const files = get(FilesApi) as FakeFilesApi;
+        files.children = () => async () => ({
+          items: [
+            { path: 'bin', kind: 'folder' as const },
+            { path: 'app.tar.gz', kind: 'file' as const, size: 2048 },
+          ],
+          nextCursor: null,
+        });
+      },
+    });
+    await settle(r.fixture);
+    expect(r.root.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain('Files');
+    expect(text(r.root)).toContain('app.tar.gz');
+    expect(r.root.querySelector<HTMLAnchorElement>('tbody a[href$="/browse/generic-local/app.tar.gz"]')).not.toBeNull();
+    expect(generic.format).toBe('generic');
+    await expectAccessible(r.root);
+  });
+
+  it('R-UI-052 a virtual repository names what it resolves from and a remote one says it lists what clients fetched', async () => {
+    const virtual = await open({ key: 'npm-all', project: 'web', class: 'virtual', format: 'npm', virtual: { members: ['npm-local', 'npm-remote'] } });
+    expect(text(virtual.root)).toContain('Resolves from');
+    expect(virtual.root.querySelector<HTMLAnchorElement>('.resolves a[href$="/repositories/npm-remote"]')).not.toBeNull();
+    const remote = await open({ key: 'npm-cache', project: 'web', class: 'remote', format: 'npm' });
+    expect(text(remote.root)).toContain('Only what clients have fetched is listed here.');
+  });
+
+  it('R-UI-052 the client setup of the repository is on the page, for this repository, without choosing the format or the repository', async () => {
+    const r = await open(NPM_REPO, undefined, undefined, { tab: 'setup' });
+    await settle(r.fixture);
+    expect(r.root.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain('Set up client');
+    expect(text(r.root)).not.toContain('Package type');
+    const setup = r.get(ClientSetupApi) as FakeClientSetupApi;
+    expect(setup.calls.at(-1)?.repository).toBe('web/npm-local');
+    expect(r.root.querySelector('pre')?.textContent).toContain('npm');
+    await expectAccessible(r.root);
+  });
+
+  it('R-UI-052 the Settings action is offered to who can read the configuration, and leads to the settings route', async () => {
+    const owner = await open(NPM_REPO);
+    const settings = [...owner.root.querySelectorAll('.header-actions a')].find((a) => a.textContent?.trim() === 'Settings');
+    expect(settings?.getAttribute('href')).toBe('/projects/web/repositories/npm-local/settings');
+    const reader = await open(NPM_REPO, undefined, []);
+    expect([...reader.root.querySelectorAll('.header-actions a')].map((a) => a.textContent?.trim())).not.toContain('Settings');
+  });
+
+  it('R-UI-052 the filter of the list is sent to the server and lives in the URL', async () => {
+    const r = await open(NPM_REPO, undefined, undefined, { q: 'left' });
+    const packages = r.get(PackagesApi) as FakePackagesApi;
+    expect(packages.listFilters.at(-1)).toMatchObject({ q: 'left' });
+    const items = r.fixture.debugElement.query((d) => d.componentInstance instanceof RepositoryItems);
+    expect(items).toBeTruthy();
+  });
+});

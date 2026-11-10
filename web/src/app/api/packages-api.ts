@@ -31,12 +31,16 @@ export interface PackageFilters {
   readonly createdFrom?: string;
   readonly createdTo?: string;
   readonly sort?: PackageSort;
+  /** `vulnerabilities` adds the counts of open findings per entry (R-UI-052). */
+  readonly include?: readonly string[];
 }
 
 export interface VersionFilters {
   readonly prerelease?: boolean;
   readonly repository?: readonly string[];
   readonly sort?: '-publishedAt' | 'publishedAt' | '-version' | 'version';
+  /** `digest` adds each version's content digest from the format (R-UI-052). */
+  readonly include?: readonly string[];
 }
 
 /** The query of `GET …/client-setup` (R-API-030). */

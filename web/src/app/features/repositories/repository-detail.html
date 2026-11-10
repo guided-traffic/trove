@@ -1,6 +1,7 @@
 <header class="page-header">
-  <h1 tabindex="-1" i18n="@@repo.detail.heading">Repository</h1>
+  <h1 tabindex="-1" i18n="@@repo.detail.heading">Repository settings</h1>
   <a class="btn btn-tertiary" [routerLink]="['/projects', project(), 'repositories']" i18n="@@repo.detail.back">All repositories</a>
+  <a class="btn btn-tertiary" [routerLink]="['/projects', project(), 'repositories', key()]" i18n="@@repo.detail.content">Content</a>
   <a class="btn btn-tertiary" [routerLink]="['/projects', project(), 'browse', key()]" i18n="@@repo.action.browse">Browse</a>
   <!-- >>> M4b vulnerabilities -->
   @if (stored(); as repo) {

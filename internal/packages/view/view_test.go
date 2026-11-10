@@ -162,6 +162,48 @@ func (fakeAdapter) Withheld(context.Context, []string) ([]int64, error) {
 	return nil, nil
 }
 
+// digestAdapter is a format whose version metadata has a `digest` member (an OCI tag), for all versions but the one named none.
+type digestAdapter struct {
+	fakeAdapter
+	asked *[]Fields
+}
+
+func (d digestAdapter) Describe(_ context.Context, vs []Version, want Fields, _ func(string) bool) (map[int64]Data, error) {
+	*d.asked = append(*d.asked, want)
+	out := map[int64]Data{}
+	for _, v := range vs {
+		if v.Version != "none" {
+			out[v.ID] = Data{Metadata: map[string]any{"digest": "sha256:" + v.Version}}
+		}
+	}
+	return out, nil
+}
+
+// TestR_UI_052_DigestsComeFromTheFormatsMetadataInOneRead: the list of an OCI tag's versions shows the digest of the format's
+// metadata, read once for the page; a format without the member has none, and the core never parses a format's metadata beyond it.
+func TestR_UI_052_DigestsComeFromTheFormatsMetadataInOneRead(t *testing.T) {
+	var asked []Fields
+	a := digestAdapter{asked: &asked}
+	repo := repoOf("npm-a", repository.Local)
+	s := &Service{}
+	sc := Scope{topo: NewTopology([]repository.Repository{repo})}
+	rows := rowsOf("1.0.0", "none")
+	groupOf := map[string]versionGroup{
+		"1.0.0": {version: "1.0.0", rows: rows[:1]},
+		"none":  {version: "none", rows: rows[1:2]},
+	}
+	page := []VersionSummary{{Version: "1.0.0"}, {Version: "none"}}
+	if err := s.fillDigests(context.Background(), sc, a, "oci", groupOf, page); err != nil {
+		t.Fatal(err)
+	}
+	if page[0].Digest != "sha256:1.0.0" || page[1].Digest != "" {
+		t.Errorf("digests = %+v", page)
+	}
+	if len(asked) != 1 || asked[0] != FieldDetails {
+		t.Errorf("the adapter was asked %v, want the details once", asked)
+	}
+}
+
 func rowsOf(versions ...string) []q.PackageViewVersionsRow {
 	out := make([]q.PackageViewVersionsRow, len(versions))
 	for i, v := range versions {

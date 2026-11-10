@@ -63,12 +63,12 @@ const READER: Me = { ...OWNER, projects: [{ key: 'web', role: 'reader' }] };
 describe('The project is the context of the content (Q-UI-129)', () => {
   it('Q-UI-129 a caller with exactly one project starts in it, with the project sidebar', async () => {
     const { root } = await render('/', OWNER);
-    expect(TestBed.inject(Router).url).toBe('/projects/web/packages');
+    expect(TestBed.inject(Router).url).toBe('/projects/web/repositories');
     expect(root.querySelector('.project-switcher .switcher-name')?.textContent).toContain('Web platform');
     expect(navLabels(root)).toEqual([
+      'Repositories',
       'Packages',
       'Browse',
-      'Repositories',
       'Vulnerabilities',
       'Access',
       'Members',
@@ -90,7 +90,7 @@ describe('The project is the context of the content (Q-UI-129)', () => {
     expect(navLabels(root)).toEqual(['Projects', 'Guides']);
     root.querySelector<HTMLAnchorElement>('main tbody a[href="/projects/data"]')!.click();
     await settleApp(fixture);
-    expect(TestBed.inject(Router).url).toBe('/projects/data/packages');
+    expect(TestBed.inject(Router).url).toBe('/projects/data/repositories');
     expect(await seriousViolations(root)).toEqual([]);
   });
 
@@ -110,7 +110,7 @@ describe('The project is the context of the content (Q-UI-129)', () => {
 
   it('Q-UI-129 a reader sees the project without the screens that need the Owner role or a capability', async () => {
     const { root } = await render('/projects/web/packages', READER);
-    expect(navLabels(root)).toEqual(['Packages', 'Browse', 'Repositories', 'Vulnerabilities', 'Access', 'Members', 'Settings']);
+    expect(navLabels(root)).toEqual(['Repositories', 'Packages', 'Browse', 'Vulnerabilities', 'Access', 'Members', 'Settings']);
   });
 
   it('Q-UI-129 the switcher is a disclosure: it lists the recent projects and the matches, narrows by typing and closes with Escape', async () => {
@@ -157,7 +157,7 @@ describe('The project is the context of the content (Q-UI-129)', () => {
     await settleApp(fixture);
     root.querySelector<HTMLAnchorElement>('#project-switcher-panel a[href="/projects/data"]')!.click();
     await settleApp(fixture);
-    expect(TestBed.inject(Router).url).toBe('/projects/data/packages');
+    expect(TestBed.inject(Router).url).toBe('/projects/data/repositories');
     expect(root.querySelector('#project-switcher-panel')).toBeNull();
     expect(root.querySelector('.switcher-name')?.textContent).toContain('Data');
   });

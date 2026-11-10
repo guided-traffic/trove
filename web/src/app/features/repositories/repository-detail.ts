@@ -519,7 +519,7 @@ export class RepositoryDetail implements HasUnsavedChanges {
       const moved = await this.api.move(this.ref(), target, newIdempotencyKey());
       this.notifier.status($localize`:@@repo.move.done:Repository moved to project ${target}:project:.`);
       this.baseline.set(this.form());
-      await this.router.navigate(['/projects', target, 'repositories', moved.value.key]);
+      await this.router.navigate(['/projects', target, 'repositories', moved.value.key, 'settings']);
     } catch (e) {
       this.failure.set(asApiError(e));
     } finally {

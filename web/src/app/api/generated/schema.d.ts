@@ -3048,7 +3048,9 @@ export interface paths {
          *     the creation time of the first visible version. `sort` takes one field, a leading `-` sorts
          *     descending; the default is `name`. An anonymous caller sees what anonymous holds `read` on.
          *     The filter runs in SQL. A sort field or filter this document does not list answers
-         *     `400 malformed_request`.
+         *     `400 malformed_request`. `include=vulnerabilities` adds `openVulnerabilities` to each entry, for a signed-in caller of an
+         *     installation that scans: the open findings the caller can read, of the visible versions in the repositories the filter names
+         *     (a virtual repository expanded to its members), counted by severity in one statement per page (R-UI-052).
          */
         get: operations["listPackages"];
         put?: never;
@@ -3124,7 +3126,9 @@ export interface paths {
          *     rules (SemVer pre-release tags for npm, SemVer 2.0 labels for NuGet); without it both are
          *     listed. `repository` (repeated) keeps the versions a repository holds; a virtual repository
          *     expands to its members. `sort=-version` orders by the format's version precedence, newest
-         *     first; the default is `-publishedAt`.
+         *     first; the default is `-publishedAt`. `include=digest` also reads each version's `digest` from
+         *     the format's metadata (an OCI tag: `sha256:…` of its manifest, R-UI-052); a format without one
+         *     has no `digest`.
          */
         get: operations["listPackageVersions"];
         put?: never;
@@ -4120,6 +4124,8 @@ export interface paths {
         /**
          * The open findings of a package, per version
          * @description Open findings per version of the package, counted by severity, over the findings the caller can read (R-VULN-020).
+         *     `repository` (repeated) narrows them to the versions and findings of that repository; a virtual repository expands to
+         *     its members (R-UI-052).
          */
         get: operations["getPackageVulnerabilities"];
         put?: never;
@@ -6714,6 +6720,8 @@ export interface components {
             priorityMembers: boolean;
             pinsAndClaims: boolean;
             caps: boolean;
+            /** @description Whether stored versions of the format are matched against advisories (the format has the vulnerability adapter, R-VULN-009); a format without it has no vulnerability counts anywhere (R-UI-052). */
+            vulnerabilityScanning: boolean;
             /**
              * @description Whether a remote repository of this format can run in mode `mirror` (R-REPO-050): its remote adapter can discover the
              *     packages of its upstream. `false` for a format that cannot; `mode: mirror` on it answers `422 not_applicable`.
@@ -7285,6 +7293,12 @@ export interface components {
              * @description The downloads of the visible versions, summed.
              */
             downloadCount: number;
+            /**
+             * @description With `include=vulnerabilities` only, and only for a signed-in caller of an installation that scans (R-UI-052): the open
+             *     findings of the entry's visible versions that the caller can read, in the repositories the list is filtered by, by
+             *     severity. A package without one counts zero. Summed over the versions, so a finding present in two versions counts twice.
+             */
+            openVulnerabilities?: components["schemas"]["VulnerabilitySeverityCounts"];
         };
         PackageList: {
             items: components["schemas"]["PackageSummary"][];
@@ -7301,6 +7315,8 @@ export interface components {
              * @description The size of the version's files, summed; for a format whose files are not its content, the size the format reports (an OCI tag - the size of its image, config and layers, not of the manifest document).
              */
             sizeBytes: number;
+            /** @description With `include=digest` only, the version's content digest from the format's metadata (an OCI tag - `sha256:` and the hex digest of its manifest); absent for a format without one. */
+            digest?: string;
             /** @description The keys of the repositories that hold this version and that the caller may read. */
             repositories: string[];
             /** Format: int64 */
@@ -13114,6 +13130,7 @@ export interface operations {
                      *           "priorityMembers": false,
                      *           "pinsAndClaims": false,
                      *           "caps": false,
+                     *           "vulnerabilityScanning": false,
                      *           "mirror": false,
                      *           "settingsSchema": null
                      *         }
@@ -16180,6 +16197,8 @@ export interface operations {
                 q?: string;
                 namePrefix?: string;
                 keyword?: string;
+                /** @description `vulnerabilities`: also answer the counts of open findings per entry (`openVulnerabilities`). */
+                include?: "vulnerabilities"[];
                 /** @description Inclusive lower bound of the creation time of the first visible version. */
                 createdFrom?: string;
                 /** @description Exclusive upper bound of the creation time of the first visible version. */
@@ -16312,6 +16331,8 @@ export interface operations {
                 prerelease?: boolean;
                 /** @description Repeat the parameter for several repository keys. */
                 repository?: string[];
+                /** @description `digest`: also read each version's content digest from the format (`digest`). */
+                include?: "digest"[];
                 sort?: "-publishedAt" | "publishedAt" | "-version" | "version";
                 /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
                 limit?: components["parameters"]["Limit"];
@@ -18227,7 +18248,10 @@ export interface operations {
     };
     getPackageVulnerabilities: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Repeat the parameter for several repository names `<project>/<key>`. */
+                repository?: string[];
+            };
             header?: never;
             path: {
                 /** @description The server-generated package identifier (R-API-029). */

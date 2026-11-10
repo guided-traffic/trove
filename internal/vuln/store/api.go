@@ -431,15 +431,43 @@ type VersionCount struct {
 }
 
 // PackageCounts returns the open findings of one package in scope, per version and severity.
-func (a *API) PackageCounts(ctx context.Context, sc Scope, format, name string) ([]VersionCount, error) {
+func (a *API) PackageCounts(ctx context.Context, sc Scope, format, name string, f Filter) ([]VersionCount, error) {
 	var rows []q.VulnPackageCountsRow
 	err := a.db.Read(ctx, func(db q.DBTX) (err error) {
-		rows, err = q.New(db).VulnPackageCounts(ctx, q.VulnPackageCountsParams{Whole: nid(sc.Whole), Rows: nn(sc.Rows), PackageRows: nn(sc.Packages), Format: format, Name: name})
+		rows, err = q.New(db).VulnPackageCounts(ctx, q.VulnPackageCountsParams{
+			Whole: nid(sc.Whole), Rows: nn(sc.Rows), PackageRows: nn(sc.Packages), Format: format, Name: name,
+			HasRepos: f.HasRepos, Repos: nid(f.Repos),
+		})
 		return err
 	})
 	out := make([]VersionCount, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, VersionCount{Version: r.Version, Severity: advisory.Severity(r.Severity), N: r.N})
+	}
+	return out, err
+}
+
+// PackageCount is the number of open findings of one severity of one package.
+type PackageCount struct {
+	Format, Package string
+	Severity        advisory.Severity
+	N               int64
+}
+
+// PackageListCounts returns the open findings of the packages named in f (with f's repositories and formats) in scope, per format,
+// package and severity: the one statement behind the vulnerability counts of a page of the packages list (R-UI-052).
+func (a *API) PackageListCounts(ctx context.Context, sc Scope, f Filter) ([]PackageCount, error) {
+	var rows []q.VulnPackageListCountsRow
+	err := a.db.Read(ctx, func(db q.DBTX) (err error) {
+		rows, err = q.New(db).VulnPackageListCounts(ctx, q.VulnPackageListCountsParams{
+			Whole: nid(sc.Whole), Rows: nn(sc.Rows), PackageRows: nn(sc.Packages), Packages: nn(f.Packages),
+			Formats: nn(f.Formats), HasRepos: f.HasRepos, Repos: nid(f.Repos),
+		})
+		return err
+	})
+	out := make([]PackageCount, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, PackageCount{Format: r.Format, Package: r.PackageName, Severity: advisory.Severity(r.Severity), N: r.N})
 	}
 	return out, err
 }

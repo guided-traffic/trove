@@ -18,7 +18,8 @@ const SCREENS: readonly (readonly [url: string, heading: string])[] = [
   ['/projects/web/browse/npm-local/@team-a/ui/-/ui-1.0.0.tgz', 'File tree'],
   ['/projects/web/repositories', 'Repositories'],
   ['/projects/web/repositories/new', 'New repository'],
-  ['/projects/web/repositories/npm-local', 'Repository'],
+  ['/projects/web/repositories/generic-local', 'generic-local'],
+  ['/projects/web/repositories/npm-local/settings', 'Repository settings'],
   ['/projects/web/members', 'Members'],
   ['/projects/web/settings', 'Settings'],
   ['/projects/web/policies', 'Permission policies'],
@@ -111,10 +112,10 @@ describe('route map', () => {
     expect(leaf().params['path']).toBe('@team-a/ui/-/ui-1.0.0.tgz');
   });
 
-  it('Q-UI-129 /projects/{project} answers with the packages of the project, so that its breadcrumb step links to a route that exists', async () => {
+  it('R-UI-052 Q-UI-216 /projects/{project} answers with the repositories of the project, so that its breadcrumb step links to a route that exists', async () => {
     const root = await open('/projects/web');
-    expect(TestBed.inject(Router).url).toBe('/projects/web/packages');
-    expect(root.querySelector('main h1')?.textContent?.trim()).toBe('Packages');
+    expect(TestBed.inject(Router).url).toBe('/projects/web/repositories');
+    expect(root.querySelector('main h1')?.textContent?.trim()).toBe('Repositories');
   });
 
   it('Q-UI-129 the old content routes are gone: /packages, /browse, /vulnerabilities and /admin/repositories/{project}/{key} are not found', async () => {

@@ -4988,6 +4988,7 @@ paths:
                     priorityMembers: false
                     pinsAndClaims: false
                     caps: false
+                    vulnerabilityScanning: false
                     mirror: false
                     settingsSchema: null
                 baseUrl: https://trove.example.com
@@ -8870,7 +8871,9 @@ paths:
         the creation time of the first visible version. `sort` takes one field, a leading `-` sorts
         descending; the default is `name`. An anonymous caller sees what anonymous holds `read` on.
         The filter runs in SQL. A sort field or filter this document does not list answers
-        `400 malformed_request`.
+        `400 malformed_request`. `include=vulnerabilities` adds `openVulnerabilities` to each entry, for a signed-in caller of an
+        installation that scans: the open findings the caller can read, of the visible versions in the repositories the filter names
+        (a virtual repository expanded to its members), counted by severity in one statement per page (R-UI-052).
       x-trove-permission:
         public: true
       parameters:
@@ -8912,6 +8915,16 @@ paths:
           in: query
           schema:
             type: string
+        - name: include
+          in: query
+          description: "`vulnerabilities`: also answer the counts of open findings per entry (`openVulnerabilities`)."
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [vulnerabilities]
+          style: form
+          explode: true
         - name: createdFrom
           in: query
           description: Inclusive lower bound of the creation time of the first visible version.
@@ -9064,7 +9077,9 @@ paths:
         rules (SemVer pre-release tags for npm, SemVer 2.0 labels for NuGet); without it both are
         listed. `repository` (repeated) keeps the versions a repository holds; a virtual repository
         expands to its members. `sort=-version` orders by the format's version precedence, newest
-        first; the default is `-publishedAt`.
+        first; the default is `-publishedAt`. `include=digest` also reads each version's `digest` from
+        the format's metadata (an OCI tag: `sha256:…` of its manifest, R-UI-052); a format without one
+        has no `digest`.
       x-trove-permission:
         public: true
       parameters:
@@ -9079,6 +9094,16 @@ paths:
             type: array
             items:
               type: string
+          style: form
+          explode: true
+        - name: include
+          in: query
+          description: "`digest`: also read each version's content digest from the format (`digest`)."
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [digest]
           style: form
           explode: true
         - name: sort
@@ -11338,8 +11363,20 @@ paths:
       summary: The open findings of a package, per version
       description: |
         Open findings per version of the package, counted by severity, over the findings the caller can read (R-VULN-020).
+        `repository` (repeated) narrows them to the versions and findings of that repository; a virtual repository expands to
+        its members (R-UI-052).
       x-trove-permission:
         authenticated: true
+      parameters:
+        - name: repository
+          in: query
+          description: Repeat the parameter for several repository names `<project>/<key>`.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
       responses:
         "200":
           description: The counts per version.
@@ -15509,7 +15546,7 @@ components:
     # >>> M1 repository
     FormatDescriptor:
       type: object
-      required: [name, classes, clients, layout, protocolBasePath, defaultUpstreamUrl, defaultExtraHosts, defaultCredentialHosts, defaultMetadataTtlSeconds, defaultNotFoundTtlSeconds, patternSubject, priorityMembers, pinsAndClaims, caps, mirror, settingsSchema]
+      required: [name, classes, clients, layout, protocolBasePath, defaultUpstreamUrl, defaultExtraHosts, defaultCredentialHosts, defaultMetadataTtlSeconds, defaultNotFoundTtlSeconds, patternSubject, priorityMembers, pinsAndClaims, caps, vulnerabilityScanning, mirror, settingsSchema]
       properties:
         name:
           type: string
@@ -15566,6 +15603,9 @@ components:
           type: boolean
         caps:
           type: boolean
+        vulnerabilityScanning:
+          type: boolean
+          description: Whether stored versions of the format are matched against advisories (the format has the vulnerability adapter, R-VULN-009); a format without it has no vulnerability counts anywhere (R-UI-052).
         # >>> M6b mirror
         mirror:
           type: boolean
@@ -16452,6 +16492,12 @@ components:
           type: integer
           format: int64
           description: The downloads of the visible versions, summed.
+        openVulnerabilities:
+          description: |
+            With `include=vulnerabilities` only, and only for a signed-in caller of an installation that scans (R-UI-052): the open
+            findings of the entry's visible versions that the caller can read, in the repositories the list is filtered by, by
+            severity. A package without one counts zero. Summed over the versions, so a finding present in two versions counts twice.
+          $ref: "#/components/schemas/VulnerabilitySeverityCounts"
     PackageList:
       type: object
       required: [items, nextCursor]
@@ -16478,6 +16524,9 @@ components:
           type: integer
           format: int64
           description: The size of the version's files, summed; for a format whose files are not its content, the size the format reports (an OCI tag - the size of its image, config and layers, not of the manifest document).
+        digest:
+          type: string
+          description: With `include=digest` only, the version's content digest from the format's metadata (an OCI tag - `sha256:` and the hex digest of its manifest); absent for a format without one.
         repositories:
           type: array
           description: The keys of the repositories that hold this version and that the caller may read.

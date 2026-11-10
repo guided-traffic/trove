@@ -156,7 +156,7 @@ test('R-UI-021 R-ARCH-004 the NuGet settings in the wizard and on the edit form,
   });
 
   await test.step('the edit form reads it back and setting the default back removes it from the document', async () => {
-    await page.reload();
+    await page.goto(`/ui/en/projects/${e2eProject}/repositories/${wizardKey}/settings`);
     await page.getByRole('tab', { name: 'NuGet settings' }).click();
     await expect(mode.locator('option:checked')).toHaveText('delete');
     await expectAccessible(page, 'repository detail, NuGet settings');

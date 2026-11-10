@@ -380,6 +380,9 @@ func (s *Server) ListFormats(w http.ResponseWriter, r *http.Request) {
 		PriorityMembers           bool     `json:"priorityMembers"`
 		PinsAndClaims             bool     `json:"pinsAndClaims"`
 		Caps                      bool     `json:"caps"`
+		// VulnerabilityScanning says whether the format has the vulnerability adapter (R-VULN-009), so the screens know whether a repository
+		// of it can have findings at all (R-UI-052).
+		VulnerabilityScanning bool `json:"vulnerabilityScanning"`
 		// Mirror is the catalog fact Entry.Mirror: a remote of the format can run in mode mirror (R-UI-021).
 		Mirror bool `json:"mirror"`
 		// SettingsSchema is the JSON Schema of the format's settings member; null for
@@ -408,6 +411,9 @@ func (s *Server) ListFormats(w http.ResponseWriter, r *http.Request) {
 			x.SettingsSchema = d.SettingsSchema
 		}
 		x.Mirror = mirrorFact(catalog.Default(), string(d.ID))
+		if f, ok := formats.Lookup(string(d.ID)); ok && formats.CapabilitiesOf(f).Vulnerability != nil {
+			x.VulnerabilityScanning = true
+		}
 		if d.DefaultUpstreamURL != "" {
 			u := d.DefaultUpstreamURL
 			x.DefaultUpstreamURL = &u
