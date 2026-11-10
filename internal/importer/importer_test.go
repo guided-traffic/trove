@@ -158,7 +158,7 @@ func TestR_IMP_002_AnAddressIsCheckedWithTheRuleOfAnUpstreamURL(t *testing.T) {
 	if _, _, _, err := Build(factory(), Params{Format: "npm", From: "https://x.example/", To: "https://t.example/", Token: "t", SourceAuth: AuthBasic}); err == nil {
 		t.Error("basic authentication without a password was built")
 	}
-	if _, _, _, err := Build(factory(), Params{Format: "galaxy", From: "https://x.example/", To: "https://t.example/", Token: "t"}); err == nil || !strings.Contains(err.Error(), "npm and nuget") {
+	if _, _, _, err := Build(factory(), Params{Format: "galaxy", From: "https://x.example/", To: "https://t.example/", Token: "t"}); err == nil || !strings.Contains(err.Error(), "npm, nuget and ansible") {
 		t.Errorf("an unknown format: %v", err)
 	}
 }

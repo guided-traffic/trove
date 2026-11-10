@@ -20,9 +20,9 @@ const (
 
 // Params is what the command line gives (R-IMP-001, R-IMP-002).
 type Params struct {
-	// Format is "npm" or "nuget".
+	// Format is "npm", "nuget" or "ansible".
 	Format string
-	// From is the source: the registry address of npm, the service index of NuGet. To is the target repository's address
+	// From is the source: the registry address of npm, the service index of NuGet, the API root of a Galaxy. To is the target repository's address
 	// in the same form, as a package manager is given it.
 	From, To string
 	// SourceAuth, SourceUsername and SourcePassword are the credential for the source; the password is the token for bearer.
@@ -42,8 +42,10 @@ func FormatByID(id string) (Format, error) {
 		return NPM{}, nil
 	case "nuget":
 		return &NuGet{}, nil
+	case "ansible":
+		return &Ansible{}, nil
 	}
-	return nil, fmt.Errorf("the format %q is not supported; the formats are npm and nuget", id)
+	return nil, fmt.Errorf("the format %q is not supported; the formats are npm, nuget and ansible", id)
 }
 
 // Build checks the addresses with the rule of a remote repository's upstream URL and builds the two clients from the

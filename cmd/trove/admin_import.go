@@ -18,7 +18,7 @@ import (
 	"github.com/guided-traffic/trove/internal/outbound"
 )
 
-const importUsage = `usage: trove admin import npm|nuget --from <source address> --to <trove repository address>
+const importUsage = `usage: trove admin import npm|nuget|ansible --from <source address> --to <trove repository address>
          [--package <name>]... [--packages-file <file>] [--search <text>]
          [--source-auth none|basic|bearer] [--source-username <name>] [--source-extra-host <pattern>]...
          [--state <file>] [--report <file>] [--concurrency 2] [--rate 5] [--max-package-bytes 536870912]
@@ -48,7 +48,7 @@ func importCmd(args []string, s streams) error {
 		return usageError{importUsage}
 	}
 	c := newFlags("admin import", s)
-	from := c.fs.String("from", "", "the source: the registry address (npm) or the service index (NuGet)")
+	from := c.fs.String("from", "", "the source: the registry address (npm), the service index (NuGet) or the API root (Ansible Galaxy)")
 	to := c.fs.String("to", "", "the target: the address of a local repository of trove, as a package manager is given it")
 	var names, extra stringList
 	c.fs.Var(&names, "package", "a package to copy; may be repeated")

@@ -20,7 +20,7 @@ client setup instructions; and the test suites. Mechanisms shared by all formats
 | Actions, patterns, ownership, claims, the virtual gate | [authorization.md](../authorization.md) (R-AUTHZ-005 to R-AUTHZ-009, R-AUTHZ-016, R-AUTHZ-018) |
 | Format contract, untrusted input, read budget, jobs | [architecture.md](../architecture.md) (R-ARCH-008 to R-ARCH-012, R-ARCH-016, R-ARCH-027, R-ARCH-028) |
 | Export classes, revision columns, revocation journal | [backup-and-restore.md](../backup-and-restore.md) (R-BAK-004, R-BAK-008, R-BAK-024) |
-| The copy of packages from an existing registry | `docs/spec/import.md` (R-IMP-001 to R-IMP-009; on `main`, not on the branch this page was written on) |
+| The copy of packages from an existing registry | [import.md](../import.md) (R-IMP-001 to R-IMP-009) |
 | Vulnerability scanning | [vulnerability-scanning.md](../vulnerability-scanning.md) |
 
 Covers: [formats/ansible.md](../../features/formats/ansible.md) (`PKG-ANSIBLE-*`); the section [Catalog coverage](#catalog-coverage) lists
@@ -904,8 +904,8 @@ Priority: **P1** · Covers: PKG-ANSIBLE-004
 ### R-ANS-027 · Import of the content of an existing Galaxy
 Priority: **P1** · Covers: trove-only
 
-The copy of an existing Galaxy's collections into a local repository is one more `Format` of the importer (`docs/spec/import.md`
-R-IMP-009; `internal/importer` `Format` interface: `ID`, `ValidName`, `Preflight`, `Search`, `Plan`, `Held`, `Publish`, `Finish`)
+The copy of an existing Galaxy's collections into a local repository is one more `Format` of the importer ([import.md](../import.md)
+R-IMP-009; the [`Format` interface](../../../internal/importer/types.go): `ID`, `ValidName`, `Preflight`, `Search`, `Plan`, `Held`, `Publish`, `Finish`)
 ([Q-ANS-21](#q-ans-21--the-galaxy-import-is-one-more-format-of-the-importer-collections-only)). `trove admin import ansible --from <source API root> --to <repo URL> [flags]`; the flags, the state file, the report and the exit
 codes are those of R-IMP-001 to R-IMP-008, and nothing in the runner, the report or the state file changes.
 
@@ -930,7 +930,12 @@ codes are those of R-IMP-001 to R-IMP-008, and nothing in the runner, the report
   operator passes that prefix as part of `--from`. The importer does not guess. **The owner's instance has not been seen** by the
   development agent ([H-847](#h-847--the-import-is-written-against-the-public-galaxy-and-not-against-the-owners-instance)): the package that builds this requirement runs the importer against the first real source
   through `--dry-run` before any copy and records what differs.
+- The format is [`internal/importer/ansible.go`](../../../internal/importer/ansible.go); the importer's tool page is
+  [developer/import.md](../../developer/import.md) and the operator's page [manual/admin/import.md](../../manual/admin/import.md).
 - The importer's tests use the counting stub of R-ANS-032 as the source and a local repository of the integration stack as the target.
+  The unit tests of the format run against a small Galaxy and trove target of their own in the test file.
+- **The roles of the source** are counted once per run, through `GET v1/roles/?page_size=1` (the `count` of the answer), and named under
+  `notKept` of the first collection that is planned ([Q-ANS-43](#q-ans-43--the-roles-of-the-source-are-reported-once-per-run-with-the-first-collection)); a source without `v1` reports nothing. A collection the source marks `deprecated` is named under `notKept` too.
 
 Acceptance criteria:
 
@@ -1113,7 +1118,7 @@ Each change is made by the work package that builds its mechanism, in the same c
 | [api-and-ui.md](../api-and-ui.md) | The operations `listAnsibleImportTasks` and `clearAnsibleTombstone`; the `ansible-galaxy` setup templates and guide; the import tasks tab | R-ANS-025, R-ANS-026 |
 | [operations-and-observability.md](../operations-and-observability.md) | The events and metrics of R-ANS-030; the job kinds `ansible-reindex`, `ansible-mirror` (the engine's) and the task `ansible-import-task-sweep` | R-ANS-030 |
 | [endpoints.md](../endpoints.md) | R-EP-018: the format has no exposure adapter | Q-ANS-25 |
-| `import.md` | The Scope paragraph: Galaxy is imported (R-ANS-027), the format table | Q-ANS-21 |
+| [import.md](../import.md) | The Scope paragraph: Galaxy is imported (R-ANS-027), the format table | Q-ANS-21 |
 | [vulnerability-scanning.md](../vulnerability-scanning.md) | The format's repositories are `not_covered` (no OSV ecosystem) | Q-ANS-15 |
 | [decisions.md](../../decisions.md) | ADR-191 and the table rows of Q-ANS-1 to Q-ANS-28 | — |
 
@@ -1676,6 +1681,21 @@ signatures the plan fixed; `RecordAnnounced` returns the rows whose offered dige
 can write its event (R-ANS-018). Revisit never: the rule is architectural.
 
 **Applied in the spec:** none (a code-level contract of the plan, section 2.2).
+
+### Q-ANS-43 · The roles of the source are reported once per run, with the first collection
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The format counts the roles once (`v1/roles/?page_size=1`) and names the count under `notKept` of the first planned collection (chosen) | `notKept` is per package in the report, the roles are not a package | No change of the runner, the report or the state file (R-IMP-009); the operator sees the loss | The note sits on an arbitrary collection of the report |
+| (b) A report field for the run | A place of its own | Honest placement | Changes the runner and the report for one format |
+| (c) Say nothing | Roles are not imported | Nothing to build | The operator learns of the loss when a playbook fails |
+
+**Choice:** (a). **Rationale:** the seam promises that nothing in the runner changes. Revisit when a second format has a loss that belongs to the
+source and not to a package: a run-level note then earns the report field of (b).
+
+**Applied in the spec:** R-ANS-027.
 
 ## What this does not cover
 
