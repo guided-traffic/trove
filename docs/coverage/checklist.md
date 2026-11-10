@@ -9,14 +9,14 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 620 of 781 spec requirements are implemented: a passing test names them and no
+**Status.** 620 of 813 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 774 specified (521 of them implemented), 1,465 open.
-781 spec requirements: 606 cover catalog features, 175 cover none (`trove-only`, [listed at the
+**Totals.** 2,239 catalog features on 60 pages: 787 specified (521 of them implemented), 1,452 open.
+813 spec requirements: 632 cover catalog features, 181 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
 ## Pages
@@ -56,7 +56,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [PyPI package format](#pypi-package-format-pkg-pypi) | `PKG-PYPI` | 29 | – | 0 | 29 | 0 |
 | [Go modules format](#go-modules-format-pkg-go) | `PKG-GO` | 16 | – | 0 | 16 | 0 |
 | [Generic format](#generic-format-pkg-generic) | `PKG-GENERIC` | 11 | – | 11 | 0 | 3 |
-| [Ansible collection format](#ansible-collection-format-pkg-ansible) | `PKG-ANSIBLE` | 13 | – | 0 | 13 | 0 |
+| [Ansible collection format](#ansible-collection-format-pkg-ansible) | `PKG-ANSIBLE` | 13 | – | 13 | 0 | 0 |
 | [Alpine Linux package format](#alpine-linux-package-format-pkg-apk) | `PKG-APK` | 14 | – | 0 | 14 | 0 |
 | [Bazel modules package format](#bazel-modules-package-format-pkg-bazel) | `PKG-BAZEL` | 12 | – | 0 | 12 | 0 |
 | [Bower package format](#bower-package-format-pkg-bower) | `PKG-BOWER` | 14 | – | 0 | 14 | 0 |
@@ -2174,23 +2174,23 @@ Catalog page: [formats/generic.md](../features/formats/generic.md) · specified 
 
 ## Ansible collection format (PKG-ANSIBLE)
 
-Catalog page: [formats/ansible.md](../features/formats/ansible.md) · specified by priority: P1 0 of 13
+Catalog page: [formats/ansible.md](../features/formats/ansible.md) · specified by priority: P1 13 of 13
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
-| PKG-ANSIBLE-001 | Ansible repositories in all three repository classes | P1 | open | – |
-| PKG-ANSIBLE-002 | Galaxy v3 API per repository | P1 | open | – |
-| PKG-ANSIBLE-003 | Publish collections with ansible-galaxy | P1 | open | – |
-| PKG-ANSIBLE-004 | Deploy collection archives through the UI or plain HTTP | P1 | open | – |
-| PKG-ANSIBLE-005 | Install collections | P1 | open | – |
-| PKG-ANSIBLE-006 | Collection metadata calculation and recalculation | P1 | open | – |
-| PKG-ANSIBLE-007 | Install legacy roles through remote repositories | P1 | open | – |
-| PKG-ANSIBLE-008 | No browsing of uncached remote content | P1 | open | – |
-| PKG-ANSIBLE-009 | Remote repositories for Ansible Galaxy | P1 | open | – |
-| PKG-ANSIBLE-010 | Proxy Red Hat Ansible Automation Hub | P1 | open | – |
-| PKG-ANSIBLE-011 | Virtual Ansible repositories | P1 | open | – |
-| PKG-ANSIBLE-012 | ansible.cfg configuration for collections | P1 | open | – |
-| PKG-ANSIBLE-013 | Credentials for role installation | P1 | open | – |
+| PKG-ANSIBLE-001 | Ansible repositories in all three repository classes | P1 | specified | [R-ANS-001](../spec/formats/ansible.md) |
+| PKG-ANSIBLE-002 | Galaxy v3 API per repository | P1 | specified | [R-ANS-002](../spec/formats/ansible.md), [R-ANS-003](../spec/formats/ansible.md), [R-ANS-004](../spec/formats/ansible.md), [R-ANS-007](../spec/formats/ansible.md) |
+| PKG-ANSIBLE-003 | Publish collections with ansible-galaxy | P1 | specified | [R-ANS-007](../spec/formats/ansible.md), [R-ANS-008](../spec/formats/ansible.md), [R-ANS-009](../spec/formats/ansible.md), [R-ANS-024](../spec/formats/ansible.md) |
+| PKG-ANSIBLE-004 | Deploy collection archives through the UI or plain HTTP | P1 | specified | [R-ANS-008](../spec/formats/ansible.md), [R-ANS-026](../spec/formats/ansible.md) |
+| PKG-ANSIBLE-005 | Install collections | P1 | specified | [R-ANS-005](../spec/formats/ansible.md), [R-ANS-013](../spec/formats/ansible.md) |
+| PKG-ANSIBLE-006 | Collection metadata calculation and recalculation | P1 | specified | [R-ANS-002](../spec/formats/ansible.md), [R-ANS-010](../spec/formats/ansible.md), [R-ANS-011](../spec/formats/ansible.md), [R-ANS-012](../spec/formats/ansible.md) |
+| PKG-ANSIBLE-007 | Install legacy roles through remote repositories | P1 | specified | [R-ANS-014](../spec/formats/ansible.md), [R-ANS-020](../spec/formats/ansible.md) |
+| PKG-ANSIBLE-008 | No browsing of uncached remote content | P1 | specified | [R-ANS-017](../spec/formats/ansible.md) |
+| PKG-ANSIBLE-009 | Remote repositories for Ansible Galaxy | P1 | specified | [R-ANS-016](../spec/formats/ansible.md), [R-ANS-017](../spec/formats/ansible.md), [R-ANS-018](../spec/formats/ansible.md), [R-ANS-021](../spec/formats/ansible.md) |
+| PKG-ANSIBLE-010 | Proxy Red Hat Ansible Automation Hub | P1 | specified | [R-ANS-019](../spec/formats/ansible.md) |
+| PKG-ANSIBLE-011 | Virtual Ansible repositories | P1 | specified | [R-ANS-022](../spec/formats/ansible.md), [R-ANS-023](../spec/formats/ansible.md) |
+| PKG-ANSIBLE-012 | ansible.cfg configuration for collections | P1 | specified | [R-ANS-006](../spec/formats/ansible.md), [R-ANS-025](../spec/formats/ansible.md) |
+| PKG-ANSIBLE-013 | Credentials for role installation | P1 | specified | [R-ANS-006](../spec/formats/ansible.md), [R-ANS-015](../spec/formats/ansible.md) |
 
 ## Alpine Linux package format (PKG-APK)
 
@@ -2969,7 +2969,7 @@ Requirements whose `Covers:` line says `trove-only`: trove's own design work tha
 catalog feature measures. They count toward the requirement total, not toward any share.
 
 <details>
-<summary>175 requirements</summary>
+<summary>181 requirements</summary>
 
 | Requirement | Title | Priority | Spec page |
 |---|---|---|---|
@@ -3062,6 +3062,12 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-EP-018 (implemented) | Package metadata on an endpoint: filtering, URLs and cache keys | MVP | [endpoints.md](../spec/endpoints.md) |
 | R-EP-019 (implemented) | Cache-fill policy per endpoint | MVP | [endpoints.md](../spec/endpoints.md) |
 | R-EP-020 (implemented) | Exposure changes in the revocation journal | MVP | [endpoints.md](../spec/endpoints.md) |
+| R-ANS-027 | Import of the content of an existing Galaxy | P1 | [formats/ansible.md](../spec/formats/ansible.md) |
+| R-ANS-028 | Ansible on n replicas, without Valkey and during a drain | P1 | [formats/ansible.md](../spec/formats/ansible.md) |
+| R-ANS-029 | Ansible data in backups and restores | P1 | [formats/ansible.md](../spec/formats/ansible.md) |
+| R-ANS-030 | Audit events and metrics | P1 | [formats/ansible.md](../spec/formats/ansible.md) |
+| R-ANS-031 | Limits for untrusted content | P1 | [formats/ansible.md](../spec/formats/ansible.md) |
+| R-ANS-032 | Test suites | P1 | [formats/ansible.md](../spec/formats/ansible.md) |
 | R-DEB-004 (implemented) | Permissions per operation | P2 | [formats/debian.md](../spec/formats/debian.md) |
 | R-DEB-005 | Errors and response headers | P2 | [formats/debian.md](../spec/formats/debian.md) |
 | R-DEB-024 (implemented) | Mirror settings of a Debian remote | P2 | [formats/debian.md](../spec/formats/debian.md) |

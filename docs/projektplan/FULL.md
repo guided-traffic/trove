@@ -21,7 +21,7 @@ repositories) before it counts as done.
 | Block | Content | Status |
 |---|---|---|
 | [A · Beta phase](#a--beta-phase) | Beta feedback, upgrade path, import tooling, user documentation | 🟡 |
-| [B · Registries after the beta](#b--registries-after-the-beta-p1) | Ansible Galaxy first, then generic, PyPI, Helm, OCI/Docker, Go, Maven | ⚪ |
+| [B · Registries after the beta](#b--registries-after-the-beta-p1) | Ansible Galaxy first, then generic, PyPI, Helm, OCI/Docker, Go, Maven | 🟡 |
 | [C · Platform features](#c--platform-features-p1) | npm/NuGet completion, retention, search, webhooks, identity breadth, HA breadth, curation | ⚪ |
 | [D · Further registries](#d--further-registries-p2) | 37 more registry types | ⚪ |
 | [E · Further platform work](#e--further-platform-work-p2) | Replication, query language, more storage back ends, … | ⚪ |
@@ -45,7 +45,7 @@ Ansible Galaxy goes first because it replaces a system the owner runs today. The
 follow the [roadmap's format order](../coverage/roadmap.md#p1-format-expansion-order).
 
 ### F0 · Ansible Galaxy (replaces the existing Galaxy)
-- ⚪ Spec page `formats/ansible.md` ([catalog](../features/formats/ansible.md))
+- 🟢 Spec page [formats/ansible.md](../spec/formats/ansible.md) ([catalog](../features/formats/ansible.md)), the cut into work packages in [ansible-work-packages.md](ansible-work-packages.md)
 - ⚪ Local: publish and install collections and roles
 - ⚪ Remote: proxy of the public Galaxy
 - ⚪ Virtual: one endpoint for internal and public content
