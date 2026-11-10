@@ -407,7 +407,7 @@ ALTER TABLE remote_cache_entries ADD COLUMN media_type text CHECK (length(media_
   trash needs no hook for them. The rows of a remote repository are tied to the alias item `<name>/_manifests/<digest>` that its fill
   entered (R-OCI-022, Q-OCI-25): the eviction of a metadata entry (the tag document) reaches no format hook, but the removal of an
   item does, so the hook removes the rows of a manifest with its alias item. The tag documents and the tags list are metadata
-  entries and own no row.
+  entries and own no row; the package screens list the tags of a remote from the entries (R-OCI-036).
 - Layer deduplication across names and repositories is the blob store's: a blob item references the one object of its
   SHA-256 (R-STOR-005).
 
@@ -1093,6 +1093,7 @@ The version `metadata` of a tag holds `digest`, `mediaType`, `size` (the summed 
 sum over its children, at any depth) and `artifactType` (the manifest's own, else the media type of its config, so every image shows its config type); an index adds `platforms`, one object per child with
 `platform` (`os/arch[/variant]`, `unknown/unknown` for an attestation, `""` for a child the index names without a platform), `digest`, `mediaType` and `size`. `Compare` is the tag order
 of the format (Q-OCI-17, Q-OCI-64), and a string that is no tag sorts before every tag; a tag whose manifest the journal replay withheld is not listed (R-OCI-033).
+The tags of a remote repository are listed the same way, read from its cache entries (R-OCI-036).
 
 Acceptance criteria:
 
@@ -1225,6 +1226,44 @@ Priority: **P1** · Covers: trove-only
 Acceptance criteria: the suites are green in CI for every change that touches the format, the registry root or the token
 service, and the closing run is green.
 
+### R-OCI-036 · The tags of a remote repository on the package screens
+Priority: **P1** · Covers: trove-only
+
+A remote repository of the format, in mode `pullThrough` or `mirror`, lists the images and tags it holds on the package screens, the list API
+and the content page of [R-UI-052](../api-and-ui.md#r-ui-052--repository-content-page), as a local repository does (R-OCI-031).
+
+- **What is listed.** A tag is listed as a version of its image name while the cache holds its tag document (the metadata entry
+  `<name>/_tags/<tag>`, R-OCI-007), the upstream has not marked that document gone (R-REPO-029) and the manifest row of its digest exists.
+  These are the conditions under which the remote address serves the tag from its cache, so the screen lists what a pull of the tag
+  would answer without asking the upstream. An image name with no listed tag is not listed: a name whose manifests were fetched by digest only
+  has no tag to show.
+- **Where it is read.** The listing reads the cache entries; the fill transaction, the mirror pass and the eviction write nothing for it
+  (Q-OCI-215). A pull that stores a tag, a mirror pass that fetches its tag documents (R-REPO-050) and an eviction of the entry change the listing
+  in the statement that changes the cache.
+- **What a listed tag shows.** The version is the tag; `publishedAt` is the time the stored tag document was fetched, so the tag
+  that moved upstream is listed with the time of the fetch that stored the new document; the metadata is that of R-OCI-031 (`digest`,
+  `mediaType`, `size`, `artifactType`, `platforms`), read from the manifest row of the entry's document. `downloadCount` is 0:
+  a remote's pulls are not counted per tag (Q-OCI-216). A tag is never a pre-release.
+- **A tag that moved, expired or vanished upstream** (Q-OCI-216). A tag shows the digest of the document the cache holds: a moved tag
+  shows its old digest until a request revalidates it and the fill stores the new document (R-OCI-022), then the new one, with a new
+  time. An entry past its metadata period is still listed (it is still served stale, R-REPO-029). A tag the upstream answered 404 or 410 for at
+  revalidation, or whose entry was evicted (R-REPO-046), is not listed.
+- **Who sees what.** The listing uses the read scope of R-API-029 and nothing of its own: a repository's include and exclude patterns
+  (R-REPO-005) and a caller's grants narrowed by package or path patterns are decided for each image name and tag as for a local
+  repository, so an image or tag the caller may not read is not listed, counted or found by a search, and its details answer 404.
+- **Virtual repositories** list the union of their members' versions as before; a tag held by a local and a remote member is one version
+  with both repositories.
+- Findings (R-VULN-020) of a remote image are counted per tag as for a local one.
+
+Acceptance criteria:
+
+- After `GET /v2/it/oci-anon/library/alpine/manifests/3.19`, `GET /api/v1/packages?repository=it/oci-anon` lists `library/alpine` with the
+  version count 1, and `GET /api/v1/packages/{id}/versions?repository=it/oci-anon&include=digest` lists `3.19` with the digest the pull answered.
+- After the upstream moved the tag and a revalidation fetched the new document, the list shows the new digest and no second version.
+- A caller whose grant is narrowed to the package pattern `acme/*` lists `acme/a` and not `library/alpine`; a caller with no grant on the
+  repository lists nothing and gets 404 for the package.
+- A tag whose cache entry is marked gone or deleted is not listed.
+
 ## Mirror discovery
 
 What an OCI remote in mode `mirror` discovers and stores ([repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-050
@@ -1319,6 +1358,7 @@ against PostgreSQL, Valkey with Sentinel and S3 plus the conformance kit, and e2
 | R-OCI-027, R-OCI-028 (virtual) | — | resolution order, claims, union lists, link step | pull, push and content discovery through a virtual address (content management: Q-OCI-211) | `oci` (pull and push through `docker`) |
 | R-OCI-029 (bound host) | — | dispatch on a bound host | — | `oci` (Docker Engine mirror) |
 | R-OCI-030, R-OCI-031 (setup, screens) | templates render | view API | — | `oci` (rendered snippets), browser journey of the package screen |
+| R-OCI-036 (tags of a remote on the screens) | content page component | `test/integration/ociremote`: list and versions through the API, a moved tag, a gone tag, read scope | — | — |
 | R-OCI-032 to R-OCI-034 (replicas, backups, metrics) | — | Valkey stopped, metrics | — | `oci` in `scatter`; closing run with Valkey stopped; restore drill (R-BAK-029) |
 
 ## Catalog coverage
@@ -2083,6 +2123,61 @@ development agent would revisit it if the shared installation makes a subtest de
 answers nothing (`testenv.StackOptions.Valkey` false), so the stack's Valkey is never stopped and the failover lock is not needed.
 
 **Applied in the spec:** the test plan of R-OCI-035. Code: [test/integration/oci](../../../test/integration/oci).
+
+### Q-OCI-215 · The tags of a remote are listed from its cache entries by a database view, not from version rows
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the package screens, the list API and the content page of R-UI-052 read `package_versions`. A remote's tag is a metadata cache entry whose
+document is the manifest (Q-OCI-121), so it owns no version row and the content page of a remote listed nothing. The earlier text named two roads:
+a format adapter that reads the manifests of a remote, and version rows for its tags, and set the second aside because it changes the fill
+transaction, which is reliability-critical. What the code does: `OnFill` writes the manifest row and the references of a tag, `OnCommit` those of a
+digest, and a mirror pass fetches tag documents through the same fill (`Upstream.Document`, R-REPO-050), so a pass writes the same entries a pull
+does. The eviction of a metadata entry (R-REPO-046) and the gone mark (R-REPO-029) reach no format hook.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Version rows written by `OnFill` for a tag (the second road) | A row per tag, created and moved in the fill transaction | The read model needs no change | Changes the fill transaction; the eviction and the gone mark reach no hook, so rows outlive the entries they stand for and the screen lists tags the remote address answers 404 for; every pull and every mirror pass writes one more row per tag under the package lock |
+| (b) A format adapter that returns a remote's versions as Go values, merged into the read model | The first road | No schema change | The read model is a set of keyset statements over rows (counts, latest, sort, filters, scope); a second source in Go would repeat each of them, and the read scope of R-API-029 is passed to those statements as data |
+| (c) A database view over the cache entries that presents a remote's tags as version rows, read by the same statements (chosen) | `oci_remote_tags` derives `(package, tag, fetch time, manifest digest)` from `remote_cache_entries` and the manifest rows; `package_version_listing` is the union with `package_versions`; the read statements read the union | The fill transaction, the mirror pass and the eviction are untouched; the listing is true by construction (it is the cache); the count, the latest tag, the sort, the filters and the read scope apply as they are | Generic statements read a name (`package_version_listing`) whose second branch is the format's; the entries of a remote OCI repository are matched by a pattern on the path for every statement that lists |
+| (d) A separate endpoint for a remote's images | The content page asks another API | Free of the read model | The page, the package details, the install snippet and the findings of a tag would each need the same second path |
+
+**Choice:** (c). The view `oci_remote_tags` ([00067](../../../internal/meta/postgres/migrations/00067_oci_remote_tag_versions.sql)) lists an entry of a remote
+repository of the format whose path is `<name>/_tags/<tag>`, kind `metadata`, not marked gone, whose digest has a manifest row of the name. Its id is
+the negative of the entry's id: a listed tag of a remote is told from a `package_versions` row by its sign, so the format's reads by version id
+(`OCITagViews`, `OCITagSizes`, `OCIChildPlatforms`) find either and the id spaces never meet. `package_version_listing` is the union with
+`package_versions`; the statements of the view (`PackageViewList`, `PackageViewVersions`, `PackageViewCandidates`) and the version candidates of the
+findings read it. The tag counts of the findings (`VulnImageTagCounts`, `VulnImageManifests`) take the tags of the view as well.
+
+**Rationale:** it is the only road that leaves the fill path alone and cannot disagree with the cache: a listing built from rows would have to
+learn of every eviction. The read scope is the existing one: `Candidates` hands the triples (repository, image, tag) of a repository with patterns or
+a restricted caller to the decision point, which decides each as for a local tag. The development agent would revisit it if the read of the view
+shows in the query budget of a large cache (H-829), when a derived table kept by the fill becomes worth its cost, or when a second format has tags
+that are cache entries.
+
+**Applied in the spec:** R-OCI-036 (new), R-OCI-007, R-OCI-031, [R-UI-052](../api-and-ui.md#r-ui-052--repository-content-page), R-API-029. Code: the migration, `package_view.sql`, `oci_manifests.sql`, `vuln_image.sql`, `vuln_api.sql` (all under `internal/meta/postgres`). Tests: `TestR_OCI_036_*` in [test/integration/ociremote](../../../test/integration/ociremote).
+
+### Q-OCI-216 · A listed tag of a remote shows the document the cache holds; its time is the fetch, its downloads are 0
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a cache is not the upstream: a tag may have moved or gone since the entry was fetched, an entry may be past its period, and a remote counts the
+downloads of an artifact, not of a tag document.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The entry as stored: digest of the document, `fetched_at` as the time, an expired entry listed, a gone-marked or evicted entry not (chosen) | The screen says what a pull would answer from the cache | No request on a read; the same rule the remote address applies (R-REPO-029) | A tag that moved upstream shows its old digest until a request revalidates it |
+| (b) Revalidate on a read of the list | Always current | Current | A GET of the API asks the upstream for every tag: unbounded fan-out on a read, against the egress and the circuit rules |
+| (c) List an expired entry only while it is fresh | The period decides | Looks newer | A tag that is still served stale would vanish and reappear |
+| (d) The time is the first fetch of the tag | Stable | The pushed-time semantics of a local tag | The cache keeps one entry per tag, and the first fetch is not kept; a moved tag would show a time older than its document |
+
+**Choice:** (a). `downloadCount` is 0 because the counts belong to items (a lead item's `item_download_stats`) and a tag entry has none; the blobs of the
+image keep their own counts. A tag is not a pre-release.
+
+**Rationale:** (a) is what a client asking the remote address gets, and it needs no request. The development agent would revisit it if the owner wants
+the tag's pulls counted (a counter on the entry), or a "checked" column from `validated_at`.
+
+**Applied in the spec:** R-OCI-036. Tests: `TestR_OCI_036_AMovedTagShowsTheNewDigestAndNoSecondVersion`, `TestR_OCI_036_AGoneOrEvictedTagIsNotListed`.
 
 ### Q-OCI-23 · No exposure rules and no Bastion for the format in this phase
 
@@ -3528,6 +3623,23 @@ credential, fail the job with the 403 or the 401 a request would get ([storage.m
 [authorization.md](../authorization.md) Q-AUTHZ-260). What remains is a removal that has no subject: a retention run or a purge removes
 by policy, and the cascade of the OCI hook (a removed manifest takes its tags and referrers) is not decided for anyone. Dormant: no
 retention run reaches the OCI hook today, and when one does it acts as the system, not as a caller whose grant could be exceeded.
+
+### H-828 · The tags a remote lists are the tags its cache holds, not the tags its upstream has
+
+A remote lists the tag documents it stored. A tag nobody pulled, and no mirror pass fetched, is not listed though the upstream has it; a tag
+whose entry the cleanup of unused cache content removed (R-REPO-046, `unusedRetentionHours` above 0) is not listed though its blobs may remain;
+a tag that vanished upstream is listed until a request revalidates it and the upstream answers 404 or 410 (R-REPO-029). The list is not a view of
+the registry. Live today; real for a user who reads the page as an inventory of the upstream, or who sets an unused-retention period and expects
+the page to keep naming the images. Listing what the upstream has would need its tags list (R-OCI-024) on a read, which Q-OCI-216 option (b) refuses.
+
+### H-829 · The listing of a remote reads every tag entry of the repositories in scope
+
+`oci_remote_tags` matches the path of each metadata entry of the remote OCI repositories a statement reads, because a tag is told from the
+tags list and from other documents by `/_tags/` in its path; no index serves that match. A list of a repository with some hundred thousand
+tag entries reads them all for each page of the list and for the count, as a list of local versions reads all its version rows. Not measured: no
+target of R-ARCH-027 names the content page of a remote and the query budget tests (`querybudget`) hold no remote with a large cache. Live today;
+real for a mirror of a registry with many tags. A derived table kept by the fill, or an expression index on the tag, are the remedies; neither is
+built.
 
 ### Q-OCI-100 · Everything below `/v2/` is one handler and one match, on the patterns `/v2` and `/v2/{rest...}`
 

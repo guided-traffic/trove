@@ -8865,8 +8865,8 @@ paths:
         entry (`latestVersion`, `repositories`, `versionCount`, `downloadCount`, `createdAt`,
         `updatedAt`) is computed from the visible versions only, so a hidden version leaks neither its
         number nor its existence. `format` and `repository` repeat for OR; a virtual repository
-        expands to its members; a remote repository contributes only cached versions. `q` matches
-        the name and the description case-insensitively, `namePrefix` the start of the name,
+        expands to its members; a remote repository contributes only cached versions (an OCI remote: the tags
+        whose document the cache holds, R-OCI-036). `q` matches the name and the description case-insensitively, `namePrefix` the start of the name,
         `keyword` one keyword exactly. `createdFrom` (inclusive) and `createdTo` (exclusive) bound
         the creation time of the first visible version. `sort` takes one field, a leading `-` sorts
         descending; the default is `name`. An anonymous caller sees what anonymous holds `read` on.

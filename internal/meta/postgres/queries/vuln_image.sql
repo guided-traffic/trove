@@ -150,7 +150,7 @@ SELECT COALESCE(blk.id::text, '')::text AS finding_id, COALESCE(blk.advisory_id,
 
 -- name: VulnImageManifests :many
 -- The manifests a tag stands for in the repositories (the tag's own and, for an index, the children it names), with how far each is
--- scanned: the version views of the report (R-VULN-020). The tag item's blob is the manifest it points at (R-OCI-007). An index has no
+-- scanned: the version views of the report (R-VULN-020). The tag item's blob is the manifest it points at (R-OCI-007); the tag of a remote repository is its cache entry (R-OCI-036). An index has no
 -- scan row of its own and is left out once it has children.
 WITH tagged AS (
     SELECT p.repo_id, p.name, i.blob_sha256 AS digest, ''::text AS platform
@@ -158,6 +158,10 @@ WITH tagged AS (
       JOIN package_versions pv ON pv.package_id = p.id
       JOIN items i ON i.id = pv.lead_item_id
      WHERE p.repo_id = ANY(sqlc.arg(repos)::bigint[]) AND p.name = sqlc.arg(name)::text AND pv.version = sqlc.arg(tag)::text AND pv.trashed_at IS NULL
+    UNION ALL
+    SELECT t.repo_id, t.name, t.manifest_sha256, ''::text
+      FROM oci_remote_tags t
+     WHERE t.repo_id = ANY(sqlc.arg(repos)::bigint[]) AND t.name = sqlc.arg(name)::text AND t.version = sqlc.arg(tag)::text
 ), images AS (
     SELECT * FROM tagged
     UNION
@@ -184,6 +188,10 @@ WITH tagged AS (
       JOIN package_versions pv ON pv.package_id = p.id
       JOIN items i ON i.id = pv.lead_item_id
      WHERE r.format = 'oci' AND p.name = sqlc.arg(name)::text AND pv.trashed_at IS NULL
+    UNION ALL
+    SELECT t.repo_id, t.name, t.version AS tag, t.manifest_sha256 AS digest
+      FROM oci_remote_tags t
+     WHERE t.name = sqlc.arg(name)::text
 ), images AS (
     SELECT repo_id, name, tag, digest FROM tagged
     UNION

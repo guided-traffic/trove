@@ -12,9 +12,9 @@ import (
 )
 
 // The package screens of the format (R-OCI-031, R-API-029): an image name is a package and its tags are its versions, newest first by
-// push time in a local repository. Per tag the screen shows the digest, the media type, the summed size and, for an index, its
-// platforms with the digest and the size of each child, read from the rows of R-OCI-007. Layer history and labels are not shown
-// (Deferred).
+// push time in a local repository and by fetch time in a remote one, whose tags the screens read from the cache entries (R-OCI-036).
+// Per tag the screen shows the digest, the media type, the summed size and, for an index, its platforms with the digest and the size
+// of each child, read from the rows of R-OCI-007. Layer history and labels are not shown (Deferred).
 
 // View returns the format's part of the package screens.
 func (f *Format) View() formats.ViewAdapter { return viewAdapter{} }
@@ -46,9 +46,9 @@ func (viewAdapter) Compare(a, b string) int {
 	return tagorder.Compare(a, b)
 }
 
-// Stored lists the tags a local repository serves of an image name, newest push first. A remote repository lists none: its tag
-// documents are metadata entries and own no version row (Q-OCI-34, Q-OCI-121), so the screens show the image names and manifests of its
-// cache through the format's tables; a virtual repository lists none yet (its adapter is a work package of its own).
+// Stored lists the tags a local repository serves of an image name, newest push first, for the exposure check of an endpoint. A remote
+// repository answers none here: its tag documents are metadata entries and own no version row (Q-OCI-34, Q-OCI-121); the package screens
+// list them from the cache entries (R-OCI-036, Q-OCI-215) and the exposure check does not read the cache.
 func (viewAdapter) Stored(ctx context.Context, ports formats.DataPorts, q formats.StoredQuery) (formats.Stored, error) {
 	if q.Repo.Class != formats.Local || q.Limit <= 0 {
 		return formats.Stored{}, nil

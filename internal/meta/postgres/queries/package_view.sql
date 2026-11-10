@@ -8,6 +8,8 @@
 --                version the caller may read in the other repositories
 --                (authz.ReadRows), decided by the decision point row by row;
 --   withheld     ids of stored versions the format does not serve.
+-- The versions are those of package_version_listing: the rows of package_versions and the tags of a remote OCI repository, which
+-- are read from the repository's cache entries (R-OCI-036); the second kind has a negative id and no lead item.
 -- A repository in neither list contributes no row. The scope parameters (formats,
 -- repos) narrow the rows a request asks about and never widen them.
 
@@ -23,7 +25,7 @@
 WITH vis AS (
   SELECT pv.id AS vid, pv.version, pv.created_at, (p.name COLLATE "C")::text AS name, p.display_name, r.format,
          COALESCE((SELECT s.downloads FROM item_download_stats s WHERE s.item_id = pv.lead_item_id), 0)::bigint AS downloads
-    FROM package_versions pv
+    FROM package_version_listing pv
     JOIN packages p ON p.id = pv.package_id
     JOIN repositories r ON r.id = p.repo_id
    WHERE pv.trashed_at IS NULL
@@ -80,7 +82,7 @@ SELECT pv.id AS version_id, r.format, p.name, p.display_name, pv.version, pv.cre
             THEN COALESCE((SELECT sum(i.size) FROM items i WHERE i.version_id = pv.id AND i.kind = 'file' AND i.trashed_at IS NULL), 0)
             ELSE 0 END::bigint AS size_bytes,
        COALESCE((SELECT s.downloads FROM item_download_stats s WHERE s.item_id = pv.lead_item_id), 0)::bigint AS downloads
-  FROM package_versions pv
+  FROM package_version_listing pv
   JOIN packages p ON p.id = pv.package_id
   JOIN repositories r ON r.id = p.repo_id
  WHERE pv.trashed_at IS NULL
@@ -103,7 +105,7 @@ SELECT i.path, i.size, encode(i.blob_sha256, 'hex')::text AS sha256
 -- repositories whose rows the decision point decides one by one. At most max_rows;
 -- the caller asks for one more than it accepts.
 SELECT p.repo_id, p.name, pv.version
-  FROM package_versions pv
+  FROM package_version_listing pv
   JOIN packages p ON p.id = pv.package_id
   JOIN repositories r ON r.id = p.repo_id
  WHERE pv.trashed_at IS NULL

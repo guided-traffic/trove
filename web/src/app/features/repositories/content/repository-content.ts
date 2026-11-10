@@ -68,7 +68,7 @@ export class RepositoryContent {
   protected readonly formatName = computed(() => this.descriptor()?.displayName ?? this.repository()?.format ?? '');
   protected readonly isGeneric = computed(() => this.repository()?.format === 'generic');
   protected readonly scanned = computed(() => this.descriptor()?.vulnerabilityScanning ?? false);
-  protected readonly shape = computed(() => contentShapeOf(this.repository()?.format ?? ''));
+  protected readonly shape = computed(() => contentShapeOf(this.repository()?.format ?? '', this.repository()?.class ?? ''));
   protected readonly classText = computed(() => classLabel(this.repository()?.class ?? 'local'));
   /** The settings exist for whoever can read the configuration: the capability, or an Owner of the project. */
   protected readonly canConfigure = computed(

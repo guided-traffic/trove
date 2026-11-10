@@ -763,6 +763,16 @@ type OciReference struct {
 	Platform pgtype.Text
 }
 
+type OciRemoteTag struct {
+	ID             int64
+	PackageID      int64
+	RepoID         int64
+	Name           string
+	Version        string
+	CreatedAt      pgtype.Timestamptz
+	ManifestSha256 []byte
+}
+
 type OciTombstone struct {
 	RepoID     int64
 	Name       string
@@ -828,6 +838,15 @@ type PackageVersion struct {
 	CreatedAt      pgtype.Timestamptz
 	CreatedBy      pgtype.UUID
 	TrashedAt      pgtype.Timestamptz
+}
+
+type PackageVersionListing struct {
+	ID         int64
+	PackageID  int64
+	Version    string
+	CreatedAt  pgtype.Timestamptz
+	LeadItemID pgtype.Int8
+	TrashedAt  pgtype.Timestamptz
 }
 
 type Principal struct {

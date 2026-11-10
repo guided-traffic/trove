@@ -343,6 +343,10 @@ WITH tagged AS (
       JOIN package_versions pv ON pv.package_id = p.id
       JOIN items i ON i.id = pv.lead_item_id
      WHERE p.repo_id = ANY($1::bigint[]) AND p.name = $2::text AND pv.version = $3::text AND pv.trashed_at IS NULL
+    UNION ALL
+    SELECT t.repo_id, t.name, t.manifest_sha256, ''::text
+      FROM oci_remote_tags t
+     WHERE t.repo_id = ANY($1::bigint[]) AND t.name = $2::text AND t.version = $3::text
 ), images AS (
     SELECT repo_id, name, digest, platform FROM tagged
     UNION
@@ -380,7 +384,7 @@ type VulnImageManifestsRow struct {
 }
 
 // The manifests a tag stands for in the repositories (the tag's own and, for an index, the children it names), with how far each is
-// scanned: the version views of the report (R-VULN-020). The tag item's blob is the manifest it points at (R-OCI-007). An index has no
+// scanned: the version views of the report (R-VULN-020). The tag item's blob is the manifest it points at (R-OCI-007); the tag of a remote repository is its cache entry (R-OCI-036). An index has no
 // scan row of its own and is left out once it has children.
 func (q *Queries) VulnImageManifests(ctx context.Context, arg VulnImageManifestsParams) ([]VulnImageManifestsRow, error) {
 	rows, err := q.db.Query(ctx, vulnImageManifests, arg.Repos, arg.Name, arg.Tag)
@@ -615,6 +619,10 @@ WITH tagged AS (
       JOIN package_versions pv ON pv.package_id = p.id
       JOIN items i ON i.id = pv.lead_item_id
      WHERE r.format = 'oci' AND p.name = $6::text AND pv.trashed_at IS NULL
+    UNION ALL
+    SELECT t.repo_id, t.name, t.version AS tag, t.manifest_sha256 AS digest
+      FROM oci_remote_tags t
+     WHERE t.name = $6::text
 ), images AS (
     SELECT repo_id, name, tag, digest FROM tagged
     UNION

@@ -22,8 +22,8 @@ regenerated.
 | P1 features covered by spec requirements | 64.2% (330 of 514) | measured from `Covers:` lines |
 | In-scope features covered (MVP, P1, P2, Later) | 35.7% (774 of 2,167) | measured from `Covers:` lines |
 | Catalog features | 2,239 on 60 pages | measured from catalog headings |
-| Spec requirements | 771 on 18 pages (546 MVP, 184 P1, 41 P2) | measured from spec headings |
-| Requirements covering no catalog feature | 165 (`trove-only`) | measured from `Covers:` lines |
+| Spec requirements | 772 on 18 pages (546 MVP, 185 P1, 41 P2) | measured from spec headings |
+| Requirements covering no catalog feature | 166 (`trove-only`) | measured from `Covers:` lines |
 <!-- coverage-gen:end headline -->
 
 **What the owner constraints of 2026-10-28 changed.** The tables were regenerated on 2026-10-29,

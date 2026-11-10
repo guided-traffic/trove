@@ -13758,7 +13758,7 @@
     </unit>
     <unit id="repo.content.oci.items">
       <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:30</note>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:31</note>
       </notes>
       <segment>
         <source>Images</source>
@@ -13766,7 +13766,7 @@
     </unit>
     <unit id="repo.content.oci.item">
       <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:31</note>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:32</note>
       </notes>
       <segment>
         <source>Image</source>
@@ -13774,7 +13774,7 @@
     </unit>
     <unit id="repo.content.oci.versions">
       <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:32</note>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:33</note>
       </notes>
       <segment>
         <source>Tags</source>
@@ -13782,7 +13782,7 @@
     </unit>
     <unit id="repo.content.oci.version">
       <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:33</note>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:34</note>
       </notes>
       <segment>
         <source>Tag</source>
@@ -13790,15 +13790,23 @@
     </unit>
     <unit id="repo.content.oci.filter">
       <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:34</note>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:35</note>
       </notes>
       <segment>
         <source>Filter images</source>
       </segment>
     </unit>
+    <unit id="repo.content.oci.empty-remote">
+      <notes>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:37</note>
+      </notes>
+      <segment>
+        <source>This repository has cached no images yet. Pull an image through it, or set up your client first.</source>
+      </segment>
+    </unit>
     <unit id="repo.content.oci.empty">
       <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:35</note>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:38</note>
       </notes>
       <segment>
         <source>This repository holds no images yet. Push an image, or set up your client first.</source>
@@ -13806,15 +13814,23 @@
     </unit>
     <unit id="repo.content.oci.empty-filtered">
       <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:36</note>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:39</note>
       </notes>
       <segment>
         <source>No image matches the filter.</source>
       </segment>
     </unit>
+    <unit id="repo.content.oci.fetched">
+      <notes>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:41</note>
+      </notes>
+      <segment>
+        <source>Fetched</source>
+      </segment>
+    </unit>
     <unit id="repo.content.oci.published">
       <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:37</note>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:42</note>
       </notes>
       <segment>
         <source>Pushed</source>
@@ -13822,7 +13838,7 @@
     </unit>
     <unit id="repo.content.oci.command">
       <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:39</note>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:44</note>
       </notes>
       <segment>
         <source>Pull command</source>
@@ -13830,8 +13846,8 @@
     </unit>
     <unit id="repo.content.no-scanning">
       <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:40</note>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:57</note>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:45</note>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:62</note>
       </notes>
       <segment>
         <source>This package type is not scanned for vulnerabilities yet.</source>
@@ -13839,7 +13855,7 @@
     </unit>
     <unit id="repo.content.files">
       <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:44</note>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:49</note>
       </notes>
       <segment>
         <source>Files</source>
@@ -13847,7 +13863,7 @@
     </unit>
     <unit id="repo.content.items">
       <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:47</note>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:52</note>
       </notes>
       <segment>
         <source>Packages</source>
@@ -13855,7 +13871,7 @@
     </unit>
     <unit id="repo.content.item">
       <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:48</note>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:53</note>
       </notes>
       <segment>
         <source>Package</source>
@@ -13863,7 +13879,7 @@
     </unit>
     <unit id="repo.content.versions">
       <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:49</note>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:54</note>
       </notes>
       <segment>
         <source>Versions</source>
@@ -13871,7 +13887,7 @@
     </unit>
     <unit id="repo.content.version">
       <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:50</note>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:55</note>
       </notes>
       <segment>
         <source>Version</source>
@@ -13879,7 +13895,7 @@
     </unit>
     <unit id="repo.content.filter">
       <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:51</note>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:56</note>
       </notes>
       <segment>
         <source>Filter packages</source>
@@ -13887,7 +13903,7 @@
     </unit>
     <unit id="repo.content.empty">
       <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:52</note>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:57</note>
       </notes>
       <segment>
         <source>This repository holds no packages yet. Publish a package, or set up your client first.</source>
@@ -13895,7 +13911,7 @@
     </unit>
     <unit id="repo.content.empty-filtered">
       <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:53</note>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:58</note>
       </notes>
       <segment>
         <source>No package matches the filter.</source>
@@ -13903,7 +13919,7 @@
     </unit>
     <unit id="repo.content.published">
       <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:54</note>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:59</note>
       </notes>
       <segment>
         <source>Published</source>
@@ -13911,7 +13927,7 @@
     </unit>
     <unit id="repo.content.command">
       <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:56</note>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:61</note>
       </notes>
       <segment>
         <source>Install command</source>
@@ -13964,7 +13980,7 @@
         <note category="location">src/app/features/repositories/content/repository-content.html:53,55</note>
       </notes>
       <segment>
-        <source>The images a remote registry has cached are not listed here yet. Pull them through this repository with the commands under Set up client.</source>
+        <source>Only the tags this repository has cached are listed here: those clients have pulled and, in mirror mode, those a pass has fetched.</source>
       </segment>
     </unit>
     <unit id="repo.content.remote-note">

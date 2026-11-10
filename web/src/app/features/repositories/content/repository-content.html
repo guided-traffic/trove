@@ -50,7 +50,7 @@
         } @else {
           @if (r.class === 'remote') {
             @if (r.format === 'oci') {
-              <p class="content-note" i18n="@@repo.content.oci-remote-note">The images a remote registry has cached are not listed here yet. Pull them through this repository with the commands under Set up client.</p>
+              <p class="content-note" i18n="@@repo.content.oci-remote-note">Only the tags this repository has cached are listed here: those clients have pulled and, in mirror mode, those a pass has fetched.</p>
             } @else {
               <p class="content-note" i18n="@@repo.content.remote-note">Only what clients have fetched is listed here.</p>
             }

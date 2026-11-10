@@ -137,6 +137,36 @@ describe('Repository content page', () => {
     expect(text(remote.root)).toContain('Only what clients have fetched is listed here.');
   });
 
+  it('R-OCI-036 an OCI remote repository lists the images it has cached like a local one, with the fetched time of a tag, and no longer says that they are not listed', async () => {
+    const remote: RepoDoc = { key: 'oci-cache', project: 'web', class: 'remote', format: 'oci' };
+    const r = await open(remote, ({ packages }) => {
+      ociFixture(packages);
+      packages.packages = packages.packages.map((p) => (p.format === 'oci' ? { ...p, repositories: ['web/oci-cache'] } : p));
+    });
+    const body = text(r.root);
+    expect(body).not.toContain('not listed here yet');
+    expect(body).toContain('Only the tags this repository has cached are listed here');
+    const packages = r.get(PackagesApi) as FakePackagesApi;
+    expect(packages.listFilters.at(-1)).toMatchObject({ repository: ['web/oci-cache'], format: ['oci'] });
+    const opener = r.root.querySelector<HTMLButtonElement>('button[aria-expanded]')!;
+    opener.click();
+    await settle(r.fixture);
+    const headers = [...r.root.querySelectorAll('trove-repository-item-versions th')].map((th) => th.textContent?.trim());
+    expect(headers).toContain('Fetched');
+    expect(headers).not.toContain('Pushed');
+    const rows = [...r.root.querySelectorAll('trove-repository-item-versions tbody tr')];
+    expect(rows[0]?.textContent).toContain('sha256:');
+    await expectAccessible(r.root);
+  });
+
+  it('R-OCI-036 an OCI remote repository with nothing cached says so and names the way to fill it', async () => {
+    const remote: RepoDoc = { key: 'oci-cache', project: 'web', class: 'remote', format: 'oci' };
+    const r = await open(remote, ({ packages }) => {
+      packages.packages = [];
+    });
+    expect(text(r.root)).toContain('This repository has cached no images yet. Pull an image through it');
+  });
+
   it('R-UI-052 the client setup of the repository is on the page, for this repository, without choosing the format or the repository', async () => {
     const r = await open(NPM_REPO, undefined, undefined, { tab: 'setup' });
     await settle(r.fixture);

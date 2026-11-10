@@ -9,14 +9,14 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 620 of 771 spec requirements are implemented: a passing test names them and no
+**Status.** 620 of 772 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
 **Totals.** 2,239 catalog features on 60 pages: 774 specified (521 of them implemented), 1,465 open.
-771 spec requirements: 606 cover catalog features, 165 cover none (`trove-only`, [listed at the
+772 spec requirements: 606 cover catalog features, 166 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
 ## Pages
@@ -2969,7 +2969,7 @@ Requirements whose `Covers:` line says `trove-only`: trove's own design work tha
 catalog feature measures. They count toward the requirement total, not toward any share.
 
 <details>
-<summary>165 requirements</summary>
+<summary>166 requirements</summary>
 
 | Requirement | Title | Priority | Spec page |
 |---|---|---|---|
@@ -3087,6 +3087,7 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-OCI-033 (implemented) | OCI data in backups and restores | P1 | [formats/oci.md](../spec/formats/oci.md) |
 | R-OCI-034 | Audit events and metrics | P1 | [formats/oci.md](../spec/formats/oci.md) |
 | R-OCI-035 (implemented) | Test suites | P1 | [formats/oci.md](../spec/formats/oci.md) |
+| R-OCI-036 | The tags of a remote repository on the package screens | P1 | [formats/oci.md](../spec/formats/oci.md) |
 | R-CI-029 (implemented) | CI state across replicas, Valkey outages and restores | MVP | [gitlab-ci-oidc.md](../spec/gitlab-ci-oidc.md) |
 | R-CI-030 (implemented) | Background tasks of the CI exchange | MVP | [gitlab-ci-oidc.md](../spec/gitlab-ci-oidc.md) |
 | R-HA-056 | Valkey with Sentinel: connection and supported topologies | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |

@@ -3042,8 +3042,8 @@ export interface paths {
          *     entry (`latestVersion`, `repositories`, `versionCount`, `downloadCount`, `createdAt`,
          *     `updatedAt`) is computed from the visible versions only, so a hidden version leaks neither its
          *     number nor its existence. `format` and `repository` repeat for OR; a virtual repository
-         *     expands to its members; a remote repository contributes only cached versions. `q` matches
-         *     the name and the description case-insensitively, `namePrefix` the start of the name,
+         *     expands to its members; a remote repository contributes only cached versions (an OCI remote: the tags
+         *     whose document the cache holds, R-OCI-036). `q` matches the name and the description case-insensitively, `namePrefix` the start of the name,
          *     `keyword` one keyword exactly. `createdFrom` (inclusive) and `createdTo` (exclusive) bound
          *     the creation time of the first visible version. `sort` takes one field, a leading `-` sorts
          *     descending; the default is `name`. An anonymous caller sees what anonymous holds `read` on.
@@ -8090,10 +8090,12 @@ export interface components {
         /**
          * @description The derived evaluation state of a stored version in a repository (R-VULN-001): `evaluated` (the advisory data is
          *     complete), `pending_data` (it was never imported completely), `internal` (public advisories do not apply to the name)
-         *     or `not_covered` (scanning is off, the upstream is not recognised, or the format has no adapter).
+         *     or `not_covered` (scanning is off, the upstream is not recognised, or the format has no adapter). For an image also
+         *     `pending_scan` (its manifests have not been scanned yet, so the absence of findings says nothing) and `scan_failed` (the scan of one of
+         *     them did not finish; `images` names why).
          * @enum {string}
          */
-        VulnerabilityEvaluation: "evaluated" | "pending_data" | "internal" | "not_covered";
+        VulnerabilityEvaluation: "evaluated" | "pending_data" | "internal" | "not_covered" | "pending_scan" | "scan_failed";
         /**
          * @description The `vulnerabilities` member of a repository document (R-VULN-002): local and remote repositories of a format with the
          *     vulnerability adapter (npm, NuGet). Virtual repositories and other formats answer `422 not_applicable` at
@@ -8139,6 +8141,36 @@ export interface components {
             /** @example CC-BY 4.0 */
             license: string | null;
             url: string;
+        };
+        /** @description A package inside a container image that an advisory affects (R-VULN-012). */
+        VulnerabilityImageComponent: {
+            /** @description The ecosystem of the package as the analyser names it, for example apk, deb, npm or gobinary. */
+            type: string;
+            /** @description os-pkgs for an operating-system package, lang-pkgs for a language package. */
+            class: string;
+            name: string;
+            version: string;
+            fixedVersion?: string;
+            /** @description Where a language package was found in the image. */
+            path?: string;
+        };
+        /** @description One manifest of an image version, and how far it has been scanned (R-VULN-034). */
+        VulnerabilityImageState: {
+            digest: string;
+            /** @description os/arch[/variant] for a child of a multi-platform image. */
+            platform?: string;
+            /** @enum {string} */
+            state: "pending" | "scanned" | "failed";
+            /** @description Why a scan did not finish. */
+            errorCode?: string;
+            /** Format: date-time */
+            scannedAt?: string | null;
+            osFamily?: string;
+            osName?: string;
+            /** @description The distribution no longer provides security updates, so an absence of findings says little. */
+            eosl?: boolean;
+            /** @description The packages the analysis found. None for an image without a known distribution and language packages. */
+            packages?: number;
         };
         /**
          * @description One finding: one canonical advisory affects one stored version in one repository (R-VULN-012). `blocked` and
@@ -8197,6 +8229,8 @@ export interface components {
             knownExploitedAddedAt?: string | null;
             fixAvailable: boolean;
             fixedVersions: string[];
+            /** @description The packages inside the image the advisory affects, for a finding of an image (R-VULN-012). Absent for a package finding. */
+            components?: components["schemas"]["VulnerabilityImageComponent"][];
             status: components["schemas"]["VulnerabilityStatus"];
             dismissalReason?: components["schemas"]["VulnerabilityDismissalReason"] | null;
             resolvedReason?: components["schemas"]["VulnerabilityResolvedReason"] | null;
@@ -8460,6 +8494,8 @@ export interface components {
                 blocked: boolean;
                 blockReason: components["schemas"]["VulnerabilityVersionBlockReason"] | null;
                 findings: components["schemas"]["VulnerabilityFinding"][];
+                /** @description For a version of the format oci, the manifests the version stands for, one per platform. */
+                images?: components["schemas"]["VulnerabilityImageState"][];
             }[];
         };
         VulnerabilityPackageReport: {

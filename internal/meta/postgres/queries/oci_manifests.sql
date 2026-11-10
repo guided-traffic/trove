@@ -29,13 +29,18 @@ UPDATE oci_manifests m
 -- name: OCITagSizes :many
 -- The size of the image each of the tags with the given version ids points at: the content size of its manifest, which an index
 -- holds as the sum of its children (R-OCI-031, Q-OCI-130). One statement for any number of packages.
-SELECT pv.id AS version_id, m.content_size
-FROM package_versions pv
-JOIN packages p ON p.id = pv.package_id
-JOIN items i ON i.id = pv.lead_item_id
-JOIN oci_manifests m ON m.repo_id = p.repo_id AND m.name = p.name AND m.digest = i.blob_sha256
-WHERE pv.id = ANY(sqlc.arg(version_ids)::bigint[]) AND pv.trashed_at IS NULL AND i.trashed_at IS NULL
-ORDER BY pv.id;
+WITH tags AS (
+  SELECT pv.id, pv.package_id, i.blob_sha256 AS manifest_sha256
+    FROM package_versions pv JOIN items i ON i.id = pv.lead_item_id
+   WHERE pv.id = ANY(sqlc.arg(version_ids)::bigint[]) AND pv.trashed_at IS NULL AND i.trashed_at IS NULL
+  UNION ALL
+  SELECT t.id, t.package_id, t.manifest_sha256 FROM oci_remote_tags t WHERE t.id = ANY(sqlc.arg(version_ids)::bigint[])
+)
+SELECT t.id AS version_id, m.content_size
+FROM tags t
+JOIN packages p ON p.id = t.package_id
+JOIN oci_manifests m ON m.repo_id = p.repo_id AND m.name = p.name AND m.digest = t.manifest_sha256
+ORDER BY t.id;
 
 -- name: OCIPutReferences :exec
 -- The edges of a manifest, one per target; an edge that is recorded already changes nothing. They travel as one JSON array of
@@ -68,26 +73,37 @@ WHERE repo_id = sqlc.arg(repo_id)::bigint AND name = sqlc.arg(name)::text AND di
 
 -- name: OCITagViews :many
 -- The tags with the given version ids and the rows of the manifests they point at, for the package view (R-OCI-031): the lead item
--- of the version is the tag item, whose blob is the manifest's. Any number of packages in one statement.
-SELECT pv.id AS version_id, pv.version::text AS tag, m.digest, m.media_type, COALESCE(m.artifact_type, '')::text AS artifact_type,
+-- of the version is the tag item, whose blob is the manifest's; the tag of a remote repository (a negative id, R-OCI-036) is its cache
+-- entry, whose document is the manifest. Any number of packages in one statement.
+WITH tags AS (
+  SELECT pv.id, pv.package_id, pv.version, i.blob_sha256 AS manifest_sha256
+    FROM package_versions pv JOIN items i ON i.id = pv.lead_item_id
+   WHERE pv.id = ANY(sqlc.arg(version_ids)::bigint[]) AND pv.trashed_at IS NULL AND i.trashed_at IS NULL
+  UNION ALL
+  SELECT t.id, t.package_id, t.version, t.manifest_sha256 FROM oci_remote_tags t WHERE t.id = ANY(sqlc.arg(version_ids)::bigint[])
+)
+SELECT t.id AS version_id, t.version::text AS tag, m.digest, m.media_type, COALESCE(m.artifact_type, '')::text AS artifact_type,
        m.size, m.content_size
-FROM package_versions pv
-JOIN packages p ON p.id = pv.package_id
-JOIN items i ON i.id = pv.lead_item_id
-JOIN oci_manifests m ON m.repo_id = p.repo_id AND m.name = p.name AND m.digest = i.blob_sha256
-WHERE pv.id = ANY(sqlc.arg(version_ids)::bigint[]) AND pv.trashed_at IS NULL AND i.trashed_at IS NULL
-ORDER BY pv.id;
+FROM tags t
+JOIN packages p ON p.id = t.package_id
+JOIN oci_manifests m ON m.repo_id = p.repo_id AND m.name = p.name AND m.digest = t.manifest_sha256
+ORDER BY t.id;
 
 -- name: OCIChildPlatforms :many
 -- The children the indexes of the given versions name, with the platform of the edge and the child's own facts (R-OCI-031).
-SELECT pv.id AS version_id, COALESCE(r.platform, '')::text AS platform, c.digest, c.media_type, c.size, c.content_size
-FROM package_versions pv
-JOIN packages p ON p.id = pv.package_id
-JOIN items i ON i.id = pv.lead_item_id
-JOIN oci_references r ON r.repo_id = p.repo_id AND r.name = p.name AND r.manifest = i.blob_sha256 AND r.kind = 'manifest'
+WITH tags AS (
+  SELECT pv.id, pv.package_id, i.blob_sha256 AS manifest_sha256
+    FROM package_versions pv JOIN items i ON i.id = pv.lead_item_id
+   WHERE pv.id = ANY(sqlc.arg(version_ids)::bigint[]) AND pv.trashed_at IS NULL AND i.trashed_at IS NULL
+  UNION ALL
+  SELECT t.id, t.package_id, t.manifest_sha256 FROM oci_remote_tags t WHERE t.id = ANY(sqlc.arg(version_ids)::bigint[])
+)
+SELECT t.id AS version_id, COALESCE(r.platform, '')::text AS platform, c.digest, c.media_type, c.size, c.content_size
+FROM tags t
+JOIN packages p ON p.id = t.package_id
+JOIN oci_references r ON r.repo_id = p.repo_id AND r.name = p.name AND r.manifest = t.manifest_sha256 AND r.kind = 'manifest'
 JOIN oci_manifests c ON c.repo_id = r.repo_id AND c.name = r.name AND c.digest = r.target
-WHERE pv.id = ANY(sqlc.arg(version_ids)::bigint[]) AND pv.trashed_at IS NULL AND i.trashed_at IS NULL
-ORDER BY pv.id, r.platform NULLS LAST, r.target;
+ORDER BY t.id, r.platform NULLS LAST, r.target;
 
 -- name: OCIStoredTags :many
 -- The tags a local repository serves of a name, newest push first: live versions whose manifest the replay did not withhold.

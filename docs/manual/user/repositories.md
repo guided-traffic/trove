@@ -95,7 +95,7 @@ Depending on the format, the content shows:
 
 | Format | What is listed | Open a row to see |
 |---|---|---|
-| **OCI (Docker)** | Images, each with its latest tag, the number of tags, and when it was last pushed. A remote repository does not list the images it has cached yet; pull them with the commands under **Set up client** | The tags with digest, size and pushed time, and a copyable `docker pull` or `podman pull` command for the tag you choose, with this installation's address |
+| **OCI (Docker)** | Images, each with its latest tag, the number of tags, and when it was last pushed. A remote repository lists the images it has cached: the tags clients have pulled through it and, in mirror mode, the tags a pass has fetched | The tags with digest, size and pushed time (fetched time in a remote repository, the time its cached copy of the tag was stored), and a copyable `docker pull` or `podman pull` command for the tag you choose, with this installation's address |
 | **npm, NuGet, Debian** | Packages, each with its latest version, the number of versions, open vulnerabilities where the format is scanned (npm and NuGet today) and downloads | The versions with size and published time, the open findings of each, and the install command for the version you choose |
 | **Generic** | The files of the repository, folder by folder | Selecting a folder opens it in place; selecting a file opens it in the file browser with all its details; the copy button copies its download address |
 

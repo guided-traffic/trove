@@ -401,7 +401,7 @@ run 42839263211 (2513be80) was still running with `unit tests` and `e2e (push)` 
 
 **Product work still to do**
 
-- Container images: **OCI remote repositories list nothing** on the content page, because remote tags have no version rows (Q-OCI-121). Needs a decision and a change.
+- H-829: the listing of a remote OCI repository (view `oci_remote_tags`, Q-OCI-215) matches a regular expression on the path of every tag entry, without an index, and was not measured on a cache with very many tags. Next step: measure it; a derived table or an expression index if it is slow.
 - Image scanning: no scan seen yet on the owner's installation; push an image and read the page. Not run: a push through the whole app with the real binary, a drain or worker loss in a cluster, and the release image and chart in a cluster. Gaps H-810 to H-819 are on [image-scanning.md](../security/image-scanning.md); H-819 (the 1.6 GiB database and the scans share the 5 GiB spool) is live on an installation that scans large images.
 - The integration tests and browser journeys written for R-UI-052 ran only in CI; read their results.
 - Other settings pages still have to move to the one-column form of the [style guide](../developer/ui-style-guide.md#settings-pages). A service-account token has no administrator choice in the form, and the token administration does not show inactive administrator rights (Q-UI-213). A token without rights gets only `denied` from the registry, also for an administrator.

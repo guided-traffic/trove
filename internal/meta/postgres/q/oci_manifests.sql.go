@@ -11,14 +11,19 @@ import (
 )
 
 const oCIChildPlatforms = `-- name: OCIChildPlatforms :many
-SELECT pv.id AS version_id, COALESCE(r.platform, '')::text AS platform, c.digest, c.media_type, c.size, c.content_size
-FROM package_versions pv
-JOIN packages p ON p.id = pv.package_id
-JOIN items i ON i.id = pv.lead_item_id
-JOIN oci_references r ON r.repo_id = p.repo_id AND r.name = p.name AND r.manifest = i.blob_sha256 AND r.kind = 'manifest'
+WITH tags AS (
+  SELECT pv.id, pv.package_id, i.blob_sha256 AS manifest_sha256
+    FROM package_versions pv JOIN items i ON i.id = pv.lead_item_id
+   WHERE pv.id = ANY($1::bigint[]) AND pv.trashed_at IS NULL AND i.trashed_at IS NULL
+  UNION ALL
+  SELECT t.id, t.package_id, t.manifest_sha256 FROM oci_remote_tags t WHERE t.id = ANY($1::bigint[])
+)
+SELECT t.id AS version_id, COALESCE(r.platform, '')::text AS platform, c.digest, c.media_type, c.size, c.content_size
+FROM tags t
+JOIN packages p ON p.id = t.package_id
+JOIN oci_references r ON r.repo_id = p.repo_id AND r.name = p.name AND r.manifest = t.manifest_sha256 AND r.kind = 'manifest'
 JOIN oci_manifests c ON c.repo_id = r.repo_id AND c.name = r.name AND c.digest = r.target
-WHERE pv.id = ANY($1::bigint[]) AND pv.trashed_at IS NULL AND i.trashed_at IS NULL
-ORDER BY pv.id, r.platform NULLS LAST, r.target
+ORDER BY t.id, r.platform NULLS LAST, r.target
 `
 
 type OCIChildPlatformsRow struct {
@@ -260,13 +265,18 @@ func (q *Queries) OCIStoredTags(ctx context.Context, arg OCIStoredTagsParams) ([
 }
 
 const oCITagSizes = `-- name: OCITagSizes :many
-SELECT pv.id AS version_id, m.content_size
-FROM package_versions pv
-JOIN packages p ON p.id = pv.package_id
-JOIN items i ON i.id = pv.lead_item_id
-JOIN oci_manifests m ON m.repo_id = p.repo_id AND m.name = p.name AND m.digest = i.blob_sha256
-WHERE pv.id = ANY($1::bigint[]) AND pv.trashed_at IS NULL AND i.trashed_at IS NULL
-ORDER BY pv.id
+WITH tags AS (
+  SELECT pv.id, pv.package_id, i.blob_sha256 AS manifest_sha256
+    FROM package_versions pv JOIN items i ON i.id = pv.lead_item_id
+   WHERE pv.id = ANY($1::bigint[]) AND pv.trashed_at IS NULL AND i.trashed_at IS NULL
+  UNION ALL
+  SELECT t.id, t.package_id, t.manifest_sha256 FROM oci_remote_tags t WHERE t.id = ANY($1::bigint[])
+)
+SELECT t.id AS version_id, m.content_size
+FROM tags t
+JOIN packages p ON p.id = t.package_id
+JOIN oci_manifests m ON m.repo_id = p.repo_id AND m.name = p.name AND m.digest = t.manifest_sha256
+ORDER BY t.id
 `
 
 type OCITagSizesRow struct {
@@ -297,14 +307,19 @@ func (q *Queries) OCITagSizes(ctx context.Context, versionIds []int64) ([]OCITag
 }
 
 const oCITagViews = `-- name: OCITagViews :many
-SELECT pv.id AS version_id, pv.version::text AS tag, m.digest, m.media_type, COALESCE(m.artifact_type, '')::text AS artifact_type,
+WITH tags AS (
+  SELECT pv.id, pv.package_id, pv.version, i.blob_sha256 AS manifest_sha256
+    FROM package_versions pv JOIN items i ON i.id = pv.lead_item_id
+   WHERE pv.id = ANY($1::bigint[]) AND pv.trashed_at IS NULL AND i.trashed_at IS NULL
+  UNION ALL
+  SELECT t.id, t.package_id, t.version, t.manifest_sha256 FROM oci_remote_tags t WHERE t.id = ANY($1::bigint[])
+)
+SELECT t.id AS version_id, t.version::text AS tag, m.digest, m.media_type, COALESCE(m.artifact_type, '')::text AS artifact_type,
        m.size, m.content_size
-FROM package_versions pv
-JOIN packages p ON p.id = pv.package_id
-JOIN items i ON i.id = pv.lead_item_id
-JOIN oci_manifests m ON m.repo_id = p.repo_id AND m.name = p.name AND m.digest = i.blob_sha256
-WHERE pv.id = ANY($1::bigint[]) AND pv.trashed_at IS NULL AND i.trashed_at IS NULL
-ORDER BY pv.id
+FROM tags t
+JOIN packages p ON p.id = t.package_id
+JOIN oci_manifests m ON m.repo_id = p.repo_id AND m.name = p.name AND m.digest = t.manifest_sha256
+ORDER BY t.id
 `
 
 type OCITagViewsRow struct {
@@ -318,7 +333,8 @@ type OCITagViewsRow struct {
 }
 
 // The tags with the given version ids and the rows of the manifests they point at, for the package view (R-OCI-031): the lead item
-// of the version is the tag item, whose blob is the manifest's. Any number of packages in one statement.
+// of the version is the tag item, whose blob is the manifest's; the tag of a remote repository (a negative id, R-OCI-036) is its cache
+// entry, whose document is the manifest. Any number of packages in one statement.
 func (q *Queries) OCITagViews(ctx context.Context, versionIds []int64) ([]OCITagViewsRow, error) {
 	rows, err := q.db.Query(ctx, oCITagViews, versionIds)
 	if err != nil {

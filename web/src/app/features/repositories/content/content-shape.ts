@@ -1,5 +1,5 @@
 /**
- * What a repository's content is called and what it shows, per format (R-UI-052). One shell serves every format; the words and
+ * What a repository's content is called and what it shows, per format and, for the words that differ, per class (R-UI-052). One shell serves every format; the words and
  * the columns are this small table, not a screen per format.
  */
 export interface ContentShape {
@@ -14,7 +14,7 @@ export interface ContentShape {
   readonly filterLabel: string;
   readonly emptyText: string;
   readonly emptyFilteredText: string;
-  /** The date a version arrived: Pushed for an image tag, Published elsewhere. */
+  /** The date a version arrived: Pushed for an image tag, Fetched for a tag of a remote repository, Published elsewhere. */
   readonly publishedLabel: string;
   /** A version has a content digest worth showing (an image tag). */
   readonly digest: boolean;
@@ -24,17 +24,22 @@ export interface ContentShape {
   readonly notScannedText: string;
 }
 
-export function contentShapeOf(format: string): ContentShape {
+export function contentShapeOf(format: string, repositoryClass = ''): ContentShape {
   if (format === 'oci') {
+    const remote = repositoryClass === 'remote';
     return {
       itemsLabel: $localize`:@@repo.content.oci.items:Images`,
       itemLabel: $localize`:@@repo.content.oci.item:Image`,
       versionsLabel: $localize`:@@repo.content.oci.versions:Tags`,
       versionLabel: $localize`:@@repo.content.oci.version:Tag`,
       filterLabel: $localize`:@@repo.content.oci.filter:Filter images`,
-      emptyText: $localize`:@@repo.content.oci.empty:This repository holds no images yet. Push an image, or set up your client first.`,
+      emptyText: remote
+        ? $localize`:@@repo.content.oci.empty-remote:This repository has cached no images yet. Pull an image through it, or set up your client first.`
+        : $localize`:@@repo.content.oci.empty:This repository holds no images yet. Push an image, or set up your client first.`,
       emptyFilteredText: $localize`:@@repo.content.oci.empty-filtered:No image matches the filter.`,
-      publishedLabel: $localize`:@@repo.content.oci.published:Pushed`,
+      publishedLabel: remote
+        ? $localize`:@@repo.content.oci.fetched:Fetched`
+        : $localize`:@@repo.content.oci.published:Pushed`,
       digest: true,
       commandLabel: $localize`:@@repo.content.oci.command:Pull command`,
       notScannedText: $localize`:@@repo.content.no-scanning:This package type is not scanned for vulnerabilities yet.`,

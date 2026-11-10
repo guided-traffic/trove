@@ -3171,8 +3171,9 @@ Priority: **MVP** · Covers: trove-only
   because children have no name filter on the server.
 - A virtual repository shows what it resolves: the same list, whose `repository` filter expands to its members (R-API-029). A remote repository
   lists what it holds: what the format has stored for it (a cached npm or NuGet version, for example); a note says that only what
-  clients have fetched appears. **An OCI remote lists nothing yet:** a remote's tags are metadata entries and own no version row (Q-OCI-121,
-  R-OCI-031), so `GET /api/v1/packages` has nothing to list for it and the screen says so instead of implying an empty cache.
+  clients have fetched appears. An OCI remote lists the images and tags its cache holds, from the same list API as a local one
+  (R-OCI-036, Q-OCI-215): the note says that only the cached tags appear (those clients pulled and those a mirror pass fetched), the
+  column of the tag's time is **Fetched** and not Pushed, and an empty remote says that it has cached no images yet (Q-UI-217).
 - **Set up client** is the client setup of R-UI-016 for this one repository, on the page: the format and the repository are fixed by the page,
   so the steps that choose them are left out and the client is chosen in the component (Q-UI-216); the token, paste and snippet behaviour is
   R-UI-016's unchanged, because it is the same component. Hidden for a disabled repository.
@@ -3183,6 +3184,8 @@ Acceptance criteria:
 - `/projects/web` opens the repositories of the project; the sidebar lists Repositories first; the project switcher and the start page lead there.
 - `/projects/web/repositories/<oci-key>` lists the images; opening one shows its tags with digest, size and pushed time and a
   `docker pull <host>/web/<oci-key>/<image>:<tag>` copy; Podman in the client picker switches it to `podman pull`.
+- `/projects/web/repositories/<oci-remote-key>`, after a pull through it, lists the pulled image with its tag, the digest and a **Fetched** time; before any pull it says
+  that the repository has cached no images yet (R-OCI-036, Q-UI-217).
 - `/projects/web/repositories/<npm-key>` lists the packages with the highest open severity and the number of open findings, and the open version
   row shows `npm install <name>@<version>`; a reader without `repositories:read-config` sees no Settings action.
 - The Edit action of the repository list and the Settings action of the content page open `…/settings`, and leaving it with unsaved changes asks first.
@@ -9435,13 +9438,36 @@ Context: the repository screen of R-UI-020 was the settings, and the content a r
 - The open findings of an item are summed over its versions in this repository: a finding present in two versions counts twice, as everywhere else findings are counted per version. The row's badge shows the highest open severity and the count.
 - Debian has no vulnerability adapter today, so its page has no column of findings and says so in one sentence; OCI images are scanned since R-VULN-033 (`vulnerabilityScanning` of the format catalog); the column appears the day an adapter exists, and the digest of a tag and the counts need no other change.
 - The digest of a version in the list comes from the format's existing `metadata.digest` behind `include=digest`, not from a new format contract member: only the OCI screens ask for it, so no adapter pays for it otherwise.
-- A remote OCI repository lists nothing: its tags are no version rows (Q-OCI-121), and adding one would change a reliability-critical path; the screen says so. It is an open item for the owner (below).
+- A remote OCI repository lists the tags its cache holds ([Q-OCI-215](formats/oci.md#q-oci-215--the-tags-of-a-remote-are-listed-from-its-cache-entries-by-a-database-view-not-from-version-rows)); the words that differ are Q-UI-217.
 
 **Rationale:** the screen follows the mental model the owner named (images, tags, vulnerabilities, how to pull), and it reuses what exists (the install snippets of R-API-030, the client setup of R-UI-016, the list API of R-API-029) instead of a parallel set of format screens.
 
 **Applied in the spec:** R-UI-052 (new), R-UI-003, R-UI-006, R-UI-020, R-UI-041, R-API-029, [R-VULN-020](vulnerability-scanning.md#r-vuln-020--findings-api); [web-ui.md](../developer/web-ui.md); [repositories.md](../manual/user/repositories.md). Code: [repository-content.ts](../../web/src/app/features/repositories/content/repository-content.ts).
 
-**Open:** a remote OCI repository's cached images are not listed (no version rows, Q-OCI-121); listing them needs either a format adapter that reads the manifests of a remote or version rows for its tags, a decision for the owner. Vulnerability counts for OCI need the image scanning of [vulnerability-scanning.md](vulnerability-scanning.md) (F4).
+**Open:** none. A remote OCI repository's cached images were the open item; they are listed since Q-OCI-215. Vulnerability counts for OCI are those of the image scanning of [vulnerability-scanning.md](vulnerability-scanning.md).
+
+### Q-UI-217 · The content page of an OCI remote uses the words of a cache: Fetched, and a note that names what is listed
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the list API serves the tags of a remote OCI repository since [Q-OCI-215](formats/oci.md#q-oci-215--the-tags-of-a-remote-are-listed-from-its-cache-entries-by-a-database-view-not-from-version-rows),
+so the page of R-UI-052 needs no second component. Its words were written for a repository that is pushed to: the time column is **Pushed**, the empty text says to
+push an image, and an OCI remote carried a note that nothing is listed.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The same components, the words follow the class: **Fetched**, an empty text that says to pull an image, one note that names what is listed (chosen) | `contentShapeOf(format, class)` returns the words of a cache for an OCI remote | One table of words stays the only per-format code (R-UI-052); the time is what the API's `publishedAt` is for a remote (R-OCI-036) | A second set of words for one format and class |
+| (b) The words stay those of a local repository | Nothing changes | No code | "Pushed" for a time nobody pushed; an empty text that tells a reader to push to a cache |
+| (c) The generic remote note ("Only what clients have fetched is listed here.") | The note of the other formats | One text | It leaves out the mirror pass, which fills the cache without a client |
+
+**Choice:** (a). The note reads "Only the tags this repository has cached are listed here: those clients have pulled and, in mirror mode, those a pass has fetched."
+The empty text reads "This repository has cached no images yet. Pull an image through it, or set up your client first." The version table keeps its
+columns; the column of the findings is shown when the format is scanned, as for a local repository. No styling is added.
+
+**Rationale:** the screen should not call a fetch a push. The development agent would revisit it if the page gains a "checked" time from the entry's validation,
+which would be a second column beside Fetched.
+
+**Applied in the spec:** R-UI-052, Q-UI-216. Code: [content-shape.ts](../../web/src/app/features/repositories/content/content-shape.ts), [repository-content.html](../../web/src/app/features/repositories/content/repository-content.html). Tests: `R-OCI-036` in [repository-content.spec.ts](../../web/src/app/features/repositories/content/repository-content.spec.ts).
 
 ### Q-API-246 · An operation that is allowed while the installation is read-only declares `x-trove-maintenance: allowed`
 

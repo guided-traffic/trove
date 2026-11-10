@@ -29815,6 +29815,24 @@
         <target>Kein Image passt zum Filter.</target>
       </segment>
     </unit>
+    <unit id="repo.content.oci.empty-remote">
+      <notes>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:35</note>
+      </notes>
+      <segment>
+        <source>This repository has cached no images yet. Pull an image through it, or set up your client first.</source>
+        <target>Dieses Repository hat noch keine Images zwischengespeichert. Rufen Sie ein Image darüber ab oder richten Sie zuerst Ihren Client ein.</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.oci.fetched">
+      <notes>
+        <note category="location">src/app/features/repositories/content/content-shape.ts:41</note>
+      </notes>
+      <segment>
+        <source>Fetched</source>
+        <target>Abgerufen</target>
+      </segment>
+    </unit>
     <unit id="repo.content.oci.published">
       <notes>
         <note category="location">src/app/features/repositories/content/content-shape.ts:35</note>
@@ -30246,8 +30264,8 @@
         <note category="location">src/app/features/repositories/content/repository-content.html:53,55</note>
       </notes>
       <segment>
-        <source>The images a remote registry has cached are not listed here yet. Pull them through this repository with the commands under Set up client.</source>
-        <target>Die Images, die eine entfernte Registry zwischengespeichert hat, werden hier noch nicht aufgeführt. Rufen Sie sie über dieses Repository mit den Befehlen unter „Client einrichten“ ab.</target>
+        <source>Only the tags this repository has cached are listed here: those clients have pulled and, in mirror mode, those a pass has fetched.</source>
+        <target>Hier stehen nur die Tags, die dieses Repository zwischengespeichert hat: die, die Clients abgerufen haben, und im Spiegelmodus die, die ein Durchlauf geholt hat.</target>
       </segment>
     </unit>
   </file>

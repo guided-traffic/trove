@@ -782,7 +782,7 @@ func (q *Queries) VulnFindingsLock(ctx context.Context, arg VulnFindingsLockPara
 
 const vulnPackageCandidates = `-- name: VulnPackageCandidates :many
 SELECT p.repo_id, p.name, pv.version
-  FROM package_versions pv
+  FROM package_version_listing pv
   JOIN packages p ON p.id = pv.package_id
   JOIN repositories r ON r.id = p.repo_id
  WHERE pv.trashed_at IS NULL
