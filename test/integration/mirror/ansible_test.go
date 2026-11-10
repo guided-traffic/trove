@@ -68,9 +68,15 @@ func TestR_ANS_021_APassOfTheCollectionIndexStoresTheCollectionsThePatternsSelec
 		}
 	})
 
-	t.Run("R-ANS-021 an install afterwards makes no request to the stub", func(t *testing.T) {
+	t.Run("R-ANS-021 an install afterwards makes no request to the stub, the collection document first", func(t *testing.T) {
+		// The upstream is cut: every request it still got would be answered 503, so a document the mirror did not keep fails the install.
+		if err := stub.SetMode(ansiblestub.Mode{Down: ansiblestub.DownUnavailable}); err != nil {
+			t.Fatal(err)
+		}
 		before := stub.Counts().Total()
-		for _, p := range []string{"v3/collections/acme/tools/versions/", "v3/collections/acme/tools/versions/2.0.0/", "v3/artifacts/collections/acme-tools-2.0.0.tar.gz", "v3/artifacts/collections/acme-base-1.2.0.tar.gz"} {
+		// The requests of ansible-galaxy in its order: the collection document (it reads the dates from it), the version list, the version
+		// document, the archive. A mirror without the collection document answers the first with 503 once the upstream is away.
+		for _, p := range []string{"v3/collections/acme/tools/", "v3/collections/acme/base/", "v3/collections/acme/tools/versions/", "v3/collections/acme/tools/versions/2.0.0/", "v3/artifacts/collections/acme-tools-2.0.0.tar.gz", "v3/artifacts/collections/acme-base-1.2.0.tar.gz"} {
 			if a := r.get(web, p); a.Status != http.StatusOK {
 				t.Fatalf("%s: %d %s", p, a.Status, a.Body)
 			}

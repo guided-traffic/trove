@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { APIRequestContext, expect, Page, request, test as base } from '@playwright/test';
+import { APIRequestContext, expect, Page, Request, request, test as base } from '@playwright/test';
 
 /** What a journey needs besides the page: the management API as the administrator, and the replicas seen. */
 interface Fixtures {
@@ -146,29 +146,61 @@ export async function signInWithKeycloak(page: Page, user: 'alice' | 'bob', pass
 export const rotationHoldCapMs = 3 * 60_000;
 
 /**
+ * How long the answer of one login POST may take. The default of 15 s is the budget of a UI action; the answer of the
+ * login is the server's: a hashed password check and its database writes on a cluster that the same run shares with
+ * other legs, which has stood still for 10 s and more (Q-ARCH-469). It is the bound of a hang, not of a speed.
+ */
+export const loginAnswerMs = 60_000;
+
+const isLoginPost = (r: { url(): string; method(): string }): boolean => r.url().endsWith('/auth/local/login') && r.method() === 'POST';
+
+/**
  * Submits the local sign-in form with `submit` (the click on its button) and waits out the break-glass rotation
  * hold: for `login.break_glass.rotation_hold` after the operator rotated `trove-break-glass`, the local login
  * answers `503 break_glass_rotating` with a `Retry-After` (R-AUTH-014, Q-AUTH-14). A long-lived dev cluster meets
  * that window once a day; the sign-in then waits for the Retry-After and submits again, for at most
  * `rotationHoldCapMs` in total (Q-AUTH-194). Any other answer, 503 or not, ends the wait and is left to the
  * journey's own assertion. The test's timeout grows by the time waited, so that the wait is not charged to the journey.
+ * A login POST that gets no answer within `loginAnswerMs` fails with whether the request left the browser at all, so
+ * that a form which did not submit is told from a server that did not answer.
  */
 export async function submitLocalForm(page: Page, submit: () => Promise<void>): Promise<void> {
   let waited = 0;
-  for (;;) {
-    const answered = page.waitForResponse((r) => r.url().endsWith('/auth/local/login') && r.request().method() === 'POST');
-    await submit();
-    const res = await answered;
-    if (res.status() !== 503 || ((await res.json().catch(() => ({}))) as { code?: string }).code !== 'break_glass_rotating') return;
-    const retryAfter = Number(res.headers()['retry-after']);
-    const wait = (Number.isFinite(retryAfter) && retryAfter >= 1 ? retryAfter : 1) * 1000 + 1000;
-    if (waited + wait > rotationHoldCapMs) {
-      throw new Error(`the break-glass login is still in its rotation hold (503 break_glass_rotating) after ${waited / 1000} s, limit ${rotationHoldCapMs / 1000} s`);
+  let sent = 0;
+  const onRequest = (r: Request): void => {
+    if (isLoginPost(r)) sent++;
+  };
+  page.on('request', onRequest);
+  try {
+    for (;;) {
+      const sentBefore = sent;
+      const answered = page.waitForResponse((r) => isLoginPost(r.request()), { timeout: loginAnswerMs });
+      answered.catch(() => undefined); // reported below, at the await; a rejection while the click runs is not unhandled
+      await submit();
+      let res;
+      try {
+        res = await answered;
+      } catch (e) {
+        throw new Error(
+          sent > sentBefore
+            ? `the login POST was sent and got no answer within ${loginAnswerMs / 1000} s`
+            : `the click did not send a login POST within ${loginAnswerMs / 1000} s (the form did not submit)`,
+          { cause: e },
+        );
+      }
+      if (res.status() !== 503 || ((await res.json().catch(() => ({}))) as { code?: string }).code !== 'break_glass_rotating') return;
+      const retryAfter = Number(res.headers()['retry-after']);
+      const wait = (Number.isFinite(retryAfter) && retryAfter >= 1 ? retryAfter : 1) * 1000 + 1000;
+      if (waited + wait > rotationHoldCapMs) {
+        throw new Error(`the break-glass login is still in its rotation hold (503 break_glass_rotating) after ${waited / 1000} s, limit ${rotationHoldCapMs / 1000} s`);
+      }
+      console.log(`break-glass rotation hold (R-AUTH-014): waiting ${wait / 1000} s for the Retry-After, ${waited / 1000} s waited so far`);
+      test.info().setTimeout(test.info().timeout + wait);
+      await page.waitForTimeout(wait);
+      waited += wait;
     }
-    console.log(`break-glass rotation hold (R-AUTH-014): waiting ${wait / 1000} s for the Retry-After, ${waited / 1000} s waited so far`);
-    test.info().setTimeout(test.info().timeout + wait);
-    await page.waitForTimeout(wait);
-    waited += wait;
+  } finally {
+    page.off('request', onRequest);
   }
 }
 

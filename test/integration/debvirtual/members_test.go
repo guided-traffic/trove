@@ -190,15 +190,36 @@ func TestR_DEB_029_ALocalMemberCannotShadowTheNamesOfItsRemoteMember(t *testing.
 	}
 }
 
-// failedWith waits until the suite is failed for the reason and checks that the last generation stays published.
-func (e *venv) failedWith(reason string, before suiteState) {
+// mark is the database clock; a build counts as the answer to a change when it started after the mark the change was made at.
+func (e *venv) mark() string {
 	e.t.Helper()
-	testenv.WaitFor(e.t, "the suite to fail with "+reason, 90*time.Second, func() bool {
-		s := mustSuite(e.t, e, rApt)
-		return s.State == "failed" && strings.HasPrefix(s.Reason, reason)
+	return e.st.Text(`SELECT clock_timestamp()::text`)
+}
+
+// buildAfter waits until the build of the virtual repository that started after mark has ended. The change that the test made enqueues
+// that build in its own transaction, so the wait is for the job and not for a state that a fixed period is guessed to reach: a loaded
+// runner makes the job late, never wrong, and the bound is the hang of a job that never ends. What the build decided is asserted
+// afterwards, at once.
+func (e *venv) buildAfter(repo, mark string) {
+	e.t.Helper()
+	testenv.WaitFor(e.t, "the build of "+repo+" after the change to end", 5*time.Minute, func() bool {
+		return e.st.Number(`SELECT count(*) FROM job
+			 WHERE kind = $1 AND dedup_key = 'index:' || (SELECT id::text FROM repositories WHERE key = $2)
+			   AND started_at > $3::timestamptz AND state IN ('succeeded', 'failed', 'cancelled')`, debdata.IndexJobKind, repo, mark) > 0
 	})
-	if after := mustSuite(e.t, e, rApt); after.Generation != before.Generation {
-		e.t.Errorf("the generation moved from %d to %d", before.Generation, after.Generation)
+}
+
+// failedWith waits until the build that followed the change at mark has ended, then checks that the suite is failed for the reason and
+// that the last generation stays published.
+func (e *venv) failedWith(reason string, before suiteState, mark string) {
+	e.t.Helper()
+	e.buildAfter(rApt, mark)
+	s := mustSuite(e.t, e, rApt)
+	if s.State != "failed" || !strings.HasPrefix(s.Reason, reason) {
+		e.t.Fatalf("the build after the change left the suite %s with reason %q, want failed with %s", s.State, s.Reason, reason)
+	}
+	if s.Generation != before.Generation {
+		e.t.Errorf("the generation moved from %d to %d", before.Generation, s.Generation)
 	}
 	if _, ok := find(e.packages(rApt, "stable", e.admin), "local-tool", "1.0-1"); !ok {
 		e.t.Error("the last published index is gone")
@@ -215,12 +236,13 @@ func TestR_DEB_025_AReleaseNoCurrentKeyVerifiesIsNotMerged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	mark := e.mark()
 	a := e.st.Do(e.r, http.MethodPatch, "/api/v1/projects/"+project+"/repositories/"+rRemote, e.admin,
 		map[string]any{"deb": map[string]any{"upstreamKeys": string(ring)}}, "Content-Type", "application/merge-patch+json", "If-Match", "*")
 	if a.Status != 200 {
 		t.Fatalf("change the keys = %d %s", a.Status, a.Body)
 	}
-	e.failedWith("member_unverified", before)
+	e.failedWith("member_unverified", before, mark)
 }
 
 // R-DEB-025, Q-DEB-43: a release older than the Date the last build recorded is a rollback and is not merged. The stored releases of the
@@ -239,8 +261,9 @@ func TestR_DEB_025_AReleaseOlderThanTheRecordedDateIsNotMerged(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.st.Exec(`DELETE FROM deb_remote_releases WHERE repo_id = (SELECT id FROM repositories WHERE key = $1)`, rRemote)
+	mark := e.mark()
 	e.rebuild()
-	e.failedWith("member_rollback", before)
+	e.failedWith("member_rollback", before, mark)
 }
 
 // R-DEB-025: the earliest Valid-Until of the members' releases is the one of the merged release.

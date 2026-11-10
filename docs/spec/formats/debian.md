@@ -3698,6 +3698,24 @@ Context: F-118. The merge of a virtual repository read, for `main/binary-amd64/P
 
 **Applied in the spec:** R-DEB-025 (what it serves, architecture `all`). Code: `virtualSuite` in [virtual_build.go](../../../internal/formatdata/deb/virtual_build.go). Test: `TestR_DEB_025_ThePackagesOfArchitectureAllOfARemoteMemberAreInEveryArchitectureIndex` ([merge_test.go](../../../test/integration/debvirtual/merge_test.go)), and the row `TestDebVirtual` ([deb_virtual_test.go](../../../test/e2e/deb_virtual_test.go)).
 
+### Q-DEB-111 · A test that waits for a failed virtual build waits for the build job, not for a period
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `TestR_DEB_025_AReleaseNoCurrentKeyVerifiesIsNotMerged` failed in Test and Release 42894886354 (shard c): "the suite to fail with member_unverified did not happen within 1m30s", 106 s against 16 s locally. The test changes the remote member's `deb.upstreamKeys`; `debRepositoryHook.OnUpdated` enqueues the build of the virtual repository in the same transaction and without delay, so the failed suite is the result of one job the test can name. The test polled the suite's state for 90 s. The log of the run shows the replica's readiness checks for the database, schema and object store timing out for minutes and the task `deb-index-refresh` failing with `closed pool` in that window: the runner stood still, and a poll of fixed length turned a slow build into a failed test. Verified: the build is enqueued by the change and is not waiting for the merge period (the test's `mergedMetadataTtlSeconds` is 3600). Not verified: what closed the pool of the refresh task.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Raise the 90 s | A longer poll | One number | Moves the failure to the next slower runner; a wrong result is found only after the whole period |
+| (b) Wait for the build job of the virtual repository that started after the change to end, then assert the suite once (chosen) | `failedWith` takes the database clock at the change (`mark`) and waits for a `deb-index` job with the key `index:<id>` that started after it and ended; the assertion (state `failed`, reason prefix, generation unchanged, the last index still served) is the one of before and runs at once | A slow runner makes the test late and not red; a build that ends with another result fails at once with that result; the bound (5 minutes) is the hang of a job that never ends | Reads the job table of the stack, as other tests of the integration tier do |
+| (c) Call `rebuild()` and poll | Trigger the build by hand | Looks explicit | A second build next to the one the change enqueued; the change's own path, which the test is about, is not the one that runs |
+
+**Choice:** (b), in `failedWith` and `buildAfter` ([members_test.go](../../../test/integration/debvirtual/members_test.go)); the rollback test (`member_rollback`) uses the same helper.
+
+**Rationale:** The event is the end of the job; the state the test asserts is its result. The development agent would revisit the choice if the job's retries (a failed attempt returns it to the queue) were to make a build that failed for another reason look unfinished: the 5-minute bound would then report the hang.
+
+**Applied in the spec:** none (R-DEB-025 is unchanged). Test: `TestR_DEB_025_AReleaseNoCurrentKeyVerifiesIsNotMerged`, `TestR_DEB_025_AReleaseOlderThanTheRecordedDateIsNotMerged`.
+
 ## What this does not cover
 
 ### H-620 · A holder of the stored-secret key ring and a database copy can sign for every Debian repository
