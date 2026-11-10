@@ -1,8 +1,7 @@
 # Ansible Galaxy remote repositories
 
-The remote class and the roles of the format `ansible` ([R-ANS-016 to R-ANS-018, R-ANS-020](../spec/formats/ansible.md#r-ans-016--remote-repository-upstream-and-discovery)),
-and the counting stub every test of the format uses as its upstream. The mirror (R-ANS-021) and the hub's token exchange (R-ANS-019) are built
-after this page's contents and add their sections. The security view is [security/ansible-remote.md](../security/ansible-remote.md); the format as a
+The remote class, the roles, the mirror and the hub exchange of the format `ansible` ([R-ANS-016 to R-ANS-021](../spec/formats/ansible.md#r-ans-016--remote-repository-upstream-and-discovery)),
+and the counting stub every test of the format uses as its upstream. The security view is [security/ansible-remote.md](../security/ansible-remote.md); the format as a
 whole is [ansible.md](ansible.md).
 
 ## What has to be in your head first
@@ -42,6 +41,10 @@ whole is [ansible.md](ansible.md).
 | [`remote_docs.go`](../../internal/formats/ansible/remote_docs.go) | the upstream collection and page documents, the role documents and their rendering, the host rules |
 | [`remote_gate.go`](../../internal/formats/ansible/remote_gate.go) | `BeforeArtifact`: the recorded digest of a version, the revalidation of a document that was never stored |
 | [`remote_fill.go`](../../internal/formats/ansible/remote_fill.go) | `FillInspector`: the identity of a collection archive, the shape of a role archive |
+| [`mirror.go`](../../internal/formats/ansible/mirror.go) | `discover.Lister`: the methods, the index listing by offset, the exact names, the plan of a collection |
+| [`hub.go`](../../internal/formats/ansible/hub.go) | `formats.CredentialExchanger`: the refresh-token grant at `ansible.authUrl` and the reading of its answer |
+| [`internal/repository/validate_ansible.go`](../../internal/repository/validate_ansible.go) | the rules of `ansible.authUrl` when a document is saved |
+| [`internal/proxy/credential_exchange.go`](../../internal/proxy/credential_exchange.go) | the engine's side of the exchange |
 | [`remote_bind.go`](../../internal/formats/ansible/remote_bind.go) | `Bind`: the replica's configuration and metrics (`trove_ansible_role_versions_dropped_total`, `trove_ansible_document_bytes`) |
 | [`internal/formatdata/ansible/remote_store.go`](../../internal/formatdata/ansible/remote_store.go) | `RecordAnnounced`, `Announced`, `AnnouncedNames` on `ansible_upstream_versions` (migration 00070, [ansible_remote.sql](../../internal/meta/postgres/queries/ansible_remote.sql)) |
 | [`remote_tables.go`](../../internal/formatdata/ansible/remote_tables.go), [`remote_purge.go`](../../internal/formatdata/ansible/remote_purge.go), [`internal/backup/fixup/ansible_remote.go`](../../internal/backup/fixup/ansible_remote.go) | the table's export class and the purge of a restore without remote caches |
@@ -61,13 +64,28 @@ requests (document, archive) and every later request none.
 **A role.** Lookup, version pages and archives follow the table above; the version page's `PrepareFill` records an archive address for each version
 that passes the host rule and counts the others. The archive has no digest; the hook checks that it is a gzip-compressed tar archive within bounds.
 
+**The mirror** ([R-ANS-021](../spec/formats/ansible.md#r-ans-021--remote-repository-mirror-mode)). `MirrorNames` with the method `listing` reads the collection index through `Upstream.Get`,
+100 entries at a time, and returns the names the scope admits in the index's order; the cursor is `{"offset": n}`, the position after the last
+entry consumed, so a page the engine's limit cut resumes inside an upstream page. The method `names` returns the include patterns without a
+wildcard that read as `<ns>.<name>`. `MirrorPlan` reads the version-list pages and, newest first, the documents of the versions the bounds
+keep (`discover.BoundsOf`), through `Upstream.Document`: each document is an ordinary fill, so the digest of every planned version is recorded
+before the engine fetches its archive through the gate. Roles and the role index are not mirrored. The role of the engine is
+[mirror.md](mirror.md); the area is `test/integration/mirror/ansible_test.go`.
+
+**The hub exchange** ([R-ANS-019](../spec/formats/ansible.md#r-ans-019--remote-repository-a-hub-behind-single-sign-on)). A hub repository has `remote.authMode: bearer` (the offline token is the stored secret) and
+`ansible.authUrl`. `send` of the engine asks the adapter's `ExchangeRequest` for a request to the realm, checks that the realm's host may
+receive the credential, exchanges (one flight per replica and token, cached until 30 seconds before the realm's `expires_in`) and sends the
+upstream request with `Authorization: Bearer <access token>` in place of the credential; a 401 of the upstream exchanges again once. The
+stub's realm ([realm.go](../../test/ansiblestub/realm.go)) issues the tokens and counts what the upstream accepted and rejected, so a test
+shows that the offline token never reached the upstream (`Rejected == 0`).
+
 ## Tests
 
 | Tier | Where | What |
 |---|---|---|
 | Unit | `internal/formats/ansible/remote*_test.go` | the API root, the upstream addresses, the checks of a version document, the role rendering and its host rule, the role archive bound, the fill hook |
 | Kit | `conformance_test.go`, `remote_fixture_test.go` | `Rewrite` (deterministic, idempotent, no upstream address left), the discovery documents of check 6, the name `role/16` |
-| Integration | `test/integration/ansibleremote` | against the stub through the slot wrapper; the role routes of the kit's content check are listed in `NoContent` because the kit's host is a local repository |
+| Integration | `test/integration/ansibleremote`, `test/integration/mirror/ansible_test.go` | against the stub through the slot wrapper (`hub_test.go` for the realm); the role routes of the kit's content check are listed in `NoContent` because the kit's host is a local repository |
 
 ## The counting stub
 

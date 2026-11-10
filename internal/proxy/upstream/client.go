@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/outbound"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -25,7 +26,21 @@ type Client struct {
 	http     *http.Client
 	exchange *http.Client // the same policy, without the repository's read timeout (ExchangeHTTP)
 	cred     *credential
+	policy   *outbound.CredentialPolicy
 }
+
+// BearerSecret returns the repository's stored secret when its authMode is bearer, for a caller that must put it into a body (the
+// refresh token of a single-sign-on exchange, R-ANS-019); false for any other mode and while the secret cannot be resolved.
+func (c *Client) BearerSecret() (string, bool) {
+	if c.cred == nil || c.cred.mode != repository.AuthBearer {
+		return "", false
+	}
+	v, ok := strings.CutPrefix(c.cred.headers().Get("Authorization"), "Bearer ")
+	return v, ok && v != ""
+}
+
+// CredentialHost reports whether the repository's credential may go to u: the hop policy's answer for the first hop.
+func (c *Client) CredentialHost(u *url.URL) bool { return c.policy != nil && c.policy.Allows(u) }
 
 // ExchangeHeaderTimeout is the longest an exchange waits for response headers when its context does not end it first: the
 // largest bound a format sets (npm.audit.timeout, 300 s).

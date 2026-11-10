@@ -1,8 +1,8 @@
 # Ansible Galaxy remote repositories
 
-Status: built (B2, stage 2): the remote class of the Ansible Galaxy format, the proxy and cache of a Galaxy API v3 and of its v1 role API
-([R-ANS-016 to R-ANS-018 and R-ANS-020](../spec/formats/ansible.md)). Not built yet on this page's subject: the mirror (R-ANS-021) and the token
-exchange of a hub behind single sign-on (R-ANS-019, [H-842](../spec/formats/ansible.md#h-842--the-hub-token-exchange-is-specified-from-documentation-and-never-run-against-the-service)).
+Status: built: the remote class of the Ansible Galaxy format, the proxy and cache of a Galaxy API v3 and of its v1 role API
+([R-ANS-016 to R-ANS-018 and R-ANS-020](../spec/formats/ansible.md)), the mirror (R-ANS-021) and the token exchange of a hub behind single
+sign-on (R-ANS-019), the last proven against the stub's realm only ([H-842](../spec/formats/ansible.md#h-842--the-hub-token-exchange-is-specified-from-documentation-and-never-run-against-the-service)).
 
 This page describes what an upstream Galaxy can make trove do and show, and what limits that. The upstream is a party trove does not trust:
 its documents decide which addresses trove contacts, which bytes it stores and what its clients are told. The outbound rules it relies on
@@ -76,6 +76,22 @@ A role is not an archive the Galaxy stores: each version names a `download_url`,
 - **The credentials.** The client downloads a role archive without the token header and sends `~/.netrc` instead; the role archive route accepts Basic
   with a trove token as the password and answers 401 with `WWW-Authenticate: Basic realm="trove"` without one (R-ANS-015). Git and URL roles bypass trove
   ([H-844](../spec/formats/ansible.md#h-844--git-and-url-roles-bypass-trove)).
+
+## The hub's credential
+
+A hub repository stores an offline token (a refresh token) as its credential and `ansible.authUrl`, the token endpoint of the realm
+([Q-ANS-51](../spec/formats/ansible.md#q-ans-51--the-hub-exchange-is-the-optional-interface-credentialexchanger-and-the-engine-sends-the-exchanged-token-and-never-the-credential)). The token is in the body of the request to the realm, where the hop policy that strips an `Authorization` header cannot withhold it,
+so the rule is stricter than for a header:
+
+| Step | What is decided | Where | Answer |
+|---|---|---|---|
+| 1 | `authUrl` is an `https` URL (`http` only for a loopback address) without user information, query or fragment; the repository's `authMode` is `bearer`; the host is the upstream's or an `extraHosts` entry with `sendCredentials` | [validate_ansible.go](../../internal/repository/validate_ansible.go) when the document is saved | 422 `invalid_value` at `/ansible/authUrl` |
+| 2 | The same host rule, again, at every exchange: the realm must be a host the credential may go to, and an https upstream is never left for cleartext | [credential_exchange.go](../../internal/proxy/credential_exchange.go) `sendExchanged` | 502, nothing is sent |
+| 3 | The offline token goes to the realm and to nothing else; the upstream is called with the access token, never with the offline token, and a request is not sent at all when the exchange failed | `sendExchanged`, the hop policy (`outbound.WithAuthorization`) | 502 `upstream_auth_failed` |
+| 4 | The access token is kept in the replica's memory only, under a key that holds the digest of the credential, so a rotated offline token needs a new exchange; neither token is logged, audited or returned by an API | `proxy_upstream_tokens` cache | |
+
+The request to the realm also carries the repository's credential as an `Authorization` header when the realm is a credential host (the hop
+policy adds it); the realm receives the same secret twice, in the header and in the body.
 
 ## What this does not cover
 

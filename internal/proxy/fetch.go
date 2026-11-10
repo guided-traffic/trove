@@ -336,6 +336,10 @@ func (f *fetcher) request(ctx context.Context) (*http.Request, error) {
 // token the last challenge of the repository names, and, when the upstream answers 401, with the token that challenge names. The
 // returned cancel ends the request and its body.
 func (f *fetcher) send(ctx context.Context, req *http.Request) (resp *http.Response, cancel context.CancelFunc, idle *atomic.Bool, err error) {
+	// A repository whose credential is exchanged at a single-sign-on realm sends the exchanged token and never the credential (Q-ANS-51).
+	if resp, cancel, idle, handled, err := f.sendExchanged(ctx, req); handled {
+		return resp, cancel, idle, err
+	}
 	h := f.handshakeFor()
 	if h == nil {
 		return f.sendOnce(ctx, req)

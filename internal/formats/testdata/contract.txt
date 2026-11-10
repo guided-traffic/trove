@@ -68,6 +68,8 @@ formats.Companion: field MediaType string
 formats.Companion: field Path Path
 formats.Companion: field Payload any
 formats.Companion: field Spooled Spooled
+formats.CredentialExchanger: method ExchangeRequest(context.Context, RemoteContext, string) (*http.Request, string, bool, error)
+formats.CredentialExchanger: method ReadExchange(context.Context, RemoteContext, int, []byte) (string, time.Duration, error)
 formats.Currency: type uint8
 formats.DataPorts: method FormatData(ID) any
 formats.Descriptor: embedded catalog.Facts
@@ -322,6 +324,7 @@ formats.RemoteBase: method ExpectsType(Path, string) bool
 formats.RemoteBase: method UpstreamQuery(context.Context, RemoteContext, Query) (*http.Request, error)
 formats.RemoteCaps: field Auth Authenticator
 formats.RemoteCaps: field Discovery Discoverer
+formats.RemoteCaps: field Exchange CredentialExchanger
 formats.RemoteCaps: field Fill FillInspector
 formats.RemoteCaps: field Gate FactsGate
 formats.RemoteCaps: field Mirror MirrorLister

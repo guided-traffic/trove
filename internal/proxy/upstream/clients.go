@@ -398,5 +398,5 @@ func (c *Clients) build(key string, s repository.RemoteSettings, sec *secretValu
 	// answer: the caller's context bounds it, not the repository's read timeout, which is about silence in a transfer.
 	ex := c.o.Factory.Client(outbound.PurposeRemote, opts(ExchangeHeaderTimeout)...)
 	ex.Transport = &guard{next: ex.Transport, repo: key, cred: cred}
-	return &Client{key: key, settings: s, origin: origin, http: hc, exchange: ex, cred: cred}, nil
+	return &Client{key: key, settings: s, origin: origin, http: hc, exchange: ex, cred: cred, policy: policy}, nil
 }

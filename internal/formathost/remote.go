@@ -625,6 +625,22 @@ func (a *adapter) handshake() proxy.Authenticator {
 	return handshakeOf(a.caps, a.repo, a.settings, a.disc)
 }
 
+var _ proxy.CredentialExchanger = (*adapter)(nil)
+
+// ExchangeRequest implements [proxy.CredentialExchanger] over the format's [formats.CredentialExchanger]; a format without one
+// answers ok false and the repository's credential is sent as it is.
+func (a *adapter) ExchangeRequest(ctx context.Context, b proxy.UpstreamBase, credential string) (*http.Request, string, bool, error) {
+	if a.caps.Exchange == nil {
+		return nil, "", false, nil
+	}
+	return a.caps.Exchange.ExchangeRequest(ctx, a.context(b), credential)
+}
+
+// ReadExchange implements [proxy.CredentialExchanger].
+func (a *adapter) ReadExchange(ctx context.Context, status int, body []byte) (string, time.Duration, error) {
+	return a.caps.Exchange.ReadExchange(ctx, a.remoteContext(), status, body)
+}
+
 var _ proxy.Authenticator = (*adapter)(nil)
 
 // TokenRequest implements [proxy.Authenticator] over the format's [formats.Authenticator]; a format without one answers ok

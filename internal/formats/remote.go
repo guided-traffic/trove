@@ -211,6 +211,22 @@ type Authenticator interface {
 	ReadToken(ctx context.Context, rc RemoteContext, status int, body []byte) (authorization string, ttl time.Duration, err error)
 }
 
+// CredentialExchanger is an optional interface of a [RemoteAdapter]: the upstream is called with a short-lived token that a
+// single-sign-on realm issues for the repository's stored credential, a refresh token (R-ANS-019, Q-ANS-51). It is the one place a
+// format is handed the credential: ExchangeRequest receives it for the request to the realm, whose body needs it, and for nothing
+// else. The engine sends the request through the repository's client and only to a host that may receive the credential (the upstream
+// or an extraHosts entry with sendCredentials), keeps the token in the replica's cache and sends the upstream request with it in place
+// of the credential, which therefore never goes to the upstream. A format returns ok false for a repository that does no exchange (its
+// credential is a static token). The credential is not logged, audited or returned by any API. Register reads it off the adapter once
+// ([RemoteCapabilities]).
+type CredentialExchanger interface {
+	// ExchangeRequest builds the realm request for credential; key names the token in the replica's cache (at most 1 KiB).
+	ExchangeRequest(ctx context.Context, rc RemoteContext, credential string) (req *http.Request, key string, ok bool, err error)
+	// ReadExchange reads the realm's 2xx answer (bounded by the engine at 64 KiB): the Authorization value and the time it is to be
+	// used for (0: 60 s); the format shortens the realm's lifetime by the margin it wants.
+	ReadExchange(ctx context.Context, rc RemoteContext, status int, body []byte) (authorization string, ttl time.Duration, err error)
+}
+
 // StoodChallengeReader is an optional interface of an [Authenticator]: the format reads a 401 that stood after the handshake. A
 // registry answers 401 with error="insufficient_scope" to a valid token that is not allowed the resource (Docker Hub: a repository
 // that does not exist or is private). When StoodMissing says so the engine answers the request as a 404 of the upstream, with a
@@ -268,6 +284,8 @@ type RemoteCaps struct {
 	Auth Authenticator
 	// Stood is the adapter's reading of a 401 that stood after the handshake (Q-OCI-127); nil for an adapter that has none.
 	Stood StoodChallengeReader
+	// Exchange is the adapter's exchange of the stored credential at a realm (R-ANS-019); nil for an adapter that has none.
+	Exchange CredentialExchanger
 	// Revalidate is the adapter's own revalidation request; nil for the engine's conditional GET (R-OCI-022).
 	Revalidate Revalidator
 	// Names answers the shadowing check of a format without a package document from the rows of the remote's indexes (Q-DEB-37);

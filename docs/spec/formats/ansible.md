@@ -703,19 +703,25 @@ obtains from a single-sign-on realm with a long-lived **offline token** (a refre
   the realm and the token to the upstream origin and nowhere else); neither token is logged, audited or returned by any API.
 - The existing contract hands an authenticating adapter the challenge, not the credential (`Authenticator.TokenRequest`), and the
   form needs the offline token in its body. This requirement therefore needs an **additive optional interface** of the remote adapter
-  that receives the credential in effect for one exchange only; its shape is decided by the package that builds it and recorded as a
-  decision and in architecture.md R-ARCH-008 (ADR-191 reserves the number).
-- A failed exchange (a 400 `invalid_grant` of the realm, an unreachable realm) is `upstream_unavailable` with the reason
-  `upstream_authentication_failed`, never an empty list; the repository's status shows it.
-- `ansible.authUrl` must be an `https` URL (`http` only for a loopback test stub) and is validated like `remote.url`.
+  that receives the credential in effect for one exchange only: `formats.CredentialExchanger`, recorded in architecture.md R-ARCH-008 and
+  in ADR-191 ([Q-ANS-51](#q-ans-51--the-hub-exchange-is-the-optional-interface-credentialexchanger-and-the-engine-sends-the-exchanged-token-and-never-the-credential)). The engine sends the realm request, caches the token and sends the upstream request with the token in place of the
+  credential, so the offline token never goes to the upstream, and nothing is sent to the upstream when the exchange fails.
+- A failed exchange (a 400 `invalid_grant` of the realm, a 401 or 403) is 502 `upstream_auth_failed`, the answer every credential the
+  upstream refuses has (R-REPO-033), never an empty list; an unreachable realm is the engine's `upstream_unreachable`. The security event
+  of the failed request names the realm's host and no token.
+- `ansible.authUrl` must be an `https` URL (`http` only for a loopback address, the test stub's), without user information, query or fragment;
+  the repository needs `remote.authMode: bearer` (the stored secret is the refresh token) and the endpoint's host is the upstream's or an
+  `extraHosts` entry with `sendCredentials`, because the refresh token is in the body of the request, where the hop policy cannot withhold it.
+  The service checks all four when the document is saved (`validate_ansible.go`) and the engine again at every exchange.
 - The `x-trove-classes` of both settings is `remote`.
 
 Acceptance criteria (with the stub's realm; the service itself is not reachable from the tests):
 
 - The stub's upstream accepts only `Bearer` access tokens its realm issued; a remote with a refresh token installs a collection, and
   after the stub expires the access token, the next request exchanges again and succeeds.
-- A wrong refresh token: the install fails with the 503 of `upstream_authentication_failed` and the stub's realm saw no request with
-  the old access token.
+- A wrong refresh token: the install fails with the 502 `upstream_auth_failed` and the stub's upstream saw no request at all (nothing is
+  sent without a token, and the credential is not sent in its place).
+- A realm host that may not receive the credential: the request fails and the realm saw none.
 
 ### R-ANS-020 · Remote repository: roles by translation
 Priority: **P1** · Covers: PKG-ANSIBLE-007
@@ -1081,7 +1087,7 @@ The engine, the bounds and the throttling are the core's; this is what the forma
 - **Methods** (`discover.Method`): `feed` not offered (no change feed was found); `listing` (what `auto` takes) walks the index by offset
   and returns the names the scope admits, in the index's order, in pages of the engine's limit with the cursor `{"offset": n}`; `names`
   takes literal include patterns as `<ns>.<name>`.
-- **The plan of a name**: the version documents of the collection through `Upstream.Document`, newest first by semver, each an item
+- **The plan of a name** ([Q-ANS-52](#q-ans-52--the-mirror-lists-by-offset-and-plans-from-the-version-lists-and-the-version-bounds-cut-before-documents-are-read)): the version documents of the collection through `Upstream.Document`, newest first by semver, each an item
   (`collections/<ns>/<name>/<ns>-<name>-<version>.tar.gz`) with the announced `artifact.size` and the pre-release flag; the digest
   reaches the engine through the gate of R-ANS-018 from the recorded row.
 - **Moving content.** Every pass revalidates the index and the lists; new versions are planned; the archives of versions the upstream
@@ -1962,6 +1968,43 @@ scenario needs the public store (a client that reaches a host outside the cluste
 
 **Applied in the spec:** R-ANS-032.
 
+### Q-ANS-51 · The hub exchange is the optional interface CredentialExchanger, and the engine sends the exchanged token and never the credential
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `formats.CredentialExchanger`: the format builds the realm request from the credential and reads the answer; the engine sends it under the host rule, caches the token and sends the upstream request with the token in place of the credential (chosen) | The credential is handed to the format for one request only; the engine owns the I/O, the cache and the retry | The offline token never reaches the upstream; the host rule is the engine's, not each format's; reuses the handshake's bounded read and the token cache | An addition to the contract and a branch in the engine's `send` |
+| (b) The format exchanges through `RemoteFetcher.Exchange` | No engine change | | The format would need the credential value, which it cannot read, and the first upstream request would still carry the credential |
+| (c) Extend `Authenticator.TokenRequest` with the credential | One interface | | The handshake answers a 401 challenge and runs after a first request: the credential would already have gone to the upstream |
+
+**Choice:** (a). **Rationale:** [R-ANS-019](#r-ans-019--remote-repository-a-hub-behind-single-sign-on) needs the refresh token in a form body. `ExchangeRequest` receives it and returns the request; the engine
+(`internal/proxy/credential_exchange.go`) refuses a realm on a host the hop policy would not give the credential to, exchanges before the
+first request of the repository to the upstream's origin, keys the cached token by the format's key, the realm and the digest of the
+credential (a rotated offline token needs a new exchange), and on a 401 of the upstream exchanges once more and sends the request once more.
+A realm's 4xx is `upstream_auth_failed`. The lifetime is the realm's `expires_in` less 30 seconds. Revisit when a second format needs
+a credential exchange: the interface is not Galaxy-specific.
+
+**Applied in the spec:** R-ANS-019, architecture.md R-ARCH-008, ADR-191.
+
+### Q-ANS-52 · The mirror lists by offset and plans from the version lists, and the version bounds cut before documents are read
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `listing` walks the collection index 100 entries at a time with the cursor `{"offset": n}`; the plan reads the stored version-list pages and, newest first, the documents of the versions the bounds keep (chosen) | One request per index page and per kept version | No document is read for a version the engine would drop; the digest of every kept version is recorded by its fill | A pass reads the whole index even for a narrow pattern |
+| (b) Narrow the index by the `namespace` filter of a literal prefix | Fewer index pages | Cheaper for `acme.*` | A second request shape, and the filter was verified on the public Galaxy only; a collection of a namespace in another case is missed |
+| (c) Read every version document, then apply the bounds | Simple | | A document per version of a collection whose versions are dropped |
+
+**Choice:** (a). **Rationale:** the public Galaxy lists 4,685 collections, 47 index pages, which a pass reads in seconds; the cost of a
+document per version is the cost that matters. Revisit with (b) when a mirror's index walk is measured as the pass's dominant cost (H-846).
+The role index is never read, and the hub's index is not listed ([H-849](#h-849--a-mirror-of-a-hub-cannot-list-its-collections)).
+
+**Applied in the spec:** R-ANS-021.
+
+## What this does not cover
+
 ## What this does not cover
 
 ### H-839 · A remote's signatures are passed through and not verified by trove
@@ -2027,6 +2070,19 @@ runs a `--dry-run` against the first real source and records them.
 `TracksVersionRemoval` is false (R-ANS-017): a version that disappears from the upstream's list disappears from the served list at the next
 revalidation, and its cached archive stays downloadable by path. Live for any upstream that removes versions; the cached copy can outlive
 a withdrawal the upstream made for a security reason.
+
+### H-849 · A mirror of a hub cannot list its collections
+
+A pass lists the collection index with `Upstream.Get`, a request of the pass that the engine's token exchange ([Q-ANS-51](#q-ans-51--the-hub-exchange-is-the-optional-interface-credentialexchanger-and-the-engine-sends-the-exchanged-token-and-never-the-credential)) does not cover: it runs for the
+fetches of documents and archives. A remote with `ansible.authUrl` in mode `mirror` therefore reads the index without a token and the
+hub answers 401. Dormant while no hub is mirrored (the hub itself was never reached, [H-842](#h-842--the-hub-token-exchange-is-specified-from-documentation-and-never-run-against-the-service)); the `names` method needs no index and works. Closing it
+is the exchange in the engine's `Get`.
+
+### H-850 · Each replica exchanges the refresh token for itself
+
+The access token is kept in the replica's own cache (R-REPO-033), so every replica of an installation asks the realm once per token lifetime
+and the realm sees one session per replica for one offline token. A realm that limits the sessions of an offline token, or rotates it on
+use, would refuse the second replica; neither was observed, because the service was never reached ([H-842](#h-842--the-hub-token-exchange-is-specified-from-documentation-and-never-run-against-the-service)). Live for a hub on several replicas.
 
 ### H-851 · A collection archive beyond the core's reader bounds is refused
 

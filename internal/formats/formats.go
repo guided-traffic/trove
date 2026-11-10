@@ -296,6 +296,7 @@ func CapabilitiesOf(f Format) Capabilities {
 		c.Remote.Gate, _ = ra.(FactsGate)
 		c.Remote.Auth, _ = ra.(Authenticator)
 		c.Remote.Stood, _ = ra.(StoodChallengeReader)
+		c.Remote.Exchange, _ = ra.(CredentialExchanger)
 		c.Remote.Revalidate, _ = ra.(Revalidator)
 		c.Remote.Names, _ = ra.(NameServer)
 	}

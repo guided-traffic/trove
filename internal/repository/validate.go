@@ -130,6 +130,7 @@ func validateSections(v *validation, info catalog.Entry, d *Document) {
 	stripDebReadOnly(info, d)
 	validateFormatSettings(v, info, d)
 	validateDeb(v, info, d)
+	validateAnsible(v, info, d)
 	validateVulnerabilities(v, info, d, na)
 	if len(d.Storage) > 0 {
 		trimmed := bytes.TrimSpace(d.Storage)

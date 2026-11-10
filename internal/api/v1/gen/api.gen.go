@@ -4307,9 +4307,11 @@ type AnsibleImportTaskList struct {
 // settings of the format, and a setting that does not apply to the class of the repository answers 422 `not_applicable`. An
 // omitted setting takes its default.
 type AnsibleSettings struct {
-	// AuthUrl Remote repositories of a Galaxy-compatible hub behind single sign-on (R-ANS-019). The https URL of the token endpoint of
-	// the hub's identity realm, where the offline token stored in the repository's credential is exchanged for a short-lived
-	// access token. Left out, the upstream is called with the credential as it is (a static token).
+	// AuthUrl Remote repositories of a Galaxy-compatible hub behind single sign-on (R-ANS-019). The https URL (http only for a loopback
+	// address, which the service checks) of the token endpoint of the hub's identity realm, where the offline token stored in the
+	// repository's credential is exchanged for a short-lived access token. The repository needs `authMode` bearer, and the
+	// endpoint's host is the upstream's or an `extraHosts` entry with `sendCredentials`. Left out, the upstream is called with
+	// the credential as it is (a static token).
 	AuthUrl *string `json:"authUrl,omitempty"`
 
 	// ClientId Remote repositories with `authUrl` (R-ANS-019). The client id the exchange presents to the realm.

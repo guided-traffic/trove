@@ -47,6 +47,13 @@ const (
 	rNoRoles = "ans-noroles" // extraHosts without the GitHub stand-in
 	// rNotGalaxy has an upstream URL that is no API root: it answers a collection document.
 	rNotGalaxy = "ans-notgalaxy"
+	// The hub repositories: authMode bearer with the offline token as the secret and ansible.authUrl at the stub's realm. The realm
+	// host is an extraHosts entry with sendCredentials in rHub1 to rHub3 and without in rHubNoHost.
+	rHub1, rHub2, rHub3, rHubNoHost = "ans-hub1", "ans-hub2", "ans-hub3", "ans-hubnohost"
+	// hubSecretEnv holds the offline token of the hub repositories.
+	hubSecretEnv = "TROVE_CAC_ANSIBLEREMOTE_IT_OFFLINE_TOKEN"
+	// offlineToken is that token; the stub's realm takes it once SetRealm lists it.
+	offlineToken = "offline-token-1"
 )
 
 // aenv is one installation with the repositories above, a stub and two principals.
@@ -102,12 +109,17 @@ func newEnv(t *testing.T, o options) *aenv {
 	e.repo(rRequire, "require", roleHosts...)
 	e.repo(rNoRoles, "verify-if-available")
 	e.repoAt(rNotGalaxy, e.run.URL+"/api/v3/collections/acme/tools/", "verify-if-available", 300)
+	t.Setenv(hubSecretEnv, offlineToken)
+	for _, k := range []string{rHub1, rHub2, rHub3} {
+		e.hub(k, true)
+	}
+	e.hub(rHubNoHost, false)
 
 	rita, reader := e.st.User("rita"), e.st.User("reader")
 	e.st.Bind("admin", rita)
 	e.admin = e.st.Token(rita, scope.Scope{Inherit: true, Admin: true})
 	e.reader = e.st.Token(reader, scope.Default())
-	names := []string{rRequire, rNoRoles, rNotGalaxy}
+	names := []string{rRequire, rNoRoles, rNotGalaxy, rHub1, rHub2, rHub3, rHubNoHost}
 	for i := 1; i <= scratchRepos; i++ {
 		names = append(names, "ans-"+strconv.Itoa(i))
 	}
@@ -144,6 +156,33 @@ func (e *aenv) repoAt(key, upstream, policy string, ttl int, hosts ...string) {
 		e.t.Fatal(err)
 	}
 	e.st.Repository(key, "remote", "ansible", string(doc))
+}
+
+// hub creates a remote repository of a hub behind single sign-on: the offline token is the bearer secret, ansible.authUrl is the token
+// endpoint of the stub's realm, and the realm host may receive the credential when credentialHost is set.
+func (e *aenv) hub(key string, credentialHost bool) {
+	e.t.Helper()
+	realm := ansiblestub.DefaultRealmHost
+	remote := map[string]any{
+		"url": e.run.APIRoot(), "extraHosts": []any{map[string]any{"pattern": realm, "sendCredentials": credentialHost}}, "authMode": "bearer", "username": "",
+		"password":          map[string]any{"secretRef": map[string]any{"env": hubSecretEnv}},
+		"clientCertificate": nil, "headers": []any{}, "forwardAuthOnRedirect": false, "outboundProxy": map[string]any{"mode": "direct"},
+		"connectTimeoutMs": 5000, "readTimeoutMs": 15000, "sourceNetwork": nil, "cacheFillAction": "read",
+		"cache": map[string]any{
+			"storeArtifacts": true, "metadataTtlSeconds": 300, "metadataRefreshTimeoutSeconds": 10, "notFoundTtlSeconds": 300,
+			"maxStaleSeconds": 0, "unusedRetentionHours": 0,
+		},
+		"integrity":    map[string]any{"checksumPolicy": "verify-if-available", "blockUnexpectedContentTypes": true, "allowedContentTypes": []any{}},
+		"availability": map[string]any{"mode": "online", "failureThreshold": 3, "circuitOpenSeconds": 30},
+		"limits":       map[string]any{"maxArtifactBytes": nil, "maxMetadataBytes": nil, "maxConcurrentFetches": 16},
+	}
+	doc, err := json.Marshal(map[string]any{"remote": remote, "ansible": map[string]any{"authUrl": e.run.RealmURL + ansiblestub.DefaultRealmPath}})
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	e.st.Repository(key, "remote", "ansible", string(doc))
+	e.st.Exec(`INSERT INTO repository_secrets (repo_id, field, secret_ref) SELECT id, '/remote/password', $2::text::jsonb FROM repositories WHERE key = $1`,
+		key, `{"env":"`+hubSecretEnv+`"}`)
 }
 
 // fresh returns a scratch repository of the installation that nothing has been fetched through.

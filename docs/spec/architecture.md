@@ -1504,6 +1504,18 @@ type StoodChallengeReader interface {
 	StoodMissing(p Path, header http.Header) bool
 }
 
+// CredentialExchanger: an optional interface of the remote adapter, found by type assertion: the upstream is called with a short-lived
+// token that a single-sign-on realm issues for the repository's stored credential (a refresh token, R-ANS-019, Q-ANS-51). It is the one
+// place a format is handed the credential: ExchangeRequest receives it for the form of the request to the realm and for nothing else
+// (ok false: the repository does no exchange). The engine sends that request through the repository's client and only to a host that may
+// receive the credential (the upstream or an extraHosts entry with sendCredentials), keeps the token in the replica's cache keyed by the
+// credential's digest, sends the upstream request with the token in place of the credential, which therefore never goes to the upstream,
+// and on a 401 exchanges once more and sends the request once more. ReadExchange reads the realm's answer.
+type CredentialExchanger interface {
+	ExchangeRequest(ctx context.Context, rc RemoteContext, credential string) (req *http.Request, key string, ok bool, err error)
+	ReadExchange(ctx context.Context, rc RemoteContext, status int, body []byte) (authorization string, ttl time.Duration, err error)
+}
+
 // Revalidator: an expired stored document is revalidated by a request of the format's own kind (OCI: a HEAD whose digest
 // header says whether a tag still points at the stored manifest, R-OCI-022). RevalidationRequest returns it (ok false: the
 // engine's conditional GET; get is the GET the engine would send, and the request derives from it: the same URL and Accept);
@@ -1541,6 +1553,7 @@ type RemoteCaps struct {
 	Gate      FactsGate
 	Auth       Authenticator // the token handshake with the upstream; nil for a format whose upstreams authenticate by the credential alone
 	Stood      StoodChallengeReader // the reading of a 401 that stood after the handshake; nil for none
+	Exchange   CredentialExchanger  // the exchange of the stored credential at a single-sign-on realm; nil for none
 	Revalidate Revalidator   // the format's own revalidation request; nil for the engine's conditional GET
 	Names      NameServer    // the shadowing check from the rows of the remote's indexes, for a format without a package document; nil otherwise
 }

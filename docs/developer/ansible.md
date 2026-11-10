@@ -71,9 +71,9 @@ internal/config/ansible.go     # the ansible: section
 
 | File | Responsibility |
 |---|---|
-| `handlers_remote.go`, `remote*.go` | The remote class and the roles: [ansible-remote.md](ansible-remote.md). `mirror.go` and `hub.go` are not created yet (B2, later stages) |
+| `handlers_remote.go`, `remote*.go` | The remote class and the roles: [ansible-remote.md](ansible-remote.md). `mirror.go` is the mirror's lister and `hub.go` the exchange of a hub behind single sign-on |
 | `class_virtual.go`, `handlers_virtual.go`, `virtual*.go`, `merge/` | The virtual class: [ansible-virtual.md](ansible-virtual.md) |
-| `setup*.go`, `guide*.go`, `guide/` | Not created yet: the setup templates and the guide (B4); the conformance fixture skips check 8 until then |
+| `setup*.go`, `guide*.go`, `guide/` | The setup templates and the guide of the client setup page; check 8 of the conformance kit runs on them |
 
 ## The routes
 
@@ -171,6 +171,6 @@ The remote adapter implements `FillCommitter` (the commit of a cached archive) a
 
 ## What is built and what is not
 
-Built: the skeleton, the leaves, the scheme, the tables, the data port, the local, remote and virtual classes, the setup, the guide and the
-screens. Not built yet: the mirror and the hub's token exchange of the remote class, the e2e set `ansible`, the restore from the trash (H-852).
+Built: the skeleton, the leaves, the scheme, the tables, the data port, the local, remote and virtual classes, the setup, the guide, the
+screens, the mirror and the hub exchange. Not built yet: the e2e set `ansible`, the restore from the trash (H-852).
 The deploy dialog is not offered (Q-ANS-34).

@@ -88,6 +88,11 @@ type CredentialPolicy struct {
 	Headers func() http.Header
 }
 
+// Allows reports whether a request to u may carry the repository's credential on its first hop: the upstream's origin and the extraHosts
+// entries with sendCredentials, over https (or over http when the origin itself is http). A caller that puts the credential into a body,
+// where the hop policy cannot strip it, asks first.
+func (p *CredentialPolicy) Allows(u *url.URL) bool { return p.allowed(u, 0) }
+
 // allowed reports whether the host of u may receive credentials at hop.
 func (p *CredentialPolicy) allowed(u *url.URL, hop int) bool {
 	if !isHTTPS(u) && (p.Origin == nil || isHTTPS(p.Origin)) {

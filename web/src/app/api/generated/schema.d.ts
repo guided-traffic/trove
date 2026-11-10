@@ -8976,9 +8976,11 @@ export interface components {
          */
         AnsibleSettings: {
             /**
-             * @description Remote repositories of a Galaxy-compatible hub behind single sign-on (R-ANS-019). The https URL of the token endpoint of
-             *     the hub's identity realm, where the offline token stored in the repository's credential is exchanged for a short-lived
-             *     access token. Left out, the upstream is called with the credential as it is (a static token).
+             * @description Remote repositories of a Galaxy-compatible hub behind single sign-on (R-ANS-019). The https URL (http only for a loopback
+             *     address, which the service checks) of the token endpoint of the hub's identity realm, where the offline token stored in the
+             *     repository's credential is exchanged for a short-lived access token. The repository needs `authMode` bearer, and the
+             *     endpoint's host is the upstream's or an `extraHosts` entry with `sendCredentials`. Left out, the upstream is called with
+             *     the credential as it is (a static token).
              */
             authUrl?: string;
             /**
