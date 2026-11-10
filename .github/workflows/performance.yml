@@ -63,6 +63,11 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # The runner pods have no CPU limit, so every tool would see the node's 32 cores and start that many threads on a node that other
+  # jobs share; the time bounds of the tests would then measure the node. Owner, 2026-11-10: limit the tools, not the pods.
+  GOMAXPROCS: "8"
+  NG_BUILD_MAX_WORKERS: "8"
+  VITEST_MAX_WORKERS: "8"
 
 jobs:
   # The platform matrix of R-HA-049 (Q-HA-274, docs/developer/releasing.md#the-platform-matrix): the chart against the API server of the

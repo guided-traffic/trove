@@ -19,6 +19,7 @@ first stable release:
 | A release can carry a defect those legs found | The price of the rule; it is accepted while trove has no users | Q-ARCH-457 |
 | The coverage badge and the evidence record stand still | Their jobs need the legs that no longer gate, so a release commits neither | Q-ARCH-457 |
 | Nothing runs against published artifacts | Tests belong before a release, where a failure can still change the outcome | [Q-HA-281](../spec/ha-and-helm.md#q-ha-281--tests-run-before-a-release-not-after-it) |
+| The tools are limited, not the pods | Both workflows set `GOMAXPROCS`, `NG_BUILD_MAX_WORKERS` and `VITEST_MAX_WORKERS` to 8. The pods keep their requests and have no CPU limit, so without this every tool would start 32 threads on a shared node | owner, 2026-11-10 |
 | Names of jobs and steps say what they do | No requirement codes, no tool versions, no "on kind"; an e2e job is `e2e (<set>)` | owner, 2026-11-10 |
 | An e2e set is cut by what it tests | What a format does belongs to that format's set, not to a set named after a feature | owner, 2026-11-10 |
 
