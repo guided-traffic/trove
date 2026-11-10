@@ -370,6 +370,49 @@ Found on 2026-11-01 while writing the manual (`docs/manual`) and the design chan
   does not change the machine. Checked again on 2026-11-08: unchanged (`docker-buildx` still links to Docker Desktop's v0.28.0-desktop.1,
   `make versions-check` exits 2 on that line only).
 
+### Open at the end of the session of 2026-11-09 and 2026-11-10
+
+Handed over by the owner's request. v0.36.0 is released and runs on the owner's installation. `main` is at the commit after this list; Test and Release
+run 42839263211 (2513be80) was still running with `unit tests` and `e2e (push)` red. Red pipelines are worked on even though they no longer hold a release
+([releasing.md](../developer/releasing.md#until-the-first-stable-release)). Start with the gating job.
+
+**Decisions only the owner can take**
+
+- **H-812** ([image-scanning.md](../security/image-scanning.md)): Trivy shares the file system and network of the worker pod, so a crafted image that compromises it can read the secrets mounted there. Close it before images from untrusted remotes are scanned (a sandbox or a pod per scan, a further component), or accept it? A dedicated `vuln` worker pool would shrink it; the owner kept the plain workers on 2026-11-10 (Q-VULN-137).
+- **Browse**: stays, or goes now that the repository content pages exist (R-UI-052)? It also carries upload, copy, move and the trash can (R-UI-010 to R-UI-014). The owner decides after seeing the new pages.
+
+**Gating job, blocks the next release**
+
+- `unit tests`, `TestR_VULN_004_AStallAtTheByteGateIsNoUpstreamTimeout` red in run 42839263211 and 42825155671 (`records_test.go:226`, `upstream_timeout ... found false`): cause not looked at. Confirmed in the logs.
+- `GOMAXPROCS` 8 was set on 2026-11-10 because six time-bound unit tests failed at once with 32 threads. One following run had no timing failure; whether that lasts is not known. Remaining wall-clock bounds fail on the runner one test at a time: replace a bound by a real hang or an event where the test allows it, as in `TestR_BAK_013` and `TestR_BAS_039`.
+
+**Integration and e2e legs (no release gate, still to be fixed)**
+
+- **Integration shard a, the database stops answering just before a replica stops.** `change-log poll failed`, `replica heartbeat failed` and `replica row not marked draining` with `context deadline exceeded`, then the shutdown budget is gone and `close phase overran its deadline`. Red in runs 42788335321, 42793751322, 42831867192, in `TestR_CI_001`, `TestR_CI_009`, `TestR_CI_029`, `TestR_STOR_027`, `TestR_REPO_056`, `TestR_NPM_010`, `TestJobs`, `TestCollapse`; shard b once (`TestE1_14_CustomerEndpoint`). Falsified: the million-row `TestInvalidationAtScale`, which runs later. Not separated: the `Flights` change (732572ba, absent from every goroutine dump) and the runner limits removed on 2026-11-09. Unknown whether a real pod overruns under database load.
+- **`ha-faults`** (run 42774548669): `TestHAFaults_PostgresOutage` is green since 732572ba. `ValkeyFlushAll`: 503 from 07:53:20, 70 s before the FLUSHALL, while the run shared the runners with Test and Release; pod logs of the window are not kept. `ValkeyCredentialMismatch`: 53 tarball requests end at the client's 45 s, and running pods answer `/readyz` 503 for `valkey`, against R-HA-007. Both were green in the two runs before.
+- **502 bursts at the edge (H-795)**: `npm-ha`, `drain-load-e`, `TestE14Drain`, node loss. HAProxy `SH--`, 40 of 41 with a connect time over 1 s on three backends within 2 s; k6 measures 12 to 14 s where HAProxy measures 2 to 3 s, so the time may be lost before the accept. No reload in the window. Cause open.
+- **`TestE15TLS`** (`e2e (push)`): certificate rotation under load, 7 of about 10,000 answers 502 in run 42818570044 and 353 of 9602 with status 0 (`context_canceled`) in run 42839263211. Cause open.
+- `drain-load-e`: the replacement of the evicted backup pod still ran after 15 minutes (`Job var-e-281d-1`); its log is not in the artifacts.
+- `vuln-pooler`: 12 of 4683 answers were the ingress's 503 in drain variant D.
+- `alerts`: `TroveDatabaseUnreachable` fired during maintenance (R-OPS-046); red in two of about ten runs.
+- `bastion`, `TestBastion_R_BAS_049_RoutingByPath`: 0 hits on both replicas, once in twelve runs.
+- `TestGarbageCollection` (`gc_test.go:170`, row in state `deleting`), `TestE14Drain` (a packages pod unready for 5 s at the end, Valkey `circuit_open`), R-ARCH-034 (26 held against 24, once), `TestR_DEB_010_DelayBound` (503 `database_unavailable`, once in nightly 42677190569; the suspicion on the retry budget of Q-HA-259 is unverified).
+- The mirror tests moved into the format and HA sets (Q-REPO-306) get their worker pool from the first mirror test of a process, and `TestNPMHA` and `TestNuGetHA` see four workers only because of the sort order of the test files. Fragile.
+- A job can stay queued for hours when the ARC listener loses its assignment (P-13, 2026-11-10, `assigned job=0` after a broker retry); the cause was not established, and a stuck run holds the nightly group until it is cancelled.
+
+**Product work still to do**
+
+- Container images: **OCI remote repositories list nothing** on the content page, because remote tags have no version rows (Q-OCI-121). Needs a decision and a change.
+- Image scanning: no scan seen yet on the owner's installation; push an image and read the page. Not run: a push through the whole app with the real binary, a drain or worker loss in a cluster, and the release image and chart in a cluster. Gaps H-810 to H-819 are on [image-scanning.md](../security/image-scanning.md); H-819 (the 1.6 GiB database and the scans share the 5 GiB spool) is live on an installation that scans large images.
+- The integration tests and browser journeys written for R-UI-052 ran only in CI; read their results.
+- Other settings pages still have to move to the one-column form of the [style guide](../developer/ui-style-guide.md#settings-pages). A service-account token has no administrator choice in the form, and the token administration does not show inactive administrator rights (Q-UI-213). A token without rights gets only `denied` from the registry, also for an administrator.
+- A disk watcher in the jobs, so that a lost runner can be read, was proposed and not built.
+- The coverage badge and the evidence record stand still until the first stable release (Q-ARCH-457).
+
+**Phase 7, not closed** (BETA.md stays 🟡): E5.9, E5.10 and E5.5 need green runs, E5.1 the drill with the new commands on a cluster, H-798 is unexplained (drained pods killed after their grace period), and E5.6 misses 18 MVP IDs. The beta candidate is published only when every criterion is met.
+
+**Housekeeping**: finished builder worktrees under `.claude/worktrees` and the origin branches `p7-*` exist; deleting them is for the owner to approve. The local `docker buildx` is still behind its pin (see above).
+
 ## 9 · Owner review of 2026-11-06: tasks and open questions
 
 The owner reviewed the UI, the documentation and the domain model with the development agent on 2026-11-06, on the branch
