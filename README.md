@@ -333,6 +333,29 @@ A remote Debian repository stores what it fetched at the path the client asked f
 | `<directory>/<name>.diff/…` | a pdiff patch, passed through as content |
 | `pool/…`, any other path of a flat directory | a package or source file, immutable, checked against the digest of the newest parsed index that lists it |
 
+### Ansible Galaxy names and paths
+
+What an `ansible-galaxy` client, a token and the storage see of an Ansible Galaxy repository ([routes.go](internal/formats/ansible/routes.go),
+[paths.go](internal/formats/ansible/paths.go), [setup.go](internal/formats/ansible/setup.go), [view.go](internal/formats/ansible/view.go)).
+
+| What | Name or pattern | Built |
+|---|---|---|
+| Repository address | `<base URL>/api/ansible/<projectKey>/<repoKey>/`, the `url` of a server in `ansible.cfg`; the address itself answers the discovery document (`available_versions`: `v3`, and `v1` on a remote) | yes |
+| Collection routes | `v3/collections/<namespace>/<name>/`, `…/versions/`, `…/versions/<version>/`, `v3/artifacts/collections/<namespace>-<name>-<version>.tar.gz` | yes |
+| Publish and its task | `POST v3/artifacts/collections/` (multipart `file` and `sha256`, either order; `202` with the task address); `GET v3/imports/collections/<task id>/` | yes (local) |
+| Role routes (remote only) | `v1/roles/?owner__username=<owner>&name=<role>`, `v1/roles/<id>/versions/`, `v1/roles/archives/<id>/<ref>.tar.gz` | yes |
+| Collection name and version | `<namespace>.<name>`, each part lower case `[a-z0-9_]`, 1 to 64 characters; a semantic version, newest first by precedence with build metadata ignored | yes |
+| Stored path of an archive | `collections/<namespace>/<name>/<namespace>-<name>-<version>.tar.gz` (lower case); a remote also stores `collections/<namespace>/<name>/collection.json`, `versions.json` (variant `offset=<n>`), `<version>.json`, `api-root.json` and below `roles/` | yes |
+| Authorization schemes | `Authorization: Token <token>` (the scheme of `ansible-galaxy`, accepted on the routes of this format only), `Bearer`, and `Basic` with the token as the password | yes |
+| Files the setup writes | `ansible.cfg` (`[galaxy] server_list = trove`, `[galaxy_server.trove] url=`), the variable `ANSIBLE_GALAXY_SERVER_TROVE_TOKEN` in the shell, `~/.netrc` (`machine <host> login trove password …`, appended by a command, needed for roles), `requirements.yml` | yes |
+| Snippet ids | `ansible-galaxy.configure.{ansible-cfg,token-env,token-env-powershell,token-env-cmd,netrc}`, `ansible-galaxy.install.{collection,requirements}`, `ansible-galaxy.publish.collection` | yes |
+| Repository document member | `ansible`: `authUrl` and `clientId` (remote only; the hub's token exchange is not built) | yes |
+| Management API | `GET …/repositories/<repoKey>/ansible/imports`, `GET …/ansible/tombstones`, `DELETE …/ansible/tombstones/<collection>/<version>` | yes |
+| Configuration keys | `ansible.max_archive_bytes`, `ansible.role_archive_max_bytes`, `ansible.import_task_keep` ([configuration](#configuration-keys)) | yes |
+| Job kinds and task | `ansible-reindex`, the task `ansible-import-task-sweep` | yes |
+| Audit events | `ansible.version.deleted` (a deleted version and its tombstone), `ansible.tombstone.cleared` | yes |
+| Client images of the tests | `trove-e2e-ansibleclients-<core217\|core221>:dev`, the pods `trove-e2e-ansible-<core217\|core221>` in the namespace `trove-e2e-ansible` | yes |
+
 ### Headers
 
 | Header | Value | Built |
@@ -782,6 +805,9 @@ Registrations at start-up, in `internal/app/wire_*.go` and in the packages that 
 | [docs/developer/deb.md](docs/developer/deb.md) | The Debian (APT) format for contributors, in the order of a request: the address and the routes, the files, the upload and the coordinates of the local class, the index builder, the signing keys and the OpenPGP library, the remote class and its jobs, the mirror, the virtual class, the restore, the screens, the tests and the counting stub archive (R-DEB-001 to R-DEB-035) |
 | [docs/security/deb-signing.md](docs/security/deb-signing.md), [deb-index.md](docs/security/deb-index.md), [deb-remote.md](docs/security/deb-remote.md), [deb-mirror.md](docs/security/deb-mirror.md), [deb-virtual.md](docs/security/deb-virtual.md) | The Debian format's security: the custody, rotation and restore of the signing keys; what turns rows into a signed index; what a remote checks of its archive; what a mirror stores; what a virtual repository merges and signs; and the gaps of each |
 | [docs/manual/user/apt-packages.md](docs/manual/user/apt-packages.md), [docs/manual/admin/apt-repositories.md](docs/manual/admin/apt-repositories.md) | User manual: APT on Debian and Ubuntu against trove, uploads, suites, key rotation and the client's errors; administrator manual: local, remote and virtual repositories, upstream keys, the mirror, signing keys, the index state and a restore |
+| [docs/developer/ansible.md](docs/developer/ansible.md), [ansible-remote.md](docs/developer/ansible-remote.md), [docs/security/ansible.md](docs/security/ansible.md), [ansible-remote.md](docs/security/ansible-remote.md) | The Ansible Galaxy format for contributors and its security perspectives: the routes, the leaf packages, the local and remote classes, the counting stub, the credentials and the untrusted archives |
+| [docs/manual/user/ansible-collections.md](docs/manual/user/ansible-collections.md), [docs/manual/admin/ansible-repositories.md](docs/manual/admin/ansible-repositories.md) | User manual: `ansible-galaxy` against a trove repository (the configuration, the token, the netrc line for roles, install, publish, errors); administrator manual: the classes, the settings, the limits, import tasks and tombstones |
+| [docs/spec/formats/ansible.md](docs/spec/formats/ansible.md) | Target design of the Ansible Galaxy format: R-ANS-001 to R-ANS-032 and the decisions |
 | [docs/developer/oci.md](docs/developer/oci.md) | The OCI (Docker) registry for contributors: the registry root and its dispatch, the token service and registry tokens, manifests and the push path, uploads and the mount, removal and the sweep, the remote, mirror and virtual classes, the tests, the conformance suite and the counting stub registry |
 | [docs/security/oci-registry.md](docs/security/oci-registry.md), [oci-uploads.md](docs/security/oci-uploads.md), [oci-content.md](docs/security/oci-content.md), [oci-remote.md](docs/security/oci-remote.md), [oci-virtual.md](docs/security/oci-virtual.md) | The OCI registry's security: what a client presents and what a registry token is worth; the upload routes and the mount; removal, the sweep and a restore; what an upstream registry can make a remote store and show, and the mirror; how a virtual repository decides and where a push goes |
 | [docs/manual/user/container-images.md](docs/manual/user/container-images.md), [docs/manual/admin/container-repositories.md](docs/manual/admin/container-repositories.md) | User manual: Docker, Podman, Buildx and Kubernetes against trove; administrator manual: local, remote (Docker Hub, GHCR) and virtual OCI repositories, the mirror and the Docker Engine mirror |

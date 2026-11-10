@@ -1810,6 +1810,206 @@ jobs:
         run: make dev-down
   # <<< T17 e2e-deb
 
+  # >>> F0 e2e-ansible
+  # The Ansible Galaxy acceptance suite (R-ANS-032) on a kind cluster: a real ansible-galaxy of ansible-core 2.17 and 2.21 in client pods of the
+  # namespace trove-e2e-ansible (Q-ANS-49, Q-ANS-50), against the scatter profile and the counting Galaxy test upstream
+  # (docs/developer/e2e.md#the-ansible-tests). Per change that touches the format it runs the leg ansible: every TestAnsible... (local, remote
+  # and the credentials, a changed digest, the pasted setup snippets; the virtual and mirror rows are listed and wait for their classes). A
+  # dispatch with closing=true adds the leg ansible-closing (TestAnsibleClosing: Valkey stopped). The job does not hold Semantic Release back
+  # (CLAUDE.md, CI until the first stable release). The ports 8117 and 8118 are the first free ones of both workflows.
+  e2e-ansible:
+    name: e2e (${{ matrix.set }})
+    runs-on: large
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.closing && '[{"set":"ansible","port":"8117"},{"set":"ansible-closing","port":"8118"}]' || '[{"set":"ansible","port":"8117"}]') }}
+    env:
+      TROVE_IMAGE: guidedtraffic/trove:dev
+      TROVE_DEV_CLUSTER: trove-${{ matrix.set }}-${{ github.run_id }}
+      TROVE_DEV_HTTP_PORT: ${{ matrix.port }}
+      # The clients images are built once by the step make ansible-clients-image; deploy/dev/e2e.sh loads them and does not build them again.
+      TROVE_E2E_ANSIBLE_CLIENTS_IMAGE_BUILD: "0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0   # the scope step diffs against the base of the push or the pull request
+
+      # Whether the change touches the Ansible Galaxy format (R-ANS-032: every change that touches the format or the registry root): for any other change the
+      # job is green after this step, so that Semantic Release, which needs the job, is not held back by a change that cannot affect it.
+      - name: Does the change touch the Ansible Galaxy format?
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          CLOSING: ${{ inputs.closing }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          base=""
+          case "$EVENT" in
+            pull_request) base="$PR_BASE" ;;
+            push) base="$PUSH_BEFORE" ;;
+          esac
+          paths='^(internal/formats/ansible/|internal/formats/(setup|serve|remote|virtual)\.go$|internal/formathost/|internal/formatdata/ansible/|internal/importer/ansible|internal/api/dispatch/|internal/items/|internal/uploads/|internal/proxy/|internal/virtual/|internal/mirror/|internal/httpserver/|test/ansiblestub/|test/e2e/(ansible_|ansibleclients)|test/e2e/clients/fwd/|deploy/dev/(ansiblestub|ansible-clients|values-dev|values-scatter|pki|kind)\.yaml$|deploy/dev/(up|e2e|lib)\.sh$|deploy/helm/trove/|tools/versions\.env$|docs/spec/formats/ansible\.md$)'
+          if [ "$CLOSING" = "true" ] || [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            echo "no base to compare with ($EVENT), or a closing run: the Ansible suite runs"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "$base" "$GITHUB_SHA" | grep -qE "$paths"; then
+            echo "the change touches the Ansible Galaxy format: the suite runs"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "the change does not touch the Ansible Galaxy format: nothing to run"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Load the tool pins
+        if: steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/load-pins
+
+      - name: Set up Go
+        if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install build tools
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential jq
+
+      - name: Install the pinned helm
+        if: steps.scope.outputs.run == 'true'
+        uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install the pinned kubectl
+        if: steps.scope.outputs.run == 'true'
+        uses: azure/setup-kubectl@v5
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: Install the pinned kind
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin"
+          GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Install the pinned Docker Buildx
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 16
+        uses: ./.github/actions/install-buildx
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
+      - name: Set up Docker Buildx
+        if: steps.scope.outputs.run == 'true'
+        uses: docker/setup-buildx-action@v4
+        with:
+          cache-binary: false
+
+      - name: Log in to Docker Hub (the dev profile's images)
+        if: steps.scope.outputs.run == 'true'
+        uses: docker/login-action@v4
+        with:
+          username: guidedtraffic
+          password: ${{ secrets.DOCKERHUB_PAT }}
+
+      - name: make ansible-clients-image
+        if: steps.scope.outputs.run == 'true'
+        run: make ansible-clients-image
+
+      - name: The dev profile's dependency pins and the runner architecture
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          [ "$(uname -m)" = "x86_64" ] || { echo "::error::the dev profile needs an amd64 runner (or qemu), got $(uname -m)"; exit 1; }
+          echo "kind $KIND_VERSION, kubectl $KUBECTL_VERSION, helm $HELM_VERSION, clients $E2E_ANSIBLECLIENTS_CORE217_IMAGE $E2E_ANSIBLECLIENTS_CORE221_IMAGE"
+          kind version
+          kubectl version --client
+          helm version --short
+          for u in https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator; do
+            curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
+          done
+
+      - name: make image
+        if: steps.scope.outputs.run == 'true'
+        run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
+
+      - name: Fetch the dev charts that are GitHub release assets
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 16
+        env:
+          # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
+          GITHUB_TOKEN: ${{ github.token }}
+        run: make dev-charts
+
+      - name: make dev-up
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 25
+        run: make dev-up
+
+      - name: make e2e SET=${{ matrix.set }}
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 60
+        run: make e2e SET=${{ matrix.set }}
+
+      - name: Upload the go test -json report
+        if: always() && steps.scope.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-ansible-report-${{ matrix.set }}
+          path: .out/test-e2e.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload the report, the clients image log and the artifacts
+        if: always() && steps.scope.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-ansible-artifacts-${{ matrix.set }}
+          path: .out/e2e/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Cluster state (failure only)
+        if: failure() && steps.scope.outputs.run == 'true'
+        run: |
+          set -u
+          ctx="kind-${TROVE_DEV_CLUSTER}"
+          mkdir -p .out/cluster-state
+          for ns in trove ingress-controller cert-manager valkey-operator-system internal-secrets-operator-system cnpg-system kube-system; do
+            kubectl --context "$ctx" -n "$ns" get pods -o wide > ".out/cluster-state/pods-$ns.txt" 2>&1 || true
+            kubectl --context "$ctx" -n "$ns" describe pods > ".out/cluster-state/describe-$ns.txt" 2>&1 || true
+            kubectl --context "$ctx" -n "$ns" get events --sort-by=.lastTimestamp > ".out/cluster-state/events-$ns.txt" 2>&1 || true
+          done
+          deploy/dev/cluster-logs.sh .out/cluster-state
+          kubectl --context "$ctx" get nodes -o wide > .out/cluster-state/nodes.txt 2>&1 || true
+          helm --kube-context "$ctx" -n trove status trove > .out/cluster-state/helm-status.txt 2>&1 || true
+          docker ps -a > .out/cluster-state/docker-ps.txt 2>&1 || true
+          cp -r .dev/logs .out/cluster-state/dev-logs 2>/dev/null || true
+
+      - name: Upload the cluster state (failure only)
+        if: failure() && steps.scope.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-ansible-cluster-state-${{ matrix.set }}
+          path: .out/cluster-state/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: make dev-down
+        if: always() && steps.scope.outputs.run == 'true'
+        run: make dev-down
+  # <<< F0 e2e-ansible
+
   # The GitLab CI OIDC suite (R-CI-028, roadmap M4 E4.1 and E4.4 to E4.6) on a kind cluster: the steps of the reference pipeline run with
   # the real npm and .NET clients of the client pods against the issuer double (test/oidcstub), in the scatter profile
   # (docs/developer/e2e.md#the-ci-tests). The long legs (the drained node, Valkey stopped, the failover, the deleted pod, E4.7) are the
@@ -2637,7 +2837,7 @@ jobs:
   # when they do; Semantic Release waits for them as well.
   coverage-evidence:
     name: coverage evidence (implemented.txt)
-    needs: [unit, web, integration, chart, e2e, e2e-npm, e2e-nuget, e2e-oci, e2e-deb, e2e-ci, e2e-bastion, e2e-vuln]
+    needs: [unit, web, integration, chart, e2e, e2e-npm, e2e-nuget, e2e-oci, e2e-deb, e2e-ansible, e2e-ci, e2e-bastion, e2e-vuln]
     runs-on: self-hosted
     timeout-minutes: 15
     permissions:

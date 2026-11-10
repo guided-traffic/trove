@@ -73,7 +73,7 @@ internal/config/ansible.go     # the ansible: section
 |---|---|
 | `handlers_remote.go`, `remote*.go` | The remote class and the roles: [ansible-remote.md](ansible-remote.md). `mirror.go` is the mirror's lister and `hub.go` the exchange of a hub behind single sign-on |
 | `class_virtual.go`, `handlers_virtual.go`, `virtual*.go`, `merge/` | The virtual class: [ansible-virtual.md](ansible-virtual.md) |
-| `setup*.go`, `guide*.go`, `guide/` | The setup templates and the guide of the client setup page; check 8 of the conformance kit runs on them |
+| [`setup.go`](../../internal/formats/ansible/setup.go), [`guide.go`](../../internal/formats/ansible/guide.go), `guide/*.md` | The client surface: the eight setup templates (ids `ansible-galaxy.<name>.<section>`, Q-ANS-48; the token only as the variable `ANSIBLE_GALAXY_SERVER_TROVE_TOKEN`, Q-ANS-22; the netrc line uses the template function `hostname`) and the guide sections per class, which appear with the class the format registers; kit check 8 runs over them |
 
 ## The routes
 
@@ -172,5 +172,6 @@ The remote adapter implements `FillCommitter` (the commit of a cached archive) a
 ## What is built and what is not
 
 Built: the skeleton, the leaves, the scheme, the tables, the data port, the local, remote and virtual classes, the setup, the guide, the
-screens, the mirror and the hub exchange. Not built yet: the e2e set `ansible`, the restore from the trash (H-852).
-The deploy dialog is not offered (Q-ANS-34).
+screens (the import tasks and tombstones tabs, the package details; `web/src/app/features/repositories/ansible-*.ts`), the mirror, the hub
+exchange and the end-to-end set with the two ansible-core clients ([e2e.md](e2e.md#the-ansible-tests)); its virtual and mirror rows wait
+(H-868). Not built yet: the restore from the trash (H-852). The deploy dialog is not offered (Q-ANS-34).

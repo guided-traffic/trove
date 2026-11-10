@@ -43,8 +43,10 @@ url={{.RegistryURL}}
 	envCmd := `{{if .RequiresAuth}}set ` + tokenEnv + `=` + formats.SetupTokenRefWin + `
 {{else}}REM ` + anonymousNote + `
 {{end}}`
-	netrc := `{{if .RequiresAuth}}# chmod 600 ~/.netrc: one machine line serves every repository on the host.
-machine {{hostname .RegistryURL}} login trove password ` + formats.SetupTokenRef + `
+	// netrc is a command and not the content of a file: ~/.netrc expands no variable, so a line that holds the reference would be read as the
+	// password itself (the client sends it as Basic, in place of its Token header, which the e2e set showed with ansible-core 2.17 and 2.21).
+	netrc := `{{if .RequiresAuth}}touch ~/.netrc && chmod 600 ~/.netrc
+printf 'machine %s login trove password %s\n' {{hostname .RegistryURL}} "` + formats.SetupTokenRef + `" >>~/.netrc
 {{else}}# This repository is open to anonymous readers: no ~/.netrc entry is needed.
 {{end}}`
 	requirements := `---
@@ -62,7 +64,7 @@ collections:
 		{ID: "ansible-galaxy.token-env.configure", Client: ClientGalaxy, Section: "configure", Lang: "shell", Template: envShell},
 		{ID: "ansible-galaxy.token-env-powershell.configure", Client: ClientGalaxy, Section: "configure", Lang: "powershell", Template: envPS},
 		{ID: "ansible-galaxy.token-env-cmd.configure", Client: ClientGalaxy, Section: "configure", Lang: "cmd", Template: envCmd},
-		{ID: "ansible-galaxy.netrc.configure", Client: ClientGalaxy, Section: "configure", Lang: "ini", File: "~/.netrc", Template: netrc},
+		{ID: "ansible-galaxy.netrc.configure", Client: ClientGalaxy, Section: "configure", Lang: "shell", Template: netrc},
 
 		{
 			ID: "ansible-galaxy.collection.install", Client: ClientGalaxy, Section: "install", Lang: "shell",

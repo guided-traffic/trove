@@ -134,7 +134,7 @@ export function snippetExplanation(id: string): string | null {
     case 'ansible-galaxy.configure.token-env-cmd':
       return $localize`:@@setup.snippet.ansible-token-env:ansible-galaxy reads the token of the server trove from this environment variable. Set it in the shell or the CI job that runs the command, and keep it out of version control.`;
     case 'ansible-galaxy.configure.netrc':
-      return $localize`:@@setup.snippet.ansible-netrc:Needed to install roles: the client downloads a role archive without its token header and falls back to ~/.netrc. One line serves every repository on this host. Run chmod 600 ~/.netrc.`;
+      return $localize`:@@setup.snippet.ansible-netrc:Needed to install roles: the client downloads a role archive without its token header and falls back to ~/.netrc. This command appends the line to your ~/.netrc, in a file only you can read, and your shell fills in the token. One line serves every repository on this host, and the client then uses it for every request to the host, so keep the token in it valid.`;
     case 'ansible-galaxy.install.collection':
       return $localize`:@@setup.snippet.ansible-install:Installs a collection through this repository once the client is configured. Replace the collection name with yours.`;
     case 'ansible-galaxy.install.requirements':

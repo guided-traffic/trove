@@ -35,8 +35,8 @@ test('E2.13 R-UI-049 the guide of a virtual repository, and its configure snippe
     await page.getByRole('menuitem', { name: 'Guides', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Guides', level: 1 })).toBeVisible();
     const formats = page.getByRole('group', { name: 'Package type' });
-    // The catalog is ordered by name, so the first format (Debian, since T-17) opens checked; generic is chosen here.
-    await expect(formats.getByRole('radio', { name: 'Debian (APT)', exact: true })).toBeChecked();
+    // The catalog is ordered by name, so the first format (Ansible Galaxy, since F0) opens checked; generic is chosen here.
+    await expect(formats.getByRole('radio', { name: 'Ansible Galaxy', exact: true })).toBeChecked();
     await formats.getByRole('radio', { name: 'Generic', exact: true }).check();
     await expect(page.getByRole('group', { name: 'Client' }).getByRole('radio', { name: 'curl', exact: true })).toBeVisible();
     await formats.getByRole('radio', { name: 'npm', exact: true }).check();

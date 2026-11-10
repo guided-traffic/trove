@@ -1,6 +1,6 @@
 # Connecting a package client
 
-How to point npm, pnpm, Yarn, the .NET CLI, nuget.exe, Visual Studio, the Docker CLI, Podman, APT and curl at a trove repository, sign them in with a token from an environment variable, and install, publish and maintain packages and files through it. The page explains the concepts and the places in the UI that give you the exact configuration of your installation: the Client setup page, the Guides area and the How to use tab of a repository.
+How to point npm, pnpm, Yarn, the .NET CLI, nuget.exe, Visual Studio, the Docker CLI, Podman, APT, ansible-galaxy and curl at a trove repository, sign them in with a token from an environment variable, and install, publish and maintain packages and files through it. The page explains the concepts and the places in the UI that give you the exact configuration of your installation: the Client setup page, the Guides area and the How to use tab of a repository.
 
 ## Where the instructions are
 
@@ -36,8 +36,9 @@ Every repository belongs to a project, and has one client address, built from th
 | Generic | `<base URL>/files/<project key>/<repository key>/` | `https://trove.example.com/files/web/generic-local/` |
 | OCI (Docker) | `<host>/<project key>/<repository key>` as the start of every image reference, without a scheme | `trove.example.com/web/docker/team/app:1.0` |
 | Debian (APT) | `<base URL>/api/deb/<project key>/<repository key>/`, the URI of the source, with the suite named beside it | `https://trove.example.com/api/deb/web/deb-local/` |
+| Ansible Galaxy | `<base URL>/api/ansible/<project key>/<repository key>/`, the `url` of the server in `ansible.cfg` | `https://trove.example.com/api/ansible/web/ansible-local/` |
 
-The trailing slash belongs to the address of npm, Debian and generic repositories; a NuGet address ends in `index.json`; a container image reference names the host and no scheme ([Container images with Docker and Podman](container-images.md)). Two projects can each have a repository of the same key, so the project key is always part of the address; a repository that an administrator moves to another project gets a new address, and the old one answers `404`. Which class of repository to use:
+The trailing slash belongs to the address of npm, Debian, Ansible Galaxy and generic repositories; a NuGet address ends in `index.json`; a container image reference names the host and no scheme ([Container images with Docker and Podman](container-images.md)). Two projects can each have a repository of the same key, so the project key is always part of the address; a repository that an administrator moves to another project gets a new address, and the old one answers `404`. Which class of repository to use:
 
 - **Virtual** repositories are the recommended address: internal and public packages through one address and one credential. A publish through a virtual repository goes to its deployment target, a local member.
 - **Local** repositories hold what your teams publish and serve nothing else.
@@ -240,3 +241,7 @@ This page explains the concepts; the guide of your installation gives the exact 
 - a **Troubleshooting** table with the error codes of the protocol and what to do about each.
 
 When something goes wrong, start with [Errors and troubleshooting](troubleshooting.md).
+
+## Configure ansible-galaxy
+
+For an Ansible Galaxy repository the **Configure** tab renders an `ansible.cfg` with the repository as the server `trove`, the token as the environment variable `ANSIBLE_GALAXY_SERVER_TROVE_TOKEN` (also for PowerShell and cmd), and a `~/.netrc` line that roles need. The **Install** tab renders `ansible-galaxy collection install` and a `requirements.yml`, and **Publish** renders `ansible-galaxy collection publish`. See [Ansible collections and roles with ansible-galaxy](ansible-collections.md).

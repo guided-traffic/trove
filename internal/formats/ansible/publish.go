@@ -2,6 +2,7 @@ package ansible
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"io"
@@ -146,7 +147,7 @@ func (f *Format) readPublish(ctx context.Context, rq *formats.Request, rep *repl
 			if sp != nil {
 				return nil, "", invalidRequest("The publish has the part file twice.")
 			}
-			if sp, err = rq.Host.Ingest().Spool(ctx, rq, part, opts); err != nil {
+			if sp, err = rq.Host.Ingest().Spool(ctx, rq, filePartBody(part), opts); err != nil {
 				return nil, "", ioError(err)
 			}
 		case "sha256":
@@ -168,6 +169,17 @@ func (f *Format) readPublish(ctx context.Context, rq *formats.Request, rep *repl
 		return nil, "", invalidRequest("The part sha256 of the publish is not 64 hexadecimal digits.")
 	}
 	return sp, declared, nil
+}
+
+// filePartBody is the bytes of the file part. ansible-core sends the archive base64-encoded with Content-Transfer-Encoding: base64
+// (prepare_multipart of ansible.module_utils.urls, verified with the clients of the e2e set), lines of 76 characters; the multipart
+// reader decodes quoted-printable by itself and leaves base64 alone, so the digest and the archive would be those of the encoded text.
+// A part without that header is the raw archive, which curl and the documentation send.
+func filePartBody(part *multipart.Part) io.Reader {
+	if strings.EqualFold(strings.TrimSpace(part.Header.Get("Content-Transfer-Encoding")), "base64") {
+		return base64.NewDecoder(base64.StdEncoding, part)
+	}
+	return part
 }
 
 func isHexDigest(s string) bool {

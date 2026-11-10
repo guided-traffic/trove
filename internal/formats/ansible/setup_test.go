@@ -75,19 +75,20 @@ func TestR_ANS_025_TheTokenIsAnEnvironmentVariableAndNeverInTheConfigFile(t *tes
 	}
 }
 
-// TestR_ANS_025_TheNetrcLineNamesTheHostAlone: the machine of the ~/.netrc line is the host name of the repository address without
-// scheme, port or path, because the client looks it up by host name (R-ANS-015, Q-ANS-48).
-func TestR_ANS_025_TheNetrcLineNamesTheHostAlone(t *testing.T) {
+// TestR_ANS_025_TheNetrcSnippetIsACommandThatNamesTheHostAlone: the machine of the ~/.netrc line is the host name of the repository
+// address without scheme, port or path, because the client looks it up by host name (R-ANS-015, Q-ANS-48), and the line is written by a
+// command that expands the token reference itself: netrc expands no variable, so a file with the reference would hold it as the password.
+func TestR_ANS_025_TheNetrcSnippetIsACommandThatNamesTheHostAlone(t *testing.T) {
 	tpl := templateByID(t, "ansible-galaxy.netrc.configure")
 	got := renderSetup(t, tpl, setupData(true))
-	want := "machine trove.example.com login trove password " + formats.SetupTokenRef + "\n"
+	want := "printf 'machine %s login trove password %s\\n' trove.example.com \"" + formats.SetupTokenRef + "\" >>~/.netrc\n"
 	if !strings.Contains(got, want) {
 		t.Errorf("netrc = %q, want a line %q", got, want)
 	}
-	if tpl.File != "~/.netrc" {
-		t.Errorf("file = %q", tpl.File)
+	if tpl.Lang != "shell" || tpl.File != "" {
+		t.Errorf("the netrc snippet is %q in the file %q, want a shell command", tpl.Lang, tpl.File)
 	}
-	if open := renderSetup(t, tpl, setupData(false)); strings.Contains(open, "machine") {
+	if open := renderSetup(t, tpl, setupData(false)); strings.Contains(open, "printf") {
 		t.Errorf("an anonymous repository gets a netrc entry: %q", open)
 	}
 }

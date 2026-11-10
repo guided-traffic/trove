@@ -19,9 +19,10 @@ Readers on GitHub can browse the same files here.
 6. [Connecting a package client](user/client-setup.md)
 7. [Container images with Docker and Podman](user/container-images.md)
 8. [Debian packages with APT](user/apt-packages.md)
-9. [Personal access tokens](user/access-tokens.md)
-10. [GitLab CI pipelines](user/gitlab-ci-pipelines.md)
-11. [Errors and troubleshooting](user/troubleshooting.md)
+9. [Ansible collections and roles with ansible-galaxy](user/ansible-collections.md)
+10. [Personal access tokens](user/access-tokens.md)
+11. [GitLab CI pipelines](user/gitlab-ci-pipelines.md)
+12. [Errors and troubleshooting](user/troubleshooting.md)
 
 ## Administrator guide
 
@@ -39,15 +40,16 @@ Readers on GitHub can browse the same files here.
 12. [Managing repositories](admin/repositories.md)
 13. [Container image repositories](admin/container-repositories.md)
 14. [Debian (APT) repositories](admin/apt-repositories.md)
-15. [Importing from another registry](admin/import.md)
-16. [Advisory sources](admin/vulnerability-sources.md)
-17. [Security dashboard](admin/security-dashboard.md)
-18. [Admin dashboard](admin/dashboard.md)
-19. [Monitoring and operations](admin/operations.md)
-20. [Backup and restore](admin/backup-and-restore.md)
-21. [Runbook](admin/runbook.md)
-22. [Upgrades](admin/upgrades.md)
-23. [Known limitations](admin/limitations.md)
+15. [Ansible Galaxy repositories](admin/ansible-repositories.md)
+16. [Importing from another registry](admin/import.md)
+17. [Advisory sources](admin/vulnerability-sources.md)
+18. [Security dashboard](admin/security-dashboard.md)
+19. [Admin dashboard](admin/dashboard.md)
+20. [Monitoring and operations](admin/operations.md)
+21. [Backup and restore](admin/backup-and-restore.md)
+22. [Runbook](admin/runbook.md)
+23. [Upgrades](admin/upgrades.md)
+24. [Known limitations](admin/limitations.md)
 
 The order of these two lists is the order of the manual in the UI; a test in
 [internal/manual](../../internal/manual/) fails when this page and the embedded contents disagree.

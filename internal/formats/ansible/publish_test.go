@@ -3,8 +3,14 @@ package ansible
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"io"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"strings"
 	"testing"
 
@@ -74,6 +80,40 @@ func TestR_ANS_008_APublishIsAcceptedInEitherOrderOfParts(t *testing.T) {
 				t.Errorf("version: status %d", v.Code)
 			}
 		})
+	}
+}
+
+// TestR_ANS_008_AFilePartInBase64IsDecodedAsAnsibleCoreSendsIt: ansible-core encodes the archive in the file part as base64 in lines of 76
+// characters and says so in Content-Transfer-Encoding (prepare_multipart); the stored archive and its digest are the decoded bytes.
+func TestR_ANS_008_AFilePartInBase64IsDecodedAsAnsibleCoreSendsIt(t *testing.T) {
+	h := newHost(t)
+	archive := collectiontest.Build(collectionSpec("1.0.0"))
+	sum := sha256.Sum256(archive)
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	_ = mw.WriteField("sha256", hex.EncodeToString(sum[:]))
+	hdr := textproto.MIMEHeader{}
+	hdr.Set("Content-Type", "application/octet-stream")
+	hdr.Set("Content-Transfer-Encoding", "base64")
+	hdr.Set("Content-Disposition", `form-data; name="file"; filename="acme-tools-1.0.0.tar.gz"`)
+	fw, _ := mw.CreatePart(hdr)
+	enc := base64.StdEncoding.EncodeToString(archive)
+	for len(enc) > 76 {
+		_, _ = io.WriteString(fw, enc[:76]+"\n")
+		enc = enc[76:]
+	}
+	_, _ = io.WriteString(fw, enc+"\n")
+	_ = mw.Close()
+	r, err := h.Serve(context.Background(), http.MethodPost, "v3/artifacts/collections/", &body, false,
+		func(r *http.Request) { r.Header.Set("Content-Type", mw.FormDataContentType()) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task := taskOf(t, h, r); task["state"] != "completed" {
+		t.Errorf("task = %v", task)
+	}
+	if v := get(t, h, "v3/collections/acme/tools/versions/1.0.0/"); !strings.Contains(v.Body.String(), hex.EncodeToString(sum[:])) {
+		t.Errorf("the stored version does not carry the digest of the decoded archive: %s", v.Body.String())
 	}
 }
 

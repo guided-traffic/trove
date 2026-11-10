@@ -347,7 +347,9 @@ query parameter `sha256`) for a scripted publish with `curl --data-binary`, with
    streams the `file` part into the spool without buffering it (R-ARCH-014) and bounds the preamble as the NuGet push does. A missing
    part is 400 `invalid_request`. The part `sha256` is compared with the digest of the spooled bytes **before the archive is
    inspected**: a mismatch is 400 `sha256_mismatch` and nothing is stored. Without the part the upload is accepted (a plain `PUT`
-   has none).
+   has none). ansible-core sends the `file` part base64-encoded with `Content-Transfer-Encoding: base64`, in lines of 76 characters
+   ([Q-ANS-53](#q-ans-53--a-file-part-with-content-transfer-encoding-base64-is-decoded-while-it-is-spooled)), so the handler decodes such a part while it spools it; the digest, the size limits and the stored archive are those of the decoded
+   bytes. A part without the header is the raw archive (curl, the documentation).
 2. **Inspection** (R-ANS-010) reads identity and metadata from the archive. An archive that cannot be a collection archive is
    recorded as a **failed import task** (R-ANS-009), not as an HTTP error, so that the client prints Galaxy's own failure text.
 3. **Authorization** of the identity the archive declares (`deploy` on `<ns>.<name>` and the archive path), ownership of the name
@@ -889,7 +891,7 @@ The setup templates (R-API-030) and the guide (R-UI-049) of the format ([Q-ANS-2
 |---|---|---|---|
 | `ansible-galaxy.ansible-cfg.configure` | configure | `ansible.cfg`, ini | `[galaxy]` `server_list = trove` and `[galaxy_server.trove]` `url=<repo URL>`; the token line is **not** written (below) |
 | `ansible-galaxy.token-env.configure`, `ansible-galaxy.token-env-powershell.configure`, `ansible-galaxy.token-env-cmd.configure` | configure | shell, PowerShell, cmd | `export ANSIBLE_GALAXY_SERVER_TROVE_TOKEN="${TROVE_TOKEN}"` and the forms of the other two shells; for a repository that is not anonymously readable, else a comment that none is needed |
-| `ansible-galaxy.netrc.configure` | configure | `~/.netrc`, ini | `machine <host name> login trove password ${TROVE_TOKEN}` (the host name alone, by the template function `hostname`) with a hint to `chmod 600` (needed for roles, R-ANS-015); for a repository that is not anonymously readable |
+| `ansible-galaxy.netrc.configure` | configure | shell | `touch ~/.netrc && chmod 600 ~/.netrc` and a `printf` that appends `machine <host name> login trove password ${TROVE_TOKEN}` (the host name alone, by the template function `hostname`); a command and not a file, because netrc expands no variable (needed for roles, R-ANS-015; Q-ANS-54); for a repository that is not anonymously readable |
 | `ansible-galaxy.collection.install` | install | shell | `ansible-galaxy collection install <package>` with the version spec `:<version>`; the package placeholder is the collection |
 | `ansible-galaxy.requirements.install` | install | yaml, `requirements.yml` | `collections:` with the package, `source: trove` naming the server and the version as a key of the entry; the `roles:` example is a comment (remote and virtual repositories only) |
 | `ansible-galaxy.collection.publish` | publish | shell | `ansible-galaxy collection publish <archive> --server <repo URL> --token=${TROVE_TOKEN}`, shown only to a caller who holds `deploy` on the publish target |
@@ -2003,7 +2005,36 @@ The role index is never read. The hub's index is listed with the exchanged token
 
 **Applied in the spec:** R-ANS-021.
 
-## What this does not cover
+### Q-ANS-53 · A file part with Content-Transfer-Encoding base64 is decoded while it is spooled
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Decode a `file` part that says `Content-Transfer-Encoding: base64` while it streams into the spool (chosen) | `base64.NewDecoder` over the part; the digest, the size limit and the inspection see the decoded bytes | It is what the real client sends: `prepare_multipart` of ansible-core 2.17 and 2.21 encodes the archive as base64 in lines of 76 characters (the first run of the e2e set against the local class answered 400 `sha256_mismatch` for every `ansible-galaxy collection publish`, because the digest was that of the encoded text); streaming, no buffering | A body is a third larger on the wire than the archive; `ansible.max_archive_bytes` bounds the decoded bytes, the system upload limit the encoded ones |
+| (b) Accept only raw parts | | Nothing to build | No real client can publish |
+| (c) Ask the client to change | | | Not in our hands |
+
+**Choice:** (a). **Rationale:** the integration tests of the local class sent raw parts, the way the specification described the request; the real
+client was first seen by the e2e set. Revisit if a client sends another transfer encoding (the multipart reader of the standard library decodes
+quoted-printable by itself).
+
+**Applied in the spec:** R-ANS-008.
+
+### Q-ANS-54 · The netrc snippet is a command that appends the line
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A shell command: `printf 'machine %s login trove password %s\n' <host> "${TROVE_TOKEN}" >>~/.netrc` after `touch` and `chmod 600` (chosen) | The shell expands the reference | A netrc file expands no variable; the pasted file of the first version held the reference as the password, the client sent it as Basic in place of its Token header, and every request answered 401 (seen in the e2e set with ansible-core 2.17 and 2.21) | One more way to write a credential into a file, as the Debian snippet does for `auth.conf` |
+| (b) A file snippet with the reference | | Matches the table of R-ANS-025 as first written | Never works |
+| (c) A placeholder the reader replaces | | | A line that is wrong until edited |
+
+**Choice:** (a). **Rationale:** the only form that works. The finding behind it is also a fact about the client: a netrc line for the host wins over the
+`Token` header for every request, so the guide says to keep the token in it valid. Revisit if ansible-core stops preferring netrc.
+
+**Applied in the spec:** R-ANS-025, R-ANS-015.
 
 ## What this does not cover
 
@@ -2146,3 +2177,17 @@ The guide says what `ansible-galaxy` caches (`~/.ansible/galaxy_cache`, `--clear
 role with a Git source bypasses trove. They are read from the documentation and the source (the verification table above); the tests prove the
 install, publish and credential paths, not these sentences. Live for the cache statement: a client release that renames the flag makes the
 guide wrong without a test failing.
+
+### H-867 · A ~/.netrc line for the host wins over the token for every request
+
+ansible-core 2.17 and 2.21 use a netrc line of the host for every request to it and send Basic in place of their `Token` header (seen in the
+e2e set: a line that held a wrong password turned every install into a 401 although the token in the environment was right). The setup writes
+the line because roles need it (R-ANS-015), and trove cannot change the order of the client. Live for a user who keeps an old or wrong line
+for the host; the guide and the manual say so, and no check of trove can see it, because the request arrives with the wrong credential.
+
+### H-868 · The virtual and mirror rows of the end-to-end set are written and skipped
+
+`TestAnsibleVirtual` and `TestAnsibleMirror` are listed in the set with a skip that names the work package they wait for (the virtual class
+and the mirror of the remote class). Until they are written and run, nothing proves with the real clients that a virtual repository merges
+local and remote versions, that a publish through it reaches the deploy target, or that installs after a mirror pass cost the upstream nothing.
+Live until the classes land.

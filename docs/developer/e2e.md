@@ -3935,7 +3935,7 @@ dispatch (`-f sets=e2e-edge,e2e-alerts`). A red leg is a finding, not a blocker 
 
 ## The Ansible tests
 
-The Ansible Galaxy registry ([R-ANS-032](../spec/formats/ansible.md#r-ans-032--test-suites), Q-ANS-23) has a set of its own, `ansible`, with the real `ansible-galaxy`. This page describes what exists; the tests themselves are listed with the set as they land.
+The Ansible Galaxy registry ([R-ANS-032](../spec/formats/ansible.md#r-ans-032--test-suites), Q-ANS-23) has a set of its own, `ansible`, with the real `ansible-galaxy`. The set runs in the scatter profile (three packages replicas, every request to another one) against the counting Galaxy test upstream of [ansible-remote.md](ansible-remote.md) and the two client pods below. Every command of a test runs in a clean home, with an `ansible.cfg` the test writes, or with the snippets the client setup API renders, pasted unchanged. The collections are built in the pod with `ansible-galaxy collection init` and `build`.
 
 ### The Ansible clients
 
@@ -3954,7 +3954,24 @@ The tag of an image pin is the Python the release runs on and never moves ([reno
 | what the image adds | `curl` (the upload through `/files/`), the forwarder, the entrypoint, and `trove-clean` ([clean.sh](../../test/e2e/ansibleclients/clean.sh)): it runs a command in a new home that is removed afterwards, so that no `ansible.cfg`, `~/.netrc`, galaxy cache or installed collection of an earlier scenario reaches it |
 | trust | the pod's environment sets `SSL_CERT_FILE` to the mounted dev CA; `ansible-galaxy` has no CA option and uses the default verify paths of Python. Nothing is baked into an image |
 | pods | [deploy/dev/ansible-clients.yaml](../../deploy/dev/ansible-clients.yaml), rendered once per image with `sed` by [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) (marker `F0 ansible`): pods `trove-e2e-ansible-<core217\|core221>` in the namespace `trove-e2e-ansible` (Pod Security `baseline`), on the control-plane node, no ServiceAccount token, no credential. The dev CA is the ConfigMap `trove-e2e-ansible-ca` |
-| tests | [ansible_clients_test.go](../../test/e2e/ansible_clients_test.go): `ansiblePod`, `ansibleTry` (a script in a clean home through `kubectl exec`), `ansibleEdge`, and `TestAnsibleClients` |
+| tests | [ansible_clients_test.go](../../test/e2e/ansible_clients_test.go): `ansiblePod`, `ansibleTry` (a script in a clean home through `kubectl exec`), `ansibleEdge`, and `TestAnsibleClients`; the harness is [ansible_env_test.go](../../test/e2e/ansible_env_test.go) |
+
+### The Ansible tests
+
+Each test runs for both clients. R-ANS identifiers are in the names of the subtests.
+
+| Test | File | What it proves |
+|---|---|---|
+| `TestAnsibleClients` | [ansible_clients_test.go](../../test/e2e/ansible_clients_test.go) | each pod runs the ansible-core release and the Python its pins name, verifies the edge's certificate with the dev CA, and starts every command in a clean home |
+| `TestAnsibleLocal` | [ansible_local_test.go](../../test/e2e/ansible_local_test.go) | `collection publish` prints the import messages; `install` of a collection and its dependency six times over random replicas; a `requirements.yml` with a pinned version and a range; a retry of the same archive succeeds and leaves one version; other bytes under an existing version are refused and the version list stays; the discovery document of a local repository lists `v3` and no `v1` |
+| `TestAnsibleAuth` | [ansible_auth_test.go](../../test/e2e/ansible_auth_test.go) | a publish with `--token`; an install with `token=` in `ansible.cfg`, with the variable of the server (which beats a wrong `token=`) and with a username and the token as the password; a wrong token and no token are refused with the client's 401; a publish without a token is refused |
+| `TestAnsibleRemote` | [ansible_remote_test.go](../../test/e2e/ansible_remote_test.go) | `acme.tools` and its dependency through a remote over the stub; the second client costs the upstream no request; a pinned version; a role (with the netrc line) and a collection of one `requirements.yml`; the second client's role install costs the upstream no request; a role archive without the netrc line fails with 401; the role version on an unlisted host is not offered |
+| `TestAnsibleDigest` | [ansible_digest_test.go](../../test/e2e/ansible_digest_test.go) | the stub's `wrong_digest` archive is refused, nothing is installed, and the install succeeds once the upstream is right again |
+| `TestAnsibleSnippets` | [ansible_snippets_test.go](../../test/e2e/ansible_snippets_test.go) | the configure, install, requirements and publish snippets the setup API renders work when pasted |
+| `TestAnsibleVirtual`, `TestAnsibleMirror` | [ansible_virtual_test.go](../../test/e2e/ansible_virtual_test.go), [ansible_mirror_test.go](../../test/e2e/ansible_mirror_test.go) | listed, and skipped with their reason until the virtual class and the mirror are built |
+| `TestAnsibleClosing` | [ansible_closing_test.go](../../test/e2e/ansible_closing_test.go) | with Valkey stopped, a publish and installs through a local repository and an install through a remote (CI: the leg `ansible-closing` of a `closing=true` dispatch) |
+
+The browser journey is [20-ansible.spec.ts](../../web/e2e/tests/20-ansible.spec.ts): the setup page, the guide of a local repository and the two tabs.
 
 ### Running the Ansible clients
 
@@ -3965,7 +3982,12 @@ make e2e SET=ansible-clients-down  # remove the pods and their namespace
 make ansible-clients-image         # only build the two images into the local Docker
 ```
 
-`TROVE_E2E_ANSIBLE_CLIENTS_TARGET` and `TROVE_E2E_ANSIBLE_CLIENTS_IMAGE_BUILD=0` act as for the other client pods. The set `ansible` (`TROVE_E2E_ANSIBLESTUB=1` deploys the counting Galaxy test upstream of [ansible-remote.md](ansible-remote.md)) and `ansible-closing` are selected in the same marker; their tests are written with the scenarios.
+`TROVE_E2E_ANSIBLE_CLIENTS_TARGET` and `TROVE_E2E_ANSIBLE_CLIENTS_IMAGE_BUILD=0` act as for the other client pods. The set `ansible` (`TROVE_E2E_ANSIBLESTUB=1` deploys the counting Galaxy test upstream of [ansible-remote.md](ansible-remote.md)) and `ansible-closing` are selected in the same marker. CI runs `ansible` as the job `e2e (ansible)` of Test and Release on every change that touches the format; it does not hold Semantic Release back.
+
+```shell
+make e2e SET=ansible          # every TestAnsible... and TestAnsibleClients
+make e2e SET=ansible-closing  # TestAnsibleClosing: Valkey stopped (needs the closing run)
+```
 
 ## Extension checklist
 

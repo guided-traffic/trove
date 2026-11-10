@@ -51,6 +51,7 @@ Your client reaches a repository at an address built from the installation's add
 | Generic | `https://trove.example.com/files/<project>/<key>/` | the same |
 | OCI (Docker) | `trove.example.com/<project>/<key>/<image>:<tag>`, an image reference without a scheme | `https://trove.example.com/files/<project>/<key>/` (download and delete; uploads go through the registry) |
 | Debian (APT) | `https://trove.example.com/api/deb/<project>/<key>/`, with a suite in the source line | `https://trove.example.com/files/<project>/<key>/` (download and delete; uploads go to `upload/<file>` of the APT address) |
+| Ansible Galaxy | `https://trove.example.com/api/ansible/<project>/<key>/`, the `url` of a server in `ansible.cfg` | none: collections are published with `ansible-galaxy collection publish` |
 
 The **Set up client** tab of a repository shows these addresses for your installation, so you do not have to build them yourself. A repository that an administrator moves to another project changes its address: the old address answers `404`, and your client configuration needs the new one.
 
@@ -62,6 +63,7 @@ The **Set up client** tab of a repository shows these addresses for your install
 | NuGet | Local, remote, virtual | .NET CLI (dotnet), NuGet CLI (nuget.exe), Visual Studio | **Packages** and **Browse** |
 | OCI (Docker) | Local, remote, virtual | Docker CLI (with Buildx), Podman; Kubernetes through an image pull secret | **Packages** (an image name is a package, a tag a version) and **Browse** |
 | Debian (APT) | Local, remote, virtual | APT (apt, apt-get) on Debian and Ubuntu | **Packages** (a binary package name is a package) and **Browse** |
+| Ansible Galaxy | Local, remote | ansible-galaxy (ansible-core 2.17 and 2.21) | **Packages** (a collection is a package) and **Browse** |
 | Generic | Local | curl | **Browse** only: generic files have no package names, so they are not listed under **Packages** |
 
 Generic repositories store files of any kind at paths you choose: installers, archives, documents, build outputs. OCI repositories hold container images and other OCI artifacts; [Container images with Docker and Podman](container-images.md) explains them. Debian repositories are APT repositories with signed indexes; [Debian packages with APT](apt-packages.md) explains them. Other formats are not built yet; see [Known limitations](../admin/limitations.md).
