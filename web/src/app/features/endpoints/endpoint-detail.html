@@ -39,42 +39,30 @@
   }
 
   @if (e.configuration; as c) {
-    <section class="card" aria-labelledby="ep-config">
-      <h2 id="ep-config" i18n="@@ep.config.heading">Configuration</h2>
-      <p class="hint" i18n="@@ep.config.hint">Read-only: this comes from the configuration file.</p>
-      <dl class="facts">
-        <dt i18n="@@ep.col.base-url">Base URL</dt>
-        <dd translate="no">{{ c.baseUrl }}</dd>
-        <dt i18n="@@ep.col.hosts">Hosts</dt>
-        <dd translate="no">
-          {{ c.hosts.join(', ') }}{{ c.wildcardHost ? ', ' + c.wildcardHost : '' }}
-        </dd>
-        <dt i18n="@@ep.col.port">Port</dt>
-        <dd translate="no">{{ c.port ?? '–' }}</dd>
-        <dt i18n="@@ep.col.surface">Surface</dt>
-        <dd translate="no">{{ c.surface.join(', ') }}</dd>
-        <dt i18n="@@ep.col.mode">Exposure</dt>
-        <dd translate="no">{{ c.exposure }}</dd>
-        <dt i18n="@@ep.col.credentials">Accepted credentials</dt>
-        <dd translate="no">
-          {{ c.auth.tokenTypes.join(', ') }}{{ c.auth.boundTokensOnly ? ' (bound only)' : ''
-          }}{{ c.auth.anonymous ? ', anonymous' : '' }}
-        </dd>
-        <dt i18n="@@ep.col.pool">Pool</dt>
-        <dd translate="no">{{ c.pool ?? '–' }}</dd>
-        <dt i18n="@@ep.col.rate-limit">Rate limit</dt>
-        <dd translate="no">
-          @if (c.rateLimit; as r) {
-            {{ r.class }}: {{ r.requestsPerSecond }}/s, burst {{ r.burst }}, per {{ r.key }}
-          } @else {
-            –
-          }
-        </dd>
-      </dl>
-    </section>
+    <div class="settings">
+      <trove-text-field i18n-label="@@ep.col.base-url" label="Base URL" name="baseUrl" [value]="c.baseUrl" [readonly]="true" />
+      <div class="row">
+        <trove-text-field i18n-label="@@ep.col.mode" label="Exposure" name="exposure" [value]="c.exposure" [readonly]="true" />
+        <trove-text-field i18n-label="@@ep.col.surface" label="Surface" name="surface" [value]="c.surface.join(', ')" [readonly]="true" />
+      </div>
+      <trove-settings-section
+        i18n-heading="@@ep.config.heading"
+        heading="Configuration"
+        i18n-description="@@ep.config.hint"
+        description="Read-only: this comes from the configuration file."
+      >
+        <trove-text-field i18n-label="@@ep.col.hosts" label="Hosts" name="hosts" [value]="hostsText(c)" [readonly]="true" />
+        <div class="row">
+          <trove-text-field i18n-label="@@ep.col.port" label="Port" name="port" [value]="c.port === null || c.port === undefined ? '–' : '' + c.port" [readonly]="true" />
+          <trove-text-field i18n-label="@@ep.col.pool" label="Pool" name="pool" [value]="c.pool ?? '–'" [readonly]="true" />
+        </div>
+        <trove-text-field i18n-label="@@ep.col.credentials" label="Accepted credentials" name="credentials" [value]="credentialsText(c)" [readonly]="true" />
+        <trove-text-field i18n-label="@@ep.col.rate-limit" label="Rate limit" name="rateLimit" [value]="rateLimitText(c)" [readonly]="true" />
+      </trove-settings-section>
+    </div>
   }
 
-  <section aria-labelledby="ep-rules">
+  <section class="rules" aria-labelledby="ep-rules">
     <h2 id="ep-rules" i18n="@@ep.rules.heading">Exposure rules</h2>
     @if (actionFailure(); as f) {
       <trove-error-notice [error]="f" />

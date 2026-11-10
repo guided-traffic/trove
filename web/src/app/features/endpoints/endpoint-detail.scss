@@ -9,3 +9,18 @@
   gap: var(--trove-space-2);
   min-block-size: 24px;
 }
+
+.settings {
+  max-inline-size: 56rem;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--trove-space-6);
+}
+
+.rules {
+  padding-block-start: var(--trove-space-5);
+  border-block-start: 1px solid var(--trove-border);
+}

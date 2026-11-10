@@ -3818,7 +3818,8 @@ Priority: **MVP** · Covers: UI-035, UI-036
 - List: username, display name, email, origin (identity provider, administrator-created, SCIM,
   break-glass), status, last login; filters text, status, origin, group, administrator (filter
   panel); the user name column sorts (`sort=username`, `-username`).
-- Detail: identities (provider and subject, read-only and copyable); attributes from the identity
+- Detail ([Q-UI-223](#q-ui-223--the-user-the-endpoint-and-the-service-account-and-group-lists-follow-the-guide)): display name and email edited in place with "Save changes" (an administrator's correction lasts until the next login), ID and origin as
+  read-only fields; identities (provider and subject, read-only and copyable); attributes from the identity
   provider, read-only and labelled as such; status with "Disable" (choice to revoke tokens) and
   "Enable"; group memberships (identity-provider-sourced read-only with a badge, manual ones
   editable); system roles through role bindings (R-API-033) with the last-administrator guard; the
@@ -9519,13 +9520,45 @@ Context: the style guide ([Settings pages](../developer/ui-style-guide.md#settin
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) Move the four pages whose form is a short list of fields; leave the repository's settings and the user page (chosen) | General and authentication settings, service account and group follow the guide; the others stay on the list of the style guide | Each moved page is complete and tested; the repository's settings are a tabbed editor of 300 lines with a stored-document view and a move dialog, which needs its own design | Two screens still show the old card |
+| (a) Move the four pages whose form is a short list of fields; leave the repository's settings and the user page (chosen at first; the user page, the endpoint, issuer and policy pages and the lists of the group page followed in [Q-UI-223](#q-ui-223--the-user-the-endpoint-and-the-service-account-and-group-lists-follow-the-guide) and [Q-UI-224](#q-ui-224--the-policy-editor-and-the-issuer-page-keep-their-structure-and-lose-the-cards-and-the-delete-in-the-header)) | General and authentication settings, service account and group follow the guide; the others stay on the list of the style guide | Each moved page is complete and tested; the repository's settings are a tabbed editor of 300 lines with a stored-document view and a move dialog, which needs its own design | Two screens still show the old card |
 | (b) Move all five and the user page | Everything follows the guide | No page left over | A tabbed editor cannot be a column of three sections without deciding what its tabs become; done in one change it would be decided in haste |
 | (c) Move nothing until the owner shows the reference's repository settings | Wait | No guess | Four pages that are plainly a list of fields stay behind |
 
 **Choice:** (a), with these rules for a page with more than one save button: the label is **Save changes** and carries the group in a visually hidden suffix, `Save changes (banner)`, so that two buttons of one page have two accessible names; the group's save sends only the members of its group (the authentication settings are one document with one ETag, and saving the token lifetimes never carries an unsaved edit of the anonymous switch); a group that holds a state which must not be missed opens by itself (the maintenance mode while it is on). **Rationale:** a name that is the same on every button cannot be told apart by a screen reader or a browser test. The development agent would revisit the suffix if the owner prefers section titles in the visible label.
 
-**Applied in the spec:** R-UI-026, R-UI-031, R-UI-033, R-UI-025. Code: `GeneralSettings`, `AuthSettings`, `ServiceAccountDetail`, `GroupDetail`. The group page no longer shows the creation time (it was in the card of facts); the service-account page keeps it under Details.
+**Applied in the spec:** R-UI-026, R-UI-031, R-UI-033, R-UI-025. Code: `GeneralSettings`, `AuthSettings`, `ServiceAccountDetail`, `GroupDetail`. The group page keeps the creation time as a read-only field (the style guide asks for a value that cannot change to be one, and does not ask for it to go; it was dropped by mistake in the first change and restored in [Q-UI-223](#q-ui-223--the-user-the-endpoint-and-the-service-account-and-group-lists-follow-the-guide)); the service-account page keeps it under Details.
+
+### Q-UI-223 · The user, the endpoint and the service-account and group lists follow the guide
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: [Q-UI-222](#q-ui-222--which-settings-pages-are-one-column-now-and-what-a-sections-save-button-is-called) left the user page, the endpoint page and the lists on the group and service-account pages as cards. The coordinator asked for all of them except the repository's settings.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Fields in place, facts that cannot change as read-only fields, the lists as sections (chosen) | User: display name and email edited in place with **Save changes** (disabled until a change), ID and origin read-only fields, **Details**, **Identities**, **Groups**, **Sessions** and **Advanced** (disable or enable, unlock, delete) as sections, the tokens and the roles between them. Endpoint: base URL, exposure and surface as read-only fields at the top, the rest of the configuration in a section, the rule table below. Group: members, roles and policies are sections, **Members** open. | The same rules as the pages already moved; nothing a screen showed is lost | The Delete of a user and the disable are one section further away than a button row |
+| (b) Keep the lists as cards beside the moved fields | Mixed look on one page | Smaller change | A page with a column of fields and boxes under it |
+| (c) Show the endpoint's configuration as a collapsed section only | One section | Short | The base URL and the exposure mode, which a reader looks for first, would be hidden |
+
+**Choice:** (a). The user's attribute note stays: name and email come from the identity provider and are replaced at the next sign-in; the fields are read-only for a caller without `identities:write` and for the break-glass account. The endpoint's configuration comes from the configuration file and is read-only, as before. **Rationale:** the guide asks that a value that cannot change is a read-only field and that no key-value list holds what could be fields; a table or a list of rows is content and stays a table. The development agent would revisit the endpoint's split if the owner wants the whole configuration closed.
+
+**Applied in the spec:** R-UI-024, R-UI-025, R-UI-026, R-EP-017. Code: `UserDetail`, `EndpointDetail`, `GroupDetail`, `PrincipalRoles`. Tests: the `Q-UI-223` cases in [users.spec.ts](../../web/src/app/features/users/users.spec.ts) and [endpoints.spec.ts](../../web/src/app/features/endpoints/endpoints.spec.ts).
+
+### Q-UI-224 · The policy editor and the issuer page keep their structure and lose the cards and the delete in the header
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the policy editor has a table of contents, a sticky preview and a review dialog before the save; the issuer page has tabs for settings, signing keys, mappings and issued tokens. Neither is a page of settings groups the way the project's settings are, and the guide says nothing about a table of contents, a preview or tabs of different objects. They still showed cards and put a destructive action beside the main action (the policy's save bar, the issuer's header).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the structure; the groups are sections, the delete is under **Advanced**, the read-only issuer is read-only fields (chosen) | Policy: **General** at the top without a title, **Principals and actions** and **Repositories and patterns** as sections that are open at first (the table of contents opens the one it jumps to), **Advanced** with **Delete policy** last. Issuer: the Settings tab is a column of fields with **Save changes** (**Create issuer** when new), **More settings** as a section, **Advanced** with **Delete issuer**; the other tabs lose their card; an issuer of the configuration shows its settings as read-only fields | The rules of the guide hold; the editor keeps what makes it usable | The delete of an issuer is only on its Settings tab |
+| (b) Collapse every group of the policy editor | Closed by default, as a settings page | Same as the others | The groups are the document: a closed group hides what the policy grants, and the table of contents would open it |
+| (c) Redesign both | A new layout | Might be better | Needs the owner's reference; not decided here |
+
+**Choice:** (a). **Rationale:** a destructive action belongs at the end under its own sentence (the guide), and a group of fields is a section, not a box. The tabs of the issuer hold different objects (settings, keys, mappings, tokens), unlike the repository's settings, whose tabs are the groups of one document and wait for the owner's reference ([Q-UI-222](#q-ui-222--which-settings-pages-are-one-column-now-and-what-a-sections-save-button-is-called)). The development agent would revisit it if the owner wants the policy's groups closed at first.
+
+**Applied in the spec:** R-UI-027, R-UI-035. Code: `PolicyEditor`, `IssuerDetail`, `IssuerCreate`, `IssuerForm`. Tests: the `Q-UI-224` case in [policy-editor.spec.ts](../../web/src/app/features/permissions/policy-editor.spec.ts), the issuer cases of [ci-issuer-screens.spec.ts](../../web/src/app/features/ci/ci-issuer-screens.spec.ts).
 
 ### Q-API-246 · An operation that is allowed while the installation is read-only declares `x-trove-maintenance: allowed`
 

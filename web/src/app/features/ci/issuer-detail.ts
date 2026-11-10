@@ -13,6 +13,7 @@ import { IssuerForm } from './issuer-form';
 import { IssuerKeys } from './issuer-keys';
 import { MappingList } from './mapping-list';
 import { ErrorNotice } from '../../shared/error-notice';
+import { SettingsSection } from '../../shared/ui/settings-section';
 
 /** The tabs of the issuer page, in this order; the query parameter `tab` names the open one. */
 export const ISSUER_TABS = ['settings', 'keys', 'mappings', 'issuances'] as const;
@@ -26,15 +27,12 @@ export type IssuerTab = (typeof ISSUER_TABS)[number];
  */
 @Component({
   selector: 'trove-ci-issuer-detail',
-  imports: [TabContent, TabGroup, TabPage, RouterLink, ErrorNotice, IssuanceList, IssuerForm, IssuerKeys, MappingList],
+  imports: [TabContent, TabGroup, TabPage, RouterLink, ErrorNotice, IssuanceList, IssuerForm, IssuerKeys, MappingList, SettingsSection],
   template: `
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@ci.issuer.heading">CI issuer</h1>
       <a class="btn btn-tertiary" routerLink="/admin/ci" i18n="@@ci.issuer.back">All issuers</a>
       <a class="btn btn-default" [routerLink]="testLink()" i18n="@@ci.issuer.test">Test with claims</a>
-      @if (session.has('ci:write') && deletable()) {
-        <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="remove()" i18n="@@ci.issuer.delete">Delete issuer</button>
-      }
     </header>
     <p class="subject" translate="no">{{ issuer() }}</p>
 
@@ -46,15 +44,25 @@ export type IssuerTab = (typeof ISSUER_TABS)[number];
       <trove-tab-group [selectedIndex]="index()" (selectedIndexChange)="select($event)">
         <trove-tab label="Settings" i18n-label="@@ci.issuer.tab.settings">
           <ng-template troveTabContent>
-            <section class="card" aria-labelledby="ci-settings">
-              <h2 id="ci-settings" i18n="@@ci.issuer.settings">Settings</h2>
+            <div class="settings">
               <trove-ci-issuer-form [issuer]="i" [etag]="etag()" (saved)="saved($event.value, $event.etag)" />
-            </section>
+              @if (session.has('ci:write') && deletable()) {
+                <trove-settings-section
+                  i18n-heading="@@ci.issuer.advanced"
+                  heading="Advanced"
+                  i18n-description="@@ci.issuer.advanced-hint"
+                  description="Delete this issuer."
+                >
+                  <p class="muted" i18n="@@ci.issuer.delete-note">Deleting the issuer revokes the tokens issued through it and deletes its mappings.</p>
+                  <button class="btn btn-danger" type="button" [disabled]="busy()" (click)="remove()" i18n="@@ci.issuer.delete">Delete issuer</button>
+                </trove-settings-section>
+              }
+            </div>
           </ng-template>
         </trove-tab>
         <trove-tab label="Keys" i18n-label="@@ci.issuer.tab.keys">
           <ng-template troveTabContent>
-            <section class="card" aria-labelledby="ci-keys">
+            <section aria-labelledby="ci-keys">
               <h2 id="ci-keys" i18n="@@ci.issuer.keys">Signing keys</h2>
               <trove-ci-issuer-keys [issuer]="i.name" />
             </section>
@@ -62,7 +70,7 @@ export type IssuerTab = (typeof ISSUER_TABS)[number];
         </trove-tab>
         <trove-tab label="Mappings" i18n-label="@@ci.issuer.tab.mappings">
           <ng-template troveTabContent>
-            <section class="card" aria-labelledby="ci-mappings">
+            <section aria-labelledby="ci-mappings">
               <h2 id="ci-mappings" i18n="@@ci.issuer.mappings">Mappings</h2>
               <trove-ci-mapping-list [issuer]="i.name" />
             </section>
@@ -70,7 +78,7 @@ export type IssuerTab = (typeof ISSUER_TABS)[number];
         </trove-tab>
         <trove-tab label="Issuances" i18n-label="@@ci.issuer.tab.issuances">
           <ng-template troveTabContent>
-            <section class="card" aria-labelledby="ci-issuances">
+            <section aria-labelledby="ci-issuances">
               <h2 id="ci-issuances" i18n="@@ci.issuer.issuances">Issued tokens</h2>
               <trove-ci-issuance-list [issuer]="i.name" />
             </section>
@@ -80,6 +88,11 @@ export type IssuerTab = (typeof ISSUER_TABS)[number];
     }
   `,
   styleUrl: '../../shared/access/access.scss',
+  styles: `
+    .settings {
+      max-inline-size: 56rem;
+    }
+  `,
 })
 export class IssuerDetail {
   /** Route parameter `:issuer`. */
@@ -178,12 +191,16 @@ export class IssuerDetail {
       <h1 tabindex="-1" i18n="@@ci.create.heading">New CI issuer</h1>
       <a class="btn btn-tertiary" routerLink="/admin/ci" i18n="@@ci.issuer.back">All issuers</a>
     </header>
-    <section class="card" aria-labelledby="ci-create">
-      <h2 id="ci-create" i18n="@@ci.create.settings">Settings</h2>
+    <div class="settings">
       <trove-ci-issuer-form (saved)="created($event.value.name)" />
-    </section>
+    </div>
   `,
   styleUrl: '../../shared/access/access.scss',
+  styles: `
+    .settings {
+      max-inline-size: 56rem;
+    }
+  `,
 })
 export class IssuerCreate {
   private readonly router = inject(Router);

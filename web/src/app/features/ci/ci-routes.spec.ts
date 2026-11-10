@@ -59,7 +59,7 @@ describe('The routes of the CI area (R-UI-035, R-UI-036, Q-CI-26)', () => {
 
     it('R-UI-035 the tab of the issuer comes from the query', async () => {
       expect(text(await open(h, '/gitlab-com?tab=keys'))).toContain('Refresh keys');
-      expect(text(await open(h, '/gitlab-com?tab=settings'))).toContain('Save settings');
+      expect(text(await open(h, '/gitlab-com?tab=settings'))).toContain('Save changes');
     });
 
     it('R-UI-036 the claim tester takes the issuer from the path and the mapping from the query', async () => {

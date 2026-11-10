@@ -1,5 +1,6 @@
 import { Component, DestroyRef, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { Checkbox } from '../../shared/ui/checkbox';
+import { SettingsSection } from '../../shared/ui/settings-section';
 import { CI_NAME_PATTERN, CiApi, CiIssuer, CiIssuerCreate, CiIssuerInput } from '../../api/ci-api';
 import { ApiError } from '../../api/problem';
 import { Versioned } from '../../api/repositories-api';
@@ -29,7 +30,7 @@ const toLines = (text: string): string[] => splitValues(text.replace(/,/g, '\n')
  */
 @Component({
   selector: 'trove-ci-issuer-form',
-  imports: [Checkbox, ErrorNotice, TextField],
+  imports: [Checkbox, ErrorNotice, SettingsSection, TextField],
   template: `
     @if (configured()) {
       <p class="source-note" role="note">
@@ -50,42 +51,25 @@ const toLines = (text: string): string[] => splitValues(text.replace(/,/g, '\n')
 
     @if (readonly()) {
       @if (issuer(); as i) {
-        <dl class="facts">
-          <dt i18n="@@ci.form.name">Name</dt>
-          <dd translate="no">{{ i.name }}</dd>
-          <dt i18n="@@ci.form.kind">Kind</dt>
-          <dd translate="no">{{ i.kind }}</dd>
-          <dt i18n="@@ci.form.issuer">Issuer URL</dt>
-          <dd translate="no">{{ i.issuer }}</dd>
-          <dt i18n="@@ci.form.description">Description</dt>
-          <dd>{{ i.description || '–' }}</dd>
-          <dt i18n="@@ci.form.enabled">Enabled</dt>
-          <dd>{{ i.enabled ? yes : no }}</dd>
-          <dt i18n="@@ci.form.audiences">Accepted audiences</dt>
-          <dd translate="no">{{ i.allowedAudiences.join(', ') }}</dd>
-          <dt i18n="@@ci.form.exclusive">Only these audiences</dt>
-          <dd>{{ i.exclusiveAudience ? yes : no }}</dd>
-          <dt i18n="@@ci.form.algorithms">Signing algorithms</dt>
-          <dd translate="no">{{ i.allowedAlgorithms.join(', ') }}</dd>
-          <dt i18n="@@ci.form.public">Public issuer</dt>
-          <dd>{{ i.publicIssuer ? yes : no }}</dd>
-          <dt i18n="@@ci.form.pin-claims">Pin claims</dt>
-          <dd translate="no">{{ i.pinClaims.join(', ') }}</dd>
-          <dt i18n="@@ci.form.required-claims">Required claims</dt>
-          <dd translate="no">{{ i.requiredClaims.join(', ') }}</dd>
-          <dt i18n="@@ci.form.skew">Clock skew (seconds)</dt>
-          <dd>{{ i.clockSkewSeconds }}</dd>
-          <dt i18n="@@ci.form.max-ttl">Maximum token lifetime (seconds)</dt>
-          <dd>{{ i.maxTtlSeconds ?? '–' }}</dd>
-          <dt i18n="@@ci.form.discovery">Discovery document</dt>
-          <dd translate="no">{{ i.discoveryUrl ?? '–' }}</dd>
-          <dt i18n="@@ci.form.jwks">Key set URL</dt>
-          <dd translate="no">{{ i.jwksUri ?? '–' }}</dd>
-          <dt i18n="@@ci.form.ca">CA bundle</dt>
-          <dd translate="no">{{ i.caBundleRef ?? '–' }}</dd>
-          <dt i18n="@@ci.form.proxy">Outbound proxy</dt>
-          <dd>{{ i.useOutboundProxy ? yes : no }}</dd>
-        </dl>
+        <div class="readonly-fields">
+          <trove-text-field i18n-label="@@ci.form.name" label="Name" name="ro-name" [value]="i.name" [readonly]="true" />
+          <trove-text-field i18n-label="@@ci.form.kind" label="Kind" name="ro-kind" [value]="i.kind" [readonly]="true" />
+          <trove-text-field i18n-label="@@ci.form.issuer" label="Issuer URL" name="ro-issuer" [value]="i.issuer" [readonly]="true" />
+          <trove-text-field i18n-label="@@ci.form.description" label="Description" name="ro-description" [value]="i.description || '–'" [readonly]="true" />
+          <trove-text-field i18n-label="@@ci.form.enabled" label="Enabled" name="ro-enabled" [value]="i.enabled ? yes : no" [readonly]="true" />
+          <trove-text-field i18n-label="@@ci.form.audiences" label="Accepted audiences" name="ro-audiences" [value]="i.allowedAudiences.join(', ')" [readonly]="true" />
+          <trove-text-field i18n-label="@@ci.form.exclusive" label="Only these audiences" name="ro-exclusive" [value]="i.exclusiveAudience ? yes : no" [readonly]="true" />
+          <trove-text-field i18n-label="@@ci.form.algorithms" label="Signing algorithms" name="ro-algorithms" [value]="i.allowedAlgorithms.join(', ')" [readonly]="true" />
+          <trove-text-field i18n-label="@@ci.form.public" label="Public issuer" name="ro-public" [value]="i.publicIssuer ? yes : no" [readonly]="true" />
+          <trove-text-field i18n-label="@@ci.form.pin-claims" label="Pin claims" name="ro-pinClaims" [value]="i.pinClaims.join(', ')" [readonly]="true" />
+          <trove-text-field i18n-label="@@ci.form.required-claims" label="Required claims" name="ro-requiredClaims" [value]="i.requiredClaims.join(', ')" [readonly]="true" />
+          <trove-text-field i18n-label="@@ci.form.skew" label="Clock skew (seconds)" name="ro-skew" [value]="'' + i.clockSkewSeconds" [readonly]="true" />
+          <trove-text-field i18n-label="@@ci.form.max-ttl" label="Maximum token lifetime (seconds)" name="ro-maxTtl" [value]="i.maxTtlSeconds === null || i.maxTtlSeconds === undefined ? '–' : '' + i.maxTtlSeconds" [readonly]="true" />
+          <trove-text-field i18n-label="@@ci.form.discovery" label="Discovery document" name="ro-discovery" [value]="i.discoveryUrl ?? '–'" [readonly]="true" />
+          <trove-text-field i18n-label="@@ci.form.jwks" label="Key set URL" name="ro-jwks" [value]="i.jwksUri ?? '–'" [readonly]="true" />
+          <trove-text-field i18n-label="@@ci.form.ca" label="CA bundle" name="ro-ca" [value]="i.caBundleRef ?? '–'" [readonly]="true" />
+          <trove-text-field i18n-label="@@ci.form.proxy" label="Outbound proxy" name="ro-proxy" [value]="i.useOutboundProxy ? yes : no" [readonly]="true" />
+        </div>
       }
     } @else {
       @if (error(); as e) {
@@ -144,8 +128,12 @@ const toLines = (text: string): string[] => splitValues(text.replace(/,/g, '\n')
           hint="One per line. Immutable ID claims only. Empty: project_id, namespace_id, job_project_id and job_namespace_id."
         />
 
-        <details class="advanced">
-          <summary i18n="@@ci.form.advanced">More settings</summary>
+        <trove-settings-section
+          i18n-heading="@@ci.form.advanced"
+          heading="More settings"
+          i18n-description="@@ci.form.advanced-hint"
+          description="Discovery, algorithms, claims, lifetimes and the connection to the issuer."
+        >
           <trove-text-field i18n-label="@@ci.form.discovery" label="Discovery document" name="discoveryUrl" [(value)]="discoveryUrl" [error]="fieldError('/discoveryUrl')" i18n-hint="@@ci.form.discovery-hint" hint="Empty: the issuer URL followed by /.well-known/openid-configuration" />
           <trove-text-field i18n-label="@@ci.form.jwks" label="Key set URL" name="jwksUri" [(value)]="jwksUri" [error]="fieldError('/jwksUri')" i18n-hint="@@ci.form.jwks-hint" hint="Empty: the jwks_uri of the discovery document" />
           <fieldset class="algorithms">
@@ -164,7 +152,7 @@ const toLines = (text: string): string[] => splitValues(text.replace(/,/g, '\n')
           <trove-checkbox [checked]="singleUse()" (checkedChange)="singleUse.set($event)" i18n="@@ci.form.single-use">Reject a second exchange of the same ID token</trove-checkbox>
           <trove-checkbox [checked]="useOutboundProxy()" (checkedChange)="useOutboundProxy.set($event)" i18n="@@ci.form.proxy-check">Fetch discovery and keys through the outbound proxy</trove-checkbox>
           <trove-text-field i18n-label="@@ci.form.ca" label="CA bundle" name="caBundleRef" [(value)]="caBundleRef" [error]="fieldError('/caBundleRef')" i18n-hint="@@ci.form.ca-hint" hint="A reference such as file:/path or env:NAME, for an instance behind a private CA" />
-        </details>
+        </trove-settings-section>
 
         @if (isNew()) {
           <trove-checkbox [checked]="validate()" (checkedChange)="validate.set($event)" i18n="@@ci.form.validate">Check the discovery document and the keys before saving</trove-checkbox>
@@ -174,7 +162,7 @@ const toLines = (text: string): string[] => splitValues(text.replace(/,/g, '\n')
             @if (isNew()) {
               <ng-container i18n="@@ci.form.create">Create issuer</ng-container>
             } @else {
-              <ng-container i18n="@@ci.form.save">Save settings</ng-container>
+              <ng-container i18n="@@ci.form.save-changes">Save changes</ng-container>
             }
           </button>
         </div>
@@ -192,17 +180,6 @@ const toLines = (text: string): string[] => splitValues(text.replace(/,/g, '\n')
     }
     .source-note.warn .material-icons {
       color: var(--trove-status-warn);
-    }
-    .advanced {
-      inline-size: 100%;
-      margin-block: var(--trove-space-3);
-      padding: var(--trove-space-2) var(--trove-space-3);
-      border: 1px solid var(--trove-border);
-      border-radius: var(--trove-radius-m);
-    }
-    .advanced summary {
-      cursor: pointer;
-      font-weight: 600;
     }
     .algorithms {
       display: flex;

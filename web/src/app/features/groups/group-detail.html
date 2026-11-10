@@ -36,6 +36,7 @@
         <trove-text-field i18n-label="@@group.name" label="Name" name="name" [(value)]="newName" [readonly]="readOnly() || !canWrite()" [error]="fieldError('/name')" />
         <trove-text-field i18n-label="@@group.origin" label="Origin" name="origin" [value]="originLabel(g.origin)" [readonly]="true" />
       </div>
+      <trove-text-field i18n-label="@@group.created" label="Created" name="created" [value]="(g.createdAt | date: 'medium') ?? ''" [readonly]="true" />
       <trove-text-field i18n-label="@@group.description" label="Description" name="description" [(value)]="description" [readonly]="readOnly() || !canWrite()" [error]="fieldError('/description')" />
       <trove-checkbox [checked]="autoJoin()" [disabled]="readOnly() || !canWrite()" (checkedChange)="autoJoin.set($event)">
         <ng-container i18n="@@group.auto-join">Every user joins this group automatically</ng-container>
@@ -45,8 +46,13 @@
       }
     </form>
 
-  <section class="card" aria-labelledby="group-members">
-    <h2 id="group-members" i18n="@@group.members">Members ({{ g.memberCount }})</h2>
+  <trove-settings-section
+    i18n-heading="@@group.members"
+    heading="Members ({{ g.memberCount }})"
+    i18n-description="@@group.members-hint"
+    description="Who is in the group and where each membership comes from."
+    [expanded]="true"
+  >
     @if (memberError(); as e) {
       <trove-error-notice [error]="e" />
     }
@@ -110,10 +116,14 @@
         <button class="btn btn-confirm" type="submit" [disabled]="busy() || newMember().trim() === ''" i18n="@@group.add-member-submit">Add</button>
       </form>
     }
-  </section>
+  </trove-settings-section>
 
-  <section class="card" aria-labelledby="group-roles">
-    <h2 id="group-roles" i18n="@@group.roles">System roles</h2>
+  <trove-settings-section
+    i18n-heading="@@group.roles"
+    heading="System roles"
+    i18n-description="@@group.roles-hint"
+    description="The roles bound to this group."
+  >
     @if (g.roles.length === 0) {
       <p i18n="@@group.no-roles">No system role is bound to this group.</p>
     } @else {
@@ -126,11 +136,15 @@
     @if (session.has('roles:read')) {
       <p><a routerLink="/admin/roles" i18n="@@group.roles-link">Manage role bindings</a></p>
     }
-  </section>
+  </trove-settings-section>
 
   @if (policies(); as list) {
-    <section class="card" aria-labelledby="group-policies">
-      <h2 id="group-policies" i18n="@@group.policies">Permission policies naming this group</h2>
+    <trove-settings-section
+      i18n-heading="@@group.policies"
+      heading="Permission policies naming this group"
+      i18n-description="@@group.policies-hint"
+      description="Read only: the policies that grant to this group."
+    >
       @if (list.length === 0) {
         <p i18n="@@group.no-policies">No policy names this group.</p>
       } @else {
@@ -140,7 +154,7 @@
           }
         </ul>
       }
-    </section>
+    </trove-settings-section>
   }
 
   @if (canWrite() && !readOnly()) {

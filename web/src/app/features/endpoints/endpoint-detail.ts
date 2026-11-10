@@ -9,6 +9,8 @@ import { SessionStore } from '../../core/session-store';
 import { Confirm } from '../../shared/confirm-dialog';
 import { CopyButton } from '../../shared/copy-button';
 import { ErrorNotice } from '../../shared/error-notice';
+import { TextField } from '../../shared/access/fields';
+import { SettingsSection } from '../../shared/ui/settings-section';
 import { asApiError, valueOf } from '../../shared/paged-resource';
 import { endpointAddress, patternSummary, versionSummary } from './endpoint-model';
 
@@ -20,7 +22,7 @@ import { endpointAddress, patternSummary, versionSummary } from './endpoint-mode
  */
 @Component({
   selector: 'trove-endpoint-detail',
-  imports: [RouterLink, CopyButton, ErrorNotice],
+  imports: [RouterLink, CopyButton, ErrorNotice, SettingsSection, TextField],
   templateUrl: './endpoint-detail.html',
   styleUrl: './endpoint-detail.scss',
 })
@@ -70,6 +72,19 @@ export class EndpointDetail {
     const summary = (valueOf(this.repos) ?? []).find((r) => refOf(r) === rule.repository);
     const format = (valueOf(this.formats) ?? []).find((f) => f.name === summary?.format);
     return endpointAddress(configuration, format, rule.repository);
+  }
+
+  protected hostsText(c: { hosts: readonly string[]; wildcardHost?: string | null }): string {
+    return [...c.hosts, ...(c.wildcardHost ? [c.wildcardHost] : [])].join(', ');
+  }
+
+  protected credentialsText(c: { auth: { tokenTypes: readonly string[]; boundTokensOnly?: boolean; anonymous?: boolean } }): string {
+    return `${c.auth.tokenTypes.join(', ')}${c.auth.boundTokensOnly ? ' (bound only)' : ''}${c.auth.anonymous ? ', anonymous' : ''}`;
+  }
+
+  protected rateLimitText(c: { rateLimit?: { class: string; requestsPerSecond: number; burst: number; key: string } | null }): string {
+    const r = c.rateLimit;
+    return r ? `${r.class}: ${r.requestsPerSecond}/s, burst ${r.burst}, per ${r.key}` : '–';
   }
 
   protected summary = patternSummary;

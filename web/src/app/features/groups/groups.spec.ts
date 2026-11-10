@@ -46,7 +46,7 @@ describe('Groups (R-UI-025)', () => {
 
   it('R-UI-025 only manual members can be removed', async () => {
     const { root } = await renderScreen(GroupDetail, { inputs: { name: 'team-web' } });
-    const rows = [...root.querySelectorAll('section[aria-labelledby="group-members"] tbody tr')];
+    const rows = [...root.querySelectorAll('trove-settings-section tbody tr')];
     expect(rows).toHaveLength(2);
     const provider = rows.find((r) => text(r).startsWith('alice'))!;
     const mixed = rows.find((r) => text(r).startsWith('sa:ci-bot'))!;

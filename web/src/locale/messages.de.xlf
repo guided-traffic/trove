@@ -6233,15 +6233,6 @@
         <target>Einstellungen</target>
       </segment>
     </unit>
-    <unit id="ci.issuer.settings">
-      <notes>
-        <note category="location">src/app/features/ci/issuer-detail.ts:50,51</note>
-      </notes>
-      <segment>
-        <source>Settings</source>
-        <target>Einstellungen</target>
-      </segment>
-    </unit>
     <unit id="ci.issuer.tab.keys">
       <notes>
         <note category="location">src/app/features/ci/issuer-detail.ts:55</note>
@@ -6348,15 +6339,6 @@
       <segment>
         <source>New CI issuer</source>
         <target>Neuer CI-Aussteller</target>
-      </segment>
-    </unit>
-    <unit id="ci.create.settings">
-      <notes>
-        <note category="location">src/app/features/ci/issuer-detail.ts:182,183</note>
-      </notes>
-      <segment>
-        <source>Settings</source>
-        <target>Einstellungen</target>
       </segment>
     </unit>
     <unit id="ci.form.configuration-source">
@@ -6735,15 +6717,6 @@
       <segment>
         <source>Create issuer</source>
         <target>Aussteller anlegen</target>
-      </segment>
-    </unit>
-    <unit id="ci.form.save">
-      <notes>
-        <note category="location">src/app/features/ci/issuer-form.ts:177,178</note>
-      </notes>
-      <segment>
-        <source>Save settings</source>
-        <target>Einstellungen speichern</target>
       </segment>
     </unit>
     <unit id="ci.yes">
@@ -21890,15 +21863,6 @@
         <target>Alle Benutzer</target>
       </segment>
     </unit>
-    <unit id="user.attributes">
-      <notes>
-        <note category="location">src/app/features/users/user-detail.html:17,19</note>
-      </notes>
-      <segment>
-        <source>Attributes</source>
-        <target>Attribute</target>
-      </segment>
-    </unit>
     <unit id="user.id">
       <notes>
         <note category="location">src/app/features/users/user-detail.html:20</note>
@@ -21906,24 +21870,6 @@
       <segment>
         <source>ID</source>
         <target>ID</target>
-      </segment>
-    </unit>
-    <unit id="user.display-name-fact">
-      <notes>
-        <note category="location">src/app/features/users/user-detail.html:21,22</note>
-      </notes>
-      <segment>
-        <source>Display name</source>
-        <target>Anzeigename</target>
-      </segment>
-    </unit>
-    <unit id="user.email-fact">
-      <notes>
-        <note category="location">src/app/features/users/user-detail.html:23,24</note>
-      </notes>
-      <segment>
-        <source>Email</source>
-        <target>E-Mail</target>
       </segment>
     </unit>
     <unit id="user.origin">
@@ -22041,15 +21987,6 @@
       <segment>
         <source>Email</source>
         <target>E-Mail</target>
-      </segment>
-    </unit>
-    <unit id="user.save">
-      <notes>
-        <note category="location">src/app/features/users/user-detail.html:66,67</note>
-      </notes>
-      <segment>
-        <source>Save correction</source>
-        <target>Korrektur speichern</target>
       </segment>
     </unit>
     <unit id="user.disable">
@@ -30376,6 +30313,231 @@
       <segment>
         <source>Refuse every write during a migration or an incident.</source>
         <target>Alle Schreibzugriffe bei einer Migration oder Störung ablehnen.</target>
+      </segment>
+    </unit>
+    <unit id="ci.issuer.advanced">
+      <notes>
+        <note category="location">src/app/features/ci/issuer-detail.ts:52,53</note>
+      </notes>
+      <segment>
+        <source>Advanced</source>
+        <target>Erweitert</target>
+      </segment>
+    </unit>
+    <unit id="ci.issuer.advanced-hint">
+      <notes>
+        <note category="location">src/app/features/ci/issuer-detail.ts:54,56</note>
+      </notes>
+      <segment>
+        <source>Delete this issuer.</source>
+        <target>Diesen Aussteller löschen.</target>
+      </segment>
+    </unit>
+    <unit id="ci.issuer.delete-note">
+      <notes>
+        <note category="location">src/app/features/ci/issuer-detail.ts:56,57</note>
+      </notes>
+      <segment>
+        <source>Deleting the issuer revokes the tokens issued through it and deletes its mappings.</source>
+        <target>Beim Löschen werden die über diesen Aussteller ausgestellten Token widerrufen und seine Zuordnungen gelöscht.</target>
+      </segment>
+    </unit>
+    <unit id="ci.form.advanced-hint">
+      <notes>
+        <note category="location">src/app/features/ci/issuer-form.ts:135,137</note>
+      </notes>
+      <segment>
+        <source>Discovery, algorithms, claims, lifetimes and the connection to the issuer.</source>
+        <target>Discovery, Algorithmen, Claims, Laufzeiten und die Verbindung zum Aussteller.</target>
+      </segment>
+    </unit>
+    <unit id="ci.form.save-changes">
+      <notes>
+        <note category="location">src/app/features/ci/issuer-form.ts:165,167</note>
+      </notes>
+      <segment>
+        <source>Save changes</source>
+        <target>Änderungen speichern</target>
+      </segment>
+    </unit>
+    <unit id="group.created">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:39</note>
+      </notes>
+      <segment>
+        <source>Created</source>
+        <target>Erstellt</target>
+      </segment>
+    </unit>
+    <unit id="group.members-hint">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:53,56</note>
+      </notes>
+      <segment>
+        <source>Who is in the group and where each membership comes from.</source>
+        <target>Wer in der Gruppe ist und woher jede Mitgliedschaft stammt.</target>
+      </segment>
+    </unit>
+    <unit id="group.roles-hint">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:125,127</note>
+      </notes>
+      <segment>
+        <source>The roles bound to this group.</source>
+        <target>Die an diese Gruppe gebundenen Rollen.</target>
+      </segment>
+    </unit>
+    <unit id="group.policies-hint">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:146,148</note>
+      </notes>
+      <segment>
+        <source>Read only: the policies that grant to this group.</source>
+        <target>Nur lesen: die Richtlinien, die dieser Gruppe etwas gewähren.</target>
+      </segment>
+    </unit>
+    <unit id="policy.resources-help">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:156,157</note>
+      </notes>
+      <segment>
+        <source>Which repositories, package names and paths the entries apply to.</source>
+        <target>Auf welche Repositories, Paketnamen und Pfade sich die Einträge beziehen.</target>
+      </segment>
+    </unit>
+    <unit id="policy.advanced">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:225,226</note>
+      </notes>
+      <segment>
+        <source>Advanced</source>
+        <target>Erweitert</target>
+      </segment>
+    </unit>
+    <unit id="policy.advanced-hint">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:227,229</note>
+      </notes>
+      <segment>
+        <source>Delete this policy.</source>
+        <target>Diese Richtlinie löschen.</target>
+      </segment>
+    </unit>
+    <unit id="policy.delete-note">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:229,230</note>
+      </notes>
+      <segment>
+        <source>Deleting the policy removes every grant it gives, at once on every replica.</source>
+        <target>Beim Löschen entfällt jede Berechtigung, die sie gewährt, sofort auf jedem Replikat.</target>
+      </segment>
+    </unit>
+    <unit id="user.save-changes">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:29,31</note>
+      </notes>
+      <segment>
+        <source>Save changes</source>
+        <target>Änderungen speichern</target>
+      </segment>
+    </unit>
+    <unit id="user.details">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:40</note>
+      </notes>
+      <segment>
+        <source>Details</source>
+        <target>Details</target>
+      </segment>
+    </unit>
+    <unit id="user.details-hint">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:41,44</note>
+      </notes>
+      <segment>
+        <source>Avatar, status, administrator role, last sign-in and creation.</source>
+        <target>Avatar, Status, Administratorrolle, letzte Anmeldung und Erstellung.</target>
+      </segment>
+    </unit>
+    <unit id="user.identities-hint">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:88,89</note>
+      </notes>
+      <segment>
+        <source>The identity providers linked to this user.</source>
+        <target>Die mit diesem Benutzer verknüpften Identitätsanbieter.</target>
+      </segment>
+    </unit>
+    <unit id="user.groups-hint">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:107,108</note>
+      </notes>
+      <segment>
+        <source>Group memberships and where each comes from.</source>
+        <target>Gruppenmitgliedschaften und woher jede stammt.</target>
+      </segment>
+    </unit>
+    <unit id="user.sessions-hint">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:165,166</note>
+      </notes>
+      <segment>
+        <source>Open sessions of this user.</source>
+        <target>Offene Sitzungen dieses Benutzers.</target>
+      </segment>
+    </unit>
+    <unit id="user.advanced">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:206,207</note>
+      </notes>
+      <segment>
+        <source>Advanced</source>
+        <target>Erweitert</target>
+      </segment>
+    </unit>
+    <unit id="user.advanced-hint">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:208,210</note>
+      </notes>
+      <segment>
+        <source>Disable, unlock or delete this account.</source>
+        <target>Dieses Konto deaktivieren, entsperren oder löschen.</target>
+      </segment>
+    </unit>
+    <unit id="user.disable-note">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:211,213</note>
+      </notes>
+      <segment>
+        <source>A disabled user can no longer sign in and their sessions end; you can also revoke their tokens.</source>
+        <target>Ein deaktivierter Benutzer kann sich nicht mehr anmelden und seine Sitzungen enden; Sie können zusätzlich seine Token widerrufen.</target>
+      </segment>
+    </unit>
+    <unit id="user.unlock-note">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:221,222</note>
+      </notes>
+      <segment>
+        <source>The account is locked after failed sign-ins. Unlocking lets it sign in again at once.</source>
+        <target>Das Konto ist nach fehlgeschlagenen Anmeldungen gesperrt. Beim Entsperren kann es sich sofort wieder anmelden.</target>
+      </segment>
+    </unit>
+    <unit id="user.delete-note">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:225,226</note>
+      </notes>
+      <segment>
+        <source>Deleting the user removes their tokens and sessions. This cannot be undone.</source>
+        <target>Beim Löschen werden die Token und Sitzungen des Benutzers entfernt. Das lässt sich nicht rückgängig machen.</target>
+      </segment>
+    </unit>
+    <unit id="principal-roles.hint">
+      <notes>
+        <note category="location">src/app/shared/access/principal-roles.ts:40,42</note>
+      </notes>
+      <segment>
+        <source>The system roles bound to this principal.</source>
+        <target>Die an diesen Principal gebundenen Systemrollen.</target>
       </segment>
     </unit>
   </file>

@@ -28,6 +28,16 @@ describe('Policy list (R-UI-027)', () => {
 });
 
 describe('Policy editor (R-UI-027)', () => {
+  it('Q-UI-224 the groups are sections without a card, and Delete policy is last under Advanced', async () => {
+    const { root } = await renderScreen(PolicyEditor, { inputs: { name: 'team-web-publish' } });
+    expect(root.querySelector('section.card')).toBeNull();
+    const toggles = [...root.querySelectorAll('.toggle')].map((e) => text(e));
+    expect(toggles.map((t) => t.replace('chevron_right', ''))).toEqual(['Principals and actions', 'Repositories and patterns', 'Advanced']);
+    const advanced = [...root.querySelectorAll('trove-settings-section')].pop()!;
+    expect(advanced.querySelector('button.btn-danger')).toBeTruthy();
+    expect(root.querySelector('.save-bar')!.textContent).not.toContain('Delete policy');
+  });
+
   it('R-UI-027 validates the draft after 500 ms and shows the covered repositories', async () => {
     const { fixture, root, get } = await renderScreen(PolicyEditor);
     const api = get(PolicyApi) as FakePolicyApi;

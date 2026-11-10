@@ -86,13 +86,27 @@ describe('User detail (R-UI-024)', () => {
   it('R-UI-024 shows attributes, identities, groups, roles, tokens and sessions, and passes axe', async () => {
     const { root } = await renderScreen(UserDetail, { inputs: { username: 'alice' } });
     const t = text(root);
-    expect(t).toContain('Alice Example');
+    expect(root.querySelector<HTMLInputElement>('input[name="displayName"]')!.value).toBe('Alice Example');
     expect(t).toContain('corp');
     expect(t).toContain('team-web');
     expect(t).toContain('System roles');
     expect(t).toContain('Tokens');
     expect(t).toContain('Firefox 140');
     expect(await seriousViolations(root)).toEqual([]);
+  });
+
+  it('Q-UI-223 the user is one column: name and email edited in place, ID and origin read-only, Save changes waits for a change, Advanced last', async () => {
+    const { fixture, root } = await renderScreen(UserDetail, { inputs: { username: 'alice' } });
+    expect(root.querySelector('.settings > .card')).toBeNull();
+    const save = buttonByText(root, 'Save changes') as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    typeInto(root, 'Email', 'alice@new.example');
+    await settle(fixture);
+    expect(save.disabled).toBe(false);
+    expect(root.querySelector<HTMLInputElement>('input[name="id"]')!.readOnly).toBe(true);
+    expect(root.querySelector<HTMLInputElement>('input[name="origin"]')!.readOnly).toBe(true);
+    const headings = [...root.querySelectorAll('.toggle')].map((e) => text(e));
+    expect(headings[headings.length - 1]).toMatch(/Advanced$/);
   });
 
   it('R-UI-005 the self-lockout guard disables disable and delete on the own account', async () => {
@@ -104,7 +118,7 @@ describe('User detail (R-UI-024)', () => {
 
   it('R-UI-024 identity-provider memberships are read only; a manual one can be removed', async () => {
     const { fixture, root, get } = await renderScreen(UserDetail, { inputs: { username: 'alice' } });
-    const rows = [...root.querySelectorAll('section[aria-labelledby="user-groups"] tbody tr')];
+    const rows = [...root.querySelectorAll('trove-settings-section tbody tr')];
     const web = rows.find((r) => text(r).includes('team-web'))!;
     const platform = rows.find((r) => text(r).includes('platform'))!;
     expect(web.querySelector('button')).toBeNull();
@@ -178,7 +192,8 @@ describe('User detail (R-UI-024)', () => {
   it('R-UI-024 a correction of the display name is a merge patch of that member only', async () => {
     const { fixture, root, get } = await renderScreen(UserDetail, { inputs: { username: 'alice' } });
     typeInto(root, 'Display name', 'Alice B.');
-    buttonByText(root, 'Save correction').click();
+    await settle(fixture);
+    buttonByText(root, 'Save changes').click();
     await settle(fixture);
     expect((get(IdentityApi) as FakeIdentityApi).calls).toContain('updateUser alice {"displayName":"Alice B."}');
   });
@@ -188,12 +203,14 @@ describe('User detail (R-UI-024)', () => {
     const api = get(IdentityApi) as FakeIdentityApi;
     expect(api.etagOf('user:alice')).toBe('"1"');
     typeInto(root, 'Display name', 'Alice B.');
-    buttonByText(root, 'Save correction').click();
+    await settle(fixture);
+    buttonByText(root, 'Save changes').click();
     await settle(fixture);
     expect(api.ifMatch).toEqual(['"1"']);
     // The answer's ETag is the one for the next write.
     typeInto(root, 'Display name', 'Alice C.');
-    buttonByText(root, 'Save correction').click();
+    await settle(fixture);
+    buttonByText(root, 'Save changes').click();
     await settle(fixture);
     expect(api.ifMatch).toEqual(['"1"', '"2"']);
   });
@@ -203,7 +220,8 @@ describe('User detail (R-UI-024)', () => {
     const api = get(IdentityApi) as FakeIdentityApi;
     api.bumpRevision('user:alice');
     typeInto(root, 'Display name', 'Alice B.');
-    buttonByText(root, 'Save correction').click();
+    await settle(fixture);
+    buttonByText(root, 'Save changes').click();
     await settle(fixture);
     const dialog = overlay().querySelector('trove-conflict-dialog') as HTMLElement;
     expect(dialog).toBeTruthy();
@@ -220,7 +238,8 @@ describe('User detail (R-UI-024)', () => {
     const api = get(IdentityApi) as FakeIdentityApi;
     api.bumpRevision('user:alice');
     typeInto(root, 'Display name', 'Alice B.');
-    buttonByText(root, 'Save correction').click();
+    await settle(fixture);
+    buttonByText(root, 'Save changes').click();
     await settle(fixture);
     buttonByText(overlay().querySelector('trove-conflict-dialog') as HTMLElement, 'Reload (discard mine)').click();
     await sleep(fixture, 300);
@@ -239,7 +258,7 @@ describe('User detail (R-UI-024)', () => {
       inputs: { username: 'bob' },
       capabilities: ['identities:read'],
     });
-    expect(root.textContent).not.toContain('Save correction');
+    expect(root.textContent).not.toContain('Save changes');
     expect(root.textContent).not.toContain('Enable');
     expect(root.textContent).not.toContain('Add to group');
   });

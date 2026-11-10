@@ -1,4 +1,5 @@
 import { DestroyRef, Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { SettingsSection } from '../../shared/ui/settings-section';
 import { Checkbox } from '../../shared/ui/checkbox';
 import { TroveDialog } from '../../shared/ui/dialog';
 import { Router, RouterLink } from '@angular/router';
@@ -56,6 +57,7 @@ export const PREVIEW_DEBOUNCE_MS = 500;
   selector: 'trove-policy-editor',
   imports: [
     Checkbox,
+    SettingsSection,
     RouterLink,
     ErrorNotice,
     Needs,
@@ -550,7 +552,13 @@ export class PolicyEditor {
     }
   }
 
+  /** The two groups fold like every settings section; they are open at first (Q-UI-224). */
+  protected readonly principalsOpen = signal(true);
+  protected readonly resourcesOpen = signal(true);
+
   protected jump(id: string): void {
+    if (id === 'sec-principals') this.principalsOpen.set(true);
+    if (id === 'sec-resources') this.resourcesOpen.set(true);
     const el = document.getElementById(id);
     el?.scrollIntoView?.({ block: 'start' });
     el?.focus();

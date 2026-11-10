@@ -261,7 +261,7 @@ To pre-provision a user, select **Add user** and fill in:
 
 A user's page shows **Attributes**, **Identities** (**Linked** or **Pending first sign-in**), **Groups** with the **Source** of each membership (**Manual**, **Auto-join**, **Identity provider**), the user's system roles, **Tokens** and **Sessions**. You can:
 
-- correct **Display name** and **Email** with **Save correction**;
+- correct **Display name** and **Email** in place with **Save changes** (disabled until you change something; the ID and the origin are read-only fields). The identities, groups and sessions are sections you open, and **Disable**, **Unlock** and **Delete** are in the section **Advanced** at the end;
 - remove a pending link by saving the list of links without it. The removal is journaled with the change (`user.updated` lists the provider), so a restore to an earlier point removes the link again and the provider's account of that username cannot take the user over through it. A link that is already **Linked** is never removed this way, and the replay never removes one;
 - add a manual membership with **Add to group**, or **Remove** a manual one; memberships from the provider or auto-join cannot be removed here;
 - **Disable** the user: sessions end, tokens stop working, and **Also revoke all tokens of this user** (checked by default) revokes them for good. **Enable** reverses a disable, but not a revocation;

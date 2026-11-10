@@ -83,7 +83,7 @@ describe('A CI issuer (R-UI-035, R-CI-001, R-CI-002, Q-CI-16)', () => {
     expect(text(root)).toContain('declared in the installation');
     expect(text(root)).toContain('ci.issuers');
     expect(root.querySelector('form')).toBeNull();
-    expect(root.querySelector('dl.facts')).toBeTruthy();
+    expect(root.querySelector<HTMLInputElement>('input[name="ro-issuer"]')!.readOnly).toBe(true);
     // Not deletable while it is still declared.
     expect(root.textContent).not.toContain('Delete issuer');
   });
@@ -106,7 +106,7 @@ describe('A CI issuer (R-UI-035, R-CI-001, R-CI-002, Q-CI-16)', () => {
     await settle(fixture);
     expect(root.querySelector('form')).toBeTruthy();
     typeInto(root, 'Description', 'Changed');
-    buttonByText(root, 'Save settings').click();
+    buttonByText(root, 'Save changes').click();
     await sleep(fixture, 100);
     expect(ci(get).calls).toContain('replaceIssuer gitlab-com');
     expect(ci(get).ifMatch).toEqual(['"1"']);
@@ -120,7 +120,7 @@ describe('A CI issuer (R-UI-035, R-CI-001, R-CI-002, Q-CI-16)', () => {
       i.name === 'gitlab-com' ? { ...i, version: 2, allowedAudiences: ['https://trove.example.com'], singleUseSubjectTokens: true } : i,
     );
     typeInto(root, 'Description', 'mine');
-    buttonByText(root, 'Save settings').click();
+    buttonByText(root, 'Save changes').click();
     await sleep(fixture, 150);
     expect(document.querySelector('trove-conflict-dialog')).toBeTruthy();
     (buttonByText(document.body, 'Overwrite') as HTMLButtonElement).click();
@@ -137,7 +137,7 @@ describe('A CI issuer (R-UI-035, R-CI-001, R-CI-002, Q-CI-16)', () => {
     await settle(fixture);
     typeInto(root, 'Description', 'drafted');
     ci(get).failure = new ApiError(401, { code: 'reauthentication_required' }, 'r');
-    buttonByText(root, 'Save settings').click();
+    buttonByText(root, 'Save changes').click();
     await sleep(fixture, 100);
     fixture.destroy();
     const again = TestBed.createComponent(IssuerDetail);
@@ -174,7 +174,8 @@ describe('A CI issuer (R-UI-035, R-CI-001, R-CI-002, Q-CI-16)', () => {
   });
 
   it('R-CI-002 deleting an issuer with mappings names them and cascades after the name is typed', async () => {
-    const { root, fixture, get } = await renderScreen(IssuerDetail, { inputs: { issuer: 'gitlab-com' } });
+    const { root, fixture, get } = await renderScreen(IssuerDetail, { inputs: { issuer: 'gitlab-com', tab: 'settings' } });
+    await settle(fixture);
     buttonByText(root, 'Delete issuer').click();
     await settle(fixture);
     const ask = overlay().querySelector('trove-confirm-dialog') as HTMLElement;

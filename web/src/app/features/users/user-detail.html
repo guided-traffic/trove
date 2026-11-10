@@ -13,11 +13,34 @@
 }
 
 @if (user(); as u) {
-  <section class="card" aria-labelledby="user-attributes">
-    <h2 id="user-attributes" i18n="@@user.attributes">Attributes</h2>
+  <div class="settings">
+  <form (submit)="saveAttributes($event)" novalidate>
+    @if (editError(); as e) {
+      <trove-error-notice [error]="e" />
+    }
+    <div class="row">
+      <trove-text-field i18n-label="@@user.display-name" label="Display name" name="displayName" [(value)]="displayName" [readonly]="!canEdit()" [error]="fieldError('/displayName')" />
+      <trove-text-field i18n-label="@@user.email" label="Email" name="email" type="email" [(value)]="email" [readonly]="!canEdit()" [error]="fieldError('/email')" />
+    </div>
+    <p class="muted" i18n="@@user.attributes-note">
+      Name and email come from the identity provider and are replaced at the user's next sign-in.
+    </p>
+    @if (canEdit()) {
+      <button class="btn btn-confirm" type="submit" [disabled]="busy() || !dirty()" i18n="@@user.save-changes">Save changes</button>
+    }
+    <div class="row ids">
+      <trove-text-field i18n-label="@@user.id" label="ID" name="id" [value]="u.id" [readonly]="true" />
+      <trove-text-field i18n-label="@@user.origin" label="Origin" name="origin" [value]="originLabel(u.origin)" [readonly]="true" />
+    </div>
+  </form>
+
+  <trove-settings-section
+    i18n-heading="@@user.details"
+    heading="Details"
+    i18n-description="@@user.details-hint"
+    description="Avatar, status, administrator role, last sign-in and creation."
+  >
     <dl class="facts">
-      <dt i18n="@@user.id">ID</dt>
-      <dd><code translate="no">{{ u.id }}</code></dd>
       <dt i18n="@@user.avatar">Avatar</dt>
       <dd>
         <trove-avatar class="user-avatar" aria-hidden="true" [seed]="u.id" [imageUrl]="u.avatarUrl" />
@@ -30,12 +53,6 @@
           <span class="muted" i18n="@@user.avatar-generated">Generated</span>
         }
       </dd>
-      <dt i18n="@@user.display-name-fact">Display name</dt>
-      <dd>{{ u.displayName ?? '' }}</dd>
-      <dt i18n="@@user.email-fact">Email</dt>
-      <dd>{{ u.email ?? '' }}</dd>
-      <dt i18n="@@user.origin">Origin</dt>
-      <dd>{{ originLabel(u.origin) }}</dd>
       <dt i18n="@@user.status">Status</dt>
       <dd>
         @if (u.status === 'active') {
@@ -63,46 +80,12 @@
       <dt i18n="@@user.created">Created</dt>
       <dd>{{ u.createdAt | date: 'medium' }}</dd>
     </dl>
-    <p class="muted" i18n="@@user.attributes-note">
-      Name and email come from the identity provider and are replaced at the user's next sign-in.
-    </p>
-
-    @if (canWrite() && editable()) {
-      <form class="form-grid" (submit)="saveAttributes($event)">
-        @if (editError(); as e) {
-          <trove-error-notice [error]="e" />
-        }
-        <trove-text-field i18n-label="@@user.display-name" label="Display name" name="displayName" [(value)]="displayName" [error]="fieldError('/displayName')" />
-        <trove-text-field i18n-label="@@user.email" label="Email" name="email" type="email" [(value)]="email" [error]="fieldError('/email')" />
-        <div class="row-actions">
-          <button class="btn btn-confirm" type="submit" [disabled]="busy()" i18n="@@user.save">Save correction</button>
-        </div>
-      </form>
+    @if (session.has('audit:read')) {
+      <p><a class="btn btn-tertiary" routerLink="/admin/audit" [queryParams]="{ actor: u.username }" i18n="@@user.audit">Audit log of this user</a></p>
     }
+  </trove-settings-section>
 
-    <div class="row-actions">
-      @if (canWrite() && editable()) {
-        @if (u.status === 'active') {
-          <button class="btn btn-tertiary" type="button" [disabled]="isSelf() || busy()" [attr.aria-describedby]="isSelf() ? 'self-guard' : null" (click)="disable()" i18n="@@user.disable">Disable</button>
-        } @else {
-          <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="enable()" i18n="@@user.enable">Enable</button>
-        }
-        <button class="btn btn-tertiary" type="button" [disabled]="isSelf() || busy()" [attr.aria-describedby]="isSelf() ? 'self-guard' : null" (click)="remove()" i18n="@@user.delete">Delete</button>
-      }
-      @if (locked() && session.has('content:bypass')) {
-        <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="unlock()" i18n="@@user.unlock">Unlock</button>
-      }
-      @if (session.has('audit:read')) {
-        <a class="btn btn-tertiary" routerLink="/admin/audit" [queryParams]="{ actor: u.username }" i18n="@@user.audit">Audit log of this user</a>
-      }
-    </div>
-    @if (isSelf()) {
-      <p id="self-guard" class="muted" i18n="@@user.self-guard">You cannot disable or delete your own account.</p>
-    }
-  </section>
-
-  <section class="card" aria-labelledby="user-identities">
-    <h2 id="user-identities" i18n="@@user.identities">Identities</h2>
+  <trove-settings-section i18n-heading="@@user.identities" heading="Identities" i18n-description="@@user.identities-hint" description="The identity providers linked to this user.">
     @if (u.identities.length === 0) {
       <p i18n="@@user.no-identities">No identity provider is linked.</p>
     } @else {
@@ -119,10 +102,9 @@
         }
       </ul>
     }
-  </section>
+  </trove-settings-section>
 
-  <section class="card" aria-labelledby="user-groups">
-    <h2 id="user-groups" i18n="@@user.groups">Groups</h2>
+  <trove-settings-section i18n-heading="@@user.groups" heading="Groups" i18n-description="@@user.groups-hint" description="Group memberships and where each comes from.">
     @if (u.groupClaimMissing; as missing) {
       <p role="status" class="warn">
         <span class="material-icons" aria-hidden="true">warning</span>
@@ -167,21 +149,20 @@
         <button class="btn btn-confirm" type="submit" [disabled]="busy() || newGroup().trim() === ''" i18n="@@user.add-group-submit">Add</button>
       </form>
     }
-  </section>
+  </trove-settings-section>
 
   @if (session.has('roles:read')) {
     <trove-principal-roles [principal]="'user:' + u.username" />
   }
 
   @if (session.has('tokens:read')) {
-    <section class="card" aria-labelledby="user-tokens">
+    <section class="tokens" aria-labelledby="user-tokens">
       <h2 id="user-tokens" i18n="@@user.tokens">Tokens</h2>
       <trove-token-manager [scope]="scope()" />
     </section>
   }
 
-  <section class="card" aria-labelledby="user-sessions">
-    <h2 id="user-sessions" i18n="@@user.sessions">Sessions</h2>
+  <trove-settings-section i18n-heading="@@user.sessions" heading="Sessions" i18n-description="@@user.sessions-hint" description="Open sessions of this user.">
     @if (sessionError(); as e) {
       <trove-error-notice [error]="e" (retry)="load()" />
     }
@@ -217,5 +198,37 @@
         }
       }
     }
-  </section>
+  </trove-settings-section>
+
+  @if ((canWrite() && editable()) || (locked() && session.has('content:bypass'))) {
+    <trove-settings-section
+      i18n-heading="@@user.advanced"
+      heading="Advanced"
+      i18n-description="@@user.advanced-hint"
+      description="Disable, unlock or delete this account."
+    >
+      @if (canWrite() && editable()) {
+        <p class="muted" i18n="@@user.disable-note">A disabled user can no longer sign in and their sessions end; you can also revoke their tokens.</p>
+        <p>
+          @if (u.status === 'active') {
+            <button class="btn btn-tertiary" type="button" [disabled]="isSelf() || busy()" [attr.aria-describedby]="isSelf() ? 'self-guard' : null" (click)="disable()" i18n="@@user.disable">Disable</button>
+          } @else {
+            <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="enable()" i18n="@@user.enable">Enable</button>
+          }
+        </p>
+      }
+      @if (locked() && session.has('content:bypass')) {
+        <p class="muted" i18n="@@user.unlock-note">The account is locked after failed sign-ins. Unlocking lets it sign in again at once.</p>
+        <p><button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="unlock()" i18n="@@user.unlock">Unlock</button></p>
+      }
+      @if (canWrite() && editable()) {
+        <p class="muted" i18n="@@user.delete-note">Deleting the user removes their tokens and sessions. This cannot be undone.</p>
+        <button class="btn btn-danger" type="button" [disabled]="isSelf() || busy()" [attr.aria-describedby]="isSelf() ? 'self-guard' : null" (click)="remove()" i18n="@@user.delete">Delete</button>
+      }
+      @if (isSelf()) {
+        <p id="self-guard" class="muted" i18n="@@user.self-guard">You cannot disable or delete your own account.</p>
+      }
+    </trove-settings-section>
+  }
+  </div>
 }

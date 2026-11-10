@@ -15,6 +15,7 @@ import { asApiError } from '../../shared/paged-resource';
 import { Needs } from '../../shared/access/needs';
 import { PrincipalRoles } from '../../shared/access/principal-roles';
 import { ErrorNotice } from '../../shared/error-notice';
+import { SettingsSection } from '../../shared/ui/settings-section';
 import { TroveAvatar } from '../../shared/ui/avatar';
 import { TokenManager, TokenOwnerScope } from '../tokens/token-manager';
 import { isLocked, originLabel } from './user-labels';
@@ -28,9 +29,34 @@ import { isLocked, originLabel } from './user-labels';
  */
 @Component({
   selector: 'trove-user-detail',
-  imports: [DatePipe, RouterLink, ErrorNotice, Needs, PrincipalRoles, TextField, TokenManager, TroveAvatar],
+  imports: [DatePipe, RouterLink, ErrorNotice, Needs, PrincipalRoles, SettingsSection, TextField, TokenManager, TroveAvatar],
   templateUrl: './user-detail.html',
   styleUrl: '../../shared/access/access.scss',
+  styles: `
+    .settings {
+      max-inline-size: 56rem;
+    }
+    form {
+      padding-block-end: var(--trove-space-6);
+    }
+    .row {
+      display: grid;
+      grid-template-columns: minmax(0, 5fr) minmax(0, 4fr);
+      gap: var(--trove-space-6);
+    }
+    .ids {
+      margin-block-start: var(--trove-space-5);
+    }
+    .tokens {
+      padding-block: var(--trove-space-5);
+      border-block-start: 1px solid var(--trove-border);
+    }
+    @media (max-width: 40rem) {
+      .row {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+  `,
 })
 export class UserDetail {
   /** Route parameter `:username`. */
@@ -68,6 +94,12 @@ export class UserDetail {
   });
   /** The break-glass account cannot be edited or deleted through the API. */
   protected readonly editable = computed(() => this.user()?.origin !== 'system');
+  protected readonly canEdit = computed(() => this.canWrite() && this.editable());
+  /** Display name or email differ from the stored user: Save changes waits for it (Q-UI-223). */
+  protected readonly dirty = computed(() => {
+    const u = this.user();
+    return u !== null && ((u.email ?? '') !== this.email().trim() || (u.displayName ?? '') !== this.displayName().trim());
+  });
 
   constructor() {
     effect(() => {

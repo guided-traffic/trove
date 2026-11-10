@@ -48,8 +48,8 @@
     </nav>
 
     <div class="sections">
-      <section id="sec-general" tabindex="-1" class="card" aria-labelledby="h-general">
-        <h2 id="h-general" i18n="@@policy.general">General</h2>
+      <section id="sec-general" tabindex="-1" aria-labelledby="h-general">
+        <h2 id="h-general" class="visually-hidden" i18n="@@policy.general">General</h2>
         @if (isNew()) {
           <trove-text-field
             i18n-label="@@policy.name"
@@ -71,11 +71,14 @@
         />
       </section>
 
-      <section id="sec-principals" tabindex="-1" class="card" aria-labelledby="h-principals">
-        <h2 id="h-principals" i18n="@@policy.principals">Principals and actions</h2>
-        <p class="muted" i18n="@@policy.principals-help">
-          Each entry gives one principal a set of actions. Actions are independent: holding one never implies another.
-        </p>
+      <div id="sec-principals" tabindex="-1">
+      <trove-settings-section
+        i18n-heading="@@policy.principals"
+        heading="Principals and actions"
+        i18n-description="@@policy.principals-help"
+        description="Each entry gives one principal a set of actions. Actions are independent: holding one never implies another."
+        [(expanded)]="principalsOpen"
+      >
         <dl class="help">
           @for (a of actions; track a) {
             <dt translate="no">{{ a }}</dt>
@@ -142,10 +145,17 @@
             />
           }
         }
-      </section>
+      </trove-settings-section>
+      </div>
 
-      <section id="sec-resources" tabindex="-1" class="card" aria-labelledby="h-resources">
-        <h2 id="h-resources" i18n="@@policy.resources">Repositories and patterns</h2>
+      <div id="sec-resources" tabindex="-1">
+      <trove-settings-section
+        i18n-heading="@@policy.resources"
+        heading="Repositories and patterns"
+        i18n-description="@@policy.resources-help"
+        description="Which repositories, package names and paths the entries apply to."
+        [(expanded)]="resourcesOpen"
+      >
         <trove-text-field
           i18n-label="@@policy.repositories"
           label="Repository selectors"
@@ -206,7 +216,20 @@
             {{ verdictText(v) }}
           </p>
         }
-      </section>
+      </trove-settings-section>
+      </div>
+
+      @if (!isNew() && canWrite()) {
+        <trove-settings-section
+          i18n-heading="@@policy.advanced"
+          heading="Advanced"
+          i18n-description="@@policy.advanced-hint"
+          description="Delete this policy."
+        >
+          <p class="muted" i18n="@@policy.delete-note">Deleting the policy removes every grant it gives, at once on every replica.</p>
+          <button class="btn btn-danger" type="button" [disabled]="busy()" (click)="remove()" i18n="@@policy.delete">Delete policy</button>
+        </trove-settings-section>
+      }
     </div>
 
     <aside id="sec-preview" tabindex="-1" class="preview" aria-labelledby="h-preview">
@@ -306,9 +329,6 @@
             <ng-container i18n="@@policy.review">Review and save</ng-container>
           }
         </button>
-        @if (!isNew()) {
-          <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="remove()" i18n="@@policy.delete">Delete policy</button>
-        }
       }
       @if (attempted() && (validation()?.errors?.length ?? 0) > 0) {
         <span class="bad" role="alert"><span class="material-icons" aria-hidden="true">error</span> <ng-container i18n="@@policy.fix-first">Fix the problems in the preview first.</ng-container></span>

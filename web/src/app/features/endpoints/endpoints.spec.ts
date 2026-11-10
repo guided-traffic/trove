@@ -58,6 +58,15 @@ describe('Endpoint screen', () => {
     await expectAccessible(root);
   });
 
+  it('Q-UI-223 the configuration is read-only fields in one column, not a key-value list', async () => {
+    const { root } = await renderScreen(EndpointDetail, { inputs: { endpoint: 'customers' } });
+    expect(root.querySelector('dl.facts')).toBeNull();
+    for (const name of ['baseUrl', 'exposure', 'surface', 'hosts', 'credentials']) {
+      expect(root.querySelector<HTMLInputElement>(`input[name="${name}"]`)!.readOnly).toBe(true);
+    }
+    expect(root.querySelector('section.card')).toBeNull();
+  });
+
   it('R-EP-017 an endpoint in mode "all" shows a banner that its rules have no effect', async () => {
     const { root } = await renderScreen(EndpointDetail, { inputs: { endpoint: 'default' } });
     expect(text(root)).toContain('mode "all"');

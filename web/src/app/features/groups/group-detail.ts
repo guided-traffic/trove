@@ -1,3 +1,4 @@
+import { DatePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { Checkbox } from '../../shared/ui/checkbox';
 import { Router, RouterLink } from '@angular/router';
@@ -27,7 +28,7 @@ import { groupOriginLabel } from './group-list';
  */
 @Component({
   selector: 'trove-group-detail',
-  imports: [Checkbox, RouterLink, ErrorNotice, Needs, SelectField, SettingsSection, TextField],
+  imports: [DatePipe, Checkbox, RouterLink, ErrorNotice, Needs, SelectField, SettingsSection, TextField],
   templateUrl: './group-detail.html',
   styleUrl: '../../shared/access/access.scss',
   styles: `
