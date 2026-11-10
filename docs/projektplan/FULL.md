@@ -48,7 +48,7 @@ follow the [roadmap's format order](../coverage/roadmap.md#p1-format-expansion-o
 - 🟢 Spec page [formats/ansible.md](../spec/formats/ansible.md) ([catalog](../features/formats/ansible.md)), the cut into work packages in [ansible-work-packages.md](ansible-work-packages.md)
 - 🟢 Local: publish (multipart or raw body, import tasks) and install of collections, immutability and tombstones, reindex, the package screens; integration area `ansiblelocal`. Roles only through remote and virtual repositories (Q-ANS-6)
 - 🟡 Remote: proxy of the public Galaxy. Built: pull-through of collections (paged version lists, the announced digest verified, the identity inside the archive checked) and of roles by translation from allowed hosts, integration area `ansibleremote`. Building: the mirror and the Automation Hub's token exchange
-- ⚪ Virtual: one endpoint for internal and public content
+- 🟢 Virtual: one endpoint for internal and public content: merged version lists, first match, publish through the deploy target, versions a path grant hides stay hidden through the virtual repository; integration area `ansiblevirtual`
 - 🟡 Authentication with trove tokens (`ansible.cfg`, `ansible-galaxy --token`): the `Token` scheme, Basic and Bearer work on the local class (R-ANS-006); netrc for roles comes with the remote class
 - 🟡 Migration of the content of the existing Galaxy instance (`trove admin import ansible` for collections, unit-tested; integration tests and a dry run against the owner's Galaxy open, H-847)
 - ⚪ Integration tests
