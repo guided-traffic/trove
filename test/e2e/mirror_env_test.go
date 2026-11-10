@@ -2,11 +2,12 @@
 
 package e2e
 
-// The harness of the mirror tests (R-REPO-059, docs/developer/e2e.md#the-mirror-tests): the cluster in the `mirror` profile (three
-// api and three packages replicas, the main worker, and a pool of two processes that claim the queue `mirror` alone), the two
-// counting test upstreams, the repositories in mode mirror, the status and run operations, the counters of the pool's processes
-// and of the stubs, the name of the public registry made to resolve to the npm test upstream, and a sampler of the job table.
-// The tests are in mirror_*_test.go.
+// The harness of the mirror tests (R-REPO-059, docs/developer/e2e.md#the-mirror-tests): the scatter profile (three api and three
+// packages replicas, the main worker) with a pool of two processes that claim the queue `mirror` alone, added by mirrorFx for the tests
+// that need it (Q-REPO-306), the repositories in mode mirror over the counting test upstreams of the set, the status and run
+// operations, the counters of the pool's processes and of the stubs, the name of the public registry made to resolve to the npm test
+// upstream, and a sampler of the job table. The tests are in the sets of their format (npm_mirror_test.go, nuget_mirror_test.go,
+// oci_mirror_test.go, oci_long_mirror_test.go) and in the nightly HA sets (npm_ha_worker_pool_*_test.go, nuget_ha_worker_pool_test.go).
 
 import (
 	"crypto/rand"
@@ -35,6 +36,11 @@ const (
 	mirrorConcurrency = 4
 	mirrorServing     = 3 // the client-serving replicas: the packages pods of the profile
 	mirrorPoolName    = "mirror"
+	// mirrorPoolValues is the worker pool of the mirror tests, a `helm --set-json` value: two processes that claim the queue `mirror`
+	// alone (R-HA-062), the main worker claims every other queue. Helm replaces a list, it does not merge one, so the value names
+	// the pool vuln of deploy/dev/values-dev.yaml too. No profile carries the pool: it is on the release only in the tests that need it,
+	// the expected pod counts of the others stay what they are (Q-REPO-306).
+	mirrorPoolValues = `worker.pools=[{"name":"vuln","queues":["vuln"],"replicaCount":2},{"name":"mirror","queues":["mirror"],"replicaCount":2}]`
 	// the pool's pods: the label the chart puts on a pool's pods (R-HA-062)
 	selMirrorPool = selWorker + ",trove/pool=" + mirrorPoolName
 
@@ -78,7 +84,7 @@ var (
 	mirrorErr  error
 )
 
-// mirrorFx puts the cluster into the mirror profile and builds the installation of the tests.
+// mirrorFx puts the cluster into the scatter profile with the worker pool of the mirror and builds the installation of the tests.
 func mirrorFx(t testing.TB) *mirrorEnv {
 	t.Helper()
 	mirrorOnce.Do(func() {
@@ -92,7 +98,8 @@ func mirrorFx(t testing.TB) *mirrorEnv {
 }
 
 func buildMirrorEnv(t testing.TB) (*mirrorEnv, error) {
-	if err := runUp("mirror"); err != nil {
+	useScatter(t)
+	if err := runUp(scatterProfile(), "TROVE_HELM_EXTRA=--set-json "+mirrorPoolValues); err != nil {
 		return nil, err
 	}
 	waitServingSettled(t)
@@ -114,17 +121,23 @@ func buildMirrorEnv(t testing.TB) (*mirrorEnv, error) {
 	e.adm = adminAPI(t)
 
 	e.removeStaleMirrors(t)
-	stub(t).resetAll(t)
-	if os.Getenv("TROVE_E2E_NUGETSTUB_HOST") != "" { // the set mirror-long deploys the npm test upstream only
+	// every set deploys the test upstream of its format and no other
+	npmStubDeployed := os.Getenv("TROVE_E2E_NPMSTUB_HOST") != ""
+	if npmStubDeployed {
+		stub(t).resetAll(t)
+		ensurePublicNPMNames(t)
+	}
+	if os.Getenv("TROVE_E2E_NUGETSTUB_HOST") != "" {
 		nugetStub(t).resetAll(t)
 	}
-	ensurePublicNPMNames(t)
 
 	ensureSA(t, e.adm, mirrorSA)
 	e.token = freshSAToken(t, e.adm, mirrorSA, 6*3600, map[string]any{"inherit": true}).Token
 	e.npm = &npmFixture{adm: e.adm, run: e.run, stubHost: os.Getenv("TROVE_E2E_NPMSTUB_HOST"), token: e.token, rowTokens: map[string]string{}}
 	e.nuget = &nugetFixture{adm: e.adm, run: e.run, token: e.token}
-	e.seedNPM(t)
+	if npmStubDeployed {
+		e.seedNPM(t)
+	}
 	e.jobs = startJobSampler()
 	return e, nil
 }
@@ -158,6 +171,22 @@ func (e *mirrorEnv) seedNPM(t testing.TB) {
 		e.extras = append(e.extras, name)
 	}
 }
+
+// publishNames publishes n npm packages of one test to the test upstream, beside the extras: names outside the patterns of the passes
+// over the extras, so that what the test stores and counts is its own.
+func (e *mirrorEnv) publishNames(t testing.TB, label string, n int) []string {
+	t.Helper()
+	s := stub(t)
+	names := make([]string, n)
+	for i := range names {
+		names[i] = fmt.Sprintf("%s%s-%03d", e.ownPrefix(label), e.run, i)
+		s.publish(t, names[i], "1.0.0", nil)
+	}
+	return names
+}
+
+// ownPrefix is the prefix of the names publishNames gave to a test, which tarballCounts reads back.
+func (e *mirrorEnv) ownPrefix(label string) string { return "e2e-mirror-own-" + label + "-" }
 
 // grant lets the account read the repositories and waits until every replica agrees.
 func (e *mirrorEnv) grant(t testing.TB, format string, keys ...string) {
@@ -383,6 +412,14 @@ func (e *mirrorEnv) awaitPassStarted(t testing.TB, key string, n int64) mirrorSt
 		return s.Pass != nil && s.Pass.PackagesDone >= n
 	})
 	return s
+}
+
+// awaitNoPassRunning waits until no job mirror-pass is queued or running: the pass of a repository that was deleted has halted.
+func (e *mirrorEnv) awaitNoPassRunning(t *testing.T) {
+	t.Helper()
+	waitFor(t, "the pass of the deleted mirror to halt", 3*time.Minute, 2*time.Second, func() bool {
+		return sql(t, `SELECT count(*) FROM trove.job WHERE kind = 'mirror-pass' AND state IN ('queued', 'running', 'cancelling')`) == "0"
+	})
 }
 
 // ── the pool's processes ─────────────────────────────────────────────────────

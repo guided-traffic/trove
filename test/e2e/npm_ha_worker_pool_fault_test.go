@@ -2,7 +2,7 @@
 
 package e2e
 
-// The failure suite of R-HA-052 on a mirror pass (R-REPO-053, R-REPO-054, R-REPO-058, R-REPO-059; set `mirror-long`, nightly): the process
+// The failure suite of R-HA-052 on a mirror pass (R-REPO-053, R-REPO-054, R-REPO-058, R-REPO-059; set `npm-ha`, nightly): the process
 // that holds a pass lost in three ways (its pod force-deleted, its kind node stopped, its kind node frozen and thawed), an upstream that
 // throttles the pass while the process is drained or killed, and a PostgreSQL switchover and a Valkey failover during a pass. Every
 // scenario has a remote of its own over a hundred of the run's extra packages (the digit of the name picks the range), so that the
@@ -221,14 +221,14 @@ type lossOf struct {
 	clientsWhole func(t *testing.T, hp *heldPass) bool
 }
 
-// TestMirrorLong_R_REPO_053_WorkerLostMidPass: the process of the pool that holds a pass of a hundred packages is lost after the pass
+// TestNPMHA_R_REPO_053_WorkerLostMidMirrorPass: the process of the pool that holds a pass of a hundred packages is lost after the pass
 // has filled about twenty-five. The lease runs out (jobs.lease_duration), the reaper ends the job, the next mirror-dispatch enqueues
 // a new one, a process that claims the queue takes the fence over and continues from the pending names (R-REPO-053 "Crash and
 // failover"). Pass conditions: the pass progresses in another process within resumeWithin and ends `complete` with each of its
 // hundred packages counted once (what a write of the lost process under the old fence would have added is not there); the test
 // upstream served every tarball and at most `concurrency` of them twice; every `npm install` of a stored version through the same
 // remote during the loss succeeds (R-REPO-055: clients do not wait for the pool); the pool has two ready pods again.
-func TestMirrorLong_R_REPO_053_WorkerLostMidPass(t *testing.T) {
+func TestNPMHA_R_REPO_053_WorkerLostMidMirrorPass(t *testing.T) {
 	e := mirrorFx(t)
 	for _, l := range []lossOf{
 		{
@@ -399,14 +399,14 @@ func keysOf(m map[string]bool) []string {
 
 // ── the upstream throttles while the process moves ───────────────────────────
 
-// TestMirrorLong_R_REPO_054_ThrottledUpstreamAcrossAMove: the test upstream rate-limits the pass's tarball requests while the process
+// TestNPMHA_R_REPO_054_ThrottledUpstreamAcrossAMirrorMove: the test upstream rate-limits the pass's tarball requests while the process
 // that runs it is drained or killed. The answers are recorded with their arrival times by the upstream itself (the request log of the
 // counting stub). Pass conditions: after an answer that names a wait, the upstream sees no request of the mirror (document or tarball)
 // until the wait is over, however the pass moved in the meantime (R-REPO-054: the end of every wait is stored in
 // `rate_limited_until`, so that a job released in the middle of it does not resume at once in another process, Q-REPO-187); the number
 // of throttled answers stays small (no burst after the move); the pass ends `complete` once the upstream allows again, with every
 // tarball served; a client install of a stored version through the remote during the wait succeeds without a request to the upstream.
-func TestMirrorLong_R_REPO_054_ThrottledUpstreamAcrossAMove(t *testing.T) {
+func TestNPMHA_R_REPO_054_ThrottledUpstreamAcrossAMirrorMove(t *testing.T) {
 	e := mirrorFx(t)
 	t.Run("R-REPO-054 R-REPO-053 R-HA-059 429 with Retry-After 30 while the node of the pass's process is drained", func(t *testing.T) {
 		th := npmstub.Throttle{Kind: npmstub.Throttle429, Class: npmstub.KindTarball, PeriodMS: 45000, RetryAfterSeconds: 30}
@@ -521,13 +521,13 @@ func requestsInsideWaits(log []npmstub.RequestRecord, status int, tolerance time
 
 // ── the database and Valkey fail over during a pass ──────────────────────────
 
-// TestMirrorLong_R_REPO_053_PostgresSwitchoverAndValkeyFailoverDuringAPass: a PostgreSQL switchover (deploy/dev/failover.sh) at about
+// TestNPMHA_R_REPO_053_PostgresSwitchoverAndValkeyFailoverDuringAMirrorPass: a PostgreSQL switchover (deploy/dev/failover.sh) at about
 // a quarter and a Valkey failover (valkey-failover.sh) at about a half of a pass of a hundred packages. The processes stay; the
 // statements are retried (R-HA-009, R-REPO-053 "Crash and failover") and the signals and flights recover (R-HA-057). Pass conditions:
 // the same job ends the pass `complete` with each package counted once, and the upstream served every tarball exactly once: a lost
 // commit of a deleted pending row fills the package again, which stores nothing twice (R-REPO-026) and so asks the upstream for
 // nothing.
-func TestMirrorLong_R_REPO_053_PostgresSwitchoverAndValkeyFailoverDuringAPass(t *testing.T) {
+func TestNPMHA_R_REPO_053_PostgresSwitchoverAndValkeyFailoverDuringAMirrorPass(t *testing.T) {
 	e := mirrorFx(t)
 	t.Run("R-REPO-053 R-HA-052 R-HA-057 switchover of PostgreSQL, then planned failover of Valkey", func(t *testing.T) {
 		hp := e.startHeldPass(t, "failover", 2, npmstub.Mode{DelayMS: map[string]int{"document": longDocumentDelayMS, "tarball": longTarballDelayMS}}, 15)

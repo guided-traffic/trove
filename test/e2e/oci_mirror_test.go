@@ -2,7 +2,7 @@
 
 package e2e
 
-// R-REPO-055 and R-OCI-026 on kind for an OCI remote (set `mirror`, R-OCI-035): a pass of a mirror of the counting OCI test upstream runs in the
+// R-REPO-055 and R-OCI-026 on kind for an OCI remote (set `oci`, R-OCI-035): a pass of a mirror of the counting OCI test upstream runs in the
 // pool of two processes that claim the queue `mirror` alone, while docker and podman pull images through the same remote on the three
 // client-serving replicas.
 
@@ -55,15 +55,15 @@ func (e *mirrorEnv) awaitPassRunning(t *testing.T, key string) mirrorStatus {
 	return s
 }
 
-// TestMirror_R_REPO_055_AnOCIPassRunsWhileClientsPull: the pass of an OCI mirror (the catalog of the test upstream, `latest` and the tags
+// TestOCIMirror_R_REPO_055_APassRunsWhileClientsPull: the pass of an OCI mirror (the catalog of the test upstream, `latest` and the tags
 // t0000 to t0999 of bulk/tags, each held 100 ms by the upstream) runs in a process of the pool while docker and podman on three client pods pull
 // library/alpine:3, library/busybox:latest and library/nginx:1 through the mirror. Every pull succeeds, the upstream never holds more requests
 // open than the bound of R-REPO-055 (maxConcurrentFetches + n - 1 + B), and the pass ends complete.
-func TestMirror_R_REPO_055_AnOCIPassRunsWhileClientsPull(t *testing.T) {
+func TestOCIMirror_R_REPO_055_APassRunsWhileClientsPull(t *testing.T) {
 	e := mirrorFx(t)
 	s := ociStub(t)
 	host := ociRegistryHost(t)
-	fx := &ociFixture{adm: e.adm, token: e.token, run: e.run} // not ociFx: that switches the cluster to the scatter profile
+	fx := &ociFixture{adm: e.adm, token: e.token, run: e.run} // the service account and the run of the mirror environment
 	b := mirrorShare(mirrorConcurrency, mirrorMaxFetches)
 	bound := mirrorBound(mirrorMaxFetches, mirrorServing, b)
 	s.resetAll(t)

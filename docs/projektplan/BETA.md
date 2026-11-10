@@ -1,7 +1,7 @@
 # trove · Project plan to the beta release
 
 **Status:** ⚪ not started · 🟡 in progress or partly done · 🟢 done
-**Last updated:** 2026-11-09
+**Last updated:** 2026-11-10
 
 The way from zero to the beta release. The beta is trove with two package registries, **npm** and
 **NuGet (.NET)**, each with local, remote (pull-through) and virtual repositories, running on the
@@ -938,10 +938,10 @@ phase 7, so that the failure suite covers the background sync too. Its engine wa
   Q-NUGET-110, Q-OPS-171 to Q-OPS-174, Q-ARCH-316 to Q-ARCH-323); the storage usage fold that the byte bound reads (F-55)
 - 🟢 Integration tests against the counting test upstreams answering `429` and `SlowDown` (`test/integration/mirror`: npm and NuGet
   discovery, every throttling mode, the byte bound across passes, the release at shutdown, the back-off, the pre-emption across
-  processes, the status, a pass on a `worker` with its own engine); e2e: the set `mirror` (a pass while `npm ci` of 707 packages runs
+  processes, the status, a pass on a `worker` with its own engine); e2e, in the sets of the formats since Q-REPO-306: `npm`, `nuget`, `oci` (a pass while `npm ci` of 707 packages runs
   through the same remote on three client-serving replicas at 97 % and 98 % of its time without the pass, the stub's open requests at
   most 9 against the bound of 12, `dotnet restore` with a running pass, a pass with Valkey stopped, two claimants, installs and
-  restores with the stubs stopped, the Mirror tab's journey) per change, and the set `mirror-long` (the drain of the node of the
+  restores with the stubs stopped; the Mirror tab's journey in `access-long`) per change, and the nightly sets `npm-ha` and `oci-long` (the drain of the node of the
   process that runs a pass of 300 packages) nightly
 - 🟢 The repository wizard asks for the format first (owner, 2026-11-05): a picker of format tiles with a filter field is the
   first step, and the class step offers only the classes the chosen format has, because some features are technically

@@ -271,7 +271,6 @@ release_values() {
   [ "$POOLER" = "1" ] && RELEASE_VALUES+=(-f "$dir/values-pooler.yaml")
   [ "$profile" = "scatter" ] && RELEASE_VALUES+=(-f "$dir/values-scatter.yaml")
   [ "$profile" = "vuln" ] && RELEASE_VALUES+=(-f "$dir/values-scatter.yaml" -f "$dir/values-vuln.yaml")
-  [ "$profile" = "mirror" ] && RELEASE_VALUES+=(-f "$dir/values-scatter.yaml" -f "$dir/values-mirror.yaml")
   [ "$profile" = "backup" ] && RELEASE_VALUES+=(-f "$dir/values-backup.yaml")
   # The profiles edge (Envoy Gateway beside the Ingress, the transfers of R-HA-039) and alerts (ServiceMonitor and PrometheusRule): older release
   # copies have neither file, and the upgrade tests never ask for these profiles.

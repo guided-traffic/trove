@@ -2,8 +2,9 @@
 
 package e2e
 
-// R-REPO-058 on kind (set `mirror`): the status from every replica, two processes that claim the queue `mirror`, and a pass with
-// Valkey stopped.
+// R-REPO-058 on kind (set `npm-ha`): the engine of the remote full mirror across its worker pool: the status from every replica (the
+// npm mirror here, the NuGet one in nuget_ha_worker_pool_test.go), two processes that claim the queue `mirror`, and a pass with Valkey
+// stopped.
 
 import (
 	"encoding/json"
@@ -15,20 +16,6 @@ import (
 
 	"github.com/guided-traffic/trove/test/npmstub"
 )
-
-// needMirrors makes the tests after the clients-first one independent of it: a run of one of them alone builds the mirrors first.
-func (e *mirrorEnv) needMirrors(t *testing.T) {
-	t.Helper()
-	e.mu.Lock()
-	haveNPM, haveNuGet := e.npmMirror != "", e.nugetMirror != ""
-	e.mu.Unlock()
-	if !haveNPM {
-		e.clientsFirstNPM(t)
-	}
-	if !haveNuGet {
-		e.clientsFirstNuGet(t)
-	}
-}
 
 // canonical is a JSON document with its members in a fixed order, so two answers can be compared as bytes.
 func canonical(t testing.TB, raw []byte) string {
@@ -74,25 +61,33 @@ func sameStatusOnEveryReplica(t *testing.T, e *mirrorEnv, key string) mirrorStat
 	return first
 }
 
-// TestMirror_R_REPO_058_StatusFromEveryReplica: the status operation answers the same on every replica that serves it, after the
-// complete passes of the clients-first test, for the npm and the NuGet mirror.
-func TestMirror_R_REPO_058_StatusFromEveryReplica(t *testing.T) {
-	e := mirrorFx(t)
-	e.needMirrors(t)
-	for _, key := range []string{e.npmMirror, e.nugetMirror} {
-		s := sameStatusOnEveryReplica(t, e, key)
-		if s.Mode != "mirror" || s.Pass != nil || s.LastCompletePass == nil || s.LastCompletePass.Outcome != "complete" {
-			t.Errorf("the status of %s is %s", key, s.Raw)
-		}
+// assertStatusFromEveryReplica waits for the status of a mirror with a complete pass to settle, and requires one answer of its status on
+// every replica that serves it.
+func assertStatusFromEveryReplica(t *testing.T, e *mirrorEnv, key string) {
+	t.Helper()
+	e.awaitFolded(t, key, 2*time.Minute)
+	s := sameStatusOnEveryReplica(t, e, key)
+	if s.Mode != "mirror" || s.Pass != nil || s.LastCompletePass == nil || s.LastCompletePass.Outcome != "complete" {
+		t.Errorf("the status of %s is %s", key, s.Raw)
 	}
+}
+
+// TestNPMHA_R_REPO_058_MirrorStatusFromEveryReplica: the status operation of an npm mirror answers the same on every replica that serves
+// it after a complete pass. The pass is the one the dispatch starts for a new mirror; the NuGet mirror's is
+// TestNuGetHA_R_REPO_058_MirrorStatusFromEveryReplica.
+func TestNPMHA_R_REPO_058_MirrorStatusFromEveryReplica(t *testing.T) {
+	e := mirrorFx(t)
+	key := e.create(t, e.npmNamesBody("npm-mirror-status-"+e.run, e.publishNames(t, "status", 5)))
+	e.awaitComplete(t, key, 5*time.Minute)
+	assertStatusFromEveryReplica(t, e, key)
 	e.jobs.check(t)
 }
 
-// TestMirror_R_REPO_058_TwoClaimantsOneJobPerRepository: the two processes of the pool run the task mirror-dispatch every minute
+// TestNPMHA_R_REPO_058_TwoMirrorClaimantsOneJobPerRepository: the two processes of the pool run the task mirror-dispatch every minute
 // beside the requests of a run (R-REPO-056) that arrive at the same moment from three callers; six repositories are due at the first
 // tick. The job table, read every 400 ms from before the first request until every pass has ended, never holds two unfinished
 // mirror-pass jobs of one repository (the sampler of the environment), and every pass ends complete.
-func TestMirror_R_REPO_058_TwoClaimantsOneJobPerRepository(t *testing.T) {
+func TestNPMHA_R_REPO_058_TwoMirrorClaimantsOneJobPerRepository(t *testing.T) {
 	e := mirrorFx(t)
 	s := stub(t)
 	s.setMode(t, npmstub.Mode{DelayMS: map[string]int{"tarball": 300}})
@@ -100,7 +95,7 @@ func TestMirror_R_REPO_058_TwoClaimantsOneJobPerRepository(t *testing.T) {
 	const repos = 6
 	var keys []string
 	for i := 0; i < repos; i++ {
-		keys = append(keys, e.create(t, e.npmNamesBody(fmt.Sprintf("npm-mirror-dedup%d-%s", i, e.run), e.extras[100+3*i:103+3*i])))
+		keys = append(keys, e.create(t, e.npmNamesBody(fmt.Sprintf("npm-mirror-dedup%d-%s", i, e.run), e.publishNames(t, fmt.Sprintf("dedup%d", i), 3))))
 	}
 	startedAt := time.Now()
 	claimed0 := claimedBy(t, "mirror-dispatch")
@@ -157,15 +152,15 @@ func TestMirror_R_REPO_058_TwoClaimantsOneJobPerRepository(t *testing.T) {
 	e.jobs.check(t)
 }
 
-// TestMirror_R_REPO_058_ValkeyStoppedForAWholePass: Valkey and its Sentinels are down from before the mirror is created until its pass
+// TestNPMHA_R_REPO_058_ValkeyStoppedForAWholeMirrorPass: Valkey and its Sentinels are down from before the mirror is created until its pass
 // has ended. The pass is the one the dispatch starts for a new mirror (R-REPO-050: within a minute of the mode switch); no run is
 // requested, because a request after that pass would start a second one. The pass completes (the dispatch, the fence, the cursors and
 // the bounds are in PostgreSQL; the yield signal is the only thing Valkey carried), the test upstream serves each tarball once, and the
 // status is the same on every replica that serves it.
-func TestMirror_R_REPO_058_ValkeyStoppedForAWholePass(t *testing.T) {
+func TestNPMHA_R_REPO_058_ValkeyStoppedForAWholeMirrorPass(t *testing.T) {
 	e := mirrorFx(t)
 	s := stub(t)
-	names := e.extras[200:240]
+	names := e.publishNames(t, "valkey", 40)
 	var key string
 	withValkeyStopped(t, func() {
 		servingReadyDegraded(t, true)
@@ -183,7 +178,7 @@ func TestMirror_R_REPO_058_ValkeyStoppedForAWholePass(t *testing.T) {
 			t.Errorf("the status changed between two reads:\n%s\n%s", done.Raw, same.Raw)
 		}
 	})
-	counts := tarballCounts(t, "e2e-mirror-"+e.run+"-")
+	counts := tarballCounts(t, e.ownPrefix("valkey"))
 	for _, name := range names {
 		if n := counts["/"+name+"/-/"+name+"-1.0.0.tgz"]; n != 1 {
 			t.Errorf("the test upstream served the tarball of %s %d times, want once", name, n)

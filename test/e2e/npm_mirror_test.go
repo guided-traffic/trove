@@ -2,8 +2,10 @@
 
 package e2e
 
-// R-REPO-055 on kind (set `mirror`, R-REPO-059): a pass runs while `npm ci` and `dotnet restore` run through the same remotes on the
-// three client-serving replicas, the pass in the pool of two processes that claim the queue `mirror` alone.
+// The npm side of the remote full mirror on kind (R-REPO-055, R-REPO-059; set `npm`, and the install-time ratio with TROVE_PERF_GATE=1 in the
+// set `npm-ha-soak` of the nightly workflow): a pass runs while `npm ci` runs through the same remote on the three client-serving replicas,
+// the pass in the pool of two processes that claim the queue `mirror` alone, and a client installs what the mirror stored while the test
+// upstream is stopped. The NuGet side is nuget_mirror_test.go, the OCI one oci_mirror_test.go, the harness mirror_env_test.go.
 
 import (
 	"fmt"
@@ -17,26 +19,25 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/test/npmstub"
-	"github.com/guided-traffic/trove/test/nugetstub"
 )
 
 // installBudget is the factor of R-REPO-055: the install through a remote that a pass fills takes at most this much of its time
 // without the pass.
 const installBudget = 1.2
 
-// TestMirror_R_REPO_055_ClientsFirst is the e2e criterion of R-REPO-055 and E6b.6, for npm and for NuGet.
+// TestNPMMirror_R_REPO_055_ClientsFirst is the e2e criterion of R-REPO-055 and E6b.6 for npm; the NuGet criterion is
+// TestNuGetMirror_R_REPO_055_ClientsFirst.
 //
-// npm: the remote npm-mirror-<run> is a mirror of the npm test upstream under the public registry's name (the feed lists the 700
+// The remote npm-mirror-<run> is a mirror of the npm test upstream under the public registry's name (the feed lists the 700
 // packages of its corpus and the 300 extra ones the test published); maxConcurrentFetches is 8 and the mirror's concurrency 4, so
 // B = 2 and the bound is 8 + 3 - 1 + 2 = 12. The baseline is `npm ci` of the reference project (707 locked packages) through a
 // second remote of the same settings whose mirror is paused, so that its cache is as cold as the first one's and only the pass
 // differs; the run with the pass starts once the pass has filled packages. The test upstream holds every tarball and document for
 // 120 ms and 20 ms, so that fetches overlap.
-func TestMirror_R_REPO_055_ClientsFirst(t *testing.T) {
+func TestNPMMirror_R_REPO_055_ClientsFirst(t *testing.T) {
 	e := mirrorFx(t)
 	t.Run("npm", func(t *testing.T) { e.clientsFirstNPM(t) })
 	t.Run("preemption", func(t *testing.T) { e.clientsFirstPreemption(t) })
-	t.Run("nuget", func(t *testing.T) { e.clientsFirstNuGet(t) })
 	e.jobs.check(t)
 }
 
@@ -176,57 +177,6 @@ func median(d []time.Duration) time.Duration {
 	return c[len(c)/2]
 }
 
-// awaitNoPassRunning waits until no job mirror-pass is queued or running: the pass of a repository that was deleted has halted.
-func (e *mirrorEnv) awaitNoPassRunning(t *testing.T) {
-	t.Helper()
-	waitFor(t, "the pass of the deleted mirror to halt", 3*time.Minute, 2*time.Second, func() bool {
-		return sql(t, `SELECT count(*) FROM trove.job WHERE kind = 'mirror-pass' AND state IN ('queued', 'running', 'cancelling')`) == "0"
-	})
-}
-
-func (e *mirrorEnv) clientsFirstNuGet(t *testing.T) {
-	s := nugetStub(t)
-	b := mirrorShare(mirrorConcurrency, mirrorMaxFetches)
-	bound := mirrorBound(mirrorMaxFetches, mirrorServing, b)
-	s.nugetMode(t, nugetstub.Mode{Catalog: true, DelayMS: map[string]int{"nupkg": 100}})
-	t.Cleanup(func() { s.nugetMode(t, nugetstub.Mode{}) })
-
-	key := e.create(t, e.nugetBody(t, "nuget-mirror-"+e.run))
-	e.run_(t, key, false)
-	st := e.awaitPassStarted(t, key, 5)
-	t.Logf("the pass runs (%s, %d names so far, %d packages filled) when dotnet restore starts", st.Pass.Method, st.Pass.NamesDiscovered, st.Pass.PackagesDone)
-	if st.Pass.Method != "feed" {
-		t.Errorf("the pass uses the method %q, want feed (the catalog)", st.Pass.Method)
-	}
-	s.reset(t)
-	before := preempted(t, key)
-	start := time.Now()
-	out, n, err := e.restoreReference(t, 0, key, "load")
-	took := time.Since(start)
-	after := preempted(t, key)
-	open := nugetInflight(t)
-	t.Logf("dotnet restore of %d packages with the pass: %s; the test upstream held at most %d requests open (bound %d); trove_mirror_preempted_total %v -> %v",
-		n, took.Round(time.Millisecond), open.Max, bound, before, after)
-	if err != nil {
-		t.Fatalf("dotnet restore through %s with a pass running: %v\n%s", key, err, tailLines(out, 25))
-	}
-	if n < 100 {
-		t.Errorf("the restore graph has %d packages, want at least 100", n)
-	}
-	if open.Max > bound {
-		t.Errorf("R-REPO-055: the NuGet test upstream held %d requests open at once, want at most %d", open.Max, bound)
-	}
-	done := e.awaitComplete(t, key, 20*time.Minute)
-	sum := done.LastCompletePass
-	t.Logf("the pass ended %s: %d packages (%d failed), %d items, %d bytes, method %s", sum.Outcome, sum.Packages, sum.PackagesFailed, sum.ItemsStored, sum.BytesStored, sum.Method)
-	if sum.Outcome != "complete" || sum.PackagesFailed != 0 || sum.Packages < 100 {
-		t.Errorf("the pass ended %+v, want complete with no failed package", *sum)
-	}
-	e.mu.Lock()
-	e.nugetMirror = key
-	e.mu.Unlock()
-}
-
 // clientsFirstPreemption is the pre-emption half of the e2e criterion of R-REPO-055, with the contention forced (Q-REPO-253): a pass runs
 // through a remote of the private test upstream while the stub holds every tarball 1.5 s (the delay is keyed by the kind of request for
 // the whole stub, not per remote: it holds while this subtest runs, the subtests run one after another and each resets the stub), so the
@@ -250,7 +200,7 @@ func (e *mirrorEnv) clientsFirstPreemption(t *testing.T) {
 	t.Cleanup(func() { s.setMode(t, npmstub.Mode{}) })
 
 	key := e.create(t, e.npmNamesBody("npm-mirror-preempt-"+e.run, names))
-	// the remote and its pass go at the end of the subtest, a failure included, so that no pass runs on into the NuGet subtest
+	// the remote and its pass go at the end of the subtest, a failure included, so that no pass runs on into the next test
 	t.Cleanup(func() {
 		e.drop(t, key)
 		e.awaitNoPassRunning(t)
@@ -290,4 +240,42 @@ func (e *mirrorEnv) clientsFirstPreemption(t *testing.T) {
 			t.Errorf("R-REPO-055: the client fetch of %s answered %d, want 200", asked[i], code)
 		}
 	}
+}
+
+// needNPMMirror builds the mirror the tests after the clients-first one read: a run of one of them alone has none yet.
+func (e *mirrorEnv) needNPMMirror(t *testing.T) string {
+	t.Helper()
+	e.mu.Lock()
+	have := e.npmMirror != ""
+	e.mu.Unlock()
+	if !have {
+		e.clientsFirstNPM(t)
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.npmMirror
+}
+
+// TestNPMMirror_R_REPO_059_RestoreWithTheUpstreamStopped (E6b.3): after a complete pass of the mirror, the npm test upstream is scaled to
+// zero and `npm install` of a mirrored version through the same remote succeeds with an empty client cache. A stub scaled to zero
+// loses its dataset; the test restores it (seedNPM) when it ends.
+func TestNPMMirror_R_REPO_059_RestoreWithTheUpstreamStopped(t *testing.T) {
+	e := mirrorFx(t)
+	key := e.needNPMMirror(t)
+	markStubStopped("npmstub", true)
+	stubScale(t, "npmstub", 0)
+	t.Cleanup(func() {
+		stubScale(t, "npmstub", 1)
+		markStubStopped("npmstub", false)
+		e.seedNPM(t)
+	})
+	for i, name := range e.extras[:3] {
+		r, has := e.npmInstall(t, i, key, "stopped", name, "1.0.0")
+		if r.Code != 0 || !has {
+			t.Errorf("npm install %s@1.0.0 through %s with the upstream stopped: exit %d, installed %v:\n%s", name, key, r.Code, has, tailLines(r.Out, 20))
+			continue
+		}
+		t.Logf("npm install %s@1.0.0 with the upstream stopped: %s", name, r.Dur.Round(time.Millisecond))
+	}
+	e.jobs.check(t)
 }

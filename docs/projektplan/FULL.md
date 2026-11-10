@@ -212,7 +212,7 @@ all four columns green.
   Evidence: [apt-work-packages.md, Closing](apt-work-packages.md#24--closing). Stays: local source packages, snapshots, debug-symbol and
   installer packages, `dput`, translations and `Contents` for local and virtual repositories, mirrors of flat archives, `Valid-Until` on
   trove's own releases, keys in a key service, Debian vulnerability matching, copy and move, exposure rules, the Bastion and nested virtual
-  repositories (debian.md, Deferred); the nightly set `deb-long`, the Debian pass in the e2e sets `mirror` and `mirror-long`, a build
+  repositories (debian.md, Deferred); the nightly set `deb-long`, the Debian pass beside clients and under a drain in the e2e sets, a build
   trigger on a change of claims (H-725) and the metric `trove_deb_remote_parse_total`.
 
 ## E · Further platform work (P2)

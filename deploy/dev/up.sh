@@ -19,9 +19,6 @@
 #   TROVE_PROFILE=vuln    the `vuln` e2e profile (R-VULN-029): the scatter profile with the scanning reading the test advisory
 #                         source and the hosts of the test upstreams listed as public registries (values-vuln.yaml).
 #                         Run up.sh again without it to switch back.
-#   TROVE_PROFILE=mirror  the `mirror` e2e profile (R-REPO-059): the scatter profile (three api and three packages replicas) with the
-#                         passes of a mirror in a worker pool of two processes that claim the queue `mirror` alone (values-mirror.yaml).
-#                         Run up.sh again without it to switch back.
 #   TROVE_PROFILE=bastion the `bastion` e2e profile (R-BAS-049): the main installation trusts the pod range as a proxy
 #                         and lists the base URLs of the e2e Bastions (values-bastion.yaml, deploy/dev/bastion.sh).
 #                         Run up.sh again without it to switch back.
@@ -64,7 +61,7 @@ SKIP_RELEASE="${TROVE_SKIP_RELEASE:-0}"
 POOLER="${TROVE_POOLER:-0}"
 PITR="${TROVE_PITR:-0}"
 PROFILE="${TROVE_PROFILE:-default}"
-case "$PROFILE" in default|scatter|bastion|vuln|mirror|backup|edge|alerts|drain) ;; *) die "TROVE_PROFILE must be default, scatter, bastion, vuln, mirror, backup, edge, alerts or drain, not '$PROFILE'" ;; esac
+case "$PROFILE" in default|scatter|bastion|vuln|backup|edge|alerts|drain) ;; *) die "TROVE_PROFILE must be default, scatter, bastion, vuln, backup, edge, alerts or drain, not '$PROFILE'" ;; esac
 IMAGE="${TROVE_IMAGE:-guidedtraffic/trove:dev}"
 LOGS="$STATE_DIR/logs"
 START="$(date +%s)"

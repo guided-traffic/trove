@@ -1125,11 +1125,11 @@ populate rule of R-AUTHZ-008 and R-AUTHZ-026. The catalog entries API-082 to API
   one that claims the queue `mirror`.
 - **E6b.5** Status and operations (R-REPO-056, R-REPO-057): the status and the run with permission-narrowed callers and a project
   administrator, the metrics and the audit events, the browser journey of the mirror tab with axe.
-- **E6b.6** e2e set `mirror` (R-REPO-059): npm and NuGet mirrors of the stubs while `npm ci` and `dotnet restore` run through the
+- **E6b.6** e2e (R-REPO-059; the mirror tests of the format and HA sets, Q-REPO-306): npm and NuGet mirrors of the stubs while `npm ci` and `dotnet restore` run through the
   same remotes on three client-serving replicas, the install within 120 % of its time without the pass and the stub's
   connections within the bound of R-REPO-055; `kubectl drain` of the node of the process that runs a pass, the pass ending in
   another process that claims the queue; the set once with Valkey stopped.
-  Built: the sets `mirror` and `mirror-long` ([developer/e2e.md](../developer/e2e.md#the-mirror-tests)); the drain is the nightly set `mirror-long`.
+  Built: the mirror tests in the format sets `npm`, `nuget`, `oci` and the nightly sets `npm-ha`, `nuget-ha`, `oci-long` ([developer/e2e.md](../developer/e2e.md#the-mirror-tests), Q-REPO-306; the sets `mirror` and `mirror-long` until 2026-11-10); the drain is in the nightly set `npm-ha`.
 - **E6b.7** Every requirement R-REPO-050 to R-REPO-059 has a passing test that names it (Q-ROAD-4).
 
 **Evidence (2026-11-05).**

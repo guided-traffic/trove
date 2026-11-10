@@ -2,7 +2,7 @@
 
 Status: phase 6b, built (2026-11-05): the contracts, npm and NuGet discovery (A, B), the remote engine's side (C1) and the engine
 (C2), the status and run operations and the Mirror tab (D), the integration suite against the counting stubs
-([below](#the-integration-suite)) and the e2e sets `mirror` and `mirror-long` ([below](#the-e2e-set)). Specified on
+([below](#the-integration-suite)) and the e2e tests in the sets of the formats and the nightly HA sets ([below](#the-e2e-set)). Specified on
 [repositories-and-proxy.md](../spec/repositories-and-proxy.md#mirror-mode) (R-REPO-050 to R-REPO-059) and the format pages'
 sections "Mirror discovery" ([npm](../spec/formats/npm.md#mirror-discovery), [NuGet](../spec/formats/nuget.md#mirror-discovery));
 the cut into work packages is [Q-ARCH-288](../spec/architecture.md#q-arch-288--the-seams-of-the-mirror).
@@ -317,7 +317,7 @@ suite takes about three minutes; the throttling tests wait for the real seconds 
 - **C:** unit tests with a fake clock and a fake lister (window, back-off with jitter, the long wait, the fence); in
   `test/integration/mirror` the counting stubs of R-REPO-059: `429` with `Retry-After` in seconds and as a date, `503` with
   `SlowDown` and without a hint, `403` with `X-RateLimit-Remaining: 0`, release and resume, lease loss, the bound, pre-emption
-  in one process and across a client-serving process and one that claims the queue `mirror`; the e2e set `mirror`: a pass
+  in one process and across a client-serving process and one that claims the queue `mirror`; the e2e test `TestNPMMirror_R_REPO_055_ClientsFirst`: a pass
   while `npm ci` and `dotnet restore` run through the same remotes (clients first), the drain of the node of the process that
   runs a pass, once with Valkey stopped.
 - **D:** handler tests with permission-narrowed callers and the Owner of a project; `test/integration/mirrorapi` for the status
@@ -511,13 +511,13 @@ Tests: [window_test.go](../../internal/mirror/window_test.go), [background_upstr
 
 ## The e2e set
 
-The sets `mirror` and `mirror-long` ([developer/e2e.md](e2e.md#the-mirror-tests), R-REPO-059, E6b.6) run the engine in the process topology of the cut: three `packages` replicas that
-serve clients and a worker pool of two processes that claim the queue `mirror` alone ([values-mirror.yaml](../../deploy/dev/values-mirror.yaml)), against the counting stubs of both
-formats, with the real npm and .NET clients. They are the first tests that start a worker with the queue `mirror` on a cluster. What a colleague adding to the engine has to know:
+The mirror tests are part of the sets of their formats and of the nightly HA sets ([developer/e2e.md](e2e.md#the-mirror-tests), R-REPO-059, E6b.6, Q-REPO-306). They run the engine in the process topology of the cut: three `packages` replicas that
+serve clients and a worker pool of two processes that claim the queue `mirror` alone (the harness adds it to the scatter profile, `mirrorPoolValues` in [mirror_env_test.go](../../test/e2e/mirror_env_test.go)), against the counting stubs of each
+format, with the real clients. They are the first tests that start a worker with the queue `mirror` on a cluster. What a colleague adding to the engine has to know:
 
 - A change to the slots, the flights or the pass's fill ([internal/proxy](../../internal/proxy), [internal/mirror](../../internal/mirror)) is measured by
-  `TestMirror_R_REPO_055_ClientsFirst`: `npm ci` of 707 packages takes about 12 s through a remote whose mirror is paused, and the same through a remote whose pass runs must stay within 120 %.
+  `TestNPMMirror_R_REPO_055_ClientsFirst` (and `TestNuGetMirror_R_REPO_055_ClientsFirst`): `npm ci` of 707 packages takes about 12 s through a remote whose mirror is paused, and the same through a remote whose pass runs must stay within 120 %.
   The first build of the set measured 41 s (two requests of 31 s: a background fetch that held the flight while it waited for its slot, Q-REPO-179) and 12 s once the slot came first.
 - The pool's processes are the claimants of the queue: a test that needs a pass in a client-serving process is the integration tier's (`test/integration`).
-- The drain is `TestMirrorLong_R_REPO_058_DrainOfTheNodeOfAPass`: the pass of 300 packages outlasts the pool's 60 s grace period, so the release at shutdown is what ends it in the first process.
-- The failure suite of R-HA-052 on a pass is [mirror_long_fault_test.go](../../test/e2e/mirror_long_fault_test.go) (Q-REPO-198): the process that holds a pass lost by a force-delete, a stop and a freeze of its kind node (`TestMirrorLong_R_REPO_053_WorkerLostMidPass`), the upstream throttling across a drain and a kill, judged by the upstream's request log (`TestMirrorLong_R_REPO_054_ThrottledUpstreamAcrossAMove`), and a PostgreSQL switchover and a Valkey failover during a pass. A scenario that needs the pass to be in a known process takes it from the job table (`poolPodOfPass`) and needs the two processes of the pool on different nodes.
+- The drain is `TestNPMHA_R_REPO_058_DrainOfTheNodeOfAMirrorPass` (set `npm-ha`): the pass of 300 packages outlasts the pool's 60 s grace period, so the release at shutdown is what ends it in the first process.
+- The failure suite of R-HA-052 on a pass is [npm_ha_worker_pool_fault_test.go](../../test/e2e/npm_ha_worker_pool_fault_test.go) (Q-REPO-198): the process that holds a pass lost by a force-delete, a stop and a freeze of its kind node (`TestNPMHA_R_REPO_053_WorkerLostMidMirrorPass`), the upstream throttling across a drain and a kill, judged by the upstream's request log (`TestNPMHA_R_REPO_054_ThrottledUpstreamAcrossAMirrorMove`), and a PostgreSQL switchover and a Valkey failover during a pass. A scenario that needs the pass to be in a known process takes it from the job table (`poolPodOfPass`) and needs the two processes of the pool on different nodes.

@@ -25,11 +25,14 @@
 #   e2e.sh clients      the smoke test of the npm client pods (R-NPM-045: every gate row runs --version, the base URL
 #                       reaches the cluster); builds the clients image and starts the pods, which stay up
 #   e2e.sh clients-down removes the client pods
-#   e2e.sh npm-ha       drain variant A and the failovers of R-HA-052 under the npm load (E2.11)
+#   e2e.sh npm-ha       drain variant A and the failovers of R-HA-052 under the npm load (E2.11, TestNPMHA), and the HA of the mirror's worker pool (TestNPMHA_R_REPO_...:
+#                       the status from every replica, two claimants, Valkey stopped for a whole pass, the drain of the node of a pass, the failure suite of R-HA-052 on a pass; R-REPO-053,
+#                       R-REPO-054, R-REPO-058, R-REPO-059; Q-REPO-306)
 #   e2e.sh npm-ha-crash the pod crash of R-HA-052 under the npm load, three force-deletes (E2.11)
 #   e2e.sh npm-ha-soak  the pod crash with ten force-deletes over 20 minutes, then the npm load scripts of R-ARCH-027
-#                       (perf/k6/npm.js, reported); the nightly Performance workflow runs it. npm-ha-closing runs npm-ha,
-#                       npm-ha-soak and the Valkey outage in one go
+#                       (perf/k6/npm.js, reported), and the clients-first measurement of a mirror (TestNPMMirror_R_REPO_055_ClientsFirst, R-REPO-055,
+#                       with its install-time ratio enforced when the job sets TROVE_PERF_GATE=1); the nightly Performance workflow runs it. npm-ha-closing
+#                       runs npm-ha, npm-ha-soak and the Valkey outage in one go
 #   e2e.sh ha-suite    the failure scenarios of R-HA-052 that npm-ha does not run, under the npm load (TestHASuite_...): the audit forward of
 #                       R-NPM-038 cut by a pod deletion, the object-store outage (30 s, and 5 min with a replica deleted), the PostgreSQL
 #                       and the Valkey primary loss and the loss of a node (docker stop); the scatter profile, three client pods, the counting
@@ -48,7 +51,7 @@
 #   e2e.sh nuget        the NuGet acceptance tests (every TestNuGet... except TestNuGetClosing... and TestNuGetHA...), the counting
 #                       NuGet test upstream and three client pods; CI: job e2e-nuget
 #   e2e.sh nuget-closing  TestNuGetClosing...: the additions of the run that closes the phase (CI: job e2e-nuget, closing=true)
-#   e2e.sh nuget-ha     TestNuGetHA...: drain variant A and the failovers of R-HA-052 under the npm and NuGet load together
+#   e2e.sh nuget-ha     TestNuGetHA...: drain variant A and the failovers of R-HA-052 under the npm and NuGet load together, and the status of a NuGet mirror from every replica (R-REPO-058)
 #   e2e.sh drain-load-b, drain-load-c, drain-load-e  one variant of TestDrainLoad each (CI)
 #   e2e.sh drain-load   TestDrainLoad: drain variants B, C and E of R-HA-059 under that load, the long-transfer probes and R-STOR-046's gc-full (E5.9)
 #   e2e.sh drain-load-pooler  TestDrainLoadPooler: drain variant D (an instance of the request pooler) under the same load, in the pooler profile
@@ -74,20 +77,13 @@
 #   e2e.sh vuln-pooler  the block of a malicious version through drain variant D (E5.13): the `vuln` profile with the poolers of R-HA-058
 #                       (TROVE_POOLER=1), no client pods; the cluster stays in the pooler overlay until the next `make dev-up`
 #                       (CI: job e2e-vuln, nightly)
-#   e2e.sh mirror       the short scenarios of R-REPO-059: the chart in the `mirror` profile (three api and three packages replicas, the main worker
-#                       and a pool of two processes that claim the queue `mirror` alone, the scatter edge), npm and NuGet remotes in mode mirror
-#                       over the counting test upstreams (the npm one also under the names of the public registry, through a CoreDNS rewrite
-#                       the tests make and undo), `npm ci` and `dotnet restore` through the same remotes while a pass runs, the status from
-#                       every replica, the dispatch of two processes, a pass with Valkey stopped and a restore with the upstream stopped;
-#                       CI: job e2e-mirror (a change to the mirror)
-#   e2e.sh mirror-long  the long scenario of R-REPO-058: `kubectl drain` of the node of the process that runs a pass of 300 packages
-#                       (nightly, dispatch, locally: a red long leg is a finding, not a blocker, owner 2026-11-01)
 #   e2e.sh oci          the OCI acceptance tests (every TestOCI... but TestOCIClosing... and TestOCILong...): the counting OCI test upstream and three
 #                       client pods, each with the Docker Engine (Buildx) and Podman in a privileged pod of the namespace trove-e2e-clients; the scatter
 #                       profile; login, push and pull through local, remote (pull-through and mirror), virtual and bound-host repositories, multi-platform
 #                       images, an image pull secret, the setup snippets; CI: job e2e-oci
 #   e2e.sh oci-closing  TestOCIClosing...: the additions of the run that closes the phase (CI: job e2e-oci, closing=true)
-#   e2e.sh oci-long     TestOCILong...: a push whose upload is cut by the drain of a packages pod (R-OCI-011, R-HA-052); nightly, dispatch, locally
+#   e2e.sh oci-long     TestOCILong...: a push whose upload is cut by the drain of a packages pod (R-OCI-011, R-HA-052) and the drain of the node of the process that runs an OCI
+#                       mirror's pass (R-REPO-058); nightly, dispatch, locally
 #   e2e.sh oci-clients  the smoke test of the OCI client pods (the pinned Docker Engine and Podman run, the CA is trusted, the registry answers);
 #                       builds the client images and starts the pods, which stay up
 #   e2e.sh oci-clients-down  removes the OCI client pods and their namespace
@@ -128,7 +124,7 @@
 # TROVE_E2E_NUGET_CLIENTS_IMAGE_BUILD=0 as for npm; TROVE_E2E_NUGETSTUB=1 deploys the counting NuGet test upstream.
 # The APT client pods (the set deb): TROVE_E2E_APT_CLIENTS_TARGET and TROVE_E2E_APT_CLIENTS_IMAGE_BUILD=0 as for npm; TROVE_E2E_DEBSTUB=1
 # deploys the counting Debian archive test upstream.
-# The OCI client pods (sets oci*, mirror*): TROVE_E2E_OCI_CLIENTS_PODS (default 3), TROVE_E2E_OCI_CLIENTS_TARGET and
+# The OCI client pods (sets oci*): TROVE_E2E_OCI_CLIENTS_PODS (default 3), TROVE_E2E_OCI_CLIENTS_TARGET and
 # TROVE_E2E_OCI_CLIENTS_IMAGE_BUILD=0 as for npm; TROVE_E2E_OCISTUB=1 deploys the counting OCI test upstream.
 set -euo pipefail
 # shellcheck source=deploy/dev/lib.sh
@@ -150,16 +146,17 @@ case "$set_name" in
   # >>> M2 npm-clients
   clients) run='^TestNPMClients$'; NPM_CLIENTS=1 ;;
   clients-down) NPM_CLIENTS=down ;;
-  # The npm acceptance matrix and the criteria E2.1 to E2.12 (test/e2e/npm_*_test.go): the counting test upstream,
+  # The npm acceptance matrix and the criteria E2.1 to E2.12 (test/e2e/npm_*_test.go), and the npm mirror of R-REPO-059 (TestNPMMirror..., a pool of two
+  # processes that claim the queue `mirror` beside the scatter profile, added by the tests, Q-REPO-306): the counting test upstream,
   # three client pods (one per packages replica), the scatter profile. CI runs it as the job e2e-npm on every change.
-  npm) run='^TestNPM(Clients|Matrix|Replicas|Collapse|Upstream|Endpoint|Project)'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
+  npm) run='^TestNPM(Clients|Matrix|Replicas|Collapse|Upstream|Endpoint|Project|Mirror)'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
   # The additions of the run that closes the phase: the matrix again with Valkey stopped, the read-only subset against
   # the public registry. Started by the workflow only when it is dispatched with closing=true (Q-NPM-46).
   npm-closing) run='^TestNPMClosing'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NPM_CLOSING=1 ;;
   # <<< M2 npm-clients
   # >>> M3 nuget-clients
   # The NuGet client pods (R-NUGET-027, docs/developer/e2e.md#the-nuget-clients): the smoke test of the clients alone, and
-  # the NuGet acceptance tests (test/e2e/nuget_*_test.go, every test named TestNuGet...) with the counting test upstream and
+  # the NuGet acceptance tests (test/e2e/nuget_*_test.go, every test named TestNuGet..., the NuGet mirror among them) with the counting test upstream and
   # three client pods. The closing and nightly tests (TestNuGetClosing..., TestNuGetHA...) are sets of their own and are
   # skipped by `nuget` (Q-NUGET-34). CI runs `nuget` as the job e2e-nuget on every change.
   nuget-clients) run='^TestNuGetClients$'; NUGET_CLIENTS=1 ;;
@@ -184,14 +181,14 @@ case "$set_name" in
   drain-load-pooler) run='^TestDrainLoadPooler$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 TROVE_E2E_SCATTER_PROFILE=drain TROVE_POOLER=1 ;;
   # <<< M3 nuget-clients
   # Drain and failover under npm load (E2.11, test/e2e/npm_ha_test.go): drain variant A of R-HA-059, the PostgreSQL
-  # switchover and the Valkey failover of R-HA-052 under eight npm ci loops, a publish loop and k6 (CI: e2e-npm leg
-  # npm-ha of the nightly HA and Performance workflow); the pod crash in a set of its own (npm-ha-crash, three force-deletes,
+  # switchover and the Valkey failover of R-HA-052 under eight npm ci loops, a publish loop and k6, and the HA of the mirror's worker pool
+  # (TestNPMHA_..., test/e2e/npm_ha_worker_pool*_test.go; CI: e2e-npm leg npm-ha of the nightly HA and Performance workflow); the pod crash in a set of its own (npm-ha-crash, three force-deletes,
   # run by hand). The soak
   # (nightly) runs the pod crash with ten force-deletes, then perf/k6/npm.js against one replica (TestNPMPerf, reported,
-  # not gated). npm-ha-closing runs all of it and adds the 5-minute Valkey outage of the full suite (closing run).
-  npm-ha) run='^TestNPMHA$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
+  # not gated) and the clients-first measurement of a mirror, whose install-time ratio the job enforces (TROVE_PERF_GATE=1 in performance.yml, Q-REPO-197). npm-ha-closing runs all of it and adds the 5-minute Valkey outage of the full suite (closing run).
+  npm-ha) run='^TestNPMHA($|_)'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
   npm-ha-crash) run='^TestNPMHACrash$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
-  npm-ha-soak) run='^TestNPM(HACrash|Perf)$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NPM_CRASH_SOAK=1 ;;
+  npm-ha-soak) run='^TestNPM(HACrash|Perf|Mirror_R_REPO_055_ClientsFirst)$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NPM_CRASH_SOAK=1 ;;
   npm-ha-closing) run='^TestNPM(HA|HACrash|HAClosing|Perf)$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NPM_CLOSING=1 TROVE_E2E_NPM_CRASH_SOAK=1 ;;
   # The failure suite under npm load (test/e2e/ha_suite_test.go, docs/developer/e2e.md#the-failure-suite-under-npm-load): the
   # scenarios of R-HA-052 that npm-ha and npm-ha-crash leave out, with the same load (eight npm ci loops, a publish loop, k6).
@@ -253,14 +250,6 @@ case "$set_name" in
   # The additions of the run that closes the phase: the set deb with Valkey stopped, and the read-only check against the Debian archive (R-DEB-031, R-DEB-035).
   deb-closing) run='^TestDebClosing'; APT_CLIENTS=1; export TROVE_E2E_DEBSTUB=1 TROVE_E2E_DEB_CLOSING=1 ;;
   # <<< T17 deb
-  # >>> M6b mirror
-  # The remote full mirror (R-REPO-059, docs/developer/e2e.md#the-mirror-tests): the `mirror` profile (up.sh, values-mirror.yaml), the two counting
-  # test upstreams and three client pods of each kind. `mirror` is the short scenarios (CI: job e2e-mirror on a change to the mirror);
-  # `mirror-long` the drain of the process that runs a pass (nightly, on dispatch, locally: a red long leg is a finding, not a blocker,
-  # owner 2026-11-01).
-  mirror) run='^TestMirror_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; OCI_CLIENTS=1; OCI_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 TROVE_E2E_OCISTUB=1 ;;
-  mirror-long) run='^TestMirrorLong_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; OCI_CLIENTS=1; OCI_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_OCISTUB=1 ;;
-  # <<< M6b mirror
   # >>> M6a upgrade
   # The upgrade tests (R-HA-020, R-HA-064, E6a.7, docs/developer/e2e.md#the-upgrade-tests): the release is removed, the database
   # and Valkey are emptied, an older release is installed from the published chart and image (v0.16.0 for the cut into roles, the

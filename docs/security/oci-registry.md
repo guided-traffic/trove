@@ -282,7 +282,7 @@ per-principal limits.
 
 ### H-750 · The OCI client pods of the e2e tier are privileged, and the dev CA is added to a node's containerd
 
-Stage: the dev and CI clusters of the e2e sets `oci*`, `mirror` and `mirror-long` ([oci-clients.yaml](../../deploy/dev/oci-clients.yaml), `oci_node_setup` in [e2e.sh](../../deploy/dev/e2e.sh)). Not an installation of trove.
+Stage: the dev and CI clusters of the e2e sets `oci*` ([oci-clients.yaml](../../deploy/dev/oci-clients.yaml), `oci_node_setup` in [e2e.sh](../../deploy/dev/e2e.sh)). Not an installation of trove.
 
 Live wherever those sets run. dockerd and Podman need a privileged container, so the pods `trove-e2e-oci-<i>` run privileged and as root in the namespace `trove-e2e-clients`, whose Pod Security level is `privileged` (Q-OCI-21); a container escape reaches the kind node, and with it every other pod of the cluster. The Kubernetes pull row also copies a forwarder and the dev CA with a `hosts.toml` into the control-plane node (`docker exec`, `docker cp`), so that node's containerd trusts the dev CA for `localhost:<edge port>`. The pods mount no ServiceAccount token and hold no credential of their own (the tests hand each command the token it needs), the namespace holds nothing else, and a dev cluster holds no data of value: the cluster is a throwaway of the runner or the laptop.
 

@@ -47,14 +47,14 @@ var (
 
 // runUp runs deploy/dev/up.sh with the profile; the cluster name and the ports come from the environment, as
 // make dev-up got them.
-func runUp(profile string) error {
+func runUp(profile string, env ...string) error {
 	dev := os.Getenv("TROVE_E2E_DEV_DIR")
 	if dev == "" {
 		return fmt.Errorf("TROVE_E2E_DEV_DIR is not set; run the suite through deploy/dev/e2e.sh")
 	}
 	cmd := exec.Command(filepath.Join(dev, "up.sh"))
 	cmd.Dir = cfg.repo
-	cmd.Env = append(os.Environ(), "TROVE_PROFILE="+profile)
+	cmd.Env = append(append(os.Environ(), "TROVE_PROFILE="+profile), env...)
 	out, err := cmd.CombinedOutput()
 	_ = os.WriteFile(filepath.Join(cfg.out, "profile-"+profile+".log"), out, 0o644)
 	if err != nil {

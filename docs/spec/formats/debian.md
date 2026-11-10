@@ -1602,8 +1602,8 @@ Priority: **P2** · Covers: trove-only
   Ubuntu 22.04; the flat root `deb <repo URL> ./` on Ubuntu 24.04. Set `deb-long` (nightly, R-HA-052): the delay bound of
   R-DEB-010 under load, the bound of R-DEB-026 with `compression: ["xz"]`, and the drain of the worker that runs a build of a
   virtual repository with the large index. One cluster shares one clock, so the time rules of Q-DEB-30 are proven by the
-  integration asserts of R-DEB-010 and R-DEB-016, not by the e2e set. The set `mirror` gains a Debian mirror of the stub on two worker processes while clients install through it, and
-  `mirror-long` the drain of the node whose process runs a Debian pass (R-REPO-058, R-REPO-059).
+  integration asserts of R-DEB-010 and R-DEB-016, not by the e2e set. The set `deb` carries a Debian mirror of the stub (`TestDebMirror`), and a pass on two worker processes while clients install through it and
+  the drain of the node whose process runs a Debian pass are not built (R-REPO-058, R-REPO-059, Q-REPO-306).
 - **Closing run** (the full run of Test and Release on the commit that closes the phase): the set `deb` with Valkey stopped, and a
   read-only check against the Debian archive: a `pullThrough` remote of `https://deb.debian.org/debian/` with Debian's archive key
   (fetched in the test and checked against a fingerprint pinned in the test) and `apt-get install hello` in `debian:13`, at most 30
@@ -1694,7 +1694,7 @@ against PostgreSQL, Valkey with Sentinel and S3 plus the conformance kit, and e2
 | R-DEB-010 to R-DEB-014 (builds, content, by-hash, deletion, state) | renderers, determinism | parallel uploads on three replicas, fault-injected build, Valkey stopped, by-hash retention, trash, reindex, index wait | `deb`; `deb-long` (delay bound) |
 | R-DEB-015 to R-DEB-018 (keys, signatures, rotation, public key) | signer and verifier | key API, sealing, import rules, dual signatures, promotion, journal entry | `deb` (verification in four images, a wrong keyring fails, the rotation table) |
 | R-DEB-019 to R-DEB-023 (remote) | release parser, anti-rollback decision | the counting stub: byte-for-byte release, verification, rollback, pair, by-hash, plain-path check, pool digests, parse rows, shadowing check | `deb` (remote `pullThrough`) |
-| R-DEB-024, Mirror discovery | plan over fixtures | stub passes (suites, components, architectures, patterns, versions, bound, moved suite, unknown key, offline) | `mirror` (Debian pass on two worker processes while clients install), `mirror-long` (drain) |
+| R-DEB-024, Mirror discovery | plan over fixtures | stub passes (suites, components, architectures, patterns, versions, bound, moved suite, unknown key, offline) | `deb` (a pass, `TestDebMirror`; a pass on two worker processes while clients install and the drain are not built) |
 | R-DEB-025 to R-DEB-028 (virtual) | merge over fixtures | merge order, claims, member paths, gate, member without stored copy, refresh, uploads through the target | `deb` (local and remote packages through `apt`, the claim row); `deb-long` (drain during a build) |
 | R-DEB-029, R-DEB-030 (setup, screens) | templates render, kit check 8 | view API | `deb` (rendered snippets), browser journey of the package and key screens |
 | R-DEB-031 to R-DEB-035 (replicas, backups, metrics, limits, suites) | crafted inputs (kit) | Valkey stopped, journal replay of deletions and retirements, read budget rows | `deb` in `scatter`; closing run with Valkey stopped; restore drill (R-BAK-029) |

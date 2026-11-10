@@ -611,7 +611,7 @@ Not built, or not proven:
   and enqueues its build after a member's publication has committed, not in it (H-726); `member_expired` and the dropping of a member's recorded `Date`
   are unit rules, not integration cases.
 - The nightly set `deb-long` (the delay bound of R-DEB-010 runs in `make test-performance`, Q-DEB-59; the bound of R-DEB-026 with `compression: ["xz"]` is
-  an integration case of `debvirtual`) and the Debian pass in the e2e sets `mirror` and `mirror-long`.
+  an integration case of `debvirtual`) and the Debian pass beside clients and under a drain in the e2e sets.
 - The metric `trove_deb_remote_parse_total` of R-DEB-033.
 - What the spec defers ([Deferred](../spec/formats/debian.md#deferred)): source package uploads, snapshots, `.udeb`, `dput`, debug symbols, `Valid-Until`
   on trove's own releases, an external key service, vulnerability matching, copy and move, endpoints with exposure rules, the Bastion and nested

@@ -3623,7 +3623,7 @@ budget (`limits.maxConcurrentFetches`, R-REPO-040, Q-REPO-8, Q-REPO-97), and cli
   and a per-repository background counter; it never queues: it waits outside the slots until one is free. It takes the
   cross-replica flight of R-REPO-026 like any fetch, so a client that asks for the same item joins it as a follower or a
   waiter instead of fetching twice. A background fetch takes its slot before it enters a flight (Q-REPO-179), so that no client waits for a flight whose fetch has not begun;
-  the e2e set `mirror` measured `npm ci` at 41 s against 12 s before that rule ([developer/e2e.md](../developer/e2e.md#the-mirror-tests)).
+  the first build of the e2e mirror tests measured `npm ci` at 41 s against 12 s before that rule ([developer/e2e.md](../developer/e2e.md#the-mirror-tests)).
 - **The end of the exchange** (Q-REPO-235). The background counter and the repository's share are returned when the
   upstream exchange of the item the slot was taken for ends (R-REPO-040), the replica's slot when the fetch ends. From
   the end of its exchange a background fetch is no longer one that a client fetch or the signal below pre-empts: a
@@ -3662,7 +3662,7 @@ Acceptance criteria:
   B = 2; the stub delays every tarball by 2 s): the pass runs two background fetches; eight client fetches take the
   client-serving replica's eight slots without a wait; a ninth waits, the process that runs the pass pre-empts both
   background fetches, and 1 s later the stub has at most eight tarball fetches in flight (Q-REPO-171).
-- e2e (set `mirror`, R-REPO-059): a pass of 300 packages runs while `npm ci` of the 400-dependency fixture runs through the
+- e2e (sets `npm` and `npm-ha-soak`, R-REPO-059): a pass of 300 packages runs while `npm ci` of the 400-dependency fixture runs through the
   same remote on three client-serving replicas; `npm ci` succeeds within 120 % of its time without the pass, the stub never has more
   than `maxConcurrentFetches + n − 1 + B` connections open. The time ratio is enforced by the nightly run, the bound in every run
   (Q-REPO-197). Pre-emption is proved by a second part with the contention forced (Q-REPO-253): a pass runs while the stub holds a tarball
@@ -3807,7 +3807,7 @@ Rules:
   interrupted pass had pending. A restore without remote caches (R-BAK-008) also clears `feed_cursor`, `last_full_pass_at`
   and `patterns_fingerprint`, so that its first pass is full.
 
-Acceptance criteria (e2e set `mirror` of R-REPO-059):
+Acceptance criteria (the e2e mirror tests of R-REPO-059):
 
 - `kubectl drain` of the node of the process that runs a pass of 300 packages: the pass ends in another process that claims
   the queue, and the
@@ -3831,33 +3831,33 @@ Priority: **MVP** · Covers: trove-only
 - **Integration** (against the stack of [ha-and-helm.md](ha-and-helm.md) R-HA-051): every acceptance criterion of R-REPO-050
   to R-REPO-058 that names the integration level, the npm and NuGet discovery criteria of the format pages, the fence, the
   status and run operations with permission-narrowed callers and an Owner, and the audit events.
-- **e2e** (set `mirror` on kind, three client-serving replicas and two processes that claim the queue `mirror`): npm and
+- **e2e** (on kind, three client-serving replicas and two processes that claim the queue `mirror`): the tests belong to the sets of the
+  format and of the failure suite, not to a set of their own ([Q-REPO-306](#q-repo-306--the-mirror-tests-are-part-of-the-formats-and-of-the-nightly-ha-sets-the-worker-pool-is-added-by-the-tests)). The npm and
   NuGet mirrors of the stub upstreams while
-  `npm ci` and `dotnet restore` run through the same remotes, with the clients-first criterion of R-REPO-055; the drain of
-  R-REPO-058; a restore of a stored package with the upstream stub stopped; the browser journey of the mirror panel
-  (status, pause, run a pass) with axe ([api-and-ui.md](api-and-ui.md) Q-UI-104). The drain of R-REPO-058 is the set `mirror-long`, which runs
-  in the nightly workflow (owner, 2026-11-01); the rest is the set `mirror`. The profile, the way the npm mirrors get the feed, the measure of the
-  stub's connections, the baseline of the install time, the size of the passes and the CI wiring are Q-REPO-173 to Q-REPO-178.
-- **The failure suite of phase 7** ([ha-and-helm.md](ha-and-helm.md) R-HA-052) adds the mirror to its drains, failovers and throttling; it is
-  part of the set `mirror-long` (Q-REPO-198): the process of the pool that holds a pass lost (its pod force-deleted, its kind node stopped,
+  `npm ci` and `dotnet restore` run through the same remotes, with the clients-first criterion of R-REPO-055, and a restore of a stored package with the upstream stub stopped,
+  are the sets `npm` and `nuget`; the OCI pass while clients pull is the set `oci`; the browser journey of the mirror panel
+  (status, pause, run a pass) with axe ([api-and-ui.md](api-and-ui.md) Q-UI-104) is `TestE1_11Journeys` in the set `access-long`. The install-time ratio of R-REPO-055 is enforced in the nightly set `npm-ha-soak`. The way the npm mirrors get the feed, the measure of the
+  stub's connections, the baseline of the install time and the size of the passes are Q-REPO-174 to Q-REPO-177.
+- **The drains and the failures** (R-REPO-058 and [ha-and-helm.md](ha-and-helm.md) R-HA-052, which adds the mirror to its drains, failovers and throttling) are in the nightly HA sets `npm-ha`, `nuget-ha` and `oci-long`:
+  the status from every replica, two claimants, Valkey stopped for a whole pass, the drain of the node of a pass (npm and OCI); part of `npm-ha` (Q-REPO-198): the process of the pool that holds a pass lost (its pod force-deleted, its kind node stopped,
   its kind node frozen and thawed), the upstream throttling a pass while its process is drained or killed, and a PostgreSQL switchover and
   a Valkey failover during a pass.
 
 Acceptance criteria:
 
-- The tests of `test/integration/mirror` and the e2e set `mirror` pass, and each names the requirement it checks.
-- e2e (set `mirror-long`, R-HA-052): the process that holds a pass of a hundred packages is lost, by `kubectl delete pod --grace-period=0
+- The tests of `test/integration/mirror` and the e2e mirror tests pass, and each names the requirement it checks.
+- e2e (set `npm-ha`, R-HA-052): the process that holds a pass of a hundred packages is lost, by `kubectl delete pod --grace-period=0
   --force`, by `docker stop` of its kind node (then `docker start`) and by `docker pause` of its kind node (thawed after another process has
   taken the pass over). The pass progresses again in another process within 5 minutes of the loss (`jobs.lease_duration` of 60 s, the
   reaper, the next `mirror-dispatch`), ends `complete` with each package counted once, the test upstream served every tarball and at most
   `concurrency` of them twice, and every `npm install` of a stored version through the same remote while the clients' path is whole
   succeeds (R-REPO-053, R-REPO-055, R-REPO-058).
-- e2e (set `mirror-long`, R-HA-052): the upstream answers `429` with `Retry-After: 30` for 45 s while the node of the pass's process is
+- e2e (set `npm-ha`, R-HA-052): the upstream answers `429` with `Retry-After: 30` for 45 s while the node of the pass's process is
   drained, and `503` with the `SlowDown` body eight times while the pass's process is killed. The upstream's own request log shows no request
   of the mirror inside a wait that an answer named (`Retry-After`; at least one second without it), the throttled answers stay few (six and
   twelve at most), the pass ends `complete` with every tarball served, and a client install of a stored version during the wait sends the
   upstream nothing (R-REPO-054, Q-REPO-187).
-- e2e (set `mirror-long`, R-HA-052): a PostgreSQL switchover and a Valkey failover during a pass of a hundred packages leave the pass
+- e2e (set `npm-ha`, R-HA-052): a PostgreSQL switchover and a Valkey failover during a pass of a hundred packages leave the pass
   `complete` with each package counted once and every tarball served exactly once (R-REPO-053 "Crash and failover", R-REPO-026).
 
 ## Behavior across replicas
@@ -6907,7 +6907,7 @@ Context: R-REPO-059 asks for three client-serving replicas and two processes tha
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) A profile `mirror` (values-scatter.yaml, then [values-mirror.yaml](../../deploy/dev/values-mirror.yaml)) with `worker.pools: [{name: mirror, queues: [mirror], replicaCount: 2}]` and the main worker unchanged (chosen) | Passes run only in the pool; clients are served by the three `packages` pods; the main worker keeps every other queue | The topology of R-ARCH-001 and R-HA-062 as specified: pass and clients meet only through PostgreSQL, Valkey and the signal; the pool's two processes are the two claimants of R-REPO-058 | The pool `vuln` is gone in this profile (the scanning is off in it) |
+| (a) A profile `mirror` (values-scatter.yaml, then values-mirror.yaml, removed since Q-REPO-306) with `worker.pools: [{name: mirror, queues: [mirror], replicaCount: 2}]` and the main worker unchanged (chosen) | Passes run only in the pool; clients are served by the three `packages` pods; the main worker keeps every other queue | The topology of R-ARCH-001 and R-HA-062 as specified: pass and clients meet only through PostgreSQL, Valkey and the signal; the pool's two processes are the two claimants of R-REPO-058 | The pool `vuln` is gone in this profile (the scanning is off in it) |
 | (b) No pool: the main worker (two replicas) claims `mirror` with everything else | The default topology | No new profile | Passes share processes with other jobs; R-HA-062's exclusion is not exercised |
 | (c) Role `all` | Clients and passes in one process | Pre-emption in the process | It is the integration tier's case (R-REPO-055), not the topology of the cut |
 
@@ -7584,7 +7584,7 @@ lock, CPU in the database, the machine, or trove between statements. The develop
 `log_lock_waits` with a lower `deadlock_timeout` in the profile `mirror`, or a sampler on the standby.
 
 **Applied in the spec:** R-REPO-047 (`slot_wait_ms`), [operations-and-observability.md](operations-and-observability.md) R-OPS-011. Code:
-[deploy/dev/postgres.yaml](../../deploy/dev/postgres.yaml), [test/e2e/mirror_clients_test.go](../../test/e2e/mirror_clients_test.go),
+[deploy/dev/postgres.yaml](../../deploy/dev/postgres.yaml), [test/e2e/npm_mirror_test.go](../../test/e2e/npm_mirror_test.go),
 `test/e2e/mirror_readings_test.go`, [internal/outbound/factory.go](../../internal/outbound/factory.go) (`Call`),
 [roundtripper.go](../../internal/outbound/roundtripper.go). Tests: `TestR_OPS_011_TheSlotWaitIsARemoteRecordsField` (unit),
 `TestR_OPS_011_TheUpstreamRecordOfAFetchCarriesItsSlotWait` (integration). Elsewhere: [developer/e2e.md](../developer/e2e.md#the-mirror-tests),
@@ -7616,7 +7616,7 @@ rule works across processes, which contention alone shows. The development agent
 background fetch's exchange (`trove_remote_fetch_queue_wait_seconds` of the repository above the pass-free pairs'), which would be a regression of
 the rule that this subtest does not see.
 
-**Applied in the spec:** R-REPO-055 (the e2e criterion). Code: [test/e2e/mirror_clients_test.go](../../test/e2e/mirror_clients_test.go)
+**Applied in the spec:** R-REPO-055 (the e2e criterion). Code: [test/e2e/npm_mirror_test.go](../../test/e2e/npm_mirror_test.go)
 (`clientsFirstPreemption`). Elsewhere: [developer/e2e.md](../developer/e2e.md#the-mirror-tests).
 
 ### Q-REPO-245 · A narrowing update records `repository.narrowed` beside `repository.updated`, with only the parts that narrowed
@@ -7948,6 +7948,42 @@ background fetches builds it.
 **Applied in the spec:** R-REPO-055 (the background share also covers these runs: the bullet "Runs outside a pass"), [Q-REPO-305](#q-repo-305--a-run-outside-a-pass-has-a-window-of-its-own-and-ends-on-a-long-wait). Code:
 [background_upstream.go](../../internal/formathost/background_upstream.go), [window.go](../../internal/mirror/window.go). Tests: the unit tests of both and
 `TestR_REPO_055_ABackgroundUpstreamFetchesAndStoresWithoutAPass` in [background_test.go](../../test/integration/mirror/background_test.go).
+
+### Q-REPO-306 · The mirror tests are part of the formats and of the nightly HA sets; the worker pool is added by the tests
+
+Status: **Decided by the owner, 2026-11-10** — "Ist falsch unterteilt. mirror ist eine Funktion von oci, npm und so weiter".
+
+Context: the e2e tests of the remote full mirror were a set of their own, `mirror`, with a nightly `mirror-long` (Q-REPO-173, Q-REPO-178). A mirror is a feature of a format
+(npm, NuGet, OCI, Debian), and the Debian mirror test already lived in the set `deb`. Two questions followed: where each test goes, and how the tests get the worker
+pool of two processes that claim the queue `mirror` alone (R-HA-062), which only the profile `mirror` carried.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Dissolve the sets: format behaviour into the format's own set, the engine under failure into the existing nightly HA sets; the tests add the worker pool themselves (`TROVE_HELM_EXTRA`, a Helm value naming the pools `vuln` and `mirror`) (chosen) | `mirrorFx` runs `up.sh` once more for the set's scatter profile with the pool; the profile `mirror` and `values-mirror.yaml` are gone | Each test runs where its format is, by its set's regular expression; only the sets that run mirror tests pay for two more worker pods | One more `up.sh` in the sets with mirror tests (about a minute); the value names the pool `vuln` again |
+| (b) Merge the pool into `values-scatter.yaml` | Every scatter set carries the pool | One values file | The pod counts of `push`, `drain-roles`, `ha-suite`, `ha-faults`, `ha-pooler` and `npm-ha` (three api, three packages, four workers) change for every set; two more pods in every scatter leg, the GitHub-hosted ones among them; the main worker no longer claims `mirror` anywhere |
+| (c) Keep a renamed profile (`pool`) selected by `TROVE_E2E_SCATTER_PROFILE` | A profile of its own for the sets with mirror tests | No extra `up.sh` | A set of its own in spirit, one more values file; the format sets carry a switch for a feature of theirs |
+
+**Choice:** (a), the owner's cut; the pool is the development agent's choice of how.
+
+**Where the tests went** (requirement IDs stay in the names):
+
+| Before | Now | Set |
+|---|---|---|
+| `TestMirror_R_REPO_055_ClientsFirst`, subtests `npm`, `preemption` | `TestNPMMirror_R_REPO_055_ClientsFirst` | `npm`, and `npm-ha-soak` (the install-time ratio enforced, `TROVE_PERF_GATE=1`, Q-REPO-197, Q-REPO-211) |
+| `TestMirror_R_REPO_055_ClientsFirst/nuget` | `TestNuGetMirror_R_REPO_055_ClientsFirst` | `nuget` |
+| `TestMirror_R_REPO_059_RestoreWithTheUpstreamStopped` | `TestNPMMirror_R_REPO_059_RestoreWithTheUpstreamStopped`, `TestNuGetMirror_R_REPO_059_RestoreWithTheUpstreamStopped` | `npm`, `nuget` |
+| `TestMirror_R_REPO_055_AnOCIPassRunsWhileClientsPull` | `TestOCIMirror_R_REPO_055_APassRunsWhileClientsPull` | `oci` |
+| `TestMirrorLong_R_REPO_058_DrainOfTheNodeOfAnOCIPass` | `TestOCILong_R_REPO_058_DrainOfTheNodeOfAMirrorPass` | `oci-long` |
+| `TestMirror_R_REPO_058_StatusFromEveryReplica` | `TestNPMHA_R_REPO_058_MirrorStatusFromEveryReplica`, `TestNuGetHA_R_REPO_058_MirrorStatusFromEveryReplica` | `npm-ha`, `nuget-ha` |
+| `TestMirror_R_REPO_058_TwoClaimantsOneJobPerRepository`, `..._ValkeyStoppedForAWholePass` | `TestNPMHA_R_REPO_058_TwoMirrorClaimantsOneJobPerRepository`, `..._ValkeyStoppedForAWholeMirrorPass` | `npm-ha` |
+| `TestMirrorLong_R_REPO_058_DrainOfTheNodeOfAPass`, `TestMirrorLong_R_REPO_053_WorkerLostMidPass`, `TestMirrorLong_R_REPO_054_ThrottledUpstreamAcrossAMove`, `TestMirrorLong_R_REPO_053_PostgresSwitchoverAndValkeyFailoverDuringAPass` | `TestNPMHA_R_REPO_058_DrainOfTheNodeOfAMirrorPass`, `TestNPMHA_R_REPO_053_WorkerLostMidMirrorPass`, `TestNPMHA_R_REPO_054_ThrottledUpstreamAcrossAMirrorMove`, `TestNPMHA_R_REPO_053_PostgresSwitchoverAndValkeyFailoverDuringAMirrorPass` | `npm-ha` |
+| `TestMirror_R_REPO_059_BrowserJourney` | none: it ran [14-mirror.spec.ts](../../web/e2e/tests/14-mirror.spec.ts) a second time, which `TestE1_11Journeys` already runs in the set `access-long`; the spec does not depend on the pool (its header says so) | `access-long` |
+
+The status of a mirror from every replica is split per format, because the set of each format starts only that format's test upstream; the npm half takes a mirror of its own (a complete pass over names the test publishes) instead of the clients-first test's, so that the nightly leg does not measure the clients again.
+
+**Rationale:** the sets follow what is tested, the format's behaviour with its clients in the format's set and the engine under failure in the failure suite's sets, so a change to npm runs the npm mirror and no set exists for a feature of every format. Adding the pool in the tests leaves the pod counts of every other test of the shared profiles alone, which merging it into `values-scatter.yaml` would change in five places. Supersedes the set layout of Q-REPO-173 and Q-REPO-178 and the job of Q-REPO-197 and Q-REPO-211.
+
+**Applied in the spec:** R-REPO-059, R-REPO-055 (the e2e criteria name the sets). Code: [e2e.sh](../../deploy/dev/e2e.sh), [mirror_env_test.go](../../test/e2e/mirror_env_test.go), [release.yml](../../.github/workflows/release.yml), [performance.yml](../../.github/workflows/performance.yml). Elsewhere: [developer/e2e.md](../developer/e2e.md#the-mirror-tests), [developer/releasing.md](../developer/releasing.md).
 
 ### Q-REPO-305 · A run outside a pass has a window of its own and ends on a long wait
 

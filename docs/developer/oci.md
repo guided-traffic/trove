@@ -457,7 +457,7 @@ Tests: [mirror_test.go](../../internal/formats/oci/mirror_test.go) (the lister o
 the tags list in pages and its bound, the catalog and the exact names, the bounds), [versions_test.go](../../internal/mirror/versions_test.go) (versions, the shared path, the tally),
 [mirror_format_test.go](../../internal/repository/mirror_format_test.go) (the Owner rule), and [test/integration/mirror/oci_test.go](../../test/integration/mirror/oci_test.go): the whole stack, two worker processes that
 claim the queue `mirror`, a client-serving process and the counting stub (a catalog pass with the tag bound and a pull with the stub stopped, the exact-name pass, the platform filter, a second pass and a moved tag,
-the byte bound, a Docker Hub mirror with the quota answer). The e2e rows (a pass while real clients pull, the drain) are in [e2e.md](e2e.md#the-oci-tests) (`TestMirror_R_REPO_055_AnOCIPassRunsWhileClientsPull`, `TestMirrorLong_R_REPO_058_DrainOfTheNodeOfAnOCIPass`).
+the byte bound, a Docker Hub mirror with the quota answer). The e2e rows (a pass while real clients pull, the drain) are in [e2e.md](e2e.md#the-oci-tests) (`TestOCIMirror_R_REPO_055_APassRunsWhileClientsPull`, `TestOCILong_R_REPO_058_DrainOfTheNodeOfAMirrorPass`).
 
 ## The virtual class (R-OCI-027, R-OCI-028)
 

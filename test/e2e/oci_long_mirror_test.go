@@ -3,7 +3,7 @@
 package e2e
 
 // The long test of the OCI mirror (R-REPO-058, R-OCI-026, R-OCI-035; owner rule of 2026-11-01): `kubectl drain` of the node of the process that
-// runs a pass of an OCI mirror while docker pulls through the same remote. The set is deploy/dev/e2e.sh mirror-long.
+// runs a pass of an OCI mirror while docker pulls through the same remote. The set is deploy/dev/e2e.sh oci-long.
 
 import (
 	"os/exec"
@@ -15,14 +15,14 @@ import (
 	"github.com/guided-traffic/trove/test/ocistub"
 )
 
-// TestMirrorLong_R_REPO_058_DrainOfTheNodeOfAnOCIPass: the mirror keeps 400 tags of bulk/tags, each held 300 ms by the test upstream, so that the pass
+// TestOCILong_R_REPO_058_DrainOfTheNodeOfAMirrorPass: the mirror keeps 400 tags of bulk/tags, each held 300 ms by the test upstream, so that the pass
 // outlasts the grace period of the pool. Once it has stored a package, the node of the pool's process that runs it is drained. The pass ends
 // complete in the other process; a docker pull through the remote during the drain succeeds; no manifest was fetched more than twice (the fetches
 // in flight at the drain, which the shutdown cancels and the next attempt repeats).
-func TestMirrorLong_R_REPO_058_DrainOfTheNodeOfAnOCIPass(t *testing.T) {
+func TestOCILong_R_REPO_058_DrainOfTheNodeOfAMirrorPass(t *testing.T) {
 	e := mirrorFx(t)
 	s := ociStub(t)
-	fx := &ociFixture{adm: e.adm, token: e.token, run: e.run} // not ociFx: that switches the cluster to the scatter profile
+	fx := &ociFixture{adm: e.adm, token: e.token, run: e.run} // the service account and the run of the mirror environment
 	host := ociRegistryHost(t)
 	const concurrency = 2
 	s.resetAll(t)

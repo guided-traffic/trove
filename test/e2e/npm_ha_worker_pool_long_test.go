@@ -2,9 +2,9 @@
 
 package e2e
 
-// The long test of the mirror (R-REPO-058, R-REPO-059, E6b.6; owner rule of 2026-11-01: drain, failover and soak run in the nightly
-// workflow, on dispatch and locally, never in Test and Release): `kubectl drain` of the node of the process that runs a pass of 300
-// packages. The failure suite of R-HA-052 on a pass (a process lost, a throttling upstream) is in mirror_long_fault_test.go.
+// The long test of the mirror's worker pool (R-REPO-058, R-REPO-059, E6b.6; set `npm-ha`, owner rule of 2026-11-01: drain, failover and
+// soak run in the nightly workflow, on dispatch and locally, never in Test and Release): `kubectl drain` of the node of the process that runs a pass of 300
+// packages. The failure suite of R-HA-052 on a pass (a process lost, a throttling upstream) is in npm_ha_worker_pool_fault_test.go.
 
 import (
 	"fmt"
@@ -17,13 +17,13 @@ import (
 	"github.com/guided-traffic/trove/test/npmstub"
 )
 
-// TestMirrorLong_R_REPO_058_DrainOfTheNodeOfAPass: the mirror is a remote of the public registry's name (the feed) whose include
+// TestNPMHA_R_REPO_058_DrainOfTheNodeOfAMirrorPass: the mirror is a remote of the public registry's name (the feed) whose include
 // pattern admits the 300 extra packages of the run; the test upstream holds each tarball for a second, so that the pass (two fetches at
 // a time, 150 s) outlasts the grace period of the worker pool. Once the pass has filled 40 packages, the node of the pool's process
 // that runs it is drained (`kubectl drain`, deploy/dev/drain.sh). The pass ends in the other process of the pool, complete, with every
 // package; the test upstream served every tarball, and no more than `concurrency` of them twice (the fetches in flight at the drain,
 // which the shutdown cancels and the next attempt repeats).
-func TestMirrorLong_R_REPO_058_DrainOfTheNodeOfAPass(t *testing.T) {
+func TestNPMHA_R_REPO_058_DrainOfTheNodeOfAMirrorPass(t *testing.T) {
 	e := mirrorFx(t)
 	s := stub(t)
 	const concurrency = 2

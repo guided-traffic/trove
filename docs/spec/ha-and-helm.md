@@ -9976,7 +9976,7 @@ design.
   that the jobs of a pull request receive, and the host and network of a runner while a job runs.
 - **Live or dormant:** live for every pull request from a branch of this repository. Those runs receive the
   repository's secrets: the jobs `image`, `container-scan`, `integration`, `s3-conformance`, `e2e` and `e2e-npm` on the
-  self-hosted runners, and `e2e-nuget`, `e2e-ci`, `e2e-bastion`, `e2e-vuln` and `e2e-mirror` on GitHub-hosted runners, log in to
+  self-hosted runners, and `e2e-nuget`, `e2e-ci`, `e2e-bastion` and `e2e-vuln` on GitHub-hosted runners, log in to
   Docker Hub with `secrets.DOCKERHUB_PAT`. GitHub passes repository secrets to pull requests from the same
   repository, not to pull requests from forks. Whether a fork's pull request reaches these runners at all depends
   on the repository's Actions settings, which are not in the repository and are not verified here. For the jobs on
