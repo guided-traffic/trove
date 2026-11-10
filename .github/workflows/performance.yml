@@ -71,7 +71,7 @@ jobs:
   # dry run of six sets of values, a real install without waiting for pods, the fields named in R-HA-049, an upgrade and an uninstall. No pod
   # starts, so it is no part of the lanes of Q-ARCH-431 and the perf jobs do not wait for it. It does not run the failure suite (H-805).
   k8s-matrix:
-    name: Platform matrix on kind (${{ matrix.leg }})
+    name: Platform matrix (${{ matrix.leg }})
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -160,7 +160,7 @@ jobs:
   # Q-ARCH-325: the perf jobs start after every kind leg has finished (!cancelled() lets them run when a leg failed), and vuln-perf
   # after latency, so that no perf job shares the large VM with another job of this workflow or with the other perf job.
   latency:
-    name: P-13 and P-14 latency (Valkey 9.1)
+    name: Latency
     needs: [e2e, e2e-npm, npm-ha-soak, e2e-nuget, e2e-drain-pooler, e2e-ci, e2e-bastion, e2e-vuln, e2e-mirror, e2e-backup, e2e-edge, e2e-alerts, e2e-upgrade]
     if: ${{ !cancelled() && (!inputs.sets || contains(format(',{0},', inputs.sets), ',latency,')) }}
     runs-on: large
@@ -230,7 +230,7 @@ jobs:
   # integration stack (perf/vuln). It runs here and nowhere else: Test and Release never starts it (owner, 2026-11-01).
   # TROVE_PERF_GATE=1 makes a value above its target fail the job; a failed job opens an issue that lists the misses.
   vuln-perf:
-    name: R-VULN-028 vulnerability scanning performance (V-1 to V-9)
+    name: Vulnerability scanning performance
     needs: [e2e, e2e-npm, npm-ha-soak, e2e-nuget, e2e-drain-pooler, e2e-ci, e2e-bastion, e2e-vuln, e2e-mirror, e2e-edge, e2e-alerts, e2e-upgrade, latency]
     if: ${{ !cancelled() && (!inputs.sets || contains(format(',{0},', inputs.sets), ',vuln-perf,')) }}
     runs-on: large
@@ -336,7 +336,7 @@ jobs:
   # run of the nightly workflow, with ten force-deletes; the three-force-delete leg npm-ha-crash is run by hand. The
   # closing run of Test and Release runs the ten force-deletes too, in its leg npm-ha-closing (Q-HA-67).
   npm-ha-soak:
-    name: e2e-npm on kind (npm-ha-soak)
+    name: e2e (npm-ha-soak)
     # Lane 2 (Q-ARCH-431): after e2e, whatever its result.
     needs: e2e
     if: ${{ !cancelled() && (!inputs.sets || contains(format(',{0},', inputs.sets), ',npm-ha-soak,')) }}
@@ -478,7 +478,7 @@ jobs:
   # whose Node.js is the image's own, so the leg needs no Node.js on the runner.
   # Lane 2 (Q-ARCH-431): the legs run one after the other, drain-roles first, so the heavy drain sees the fewest neighbours.
   e2e:
-    name: e2e on kind (${{ matrix.set }})
+    name: e2e (${{ matrix.set }})
     runs-on: large
     timeout-minutes: 90
     strategy:
@@ -557,7 +557,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libatomic1
 
-      - name: Set up Node.js (the Playwright journeys of E1.11)
+      - name: Set up Node.js (the Playwright journeys)
         if: matrix.browser && steps.leg.outputs.run == 'true'
         uses: actions/setup-node@v7
         with:
@@ -714,7 +714,7 @@ jobs:
   # forced, in the pooler profile; R-HA-058) run the same steps with the budgets of ha-suite, on edge ports 8112 and 8111.
   # Lane 1 (Q-ARCH-431): npm-ha, then ha-suite, ha-faults and ha-pooler, one large leg at a time.
   e2e-npm:
-    name: e2e-npm on kind (${{ matrix.set }})
+    name: e2e (${{ matrix.set }})
     runs-on: large
     timeout-minutes: 120
     strategy:
@@ -904,7 +904,7 @@ jobs:
   # port 8110 is the first free port of both workflows.
   # Lane 1 (Q-ARCH-431): after e2e-npm, whatever its result; the legs nuget-ha, drain-load-b, -c, -e and cold-crash run one at a time (max-parallel: 1).
   e2e-nuget:
-    name: e2e-nuget on kind (${{ matrix.set }})
+    name: e2e (${{ matrix.set }})
     needs: e2e-npm
     if: ${{ !cancelled() }}
     runs-on: large
@@ -1101,7 +1101,7 @@ jobs:
   # and E (drain-load) under the same load. Edge port 8116 is the first free port of both workflows.
   # Lane 2 (Q-ARCH-431): after e2e-edge, whatever its result.
   e2e-drain-pooler:
-    name: e2e-drain-pooler on kind (${{ matrix.set }})
+    name: e2e (${{ matrix.set }})
     needs: e2e-edge
     if: ${{ !cancelled() }}
     runs-on: large
@@ -1295,7 +1295,7 @@ jobs:
   # node of a process that runs an OCI pass, is a leg of e2e-mirror below. Edge port 8106 is the first free port of both workflows.
   # Lane 3 (Q-ARCH-431): after e2e-mirror, whatever its result.
   e2e-oci:
-    name: e2e-oci on kind (${{ matrix.set }})
+    name: e2e (${{ matrix.set }})
     needs: e2e-mirror
     if: ${{ !cancelled() }}
     runs-on: large
@@ -1471,7 +1471,7 @@ jobs:
   # <<< T16 e2e-oci
 
   e2e-ci:
-    name: e2e-ci on kind (${{ matrix.set }})
+    name: e2e (${{ matrix.set }})
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
@@ -1650,7 +1650,7 @@ jobs:
   # anonymous requests for random names). A red long leg is a finding and holds nothing (owner, 2026-11-01). Edge ports 8093 and 8094
   # are the first free ones of both workflows.
   e2e-bastion:
-    name: e2e-bastion on kind (${{ matrix.set }})
+    name: e2e (${{ matrix.set }})
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     strategy:
@@ -1703,7 +1703,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential jq
 
-      - name: Set up Node.js (the Playwright journey of R-BAS-007)
+      - name: Set up Node.js (the Playwright journey)
         if: steps.leg.outputs.run == 'true'
         uses: actions/setup-node@v7
         with:
@@ -1859,7 +1859,7 @@ jobs:
   # 2026-11-01). `vuln` and `vuln-long` load the NuGet clients image and run on a GitHub-hosted runner (Q-ARCH-326); `vuln-pooler` starts no
   # client pods and runs on a large one. Edge ports 8095, 8096 and 8103 are the first free ones of both workflows.
   e2e-vuln:
-    name: e2e-vuln on kind (${{ matrix.set }})
+    name: e2e (${{ matrix.set }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 150
     strategy:
@@ -1919,7 +1919,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential jq
 
-      - name: Set up Node.js (the Playwright journeys of R-VULN-022)
+      - name: Set up Node.js (the Playwright journeys)
         if: matrix.journeys == true && steps.leg.outputs.run == 'true'
         uses: actions/setup-node@v7
         with:
@@ -2071,7 +2071,7 @@ jobs:
   # `mirror-long` on a large one. Edge ports 8098 and 8099 are the first free ones of both workflows.
   # Lane 3 (Q-ARCH-431): after e2e-backup, the two large legs one after the other.
   e2e-mirror:
-    name: e2e-mirror on kind (${{ matrix.set }})
+    name: e2e (${{ matrix.set }})
     needs: e2e-backup
     if: ${{ !cancelled() }}
     runs-on: ${{ matrix.runner }}
@@ -2132,7 +2132,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential jq
 
-      - name: Set up Node.js (the browser journey of the mirror panel, R-REPO-059)
+      - name: Set up Node.js (the browser journey of the mirror panel)
         if: matrix.set == 'mirror' && steps.leg.outputs.run == 'true'
         uses: actions/setup-node@v7
         with:
@@ -2291,7 +2291,7 @@ jobs:
   # job artifact. Large runner (a kind cluster with two databases and two Valkeys). Edge port 8102 is the first free one after e2e-upgrade's 8101.
   # Lane 3 (Q-ARCH-431): after e2e-vuln, whatever its result.
   e2e-backup:
-    name: e2e-backup on kind
+    name: e2e (backup)
     needs: e2e-vuln
     if: ${{ !cancelled() }}
     runs-on: large
@@ -2405,7 +2405,7 @@ jobs:
         timeout-minutes: 90
         run: make e2e SET=backup
 
-      - name: make e2e SET=backup-pitr (the point-in-time restore drill, R-HA-025)
+      - name: make e2e SET=backup-pitr (the point-in-time restore drill)
         if: always() && steps.leg.outputs.run == 'true'
         timeout-minutes: 40
         run: make e2e SET=backup-pitr TROVE_E2E_REPORT=.out/test-e2e-backup-pitr.json
@@ -2473,7 +2473,7 @@ jobs:
   # Gateway (Envoy Gateway, the profile `edge`). The 6 GiB file and the spool need a large runner's disk (Q-ARCH-326); the job is the end of lane 2
   # (Q-ARCH-431). A red leg is a finding and holds nothing (owner, 2026-11-01). Edge port 8104.
   e2e-edge:
-    name: e2e-edge on kind (edge)
+    name: e2e (edge)
     # Lane 2 (Q-ARCH-431): after e2e-edge, whatever its result.
     needs: npm-ha-soak
     if: ${{ !cancelled() }}
@@ -2656,7 +2656,7 @@ jobs:
   # alert, and "Maintenance stays quiet". No client pods and no large file, so the job runs on a GitHub-hosted runner with the disk space freed, as
   # e2e-vuln does (Q-ARCH-326). A red leg is a finding and holds nothing (owner, 2026-11-01). Edge port 8105.
   e2e-alerts:
-    name: e2e-alerts on kind (alerts)
+    name: e2e (alerts)
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 210
@@ -2833,7 +2833,7 @@ jobs:
   # Switched off in the nightly run until the first stable release (Q-ARCH-340): it runs only on a dispatch that names it
   # (-f sets=upgrade). To switch it on, put `!inputs.sets || ` back in front of the contains() of the condition.
   e2e-upgrade:
-    name: e2e-upgrade on kind (upgrade)
+    name: e2e (upgrade)
     if: ${{ contains(format(',{0},', inputs.sets), ',upgrade,') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120

@@ -1,7 +1,7 @@
 # Test and Release: the pipeline of every push to main and every pull request. Every check is a job
 # of its own, and every job calls a Makefile target (or a command that the Makefile would run), so a
-# failure reproduces on a laptop with the same command. Semantic Release needs every job: on main it
-# cuts the release from the conventional commits since the last tag (.releaserc.json), and the
+# failure reproduces on a laptop with the same command. Semantic Release needs the set of jobs named at that job
+# (Q-ARCH-457): on main it cuts the release from the conventional commits since the last tag (.releaserc.json), and the
 # release's "published" event starts build.yml (Release Docker & Helm). What each job runs and how to
 # reproduce it: docs/developer/releasing.md#ci.
 #
@@ -52,7 +52,7 @@ jobs:
   # on PATH with its pin. The runner image's own helm, kubectl and kind are replaced by the pinned
   # ones first, so that the check looks at those.
   versions:
-    name: versions (E0.2)
+    name: versions
     runs-on: self-hosted
     timeout-minutes: 20
     steps:
@@ -244,7 +244,7 @@ jobs:
 
   # The generated code (sqlc, oapi-codegen, the config schema) regenerated and compared with the tree.
   generate:
-    name: generate (E0.1)
+    name: generate
     runs-on: self-hosted
     timeout-minutes: 20
     steps:
@@ -274,7 +274,7 @@ jobs:
   # The golden vectors of the NuGet version, range and ID rules regenerated with NuGet.Versioning in the pinned
   # .NET SDK image (tools/nugetvectors, R-NUGET-003) and compared with the committed file.
   nuget-vectors:
-    name: nuget vectors (R-NUGET-003)
+    name: nuget vectors
     runs-on: self-hosted
     timeout-minutes: 20
     steps:
@@ -292,7 +292,7 @@ jobs:
         run: make nuget-vectors-check
 
   build-no-node:
-    name: build without Node.js (E0.1)
+    name: build without Node.js
     runs-on: self-hosted
     timeout-minutes: 15
     steps:
@@ -433,7 +433,7 @@ jobs:
       - name: make web-ci
         run: make web-ci
 
-      - name: make web-lint (ESLint and the R-UI-046 rules)
+      - name: make web-lint (ESLint and the project rules)
         run: make web-lint
 
       - name: make web-test
@@ -456,7 +456,7 @@ jobs:
 
       # The notices of the bundled software in the embedded build (R-UI-001, Q-UI-144). Only this job holds a built UI;
       # the unit job runs the same test on the placeholder, where it is skipped.
-      - name: go test of the embedded notices (R-UI-001)
+      - name: go test of the embedded notices
         run: TROVE_UI_BUILT=1 go test -count=1 -run 'TestR_UI_001_ThirdPartyNotices' ./internal/webui/
 
   malware-scan:
@@ -497,7 +497,7 @@ jobs:
           retention-days: 30
 
   chart:
-    name: chart (E0.7)
+    name: chart
     runs-on: self-hosted
     timeout-minutes: 20
     steps:
@@ -604,7 +604,7 @@ jobs:
       - name: make image
         run: make image IMAGE=trove:ci
 
-      - name: The image runs as the non-root UID of R-HA-033
+      - name: The image runs as a non-root user
         run: |
           set -euo pipefail
           user="$(docker image inspect trove:ci --format '{{.Config.User}}')"
@@ -741,7 +741,7 @@ jobs:
   integration:
     # Valkey 9.1 only: trove is in development and guarantees no older line (owner, 2026-10-29). The packages run in three
     # shards with a stack each (make test-integration SHARD=a|b|c, the lists in the Makefile).
-    name: integration (Valkey 9.1, shard ${{ matrix.shard }})
+    name: integration (shard ${{ matrix.shard }})
     runs-on: self-hosted
     timeout-minutes: 45
     strategy:
@@ -892,7 +892,7 @@ jobs:
   # (owner, 2026-11-01). The legs build their own image, so they wait for no other job. Each has its own cluster name
   # and edge port, so legs can share a Docker host.
   e2e:
-    name: e2e on kind (${{ matrix.set }})
+    name: e2e (${{ matrix.set }})
     runs-on: large
     timeout-minutes: 90
     strategy:
@@ -954,7 +954,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libatomic1
 
-      - name: Set up Node.js (the Playwright journeys of E1.11)
+      - name: Set up Node.js (the Playwright journeys)
         if: matrix.browser
         uses: actions/setup-node@v7
         with:
@@ -1100,7 +1100,7 @@ jobs:
   # Valkey outage under the npm load). The closing run also runs fuzz-npm, below.
   # The ports differ from the e2e job's (8080, 8086) so that the jobs can share a runner host.
   e2e-npm:
-    name: e2e-npm on kind (${{ matrix.set }})
+    name: e2e (${{ matrix.set }})
     runs-on: large
     timeout-minutes: ${{ startsWith(matrix.set, 'npm-ha') && 120 || 90 }}
     strategy:
@@ -1251,7 +1251,7 @@ jobs:
   # closing=true adds the leg nuget-closing (TestNuGetClosing...). The nightly leg nuget-ha is job e2e-nuget in performance.yml.
   # The ports 8088 to 8090 are the first free ones of both workflows (Q-ARCH-277); the legs differ from the others in cluster name and port.
   e2e-nuget:
-    name: e2e-nuget on kind (${{ matrix.set }})
+    name: e2e (${{ matrix.set }})
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
@@ -1413,7 +1413,7 @@ jobs:
   # performance.yml. The clients images are small (the Docker and Podman images, not the 2.3 GB of the NuGet clients), so the job runs on the large
   # class like the npm leg. The ports 8104 and 8105 are the first free ones of both workflows.
   e2e-oci:
-    name: e2e-oci on kind (${{ matrix.set }})
+    name: e2e (${{ matrix.set }})
     runs-on: large
     timeout-minutes: 90
     strategy:
@@ -1614,7 +1614,7 @@ jobs:
   # official images with curl and a forwarder, so the job runs on the large class like the other kind legs. A dispatch with closing=true adds the leg
   # deb-closing (TestDebClosing...: Valkey stopped, the read-only check against deb.debian.org). The ports 8107 and 8108 are the first free ones of both workflows.
   e2e-deb:
-    name: e2e-deb on kind (${{ matrix.set }})
+    name: e2e (${{ matrix.set }})
     runs-on: large
     timeout-minutes: 90
     strategy:
@@ -1811,7 +1811,7 @@ jobs:
   # (docs/developer/e2e.md#the-ci-tests). The long legs (the drained node, Valkey stopped, the failover, the deleted pod, E4.7) are the
   # set ci-ha of job e2e-ci in performance.yml. Edge port 8091 is the first free one of both workflows.
   e2e-ci:
-    name: e2e-ci on kind (${{ matrix.set }})
+    name: e2e (${{ matrix.set }})
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
@@ -1980,7 +1980,7 @@ jobs:
   # drain, the flood and the anonymous flood) are the set bastion-long of job e2e-bastion in performance.yml, outside the release path
   # (owner, 2026-11-01). Edge port 8093 is the first free one of both workflows.
   e2e-bastion:
-    name: e2e-bastion on kind (${{ matrix.set }})
+    name: e2e (${{ matrix.set }})
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
@@ -2054,7 +2054,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential jq
 
-      - name: Set up Node.js (the Playwright journey of R-BAS-007)
+      - name: Set up Node.js (the Playwright journey)
         if: steps.scope.outputs.run == 'true'
         uses: actions/setup-node@v7
         with:
@@ -2216,7 +2216,7 @@ jobs:
   # drain, the flood and the anonymous flood) are the set bastion-long of job e2e-vuln in performance.yml, outside the release path
   # (owner, 2026-11-01). Edge port 8093 is the first free one of both workflows.
   e2e-vuln:
-    name: e2e-vuln on kind (${{ matrix.set }})
+    name: e2e (${{ matrix.set }})
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
@@ -2290,7 +2290,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential jq
 
-      - name: Set up Node.js (the Playwright journeys of R-VULN-022)
+      - name: Set up Node.js (the Playwright journeys)
         if: steps.scope.outputs.run == 'true'
         uses: actions/setup-node@v7
         with:
@@ -2450,7 +2450,7 @@ jobs:
   # runner. The drain of the process that runs a pass is the set mirror-long of job e2e-mirror in performance.yml, outside the release
   # path (owner, 2026-11-01). Edge port 8098 is the first free one of both workflows.
   e2e-mirror:
-    name: e2e-mirror on kind (${{ matrix.set }})
+    name: e2e (${{ matrix.set }})
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
@@ -2525,7 +2525,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential jq
 
-      - name: Set up Node.js (the browser journey of the mirror panel, R-REPO-059)
+      - name: Set up Node.js (the browser journey of the mirror panel)
         if: steps.scope.outputs.run == 'true'
         uses: actions/setup-node@v7
         with:
@@ -2813,7 +2813,7 @@ jobs:
   # Switched off until the first stable release (Q-ARCH-340): to switch it on, delete `if: false`, put `compat` back into the needs of
   # semantic-release and drop its ignore line in .github/actionlint.yaml (docs/developer/releasing.md#switched-off-until-the-first-stable-release).
   compat:
-    name: compatibility with the latest release (R-ARCH-025, R-ARCH-026)
+    name: compatibility with the latest release
     if: false
     runs-on: self-hosted
     timeout-minutes: 15
