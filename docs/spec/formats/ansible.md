@@ -1,8 +1,9 @@
 # Ansible Galaxy repositories
 
-Status: specification, planned (block B, unit F0 of [FULL.md](../../projektplan/FULL.md); the work packages are in
-[ansible-work-packages.md](../../projektplan/ansible-work-packages.md)). Nothing on this page is built yet. It is the first registry after the
-beta because it replaces a Galaxy system the owner runs today.
+Status: specification, building (block B, unit F0 of [FULL.md](../../projektplan/FULL.md); the work packages are in
+[ansible-work-packages.md](../../projektplan/ansible-work-packages.md)). Built: the format skeleton and the local class (publish, import
+tasks, the three read operations, tombstones, the reindex, the package screens). Not built yet: the remote class, the virtual class and
+the client surface. It is the first registry after the beta because it replaces a Galaxy system the owner runs today.
 
 This page specifies how trove serves Ansible content to `ansible-galaxy`: the format `ansible` for local, remote and virtual
 repositories; the subset of the Galaxy API that `ansible-galaxy collection install`, `collection publish`, `role install` and a
@@ -130,8 +131,8 @@ Format registration (R-REPO-003):
   repositories, create repository, class and format (UI-031).
 
 **Address.** A client names the repository URL as its Galaxy server (`url=` in `ansible.cfg`, `-s`/`--server`); the repository URL
-itself answers the discovery document (R-ANS-003). The same repository is reachable by path at `/files/<project>/<repo>/` as for any
-format (R-STOR, R-EP-014).
+itself answers the discovery document (R-ANS-003). The stored items are readable by path at `/files/<project>/<repo>/` as for any
+format (R-STOR, R-EP-014); `/files/` deploys nothing into the repository (R-STOR-007, [Q-ANS-34](#q-ans-34--a-collection-is-published-through-the-galaxy-route-only-a-raw-body-is-the-scripted-form)).
 
 Acceptance criteria:
 
@@ -232,11 +233,11 @@ the public Galaxy:
   link of a list carries the same `limit` and the next `offset`; the last one has `next: null`.
 - **Limits.** `limit` defaults to 100 and is clamped to 1..100; an `offset` beyond the count returns an empty `data`. A request for an
   unknown collection or version answers 404 in the Galaxy shape (R-ANS-007).
-- **Local class.** The documents are computed from the rows of R-ANS-011 on every request (`rev_seq`-keyed renditions, R-ARCH-012);
+- **Local class.** The documents are computed from the rows of R-ANS-011 on every request, with no rendition cache ([Q-ANS-35](#q-ans-35--a-document-is-computed-per-request-and-its-validator-is-a-digest-of-its-bytes));
   `created_at` is the publish time on the database clock and `updated_at` the newest version's; `deprecated` is always false.
 - **Remote class** and **virtual class**: R-ANS-017 and R-ANS-022.
-- `Cache-Control` and `ETag`: a computed or rewritten document carries a weak `ETag` derived from the stored digest or `rev_seq` and
-  the serving address, and answers `If-None-Match` with 304 (R-NPM-013's pattern); the client ignores them, other tools do not.
+- `ETag`: a computed or rewritten document carries a weak `ETag`, a digest of its bytes (they hold the serving address and every row it
+  shows), and answers `If-None-Match` with 304; the client ignores it, other tools do not (Q-ANS-35).
 
 Acceptance criteria:
 
@@ -258,8 +259,8 @@ Priority: **P1** · Covers: PKG-ANSIBLE-005
   (R-ANS-022); a **local** repository serves the stored item.
 - The archive's SHA-256 is the digest in the version document (`artifact.sha256`). The client compares it with what it received
   and fails with `Mismatch artifact hash with downloaded file` otherwise (verified in `_download_file`).
-- The same bytes are reachable at `/files/<project>/<repo>/collections/<ns>/<name>/<file>` (R-STOR, R-EP-014); both routes decide the
-  same path with the same grants.
+- The same bytes are readable at `/files/<project>/<repo>/collections/<ns>/<name>/<file>` (R-STOR, R-EP-014); both routes decide the
+  same path with the same grants, and the serve check of R-ANS-029 applies to both.
 
 Acceptance criteria:
 
@@ -309,7 +310,7 @@ Actions ([authorization.md](../authorization.md) R-AUTHZ-007 gains the Ansible t
 | Discovery, collection, version list, version, download, import task read | `read` | the package and the version path (R-AUTHZ-005); on a virtual repository the member reads (R-AUTHZ-009) |
 | `POST v3/artifacts/collections/` | `deploy` | the package `<ns>.<name>` and the archive path (R-AUTHZ-005), ownership of the name (R-AUTHZ-018), the shadowing check of a first publish (R-REPO-048) |
 | Role lookup, role versions, role archive | `read` | the repository; role documents carry no package name that a grant can name (R-ANS-020) |
-| Upload through `/files/` (the deploy dialog) | `deploy` | as the publish |
+| Publish of the archive as a raw body (`curl --data-binary`) | `deploy` | as the publish |
 | Removal of a version (management API and package screens) | `delete` | R-ANS-012 |
 
 **Errors.** `WriteError` renders in the shape the client reads, chosen by the route (R-ARCH-023, [Q-ANS-29](#q-ans-29--the-galaxy-error-shape-renders-the-registry-code-without-its-prefix)):
@@ -338,8 +339,9 @@ Acceptance criteria:
 Priority: **P1** · Covers: PKG-ANSIBLE-003, PKG-ANSIBLE-004
 
 `POST v3/artifacts/collections/` with `multipart/form-data`, parts `file` (the archive) and `sha256` (the hex digest of the archive);
-the same publish is reachable as an upload of the archive through `/files/<project>/<repo>/collections/<ns>/<name>/<file>` (the deploy
-dialog and `curl -T`), which skips the multipart framing and the task but not a single check below.
+the same route takes the archive as the raw body of the request (any content type but `multipart/form-data`, the digest optionally in the
+query parameter `sha256`) for a scripted publish with `curl --data-binary`, with every check below and the same task
+([Q-ANS-34](#q-ans-34--a-collection-is-published-through-the-galaxy-route-only-a-raw-body-is-the-scripted-form)); `/files/` takes no upload.
 
 1. **Framing.** The handler reads the parts in either order (the client sends `sha256` first, the documentation shows `file` first),
    streams the `file` part into the spool without buffering it (R-ARCH-014) and bounds the preamble as the NuGet push does. A missing
@@ -352,8 +354,9 @@ dialog and `curl -T`), which skips the multipart framing and the task but not a 
    (`local.autoClaim`, R-REPO-023, R-AUTHZ-018) and the shadowing check of a first version (R-REPO-048) run after inspection and
    before the commit, with no transaction open; they are rechecked in the commit transaction under the package row's lock.
 4. **Immutability** ([Q-ANS-9](#q-ans-9--a-published-version-is-immutable-a-deleted-one-leaves-a-tombstone)): the archive at the path of a version that exists is
-   refused 409 `version_exists` unless the bytes are identical (same SHA-256), when the publish succeeds again with the task of the
-   first publish (idempotent retry). A version whose number is tombstoned (R-ANS-012) is refused 409 `version_tombstoned`.
+   refused 409 `version_exists` unless the bytes are identical (same SHA-256), when the publish succeeds again with a task of its own that
+   points to the same version (idempotent retry, R-ANS-009), changing nothing else. Two versions that differ only in build metadata are one
+   number. A version whose number is tombstoned (R-ANS-012) is refused 409 `version_tombstoned`, before the stored version is looked at.
 5. **Commit.** One transaction writes the blob, the item, the package and version rows, the `ansible_collection_versions` row, the
    import task row and the audit event `package.published` with the principal of the token (the transaction of R-ARCH-014). The
    response is `202` with `{"task": "<repo URL>v3/imports/collections/<task id>/"}`, the task being already `completed`.
@@ -370,8 +373,8 @@ Acceptance criteria:
 - A second publish of the same file answers 202 and installs identical bytes; a publish of another archive with the same version
   answers 409 `version_exists` with `detail` naming the version.
 - A publish whose `sha256` part is wrong answers 400 `sha256_mismatch` and `package_versions` has no row.
-- `curl -T file.tar.gz <base>/files/web/ansible-local/collections/acme/tools/acme-tools-1.0.0.tar.gz` stores the same version; the same
-  `curl` to a path whose name differs from the manifest's is 422 `path_mismatch`.
+- `curl --data-binary @file.tar.gz '<repo URL>v3/artifacts/collections/' -H 'Content-Type: application/octet-stream'` stores the same
+  version and answers the task; a PUT of the archive to `/files/…` is refused with 409 and stores nothing.
 
 ### R-ANS-009 · Import tasks
 Priority: **P1** · Covers: PKG-ANSIBLE-003
@@ -436,7 +439,7 @@ for gzip-compressed tar archives (`formattest.InspectTarGz`) is the crafted-inpu
   then has `requires_ansible` empty) and the task carries a warning message.
 - **What is stored** in the version row (R-ANS-011): the manifest's `collection_info` without `readme` text beyond 64 KiB, the
   dependencies, `requires_ansible`, the SHA-256, size and file count. The README text of the archive (`readme` names its path) is read
-  on demand by the package screens through ranged reads, as NuGet does (R-ANS-026).
+  on demand by the package screens by streaming the archive up to that member, which a gzip stream needs (R-ANS-026, H-853).
 - `Inspection.Package` is `<ns>.<name>`, `Inspection.Version` the version, `Properties` below the prefix `ansible.` (R-ANS-011).
 
 Acceptance criteria:
@@ -894,10 +897,10 @@ Priority: **P1** · Covers: PKG-ANSIBLE-004
 
 - A `ViewAdapter` gives the package screens (R-API-029): the versions of a collection ordered by semver, the metadata block
   (`requires_ansible`, dependencies, authors, license, tags, repository and issue links), the README of a version read from the archive
-  by ranged reads (the entry named by `collection_info.readme`, text limit 64 KiB, never executed or rendered as HTML by trove), the
+  by streaming up to it (the entry named by `collection_info.readme`, text limit 64 KiB, never executed or rendered as HTML by trove), the
   size of a version, and (local) the publisher and time.
-- The **deploy dialog** (UI-013) uploads an archive through `/files/` (R-ANS-008); the dialog needs no Ansible option because the
-  archive names its own coordinates. The dialog's error for a refused archive shows the `detail` of the refusal.
+- The **deploy dialog** (UI-013) is not offered for the format: `/files/` deploys nothing into a repository with a protocol of its own
+  (R-STOR-007), so the screens show `ansible-galaxy collection publish` and the raw-body publish of R-ANS-008 instead (Q-ANS-34).
 - The UI shows the import tasks of a local repository on its edit form (a lazy tab, newest first, state and messages) through the
   management operation `listAnsibleImportTasks`; and the tombstones with the action to clear one.
 
@@ -999,7 +1002,7 @@ The archive a client uploads, an upstream's archive that a fill inspects and the
 
 | Bound | Default | Where |
 |---|---|---|
-| Archive size (`ansible.max_archive_bytes`) | 1 GiB | publish, `/files/` |
+| Archive size (`ansible.max_archive_bytes`) | 1 GiB | publish |
 | Archive entries / total expanded bytes (streamed through a digest) | 10,000 / 2 GiB, the core's defaults: a format may lower a bound and not raise it (Q-ANS-30, [H-851](#h-851--a-collection-archive-beyond-the-cores-reader-bounds-is-refused)) | `Inspect`, `InspectFill` |
 | `MANIFEST.json` / `FILES.json` / `meta/runtime.yml` | 1 MiB / 16 MiB / 64 KiB | `Inspect` |
 | Dependencies in a manifest | 256 | `Inspect` |
@@ -1072,7 +1075,7 @@ The engine, the bounds and the throttling are the core's; this is what the forma
 |---|---|---|---|
 | R-ANS-001 to R-ANS-005 (format, names, root, documents, download) | grammars, semver order, route table, `Classify`, renderers | `ansiblelocal`: the three read operations, download with ranges, formats API | `ansible` |
 | R-ANS-006, R-ANS-007 (credentials, permissions, errors) | the stage's scheme rule, error renderers | `ansiblelocal`: `Token`, Basic, Bearer, anonymous, the action map `TestR_AUTHZ_007_AnsibleActionMap`, error shapes | `ansible` (token in `ansible.cfg`, netrc, a wrong token) |
-| R-ANS-008 to R-ANS-013 (publish, tasks, inspection, storage, delete, digests) | multipart reader, manifest parser, crafted archives | `ansiblelocal`: both part orders, task polling, immutability, tombstones, reindex, `/files/` | `ansible` (publish with the real client) |
+| R-ANS-008 to R-ANS-013 (publish, tasks, inspection, storage, delete, digests) | multipart reader, manifest parser, crafted archives | `ansiblelocal`: both part orders, task polling, immutability, tombstones, reindex, the raw body, `/files/` refused | `ansible` (publish with the real client) |
 | R-ANS-014, R-ANS-015, R-ANS-020 (roles) | role document rewrite, host rule | `ansibleremote`: translation, archive pull, dropped versions | `ansible` (role install with netrc) |
 | R-ANS-016 to R-ANS-019 (remote, hub) | discovery parse, paging cut, `Rewrite`, `PrepareFill` | `ansibleremote`: counts, digest, changed digest, FillInspector, the stub's realm | `ansible` (remote, one request per document) |
 | R-ANS-021 (mirror) | plan over fixtures | `ansibleremote` and `mirror`: a pass, a bound, a rate limit | `ansible` (mirror pass) |
@@ -1090,7 +1093,7 @@ Every entry of the catalog page, with what is built, what stays and what is not 
 | PKG-ANSIBLE-001 Three classes | Built; the federated form and its signing-key selector are not (no federation, no signing) | R-ANS-001, Q-ANS-14 |
 | PKG-ANSIBLE-002 Galaxy v3 API per repository | Built: the three read operations, the discovery document, the version-list paging, the absolute addresses | R-ANS-003, R-ANS-004, R-ANS-007 |
 | PKG-ANSIBLE-003 Publish with `ansible-galaxy` | Built: multipart publish, the stored import task, publish through a virtual repository | R-ANS-008, R-ANS-009, R-ANS-024 |
-| PKG-ANSIBLE-004 Deploy through the UI or plain HTTP | Built through `/files/` and the deploy dialog; deploy by checksum and archive deploy are the generic ones | R-ANS-008, R-ANS-026 |
+| PKG-ANSIBLE-004 Deploy through the UI or plain HTTP | Built as the raw-body publish; `/files/` and the deploy dialog take nothing into a repository with a protocol of its own (R-STOR-007) | R-ANS-008, Q-ANS-34 |
 | PKG-ANSIBLE-005 Install collections | Built in all three classes | R-ANS-005, R-ANS-013 |
 | PKG-ANSIBLE-006 Metadata calculation and recalculation | Built: metadata is read at publish, the reindex rebuilds it | R-ANS-010, R-ANS-012 |
 | PKG-ANSIBLE-007 Legacy roles through remote repositories | Built by translation for the public Galaxy's roles; Git and URL roles, role publish and role import are not offered | R-ANS-014, R-ANS-020, Q-ANS-6 |
@@ -1643,7 +1646,7 @@ Status: **Decided by the development agent** — selected from the options below
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) No revision column on the format's tables (chosen) | The documents are rendered from the version rows; their ETag is derived from the generic package row's `rev_seq`, which the commit hook raises (R-ARCH-009) | `rev_seq` is already restored with a gap by the generic restore; one number to keep | A change of a version row that raises no package row would not change the ETag: there is none (every writer raises it) |
+| (a) No revision column on the format's tables (chosen) | The documents are rendered from the version rows; the generic package row's `rev_seq` is raised by every writer (R-ARCH-009), and the validator of a document follows its bytes (Q-ANS-35) | `rev_seq` is already restored with a gap by the generic restore; one number to keep | A change of a version row that raises no package row would not change the ETag: there is none (every writer raises it) |
 | (b) A revision column on `ansible_collection_versions` registered with `meta.RegisterRevisionColumn` | A second counter | | The reindex and the commit would have to raise two |
 
 **Choice:** (a). **Rationale:** the reindex raises `rev_seq` of the packages it changes (R-ANS-012), which is all the ETag needs. Revisit if
@@ -1681,6 +1684,35 @@ signatures the plan fixed; `RecordAnnounced` returns the rows whose offered dige
 can write its event (R-ANS-018). Revisit never: the rule is architectural.
 
 **Applied in the spec:** none (a code-level contract of the plan, section 2.2).
+
+### Q-ANS-34 · A collection is published through the Galaxy route only; a raw body is the scripted form
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The publish route takes the multipart form and, besides it, the archive as the raw body; `/files/` takes nothing (chosen) | `curl --data-binary` publishes with every check and a task; `PUT /files/…` answers the 409 of R-STOR-007 | The rule of the core stands (R-STOR-007, Q-ARCH-223): a format with a protocol of its own builds its documents from what that protocol receives; the format's `Inspect` and the checks that need a request (shadowing, ownership before the body) are reached by one road | The deploy dialog of the UI has no road into a Galaxy repository |
+| (b) `/files/` deploys archives | The plan's reading of R-ANS-008 | The deploy dialog works | The generic upload calls no `Inspect` of the format and no shadowing check: an archive would be stored with no row, no identity check and no task; the core refuses it for every other format |
+
+**Choice:** (a). **Rationale:** (b) needs a change of the core that every format would inherit. The raw body gives scripts what `curl -T` was
+for. The screens (R-ANS-026) show the publish command instead of a dialog. Revisit if the core lets a format inspect a raw deploy.
+
+**Applied in the spec:** R-ANS-001, R-ANS-005, R-ANS-007, R-ANS-008, R-ANS-026, R-ANS-031 and the catalog row PKG-ANSIBLE-004.
+
+### Q-ANS-35 · A document is computed per request and its validator is a digest of its bytes
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) No rendition cache; the weak `ETag` is a digest of the rendered bytes (chosen) | Every request reads the rows of the collection and renders; `If-None-Match` is answered after the render | A validator that cannot be stale (the bytes hold the addresses, the rows and the caller's hidden versions); no cache key to keep in step | A request renders even when the client holds the document |
+| (b) The rendition cache of the core, keyed by `rev_seq`, the serving address, the endpoint and the hidden-version fingerprint | As NuGet's documents | No render on a hit | A key with five inputs to keep equal to the validator by hand (Q-ARCH-261), for documents of a few KB |
+
+**Choice:** (a). **Rationale:** a document is rendered from a handful of rows (a version list is one indexed scan), and the client reads each
+once per command. When the caller's grants hide versions of a collection (`VersionsByPath`), the page is cut from at most 50,000 versions
+read and filtered ([H-854](#h-854--a-caller-whose-grants-hide-versions-makes-the-list-read-all-versions-of-the-collection)). Revisit if a list of a very large collection shows up in a profile.
+
+**Applied in the spec:** R-ANS-004.
 
 ### Q-ANS-43 · The roles of the source are reported once per run, with the first collection
 
@@ -1816,6 +1848,24 @@ a withdrawal the upstream made for a security reason.
 The archive reader runs under the core's bounds, 10,000 entries and 2 GiB inflated (R-ANS-031, Q-ANS-30), and a format cannot raise them. A
 collection with more files or more expanded bytes is refused at publish, in a fill and by the reindex, with a failed task that names the bound.
 Dormant: the collections of the public Galaxy are far below both; real for an internal collection that vendors a large tree.
+
+### H-852 · The restore of a version from the trash is not served
+
+The item store's trash can and its restore do not exist yet (R-STOR-022); the format has no `OnItemsRestored`. A version removed with the
+reason "trash" is tombstoned and its row is dropped like a deletion, and nothing brings it back until the restore and its hook are built.
+Dormant today; real when the trash can is built.
+
+### H-853 · The README of a version is read by streaming the archive up to it
+
+An archive is a gzip stream, which has no offsets: the README of a version for a screen is found by inflating the archive up to that
+member, within the bounds of R-ANS-031 and 20 seconds. A collection whose README comes late in a large archive costs a screen that much
+inflation, per request, and the member is cut at 64 KiB. Live for every screen that shows a README; the cost is the size of what precedes it.
+
+### H-854 · A caller whose grants hide versions makes the list read all versions of the collection
+
+When a grant decides versions by path (`VersionsByPath`), the version list of a collection is read whole (at most 50,000 versions) and
+filtered before it is paged, so a hidden version is neither listed nor counted (R-AUTHZ-005). Dormant for every repository whose grants do
+not narrow by path; real for one that does and whose collection has thousands of versions.
 
 ### H-864 · Only two ansible-core releases are tested
 

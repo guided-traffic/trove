@@ -1,6 +1,7 @@
 package ansible
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -9,15 +10,25 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/formattest"
 )
 
-// unbuiltStore is the data port of a test that reaches no handler which reads it: a call would panic on the nil interface. The handlers
-// of the skeleton answer 501 before they reach the port.
-type unbuiltStore struct{ Store }
-
-// conformance is the fixture of the kit over the skeleton (ansible-work-packages.md, WP0): the routes answer 501, so the checks that
-// need a built protocol are skipped or listed as not built, each with its reason, and the work package that builds the operation removes
-// the entry (the kit refuses a skip the format contradicts).
+// conformance is the fixture of the kit over the local class: the routes serve over the in-memory twin of the data port, a publish is
+// driven through the route, and the checks of the remote and the virtual class and of the client surface are skipped with the reason
+// until their classes join (the kit refuses a skip the format contradicts).
 func conformance() formattest.Fixture {
-	const notBuilt = "the handler is built by the local class (ansible-work-packages.md, B1); the skeleton answers 501 ansible_not_implemented"
+	const noTask = "a task id is random: the import task is read by the ansiblelocal integration test after a publish returned it"
+	versions := []string{"1.0.0", "1.1.0", "2.0.0"}
+	seed := func(vs ...string) func(h *formattest.Host) error {
+		return func(h *formattest.Host) error {
+			for _, v := range vs {
+				if err := publishVersion(v)(h); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}
+	do := func(fn func(h *formattest.Host) error) func(context.Context, *formattest.Host) error {
+		return func(_ context.Context, h *formattest.Host) error { return fn(h) }
+	}
 	return formattest.Fixture{
 		Rejects: []string{"v3/collections/%2e%2e/x/", "../v3/collections/acme/tools/", "v3/collections/acme/tools%00/"},
 		Paths: []formattest.PathCase{
@@ -27,36 +38,47 @@ func conformance() formattest.Fixture {
 			{Path: "collections/acme/tools/1.0.0.json", Want: formats.PathInfo{Kind: formats.PathMetadata, Package: "acme.tools", Version: "1.0.0"}},
 			{Path: "api-root.json", Want: formats.PathInfo{Kind: formats.PathMetadata}},
 		},
-		Canonical: func(example string) (string, bool) { return canonicalOfExample(example) },
+		Canonical: canonicalOfExample,
 		Protocol: func(canonical string) string {
 			ns, name, _ := strings.Cut(strings.TrimSuffix(strings.TrimPrefix(canonical, "collections/"), "/"+CollectionDocument), "/")
 			return "v3/collections/" + ns + "/" + name + "/"
 		},
-		Host: func() formattest.HostOptions {
-			return formattest.HostOptions{Data: unbuiltStore{}}
-		},
-		Names: []formattest.NameCase{
-			{Spellings: []string{"acme.tools"}}, {Spellings: []string{"community.general", "Community.General", "COMMUNITY.general"}},
-		},
+		Host:        hostOptions,
+		Names:       []formattest.NameCase{{Spellings: []string{"acme.tools"}}, {Spellings: []string{"community.general", "Community.General", "COMMUNITY.general"}}},
 		OptionNames: optionNames(),
 		Inspect:     formattest.InspectTarGz("collections/acme/tools/acme-tools-1.0.0.tar.gz", "MANIFEST.json"),
 		Content: []formattest.ContentCase{
-			{Name: "root", Path: "", Status: http.StatusNotImplemented},
-			{Name: "collection", Path: "v3/collections/acme/tools/", Status: http.StatusNotImplemented},
-			{Name: "versions", Path: "v3/collections/acme/tools/versions/", Status: http.StatusNotImplemented},
-			{Name: "version", Path: "v3/collections/acme/tools/versions/1.0.0/", Status: http.StatusNotImplemented},
-			{Name: "artifact", Path: "v3/artifacts/collections/acme-tools-1.0.0.tar.gz", Status: http.StatusNotImplemented},
-			{Name: "import task", Path: "v3/imports/collections/6f1c0000-0000-4000-8000-000000000002/", Status: http.StatusNotImplemented},
+			{Name: "root", Path: ""},
+			{Name: "collection", Path: "v3/collections/acme/tools/", Seed: seed("1.0.0")},
+			{Name: "versions", Path: "v3/collections/acme/tools/versions/", Seed: seed("1.0.0", "1.1.0")},
+			{Name: "version", Path: "v3/collections/acme/tools/versions/1.0.0/", Seed: seed("1.0.0")},
+			{Name: "artifact", Path: "v3/artifacts/collections/acme-tools-1.0.0.tar.gz", Seed: seed("1.0.0")},
+			{Name: "an unknown collection", Path: "v3/collections/acme/nope/", Status: http.StatusNotFound},
+			{Name: "an unknown task", Path: "v3/imports/collections/6f1c0000-0000-4000-8000-000000000002/", Status: http.StatusNotFound},
 		},
-		NoContent: map[string]string{
-			routeRoot: notBuilt, routeCollection: notBuilt, routeVersions: notBuilt, routeVersion: notBuilt, routeArtifact: notBuilt,
-			routeImport: notBuilt,
+		NoContent: map[string]string{routeImport: noTask},
+		Changes: []formattest.ChangeCase{
+			{Name: "a first publish (OnCommit)", Package: "acme.tools", Do: do(publishVersion("1.0.0"))},
+			{Name: "a later version (OnCommit)", Package: "acme.tools", Seed: seed("1.0.0"), Do: do(publishVersion("1.1.0"))},
+			{
+				Name: "the removal of a version through the items (OnItemsRemoved)", Package: "acme.tools", Seed: seed("1.0.0", "1.1.0"),
+				Do: func(ctx context.Context, h *formattest.Host) error {
+					rq, err := h.NewRequest(ctx, http.MethodGet, "v3/collections/acme/tools/", nil)
+					if err != nil {
+						return err
+					}
+					return h.Remove(ctx, rq, "delete", ArtifactPath("acme", "tools", "1.0.0"))
+				},
+			},
 		},
-		NoRevision: map[string]string{routePublish: notBuilt, "OnCommit": notBuilt, "OnItemsRemoved": notBuilt},
+		NoRevision: map[string]string{},
+		View: &formattest.ViewFixture{
+			Versions: versions, Package: "acme.tools",
+			Seed: func(h *formattest.Host) error { return seed(versions...)(h) },
+		},
 		Skip: map[formattest.Check]string{
 			formattest.CheckRewrite: "the remote adapter joins with the remote class (R-ANS-017)",
 			formattest.CheckMerge:   "the virtual adapter joins with the virtual class (R-ANS-022)",
-			formattest.CheckView:    "the package screens come with the local class (R-ANS-026)",
 		},
 	}
 }
@@ -79,7 +101,7 @@ func canonicalOfExample(example string) (string, bool) {
 	return CanonicalPath(r.Name, params)
 }
 
-// TestR_ARCH_010_Conformance runs the conformance kit over the skeleton.
+// TestR_ARCH_010_Conformance runs the conformance kit over the local class.
 func TestR_ARCH_010_Conformance(t *testing.T) {
 	formattest.Run(t, New(), conformance())
 }

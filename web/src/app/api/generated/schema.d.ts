@@ -9256,15 +9256,6 @@ export interface components {
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
-        /** @description The operation belongs to the Ansible Galaxy format and is not built in this release yet (`ansible_not_implemented`). */
-        AnsibleNotImplemented: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
         /** @description The request carries no valid credential. */
         Unauthenticated: {
             headers: {
@@ -19178,7 +19169,6 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["AnsibleNotImplemented"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -19226,7 +19216,6 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["AnsibleNotImplemented"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -19270,7 +19259,6 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["AnsibleNotImplemented"];
             503: components["responses"]["Unavailable"];
         };
     };

@@ -72,6 +72,28 @@ func TestR_ANS_010_AValidArchiveIsAccepted(t *testing.T) {
 	}
 }
 
+// TestR_ANS_026_ReadFileReturnsOneMemberForAScreen: the README of an archive is found by streaming up to it, cut at the bound, and a
+// member the archive lacks is not found.
+func TestR_ANS_026_ReadFileReturnsOneMemberForAScreen(t *testing.T) {
+	s := spec()
+	s.Files["docs/big.md"] = strings.Repeat("0123456789", 20_000)
+	data := collectiontest.Build(s)
+	got, found, err := collection.ReadFile(context.Background(), bytes.NewReader(data), collection.DefaultLimits(), "README.md", 64<<10)
+	if err != nil || !found || string(got) != "# tools\n" {
+		t.Fatalf("README = %q %v %v", got, found, err)
+	}
+	got, found, err = collection.ReadFile(context.Background(), bytes.NewReader(data), collection.DefaultLimits(), "docs/big.md", 1000)
+	if err != nil || !found || len(got) != 1000 {
+		t.Fatalf("a member over the bound: %d bytes, %v, %v", len(got), found, err)
+	}
+	if _, found, err = collection.ReadFile(context.Background(), bytes.NewReader(data), collection.DefaultLimits(), "nope.md", 1000); err != nil || found {
+		t.Errorf("a member the archive lacks: %v %v", found, err)
+	}
+	if _, _, err = collection.ReadFile(context.Background(), bytes.NewReader([]byte("not an archive")), collection.DefaultLimits(), "README.md", 1000); err == nil {
+		t.Error("an archive that is none was read")
+	}
+}
+
 func TestR_ANS_010_NoRuntimeFileMeansNoRequiresAnsible(t *testing.T) {
 	s := spec()
 	delete(s.Files, "meta/runtime.yml")

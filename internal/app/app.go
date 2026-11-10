@@ -157,19 +157,21 @@ type App struct {
 	parts *wiring
 	// The services that job handlers use are late values: the job registry is
 	// built, and frozen, before the area that owns the service is wired.
-	auditStore  late[*audit.Store]
-	gc          late[*blob.Collector]
-	repoSvc     late[*repository.Service]
-	itemStore   late[*items.Store]
-	tokenSvc    late[*token.Service]
-	folder      late[*invalidation.Folder]
-	reseal      late[resealDeps]
-	host        late[formats.Host]
-	semver2     late[*nugetdata.Semver2]
-	ociSweep    late[*ocidata.Sweeper]
-	debRemote   late[*debdata.RemoteJobs]
-	shipper     late[journal.Shipper]
-	checkBucket late[platform.Bucket]
+	auditStore late[*audit.Store]
+	gc         late[*blob.Collector]
+	repoSvc    late[*repository.Service]
+	itemStore  late[*items.Store]
+	tokenSvc   late[*token.Service]
+	folder     late[*invalidation.Folder]
+	reseal     late[resealDeps]
+	host       late[formats.Host]
+	semver2    late[*nugetdata.Semver2]
+	ociSweep   late[*ocidata.Sweeper]
+	debRemote  late[*debdata.RemoteJobs]
+	// ansibleReindex is the handler of the job ansible-reindex (wire_ansible.go).
+	ansibleReindex late[jobs.Handler]
+	shipper        late[journal.Shipper]
+	checkBucket    late[platform.Bucket]
 	// registryMetrics are the counters of the registry token service, shared by every endpoint (wire_registry.go).
 	registryMetrics *registrytoken.Metrics
 }
@@ -550,7 +552,7 @@ func (a *App) startClient() error {
 			// The backup runs, the summary and the backup block of the system information (wire_backup_gauges.go).
 			Backup: a.backupAPI(),
 			// The signing keys of the Debian repositories (wire_formats.go).
-			DebKeys: a.debKeyStore(), Reindexers: a.reindexers(),
+			DebKeys: a.debKeyStore(), Ansible: a.ansibleStore(), Reindexers: a.reindexers(),
 			// The banner and the read-only maintenance mode (R-OPS-024, R-OPS-025).
 			SystemState: part[infra](a.parts).sys,
 		})

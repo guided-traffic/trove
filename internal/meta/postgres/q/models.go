@@ -24,7 +24,7 @@ type AnsibleCollectionVersion struct {
 	Dependencies    json.RawMessage
 	CollectionInfo  json.RawMessage
 	PublishedBy     string
-	PublishedAt     pgtype.Timestamptz
+	PublishedAt     time.Time
 }
 
 type AnsibleImportTask struct {
@@ -37,8 +37,8 @@ type AnsibleImportTask struct {
 	ErrorDescription pgtype.Text
 	Messages         json.RawMessage
 	CreatedBy        string
-	CreatedAt        pgtype.Timestamptz
-	FinishedAt       pgtype.Timestamptz
+	CreatedAt        time.Time
+	FinishedAt       time.Time
 }
 
 type AnsibleTombstone struct {
@@ -46,7 +46,7 @@ type AnsibleTombstone struct {
 	Name      string
 	Version   string
 	Sha256    []byte
-	DeletedAt pgtype.Timestamptz
+	DeletedAt time.Time
 	DeletedBy string
 }
 

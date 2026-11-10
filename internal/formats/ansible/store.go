@@ -28,13 +28,13 @@ type Store interface {
 // LocalStore is the part of the data port the local class writes and reads (R-ANS-008 to R-ANS-012).
 type LocalStore interface {
 	// PutVersion records a stored version in the transaction that writes its item (OnCommit): the row of ansible_collection_versions
-	// and the raise of the collection's revision. A row of the same name and version is replaced (the idempotent retry stores the
-	// same bytes).
-	PutVersion(ctx context.Context, tx formats.Tx, v rows.VersionRow) error
-	// RemoveVersion deletes the row of a version in the transaction of the removal of its item. With tombstone true it leaves a
-	// tombstone (name, version, sha256) and writes the journaled event ansible.version.deleted in the same transaction; by is the
-	// principal's id or "".
-	RemoveVersion(ctx context.Context, tx formats.Tx, repoID int64, name, version string, tombstone bool, by string) error
+	// and the event package.published, without a journal entry (the deletion is the journaled event, R-ANS-029). A row of the same
+	// name and version is replaced. The revision of the collection is raised by the caller, through the package writer.
+	PutVersion(ctx context.Context, tx formats.Tx, v rows.VersionRow, a rows.Audit, p rows.PublishInfo) error
+	// RemoveVersion deletes the row of a version in the transaction of the removal of its item, if it is still there, and with
+	// tombstone true leaves the tombstone (name, version, sha256 of the archive that went) and writes the journaled event
+	// ansible.version.deleted in the same transaction.
+	RemoveVersion(ctx context.Context, tx formats.Tx, repoID int64, name, version string, sha256 []byte, tombstone bool, a rows.Audit) error
 	// Version reads the row of a version; found is false when there is none.
 	Version(ctx context.Context, repoID int64, name, version string) (rows.VersionRow, bool, error)
 	// Versions lists the versions of a collection newest first by precedence (the sort key descending) with the count of all of them.
@@ -43,13 +43,15 @@ type LocalStore interface {
 	Collection(ctx context.Context, repoID int64, name string) (rows.CollectionSummary, bool, error)
 	// Tombstoned reads the digest of the deleted version of the name; ok is false when the number is free.
 	Tombstoned(ctx context.Context, repoID int64, name, version string) (sha256 []byte, ok bool, err error)
-	// ClearTombstone deletes a tombstone and writes ansible.tombstone.cleared, journaled, in one transaction.
-	ClearTombstone(ctx context.Context, repoID int64, name, version, by string) error
+	// ClearTombstone deletes a tombstone and writes ansible.tombstone.cleared, journaled, in one transaction; found is false when
+	// the number has none.
+	ClearTombstone(ctx context.Context, repoID int64, name, version string, a rows.Audit) (found bool, err error)
 	// Tombstones lists the tombstones of a repository in name and version order after the cursor (the name and version of the
 	// last one seen, "" for the first page).
 	Tombstones(ctx context.Context, repoID int64, after string, limit int) ([]rows.Tombstone, error)
-	// CreateTask records an import task, in the publish transaction or alone for a failed task.
-	CreateTask(ctx context.Context, tx formats.Tx, t rows.Task) error
+	// CreateTask records an import task, in the publish transaction (tx) or alone (nil) for a failed task, which also writes the
+	// event ansible.import_task.failed.
+	CreateTask(ctx context.Context, tx formats.Tx, t rows.Task, a rows.Audit) error
 	// Task reads a task of the repository; found is false for an unknown id.
 	Task(ctx context.Context, repoID int64, id string) (rows.Task, bool, error)
 	// Tasks lists the tasks of a repository newest first, optionally of one state, after the cursor (the id of the last one seen).
@@ -58,6 +60,23 @@ type LocalStore interface {
 	// through reader, rewrites the version rows from it and creates the rows of archives that have none. It returns the checkpoint to
 	// continue from, and done true after the last package name. It never changes stored bytes.
 	RebuildRows(ctx context.Context, repoID int64, reader rows.ArchiveReader, checkpoint string) (next string, done bool, err error)
+}
+
+// ViewStore is the part of the data port the package screens read (R-ANS-026, R-EP-016): the statements are in
+// internal/formatdata/ansible/view_store.go. It is a separate interface because the contract's DataPort ([Store]) is the port of the
+// protocol and the writes; the same bound value implements both.
+type ViewStore interface {
+	// ViewSummaries reads the description and the tags of the given generic versions; a version without a row is absent.
+	ViewSummaries(ctx context.Context, ids []int64) ([]rows.ViewSummary, error)
+	// ViewDetails reads the stored metadata of the given generic versions and, with readme, the text of their README.
+	ViewDetails(ctx context.Context, ids []int64, readme bool) ([]rows.ViewDetail, error)
+	// ViewFind returns the ids of at most limit generic versions of the repositories (by key) whose description contains text
+	// (case-insensitively) or whose tags contain keyword exactly; exactly one of the two is set.
+	ViewFind(ctx context.Context, repos []string, text, keyword string, limit int) ([]int64, error)
+	// ViewStored lists the versions a local repository serves of a collection, newest first.
+	ViewStored(ctx context.Context, repoID int64, name string, limit int) ([]string, error)
+	// ViewWithheld lists the generic versions of the repositories (by key) whose number a tombstone withholds.
+	ViewWithheld(ctx context.Context, repos []string) ([]int64, error)
 }
 
 // RemoteStore is the part of the data port the remote class writes and reads (R-ANS-018).

@@ -15,6 +15,7 @@ package ansible
 
 import (
 	"context"
+	"io"
 
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/errs"
@@ -32,6 +33,17 @@ type Options struct {
 	// Actor gives the actor of the request in ctx. A hook that learns of a removal from the item store knows the principal's id and
 	// nothing else; the actor of the request completes the event. nil keeps what the hook passed.
 	Actor func(ctx context.Context) audit.Actor
+	// Jobs enqueues the reindex (reindex.go); nil enqueues nothing and the reindex answers an internal error (a process that serves no
+	// request, the restore's, has none).
+	Jobs Jobs
+	// Blobs reads the stored archives for the README of a version (view_store.go); nil gives the screens no README text.
+	Blobs BlobReader
+}
+
+// BlobReader opens a stored blob whole; the composition root implements it over the blob store. The read is verified against the
+// digest as every read of a blob is.
+type BlobReader interface {
+	Open(ctx context.Context, sha256 [32]byte, size int64) (io.ReadCloser, error)
 }
 
 // Store implements the data port of the format: the groups, each embedded from the files of the package that builds it.
@@ -39,6 +51,7 @@ type Store struct {
 	o Options
 	localStore
 	remoteStore
+	viewStore
 }
 
 // New creates the store.
@@ -50,7 +63,7 @@ func New(o Options) (*Store, error) {
 		return nil, errs.E(errs.Internal, errs.CodeInternal, "ansible: the data port needs an audit recorder")
 	}
 	g := &group{o: o}
-	return &Store{o: o, localStore: localStore{g}, remoteStore: remoteStore{g}}, nil
+	return &Store{o: o, localStore: localStore{g}, remoteStore: remoteStore{g}, viewStore: viewStore{g}}, nil
 }
 
 // group is what every group of the port shares: the options. A group embeds a pointer to it, so the composition is one value.

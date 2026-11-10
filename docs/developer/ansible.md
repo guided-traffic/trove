@@ -7,11 +7,11 @@ packages, the schema, the scheme `Token` of the authentication stage and the dat
 [ansible-work-packages.md](../projektplan/ansible-work-packages.md); the decision for the contract is
 [ADR-191](../decisions.md#adr-191--the-format-contract-gains-the-route-flag-for-the-galaxy-token-scheme-and-the-hub-token-exchange-is-an-optional-interface-of-the-remote-adapter).
 
-What is built today is the **skeleton and the leaves** (work package WP0): the format registers with the local class, its route table, the
-grammars, the classification of paths, the Galaxy error shape, the settings schema, the data port with its tables, the management
-operations of the OpenAPI document, the scheme `Token`, and the leaf packages with their tests. Every Galaxy route and every management
-operation answers 501 `ansible_not_implemented` until the class that serves it is built. [What is built and what is not](#what-is-built-and-what-is-not)
-says which.
+What is built today is the **skeleton, the leaves and the local class**: the format registers with its route table, the grammars, the classification of
+paths, the Galaxy error shape, the settings schema and the data port with its tables; the local class publishes, serves the three read operations and the
+download, records the import tasks, deletes with tombstones and replays them, reindexes, sweeps old tasks and reads its rows for the package screens; the
+scheme `Token` is in the authentication stage. The remote class, the virtual class and the client surface are not built; a route of a class that has no
+handler answers 501 `ansible_not_implemented`. [What is built and what is not](#what-is-built-and-what-is-not) says which.
 
 ## What has to be in your head first
 
@@ -46,14 +46,22 @@ internal/formats/ansible/
 ├── names.go              # the package-name rule (Normalize)
 ├── errors.go             # WriteError: errors[] below v3/ and at the root, {"default"} below v1/
 ├── inspect.go            # Inspect: the archive reader and the path/identity check
-├── store.go              # the data port: Store = LocalStore + RemoteStore
+├── publish.go            # the publish: the multipart reader, the order of the checks, the import task, the repeat
+├── handlers_local.go     # the read operations, the download and the task read of the local class
+├── hooks.go              # OnCommit (the version, its row and task), OnItemsRemoved (the tombstone), the fill and removal hooks of other classes
+├── view.go               # the package screens' adapter; servecheck.go: the withheld archive
+├── bind.go               # the replica: the ansible: section, trove_ansible_publish_total, registerBinder for the other classes
+├── store.go              # the data port: Store = LocalStore + RemoteStore; ViewStore for the screens
+├── ansibletest/          # the in-memory twin of the port for the unit tests and the conformance kit
 ├── settings.go, settings.schema.json  # the ansible member of the repository document (authUrl, clientId)
 ├── class_local.go        # the local class registers itself
 ├── rows/                 # leaf: the values that cross the data port, the CollectionUUID
 ├── version/              # leaf: semver 2.0.0, Compare, SortKey
 ├── collection/           # leaf: the archive reader (ReadArchive), the name rule, runtime.yml; collectiontest builds archives for tests
 └── galaxydoc/            # leaf: Render*/ParseUpstream* of the Galaxy documents; testdata/ holds the golden documents
-internal/formatdata/ansible/   # the data port: port.go, tables.go, jobs.go, local_store.go, remote_store.go
+internal/formatdata/ansible/   # the data port: port.go, tables.go, jobs.go, local_store.go, view_store.go, reindex.go, journal_replay.go, remote_store.go
+internal/app/wire_ansible.go   # the blob reads, the reindex handler, the management store
+test/integration/ansiblelocal/ # the local class over HTTP on the stack
 internal/auth/                 # stage.go, auth.go: the scheme Token (galaxy_token_test.go)
 internal/api/dispatch/         # TokenSchemeRoute beside APIKeyRoute
 internal/api/v1/ansible_*.go   # the management operations (501 until the local class)
@@ -117,16 +125,51 @@ implemented by [internal/formatdata/ansible](../../internal/formatdata/ansible/p
 (Q-ANS-33), carries no revision column (Q-ANS-31), and its reindex step is `RebuildRows`, the enqueue being the `Reindexer` the endpoint
 already finds (Q-ANS-32). The job kinds `ansible-reindex` and `ansible-import-task-sweep` are registered in [jobs.go](../../internal/formatdata/ansible/jobs.go).
 
+## The local class
+
+**Publish** ([publish.go](../../internal/formats/ansible/publish.go)). The body is spooled once (multipart in either order of `file` and `sha256`, or the archive as the
+raw body, Q-ANS-34); the digest is compared before the inspection; `Inspect` reads the archive ([inspect.go](../../internal/formats/ansible/inspect.go)); a refusal
+is a failed task and 202; then `Authorize`, `CheckOwnership`, the immutability and tombstone verdict (`numberTaken`), the shadowing check and
+`Ingest().Commit`. `OnCommit` ([hooks.go](../../internal/formats/ansible/hooks.go)) repeats the verdicts under the package row lock, claims the name, inserts the
+generic version, writes the row through the port (`PutVersion`, with `package.published` and no journal entry) and records the completed task, all in the
+commit transaction. A commit of identical content runs no hook and the handler records the repeat's task itself.
+
+**Reads** ([handlers_local.go](../../internal/formats/ansible/handlers_local.go)). Every document is computed from the rows per request with a weak `ETag` of its
+bytes (Q-ANS-35); a caller whose grants hide versions sees a list cut from the versions it may read (`formats.CallerVersions`). The download is the stored item through
+`Items().Serve` with `Content-Type: application/gzip`.
+
+**Removal.** `OnItemsRemoved` turns the removal of an archive item into the removal of the version: the generic version, the row (if the cascade of a permanent
+delete did not take it), the tombstone keyed by `version.Number` (build metadata dropped) and the journaled `ansible.version.deleted`. The serve check refuses an
+archive whose number is tombstoned.
+
+**Reindex, sweep, replay.** `POST …/reindex` is `Store.Reindex` ([reindex.go](../../internal/formatdata/ansible/reindex.go)), which the endpoint finds as `api/v1.Reindexer`; the
+job `ansible-reindex` steps through the archives by path, reads each manifest through `rows.ArchiveReader` (implemented in
+[wire_ansible.go](../../internal/app/wire_ansible.go)), rewrites or creates the rows, skips tombstoned numbers and raises the revision of what it changed. The task
+`ansible-import-task-sweep` deletes tasks older than `ansible.import_task_keep`. The replay handlers are in [journal_replay.go](../../internal/formatdata/ansible/journal_replay.go).
+
+**How the other classes hook in.** A class file registers `registerClass`, its handlers with `registerHandler(class, route, build)` and `registerBinder` (per-replica metrics), all from `init`.
+The remote adapter implements `FillCommitter` (the commit of a cached archive) and `RemovalHook` (the removal of its items), which `OnCommit` and
+`OnItemsRemoved` find on it; a virtual adapter may implement `RemovalHook` too.
+
 ## Tests
 
 | Tier | Where | What |
 |---|---|---|
 | Unit | the leaf packages | semver precedence against a reference and fuzz; the archive reader against crafted archives and fuzz (`collectiontest` builds them); the documents against golden files (`go test ./internal/formats/ansible/galaxydoc -update` rewrites them) |
-| Format | `internal/formats/ansible` | the descriptor, the route table, the matchers, `Classify`, the error shapes, the settings, the conformance kit over the skeleton |
+| Format | `internal/formats/ansible` | the descriptor, the route table, the matchers, `Classify`, the error shapes, the settings, the real handlers and hooks over the twin (`publish_test.go`), the serve check, the conformance kit with a publish seed |
 | Stage | `internal/auth`, `internal/api/dispatch` | the scheme with and without the declaration, the metric label, the cookie; the dispatcher's answer to the stage ([tokenscheme_test.go](../../internal/api/dispatch/tokenscheme_test.go)) |
+| Integration | [test/integration/ansiblelocal](../../test/integration/ansiblelocal) | the publish over HTTP in both orders and as a raw body, the counting of rows, the tasks, immutability, tombstones and their replay, credentials, `TestR_AUTHZ_007_AnsibleActionMap`, the reindex and the sweep, the package screens, two replicas without Valkey |
+
+## How to add a Galaxy field to the documents
+
+1. The document: add the member in [galaxydoc.go](../../internal/formats/ansible/galaxydoc/galaxydoc.go) (a version's metadata members are in `metadataKeys`, in the order the
+   Galaxy writes them) and rewrite the golden files with `-update`; read the diff.
+2. The row: a field a document shows from the archive goes into `collection.Archive` and its reader, into `rows.VersionRow` and the column of a new migration, into
+   `queries/ansible_local.sql` and `make generate`, and into `Store.PutVersion` and `RebuildStep`, so the reindex restores it.
+3. The tests: the crafted archive in `collectiontest`, the golden file, and the integration test that reads the document.
 
 ## What is built and what is not
 
-Built: the skeleton, the leaves, the scheme, the tables and the data port as stubs. Not built yet: the local class (publish, import tasks,
-the three read operations, tombstones, the reindex, the screens' adapter), the remote class, the virtual class, the setup and the guide, the
-importer. The management operations and every Galaxy route answer 501 until their class lands.
+Built: the skeleton, the leaves, the scheme, the tables, the data port and the local class. Not built yet: the remote class (work package B2), the virtual class (B3, which
+also lists the import tasks of a deployment target), the setup and the guide (B4), the restore from the trash (H-852). The management operations and the
+Galaxy routes of the local class are served; the deploy dialog is not offered (Q-ANS-34).

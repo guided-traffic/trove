@@ -28,7 +28,7 @@ func init() {
 	// A version of a local repository was deleted by a person or a job: its number is withheld (R-ANS-012).
 	Register(EventType{
 		Name: EventAnsibleVersionDeleted, Category: CategoryContent, Mode: Transactional, Webhook: true, Journal: JournalRevocation,
-		Schema: `{"type":"object","properties":{` + ansibleName + `,` + ansibleVersion + `,` + ansibleSHA256 + `},` +
+		Schema: `{"type":"object","properties":{` + ansibleName + `,` + ansibleVersion + `,"stored":{"type":"string","maxLength":128},` + ansibleSHA256 + `},` +
 			`"required":["name","version","sha256"],"additionalProperties":false}`,
 	})
 	// A tombstone was cleared by an administrator, so the number can be published with other bytes. Journaled so that a restore from

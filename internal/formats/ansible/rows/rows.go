@@ -102,7 +102,7 @@ type ArchiveFacts struct {
 // ArchiveReader reads the manifest of the stored archive of an item for the reindex (R-ANS-012): the two documents only, by ranged
 // reads. The format implements it over the blob store; the port calls it for every archive it finds without a current row.
 type ArchiveReader interface {
-	ReadArchive(ctx context.Context, itemID int64) (ArchiveFacts, error)
+	ReadArchive(ctx context.Context, ref ArchiveRef) (ArchiveFacts, error)
 }
 
 // CollectionUUID is the stable id of a collection of a local repository, the collection.id of its documents (R-ANS-004): a version 5
@@ -114,4 +114,59 @@ func CollectionUUID(repoID int64, name string) string {
 	b[6] = b[6]&0x0f | 0x50 // version 5
 	b[8] = b[8]&0x3f | 0x80 // variant 10
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+// Actor is the principal behind a write, as the audit event describes it.
+type Actor struct {
+	Kind, ID, Name, TokenID, AuthMethod string
+}
+
+// Audit is the audit context of a write: the repository key, the endpoint and the actor, from the request's subject.
+type Audit struct {
+	RepoKey, Endpoint string
+	Actor             Actor
+}
+
+// PublishInfo is what the event package.published of a stored version adds to the row: the claim the first version made and what the
+// shadowing check found (R-REPO-048).
+type PublishInfo struct {
+	// Claim is the result of the namespace auto claim ("" for none).
+	Claim string
+	// ShadowUndetermined says that whether a remote member serves the name could not be determined.
+	ShadowUndetermined bool
+	// Shadowed are the virtual repositories and the remote members a first publish shadows, on the strength of manage.
+	Shadowed []ShadowPair
+}
+
+// ShadowPair is a virtual repository and the remote member whose package of the name the publish shadows.
+type ShadowPair struct{ Virtual, Remote string }
+
+// ArchiveRef names the stored archive of an item for the reindex: the item, its blob and its size.
+type ArchiveRef struct {
+	ItemID int64
+	Path   string
+	SHA256 [32]byte
+	Size   int64
+}
+
+// ViewSummary is what the package list shows of a version: the description and the tags.
+type ViewSummary struct {
+	// VersionID is the id of the generic version row the screens key by.
+	VersionID                  int64
+	Name, Version, Description string
+	Tags                       []string
+}
+
+// ViewDetail is what the version screen shows: the stored metadata and, when asked for, the README.
+type ViewDetail struct {
+	ViewSummary
+	RequiresAnsible string
+	Dependencies    map[string]string
+	CollectionInfo  json.RawMessage
+	SHA256          [32]byte
+	Size            int64
+	PublishedAt     time.Time
+	// Readme and ReadmeFile are the README text (at most 64 KiB) and the name of its file inside the archive; empty when the archive
+	// has none or it was not asked for.
+	Readme, ReadmeFile string
 }

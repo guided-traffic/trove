@@ -67,24 +67,25 @@ func TestNewRegistersTheClassesOfTheClassFiles(t *testing.T) {
 	}
 }
 
-// Every route answers 501 ansible_not_implemented until a class file registers the handler of its class and name (R-ANS-007).
-func TestRoutesAnswer501UntilTheirHandlerIsRegistered(t *testing.T) {
-	f := allClasses()
-	if len(f.Routes()) != 10 {
-		t.Fatalf("the table has %d routes, want 10", len(f.Routes()))
+// Every route of a class has a handler of that class registered (R-ANS-003 to R-ANS-009), and a route whose class registered none answers
+// 501 ansible_not_implemented (R-ANS-007).
+func TestRoutesOfARegisteredClassHaveHandlersAndTheRestAnswer501(t *testing.T) {
+	f := New()
+	handlerRegistry.mu.RLock()
+	for _, r := range f.Routes() {
+		for _, class := range f.Classes() {
+			if r.ServesClass(class) && handlerRegistry.by[class][r.Name] == nil {
+				t.Errorf("route %s serves the class %s and has no handler of it", r.Name, class)
+			}
+		}
 	}
+	handlerRegistry.mu.RUnlock()
 	for _, class := range []formats.Class{formats.Local, formats.Remote, formats.Virtual} {
-		for _, r := range f.Routes() {
-			if !r.ServesClass(class) {
-				continue
-			}
-			rq := &formats.Request{Request: httptest.NewRequest(http.MethodGet, "/", nil)}
-			rq.Repo = repoOfClass(class)
-			err := r.Handler(context.Background(), rq, httptest.NewRecorder())
-			e, ok := errs.As(err)
-			if !ok || e.Kind != errs.NotImplemented || e.Code != errs.CodeAnsibleNotImplemented {
-				t.Errorf("%s for a %s repository: error = %v, want 501 ansible_not_implemented", r.Name, class, err)
-			}
+		rq := &formats.Request{Request: httptest.NewRequest(http.MethodGet, "/", nil), Repo: repoOfClass(class)}
+		err := f.op("ansible.no.such.route")(context.Background(), rq, httptest.NewRecorder())
+		e, ok := errs.As(err)
+		if !ok || e.Kind != errs.NotImplemented || e.Code != errs.CodeAnsibleNotImplemented {
+			t.Errorf("an unregistered route for a %s repository: error = %v, want 501 ansible_not_implemented", class, err)
 		}
 	}
 }

@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestR_ANS_019_SettingsOfADocument(t *testing.T) {
+func TestR_ANS_001_SettingsOfADocumentHaveTheirDefaults(t *testing.T) {
 	for name, tc := range map[string]struct {
 		doc  string
 		want Settings
@@ -22,9 +22,9 @@ func TestR_ANS_019_SettingsOfADocument(t *testing.T) {
 	}
 }
 
-// TestR_ANS_019_TheSchemaIsClosedAndHasNoSettingForLocalAndVirtual: only authUrl and clientId exist, both for remote repositories, and
+// TestR_ANS_001_TheSettingsSchemaIsClosedAndHasNoSettingForLocalAndVirtual: only authUrl and clientId exist, both for remote repositories, and
 // unknown fields are refused.
-func TestR_ANS_019_TheSchemaIsClosedAndHasNoSettingForLocalAndVirtual(t *testing.T) {
+func TestR_ANS_001_TheSettingsSchemaIsClosedAndHasNoSettingForLocalAndVirtual(t *testing.T) {
 	var s struct {
 		AdditionalProperties bool `json:"additionalProperties"`
 		Properties           map[string]struct {

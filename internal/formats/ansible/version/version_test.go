@@ -164,6 +164,14 @@ func TestR_ANS_002_SortKeyOrderEqualsTheReferenceOrder(t *testing.T) {
 	}
 }
 
+func TestR_ANS_002_NumberDropsBuildMetadata(t *testing.T) {
+	for in, want := range map[string]string{"1.0.0": "1.0.0", "1.0.0+b.5": "1.0.0", "1.0.0-rc.1+x": "1.0.0-rc.1", "x+y+z": "x"} {
+		if got := Number(in); got != want {
+			t.Errorf("Number(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestR_ANS_002_ASortedListIsNewestFirstByKey(t *testing.T) {
 	in := []string{"1.10.0", "1.2.0", "1.2.0-rc.1", "1.9.0", "2.0.0+b", "1.2.0+a"}
 	type kv struct {

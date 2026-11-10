@@ -41,7 +41,7 @@ const (
 func (f *Format) WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	p, e := errs.ProblemOf(err, "", "")
 	v1 := belowV1(r)
-	status, code, detail := p.Status, galaxyCode(p.Code), p.Detail
+	status, code, detail := p.Status, galaxyCode(p.Code, e.Kind), p.Detail
 	if detail == "" {
 		detail = p.Title
 	}
@@ -121,11 +121,13 @@ func sentenceCase(s string) string {
 	return s + "."
 }
 
-// galaxyCode is the code of the Galaxy shape for a registry code.
-func galaxyCode(code string) string {
-	switch code {
-	case errs.CodeUnauthenticated:
+// galaxyCode is the code of the Galaxy shape for a registry code and the kind of its error.
+func galaxyCode(code string, kind errs.Kind) string {
+	if kind == errs.Unauthenticated {
+		// Every 401 is "not authenticated" to a Galaxy: a missing credential, an invalid token and a rejected one alike.
 		return "not_authenticated"
+	}
+	switch code {
 	case errs.CodeForbidden:
 		return "permission_denied"
 	case errs.CodeInvalid:

@@ -240,6 +240,8 @@ type Options struct {
 	// >>> T-17 deb
 	// DebKeys is the data port's signing-key group behind the Debian key operations (deb_keys.go); nil answers them with 503.
 	DebKeys DebKeyStore
+	// Ansible is the data port's management group behind the Ansible Galaxy operations (ansible_stub.go); nil answers them with 503.
+	Ansible AnsibleStore
 	// Reindexers are the formats with a job-built index by format ID (reindex.go); a format not listed answers the reindex with 405.
 	Reindexers map[string]Reindexer
 	// <<< T-17 deb

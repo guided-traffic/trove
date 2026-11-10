@@ -9191,9 +9191,6 @@ type ProjectKey = string
 // RepoKey defines model for RepoKey.
 type RepoKey = string
 
-// AnsibleNotImplemented RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
-type AnsibleNotImplemented = Problem
-
 // BadGateway RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type BadGateway = Problem
 

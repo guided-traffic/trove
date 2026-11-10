@@ -23,6 +23,15 @@ sql:
           # The audit package reads event times as plain times (R-ARCH-002).
           - column: "audit_event.occurred_at"
             go_type: "time.Time"
+          # The Ansible Galaxy format's data port reads and writes its times as plain times (R-ARCH-002).
+          - column: "ansible_collection_versions.published_at"
+            go_type: "time.Time"
+          - column: "ansible_tombstones.deleted_at"
+            go_type: "time.Time"
+          - column: "ansible_import_tasks.created_at"
+            go_type: "time.Time"
+          - column: "ansible_import_tasks.finished_at"
+            go_type: "time.Time"
           # A transaction-mode pooler runs the main pool in pgx's Exec mode (R-ARCH-019, Q-ARCH-14), which sends no parameter
           # types: pgx then encodes a []byte as bytea ("\\x7b..."), which a ::jsonb cast refuses. json.RawMessage is sent as the
           # JSON text it holds.

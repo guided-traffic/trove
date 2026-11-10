@@ -157,6 +157,13 @@ func SortKey(v Semver) []byte {
 	return append(k, endTag)
 }
 
+// Number is the version without its build metadata: the number two versions that differ only in build metadata share, which an
+// immutability rule and a tombstone are keyed by (R-ANS-002, R-ANS-008).
+func Number(s string) string {
+	n, _, _ := strings.Cut(s, "+")
+	return n
+}
+
 // appendNumber appends the length-prefixed digits of a number; the digit count of a bounded version is below 256.
 func appendNumber(k []byte, digits string) []byte {
 	k = append(k, byte(len(digits))) //nolint:gosec // a part of a version of at most MaxLength characters has fewer than 256 digits

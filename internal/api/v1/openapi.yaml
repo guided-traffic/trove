@@ -12151,8 +12151,7 @@ paths:
   # >>> F0 ansible
   #
   # The management operations of the Ansible Galaxy format (R-ANS-009, R-ANS-012, R-ANS-026). The Galaxy protocol routes are not
-  # operations of this document: they are the format's route table (docs/spec/formats/ansible.md). The operations answer 501
-  # `ansible_not_implemented` until the local class that builds them lands.
+  # operations of this document: they are the format's route table (docs/spec/formats/ansible.md).
   /api/v1/projects/{projectKey}/repositories/{repoKey}/ansible/imports:
     parameters:
       - $ref: "#/components/parameters/ProjectKey"
@@ -12206,8 +12205,6 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/Internal"
-        "501":
-          $ref: "#/components/responses/AnsibleNotImplemented"
         "503":
           $ref: "#/components/responses/Unavailable"
   /api/v1/projects/{projectKey}/repositories/{repoKey}/ansible/tombstones:
@@ -12256,8 +12253,6 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/Internal"
-        "501":
-          $ref: "#/components/responses/AnsibleNotImplemented"
         "503":
           $ref: "#/components/responses/Unavailable"
   /api/v1/projects/{projectKey}/repositories/{repoKey}/ansible/tombstones/{collection}/{version}:
@@ -12310,8 +12305,6 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/Internal"
-        "501":
-          $ref: "#/components/responses/AnsibleNotImplemented"
         "503":
           $ref: "#/components/responses/Unavailable"
   # <<< F0 ansible
@@ -12517,12 +12510,6 @@ components:
     # <<< M13 bastion
     DebNotImplemented:
       description: The operation belongs to the Debian (APT) format and is not built in this release yet (`deb_not_implemented`).
-      content:
-        application/problem+json:
-          schema:
-            $ref: "#/components/schemas/Problem"
-    AnsibleNotImplemented:
-      description: The operation belongs to the Ansible Galaxy format and is not built in this release yet (`ansible_not_implemented`).
       content:
         application/problem+json:
           schema:

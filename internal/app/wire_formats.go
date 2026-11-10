@@ -78,6 +78,9 @@ func (a *App) wireFormatPorts(ctx context.Context, in infra) (formatPortsArea, e
 			return formatPortsArea{}, err
 		}
 		a.startDebIndexer(ports)
+		if err := a.startAnsibleReindex(in, ports); err != nil {
+			return formatPortsArea{}, err
+		}
 	}
 	return formatPortsArea{bindings: b, views: formathost.NewViewAdapters(formats.List(), b)}, nil
 }
@@ -150,7 +153,7 @@ func (a *App) registerFormatJobs(r *jobs.Registry) {
 	}
 	r.RegisterTask(ocidata.SweepJobKind, spec)
 	debdata.RegisterJobs(r, a.debRemoteHandlers())
-	ansibledata.RegisterJobs(r)
+	ansibledata.RegisterJobs(r, ansibledata.Handlers{Reindex: a.ansibleReindexHandler(), ImportTaskKeep: a.cfg.Ansible.ImportTaskKeep})
 	a.registerDebRemoteRefresh()
 }
 
@@ -222,10 +225,15 @@ func formatPorts(db meta.Runner, rec audit.Recorder, blobs *blob.Store, queue nu
 		return nil, fmt.Errorf("formats: deb data port: %w", err)
 	}
 	bindDebCreateHook(deb)
-	ansible, err := ansibledata.New(ansibledata.Options{
-		DB: db, Recorder: rec, Source: httpserver.SourceFrom,
+	ansibleOpts := ansibledata.Options{
+		DB: db, Recorder: rec, Source: httpserver.SourceFrom, Blobs: ansibleBlobs(blobs),
 		Actor: func(ctx context.Context) audit.Actor { return edge.ActorFrom(httpserver.PrincipalFrom(ctx)) },
-	})
+	}
+	// The reindex queue: the restore's refusing queue has no Running and enqueues no job.
+	if jq, ok := queue.(ansibledata.Jobs); ok {
+		ansibleOpts.Jobs = jq
+	}
+	ansible, err := ansibledata.New(ansibleOpts)
 	if err != nil {
 		return nil, fmt.Errorf("formats: ansible data port: %w", err)
 	}

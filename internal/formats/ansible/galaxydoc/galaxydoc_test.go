@@ -189,7 +189,7 @@ var upstreamVersionDoc = `{
   "manifest":{"a":1},"files":[{"name":"x"}]}
 }`
 
-func TestR_ANS_017_AnUpstreamVersionDocumentIsParsedAndServedWithoutThePluginListing(t *testing.T) {
+func TestParseUpstreamVersionDocumentDropsThePluginListing(t *testing.T) {
 	doc := strings.Replace(upstreamVersionDoc, "{{LONG}}", strings.Repeat("x", 100_000), 1)
 	v, dl, err := galaxydoc.ParseUpstreamVersion([]byte(doc))
 	if err != nil {
@@ -220,7 +220,7 @@ func TestR_ANS_017_AnUpstreamVersionDocumentIsParsedAndServedWithoutThePluginLis
 	}
 }
 
-func TestR_ANS_017_AnUpstreamVersionDocumentThatIsNotAVersionIsRefused(t *testing.T) {
+func TestParseUpstreamVersionRefusesWhatIsNoVersion(t *testing.T) {
 	good := strings.Replace(upstreamVersionDoc, "{{LONG}}", "x", 1)
 	for name, doc := range map[string]string{
 		"not JSON":          "{",
@@ -243,7 +243,7 @@ func TestR_ANS_017_AnUpstreamVersionDocumentThatIsNotAVersionIsRefused(t *testin
 	}
 }
 
-func TestR_ANS_017_AnUpstreamListPageIsParsed(t *testing.T) {
+func TestParseUpstreamListPage(t *testing.T) {
 	const page = `{"meta":{"count":250},"links":{"first":"/a","previous":null,"next":"/api/v3/x/versions/?limit=100&offset=100","last":"/z"},
 	"data":[{"version":"2.0.0","href":"/h","created_at":"2024-01-01T00:00:00.000000Z","updated_at":"2024-01-02T00:00:00Z","requires_ansible":">=2.14","marks":[]},
 	{"version":"1.0.0","requires_ansible":null}]}`
