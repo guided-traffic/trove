@@ -46,11 +46,11 @@ follow the [roadmap's format order](../coverage/roadmap.md#p1-format-expansion-o
 
 ### F0 · Ansible Galaxy (replaces the existing Galaxy)
 - 🟢 Spec page [formats/ansible.md](../spec/formats/ansible.md) ([catalog](../features/formats/ansible.md)), the cut into work packages in [ansible-work-packages.md](ansible-work-packages.md)
-- ⚪ Local: publish and install collections and roles
+- 🟡 Local: publish and install collections and roles (the format's skeleton, routes, archive reader and the `Token` scheme are in; the local class is building)
 - ⚪ Remote: proxy of the public Galaxy
 - ⚪ Virtual: one endpoint for internal and public content
 - ⚪ Authentication with trove tokens (`ansible.cfg`, `ansible-galaxy --token`)
-- ⚪ Migration of the content of the existing Galaxy instance
+- 🟡 Migration of the content of the existing Galaxy instance (`trove admin import ansible` for collections, unit-tested; integration tests and a dry run against the owner's Galaxy open, H-847)
 - ⚪ Integration tests
 - ⚪ E2E tests: `ansible-galaxy collection install/publish`, `ansible-galaxy role install`, `requirements.yml` through local, remote and virtual repositories
 - ⚪ Client setup instructions in the UI
