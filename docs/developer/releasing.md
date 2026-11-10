@@ -7,6 +7,23 @@ and [`build.yml`](../../.github/workflows/build.yml) builds the product from tha
 ([the release pipeline](#the-release-pipeline)). What the release contains and how the image is
 built: [`Containerfile`](../../Containerfile).
 
+## Until the first stable release
+
+trove is pre-alpha and a release must not wait on a slow or intermittent leg. By the owner's decisions of 2026-11-10, until the
+first stable release:
+
+| Rule | What it means | Decision |
+|---|---|---|
+| A minimal set of jobs gates Semantic Release | The static checks, unit, web, chart, image, the scans, `workflows`, `coverage` and `release-tooling`; the list is the `needs` of the job `semantic-release` in [release.yml](../../.github/workflows/release.yml) | [Q-ARCH-457](../spec/architecture.md#q-arch-457--until-the-first-stable-release-a-minimal-set-of-jobs-gates-semantic-release) |
+| `integration`, `s3-conformance` and every `e2e` leg gate nothing | They still run on every push. Nobody waits for them or re-runs them to get a release out. A red one is a finding, and the tests that matter for a change run locally | Q-ARCH-457 |
+| A release can carry a defect those legs found | The price of the rule; it is accepted while trove has no users | Q-ARCH-457 |
+| The coverage badge and the evidence record stand still | Their jobs need the legs that no longer gate, so a release commits neither | Q-ARCH-457 |
+| Nothing runs against published artifacts | Tests belong before a release, where a failure can still change the outcome | [Q-HA-281](../spec/ha-and-helm.md#q-ha-281--tests-run-before-a-release-not-after-it) |
+| Names of jobs and steps say what they do | No requirement codes, no tool versions, no "on kind"; an e2e job is `e2e (<set>)` | owner, 2026-11-10 |
+| An e2e set is cut by what it tests | What a format does belongs to that format's set, not to a set named after a feature | owner, 2026-11-10 |
+
+With the first stable release the full gate returns and reliability comes first.
+
 ## CI
 
 [`release.yml`](../../.github/workflows/release.yml) ("Test and Release") runs on every push to `main`,

@@ -92,7 +92,8 @@ Hard rules, also for every subagent (put them into every subagent prompt):
    E one bullet is one phase; blocks F and G need a spec page first, which is then the phase.
 4. Release numbers are not planned and not recorded: the pipeline releases (step 6), and BETA.md and FULL.md
    track only what is built (owner, 2026-11-02).
-5. If `Test and Release` on `main` is red (`gh run list --workflow "Test and Release" --branch main --limit 5`),
+5. If a job that gates Semantic Release is red on `main` (`gh run list --workflow "Test and Release" --branch main --limit 5`; until the first stable release the
+   `integration` and `e2e` legs do not gate it and a red one is a finding, [releasing.md](../developer/releasing.md#until-the-first-stable-release)),
    repairing it is the first task of this run, done by an agent beside the feature work, not instead of it. A red leg of `HA and Performance (nightly)`
    (`gh run list --workflow "HA and Performance (nightly)" --limit 3`) is not: it becomes an open finding in
    [section 8](#8--open-findings), unless the phase's own exit criteria are that leg.
@@ -178,7 +179,8 @@ The phase is done only when all of the following hold:
 
 - Every checklist item of the phase is 🟢, and every exit criterion of the roadmap section passes.
   For each exit criterion note the evidence (test name, CI job, command and output).
-- Unit, integration and the per-change e2e legs are green locally and in `Test and Release`. The long legs
+- Unit and the other jobs that gate Semantic Release are green in `Test and Release`; integration and e2e run locally for what the phase touches and do not hold the
+  release until the first stable release (owner, 2026-11-10, Q-ARCH-457). The long legs
   (drain and failover, the npm load under faults, the soak and the performance bounds) run in
   `HA and Performance (nightly)` every night and on dispatch, not per change (owner, 2026-11-01): a phase whose
   exit criteria are long legs dispatches that workflow on its closing commit
@@ -200,7 +202,7 @@ The phase is done only when all of the following hold:
 3. On failure: `gh run view <run-id> --log-failed` (or the job's log while the run goes on). A failure the change caused is
    fixed at once: find the cause, fix it, commit, push, and watch again. A failure the change did not cause (an outage, a row
    that fails under the runner's load) may be started again up to three times with `gh run rerun <run-id> --failed` (rule 7);
-   the re-runs are noted and the red runs recorded as a finding. Repeat until every run is green.
+   the re-runs are noted and the red runs recorded as a finding. Repeat until the jobs that gate Semantic Release are green; a red `integration` or `e2e` leg is a finding and is not waited for (Q-ARCH-457).
 
 ## 6 · Release
 
