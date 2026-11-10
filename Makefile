@@ -308,6 +308,11 @@ integration-down: ## Stop the integration stack and remove its volumes
 # 2026-11-09 (Test and Release 42545856458) once the OCI and Debian areas had joined it. Unset runs all.
 INTEGRATION_SHARD_A := $(addprefix $(MODULE)/test/integration/,ci coordination mirror npm nuget repository proxy)
 INTEGRATION_SHARD_C := $(filter $(addprefix $(MODULE)/test/integration/,oci% deb% registry itempublish vuln% bastion%),$(shell go list -tags integration ./test/integration/...))
+# The time one integration package may take. The default of 10 minutes is the sum of the area `backup` alone: about 235 tests that run one
+# after the other in one process (8 minutes on an idle host, none of them longer than 45 s and none waiting on a fixed sleep a load could
+# stretch), and coverage instrumentation and a loaded host add to it. A package that hangs is still ended, by this bound.
+INTEGRATION_TIMEOUT ?= 30m
+
 ifeq ($(SHARD),)
 INTEGRATION_PKGS = ./test/integration/...
 else ifeq ($(SHARD),a)
@@ -329,7 +334,7 @@ test-integration: ## Integration tests against the running stack (make integrati
 	@mkdir -p .out $(COVERAGE_DIR)
 	go test -c -o .out/integration-bin/ -tags integration -covermode=atomic -coverpkg=./... $(INTEGRATION_PKGS) >/dev/null
 	@set -o pipefail; set -a; . $(INTEGRATION_ENV); set +a; \
-	  go test -count=1 -p 1 -tags integration -covermode=atomic -coverpkg=./... \
+	  go test -count=1 -p 1 -timeout $(INTEGRATION_TIMEOUT) -tags integration -covermode=atomic -coverpkg=./... \
 	    -coverprofile=$(COVERAGE_DIR)/integration-$${TROVE_TEST_VALKEY_LINE:-9.1}$(if $(SHARD),-$(SHARD)).out \
 	    -json $(INTEGRATION_PKGS) | tee .out/test-integration$(if $(SHARD),-$(SHARD)).json | $(TESTLOG)
 

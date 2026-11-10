@@ -140,6 +140,11 @@ func TestMigrateConcurrentRunners(t *testing.T) {
 		name, admin := st.newDatabase(t)
 		cfg := st.config(t, name)
 		slow := stepsWith(t, slowFirstStep(t))
+		// Neither runner's wait is a wall-clock guess: how long the second one waits is how long the first one needs for every step,
+		// which host load stretches, so the lock wait is far above any plausible run and what ends the test early is the event (the first
+		// runner finishing), not a timer. A hang is ended by the test binary's own timeout.
+		patient := opts(slow)
+		patient.Migrate.AdvisoryLockWait = 10 * time.Minute
 
 		type outcome struct {
 			res postgres.Result
@@ -147,20 +152,25 @@ func TestMigrateConcurrentRunners(t *testing.T) {
 		}
 		first := make(chan outcome, 1)
 		go func() {
-			res, err := postgres.Migrate(context.Background(), cfg, opts(slow))
+			res, err := postgres.Migrate(context.Background(), cfg, patient)
 			first <- outcome{res, err}
 		}()
 
-		// The second runner starts once the first provably holds the lock.
-		deadline := time.Now().Add(20 * time.Second)
-		for scalar[int](t, admin, `SELECT count(*) FROM pg_locks WHERE locktype = 'advisory'
+		// The second runner starts once the first provably holds the lock. If the first finishes without the test ever seeing the lock
+		// held, the second could not have waited, and the first one's result says why.
+		var early *outcome
+		for early == nil && scalar[int](t, admin, `SELECT count(*) FROM pg_locks WHERE locktype = 'advisory'
 			AND classid = 3 AND objid = 0 AND granted AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`) == 0 {
-			if time.Now().After(deadline) {
-				t.Fatal("the first runner never took the migration lock")
+			select {
+			case o := <-first:
+				early = &o
+			case <-time.After(50 * time.Millisecond):
 			}
-			time.Sleep(50 * time.Millisecond)
 		}
-		res2, err2 := postgres.Migrate(ctxT(t, 60*time.Second), cfg, opts(slow))
+		if early != nil {
+			t.Fatalf("the first runner finished before the test saw it hold the migration lock: %+v / %v", early.res, early.err)
+		}
+		res2, err2 := postgres.Migrate(context.Background(), cfg, patient)
 		o1 := <-first
 
 		if o1.err != nil || err2 != nil {
