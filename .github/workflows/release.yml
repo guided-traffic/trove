@@ -373,7 +373,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential
 
+      # The pods have no CPU limit, so Go would start 32 threads and 32 test binaries at once under the race detector on a node
+      # that other jobs share; the time bounds of the tests then measure the node.
       - name: make test
+        env:
+          GOMAXPROCS: "8"
         run: make test
 
       - name: Upload the go test -json report

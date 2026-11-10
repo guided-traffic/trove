@@ -142,13 +142,13 @@ func newImage(t *testing.T) image {
 }
 
 type flow struct {
-	t    *testing.T
-	st   *testenv.Stack
-	api  *testenv.Replica
-	adm  string
-	an   *fakeAnalyser
+	t      *testing.T
+	st     *testenv.Stack
+	api    *testenv.Replica
+	adm    string
+	an     *fakeAnalyser
 	worker *testenv.Replica
-	db   *fakeDatabase
+	db     *fakeDatabase
 }
 
 func v2(name string) string { return "/v2/" + testenv.DefaultProject + "/" + repoKey + "/" + name }
@@ -238,11 +238,11 @@ type versionReport struct {
 		Evaluation string `json:"evaluation"`
 		Blocked    bool   `json:"blocked"`
 		Findings   []struct {
-			ID            string `json:"id"`
-			Advisory      string `json:"advisory"`
-			Version       string `json:"version"`
-			Severity      string `json:"severity"`
-			Status        string `json:"status"`
+			ID            string   `json:"id"`
+			Advisory      string   `json:"advisory"`
+			Version       string   `json:"version"`
+			Severity      string   `json:"severity"`
+			Status        string   `json:"status"`
 			FixedVersions []string `json:"fixedVersions"`
 			Components    []struct {
 				Name, Version, FixedVersion string
