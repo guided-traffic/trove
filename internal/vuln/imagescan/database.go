@@ -36,7 +36,7 @@ type DBMetadata struct {
 // ReadDBMetadata reads metadata.json from the archive and checks its schema version. The archive is read only as far as that file.
 func ReadDBMetadata(archive io.Reader) (DBMetadata, error) {
 	var meta DBMetadata
-	err := walkArchive(archive, func(name string, r io.Reader) (bool, error) {
+	err := walkArchive(archive, func(name string, _ int64, r io.Reader) (bool, error) {
 		if name != dbMetaName {
 			return false, nil
 		}
@@ -61,7 +61,7 @@ func ReadDBMetadata(archive io.Reader) (DBMetadata, error) {
 // walkArchive reads a gzip tar and calls fn for each regular file at the root that the archive is expected to hold; fn returns true to stop.
 // Any other kind of entry is skipped, never written anywhere, and a name with a directory in it is ignored, so that the archive decides
 // nothing about a path (GHSA-mcj4-mphf-j9ff was a database archive that could write outside the cache directory).
-func walkArchive(archive io.Reader, fn func(name string, r io.Reader) (bool, error)) error {
+func walkArchive(archive io.Reader, fn func(name string, size int64, r io.Reader) (bool, error)) error {
 	zr, err := gzip.NewReader(archive)
 	if err != nil {
 		return fmt.Errorf("the database archive is not gzip: %w", err)
@@ -79,7 +79,7 @@ func walkArchive(archive io.Reader, fn func(name string, r io.Reader) (bool, err
 		if h.Typeflag != tar.TypeReg || (h.Name != dbFileName && h.Name != dbMetaName) {
 			continue
 		}
-		done, err := fn(h.Name, tr)
+		done, err := fn(h.Name, h.Size, tr)
 		if err != nil || done {
 			return err
 		}
@@ -104,15 +104,28 @@ type LocalDatabase struct {
 	Dir   string
 	Blobs DBBlobs
 	Rows  DBReader
+	// Space is the spool the unpacked database is counted against (Q-VULN-145): its files are held before they are written, for as long
+	// as the directory exists, and a directory found on the volume at start is adopted.
+	Space Space
 
-	mu   sync.Mutex
-	uses map[string]int
+	mu    sync.Mutex
+	uses  map[string]int
+	holds map[string]dbHold
+}
+
+// dbHold is the room one unpacked database holds in the spool.
+type dbHold struct {
+	bytes   int64
+	release func()
 }
 
 var _ Database = (*LocalDatabase)(nil)
 
 // Acquire implements [Database].
 func (d *LocalDatabase) Acquire(ctx context.Context) (DatabaseAccess, error) {
+	if d.Space == nil {
+		return DatabaseAccess{}, errors.New("the local database has no spool to count its files against")
+	}
 	db, found, err := d.Rows.DB(ctx)
 	if err != nil {
 		return DatabaseAccess{}, err
@@ -123,18 +136,20 @@ func (d *LocalDatabase) Acquire(ctx context.Context) (DatabaseAccess, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.uses == nil {
-		d.uses = map[string]int{}
+		d.uses, d.holds = map[string]int{}, map[string]dbHold{}
 	}
+	// The databases nothing uses go first, so that their room is free for the new one: a spool sized for one database must not need two.
+	d.dropOldLocked(db.Digest)
 	dir := filepath.Join(d.Dir, hexOf(db.Digest))
 	if err := d.ensure(ctx, db, dir); err != nil {
 		return DatabaseAccess{}, err
 	}
 	d.uses[db.Digest]++
-	d.dropOldLocked(db.Digest)
 	digest := db.Digest
 	return DatabaseAccess{
 		Args:   []string{"--cache-dir", dir},
 		Digest: digest,
+		Held:   d.holds[digest].bytes,
 		Release: func() {
 			d.mu.Lock()
 			defer d.mu.Unlock()
@@ -147,6 +162,11 @@ func (d *LocalDatabase) Acquire(ctx context.Context) (DatabaseAccess, error) {
 // the final name is complete and a worker lost halfway leaves only a sibling to clean.
 func (d *LocalDatabase) ensure(ctx context.Context, db store.ImageDB, dir string) error {
 	if _, err := os.Stat(filepath.Join(dir, "db", dbMetaName)); err == nil {
+		if _, held := d.holds[db.Digest]; !held {
+			// A database a restarted container found in its volume: it is on the disk whatever the budget says.
+			n := dirBytes(dir)
+			d.holds[db.Digest] = dbHold{bytes: n, release: d.Space.Adopt(n)}
+		}
 		return nil
 	}
 	if err := os.MkdirAll(d.Dir, 0o700); err != nil {
@@ -166,8 +186,32 @@ func (d *LocalDatabase) ensure(ctx context.Context, db store.ImageDB, dir string
 	}
 	defer func() { _ = rc.Close() }()
 	seen := map[string]bool{}
-	err = walkArchive(contextReader{ctx, rc}, func(name string, r io.Reader) (bool, error) {
+	var held dbHold
+	keep := false
+	defer func() {
+		if !keep && held.release != nil {
+			held.release()
+		}
+	}()
+	err = walkArchive(contextReader{ctx, rc}, func(name string, size int64, r io.Reader) (bool, error) {
 		seen[name] = true
+		// The room for a file is taken from its size in the archive's header before the first byte is written, and the copy below is
+		// bounded by that size, so the unpacked database never holds more than it was admitted for.
+		if size > maxDBFileBytes {
+			return false, fmt.Errorf("a file of the database exceeds %d bytes", maxDBFileBytes)
+		}
+		release, err := d.Space.Hold(size)
+		if err != nil {
+			return false, fmt.Errorf("room for %s (%d bytes) in the spool: %w", name, size, err)
+		}
+		prev := held.release
+		held.bytes += size
+		held.release = func() {
+			release()
+			if prev != nil {
+				prev()
+			}
+		}
 		return false, writeDBFile(filepath.Join(tmp, "db", name), r)
 	})
 	if err != nil {
@@ -177,7 +221,12 @@ func (d *LocalDatabase) ensure(ctx context.Context, db store.ImageDB, dir string
 		return errors.New("the database archive does not hold trivy.db and metadata.json")
 	}
 	_ = os.RemoveAll(dir)
-	return os.Rename(tmp, dir)
+	if err := os.Rename(tmp, dir); err != nil {
+		return err
+	}
+	keep = true
+	d.holds[db.Digest] = held
+	return nil
 }
 
 func writeDBFile(path string, r io.Reader) error {
@@ -210,6 +259,12 @@ func (d *LocalDatabase) dropOldLocked(current string) {
 		if !strings.HasPrefix(name, "unpack-") && d.uses["sha256:"+name] > 0 {
 			continue
 		}
-		_ = os.RemoveAll(filepath.Join(d.Dir, name))
+		if err := os.RemoveAll(filepath.Join(d.Dir, name)); err != nil {
+			continue // the files are still on the disk, so their room stays held
+		}
+		if h, ok := d.holds["sha256:"+name]; ok {
+			h.release()
+			delete(d.holds, "sha256:"+name)
+		}
 	}
 }

@@ -99,6 +99,16 @@ func (s *Images) Failed(ctx context.Context, repoID int64, name string, digest [
 	})
 }
 
+// Deferred records a scan that did not start for lack of room in the spool of the worker: it stays pending with the reason, is due again
+// after the wait, and no attempt is spent.
+func (s *Images) Deferred(ctx context.Context, repoID int64, name string, digest [32]byte, code, detail string, wait time.Duration) error {
+	return s.tx(ctx, func(qs *q.Queries) error {
+		return qs.VulnImageDeferred(ctx, q.VulnImageDeferredParams{
+			RepoID: repoID, Name: name, Digest: digest[:], ErrorCode: code, ErrorDetail: detail, WaitSeconds: wait.Seconds(),
+		})
+	})
+}
+
 // Rearm makes every manifest of a repository due again.
 func (s *Images) Rearm(ctx context.Context, repoID int64) (n int64, err error) {
 	err = s.tx(ctx, func(qs *q.Queries) (err error) {

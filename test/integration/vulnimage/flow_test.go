@@ -161,6 +161,8 @@ type options struct {
 	realDatabase bool
 	// mirror creates the generic local repository of mode repository.
 	mirror bool
+	// workerEnv is added to the environment of the worker.
+	workerEnv []string
 }
 
 func newFlow(t *testing.T) *flow { return newFlowWith(t, options{}) }
@@ -192,7 +194,7 @@ func newFlowWith(t *testing.T, o options) *flow {
 		ov.ImageDatabase = f.db
 	}
 	f.api = st.Start(t, testenv.ReplicaOptions{Name: "web", Role: "web"})
-	f.worker = st.Start(t, testenv.ReplicaOptions{Name: "worker", Role: "worker", Vuln: ov})
+	f.worker = st.Start(t, testenv.ReplicaOptions{Name: "worker", Role: "worker", Vuln: ov, Env: o.workerEnv})
 	return f
 }
 
@@ -577,4 +579,60 @@ func etagOf(t *testing.T, f *flow, id string) string {
 		t.Fatalf("finding %s: %d %s", id, a.Status, a.Body)
 	}
 	return a.Header.Get("ETag")
+}
+
+// spoolEnv sets the byte budget of the spool of a worker, which accepts no uploads and so needs no room for one.
+func spoolEnv(bytes int64) []string {
+	return []string{"TROVE_STORAGE_SPOOL_MAX_BYTES=" + strconv.FormatInt(bytes, 10)}
+}
+
+// Q-VULN-145: the working space of a scan is admitted through the spool's budget. A budget that cannot hold the scan's margin next to
+// the scan refuses it with a reason on the row, spends no attempt, never reads the layers and never reports the image as clean.
+func TestQ_VULN_145_AScanThatCannotFitTheSpoolIsPutOffWithAReasonAndNeverReadAsClean(t *testing.T) {
+	f := newFlowWith(t, options{workerEnv: spoolEnv(32 << 20)})
+	f.push("app", "1.0", newImage(t))
+	f.runScan()
+	testenv.WaitFor(t, "the scan to be put off", 60*time.Second, func() bool {
+		return f.st.Number(`SELECT count(*) FROM vuln_image_scan WHERE error_code = 'spool_too_small'`) == 1
+	})
+	if n := f.st.Number(`SELECT attempts FROM vuln_image_scan`); n != 0 {
+		t.Fatalf("the refusal spent %d attempts", n)
+	}
+	if got := f.st.Text(`SELECT state FROM vuln_image_scan`); got != "pending" {
+		t.Fatalf("state %q", got)
+	}
+	if detail := f.st.Text(`SELECT error_detail FROM vuln_image_scan`); !strings.Contains(detail, "spool") || !strings.Contains(detail, "max_image_size") {
+		t.Fatalf("the reason does not say what to change: %q", detail)
+	}
+	if f.an.analyses.Load() != 0 || f.an.detections.Load() != 0 {
+		t.Fatal("the layers were read although the scan was refused")
+	}
+	if ev := f.versionReport("app", "1.0").Repositories[0].Evaluation; ev != "pending_scan" {
+		t.Fatalf("a refused scan reads as %q", ev)
+	}
+}
+
+// Q-VULN-145: a budget that holds the margin of one scan and a small image scans image after image, so the room of a finished scan is
+// given back; a leak would leave the second scan waiting for room that never returns.
+func TestQ_VULN_145_TheRoomOfAFinishedScanIsGivenBack(t *testing.T) {
+	f := newFlowWith(t, options{workerEnv: spoolEnv(72 << 20)})
+	for i, name := range []string{"one", "two", "three"} {
+		img := newImage(t)
+		img.layer = append(img.layer, make([]byte, 1024*(i+1))...) // another digest per image
+		m, err := json.Marshal(map[string]any{
+			"schemaVersion": 2, "mediaType": manifestType,
+			"config": map[string]any{"mediaType": "application/vnd.oci.image.config.v1+json", "digest": digestOf(img.config), "size": len(img.config)},
+			"layers": []any{map[string]any{"mediaType": "application/vnd.oci.image.layer.v1.tar", "digest": digestOf(img.layer), "size": len(img.layer)}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		img.manifest = m
+		f.push(name, "1.0", img)
+		f.runScan()
+		f.waitEvaluation(name, "1.0", "evaluated")
+	}
+	if n := f.st.Number(`SELECT count(*) FROM vuln_image_scan WHERE error_code IS NOT NULL`); n != 0 {
+		t.Fatalf("%d scans were put off or failed", n)
+	}
 }

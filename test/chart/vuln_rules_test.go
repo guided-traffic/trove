@@ -179,34 +179,70 @@ func TestR_VULN_024_PrometheusRuleValues(t *testing.T) {
 // TestR_VULN_025_SpoolHoldsOneArchive (R-VULN-025): the worker spool budget (spool size minus headroom) must hold
 // config.vulnerabilities.sources.osv.max_archive_size while the OSV source is online or repository.
 func TestR_VULN_025_SpoolHoldsOneArchive(t *testing.T) {
-	t.Run("the defaults hold: 5Gi worker spool, 2GiB headroom, 1GiB archive", func(t *testing.T) {
+	t.Run("the defaults hold: 8Gi worker spool, 2GiB headroom, 1GiB archive", func(t *testing.T) {
 		render(t, required())
 	})
 	t.Run("an archive larger than the worker budget fails and names the values", func(t *testing.T) {
-		renderFails(t, required(), []string{"config.vulnerabilities.sources.osv.max_archive_size=4GiB"},
+		renderFails(t, required(), []string{"config.vulnerabilities.sources.osv.max_archive_size=8GiB"},
 			"config.vulnerabilities.sources.osv.max_archive_size", "worker.spool.sizeLimit")
 	})
 	t.Run("the check holds in mode repository too", func(t *testing.T) {
-		renderFails(t, required(), []string{"config.vulnerabilities.sources.osv.mode=repository", "config.vulnerabilities.sources.osv.max_archive_size=4GiB"},
+		renderFails(t, required(), []string{"config.vulnerabilities.sources.osv.mode=repository", "config.vulnerabilities.sources.osv.max_archive_size=8GiB"},
 			"config.vulnerabilities.sources.osv.max_archive_size")
 	})
 	t.Run("a worker spool that holds the archive plus headroom passes", func(t *testing.T) {
-		render(t, required(), "config.vulnerabilities.sources.osv.max_archive_size=4GiB", "worker.spool.sizeLimit=6Gi")
+		render(t, required(), "config.vulnerabilities.sources.osv.max_archive_size=8GiB", "worker.spool.sizeLimit=10Gi")
 	})
 	t.Run("the headroom counts", func(t *testing.T) {
-		renderFails(t, required(), []string{"config.vulnerabilities.sources.osv.max_archive_size=4GiB", "worker.spool.sizeLimit=6Gi", "spool.headroom=3GiB"},
+		renderFails(t, required(), []string{"config.vulnerabilities.sources.osv.max_archive_size=8GiB", "worker.spool.sizeLimit=10Gi", "spool.headroom=3GiB"},
 			"max_archive_size")
 	})
 	t.Run("mode off, or the scanning disabled, is not checked", func(t *testing.T) {
-		render(t, required(), "config.vulnerabilities.sources.osv.max_archive_size=4GiB", "config.vulnerabilities.sources.osv.mode=off")
-		render(t, required(), "config.vulnerabilities.sources.osv.max_archive_size=4GiB", "config.vulnerabilities.enabled=false")
+		render(t, required(), "config.vulnerabilities.sources.osv.max_archive_size=8GiB", "config.vulnerabilities.sources.osv.mode=off", "config.vulnerabilities.images.enabled=false")
+		render(t, required(), "config.vulnerabilities.sources.osv.max_archive_size=8GiB", "config.vulnerabilities.enabled=false")
 	})
 	t.Run("the worker pods carry a spool limit of the value, not the web's", func(t *testing.T) {
-		_, docs := render(t, required(), "worker.spool.sizeLimit=6Gi")
+		_, docs := render(t, required(), "worker.spool.sizeLimit=6Gi", "config.vulnerabilities.images.enabled=false")
 		env := envByName(at(find(docs, "Deployment", "trove-worker"), "spec", "template", "spec"))
 		if got := str(env["TROVE_STORAGE_SPOOL_MAX_BYTES"], "value"); got != "4294967296" {
 			t.Errorf("TROVE_STORAGE_SPOOL_MAX_BYTES of the worker = %q, want 4294967296 (6Gi - 2GiB)", got)
 		}
+	})
+}
+
+// TestQ_VULN_145_SpoolHoldsTheImageScanning (Q-VULN-145, H-819): the working space of the image scanning is admitted through the
+// spool budget of the worker that claims the queue vuln, so that budget must hold the unpacked database (2GiB allowed), the largest
+// image (config.vulnerabilities.images.max_image_size) and 512MiB for the other work of the spool.
+func TestQ_VULN_145_SpoolHoldsTheImageScanning(t *testing.T) {
+	t.Run("the defaults hold: a budget of 6GiB against 3GiB + 2GiB + 512MiB", func(t *testing.T) {
+		render(t, required())
+	})
+	t.Run("a worker spool below the sum fails and names the image limit and the value to raise", func(t *testing.T) {
+		renderFails(t, required(), []string{"worker.spool.sizeLimit=7Gi"},
+			"config.vulnerabilities.images.max_image_size", "worker.spool.sizeLimit", "trove-worker", "queue vuln")
+	})
+	t.Run("the sum is exact: 7.5Gi holds it, a byte less does not", func(t *testing.T) {
+		render(t, required(), "worker.spool.sizeLimit=7680Mi")
+		renderFails(t, required(), []string{"worker.spool.sizeLimit=7679Mi"}, "max_image_size")
+	})
+	t.Run("a larger image limit raises what the spool must hold", func(t *testing.T) {
+		renderFails(t, required(), []string{"config.vulnerabilities.images.max_image_size=6GiB"}, "config.vulnerabilities.images.max_image_size (6GiB)")
+		render(t, required(), "config.vulnerabilities.images.max_image_size=6GiB", "worker.spool.sizeLimit=11Gi")
+	})
+	t.Run("the headroom counts", func(t *testing.T) {
+		renderFails(t, required(), []string{"spool.headroom=4GiB"}, "max_image_size")
+	})
+	t.Run("a smaller image limit lowers it", func(t *testing.T) {
+		render(t, required(), "config.vulnerabilities.images.max_image_size=1GiB", "worker.spool.sizeLimit=6Gi")
+	})
+	t.Run("the pool that claims the queue vuln is the one checked", func(t *testing.T) {
+		pool := []string{"worker.pools[0].name=v", "worker.pools[0].queues={vuln}", "worker.pools[0].replicaCount=2"}
+		renderFails(t, required(), append(pool, "worker.pools[0].spool.sizeLimit=6Gi"), "max_image_size", "trove-worker-v")
+		render(t, required(), append(pool, "worker.pools[0].spool.sizeLimit=8Gi", "worker.spool.sizeLimit=3Gi")...)
+	})
+	t.Run("the scanning of images off, or the scanning off, is not checked", func(t *testing.T) {
+		render(t, required(), "worker.spool.sizeLimit=3Gi", "config.vulnerabilities.images.enabled=false")
+		render(t, required(), "worker.spool.sizeLimit=3Gi", "config.vulnerabilities.enabled=false")
 	})
 }
 

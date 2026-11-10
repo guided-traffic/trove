@@ -240,7 +240,7 @@ worker:
       maxUnavailable: 0
   terminationGracePeriodSeconds: 300    # jobs persist their cursor before exit
   spool:
-    sizeLimit: 5Gi                      # also the working space of the image scanning (config.vulnerabilities.images.scan_dir below this spool): the largest image being scanned, default 3 GiB, and the unpacked database. Workers spool only cache fills of jobs, the artifacts of a mirror pass (at most the background share B of a repository at a time, each up to the repository maxArtifactBytes), one advisory archive while a sync runs (config.vulnerabilities.sources.osv.max_archive_size, validated) and, from P1, the nuget-symbol-index job's one extracted PDB at a time (formats/nuget.md)
+    sizeLimit: 8Gi                      # also the working space of the image scanning (config.vulnerabilities.images.scan_dir below this spool), admitted through the spool budget (sizeLimit minus spool.headroom): the unpacked database (1.6 GiB on 2026-11-10, validated with 2 GiB), the largest image being scanned (max_image_size, default 3 GiB) and 512 MiB for the rest, validated for the pool that claims the queue vuln. Workers spool only cache fills of jobs, the artifacts of a mirror pass (at most the background share B of a repository at a time, each up to the repository maxArtifactBytes), one advisory archive while a sync runs (config.vulnerabilities.sources.osv.max_archive_size, validated) and, from P1, the nuget-symbol-index job's one extracted PDB at a time (formats/nuget.md)
   resources:
     requests:
       cpu: 500m

@@ -17,6 +17,8 @@ root context.
 {{- $vuln := dig "vulnerabilities" (dict) $cfg -}}
 {{- $osv := dig "sources" "osv" (dict) $vuln -}}
 {{- $osvOn := and (dig "enabled" true $vuln) (ne (dig "mode" "online" $osv) "off") -}}
+{{- $images := dig "images" (dict) $vuln -}}
+{{- $imagesOn := and (dig "enabled" true $vuln) (dig "enabled" true $images) -}}
 {{- $ratio := dig "runtime" "memory_limit_ratio" 0.85 $cfg | float64 -}}
 {{- $reserved := add (include "trove.bytes" (dig "cache" "rendition_bytes" "256MiB" $cfg) | int64) (include "trove.bytes" (dig "proxy" "metadata_cache_bytes" "128MiB" $cfg) | int64) (include "trove.bytes" (dig "proxy" "merged_metadata_cache_bytes" "256MiB" $cfg) | int64) (include "trove.bytes" (dig "proxy" "query_cache_bytes" "8MiB" $cfg) | int64) -}}
 {{- $perRequest := include "trove.requestBytes" . | int64 -}}
@@ -88,6 +90,16 @@ root context.
 {{- $claimsVuln = has "vuln" $u.queues -}}
 {{- else -}}
 {{- $claimsVuln = not (has "vuln" ($u.excludeQueues | default list)) -}}
+{{- end -}}
+{{- /* The working space of the image scanning is admitted through the same budget (Q-VULN-145): the unpacked database (1.6 GiB on 2026-11-10, allowed 2 GiB: a source that is off leaves the stored one in place), the largest image, and a margin for the other users of the spool. A budget below the sum would refuse the largest images. */ -}}
+{{- if and $claimsVuln $imagesOn -}}
+{{- $maxImage := include "trove.bytes" (dig "max_image_size" "3GiB" $images) | int64 -}}
+{{- $database := 2147483648 -}}
+{{- $margin := 536870912 -}}
+{{- $need := add $maxImage $database $margin -}}
+{{- if gt $need $budget -}}
+{{- fail (printf "trove: the spool budget of %d bytes of Deployment %s, which claims the queue vuln (spool size minus spool.headroom), cannot hold the image scanning: config.vulnerabilities.images.max_image_size (%v) plus 2GiB for the unpacked vulnerability database plus 512MiB for the other work of the spool is %d bytes; raise worker.spool.sizeLimit or spool.sizeLimit, lower max_image_size, or set config.vulnerabilities.images.enabled: false (Q-VULN-145)" $budget $dep (dig "max_image_size" "3GiB" $images) $need) -}}
+{{- end -}}
 {{- end -}}
 {{- if and $claimsVuln $osvOn -}}
 {{- $archive := include "trove.bytes" (dig "max_archive_size" "1GiB" $osv) | int64 -}}

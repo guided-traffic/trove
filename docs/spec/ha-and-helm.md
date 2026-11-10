@@ -3924,7 +3924,7 @@ worker:
       maxUnavailable: 0
   terminationGracePeriodSeconds: 300    # jobs persist their cursor before exit
   spool:
-    sizeLimit: 5Gi                      # workers spool only cache fills of jobs and, from P1, the nuget-symbol-index job's one extracted PDB at a time (formats/nuget.md); the image scanning works below this spool too (vulnerability-scanning.md R-VULN-036), which is why its largest image is 3 GiB by default
+    sizeLimit: 8Gi                      # also the working space of the image scanning below this spool (vulnerability-scanning.md R-VULN-036, Q-VULN-145), admitted through the budget (sizeLimit minus spool.headroom), validated for the pool that claims the queue vuln: the unpacked database (2 GiB allowed), the largest image (3 GiB by default) and 512 MiB. Workers spool only cache fills of jobs and, from P1, the nuget-symbol-index job's one extracted PDB at a time (formats/nuget.md)
   resources:
     requests:
       cpu: 500m

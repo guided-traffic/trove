@@ -3166,7 +3166,7 @@ Every selector carries `namespace="<release namespace>"`, so one Prometheus that
 The chart renders no ServiceMonitor; the scrape is the operator's.
 
 The render fails while `config.vulnerabilities.enabled` is `true` (the default) and `sources.osv.mode` is not `off`, when
-`max_archive_size` is larger than the worker's spool budget: the default `worker.spool.sizeLimit: 5Gi` minus `spool.headroom: 2GiB`
+`max_archive_size` is larger than the worker's spool budget: the default `worker.spool.sizeLimit: 8Gi` minus `spool.headroom: 2GiB`
 holds the default 1 GiB ([_validate.tpl](deploy/helm/trove/templates/_validate.tpl), [the chart check](docs/security/vulnerability-scanning.md#the-chart-refuses-a-spool-that-cannot-hold-the-archive)).
 The `worker` pods need egress on port 443 to the hosts of the sources in mode `online`; the chart renders no egress policy.
 

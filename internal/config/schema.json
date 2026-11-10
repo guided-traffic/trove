@@ -4600,7 +4600,7 @@
             },
             "max_image_size": {
               "default": "3GiB",
-              "description": "Largest image scanned, compressed, config and layers together. Its layers are copied below the worker's spool (worker.spool.sizeLimit), which must hold them and the unpacked database; a larger image shows scan_failed.",
+              "description": "Largest image scanned, compressed, config and layers together. A scan holds the image's size plus 64 MiB of the worker's spool budget while it runs, next to the unpacked database; the chart refuses a budget (worker.spool.sizeLimit minus spool.headroom) below this limit plus 2GiB plus 512MiB. A larger image shows scan_failed.",
               "type": [
                 "string",
                 "integer"
@@ -4653,7 +4653,7 @@
             },
             "scan_dir": {
               "default": "/var/lib/trove/spool/imagescan",
-              "description": "Local directory of the working files of the scans and of the unpacked database; it must hold the largest image plus the database. Lost with the pod without harm.",
+              "description": "Local directory of the working files of the scans and of the unpacked database, below the worker's spool. The spool's budget counts every file in it: the database once, each scan the compressed size of its image plus 64 MiB. Lost with the pod without harm.",
               "type": "string",
               "x-trove-env": "TROVE_VULNERABILITIES_IMAGES_SCAN_DIR"
             },

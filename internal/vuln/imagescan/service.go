@@ -71,6 +71,11 @@ type Options struct {
 	Enqueue func(ctx context.Context, tx meta.Tx) error
 	// ScratchDir is the root of the working directories of the scans, on the worker's local disk.
 	ScratchDir string
+	// Space is the worker's spool; the room of every scan is taken from it before the scan writes a file (Q-VULN-145).
+	Space Space
+	// SpaceWait is how long a scan waits for room before it is put off (2 minutes by default), and SpacePoll how often it asks again
+	// meanwhile (half a second by default).
+	SpaceWait, SpacePoll time.Duration
 	// Concurrency is the number of images scanned at a time by one job.
 	Concurrency int
 	// RunSlice is how long one job keeps its slot before it hands the rest to the next run, so that an advisory sync waiting on the same
@@ -100,6 +105,14 @@ func New(o Options) (*Service, error) {
 		return nil, errors.New("imagescan: the database and the evaluation are required")
 	case o.Analyser == nil || o.Database == nil || o.Blobs == nil:
 		return nil, errors.New("imagescan: the analyser, the database and the blob reader are required")
+	case o.Space == nil:
+		return nil, errors.New("imagescan: the spool is required")
+	}
+	if o.SpaceWait <= 0 {
+		o.SpaceWait = defaultSpaceWait
+	}
+	if o.SpacePoll <= 0 {
+		o.SpacePoll = defaultSpacePoll
 	}
 	if o.Log == nil {
 		o.Log = slog.Default()
@@ -130,6 +143,12 @@ func (s *Service) RunScan(ctx context.Context, run Run) error {
 	if errors.Is(err, ErrNoDatabase) {
 		s.count("no_database")
 		return run.SetResult(map[string]string{"skipped": "no vulnerability database has been imported yet"})
+	}
+	if errors.Is(err, ErrNoSpace) {
+		// The images stay as they are; the task asks again at its next slot, when the other work of the spool may have ended.
+		s.count(CodeSpoolBusy)
+		s.log.WarnContext(ctx, "the vulnerability database cannot be unpacked: the spool has no room", "error", err)
+		return run.SetResult(map[string]string{"skipped": "the spool of the worker has no room for the unpacked vulnerability database: " + err.Error()})
 	}
 	if err != nil {
 		return fmt.Errorf("the vulnerability database: %w", err)
@@ -241,6 +260,9 @@ func (s *Service) scanOne(ctx context.Context, d store.ImageDue, access Database
 		return nil
 	case ctx.Err() != nil:
 		return context.Cause(ctx)
+	case errors.As(err, &se) && se.Defer > 0:
+		s.count(se.Code)
+		return s.recordDeferred(ctx, d, se)
 	case errors.As(err, &se):
 		s.count(se.Code)
 		return s.recordFailure(ctx, d, se.Code, se.Detail, se.Terminal)
@@ -260,6 +282,13 @@ func (s *Service) recordFailure(ctx context.Context, d store.ImageDue, code, det
 	return s.o.Images.Failed(ctx, d.RepoID, d.Name, d.Digest, code, detail, backoff)
 }
 
+// recordDeferred records a scan that did not start for lack of room in the spool: the row says why, stays pending and is due again after
+// the wait, with its attempts untouched, because nothing about the image failed.
+func (s *Service) recordDeferred(ctx context.Context, d store.ImageDue, se *ScanError) error {
+	s.log.WarnContext(ctx, "an image scan was put off: the spool has no room", "repository", d.RepoID, "name", d.Name, "code", se.Code, "detail", se.Detail)
+	return s.o.Images.Deferred(ctx, d.RepoID, d.Name, d.Digest, se.Code, se.Detail, se.Defer)
+}
+
 func (s *Service) count(result string) {
 	if s.o.Metrics != nil {
 		s.o.Metrics.ImageScans.WithLabelValues(result).Inc()
@@ -274,6 +303,11 @@ func (s *Service) observe(started time.Time) {
 
 // detect is one manifest: the analysis, once, and the detection.
 func (s *Service) detect(ctx context.Context, ref ImageRef, access DatabaseAccess) error {
+	// The room of the scan is held from the moment its files start to exist until they are gone: the deferred calls run in the
+	// opposite order, so the scratch directory is removed first and the room is given back after it, and every exit (a failure, a cancelled
+	// run, a drain) passes through both.
+	var held lease
+	defer held.Release()
 	if err := os.MkdirAll(s.o.ScratchDir, 0o700); err != nil {
 		return err
 	}
@@ -292,7 +326,7 @@ func (s *Service) detect(ctx context.Context, ref ImageRef, access DatabaseAcces
 		return s.recordDetection(ctx, ref, Detection{}, 0, access, false)
 	}
 	sbomPath := filepath.Join(scratch, "sbom.json")
-	if err := s.analysis(ctx, ref, sbomPath, scratch); err != nil {
+	if err := s.analysis(ctx, ref, sbomPath, scratch, &held, access.Held); err != nil {
 		return err
 	}
 	reportPath := filepath.Join(scratch, "report.json")
@@ -322,19 +356,24 @@ func (s *Service) scoped(ctx context.Context, ref ImageRef) (bool, error) {
 
 // analysis puts the list of what the image holds at sbomPath: from the stored analysis when one exists for this manifest and analyser, else
 // by building a layout from the object store and running the analyser, then storing the result.
-func (s *Service) analysis(ctx context.Context, ref ImageRef, sbomPath, scratch string) error {
+func (s *Service) analysis(ctx context.Context, ref ImageRef, sbomPath, scratch string, held *lease, dbHeld int64) error {
 	stored, found, err := s.o.Images.SBOM(ctx, ref.Digest, s.o.Analyser.Version())
 	if err != nil {
 		return err
 	}
 	if found {
+		// No layer is read: the list and the report are all the scan writes.
+		if err := s.admit(ctx, held, scanMargin, dbHeld); err != nil {
+			return err
+		}
 		return gunzipTo(stored, sbomPath)
 	}
 	layout := filepath.Join(scratch, "layout")
 	if err := os.MkdirAll(layout, 0o700); err != nil {
 		return err
 	}
-	if err := buildLayout(ctx, s.o.Blobs, ref, layout, s.o.Content); err != nil {
+	admit := func(total int64) error { return s.admit(ctx, held, total+scanMargin, dbHeld) }
+	if err := buildLayout(ctx, s.o.Blobs, ref, layout, s.o.Content, admit); err != nil {
 		return err
 	}
 	if err := s.o.Analyser.Analyse(ctx, layout, sbomPath, scratch, s.o.Run); err != nil {

@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/klauspost/compress/zstd"
 
@@ -42,6 +43,8 @@ type ScanError struct {
 	Code, Detail string
 	// Terminal says that another attempt on the same bytes cannot succeed.
 	Terminal bool
+	// Defer, when set, says that the scan did not start for lack of room: it is due again after this long and no attempt is spent.
+	Defer time.Duration
 }
 
 func (e *ScanError) Error() string { return e.Code + ": " + e.Detail }
@@ -95,8 +98,10 @@ type imageManifest struct {
 
 // buildLayout writes the manifest, its config and its layers as an OCI layout under dir, verifying every blob against its digest and
 // checking every layer against the limits before the analyser reads it. A blob the repository does not hold ends the build with
-// [CodeLayerMissing], which is not terminal: a pull of a remote image brings its layers after its manifest.
-func buildLayout(ctx context.Context, src BlobReader, ref ImageRef, dir string, lim ContentLimits) error {
+// [CodeLayerMissing], which is not terminal: a pull of a remote image brings its layers after its manifest. admit, when not nil, is called
+// with the compressed size of the config and the layers once the manifest passed its checks and before the first blob is written; its error
+// ends the build, so the room for the blobs is held before they exist (Q-VULN-145).
+func buildLayout(ctx context.Context, src BlobReader, ref ImageRef, dir string, lim ContentLimits, admit func(total int64) error) error {
 	raw, err := src.ReadManifest(ctx, ref, maxManifestBytes)
 	if err != nil {
 		return err
@@ -105,8 +110,14 @@ func buildLayout(ctx context.Context, src BlobReader, ref ImageRef, dir string, 
 	if err := untrusted.UnmarshalJSON(raw, untrusted.DefaultLimits().Tighten(untrusted.Limits{DocumentBytes: maxManifestBytes}), &m); err != nil {
 		return &ScanError{Code: CodeManifestInvalid, Detail: "the manifest cannot be read", Terminal: true}
 	}
-	if err := checkManifest(m, lim); err != nil {
+	total, err := checkManifest(m, lim)
+	if err != nil {
 		return err
+	}
+	if admit != nil {
+		if err := admit(total); err != nil {
+			return err
+		}
 	}
 	blobs := filepath.Join(dir, "blobs", "sha256")
 	if err := os.MkdirAll(blobs, 0o700); err != nil {
@@ -146,27 +157,28 @@ func writeBlob(p string, b []byte) error { return os.WriteFile(p, b, 0o600) }
 
 func hexOf(digest string) string { return strings.TrimPrefix(digest, "sha256:") }
 
-func checkManifest(m imageManifest, lim ContentLimits) error {
+// checkManifest returns the compressed size of the config and the layers together.
+func checkManifest(m imageManifest, lim ContentLimits) (int64, error) {
 	if !validDigest(m.Config.Digest) {
-		return &ScanError{Code: CodeManifestInvalid, Detail: "the manifest names no valid config digest", Terminal: true}
+		return 0, &ScanError{Code: CodeManifestInvalid, Detail: "the manifest names no valid config digest", Terminal: true}
 	}
 	if len(m.Layers) > lim.MaxLayers {
-		return &ScanError{Code: CodeTooManyLayers, Detail: fmt.Sprintf("the image has %d layers, the limit is %d", len(m.Layers), lim.MaxLayers), Terminal: true}
+		return 0, &ScanError{Code: CodeTooManyLayers, Detail: fmt.Sprintf("the image has %d layers, the limit is %d", len(m.Layers), lim.MaxLayers), Terminal: true}
 	}
 	total := m.Config.Size
 	for _, l := range m.Layers {
 		if !validDigest(l.Digest) {
-			return &ScanError{Code: CodeManifestInvalid, Detail: "the manifest names a layer without a valid digest", Terminal: true}
+			return 0, &ScanError{Code: CodeManifestInvalid, Detail: "the manifest names a layer without a valid digest", Terminal: true}
 		}
 		if l.Size < 0 {
-			return &ScanError{Code: CodeManifestInvalid, Detail: "the manifest names a layer of negative size", Terminal: true}
+			return 0, &ScanError{Code: CodeManifestInvalid, Detail: "the manifest names a layer of negative size", Terminal: true}
 		}
 		total += l.Size
 	}
 	if total > lim.MaxImageBytes {
-		return &ScanError{Code: CodeImageTooLarge, Detail: fmt.Sprintf("the image is %d bytes compressed, the limit is %d", total, lim.MaxImageBytes), Terminal: true}
+		return 0, &ScanError{Code: CodeImageTooLarge, Detail: fmt.Sprintf("the image is %d bytes compressed, the limit is %d", total, lim.MaxImageBytes), Terminal: true}
 	}
-	return nil
+	return total, nil
 }
 
 func validDigest(d string) bool {

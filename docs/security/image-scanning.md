@@ -28,6 +28,17 @@ The database decides what is reported about every image. In `mode: repository`, 
 
 A scan that did not finish, for any reason, leaves the evaluation `scan_failed` or `pending_scan` and never `evaluated`, so an image cannot be made to look clean by being too large, malformed or slow to analyse. The price is an image that stays unevaluated until an operator acts; that is the right way round.
 
+## The working space is the spool's
+
+An image scan writes a lot: the database unpacked (1.6 GiB on 2026-11-10) and the layers of the image copied into a layout (up to `max_image_size`, 3 GiB by default). Those files live below the worker's spool volume, the one volume a pod may write, and the volume is an `emptyDir` with a size limit: when it runs out, the kubelet evicts the pod, and with it the mirror pass, the sync and every other scan on it. So the scanning does not write what it has not been admitted for ([Q-VULN-145](../spec/vulnerability-scanning.md#q-vuln-145--the-working-space-of-the-scanning-is-admitted-through-the-spools-own-budget)).
+
+- The spool counts the scanning's files in the same budget as an upload, a mirror pass and an advisory archive. The unpacked database is held once, by the sizes in its archive's headers, before a byte is written; a scan holds the compressed size of its image from the manifest plus 64 MiB before it writes the first blob. A hold that does not fit is refused by the same two checks as an upload: the budget and the free space of the volume.
+- A scan that does not fit **waits** two minutes for the room, then is put off (`spool_busy`, due again after a minute); a scan that cannot fit next to the database in an empty spool is refused at once (`spool_too_small`, due again after an hour). The row stays `pending`, so the image reads `pending_scan`, never clean, and no attempt is spent.
+- The room is returned on every exit of the scan (finished, failed, cancelled, drained); a crash returns it with the process, and the files a crash left are removed at the next start, before any scan holds room again.
+- The chart refuses a worker spool budget (size minus `spool.headroom`) below `max_image_size` + 2 GiB + 512 MiB for the pool that claims the queue `vuln`, and the default `worker.spool.sizeLimit` is 8 Gi for that reason.
+
+What this does not do is bound what the analyser itself writes ([H-871](#h-871--the-analysers-own-files-are-bounded-by-a-margin-not-enforced)).
+
 ## What this does not cover
 
 ### H-810 · Java archives are not analysed
@@ -62,10 +73,18 @@ A finding's version is a digest, and a grant narrowed to a tag is decided by the
 
 One `vuln-image-scan` job runs across the installation, `concurrency` images at once on one worker. A backlog of many images after a database update is worked off at the pace of that one replica.
 
-### H-819 · The working space of a scan is not counted in the spool's budget
-
-The scan works below the spool volume, but the spool's admission does not count those files. The unpacked database was 1.6 GiB on 2026-11-10 and the largest image is 3 GiB by default, which with the default `worker.spool.sizeLimit` of 5 GiB leaves little for the spool's own files: a mirror pass or an advisory archive at the same moment can run the volume out and have the pod evicted. An installation that scans large images or raises `max_image_size` raises the size limit of the pool that claims the queue `vuln` with it; the chart does not check the sum.
-
 ### H-818 · Memory is bounded softly and by the pod
 
 `GOMEMLIMIT` asks the analyser to stay within `memory_limit` (512 MiB by default), and the pod's limit (1 GiB by default) is the hard stop: a scan that exceeds it kills the worker pod, not only the scan. The job then fails over, but a hostile image can repeat this.
+
+### H-871 · The analyser's own files are bounded by a margin, not enforced
+
+The worker holds what it writes itself (the layout, from sizes it checked against the digests) and 64 MiB for what the analyser leaves below its working directory: its cache and temporary files, the analysis and the report. Nothing limits the analyser's writing at the operating system: `Limits.FileBytes` is declared but not applied (no `RLIMIT_FSIZE`), and the 512 MiB output limit is checked after the file exists. What makes it real: an image whose analysis writes more than 64 MiB beside the layout. It can then use room the budget gave to another user, and the volume's free-space check at the next reservation is the only guard before the kubelet's. That the pinned analyser keeps its files within the margin for an ordinary image was not measured.
+
+### H-872 · The database allowance of the chart is a constant
+
+The chart checks the spool budget against 2 GiB for the unpacked database; the database was 1.6 GiB on 2026-11-10 and changes with every update. At run time the exact size is held, so a database that outgrows the budget is refused when it is unpacked, not when the chart is installed: `vuln-image-scan` then ends with a `skipped` result naming the reason, every image stays `pending_scan`, and the signals are that result, the log and the counter `trove_vuln_image_scans_total{result="spool_busy"}`, which `TroveVulnerabilityImageScansFailing` covers after an hour. What makes it real: an installation that sized `worker.spool.sizeLimit` exactly to the check and a database that grows past 2 GiB.
+
+### H-873 · A refused scan waits an hour after the limit is raised
+
+A scan refused with `spool_too_small` is due again after an hour. An operator who raises the pool's `sizeLimit` or lowers `max_image_size` sees the images scanned within that hour, not at once; a rescan of the repository (R-VULN-011) brings them forward. What makes it real: the first install of a pool with a spool that is too small.

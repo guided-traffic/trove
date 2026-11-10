@@ -64,7 +64,8 @@ func WithFreeBytes(f func(dir string) (uint64, error)) SpoolOption {
 }
 
 // ImageScanDir is the name of the directory below the spool directory that the image scanning works in (R-VULN-036). Its files are not
-// spool files and are not counted in the spool's budget: the bound on them is vulnerabilities.images.max_image_size.
+// spool files, so the spool does not create or delete them; the scanning takes the room for them from the spool's budget with [Spool.Hold]
+// and [Spool.Adopt] (Q-VULN-145).
 const ImageScanDir = "imagescan"
 
 // NewSpool prepares the spool directory and deletes the spool files a crashed
@@ -191,6 +192,61 @@ func (s *Spool) release(n int64) {
 		return
 	}
 	s.metrics.setSpool(r, free)
+}
+
+// Hold is budget taken on the spool for files the spool does not write itself: the unpacked vulnerability database and the working files of
+// an image scan, which live below [ImageScanDir] on the same volume (Q-VULN-145). Release it on every path.
+type Hold struct {
+	spool *Spool
+	mu    sync.Mutex
+	n     int64
+}
+
+// Hold takes n bytes of the budget for files another component writes, under the same two checks as an upload: the budget of the replica
+// and the free space of the volume. It fails with an error that is [ErrSpoolFull] when either cannot cover n, and takes nothing then.
+func (s *Spool) Hold(n int64) (*Hold, error) {
+	if n < 0 {
+		return nil, fmt.Errorf("spool hold of %d bytes", n)
+	}
+	if err := s.reserve(n); err != nil {
+		return nil, err
+	}
+	return &Hold{spool: s, n: n}, nil
+}
+
+// Adopt counts n bytes that are on the volume already (the database a restarted container finds in its volume) against the budget. The
+// bytes exist whatever the budget says, so nothing is checked and nothing is refused; the next reservation sees them.
+func (s *Spool) Adopt(n int64) *Hold {
+	n = max(n, 0)
+	free, _ := s.free(s.dir)
+	s.mu.Lock()
+	s.reserved += n
+	r := s.reserved
+	s.mu.Unlock()
+	s.metrics.setSpool(r, free)
+	return &Hold{spool: s, n: n}
+}
+
+// Budget is the byte budget of the replica: the most that [Spool.Hold] and the uploads can hold together.
+func (s *Spool) Budget() int64 { return s.max }
+
+// Size is the number of bytes the hold counts.
+func (h *Hold) Size() int64 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.n
+}
+
+// Release returns the bytes to the budget. It is safe to call more than once and on a nil hold.
+func (h *Hold) Release() {
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	n := h.n
+	h.n = 0
+	h.mu.Unlock()
+	h.spool.release(n)
 }
 
 // create opens a new spool file: mode 0600, named by a random UUID.

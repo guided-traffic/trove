@@ -109,6 +109,36 @@ func (q *Queries) VulnImageDBPut(ctx context.Context, arg VulnImageDBPutParams) 
 	return err
 }
 
+const vulnImageDeferred = `-- name: VulnImageDeferred :exec
+UPDATE vuln_image_scan
+   SET state = 'pending', not_before = now() + make_interval(secs => $1::float8),
+       error_code = $2::text, error_detail = left($3::text, 1024)
+ WHERE repo_id = $4::bigint AND name = $5::text AND digest = $6
+`
+
+type VulnImageDeferredParams struct {
+	WaitSeconds float64
+	ErrorCode   string
+	ErrorDetail string
+	RepoID      int64
+	Name        string
+	Digest      []byte
+}
+
+// A scan that did not start because the spool of the worker had no room (Q-VULN-145): the row stays pending with the reason, is due again
+// after the wait, and its attempts are not spent, because nothing about the image failed. A row that had a detection is pending again, as after a failure, and keeps its findings until the next detection.
+func (q *Queries) VulnImageDeferred(ctx context.Context, arg VulnImageDeferredParams) error {
+	_, err := q.db.Exec(ctx, vulnImageDeferred,
+		arg.WaitSeconds,
+		arg.ErrorCode,
+		arg.ErrorDetail,
+		arg.RepoID,
+		arg.Name,
+		arg.Digest,
+	)
+	return err
+}
+
 const vulnImageDiscover = `-- name: VulnImageDiscover :execrows
 
 INSERT INTO vuln_image_scan (repo_id, name, digest, not_before)

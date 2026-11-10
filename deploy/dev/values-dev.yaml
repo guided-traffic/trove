@@ -52,7 +52,7 @@ worker:
     limits:
       memory: 512Mi
   spool:
-    sizeLimit: 4Gi
+    sizeLimit: 8Gi                       # the budget (minus the 2GiB headroom) holds the unpacked database and the largest image of the scanning
   pools:
     - name: vuln
       queues: [vuln]

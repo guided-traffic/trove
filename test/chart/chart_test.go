@@ -1004,7 +1004,7 @@ func TestChart(t *testing.T) {
 	})
 
 	t.Run("R-HA-035 the spool is an emptyDir bounded by its size limit and the budget leaves headroom", func(t *testing.T) {
-		_, docs := render(t, required(), "spool.sizeLimit=12Gi", "spool.headroom=2GiB", "worker.spool.sizeLimit=3Gi", "config.storage.upload.max_size=512MiB")
+		_, docs := render(t, required(), "spool.sizeLimit=12Gi", "spool.headroom=2GiB", "worker.spool.sizeLimit=3Gi", "config.storage.upload.max_size=512MiB", "config.vulnerabilities.images.enabled=false")
 		for role, want := range map[string]struct{ limit, max string }{
 			"packages": {"12Gi", "10737418240"},
 			"api":      {"5Gi", "3221225472"},
@@ -1034,7 +1034,7 @@ func TestChart(t *testing.T) {
 			}
 		})
 		t.Run("a worker spool smaller than the largest upload renders: workers accept no uploads", func(t *testing.T) {
-			_, docs := render(t, required(), "worker.spool.sizeLimit=5Gi", "config.storage.upload.max_size=10GiB")
+			_, docs := render(t, required(), "worker.spool.sizeLimit=5Gi", "config.storage.upload.max_size=10GiB", "config.vulnerabilities.images.enabled=false")
 			pod := at(find(docs, "Deployment", "trove-worker"), "spec", "template", "spec")
 			if got := str(envByName(pod)["TROVE_STORAGE_SPOOL_MAX_BYTES"], "value"); got != "3221225472" {
 				t.Errorf("trove-worker TROVE_STORAGE_SPOOL_MAX_BYTES = %q, want 3221225472", got)

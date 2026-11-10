@@ -395,3 +395,62 @@ func TestR_VULN_036_TheSpoolKeepsTheWorkingDirectoryOfTheImageScanning(t *testin
 		t.Fatal("a spool with an unknown directory was accepted")
 	}
 }
+
+func TestQ_VULN_145_AHoldIsCountedInTheBudgetOfTheUploads(t *testing.T) {
+	sp := newSpool(t, func(c *config.StorageSpool) { c.MaxBytes = 1000; c.MemoryThreshold = 1 })
+	h, err := sp.Hold(700)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sp.Reserved() != 700 || h.Size() != 700 {
+		t.Fatalf("reserved %d, hold %d", sp.Reserved(), h.Size())
+	}
+	// An upload that would overrun the budget with the hold is refused with the spool's own error.
+	if _, err := sp.Ingest(context.Background(), strings.NewReader(strings.Repeat("x", 400)), IngestOptions{ContentLength: 400}); !errors.Is(err, ErrSpoolFull) {
+		t.Fatalf("an upload next to a hold of 700 of 1000: %v", err)
+	}
+	if _, err := sp.Hold(400); !errors.Is(err, ErrSpoolFull) {
+		t.Fatalf("a second hold beyond the budget: %v", err)
+	}
+	if sp.Reserved() != 700 {
+		t.Fatalf("a refused hold took %d", sp.Reserved()-700)
+	}
+	h.Release()
+	h.Release()
+	var none *Hold
+	none.Release()
+	if sp.Reserved() != 0 {
+		t.Fatalf("reserved %d after the release", sp.Reserved())
+	}
+	if _, err := sp.Hold(1000); err != nil {
+		t.Fatalf("the budget is whole again: %v", err)
+	}
+}
+
+func TestQ_VULN_145_AHoldFollowsTheFreeSpaceOfTheVolumeAndAdoptionChecksNothing(t *testing.T) {
+	sp := newSpool(t, func(c *config.StorageSpool) { c.MaxBytes = 1 << 30; c.MinFreeBytes = 100 },
+		WithFreeBytes(func(string) (uint64, error) { return 600, nil }))
+	if _, err := sp.Hold(600); !errors.Is(err, ErrSpoolFull) {
+		t.Fatalf("a hold that leaves less than the minimum free: %v", err)
+	}
+	h, err := sp.Hold(500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.Release()
+	// Bytes that are on the volume already are counted whatever the budget and the free space say.
+	a := sp.Adopt(2 << 30)
+	if sp.Reserved() != 2<<30 {
+		t.Fatalf("reserved %d", sp.Reserved())
+	}
+	if _, err := sp.Hold(1); !errors.Is(err, ErrSpoolFull) {
+		t.Fatalf("a hold next to an adopted directory larger than the budget: %v", err)
+	}
+	a.Release()
+	if sp.Reserved() != 0 {
+		t.Fatalf("reserved %d", sp.Reserved())
+	}
+	if _, err := sp.Hold(-1); err == nil {
+		t.Fatal("a negative hold")
+	}
+}

@@ -31,6 +31,8 @@ type DatabaseAccess struct {
 	Args []string
 	// Digest identifies the database the detection ran against; a different one makes every manifest due again.
 	Digest string
+	// Held is how many bytes of the spool's budget the unpacked database holds; 0 for a database that is not on the worker's disk.
+	Held int64
 	// Release ends the use of the database; it is never nil.
 	Release func()
 }

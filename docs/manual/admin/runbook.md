@@ -134,17 +134,17 @@ Every answer of trove on a client listener carries `X-Request-Id`. A `503` witho
 
 ## Disk or spool full
 
-**What you see.** `TroveSpoolNearlyFull` (more than 90 % used for 10 minutes). Uploads answer `503 unavailable` with a sentence about the spool, and clients retry. `trove_spool_used_bytes` and `trove_spool_free_bytes` per replica. A pod that is `Evicted`: `kubectl describe pod` names the emptyDir that passed its limit. A mirror pass waits 5 seconds and repeats the item; an image scan or an advisory sync that needs the space fails.
+**What you see.** `TroveSpoolNearlyFull` (more than 90 % used for 10 minutes). Uploads answer `503 unavailable` with a sentence about the spool, and clients retry. `trove_spool_used_bytes` and `trove_spool_free_bytes` per replica. A pod that is `Evicted`: `kubectl describe pod` names the emptyDir that passed its limit. A mirror pass waits 5 seconds and repeats the item; an advisory sync that needs the space fails; an image scan waits and is then put off (below).
 
-**What it means.** Every pod has one spool volume (`spool.sizeLimit` 20 GiB by default; `worker.spool.sizeLimit` 5 GiB). The usable budget is the size minus `spool.headroom` (2 GiB), and is held per replica. The worker's 5 GiB is shared by the cache fills of jobs, the artifacts of a mirror pass, one advisory archive while a sync runs, and the image scanning.
+**What it means.** Every pod has one spool volume (`spool.sizeLimit` 20 GiB by default; `worker.spool.sizeLimit` 8 GiB). The usable budget is the size minus `spool.headroom` (2 GiB), and is held per replica. The worker's budget is shared by the cache fills of jobs, the artifacts of a mirror pass, one advisory archive while a sync runs, and the image scanning.
 
-The working space of an image scan (`vulnerabilities.images.scan_dir`, below the spool) is **not** counted in the spool's budget. With the defaults, the unpacked advisory database (about 1.6 GiB on 2026-11-10) and the largest image a scan accepts (`vulnerabilities.images.max_image_size`, 3 GiB) leave little room: a mirror pass or an advisory archive at the same moment can run the volume out and have the pod evicted. The chart does not check that sum.
+The working space of an image scan (`vulnerabilities.images.scan_dir`, below the spool) is counted in the same budget: the unpacked advisory database once (about 1.6 GiB on 2026-11-10) and, while a scan runs, the size of its image plus 64 MiB. A scan that does not fit waits two minutes and is then put off with the code `spool_busy` (the image shows `pending_scan`, the scan is tried again after a minute); a scan that cannot fit next to the database even in an empty spool is refused with `spool_too_small` (tried again after an hour), and its reason names the sizes. The chart refuses a budget below `max_image_size` + 2 GiB + 512 MiB for the pool that claims the queue `vuln`. A database that no longer fits ends `vuln-image-scan` with a `skipped` result that says so.
 
 **What to do.**
 
 1. Find the replica on `trove_spool_used_bytes`. Look for uploads that do not end (the request log, `trove_http_requests_in_flight`).
 2. Raise the size of the role: `api.spool.sizeLimit`, `packages.spool.sizeLimit`, `worker.spool.sizeLimit`, or `spool.sizeLimit` for all of them, by `helm upgrade`. The chart refuses a size whose budget is below `storage.upload.max_size` and, for a pod that claims the queue `vuln`, below the advisory archive limit.
-3. If the worker is short because of image scans, raise the size of the pool that claims the queue `vuln`, or give the scans a pool of their own with a larger volume, or lower `vulnerabilities.images.max_image_size` (a larger image then shows `scan_failed`):
+3. If the worker is short because of image scans, raise the size of the pool that claims the queue `vuln`, or give the scans a pool of their own with a larger volume, or lower `vulnerabilities.images.max_image_size` (a larger image then shows `scan_failed`); the chart refuses a size that cannot hold the scanning:
 
    ```yaml
    worker:

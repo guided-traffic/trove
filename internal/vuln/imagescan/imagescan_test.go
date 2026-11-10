@@ -154,7 +154,7 @@ func wantScanError(t *testing.T, err error, code string) {
 func TestR_VULN_036_ALayoutHoldsTheVerifiedBlobsOfAnImage(t *testing.T) {
 	m := imageWith(tarOf(t, map[string]string{"etc/os-release": "alpine"}, true))
 	dir := t.TempDir()
-	if err := buildLayout(context.Background(), m, ImageRef{}, dir, lims()); err != nil {
+	if err := buildLayout(context.Background(), m, ImageRef{}, dir, lims(), nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"index.json", "oci-layout"} {
@@ -171,31 +171,31 @@ func TestR_VULN_036_ALayoutHoldsTheVerifiedBlobsOfAnImage(t *testing.T) {
 func TestR_VULN_036_TheBoundsOfAnUntrustedImageHold(t *testing.T) {
 	ctx := context.Background()
 	t.Run("path traversal", func(t *testing.T) {
-		err := buildLayout(ctx, imageWith(tarOf(t, map[string]string{"../../etc/shadow": "x"}, false)), ImageRef{}, t.TempDir(), lims())
+		err := buildLayout(ctx, imageWith(tarOf(t, map[string]string{"../../etc/shadow": "x"}, false)), ImageRef{}, t.TempDir(), lims(), nil)
 		wantScanError(t, err, CodePathTraversal)
 	})
 	t.Run("decompression bomb", func(t *testing.T) {
 		big := strings.Repeat("0", 3<<20)
 		l := lims()
-		err := buildLayout(ctx, imageWith(tarOf(t, map[string]string{"a": big}, true)), ImageRef{}, t.TempDir(), l)
+		err := buildLayout(ctx, imageWith(tarOf(t, map[string]string{"a": big}, true)), ImageRef{}, t.TempDir(), l, nil)
 		wantScanError(t, err, CodeDecompressedSize)
 	})
 	t.Run("too many layers", func(t *testing.T) {
 		l := lims()
 		l.MaxLayers = 1
-		err := buildLayout(ctx, imageWith(tarOf(t, map[string]string{"a": "1"}, false), tarOf(t, map[string]string{"b": "2"}, false)), ImageRef{}, t.TempDir(), l)
+		err := buildLayout(ctx, imageWith(tarOf(t, map[string]string{"a": "1"}, false), tarOf(t, map[string]string{"b": "2"}, false)), ImageRef{}, t.TempDir(), l, nil)
 		wantScanError(t, err, CodeTooManyLayers)
 	})
 	t.Run("compressed size", func(t *testing.T) {
 		l := lims()
 		l.MaxImageBytes = 10
-		err := buildLayout(ctx, imageWith(tarOf(t, map[string]string{"a": "1"}, false)), ImageRef{}, t.TempDir(), l)
+		err := buildLayout(ctx, imageWith(tarOf(t, map[string]string{"a": "1"}, false)), ImageRef{}, t.TempDir(), l, nil)
 		wantScanError(t, err, CodeImageTooLarge)
 	})
 	t.Run("entries", func(t *testing.T) {
 		l := lims()
 		l.MaxEntries = 1
-		err := buildLayout(ctx, imageWith(tarOf(t, map[string]string{"a": "1", "b": "2"}, false)), ImageRef{}, t.TempDir(), l)
+		err := buildLayout(ctx, imageWith(tarOf(t, map[string]string{"a": "1", "b": "2"}, false)), ImageRef{}, t.TempDir(), l, nil)
 		wantScanError(t, err, CodeTooManyEntries)
 	})
 	t.Run("a blob that is not what the manifest names", func(t *testing.T) {
@@ -205,7 +205,7 @@ func TestR_VULN_036_TheBoundsOfAnUntrustedImageHold(t *testing.T) {
 				m.blobs[d][0] ^= 0xff
 			}
 		}
-		err := buildLayout(ctx, m, ImageRef{}, t.TempDir(), lims())
+		err := buildLayout(ctx, m, ImageRef{}, t.TempDir(), lims(), nil)
 		wantScanError(t, err, CodeDigestMismatch)
 	})
 	t.Run("a layer that has not arrived is retried, not terminal", func(t *testing.T) {
@@ -215,7 +215,7 @@ func TestR_VULN_036_TheBoundsOfAnUntrustedImageHold(t *testing.T) {
 				delete(m.blobs, d)
 			}
 		}
-		err := buildLayout(ctx, m, ImageRef{}, t.TempDir(), lims())
+		err := buildLayout(ctx, m, ImageRef{}, t.TempDir(), lims(), nil)
 		var se *ScanError
 		if !errors.As(err, &se) || se.Code != CodeLayerMissing || se.Terminal {
 			t.Fatalf("%v", err)
@@ -226,14 +226,14 @@ func TestR_VULN_036_TheBoundsOfAnUntrustedImageHold(t *testing.T) {
 		tw := tar.NewWriter(&buf)
 		_ = tw.WriteHeader(&tar.Header{Name: "usr/lib/link", Typeflag: tar.TypeSymlink, Linkname: "../../lib/x"})
 		_ = tw.Close()
-		if err := buildLayout(ctx, imageWith(buf.Bytes()), ImageRef{}, t.TempDir(), lims()); err != nil {
+		if err := buildLayout(ctx, imageWith(buf.Bytes()), ImageRef{}, t.TempDir(), lims(), nil); err != nil {
 			t.Fatalf("symlink refused: %v", err)
 		}
 		var h bytes.Buffer
 		tw = tar.NewWriter(&h)
 		_ = tw.WriteHeader(&tar.Header{Name: "bad", Typeflag: tar.TypeLink, Linkname: "../../etc/shadow"})
 		_ = tw.Close()
-		wantScanError(t, buildLayout(ctx, imageWith(h.Bytes()), ImageRef{}, t.TempDir(), lims()), CodePathTraversal)
+		wantScanError(t, buildLayout(ctx, imageWith(h.Bytes()), ImageRef{}, t.TempDir(), lims(), nil), CodePathTraversal)
 	})
 }
 
@@ -256,7 +256,7 @@ func TestR_VULN_035_TheDatabaseArchiveDecidesNoPath(t *testing.T) {
 		t.Fatalf("%v %+v", err, meta)
 	}
 	var names []string
-	if err := walkArchive(bytes.NewReader(buf.Bytes()), func(name string, _ io.Reader) (bool, error) {
+	if err := walkArchive(bytes.NewReader(buf.Bytes()), func(name string, _ int64, _ io.Reader) (bool, error) {
 		names = append(names, name)
 		return false, nil
 	}); err != nil {

@@ -47,6 +47,14 @@ UPDATE vuln_image_scan
        error_code = sqlc.arg(error_code)::text, error_detail = left(sqlc.arg(error_detail)::text, 1024)
  WHERE repo_id = sqlc.arg(repo_id)::bigint AND name = sqlc.arg(name)::text AND digest = sqlc.arg(digest);
 
+-- name: VulnImageDeferred :exec
+-- A scan that did not start because the spool of the worker had no room (Q-VULN-145): the row stays pending with the reason, is due again
+-- after the wait, and its attempts are not spent, because nothing about the image failed. A row that had a detection is pending again, as after a failure, and keeps its findings until the next detection.
+UPDATE vuln_image_scan
+   SET state = 'pending', not_before = now() + make_interval(secs => sqlc.arg(wait_seconds)::float8),
+       error_code = sqlc.arg(error_code)::text, error_detail = left(sqlc.arg(error_detail)::text, 1024)
+ WHERE repo_id = sqlc.arg(repo_id)::bigint AND name = sqlc.arg(name)::text AND digest = sqlc.arg(digest);
+
 -- name: VulnImageRearm :execrows
 -- A rescan: every manifest of the repository is due again, and an analysis is not repeated (the document of the analysis stays).
 UPDATE vuln_image_scan

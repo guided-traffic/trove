@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -68,7 +69,8 @@ func (a *App) wireVulnImages(ctx context.Context, in infra, m *vmetrics.Metrics,
 	}
 	cleanScanDir(ctx, images.ScanDir, log)
 	rows := store.NewImages(in.db)
-	var database imagescan.Database = &imagescan.LocalDatabase{Dir: filepath.Join(images.ScanDir, "db"), Blobs: dbBlobs{in.blobs}, Rows: rows}
+	space := spoolSpace{in.blobs.Spool()}
+	var database imagescan.Database = &imagescan.LocalDatabase{Dir: filepath.Join(images.ScanDir, "db"), Blobs: dbBlobs{in.blobs}, Rows: rows, Space: space}
 	if override != nil && override.ImageDatabase != nil {
 		database = override.ImageDatabase
 	}
@@ -78,7 +80,7 @@ func (a *App) wireVulnImages(ctx context.Context, in infra, m *vmetrics.Metrics,
 	}
 	svc, err := imagescan.New(imagescan.Options{
 		DB: in.db, Images: rows, Evaluate: evaluation, Blobs: reader, Analyser: analyser, Database: database,
-		States: out.states, Enqueue: out.wakeImages, ScratchDir: images.ScanDir, Concurrency: images.Concurrency, RunSlice: images.RunSlice,
+		States: out.states, Enqueue: out.wakeImages, ScratchDir: images.ScanDir, Space: space, Concurrency: images.Concurrency, RunSlice: images.RunSlice,
 		MaxAttempts: images.MaxAttempts, Delay: images.ScanDelay, Metrics: m, Log: log,
 		Content: imagescan.ContentLimits{MaxLayers: images.MaxLayers, MaxImageBytes: int64(images.MaxImageSize), MaxUncompressedBytes: int64(images.MaxUncompressedSize), MaxEntries: images.MaxEntries},
 		Run:     imagescan.Limits{Timeout: images.Timeout, MemoryBytes: int64(images.MemoryLimit), OutputBytes: imageOutputBytes, StderrBytes: 16 << 10},
@@ -98,11 +100,25 @@ func cleanScanDir(ctx context.Context, dir string, log *slog.Logger) {
 		log.WarnContext(ctx, "the working directory of the image scanning cannot be read", "dir", dir, "error", err)
 		return
 	}
+	remove := func(path string) {
+		if err := os.RemoveAll(path); err != nil {
+			log.WarnContext(ctx, "a leftover of the image scanning cannot be removed", "path", path, "error", err)
+		}
+	}
 	for _, e := range entries {
 		if e.IsDir() && strings.HasPrefix(e.Name(), "scan-") {
-			if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
-				log.WarnContext(ctx, "a leftover of the image scanning cannot be removed", "path", e.Name(), "error", err)
-			}
+			remove(filepath.Join(dir, e.Name()))
+		}
+	}
+	// An unpack of the database that a crash interrupted is on the volume without a hold: it goes now, not at the next scan, so that no
+	// bytes of the scanning are on the volume that the spool's budget does not count (Q-VULN-145).
+	cached, err := os.ReadDir(filepath.Join(dir, "db"))
+	if err != nil {
+		return
+	}
+	for _, e := range cached {
+		if e.IsDir() && strings.HasPrefix(e.Name(), "unpack-") {
+			remove(filepath.Join(dir, "db", e.Name()))
 		}
 	}
 }
@@ -158,6 +174,28 @@ func (r imageBlobReader) open(ctx context.Context, ref imagescan.ImageRef, path 
 	}
 	return rc, it.Size, true, nil
 }
+
+// spoolSpace is the worker's spool as the image scanning sees it: the room of the unpacked database and of every scan is taken from the
+// budget the uploads and the mirror passes draw on (Q-VULN-145).
+type spoolSpace struct{ spool *blob.Spool }
+
+// Hold implements [imagescan.Space].
+func (s spoolSpace) Hold(n int64) (func(), error) {
+	h, err := s.spool.Hold(n)
+	if errors.Is(err, blob.ErrSpoolFull) {
+		return nil, fmt.Errorf("%w: %w", imagescan.ErrNoSpace, err)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return h.Release, nil
+}
+
+// Adopt implements [imagescan.Space].
+func (s spoolSpace) Adopt(n int64) func() { return s.spool.Adopt(n).Release }
+
+// Budget implements [imagescan.Space].
+func (s spoolSpace) Budget() int64 { return s.spool.Budget() }
 
 // dbBlobs opens the archive of the database from the object store.
 type dbBlobs struct{ store *blob.Store }
