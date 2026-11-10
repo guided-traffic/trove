@@ -9,7 +9,7 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 621 of 765 spec requirements are implemented: a passing test names them and no
+**Status.** 620 of 765 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
@@ -36,13 +36,13 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Authentication providers and human login](#authentication-providers-and-human-login-authn) | `AUTHN` | 44 | 13 of 13 | 18 | 26 | 14 |
 | [Access tokens](#access-tokens-tok) | `TOK` | 48 | 24 of 24 | 27 | 21 | 26 |
 | [OIDC federation for CI systems](#oidc-federation-for-ci-systems-cioidc) | `CIOIDC` | 40 | 20 of 20 | 31 | 9 | 18 |
-| [Storage and blob providers](#storage-and-blob-providers-stor) | `STOR` | 41 | 12 of 12 | 21 | 20 | 11 |
+| [Storage and blob providers](#storage-and-blob-providers-stor) | `STOR` | 41 | 12 of 12 | 21 | 20 | 13 |
 | [Retention, cleanup and archiving](#retention-cleanup-and-archiving-ret) | `RET` | 42 | – | 26 | 16 | 0 |
-| [High availability and deployment](#high-availability-and-deployment-ha) | `HA` | 79 | 49 of 49 | 61 | 18 | 42 |
-| [Operations, monitoring and configuration](#operations-monitoring-and-configuration-ops) | `OPS` | 100 | 17 of 17 | 43 | 57 | 28 |
+| [High availability and deployment](#high-availability-and-deployment-ha) | `HA` | 79 | 49 of 49 | 61 | 18 | 45 |
+| [Operations, monitoring and configuration](#operations-monitoring-and-configuration-ops) | `OPS` | 100 | 17 of 17 | 43 | 57 | 27 |
 | [Events and extensibility](#events-and-extensibility-evt) | `EVT` | 82 | 1 of 1 | 26 | 56 | 3 |
 | [Distribution and release lifecycle](#distribution-and-release-lifecycle-dist) | `DIST` | 70 | 2 of 2 | 2 | 68 | 2 |
-| [Security scanning and curation](#security-scanning-and-curation-sec) | `SEC` | 98 | 18 of 18 | 18 | 80 | 17 |
+| [Security scanning and curation](#security-scanning-and-curation-sec) | `SEC` | 98 | 18 of 18 | 18 | 80 | 13 |
 | [UI inventory](#ui-inventory-ui) | `UI` | 61 | 33 of 33 | 47 | 14 | 36 |
 | [Content API operation catalog](#content-api-operation-catalog-api) | `API` | 166 | 15 of 15 | 71 | 95 | 28 |
 | [Operation catalog: administration API](#operation-catalog-administration-api-admapi) | `ADMAPI` | 114 | 34 of 34 | 54 | 60 | 41 |
@@ -770,7 +770,7 @@ Catalog page: [oidc-ci-integration.md](../features/oidc-ci-integration.md) · sp
 Catalog page: [storage-and-blobs.md](../features/storage-and-blobs.md) · specified by priority: MVP 12 of 12 · P1 7 of 7 · P2 2 of 20 · Later 0 of 1 · Out of scope 0 of 1
 
 <details>
-<summary>41 features: 21 specified, 20 open, 11 implemented</summary>
+<summary>41 features: 21 specified, 20 open, 13 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -779,7 +779,7 @@ Catalog page: [storage-and-blobs.md](../features/storage-and-blobs.md) · specif
 | STOR-003 | Checksum-first transfers | P1 | implemented | [R-STOR-008](../spec/storage.md) (implemented) |
 | STOR-004 | SHA-256 kept as a first-class checksum | MVP | implemented | [R-ARCH-014](../spec/architecture.md) (implemented), [R-STOR-002](../spec/storage.md) (implemented) |
 | STOR-005 | SHA-256 backfill job | P2 | open | – |
-| STOR-006 | Binary store configuration | MVP | specified | [R-STOR-030](../spec/storage.md) (implemented), [R-STOR-035](../spec/storage.md) |
+| STOR-006 | Binary store configuration | MVP | implemented | [R-STOR-030](../spec/storage.md) (implemented), [R-STOR-035](../spec/storage.md) (implemented) |
 | STOR-007 | Composable provider chain and built-in templates | P2 | open | – |
 | STOR-008 | Local file-system store | P2 | open | – |
 | STOR-009 | Node-local read cache | P2 | open | – |
@@ -802,7 +802,7 @@ Catalog page: [storage-and-blobs.md](../features/storage-and-blobs.md) · specif
 | STOR-026 | Multi-bucket sharding on object storage | P2 | open | – |
 | STOR-027 | Migration of an existing store into object storage | P2 | open | – |
 | STOR-028 | Storage-class compatibility | P2 | open | – |
-| STOR-029 | Compatibility with S3-compatible object stores | MVP | specified | [R-STOR-030](../spec/storage.md) (implemented), [R-STOR-035](../spec/storage.md) |
+| STOR-029 | Compatibility with S3-compatible object stores | MVP | implemented | [R-STOR-030](../spec/storage.md) (implemented), [R-STOR-035](../spec/storage.md) (implemented) |
 | STOR-030 | Google Cloud Storage | P2 | open | – |
 | STOR-031 | Azure Blob Storage | P2 | open | – |
 | STOR-032 | Download redirect to signed object-storage URLs | P2 | specified | [R-STOR-014](../spec/storage.md) |
@@ -877,17 +877,17 @@ Catalog page: [retention-and-cleanup.md](../features/retention-and-cleanup.md) �
 Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specified by priority: MVP 49 of 49 · P1 11 of 14 · P2 1 of 10 · Later 0 of 3 · Out of scope 0 of 3
 
 <details>
-<summary>79 features: 61 specified, 18 open, 42 implemented</summary>
+<summary>79 features: 61 specified, 18 open, 45 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
 | HA-001 | Active-active cluster of identical nodes | MVP | implemented | [R-ARCH-001](../spec/architecture.md) (implemented), [R-ARCH-032](../spec/architecture.md) (implemented), [R-HA-001](../spec/ha-and-helm.md) (implemented), [R-AUTH-042](../spec/identity-and-authentication.md) (implemented) |
 | HA-002 | Cluster-wide task execution without a primary node | MVP | implemented | [R-ARCH-001](../spec/architecture.md) (implemented), [R-ARCH-016](../spec/architecture.md) (implemented), [R-ARCH-017](../spec/architecture.md) (implemented), [R-HA-001](../spec/ha-and-helm.md) (implemented), [R-HA-005](../spec/ha-and-helm.md) (implemented) |
-| HA-003 | Shared metadata database as the cluster backbone | MVP | implemented | [R-ARCH-002](../spec/architecture.md) (implemented), [R-HA-007](../spec/ha-and-helm.md) (implemented), [R-HA-013](../spec/ha-and-helm.md) (implemented) |
-| HA-004 | Shared binary storage for all nodes | MVP | specified | [R-ARCH-002](../spec/architecture.md) (implemented), [R-HA-007](../spec/ha-and-helm.md) (implemented), [R-HA-010](../spec/ha-and-helm.md) |
-| HA-005 | Node-local persistent volume for transient data | MVP | specified | [R-ARCH-014](../spec/architecture.md) (implemented), [R-HA-012](../spec/ha-and-helm.md), [R-HA-035](../spec/ha-and-helm.md) (implemented), [R-HA-061](../spec/ha-and-helm.md) (implemented) |
+| HA-003 | Shared metadata database as the cluster backbone | MVP | specified | [R-ARCH-002](../spec/architecture.md) (implemented), [R-HA-007](../spec/ha-and-helm.md), [R-HA-013](../spec/ha-and-helm.md) (implemented) |
+| HA-004 | Shared binary storage for all nodes | MVP | specified | [R-ARCH-002](../spec/architecture.md) (implemented), [R-HA-007](../spec/ha-and-helm.md), [R-HA-010](../spec/ha-and-helm.md) (implemented) |
+| HA-005 | Node-local persistent volume for transient data | MVP | implemented | [R-ARCH-014](../spec/architecture.md) (implemented), [R-HA-012](../spec/ha-and-helm.md) (implemented), [R-HA-035](../spec/ha-and-helm.md) (implemented), [R-HA-061](../spec/ha-and-helm.md) (implemented) |
 | HA-006 | Cluster-wide synchronization of configuration and state | MVP | implemented | [R-ARCH-002](../spec/architecture.md) (implemented), [R-ARCH-017](../spec/architecture.md) (implemented), [R-ARCH-018](../spec/architecture.md) (implemented), [R-ARCH-030](../spec/architecture.md) (implemented), [R-HA-003](../spec/ha-and-helm.md) (implemented), [R-HA-004](../spec/ha-and-helm.md) (implemented) |
-| HA-007 | Distributed locking through the database | MVP | specified | [R-ARCH-017](../spec/architecture.md) (implemented), [R-ARCH-030](../spec/architecture.md) (implemented), [R-ARCH-033](../spec/architecture.md) (implemented), [R-HA-005](../spec/ha-and-helm.md) (implemented), [R-HA-006](../spec/ha-and-helm.md) |
+| HA-007 | Distributed locking through the database | MVP | implemented | [R-ARCH-017](../spec/architecture.md) (implemented), [R-ARCH-030](../spec/architecture.md) (implemented), [R-ARCH-033](../spec/architecture.md) (implemented), [R-HA-005](../spec/ha-and-helm.md) (implemented), [R-HA-006](../spec/ha-and-helm.md) (implemented) |
 | HA-008 | Network locality of cluster components | MVP | specified | [R-HA-049](../spec/ha-and-helm.md) |
 | HA-009 | Horizontal scaling: adding and removing nodes | MVP | specified | [R-ARCH-001](../spec/architecture.md) (implemented), [R-ARCH-032](../spec/architecture.md) (implemented), [R-HA-003](../spec/ha-and-helm.md) (implemented), [R-HA-059](../spec/ha-and-helm.md), [R-HA-032](../spec/ha-and-helm.md) (implemented), [R-AUTH-042](../spec/identity-and-authentication.md) (implemented) |
 | HA-010 | Deployment topology: single node or cluster | MVP | implemented | [R-ARCH-001](../spec/architecture.md) (implemented), [R-HA-001](../spec/ha-and-helm.md) (implemented) |
@@ -903,8 +903,8 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 | HA-020 | IPv6 and dual-stack networking | P1 | specified | [R-ARCH-005](../spec/architecture.md) (implemented), [R-HA-044](../spec/ha-and-helm.md) |
 | HA-021 | Network ports and listener layout | MVP | implemented | [R-ARCH-005](../spec/architecture.md) (implemented), [R-EP-001](../spec/endpoints.md) (implemented), [R-HA-028](../spec/ha-and-helm.md) (implemented) |
 | HA-022 | Load balancer in front of the cluster | MVP | implemented | [R-HA-037](../spec/ha-and-helm.md) (implemented) |
-| HA-023 | Health endpoints for load balancers and probes | MVP | specified | [R-HA-008](../spec/ha-and-helm.md), [R-OPS-001](../spec/operations-and-observability.md) (implemented) |
-| HA-024 | Proxy requirements for large and long transfers | MVP | specified | [R-ARCH-005](../spec/architecture.md) (implemented), [R-HA-039](../spec/ha-and-helm.md) |
+| HA-023 | Health endpoints for load balancers and probes | MVP | implemented | [R-HA-008](../spec/ha-and-helm.md) (implemented), [R-OPS-001](../spec/operations-and-observability.md) (implemented) |
+| HA-024 | Proxy requirements for large and long transfers | MVP | implemented | [R-ARCH-005](../spec/architecture.md) (implemented), [R-HA-039](../spec/ha-and-helm.md) (implemented) |
 | HA-025 | Forwarded headers and the public base URL | MVP | implemented | [R-ARCH-006](../spec/architecture.md) (implemented), [R-EP-003](../spec/endpoints.md) (implemented), [R-HA-040](../spec/ha-and-helm.md) (implemented) |
 | HA-026 | Reverse-proxy configuration generator | P2 | open | – |
 | HA-027 | Container-registry routing at the edge | P1 | implemented | [R-EP-007](../spec/endpoints.md) (implemented), [R-HA-041](../spec/ha-and-helm.md) (implemented) |
@@ -943,9 +943,9 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 | HA-059 | Non-PostgreSQL database engines | Out of scope | open | – |
 | HA-060 | Database provisioning | MVP | implemented | [R-HA-014](../spec/ha-and-helm.md) (implemented) |
 | HA-061 | Database connection settings | MVP | specified | [R-HA-015](../spec/ha-and-helm.md) |
-| HA-062 | Connection pool sizing and the cluster-wide connection budget | MVP | implemented | [R-ARCH-019](../spec/architecture.md) (implemented), [R-HA-016](../spec/ha-and-helm.md) (implemented), [R-HA-058](../spec/ha-and-helm.md) (implemented) |
+| HA-062 | Connection pool sizing and the cluster-wide connection budget | MVP | specified | [R-ARCH-019](../spec/architecture.md) (implemented), [R-HA-016](../spec/ha-and-helm.md) (implemented), [R-HA-058](../spec/ha-and-helm.md) |
 | HA-063 | TLS to the database | MVP | specified | [R-HA-015](../spec/ha-and-helm.md) |
-| HA-064 | PostgreSQL high availability and failover | MVP | specified | [R-HA-009](../spec/ha-and-helm.md) |
+| HA-064 | PostgreSQL high availability and failover | MVP | implemented | [R-HA-009](../spec/ha-and-helm.md) (implemented) |
 | HA-065 | Database password rotation without downtime | P1 | implemented | [R-HA-017](../spec/ha-and-helm.md) (implemented) |
 | HA-066 | Schema migration on upgrade | MVP | implemented | [R-ARCH-026](../spec/architecture.md) (implemented), [R-HA-018](../spec/ha-and-helm.md) (implemented), [R-HA-019](../spec/ha-and-helm.md) (implemented) |
 | HA-067 | Hardware sizing tiers | MVP | implemented | [R-HA-050](../spec/ha-and-helm.md) (implemented) |
@@ -968,7 +968,7 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 Catalog page: [operations-and-monitoring.md](../features/operations-and-monitoring.md) · specified by priority: MVP 17 of 17 · P1 19 of 23 · P2 7 of 34 · Later 0 of 1 · Out of scope 0 of 25
 
 <details>
-<summary>100 features: 43 specified, 57 open, 28 implemented</summary>
+<summary>100 features: 43 specified, 57 open, 27 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -1003,8 +1003,8 @@ Catalog page: [operations-and-monitoring.md](../features/operations-and-monitori
 | OPS-029 | Syslog forwarding | P2 | open | – |
 | OPS-030 | Log analytics integrations | P2 | open | – |
 | OPS-031 | Support bundle | P1 | specified | [R-OPS-027](../spec/operations-and-observability.md) |
-| OPS-032 | Scheduled system backups | P2 | implemented | [R-API-050](../spec/api-and-ui.md) (implemented), [R-UI-048](../spec/api-and-ui.md) (implemented), [R-BAK-001](../spec/backup-and-restore.md) (implemented), [R-BAK-002](../spec/backup-and-restore.md) (implemented), [R-BAK-003](../spec/backup-and-restore.md) (implemented), [R-BAK-006](../spec/backup-and-restore.md) (implemented), [R-BAK-008](../spec/backup-and-restore.md) (implemented), [R-BAK-009](../spec/backup-and-restore.md) (implemented), [R-BAK-010](../spec/backup-and-restore.md) (implemented), [R-BAK-011](../spec/backup-and-restore.md) (implemented), [R-BAK-012](../spec/backup-and-restore.md) (implemented), [R-BAK-013](../spec/backup-and-restore.md) (implemented), [R-BAK-014](../spec/backup-and-restore.md) (implemented), [R-BAK-016](../spec/backup-and-restore.md) (implemented), [R-BAK-017](../spec/backup-and-restore.md) (implemented), [R-BAK-018](../spec/backup-and-restore.md) (implemented), [R-BAK-029](../spec/backup-and-restore.md) (implemented), [R-HA-060](../spec/ha-and-helm.md) (implemented) |
-| OPS-033 | Component backup and disaster recovery | P1 | specified | [R-BAK-001](../spec/backup-and-restore.md) (implemented), [R-BAK-005](../spec/backup-and-restore.md) (implemented), [R-BAK-006](../spec/backup-and-restore.md) (implemented), [R-BAK-015](../spec/backup-and-restore.md) (implemented), [R-BAK-019](../spec/backup-and-restore.md) (implemented), [R-BAK-026](../spec/backup-and-restore.md) (implemented), [R-BAK-028](../spec/backup-and-restore.md) (implemented), [R-HA-060](../spec/ha-and-helm.md) (implemented), [R-HA-023](../spec/ha-and-helm.md) (implemented), [R-HA-024](../spec/ha-and-helm.md) (implemented), [R-HA-025](../spec/ha-and-helm.md) (implemented), [R-HA-026](../spec/ha-and-helm.md) |
+| OPS-032 | Scheduled system backups | P2 | specified | [R-API-050](../spec/api-and-ui.md) (implemented), [R-UI-048](../spec/api-and-ui.md) (implemented), [R-BAK-001](../spec/backup-and-restore.md) (implemented), [R-BAK-002](../spec/backup-and-restore.md) (implemented), [R-BAK-003](../spec/backup-and-restore.md) (implemented), [R-BAK-006](../spec/backup-and-restore.md) (implemented), [R-BAK-008](../spec/backup-and-restore.md) (implemented), [R-BAK-009](../spec/backup-and-restore.md) (implemented), [R-BAK-010](../spec/backup-and-restore.md) (implemented), [R-BAK-011](../spec/backup-and-restore.md) (implemented), [R-BAK-012](../spec/backup-and-restore.md) (implemented), [R-BAK-013](../spec/backup-and-restore.md) (implemented), [R-BAK-014](../spec/backup-and-restore.md) (implemented), [R-BAK-016](../spec/backup-and-restore.md) (implemented), [R-BAK-017](../spec/backup-and-restore.md) (implemented), [R-BAK-018](../spec/backup-and-restore.md) (implemented), [R-BAK-029](../spec/backup-and-restore.md) (implemented), [R-HA-060](../spec/ha-and-helm.md) |
+| OPS-033 | Component backup and disaster recovery | P1 | specified | [R-BAK-001](../spec/backup-and-restore.md) (implemented), [R-BAK-005](../spec/backup-and-restore.md) (implemented), [R-BAK-006](../spec/backup-and-restore.md) (implemented), [R-BAK-015](../spec/backup-and-restore.md) (implemented), [R-BAK-019](../spec/backup-and-restore.md) (implemented), [R-BAK-026](../spec/backup-and-restore.md) (implemented), [R-BAK-028](../spec/backup-and-restore.md) (implemented), [R-HA-060](../spec/ha-and-helm.md), [R-HA-023](../spec/ha-and-helm.md) (implemented), [R-HA-024](../spec/ha-and-helm.md) (implemented), [R-HA-025](../spec/ha-and-helm.md) (implemented), [R-HA-026](../spec/ha-and-helm.md) |
 | OPS-034 | System export | P2 | implemented | [R-BAK-001](../spec/backup-and-restore.md) (implemented), [R-BAK-003](../spec/backup-and-restore.md) (implemented), [R-BAK-005](../spec/backup-and-restore.md) (implemented) |
 | OPS-035 | System import | P2 | implemented | [R-BAK-012](../spec/backup-and-restore.md) (implemented), [R-BAK-020](../spec/backup-and-restore.md) (implemented), [R-BAK-021](../spec/backup-and-restore.md) (implemented), [R-BAK-023](../spec/backup-and-restore.md) (implemented), [R-BAK-029](../spec/backup-and-restore.md) (implemented) |
 | OPS-036 | Repository export | P2 | open | – |
@@ -1256,7 +1256,7 @@ Catalog page: [distribution-and-lifecycle.md](../features/distribution-and-lifec
 Catalog page: [security-scanning-and-curation.md](../features/security-scanning-and-curation.md) · specified by priority: MVP 18 of 18 · P1 0 of 18 · P2 0 of 17 · Later 0 of 43 · Out of scope 0 of 2
 
 <details>
-<summary>98 features: 18 specified, 80 open, 17 implemented</summary>
+<summary>98 features: 18 specified, 80 open, 13 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -1272,7 +1272,7 @@ Catalog page: [security-scanning-and-curation.md](../features/security-scanning-
 | SEC-009 | Curation policy | P1 | open | – |
 | SEC-010 | Curation policy scope | P1 | open | – |
 | SEC-011 | Curation condition model | P1 | open | – |
-| SEC-012 | Malicious package condition | MVP | implemented | [R-VULN-015](../spec/vulnerability-scanning.md) (implemented) |
+| SEC-012 | Malicious package condition | MVP | specified | [R-VULN-015](../spec/vulnerability-scanning.md) |
 | SEC-013 | Vulnerability conditions | P1 | open | – |
 | SEC-014 | Package age conditions | P1 | open | – |
 | SEC-015 | Single-version and end-of-life conditions | P2 | open | – |
@@ -1322,10 +1322,10 @@ Catalog page: [security-scanning-and-curation.md](../features/security-scanning-
 | SEC-059 | Violation notifications and webhooks | Later | open | – |
 | SEC-060 | Issue tracker integration | Later | open | – |
 | SEC-097 | Export of findings to external security dashboards | Later | open | – |
-| SEC-061 | Block downloads on violation | MVP | implemented | [R-VULN-002](../spec/vulnerability-scanning.md) (implemented), [R-VULN-015](../spec/vulnerability-scanning.md) (implemented), [R-VULN-016](../spec/vulnerability-scanning.md) (implemented) |
-| SEC-062 | Block downloads of not-yet-scanned artifacts | MVP | implemented | [R-VULN-015](../spec/vulnerability-scanning.md) (implemented) |
+| SEC-061 | Block downloads on violation | MVP | specified | [R-VULN-002](../spec/vulnerability-scanning.md) (implemented), [R-VULN-015](../spec/vulnerability-scanning.md), [R-VULN-016](../spec/vulnerability-scanning.md) (implemented) |
+| SEC-062 | Block downloads of not-yet-scanned artifacts | MVP | specified | [R-VULN-015](../spec/vulnerability-scanning.md) |
 | SEC-063 | Download status check | MVP | implemented | [R-VULN-020](../spec/vulnerability-scanning.md) (implemented) |
-| SEC-064 | Global blocking overrides | MVP | implemented | [R-VULN-015](../spec/vulnerability-scanning.md) (implemented), [R-VULN-025](../spec/vulnerability-scanning.md) (implemented) |
+| SEC-064 | Global blocking overrides | MVP | specified | [R-VULN-015](../spec/vulnerability-scanning.md), [R-VULN-025](../spec/vulnerability-scanning.md) (implemented) |
 | SEC-065 | SBOM generation | Later | open | – |
 | SEC-066 | SBOM export | Later | open | – |
 | SEC-067 | SBOM import and aggregation | Later | open | – |
@@ -3049,7 +3049,7 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-BAS-044 (implemented) | TLS on every connection of the Bastion | MVP | [bastion.md](../spec/bastion.md) |
 | R-BAS-047 (implemented) | Network policy | MVP | [bastion.md](../spec/bastion.md) |
 | R-BAS-048 (implemented) | Integration suite against an in-process main installation | MVP | [bastion.md](../spec/bastion.md) |
-| R-BAS-049 (implemented) | End-to-end suite on kind with npm and NuGet | MVP | [bastion.md](../spec/bastion.md) |
+| R-BAS-049 | End-to-end suite on kind with npm and NuGet | MVP | [bastion.md](../spec/bastion.md) |
 | R-EP-002 (implemented) | Endpoint identity comes from the listener | MVP | [endpoints.md](../spec/endpoints.md) |
 | R-EP-004 (implemented) | TLS on endpoint listeners: certificates by SNI, wildcard certificates, reload | MVP | [endpoints.md](../spec/endpoints.md) |
 | R-EP-006 (implemented) | Host-root binding: the reserved mechanism | MVP | [endpoints.md](../spec/endpoints.md) |
@@ -3088,17 +3088,17 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-OCI-035 (implemented) | Test suites | P1 | [formats/oci.md](../spec/formats/oci.md) |
 | R-CI-029 (implemented) | CI state across replicas, Valkey outages and restores | MVP | [gitlab-ci-oidc.md](../spec/gitlab-ci-oidc.md) |
 | R-CI-030 (implemented) | Background tasks of the CI exchange | MVP | [gitlab-ci-oidc.md](../spec/gitlab-ci-oidc.md) |
-| R-HA-056 (implemented) | Valkey with Sentinel: connection and supported topologies | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |
+| R-HA-056 | Valkey with Sentinel: connection and supported topologies | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |
 | R-HA-057 | Valkey failover, outage and degraded mode | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |
 | R-HA-054 (implemented) | Revocation journal in object storage | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |
 | R-HA-055 | Optional content host at the edge | P1 | [ha-and-helm.md](../spec/ha-and-helm.md) |
-| R-HA-051 (implemented) | Local development profile | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |
+| R-HA-051 | Local development profile | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |
 | R-HA-052 | Failure-injection test suite | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |
 | R-AUTH-012 (implemented) | CSRF protection for cookie-authenticated requests | MVP | [identity-and-authentication.md](../spec/identity-and-authentication.md) |
 | R-AUTH-021 (implemented) | Dormant-user deactivation | P1 | [identity-and-authentication.md](../spec/identity-and-authentication.md) |
 | R-AUTH-043 (implemented) | Scheduled authentication tasks | MVP | [identity-and-authentication.md](../spec/identity-and-authentication.md) |
-| R-OPS-045 | Valkey and coordination observability | MVP | [operations-and-observability.md](../spec/operations-and-observability.md) |
-| R-OPS-046 (implemented) | Operational signals for availability, horizontal scale and backup | MVP | [operations-and-observability.md](../spec/operations-and-observability.md) |
+| R-OPS-045 (implemented) | Valkey and coordination observability | MVP | [operations-and-observability.md](../spec/operations-and-observability.md) |
+| R-OPS-046 | Operational signals for availability, horizontal scale and backup | MVP | [operations-and-observability.md](../spec/operations-and-observability.md) |
 | R-OPS-013 (implemented) | Secret redaction | MVP | [operations-and-observability.md](../spec/operations-and-observability.md) |
 | R-OPS-014 (implemented) | Event registry | MVP | [operations-and-observability.md](../spec/operations-and-observability.md) |
 | R-OPS-018 (implemented) | Trace context and OpenTelemetry export | MVP | [operations-and-observability.md](../spec/operations-and-observability.md) |
@@ -3125,13 +3125,13 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-STOR-048 | Client-side encryption of stored content | P2 | [storage.md](../spec/storage.md) |
 | R-STOR-027 (implemented) | Integrity scrub | P1 | [storage.md](../spec/storage.md) |
 | R-STOR-049 (implemented) | The storage of a project | MVP | [storage.md](../spec/storage.md) |
-| R-STOR-036 | Behavior during an object-store outage | MVP | [storage.md](../spec/storage.md) |
-| R-STOR-046 (implemented) | Storage work per role and across replicas | MVP | [storage.md](../spec/storage.md) |
+| R-STOR-036 (implemented) | Behavior during an object-store outage | MVP | [storage.md](../spec/storage.md) |
+| R-STOR-046 | Storage work per role and across replicas | MVP | [storage.md](../spec/storage.md) |
 | R-STOR-047 (implemented) | Storage state in backups and restores | MVP | [storage.md](../spec/storage.md) |
 | R-VULN-014 (implemented) | History and retention | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
 | R-VULN-024 (implemented) | Metrics, audit events, alerts and status | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
 | R-VULN-026 (implemented) | Vulnerability data in backups and restores | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
-| R-VULN-027 (implemented) | Across replicas, without Valkey and during a drain | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
+| R-VULN-027 | Across replicas, without Valkey and during a drain | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
 | R-VULN-028 (implemented) | Performance bounds | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
 | R-VULN-029 | Acceptance suite | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
 | R-VULN-031 | Time-limited dismissals | P1 | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |

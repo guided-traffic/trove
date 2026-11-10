@@ -51,9 +51,9 @@ see [Honesty notes](#honesty-notes).
 <!-- coverage-gen:begin priority -->
 | Priority | Features | Specified | Open | Specified share | Covered by an MVP requirement | Implemented |
 |---|---:|---:|---:|---:|---:|---:|
-| **MVP** | 394 | 394 | 0 | 100% | 394 | 369 |
+| **MVP** | 394 | 394 | 0 | 100% | 394 | 370 |
 | **P1** | 514 | 330 | 184 | 64.2% | 68 | 120 |
-| **P2** | 885 | 48 | 837 | 5.4% | 12 | 37 |
+| **P2** | 885 | 48 | 837 | 5.4% | 12 | 36 |
 | **Later** | 374 | 1 | 373 | 0.3% | 0 | 1 |
 | **Out of scope** | 72 | 0 | 72 | 0% | 0 | 0 |
 | **Total** | 2,239 | 773 | 1,466 | 34.5% | 474 | 527 |
@@ -189,7 +189,7 @@ table.
 |---|---|---|---:|---|
 | **npm-only team** | 211 of 211 specified, 0 open (100%) | 322 of 370 specified, 48 open (87.0%) | 244 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
 | **.NET team** | 209 of 209 specified, 0 open (100%) | 312 of 360 specified, 48 open (86.7%) | 238 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
-| **platform/ops team** | 269 of 269 specified, 0 open (100%) | 448 of 468 specified, 20 open (95.7%) | 298 | Repositories 9; Operations, monitoring and configuration 4; High availability and deployment 3 |
+| **platform/ops team** | 269 of 269 specified, 0 open (100%) | 448 of 468 specified, 20 open (95.7%) | 303 | Repositories 9; Operations, monitoring and configuration 4; High availability and deployment 3 |
 
 Pages counted per audience:
 
