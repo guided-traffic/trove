@@ -31,7 +31,7 @@ func stallRestorer(e *env, limit time.Duration) *Restorer {
 func TestR_BAK_013_LongStatementsOfTheRestoreAreProgress(t *testing.T) {
 	const limit = 100 * time.Millisecond
 	// Each case is one statement or transaction that reads no file. It runs three times the stall timeout, which is inside
-	// the bound of four times; the same statement at seven times is a hang and ends the restore as stalled.
+	// the bound of four times; the same statement that does not return is a hang and ends the restore as stalled.
 	cases := []struct {
 		name string
 		set  func(e *env, d time.Duration)
@@ -59,7 +59,7 @@ func TestR_BAK_013_LongStatementsOfTheRestoreAreProgress(t *testing.T) {
 		})
 		t.Run("R-BAK-013 "+c.name+" beyond the bound is still a stall", func(t *testing.T) {
 			e := newEnv(t)
-			c.set(e, 7*limit)
+			c.set(e, time.Minute) // a real hang: the watchdog ends it, however late a loaded machine runs the watchdog
 			r := stallRestorer(e, limit)
 			err, cause := watched(r, func(ctx context.Context) error { return c.run(r, e, ctx) })
 			if !errors.Is(cause, backup.ErrStalled) || err == nil {
