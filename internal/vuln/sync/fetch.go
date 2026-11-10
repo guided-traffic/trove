@@ -389,7 +389,7 @@ func (s *Service) fetchRecord(ctx context.Context, ecosystem, id string, gate *b
 	defer cancel()
 	begin := time.Now()
 	var timedOut atomic.Bool
-	timer := time.AfterFunc(s.partTimeout(), func() {
+	timer := s.newPartTimer(func() {
 		timedOut.Store(true)
 		cancel()
 	})
@@ -451,11 +451,14 @@ func (s *Service) fetchRecord(ctx context.Context, ecosystem, id string, gate *b
 }
 
 // partTimeout is the timeout of one record or one part of the change file.
-func (s *Service) partTimeout() time.Duration {
-	if s.partTimeoutOverride > 0 {
-		return s.partTimeoutOverride
+func (s *Service) partTimeout() time.Duration { return PartTimeout }
+
+// newPartTimer starts the timeout of one record; f runs when it ends.
+func (s *Service) newPartTimer(f func()) partTimer {
+	if s.startPartTimer != nil {
+		return s.startPartTimer(s.partTimeout(), f)
 	}
-	return PartTimeout
+	return time.AfterFunc(s.partTimeout(), f)
 }
 
 // fetchDocument reads a document with the conditional header and a size bound; notModified is true for a 304.

@@ -33,6 +33,8 @@ type byteGate struct {
 	used, limit int64
 	// peak is the most that was ever counted at once.
 	peak int64
+	// waiting is the number of acquire calls that wait right now.
+	waiting int
 }
 
 func newByteGate(limit int64) *byteGate {
@@ -55,7 +57,9 @@ func (g *byteGate) acquire(ctx context.Context, n int64) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		g.waiting++
 		g.cond.Wait()
+		g.waiting--
 	}
 	g.used += n
 	g.peak = max(g.peak, g.used)

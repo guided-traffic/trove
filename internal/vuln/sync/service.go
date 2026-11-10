@@ -140,8 +140,14 @@ type Service struct {
 	states *States
 	log    *slog.Logger
 	mu     stdsync.Mutex
-	// partTimeoutOverride replaces PartTimeout in a test that scales it down.
-	partTimeoutOverride time.Duration
+	// startPartTimer replaces time.AfterFunc for the timeout of a record, so that a test fires it by hand; nil means the clock.
+	startPartTimer func(d time.Duration, f func()) partTimer
+}
+
+// partTimer is the part of *time.Timer that the timeout of a record uses.
+type partTimer interface {
+	Stop() bool
+	Reset(d time.Duration) bool
 }
 
 // New creates the service and registers the cache of the source state.

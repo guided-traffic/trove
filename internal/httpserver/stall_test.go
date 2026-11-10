@@ -151,7 +151,7 @@ func TestStallDeadlineCutsAClientThatNeverReads(t *testing.T) {
 		}()
 		select {
 		case <-closed:
-		case <-time.After(5 * time.Second): // 16 stall timeouts; without the armed deadline nothing cuts it
+		case <-time.After(time.Minute): // only the failure waits this long: without the armed deadline nothing cuts the connection
 			t.Fatal("the connection of a client that reads nothing was not closed")
 		}
 	})

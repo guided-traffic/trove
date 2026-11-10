@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	stdsync "sync"
 	"testing"
 	"time"
 
@@ -205,8 +206,66 @@ func TestR_VULN_004_TheByteGateWaitsAndLetsALoneBodyPass(t *testing.T) {
 	}
 }
 
-// R-VULN-004, Q-VULN-120: the timeout of a record covers its request and its body, not the wait at the byte gate: a decoder that
-// stalls for several times the timeout makes the waiting requests neither fail nor end as upstream_timeout.
+// fakeTimers are the timeouts of the records, fired by the test and never by the clock.
+type fakeTimers struct {
+	mu stdsync.Mutex
+	ts []*fakeTimer
+}
+
+type fakeTimer struct {
+	f     func()
+	armed bool
+}
+
+func (c *fakeTimers) start(_ time.Duration, f func()) partTimer {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	t := &fakeTimer{f: f, armed: true}
+	c.ts = append(c.ts, t)
+	return &fakeHandle{c: c, t: t}
+}
+
+type fakeHandle struct {
+	c *fakeTimers
+	t *fakeTimer
+}
+
+func (h *fakeHandle) Stop() bool {
+	h.c.mu.Lock()
+	defer h.c.mu.Unlock()
+	was := h.t.armed
+	h.t.armed = false
+	return was
+}
+
+func (h *fakeHandle) Reset(time.Duration) bool {
+	h.c.mu.Lock()
+	defer h.c.mu.Unlock()
+	was := h.t.armed
+	h.t.armed = true
+	return was
+}
+
+// fireArmed ends every timeout that is running now, as if its time had passed.
+func (c *fakeTimers) fireArmed() {
+	c.mu.Lock()
+	var fire []func()
+	for _, t := range c.ts {
+		if t.armed {
+			t.armed = false
+			fire = append(fire, t.f)
+		}
+	}
+	c.mu.Unlock()
+	for _, f := range fire {
+		f()
+	}
+}
+
+// R-VULN-004, Q-VULN-120: the timeout of a record covers its request and its body, not the wait at the byte gate: while a decoder
+// holds the gate and the other requests wait at it, the timeouts that are running when "much more than the timeout" has passed
+// end no waiting request. The test fires the running timeouts itself once every other request waits at the gate, so that no
+// wall-clock bound decides the outcome: a timeout that still ran during the wait would cancel the request and fail the record.
 func TestR_VULN_004_AStallAtTheByteGateIsNoUpstreamTimeout(t *testing.T) {
 	body := `{"id":"GHSA-X","modified":"2026-10-01T00:00:00Z","summary":"` + strings.Repeat("x", 400<<10) + `"}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -217,7 +276,8 @@ func TestR_VULN_004_AStallAtTheByteGateIsNoUpstreamTimeout(t *testing.T) {
 	var cfg config.Vulnerabilities
 	cfg.Sources.OSV.BaseURL = srv.URL + "/"
 	cfg.Sources.OSV.MaxRecordSize = config.MiB
-	s := &Service{o: Options{HTTP: srv.Client(), Config: cfg}, log: slog.New(slog.DiscardHandler), partTimeoutOverride: 100 * time.Millisecond}
+	clock := &fakeTimers{}
+	s := &Service{o: Options{HTTP: srv.Client(), Config: cfg}, log: slog.New(slog.DiscardHandler), startPartTimer: clock.start}
 	ids := []string{"GHSA-1", "GHSA-2", "GHSA-3", "GHSA-4", "GHSA-5", "GHSA-6"}
 	stream := s.fetchStream(context.Background(), "npm", ids, 500<<10) // one body fits; the others wait
 	n := 0
@@ -226,7 +286,21 @@ func TestR_VULN_004_AStallAtTheByteGateIsNoUpstreamTimeout(t *testing.T) {
 			t.Fatalf("record %s: %v (found %v)", f.id, f.err, f.found)
 		}
 		if n == 0 {
-			time.Sleep(500 * time.Millisecond) // five times the timeout, with the other requests waiting at the gate
+			// The decoder stalls: it keeps the first body until every other request waits at the gate and the timeouts ran out.
+			deadline := time.Now().Add(time.Minute)
+			for {
+				stream.gate.mu.Lock()
+				waiting := stream.gate.waiting
+				stream.gate.mu.Unlock()
+				if waiting == len(ids)-1 {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("%d of %d requests wait at the gate", waiting, len(ids)-1)
+				}
+				time.Sleep(time.Millisecond)
+			}
+			clock.fireArmed()
 		}
 		stream.gate.release(f.held)
 		n++

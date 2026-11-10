@@ -383,8 +383,7 @@ run 42839263211 (2513be80) was still running with `unit tests` and `e2e (push)` 
 
 **Gating job, blocks the next release**
 
-- `unit tests`, `TestR_VULN_004_AStallAtTheByteGateIsNoUpstreamTimeout` red in run 42839263211 and 42825155671 (`records_test.go:226`, `upstream_timeout ... found false`): cause not looked at. Confirmed in the logs.
-- `GOMAXPROCS` 8 was set on 2026-11-10 because six time-bound unit tests failed at once with 32 threads. One following run had no timing failure; whether that lasts is not known. Remaining wall-clock bounds fail on the runner one test at a time: replace a bound by a real hang or an event where the test allows it, as in `TestR_BAK_013` and `TestR_BAS_039`.
+- `GOMAXPROCS` 8 was set on 2026-11-10 because six time-bound unit tests failed at once with 32 threads (run 42825155671). At 8 threads only `TestR_VULN_004` failed (run 42839263211), and that test no longer has a wall-clock bound. Whether 8 threads hold for the others is not known. `TestR_BAK_006_AbortAfterCancellationStillGoesOutWithinTheGrace` and `TestR_STOR_033_AReaderThatPausesIsNotAStalledStore` rest on timing inside the product (the abort grace, the idle timeout), so a test-only event would not hold them: if they fail again at 8 threads they need their own change. Elsewhere replace a bound by a real hang or an event where the test allows it, as in `TestR_BAK_013`, `TestR_BAS_039` and `TestR_VULN_004`.
 
 **Integration and e2e legs (no release gate, still to be fixed)**
 
