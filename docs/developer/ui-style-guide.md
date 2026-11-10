@@ -168,7 +168,8 @@ These differ from the reference on the owner's decision. Everything else that di
 The guide was written on 2026-11-10 from the owner's screenshots of the reference's member list and general settings. Screens
 written earlier were not reviewed against it, so this list is what is known, not all there is.
 
-- No other settings page has been moved to one column yet; the worked example is [project-settings.ts](../../web/src/app/features/projects/project-settings.ts).
+- Moved to one column ([Q-UI-222](../spec/api-and-ui.md#q-ui-222--which-settings-pages-are-one-column-now-and-what-a-sections-save-button-is-called)): the project's settings ([project-settings.ts](../../web/src/app/features/projects/project-settings.ts), the worked example), the general and the authentication settings, the service account and the group. Where a page has more than one save button, each is **Save changes** with the group in a visually hidden suffix, and sends only its group.
+- Not moved yet: the repository's settings ([repository-detail.html](../../web/src/app/features/repositories/repository-detail.html), a tabbed editor with a stored-document tab and a move dialog), the user page (Attributes card, key-value list and a separate correction form), the endpoint, issuer and policy pages. The members, roles and policies lists of the group page and the roles card of the service account are still cards.
 
 ## What this does not cover
 

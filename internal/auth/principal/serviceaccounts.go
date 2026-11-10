@@ -27,6 +27,38 @@ type ServiceAccount struct {
 	// account (R-AUTHZ-026, Q-AUTHZ-169). It is set when the account is created and
 	// never changes.
 	Project string
+	// IsAdmin is whether the account holds the administrator role now (Q-AUTH-209), derived from the role bindings and
+	// never stored. The read methods fill it ([Manager.GetServiceAccount], [Manager.ListServiceAccounts]); a record
+	// from a write transaction carries false. A project's account holds no system role, so it is false there.
+	IsAdmin bool
+}
+
+// AdminHolders returns the IDs among ids that hold the administrator role now: by a binding on the principal itself, by a
+// binding on a group it belongs to, or as the break-glass account (Q-AUTH-209). One query however many IDs there are; an
+// ID that is not a principal is not in the answer.
+func (m *Manager) AdminHolders(ctx context.Context, ids []string) (map[string]bool, error) {
+	out := make(map[string]bool, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	err := m.db.Read(ctx, func(db q.DBTX) error {
+		held, err := adminHolders(ctx, q.New(db), ids)
+		out = held
+		return err
+	})
+	return out, DBErr("principal.AdminHolders", err)
+}
+
+func adminHolders(ctx context.Context, qs *q.Queries, ids []string) (map[string]bool, error) {
+	rows, err := qs.IdentityAdminHolderIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(rows))
+	for _, id := range rows {
+		out[id] = true
+	}
+	return out, nil
 }
 
 // Object is the account's address: its project and its name within the project.
@@ -155,8 +187,13 @@ func (m *Manager) GetServiceAccount(ctx context.Context, name string) (ServiceAc
 func (m *Manager) getAccount(ctx context.Context, o qname.Object) (ServiceAccount, error) {
 	var sa ServiceAccount
 	err := m.db.Read(ctx, func(db q.DBTX) error {
+		qs := q.New(db)
 		var err error
-		sa, err = loadAccountOf(ctx, q.New(db), o)
+		if sa, err = loadAccountOf(ctx, qs, o); err != nil || sa.Project != "" {
+			return err
+		}
+		held, err := adminHolders(ctx, qs, []string{sa.ID})
+		sa.IsAdmin = held[sa.ID]
 		return err
 	})
 	if err == ErrNotFound { //nolint:errorlint // sentinel returned unwrapped by loadAccountOf
@@ -212,7 +249,20 @@ func (m *Manager) ListServiceAccounts(ctx context.Context, query, project, after
 		for _, r := range rows {
 			out = append(out, ServiceAccount{Revision: r.Revision, ID: r.ID, Name: r.Name, Description: r.Description, Status: Status(r.Status), CreatedAt: r.CreatedAt.Time, Project: r.Project})
 		}
-		return nil
+		ids := make([]string, 0, len(out))
+		for _, sa := range out {
+			if sa.Project == "" {
+				ids = append(ids, sa.ID)
+			}
+		}
+		if len(ids) == 0 {
+			return nil
+		}
+		held, err := adminHolders(ctx, q.New(db), ids)
+		for i := range out {
+			out[i].IsAdmin = held[out[i].ID]
+		}
+		return err
 	})
 	return out, DBErr("principal.ListServiceAccounts", err)
 }

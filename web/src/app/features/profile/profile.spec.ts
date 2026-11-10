@@ -214,7 +214,7 @@ describe('Personal tokens (R-UI-029)', () => {
   });
 
   it('R-UI-029 an administrator\'s own admin token shows no such notice', async () => {
-    const admin = sampleToken({ description: 'admin', scope: { inherit: true, admin: true, repositories: [], system: [] } });
+    const admin = sampleToken({ description: 'admin', ownerIsAdmin: true, scope: { inherit: true, admin: true, repositories: [], system: [] } });
     const { root } = await renderScreen(ProfileTokens, {
       setup: (get) => {
         (get(TokensApi) as FakeTokensApi).tokenList = [admin];

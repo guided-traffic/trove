@@ -207,7 +207,10 @@ The registry uses the token flow of the Docker registry token authentication spe
 - **Token requests carry the scope grammar** `repository:<full name>:<action>[,<action>…]` (R-OCI-006). Docker sends one
   `scope` per resource; at most 16 entries are read, more answer 400 `invalid_request`.
 - **Insufficient scope.** A request whose registry token lacks the action the route needs answers 401 with the challenge of
-  step 1 and `error="insufficient_scope"`, so the client fetches a new token. A request whose credential allows the action by
+  step 1 and `error="insufficient_scope"`, so the client fetches a new token. The message names the scope the request needs
+  and, for a personal or service-account token that inherits its owner's rights without administrator rights, says that such a
+  token acts as a non-administrator also for an administrator owner ([Q-OCI-220](#q-oci-220--the-refusal-of-a-registry-token-names-the-scope-and-tells-a-token-without-administrator-rights-why-an-administrator-is-refused));
+  it never depends on whether the repository exists or is readable. A request whose credential allows the action by
   the token but not by the decision point answers 403 `DENIED`, or 404 `NAME_UNKNOWN` where the repository is hidden
   (R-AUTHZ-016).
 - **Realm.** The realm is built from the response base URL of the endpoint the request arrived on (R-EP-003), so it is
@@ -2178,6 +2181,23 @@ image keep their own counts. A tag is not a pre-release.
 the tag's pulls counted (a counter on the entry), or a "checked" column from `validated_at`.
 
 **Applied in the spec:** R-OCI-036. Tests: `TestR_OCI_036_AMovedTagShowsTheNewDigestAndNoSecondVersion`, `TestR_OCI_036_AGoneOrEvictedTagIsNotListed`.
+
+### Q-OCI-220 · The refusal of a registry token names the scope, and tells a token without administrator rights why an administrator is refused
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the owner created a personal token with **All permissions of the owner** as an administrator and `docker push` answered only `denied`. The token's scope is `{"inherit": true}`, which carries the owner's repository rights without administration (R-AUTH-024); an administrator holds no repository right except through the role, so the token service granted `push` for nothing and the request ended in 401 `insufficient_scope` with the text "The registry token does not grant this operation.", which says neither what is missing nor why. Two things bound what the answer may say: the token service withholds an action for a repository that does not exist and for one the caller may not read in the same way (Q-OCI-6, R-AUTHZ-016), so nothing in the answer may depend on the repository; and a caller without a credential, or with a token the stage refuses, is answered by the challenge alone.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Name the scope the request needs, and add one sentence built from the caller's own token scope when that scope is `inherit` without `admin` (chosen) | The message reads "The registry token does not grant repository:web/app/img:push." and, for a personal or service-account token of that scope, says that it carries no administrator rights, that it therefore acts as a non-administrator also for an owner who is an administrator, and that the token needs the scope Administrator | Built from the request's own address (already in the challenge) and the caller's own token; the same text for an existing, a hidden and a missing repository; says what an administrator has to do | The sentence is shown to every such token, also to a non-administrator, for whom it is irrelevant but true |
+| (b) Say which right the owner lacks on the repository | "The owner holds no deploy right on web/app" | Exact | It tells a caller without read access that the repository exists, or, by the difference to a missing one, that it does not: the leak R-AUTHZ-016 forbids |
+| (c) Ask the decision point for the owner's role and say it only to an administrator | The sentence only where it applies | No noise for a non-administrator | The enforcement point would hold the decision point and rebuild a subject from the registry token; a second path to the roles for one sentence of text |
+| (d) Leave the answer as it is | `denied` | No change | The case stays unexplained at the one place the user looks |
+
+**Choice:** (a), for a refusal of a registry token on a route that needs a scope (the 401 `insufficient_scope` of the enforcement point). The message of the 403 `DENIED` of the decision point for a trove token presented directly already names the action and the target the caller sent (R-AUTHZ-016) and is unchanged; a 404 `NAME_UNKNOWN` stays byte-identical for a hidden and a missing repository. The sentence about administrator rights is added for the types `pat` and `sat` with `inherit` and no `admin`, and for no other credential: not for an anonymous caller, not for a CI token, not for a restricted scope, not for a token that has administrator rights. **Rationale:** the facts the message uses are facts about the caller's own token and the address the caller typed, so it is safe for an authenticated principal and is the same whether the repository exists or not. The development agent would revisit (a) for (c) if the sentence confuses non-administrators, or if the answer should state the owner's role.
+
+**Applied in the spec:** R-OCI-004 (insufficient scope). Code: `insufficientText` in [enforce.go](../../../internal/api/registry/enforce.go). Tests: `TestTheInsufficientScopeRefusalSaysMoreWithoutLeaking` in [enforce_test.go](../../../internal/api/registry/enforce_test.go); `TestTheRefusalOfATokenWithoutRightsSaysWhyAndNothingAboutTheRepository` in [refusal_test.go](../../../test/integration/registry/refusal_test.go).
 
 ### Q-OCI-23 · No exposure rules and no Bastion for the format in this phase
 

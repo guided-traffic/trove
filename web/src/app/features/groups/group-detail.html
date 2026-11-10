@@ -10,8 +10,7 @@
 }
 
 @if (group(); as g) {
-  <section class="card" aria-labelledby="group-general">
-    <h2 id="group-general" i18n="@@group.general">General</h2>
+  <div class="settings">
     @if (readOnly()) {
       <p role="status" class="warn">
         <span class="material-icons" aria-hidden="true">lock</span>
@@ -32,26 +31,19 @@
     @if (editError(); as e) {
       <trove-error-notice [error]="e" />
     }
-    <form class="form-grid" (submit)="save($event)">
-      <trove-text-field i18n-label="@@group.name" label="Name" name="name" [(value)]="newName" [readonly]="readOnly() || !canWrite()" [error]="fieldError('/name')" />
+    <form (submit)="save($event)" novalidate>
+      <div class="row">
+        <trove-text-field i18n-label="@@group.name" label="Name" name="name" [(value)]="newName" [readonly]="readOnly() || !canWrite()" [error]="fieldError('/name')" />
+        <trove-text-field i18n-label="@@group.origin" label="Origin" name="origin" [value]="originLabel(g.origin)" [readonly]="true" />
+      </div>
       <trove-text-field i18n-label="@@group.description" label="Description" name="description" [(value)]="description" [readonly]="readOnly() || !canWrite()" [error]="fieldError('/description')" />
       <trove-checkbox [checked]="autoJoin()" [disabled]="readOnly() || !canWrite()" (checkedChange)="autoJoin.set($event)">
         <ng-container i18n="@@group.auto-join">Every user joins this group automatically</ng-container>
       </trove-checkbox>
-      <dl class="facts">
-        <dt i18n="@@group.origin">Origin</dt>
-        <dd>{{ originLabel(g.origin) }}</dd>
-        <dt i18n="@@group.created">Created</dt>
-        <dd>{{ g.createdAt | date: 'medium' }}</dd>
-      </dl>
       @if (canWrite() && !readOnly()) {
-        <div class="row-actions">
-          <button class="btn btn-confirm" type="submit" [disabled]="busy()" i18n="@@group.save">Save group</button>
-          <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="remove()" i18n="@@group.delete">Delete group</button>
-        </div>
+        <button class="btn btn-confirm" type="submit" [disabled]="busy() || !dirty()" i18n="@@group.save-changes">Save changes</button>
       }
     </form>
-  </section>
 
   <section class="card" aria-labelledby="group-members">
     <h2 id="group-members" i18n="@@group.members">Members ({{ g.memberCount }})</h2>
@@ -150,4 +142,17 @@
       }
     </section>
   }
+
+  @if (canWrite() && !readOnly()) {
+    <trove-settings-section
+      i18n-heading="@@group.advanced"
+      heading="Advanced"
+      i18n-description="@@group.advanced-hint"
+      description="Delete this group."
+    >
+      <p class="muted" i18n="@@group.delete-note">Deleting the group removes its memberships and the role bindings of the group. Policies that name it stop granting to its members.</p>
+      <button class="btn btn-danger" type="button" [disabled]="busy()" (click)="remove()" i18n="@@group.delete">Delete group</button>
+    </trove-settings-section>
+  }
+  </div>
 }

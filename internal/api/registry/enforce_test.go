@@ -20,6 +20,7 @@ import (
 	"github.com/guided-traffic/trove/internal/auth"
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/auth/registrytoken"
+	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/config"
@@ -462,4 +463,61 @@ func TestAlsoChecksTheMountsSourceActionByAction(t *testing.T) {
 	if err := check(both, source, 0); err == nil {
 		t.Fatal("no action passed")
 	}
+}
+
+// Q-OCI-220: the refusal of a registry token names the missing scope and, for a token without administrator rights, says why an
+// administrator is refused; it is the same text for an existing, a hidden and a missing repository, because it is built from the
+// request's address and the caller's own token scope alone.
+func TestTheInsufficientScopeRefusalSaysMoreWithoutLeaking(t *testing.T) {
+	m := newMount(t, nil, "")
+	refusal := func(path string, sc *scope.Scope, typ httpserver.TokenType) string {
+		t.Helper()
+		r := httptest.NewRequestWithContext(context.Background(), "POST", path, nil)
+		p := httpserver.Principal{
+			Kind: httpserver.KindUser, ID: alice.ID,
+			Credential: httpserver.Credential{Registry: &httpserver.RegistryGrant{}, Scope: sc, TokenType: typ},
+		}
+		ctx := httpserver.WithResolved(r.Context(), httpserver.RequestInfo{BaseURL: "https://trove.test"})
+		err := m.enforcer.Check(r.WithContext(httpserver.WithPrincipal(ctx, p)))
+		e, ok := errs.As(err)
+		if !ok || e.Code != errs.CodeOCIInsufficientScope {
+			t.Fatalf("no insufficient_scope refusal: %v", err)
+		}
+		return e.Detail
+	}
+	t.Run("an authenticated token without administrator rights is told what the grant lacks and why", func(t *testing.T) {
+		got := refusal(exampleBase+"app/blobs/uploads/", &scope.Scope{Inherit: true}, httpserver.TokenPAT)
+		for _, want := range []string{"does not grant repository:web/docker-local/app:push", "no administrator rights", "scope Administrator"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("the message lacks %q: %s", want, got)
+			}
+		}
+	})
+	t.Run("a token with administrator rights, a restricted token and a CI token get no administrator advice", func(t *testing.T) {
+		for name, c := range map[string]struct {
+			sc  *scope.Scope
+			typ httpserver.TokenType
+		}{
+			"admin":      {&scope.Scope{Inherit: true, Admin: true}, httpserver.TokenPAT},
+			"restricted": {&scope.Scope{}, httpserver.TokenPAT},
+			"ci":         {&scope.Scope{Inherit: true}, httpserver.TokenCIT},
+			"none":       {nil, httpserver.TokenPAT},
+		} {
+			got := refusal(exampleBase+"app/blobs/uploads/", c.sc, c.typ)
+			if strings.Contains(got, "administrator") {
+				t.Errorf("%s: %s", name, got)
+			}
+			if !strings.Contains(got, "does not grant repository:web/docker-local/app:push") {
+				t.Errorf("%s: the message does not name the scope: %s", name, got)
+			}
+		}
+	})
+	t.Run("the text does not depend on the repository: only on the name the client sent", func(t *testing.T) {
+		sc := &scope.Scope{Inherit: true}
+		a := refusal("/v2/web/docker-local/app/blobs/uploads/", sc, httpserver.TokenPAT)
+		b := refusal("/v2/web/does-not-exist/app/blobs/uploads/", sc, httpserver.TokenPAT)
+		if strings.ReplaceAll(a, "docker-local", "X") != strings.ReplaceAll(b, "does-not-exist", "X") {
+			t.Fatalf("the two refusals differ beyond the name sent:\n%s\n%s", a, b)
+		}
+	})
 }

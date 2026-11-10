@@ -34,6 +34,24 @@ describe('Token administration (R-UI-030)', () => {
     expect(await seriousViolations(root)).toEqual([]);
   });
 
+  it('Q-UI-221 Q-AUTH-209 the list of other people\'s tokens says which administrator tokens have inactive rights', async () => {
+    const adminScope = { inherit: true, admin: true, repositories: [], system: [] };
+    const { root } = await renderScreen(TokenAdmin, {
+      setup: (api) => {
+        (api(TokensApi) as FakeTokensApi).tokenList = [
+          sampleToken({ id: 't1', description: 'lost the role', scope: adminScope, ownerIsAdmin: false }),
+          sampleToken({ id: 't2', description: 'still admin', scope: adminScope, ownerIsAdmin: true }),
+          sampleToken({ id: 't3', description: 'plain', ownerIsAdmin: false }),
+        ];
+      },
+    });
+    const rows = root.querySelectorAll('tbody tr');
+    expect(text(rows[0]!)).toContain('Administrator rights inactive: the owner is no administrator now');
+    expect(text(rows[1]!)).not.toContain('Administrator rights inactive');
+    expect(text(rows[2]!)).not.toContain('Administrator rights inactive');
+    expect(await seriousViolations(root)).toEqual([]);
+  });
+
   it('R-UI-030 the state filter "All" also lists revoked tokens', async () => {
     const { fixture, root } = await renderScreen(TokenAdmin);
     await openFilters(fixture, root);

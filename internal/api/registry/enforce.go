@@ -468,11 +468,29 @@ func scopeName(t route.Target) string {
 
 // insufficient is the 401 of R-OCI-004 for a registry token whose grant lacks what the request needs: the challenge names
 // the scope to ask for, so the client fetches a new token. Its code is its own, so logs and metrics tell it from a rejected
-// credential.
+// credential. The message says what the grant lacks and, for a token that cannot hold administrator power, why an administrator
+// may still be refused (Q-OCI-220); it is built from the request's own address and the caller's own token scope, never from a
+// repository, so it is the same for a repository that exists, one the caller may not read and one that does not exist.
 func (e *Enforcer) insufficient(r *http.Request, scope string) error {
 	realm, service := e.o.Realm(r)
-	return errs.E(errs.Unauthenticated, errs.CodeOCIInsufficientScope, "The registry token does not grant this operation.",
+	return errs.E(errs.Unauthenticated, errs.CodeOCIInsufficientScope, insufficientText(r, scope),
 		errs.WithChallenge(registrytoken.Challenge(realm, service, scope, registrytoken.ErrorInsufficientScope)))
+}
+
+// insufficientText is the message of the insufficient_scope refusal. scope is the challenge's scope value ("" when the request
+// names no scope to ask for).
+func insufficientText(r *http.Request, scope string) string {
+	text := "The registry token does not grant this operation."
+	if scope != "" {
+		text = "The registry token does not grant " + scope + "."
+	}
+	c := httpserver.PrincipalFrom(r.Context()).Credential
+	if sc := c.Scope; sc != nil && sc.Inherit && !sc.Admin && (c.TokenType == httpserver.TokenPAT || c.TokenType == httpserver.TokenSAT) {
+		text += " The token service grants an action only where the token's owner holds that right on a repository, and this token" +
+			" carries no administrator rights, so it acts as a non-administrator also for an owner who is an administrator." +
+			" To push or pull as an administrator, create the token with the scope Administrator."
+	}
+	return text
 }
 
 // RepositoryRoutes are the enforcer's routes of a format's routes (formats.Route): each with its name, its coarse-check action

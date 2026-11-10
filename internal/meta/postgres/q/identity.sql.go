@@ -45,6 +45,44 @@ func (q *Queries) IdentityAddMembership(ctx context.Context, arg IdentityAddMemb
 	return items, nil
 }
 
+const identityAdminHolderIDs = `-- name: IdentityAdminHolderIDs :many
+SELECT b.principal_id::text AS id
+  FROM authz_role_binding b
+ WHERE b.role = 'admin' AND b.principal_id = ANY($1::text[]::uuid[])
+UNION
+SELECT m.member_id::text AS id
+  FROM authz_role_binding b
+  JOIN group_membership m ON m.group_id = b.principal_id
+ WHERE b.role = 'admin' AND m.member_id = ANY($1::text[]::uuid[])
+UNION
+SELECT u.principal_id::text AS id
+  FROM app_user u
+ WHERE u.is_break_glass AND u.principal_id = ANY($1::text[]::uuid[])
+ORDER BY id
+`
+
+// Which of the given principals hold the role admin now (Q-AUTH-209): a binding on the principal itself, a binding on a
+// group the principal is a member of, or the break-glass account. A service account is bound directly (R-AUTH-019).
+func (q *Queries) IdentityAdminHolderIDs(ctx context.Context, ids []string) ([]string, error) {
+	rows, err := q.db.Query(ctx, identityAdminHolderIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const identityAdminHolders = `-- name: IdentityAdminHolders :one
 SELECT (SELECT count(*) FROM principal p
          WHERE p.status = 'active' AND p.kind IN ('user', 'service_account')

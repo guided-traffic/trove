@@ -9558,15 +9558,6 @@
         <target>Alle Gruppen</target>
       </segment>
     </unit>
-    <unit id="group.general">
-      <notes>
-        <note category="location">src/app/features/groups/group-detail.html:14,15</note>
-      </notes>
-      <segment>
-        <source>General</source>
-        <target>Allgemein</target>
-      </segment>
-    </unit>
     <unit id="group.scim-note">
       <notes>
         <note category="location">src/app/features/groups/group-detail.html:18,20</note>
@@ -9628,24 +9619,6 @@
       <segment>
         <source>Origin</source>
         <target>Herkunft</target>
-      </segment>
-    </unit>
-    <unit id="group.created">
-      <notes>
-        <note category="location">src/app/features/groups/group-detail.html:33,34</note>
-      </notes>
-      <segment>
-        <source>Created</source>
-        <target>Erstellt</target>
-      </segment>
-    </unit>
-    <unit id="group.save">
-      <notes>
-        <note category="location">src/app/features/groups/group-detail.html:38,39</note>
-      </notes>
-      <segment>
-        <source>Save group</source>
-        <target>Gruppe speichern</target>
       </segment>
     </unit>
     <unit id="group.delete">
@@ -17903,15 +17876,6 @@
         <target>Servicekonto des Projekts</target>
       </segment>
     </unit>
-    <unit id="sa.general">
-      <notes>
-        <note category="location">src/app/features/service-accounts/service-account-detail.ts:56,57</note>
-      </notes>
-      <segment>
-        <source>General</source>
-        <target>Allgemein</target>
-      </segment>
-    </unit>
     <unit id="sa.id">
       <notes>
         <note category="location">src/app/features/service-accounts/service-account-detail.ts:59</note>
@@ -17964,15 +17928,6 @@
       <segment>
         <source>Description</source>
         <target>Beschreibung</target>
-      </segment>
-    </unit>
-    <unit id="sa.save">
-      <notes>
-        <note category="location">src/app/features/service-accounts/service-account-detail.ts:75,76</note>
-      </notes>
-      <segment>
-        <source>Save description</source>
-        <target>Beschreibung speichern</target>
       </segment>
     </unit>
     <unit id="sa.disable">
@@ -18328,15 +18283,6 @@
         <target>Authentifizierungseinstellungen</target>
       </segment>
     </unit>
-    <unit id="auth-settings.anonymous">
-      <notes>
-        <note category="location">src/app/features/settings/auth-settings.html:17,19</note>
-      </notes>
-      <segment>
-        <source>Anonymous access</source>
-        <target>Anonymer Zugriff</target>
-      </segment>
-    </unit>
     <unit id="auth-settings.anonymous-switch">
       <notes>
         <note category="location">src/app/features/settings/auth-settings.html:24,26</note>
@@ -18375,10 +18321,10 @@
     </unit>
     <unit id="auth-settings.tokens-note">
       <notes>
-        <note category="location">src/app/features/settings/auth-settings.html:42,44</note>
+        <note category="location">src/app/features/settings/auth-settings.html:48,51</note>
       </notes>
       <segment>
-        <source> Values are in days (fractions allowed, at least 60 seconds). The ceiling comes from the installation&apos;s configuration and cannot be exceeded here. </source>
+        <source>Values are in days (fractions allowed, at least 60 seconds). The ceiling comes from the installation&apos;s configuration and cannot be exceeded here.</source>
         <target>Die Werte sind in Tagen angegeben (Bruchteile erlaubt, mindestens 60 Sekunden). Die Obergrenze stammt aus der Konfiguration der Installation und kann hier nicht überschritten werden.</target>
       </segment>
     </unit>
@@ -18454,31 +18400,22 @@
         <target>So viele Tage vor dem Ablauf eines Tokens benachrichtigen</target>
       </segment>
     </unit>
-    <unit id="auth-settings.save">
-      <notes>
-        <note category="location">src/app/features/settings/auth-settings.html:103,106</note>
-      </notes>
-      <segment>
-        <source>Save settings</source>
-        <target>Einstellungen speichern</target>
-      </segment>
-    </unit>
     <unit id="auth-settings.status">
       <notes>
-        <note category="location">src/app/features/settings/auth-settings.html:109,110</note>
+        <note category="location">src/app/features/settings/auth-settings.html:119</note>
       </notes>
       <segment>
-        <source>Status (read only)</source>
-        <target>Status (nur lesen)</target>
+        <source>Status</source>
+        <target>Status</target>
       </segment>
     </unit>
     <unit id="auth-settings.status-note">
       <notes>
-        <note category="location">src/app/features/settings/auth-settings.html:110,112</note>
+        <note category="location">src/app/features/settings/auth-settings.html:120,122</note>
       </notes>
       <segment>
-        <source>These values come from the installation&apos;s configuration.</source>
-        <target>Diese Werte stammen aus der Konfiguration der Installation.</target>
+        <source>Read only: these values come from the installation&apos;s configuration.</source>
+        <target>Nur lesen: Diese Werte stammen aus der Konfiguration der Installation.</target>
       </segment>
     </unit>
     <unit id="auth-settings.providers">
@@ -29293,24 +29230,6 @@
         <target>Öffentliche Basis-URL</target>
       </segment>
     </unit>
-    <unit id="general.base-url.value">
-      <notes>
-        <note category="location">src/app/features/settings/general-settings.html:14,15</note>
-      </notes>
-      <segment>
-        <source>Address</source>
-        <target>Adresse</target>
-      </segment>
-    </unit>
-    <unit id="general.base-url.source">
-      <notes>
-        <note category="location">src/app/features/settings/general-settings.html:16,17</note>
-      </notes>
-      <segment>
-        <source>Source</source>
-        <target>Quelle</target>
-      </segment>
-    </unit>
     <unit id="general.banner">
       <notes>
         <note category="location">src/app/features/settings/general-settings.html:25,26</note>
@@ -29325,8 +29244,8 @@
         <note category="location">src/app/features/settings/general-settings.html:27,29</note>
       </notes>
       <segment>
-        <source> The banner is shown at the top of every screen for every user, including the sign-in page, within a minute after you save. </source>
-        <target>Das Banner erscheint nach dem Speichern innerhalb einer Minute oben auf jeder Seite für alle Benutzer, auch auf der Anmeldeseite.</target>
+        <source>Shown at the top of every screen for every user, including the sign-in page, within a minute after you save.</source>
+        <target>Erscheint nach dem Speichern innerhalb einer Minute oben auf jeder Seite für alle Benutzer, auch auf der Anmeldeseite.</target>
       </segment>
     </unit>
     <unit id="general.banner.legend">
@@ -29381,15 +29300,6 @@
       <segment>
         <source>Preview of the message</source>
         <target>Vorschau des Textes</target>
-      </segment>
-    </unit>
-    <unit id="general.banner.save">
-      <notes>
-        <note category="location">src/app/features/settings/general-settings.html:82,84</note>
-      </notes>
-      <segment>
-        <source> Save banner </source>
-        <target>Banner speichern</target>
       </segment>
     </unit>
     <unit id="general.mode">
@@ -29489,15 +29399,6 @@
       <segment>
         <source>Retry after (seconds)</source>
         <target>Erneut versuchen nach (Sekunden)</target>
-      </segment>
-    </unit>
-    <unit id="general.mode.save">
-      <notes>
-        <note category="location">src/app/features/settings/general-settings.html:153,155</note>
-      </notes>
-      <segment>
-        <source> Save maintenance mode </source>
-        <target>Wartungsmodus speichern</target>
       </segment>
     </unit>
     <unit id="general.banner.severity.info">
@@ -30266,6 +30167,215 @@
       <segment>
         <source>Only the tags this repository has cached are listed here: those clients have pulled and, in mirror mode, those a pass has fetched.</source>
         <target>Hier stehen nur die Tags, die dieses Repository zwischengespeichert hat: die, die Clients abgerufen haben, und im Spiegelmodus die, die ein Durchlauf geholt hat.</target>
+      </segment>
+    </unit>
+    <unit id="group.save-changes">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:44,48</note>
+      </notes>
+      <segment>
+        <source>Save changes</source>
+        <target>Änderungen speichern</target>
+      </segment>
+    </unit>
+    <unit id="group.advanced">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:149,150</note>
+      </notes>
+      <segment>
+        <source>Advanced</source>
+        <target>Erweitert</target>
+      </segment>
+    </unit>
+    <unit id="group.advanced-hint">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:151,153</note>
+      </notes>
+      <segment>
+        <source>Delete this group.</source>
+        <target>Diese Gruppe löschen.</target>
+      </segment>
+    </unit>
+    <unit id="group.delete-note">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:153,154</note>
+      </notes>
+      <segment>
+        <source>Deleting the group removes its memberships and the role bindings of the group. Policies that name it stop granting to its members.</source>
+        <target>Beim Löschen entfallen die Mitgliedschaften und die Rollenbindungen der Gruppe. Richtlinien, die sie nennen, gelten für ihre Mitglieder nicht mehr.</target>
+      </segment>
+    </unit>
+    <unit id="sa.save-changes">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:63,65</note>
+      </notes>
+      <segment>
+        <source>Save changes</source>
+        <target>Änderungen speichern</target>
+      </segment>
+    </unit>
+    <unit id="sa.details">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:70</note>
+      </notes>
+      <segment>
+        <source>Details</source>
+        <target>Details</target>
+      </segment>
+    </unit>
+    <unit id="sa.details-hint">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:71,73</note>
+      </notes>
+      <segment>
+        <source>Status, administrator role and when the account was created.</source>
+        <target>Status, Administratorrolle und Erstellungszeitpunkt des Kontos.</target>
+      </segment>
+    </unit>
+    <unit id="sa.admin">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:83,84</note>
+      </notes>
+      <segment>
+        <source>Administrator role</source>
+        <target>Administratorrolle</target>
+      </segment>
+    </unit>
+    <unit id="sa.admin.yes">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:86,87</note>
+      </notes>
+      <segment>
+        <source>Held by this account</source>
+        <target>Von diesem Konto gehalten</target>
+      </segment>
+    </unit>
+    <unit id="sa.admin.no">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:88,89</note>
+      </notes>
+      <segment>
+        <source>Not held</source>
+        <target>Nicht gehalten</target>
+      </segment>
+    </unit>
+    <unit id="sa.advanced">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:113,114</note>
+      </notes>
+      <segment>
+        <source>Advanced</source>
+        <target>Erweitert</target>
+      </segment>
+    </unit>
+    <unit id="sa.advanced-hint">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:115,117</note>
+      </notes>
+      <segment>
+        <source>Disable or delete this account.</source>
+        <target>Dieses Konto deaktivieren oder löschen.</target>
+      </segment>
+    </unit>
+    <unit id="sa.disable-note">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:119,120</note>
+      </notes>
+      <segment>
+        <source>A disabled account can no longer authenticate; you can also revoke its tokens.</source>
+        <target>Ein deaktiviertes Konto kann sich nicht mehr anmelden; Sie können zusätzlich seine Token widerrufen.</target>
+      </segment>
+    </unit>
+    <unit id="sa.enable-note">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:121,122</note>
+      </notes>
+      <segment>
+        <source>The account is disabled and cannot authenticate. Enabling it lets its tokens work again.</source>
+        <target>Das Konto ist deaktiviert und kann sich nicht anmelden. Wenn Sie es aktivieren, funktionieren seine Token wieder.</target>
+      </segment>
+    </unit>
+    <unit id="sa.delete-note">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:131,132</note>
+      </notes>
+      <segment>
+        <source>Deleting the account removes it and its tokens. This cannot be undone.</source>
+        <target>Beim Löschen werden das Konto und seine Token entfernt. Das lässt sich nicht rückgängig machen.</target>
+      </segment>
+    </unit>
+    <unit id="auth-settings.save-changes">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:38,39</note>
+        <note category="location">src/app/features/settings/auth-settings.html:109,110</note>
+      </notes>
+      <segment>
+        <source>Save changes</source>
+        <target>Änderungen speichern</target>
+      </segment>
+    </unit>
+    <unit id="auth-settings.save-anonymous">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:39,42</note>
+      </notes>
+      <segment>
+        <source> (anonymous access)</source>
+        <target> (anonymer Zugriff)</target>
+      </segment>
+    </unit>
+    <unit id="auth-settings.save-tokens">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:110,113</note>
+      </notes>
+      <segment>
+        <source> (token lifetimes)</source>
+        <target> (Token-Laufzeiten)</target>
+      </segment>
+    </unit>
+    <unit id="general.save-changes">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:83,84</note>
+        <note category="location">src/app/features/settings/general-settings.html:159,160</note>
+      </notes>
+      <segment>
+        <source>Save changes</source>
+        <target>Änderungen speichern</target>
+      </segment>
+    </unit>
+    <unit id="general.banner.save-for">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:84,86</note>
+      </notes>
+      <segment>
+        <source> (banner)</source>
+        <target> (Banner)</target>
+      </segment>
+    </unit>
+    <unit id="general.mode.save-for">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.html:160,162</note>
+      </notes>
+      <segment>
+        <source> (maintenance mode)</source>
+        <target> (Wartungsmodus)</target>
+      </segment>
+    </unit>
+    <unit id="general.mode.summary-on">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.ts:81</note>
+      </notes>
+      <segment>
+        <source>Read-only mode is on: every write is refused.</source>
+        <target>Der Nur-Lese-Modus ist an: Jeder Schreibzugriff wird abgelehnt.</target>
+      </segment>
+    </unit>
+    <unit id="general.mode.summary-off">
+      <notes>
+        <note category="location">src/app/features/settings/general-settings.ts:82</note>
+      </notes>
+      <segment>
+        <source>Refuse every write during a migration or an incident.</source>
+        <target>Alle Schreibzugriffe bei einer Migration oder Störung ablehnen.</target>
       </segment>
     </unit>
   </file>

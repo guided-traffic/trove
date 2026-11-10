@@ -3844,6 +3844,8 @@ Priority: **MVP** · Covers: UI-037
   of the group (read-only with link to `/admin/roles`), the policies naming the group (read-only
   links), "Explain" (P1).
 - A group managed by SCIM is read-only with the reason shown.
+- Name, origin (read-only), description and auto-join are fields in one column with **Save changes**, disabled until something changed; **Delete group**
+  is under **Advanced** ([Q-UI-222](#q-ui-222--which-settings-pages-are-one-column-now-and-what-a-sections-save-button-is-called)).
 - A group a restore detached from group synchronization (`syncDetached`, [identity-and-authentication.md](identity-and-authentication.md)
   R-AUTH-018) shows that the identity provider no longer fills it, and the editor offers to attach it again
   (`{"syncDetached": false}`).
@@ -3868,7 +3870,11 @@ Priority: **MVP** · Covers: trove-only
   **Rotate** to those callers only (`authz/me` `roles` and `projects`), not to a holder of `identities:write` alone,
   who would get 403. An Owner's form offers no non-expiring lifetime, no `admin` and no `system` item. Revoking follows
   `tokens:revoke` or the role `owner`.
-- The token form offers the binding to endpoints where the caller may read them (Q-UI-91).
+- The token form offers the binding to endpoints where the caller may read them (Q-UI-91). It offers **Administrator: everything on this installation**
+  to a caller with the administrator role for an account of no project that holds the role itself (`ServiceAccount.isAdmin`); the choice sends
+  `{"inherit": true, "admin": true}` ([Q-UI-220](#q-ui-220--the-form-of-a-service-account-token-offers-the-administrator-choice-for-an-account-that-holds-the-role)).
+- The page is one column, as the style guide's settings pages are ([Q-UI-222](#q-ui-222--which-settings-pages-are-one-column-now-and-what-a-sections-save-button-is-called)):
+  the description and the ID at the top with **Save changes**, **Details** (status, the administrator role, created) and **Advanced** (disable or enable, delete) as sections.
 - A hint explains when to use one: CI systems without OIDC exchange, long-running automation.
 
 Acceptance criteria:
@@ -3985,7 +3991,8 @@ Priority: **MVP** · Covers: UI-041, TOK-026
 
 - All tokens (`tokens:read`): type, owner, description, scope, created, expires, last used, created
   via, state; filters type, owner, state, expiring before, unused since; revoke single and selected
-  with confirmation.
+  with confirmation. An active token with `admin: true` whose owner does not hold the administrator role says that its
+  administrator rights are inactive (`Token.ownerIsAdmin`, [Q-UI-221](#q-ui-221--the-token-administration-marks-administrator-tokens-whose-owner-no-longer-holds-the-role)).
 - CI tokens come from `/api/v1/ci/issuances` with job context (project, pipeline, job, mapping) and
   "Revoke matching" by project or pipeline.
 - "Revoke by value": a field to paste a leaked token; the value is sent once to
@@ -4007,7 +4014,9 @@ notices, and the read-only status block (providers and discovery state, break-gl
 timeouts, client switches including Basic, the command-line login poll binding mode, SCIM state).
 YAML-pinned and ceiling-bounded values show their source. Hiding unauthorized resources
 (`authz.hide_existence`) is shown read-only. Save sends `PATCH` with `If-Match`; recent
-authentication applies.
+authentication applies. The page is one column ([Q-UI-222](#q-ui-222--which-settings-pages-are-one-column-now-and-what-a-sections-save-button-is-called)):
+anonymous access is open at the top, the token lifetimes and the read-only status are sections, and each group with a save button
+sends the members of its own group only.
 
 The status block shows the two poll-binding warnings that the answer carries (R-AUTH-034,
 R-AUTH-040 in [identity-and-authentication.md](identity-and-authentication.md)) as warnings next to
@@ -4042,8 +4051,10 @@ Acceptance criteria:
 Priority: **MVP** · Covers: UI-044
 
 `/admin/settings/general` shows the public base URL and its source (`GET /api/v1/system/info`,
-read-only, R-OPS-005), the banner (`/api/v1/system/banner`: enabled, severity, plain text) and
-maintenance mode (`/api/v1/system/maintenance`). Server name, date format, logo and login notice are
+read-only field, R-OPS-005) at the top, then the banner and the maintenance mode as sections with a **Save changes** each
+([Q-UI-222](#q-ui-222--which-settings-pages-are-one-column-now-and-what-a-sections-save-button-is-called)); the maintenance section opens by
+itself while the mode is on. The banner is `/api/v1/system/banner` (enabled, severity, plain text) and the
+maintenance mode `/api/v1/system/maintenance`. Server name, date format, logo and login notice are
 P2 on [operations-and-observability.md](operations-and-observability.md).
 
 Acceptance criteria:
@@ -9386,7 +9397,7 @@ Context: the owner created a personal token with **All permissions of the owner*
 
 **A token is not revoked when its owner loses the role** (recommended by the development agent; the owner did not object). The role is checked at every use (R-AUTHZ-010), so the power ends with the role. A revocation would add nothing to that and would end every such token for good if one login through the identity provider carried no group claim (R-AUTH-008). What remains is that the token holds the power again if the owner regains the role; its lifetime bounds that, and the list of the owner's tokens says that the rights are inactive.
 
-Not covered: the form of a service-account token offers no administrator rights (the account's role is not known to the form; `trove admin token create --scope-file` and the API set them), and the token administration (R-UI-030) does not know the role of each owner, so it shows no such notice.
+Not covered at the time: the form of a service-account token offered no administrator rights (the account's role was not known to the form), and the token administration (R-UI-030) did not know the role of each owner, so it showed no such notice. Both are built since ([Q-UI-220](#q-ui-220--the-form-of-a-service-account-token-offers-the-administrator-choice-for-an-account-that-holds-the-role), [Q-UI-221](#q-ui-221--the-token-administration-marks-administrator-tokens-whose-owner-no-longer-holds-the-role), on the fields of [Q-AUTH-209](identity-and-authentication.md#q-auth-209--a-token-and-a-service-account-state-whether-the-owner-holds-the-administrator-role)).
 
 **Applied in the spec:** R-UI-029. Code: `TokenForm` and `scopeSummary` in `web/src/app/shared/access/`.
 
@@ -9468,6 +9479,53 @@ columns; the column of the findings is shown when the format is scanned, as for 
 which would be a second column beside Fetched.
 
 **Applied in the spec:** R-UI-052, Q-UI-216. Code: [content-shape.ts](../../web/src/app/features/repositories/content/content-shape.ts), [repository-content.html](../../web/src/app/features/repositories/content/repository-content.html). Tests: `R-OCI-036` in [repository-content.spec.ts](../../web/src/app/features/repositories/content/repository-content.spec.ts).
+
+### Q-UI-220 · The form of a service-account token offers the administrator choice for an account that holds the role
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: [Q-UI-213](#q-ui-213--the-token-form-names-what-a-token-can-be-in-three-choices-and-only-an-administrator-is-offered-the-first) left the form of a service-account token without the administrator choice because the form did not know the account's role. The API accepts `{"inherit": true, "admin": true}` for an account's token from an administrator, and the token carries power only while the account itself holds the role ([R-AUTH-024](identity-and-authentication.md#r-auth-024--token-scopes)); an account is bound to the role directly, never through a group (R-AUTH-019), and a project's account holds no system role (R-AUTHZ-026).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Offer the choice when the caller is an administrator and the account holds the role now (chosen) | The record states it (`ServiceAccount.isAdmin`, [Q-AUTH-209](identity-and-authentication.md#q-auth-209--a-token-and-a-service-account-state-whether-the-owner-holds-the-administrator-role)); the choice is offered for an instance-wide account with `isAdmin` | Only a choice that takes effect; the account page also names the role in its details | One more field on the account |
+| (b) Offer it for every instance-wide account to an administrator | No new field | The creator may prepare a token for an account that is bound to the role later | The token is inactive from the first minute and the list says so; a choice that does nothing now invites the mistake the token form was reworked to avoid |
+| (c) Do not offer it; `trove admin token create --scope-file` stays the way | Nothing changes | No work | The owner's installation has an account that administers, and its token cannot be made in the screen |
+
+**Choice:** (a). The choice sends `{"inherit": true, "admin": true}`, as the personal token's does. A project's account is never offered it (its page shows no role line), and a caller without the administrator role is not offered the form at all (R-AUTH-027). **Rationale:** the form promises only what the token will hold. The development agent would revisit (a) when roles are bound to accounts through a group, which R-AUTH-019 forbids today.
+
+**Applied in the spec:** R-UI-026, R-UI-029. Code: `TokenManager.offerAdmin`, `ServiceAccountDetail`.
+
+### Q-UI-221 · The token administration marks administrator tokens whose owner no longer holds the role
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the profile's list of the caller's own tokens already said **Administrator rights inactive** by comparing with the caller's role; the token administration (R-UI-030) lists other people's tokens and did not know the role of each owner ([Q-UI-213](#q-ui-213--the-token-form-names-what-a-token-can-be-in-three-choices-and-only-an-administrator-is-offered-the-first), "Not covered").
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The token record carries `ownerIsAdmin`, every list marks an administrator token whose owner is no administrator (chosen) | One field, filled in one query per page of tokens ([Q-AUTH-209](identity-and-authentication.md#q-auth-209--a-token-and-a-service-account-state-whether-the-owner-holds-the-administrator-role)) | The same mark on the profile, the user's and the account's lists and the administration; nothing is computed in the browser from a role it cannot know | The API answer grows by a boolean |
+| (b) The administration asks the user list for the roles of the owners on the page | One request per owner or a filtered list | No change of the token record | A second call that needs `identities:read`, which a holder of `tokens:read` alone lacks; a race between the two answers |
+
+**Choice:** (a). The notice is the existing one; the table no longer takes the owner's role as an input. **Rationale:** the fact belongs to the record the notice is about. The development agent would revisit it if a list of tokens grows to a page size where one extra query per page costs measurably.
+
+**Applied in the spec:** R-UI-029, R-UI-030. Code: `TokenTable.adminInactive`. Tests: `Q-UI-221` in [token-admin.spec.ts](../../web/src/app/features/tokens/token-admin.spec.ts).
+
+### Q-UI-222 · Which settings pages are one column now, and what a section's save button is called
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the style guide ([Settings pages](../developer/ui-style-guide.md#settings-pages), [Q-UI-215](#q-ui-215--settings-are-fields-in-one-column-and-everything-that-folds-is-animated)) moved the project's settings to one column and listed the other settings pages as still to move. Five pages carry settings: the authentication and the general settings, a service account, a group, and the repository's settings; user, profile, endpoint, issuer and policy pages are detail or editor pages with their own structure.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Move the four pages whose form is a short list of fields; leave the repository's settings and the user page (chosen) | General and authentication settings, service account and group follow the guide; the others stay on the list of the style guide | Each moved page is complete and tested; the repository's settings are a tabbed editor of 300 lines with a stored-document view and a move dialog, which needs its own design | Two screens still show the old card |
+| (b) Move all five and the user page | Everything follows the guide | No page left over | A tabbed editor cannot be a column of three sections without deciding what its tabs become; done in one change it would be decided in haste |
+| (c) Move nothing until the owner shows the reference's repository settings | Wait | No guess | Four pages that are plainly a list of fields stay behind |
+
+**Choice:** (a), with these rules for a page with more than one save button: the label is **Save changes** and carries the group in a visually hidden suffix, `Save changes (banner)`, so that two buttons of one page have two accessible names; the group's save sends only the members of its group (the authentication settings are one document with one ETag, and saving the token lifetimes never carries an unsaved edit of the anonymous switch); a group that holds a state which must not be missed opens by itself (the maintenance mode while it is on). **Rationale:** a name that is the same on every button cannot be told apart by a screen reader or a browser test. The development agent would revisit the suffix if the owner prefers section titles in the visible label.
+
+**Applied in the spec:** R-UI-026, R-UI-031, R-UI-033, R-UI-025. Code: `GeneralSettings`, `AuthSettings`, `ServiceAccountDetail`, `GroupDetail`. The group page no longer shows the creation time (it was in the card of facts); the service-account page keeps it under Details.
 
 ### Q-API-246 · An operation that is allowed while the installation is read-only declares `x-trove-maintenance: allowed`
 

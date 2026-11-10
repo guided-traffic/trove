@@ -20,14 +20,14 @@ func TestR_EP_011_TokenListingShowsUnknownEndpoints(t *testing.T) {
 	s := New(Options{Auth: AuthServices{EndpointConfigured: configured}})
 
 	t.Run("R-EP-011 a bound name that no endpoint carries is listed", func(t *testing.T) {
-		got := s.toToken(rec("customers", "gone", "old")).UnknownEndpoints
+		got := s.toToken(rec("customers", "gone", "old"), false).UnknownEndpoints
 		if strings.Join(got, ",") != "gone,old" {
 			t.Fatalf("unknownEndpoints = %v", got)
 		}
 	})
 	t.Run("R-EP-011 a token bound to configured endpoints, and an unbound token, list none (an array, not null)", func(t *testing.T) {
 		for _, r := range []token.Record{rec("customers"), rec()} {
-			b, err := json.Marshal(s.toToken(r))
+			b, err := json.Marshal(s.toToken(r, false))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -38,7 +38,7 @@ func TestR_EP_011_TokenListingShowsUnknownEndpoints(t *testing.T) {
 	})
 	t.Run("R-EP-011 without a configuration to ask, nothing is unknown", func(t *testing.T) {
 		bare := New(Options{})
-		if got := bare.toToken(rec("anything")).UnknownEndpoints; len(got) != 0 {
+		if got := bare.toToken(rec("anything"), false).UnknownEndpoints; len(got) != 0 {
 			t.Fatalf("unknownEndpoints = %v", got)
 		}
 	})

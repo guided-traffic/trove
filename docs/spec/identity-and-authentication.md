@@ -1606,6 +1606,8 @@ account or to its groups, never from placeholder users.
   ([Q-AUTHZ-215](authorization.md#q-authz-215--a-members-role-acts-through-its-session-and-personal-tokens-within-their-scope-and-service-accounts-are-not-members)).
 - It can be a group member (R-AUTH-018) and a policy principal, unless it is a project service account (below).
 - It holds `trv_sat_` tokens, at most `max_active_per_principal`.
+- The record states `isAdmin`: whether the account holds the administrator role now, by a binding on the account; always `false`
+  for a project's account ([Q-AUTH-209](#q-auth-209--a-token-and-a-service-account-state-whether-the-owner-holds-the-administrator-role)).
 
 **Instance-wide service accounts** are created, changed, disabled, enabled and deleted, and their tokens issued, only by
 administrators of trove (`identities:write`; tokens also by owners from P1; Q-AUTHZ-209).
@@ -2324,6 +2326,10 @@ Acceptance criteria:
 
 ### R-AUTH-028 · Listing and inspecting tokens
 Priority: **MVP** · Covers: TOK-026, TOK-027, TOK-028, ADMAPI-043, ADMAPI-044
+
+Every token record states `ownerIsAdmin`: whether the owner holds the administrator role at the time of the read
+([Q-AUTH-209](#q-auth-209--a-token-and-a-service-account-state-whether-the-owner-holds-the-administrator-role)). A token with `scope.admin` is
+inactive as an administrator's while it is `false`.
 
 **List:** `GET /api/v1/tokens`, with these filters:
 
@@ -5768,7 +5774,29 @@ Context: a finding of `TestHAFaults_PostgresOutage` (nightly runs 42677190569 an
 
 **Choice:** (b). The lookup is bound by one minute, above the default budget and one statement, and not by the 10 s of the session store: a gate closes in exactly the failover that the budget rides out, so a shorter bound would turn that failover into `503`. The minute only ends a statement that hangs on a connection whose route is gone. **Rationale:** the flight is shared state, so it must not belong to one request. The development agent would revisit the fixed minute if `database.retry.max_elapsed` were ever set near it. Not verified: a run of `TestHAFaults_PostgresOutage` with the change. **Applied in the spec:** R-AUTH-023 (the shared lookup). Code: `Flights` in `internal/auth/principal/gate.go`.
 
+### Q-AUTH-209 · A token and a service account state whether the owner holds the administrator role
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a token with `admin: true` carries administrator power only while its owner holds the role (R-AUTH-024, R-AUTHZ-010), so a token can be inactive without any change to the token. The profile knew this for the caller's own tokens by asking the session for the caller's role; the token administration lists other people's tokens and the form of a service account's token has to know the account's role (Q-UI-213, "Not covered"). Neither could answer from what the API sent.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The records carry the fact: `Token.ownerIsAdmin` and `ServiceAccount.isAdmin`, derived from the role bindings at the time of the read (chosen) | One query per page (`IdentityAdminHolderIDs`): a binding on the principal, a binding on a group it belongs to, or the break-glass account | No second call, the same words everywhere; no stored copy that could disagree with the bindings | The fact is the state at the read; the decision at use time is the decision point's (R-AUTHZ-010) |
+| (b) A stored flag on the token set when the role changes | Written by the role binding | Cheap to read | A second source of truth next to the bindings, and a write fan-out on every change of a group's role |
+| (c) The caller asks the user and group endpoints | `GET /users`, `GET /service-accounts` | No change of the records | `identities:read` is needed, which a holder of `tokens:read` alone lacks; one call per owner |
+
+**Choice:** (a). `ownerIsAdmin` is present on every token read (list, single, current) and is `true` for a token whose owner holds the role, whatever the token's scope says; `isAdmin` is present on every service account and is `false` for a project's account, which holds no system role (R-AUTHZ-026). A token is not revoked when its owner loses the role (Q-UI-213); the field is what lets a screen say so. **Rationale:** the fact is derived from the bindings in one query, as `isAdmin` of a user already is (R-AUTH-016), and stored nowhere. The development agent would revisit it if a page of tokens makes the extra query measurable, or if a role can be held by anything other than a binding on the principal, a group of it or the break-glass account.
+
+**Security note:** a holder of `tokens:read` learns which token owners are administrators; a holder of `identities:read` already learned it from the user list. See [H-836](#h-836--tokensread-shows-which-owners-are-administrators).
+
+**Applied in the spec:** R-AUTH-020, R-AUTH-028, [openapi.yaml](../../api/openapi.yaml) (`Token`, `ServiceAccount`). Code: `Manager.AdminHolders` and the query `IdentityAdminHolderIDs` ([identity.sql](../../internal/meta/postgres/queries/identity.sql)), `ownerAdmins` in [tokens_api.go](../../internal/api/v1/tokens_api.go). Tests: `TestQ_AUTH_209_TheRecordsStateWhetherTheOwnerIsAnAdministrator` in [admin_state_test.go](../../test/integration/identity/admin_state_test.go).
+
 ## What this does not cover
+
+### H-836 · `tokens:read` shows which owners are administrators
+
+A caller who holds `tokens:read` and not `identities:read` can tell from `ownerIsAdmin` and `isAdmin` ([Q-AUTH-209](#q-auth-209--a-token-and-a-service-account-state-whether-the-owner-holds-the-administrator-role)) which owners of tokens, and which service accounts, hold the administrator role. The fact is no secret from an administrator or a holder of `identities:read` (the user list carries `isAdmin` and `adminVia`), and the system roles that hold `tokens:read` (administrator, security administrator and auditor, [roles.go](../../internal/authz/roles.go)) also hold `identities:read`. A custom role that holds `tokens:read` alone discloses it. The record states no group name or reason, only the fact.
 
 ### H-15 · Consent phishing of command-line browser login
 

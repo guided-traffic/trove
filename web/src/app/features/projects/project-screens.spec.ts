@@ -132,6 +132,7 @@ describe('A project service account (R-UI-041, Q-AUTHZ-175, Q-AUTHZ-177)', () =>
         description: 'CI of the web team',
         status: 'active',
         project: 'web',
+        isAdmin: false,
         createdAt: '2026-11-01T08:00:00Z',
       },
     ];

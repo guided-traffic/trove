@@ -48,13 +48,15 @@ describe('Service accounts (R-UI-026)', () => {
     const { fixture, root, get } = await renderScreen(ServiceAccountDetail, { inputs: { name: 'ci-bot' } });
     const api = get(IdentityApi) as FakeIdentityApi;
     typeInto(root, 'Description', 'Deploy and release jobs');
-    buttonByText(root, 'Save description').click();
+    await settle(fixture);
+    buttonByText(root, 'Save changes').click();
     await settle(fixture);
     expect(api.ifMatch).toEqual(['"1"']);
     api.bumpRevision('service-account:ci-bot');
     api.bumpRevision('service-account:ci-bot');
     typeInto(root, 'Description', 'Something else');
-    buttonByText(root, 'Save description').click();
+    await settle(fixture);
+    buttonByText(root, 'Save changes').click();
     await settle(fixture);
     expect(overlay().querySelector('trove-conflict-dialog')).toBeTruthy();
   });
@@ -142,6 +144,61 @@ describe('Service accounts (R-UI-026)', () => {
     buttonByText(form, 'Create token').click();
     await settle(fixture);
     expect((get(TokensApi) as FakeTokensApi).lastRequest?.scope).toEqual({ inherit: true, endpoints: ['customers'] });
+  });
+
+  describe('Q-UI-220 administrator rights in the token form of a service account', () => {
+    const withAccount = (isAdmin: boolean, roles: AuthzMe['roles'], project: string | null = null) => ({
+      inputs: project ? { name: 'ci-bot', project } : { name: 'ci-bot' },
+      capabilities: ['identities:write', 'tokens:read'],
+      setup: (api: <A>(t: abstract new (...a: never[]) => A) => A) => {
+        const me = api(SessionApi) as FakeSessionApi;
+        me.meResult = { roles, capabilities: ['identities:write', 'tokens:read'] };
+        const ids = api(IdentityApi) as FakeIdentityApi;
+        ids.accounts = ids.accounts.map((a) => ({ ...a, isAdmin, project }));
+      },
+    });
+    const radios = (root: HTMLElement): string[] =>
+      [...root.querySelectorAll('trove-token-form input[type="radio"]')].map((r) => text(r.closest('label')!));
+
+    it('an administrator is offered the Administrator choice for an account that holds the role, and it sends admin with inherit', async () => {
+      const { fixture, root, get } = await renderScreen(ServiceAccountDetail, withAccount(true, ['admin']));
+      expect(text(root.querySelector('[data-testid="sa-admin"]')!)).toBe('Held by this account');
+      buttonByText(root, 'Create token').click();
+      await settle(fixture);
+      expect(radios(root)[0]).toContain('Administrator: everything on this installation');
+      typeInto(root.querySelector('trove-token-form')!, 'Description', 'ops');
+      root.querySelector<HTMLInputElement>('trove-token-form input[type="radio"]')!.click();
+      await settle(fixture);
+      buttonByText(root.querySelector('trove-token-form')!, 'Create token').click();
+      await settle(fixture);
+      expect((get(TokensApi) as FakeTokensApi).lastRequest?.scope).toEqual({ inherit: true, admin: true });
+    });
+
+    it('an account without the role is offered no Administrator choice: it would take effect nowhere', async () => {
+      const { fixture, root } = await renderScreen(ServiceAccountDetail, withAccount(false, ['admin']));
+      expect(text(root.querySelector('[data-testid="sa-admin"]')!)).toBe('Not held');
+      buttonByText(root, 'Create token').click();
+      await settle(fixture);
+      expect(radios(root).join('|')).not.toContain('Administrator');
+    });
+
+    it('a project account holds no system role: no choice and no role line', async () => {
+      const { root } = await renderScreen(ServiceAccountDetail, withAccount(true, ['admin'], 'web'));
+      expect(root.querySelector('[data-testid="sa-admin"]')).toBeNull();
+    });
+  });
+
+  it('Q-UI-222 the page is one column: no card, the description edited in place with Save changes, Advanced last', async () => {
+    const { fixture, root } = await renderScreen(ServiceAccountDetail, { inputs: { name: 'ci-bot' } });
+    expect(root.querySelector('.settings > .card')).toBeNull();
+    const save = buttonByText(root, 'Save changes') as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    typeInto(root, 'Description', 'Changed');
+    await settle(fixture);
+    expect(save.disabled).toBe(false);
+    expect(root.querySelector<HTMLInputElement>('input[name="id"]')!.readOnly).toBe(true);
+    const headings = [...root.querySelectorAll('.toggle')].map((e) => text(e));
+    expect(headings[headings.length - 1]).toMatch(/Advanced$/);
   });
 
   it('R-EP-011 without endpoints:read the form has no endpoint field', async () => {

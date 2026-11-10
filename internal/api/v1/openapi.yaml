@@ -14589,11 +14589,14 @@ components:
     ServiceAccount:
       type: object
       description: A service account (R-AUTH-020). `name` is the name within its project, unique among the accounts of that project, or among the instance-wide accounts when `project` is `null` (Q-AUTHZ-209).
-      required: [id, name, principal, description, status, createdAt, project]
+      required: [id, name, principal, description, status, createdAt, project, isAdmin]
       properties:
         id:
           type: string
           format: uuid
+        isAdmin:
+          type: boolean
+          description: Whether the account holds the administrator role now, by a binding on the account (Q-AUTH-209). Always `false` for a project's account, which holds no system role (R-AUTHZ-026). A token of the account carries administrator power only with `scope.admin` and only while this is `true` (R-AUTH-024).
         name:
           type: string
           description: The name within the project; the stored name is `<project>/<name>` for a project's account.
@@ -14619,6 +14622,7 @@ components:
         status: active
         createdAt: "2026-09-01T08:00:00Z"
         project: null
+        isAdmin: false
     ServiceAccountList:
       type: object
       required: [items, nextCursor]
@@ -14750,7 +14754,7 @@ components:
     Token:
       type: object
       description: A token as a list or an inspection shows it (R-AUTH-028). Neither the value nor its hash is part of it.
-      required: [id, type, hint, owner, description, scope, unknownEndpoints, createdAt, createdBy, createdVia, expiresAt,
+      required: [id, type, hint, owner, ownerIsAdmin, description, scope, unknownEndpoints, createdAt, createdBy, createdVia, expiresAt,
                  lastUsedAt, lastUsedAddr, state, revokedAt, revokedBy, revocationReason, rotatedFrom, selfRotatable, ciContext]
       properties:
         id:
@@ -14764,6 +14768,12 @@ components:
           description: The prefix and the first characters of the value, for recognising a token.
         owner:
           $ref: "#/components/schemas/TokenOwner"
+        ownerIsAdmin:
+          type: boolean
+          description: |
+            Whether the owner holds the administrator role now (Q-AUTH-209). A token with `scope.admin` exercises administrator power
+            only while this is `true`, and has no administrator rights while it is `false` (R-AUTH-024); the answer does not change
+            what the token may do, it states what the role is at the time of the read.
         description:
           type: string
         scope:

@@ -1,4 +1,3 @@
-import { DatePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { Checkbox } from '../../shared/ui/checkbox';
 import { Router, RouterLink } from '@angular/router';
@@ -16,6 +15,7 @@ import { fieldErrorAt } from '../../shared/field-errors';
 import { Needs } from '../../shared/access/needs';
 import { PagedResource, asApiError } from '../../shared/paged-resource';
 import { ErrorNotice } from '../../shared/error-notice';
+import { SettingsSection } from '../../shared/ui/settings-section';
 import { groupOriginLabel } from './group-list';
 
 /**
@@ -27,9 +27,27 @@ import { groupOriginLabel } from './group-list';
  */
 @Component({
   selector: 'trove-group-detail',
-  imports: [DatePipe, Checkbox, RouterLink, ErrorNotice, Needs, SelectField, TextField],
+  imports: [Checkbox, RouterLink, ErrorNotice, Needs, SelectField, SettingsSection, TextField],
   templateUrl: './group-detail.html',
   styleUrl: '../../shared/access/access.scss',
+  styles: `
+    .settings {
+      max-inline-size: 56rem;
+    }
+    form[novalidate] {
+      padding-block-end: var(--trove-space-6);
+    }
+    .row {
+      display: grid;
+      grid-template-columns: minmax(0, 5fr) minmax(0, 4fr);
+      gap: var(--trove-space-6);
+    }
+    @media (max-width: 40rem) {
+      .row {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+  `,
 })
 export class GroupDetail {
   /** Route parameter `:name`. */
@@ -62,6 +80,14 @@ export class GroupDetail {
 
   protected readonly canWrite = computed(() => this.session.has('identities:write'));
   protected readonly readOnly = computed(() => this.group()?.origin === 'scim');
+  /** Name, description or auto-join differ from the stored group: Save changes waits for it (Q-UI-222). */
+  protected readonly dirty = computed(() => {
+    const g = this.group();
+    return (
+      g !== null &&
+      (this.newName().trim() !== g.name || this.description().trim() !== g.description || this.autoJoin() !== g.autoJoin)
+    );
+  });
   protected readonly sourceOptions: readonly SelectOption[] = [
     { value: '', label: $localize`:@@group.source.all:All sources` },
     { value: 'manual', label: $localize`:@@group.source.manual:Manual` },

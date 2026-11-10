@@ -21,15 +21,17 @@ test('R-UI-033 R-OPS-025 a saved banner shows on the sign-in page and on every s
   await signInLocal(page);
   await page.goto('/ui/en/admin/settings/general');
   await expect(page.getByRole('heading', { name: 'General settings', level: 1 })).toBeVisible();
-  await expect(page.getByTestId('base-url')).not.toBeEmpty();
+  await expect(page.getByLabel('Public base URL')).not.toHaveValue('');
   await expect(page.getByTestId('base-url-source')).toContainText('configuration file');
 
   await test.step('the banner is saved', async () => {
+    // The sections of a settings page are closed until opened (Q-UI-215).
+    await page.getByRole('button', { name: 'Banner', exact: true }).click();
     await page.getByLabel('Show the banner').check();
     await page.getByLabel('Severity').selectOption('warning');
     await page.getByLabel('Title (optional)').fill('Planned work');
     await page.getByLabel('Banner message').fill(bannerText);
-    await page.getByRole('button', { name: 'Save banner' }).click();
+    await page.getByRole('button', { name: 'Save changes (banner)' }).click();
     await expect(page.getByText('Banner saved.')).toBeVisible();
   });
 
@@ -52,8 +54,9 @@ test('R-UI-033 R-OPS-025 a saved banner shows on the sign-in page and on every s
 
   await test.step('switching it off removes it', async () => {
     await page.goto('/ui/en/admin/settings/general');
+    await page.getByRole('button', { name: 'Banner', exact: true }).click();
     await page.getByLabel('Show the banner').uncheck();
-    await page.getByRole('button', { name: 'Save banner' }).click();
+    await page.getByRole('button', { name: 'Save changes (banner)' }).click();
     await expect(page.getByText('Banner saved.')).toBeVisible();
     await expect(page.getByRole('region', { name: 'System notice' })).toHaveCount(0);
   });
@@ -70,9 +73,10 @@ test('R-UI-033 R-OPS-024 the read-only maintenance mode asks first, refuses writ
   const message = `Storage migration ${unique('m')}`;
 
   await test.step('switching it on asks for confirmation', async () => {
+    await page.getByRole('button', { name: 'Maintenance mode', exact: true }).click();
     await page.getByLabel('Read-only maintenance mode', { exact: true }).check();
     await page.getByLabel('Maintenance message').fill(message);
-    await page.getByRole('button', { name: 'Save maintenance mode' }).click();
+    await page.getByRole('button', { name: 'Save changes (maintenance mode)' }).click();
     const dialog = page.getByRole('dialog', { name: 'Switch to read-only maintenance mode?' });
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Switch on' }).click();
@@ -95,7 +99,7 @@ test('R-UI-033 R-OPS-024 the read-only maintenance mode asks first, refuses writ
 
   await test.step('switching it off lifts the refusal', async () => {
     await page.getByLabel('Read-only maintenance mode', { exact: true }).uncheck();
-    await page.getByRole('button', { name: 'Save maintenance mode' }).click();
+    await page.getByRole('button', { name: 'Save changes (maintenance mode)' }).click();
     await expect(page.getByTestId('mode-state')).toContainText('Normal mode');
     await expect(page.getByRole('region', { name: 'Maintenance notice' })).toHaveCount(0);
     const key = unique('ui-unblocked');

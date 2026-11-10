@@ -244,7 +244,7 @@ func toServiceAccount(a principal.ServiceAccount) gen.ServiceAccount {
 		// A project's account is stored as <project>/<name>; the API shows the name within the project.
 		name = strings.TrimPrefix(a.Name, a.Project+"/")
 	}
-	return gen.ServiceAccount{Id: uuidOf(a.ID), Name: name, Principal: ref, Description: a.Description, Status: gen.ServiceAccountStatus(a.Status), CreatedAt: utc(a.CreatedAt), Project: optString(a.Project)}
+	return gen.ServiceAccount{Id: uuidOf(a.ID), Name: name, Principal: ref, Description: a.Description, Status: gen.ServiceAccountStatus(a.Status), CreatedAt: utc(a.CreatedAt), Project: optString(a.Project), IsAdmin: a.IsAdmin}
 }
 
 // globalAccount reads the instance-wide service account a request addresses: the item routes of

@@ -1,5 +1,6 @@
 import { Component, DestroyRef, LOCALE_ID, computed, inject, signal } from '@angular/core';
 import { Checkbox } from '../../shared/ui/checkbox';
+import { SettingsSection } from '../../shared/ui/settings-section';
 import { RouterLink } from '@angular/router';
 import {
   AuthSettings as AuthSettingsModel,
@@ -29,18 +30,30 @@ interface Form {
   expiryNotice: string;
 }
 
+/** The two groups of the document that have a save button each (Q-UI-222). */
+type Part = 'anonymous' | 'tokens';
+
 /**
- * Authentication settings (R-UI-031, R-AUTH-040): the runtime values (anonymous access, token
- * lifetimes per type, the expiry notice) bounded by the ceilings of the installation's
+ * Authentication settings (R-UI-031, R-AUTH-040): the runtime values (anonymous access open at the top, token
+ * lifetimes per type and the expiry notice in a section) bounded by the ceilings of the installation's
  * configuration, which are shown next to them, and the read-only status of providers,
- * break-glass, sessions and client switches. Save sends a merge patch with `If-Match`; a 412 opens
+ * break-glass, sessions and client switches in a section. The two groups are one document with one ETag, and each save sends a
+ * merge patch of its own group only with `If-Match`, so saving one never carries an unsaved edit of the other; a 412 opens
  * the conflict dialog; recent authentication applies (the draft survives the sign-in).
  */
 @Component({
   selector: 'trove-auth-settings',
-  imports: [Checkbox, RouterLink, ErrorNotice, Needs, TextField],
+  imports: [Checkbox, RouterLink, ErrorNotice, Needs, SettingsSection, TextField],
   templateUrl: './auth-settings.html',
   styleUrl: '../../shared/access/access.scss',
+  styles: `
+    .settings {
+      max-inline-size: 56rem;
+    }
+    form {
+      padding-block-end: var(--trove-space-5);
+    }
+  `,
 })
 export class AuthSettings {
   private readonly api = inject(AuthSettingsApi);
@@ -64,10 +77,15 @@ export class AuthSettings {
 
   protected readonly canWrite = computed(() => this.session.has('settings:write'));
   protected readonly settings = computed<AuthSettingsModel | null>(() => this.loaded()?.settings ?? null);
-  protected readonly dirty = computed(() => {
+  protected readonly tokensOpen = signal(false);
+  protected readonly dirtyAnonymous = computed(() => this.dirtyPart('anonymous'));
+  protected readonly dirtyTokens = computed(() => this.dirtyPart('tokens'));
+  protected readonly dirty = computed(() => this.dirtyAnonymous() || this.dirtyTokens());
+
+  private dirtyPart(part: Part): boolean {
     const s = this.settings();
-    return s !== null && Object.keys(this.diff(s)).length > 0;
-  });
+    return s !== null && Object.keys(this.diff(s, part)).length > 0;
+  }
 
   constructor() {
     this.drafts.track(() => (this.dirty() ? this.form() : null), inject(DestroyRef));
@@ -82,6 +100,7 @@ export class AuthSettings {
       const draft = this.drafts.take<Form>();
       if (draft) {
         this.apply(draft);
+        if (this.dirtyTokens()) this.tokensOpen.set(true);
         this.notifier.status($localize`:@@auth-settings.draft:Your entries were restored. Save them again.`);
       }
     } catch (e) {
@@ -100,13 +119,15 @@ export class AuthSettings {
     };
   }
 
-  private adopt(loaded: LoadedAuthSettings): void {
+  /** Takes the stored document and its ETag; the fields of `part` follow it, those of the other group keep their edits. */
+  private adopt(loaded: LoadedAuthSettings, part?: Part): void {
     this.loaded.set(loaded);
-    this.apply(this.formOf(loaded.settings));
+    this.apply(this.formOf(loaded.settings), part);
   }
 
-  private apply(f: Form): void {
-    this.anonymousAccess.set(f.anonymousAccess);
+  private apply(f: Form, part?: Part): void {
+    if (part !== 'tokens') this.anonymousAccess.set(f.anonymousAccess);
+    if (part === 'anonymous') return;
     this.patDefault.set(f.patDefault);
     this.patMax.set(f.patMax);
     this.satDefault.set(f.satDefault);
@@ -125,8 +146,8 @@ export class AuthSettings {
     };
   }
 
-  /** The merge patch: only the members that differ from what was loaded. */
-  private diff(s: AuthSettingsModel): AuthSettingsPatch {
+  /** The merge patch: only the members that differ from what was loaded, of one group or of both. */
+  private diff(s: AuthSettingsModel, part?: Part): AuthSettingsPatch {
     const f = this.form();
     const patch: {
       anonymousAccess?: boolean;
@@ -136,7 +157,8 @@ export class AuthSettings {
         expiryNoticeSeconds?: number;
       };
     } = {};
-    if (f.anonymousAccess !== s.anonymousAccess) patch.anonymousAccess = f.anonymousAccess;
+    if (part !== 'tokens' && f.anonymousAccess !== s.anonymousAccess) patch.anonymousAccess = f.anonymousAccess;
+    if (part === 'anonymous') return patch;
     const tokens: NonNullable<typeof patch.tokens> = {};
     const lifetimes = (
       kind: 'pat' | 'sat',
@@ -173,20 +195,20 @@ export class AuthSettings {
     return fieldErrorAt(this.saveError(), pointer);
   }
 
-  protected async save(event: Event): Promise<void> {
+  protected async save(event: Event, part: Part): Promise<void> {
     event.preventDefault();
     const current = this.loaded();
     if (!current) return;
-    const patch = this.diff(current.settings);
+    const patch = this.diff(current.settings, part);
     if (Object.keys(patch).length === 0) return;
     this.busy.set(true);
     this.saveError.set(null);
     try {
-      this.adopt(await this.api.patch(patch, current.etag));
+      this.adopt(await this.api.patch(patch, current.etag), part);
       this.notifier.status($localize`:@@auth-settings.saved:Settings saved.`);
     } catch (e) {
       const error = asApiError(e);
-      if (error.status === 412) await this.resolveConflict(patch);
+      if (error.status === 412) await this.resolveConflict(patch, part);
       else {
         this.saveError.set(error);
         if (error.code === 'reauthentication_required') this.drafts.keep(this.form());
@@ -197,7 +219,7 @@ export class AuthSettings {
   }
 
   /** 412: their stored values against mine; "Overwrite" sends my patch with the ETag read now. */
-  private async resolveConflict(patch: AuthSettingsPatch): Promise<void> {
+  private async resolveConflict(patch: AuthSettingsPatch, part: Part): Promise<void> {
     const theirs = await this.api.load();
     const decision = await this.conflicts.resolve({
       mine: { ...this.form() },
@@ -205,13 +227,13 @@ export class AuthSettings {
     });
     if (decision === 'overwrite') {
       try {
-        this.adopt(await this.api.patch(patch, theirs.etag));
+        this.adopt(await this.api.patch(patch, theirs.etag), part);
         this.notifier.status($localize`:@@auth-settings.saved:Settings saved.`);
       } catch (e) {
         this.saveError.set(asApiError(e));
       }
     } else {
-      this.adopt(theirs);
+      this.adopt(theirs, part);
     }
   }
 }

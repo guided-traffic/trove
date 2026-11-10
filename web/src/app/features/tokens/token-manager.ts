@@ -109,7 +109,7 @@ export class RotateDialog {
           [allowNonExpiring]="allowNonExpiring()"
           [lifetimeCapped]="projectIssues() && !allowNonExpiring()"
           [tokenType]="scope().kind === 'service-account' ? 'sat' : 'pat'"
-          [offerAdmin]="scope().kind === 'own' && session.hasRole('admin')"
+          [offerAdmin]="offerAdmin()"
           [busy]="busy()"
           [failure]="formError()"
           [restore]="restored()"
@@ -129,7 +129,6 @@ export class RotateDialog {
     @if (list.loaded()) {
       <trove-token-table
         [tokens]="list.items()"
-        [ownerIsAdmin]="scope().kind === 'own' ? session.hasRole('admin') : null"
         [canRotate]="canRotate()"
         [canRevoke]="canRevoke()"
         [hasMore]="list.hasMore()"
@@ -146,6 +145,8 @@ export class RotateDialog {
 })
 export class TokenManager {
   readonly scope = input.required<TokenOwnerScope>();
+  /** For a service account: whether it holds the administrator role now (`ServiceAccount.isAdmin`, Q-AUTH-209). */
+  readonly accountIsAdmin = input(false);
 
   private readonly api = inject(TokensApi);
   protected readonly session = inject(SessionStore);
@@ -167,6 +168,16 @@ export class TokenManager {
   protected lastDraft: TokenDraft | null = null;
 
   private idempotencyKey = newIdempotencyKey();
+
+  /**
+   * Administrator rights are offered to a caller who holds the role, for their own token and for the token of an instance-wide
+   * service account that holds the role itself: for any other account the choice would take effect nowhere (Q-UI-220).
+   */
+  protected readonly offerAdmin = computed(() => {
+    if (!this.session.hasRole('admin')) return false;
+    const s = this.scope();
+    return s.kind === 'own' || (s.kind === 'service-account' && !s.project && this.accountIsAdmin());
+  });
 
   protected readonly owner = computed(() => {
     const s = this.scope();

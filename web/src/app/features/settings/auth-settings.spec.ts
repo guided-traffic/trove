@@ -1,10 +1,15 @@
 import { AuthSettingsApi } from '../../api/auth-settings-api';
 import { FakeAuthSettingsApi, problem, sampleAuthSettings } from '../../api/testing/access-fakes';
-import { browserStorage, buttonByText, renderScreen, settle, text, typeInto, sleep } from '../../testing/screen';
+import { browserStorage, button, buttonByText, renderScreen, settle, text, typeInto, sleep } from '../../testing/screen';
 import { seriousViolations } from '../../testing/axe';
 import { AuthSettings } from './auth-settings';
 
 const overlay = (): HTMLElement => document.querySelector('.cdk-overlay-container') as HTMLElement;
+
+/** The "Save changes" button of one group; its accessible name carries the group (Q-UI-222). */
+const saveButton = (root: ParentNode, group: string): HTMLButtonElement =>
+  button(root, new RegExp(`^\\s*Save changes\\s+\\(${group}\\)\\s*$`));
+const saveTokens = (root: ParentNode): HTMLButtonElement => saveButton(root, 'token lifetimes');
 
 describe('Authentication settings (R-UI-031)', () => {
   beforeEach(() => browserStorage.clear('session'));
@@ -12,7 +17,7 @@ describe('Authentication settings (R-UI-031)', () => {
   it('R-UI-031 shows the runtime values with their ceilings and the read-only status, and passes axe', async () => {
     const { root } = await renderScreen(AuthSettings);
     const t = text(root);
-    expect(t).toContain('Anonymous access');
+    expect(t).toContain('Allow requests without a credential');
     expect(t).toContain('Ceiling from the configuration: 365 days');
     expect(t).toContain('Corporate SSO');
     expect(t).toContain('discovery document loaded');
@@ -58,12 +63,36 @@ describe('Authentication settings (R-UI-031)', () => {
     const { fixture, root, get } = await renderScreen(AuthSettings);
     typeInto(root, 'Default lifetime (days)', '30');
     await settle(fixture);
-    buttonByText(root, 'Save settings').click();
+    saveTokens(root).click();
     await settle(fixture);
     const api = get(AuthSettingsApi) as FakeAuthSettingsApi;
     expect(api.patches).toHaveLength(1);
     expect(api.patches[0]).toEqual({ patch: { tokens: { pat: { defaultTTLSeconds: 2_592_000 } } }, etag: '"100"' });
     expect(api.stored.etag).toBe('"101"');
+  });
+
+  it('Q-UI-222 each group has its own Save changes: saving one sends only its members and keeps the other group\'s edits', async () => {
+    const { fixture, root, get } = await renderScreen(AuthSettings);
+    const api = get(AuthSettingsApi) as FakeAuthSettingsApi;
+    expect(saveButton(root, 'anonymous access').disabled).toBe(true);
+    expect(saveTokens(root).disabled).toBe(true);
+    root.querySelector<HTMLInputElement>('trove-checkbox input')!.click();
+    typeInto(root, 'Default lifetime (days)', '30');
+    await settle(fixture);
+    expect(saveButton(root, 'anonymous access').disabled).toBe(false);
+    expect(saveTokens(root).disabled).toBe(false);
+
+    saveButton(root, 'anonymous access').click();
+    await settle(fixture);
+    expect(api.patches).toHaveLength(1);
+    expect(api.patches[0]).toEqual({ patch: { anonymousAccess: true }, etag: '"100"' });
+    expect(saveButton(root, 'anonymous access').disabled).toBe(true);
+    expect(saveTokens(root).disabled).toBe(false);
+    expect(root.querySelector<HTMLInputElement>('input[name="patDefault"]')!.value).toBe('30');
+
+    saveTokens(root).click();
+    await settle(fixture);
+    expect(api.patches[1]).toEqual({ patch: { tokens: { pat: { defaultTTLSeconds: 2_592_000 } } }, etag: '"101"' });
   });
 
   it('R-AUTH-040 anonymous access cannot be switched on above the ceiling and says why', async () => {
@@ -88,7 +117,7 @@ describe('Authentication settings (R-UI-031)', () => {
     await api.patch({ tokens: { expiryNoticeSeconds: 86_400 } }, '"100"');
     typeInto(root, 'Default lifetime (days)', '30');
     await settle(fixture);
-    buttonByText(root, 'Save settings').click();
+    saveTokens(root).click();
     await settle(fixture);
     const dialog = overlay().querySelector('trove-conflict-dialog') as HTMLElement;
     expect(dialog).toBeTruthy();
@@ -105,7 +134,7 @@ describe('Authentication settings (R-UI-031)', () => {
     });
     typeInto(root, 'Maximum lifetime (days)', '9999');
     await settle(fixture);
-    buttonByText(root, 'Save settings').click();
+    saveTokens(root).click();
     await settle(fixture);
     expect(text(root.querySelector('.field-error')!)).toContain('above the ceiling');
   });
@@ -115,7 +144,7 @@ describe('Authentication settings (R-UI-031)', () => {
     (get(AuthSettingsApi) as FakeAuthSettingsApi).failure = problem(401, 'reauthentication_required');
     typeInto(root, 'Default lifetime (days)', '30');
     await settle(fixture);
-    buttonByText(root, 'Save settings').click();
+    saveTokens(root).click();
     await settle(fixture);
     const drafts = browserStorage.entries('session').filter(([k]) => k.startsWith('trove.draft:'));
     expect(drafts).toHaveLength(1);
@@ -130,7 +159,7 @@ describe('Authentication settings (R-UI-031)', () => {
 
   it('R-UI-005 without settings:write the values are read only and there is no save button', async () => {
     const { root } = await renderScreen(AuthSettings, { capabilities: ['settings:read'] });
-    expect(root.textContent).not.toContain('Save settings');
+    expect(root.textContent).not.toContain('Save changes');
     expect(root.querySelector<HTMLInputElement>('input[name="patDefault"]')!.readOnly).toBe(true);
   });
 });

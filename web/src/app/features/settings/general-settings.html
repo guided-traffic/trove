@@ -7,90 +7,95 @@
   <trove-error-notice [error]="e" (retry)="load()" />
 }
 
-@if (info(); as i) {
-  <section class="card" aria-labelledby="gs-base-url">
-    <h2 id="gs-base-url" i18n="@@general.base-url">Public base URL</h2>
-    <dl class="facts">
-      <dt i18n="@@general.base-url.value">Address</dt>
-      <dd><code translate="no" data-testid="base-url">{{ i.baseUrl }}</code></dd>
-      <dt i18n="@@general.base-url.source">Source</dt>
-      <dd data-testid="base-url-source">{{ baseUrlSourceText() }}</dd>
-    </dl>
-  </section>
-}
+<div class="settings">
+  @if (info(); as i) {
+    <trove-text-field
+      i18n-label="@@general.base-url"
+      label="Public base URL"
+      name="baseUrl"
+      [value]="i.baseUrl"
+      [readonly]="true"
+    />
+    <p class="muted source" data-testid="base-url-source">{{ baseUrlSourceText() }}</p>
+  }
 
-@if (stored(); as s) {
-  <form (submit)="saveBanner($event)" novalidate aria-labelledby="gs-banner">
-    <section class="card">
-      <h2 id="gs-banner" i18n="@@general.banner">Banner</h2>
-      <p class="muted" i18n="@@general.banner.intro">
-        The banner is shown at the top of every screen for every user, including the sign-in page, within a minute after you save.
-      </p>
-      @if (bannerError(); as e) {
-        @if (bannerFieldError('/message') === null && bannerFieldError('/title') === null && bannerFieldError('/severity') === null) {
-          <trove-error-notice [error]="e" />
+  @if (stored(); as s) {
+    <trove-settings-section
+      i18n-heading="@@general.banner"
+      heading="Banner"
+      i18n-description="@@general.banner.intro"
+      description="Shown at the top of every screen for every user, including the sign-in page, within a minute after you save."
+    >
+      <form (submit)="saveBanner($event)" novalidate>
+        @if (bannerError(); as e) {
+          @if (bannerFieldError('/message') === null && bannerFieldError('/title') === null && bannerFieldError('/severity') === null) {
+            <trove-error-notice [error]="e" />
+          }
         }
-      }
-      <fieldset class="form-grid" [disabled]="!canWrite()">
-        <legend class="visually-hidden" i18n="@@general.banner.legend">Banner settings</legend>
-        <trove-checkbox [checked]="bannerEnabled()" (checkedChange)="bannerEnabled.set($event)">
-          <ng-container i18n="@@general.banner.enabled">Show the banner</ng-container>
-        </trove-checkbox>
-        <trove-select-field
-          i18n-label="@@general.banner.severity"
-          label="Severity"
-          name="severity"
-          [options]="severityOptions"
-          [value]="severity()"
-          (valueChange)="setSeverity($event)"
-          [error]="bannerFieldError('/severity')"
-        />
-        <trove-text-field
-          i18n-label="@@general.banner.title"
-          label="Title (optional)"
-          name="title"
-          [(value)]="title"
-          [error]="bannerFieldError('/title')"
-        />
-        <trove-text-field
-          i18n-label="@@general.banner.message"
-          label="Banner message"
-          name="message"
-          type="textarea"
-          [(value)]="message"
-          [hint]="messageHint"
-          [error]="bannerFieldError('/message')"
-        />
-      </fieldset>
-      @if (preview().length > 0) {
-        <div class="preview" data-testid="banner-preview">
-          <h3 i18n="@@general.banner.preview">Preview of the message</h3>
-          <p>
-            @for (part of preview(); track $index) {
-              @if (part.kind === 'link') {
-                <a [href]="part.href" target="_blank" rel="noopener noreferrer">{{ part.text }}</a>
-              } @else {
-                {{ part.text }}
+        <fieldset class="form-grid" [disabled]="!canWrite()">
+          <legend class="visually-hidden" i18n="@@general.banner.legend">Banner settings</legend>
+          <trove-checkbox [checked]="bannerEnabled()" (checkedChange)="bannerEnabled.set($event)">
+            <ng-container i18n="@@general.banner.enabled">Show the banner</ng-container>
+          </trove-checkbox>
+          <trove-select-field
+            i18n-label="@@general.banner.severity"
+            label="Severity"
+            name="severity"
+            [options]="severityOptions"
+            [value]="severity()"
+            (valueChange)="setSeverity($event)"
+            [error]="bannerFieldError('/severity')"
+          />
+          <trove-text-field
+            i18n-label="@@general.banner.title"
+            label="Title (optional)"
+            name="title"
+            [(value)]="title"
+            [error]="bannerFieldError('/title')"
+          />
+          <trove-text-field
+            i18n-label="@@general.banner.message"
+            label="Banner message"
+            name="message"
+            type="textarea"
+            [(value)]="message"
+            [hint]="messageHint"
+            [error]="bannerFieldError('/message')"
+          />
+        </fieldset>
+        @if (preview().length > 0) {
+          <div class="preview" data-testid="banner-preview">
+            <h3 i18n="@@general.banner.preview">Preview of the message</h3>
+            <p>
+              @for (part of preview(); track $index) {
+                @if (part.kind === 'link') {
+                  <a [href]="part.href" target="_blank" rel="noopener noreferrer">{{ part.text }}</a>
+                } @else {
+                  {{ part.text }}
+                }
               }
-            }
-          </p>
-        </div>
-      }
-      @if (canWrite()) {
-        <div class="row-actions">
-          <button class="btn btn-confirm" type="submit" [disabled]="savingBanner() || !bannerDirty()" i18n="@@general.banner.save">
-            Save banner
-          </button>
-        </div>
-      }
-    </section>
-  </form>
-}
+            </p>
+          </div>
+        }
+        @if (canWrite()) {
+          <div class="row-actions">
+            <button class="btn btn-confirm" type="submit" [disabled]="savingBanner() || !bannerDirty()">
+              <ng-container i18n="@@general.save-changes">Save changes</ng-container>
+              <span class="visually-hidden" i18n="@@general.banner.save-for"> (banner)</span>
+            </button>
+          </div>
+        }
+      </form>
+    </trove-settings-section>
+  }
 
-@if (storedMode(); as m) {
-  <form (submit)="saveMode($event)" novalidate aria-labelledby="gs-mode">
-    <section class="card">
-      <h2 id="gs-mode" i18n="@@general.mode">Maintenance mode</h2>
+  @if (storedMode(); as m) {
+    <trove-settings-section
+      i18n-heading="@@general.mode"
+      heading="Maintenance mode"
+      [description]="modeSummary()"
+      [(expanded)]="modeOpen"
+    >
       <p class="muted" i18n="@@general.mode.intro">
         In read-only mode every write is refused with 503 and the message below, for example during a storage migration or an incident.
         Downloads, sign-in, creating and revoking tokens, and this switch keep working.
@@ -114,46 +119,49 @@
           </span>
         }
       </p>
-      @if (modeError(); as e) {
-        @if (modeFieldError('/message') === null && modeFieldError('/retryAfterSeconds') === null) {
-          <trove-error-notice [error]="e" />
+      <form (submit)="saveMode($event)" novalidate>
+        @if (modeError(); as e) {
+          @if (modeFieldError('/message') === null && modeFieldError('/retryAfterSeconds') === null) {
+            <trove-error-notice [error]="e" />
+          }
         }
-      }
-      <fieldset class="form-grid" [disabled]="!canWrite()">
-        <legend class="visually-hidden" i18n="@@general.mode.legend">Maintenance mode settings</legend>
-        <trove-checkbox [checked]="readOnly()" (checkedChange)="readOnly.set($event)">
-          <ng-container i18n="@@general.mode.enabled">Read-only maintenance mode</ng-container>
-        </trove-checkbox>
-        @if (readOnly()) {
-          <trove-text-field
-            i18n-label="@@general.mode.message"
-            label="Maintenance message"
-            name="maintenanceMessage"
-            type="textarea"
-            [(value)]="modeMessage"
-            [hint]="modeMessageHint"
-            [error]="modeFieldError('/message')"
-          />
-          <trove-checkbox [checked]="cacheFill()" (checkedChange)="cacheFill.set($event)">
-            <ng-container i18n="@@general.mode.cache-fill">Remote repositories keep filling their cache</ng-container>
+        <fieldset class="form-grid" [disabled]="!canWrite()">
+          <legend class="visually-hidden" i18n="@@general.mode.legend">Maintenance mode settings</legend>
+          <trove-checkbox [checked]="readOnly()" (checkedChange)="readOnly.set($event)">
+            <ng-container i18n="@@general.mode.enabled">Read-only maintenance mode</ng-container>
           </trove-checkbox>
-          <trove-text-field
-            i18n-label="@@general.mode.retry-after"
-            label="Retry after (seconds)"
-            name="retryAfterSeconds"
-            type="number"
-            [(value)]="retryAfter"
-            [error]="modeFieldError('/retryAfterSeconds')"
-          />
+          @if (readOnly()) {
+            <trove-text-field
+              i18n-label="@@general.mode.message"
+              label="Maintenance message"
+              name="maintenanceMessage"
+              type="textarea"
+              [(value)]="modeMessage"
+              [hint]="modeMessageHint"
+              [error]="modeFieldError('/message')"
+            />
+            <trove-checkbox [checked]="cacheFill()" (checkedChange)="cacheFill.set($event)">
+              <ng-container i18n="@@general.mode.cache-fill">Remote repositories keep filling their cache</ng-container>
+            </trove-checkbox>
+            <trove-text-field
+              i18n-label="@@general.mode.retry-after"
+              label="Retry after (seconds)"
+              name="retryAfterSeconds"
+              type="number"
+              [(value)]="retryAfter"
+              [error]="modeFieldError('/retryAfterSeconds')"
+            />
+          }
+        </fieldset>
+        @if (canWrite()) {
+          <div class="row-actions">
+            <button class="btn btn-confirm" type="submit" [disabled]="savingMode() || !modeDirty()">
+              <ng-container i18n="@@general.save-changes">Save changes</ng-container>
+              <span class="visually-hidden" i18n="@@general.mode.save-for"> (maintenance mode)</span>
+            </button>
+          </div>
         }
-      </fieldset>
-      @if (canWrite()) {
-        <div class="row-actions">
-          <button class="btn btn-confirm" type="submit" [disabled]="savingMode() || !modeDirty()" i18n="@@general.mode.save">
-            Save maintenance mode
-          </button>
-        </div>
-      }
-    </section>
-  </form>
-}
+      </form>
+    </trove-settings-section>
+  }
+</div>

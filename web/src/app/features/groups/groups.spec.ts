@@ -57,7 +57,7 @@ describe('Groups (R-UI-025)', () => {
   it('R-UI-025 a SCIM group is read-only and says why', async () => {
     const { root } = await renderScreen(GroupDetail, { inputs: { name: 'scim-sales' } });
     expect(text(root)).toContain('managed by SCIM');
-    expect(root.textContent).not.toContain('Save group');
+    expect(root.textContent).not.toContain('Save changes');
     expect(root.textContent).not.toContain('Add a member');
     expect(await seriousViolations(root)).toEqual([]);
   });
@@ -89,7 +89,8 @@ describe('Groups (R-UI-025)', () => {
   it('R-UI-025 saves only the members that changed and passes axe', async () => {
     const { fixture, root, get } = await renderScreen(GroupDetail, { inputs: { name: 'platform' } });
     typeInto(root, 'Description', 'Platform and infra');
-    buttonByText(root, 'Save group').click();
+    await settle(fixture);
+    buttonByText(root, 'Save changes').click();
     await settle(fixture);
     const api = get(IdentityApi) as FakeIdentityApi;
     expect(api.calls).toContain('updateGroup platform {"description":"Platform and infra"}');
@@ -97,11 +98,26 @@ describe('Groups (R-UI-025)', () => {
     expect(await seriousViolations(root)).toEqual([]);
   });
 
+  it('Q-UI-222 the group is edited in place: Save changes waits for a change, the origin is read-only, Delete is under Advanced', async () => {
+    const { fixture, root } = await renderScreen(GroupDetail, { inputs: { name: 'platform' } });
+    expect(root.querySelector('.settings > form')).toBeTruthy();
+    const save = buttonByText(root, 'Save changes') as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    typeInto(root, 'Description', 'Changed');
+    await settle(fixture);
+    expect(save.disabled).toBe(false);
+    expect(root.querySelector<HTMLInputElement>('input[name="origin"]')!.readOnly).toBe(true);
+    const advanced = [...root.querySelectorAll('trove-settings-section')].find((e) => text(e).includes('Advanced'))!;
+    expect(text(advanced)).toContain('Delete group');
+    expect(advanced.querySelector('button.btn-danger')).toBeTruthy();
+  });
+
   it('R-UI-042 a 412 on a group PATCH opens the conflict dialog', async () => {
     const { fixture, root, get } = await renderScreen(GroupDetail, { inputs: { name: 'platform' } });
     (get(IdentityApi) as FakeIdentityApi).bumpRevision('group:platform');
     typeInto(root, 'Description', 'Platform and infra');
-    buttonByText(root, 'Save group').click();
+    await settle(fixture);
+    buttonByText(root, 'Save changes').click();
     await settle(fixture);
     expect(document.querySelector('.cdk-overlay-container trove-conflict-dialog')).toBeTruthy();
   });

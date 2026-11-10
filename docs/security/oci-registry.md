@@ -125,6 +125,16 @@ Q-OCI-56), and nothing can be mounted below `/v2/` around it:
   lacks the route's action on the image name of the repository (the bound repository on a bound host, the base repository of a cache
   view); when the catalog is asked for without `registry:catalog:*`; and when a request matched to the version check is not `/v2/`
   itself.
+- **What the refusal says (Q-OCI-220).** The text of that 401 names the scope the request needs (the same value as the challenge's
+  `scope`, which carries the name the client typed) and, for a personal or service-account token whose scope is `inherit` without
+  `admin`, adds that such a token acts as a non-administrator also for an owner who is an administrator and has to be created with
+  administrator rights (`insufficientText` in [enforce.go](../../internal/api/registry/enforce.go)). It is built from the request's
+  address and the caller's own token scope, never from a lookup of the repository, so an existing repository, one the caller may not
+  read and one that does not exist are answered with the same text; it does not say which right the owner lacks, because that would
+  need the decision point's answer for the repository. A trove token presented directly keeps the 403 of the decision point, which
+  names the action and the target the caller sent, and the 404 `NAME_UNKNOWN` that is byte-identical for a hidden and a missing
+  repository. The test is `TestTheRefusalOfATokenWithoutRightsSaysWhyAndNothingAboutTheRepository` in
+  [refusal_test.go](../../test/integration/registry/refusal_test.go).
 - **What `Mount` refuses.** A pattern outside `/v2/`, a pattern mounted twice, a route name twice, a route without its example request,
   a repository route under a core route's name, a second version check, and a version check other than `GET` or `HEAD` of `/v2/`.
 

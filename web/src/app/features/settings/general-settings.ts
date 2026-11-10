@@ -17,6 +17,7 @@ import { ErrorNotice } from '../../shared/error-notice';
 import { fieldErrorAt } from '../../shared/field-errors';
 import { asApiError } from '../../shared/paged-resource';
 import { Checkbox } from '../../shared/ui/checkbox';
+import { SettingsSection } from '../../shared/ui/settings-section';
 
 type Severity = 'info' | 'warning' | 'critical';
 
@@ -33,9 +34,17 @@ const MAINTENANCE_MESSAGE_MAX = 500;
  */
 @Component({
   selector: 'trove-general-settings',
-  imports: [Checkbox, ErrorNotice, Needs, SelectField, TextField],
+  imports: [Checkbox, ErrorNotice, Needs, SelectField, SettingsSection, TextField],
   templateUrl: './general-settings.html',
   styleUrl: '../../shared/access/access.scss',
+  styles: `
+    .settings {
+      max-inline-size: 56rem;
+    }
+    .source {
+      margin-block-start: calc(-1 * var(--trove-space-2));
+    }
+  `,
 })
 export class GeneralSettings {
   private readonly api = inject(SystemApi);
@@ -64,6 +73,14 @@ export class GeneralSettings {
   protected readonly retryAfter = signal('300');
 
   protected readonly canWrite = computed(() => this.session.has('settings:write'));
+
+  /** The maintenance section opens by itself while the mode is on, so that a read-only installation is seen at once. */
+  protected readonly modeOpen = signal(false);
+  protected readonly modeSummary = computed(() =>
+    this.storedMode()?.mode === 'read_only'
+      ? $localize`:@@general.mode.summary-on:Read-only mode is on: every write is refused.`
+      : $localize`:@@general.mode.summary-off:Refuse every write during a migration or an incident.`,
+  );
 
   protected readonly severityOptions: readonly SelectOption[] = [
     { value: 'info', label: $localize`:@@general.banner.severity.info:Notice` },
@@ -135,6 +152,7 @@ export class GeneralSettings {
 
   private adoptMode(m: MaintenanceMode): void {
     this.storedMode.set(m);
+    if (m.mode === 'read_only') this.modeOpen.set(true);
     this.readOnly.set(m.mode === 'read_only');
     this.modeMessage.set(m.message ?? '');
     this.cacheFill.set(m.cacheFill);

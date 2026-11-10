@@ -6066,12 +6066,15 @@ export interface components {
          *       "description": "Deploy jobs",
          *       "status": "active",
          *       "createdAt": "2026-09-01T08:00:00Z",
-         *       "project": null
+         *       "project": null,
+         *       "isAdmin": false
          *     }
          */
         ServiceAccount: {
             /** Format: uuid */
             id: string;
+            /** @description Whether the account holds the administrator role now, by a binding on the account (Q-AUTH-209). Always `false` for a project's account, which holds no system role (R-AUTHZ-026). A token of the account carries administrator power only with `scope.admin` and only while this is `true` (R-AUTH-024). */
+            isAdmin: boolean;
             /** @description The name within the project; the stored name is `<project>/<name>` for a project's account. */
             name: string;
             /** @description The reference, `sa:<name>` or `sa:<project>/<name>`. */
@@ -6175,6 +6178,12 @@ export interface components {
             /** @description The prefix and the first characters of the value, for recognising a token. */
             hint: string;
             owner: components["schemas"]["TokenOwner"];
+            /**
+             * @description Whether the owner holds the administrator role now (Q-AUTH-209). A token with `scope.admin` exercises administrator power
+             *     only while this is `true`, and has no administrator rights while it is `false` (R-AUTH-024); the answer does not change
+             *     what the token may do, it states what the role is at the time of the read.
+             */
+            ownerIsAdmin: boolean;
             description: string;
             scope: components["schemas"]["TokenScope"];
             /**

@@ -126,6 +126,23 @@ SELECT m.member_id::text AS user_id, 'group:' || g.name AS via
  WHERE b.role = 'admin' AND m.member_id = ANY(sqlc.arg(ids)::text[]::uuid[])
  ORDER BY user_id, via;
 
+-- name: IdentityAdminHolderIDs :many
+-- Which of the given principals hold the role admin now (Q-AUTH-209): a binding on the principal itself, a binding on a
+-- group the principal is a member of, or the break-glass account. A service account is bound directly (R-AUTH-019).
+SELECT b.principal_id::text AS id
+  FROM authz_role_binding b
+ WHERE b.role = 'admin' AND b.principal_id = ANY(sqlc.arg(ids)::text[]::uuid[])
+UNION
+SELECT m.member_id::text AS id
+  FROM authz_role_binding b
+  JOIN group_membership m ON m.group_id = b.principal_id
+ WHERE b.role = 'admin' AND m.member_id = ANY(sqlc.arg(ids)::text[]::uuid[])
+UNION
+SELECT u.principal_id::text AS id
+  FROM app_user u
+ WHERE u.is_break_glass AND u.principal_id = ANY(sqlc.arg(ids)::text[]::uuid[])
+ORDER BY id;
+
 -- name: IdentityGroupRoles :many
 -- The system roles bound to a group, read only on the group record (R-AUTH-018).
 SELECT role FROM authz_role_binding WHERE principal_id = sqlc.arg(group_id)::text::uuid ORDER BY role;

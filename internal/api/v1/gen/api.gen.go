@@ -7988,6 +7988,9 @@ type ServiceAccount struct {
 	Description string             `json:"description"`
 	Id          openapi_types.UUID `json:"id"`
 
+	// IsAdmin Whether the account holds the administrator role now, by a binding on the account (Q-AUTH-209). Always `false` for a project's account, which holds no system role (R-AUTHZ-026). A token of the account carries administrator power only with `scope.admin` and only while this is `true` (R-AUTH-024).
+	IsAdmin bool `json:"isAdmin"`
+
 	// Name The name within the project; the stored name is `<project>/<name>` for a project's account.
 	Name string `json:"name"`
 
@@ -8219,13 +8222,18 @@ type Token struct {
 	ExpiresAt   *time.Time `json:"expiresAt"`
 
 	// Hint The prefix and the first characters of the value, for recognising a token.
-	Hint             string             `json:"hint"`
-	Id               openapi_types.UUID `json:"id"`
-	LastUsedAddr     *string            `json:"lastUsedAddr"`
-	LastUsedAt       *time.Time         `json:"lastUsedAt"`
-	Owner            TokenOwner         `json:"owner"`
-	RevocationReason *string            `json:"revocationReason"`
-	RevokedAt        *time.Time         `json:"revokedAt"`
+	Hint         string             `json:"hint"`
+	Id           openapi_types.UUID `json:"id"`
+	LastUsedAddr *string            `json:"lastUsedAddr"`
+	LastUsedAt   *time.Time         `json:"lastUsedAt"`
+	Owner        TokenOwner         `json:"owner"`
+
+	// OwnerIsAdmin Whether the owner holds the administrator role now (Q-AUTH-209). A token with `scope.admin` exercises administrator power
+	// only while this is `true`, and has no administrator rights while it is `false` (R-AUTH-024); the answer does not change
+	// what the token may do, it states what the role is at the time of the read.
+	OwnerIsAdmin     bool       `json:"ownerIsAdmin"`
+	RevocationReason *string    `json:"revocationReason"`
+	RevokedAt        *time.Time `json:"revokedAt"`
 
 	// RevokedBy The ID of the principal that revoked the token.
 	RevokedBy   *string             `json:"revokedBy"`

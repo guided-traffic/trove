@@ -154,8 +154,6 @@ export function expiresSoon(token: Pick<Token, 'state' | 'expiresAt'>, now: numb
 export class TokenTable {
   readonly tokens = input.required<readonly Token[]>();
   readonly showOwner = input(false);
-  /** Whether the owner holds the administrator role now; null where the table does not know it (the tokens of others). */
-  readonly ownerIsAdmin = input<boolean | null>(null);
   readonly selectable = input(false);
   readonly canRotate = input(false);
   readonly canRevoke = input(true);
@@ -202,9 +200,13 @@ export class TokenTable {
     return Date.now();
   });
 
-  /** An admin token whose owner lost the role has no administrator rights until the owner holds it again (R-AUTH-024). */
+  /**
+   * An admin token whose owner does not hold the role has no administrator rights until the owner holds it (R-AUTH-024). The
+   * record states the owner's role at the time of the read (`ownerIsAdmin`, Q-AUTH-209), so every list shows it, also the token
+   * administration's list of other people's tokens (Q-UI-221).
+   */
   protected adminInactive(t: Token): boolean {
-    return t.state === 'active' && t.scope.admin === true && this.ownerIsAdmin() === false;
+    return t.state === 'active' && t.scope.admin === true && !t.ownerIsAdmin;
   }
 
   protected summary(t: Token): string {

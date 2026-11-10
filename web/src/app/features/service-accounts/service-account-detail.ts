@@ -14,6 +14,7 @@ import { asApiError } from '../../shared/paged-resource';
 import { Needs } from '../../shared/access/needs';
 import { PrincipalRoles } from '../../shared/access/principal-roles';
 import { ErrorNotice } from '../../shared/error-notice';
+import { SettingsSection } from '../../shared/ui/settings-section';
 import { TokenManager, TokenOwnerScope } from '../tokens/token-manager';
 
 /**
@@ -23,7 +24,7 @@ import { TokenManager, TokenOwnerScope } from '../tokens/token-manager';
  */
 @Component({
   selector: 'trove-service-account-detail',
-  imports: [DatePipe, RouterLink, ErrorNotice, Needs, PrincipalRoles, TextField, TokenManager],
+  imports: [DatePipe, RouterLink, ErrorNotice, Needs, PrincipalRoles, SettingsSection, TextField, TokenManager],
   template: `
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@sa.heading">Service account</h1>
@@ -52,53 +53,111 @@ import { TokenManager, TokenOwnerScope } from '../tokens/token-manager';
     }
 
     @if (account(); as a) {
-      <section class="card" aria-labelledby="sa-general">
-        <h2 id="sa-general" i18n="@@sa.general">General</h2>
-        <dl class="facts">
-          <dt i18n="@@sa.id">ID</dt>
-          <dd><code translate="no">{{ a.id }}</code></dd>
-          <dt i18n="@@sa.status">Status</dt>
-          <dd>
-            @if (a.status === 'active') {
-              <span class="ok"><span class="material-icons" aria-hidden="true">check_circle</span> <ng-container i18n="@@sa.active">Active</ng-container></span>
-            } @else {
-              <span class="bad"><span class="material-icons" aria-hidden="true">block</span> <ng-container i18n="@@sa.disabled">Disabled</ng-container></span>
-            }
-          </dd>
-          <dt i18n="@@sa.created">Created</dt>
-          <dd>{{ a.createdAt | date: 'medium' }}</dd>
-        </dl>
-        <form class="form-grid" (submit)="save($event)">
-          <trove-text-field i18n-label="@@sa.description" label="Description" name="description" [(value)]="description" [readonly]="!canWrite()" [error]="fieldError('/description')" />
+      <div class="settings">
+        <form (submit)="save($event)" novalidate>
+          <div class="row">
+            <trove-text-field i18n-label="@@sa.description" label="Description" name="description" [(value)]="description" [readonly]="!canWrite()" [error]="fieldError('/description')" />
+            <trove-text-field i18n-label="@@sa.id" label="ID" name="id" [value]="a.id" [readonly]="true" />
+          </div>
           @if (canWrite()) {
-            <div class="row-actions">
-              <button class="btn btn-confirm" type="submit" [disabled]="busy()" i18n="@@sa.save">Save description</button>
+            <button class="btn btn-confirm" type="submit" [disabled]="busy() || !dirty()" i18n="@@sa.save-changes">Save changes</button>
+          }
+        </form>
+
+        <trove-settings-section
+          i18n-heading="@@sa.details"
+          heading="Details"
+          i18n-description="@@sa.details-hint"
+          description="Status, administrator role and when the account was created."
+        >
+          <dl class="facts">
+            <dt i18n="@@sa.status">Status</dt>
+            <dd>
+              @if (a.status === 'active') {
+                <span class="ok"><span class="material-icons" aria-hidden="true">check_circle</span> <ng-container i18n="@@sa.active">Active</ng-container></span>
+              } @else {
+                <span class="bad"><span class="material-icons" aria-hidden="true">block</span> <ng-container i18n="@@sa.disabled">Disabled</ng-container></span>
+              }
+            </dd>
+            @if (!a.project) {
+              <dt i18n="@@sa.admin">Administrator role</dt>
+              <dd data-testid="sa-admin">
+                @if (a.isAdmin) {
+                  <ng-container i18n="@@sa.admin.yes">Held by this account</ng-container>
+                } @else {
+                  <ng-container i18n="@@sa.admin.no">Not held</ng-container>
+                }
+              </dd>
+            }
+            <dt i18n="@@sa.created">Created</dt>
+            <dd>{{ a.createdAt | date: 'medium' }}</dd>
+          </dl>
+        </trove-settings-section>
+
+        @if (session.has('roles:read') && !a.project) {
+          <trove-principal-roles [principal]="a.principal" />
+        }
+
+        <section class="tokens" aria-labelledby="sa-tokens">
+          <h2 id="sa-tokens" i18n="@@sa.tokens">Tokens</h2>
+          @if (canReadTokens()) {
+            <trove-token-manager [scope]="scope()" [accountIsAdmin]="a.isAdmin" />
+          } @else {
+            <p i18n="@@sa.tokens-denied">You need the permission to read tokens to manage the tokens of this account.</p>
+          }
+        </section>
+
+        @if (canWrite()) {
+          <trove-settings-section
+            i18n-heading="@@sa.advanced"
+            heading="Advanced"
+            i18n-description="@@sa.advanced-hint"
+            description="Disable or delete this account."
+          >
+            <p class="muted">
+              @if (a.status === 'active') {
+                <ng-container i18n="@@sa.disable-note">A disabled account can no longer authenticate; you can also revoke its tokens.</ng-container>
+              } @else {
+                <ng-container i18n="@@sa.enable-note">The account is disabled and cannot authenticate. Enabling it lets its tokens work again.</ng-container>
+              }
+            </p>
+            <p>
               @if (a.status === 'active') {
                 <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="disable()" i18n="@@sa.disable">Disable</button>
               } @else {
                 <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="enable()" i18n="@@sa.enable">Enable</button>
               }
-              <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="remove()" i18n="@@sa.delete">Delete</button>
-            </div>
-          }
-        </form>
-      </section>
-
-      @if (session.has('roles:read') && !a.project) {
-        <trove-principal-roles [principal]="a.principal" />
-      }
-
-      <section class="card" aria-labelledby="sa-tokens">
-        <h2 id="sa-tokens" i18n="@@sa.tokens">Tokens</h2>
-        @if (canReadTokens()) {
-          <trove-token-manager [scope]="scope()" />
-        } @else {
-          <p i18n="@@sa.tokens-denied">You need the permission to read tokens to manage the tokens of this account.</p>
+            </p>
+            <p class="muted" i18n="@@sa.delete-note">Deleting the account removes it and its tokens. This cannot be undone.</p>
+            <button class="btn btn-danger" type="button" [disabled]="busy()" (click)="remove()" i18n="@@sa.delete">Delete</button>
+          </trove-settings-section>
         }
-      </section>
+      </div>
     }
   `,
   styleUrl: '../../shared/access/access.scss',
+  styles: `
+    .settings {
+      max-inline-size: 56rem;
+    }
+    form {
+      padding-block-end: var(--trove-space-6);
+    }
+    .row {
+      display: grid;
+      grid-template-columns: minmax(0, 5fr) minmax(0, 4fr);
+      gap: var(--trove-space-6);
+    }
+    .tokens {
+      padding-block: var(--trove-space-5);
+      border-block-start: 1px solid var(--trove-border);
+    }
+    @media (max-width: 40rem) {
+      .row {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+  `,
 })
 export class ServiceAccountDetail {
   /** Route parameter `:name`: bare within the project. */
@@ -120,6 +179,10 @@ export class ServiceAccountDetail {
   protected readonly actionError = signal<ApiError | null>(null);
   protected readonly description = signal('');
   protected readonly busy = signal(false);
+  protected readonly dirty = computed(() => {
+    const a = this.account();
+    return a !== null && this.description().trim() !== a.description;
+  });
 
   /** The project of the account, or null for an instance-wide account (R-AUTHZ-026). */
   protected readonly projectKey = computed(() => this.project() ?? null);

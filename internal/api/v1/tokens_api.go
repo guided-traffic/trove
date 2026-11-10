@@ -71,10 +71,10 @@ func toOwner(o token.Owner) gen.TokenOwner {
 // configuration (nil: every name is configured): the endpoint names the token is
 // bound to that no configured endpoint carries are listed as unknownEndpoints,
 // because the token is valid on none of them (R-EP-011).
-func (s *Server) toToken(r token.Record) gen.Token {
+func (s *Server) toToken(r token.Record, ownerIsAdmin bool) gen.Token {
 	out := gen.Token{
-		UnknownEndpoints: s.unknownEndpoints(r.Scope.Endpoints),
-		Id:               uuidOf(r.ID), Type: gen.TokenType(r.Type), Hint: r.Hint, Owner: toOwner(r.Owner), Description: r.Description,
+		UnknownEndpoints: s.unknownEndpoints(r.Scope.Endpoints), OwnerIsAdmin: ownerIsAdmin,
+		Id: uuidOf(r.ID), Type: gen.TokenType(r.Type), Hint: r.Hint, Owner: toOwner(r.Owner), Description: r.Description,
 		Scope: toScope(r.Scope), CreatedAt: utc(r.CreatedAt), CreatedBy: optString(r.CreatedBy), CreatedVia: r.CreatedVia,
 		ExpiresAt: optTime(deref1(r.ExpiresAt)), LastUsedAt: optTime(deref1(r.LastUsedAt)), LastUsedAddr: optString(r.LastUsedAddr),
 		State: gen.TokenState(r.State), RevokedAt: optTime(deref1(r.RevokedAt)), RevokedBy: optString(r.RevokedBy),
@@ -91,6 +91,29 @@ func (s *Server) toToken(r token.Record) gen.Token {
 		}
 	}
 	return out
+}
+
+// ownerAdmins says which owners of the records hold the administrator role now (Q-AUTH-209), in one query. The answer is the
+// state at the time of the read; the token's own power is decided at every use (R-AUTHZ-010).
+func (s *Server) ownerAdmins(ctx context.Context, recs ...token.Record) (map[string]bool, error) {
+	ids := make([]string, 0, len(recs))
+	seen := make(map[string]bool, len(recs))
+	for _, r := range recs {
+		if r.Owner.ID != "" && !seen[r.Owner.ID] {
+			seen[r.Owner.ID] = true
+			ids = append(ids, r.Owner.ID)
+		}
+	}
+	return s.o.Auth.Manager.AdminHolders(ctx, ids)
+}
+
+// tokenWithOwnerRole renders one record with the role of its owner.
+func (s *Server) tokenWithOwnerRole(ctx context.Context, rec token.Record) (gen.Token, error) {
+	admins, err := s.ownerAdmins(ctx, rec)
+	if err != nil {
+		return gen.Token{}, err
+	}
+	return s.toToken(rec, admins[rec.Owner.ID]), nil
 }
 
 func (s *Server) unknownEndpoints(bound []string) []string {
@@ -425,8 +448,13 @@ func (s *Server) ListTokens(w http.ResponseWriter, r *http.Request, _ gen.ListTo
 			return
 		}
 	}
+	admins, err := s.ownerAdmins(ctx, rows...)
+	if err != nil {
+		failIdentity(w, r, err)
+		return
+	}
 	page := NewPage(lq, rows, func(t token.Record) []string { return []string{t.ID} })
-	WritePage(w, r, MapPage(page, s.toToken))
+	WritePage(w, r, MapPage(page, func(t token.Record) gen.Token { return s.toToken(t, admins[t.Owner.ID]) }))
 }
 
 // listOwner resolves the owner filter of the token list. A caller without
@@ -532,11 +560,15 @@ func (s *Server) GetToken(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	rec, err := s.loadVisible(r.Context(), httpserver.PrincipalFrom(r.Context()), id, "tokens:read", true)
+	var out gen.Token
+	if err == nil {
+		out, err = s.tokenWithOwnerRole(r.Context(), rec)
+	}
 	if err != nil {
 		failIdentity(w, r, err)
 		return
 	}
-	writeJSON(w, r, http.StatusOK, s.toToken(rec))
+	writeJSON(w, r, http.StatusOK, out)
 }
 
 func notAToken() error {
@@ -554,11 +586,15 @@ func (s *Server) GetCurrentToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rec, err := s.o.Auth.Tokens.Get(r.Context(), p.Credential.TokenID)
+	var out gen.Token
+	if err == nil {
+		out, err = s.tokenWithOwnerRole(r.Context(), rec)
+	}
 	if err != nil {
 		failIdentity(w, r, err)
 		return
 	}
-	writeJSON(w, r, http.StatusOK, s.toToken(rec))
+	writeJSON(w, r, http.StatusOK, out)
 }
 
 func noContent(w http.ResponseWriter) {

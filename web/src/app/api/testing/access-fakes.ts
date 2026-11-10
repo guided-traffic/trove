@@ -105,6 +105,7 @@ export function sampleToken(over: Partial<Token> = {}): Token {
     type: 'pat',
     hint: 'trv_pat_3kQ9',
     owner: { kind: 'user', name: 'alice' },
+    ownerIsAdmin: false,
     description: 'laptop npm',
     scope: { inherit: true, admin: false, repositories: [], system: [] },
     unknownEndpoints: [],
@@ -196,6 +197,7 @@ export class FakeIdentityApi extends IdentityApi {
       description: 'Deploy jobs',
       status: 'active',
       project: null,
+      isAdmin: false,
       createdAt: '2026-09-01T08:00:00Z',
     },
   ];
@@ -491,6 +493,7 @@ export class FakeIdentityApi extends IdentityApi {
       name: body.name,
       principal: project ? `sa:${project}/${body.name}` : `sa:${body.name}`,
       project,
+      isAdmin: false,
       description: body.description ?? '',
       status: 'active',
       createdAt: '2026-10-29T10:00:00Z',

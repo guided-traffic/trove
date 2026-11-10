@@ -15,6 +15,10 @@ async function render(options: { capabilities?: readonly string[]; setup?: (api:
   return { ...r, api: r.get(SystemApi) as FakeSystemApi, notices: r.get(BannerStore) };
 }
 
+/** The section's own "Save changes" button; its accessible name carries the section (Q-UI-222). */
+const save = (root: ParentNode, section: 'banner' | 'maintenance mode'): HTMLButtonElement =>
+  button(root, new RegExp(`^\\s*Save changes\\s+\\(${section}\\)\\s*$`));
+
 const checkbox = (root: ParentNode, label: string): HTMLInputElement => {
   const l = [...root.querySelectorAll('label.check-row')].find((e) => text(e).startsWith(label));
   const input = l?.querySelector('input');
@@ -31,7 +35,9 @@ describe('General settings (R-UI-033)', () => {
   it('R-UI-033 shows the public base URL with its source, the banner and the maintenance mode, and passes axe', async () => {
     const { root, api } = await render();
     expect(text(root.querySelector('h1')!)).toBe('General settings');
-    expect(text(root.querySelector('[data-testid="base-url"]')!)).toBe((await api.info()).baseUrl);
+    const baseUrl = root.querySelector<HTMLInputElement>('input[name="baseUrl"]')!;
+    expect(baseUrl.value).toBe((await api.info()).baseUrl);
+    expect(baseUrl.readOnly).toBe(true);
     expect(text(root.querySelector('[data-testid="base-url-source"]')!)).toContain('configuration file');
     expect(text(root)).toContain('Banner');
     expect(text(root.querySelector('[data-testid="mode-state"]')!)).toContain('Normal mode');
@@ -49,7 +55,7 @@ describe('General settings (R-UI-033)', () => {
 
   it('R-UI-033 saves an enabled banner with its severity, title and message, and shows it at once', async () => {
     const { fixture, root, api, notices } = await render();
-    expect(button(root, 'Save banner').disabled).toBe(true);
+    expect(save(root, 'banner').disabled).toBe(true);
     await toggle(fixture, checkbox(root, 'Show the banner'));
     const severity = root.querySelector<HTMLSelectElement>('select[name="severity"]')!;
     severity.value = 'warning';
@@ -57,7 +63,7 @@ describe('General settings (R-UI-033)', () => {
     typeInto(root, 'Title', 'Planned downtime');
     typeInto(root, 'Banner message', 'Read-only on Saturday, see [status](https://status.example.com/).');
     await settle(fixture);
-    button(root, 'Save banner').click();
+    save(root, 'banner').click();
     await settle(fixture);
     expect(api.bannerWrites).toEqual([
       {
@@ -68,7 +74,7 @@ describe('General settings (R-UI-033)', () => {
       },
     ]);
     expect(notices.notices().map((n) => [n.kind, n.severity, n.title])).toEqual([['banner', 'warning', 'Planned downtime']]);
-    expect(button(root, 'Save banner').disabled).toBe(true);
+    expect(save(root, 'banner').disabled).toBe(true);
   });
 
   it('R-OPS-025 previews the message with https links only: a javascript link stays text', async () => {
@@ -89,7 +95,7 @@ describe('General settings (R-UI-033)', () => {
     expect(checkbox(root, 'Show the banner').checked).toBe(true);
     expect(root.querySelector<HTMLSelectElement>('select[name="severity"]')!.value).toBe('critical');
     await toggle(fixture, checkbox(root, 'Show the banner'));
-    button(root, 'Save banner').click();
+    save(root, 'banner').click();
     await settle(fixture);
     expect(api.bannerWrites[0]).toMatchObject({ enabled: false, severity: 'critical', message: 'Pushes fail.' });
   });
@@ -104,7 +110,7 @@ describe('General settings (R-UI-033)', () => {
     );
     typeInto(root, 'Banner message', 'x');
     await settle(fixture);
-    button(root, 'Save banner').click();
+    save(root, 'banner').click();
     await settle(fixture);
     expect(text(root.querySelector('.field-error')!)).toBe('An enabled banner needs a message.');
     expect(checkbox(root, 'Show the banner').checked).toBe(true);
@@ -119,7 +125,7 @@ describe('General settings (R-UI-033)', () => {
     await toggle(fixture, checkbox(root, 'Remote repositories keep filling'));
     typeInto(root, 'Retry after (seconds)', '120');
     await settle(fixture);
-    button(root, 'Save maintenance mode').click();
+    save(root, 'maintenance mode').click();
     await settle(fixture);
     expect(api.maintenanceWrites).toEqual([]);
     expect(text(overlay())).toContain('Switch to read-only maintenance mode?');
@@ -135,7 +141,7 @@ describe('General settings (R-UI-033)', () => {
   it('R-OPS-024 declining the confirmation sends nothing', async () => {
     const { fixture, root, api } = await render();
     await toggle(fixture, checkbox(root, 'Read-only maintenance mode'));
-    button(root, 'Save maintenance mode').click();
+    save(root, 'maintenance mode').click();
     await settle(fixture);
     buttonByText(overlay(), 'Cancel').click();
     await settle(fixture);
@@ -152,7 +158,7 @@ describe('General settings (R-UI-033)', () => {
     expect(text(root.querySelector('[data-testid="mode-state"]')!)).toContain('Read-only mode is on. Since');
     expect(text(root.querySelector('[data-testid="mode-state"]')!)).toContain('by alice');
     await toggle(fixture, checkbox(root, 'Read-only maintenance mode'));
-    button(root, 'Save maintenance mode').click();
+    save(root, 'maintenance mode').click();
     await settle(fixture);
     expect(api.maintenanceWrites).toEqual([{ mode: 'normal' }]);
     expect(text(root.querySelector('[data-testid="mode-state"]')!)).toContain('Normal mode');
@@ -162,8 +168,7 @@ describe('General settings (R-UI-033)', () => {
     const { root } = await render({ capabilities: ['settings:read'] });
     expect(text(root)).toContain('Read only: changing this needs the permission settings:write');
     expect(root.querySelector('fieldset')!.disabled).toBe(true);
-    expect([...root.querySelectorAll('button')].map((b) => text(b))).not.toContain('Save banner');
-    expect([...root.querySelectorAll('button')].map((b) => text(b))).not.toContain('Save maintenance mode');
+    expect([...root.querySelectorAll('button')].map((b) => text(b)).filter((t) => t.startsWith('Save changes'))).toEqual([]);
   });
 
   it('R-UI-033 a load failure is shown with a retry', async () => {
