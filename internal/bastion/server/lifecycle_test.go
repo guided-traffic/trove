@@ -266,9 +266,8 @@ func TestR_BAS_039_TheDrainSpoolsTheBufferDuringAnOutageAndAnotherReplicaDeliver
 	for i := 0; i < 3; i++ {
 		srv.deps.Downloads.Add(iface.DownloadEvent{At: at.Add(time.Duration(i) * time.Second), Repository: "web/npm-all", Path: fmt.Sprintf("/api/npm/web/npm-all/p%d.tgz", i), ClientAddress: "203.0.113.7", Replica: "replica-a"})
 	}
-	if v := maintest.Value(srv.bm.AuditBuffer); v != 3 {
-		t.Fatalf("buffer = %v", v)
-	}
+	// A flush that runs now holds the batch while it fails against the outage and then puts it back.
+	eventually(t, 20*time.Second, "the three events in the buffer", func() bool { return maintest.Value(srv.bm.AuditBuffer) == 3 })
 	if err := srv.Shutdown(context.Background()); err != nil {
 		t.Fatalf("shutdown: %v", err)
 	}
