@@ -73,7 +73,7 @@ before the engine fetches its archive through the gate. Roles and the role index
 [mirror.md](mirror.md); the area is `test/integration/mirror/ansible_test.go`.
 
 **The hub exchange** ([R-ANS-019](../spec/formats/ansible.md#r-ans-019--remote-repository-a-hub-behind-single-sign-on)). A hub repository has `remote.authMode: bearer` (the offline token is the stored secret) and
-`ansible.authUrl`. `send` of the engine asks the adapter's `ExchangeRequest` for a request to the realm, checks that the realm's host may
+`ansible.authUrl`. `send` of the engine (and `Get`, the request of a mirror's discovery) asks the adapter's `ExchangeRequest` for a request to the realm, checks that the realm's host may
 receive the credential, exchanges (one flight per replica and token, cached until 30 seconds before the realm's `expires_in`) and sends the
 upstream request with `Authorization: Bearer <access token>` in place of the credential; a 401 of the upstream exchanges again once. The
 stub's realm ([realm.go](../../test/ansiblestub/realm.go)) issues the tokens and counts what the upstream accepted and rejected, so a test

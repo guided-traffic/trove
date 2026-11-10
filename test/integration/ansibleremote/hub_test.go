@@ -37,6 +37,10 @@ func TestR_ANS_019_AHubIsCalledWithTheAccessTokenItsRealmIssuedAndNeverWithTheOf
 	if got := e.stub.Counts().WithAuth(ansiblestub.GalaxyLoopbackHost, "Bearer"); got < 3 || e.stub.Counts().WithAuth(ansiblestub.GalaxyLoopbackHost, "") != 0 {
 		t.Errorf("%d Bearer requests and %d without a credential at the upstream", got, e.stub.Counts().WithAuth(ansiblestub.GalaxyLoopbackHost, ""))
 	}
+	// The realm receives the offline token once, in the body of the grant: no request to it carries an Authorization header.
+	if n := e.stub.Counts().OnHost(ansiblestub.DefaultRealmHost); n != 1 || e.stub.Counts().WithAuth(ansiblestub.DefaultRealmHost, "") != n {
+		t.Errorf("%d requests to the realm, %d of them without an Authorization header; want 1 and 1", n, e.stub.Counts().WithAuth(ansiblestub.DefaultRealmHost, ""))
+	}
 	// The realm was asked in the form the grant is made in.
 	if len(st.ClientIDs) != 1 || st.ClientIDs[0] != "cloud-services" {
 		t.Errorf("client ids %v", st.ClientIDs)

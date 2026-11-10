@@ -34,6 +34,9 @@ type Get struct {
 	// Auth is the format's handshake with the upstream (R-OCI-021); nil leaves a 401 as the result. The handshake is not run for
 	// a request to a mirror host: no credential and no token goes there.
 	Auth Authenticator
+	// Exchange is the format's exchange of the repository's credential at a single-sign-on realm (R-ANS-019): a request to the
+	// upstream's origin is sent with the exchanged token, as a fetch is. Nil sends the request with the credential as it is.
+	Exchange CredentialExchanger
 	// Ceiling and JobID are those of the pass, as on a [Request].
 	Ceiling int
 	JobID   string
@@ -135,28 +138,45 @@ func (e *Engine) get(ctx context.Context, g Get, cl *upstream.Client, viaMirror 
 		e.m.request(rem.Repo.Name.String(), r.StatusCode)
 		return r, func() {}, nil, nil
 	}
-	var used *attempt
-	first := rctx
-	if h != nil {
-		if used = e.preemptive(ctx, h, req); used != nil {
-			first = outbound.WithAuthorization(rctx, used.value)
+	// A repository whose credential is exchanged at a realm sends the exchanged token, as a fetch does (Q-ANS-51); the exchange covers
+	// the request to the upstream's origin and never a mirror host.
+	var resp *http.Response
+	exchanged := false
+	if g.Exchange != nil && !viaMirror {
+		c := exchangeCall{cl: cl, rem: rem, x: g.Exchange, jobID: g.JobID, background: true}
+		var handled bool
+		resp, _, _, handled, err = e.sendExchangedVia(rctx, c, req, send) //nolint:bodyclose // closed through the idle body below
+		if handled {
+			if err != nil {
+				return nil, f.failureOf(ctx, err)
+			}
+			exchanged = true
 		}
 	}
-	resp, _, _, err := send(first) //nolint:bodyclose // closed through the idle body below
-	if err != nil {
-		if used != nil && ctx.Err() == nil {
-			e.dropToken(used.key, used.value)
+	if !exchanged {
+		var used *attempt
+		first := rctx
+		if h != nil {
+			if used = e.preemptive(ctx, h, req); used != nil {
+				first = outbound.WithAuthorization(rctx, used.value)
+			}
 		}
-		return nil, f.failureOf(ctx, err)
-	}
-	if resp.StatusCode == http.StatusUnauthorized && h != nil {
-		later := func(c context.Context) (*http.Response, context.CancelFunc, *atomic.Bool, error) {
-			c = outbound.WithCall(c, outbound.Call{Repo: rem.Repo.Name.String(), FlightRole: roleMirror, JobID: g.JobID, SlotWait: outbound.NewSlotWait(0)})
-			return send(c)
-		}
-		resp, _, _, err = e.authenticate(rctx, h, req, resp, func() {}, nil, later, used) //nolint:bodyclose // closed through the idle body below
+		resp, _, _, err = send(first) //nolint:bodyclose // closed through the idle body below
 		if err != nil {
+			if used != nil && ctx.Err() == nil {
+				e.dropToken(used.key, used.value)
+			}
 			return nil, f.failureOf(ctx, err)
+		}
+		if resp.StatusCode == http.StatusUnauthorized && h != nil {
+			later := func(c context.Context) (*http.Response, context.CancelFunc, *atomic.Bool, error) {
+				c = outbound.WithCall(c, outbound.Call{Repo: rem.Repo.Name.String(), FlightRole: roleMirror, JobID: g.JobID, SlotWait: outbound.NewSlotWait(0)})
+				return send(c)
+			}
+			resp, _, _, err = e.authenticate(rctx, h, req, resp, func() {}, nil, later, used) //nolint:bodyclose // closed through the idle body below
+			if err != nil {
+				return nil, f.failureOf(ctx, err)
+			}
 		}
 	}
 	idle := new(atomic.Bool)

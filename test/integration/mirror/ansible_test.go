@@ -147,3 +147,52 @@ func TestR_ANS_021_ARateLimitedIndexSlowsThePassAndItCompletes(t *testing.T) {
 		t.Errorf("%d archives stored after the throttled pass, want 7", n)
 	}
 }
+
+func TestR_ANS_019_AMirrorOfAHubListsItsIndexWithTheExchangedToken(t *testing.T) {
+	const offline = "offline-token-for-the-mirror"
+	// The Galaxy is the stub under 127.0.0.1, the realm the same listener under the name localhost, which the repository may send its
+	// credential to.
+	r, stub := newAnsibleRig(t, ansiblestub.Config{RealmHost: "localhost"}, rigOptions{
+		include: []string{"acme.*"}, token: offline,
+		remote: map[string]any{"extraHosts": []any{map[string]any{"pattern": "localhost", "sendCredentials": true}}},
+		member: map[string]any{"authUrl": "@LOCALHOST@" + ansiblestub.DefaultRealmPath},
+	})
+	if err := stub.SetRealm(ansiblestub.Realm{Require: true, RefreshTokens: []string{offline}, AccessTTLSeconds: 300}); err != nil {
+		t.Fatal(err)
+	}
+	run := r.runner("runner")
+	t0 := r.pass(run)
+	r.waitPass(t0, "full", "complete", passWithin)
+
+	t.Run("R-ANS-019 the pass lists by the index and stores the collections the patterns select", func(t *testing.T) {
+		if st := r.summary(); st["method"] != "listing" || st["itemsStored"] != float64(7) {
+			t.Errorf("summary %v", st)
+		}
+		if n := r.ansibleArchives(); n != 7 {
+			t.Errorf("%d archives stored, want 7", n)
+		}
+		if n := stub.Counts().Requests(http.MethodGet, "/api/v3/collections/"); n < 1 {
+			t.Error("the index was not read")
+		}
+	})
+
+	t.Run("R-ANS-019 every request the upstream accepted carried the access token, none the offline token", func(t *testing.T) {
+		st := stub.RealmState()
+		if st.Rejected != 0 || st.Accepted < 10 {
+			t.Errorf("the upstream accepted %d and rejected %d requests", st.Accepted, st.Rejected)
+		}
+		if st.Exchanges < 1 || st.Failed != 0 {
+			t.Errorf("exchanges %d, refused %d", st.Exchanges, st.Failed)
+		}
+	})
+
+	t.Run("R-ANS-019 the realm sees the refresh token once: in the body of the grant and in no header", func(t *testing.T) {
+		c := stub.Counts()
+		if n := c.OnHost("localhost"); n < 1 {
+			t.Fatal("the realm saw no request")
+		}
+		if n := c.WithAuth("localhost", ""); n != c.OnHost("localhost") {
+			t.Errorf("%d of %d requests to the realm carried an Authorization header", c.OnHost("localhost")-n, c.OnHost("localhost"))
+		}
+	})
+}

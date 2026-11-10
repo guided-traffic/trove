@@ -182,6 +182,9 @@ type handshake struct {
 	background bool
 	// refused is set by authenticate when the upstream refused the token the handshake sent for the request (the 401 stands).
 	refused bool
+	// noCredential: the request to the token service carries no credential of the repository besides what the format put into it. The
+	// exchange of a refresh token has the credential in the body, and the Authorization header the hop policy would add repeats it.
+	noCredential bool
 }
 
 // attempt is a token and where it came from.
@@ -437,6 +440,9 @@ func (e *Engine) requestToken(ctx context.Context, h handshake, treq *http.Reque
 	// No flight: flight_role stays empty in the upstream log record, as for an exchange (Q-REPO-92). The credential goes to the
 	// service's host and to no redirect target: the redirect is the upstream's to choose.
 	ctx = outbound.WithCredentialsOnTheFirstHopOnly(outbound.WithCall(ctx, outbound.Call{OnBehalfOf: h.caller.Principal, Repo: name, Attempt: 1, JobID: h.jobID}))
+	if h.noCredential {
+		ctx = outbound.WithoutCredentials(ctx)
+	}
 	out := treq.Clone(ctx)
 	out.Header.Del("Authorization") // the client's hop policy alone adds the credential, to the hosts that may have it
 	out.Header.Set("Accept-Encoding", "identity")

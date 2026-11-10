@@ -305,7 +305,8 @@ func (u *passUpstream) VersionBounds() (int, bool) {
 func (u *passUpstream) Get(ctx context.Context, target *url.URL, accept string, max int64) (*discover.Response, error) {
 	res, err := u.m.e.Get(ctx, proxy.Get{
 		Remote: u.rem, URL: target, Accept: accept, Max: max, MirrorHosts: u.hosts, Ceiling: u.pass.Ceiling, JobID: u.pass.JobID,
-		Auth: handshakeOf(formats.RemoteCapabilities(formats.ID(u.repo.Format)), &u.repo, u.settings, nil),
+		Auth:     handshakeOf(formats.RemoteCapabilities(formats.ID(u.repo.Format)), &u.repo, u.settings, nil),
+		Exchange: exchangerOf(formats.RemoteCapabilities(formats.ID(u.repo.Format)), &u.repo, u.settings),
 	})
 	if err != nil {
 		return nil, mapBackground(err)

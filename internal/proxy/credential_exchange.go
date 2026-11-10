@@ -8,6 +8,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/outbound"
+	"github.com/guided-traffic/trove/internal/proxy/upstream"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -41,60 +42,84 @@ func (a exchangeAuth) ReadToken(ctx context.Context, status int, body []byte) (s
 	return a.x.ReadExchange(ctx, status, body)
 }
 
-// credentialExchange reports whether the repository's requests to the upstream's origin carry an exchanged token, and returns what builds it.
-func (f *fetcher) credentialExchange(ctx context.Context, req *http.Request) (h *handshake, treq *http.Request, key string, ok bool, err error) {
-	x, isX := f.rq.Adapter.(CredentialExchanger)
-	if !isX || f.rq.Remote.Settings.AuthMode != repository.AuthBearer || !sameOrigin(req.URL, f.cl.Origin()) {
+// exchangeCall is what one request needs to be sent with an exchanged token: the client, the repository, the format's exchange and the
+// facts of the caller the realm request is logged for.
+type exchangeCall struct {
+	cl         *upstream.Client
+	rem        Remote
+	x          CredentialExchanger
+	caller     CallerFacts
+	jobID      string
+	background bool
+}
+
+// begin finds the realm request for req: ok false when the repository does no exchange for it (another authMode, a request to another
+// host than the upstream's origin, a format without an exchange or a repository without an authUrl).
+func (c exchangeCall) begin(ctx context.Context, req *http.Request) (h *handshake, treq *http.Request, key string, ok bool, err error) {
+	if c.x == nil || c.rem.Settings.AuthMode != repository.AuthBearer || !sameOrigin(req.URL, c.cl.Origin()) {
 		return nil, nil, "", false, nil
 	}
-	cred, has := f.cl.BearerSecret()
+	cred, has := c.cl.BearerSecret()
 	if !has {
 		return nil, nil, "", false, nil
 	}
-	treq, key, ok, err = x.ExchangeRequest(ctx, UpstreamBase{URL: f.cl.Origin()}, cred)
+	treq, key, ok, err = c.x.ExchangeRequest(ctx, UpstreamBase{URL: c.cl.Origin()}, cred)
 	if err != nil || !ok {
 		return nil, nil, "", false, err
 	}
-	h = &handshake{cl: f.cl, rem: f.rq.Remote, auth: exchangeAuth{x}, caller: f.rq.Caller, jobID: f.rq.JobID, background: f.rq.background()}
+	// The refresh token is in the body of the request to the realm: the request carries no Authorization header of the credential
+	// besides (requestToken, noCredential), so that the realm receives the credential once.
+	h = &handshake{cl: c.cl, rem: c.rem, auth: exchangeAuth{c.x}, caller: c.caller, jobID: c.jobID, background: c.background, noCredential: true}
 	return h, treq, key, true, nil
 }
 
 // sendExchanged is [fetcher.send] for a repository whose credential is exchanged: handled false means the repository does no exchange
 // for this request and the caller sends it as it is.
 func (f *fetcher) sendExchanged(ctx context.Context, req *http.Request) (resp *http.Response, cancel context.CancelFunc, idle *atomic.Bool, handled bool, err error) {
-	h, treq, key, ok, err := f.credentialExchange(ctx, req)
+	x, _ := f.rq.Adapter.(CredentialExchanger)
+	c := exchangeCall{cl: f.cl, rem: f.rq.Remote, x: x, caller: f.rq.Caller, jobID: f.rq.JobID, background: f.rq.background()}
+	return f.e.sendExchangedVia(ctx, c, req, func(ctx context.Context) (*http.Response, context.CancelFunc, *atomic.Bool, error) {
+		return f.sendOnce(ctx, req)
+	})
+}
+
+// sendExchangedVia exchanges the credential and sends req with the token by once, which sends the request under the context it is
+// given (it carries the token). It is the one implementation of the exchange for the fetch of a document or an artifact and for the
+// request of a mirror's discovery (Get).
+func (e *Engine) sendExchangedVia(ctx context.Context, c exchangeCall, req *http.Request, once func(context.Context) (*http.Response, context.CancelFunc, *atomic.Bool, error)) (resp *http.Response, cancel context.CancelFunc, idle *atomic.Bool, handled bool, err error) {
+	h, treq, key, ok, err := c.begin(ctx, req)
 	if err != nil {
 		return nil, nil, nil, true, &handshakeError{err: upstreamFailure(err)}
 	}
 	if !ok {
 		return nil, nil, nil, false, nil
 	}
-	rem := f.rq.Remote
+	rem := c.rem
 	// The host rule of R-REPO-033: the credential is in the body of the realm request, so the realm must be a host that may have it; a
 	// realm anywhere else is refused before a byte is sent.
 	if treq == nil || treq.URL == nil || (treq.URL.Scheme != "http" && treq.URL.Scheme != "https") || treq.URL.User != nil {
 		return nil, nil, nil, true, &handshakeError{err: tokenError(rem, "names no usable address")}
 	}
-	if err := f.cl.Allowed(treq.URL); err != nil {
+	if err := c.cl.Allowed(treq.URL); err != nil {
 		return nil, nil, nil, true, &handshakeError{err: upstreamFailure(err)}
 	}
-	if !f.cl.CredentialHost(treq.URL) {
+	if !c.cl.CredentialHost(treq.URL) {
 		return nil, nil, nil, true, &handshakeError{err: tokenError(rem, "is on a host that may not receive the repository's credential: it must be the upstream or an extraHosts entry with sendCredentials")}
 	}
 	tk := tokenKeyOf(*h, key, treq.URL)
 	name := rem.Repo.Name.String()
 	rejected := ""
 	for attempt := range 2 {
-		ent, _, terr := f.e.tokenOnce(ctx, name, tk, rejected, func(ctx context.Context) (tokenEntry, error) {
-			return f.e.requestToken(ctx, *h, treq)
+		ent, _, terr := e.tokenOnce(ctx, name, tk, rejected, func(ctx context.Context) (tokenEntry, error) {
+			return e.requestToken(ctx, *h, treq)
 		})
 		if terr != nil {
 			return nil, nil, nil, true, exchangeFailure(rem, terr)
 		}
-		resp, cancel, idle, err = f.sendOnce(outbound.WithAuthorization(ctx, ent.authorization), req)
+		resp, cancel, idle, err = once(outbound.WithAuthorization(ctx, ent.authorization))
 		if err != nil {
 			if ctx.Err() == nil {
-				f.e.dropToken(tk, ent.authorization)
+				e.dropToken(tk, ent.authorization)
 			}
 			return resp, cancel, idle, true, err
 		}

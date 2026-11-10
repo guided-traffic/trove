@@ -620,6 +620,45 @@ func (a *authenticator) ReadToken(ctx context.Context, status int, body []byte) 
 	return a.auth.ReadToken(ctx, rc, status, body)
 }
 
+// exchanger is the engine's view of a format's exchange of the stored credential ([formats.CredentialExchanger]) for a request the
+// engine makes without the format's adapter (a pass's discovery request).
+type exchanger struct {
+	x        formats.CredentialExchanger
+	repo     *repository.Repository
+	settings json.RawMessage
+}
+
+var _ proxy.CredentialExchanger = (*exchanger)(nil)
+
+// exchangerOf returns the exchange of the format whose capabilities are caps; nil for a format without one (a nil interface, not a
+// nil pointer in one).
+func exchangerOf(caps formats.RemoteCaps, repo *repository.Repository, settings json.RawMessage) proxy.CredentialExchanger {
+	if caps.Exchange == nil {
+		return nil
+	}
+	return &exchanger{x: caps.Exchange, repo: repo, settings: settings}
+}
+
+func (e *exchanger) context(base *url.URL) formats.RemoteContext {
+	rc := formats.RemoteContext{Repo: e.repo, Upstream: base, Settings: e.settings}
+	if base == nil {
+		if u, err := repoUpstream(e.repo); err == nil {
+			rc.Upstream = u
+		}
+	}
+	return rc
+}
+
+// ExchangeRequest implements [proxy.CredentialExchanger].
+func (e *exchanger) ExchangeRequest(ctx context.Context, b proxy.UpstreamBase, credential string) (*http.Request, string, bool, error) {
+	return e.x.ExchangeRequest(ctx, e.context(b.URL), credential)
+}
+
+// ReadExchange implements [proxy.CredentialExchanger].
+func (e *exchanger) ReadExchange(ctx context.Context, status int, body []byte) (string, time.Duration, error) {
+	return e.x.ReadExchange(ctx, e.context(nil), status, body)
+}
+
 // handshake is the adapter's handshake, nil for a format without one.
 func (a *adapter) handshake() proxy.Authenticator {
 	return handshakeOf(a.caps, a.repo, a.settings, a.disc)

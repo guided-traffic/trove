@@ -1982,7 +1982,7 @@ Status: **Decided by the development agent** — selected from the options below
 (`internal/proxy/credential_exchange.go`) refuses a realm on a host the hop policy would not give the credential to, exchanges before the
 first request of the repository to the upstream's origin, keys the cached token by the format's key, the realm and the digest of the
 credential (a rotated offline token needs a new exchange), and on a 401 of the upstream exchanges once more and sends the request once more.
-A realm's 4xx is `upstream_auth_failed`. The lifetime is the realm's `expires_in` less 30 seconds. Revisit when a second format needs
+A realm's 4xx is `upstream_auth_failed`. The request to the realm carries no `Authorization` header of the credential (the hop policy is told to add none): the realm receives the refresh token once, in the body. A mirror's discovery request (`Upstream.Get`) takes the same exchange. The lifetime is the realm's `expires_in` less 30 seconds. Revisit when a second format needs
 a credential exchange: the interface is not Galaxy-specific.
 
 **Applied in the spec:** R-ANS-019, architecture.md R-ARCH-008, ADR-191.
@@ -1999,7 +1999,7 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Choice:** (a). **Rationale:** the public Galaxy lists 4,685 collections, 47 index pages, which a pass reads in seconds; the cost of a
 document per version is the cost that matters. Revisit with (b) when a mirror's index walk is measured as the pass's dominant cost (H-846).
-The role index is never read, and the hub's index is not listed ([H-849](#h-849--a-mirror-of-a-hub-cannot-list-its-collections)).
+The role index is never read. The hub's index is listed with the exchanged token, as a fetch is (`Get` of the engine takes the same exchange, Q-ANS-51).
 
 **Applied in the spec:** R-ANS-021.
 
@@ -2070,13 +2070,6 @@ runs a `--dry-run` against the first real source and records them.
 `TracksVersionRemoval` is false (R-ANS-017): a version that disappears from the upstream's list disappears from the served list at the next
 revalidation, and its cached archive stays downloadable by path. Live for any upstream that removes versions; the cached copy can outlive
 a withdrawal the upstream made for a security reason.
-
-### H-849 · A mirror of a hub cannot list its collections
-
-A pass lists the collection index with `Upstream.Get`, a request of the pass that the engine's token exchange ([Q-ANS-51](#q-ans-51--the-hub-exchange-is-the-optional-interface-credentialexchanger-and-the-engine-sends-the-exchanged-token-and-never-the-credential)) does not cover: it runs for the
-fetches of documents and archives. A remote with `ansible.authUrl` in mode `mirror` therefore reads the index without a token and the
-hub answers 401. Dormant while no hub is mirrored (the hub itself was never reached, [H-842](#h-842--the-hub-token-exchange-is-specified-from-documentation-and-never-run-against-the-service)); the `names` method needs no index and works. Closing it
-is the exchange in the engine's `Get`.
 
 ### H-850 · Each replica exchanges the refresh token for itself
 

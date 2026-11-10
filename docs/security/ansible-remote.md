@@ -90,8 +90,9 @@ so the rule is stricter than for a header:
 | 3 | The offline token goes to the realm and to nothing else; the upstream is called with the access token, never with the offline token, and a request is not sent at all when the exchange failed | `sendExchanged`, the hop policy (`outbound.WithAuthorization`) | 502 `upstream_auth_failed` |
 | 4 | The access token is kept in the replica's memory only, under a key that holds the digest of the credential, so a rotated offline token needs a new exchange; neither token is logged, audited or returned by an API | `proxy_upstream_tokens` cache | |
 
-The request to the realm also carries the repository's credential as an `Authorization` header when the realm is a credential host (the hop
-policy adds it); the realm receives the same secret twice, in the header and in the body.
+The request to the realm carries no `Authorization` header: the engine marks it as one without the repository's credential
+(`outbound.WithoutCredentials`), so the realm receives the refresh token once, in the body. A mirror's request for the collection index takes
+the same exchange as a fetch (`Engine.Get`), so a mirror of a hub lists with the access token.
 
 ## What this does not cover
 

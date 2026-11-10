@@ -2,7 +2,7 @@
 
 The plan of unit F0 of block B ([FULL.md](FULL.md), the checklist under "F0 · Ansible Galaxy"), written by the planning agent on 2026-11-10.
 Spec: [docs/spec/formats/ansible.md](../spec/formats/ansible.md), requirements **R-ANS-001 to R-ANS-032**, decisions **Q-ANS-1 to
-Q-ANS-28**, open gaps **H-839 to H-848** (H-849 and H-850 are unused), **ADR-191**. Migrations are numbered at build time by the development agent
+Q-ANS-28**, open gaps **H-839 to H-848** (H-850 was taken by the remote class; H-849 was taken and is closed), **ADR-191**. Migrations are numbered at build time by the development agent
 from the next free number on `main`; this plan names them by purpose. Reserved for the edits of other pages, recorded there by the
 package that applies them: the "Changes to other pages" table of ansible.md.
 

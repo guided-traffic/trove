@@ -228,6 +228,9 @@ type rigOptions struct {
 	format    string
 	handler   http.Handler
 	indexPath string
+	// member is the format's member of the repository document (the ansible settings of a hub); a string value holding @LOCALHOST@ is
+	// completed with "https://localhost:<port>" of the stub, a second name for it that the certificate carries.
+	member map[string]any
 }
 
 // rig is one installation: the stack, the stub with its recorder, the remote repository npm-mirror and its people.
@@ -302,7 +305,27 @@ func newRig(t *testing.T, o rigOptions) *rig {
 		remote["authMode"] = "bearer"
 		remote["password"] = map[string]any{"secretRef": map[string]any{"env": upstreamSecretEnv}}
 	}
-	st.Repository(repoKey, "remote", format, remoteDocAt(r.upstream, mode, o.include, o.mirror, remote))
+	doc := remoteDocAt(r.upstream, mode, o.include, o.mirror, remote)
+	if o.member != nil {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(doc), &m); err != nil {
+			t.Fatal(err)
+		}
+		member := map[string]any{}
+		for k, v := range o.member {
+			if s, ok := v.(string); ok {
+				v = strings.ReplaceAll(s, "@LOCALHOST@", "https://localhost:"+srv.Listener.Addr().String()[strings.LastIndex(srv.Listener.Addr().String(), ":")+1:])
+			}
+			member[k] = v
+		}
+		m[format] = member
+		b, err := json.Marshal(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		doc = string(b)
+	}
+	st.Repository(repoKey, "remote", format, doc)
 	if o.token != "" {
 		st.Exec(`INSERT INTO repository_secrets (repo_id, field, secret_ref) SELECT id, '/remote/password', $2::text::jsonb FROM repositories WHERE key = $1`,
 			repoKey, `{"env":"`+upstreamSecretEnv+`"}`)
