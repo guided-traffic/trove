@@ -121,6 +121,9 @@ image: ## Build the release image (IMAGE, VERSION, IMAGE_ARCH) for linux/IMAGE_A
 		--build-arg NODE_VERSION=$(NODE_VERSION) \
 		--build-arg GO_VERSION=$(GO_MOD_GO) \
 		--build-arg RUNTIME_BASE_IMAGE=$(RUNTIME_BASE_IMAGE) \
+		--build-arg TRIVY_VERSION=$(TRIVY_VERSION) \
+		--build-arg TRIVY_SHA256_LINUX_AMD64=$(TRIVY_SHA256_LINUX_AMD64) \
+		--build-arg TRIVY_SHA256_LINUX_ARM64=$(TRIVY_SHA256_LINUX_ARM64) \
 		--build-arg VERSION=$(VERSION) \
 		--build-arg COMMIT=$(COMMIT) \
 		--build-arg DATE=$(DATE) \

@@ -17,6 +17,7 @@ import (
 	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/vuln"
+	"github.com/guided-traffic/trove/internal/vuln/advisory"
 	"github.com/guided-traffic/trove/internal/vuln/match"
 )
 
@@ -226,6 +227,14 @@ func publicUpstream(public map[string][]string, format, host string) bool {
 // matchPublicAdvisories and upstream host, a local one by always (matched) and never (internal). decided is false for a local
 // repository with auto, whose scope depends on the name.
 func repositoryScope(public map[string][]string, rv repoView) (sc Scope, decided bool) {
+	if rv.Ecosystem == advisory.EcosystemOCI {
+		// An image is read for what is inside it, so where it came from and who claims its name do not decide (R-VULN-010): the packages in
+		// it are public packages whatever the image is called.
+		if rv.Settings.MatchPublicAdvisories == vuln.MatchNever {
+			return ScopeNotCovered, true
+		}
+		return ScopeMatched, true
+	}
 	switch rv.Class {
 	case repository.Remote:
 		switch rv.Settings.MatchPublicAdvisories {

@@ -15,6 +15,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
+	"github.com/guided-traffic/trove/internal/formats/oci/manifest"
 	"github.com/guided-traffic/trove/internal/formats/untrusted"
 )
 
@@ -148,6 +149,11 @@ func (f *Format) remoteManifestGet(ctx context.Context, rq *formats.Request, w h
 		if err := gateRemote(ctx, rq, client, formats.Target{Package: client, Path: pathOf(client), Actions: read}, pathOf, errManifestUnknown); err != nil {
 			return err
 		}
+		if sum, ok := manifest.ParseDigest(ref); ok {
+			if err := refuseBlockedImage(ctx, rq, name, sum); err != nil {
+				return err
+			}
+		}
 		vw := validatorWriter{ResponseWriter: w, digest: ref}
 		return missing(rq.Host.Remote().Artifact(ctx, storedValidators(rq), formats.Path{Path: path}, formats.Digests{}, vw), errManifestUnknown)
 	}
@@ -171,6 +177,9 @@ func (f *Format) remoteManifestGet(ctx context.Context, rq *formats.Request, w h
 	}
 	if doc.Status.Negative {
 		return missing(errs.E(errs.NotFound, errs.CodeNotFound, "", errs.WithHeader("Cache-Status", doc.Status.Header)), errManifestUnknown)
+	}
+	if err := refuseBlockedImage(ctx, rq, name, doc.Digest); err != nil {
+		return err
 	}
 	body, err := doc.Bytes(ctx)
 	if err != nil {

@@ -1602,6 +1602,7 @@ type Capabilities struct {
 	RemovalLocker RemovalLocker // nil for a format without one (ADR-168)
 	Remote        RemoteCaps    // the optional interfaces of the remote adapter (WP3.0a, WP3.0b)
 	Vulnerability VulnerabilityAdapter // nil for a format without the vulnerability adapter (R-VULN-009, ADR-150)
+	ImageScanned  ImageScanned         // nil for a format whose content the image scanning does not read (R-VULN-033, ADR-190)
 	ServeFacts    ServeFactsKeyer      // nil for a format whose serve check reads nothing besides the item (Q-ARCH-291)
 	ViewSizer     ViewSizer            // nil for a format whose versions are the sum of their files (ADR-177)
 	VersionPath   VersionPather        // nil for a format whose versions have no file of their own (Q-AUTHZ-255, ADR-174)
@@ -1661,6 +1662,13 @@ type VulnerabilityAdapter interface {
 	CompareVersions(a, b string) (int, error)
 }
 
+// ImageScanned is the optional interface of a format whose stored content is read for what it holds (vulnerability-scanning.md R-VULN-033,
+// ADR-190): its repositories have the scanning, and nothing matches them against an advisory by name.
+type ImageScanned interface {
+	// ImageEcosystem is the ecosystem of the format's findings.
+	ImageEcosystem() string
+}
+
 // VulnerabilityData is what a format's audit routes read of the scanning (R-VULN-017, R-VULN-018); Host.Vulnerabilities
 // returns it. Its types are those of the leaf package internal/vuln/advisory; the matcher is the leaf package
 // internal/vuln/match, which a format imports and calls itself (match.Affects, ADR-150).
@@ -1679,6 +1687,9 @@ type VulnerabilityData interface {
 	// Enabled reports whether the installation's vulnerabilities.enabled is true, which an audit mode local needs (R-VULN-017).
 	// The composition root sets it explicitly (formathost.VulnPorts.Enabled); it is not derived from which ports are wired.
 	Enabled() bool
+	// RefuseImage answers whether a pull of an image manifest is refused (R-VULN-015, R-VULN-016): nil to serve it, else the refusal the
+	// format renders in its own error shape. digest is the manifest's SHA-256.
+	RefuseImage(ctx context.Context, rq *Request, repo RepoRef, name string, digest [32]byte) error
 	// LocalByDefault reports whether the audit mode of a repository whose document does not set one is local: Enabled and the
 	// OSV source is not off (R-VULN-017, R-VULN-018, Q-VULN-44).
 	LocalByDefault() bool

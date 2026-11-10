@@ -7,10 +7,12 @@ import (
 
 	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/jobs"
+	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/vuln"
 	"github.com/guided-traffic/trove/internal/vuln/enforce"
 	"github.com/guided-traffic/trove/internal/vuln/evaluate"
+	"github.com/guided-traffic/trove/internal/vuln/imagescan"
 	vmetrics "github.com/guided-traffic/trove/internal/vuln/metrics"
 	"github.com/guided-traffic/trove/internal/vuln/store"
 	vsync "github.com/guided-traffic/trove/internal/vuln/sync"
@@ -52,6 +54,12 @@ type vulnArea struct {
 	localAudits bool
 	// metrics are the collectors of R-VULN-024.
 	metrics *vmetrics.Metrics
+	// images is the scanning of container images; nil on a replica that runs no jobs, or where the analyser is not installed.
+	images *imagescan.Service
+	// dbCommit stores the archive of the vulnerability database of the image scanning; nil where no job runs.
+	dbCommit vsync.DBCommitter
+	// wakeImages enqueues the scan of images in a commit's transaction; nil where no job queue is wired.
+	wakeImages func(ctx context.Context, tx meta.Tx) error
 	// enforcer applies the download policy: the policy of a repository for the item lookup, the verdict, the remote miss gate
 	// and the refusal. Nil is a replica without the area.
 	enforcer *enforce.Enforcer
@@ -63,6 +71,10 @@ type vulnArea struct {
 type VulnOverride struct {
 	States    vuln.States
 	Evaluator vuln.Evaluator
+	// ImageAnalyser and ImageDatabase replace the analyser binary and the database seam of the image scanning: a test then runs the whole
+	// scan without the binary or a real database (R-VULN-034).
+	ImageAnalyser imagescan.Analyser
+	ImageDatabase imagescan.Database
 }
 
 // wireVuln builds the area in dependency order: the metrics, the data state (and on a role that runs jobs the sync service), the
@@ -104,6 +116,9 @@ func (a *App) wireVuln(ctx context.Context, in infra, repo repositoryArea, vir v
 	if err := a.wireAudits(in, repo, vir, &out); err != nil {
 		return vulnArea{}, err
 	}
+	if err := a.wireVulnImages(ctx, in, m, &out); err != nil {
+		return vulnArea{}, err
+	}
 
 	// The database gauges of R-VULN-024, evaluated in the background once per metrics.db_gauge_interval (Q-OPS-18).
 	a.tele.metrics.DBGauges().Add(store.GaugeSource(in.db,
@@ -115,7 +130,7 @@ func (a *App) wireVuln(ctx context.Context, in infra, repo repositoryArea, vir v
 	public := vcfg.Matching.PublicUpstreams
 	out.enforcer = enforce.New(enforce.Options{
 		Covered: func(r repository.Repository) bool { return evaluate.RepositoryCovered(public, r) }, Enabled: vcfg.Enabled, Enforcement: vuln.Enforcement(vcfg.Enforcement),
-		States: out.states, Evaluator: out.evaluator, Names: store.NewEnforce(in.db), Metrics: m, Audit: in.rec,
+		States: out.states, Evaluator: out.evaluator, Names: store.NewEnforce(in.db), Metrics: m, Audit: in.rec, Images: store.NewImages(in.db),
 		BaseURL: a.cfg.Server.BaseURL, Log: a.log.With("component", "vuln-enforce"),
 	})
 	return out, nil
@@ -132,6 +147,9 @@ func (v vulnArea) countAudit(format, mode, outcome string) {
 // it is wired (R-VULN-011: the version of a committed item is evaluated in the commit's transaction after the format's
 // OnCommit linked the item to it, and a removal resolves the version's findings in the removing transaction).
 func (v vulnArea) hooks(inner items.Hooks) items.Hooks {
+	if v.wakeImages != nil {
+		inner = imagescan.Hooks(inner, v.wakeImages)
+	}
 	if v.evaluator != nil {
 		return evaluate.Hooks(inner, v.evaluator)
 	}
@@ -154,4 +172,5 @@ func (a *App) vulnTaskSpec(d vuln.TaskDefault) jobs.TaskSpec {
 func (a *App) registerVulnJobs(r *jobs.Registry) {
 	a.registerVulnSyncJobs(r)
 	a.registerVulnEvaluationJobs(r)
+	a.registerVulnImageJobs(r)
 }

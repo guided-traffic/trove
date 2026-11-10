@@ -306,6 +306,7 @@ func (s *Server) GetPackageVersionVulnerabilities(w http.ResponseWriter, r *http
 		Blocked     bool                                 `json:"blocked"`
 		Evaluation  gen.VulnerabilityEvaluation          `json:"evaluation"`
 		Findings    []gen.VulnerabilityFinding           `json:"findings"`
+		Images      *[]gen.VulnerabilityImageState       `json:"images,omitempty"`
 		Repository  string                               `json:"repository"`
 		SyncedAt    *time.Time                           `json:"syncedAt,omitempty"`
 	}, 0, len(repos))
@@ -315,6 +316,7 @@ func (s *Server) GetPackageVersionVulnerabilities(w http.ResponseWriter, r *http
 			Blocked     bool                                 `json:"blocked"`
 			Evaluation  gen.VulnerabilityEvaluation          `json:"evaluation"`
 			Findings    []gen.VulnerabilityFinding           `json:"findings"`
+			Images      *[]gen.VulnerabilityImageState       `json:"images,omitempty"`
 			Repository  string                               `json:"repository"`
 			SyncedAt    *time.Time                           `json:"syncedAt,omitempty"`
 		}{
@@ -328,9 +330,40 @@ func (s *Server) GetPackageVersionVulnerabilities(w http.ResponseWriter, r *http
 		for _, f := range rv.Findings {
 			item.Findings = append(item.Findings, toFinding(f))
 		}
+		if rv.Images != nil {
+			images := make([]gen.VulnerabilityImageState, 0, len(rv.Images))
+			for _, m := range rv.Images {
+				images = append(images, toImageState(m))
+			}
+			item.Images = &images
+		}
 		out.Repositories = append(out.Repositories, item)
 	}
 	writeJSON(w, r, http.StatusOK, out)
+}
+
+// toImageState is one manifest of an image version in the answer.
+func toImageState(m report.ImageState) gen.VulnerabilityImageState {
+	out := gen.VulnerabilityImageState{Digest: m.Digest, State: gen.VulnerabilityImageStateState(m.State), ScannedAt: m.ScannedAt}
+	if m.Platform != "" {
+		out.Platform = &m.Platform
+	}
+	if m.ErrorCode != "" {
+		out.ErrorCode = &m.ErrorCode
+	}
+	if m.OSFamily != "" {
+		out.OsFamily = &m.OSFamily
+	}
+	if m.OSName != "" {
+		out.OsName = &m.OSName
+	}
+	if m.EOSL {
+		out.Eosl = &m.EOSL
+	}
+	if m.Packages > 0 {
+		out.Packages = &m.Packages
+	}
+	return out
 }
 
 // GetPackageVulnerabilities implements GET /api/v1/packages/{packageId}/vulnerabilities (R-VULN-020): the open findings per

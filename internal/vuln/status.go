@@ -166,11 +166,15 @@ const (
 	EvaluationInternal Evaluation = "internal"
 	// EvaluationNotCovered: scanning is off, the upstream is not recognised, or the format has no adapter.
 	EvaluationNotCovered Evaluation = "not_covered"
+	// EvaluationPendingScan: an image of this version has not been scanned yet (R-VULN-034); no finding says nothing about it.
+	EvaluationPendingScan Evaluation = "pending_scan"
+	// EvaluationScanFailed: the scan of an image of this version did not finish, and the code says why (R-VULN-034).
+	EvaluationScanFailed Evaluation = "scan_failed"
 )
 
-// Evaluations lists the four states.
+// Evaluations lists the states.
 func Evaluations() []Evaluation {
-	return []Evaluation{EvaluationEvaluated, EvaluationPendingData, EvaluationInternal, EvaluationNotCovered}
+	return []Evaluation{EvaluationEvaluated, EvaluationPendingData, EvaluationInternal, EvaluationNotCovered, EvaluationPendingScan, EvaluationScanFailed}
 }
 
 // Trigger is what caused an evaluation (R-VULN-011, the `trigger` label of the evaluation metrics).

@@ -12,6 +12,7 @@ import (
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/vuln"
+	"github.com/guided-traffic/trove/internal/vuln/advisory"
 	"github.com/guided-traffic/trove/internal/vuln/store"
 )
 
@@ -427,6 +428,11 @@ func (s *Service) RunRescan(ctx context.Context, run JobRun, args json.RawMessag
 			return err
 		}
 		if first.deleted {
+			if s.o.ImageRescan != nil {
+				if handled, err := s.imageRescan(ctx, a.RepositoryID); handled || err != nil {
+					return err
+				}
+			}
 			return run.SetResult(map[string]string{"skipped": "the repository is gone or not scanned"})
 		}
 		// An earlier attempt of this job that was cut off (a drain, a crash) resumes at its cursor while the repository's scanning
@@ -449,6 +455,32 @@ func (s *Service) RunRescan(ctx context.Context, run JobRun, args json.RawMessag
 		}
 	}
 	return fmt.Errorf("vuln-rescan: the scanning inputs of repository %d kept changing for %d rounds", a.RepositoryID, maxRescanRounds)
+}
+
+// imageRescan hands a rescan of a repository of container images to the image scanning, which works from its own table; handled is false for
+// any other repository.
+func (s *Service) imageRescan(ctx context.Context, repoID int64) (bool, error) {
+	var enabled, isImage bool
+	err := s.o.Runner.InTx(ctx, func(tx meta.Tx) error {
+		ev, err := store.EvalOf(tx)
+		if err != nil {
+			return err
+		}
+		row, found, err := ev.RepositoryInputs(ctx, repoID)
+		if err != nil || !found || row.Format != "oci" || row.Lifecycle != string(repository.Active) {
+			return err
+		}
+		v, err := viewOfRow(row, Ecosystem{Name: advisory.EcosystemOCI})
+		if err != nil {
+			return err
+		}
+		enabled, isImage = v.Settings.Enabled, true
+		return nil
+	})
+	if err != nil || !isImage {
+		return false, err
+	}
+	return true, s.o.ImageRescan(ctx, repoID, enabled)
 }
 
 // fingerprint identifies the scanning inputs of a repository view, for the checkpoint of a rescan.

@@ -99,6 +99,7 @@ func TestR_VULN_024_PrometheusRuleValues(t *testing.T) {
 			"TroveVulnerabilityDataStale":            "warning",
 			"TroveVulnerabilitySyncFailing":          "warning",
 			"TroveVulnerabilityClaimedNameMalicious": "critical",
+			"TroveVulnerabilityImageScansFailing":    "warning",
 			"TroveMirrorFailing":                     "warning",
 			"TroveMirrorStale":                       "warning",
 			"TroveBridgeLeftOn":                      "warning",

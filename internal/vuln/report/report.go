@@ -62,8 +62,15 @@ type Options struct {
 	// Rule is the internal-names rule of R-VULN-010 that the evaluation and the client audits apply; the views of a version
 	// and the claimed-name matches use it, so that they say what a download does (Q-VULN-70). A zero rule has no claims.
 	Rule evaluate.ClaimRule
+	// Images reads how far the manifests of an image version have been scanned; nil reports none.
+	Images ImageReader
 	// Now returns the current time; nil is time.Now.
 	Now func() time.Time
+}
+
+// ImageReader is what the version view reads of the image scanning; *store.Images implements it.
+type ImageReader interface {
+	Manifests(ctx context.Context, repos []int64, name, tag string) ([]store.ImageManifest, error)
 }
 
 // Service is the report.
@@ -73,7 +80,9 @@ type Service struct {
 	cfg  Config
 	adv  vuln.Advisories
 	rule evaluate.ClaimRule
-	now  func() time.Time
+	// images is nil while the image scanning is not wired.
+	images ImageReader
+	now    func() time.Time
 }
 
 // New returns the report.
@@ -81,7 +90,7 @@ func New(o Options) (*Service, error) {
 	if o.Store == nil || o.Repositories == nil {
 		return nil, errs.E(errs.Internal, errs.CodeInternal, "vuln report: the store and the repository snapshot are required")
 	}
-	s := &Service{st: o.Store, repo: o.Repositories, cfg: o.Config, adv: o.Advisories, rule: o.Rule, now: o.Now}
+	s := &Service{st: o.Store, repo: o.Repositories, cfg: o.Config, adv: o.Advisories, rule: o.Rule, images: o.Images, now: o.Now}
 	if s.now == nil {
 		s.now = time.Now
 	}

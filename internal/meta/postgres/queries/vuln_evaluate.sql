@@ -166,12 +166,12 @@ SELECT f.id::text AS id, f.repo_id::bigint AS repo_id, f.package_name::text AS p
 -- The id comes back for the row this statement wrote and for none when the identity exists already, so that the history is
 -- written for a row that exists (Q-VULN-65).
 INSERT INTO vuln_finding (id, repo_id, ecosystem, package_name, version, advisory_id, package_id, version_id, kind, severity, severity_rank,
-                          cvss_score, known_exploited, fix_available, fixed_versions, status, advisory_modified)
+                          cvss_score, known_exploited, fix_available, fixed_versions, status, advisory_modified, components)
 VALUES (sqlc.arg(id)::text::uuid, sqlc.arg(repo_id)::bigint, sqlc.arg(ecosystem)::text, sqlc.arg(package_name)::text, sqlc.arg(version)::text,
         sqlc.arg(advisory_id)::text, NULLIF(sqlc.arg(package_id)::bigint, 0), NULLIF(sqlc.arg(version_id)::bigint, 0), sqlc.arg(kind)::text,
         sqlc.arg(severity)::text, sqlc.arg(severity_rank)::smallint, NULLIF(sqlc.arg(cvss_score)::float8, -1)::numeric(3,1),
         sqlc.arg(known_exploited)::boolean, sqlc.arg(fix_available)::boolean, sqlc.arg(fixed_versions)::text[], 'needs_triage',
-        to_timestamp(sqlc.arg(advisory_modified_us)::bigint / 1000000.0))
+        to_timestamp(sqlc.arg(advisory_modified_us)::bigint / 1000000.0), sqlc.arg(components)::jsonb)
 ON CONFLICT (repo_id, ecosystem, package_name, version, advisory_id) DO NOTHING
 RETURNING id::text AS id;
 

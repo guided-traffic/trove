@@ -146,6 +146,9 @@ jobs:
             NODE_VERSION=${{ steps.pins.outputs.node }}
             GO_VERSION=${{ steps.pins.outputs.go }}
             RUNTIME_BASE_IMAGE=${{ env.RUNTIME_BASE_IMAGE }}
+            TRIVY_VERSION=${{ env.TRIVY_VERSION }}
+            TRIVY_SHA256_LINUX_AMD64=${{ env.TRIVY_SHA256_LINUX_AMD64 }}
+            TRIVY_SHA256_LINUX_ARM64=${{ env.TRIVY_SHA256_LINUX_ARM64 }}
             VERSION=${{ steps.version.outputs.version }}
             COMMIT=${{ github.sha }}
             DATE=${{ steps.time.outputs.date }}

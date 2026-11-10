@@ -266,7 +266,7 @@ func validateVulnerabilities(v *validation, info catalog.Entry, d *Document, na 
 	switch {
 	case d.Class == Virtual:
 		na("/vulnerabilities", "virtual repositories store nothing and are not scanned; their views aggregate the findings of their members")
-	case info.Ecosystem == "":
+	case info.Ecosystem == "" && info.ImageEcosystem == "":
 		na("/vulnerabilities", fmt.Sprintf("the %s format has no vulnerability adapter, so its stored versions are not scanned", info.ID))
 	default:
 		for _, f := range d.Vulnerabilities.Validate() {

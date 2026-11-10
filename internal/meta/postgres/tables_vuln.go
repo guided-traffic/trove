@@ -23,6 +23,10 @@ func init() {
 	tables.Register("vuln_kev", tables.Transient, tables.Options{})
 	tables.Register("vuln_pending_evaluation", tables.Transient, tables.Options{})
 	tables.Register("vuln_claimed_match", tables.Transient, tables.Options{})
+	// The scanning of images (R-VULN-033): state derived from the manifests and the database, which the next run builds again.
+	tables.Register("vuln_image_scan", tables.Transient, tables.Options{})
+	tables.Register("vuln_image_sbom", tables.Transient, tables.Options{})
+	tables.Register("vuln_image_db", tables.Transient, tables.Options{})
 
 	// revision is the ETag of a finding (R-API-012, R-VULN-013); a restore raises it by 2^32 like every client-held
 	// revision (R-BAK-022).

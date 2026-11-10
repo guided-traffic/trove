@@ -13,10 +13,12 @@ package enforce
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +29,7 @@ import (
 	"github.com/guided-traffic/trove/internal/vuln"
 	"github.com/guided-traffic/trove/internal/vuln/advisory"
 	"github.com/guided-traffic/trove/internal/vuln/metrics"
+	"github.com/guided-traffic/trove/internal/vuln/store"
 )
 
 // DedupWindow is the window of the audit deduplication (R-VULN-016, R-OPS-015): one event per repository, version and client
@@ -39,6 +42,11 @@ const maxTracked = 4096
 // NameReader names a stored version for the text of a refusal; *store.Enforce implements it.
 type NameReader interface {
 	VersionNames(ctx context.Context, versionID int64) (pkg, version string, found bool, err error)
+}
+
+// ImageReader reads the verdict of a manifest; *store.Images implements it.
+type ImageReader interface {
+	Verdict(ctx context.Context, repoID int64, name string, digest [32]byte, version string, blockMalicious bool) (store.ImageVerdict, error)
 }
 
 // Options configure [New].
@@ -57,6 +65,8 @@ type Options struct {
 	Evaluator vuln.Evaluator
 	// Names reads the package and version of a stored version when a download is refused; nil names the path only.
 	Names NameReader
+	// Images answers what a pull of an image manifest needs to know; nil refuses no pull.
+	Images ImageReader
 	// Metrics and Audit are optional.
 	Metrics *metrics.Metrics
 	Audit   audit.Recorder
@@ -270,6 +280,51 @@ func (e *Enforcer) first(key string) bool {
 	}
 	e.seen[key] = now
 	return true
+}
+
+// ImagePull is a pull of one image manifest.
+type ImagePull struct {
+	Repo repository.Repository
+	// Addressed is the repository the client addressed, which the refusal names (R-VULN-016); empty means Repo itself.
+	Addressed string
+	Name      string
+	// Digest is the digest of the manifest about to be served, the version of its findings.
+	Digest   [32]byte
+	Path     string
+	Actor    audit.Actor
+	Source   audit.Source
+	Endpoint string
+}
+
+// GateImage is the gate of a pull of an image manifest (R-VULN-015): a finding of the manifest that blocks refuses it, and with
+// onMissingData block so does a manifest that has not been scanned against a database yet. A manifest list passes: its children are pulled
+// and gated one by one, each platform on its own findings.
+func (e *Enforcer) GateImage(ctx context.Context, im ImagePull) error {
+	if e == nil || e.o.States == nil || e.o.Images == nil {
+		return nil
+	}
+	p := e.PolicyOf(im.Repo)
+	if !p.Enabled {
+		return nil
+	}
+	repoID, err := strconv.ParseInt(im.Repo.ID, 10, 64)
+	if err != nil {
+		return err
+	}
+	version := "sha256:" + hex.EncodeToString(im.Digest[:])
+	v, err := e.o.Images.Verdict(ctx, repoID, im.Name, im.Digest, version, p.QueryBlockMalicious())
+	if err != nil {
+		return err
+	}
+	block := vuln.Verdict(p, v.Row, advisory.DataState{Complete: v.Detected})
+	addressed := im.Addressed
+	if addressed == "" {
+		addressed = im.Repo.Name.String()
+	}
+	return e.Refuse(ctx, Download{
+		Addressed: addressed, Store: im.Repo.Name.String(), RepoID: im.Repo.ID, Format: im.Repo.Format, Path: im.Path,
+		Package: im.Name, Version: version, Ecosystem: p.Ecosystem, Stored: true, Block: block, Actor: im.Actor, Source: im.Source, Endpoint: im.Endpoint,
+	})
 }
 
 // Miss is a remote artifact that is about to be fetched.

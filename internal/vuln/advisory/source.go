@@ -42,6 +42,12 @@ func SourceOf(id string) Source {
 	return Source{Name: sourceOSVName, URL: osvRecordBase + url.PathEscape(id)}
 }
 
+// ImageSource is the attribution of an advisory an image scan found (R-VULN-003, R-VULN-035): the record comes from the analyser's
+// database, which is compiled from the distributions' and language ecosystems' own advisories.
+func ImageSource(id string) Source {
+	return Source{Name: "Trivy vulnerability database", License: "Apache-2.0", URL: "https://avd.aquasec.com/nvd/" + url.PathEscape(strings.ToLower(id))}
+}
+
 // KEVSource is the attribution of the known-exploited flag (R-VULN-003).
 func KEVSource() Source {
 	return Source{Name: "CISA KEV", License: "CC0 1.0", URL: "https://www.cisa.gov/known-exploited-vulnerabilities-catalog"}

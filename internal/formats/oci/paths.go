@@ -58,7 +58,7 @@ var _ formats.VersionPather = (*Format)(nil)
 // VersionPath is the path of a tag, "<name>/_tags/<tag>": a version of an image is a tag (the package rows record tags), and the
 // tag's item holds the bytes of the manifest it points at, which is what a version shows. The decision point decides a tag on it
 // as well as on the tags list, so a path pattern that hides a tag hides it from the package screens as the tags list hides it
-// (Q-AUTHZ-258); OCI has no vulnerability adapter, so no vulnerability report lists a tag. A name or a tag the grammar refuses
+// (Q-AUTHZ-258); a finding of an image names its manifest's digest, so no vulnerability report lists a tag. A name or a tag the grammar refuses
 // names no version.
 func (f *Format) VersionPath(name, tag string) (formats.Path, bool) {
 	n, ok := names{}.Normalize(name)

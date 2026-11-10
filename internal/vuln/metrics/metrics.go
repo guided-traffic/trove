@@ -28,6 +28,8 @@ const (
 	Findings           = "trove_vuln_findings"
 	DownloadsBlocked   = "trove_vuln_downloads_blocked_total"
 	AuditRequests      = "trove_vuln_audit_requests_total"
+	ImageScans         = "trove_vuln_image_scans_total"
+	ImageScanDuration  = "trove_vuln_image_scan_duration_seconds"
 	ClaimedNameMatches = "trove_vuln_claimed_name_matches"
 )
 
@@ -84,6 +86,10 @@ type Metrics struct {
 	SyncRecords *prometheus.CounterVec
 	// UnevaluableRanges counts the ranges the format's version order cannot evaluate, by ecosystem (R-VULN-009).
 	UnevaluableRanges *prometheus.CounterVec
+	// ImageScans counts finished attempts to scan an image, by result: scanned, or the code that ended it (R-VULN-034).
+	ImageScans *prometheus.CounterVec
+	// ImageScanDuration is the duration of the scan of one image.
+	ImageScanDuration prometheus.Histogram
 	// Evaluations counts evaluations by trigger (publish, fill, miss, advisory, full, rescan).
 	Evaluations *prometheus.CounterVec
 	// EvaluationDuration is the duration of an evaluation by trigger.
@@ -118,6 +124,13 @@ func New(reg prometheus.Registerer) (*Metrics, error) {
 		DownloadsBlocked: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: DownloadsBlocked, Help: "Downloads refused by a finding or by missing advisory data, by format, reason (malicious, triage, missing_data) and mode (enforce, report) (R-VULN-015).",
 		}, blockedLabels()),
+		ImageScans: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: ImageScans, Help: "Attempts to scan a container image, by result: scanned, or the code that ended it (R-VULN-034).",
+		}, []string{"result"}),
+		ImageScanDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name: ImageScanDuration, Help: "Duration of the scan of one container image (R-VULN-034).",
+			Buckets: []float64{0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600, 1200},
+		}),
 		AuditRequests: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: AuditRequests, Help: "Client audit requests (npm bulk audits in every mode, the NuGet vulnerability page), by format, mode and outcome (R-VULN-017, R-VULN-018).",
 		}, auditLabels()),
@@ -126,7 +139,7 @@ func New(reg prometheus.Registerer) (*Metrics, error) {
 		return m, nil
 	}
 	var errs []error
-	for _, c := range []prometheus.Collector{m.SyncRuns, m.SyncRecords, m.UnevaluableRanges, m.Evaluations, m.EvaluationDuration, m.DownloadsBlocked, m.AuditRequests} {
+	for _, c := range []prometheus.Collector{m.SyncRuns, m.SyncRecords, m.UnevaluableRanges, m.Evaluations, m.EvaluationDuration, m.DownloadsBlocked, m.AuditRequests, m.ImageScans, m.ImageScanDuration} {
 		errs = append(errs, reg.Register(c))
 	}
 	if err := errors.Join(errs...); err != nil {
@@ -151,7 +164,7 @@ func GaugeDescs() []*prometheus.Desc {
 // Names lists every metric name of the scanning, for the tests that hold the registry and the specification together.
 func Names() []string {
 	return []string{
-		SourceLastSuccess, SourceRecords, SourceFailures, SyncRuns, SyncRecords, UnevaluableRanges, Evaluations,
+		SourceLastSuccess, SourceRecords, SourceFailures, SyncRuns, SyncRecords, UnevaluableRanges, Evaluations, ImageScans, ImageScanDuration,
 		EvaluationDuration, Findings, DownloadsBlocked, AuditRequests, ClaimedNameMatches,
 	}
 }

@@ -963,12 +963,12 @@ func (q *Queries) VulnInsertClaimedMatch(ctx context.Context, arg VulnInsertClai
 
 const vulnInsertFinding = `-- name: VulnInsertFinding :many
 INSERT INTO vuln_finding (id, repo_id, ecosystem, package_name, version, advisory_id, package_id, version_id, kind, severity, severity_rank,
-                          cvss_score, known_exploited, fix_available, fixed_versions, status, advisory_modified)
+                          cvss_score, known_exploited, fix_available, fixed_versions, status, advisory_modified, components)
 VALUES ($1::text::uuid, $2::bigint, $3::text, $4::text, $5::text,
         $6::text, NULLIF($7::bigint, 0), NULLIF($8::bigint, 0), $9::text,
         $10::text, $11::smallint, NULLIF($12::float8, -1)::numeric(3,1),
         $13::boolean, $14::boolean, $15::text[], 'needs_triage',
-        to_timestamp($16::bigint / 1000000.0))
+        to_timestamp($16::bigint / 1000000.0), $17::jsonb)
 ON CONFLICT (repo_id, ecosystem, package_name, version, advisory_id) DO NOTHING
 RETURNING id::text AS id
 `
@@ -990,6 +990,7 @@ type VulnInsertFindingParams struct {
 	FixAvailable       bool
 	FixedVersions      []string
 	AdvisoryModifiedUs int64
+	Components         json.RawMessage
 }
 
 // The id comes back for the row this statement wrote and for none when the identity exists already, so that the history is
@@ -1012,6 +1013,7 @@ func (q *Queries) VulnInsertFinding(ctx context.Context, arg VulnInsertFindingPa
 		arg.FixAvailable,
 		arg.FixedVersions,
 		arg.AdvisoryModifiedUs,
+		arg.Components,
 	)
 	if err != nil {
 		return nil, err

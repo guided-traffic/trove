@@ -212,6 +212,7 @@ export const NUGET_FORMAT: FormatDescriptor = {
 export const OCI_FORMAT: FormatDescriptor = {
   ...GENERIC_FORMAT,
   name: 'oci',
+  vulnerabilityScanning: true,
   displayName: 'OCI (Docker)',
   classes: ['local'],
   clients: [

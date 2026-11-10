@@ -142,6 +142,8 @@ type Row struct {
 	StatusChangedByName     string
 	KeyNum                  int64
 	KeyTxt                  string
+	// Components is the JSON of the packages inside an image the advisory affects (R-VULN-012); nil for a package finding.
+	Components json.RawMessage
 }
 
 // rows32 is a row limit as the statements take it.

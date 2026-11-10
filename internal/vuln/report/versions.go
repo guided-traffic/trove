@@ -29,7 +29,7 @@ func (s *Service) dataStates(ctx context.Context) (map[string]DataInfo, []store.
 	out := map[string]DataInfo{}
 	now := s.now()
 	for _, r := range rows {
-		if r.Source != "osv" {
+		if r.Source != store.SourceOSV && r.Source != store.SourceTrivy {
 			continue
 		}
 		out[r.Ecosystem] = DataInfo{Complete: r.State == "complete", Stale: s.stale(r.SyncedAt, now), SyncedAt: r.SyncedAt}
@@ -71,6 +71,72 @@ type RepositoryVersion struct {
 	Blocked     bool
 	BlockReason vuln.BlockReason
 	Findings    []Finding
+	// Images are the manifests an image version stands for, one per platform, each with how far it has been scanned; nil for a package.
+	Images []ImageState
+}
+
+// imageFormat is the format whose versions are tags that stand for manifests (R-VULN-012).
+const imageFormat = "oci"
+
+// ImageState is one manifest of an image version in the report.
+type ImageState struct {
+	Digest, Platform string
+	// State is pending, scanned or failed; ErrorCode says why a scan failed.
+	State, ErrorCode string
+	ScannedAt        *time.Time
+	OSFamily, OSName string
+	// EOSL says that the distribution no longer provides security updates, so that an absence of findings says little.
+	EOSL     bool
+	Packages int
+}
+
+func imagesOf(all []store.ImageManifest, repoID int64) []ImageState {
+	out := []ImageState{}
+	for _, m := range all {
+		if m.RepoID != repoID {
+			continue
+		}
+		state := m.State
+		if state == "" {
+			state = store.ImageScanPending
+		}
+		out = append(out, ImageState{Digest: m.Digest, Platform: m.Platform, State: state, ErrorCode: m.ErrorCode, ScannedAt: m.ScannedAt, OSFamily: m.OSFamily, OSName: m.OSName, EOSL: m.EOSL, Packages: m.Packages})
+	}
+	return out
+}
+
+// manifestDigests are the versions of the findings of what a reference stands for: the digest itself when the caller asked by digest.
+func manifestDigests(all []store.ImageManifest, version string) []string {
+	seen := map[string]bool{}
+	out := []string{version}
+	for _, m := range all {
+		if !seen[m.Digest] {
+			seen[m.Digest] = true
+			out = append(out, m.Digest)
+		}
+	}
+	return out
+}
+
+// imageEvaluation refines the state of an evaluated image version by how far its manifests have been scanned: an image whose scan has not
+// finished is never reported as evaluated, so that nobody reads the absence of findings as clean (R-VULN-001).
+func imageEvaluation(base vuln.Evaluation, images []ImageState) vuln.Evaluation {
+	if base != vuln.EvaluationEvaluated {
+		return base
+	}
+	if len(images) == 0 {
+		return vuln.EvaluationPendingScan
+	}
+	state := vuln.EvaluationEvaluated
+	for _, m := range images {
+		switch m.State {
+		case store.ImageScanFailed:
+			return vuln.EvaluationScanFailed
+		case store.ImageScanPending:
+			state = vuln.EvaluationPendingScan
+		}
+	}
+	return state
 }
 
 // Version returns, per readable repository that holds the version, the evaluation state, the block and the findings
@@ -98,17 +164,34 @@ func (s *Service) Version(ctx context.Context, sc Scope, format, name, version s
 	if err != nil {
 		return nil, false, err
 	}
+	versions := []string{version}
+	var images []store.ImageManifest
+	if format == imageFormat && s.images != nil {
+		if images, err = s.images.Manifests(ctx, repos, name, version); err != nil {
+			return nil, false, err
+		}
+		versions = manifestDigests(images, version)
+	}
 	rows, err := s.st.List(ctx, sc.Scope, s.withPolicy(sc.snap, store.Filter{
-		Formats: []string{format}, Packages: []string{name}, Versions: []string{version}, Repos: repos, HasRepos: true,
+		Formats: []string{format}, Packages: []string{name}, Versions: versions, Repos: repos, HasRepos: true,
 	}), store.Order{Sort: "severity", Desc: true}, nil, 1000*len(repos))
 	if err != nil {
 		return nil, false, err
+	}
+	if format == imageFormat {
+		if rows, err = s.st.WithComponents(ctx, rows); err != nil {
+			return nil, false, err
+		}
 	}
 	fs := s.findings(sc.snap, rows)
 	out := make([]RepositoryVersion, 0, len(repos))
 	for _, id := range repos {
 		r, _ := sc.snap.Repository(id)
 		rv := RepositoryVersion{Repository: r.Name.String(), Evaluation: s.evaluation(ctx, r, name, data), Findings: []Finding{}}
+		if format == imageFormat {
+			rv.Images = imagesOf(images, id)
+			rv.Evaluation = imageEvaluation(rv.Evaluation, rv.Images)
+		}
 		p := s.policy(sc.snap, id)
 		for _, f := range fs {
 			if f.RepoID == id {
@@ -185,7 +268,13 @@ func (s *Service) Package(ctx context.Context, sc Scope, format, name string, f 
 	if len(sc.Holders) == 0 {
 		return nil, false, nil
 	}
-	counts, err := s.st.PackageCounts(ctx, sc.Scope, format, name, f)
+	var counts []store.VersionCount
+	var err error
+	if format == imageFormat {
+		counts, err = s.st.ImageTagCounts(ctx, sc.Scope, name, f)
+	} else {
+		counts, err = s.st.PackageCounts(ctx, sc.Scope, format, name, f)
+	}
 	if err != nil {
 		return nil, false, err
 	}

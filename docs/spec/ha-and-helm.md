@@ -3924,7 +3924,7 @@ worker:
       maxUnavailable: 0
   terminationGracePeriodSeconds: 300    # jobs persist their cursor before exit
   spool:
-    sizeLimit: 5Gi                      # workers spool only cache fills of jobs and, from P1, the nuget-symbol-index job's one extracted PDB at a time (formats/nuget.md)
+    sizeLimit: 5Gi                      # workers spool only cache fills of jobs and, from P1, the nuget-symbol-index job's one extracted PDB at a time (formats/nuget.md); the image scanning works below this spool too (vulnerability-scanning.md R-VULN-036), which is why its largest image is 3 GiB by default
   resources:
     requests:
       cpu: 500m

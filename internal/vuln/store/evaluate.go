@@ -250,6 +250,8 @@ type NewFinding struct {
 	FixAvailable      bool
 	FixedVersions     []string
 	AdvisoryModifiedU int64
+	// Components is the JSON of the affected packages inside an image; nil for a package format.
+	Components json.RawMessage
 }
 
 // InsertFinding inserts a finding; it reports whether this call wrote the row. A finding of the same identity that exists is
@@ -260,9 +262,17 @@ func (e *Eval) InsertFinding(ctx context.Context, f NewFinding) (bool, error) {
 		PackageID: f.PackageID, VersionID: f.VersionID, Kind: string(f.Kind), Severity: string(f.Severity),
 		SeverityRank: int16(f.Severity.Rank()), //nolint:gosec // a rank is 0 to 5
 		CvssScore:    f.CVSS, KnownExploited: f.KnownExploited, FixAvailable: f.FixAvailable,
-		FixedVersions: nonNil(f.FixedVersions), AdvisoryModifiedUs: f.AdvisoryModifiedU,
+		FixedVersions: nonNil(f.FixedVersions), AdvisoryModifiedUs: f.AdvisoryModifiedU, Components: componentsOf(f.Components),
 	})
 	return len(ids) > 0, err
+}
+
+// componentsOf is the column value for a finding: an empty list for a package format.
+func componentsOf(c json.RawMessage) json.RawMessage {
+	if len(c) == 0 {
+		return json.RawMessage(`[]`)
+	}
+	return c
 }
 
 // FindingsOfRepoItem returns the findings of the package of an item's version in one repository, resolved ones too: the commit hook

@@ -9,14 +9,14 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 620 of 766 spec requirements are implemented: a passing test names them and no
+**Status.** 620 of 771 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 773 specified (527 of them implemented), 1,466 open.
-766 spec requirements: 603 cover catalog features, 163 cover none (`trove-only`, [listed at the
+**Totals.** 2,239 catalog features on 60 pages: 774 specified (521 of them implemented), 1,465 open.
+771 spec requirements: 606 cover catalog features, 165 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
 ## Pages
@@ -42,7 +42,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Operations, monitoring and configuration](#operations-monitoring-and-configuration-ops) | `OPS` | 100 | 17 of 17 | 43 | 57 | 27 |
 | [Events and extensibility](#events-and-extensibility-evt) | `EVT` | 82 | 1 of 1 | 26 | 56 | 3 |
 | [Distribution and release lifecycle](#distribution-and-release-lifecycle-dist) | `DIST` | 70 | 2 of 2 | 2 | 68 | 2 |
-| [Security scanning and curation](#security-scanning-and-curation-sec) | `SEC` | 98 | 18 of 18 | 18 | 80 | 13 |
+| [Security scanning and curation](#security-scanning-and-curation-sec) | `SEC` | 98 | 18 of 18 | 18 | 80 | 7 |
 | [UI inventory](#ui-inventory-ui) | `UI` | 61 | 33 of 33 | 47 | 14 | 36 |
 | [Content API operation catalog](#content-api-operation-catalog-api) | `API` | 166 | 15 of 15 | 71 | 95 | 28 |
 | [Operation catalog: administration API](#operation-catalog-administration-api-admapi) | `ADMAPI` | 114 | 34 of 34 | 54 | 60 | 41 |
@@ -50,7 +50,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [npm package format](#npm-package-format-pkg-npm) | `PKG-NPM` | 62 | 37 of 37 | 52 | 10 | 41 |
 | [NuGet](#nuget-pkg-nuget) | `PKG-NUGET` | 56 | 35 of 35 | 42 | 14 | 35 |
 | [Docker image format](#docker-image-format-pkg-docker) | `PKG-DOCKER` | 52 | – | 33 | 19 | 33 |
-| [OCI images and artifacts](#oci-images-and-artifacts-pkg-oci) | `PKG-OCI` | 20 | – | 14 | 6 | 14 |
+| [OCI images and artifacts](#oci-images-and-artifacts-pkg-oci) | `PKG-OCI` | 20 | – | 15 | 5 | 14 |
 | [Helm chart format](#helm-chart-format-pkg-helm) | `PKG-HELM` | 25 | – | 0 | 25 | 0 |
 | [Maven package format](#maven-package-format-pkg-maven) | `PKG-MAVEN` | 39 | – | 0 | 39 | 0 |
 | [PyPI package format](#pypi-package-format-pkg-pypi) | `PKG-PYPI` | 29 | – | 0 | 29 | 0 |
@@ -1256,13 +1256,13 @@ Catalog page: [distribution-and-lifecycle.md](../features/distribution-and-lifec
 Catalog page: [security-scanning-and-curation.md](../features/security-scanning-and-curation.md) · specified by priority: MVP 18 of 18 · P1 0 of 18 · P2 0 of 17 · Later 0 of 43 · Out of scope 0 of 2
 
 <details>
-<summary>98 features: 18 specified, 80 open, 13 implemented</summary>
+<summary>98 features: 18 specified, 80 open, 7 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
-| SEC-001 | Package risk data source | MVP | specified | [R-VULN-003](../spec/vulnerability-scanning.md) (implemented), [R-VULN-006](../spec/vulnerability-scanning.md) (implemented), [R-VULN-007](../spec/vulnerability-scanning.md) (implemented), [R-VULN-008](../spec/vulnerability-scanning.md) (implemented), [R-VULN-010](../spec/vulnerability-scanning.md) (implemented), [R-VULN-030](../spec/vulnerability-scanning.md) |
-| SEC-002 | Online synchronization of the vulnerability database | MVP | implemented | [R-VULN-004](../spec/vulnerability-scanning.md) (implemented), [R-VULN-021](../spec/vulnerability-scanning.md) (implemented) |
-| SEC-003 | Offline synchronization of the vulnerability database | MVP | implemented | [R-VULN-005](../spec/vulnerability-scanning.md) (implemented) |
+| SEC-001 | Package risk data source | MVP | specified | [R-VULN-003](../spec/vulnerability-scanning.md) (implemented), [R-VULN-006](../spec/vulnerability-scanning.md) (implemented), [R-VULN-007](../spec/vulnerability-scanning.md) (implemented), [R-VULN-008](../spec/vulnerability-scanning.md) (implemented), [R-VULN-010](../spec/vulnerability-scanning.md) (implemented), [R-VULN-035](../spec/vulnerability-scanning.md), [R-VULN-030](../spec/vulnerability-scanning.md) |
+| SEC-002 | Online synchronization of the vulnerability database | MVP | specified | [R-VULN-004](../spec/vulnerability-scanning.md) (implemented), [R-VULN-021](../spec/vulnerability-scanning.md) (implemented), [R-VULN-035](../spec/vulnerability-scanning.md) |
+| SEC-003 | Offline synchronization of the vulnerability database | MVP | specified | [R-VULN-005](../spec/vulnerability-scanning.md) (implemented), [R-VULN-035](../spec/vulnerability-scanning.md) |
 | SEC-004 | Malicious package intelligence | MVP | implemented | [R-VULN-003](../spec/vulnerability-scanning.md) (implemented), [R-VULN-006](../spec/vulnerability-scanning.md) (implemented) |
 | SEC-005 | Package labels | P2 | open | – |
 | SEC-006 | Custom licenses | P2 | open | – |
@@ -1302,14 +1302,14 @@ Catalog page: [security-scanning-and-curation.md](../features/security-scanning-
 | SEC-039 | On-demand evaluation of uncovered packages | Later | open | – |
 | SEC-040 | Curation policy sharing across sites | Later | open | – |
 | SEC-041 | Redirect endpoint for intercepted public registry traffic | P2 | open | – |
-| SEC-042 | Indexing scope | MVP | implemented | [R-VULN-001](../spec/vulnerability-scanning.md) (implemented), [R-VULN-002](../spec/vulnerability-scanning.md) (implemented) |
-| SEC-043 | Scanning on upload and on cache | MVP | implemented | [R-VULN-001](../spec/vulnerability-scanning.md) (implemented), [R-VULN-009](../spec/vulnerability-scanning.md) (implemented), [R-VULN-011](../spec/vulnerability-scanning.md) (implemented) |
+| SEC-042 | Indexing scope | MVP | specified | [R-VULN-001](../spec/vulnerability-scanning.md) (implemented), [R-VULN-002](../spec/vulnerability-scanning.md) (implemented), [R-VULN-033](../spec/vulnerability-scanning.md) |
+| SEC-043 | Scanning on upload and on cache | MVP | specified | [R-VULN-001](../spec/vulnerability-scanning.md) (implemented), [R-VULN-009](../spec/vulnerability-scanning.md) (implemented), [R-VULN-011](../spec/vulnerability-scanning.md) (implemented), [R-VULN-033](../spec/vulnerability-scanning.md) |
 | SEC-044 | On-demand indexing and reindexing | MVP | implemented | [R-VULN-011](../spec/vulnerability-scanning.md) (implemented) |
 | SEC-045 | Scan data retention | Later | open | – |
 | SEC-046 | File-name exclusion from indexing | Later | open | – |
-| SEC-047 | Scan status | MVP | implemented | [R-VULN-011](../spec/vulnerability-scanning.md) (implemented), [R-VULN-012](../spec/vulnerability-scanning.md) (implemented) |
+| SEC-047 | Scan status | MVP | specified | [R-VULN-011](../spec/vulnerability-scanning.md) (implemented), [R-VULN-012](../spec/vulnerability-scanning.md) (implemented), [R-VULN-037](../spec/vulnerability-scanning.md) |
 | SEC-048 | Continuous re-evaluation | MVP | implemented | [R-VULN-011](../spec/vulnerability-scanning.md) (implemented) |
-| SEC-049 | Scan results view | MVP | implemented | [R-VULN-012](../spec/vulnerability-scanning.md) (implemented), [R-VULN-020](../spec/vulnerability-scanning.md) (implemented), [R-VULN-022](../spec/vulnerability-scanning.md) (implemented), [R-VULN-023](../spec/vulnerability-scanning.md) (implemented) |
+| SEC-049 | Scan results view | MVP | specified | [R-VULN-012](../spec/vulnerability-scanning.md) (implemented), [R-VULN-020](../spec/vulnerability-scanning.md) (implemented), [R-VULN-022](../spec/vulnerability-scanning.md) (implemented), [R-VULN-023](../spec/vulnerability-scanning.md) (implemented), [R-VULN-037](../spec/vulnerability-scanning.md) |
 | SEC-050 | Scan policy model | Later | open | – |
 | SEC-051 | Security rule criteria | Later | open | – |
 | SEC-052 | License rule criteria | Later | open | – |
@@ -1322,7 +1322,7 @@ Catalog page: [security-scanning-and-curation.md](../features/security-scanning-
 | SEC-059 | Violation notifications and webhooks | Later | open | – |
 | SEC-060 | Issue tracker integration | Later | open | – |
 | SEC-097 | Export of findings to external security dashboards | Later | open | – |
-| SEC-061 | Block downloads on violation | MVP | specified | [R-VULN-002](../spec/vulnerability-scanning.md) (implemented), [R-VULN-015](../spec/vulnerability-scanning.md), [R-VULN-016](../spec/vulnerability-scanning.md) (implemented) |
+| SEC-061 | Block downloads on violation | MVP | specified | [R-VULN-002](../spec/vulnerability-scanning.md) (implemented), [R-VULN-015](../spec/vulnerability-scanning.md), [R-VULN-016](../spec/vulnerability-scanning.md) (implemented), [R-VULN-037](../spec/vulnerability-scanning.md) |
 | SEC-062 | Block downloads of not-yet-scanned artifacts | MVP | specified | [R-VULN-015](../spec/vulnerability-scanning.md) |
 | SEC-063 | Download status check | MVP | implemented | [R-VULN-020](../spec/vulnerability-scanning.md) (implemented) |
 | SEC-064 | Global blocking overrides | MVP | specified | [R-VULN-015](../spec/vulnerability-scanning.md), [R-VULN-025](../spec/vulnerability-scanning.md) (implemented) |
@@ -1967,10 +1967,10 @@ Catalog page: [formats/docker.md](../features/formats/docker.md) · specified by
 
 ## OCI images and artifacts (PKG-OCI)
 
-Catalog page: [formats/oci.md](../features/formats/oci.md) · specified by priority: P1 12 of 15 · P2 2 of 4 · Later 0 of 1
+Catalog page: [formats/oci.md](../features/formats/oci.md) · specified by priority: P1 12 of 15 · P2 2 of 4 · Later 1 of 1
 
 <details>
-<summary>20 features: 14 specified, 6 open, 14 implemented</summary>
+<summary>20 features: 15 specified, 5 open, 14 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -1993,7 +1993,7 @@ Catalog page: [formats/oci.md](../features/formats/oci.md) · specified by prior
 | PKG-OCI-017 | ORAS | P1 | open | – |
 | PKG-OCI-018 | Helm charts in OCI repositories | P1 | open | – |
 | PKG-OCI-019 | Client setup instructions | P1 | implemented | [R-OCI-030](../spec/formats/oci.md) (implemented) |
-| PKG-OCI-020 | Scanning limited to container images | Later | open | – |
+| PKG-OCI-020 | Scanning limited to container images | Later | specified | [R-VULN-033](../spec/vulnerability-scanning.md) |
 
 </details>
 
@@ -2969,7 +2969,7 @@ Requirements whose `Covers:` line says `trove-only`: trove's own design work tha
 catalog feature measures. They count toward the requirement total, not toward any share.
 
 <details>
-<summary>163 requirements</summary>
+<summary>165 requirements</summary>
 
 | Requirement | Title | Priority | Spec page |
 |---|---|---|---|
@@ -3135,6 +3135,8 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-VULN-027 | Across replicas, without Valkey and during a drain | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
 | R-VULN-028 (implemented) | Performance bounds | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
 | R-VULN-029 | Acceptance suite | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
+| R-VULN-034 | The state of a scan, and that no finding is not the same as clean | P1 | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
+| R-VULN-036 | Scanning untrusted layers | P1 | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
 | R-VULN-031 | Time-limited dismissals | P1 | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
 
 </details>

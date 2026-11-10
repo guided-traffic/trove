@@ -70,6 +70,12 @@ func newStates(db Database, reg *cache.Registry, staleAfter time.Duration, now f
 	s.list = func(ctx context.Context) (rows []store.StateSummary, err error) {
 		err = db.Read(ctx, func(c q.DBTX) (err error) {
 			rows, err = store.Sync{}.List(ctx, c, store.SourceOSV)
+			if err != nil {
+				return err
+			}
+			// The database of the image scanning is one row more, under its own ecosystem (R-VULN-035).
+			trivy, err := store.Sync{}.List(ctx, c, store.SourceTrivy)
+			rows = append(rows, trivy...)
 			return err
 		})
 		return rows, err

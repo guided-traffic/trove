@@ -632,6 +632,20 @@ Release and of the nightly workflow; [e2e.md](e2e.md#the-vulnerability-tests) de
 gap H-494. Nothing in `internal` changed for it; what it found about the product (a UI contrast defect, fixed, and the case of the findings filter `package` for NuGet IDs) is in [e2e.md](e2e.md#findings-of-the-vulnerability-tests).
 
 
+## Container images (R-VULN-033 to R-VULN-037)
+
+A scan is two steps in [internal/vuln/imagescan](../../internal/vuln/imagescan): the analysis of the layers once per digest and analyser (kept in `vuln_image_sbom`) and a detection per database. The seam `imagescan.Database` (Q-VULN-137) is the one place that knows where the database lives: `LocalDatabase` unpacks the copy in the object store into `scan_dir`; a change to a central server would replace it and the chart, and nothing else. The job `vuln-image-scan` (queue `vuln`, `coalesce`) reads its work from `vuln_image_scan`; a push only wakes it (`imagescan.Hooks`), and `vuln-sync-trivy-db` fills the database (`internal/vuln/sync/trivydb.go`). The result enters the lifecycle of findings through `evaluate.Service.ApplyImage`, so an image's finding differs from a package's only in its version (the manifest digest) and its `components`. A pull is gated by `enforce.GateImage` through the Host port `RefuseImage` (Q-VULN-138).
+
+Tests: `internal/vuln/imagescan` (bounds and report parsing, and a run of the real binary when `TROVE_TEST_TRIVY_BIN`, `TROVE_TEST_TRIVY_CACHE` and `TROVE_TEST_IMAGE_LAYOUT` name them), [test/integration/vulnimage](../../test/integration/vulnimage) (push to findings, a new database, the block of a pull, a real import of the database through the object store).
+
+| File | Responsibility |
+|---|---|
+| [analyser.go](../../internal/vuln/imagescan/analyser.go) | The two steps, `Trivy` (client mode) and the seam `Database` |
+| [database.go](../../internal/vuln/imagescan/database.go) | The client-mode database: archive checks, the local cache, `ReadDBMetadata` |
+| [layout.go](../../internal/vuln/imagescan/layout.go) | The OCI layout of an image, with every bound of R-VULN-036 |
+| [report.go](../../internal/vuln/imagescan/report.go) | The analyser's JSON report, read under limits and turned into advisories |
+| [service.go](../../internal/vuln/imagescan/service.go) | The job and one scan |
+
 ## Tests that pass now
 
 These contract tests carry their requirement IDs in comments or in names that say what they pin; the evidence of a requirement comes from the tests of its work package (Q-ROAD-5).

@@ -232,6 +232,12 @@ func toFinding(f report.Finding) gen.VulnerabilityFinding {
 		DetectedAt: f.DetectedAt, ResolvedAt: f.ResolvedAt,
 	}
 	out.KnownExploitedAddedAt = toDate(f.KnownExploitedAddedAt)
+	if len(f.Components) > 0 {
+		var comps []gen.VulnerabilityImageComponent
+		if err := json.Unmarshal(f.Components, &comps); err == nil {
+			out.Components = &comps
+		}
+	}
 	if f.DismissalReason != "" {
 		d := gen.VulnerabilityDismissalReason(f.DismissalReason)
 		out.DismissalReason = &d

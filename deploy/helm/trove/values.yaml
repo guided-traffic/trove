@@ -240,14 +240,14 @@ worker:
       maxUnavailable: 0
   terminationGracePeriodSeconds: 300    # jobs persist their cursor before exit
   spool:
-    sizeLimit: 5Gi                      # workers spool only cache fills of jobs, the artifacts of a mirror pass (at most the background share B of a repository at a time, each up to the repository maxArtifactBytes), one advisory archive while a sync runs (config.vulnerabilities.sources.osv.max_archive_size, validated) and, from P1, the nuget-symbol-index job's one extracted PDB at a time (formats/nuget.md)
+    sizeLimit: 5Gi                      # also the working space of the image scanning (config.vulnerabilities.images.scan_dir below this spool): the largest image being scanned, default 3 GiB, and the unpacked database. Workers spool only cache fills of jobs, the artifacts of a mirror pass (at most the background share B of a repository at a time, each up to the repository maxArtifactBytes), one advisory archive while a sync runs (config.vulnerabilities.sources.osv.max_archive_size, validated) and, from P1, the nuget-symbol-index job's one extracted PDB at a time (formats/nuget.md)
   resources:
     requests:
       cpu: 500m
       memory: 512Mi
       ephemeral-storage: 1Gi
     limits:
-      memory: 1Gi                       # includes the remote engine a worker builds for mirror passes: 16 MiB of metadata bytes, 10,000 negative entries and no query cache (Q-ARCH-317)
+      memory: 1Gi                       # includes the remote engine a worker builds for mirror passes (16 MiB of metadata bytes, 10,000 negative entries and no query cache, Q-ARCH-317) and one analyser of the image scanning at a time (config.vulnerabilities.images.memory_limit, 512MiB); raise it on the pool of the queue vuln for larger images
   autoscaling:
     enabled: false
     minReplicas: 2

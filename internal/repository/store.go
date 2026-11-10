@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -81,8 +82,8 @@ func toRepository(r q.Repository, project string, cat *catalog.Registry) (Reposi
 	}
 	out.rid, out.PriorityMember = r.ID, s.PriorityMember
 	out.autoClaim = effectiveAutoClaim(info, known, &s)
-	if out.Class != Virtual && known && info.Ecosystem != "" {
-		out.vulnEcosystem, out.vulnerabilities = info.Ecosystem, vuln.DefaultSettings()
+	if eco := cmp.Or(info.Ecosystem, info.ImageEcosystem); out.Class != Virtual && known && eco != "" {
+		out.vulnEcosystem, out.vulnerabilities = eco, vuln.DefaultSettings()
 		if s.Vulnerabilities != nil {
 			out.vulnerabilities = *s.Vulnerabilities
 		}

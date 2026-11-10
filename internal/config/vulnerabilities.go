@@ -20,14 +20,43 @@ type Vulnerabilities struct {
 	Sources  VulnerabilitySources  `yaml:"sources"`
 	Matching VulnerabilityMatching `yaml:"matching"`
 	Findings VulnerabilityFindings `yaml:"findings"`
+	Images   VulnerabilityImages   `yaml:"images"`
 	Export   VulnerabilityExport   `yaml:"export"`
 }
 
 // VulnerabilitySources are the advisory sources (R-VULN-003).
 type VulnerabilitySources struct {
-	OSV  VulnerabilityOSV  `yaml:"osv"`
-	KEV  VulnerabilityKEV  `yaml:"kev"`
-	EPSS VulnerabilityEPSS `yaml:"epss"`
+	OSV   VulnerabilityOSV   `yaml:"osv"`
+	KEV   VulnerabilityKEV   `yaml:"kev"`
+	EPSS  VulnerabilityEPSS  `yaml:"epss"`
+	Trivy VulnerabilityTrivy `yaml:"trivy"`
+}
+
+// VulnerabilityTrivy configures the vulnerability database of the image scanning (R-VULN-035).
+type VulnerabilityTrivy struct {
+	Mode           string        `yaml:"mode" default:"online" validate:"oneof=online|repository|off" doc:"online: a worker copies the published database into the object store; repository: it reads trivy/db.tar.gz from a generic local repository, for an air-gapped installation (R-VULN-005); off: the stored database stays as it is and ages."`
+	URL            string        `yaml:"url" default:"https://mirror.gcr.io/v2/aquasec/trivy-db/" doc:"The registry path of the database artifact, ending in a slash; https only."`
+	Reference      string        `yaml:"reference" default:"2" doc:"The tag of the artifact, which is the schema version of the database this release reads."`
+	Repository     string        `yaml:"repository" default:"" doc:"Mode repository: the qualified name <projectKey>/<repoKey> of a generic local repository that holds trivy/db.tar.gz. Whoever holds deploy on it decides what the images are compared with."`
+	Timeout        time.Duration `yaml:"timeout" default:"15m" validate:"min=10s,max=24h" doc:"Timeout of one import of the database."`
+	MaxArchiveSize ByteSize      `yaml:"max_archive_size" default:"2GiB" validate:"min=1MiB" doc:"Largest database archive accepted. The worker's spool must hold one archive plus headroom."`
+}
+
+// VulnerabilityImages configures the scanning of container images (R-VULN-033 to R-VULN-036).
+type VulnerabilityImages struct {
+	Enabled             bool          `yaml:"enabled" default:"true" doc:"false: no image is scanned; a repository's images are not_covered. The findings stay as they are."`
+	Binary              string        `yaml:"binary" default:"/usr/local/bin/trivy" doc:"The analyser, the one the release image carries at the version of tools/versions.env."`
+	ScanDir             string        `yaml:"scan_dir" default:"/var/lib/trove/spool/imagescan" doc:"Local directory of the working files of the scans and of the unpacked database; it must hold the largest image plus the database. Lost with the pod without harm."`
+	Concurrency         int           `yaml:"concurrency" default:"1" validate:"min=1,max=64" doc:"Images one job scans at a time."`
+	RunSlice            time.Duration `yaml:"run_slice" default:"10m" validate:"min=10s,max=24h" doc:"How long one job keeps its slot on the queue vuln before the rest of the work goes to the next job, so that an advisory sync gets its turn."`
+	ScanDelay           time.Duration `yaml:"scan_delay" default:"30s" validate:"min=0,max=1h" doc:"Delay before a new manifest is scanned, so that a pull of a remote image has brought its layers."`
+	MaxAttempts         int           `yaml:"max_attempts" default:"5" validate:"min=1,max=100" doc:"Attempts at a scan that fails for a reason that may pass (a layer that has not arrived, an analyser that was killed)."`
+	Timeout             time.Duration `yaml:"timeout" default:"15m" validate:"min=10s,max=24h" doc:"Time limit of one step of the analyser."`
+	MemoryLimit         ByteSize      `yaml:"memory_limit" default:"512MiB" validate:"min=64MiB" doc:"Soft limit of the analyser's Go heap. The memory limit of the pod is the hard one."`
+	MaxLayers           int           `yaml:"max_layers" default:"256" validate:"min=1" doc:"Images with more layers are not scanned and show scan_failed."`
+	MaxImageSize        ByteSize      `yaml:"max_image_size" default:"3GiB" validate:"min=1MiB" doc:"Largest image scanned, compressed, config and layers together. Its layers are copied below the worker's spool (worker.spool.sizeLimit), which must hold them and the unpacked database; a larger image shows scan_failed."`
+	MaxUncompressedSize ByteSize      `yaml:"max_uncompressed_size" default:"32GiB" validate:"min=1MiB" doc:"Largest size the layers of an image may decompress to together; a larger image is treated as a decompression bomb."`
+	MaxEntries          int64         `yaml:"max_entries" default:"5000000" validate:"min=1" doc:"Largest number of file entries in the layers of an image."`
 }
 
 // VulnerabilityOSV configures the OSV source (R-VULN-003 to R-VULN-006).
@@ -103,10 +132,15 @@ func (v *Vulnerabilities) Validate(r *Report) {
 	checkHTTPSURL(r, "sources.osv.base_url", o.BaseURL, o.Mode == "online")
 	checkHTTPSURL(r, "sources.kev.url", v.Sources.KEV.URL, v.Sources.KEV.Mode == "online")
 	checkHTTPSURL(r, "sources.epss.url", v.Sources.EPSS.URL, v.Sources.EPSS.Mode == "online")
+	checkHTTPSURL(r, "sources.trivy.url", v.Sources.Trivy.URL, v.Sources.Trivy.Mode == "online")
+	if !strings.HasSuffix(v.Sources.Trivy.URL, "/") {
+		r.Add("sources.trivy.url", "must end in a slash")
+	}
 	for _, s := range []struct{ key, mode, repo string }{
 		{"sources.osv.repository", o.Mode, o.Repository},
 		{"sources.kev.repository", v.Sources.KEV.Mode, v.Sources.KEV.Repository},
 		{"sources.epss.repository", v.Sources.EPSS.Mode, v.Sources.EPSS.Repository},
+		{"sources.trivy.repository", v.Sources.Trivy.Mode, v.Sources.Trivy.Repository},
 	} {
 		if s.mode == "repository" && strings.TrimSpace(s.repo) == "" {
 			r.Add(s.key, "is required when the source's mode is repository: it names the generic local repository that holds the files (R-VULN-005)")

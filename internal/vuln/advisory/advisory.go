@@ -14,6 +14,10 @@ import (
 	"time"
 )
 
+// EcosystemOCI is the ecosystem of container images. Its advisories come from the analyser's database (R-VULN-035), never from the OSV
+// export, and a finding's version is a manifest digest (R-VULN-012).
+const EcosystemOCI = "OCI"
+
 // Kind says what an advisory is (R-VULN-006).
 type Kind string
 

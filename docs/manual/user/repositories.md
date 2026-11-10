@@ -101,7 +101,7 @@ Depending on the format, the content shows:
 
 Select a package or image name to open the [package page](packages.md) for details, the README and all versions. A virtual repository lists what it resolves through its members, which are named above the list. A remote repository lists what has been fetched through it, marked in a note.
 
-Vulnerabilities are not scanned for container images and Debian packages yet; the page says so and shows no vulnerability column for those.
+Debian packages are not scanned for vulnerabilities yet; the page says so and shows no vulnerability column for them.
 
 ## Repository settings
 

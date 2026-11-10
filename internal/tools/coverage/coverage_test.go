@@ -62,7 +62,7 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 		prioMVP:   {394, 394},
 		prioP1:    {514, 330},
 		prioP2:    {885, 48},
-		prioLater: {374, 1},
+		prioLater: {374, 2},
 		prioOut:   {72, 0},
 	}
 	t.Run("E0.8 catalog counts per priority", func(t *testing.T) {
@@ -83,11 +83,11 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 		if got := len(m.Features); got != 2239 {
 			t.Errorf("catalog entries: got %d, want 2239", got)
 		}
-		if got := m.countSpecified(m.Features); got != 773 {
-			t.Errorf("listed entries: got %d, want 773", got)
+		if got := m.countSpecified(m.Features); got != 774 {
+			t.Errorf("listed entries: got %d, want 774", got)
 		}
-		if got := m.countOpen(m.Features); got != 1466 {
-			t.Errorf("not listed entries: got %d, want 1466", got)
+		if got := m.countOpen(m.Features); got != 1465 {
+			t.Errorf("not listed entries: got %d, want 1465", got)
 		}
 	})
 	t.Run("E0.8 requirement counts", func(t *testing.T) {
@@ -95,8 +95,8 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 		for _, r := range m.Reqs {
 			count[r.Priority]++
 		}
-		if len(m.Reqs) != 766 || count[prioMVP] != 546 || count[prioP1] != 179 || count[prioP2] != 41 {
-			t.Errorf("requirements: got %d (MVP %d, P1 %d, P2 %d), want 766 (546, 179, 41)",
+		if len(m.Reqs) != 771 || count[prioMVP] != 546 || count[prioP1] != 184 || count[prioP2] != 41 {
+			t.Errorf("requirements: got %d (MVP %d, P1 %d, P2 %d), want 771 (546, 184, 41)",
 				len(m.Reqs), count[prioMVP], count[prioP1], count[prioP2])
 		}
 	})

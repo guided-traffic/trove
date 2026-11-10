@@ -154,6 +154,14 @@ the alert and the report banner agree (R-VULN-004). It is a duration parsed by t
   annotations:
     summary: A malicious-package advisory names a package name that this installation treats as internal.
     description: Look at GET /api/v1/vulnerabilities/claimed-name-matches. A public package of that name exists, which is how a dependency-confusion attempt looks (R-VULN-010, R-VULN-024).
+- alert: TroveVulnerabilityImageScansFailing
+  expr: sum(increase(trove_vuln_image_scans_total{ {{ $ns }},result!~"scanned|no_database" }[1h])) > 0 and (sum(increase(trove_vuln_image_scans_total{ {{ $ns }},result="scanned" }[1h])) or vector(0)) == 0
+  for: 1h
+  labels:
+    severity: warning
+  annotations:
+    summary: Container images are being scanned without one scan finishing.
+    description: Images whose scan does not finish show the evaluation scan_failed and are not reported as clean (R-VULN-034). The codes are the results of trove_vuln_image_scans_total; a repository page names the code per image in GET /api/v1/packages/{packageId}/versions/{version}/vulnerabilities.
 - alert: TroveMirrorFailing
   expr: max by (repo) (trove_mirror_consecutive_failures{ {{ $ns }} }) >= 3
   labels:
@@ -303,5 +311,5 @@ the alert and the report banner agree (R-VULN-004). It is a duration parsed by t
 
 {{/* The names of every alert the chart can render, for the check of disabledAlerts. */}}
 {{- define "trove.rules.names" -}}
-{{- toJson (list "TroveReplicasNotReady" "TroveDatabaseUnreachable" "TroveObjectStoreUnreachable" "TroveObjectStoreUnreachableSingleReplica" "TroveDatabasePoolSaturated" "TroveControlConnectionWaits" "TroveJobsStuck" "TroveLeaseLost" "TroveMixedVersions" "TroveSpoolNearlyFull" "TroveVulnerabilityDataStale" "TroveVulnerabilitySyncFailing" "TroveVulnerabilityRecordsRejected" "TroveVulnerabilityRecordsInvalid" "TroveVulnerabilityMaliciousRecordRejected" "TroveVulnerabilityClaimedNameMalicious" "TroveMirrorFailing" "TroveMirrorStale" "TroveBridgeLeftOn" "TroveBlobMissing" "TroveGCStale" "TroveBackupCheckFailed" "TroveRevocationJournalBacklog" "TroveRevocationJournalQuarantined" "TroveValkeyUnavailable" "TroveValkeyUnavailableSingleReplica" "TroveValkeySentinelsDegraded" "TroveValkeyFailoverFlapping" "TroveValkeyPrimaryDisagreement" "TroveBackupStale" "TroveBackupFailed" "TroveBackupRunningLong" "TroveBackupGlobalHoldLong" "TroveBackupSourceDamage" "TroveBackupVerifyFindings") -}}
+{{- toJson (list "TroveReplicasNotReady" "TroveDatabaseUnreachable" "TroveObjectStoreUnreachable" "TroveObjectStoreUnreachableSingleReplica" "TroveDatabasePoolSaturated" "TroveControlConnectionWaits" "TroveJobsStuck" "TroveLeaseLost" "TroveMixedVersions" "TroveSpoolNearlyFull" "TroveVulnerabilityDataStale" "TroveVulnerabilitySyncFailing" "TroveVulnerabilityRecordsRejected" "TroveVulnerabilityRecordsInvalid" "TroveVulnerabilityMaliciousRecordRejected" "TroveVulnerabilityClaimedNameMalicious" "TroveVulnerabilityImageScansFailing" "TroveMirrorFailing" "TroveMirrorStale" "TroveBridgeLeftOn" "TroveBlobMissing" "TroveGCStale" "TroveBackupCheckFailed" "TroveRevocationJournalBacklog" "TroveRevocationJournalQuarantined" "TroveValkeyUnavailable" "TroveValkeyUnavailableSingleReplica" "TroveValkeySentinelsDegraded" "TroveValkeyFailoverFlapping" "TroveValkeyPrimaryDisagreement" "TroveBackupStale" "TroveBackupFailed" "TroveBackupRunningLong" "TroveBackupGlobalHoldLong" "TroveBackupSourceDamage" "TroveBackupVerifyFindings") -}}
 {{- end -}}

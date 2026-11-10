@@ -244,6 +244,9 @@ type Entry struct {
 	// does not apply (R-VULN-002), and the scanning derives the ecosystems it syncs from the entries that have one
 	// (R-VULN-003).
 	Ecosystem string
+	// ImageEcosystem is the ecosystem of a format whose content the image scanning reads (R-VULN-033), "" for any other: its repositories
+	// have the scanning, and nothing matches them by name.
+	ImageEcosystem string
 	// Mirror is true for a format whose remote adapter can discover the packages of its upstream (the optional mirror
 	// interface, repositories-and-proxy.md R-REPO-050, ADR-152). formats.Register derives it; the repository model reads
 	// it to refuse remote.mode mirror where it is false.

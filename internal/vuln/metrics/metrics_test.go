@@ -25,12 +25,14 @@ func TestR_VULN_024_TheFamiliesFollowTheConventions(t *testing.T) {
 	m.EvaluationDuration.WithLabelValues("publish").Observe(0.002)
 	m.DownloadsBlocked.WithLabelValues("npm", "malicious", ModeEnforce).Inc()
 	m.AuditRequests.WithLabelValues("npm", "local", "ok").Inc()
+	m.ImageScans.WithLabelValues("scanned").Inc()
+	m.ImageScanDuration.Observe(2)
 	fams, err := reg.Gather()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(fams) != 7 {
-		t.Errorf("%d families gathered, want the 7 collectors", len(fams))
+	if len(fams) != 9 {
+		t.Errorf("%d families gathered, want the 9 collectors", len(fams))
 	}
 	for _, e := range observability.CheckFamilies(fams) {
 		t.Error(e)
@@ -61,7 +63,7 @@ func TestR_VULN_024_TheGaugesUseAllowedLabelsAndTheNamesAreTheSpecs(t *testing.T
 			t.Errorf("%s is not a row of R-VULN-024", n)
 		}
 	}
-	if len(Names()) != 12 {
-		t.Errorf("%d names, want the 12 families of R-VULN-024", len(Names()))
+	if len(Names()) != 14 {
+		t.Errorf("%d names, want the 14 families of R-VULN-024", len(Names()))
 	}
 }

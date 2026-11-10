@@ -12,6 +12,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
+	"github.com/guided-traffic/trove/internal/formats/oci/manifest"
 	"github.com/guided-traffic/trove/internal/formats/oci/rows"
 )
 
@@ -284,6 +285,12 @@ func (f *Format) serveCached(ctx context.Context, mrq *formats.Request, w http.R
 	}
 	if !ok {
 		return l.unknown()
+	}
+	if sum, ok := manifest.ParseDigest(digest); ok && l.contentType == "" {
+		// A manifest about to be served from a member's cache is gated like one served from the member itself (R-VULN-015).
+		if err := refuseBlockedImage(ctx, mrq, remoteName(mrq, client), sum); err != nil {
+			return err
+		}
 	}
 	vw := validatorWriter{ResponseWriter: w, digest: digest, contentType: l.contentType}
 	return mrq.Host.Items().Serve(ctx, storedValidators(mrq), vw, it, formats.ServeStored)

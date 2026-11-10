@@ -49,7 +49,8 @@ describe('Repository content page', () => {
     const r = await open(OCI_REPO, ({ packages }) => ociFixture(packages));
     expect(r.root.querySelector('h1')?.textContent).toContain('oci-local');
     expect(text(r.root)).toContain('Images of the web team');
-    expect(text(r.root)).toContain('Images are not scanned for vulnerabilities yet.');
+    expect(text(r.root)).not.toContain('not scanned for vulnerabilities yet');
+    expect(text(r.root)).toContain('Vulnerabilities');
     expect(r.root.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain('Images');
     const opener = r.root.querySelector<HTMLButtonElement>('button[aria-expanded]')!;
     expect(opener.getAttribute('aria-expanded')).toBe('false');

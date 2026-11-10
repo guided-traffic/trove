@@ -63,13 +63,19 @@ func WithFreeBytes(f func(dir string) (uint64, error)) SpoolOption {
 	return func(s *Spool) { s.free = f }
 }
 
+// ImageScanDir is the name of the directory below the spool directory that the image scanning works in (R-VULN-036). Its files are not
+// spool files and are not counted in the spool's budget: the bound on them is vulnerabilities.images.max_image_size.
+const ImageScanDir = "imagescan"
+
 // NewSpool prepares the spool directory and deletes the spool files a crashed
 // process left in it: no spool file survives its request (R-STOR-004 step 6).
 // It deletes only what the spool itself creates, regular files named by a UUID.
 // A directory that holds anything else (a misconfigured storage.spool.dir such
 // as a data directory or a home directory) is refused with an error naming the
-// entry, before anything is deleted. The one tolerated entry is lost+found, the
-// directory a freshly formatted volume carries.
+// entry, before anything is deleted. The tolerated entries are lost+found, the
+// directory a freshly formatted volume carries, and [ImageScanDir], the working
+// directory of the image scanning, which shares this volume because a pod may
+// write nowhere else (R-HA-061).
 func NewSpool(cfg config.StorageSpool, opts ...SpoolOption) (*Spool, error) {
 	s := &Spool{
 		dir: cfg.Dir, max: int64(cfg.MaxBytes), minFree: int64(cfg.MinFreeBytes),
@@ -94,6 +100,7 @@ func NewSpool(cfg config.StorageSpool, opts ...SpoolOption) (*Spool, error) {
 		path := filepath.Join(s.dir, e.Name())
 		switch {
 		case e.Name() == "lost+found" && e.IsDir():
+		case e.Name() == ImageScanDir && e.IsDir():
 		case e.Type().IsRegular() && isSpoolName(e.Name()):
 			stale = append(stale, path)
 		default:

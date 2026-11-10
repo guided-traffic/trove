@@ -1,6 +1,7 @@
 package evaluate
 
 import (
+	"encoding/json"
 	"sort"
 
 	"github.com/guided-traffic/trove/internal/vuln"
@@ -23,6 +24,8 @@ type matched struct {
 	// the affected entries.
 	FixAvailable bool
 	Fixed        []string
+	// Components is the JSON of the packages inside an image the advisory affects (R-VULN-012); nil for a package format.
+	Components json.RawMessage
 }
 
 // changes lists how the advisory's facts differ from those the finding stored: "severity", "kind", "knownExploited", "cvss",

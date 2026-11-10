@@ -31,6 +31,7 @@ func alertSeverities() []alertSeverity {
 		{"TroveVulnerabilityRecordsInvalid", "warning"},
 		{"TroveVulnerabilityMaliciousRecordRejected", "critical"},
 		{"TroveVulnerabilityClaimedNameMalicious", "critical"},
+		{"TroveVulnerabilityImageScansFailing", "warning"},
 		{"TroveMirrorFailing", "warning"},
 		{"TroveMirrorStale", "warning"},
 		{"TroveBridgeLeftOn", "warning"},

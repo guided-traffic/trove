@@ -138,7 +138,22 @@ func (f *Format) handleManifestGet(ctx context.Context, rq *formats.Request, w h
 	if err := rq.Host.Authorize(ctx, rq, target); err != nil {
 		return err
 	}
+	it, found, err := rq.Host.Items().Stat(ctx, rq.RepoRef(), formats.Path{Path: path})
+	if err != nil {
+		return err
+	}
+	if found && len(it.Digests.SHA256) == 32 {
+		if err := refuseBlockedImage(ctx, rq, name, [32]byte(it.Digests.SHA256)); err != nil {
+			return err
+		}
+	}
 	return serveStored(ctx, rq, w, path, "", errManifestUnknown)
+}
+
+// refuseBlockedImage asks the scanning whether the manifest about to be served is blocked (R-VULN-015); the refusal is rendered by
+// [Format.WriteError] as the registry's DENIED, the shape of R-VULN-016.
+func refuseBlockedImage(ctx context.Context, rq *formats.Request, name string, digest [32]byte) error {
+	return rq.Host.Vulnerabilities().RefuseImage(ctx, rq, rq.RepoRef(), name, digest)
 }
 
 // pushed is what a push of a manifest hands the storage hooks (R-OCI-013 step 8).

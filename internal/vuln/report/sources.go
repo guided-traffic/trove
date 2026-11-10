@@ -16,6 +16,8 @@ import (
 const (
 	SourceOSV = "osv"
 	SourceKEV = "kev"
+	// SourceTrivy is the vulnerability database of the image scanning; it has one ecosystem, OCI.
+	SourceTrivy = "trivy"
 )
 
 // SourceView is one source and ecosystem as the sources operation shows it (R-VULN-021).
@@ -40,6 +42,8 @@ type SourceConfig struct {
 	Enabled bool
 	// OSVMode and KEVMode are the modes of the sources (online, repository, off).
 	OSVMode, KEVMode string
+	// TrivyMode is the mode of the vulnerability database of the image scanning; "" when the images are not scanned.
+	TrivyMode string
 	// Ecosystems are the ecosystems the OSV source imports (config EffectiveEcosystems).
 	Ecosystems []string
 	// StaleAfter is vulnerabilities.stale_after; zero never marks a source stale.
@@ -58,6 +62,9 @@ func SourceViews(cfg SourceConfig, rows []store.SourceRow, now time.Time) []Sour
 	configured := map[string]bool{SourceKEV + "\x00": true}
 	for _, e := range cfg.Ecosystems {
 		configured[SourceOSV+"\x00"+e] = true
+	}
+	if cfg.TrivyMode != "" {
+		configured[SourceTrivy+"\x00"+advisory.EcosystemOCI] = true
 	}
 	keys := map[string]bool{}
 	for k := range configured {
@@ -83,6 +90,8 @@ func SourceViews(cfg SourceConfig, rows []store.SourceRow, now time.Time) []Sour
 		case !cfg.Enabled || !configured[k]:
 		case r.Source == SourceKEV:
 			mode = cfg.KEVMode
+		case r.Source == SourceTrivy:
+			mode = cfg.TrivyMode
 		default:
 			mode = cfg.OSVMode
 		}

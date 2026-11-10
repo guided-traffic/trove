@@ -49,6 +49,9 @@ type Options struct {
 	Log       *slog.Logger
 	// BatchNames overrides [BatchNames]; tests only.
 	BatchNames int
+	// ImageRescan is the image scanning's part of a rescan of a repository of the format oci, whose work is not this package's
+	// (R-VULN-011); nil skips such a repository. The composition root sets it after the image scanning exists.
+	ImageRescan func(ctx context.Context, repoID int64, enabled bool) error
 }
 
 // Service is the evaluation: the [vuln.Evaluator] port and the jobs. A replica builds one; it holds no state between calls
@@ -596,7 +599,7 @@ func (r *run) upsert(ctx context.Context, rv repoView, v store.StoredVersion, m 
 	nf := store.NewFinding{
 		RepoID: v.RepoID, Ecosystem: r.eco.Name, Name: v.Name, Version: v.Version, AdvisoryID: m.ID, PackageID: v.PackageID,
 		VersionID: v.VersionID, Kind: m.Kind, Severity: m.Severity, CVSS: m.CVSS, KnownExploited: m.KnownExploited,
-		FixAvailable: m.FixAvailable, FixedVersions: m.Fixed, AdvisoryModifiedU: m.ModifiedUs,
+		FixAvailable: m.FixAvailable, FixedVersions: m.Fixed, AdvisoryModifiedU: m.ModifiedUs, Components: m.Components,
 	}
 	if f == nil {
 		nf.ID = store.NewFindingID()

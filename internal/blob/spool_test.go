@@ -373,3 +373,25 @@ func TestSpoolDeclaredDigests(t *testing.T) {
 		}
 	})
 }
+
+// R-VULN-036: the image scanning works below the spool, the one volume a pod may write, so its directory must not stop a worker that
+// restarts with the volume still there, while anything else in the directory still does.
+func TestR_VULN_036_TheSpoolKeepsTheWorkingDirectoryOfTheImageScanning(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ImageScanDir, "db"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.StorageSpool{Dir: dir, MaxBytes: 1 << 20}
+	if _, err := NewSpool(cfg, WithFreeBytes(func(string) (uint64, error) { return 1 << 40, nil })); err != nil {
+		t.Fatalf("a spool with the scanning's directory: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ImageScanDir, "db")); err != nil {
+		t.Fatalf("the directory was removed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "other"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewSpool(cfg, WithFreeBytes(func(string) (uint64, error) { return 1 << 40, nil })); err == nil {
+		t.Fatal("a spool with an unknown directory was accepted")
+	}
+}

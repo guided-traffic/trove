@@ -211,6 +211,7 @@ checked every earlier decision against them:
 | [ADR-173](#adr-173--the-registry-root-is-one-pattern-one-handler-and-one-match) | The registry root is one pattern, one handler and one match | Decided by the development agent — owner review at the walkthrough |
 | [ADR-188](#adr-188--the-oci-e2e-clients-run-privileged-in-a-namespace-of-their-own-and-the-kubelet-row-is-served-by-a-forwarder-on-the-node) | The OCI e2e clients run privileged in a namespace of their own, and the kubelet row is served by a forwarder on the node | Decided by the development agent — owner review at the walkthrough |
 | [ADR-182](#adr-182--the-oci-mirror-stores-through-the-hosts-artifact-fill-and-the-engine-counts-versions) | The OCI mirror stores through the host's artifact fill, and the engine counts versions | Decided by the development agent — owner review at the walkthrough |
+| [ADR-190](#adr-190--the-format-contract-gains-the-optional-interface-imagescanned-and-a-port-of-the-host-for-the-block-of-an-image-pull) | The format contract gains the optional interface `ImageScanned` and a port of the Host for the block of an image pull | Decided by the development agent — owner review at the walkthrough |
 | [ADR-189](#adr-189--the-oci-conformance-suite-and-the-protocol-criteria-run-against-replicas-of-the-whole-application) | The OCI conformance suite and the protocol criteria run against replicas of the whole application | Decided by the development agent — owner review at the walkthrough |
 | [ADR-177](#adr-177--the-format-contract-gains-the-optional-viewsizer-for-the-size-of-a-version-that-is-not-the-sum-of-its-files) | The format contract gains the optional ViewSizer for the size of a version that is not the sum of its files | Decided by the development agent — owner review at the walkthrough |
 | [ADR-175](#adr-175--the-upload-and-mount-handlers-hold-the-protocol-and-the-host-holds-the-session-and-the-link) | The upload and mount handlers hold the protocol, and the host holds the session and the link | Decided by the development agent — owner review at the walkthrough |
@@ -6572,6 +6573,16 @@ second matcher that tracks ServeMux).
 
 **Spec:** [spec/formats/oci.md](spec/formats/oci.md) R-OCI-001, R-OCI-003, R-OCI-017, R-OCI-029, Q-OCI-100, Q-OCI-101;
 [spec/architecture.md](spec/architecture.md) R-ARCH-005, Q-ARCH-390; [spec/endpoints.md](spec/endpoints.md) R-EP-006, R-EP-007, Q-EP-80.
+
+### ADR-190 · The format contract gains the optional interface `ImageScanned` and a port of the Host for the block of an image pull
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** Images are the first content the scanning reads rather than matches by name (R-VULN-033). A format has no way to say that it takes part in the scanning without implementing the adapter that every OSV path reads, and a manifest pull is refused from the format's own handlers, where the digest is known.
+
+**Decision.** The contract stays at version 3 and gains additions only: the optional interface `formats.ImageScanned` (`CapabilitiesOf` records it in `Capabilities.ImageScanned`), its catalog fact `Entry.ImageEcosystem`, the member `RefuseImage` of `formats.VulnerabilityData` (a service of the Host), and the value `advisory.EcosystemOCI` in the leaf the contract speaks in. See [Q-VULN-138](spec/vulnerability-scanning.md#q-vuln-138--the-pull-is-gated-in-the-registrys-handlers-by-the-digest-that-is-about-to-be-served) and [Q-VULN-141](spec/vulnerability-scanning.md#q-vuln-141--the-format-takes-part-through-an-optional-interface-of-its-own-not-the-adapter).
+
+**Consequences.** No format changes; OCI implements the interface and calls the port.
 
 ### ADR-189 · The OCI conformance suite and the protocol criteria run against replicas of the whole application
 

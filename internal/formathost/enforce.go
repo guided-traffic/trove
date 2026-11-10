@@ -28,6 +28,21 @@ func (h *Host) liveRef(ctx context.Context, repo formats.RepoRef) (items.RepoRef
 	return ref, nil
 }
 
+// refuseImage applies the verdict of the vulnerability scanning to a pull of an image manifest (R-VULN-015, R-VULN-016).
+func (h *Host) refuseImage(ctx context.Context, rq *formats.Request, repo formats.RepoRef, name string, digest [32]byte) error {
+	if h.o.Enforce == nil || h.o.Repos == nil {
+		return nil
+	}
+	r, err := h.o.Repos.ByName(ctx, repo.Name)
+	if err != nil {
+		return err
+	}
+	return h.o.Enforce.GateImage(ctx, enforce.ImagePull{
+		Repo: r, Addressed: rq.Addressed().String(), Name: name, Digest: digest,
+		Actor: edge.ActorFrom(httpserver.PrincipalFrom(ctx)), Source: httpserver.SourceFrom(ctx), Endpoint: rq.Subject.Endpoint,
+	})
+}
+
 // refuseBlocked applies the verdict of the vulnerability scanning to a stored item about to be served (R-VULN-015): it counts
 // and records a block and returns the refusal, 403 with the code and text of R-VULN-016, for GET, HEAD, conditional and Range
 // requests alike. The error ends the request and, in a virtual repository, the resolution: the next member is not asked.

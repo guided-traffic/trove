@@ -3154,6 +3154,8 @@ const (
 	VulnerabilityEvaluationInternal    VulnerabilityEvaluation = "internal"
 	VulnerabilityEvaluationNotCovered  VulnerabilityEvaluation = "not_covered"
 	VulnerabilityEvaluationPendingData VulnerabilityEvaluation = "pending_data"
+	VulnerabilityEvaluationPendingScan VulnerabilityEvaluation = "pending_scan"
+	VulnerabilityEvaluationScanFailed  VulnerabilityEvaluation = "scan_failed"
 )
 
 // Valid indicates whether the value is a known member of the VulnerabilityEvaluation enum.
@@ -3166,6 +3168,10 @@ func (e VulnerabilityEvaluation) Valid() bool {
 	case VulnerabilityEvaluationNotCovered:
 		return true
 	case VulnerabilityEvaluationPendingData:
+		return true
+	case VulnerabilityEvaluationPendingScan:
+		return true
+	case VulnerabilityEvaluationScanFailed:
 		return true
 	default:
 		return false
@@ -3196,6 +3202,27 @@ func (e VulnerabilityFindingEventChange) Valid() bool {
 	case VulnerabilityFindingEventChangeResolved:
 		return true
 	case VulnerabilityFindingEventChangeStatusChanged:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VulnerabilityImageStateState.
+const (
+	VulnerabilityImageStateStateFailed  VulnerabilityImageStateState = "failed"
+	VulnerabilityImageStateStatePending VulnerabilityImageStateState = "pending"
+	VulnerabilityImageStateStateScanned VulnerabilityImageStateState = "scanned"
+)
+
+// Valid indicates whether the value is a known member of the VulnerabilityImageStateState enum.
+func (e VulnerabilityImageStateState) Valid() bool {
+	switch e {
+	case VulnerabilityImageStateStateFailed:
+		return true
+	case VulnerabilityImageStateStatePending:
+		return true
+	case VulnerabilityImageStateStateScanned:
 		return true
 	default:
 		return false
@@ -8602,7 +8629,9 @@ type VulnerabilityDismissalReason string
 
 // VulnerabilityEvaluation The derived evaluation state of a stored version in a repository (R-VULN-001): `evaluated` (the advisory data is
 // complete), `pending_data` (it was never imported completely), `internal` (public advisories do not apply to the name)
-// or `not_covered` (scanning is off, the upstream is not recognised, or the format has no adapter).
+// or `not_covered` (scanning is off, the upstream is not recognised, or the format has no adapter). For an image also
+// `pending_scan` (its manifests have not been scanned yet, so the absence of findings says nothing) and `scan_failed` (the scan of one of
+// them did not finish; `images` names why).
 type VulnerabilityEvaluation string
 
 // VulnerabilityFinding One finding: one canonical advisory affects one stored version in one repository (R-VULN-012). `blocked` and
@@ -8610,17 +8639,20 @@ type VulnerabilityEvaluation string
 // the download agree.
 type VulnerabilityFinding struct {
 	// Advisory The canonical identifier.
-	Advisory        string                        `json:"advisory"`
-	Aliases         []string                      `json:"aliases"`
-	BlockReason     *VulnerabilityBlockReason     `json:"blockReason"`
-	Blocked         bool                          `json:"blocked"`
-	Cvss            *VulnerabilityCvss            `json:"cvss"`
-	DetectedAt      time.Time                     `json:"detectedAt"`
-	DismissalReason *VulnerabilityDismissalReason `json:"dismissalReason,omitempty"`
-	FixAvailable    bool                          `json:"fixAvailable"`
-	FixedVersions   []string                      `json:"fixedVersions"`
-	Format          string                        `json:"format"`
-	Id              openapi_types.UUID            `json:"id"`
+	Advisory    string                    `json:"advisory"`
+	Aliases     []string                  `json:"aliases"`
+	BlockReason *VulnerabilityBlockReason `json:"blockReason"`
+	Blocked     bool                      `json:"blocked"`
+
+	// Components The packages inside the image the advisory affects, for a finding of an image (R-VULN-012). Absent for a package finding.
+	Components      *[]VulnerabilityImageComponent `json:"components,omitempty"`
+	Cvss            *VulnerabilityCvss             `json:"cvss"`
+	DetectedAt      time.Time                      `json:"detectedAt"`
+	DismissalReason *VulnerabilityDismissalReason  `json:"dismissalReason,omitempty"`
+	FixAvailable    bool                           `json:"fixAvailable"`
+	FixedVersions   []string                       `json:"fixedVersions"`
+	Format          string                         `json:"format"`
+	Id              openapi_types.UUID             `json:"id"`
 
 	// Kind `malicious` for the OpenSSF malicious-packages records (identifier prefix `MAL-`), else `vulnerability`.
 	Kind                  VulnerabilityKind   `json:"kind"`
@@ -8707,6 +8739,45 @@ type VulnerabilityFindingPatch struct {
 	// Status `resolved` is refused (`422 status_not_settable`); `blocked` needs a confirmed finding (`409 finding_not_confirmed`).
 	Status *VulnerabilityStatus `json:"status,omitempty"`
 }
+
+// VulnerabilityImageComponent A package inside a container image that an advisory affects (R-VULN-012).
+type VulnerabilityImageComponent struct {
+	// Class os-pkgs for an operating-system package, lang-pkgs for a language package.
+	Class        string  `json:"class"`
+	FixedVersion *string `json:"fixedVersion,omitempty"`
+	Name         string  `json:"name"`
+
+	// Path Where a language package was found in the image.
+	Path *string `json:"path,omitempty"`
+
+	// Type The ecosystem of the package as the analyser names it, for example apk, deb, npm or gobinary.
+	Type    string `json:"type"`
+	Version string `json:"version"`
+}
+
+// VulnerabilityImageState One manifest of an image version, and how far it has been scanned (R-VULN-034).
+type VulnerabilityImageState struct {
+	Digest string `json:"digest"`
+
+	// Eosl The distribution no longer provides security updates, so an absence of findings says little.
+	Eosl *bool `json:"eosl,omitempty"`
+
+	// ErrorCode Why a scan did not finish.
+	ErrorCode *string `json:"errorCode,omitempty"`
+	OsFamily  *string `json:"osFamily,omitempty"`
+	OsName    *string `json:"osName,omitempty"`
+
+	// Packages The packages the analysis found. None for an image without a known distribution and language packages.
+	Packages *int `json:"packages,omitempty"`
+
+	// Platform os/arch[/variant] for a child of a multi-platform image.
+	Platform  *string                      `json:"platform,omitempty"`
+	ScannedAt *time.Time                   `json:"scannedAt,omitempty"`
+	State     VulnerabilityImageStateState `json:"state"`
+}
+
+// VulnerabilityImageStateState defines model for VulnerabilityImageState.State.
+type VulnerabilityImageStateState string
 
 // VulnerabilityKind `malicious` for the OpenSSF malicious-packages records (identifier prefix `MAL-`), else `vulnerability`.
 type VulnerabilityKind string
@@ -8901,10 +8972,15 @@ type VulnerabilityVersionReport struct {
 
 		// Evaluation The derived evaluation state of a stored version in a repository (R-VULN-001): `evaluated` (the advisory data is
 		// complete), `pending_data` (it was never imported completely), `internal` (public advisories do not apply to the name)
-		// or `not_covered` (scanning is off, the upstream is not recognised, or the format has no adapter).
+		// or `not_covered` (scanning is off, the upstream is not recognised, or the format has no adapter). For an image also
+		// `pending_scan` (its manifests have not been scanned yet, so the absence of findings says nothing) and `scan_failed` (the scan of one of
+		// them did not finish; `images` names why).
 		Evaluation VulnerabilityEvaluation `json:"evaluation"`
 		Findings   []VulnerabilityFinding  `json:"findings"`
-		Repository string                  `json:"repository"`
+
+		// Images For a version of the format oci, the manifests the version stands for, one per platform.
+		Images     *[]VulnerabilityImageState `json:"images,omitempty"`
+		Repository string                     `json:"repository"`
 
 		// SyncedAt The data's `syncedAt` for an evaluated version.
 		SyncedAt *time.Time `json:"syncedAt,omitempty"`

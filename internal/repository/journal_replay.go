@@ -540,7 +540,7 @@ func moreBlocking(cur, journaled vuln.Settings) vuln.Settings {
 // replay's transaction, because the setting blocks nothing until the stored versions are evaluated again (R-VULN-011,
 // Q-HA-180). A repository that has no such member leaves the part out.
 func (r *replayer) vulnerabilities(c *vulnChange) error {
-	if c == nil || r.class == Virtual || !r.known || r.info.Ecosystem == "" {
+	if c == nil || r.class == Virtual || !r.known || (r.info.Ecosystem == "" && r.info.ImageEcosystem == "") {
 		return nil
 	}
 	cur := vuln.DefaultSettings()

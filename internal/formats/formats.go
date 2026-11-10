@@ -236,6 +236,8 @@ type Capabilities struct {
 	// Vulnerability is the adapter that lets the core match the format's stored versions against advisories
 	// (R-VULN-009, ADR-150); nil for a format without one, whose repositories are not_covered.
 	Vulnerability VulnerabilityAdapter
+	// ImageScanned is the optional interface of a format whose content the image scanning reads (R-VULN-033).
+	ImageScanned ImageScanned
 	// ServeFacts names the rows the format's serve check decides on for a path, so that the item lookup of a download reads
 	// them in its own statement (R-ARCH-027, Q-ARCH-291); nil for a format whose check reads nothing besides the item.
 	ServeFacts ServeFactsKeyer
@@ -271,6 +273,9 @@ func CapabilitiesOf(f Format) Capabilities {
 	}
 	if v, ok := f.(VulnerabilityAdapter); ok {
 		c.Vulnerability = v
+	}
+	if i, ok := f.(ImageScanned); ok {
+		c.ImageScanned = i
 	}
 	if s, ok := f.(SourceSpeller); ok {
 		c.SourceSpeller = s
@@ -358,6 +363,9 @@ func CatalogEntry(f Format) catalog.Entry {
 	}
 	if v := caps.Vulnerability; v != nil {
 		e.Ecosystem = v.Ecosystem()
+	}
+	if i := caps.ImageScanned; i != nil {
+		e.ImageEcosystem = i.ImageEcosystem()
 	}
 	e.Mirror = caps.Remote.Mirror != nil
 	if x := f.Exposure(); x != nil {

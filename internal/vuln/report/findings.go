@@ -43,6 +43,9 @@ type Advisory struct {
 
 func (s *Service) advisoryView(a store.Advisory) Advisory {
 	out := Advisory{Advisory: a, Source: advisory.SourceOf(a.ID)}
+	if a.Ecosystem == advisory.EcosystemOCI {
+		out.Source = advisory.ImageSource(a.ID)
+	}
 	for _, af := range a.Affected {
 		for _, v := range af.Fixed {
 			if !slices.Contains(out.FixedVersions, v) {

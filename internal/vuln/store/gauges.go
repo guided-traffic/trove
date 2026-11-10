@@ -34,6 +34,9 @@ func ExpectedSources(v config.Vulnerabilities) []ExpectedSource {
 	if v.Sources.KEV.Mode != "off" {
 		out = append(out, ExpectedSource{vmetrics.SourceKEV, ""})
 	}
+	if v.Images.Enabled && v.Sources.Trivy.Mode != "off" {
+		out = append(out, ExpectedSource{SourceTrivy, advisory.EcosystemOCI})
+	}
 	return out
 }
 

@@ -148,6 +148,5 @@ Give the `X-Request-Id` of the answer to an administrator when you need help ([E
 ## What is not available
 
 - An endpoint with exposure rules (a customer endpoint) does not serve container images; use an endpoint that exposes everything.
-- trove does not scan the content of images for vulnerabilities.
 - `docker search` has no counterpart: the catalog lists image names (`GET /v2/_catalog`), but there is no search.
 - The `sha256-<digest>` fallback tags of the older referrers scheme are not maintained for local repositories; use the referrers API.

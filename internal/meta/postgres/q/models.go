@@ -1220,6 +1220,7 @@ type VulnFinding struct {
 	ResolvedAt             pgtype.Timestamptz
 	StatusChangedAt        pgtype.Timestamptz
 	StatusChangedBy        pgtype.UUID
+	Components             json.RawMessage
 }
 
 type VulnFindingEvent struct {
@@ -1233,6 +1234,41 @@ type VulnFindingEvent struct {
 	Reason     pgtype.Text
 	Comment    pgtype.Text
 	Details    json.RawMessage
+}
+
+type VulnImageDb struct {
+	ID         pgtype.Int8
+	Singleton  int16
+	Digest     string
+	BlobSha256 []byte
+	Size       int64
+	UpdatedAt  pgtype.Timestamptz
+	NextUpdate pgtype.Timestamptz
+	ImportedAt pgtype.Timestamptz
+}
+
+type VulnImageSbom struct {
+	Digest    []byte
+	Analyser  string
+	Sbom      []byte
+	CreatedAt pgtype.Timestamptz
+}
+
+type VulnImageScan struct {
+	RepoID      int64
+	Name        string
+	Digest      []byte
+	State       string
+	NotBefore   pgtype.Timestamptz
+	Attempts    int32
+	DbDigest    pgtype.Text
+	ScannedAt   pgtype.Timestamptz
+	ErrorCode   pgtype.Text
+	ErrorDetail pgtype.Text
+	OsFamily    pgtype.Text
+	OsName      pgtype.Text
+	OsEosl      bool
+	Packages    int32
 }
 
 type VulnKev struct {

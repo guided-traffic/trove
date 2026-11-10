@@ -177,6 +177,31 @@ tests:
               summary: A malicious-package advisory record of osv npm was rejected, by a bound or by validation, within the last seven days.
               description: The record named MAL-... is not applied, so the package it names is not flagged or blocked by it (R-VULN-004, Q-VULN-122). Find the entry in the worker log (message "an advisory record was rejected"); the cause is the bound of one entry (its size) or a rule of R-VULN-006 (it failed validation).
 
+  # --- TroveVulnerabilityImageScansFailing -----------------------------------------------------------------
+  - name: TroveVulnerabilityImageScansFailing fires when scans fail and none finishes, and stays silent when scans finish or none failed
+    interval: 1m
+    input_series:
+      - {series: 'trove_vuln_image_scans_total{namespace="default",result="timeout",pod="w1"}', values: '0+1x200'}
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: TroveVulnerabilityImageScansFailing
+        exp_alerts: []
+      - eval_time: 120m
+        alertname: TroveVulnerabilityImageScansFailing
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: Container images are being scanned without one scan finishing.
+              description: Images whose scan does not finish show the evaluation scan_failed and are not reported as clean (R-VULN-034). The codes are the results of trove_vuln_image_scans_total; a repository page names the code per image in GET /api/v1/packages/{packageId}/versions/{version}/vulnerabilities.
+
+  - name: TroveVulnerabilityImageScansFailing stays silent while scans finish
+    interval: 1m
+    input_series:
+      - {series: 'trove_vuln_image_scans_total{namespace="default",result="timeout",pod="w1"}', values: '0+1x200'}
+      - {series: 'trove_vuln_image_scans_total{namespace="default",result="scanned",pod="w1"}', values: '0+5x200'}
+    alert_rule_test:
+      - {eval_time: 150m, alertname: TroveVulnerabilityImageScansFailing, exp_alerts: []}
+
   # --- TroveVulnerabilityClaimedNameMalicious -------------------------------------------------------------
   - name: TroveVulnerabilityClaimedNameMalicious fires on a malicious match and not on a vulnerability match
     interval: 1m

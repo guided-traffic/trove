@@ -95,7 +95,7 @@ func TestR_UI_052_TheFormatListSaysWhichFormatsAreScanned(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]bool{"npm": true, "nuget": true, "oci": false, "deb": false, "generic": false}
+	want := map[string]bool{"npm": true, "nuget": true, "oci": true, "deb": false, "generic": false}
 	seen := 0
 	for _, f := range body.Formats {
 		if w, ok := want[f.Name]; ok {

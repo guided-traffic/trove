@@ -25,7 +25,7 @@ func TestStatusSets(t *testing.T) {
 	if got := OpenStatuses(); len(got) != 3 {
 		t.Errorf("OpenStatuses = %v", got)
 	}
-	if len(DismissalReasons()) != 5 || len(ResolvedReasons()) != 4 || len(Changes()) != 6 || len(Evaluations()) != 4 || len(Triggers()) != 6 {
+	if len(DismissalReasons()) != 5 || len(ResolvedReasons()) != 4 || len(Changes()) != 6 || len(Evaluations()) != 6 || len(Triggers()) != 6 {
 		t.Error("an enumeration lost a value the schema's CHECK has")
 	}
 	if !DismissNotExploitable.Valid() || DismissalReason("x").Valid() || !ResolvedWithdrawn.Valid() || ResolvedReason("x").Valid() {
@@ -257,11 +257,12 @@ func TestJobsAndTasks(t *testing.T) {
 		t.Errorf("RescanKey = %s", RescanKey(42))
 	}
 	tasks := TaskDefaults()
-	if len(tasks) != 4 {
+	if len(tasks) != 6 {
 		t.Fatalf("%d tasks", len(tasks))
 	}
 	want := map[string]string{
 		"vuln-sync-osv": "*/15 * * * *", "vuln-sync-osv-full": "17 3 * * 0", "vuln-sync-kev": "41 */6 * * *", "vuln-findings-retention": "50 3 * * *",
+		"vuln-image-scan": "*/5 * * * *", "vuln-sync-trivy-db": "23 */6 * * *",
 	}
 	for _, td := range tasks {
 		if want[td.Name] != td.Schedule {

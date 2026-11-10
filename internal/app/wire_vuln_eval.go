@@ -50,6 +50,12 @@ func (a *App) wireVulnEvaluation(_ context.Context, in infra, rp repositoryArea,
 		Runner: in.db, Repos: rp.reader, Claims: vr.routing, States: out.states, Recorder: in.rec, Metrics: out.metrics,
 		Ecosystems: vulnEcosystems(), Enabled: cfg.Enabled, Enforcement: vuln.Enforcement(cfg.Enforcement),
 		PublicUpstreams: cfg.Matching.PublicUpstreams, Retention: cfg.Findings.ResolvedRetention,
+		ImageRescan: func(ctx context.Context, repoID int64, enabled bool) error {
+			if svc := part[vulnArea](a.parts).images; svc != nil {
+				return svc.Rescan(ctx, repoID, enabled)
+			}
+			return nil
+		},
 		Log: a.log.With("component", "vuln-evaluate"),
 	})
 	if err != nil {

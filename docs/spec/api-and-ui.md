@@ -3156,7 +3156,7 @@ Priority: **MVP** · Covers: trove-only
 - A package format (npm, NuGet, OCI, Debian, every format with a view adapter) lists its items from `GET /api/v1/packages` with
   `repository=<qualified name>` and `format=<format>`, the filter `q` (query, server-side, name and description) and the sort `name`
   or `updatedAt`, paged with "Load more". A column of open findings appears only for a format whose versions are matched against
-  advisories (`FormatDescriptor.vulnerabilityScanning`, a format with the vulnerability adapter, R-VULN-009); for any other a muted
+  advisories (`FormatDescriptor.vulnerabilityScanning`, a format with the vulnerability adapter, R-VULN-009, or the image scanning, R-VULN-033); for any other a muted
   sentence says so (OCI and Debian today). The counts come from `include=vulnerabilities` in one statement per page, summed over the
   versions of the item in this repository, and the versions list of an item is `…/versions?repository=…` with its
   `…/vulnerabilities?repository=…` report, one request each per opened item.
@@ -9433,7 +9433,7 @@ Context: the repository screen of R-UI-020 was the settings, and the content a r
 
 - The client setup is a tab of the page, not a section below the list and not a dialog: it stays on the page without pushing the list down, and a token created in it dies with the tab (R-UI-043, R-UI-016).
 - The open findings of an item are summed over its versions in this repository: a finding present in two versions counts twice, as everywhere else findings are counted per version. The row's badge shows the highest open severity and the count.
-- OCI and Debian have no vulnerability adapter today, so their pages have no column of findings and say so in one sentence (`vulnerabilityScanning` of the format catalog); the column appears the day an adapter exists, and the digest of a tag and the counts need no other change.
+- Debian has no vulnerability adapter today, so its page has no column of findings and says so in one sentence; OCI images are scanned since R-VULN-033 (`vulnerabilityScanning` of the format catalog); the column appears the day an adapter exists, and the digest of a tag and the counts need no other change.
 - The digest of a version in the list comes from the format's existing `metadata.digest` behind `include=digest`, not from a new format contract member: only the OCI screens ask for it, so no adapter pays for it otherwise.
 - A remote OCI repository lists nothing: its tags are no version rows (Q-OCI-121), and adding one would change a reliability-critical path; the screen says so. It is an open item for the owner (below).
 

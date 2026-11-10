@@ -1410,7 +1410,7 @@ T-16; "F4" means it stays in FULL.md F4 for a later phase; "Not offered" means t
 | PKG-OCI-017 ORAS | F4 | Deferred |
 | PKG-OCI-018 Helm charts in OCI repositories | F5 | Deferred |
 | PKG-OCI-019 Setup instructions | Built for Docker and Podman; the other clients F4 | R-OCI-030 |
-| PKG-OCI-020 Scanning limited to images | F4, with image scanning | Deferred |
+| PKG-OCI-020 Scanning limited to images | [vulnerability-scanning.md](../vulnerability-scanning.md#images) R-VULN-033 | Built |
 
 </details>
 
@@ -1431,7 +1431,7 @@ R-ARCH-009 by `TestR_ARCH_008_TheWrittenContractEqualsTheCode`):
 | [storage.md](../storage.md) | R-STOR-011: status built, with the OCI page as its first user; the session row gains the repository the client addressed and a binding the format names (the OCI image name), both checked on every request | Q-OCI-12 |
 | [endpoints.md](../endpoints.md) | R-EP-007: the Docker Engine mirror points at R-OCI-029 | — |
 | [ha-and-helm.md](../ha-and-helm.md) | R-HA-041: the acceptance criterion points at the e2e set `oci` | — |
-| [vulnerability-scanning.md](../vulnerability-scanning.md) | Deferred: image scanning stays with F4 after this phase | Q-OCI-2 |
+| [vulnerability-scanning.md](../vulnerability-scanning.md) | [Images](../vulnerability-scanning.md#images) (R-VULN-033 to R-VULN-037): each image manifest is scanned, an image's findings carry its digest, and a blocked pull answers `DENIED` | Q-OCI-2, Q-VULN-134 |
 
 ## Deferred
 
@@ -1449,7 +1449,6 @@ R-ARCH-009 by `TestR_ARCH_008_TheWrittenContractEqualsTheCode`):
 | PKG-OCI-014 (build caches), PKG-OCI-015 | P1 | BuildKit registry caches as a tested client. |
 | PKG-OCI-016, PKG-OCI-017 | P1 | wasm-to-oci and ORAS as tested clients; the registry side is content-agnostic already. |
 | PKG-OCI-018 | P1 | Helm charts in OCI repositories (F5). |
-| PKG-OCI-020 | P1 | Image vulnerability scanning ([vulnerability-scanning.md](../vulnerability-scanning.md#deferred)). |
 | Cosign beyond referrers | P1 | Signature verification and policies; signatures are stored as referrers or tags today. |
 | OCI on endpoints with exposure rules | P1 | The format has no exposure adapter yet, so an endpoint with `exposure: rules` does not serve it (R-EP-018, Q-OCI-23). |
 | OCI through the Bastion | P2 | The Bastion's mirrored URL space has no `/v2/` and no token service (Q-OCI-23). |

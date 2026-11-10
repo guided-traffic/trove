@@ -22,6 +22,10 @@ const (
 	KindEvaluate = "vuln-evaluate"
 	// KindRescan evaluates one repository (work package B): queue default, dedup key RescanKey(id), exclusive.
 	KindRescan = "vuln-rescan"
+	// KindImageScan works off the manifests of images that are due (R-VULN-034): queue vuln, dedup key DedupImageScan, coalesce (the work
+	// is read from a table). KindSyncTrivyDB imports the analyser's vulnerability database (R-VULN-035): queue vuln, exclusive, MaxAttempts 1.
+	KindImageScan   = "vuln-image-scan"
+	KindSyncTrivyDB = "vuln-sync-trivy-db"
 	// KindFindingsRetention deletes resolved findings past their retention (work package B): queue maintenance.
 	KindFindingsRetention = "vuln-findings-retention"
 )
@@ -35,8 +39,9 @@ const (
 
 // The dedup keys.
 const (
-	DedupSyncOSV  = "vuln-sync-osv"
-	DedupEvaluate = "vuln-evaluate"
+	DedupSyncOSV   = "vuln-sync-osv"
+	DedupEvaluate  = "vuln-evaluate"
+	DedupImageScan = "vuln-image-scan"
 )
 
 // RescanKey is the dedup key of the rescan of one repository, "vuln-rescan:<repository id>" (R-VULN-011).
@@ -57,11 +62,15 @@ const (
 	TaskSyncOSVFull       = KindSyncOSVFull
 	TaskSyncKEV           = KindSyncKEV
 	TaskFindingsRetention = KindFindingsRetention
+	TaskImageScan         = KindImageScan
+	TaskSyncTrivyDB       = KindSyncTrivyDB
 
 	DefaultSyncOSVSchedule           = "*/15 * * * *"
 	DefaultSyncOSVFullSchedule       = "17 3 * * 0"
 	DefaultSyncKEVSchedule           = "41 */6 * * *"
 	DefaultFindingsRetentionSchedule = "50 3 * * *"
+	DefaultImageScanSchedule         = "*/5 * * * *"
+	DefaultSyncTrivyDBSchedule       = "23 */6 * * *"
 )
 
 // TaskDefault is the default of one scheduled task.
@@ -72,13 +81,15 @@ type TaskDefault struct {
 	DedupKey string
 }
 
-// TaskDefaults lists the four tasks of R-VULN-025 in the order of the configuration.
+// TaskDefaults lists the tasks of R-VULN-025 in the order of the configuration.
 func TaskDefaults() []TaskDefault {
 	return []TaskDefault{
 		{TaskSyncOSV, DefaultSyncOSVSchedule, DedupSyncOSV},
 		{TaskSyncOSVFull, DefaultSyncOSVFullSchedule, DedupSyncOSV},
 		{TaskSyncKEV, DefaultSyncKEVSchedule, ""},
 		{TaskFindingsRetention, DefaultFindingsRetentionSchedule, ""},
+		{TaskImageScan, DefaultImageScanSchedule, DedupImageScan},
+		{TaskSyncTrivyDB, DefaultSyncTrivyDBSchedule, ""},
 	}
 }
 

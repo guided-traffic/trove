@@ -17835,11 +17835,13 @@ components:
       enum: [no_longer_affected, advisory_withdrawn, version_removed, scanning_disabled]
     VulnerabilityEvaluation:
       type: string
-      enum: [evaluated, pending_data, internal, not_covered]
+      enum: [evaluated, pending_data, internal, not_covered, pending_scan, scan_failed]
       description: |
         The derived evaluation state of a stored version in a repository (R-VULN-001): `evaluated` (the advisory data is
         complete), `pending_data` (it was never imported completely), `internal` (public advisories do not apply to the name)
-        or `not_covered` (scanning is off, the upstream is not recognised, or the format has no adapter).
+        or `not_covered` (scanning is off, the upstream is not recognised, or the format has no adapter). For an image also
+        `pending_scan` (its manifests have not been scanned yet, so the absence of findings says nothing) and `scan_failed` (the scan of one of
+        them did not finish; `images` names why).
     VulnerabilitySettings:
       type: object
       additionalProperties: false
@@ -17880,6 +17882,33 @@ components:
         name: {type: string, example: GitHub Advisory Database}
         license: {type: [string, "null"], example: CC-BY 4.0}
         url: {type: string}
+    VulnerabilityImageComponent:
+      type: object
+      additionalProperties: false
+      required: [type, class, name, version]
+      description: A package inside a container image that an advisory affects (R-VULN-012).
+      properties:
+        type: {type: string, description: "The ecosystem of the package as the analyser names it, for example apk, deb, npm or gobinary."}
+        class: {type: string, description: "os-pkgs for an operating-system package, lang-pkgs for a language package."}
+        name: {type: string}
+        version: {type: string}
+        fixedVersion: {type: string}
+        path: {type: string, description: Where a language package was found in the image.}
+    VulnerabilityImageState:
+      type: object
+      additionalProperties: false
+      required: [digest, state]
+      description: One manifest of an image version, and how far it has been scanned (R-VULN-034).
+      properties:
+        digest: {type: string}
+        platform: {type: string, description: "os/arch[/variant] for a child of a multi-platform image."}
+        state: {type: string, enum: [pending, scanned, failed]}
+        errorCode: {type: string, description: Why a scan did not finish.}
+        scannedAt: {type: [string, "null"], format: date-time}
+        osFamily: {type: string}
+        osName: {type: string}
+        eosl: {type: boolean, description: "The distribution no longer provides security updates, so an absence of findings says little."}
+        packages: {type: integer, description: The packages the analysis found. None for an image without a known distribution and language packages.}
     VulnerabilityFinding:
       type: object
       additionalProperties: false
@@ -17908,6 +17937,11 @@ components:
         knownExploitedAddedAt: {type: [string, "null"], format: date}
         fixAvailable: {type: boolean}
         fixedVersions: {type: array, maxItems: 1000, items: {type: string}}
+        components:
+          type: array
+          maxItems: 256
+          description: The packages inside the image the advisory affects, for a finding of an image (R-VULN-012). Absent for a package finding.
+          items: {$ref: "#/components/schemas/VulnerabilityImageComponent"}
         status: {$ref: "#/components/schemas/VulnerabilityStatus"}
         dismissalReason:
           oneOf:
@@ -18256,6 +18290,11 @@ components:
                   - $ref: "#/components/schemas/VulnerabilityVersionBlockReason"
                   - type: "null"
               findings: {type: array, maxItems: 1000, items: {$ref: "#/components/schemas/VulnerabilityFinding"}}
+              images:
+                type: array
+                maxItems: 256
+                description: For a version of the format oci, the manifests the version stands for, one per platform.
+                items: {$ref: "#/components/schemas/VulnerabilityImageState"}
     VulnerabilityPackageReport:
       type: object
       additionalProperties: false
