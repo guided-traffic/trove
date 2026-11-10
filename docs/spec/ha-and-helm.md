@@ -9312,6 +9312,26 @@ Evidence (the Prometheus of that run, queried afterwards). The alert was pending
 
 **Also found, not changed** (the nightly 42793416589): variant B ends, `waitServingSettled` returns after trove has settled, and `valkey-failover.sh` runs `SENTINEL FAILOVER` on `trove-valkey-sentinel-0`, which answers `OK`, but the primary does not move within 60 s. Not verified: the cause. A candidate is that the Sentinel which variant B restarted has not yet rebuilt its view of the others (the failover needs the authorisation of a majority). It did not recur in the local run, in which the same step took 9.6 s. The step waits for trove, not for the Sentinels; a wait for three Sentinels that agree on the primary and the replica before the planned failover would remove the candidate.
 
+### Q-HA-291 · The closed loop of the rotation row is held to "every client ran through the window and every api pod answered in it", not to a request count
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: [Q-HA-288](#q-ha-288--the-rotation-row-of-e015-loads-the-cluster-with-a-closed-loop-and-the-load-loops-of-the-e2e-tests-register-their-stop-before-they-start) gave the rotation row of `TestE15TLS` a closed loop and left the check of `k6result.only200` as it was. Test and Release 42870155749 (job 130018949658) then failed with every answer 200 and every pod serving the new certificate in time: `k6 rotate: 8278 requests over 1m36s, status map[200:8278] … max 14965 ms` and `k6 sent 8278 requests in 96 s, want at least 9140`. The cluster had stalled for about 15 s; the clients waited, as designed, and sent fewer requests.
+
+What the bound is for. `only200` demands "at least 95 % of 100 requests a second over the observed duration" so that "only 200" cannot be satisfied by a load that never ran: a k6 that sent ten requests would pass. For an open loop the count proves the load kept its arrival rate. For a closed loop the count is the product of the number of clients and the speed of the answers, so it measures the runner (the cluster's stall) and not the load.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Lower the number | e.g. 80 % | One edit | Still a function of the stall; the next longer stall fails again; the number has no meaning for a closed loop |
+| (b) Drop the bound for the closed loop | | No false failure | "Only 200" could be empty again (k6 not running, one client) |
+| (c) Prove that the load ran (chosen) | Every one of the 100 clients is accounted for at every instant of the window from the trigger to the moment the last pod served the new certificate, and every api pod answered a request in that window | Independent of the speed of the answers; names the window the row is about; a client that never started, died or stopped early fails; so does a pod that received nothing | A little code in the harness |
+
+**Choice:** (c). [load.js](../../test/e2e/k6/load.js) writes the client number as an optional last field of a line when `LOOP=closed`. `k6result.clientsRanThrough` ([env_test.go](../../test/e2e/env_test.go)) requires that all `clients` numbers appear and that, for each, a request is in flight or its last one ended at most 2 s before (the pause of a client is at most a second) at every instant of `[trigger, last pod serving]`, and that the client is still accounted for at the end of the window. `k6result.replicasServed` requires a `200` for every api pod of the row in that window (the packages pods are not reached by the load's two paths: the replica list of the run shows only api pods). `only200` skips the count for a closed loop (`k6result.Closed`) and keeps the rest: no other status, at least 20 s of load, no dropped iterations. The open loop (failover, drain, scatter) keeps the count, which is what it proves there. The row's assertions on the certificate are unchanged.
+
+**Rationale:** The row is about requests while the certificate changes; the load has to be present and has to reach the pods that swap it, and nothing in that depends on how fast a stalled runner answers. Revisit when a closed-loop row passes with a client that sent nothing in the window (a gap of the 2 s is too wide) or when the load is meant to include the packages pods.
+
+**Applied:** [env_test.go](../../test/e2e/env_test.go), [e15_tls_test.go](../../test/e2e/e15_tls_test.go), [load.js](../../test/e2e/k6/load.js), [e2e.md](../developer/e2e.md) (E0.15).
+
 ### Q-HA-204 · The SPDX file of the release is written by the pinned syft image from the registry tag
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.

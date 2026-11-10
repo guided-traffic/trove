@@ -20,6 +20,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -439,6 +440,7 @@ type k6run struct {
 	cmd             *exec.Cmd
 	done            chan error
 	started         time.Time
+	closed          bool
 }
 
 type failure struct {
@@ -448,7 +450,20 @@ type failure struct {
 	Path    string
 }
 
+// k6request is one line of the console of load.js. VU is the client of a closed loop (LOOP=closed), -1 for the open loop.
+type k6request struct {
+	At      time.Time
+	Status  int
+	Replica string
+	Dur     time.Duration
+	VU      int
+}
+
 type k6result struct {
+	// Closed says the load was a closed loop: its count of requests follows the speed of the answers, so only200 does not
+	// bound it, and clientsRanThrough and replicasServed prove that the load ran instead (Q-HA-291).
+	Closed   bool
+	Requests []k6request // every line, the requests cancelled by the stop included
 	Total    int
 	Status   map[int]int
 	Replicas map[string]int
@@ -462,6 +477,9 @@ type k6result struct {
 	MaxMS       int
 	Summary     map[string]any
 }
+
+// k6Clients is the number of clients of the closed loop.
+const k6Clients = 100
 
 // startK6 runs the load of test/e2e/k6/load.js in a container on the kind Docker network, at
 // 100 requests/s through the Ingress, and returns once the first responses are in. The requests start on a
@@ -477,7 +495,7 @@ func startK6(t testing.TB, name string, d time.Duration) *k6run {
 // does not hold requests on purpose.
 func startK6Closed(t testing.TB, name string, d time.Duration) *k6run {
 	t.Helper()
-	return startK6Script(t, name, "load.js", d, k6Opts{rate: 100, prefix: "R ", closed: true})
+	return startK6Script(t, name, "load.js", d, k6Opts{rate: k6Clients, prefix: "R ", closed: true})
 }
 
 // k6Opts parameterizes startK6Script: the iterations per second, the console lines that show the load runs
@@ -495,7 +513,7 @@ type k6Opts struct {
 // startK6Script runs a script of test/e2e/k6 the way startK6 runs load.js.
 func startK6Script(t testing.TB, name, scriptName string, d time.Duration, o k6Opts) *k6run {
 	t.Helper()
-	k := &k6run{name: name, container: fmt.Sprintf("trove-e2e-k6-%s-%d", name, os.Getpid()), dir: filepath.Join(cfg.out, "k6-"+name), done: make(chan error, 1)}
+	k := &k6run{closed: o.closed, name: name, container: fmt.Sprintf("trove-e2e-k6-%s-%d", name, os.Getpid()), dir: filepath.Join(cfg.out, "k6-"+name), done: make(chan error, 1)}
 	if err := os.MkdirAll(k.dir, 0o777); err != nil {
 		t.Fatal(err)
 	}
@@ -561,11 +579,12 @@ func (k *k6run) stop(t testing.TB) k6result {
 	return parseK6(t, k)
 }
 
-var linePattern = regexp.MustCompile(`^R (\d+) (\d+) (\S+) (\d+) (\S+)$`)
+// linePattern is a line of load.js; the last field is the client number of a closed loop.
+var linePattern = regexp.MustCompile(`^R (\d+) (\d+) (\S+) (\d+) (\S+)(?: (\d+))?$`)
 
 func parseK6(t testing.TB, k *k6run) k6result {
 	t.Helper()
-	r := k6result{Status: map[int]int{}, Replicas: map[string]int{}}
+	r := k6result{Closed: k.closed, Status: map[int]int{}, Replicas: map[string]int{}}
 	var all []failure
 	f, err := os.Open(filepath.Join(k.dir, "console.log"))
 	if err != nil {
@@ -582,6 +601,11 @@ func parseK6(t testing.TB, k *k6run) k6result {
 		status, _ := strconv.Atoi(m[2])
 		dur, _ := strconv.Atoi(m[4])
 		at := time.UnixMilli(ms)
+		vu := -1
+		if m[6] != "" {
+			vu, _ = strconv.Atoi(m[6])
+		}
+		r.Requests = append(r.Requests, k6request{At: at, Status: status, Replica: m[3], Dur: time.Duration(dur) * time.Millisecond, VU: vu})
 		if status == 200 {
 			r.Replicas[m[3]]++
 		} else {
@@ -623,15 +647,17 @@ func parseK6(t testing.TB, k *k6run) k6result {
 	return r
 }
 
-// only200 fails the test for any response that is not a 200 and for a load that fell behind: at
-// 100 requests/s k6 must have sent at least 95 % of what the observed duration allows.
+// only200 fails the test for any response that is not a 200 and for a load that fell behind. The bound exists so that
+// "only 200" is not an empty statement: an open loop has to have kept its arrival rate (at 100 requests/s at least 95 % of
+// what the observed duration allows); a closed loop sends fewer requests when the cluster is slow, which says nothing about
+// the load, so for it the test calls clientsRanThrough and replicasServed for the window it is about (Q-HA-291).
 func (r k6result) only200(t testing.TB) {
 	t.Helper()
 	secs := r.Last.Sub(r.First).Seconds()
 	if secs < 20 {
 		t.Errorf("k6 ran for %.0f s, too short to say anything", secs)
 	}
-	if min := int(0.95 * 100 * secs); r.Total < min {
+	if min := int(0.95 * 100 * secs); !r.Closed && r.Total < min {
 		t.Errorf("k6 sent %d requests in %.0f s, want at least %d", r.Total, secs, min)
 	}
 	if n := r.Total - r.Status[200]; n != 0 {
@@ -644,6 +670,65 @@ func (r k6result) only200(t testing.TB) {
 	if d, _ := r.Summary["dropped_iterations"].(float64); d != 0 {
 		t.Errorf("k6 dropped %v iterations: the load fell behind its rate", d)
 	}
+}
+
+// clientsRanThrough fails the test unless every one of the `clients` clients of a closed loop was running during [from, to]:
+// at every instant of the window each client either has a request in flight or is within maxIdle of the end of its last
+// one (the pause of a client is at most a second), and the client does not stop before `to`. A client that stalled in a slow
+// request is running; a client that was never started, or died, leaves a gap.
+func (r k6result) clientsRanThrough(t testing.TB, clients int, from, to time.Time, maxIdle time.Duration) {
+	t.Helper()
+	by := map[int][]k6request{}
+	for _, q := range r.Requests {
+		if q.VU >= 0 {
+			by[q.VU] = append(by[q.VU], q)
+		}
+	}
+	if len(by) < clients {
+		t.Errorf("%d of %d clients of the load sent a request at all", len(by), clients)
+	}
+	var bad []string
+	for vu, rs := range by {
+		slices.SortFunc(rs, func(a, b k6request) int { return a.At.Compare(b.At) })
+		// covered is the instant up to which the client is accounted for: the end of the requests so far plus its pause
+		covered := from
+		for _, q := range rs {
+			if q.At.After(covered.Add(maxIdle)) && q.At.After(from) {
+				bad = append(bad, fmt.Sprintf("client %d idle from %s to %s", vu, covered.Format("15:04:05.000"), q.At.Format("15:04:05.000")))
+				break
+			}
+			if end := q.At.Add(q.Dur); end.After(covered) {
+				covered = end
+			}
+		}
+		if !covered.Add(maxIdle).After(to) {
+			bad = append(bad, fmt.Sprintf("client %d accounted for only until %s", vu, covered.Format("15:04:05.000")))
+		}
+	}
+	slices.Sort(bad)
+	if len(bad) > 0 {
+		if len(bad) > 5 {
+			bad = bad[:5]
+		}
+		t.Errorf("the load did not run with all %d clients from %s to %s: %d clients with a gap, first: %v", clients, from.Format("15:04:05.000"), to.Format("15:04:05.000"), len(bad), bad)
+	}
+}
+
+// replicasServed fails the test unless every named replica answered at least one request with 200 that started in [from, to].
+func (r k6result) replicasServed(t testing.TB, replicas []string, from, to time.Time) {
+	t.Helper()
+	got := map[string]int{}
+	for _, q := range r.Requests {
+		if q.Status == 200 && !q.At.Before(from) && !q.At.After(to) {
+			got[q.Replica]++
+		}
+	}
+	for _, name := range replicas {
+		if got[name] == 0 {
+			t.Errorf("replica %s answered no request between %s and %s: %v", name, from.Format("15:04:05.000"), to.Format("15:04:05.000"), got)
+		}
+	}
+	t.Logf("requests answered with 200 between %s and %s, by replica: %v", from.Format("15:04:05.000"), to.Format("15:04:05.000"), got)
 }
 
 // transferResult is the outcome of transfer.js: every request is a line `T <ms> <op> <status> <replica> <ms> <path> <ok|bad>`.

@@ -272,9 +272,21 @@ func TestE15TLS(t *testing.T) {
 			return done
 		})
 		total := time.Since(renewedAt)
+		servedAt := renewedAt.Add(total)
 		time.Sleep(10 * time.Second) // load continues over the swap and after it
 		res := k.stop(t)
 		res.only200(t)
+		// The load is a closed loop, so the count of its requests follows how fast the cluster answered and is not asserted (Q-HA-291).
+		// What makes "only 200" a statement is that the whole load ran in the window the row is about, from the trigger until the last
+		// pod served the new certificate, and that every api pod (the pods the load's paths reach) answered in it.
+		res.clientsRanThrough(t, k6Clients, renewedAt, servedAt, 2*time.Second)
+		var apis []string
+		for _, p := range pods {
+			if strings.HasPrefix(p.Name, "trove-api-") {
+				apis = append(apis, p.Name)
+			}
+		}
+		res.replicasServed(t, apis, renewedAt, servedAt)
 
 		summary := map[string]any{
 			"serial_before": before, "serial_after": after, "reload_interval_s": interval.Seconds(), "bound_s": bound.Seconds(),

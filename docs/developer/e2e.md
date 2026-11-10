@@ -414,7 +414,9 @@ nightly run is its first.
      about 1,000 connections at the edge). After 20 s the test triggers the renewal the way `cmctl renew`
      does: it adds the `Issuing` condition to the status of the `Certificate` `trove-tls` (a JSON patch on the status
      subresource; `privateKey.rotationPolicy: Always` makes it a new key too).
-   - Asserted: k6 only `200` (and the rate held); on every pod the new serial is served within
+   - Asserted: k6 only `200`, with all 100 clients accounted for at every instant from the trigger until the last pod served the
+     new certificate and every api pod answering in that window (`clientsRanThrough`, `replicasServed`; the number of requests
+     of a closed loop follows the speed of the answers and is not asserted, Q-HA-291); on every pod the new serial is served within
      `server.tls.reload_interval + 1 s` (2 s + 1 s from the dev values) of the file changing, on both listeners;
      `trove_tls_reloads_total{kind="listener"}` rose and `trove_tls_reload_errors_total` did not; pod UID, restart
      count and `process_start_time_seconds` of every pod are unchanged.

@@ -11,7 +11,9 @@
 //
 // Every response becomes one line on the console, which test/e2e parses:
 //
-//   R <unix ms> <status> <replica> <duration ms> <path>
+//   R <unix ms> <status> <replica> <duration ms> <path> [<client number>]
+//
+// The client number is there for LOOP=closed only; test/e2e uses it to show that every client ran through a window.
 //
 // A request that never got a response has status 0 and k6's error code and text (<code>:<text>, spaces as _) in the replica column.
 // k6's own summary (handleSummary) goes to /out/summary.json as a cross-check.
@@ -66,17 +68,17 @@ export default function () {
     sleep((exec.vu.idInTest % RATE) / RATE);
   }
   const began = Date.now();
-  request();
+  request(exec.vu.idInTest);
   sleep(Math.max(0, 1 - (Date.now() - began) / 1000));
 }
 
-function request() {
+function request(vu) {
   const path = PATHS[exec.scenario.iterationInTest % PATHS.length];
   const t0 = Date.now();
   const res = http.get(TARGET + path, { headers: { Host: HOST }, timeout: __ENV.TIMEOUT || '15s', tags: { name: path } });
   // A request without a response carries k6's error code and text in the replica column: <code>:<text>.
   const replica = res.status === 0 ? `${res.error_code || 0}:${res.error || 'error'}` : (res.headers['X-Trove-Replica'] || '-');
-  console.log(`R ${t0} ${res.status} ${String(replica).replace(/\s+/g, '_')} ${Date.now() - t0} ${path}`);
+  console.log(`R ${t0} ${res.status} ${String(replica).replace(/\s+/g, '_')} ${Date.now() - t0} ${path}${vu === undefined ? '' : ' ' + vu}`);
 }
 
 export function handleSummary(data) {
