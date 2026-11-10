@@ -156,8 +156,13 @@
   }
 
   // The body is always visible in the wide layout, whatever the toggle says.
-  .preview-body[hidden] {
-    display: block;
+  .preview .collapse-region {
+    grid-template-rows: 1fr;
+    visibility: visible;
+
+    > * {
+      overflow: visible;
+    }
   }
 
   .save-bar {

@@ -120,8 +120,9 @@ test('R-UI-041 an administrator creates a project; a member of its Owner group a
     await nav.getByRole('link', { name: 'Members', exact: true }).click();
     await expect(bob.getByRole('heading', { name: 'Members', level: 1 })).toBeVisible();
     const members = bob.locator('trove-project-members');
-    await expect(members.getByRole('rowheader', { name: `group:${groupName}` })).toBeVisible();
-    await members.getByRole('button', { name: `Remove group:${groupName}` }).click();
+    await expect(members.getByRole('rowheader', { name: groupName })).toBeVisible();
+    await members.getByRole('button', { name: `Actions for group:${groupName}` }).click();
+    await bob.getByRole('menuitem', { name: 'Remove member' }).click();
     await expect(members.getByText('A project keeps at least one Owner')).toBeVisible();
     await expectAccessible(bob, 'project members (Owner)');
 
