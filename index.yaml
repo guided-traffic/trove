@@ -2,8 +2,23 @@ apiVersion: v1
 entries:
   trove:
   - apiVersion: v2
+    appVersion: 0.43.0
+    created: "2026-11-10T21:31:32.420429767Z"
+    description: trove, an artifact repository manager for package formats, as a web
+      and a worker Deployment.
+    digest: 5fee161bc939c155371b0ee7db5dcda43d88f30ecf78e200c005126797788716
+    home: https://github.com/guided-traffic/trove
+    kubeVersion: '>=1.30.0-0'
+    name: trove
+    sources:
+    - https://github.com/guided-traffic/trove
+    type: application
+    urls:
+    - https://guided-traffic.github.io/trove/trove-0.43.0.tgz
+    version: 0.43.0
+  - apiVersion: v2
     appVersion: 0.42.0
-    created: "2026-11-10T20:44:46.297142641Z"
+    created: "2026-11-10T21:31:32.41589908Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 1f0331275c8233dd321bf11563399bbacacf2cc945bc4e4a65d42969903b66a4
@@ -18,7 +33,7 @@ entries:
     version: 0.42.0
   - apiVersion: v2
     appVersion: 0.41.0
-    created: "2026-11-10T20:44:46.291190645Z"
+    created: "2026-11-10T21:31:32.409704165Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 2e70ba8c2ba4d1e864ad5eaa4055c7428a593e3a1af72e25aec36a31f8533da6
@@ -33,7 +48,7 @@ entries:
     version: 0.41.0
   - apiVersion: v2
     appVersion: 0.40.0
-    created: "2026-11-10T20:44:46.286674916Z"
+    created: "2026-11-10T21:31:32.405230945Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 1ee4544e63e57ea679093317ca82096077f6fb51688a46a343868936d63765ec
@@ -48,7 +63,7 @@ entries:
     version: 0.40.0
   - apiVersion: v2
     appVersion: 0.39.0
-    created: "2026-11-10T20:44:46.278996214Z"
+    created: "2026-11-10T21:31:32.396753353Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 84a26e214abc834177b59e7485c390cdfa8699a59ffd6de692f8967a3c9182fc
@@ -63,7 +78,7 @@ entries:
     version: 0.39.0
   - apiVersion: v2
     appVersion: 0.38.0
-    created: "2026-11-10T20:44:46.274610942Z"
+    created: "2026-11-10T21:31:32.39189716Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 3cdd988ebdfbc7e9ebf2fd48f1b92b0fbb0042b33fb959b1fb55c8156c5917fe
@@ -78,7 +93,7 @@ entries:
     version: 0.38.0
   - apiVersion: v2
     appVersion: 0.37.0
-    created: "2026-11-10T20:44:46.270508834Z"
+    created: "2026-11-10T21:31:32.385397588Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: e967181c0d6449b344c87042fbe60c3ab7af5bfb4170d95736d06ed309666ab4
@@ -93,7 +108,7 @@ entries:
     version: 0.37.0
   - apiVersion: v2
     appVersion: 0.36.0
-    created: "2026-11-10T20:44:46.264665675Z"
+    created: "2026-11-10T21:31:32.380533039Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 38d6d7a38c1b83acbb7864d805e409d828360e89ddb6b2d099f172afe75f6905
@@ -108,7 +123,7 @@ entries:
     version: 0.36.0
   - apiVersion: v2
     appVersion: 0.35.0
-    created: "2026-11-10T20:44:46.260197475Z"
+    created: "2026-11-10T21:31:32.373847666Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 1edd64bf1114b525ffe25c124bdbb4cb8b571f86380d4da5dfc2d7f4e71f9538
@@ -123,7 +138,7 @@ entries:
     version: 0.35.0
   - apiVersion: v2
     appVersion: 0.34.1
-    created: "2026-11-10T20:44:46.254932088Z"
+    created: "2026-11-10T21:31:32.369362625Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 5a1944c24d542a975b7e9c894ade5f3cdd1f02407888085ca870929c81774e64
@@ -138,7 +153,7 @@ entries:
     version: 0.34.1
   - apiVersion: v2
     appVersion: 0.34.0
-    created: "2026-11-10T20:44:46.25114162Z"
+    created: "2026-11-10T21:31:32.364570422Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: bf20af84e0f4083a33801dd19ed213f5b8932311fc0655696b849f5549ed1b38
@@ -153,7 +168,7 @@ entries:
     version: 0.34.0
   - apiVersion: v2
     appVersion: 0.33.0
-    created: "2026-11-10T20:44:46.247333748Z"
+    created: "2026-11-10T21:31:32.35854656Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: c3ae344bf48436fbb33eb4eb23900749603485ce43afbf145be6912e2b32095c
@@ -168,7 +183,7 @@ entries:
     version: 0.33.0
   - apiVersion: v2
     appVersion: 0.32.0
-    created: "2026-11-10T20:44:46.2423106Z"
+    created: "2026-11-10T21:31:32.353931252Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 3f482d541eca1b8d76cb22821da006f887413d470d17b79a0db5164153a3d1fe
@@ -183,7 +198,7 @@ entries:
     version: 0.32.0
   - apiVersion: v2
     appVersion: 0.31.0
-    created: "2026-11-10T20:44:46.23856652Z"
+    created: "2026-11-10T21:31:32.347363462Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: d6a0a7b1c1dd843bc91a3e731b70a07bfece5140fd598cf57602056931f943fc
@@ -198,7 +213,7 @@ entries:
     version: 0.31.0
   - apiVersion: v2
     appVersion: 0.30.1
-    created: "2026-11-10T20:44:46.233774167Z"
+    created: "2026-11-10T21:31:32.342515525Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: ef7a461579e58f5e8a1f7a16b3309c4a4157c9e3b2cc49d191e5238f9ef3317e
@@ -213,7 +228,7 @@ entries:
     version: 0.30.1
   - apiVersion: v2
     appVersion: 0.30.0
-    created: "2026-11-10T20:44:46.230168197Z"
+    created: "2026-11-10T21:31:32.33789183Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: b7012720773168204dbda29eb33f603806139df30d03d01225d99b2509332c74
@@ -228,7 +243,7 @@ entries:
     version: 0.30.0
   - apiVersion: v2
     appVersion: 0.29.0
-    created: "2026-11-10T20:44:46.221219255Z"
+    created: "2026-11-10T21:31:32.327671132Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 8097eeeee6ef60bd93b6399e8c1b64b92e94bd49d6646a72a6111d6269974040
@@ -243,7 +258,7 @@ entries:
     version: 0.29.0
   - apiVersion: v2
     appVersion: 0.28.0
-    created: "2026-11-10T20:44:46.217459385Z"
+    created: "2026-11-10T21:31:32.321838592Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 65f8c67c8e70d445081c5706ccadd27bba297ed6dda0a70725e5889bf6960f14
@@ -258,7 +273,7 @@ entries:
     version: 0.28.0
   - apiVersion: v2
     appVersion: 0.27.1
-    created: "2026-11-10T20:44:46.212590417Z"
+    created: "2026-11-10T21:31:32.317523762Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 3e33ca5a2e4d41eb76aff3c747ac631f62dc71b3cacee73513ed8cebe292ed22
@@ -273,7 +288,7 @@ entries:
     version: 0.27.1
   - apiVersion: v2
     appVersion: 0.27.0
-    created: "2026-11-10T20:44:46.208925876Z"
+    created: "2026-11-10T21:31:32.311981502Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: e16a471ca04968c2b4eeba0505c0b7a8c644d24cb3709a5a6540cb8386a367aa
@@ -288,7 +303,7 @@ entries:
     version: 0.27.0
   - apiVersion: v2
     appVersion: 0.26.0
-    created: "2026-11-10T20:44:46.203970225Z"
+    created: "2026-11-10T21:31:32.307527538Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 7e8a76a8767a7512c425737da50e1516ed836c01f57830232d2bacdd8e2f3fb2
@@ -303,7 +318,7 @@ entries:
     version: 0.26.0
   - apiVersion: v2
     appVersion: 0.25.4
-    created: "2026-11-10T20:44:46.199848882Z"
+    created: "2026-11-10T21:31:32.301940172Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 48a536c177146a302af6f50f6134e8cc6a53ee09a5e406df28ebb68635eec482
@@ -318,7 +333,7 @@ entries:
     version: 0.25.4
   - apiVersion: v2
     appVersion: 0.25.3
-    created: "2026-11-10T20:44:46.19451257Z"
+    created: "2026-11-10T21:31:32.297999189Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: f02a9095b53d256d885d133420700efeaadefff16cf621d5ee89417fa9e44404
@@ -333,7 +348,7 @@ entries:
     version: 0.25.3
   - apiVersion: v2
     appVersion: 0.25.2
-    created: "2026-11-10T20:44:46.190462943Z"
+    created: "2026-11-10T21:31:32.293627111Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 0d2b44621bb9678231508710b0f45d58b46ef34626269741ac49f0ee09274a68
@@ -348,7 +363,7 @@ entries:
     version: 0.25.2
   - apiVersion: v2
     appVersion: 0.25.0
-    created: "2026-11-10T20:44:46.186627789Z"
+    created: "2026-11-10T21:31:32.287626033Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: e3a1f5c514708ccb6a8f4df29375460511e4d7222cf8a98da77589cfa8a9459e
@@ -363,7 +378,7 @@ entries:
     version: 0.25.0
   - apiVersion: v2
     appVersion: 0.24.0
-    created: "2026-11-10T20:44:46.181147636Z"
+    created: "2026-11-10T21:31:32.283750584Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 3254dc20e8a668ed0c2176fc7bc8cd14daa8646d54e4dd99e651cc0caa592a9b
@@ -378,7 +393,7 @@ entries:
     version: 0.24.0
   - apiVersion: v2
     appVersion: 0.23.0
-    created: "2026-11-10T20:44:46.177229798Z"
+    created: "2026-11-10T21:31:32.278655638Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 20bd1322c5e7cedf89f8589238a31bd229efa34775be44a0f7eacdf08302f4c3
@@ -393,7 +408,7 @@ entries:
     version: 0.23.0
   - apiVersion: v2
     appVersion: 0.22.0
-    created: "2026-11-10T20:44:46.173340733Z"
+    created: "2026-11-10T21:31:32.27490708Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 49ad2cd41eb8ccfe0a77c97a23e2d2572298fdfb0c3d3b3d60a8f4d2ff672ccb
@@ -408,7 +423,7 @@ entries:
     version: 0.22.0
   - apiVersion: v2
     appVersion: 0.21.0
-    created: "2026-11-10T20:44:46.169143024Z"
+    created: "2026-11-10T21:31:32.270954235Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: e91c99f6a948151baa7ecdfb092bf406204e2e73cd2c7ccd17d80691625d40a4
@@ -423,7 +438,7 @@ entries:
     version: 0.21.0
   - apiVersion: v2
     appVersion: 0.20.2
-    created: "2026-11-10T20:44:46.16571377Z"
+    created: "2026-11-10T21:31:32.266217417Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 04193d8476860987d79c3ecc6c86c739016bd31f451c528725f5fcfccaf1fb5a
@@ -438,7 +453,7 @@ entries:
     version: 0.20.2
   - apiVersion: v2
     appVersion: 0.20.1
-    created: "2026-11-10T20:44:46.161875912Z"
+    created: "2026-11-10T21:31:32.263207295Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 207d2c7283c3390fe1738cced56b306590cd4f9bcab07cff083ed8f709132e12
@@ -453,7 +468,7 @@ entries:
     version: 0.20.1
   - apiVersion: v2
     appVersion: 0.20.0
-    created: "2026-11-10T20:44:46.157330157Z"
+    created: "2026-11-10T21:31:32.259903336Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: bfa1520fbe47754e97e935a20d990bc861715f65366915fc3da76ad04132b056
@@ -468,7 +483,7 @@ entries:
     version: 0.20.0
   - apiVersion: v2
     appVersion: 0.19.5
-    created: "2026-11-10T20:44:46.15203909Z"
+    created: "2026-11-10T21:31:32.252695616Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: df2bd960e5ae28d933ce71ba4f95affca8d647c3513b7e1e1a36dd8f20b7a413
@@ -483,7 +498,7 @@ entries:
     version: 0.19.5
   - apiVersion: v2
     appVersion: 0.19.4
-    created: "2026-11-10T20:44:46.14733241Z"
+    created: "2026-11-10T21:31:32.249179808Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: f70bae8d870c4ee8b7f54b446733e48c8bd9b88a247ae50a2a58f45dd00e913a
@@ -498,7 +513,7 @@ entries:
     version: 0.19.4
   - apiVersion: v2
     appVersion: 0.19.3
-    created: "2026-11-10T20:44:46.144256743Z"
+    created: "2026-11-10T21:31:32.244261837Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: b1f220835330ff77655cee323653ea7f2f6226dd8e3684807c4616742e92a8f4
@@ -513,7 +528,7 @@ entries:
     version: 0.19.3
   - apiVersion: v2
     appVersion: 0.19.2
-    created: "2026-11-10T20:44:46.141192588Z"
+    created: "2026-11-10T21:31:32.240911331Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 30edd54f00f4da4ebdccab6dc59b627d836bb9476716ef04601439d2613bf09b
@@ -528,7 +543,7 @@ entries:
     version: 0.19.2
   - apiVersion: v2
     appVersion: 0.19.1
-    created: "2026-11-10T20:44:46.136690144Z"
+    created: "2026-11-10T21:31:32.237734813Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 7dd51b22025616d9c7274f2396ef2e9659102abf821eaaa320a329b68dc4da11
@@ -543,7 +558,7 @@ entries:
     version: 0.19.1
   - apiVersion: v2
     appVersion: 0.19.0
-    created: "2026-11-10T20:44:46.133946717Z"
+    created: "2026-11-10T21:31:32.232922954Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 5001077eb5c0b4ee2e06e24fbe4e28f72dd22d990bfb63283be4922b9d5fe5b3
@@ -558,7 +573,7 @@ entries:
     version: 0.19.0
   - apiVersion: v2
     appVersion: 0.18.0
-    created: "2026-11-10T20:44:46.131215341Z"
+    created: "2026-11-10T21:31:32.229580473Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: c71ea1675cbc5c760860ee6c119fb5358a0a67082d29f76baf1062e5a2f732fd
@@ -573,7 +588,7 @@ entries:
     version: 0.18.0
   - apiVersion: v2
     appVersion: 0.17.1
-    created: "2026-11-10T20:44:46.126885473Z"
+    created: "2026-11-10T21:31:32.225618891Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 7cf4f456eae0bf58fb3c2030dacc5079c32b0c094c96fec8d89817a97cb065fa
@@ -588,7 +603,7 @@ entries:
     version: 0.17.1
   - apiVersion: v2
     appVersion: 0.17.0
-    created: "2026-11-10T20:44:46.123627612Z"
+    created: "2026-11-10T21:31:32.220540177Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: b284b4ad458a23044f8c8a8ae1434df131361037f9a6c29640e3514bdcfed233
@@ -603,7 +618,7 @@ entries:
     version: 0.17.0
   - apiVersion: v2
     appVersion: 0.16.0
-    created: "2026-11-10T20:44:46.120302083Z"
+    created: "2026-11-10T21:31:32.216769075Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 9e426cbecaeb656ee5789aea637ea94cd5d16cd13e9b1486d214fd9f3d5fc277
@@ -618,7 +633,7 @@ entries:
     version: 0.16.0
   - apiVersion: v2
     appVersion: 0.15.1
-    created: "2026-11-10T20:44:46.117322399Z"
+    created: "2026-11-10T21:31:32.213960414Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 8f8344fbe772b721ebff32bd95f859efd82aa3aab0e9cf44e92a3bdd416be031
@@ -633,7 +648,7 @@ entries:
     version: 0.15.1
   - apiVersion: v2
     appVersion: 0.15.0
-    created: "2026-11-10T20:44:46.11319267Z"
+    created: "2026-11-10T21:31:32.209929391Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: a4d01ee5cb78c9969c43680c64d631930c6263f6260b8a70c45e232080ce4df4
@@ -648,7 +663,7 @@ entries:
     version: 0.15.0
   - apiVersion: v2
     appVersion: 0.14.0
-    created: "2026-11-10T20:44:46.110423292Z"
+    created: "2026-11-10T21:31:32.207561153Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: f8f3cf1ed82d6c3c01c1dea17e14a52bd3d1377fb57a931310761fef54d78f3a
@@ -663,7 +678,7 @@ entries:
     version: 0.14.0
   - apiVersion: v2
     appVersion: 0.13.0
-    created: "2026-11-10T20:44:46.107828706Z"
+    created: "2026-11-10T21:31:32.205217209Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 326c386991fd65b9435fb9ebc68bc7e43f8a01f0aabbc702eff88a2978483689
@@ -678,7 +693,7 @@ entries:
     version: 0.13.0
   - apiVersion: v2
     appVersion: 0.12.0
-    created: "2026-11-10T20:44:46.104284543Z"
+    created: "2026-11-10T21:31:32.202226224Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 329ca5f0f40923fbe4c99830b8c290c7db02ba79254587ab04c54c57046bee32
@@ -693,7 +708,7 @@ entries:
     version: 0.12.0
   - apiVersion: v2
     appVersion: 0.11.1
-    created: "2026-11-10T20:44:46.101766742Z"
+    created: "2026-11-10T21:31:32.198612509Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 206e3842f9f44c36dcb22d2cdc2dbf1978b25e521d1788723ee7d2bab5e7a1b4
@@ -708,7 +723,7 @@ entries:
     version: 0.11.1
   - apiVersion: v2
     appVersion: 0.11.0
-    created: "2026-11-10T20:44:46.099360341Z"
+    created: "2026-11-10T21:31:32.196143561Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 4482dde6d74c20a5c523714bb07b2d0cc09db48ad110aa16ee59016e6521d1eb
@@ -723,7 +738,7 @@ entries:
     version: 0.11.0
   - apiVersion: v2
     appVersion: 0.10.0
-    created: "2026-11-10T20:44:46.096792876Z"
+    created: "2026-11-10T21:31:32.193621902Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 55b19df29e2ce66c7ed82adb12ebbb06cfb007e9c95cb964f16eef726b49b753
@@ -738,7 +753,7 @@ entries:
     version: 0.10.0
   - apiVersion: v2
     appVersion: 0.9.0
-    created: "2026-11-10T20:44:46.310121705Z"
+    created: "2026-11-10T21:31:32.433568084Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 537bb0e64e6816cb7456c4faabf5c36b8217fc6f7b170e96127bc1a720659f9e
@@ -753,7 +768,7 @@ entries:
     version: 0.9.0
   - apiVersion: v2
     appVersion: 0.8.0
-    created: "2026-11-10T20:44:46.30751238Z"
+    created: "2026-11-10T21:31:32.431382581Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: f660d494ee4cefa298b30d96bc5c72f8746dabc010b81bc3b1c1599687fcbbd6
@@ -768,7 +783,7 @@ entries:
     version: 0.8.0
   - apiVersion: v2
     appVersion: 0.7.0
-    created: "2026-11-10T20:44:46.303575005Z"
+    created: "2026-11-10T21:31:32.428689047Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 4904d4f6744ff0c30741270945d3a7eb9235153d043375ddcddb9c0c7cdcd4b5
@@ -783,7 +798,7 @@ entries:
     version: 0.7.0
   - apiVersion: v2
     appVersion: 0.6.0
-    created: "2026-11-10T20:44:46.301454494Z"
+    created: "2026-11-10T21:31:32.424584084Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: de162a1cb4b4594fce20c9efedef1495da573d1155b681efdba502e9fbb42d11
@@ -798,7 +813,7 @@ entries:
     version: 0.6.0
   - apiVersion: v2
     appVersion: 0.5.0
-    created: "2026-11-10T20:44:46.299377837Z"
+    created: "2026-11-10T21:31:32.42254045Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: f1204e5511ff4ae31086a0a4ce14ae95be00419155b95d53f0868c2d3df1201e
@@ -813,7 +828,7 @@ entries:
     version: 0.5.0
   - apiVersion: v2
     appVersion: 0.4.0
-    created: "2026-11-10T20:44:46.282434657Z"
+    created: "2026-11-10T21:31:32.399399698Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: b00facfad70564296607f9cea5bfece3ef7da5426425e4327a3e3f7be4facac8
@@ -828,7 +843,7 @@ entries:
     version: 0.4.0
   - apiVersion: v2
     appVersion: 0.3.1
-    created: "2026-11-10T20:44:46.226390443Z"
+    created: "2026-11-10T21:31:32.331866315Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: a609d748e2a502711c9dbef2ce2fd2862088ecd2ff5e654d75ac2faef002f356
@@ -843,7 +858,7 @@ entries:
     version: 0.3.1
   - apiVersion: v2
     appVersion: 0.3.0
-    created: "2026-11-10T20:44:46.223170124Z"
+    created: "2026-11-10T21:31:32.329810408Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 1767bb4f91eb7258cc99de93f0ee1436013fa481eb84b393f3c9bf017a89042f
@@ -858,7 +873,7 @@ entries:
     version: 0.3.0
   - apiVersion: v2
     appVersion: 0.2.0
-    created: "2026-11-10T20:44:46.154093846Z"
+    created: "2026-11-10T21:31:32.255044267Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: bfa538f776ba3f3fa55abfd576b2f16cc3b525537dd2bd985e384f84b5bee96a
@@ -873,7 +888,7 @@ entries:
     version: 0.2.0
   - apiVersion: v2
     appVersion: 0.1.1
-    created: "2026-11-10T20:44:46.094157433Z"
+    created: "2026-11-10T21:31:32.190352869Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: a901e8644b4b37b1a235da888b8c215453e28decb6a7c8c4ece503d26586fe08
@@ -888,8 +903,23 @@ entries:
     version: 0.1.1
   trove-bastion:
   - apiVersion: v2
+    appVersion: 0.43.0
+    created: "2026-11-10T21:31:32.549256963Z"
+    description: The trove Bastion, a read-only, internet-facing cache instance in
+      front of a main trove installation (trove serve --role bastion).
+    digest: 98e96f826f797afbd6ef9d1e2d38a879e10e80602abbc3153c145efcad894d1c
+    home: https://github.com/guided-traffic/trove
+    kubeVersion: '>=1.30.0-0'
+    name: trove-bastion
+    sources:
+    - https://github.com/guided-traffic/trove
+    type: application
+    urls:
+    - https://guided-traffic.github.io/trove/trove-bastion-0.43.0.tgz
+    version: 0.43.0
+  - apiVersion: v2
     appVersion: 0.42.0
-    created: "2026-11-10T20:44:46.406907023Z"
+    created: "2026-11-10T21:31:32.546823922Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 0322d630670f7bad90083a5cb18bde9e7ac9666c410fad6f76233e2f0958054e
@@ -904,7 +934,7 @@ entries:
     version: 0.42.0
   - apiVersion: v2
     appVersion: 0.41.0
-    created: "2026-11-10T20:44:46.403444724Z"
+    created: "2026-11-10T21:31:32.544584296Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 220da867beccc58896d73cb4c9f2698307831a296e29fdc90ee05b1b99655786
@@ -919,7 +949,7 @@ entries:
     version: 0.41.0
   - apiVersion: v2
     appVersion: 0.40.0
-    created: "2026-11-10T20:44:46.401462717Z"
+    created: "2026-11-10T21:31:32.540971194Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: b7c4d6f229230f4f521ae0ce04ffda95b08c5680e321461696d8b88a0818c9f4
@@ -934,7 +964,7 @@ entries:
     version: 0.40.0
   - apiVersion: v2
     appVersion: 0.39.0
-    created: "2026-11-10T20:44:46.3991588Z"
+    created: "2026-11-10T21:31:32.538963446Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 52e456055eb95693d9b4947c482c233dfcfece2353513e3df6fe97d348ead251
@@ -949,7 +979,7 @@ entries:
     version: 0.39.0
   - apiVersion: v2
     appVersion: 0.38.0
-    created: "2026-11-10T20:44:46.396920427Z"
+    created: "2026-11-10T21:31:32.536659109Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 6f7fa55da9e432f9edf4583420d13221a678b3e98b5c14eb0f13dd3aed1633a2
@@ -964,7 +994,7 @@ entries:
     version: 0.38.0
   - apiVersion: v2
     appVersion: 0.37.0
-    created: "2026-11-10T20:44:46.393481014Z"
+    created: "2026-11-10T21:31:32.534469779Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: b864ce4dd51c81742790b0742c2b525c488dfc07b1c40364d75aa53599848051
@@ -979,7 +1009,7 @@ entries:
     version: 0.37.0
   - apiVersion: v2
     appVersion: 0.36.0
-    created: "2026-11-10T20:44:46.391743036Z"
+    created: "2026-11-10T21:31:32.532400856Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 12831247fd98135a3f30ba3b527a6d8d869ce099fb574432a67ac73bc8f54596
@@ -994,7 +1024,7 @@ entries:
     version: 0.36.0
   - apiVersion: v2
     appVersion: 0.35.0
-    created: "2026-11-10T20:44:46.389882097Z"
+    created: "2026-11-10T21:31:32.528907991Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 32f7f56ebf1b4e598be7e5e1fabcb74b726621cba2dd4268d665e7f8b392a324
@@ -1009,7 +1039,7 @@ entries:
     version: 0.35.0
   - apiVersion: v2
     appVersion: 0.34.1
-    created: "2026-11-10T20:44:46.388034634Z"
+    created: "2026-11-10T21:31:32.526566081Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: a9a626438f1176bd3b05c14fbe1dcb1aa444e2f5677f66ede1a0fd7891d28a1e
@@ -1024,7 +1054,7 @@ entries:
     version: 0.34.1
   - apiVersion: v2
     appVersion: 0.34.0
-    created: "2026-11-10T20:44:46.386085157Z"
+    created: "2026-11-10T21:31:32.524110218Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: f4cec77af9fb27fcbbf06ce10a15703dfdb07e0d632f4d788c6c231e2a1f242f
@@ -1039,7 +1069,7 @@ entries:
     version: 0.34.0
   - apiVersion: v2
     appVersion: 0.33.0
-    created: "2026-11-10T20:44:46.383023938Z"
+    created: "2026-11-10T21:31:32.521861024Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 6e12051f6753c772cece54762fa37ce1f0246bf4e55bf4c58cfe339c5692db1f
@@ -1054,7 +1084,7 @@ entries:
     version: 0.33.0
   - apiVersion: v2
     appVersion: 0.32.0
-    created: "2026-11-10T20:44:46.380836722Z"
+    created: "2026-11-10T21:31:32.519348553Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: ab800dd0d24455df94204df352e8e2c095eb6d51c56a30ca3257eac383f10dba
@@ -1069,7 +1099,7 @@ entries:
     version: 0.32.0
   - apiVersion: v2
     appVersion: 0.31.0
-    created: "2026-11-10T20:44:46.379004437Z"
+    created: "2026-11-10T21:31:32.515186772Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: e9a4b25196daede47579a0d99d546f4f844ec874475babb49af2a3dbc59763c5
@@ -1084,7 +1114,7 @@ entries:
     version: 0.31.0
   - apiVersion: v2
     appVersion: 0.30.1
-    created: "2026-11-10T20:44:46.377025635Z"
+    created: "2026-11-10T21:31:32.512526221Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 2810c18cb8b864c0cbd6e9e7d3f40c047e66209328a34eb828bf448f3f50d59a
@@ -1099,7 +1129,7 @@ entries:
     version: 0.30.1
   - apiVersion: v2
     appVersion: 0.30.0
-    created: "2026-11-10T20:44:46.375136673Z"
+    created: "2026-11-10T21:31:32.509965819Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: a24d50f93bed870f8a6f3936d3622f8a1547bdc8e996901d3dde6700c9e689a6
@@ -1114,7 +1144,7 @@ entries:
     version: 0.30.0
   - apiVersion: v2
     appVersion: 0.29.0
-    created: "2026-11-10T20:44:46.372129165Z"
+    created: "2026-11-10T21:31:32.507694624Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 1b07b14173d4465209314adef718a6ceac7d68b1e08b7193ce3b93b5df962676
@@ -1129,7 +1159,7 @@ entries:
     version: 0.29.0
   - apiVersion: v2
     appVersion: 0.28.0
-    created: "2026-11-10T20:44:46.370224604Z"
+    created: "2026-11-10T21:31:32.505433679Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 58620024e666631dd7e14f245c6341e2cfbe41a4f9efac1612c89f9fd678c4c4
@@ -1144,7 +1174,7 @@ entries:
     version: 0.28.0
   - apiVersion: v2
     appVersion: 0.27.1
-    created: "2026-11-10T20:44:46.368024914Z"
+    created: "2026-11-10T21:31:32.501254796Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 567fa2f4292c5cfac10a70bdde38de66ad580bcc16bd6c45e9ca73191e744417
@@ -1159,7 +1189,7 @@ entries:
     version: 0.27.1
   - apiVersion: v2
     appVersion: 0.27.0
-    created: "2026-11-10T20:44:46.365990216Z"
+    created: "2026-11-10T21:31:32.498789513Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: e1f7050e9ddfbf2872a56fc776c77b8a131aef5281306533c3611620fa3e4159
@@ -1174,7 +1204,7 @@ entries:
     version: 0.27.0
   - apiVersion: v2
     appVersion: 0.26.0
-    created: "2026-11-10T20:44:46.363767633Z"
+    created: "2026-11-10T21:31:32.496182964Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 1365dc2c3159817f1404ca8c460594366c3b97c283c805da3865b8e531867380
@@ -1189,7 +1219,7 @@ entries:
     version: 0.26.0
   - apiVersion: v2
     appVersion: 0.25.4
-    created: "2026-11-10T20:44:46.360447113Z"
+    created: "2026-11-10T21:31:32.494019824Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 4bb3dcdc87dedd055ecd2774217d15449101ec6c17b01e6e425cb01c5f3608fb
@@ -1204,7 +1234,7 @@ entries:
     version: 0.25.4
   - apiVersion: v2
     appVersion: 0.25.3
-    created: "2026-11-10T20:44:46.358678278Z"
+    created: "2026-11-10T21:31:32.491319497Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: ab2eb0e9686d33b63547c36a75ed2edae5210ef50c1aa685f16434cbf03a31c4
@@ -1219,7 +1249,7 @@ entries:
     version: 0.25.3
   - apiVersion: v2
     appVersion: 0.25.2
-    created: "2026-11-10T20:44:46.356900808Z"
+    created: "2026-11-10T21:31:32.488469378Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 28fa098db696c5df1f9a140c9869f20f27127fc5e19c92df3ad1bbac20e37da5
@@ -1234,7 +1264,7 @@ entries:
     version: 0.25.2
   - apiVersion: v2
     appVersion: 0.25.0
-    created: "2026-11-10T20:44:46.355107686Z"
+    created: "2026-11-10T21:31:32.486552182Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 838c880025c560c246cba46e26b725465a994314cbf01c861ec6530faa9d6aaf
@@ -1249,7 +1279,7 @@ entries:
     version: 0.25.0
   - apiVersion: v2
     appVersion: 0.24.0
-    created: "2026-11-10T20:44:46.353057159Z"
+    created: "2026-11-10T21:31:32.48480615Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: cf1dd8c0de212bc4c285885ed7d8e02d2a4e3b34902f00272fb66c441f727c11
@@ -1264,7 +1294,7 @@ entries:
     version: 0.24.0
   - apiVersion: v2
     appVersion: 0.23.0
-    created: "2026-11-10T20:44:46.349769973Z"
+    created: "2026-11-10T21:31:32.483015063Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 9b45d5bd7d338cdc6aa46869fb40a0045bdf76e9fffee4e9be2be8f32d493937
@@ -1279,7 +1309,7 @@ entries:
     version: 0.23.0
   - apiVersion: v2
     appVersion: 0.22.0
-    created: "2026-11-10T20:44:46.347735395Z"
+    created: "2026-11-10T21:31:32.479277064Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: f27264eb1b65ce76b2d64a770f5c429a2a112a6ad1cdbde67ddec8698e102f1c
@@ -1294,7 +1324,7 @@ entries:
     version: 0.22.0
   - apiVersion: v2
     appVersion: 0.21.0
-    created: "2026-11-10T20:44:46.345957984Z"
+    created: "2026-11-10T21:31:32.476916751Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 01d232aa5dee0eb3bfc3cdfddb0762f9198013b2fe43b2d27321939dc1574bcf
@@ -1309,7 +1339,7 @@ entries:
     version: 0.21.0
   - apiVersion: v2
     appVersion: 0.20.2
-    created: "2026-11-10T20:44:46.344176856Z"
+    created: "2026-11-10T21:31:32.474899065Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 302b9be4c63eca161949f75c502cb0012a36889caff3c4ce97d82b8eb251d2cc
@@ -1324,7 +1354,7 @@ entries:
     version: 0.20.2
   - apiVersion: v2
     appVersion: 0.20.1
-    created: "2026-11-10T20:44:46.342358406Z"
+    created: "2026-11-10T21:31:32.472801238Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 0bec4c5e06203038ca86e2e4d7b64e268dcfb25176f98e345049f1c01301f240
@@ -1339,7 +1369,7 @@ entries:
     version: 0.20.1
   - apiVersion: v2
     appVersion: 0.20.0
-    created: "2026-11-10T20:44:46.339353314Z"
+    created: "2026-11-10T21:31:32.470577922Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 4f8c80154c2c73643cea4f3716ffcfd0f108fe655965b8af6ada857157a5fa15
@@ -1354,7 +1384,7 @@ entries:
     version: 0.20.0
   - apiVersion: v2
     appVersion: 0.19.5
-    created: "2026-11-10T20:44:46.337584359Z"
+    created: "2026-11-10T21:31:32.465964718Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 53d0a9e17a00d6f8eaaed9a03b57e0187be590bbb99e97202afd73067498e568
@@ -1369,7 +1399,7 @@ entries:
     version: 0.19.5
   - apiVersion: v2
     appVersion: 0.19.4
-    created: "2026-11-10T20:44:46.335741083Z"
+    created: "2026-11-10T21:31:32.463986377Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 76de62bb41ce2da104cafd5376f1e5e85e146c2d8027741030a57a8e9b55da1f
@@ -1384,7 +1414,7 @@ entries:
     version: 0.19.4
   - apiVersion: v2
     appVersion: 0.19.3
-    created: "2026-11-10T20:44:46.333722906Z"
+    created: "2026-11-10T21:31:32.461802348Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 4a8b16cdd262c902686a7032a62288827760fb5ffce3b51478e0729da3e2c8b9
@@ -1399,7 +1429,7 @@ entries:
     version: 0.19.3
   - apiVersion: v2
     appVersion: 0.19.2
-    created: "2026-11-10T20:44:46.331849033Z"
+    created: "2026-11-10T21:31:32.459544317Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 7405c706390e342e3802d3dac8df821415a11463f04cc82256b88521f3b4cf3d
@@ -1414,7 +1444,7 @@ entries:
     version: 0.19.2
   - apiVersion: v2
     appVersion: 0.19.1
-    created: "2026-11-10T20:44:46.329118048Z"
+    created: "2026-11-10T21:31:32.457156742Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 3ea9c8d3d6e3438a9e66bea6f9d36c3f9a6d945438b41e094beaae40fb2a6232
@@ -1429,7 +1459,7 @@ entries:
     version: 0.19.1
   - apiVersion: v2
     appVersion: 0.19.0
-    created: "2026-11-10T20:44:46.326206302Z"
+    created: "2026-11-10T21:31:32.452987247Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 2d7732eee730859497354cb5d94111eadaab9689b5fe5a5d262efea807ea0749
@@ -1444,7 +1474,7 @@ entries:
     version: 0.19.0
   - apiVersion: v2
     appVersion: 0.18.0
-    created: "2026-11-10T20:44:46.324459429Z"
+    created: "2026-11-10T21:31:32.450839265Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 0236afe97db7107e6af54c771e60ae161806c9654c35ae0187dd66dd77180c14
@@ -1459,7 +1489,7 @@ entries:
     version: 0.18.0
   - apiVersion: v2
     appVersion: 0.17.1
-    created: "2026-11-10T20:44:46.322687538Z"
+    created: "2026-11-10T21:31:32.448621721Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: e14d96dd9f925db5b93243f01e26faf4150fd9f52fc8317b5e8a21f0f3b1f4d2
@@ -1474,7 +1504,7 @@ entries:
     version: 0.17.1
   - apiVersion: v2
     appVersion: 0.17.0
-    created: "2026-11-10T20:44:46.320830737Z"
+    created: "2026-11-10T21:31:32.445278359Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: bf439a04fa9185cd5a1dad959678fc4db806fa84b996bc9c735effc5f0b6b5a2
@@ -1489,7 +1519,7 @@ entries:
     version: 0.17.0
   - apiVersion: v2
     appVersion: 0.16.0
-    created: "2026-11-10T20:44:46.318556446Z"
+    created: "2026-11-10T21:31:32.442825801Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: c4020c4a1ffe4518ab8758a47dd1f723720fc9362017d4ea395d73bacabfc0c9
@@ -1504,7 +1534,7 @@ entries:
     version: 0.16.0
   - apiVersion: v2
     appVersion: 0.15.1
-    created: "2026-11-10T20:44:46.31480975Z"
+    created: "2026-11-10T21:31:32.438952877Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: 0785a84f9933e61869c4493018b3ea8274e85ed096d6d80e315dbc9e5449e77f
@@ -1519,7 +1549,7 @@ entries:
     version: 0.15.1
   - apiVersion: v2
     appVersion: 0.15.0
-    created: "2026-11-10T20:44:46.31249896Z"
+    created: "2026-11-10T21:31:32.436100522Z"
     description: The trove Bastion, a read-only, internet-facing cache instance in
       front of a main trove installation (trove serve --role bastion).
     digest: a7464852c33204d26420e9df62a9f44aa918fcd14db2a4988971b73a5c5787dd
@@ -1532,4 +1562,4 @@ entries:
     urls:
     - https://guided-traffic.github.io/trove/trove-bastion-0.15.0.tgz
     version: 0.15.0
-generated: "2026-11-10T20:44:46.089402941Z"
+generated: "2026-11-10T21:31:32.185362222Z"
