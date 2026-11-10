@@ -171,8 +171,16 @@ func TestGracefulShutdown(t *testing.T) {
 		if err := h.app.Shutdown(context.Background()); err != nil {
 			t.Fatal(err)
 		}
+		// The drainers and the settlers of a phase run side by side (Q-ARCH-460), so the order inside these two phases is free;
+		// the phases, the flushes and the stops are not.
 		got := strings.Join(order, ",")
-		if got != "drain a,drain b,settle a,settle b,flush b,flush a,stop b,stop a" && got != "drain a,drain b,settle b,settle a,flush b,flush a,stop b,stop a" {
+		ok := false
+		for _, drain := range []string{"drain a,drain b", "drain b,drain a"} {
+			for _, settle := range []string{"settle a,settle b", "settle b,settle a"} {
+				ok = ok || got == drain+","+settle+",flush b,flush a,stop b,stop a"
+			}
+		}
+		if !ok {
 			t.Fatalf("order = %s", got)
 		}
 	})

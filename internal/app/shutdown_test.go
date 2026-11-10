@@ -154,6 +154,7 @@ func (c *blockingComp) Settle(ctx context.Context) error {
 // scaled is the production budget at one thousandth of the size.
 func scaledBudget() shutdownBudget {
 	return shutdownBudget{
+		Drain:  100 * time.Millisecond,
 		Margin: 800 * time.Millisecond, Slack: 100 * time.Millisecond, Quiesce: 600 * time.Millisecond,
 		CommitGrace: 500 * time.Millisecond, CloseReserve: 200 * time.Millisecond,
 		OpsReserve: 100 * time.Millisecond, Abandon: 50 * time.Millisecond, Release: 2 * time.Second,
@@ -298,4 +299,53 @@ func TestStopOrder(t *testing.T) {
 			t.Fatalf("stop order %v, want %s", got, want)
 		}
 	})
+}
+
+// stalledDrainer is a component whose Drain does not return, as a database call on a connection that never answers does,
+// and which records that the close phase reached its Flush.
+type stalledDrainer struct {
+	name    string
+	release chan struct{}
+	flushed atomic.Bool
+}
+
+func (c *stalledDrainer) Name() string                { return c.name }
+func (c *stalledDrainer) Start(context.Context) error { return nil }
+func (c *stalledDrainer) Stop(context.Context) error  { return nil }
+func (c *stalledDrainer) Drain(context.Context)       { <-c.release }
+func (c *stalledDrainer) Flush(context.Context) error { c.flushed.Store(true); return nil }
+
+// R-ARCH-024 step 1, R-HA-011 (Q-ARCH-460): a drain that waits on the database is waited for until the end of the drain step
+// and no longer. Without the bound the call timeout of the drain (10 s) came out of the budget of every later phase, the close
+// phase started past its deadline and was abandoned before it flushed anything.
+func TestShutdownDrainStepIsBoundedByThePlan(t *testing.T) {
+	for _, tc := range []struct {
+		role  string
+		drain string
+	}{{"web", "300ms"}, {"worker", "0s"}} {
+		t.Run(tc.role+" with a drain that never returns the close phase still flushes inside the plan", func(t *testing.T) {
+			h := start(t, tc.role, map[string]string{"TROVE_HEALTH_SHUTDOWN_DRAIN_DELAY": tc.drain, "TROVE_SERVER_SHUTDOWN_TIMEOUT": "1s"})
+			h.app.budget = scaledBudget()
+			comp := &stalledDrainer{name: "stalled", release: make(chan struct{})}
+			t.Cleanup(func() { close(comp.release) })
+			h.app.comps = append(h.app.comps, comp)
+
+			begin := time.Now()
+			err := h.app.Shutdown(context.Background())
+			took := time.Since(begin)
+			if err != nil {
+				t.Errorf("Shutdown = %v, want a clean exit", err)
+			}
+			if !comp.flushed.Load() {
+				t.Error("the close phase never reached the flush: the drain took the time of the later phases")
+			}
+			drain, _ := time.ParseDuration(tc.drain)
+			if limit := drain + time.Second + 800*time.Millisecond + 400*time.Millisecond; took > limit {
+				t.Errorf("Shutdown took %s, want it inside the plan of %s", took, limit)
+			}
+			if !strings.Contains(h.logs.String(), "components were still draining at the end of the drain step") {
+				t.Errorf("the drain that did not return is not named in the log:\n%s", h.logs.String())
+			}
+		})
+	}
 }

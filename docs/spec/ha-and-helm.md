@@ -9614,6 +9614,50 @@ Context: R-HA-049's acceptance wants the chart installed on kind with Kubernetes
 **Rationale:** the requirement's reason for the matrix is that the chart must work on the API of each supported version and with both Helm majors; that is decided by the install, not by the pods. **Revisit:** when the dev profile can start on a second Kubernetes version at an acceptable cost, the smoke subset runs there (then H-805 is closed), or when a Helm 3 release changes how `--dry-run=server` behaves.
 **Applied:** `tools/versions.env`, `renovate.json`, `deploy/dev/k8s-matrix.sh`, `.github/workflows/performance.yml` (job `k8s-matrix`), `docs/developer/releasing.md#the-platform-matrix`.
 
+### Q-HA-283 · The registry row is marked draining on the request pool
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: [Q-HA-202](#q-ha-202--the-final-deletion-of-the-registry-row-runs-on-the-request-pool) moved the deletion of the replica's row to the request pool because the control connection is shared with the change-log poll and the readiness checks, and a statement queued behind them is cut by its phase. The statement that marks the row `draining` (R-ARCH-024 step 1) is the same kind of write and stayed on the control connection: in the runs of 2026-11-10 it waited for the whole call timeout (10 s), every control user waiting at once (`change-log poll failed`, `replica heartbeat failed` and `replica row not marked draining`, all `context deadline exceeded`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Leave it on the control connection, bound by the drain step ([Q-ARCH-460](architecture.md#q-arch-460--the-drain-step-of-the-shutdown-is-bounded-by-the-plan)) | The mark is lost when the connection is held | No change of pool | The mark fails exactly when it is wanted, and the heartbeat that follows writes `draining` anyway only if the control connection is back |
+| (b) Mark it on the request pool (chosen) | `RegistryOptions.DeleteDB` becomes `ShutdownDB`, used by `Drain` and `Stop` | The request pool is not stalled by the control users; the drain of a replica that still serves requests costs one statement of a pool that has connections | The mark leaves the connection class R-OPS-003 gives the heartbeat |
+
+**Choice:** (b). **Rationale:** R-OPS-003 puts the heartbeat on the control connection so that a request pool exhausted by load never makes a live replica look lost; a draining replica is leaving and the mark is one statement. Revisit if the request pool is saturated at the start of a drain by a load that would also make the mark fail: the mark is then lost, the later heartbeats write `draining` all the same (the registry keeps the flag).
+**Applied:** R-ARCH-024 step 1; `internal/cluster/replica_registry.go` (`ShutdownDB`, `Drain`, `Stop`), `internal/app/wire_coordination.go`; `docs/developer/coordination.md`. Test: `TestR_ARCH_024_RegistryDrainDoesNotWaitForTheControlConnection`.
+
+### Q-HA-284 · A readiness probe does not cut its statement at the end of its check
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: The `database` and `schema` checks run on the control connection, which is a pool of one connection (Q-HA-20). The deadline of a check (`health.check_timeout`, 2 s by default, 200 ms in the integration tests) was the context of its statements, and pgx closes a connection whose statement is cut by its context; the pool then holds its one slot until the closed connection is cleaned up (puddle `destroyAcquiredResource` runs the destructor, which waits for the cleanup, up to 15 s, before it frees the slot). Verified: with the context of a check ended while its statement runs, the control pool opened a second connection (test below, before the change); on an idle machine the whole cycle takes 15 to 25 ms. Not verified: how long it takes on the CI runners in the red runs (H-822).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A second connection in the control pool | Size 2 | A closed connection never blocks the pool | Changes the budget of R-HA-016 and the minimum of `database.pool.max_conns`; the probes still close connections |
+| (b) The deadline of the check bounds the wait for the connection, the statements run under `probeStatementBound` of 10 s (chosen) | `Ready` and `CheckSchema` acquire first, then run on a context with the values of the check's and a bound of its own | A slow statement ends as a timed-out check, as before, and the connection survives; no change of the budget | A statement on a connection that never answers holds the control connection for up to 10 s, the bound of the loops' own calls (`callTimeout`) |
+| (c) Run the checks on the request pool | Not on the control connection | No sharing | The check no longer proves the connection the loops use (R-OPS-001) |
+
+**Choice:** (b). **Rationale:** the answer of the check is still bound by its deadline (`runCheck` returns at it and records the timeout); only the statement is not killed, and a statement that is slow answers a moment later on a healthy connection. Revisit if a connection that never answers is seen holding the control pool for the bound.
+**Applied:** R-OPS-001; `internal/meta/postgres/db.go` (`Ready`, `probeStatementBound`), `internal/meta/postgres/gate.go` (`CheckSchema`); `docs/developer/database.md`. Test: `TestR_OPS_001_AProbeWhoseDeadlineEndsDuringItsStatementKeepsTheControlConnection`.
+
+### Q-HA-285 · The integration harness never hands out an address twice, and the rate-limit test does not give up on a Valkey that answers
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Two test defects in run 42839263211. `TestEndpoints` failed in 0.5 s with `server.endpoints.customers.listen uses port 40965, which server.listen already uses`: `freeAddr` opens a listener on port 0 and closes it, and the kernel gave the same port to the next call. The subtest "with Valkey" of `TestClusterWideRateLimit` read `trove_ratelimit_fallback = 1` on one replica with Valkey running: the burst took 1.8 s where the other bursts of the test took 0.1 s, a check waited past `valkey.command_timeout` (500 ms by default), and the limiter ran its fallback for it, which the gauge shows until a check used the shared counters again.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `freeAddr` remembers the addresses it returned (chosen for the harness) | A process-wide set | Removes the collision inside the test binary, where it happened | A foreign process can still take the port between the close and the use |
+| (b) Pass the listeners on instead of addresses | The test binds, the replica inherits | Closes the window | A replica is a child process that takes addresses from its configuration |
+| (c) Rate-limit test: `valkey.command_timeout` of 10 s for the subtest "with Valkey" (chosen) | The subject is that a Valkey that answers is used | The result no longer depends on the speed of the host | The subtest does not show what a slow Valkey does; `TestRateLimitAddsNoDelayOnceTheCircuitIsOpen` and the two "unavailable" subtests do |
+
+**Choice:** (a) and (c). **Rationale:** both bounds belonged to the speed of the host and not to the subject of their test. Revisit (c) if the burst bound of 2 s in the same subtest is seen to fail on a loaded runner (H-823).
+**Applied:** `test/integration/server/env_test.go` (`freeAddr`), `test/integration/api/ratelimit_test.go`.
+
 ### Q-HA-280 · The drain variants keep the logs of the evicted pods in the artifacts
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Refines R-HA-059 and the drain tests of [e2e.md](../developer/e2e.md).
@@ -10083,4 +10127,20 @@ Component: the CI leg `e2e-edge` of the nightly workflow ([performance.yml](../.
 Live. On 2026-11-09 four dispatches of the leg on the branch `p7-e55` (runs 42613296450, 42624333458, 42628360515, 42647432138) ended with "The self-hosted runner lost communication with the server" 6 to 15 minutes into `make e2e SET=edge`; steps that ran on the runner afterwards (`df`, `docker system df`) hung, so no log of the host exists. The first three streamed or wrote 6 GiB and 2 GiB of random bytes (the first two as files in the client pod, the third streamed); a neighbour run was on the machine in the first two (the main nightly, another builder's branch), and none was in the fourth except one queued. The same set, full size, passes on the arm64 laptop in 25 minutes (`TestEdge_R_HA_039_TransfersThroughTheIngressAndTheGateway` with 6144 MiB uploaded and downloaded through both edges in 1m16s and 46s, 17m7s for the reads at 2 MiB/s, the 1 GiB push in 14 s) with 22 to 25 GB of disk free in the Docker VM, and a sampler of the kind nodes saw at most 4.4 GiB of memory on the control-plane node. Not verified: which resource of the runner machine runs out (memory of the host, its disk, or the I/O of 12 GiB written beside the other legs) and what the runner agent's limits are.
 
 What makes it real: the leg shows red as a lost runner and takes a neighbour's job with it if it shares the machine; until the cause is known the criterion's CI evidence for the transfers is the local full-size run, and the leg should run alone on the machine (a dispatch with no other leg in progress).
+
+### H-822 · The control connection of a replica can stay unusable for more than 10 s in the integration runs, and the cause is not found
+
+Component: the control pool (Q-HA-20) of a replica in the CI legs `integration` shard a (and once shard b). Subject: the loops that share it (change-log poll, registry heartbeat, the `database` and `schema` checks, `FillCount`).
+
+Live on the CI runners, not seen on the laptop. In runs 42788335321, 42793751322 and 42831867192 the change-log poll, the heartbeat and `Registry.Drain` of one replica failed together with `context deadline exceeded` after their 10 s call timeouts, in the middle of tests (`TestR_REPO_056` read `authz_stale` on a status request because the poll was stale) and at their end. Verified from the logs: the control pool was the one that stalled (the dumps show the `database` and `schema` checks and the poll waiting in `pgxpool.Acquire` on one pool, and closed connections being cleaned up beside them); the object-store probes of the same replica ran in 2 ms in the window, so the process was not stopped; pgbouncer of shard a logged no query in the whole run (the integration replicas connect to PostgreSQL directly). Measured on the laptop: a statement cut by its context costs the control pool 15 to 25 ms, and 24 busy loops at the lowest priority over 40 s gave a worst wait of 174 ms.
+
+Not verified, and this is the gap: what kept the pool from handing out a connection for 10 s and longer. The candidates, none of them shown: (1) the cleanup of a closed connection (cancel request over TLS, terminate, wait for the server to close) taking seconds on the runner; (2) the `schema` and `database` checks cutting every fresh connection again and again at 200 ms (the integration setting) while a connection takes longer than that to set up, which Q-HA-284 removes; (3) a stall of the PostgreSQL container. The dump of an overrun is now grouped and carries the pool counts (Q-ARCH-461), so the next red run answers it.
+
+What makes it real: a replica whose control connection is unusable turns stale for the authorization gate (`503 authz_stale`) and its heartbeat lapses, in production as in the tests; the bound of the drain step and the move of the mark to the request pool keep it from costing the shutdown its budget, they do not keep the poll running.
+
+### H-823 · The burst of the rate-limit acceptance test is bound by wall-clock time
+
+Component: `TestClusterWideRateLimit` ([test/integration/api/ratelimit_test.go](../../test/integration/api/ratelimit_test.go)). Subject: its fixed bound "the burst took more than 2 s".
+
+Live. The criterion R-ARCH-034 states 1,000 requests within 2 s admit at most 300, and the test sends them from one process that also runs the three replicas; on a loaded runner the burst of run 42839263211 took 1.8 s against 0.1 s elsewhere in the same test, so the bound is close to the edge there. Not verified: whether a burst over 2 s on the runner would also exceed 300 admitted; the bound is the test's reading of the window and is kept as it is. What makes it real: a runner slower by a further factor of 1.1 fails the test on the bound and not on the product.
 

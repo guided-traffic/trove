@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -201,16 +202,33 @@ func (db *DB) Role() string { return db.role }
 // Config returns the configuration the DB was opened with.
 func (db *DB) Config() config.Database { return db.cfg }
 
+// probeStatementBound is how long a statement of a readiness probe may run once the probe has its connection. The deadline of a
+// check bounds the wait for the control connection and so the check's answer, not the statement: a statement cut by the check's
+// deadline (200 ms in the integration tests, 2 s by default) makes the driver close the connection, and the control pool, one
+// connection big, then hands out nothing to the change-log poll, the heartbeat and the drain until the closed connection is
+// cleaned up, which the pool waits for (Q-HA-284). The bound is that of the loops' own calls.
+const probeStatementBound = 10 * time.Second
+
+// probeStatementContext is the context of a probe's statements: the values of ctx, the bound of probeStatementBound, not the
+// end of ctx.
+func probeStatementContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), probeStatementBound)
+}
+
 // Ready is the `database` readiness check (R-OPS-001): a statement on the
 // control connection that also proves the server is a primary, so a replica
 // connected to a demoted primary turns unready instead of failing writes.
+// ctx bounds the wait for the connection; the statement runs under
+// probeStatementBound (Q-HA-284).
 func (db *DB) Ready(ctx context.Context) error {
 	conn, err := db.control.Acquire(ctx)
 	if err != nil {
 		return err
 	}
+	sctx, cancel := probeStatementContext(ctx)
+	defer cancel()
 	var primary bool
-	err = conn.QueryRow(ctx, "SELECT NOT pg_is_in_recovery()").Scan(&primary)
+	err = conn.QueryRow(sctx, "SELECT NOT pg_is_in_recovery()").Scan(&primary)
 	switch {
 	case err == nil && primary:
 		conn.Release()

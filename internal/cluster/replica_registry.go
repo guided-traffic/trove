@@ -111,12 +111,12 @@ type RegistryOptions struct {
 	// DB is the replica's control connection (DB.ControlPool): a request pool
 	// exhausted under load must not make a live replica look lost.
 	DB q.DBTX
-	// DeleteDB is the pool the final deletion of the replica's row (Stop) runs on: the request pool, which is idle by then
-	// (R-ARCH-024 step 6). The control connection is busy at that point with the change-log poll and the database and
-	// schema checks, which run until the close phase ends, and a delete queued behind them is cut by the phase deadline
-	// (Q-HA-202). Nil deletes on DB.
-	DeleteDB q.DBTX
-	Identity ReplicaIdentity
+	// ShutdownDB is the pool of the two writes a stopping replica makes to its row: marking it draining (Drain, step 1) and the
+	// final deletion (Stop, step 6). It is the request pool, which no longer serves anything then. The control connection is
+	// busy at that point with the change-log poll and the database and schema checks, which run until the close phase ends,
+	// and a statement queued behind them is cut by the deadline of its phase (Q-HA-202, Q-HA-283). Nil uses DB.
+	ShutdownDB q.DBTX
+	Identity   ReplicaIdentity
 	// Snapshot returns the current state, checks and Valkey view; called on
 	// every heartbeat. Nil reports "ready" with no checks.
 	Snapshot func() ReplicaSnapshot
@@ -275,15 +275,24 @@ func nonNilChecks(m map[string]ReplicaCheck) map[string]ReplicaCheck {
 	return m
 }
 
-// Drain turns the row draining at once and keeps it draining in later
-// heartbeats (R-ARCH-024 step 1).
+// shutdownDB is the pool of the writes a stopping replica makes to its row.
+func (r *Registry) shutdownDB() q.DBTX {
+	if r.o.ShutdownDB != nil {
+		return r.o.ShutdownDB
+	}
+	return r.o.DB
+}
+
+// Drain turns the row draining at once and keeps it draining in later heartbeats (R-ARCH-024 step 1). The write runs on the
+// request pool and against ctx and its own call timeout, whichever ends first: the control connection is the one a stalled
+// database holds, and a drain that waits on it for the whole call timeout spends the budget of every later phase (Q-HA-283).
 func (r *Registry) Drain(ctx context.Context) {
 	r.mu.Lock()
 	r.draining = true
 	r.mu.Unlock()
 	cctx, cancel := context.WithTimeout(ctx, callTimeout(r.o.WatchdogTimeout))
 	defer cancel()
-	if _, err := q.New(r.o.DB).SetReplicaState(cctx, q.SetReplicaStateParams{InstanceUid: r.o.Identity.UID, State: ReplicaDraining}); err != nil {
+	if _, err := q.New(r.shutdownDB()).SetReplicaState(cctx, q.SetReplicaStateParams{InstanceUid: r.o.Identity.UID, State: ReplicaDraining}); err != nil {
 		r.log.Warn("replica row not marked draining", "error", err)
 	}
 }
@@ -307,9 +316,5 @@ func (r *Registry) Stop(ctx context.Context) error {
 	r.StopHeartbeat()
 	dctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	db := r.o.DeleteDB
-	if db == nil {
-		db = r.o.DB
-	}
-	return q.New(db).DeleteReplica(dctx, r.o.Identity.UID)
+	return q.New(r.shutdownDB()).DeleteReplica(dctx, r.o.Identity.UID)
 }

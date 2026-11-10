@@ -118,7 +118,7 @@ func (a *App) registryOptions(db *postgres.DB, ring *secrets.KeyRing) cluster.Re
 func registryOptionsOn[P q.DBTX](a *App, db registryPools[P], ring *secrets.KeyRing) cluster.RegistryOptions {
 	bi := buildinfo.Get()
 	return cluster.RegistryOptions{
-		DB: db.ControlPool(), DeleteDB: db.Main(),
+		DB: db.ControlPool(), ShutdownDB: db.Main(),
 		Identity: cluster.ReplicaIdentity{
 			UID: a.id.UID, Name: a.id.Instance, Version: bi.Version, Revision: bi.Commit, Role: a.id.Role,
 			Node: a.id.Node, Pool: a.id.Pool, StartedAt: a.startedAt,

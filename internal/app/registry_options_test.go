@@ -31,7 +31,7 @@ func TestR_ARCH_024_RegistryDeletesItsRowOnTheRequestPool(t *testing.T) {
 	if o.DB != q.DBTX(pools.control) {
 		t.Error("the heartbeat is not on the control pool")
 	}
-	if o.DeleteDB != q.DBTX(pools.main) {
+	if o.ShutdownDB != q.DBTX(pools.main) {
 		t.Error("the final deletion is not on the request pool")
 	}
 }

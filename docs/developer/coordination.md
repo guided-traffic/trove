@@ -288,7 +288,7 @@ A cache with `MaxBytes` needs `Weigh`. Metrics: `trove_cache_requests_total{cach
 ## Replica registry
 
 `cluster.Registry` (one per replica, of the roles `api`, `packages`, `worker`, `web` and `all`, the constants and `ValidRole` of [replica_roles.go](../../internal/cluster/replica_roles.go); `NewRegistry` refuses any other role, Q-OPS-161, Q-OPS-166): `Start` upserts the row (retrying until PostgreSQL answers), a loop on the control connection upserts again every
-`system.heartbeat_interval` with the snapshot from `RegistryOptions.Snapshot` (state, checks, Valkey view, runtime) and `RegistryOptions.Leases`. `Drain` writes `draining`; `Stop` deletes the row on `RegistryOptions.DeleteDB` (the request pool, `DB.Main()`, so it does not queue behind the poll and the checks on the control connection) within the close phase's context;
+`system.heartbeat_interval` with the snapshot from `RegistryOptions.Snapshot` (state, checks, Valkey view, runtime) and `RegistryOptions.Leases`. `Drain` writes `draining` and `Stop` deletes the row, both on `RegistryOptions.ShutdownDB` (the request pool, `DB.Main()`, so they do not queue behind the poll and the checks on the control connection), `Drain` within the drain step of the shutdown plan and `Stop` within the close phase's context;
 `StopHeartbeat` leaves it (fault injection). The heartbeat is an upsert, so a row removed by the prune or a restore comes back.
 `upsertParams` renders one heartbeat's row; `replicaInfoOf` reads one back.
 

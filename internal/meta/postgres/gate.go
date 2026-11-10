@@ -89,9 +89,18 @@ func readSchemaState(ctx context.Context, conn q.DBTX) (SchemaState, error) {
 
 // CheckSchema is the `schema` readiness check (R-OPS-001): Gate applied to the
 // database and this binary's embedded requiredSchema. It reads on the control
-// connection, like the other checks readiness depends on.
+// connection, like the other checks readiness depends on, on one connection for
+// all its statements; ctx bounds the wait for it, the statements run under
+// probeStatementBound (Q-HA-284).
 func (db *DB) CheckSchema(ctx context.Context, version string) error {
-	st, err := readSchemaState(ctx, db.control)
+	conn, err := db.control.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+	sctx, cancel := probeStatementContext(ctx)
+	defer cancel()
+	st, err := readSchemaState(sctx, conn)
 	if err != nil {
 		return err
 	}
@@ -100,7 +109,7 @@ func (db *DB) CheckSchema(ctx context.Context, version string) error {
 	}
 	// After the schema state, never before: a restore commits the marker with the step that makes the schema servable, so a
 	// state read first cannot be followed by a missing marker (R-BAK-021 step 2).
-	return checkRestoreMarker(ctx, db.control)
+	return checkRestoreMarker(sctx, conn)
 }
 
 // ErrRestoreInProgress means system_state holds restore_in_progress: a restore has not finished, and the replica waits, not

@@ -321,9 +321,12 @@ start ──drain──▶ ReleaseAt ─▶ QuiesceAt ─▶ ServerBy ──comm
         (web only)  CloseBy-15 s  ServerBy-5 s  start+drain+timeout    ≤ 3 s          flush+stop   0.5 s   ServerBy + 5 s - 0.5 s
 ```
 
-1. `SetDraining`: `/readyz` turns 503 at once, `Drain` of every component (a worker stops claiming).
-2. `web`/`all`: keep serving for `health.shutdown_drain_delay`; responses carry `Connection: close`.
-   `worker`: no delay.
+1. `SetDraining`: `/readyz` turns 503 at once, `Drain` of every component (a worker stops claiming). The drainers run side by
+   side against one context that ends at `shutdownPlan.DrainBy` (`start + max(drain delay, shutdownBudget.Drain)`, 2 s for a
+   worker); one that has not returned by then is named in the log (`components were still draining ...`) and the shutdown goes on
+   ([Q-ARCH-460](../spec/architecture.md#q-arch-460--the-drain-step-of-the-shutdown-is-bounded-by-the-plan)).
+2. `web`/`all`: keep serving for `health.shutdown_drain_delay`, counted from the start of the shutdown, not from the end of step 1;
+   responses carry `Connection: close`. `worker`: no delay.
 3. `Server.ShutdownBy` until `ServerBy`: the listener closes, in-flight requests finish; `Settle` of
    every component runs alongside.
 4. `ReleaseAt` (`CloseBy - jobs.SettleDeadline`, 15 s, so `ServerBy - 11 s`; not before the drain ends, not after `QuiesceAt`): the components that
@@ -343,9 +346,13 @@ start ──drain──▶ ReleaseAt ─▶ QuiesceAt ─▶ ServerBy ──comm
    that ignores its context is abandoned 250 ms after `CloseBy` and reported (`close phase overran`).
    Then `shutdownTail` runs the ops listener, the wait for the background goroutines and the tracer, each for at most the ops
    reserve (`shutdownPlan.opsBy`) and never past `ExitBy`; a connection still open on the ops listener at its bound is reset and a
-   goroutine that does not end is left to the exit, both logged with a dump of the goroutines
+   goroutine that does not end is left to the exit, both logged with a dump of the goroutines (`health.GoroutineDump`: every
+   goroutine with its state and stack, and above 256 KiB the stacks grouped with their counts so that none is missing,
+   [Q-ARCH-461](../spec/architecture.md#q-arch-461--the-goroutine-dump-of-an-overrun-names-every-stack-and-the-log-carries-the-pool-counts)).
+   The log of an overrun also carries `pools`, the counts of the three database pools (`App.poolCounts`)
    ([Q-ARCH-456](../spec/architecture.md#q-arch-456--the-steps-after-the-close-phase-each-wait-at-most-the-ops-reserve-and-log-what-they-abandon-with-the-goroutines)).
-   `Registry.Drain` marks the row `draining` in step 1.
+   `Registry.Drain` marks the row `draining` in step 1, on the request pool like the deletion in step 6
+   ([Q-HA-283](../spec/ha-and-helm.md#q-ha-283--the-registry-row-is-marked-draining-on-the-request-pool)).
 
 The budget constants (`defaultBudget`: margin 5 s from `config.ShutdownMargin`, slack 0.5 s, close reserve
 1 s, ops reserve 0.5 s) are a struct on the `App` so tests scale them down

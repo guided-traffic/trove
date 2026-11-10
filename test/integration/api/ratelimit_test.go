@@ -117,7 +117,12 @@ func (e *env) startWebs(t *testing.T) []*node {
 // Valkey available and with it unavailable, and a second token is not slowed down.
 func TestClusterWideRateLimit(t *testing.T) {
 	t.Run("R-ARCH-034 R-API-016 with Valkey: at most 300 admitted, 429 with Retry-After, the second token unaffected", func(t *testing.T) {
-		e := newEnv(t, true, rateLimitsOn...)
+		// The subject is that a Valkey that answers is used, so no command may be given up on for the speed of the host: on a
+		// loaded runner the burst of one run took 1.8 s instead of 0.1 s, a check of the burst waited past the default
+		// command timeout of 500 ms, the limiter ran its fallback for it, and the gauge read 1 with Valkey running. What the
+		// limiter does when a command is given up on is the subject of the subtests below and of
+		// TestRateLimitAddsNoDelayOnceTheCircuitIsOpen.
+		e := newEnv(t, true, append([]string{"TROVE_VALKEY_COMMAND_TIMEOUT=10s"}, rateLimitsOn...)...)
 		nodes := e.startWebs(t)
 		admitted, refused, elapsed, noRetry := burstOf(t, e, nodes, e.alice.token, 1000)
 		t.Logf("admitted %d, refused %d in %s", admitted, refused, elapsed)

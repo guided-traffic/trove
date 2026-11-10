@@ -4312,7 +4312,11 @@ hashed files of the build to the shared asset store in step 8, before the listen
 Shutdown on `SIGTERM`. Kubernetes removes the pod from the EndpointSlices at the same time as it
 sends the signal, and every proxy in front of trove (kube-proxy, the Ingress or Gateway controller)
 learns of the removal with a delay. The steps cover that delay first:
-1. Readiness fails at once (`draining`), and the registry row turns `draining`.
+1. Readiness fails at once (`draining`), and the registry row turns `draining`. The components that drain do so side by side
+   and are waited for until the end of this step, `health.shutdown_drain_delay` for a `web` replica and 2 s for a `worker`,
+   and no longer: a database that does not answer cannot take the time of the later steps
+   ([Q-ARCH-460](#q-arch-460--the-drain-step-of-the-shutdown-is-bounded-by-the-plan)). The row is written on the request pool
+   ([Q-HA-283](ha-and-helm.md#q-ha-283--the-registry-row-is-marked-draining-on-the-request-pool)).
    - A `worker` stops claiming jobs at once. If it holds the `scheduler` lease, it stops its
      scheduler tick and releases that lease at once (`pg_advisory_unlock`), so another worker
      schedules from its next retry instead of after this drain
@@ -4321,7 +4325,7 @@ learns of the removal with a delay. The steps cover that delay first:
    - A `web` replica holds no new cross-replica flight from now on
      ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026, Q-REPO-7; R-ARCH-033).
    - A support-bundle part this replica is still collecting is abandoned (R-OPS-027, P1).
-2. A `web` replica keeps serving normally for `health.shutdown_drain_delay`, so that requests a
+2. A `web` replica keeps serving normally for `health.shutdown_drain_delay`, counted from the start of the shutdown, so that requests a
    proxy still routes to it succeed. That includes `GET /api/v1/system/ping`, which answers `200`
    until the listener closes ([operations-and-observability.md](operations-and-observability.md)
    R-OPS-002, Q-OPS-30). Every response it completes from now on carries
@@ -10065,6 +10069,40 @@ Context: the plan reserves 0.5 s of the margin for the ops listener and the trac
 **Rationale:** The ops listener serves probes and scrapes whose answers are a few KiB, so 0.5 s is generous; the plan stays absolute (the tail never extends past `ExitBy`). Revisit if a tracer export to a healthy collector is seen cut at the bound.
 
 **Applied in the spec:** R-ARCH-024 step 6. Code: `shutdownTail` in `internal/app/app.go`, `shutdownPlan.opsBy` in `internal/app/shutdown.go`. Test: `TestShutdownOpsListener`. Documentation: [architecture.md](../developer/architecture.md).
+
+### Q-ARCH-460 · The drain step of the shutdown is bounded by the plan
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Refines R-ARCH-024 steps 1 and 2.
+
+Context: In the red integration runs of 2026-11-10 (runs 42788335321, 42793751322, 42831867192; tests `TestR_CI_009`, `TestR_REPO_056`, `TestR_NPM_010` and others) a replica's stop ended with `close phase overran its deadline` and a log in which `replica row not marked draining` came exactly 10 s after the start of the shutdown and `draining` followed at once (`web-a` of run 42831867192: `stopped` with `took` 10.307 s, the mark logged at 14:26:32.533, 10.0 s after the start at 14:26:22.531; the logs of `web-c` and `web-1` show the same failure of the mark 10 s before the dump, with the poll and the heartbeat failing at the same instant). Step 1 called `Drain` of every component one after the other against a context without a deadline, `Registry.Drain` waited on the control connection for its call timeout (10 s), and the plan, which is absolute, had its server phase and its close deadline behind it when step 2 began: the close phase was abandoned at once (`"at":null` in the log, the step the close phase was in: none had begun), and its flushes and stops ran against an expired context. Any component whose `Drain` touches the database or the lease pool could do the same; `Worker.Drain` releases the scheduler lease on the lease pool.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Shorten the call timeout of `Registry.Drain` | One component waits less | Smallest change | The next drainer has the same defect; the bound belongs to the plan, not to a component |
+| (b) The drainers run side by side against a context that ends with the drain step, and the step waits for them until then (chosen) | `shutdownPlan.DrainBy = start + max(drain delay, shutdownBudget.Drain)`; the drain delay of step 2 is counted from the start | A `web` replica spends the drain delay anyway, so a stalled drain costs it nothing; a worker has no delay and gets 2 s; every present and future `Drain` is bounded | A drain still running at `DrainBy` finishes against an ended context and its result is lost (it is logged by name) |
+| (c) Do the writes of step 1 in the background and not wait | Step 1 never delays | Cheapest | The drain of a worker (stops claiming, releases the scheduler lease) would not be done when the quiesce begins |
+
+**Choice:** (b). `shutdownBudget.Drain` is 2 s. **Rationale:** the drain delay is time the replica is going to wait for the edge anyway, and a worker's drain is a flag and one `pg_advisory_unlock`. Revisit if a drainer is added whose work needs more than 2 s on a worker.
+
+**Applied in the spec:** R-ARCH-024 steps 1 and 2. Code: `drainComponents` in `internal/app/app.go`, `shutdownPlan.DrainBy` and `shutdownBudget.Drain` in `internal/app/shutdown.go`. Test: `TestShutdownDrainStepIsBoundedByThePlan`. Documentation: [architecture.md](../developer/architecture.md).
+
+### Q-ARCH-461 · The goroutine dump of an overrun names every stack, and the log carries the pool counts
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Refines [Q-ARCH-456](#q-arch-456--the-steps-after-the-close-phase-each-wait-at-most-the-ops-reserve-and-log-what-they-abandon-with-the-goroutines).
+
+Context: The dump in the log of an overrun is cut at 256 KiB. An integration test binary holds several hundred goroutines (every replica, its pools, its HTTP clients), the dump of the run above held about 250 of them, an arbitrary part of the order, and the question those runs asked, what the connections of the control pool were doing, could not be answered from it: the goroutine that holds a connection may be the one that was cut.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Raise the limit | 1 MiB | No format change | A log line of a megabyte; still arbitrary above it |
+| (b) Above the limit, render the stacks grouped with their counts (chosen) | `pprof` debug level 1 | Nothing is missing; identical stacks (hundreds of idle connections) cost one entry | No goroutine ids or wait times in that form |
+| (c) A second dump of the goroutines of the database packages only | Filtered output | Small | A filter names what we already suspect |
+
+The log of an overrun also gets `pools`: the counts of the main, control and lease pool (maximum, total, idle, acquired, acquisitions that had to wait, acquisitions given up, connections opened), which say whether a pool had its connections taken or was waiting for one.
+
+**Choice:** (b) and the pool counts. **Rationale:** it turns the next red run into an answer instead of a guess. Revisit if the grouped form is too coarse for a case.
+
+**Applied in the spec:** none beyond R-ARCH-024 step 6. Code: `GoroutineDump` in `internal/observability/health/health.go`, `App.poolCounts` in `internal/app/app.go`. Test: `TestR_OPS_001_GoroutineDumpAboveTheLimitGroupsTheStacksWithTheirCounts`.
 
 ### Q-ARCH-457 · Until the first stable release a minimal set of jobs gates Semantic Release
 

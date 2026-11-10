@@ -749,11 +749,21 @@ func (h *Health) Stuck() []string {
 	return stuck
 }
 
-// GoroutineDump renders the goroutine profile, truncated to 256 KiB.
+// GoroutineDump renders the goroutine profile with every goroutine's state and stack. A process with many goroutines (an
+// integration test binary holds hundreds of connections) would lose most of them to the limit of 256 KiB, and the dump would
+// show an arbitrary part of the picture; above the limit it renders the stacks grouped with their counts instead, which
+// fits and misses none.
 func GoroutineDump() string {
+	p := pprof.Lookup("goroutine")
+	if p == nil {
+		return ""
+	}
 	var b bytes.Buffer
-	if p := pprof.Lookup("goroutine"); p != nil {
-		_ = p.WriteTo(&b, 2)
+	_ = p.WriteTo(&b, 2)
+	if b.Len() > dumpLimit {
+		b.Reset()
+		b.WriteString("the full dump exceeds the limit; the stacks are grouped, each with its count\n")
+		_ = p.WriteTo(&b, 1)
 	}
 	if b.Len() > dumpLimit {
 		b.Truncate(dumpLimit)

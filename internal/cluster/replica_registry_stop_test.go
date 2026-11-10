@@ -72,11 +72,28 @@ func TestR_HA_011_RegistryStopEndsWithTheClosePhase(t *testing.T) {
 // poll and the readiness checks still use during the close phase; it runs on the idle request pool and ends without an error
 // (Q-HA-202).
 func TestR_HA_011_RegistryStopDoesNotWaitForTheControlConnection(t *testing.T) {
-	r, err := NewRegistry(RegistryOptions{DB: stuckDB{}, DeleteDB: okDB{}, Identity: ReplicaIdentity{UID: "uid", Name: "a", Role: "web"}})
+	r, err := NewRegistry(RegistryOptions{DB: stuckDB{}, ShutdownDB: okDB{}, Identity: ReplicaIdentity{UID: "uid", Name: "a", Role: "web"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := stopAfter(t, r, 200*time.Millisecond); err != nil {
 		t.Fatalf("Stop = %v, want the row deleted on the request pool", err)
+	}
+}
+
+// R-ARCH-024 step 1, R-OPS-003 (Q-HA-283): marking the row draining is the first thing a stopping replica does, and it runs on
+// the request pool like the deletion. On the control connection it queued behind the poll and the readiness checks for the
+// whole call timeout (10 s) when the database stalled, and that time came out of the budget of every later phase.
+func TestR_ARCH_024_RegistryDrainDoesNotWaitForTheControlConnection(t *testing.T) {
+	r, err := NewRegistry(RegistryOptions{DB: stuckDB{}, ShutdownDB: okDB{}, Identity: ReplicaIdentity{UID: "uid", Name: "a", Role: "web"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { r.Drain(context.Background()); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Drain waited for the control connection")
 	}
 }

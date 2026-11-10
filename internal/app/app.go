@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -656,27 +657,24 @@ func (a *App) Shutdown(ctx context.Context) error {
 		<-a.bootDone
 	}
 
-	// Step 1: readiness off at once; workers stop claiming.
+	// Step 1: readiness off at once; workers stop claiming. The drainers write to the database, so they run against the plan:
+	// they are waited for until the end of the drain step and no longer, whatever the database does (Q-ARCH-460).
 	a.health.SetDraining()
 	a.mu.Lock()
 	comps := append([]Component(nil), a.comps...)
 	a.mu.Unlock()
-	for _, c := range comps {
-		if d, ok := c.(Drainer); ok {
-			d.Drain(ctx)
-		}
-	}
-
-	// Step 2: a web replica keeps serving for the drain delay; workers have no
-	// Service routing to them and skip it.
 	var drain time.Duration
 	if a.client != nil {
 		drain = a.cfg.Health.ShutdownDrainDelay
 	}
 	plan := planShutdown(start, drain, a.cfg.Server.ShutdownTimeout, a.budget)
+	a.drainComponents(ctx, comps, plan.DrainBy)
+
+	// Step 2: a web replica keeps serving for the drain delay, counted from the start of the shutdown; workers have no
+	// Service routing to them and skip it.
 	if drain > 0 {
 		a.log.Info("draining", "delay", drain.String())
-		sleep(ctx, drain)
+		sleep(ctx, time.Until(start.Add(drain)))
 	}
 
 	// Steps 3 and 4: stop accepting, let in-flight requests and running work
@@ -753,12 +751,70 @@ func (a *App) Shutdown(ctx context.Context) error {
 	case e := <-closed:
 		errsOut = append(errsOut, e...)
 	case <-time.After(time.Until(plan.CloseBy.Add(a.budget.Abandon))):
-		a.log.Error("components did not stop before the close deadline; abandoning them to keep the exit deadline", "at", closing.Load(), "goroutines", health.GoroutineDump())
+		a.log.Error("components did not stop before the close deadline; abandoning them to keep the exit deadline", "at", closing.Load(), "pools", a.poolCounts(), "goroutines", health.GoroutineDump())
 		errsOut = append(errsOut, errors.New("close phase overran its deadline"))
 	}
 	a.shutdownTail(ctx, plan)
 	a.log.Info("stopped", "took", time.Since(start).Round(time.Millisecond).String())
 	return errors.Join(errsOut...)
+}
+
+// drainComponents is step 1: every Drainer gets the same context, which ends at by, and they run side by side. A drain that
+// has not returned by then is left running against its ended context and named in the log; the shutdown goes on with the
+// time the plan still has (Q-ARCH-460).
+func (a *App) drainComponents(ctx context.Context, comps []Component, by time.Time) {
+	dctx, cancel := context.WithDeadline(ctx, by)
+	defer cancel()
+	var (
+		wg      sync.WaitGroup
+		mu      sync.Mutex
+		running = map[string]struct{}{}
+	)
+	for _, c := range comps {
+		d, ok := c.(Drainer)
+		if !ok {
+			continue
+		}
+		wg.Add(1)
+		mu.Lock()
+		running[c.Name()] = struct{}{}
+		mu.Unlock()
+		go func() {
+			defer wg.Done()
+			d.Drain(dctx)
+			mu.Lock()
+			delete(running, c.Name())
+			mu.Unlock()
+		}()
+	}
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-dctx.Done():
+		mu.Lock()
+		names := make([]string, 0, len(running))
+		for n := range running {
+			names = append(names, n)
+		}
+		mu.Unlock()
+		sort.Strings(names)
+		a.log.Warn("components were still draining at the end of the drain step; the shutdown goes on", "components", names)
+	}
+}
+
+// poolCounts is the state of the database pools for the log of an overrun: which pool had its connections taken, which waited
+// for one, and how many connections were opened. Empty without a database.
+func (a *App) poolCounts() string {
+	db := a.database()
+	if db == nil {
+		return ""
+	}
+	st := db.Stats()
+	one := func(name string, p postgres.PoolStats) string {
+		return fmt.Sprintf("%s: max %d, total %d, idle %d, acquired %d, waited %d, canceled %d, opened %d", name, p.Max, p.Total, p.Idle, p.Acquired, p.EmptyAcquireCount, p.CanceledAcquireCount, p.NewConns)
+	}
+	return one("main", st.Main) + "; " + one("control", st.Control) + "; " + one("lease", st.Lease)
 }
 
 // shutdownTail is what follows the close phase: the ops listener, the background goroutines and the tracer. Each step

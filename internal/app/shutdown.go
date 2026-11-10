@@ -12,6 +12,9 @@ import (
 // (R-ARCH-024 step 5 and 6, R-HA-011). Production uses defaultBudget; the tests
 // scale it down.
 type shutdownBudget struct {
+	// Drain is the longest the drain step (step 1) waits for the drainers when the replica keeps no drain delay, as a worker.
+	// A web replica waits for them as long as its drain delay, which it spends anyway (Q-ARCH-460).
+	Drain time.Duration
 	// Margin is what the configuration keeps free of the grace period after the
 	// server phase (config.ShutdownMargin). The exit deadline lies Slack before its
 	// end, so the process is gone before the kubelet's SIGKILL, not exactly at it.
@@ -41,6 +44,7 @@ type shutdownBudget struct {
 
 func defaultBudget() shutdownBudget {
 	return shutdownBudget{
+		Drain:        2 * time.Second,
 		Margin:       config.ShutdownMargin,
 		Slack:        500 * time.Millisecond,
 		Quiesce:      5 * time.Second,
@@ -57,6 +61,8 @@ func defaultBudget() shutdownBudget {
 // never exceed the budget: a phase that runs long shortens the later ones.
 type shutdownPlan struct {
 	Start time.Time
+	// DrainBy ends the drain step (step 1): start + the drain delay, at least start + the budget's Drain.
+	DrainBy time.Time
 	// ServerBy ends the server phase (steps 3 and 4): start + drain + shutdown_timeout.
 	ServerBy time.Time
 	// QuiesceAt is when running work is cancelled and released.
@@ -80,6 +86,7 @@ type shutdownPlan struct {
 // waits (zero for a worker), timeout is server.shutdown_timeout.
 func planShutdown(start time.Time, drain, timeout time.Duration, b shutdownBudget) shutdownPlan {
 	p := shutdownPlan{Start: start}
+	p.DrainBy = start.Add(max(drain, b.Drain))
 	p.ServerBy = start.Add(drain + timeout)
 	p.ExitBy = p.ServerBy.Add(b.Margin - b.Slack)
 	p.QuiesceAt = p.ServerBy.Add(-b.Quiesce)

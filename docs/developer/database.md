@@ -74,8 +74,14 @@ The connection string carries neither.
   [test/integration/postgres/read_test.go](../../test/integration/postgres/read_test.go) (terminated backends, the
   bound, the facts reads).
 - `Ready(ctx)` is the `database` readiness check: `SELECT NOT pg_is_in_recovery()` on the control connection.
-  `CheckSchema(ctx, version)` is the `schema` check (below) and reads on the control connection; `SchemaState`
+  `CheckSchema(ctx, version)` is the `schema` check (below) and reads on the control connection, all its statements on one
+  acquired connection; `SchemaState`
   (GET /system/info) reads on the main pool through `Read`, so a request never needs the control connection.
+  The deadline of a check bounds the wait for the control connection, not the statements: they run under
+  `probeStatementBound` (10 s) on a context that keeps the values of the check's and not its end, because the driver closes
+  a connection whose statement was cut and the control pool, one connection big, then waits for the cleanup of the closed one
+  before it hands out another ([Q-HA-284](../spec/ha-and-helm.md#q-ha-284--a-readiness-probe-does-not-cut-its-statement-at-the-end-of-its-check)).
+  Test: `TestR_OPS_001_AProbeWhoseDeadlineEndsDuringItsStatementKeepsTheControlConnection`.
   `Ready` returns `ErrStandby` for a server in recovery and destroys that connection (the control pool holds one, so
   the next check connects again and finds the new primary); `Read` destroys the connection when `fn` panics;
   `classify` treats a failed TLS verification of the server (`x509` and `tls.CertificateVerificationError` inside the
