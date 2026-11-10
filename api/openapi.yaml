@@ -14017,6 +14017,15 @@ components:
           enum: [user, group]
         name:
           type: string
+        id:
+          type: string
+          description: The ID of the principal; the seed of a user's generated avatar. Not on the answer of a write.
+        displayName:
+          type: [string, "null"]
+          description: The display name of a user. Not on the answer of a write.
+        avatarUrl:
+          type: [string, "null"]
+          description: The path of a user's avatar image, `null` for none. Not on the answer of a write.
         role:
           $ref: "#/components/schemas/ProjectRole"
     MemberInput:

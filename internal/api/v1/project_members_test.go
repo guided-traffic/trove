@@ -36,6 +36,12 @@ type memberCall struct {
 
 func (m memberProjects) Members(_ context.Context, key string) ([]project.Member, error) {
 	p, err := m.Get(context.Background(), key)
+	if key == "web" {
+		p.Members = append(p.Members, project.Member{
+			Project: key, Principal: project.PrincipalRef{Kind: project.KindUser, Name: "alice", ID: "u1"},
+			Role: authz.ProjectRoleReader, DisplayName: "Alice Doe", AvatarSHA256: "abc",
+		})
+	}
 	return p.Members, err
 }
 
@@ -75,6 +81,15 @@ func TestR_AUTHZ_026_TheMembersOfAProject(t *testing.T) {
 		w := s.get("/api/v1/projects/web/members")
 		if w.Code != 200 || !strings.Contains(w.Body.String(), `"principal":"group:web-leads"`) || !strings.Contains(w.Body.String(), `"role":"owner"`) {
 			t.Fatalf("%d %s", w.Code, w.Body)
+		}
+	})
+	t.Run("R-UI-041 a user among the members carries the ID, the display name and the avatar the members screen shows", func(t *testing.T) {
+		s, _ := memberSetup(t, reader)
+		w := s.get("/api/v1/projects/web/members")
+		for _, want := range []string{`"id":"u1"`, `"displayName":"Alice Doe"`, `"avatarUrl":"/api/v1/avatars/abc"`} {
+			if !strings.Contains(w.Body.String(), want) {
+				t.Errorf("%s not in %s", want, w.Body)
+			}
 		}
 	})
 	t.Run("R-AUTHZ-026 the holder of projects:read reads the members of any project", func(t *testing.T) {

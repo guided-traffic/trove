@@ -287,7 +287,13 @@ func (s *Server) ListProjectMembers(w http.ResponseWriter, r *http.Request, proj
 	}
 	out := gen.MemberList{Items: make([]gen.Member, 0, len(members))}
 	for _, m := range members {
-		out.Items = append(out.Items, toProjectMember(m))
+		item := toProjectMember(m)
+		item.Id = &m.Principal.ID
+		item.AvatarUrl = avatarURL(m.AvatarSHA256)
+		if m.DisplayName != "" {
+			item.DisplayName = &m.DisplayName
+		}
+		out.Items = append(out.Items, item)
 	}
 	writeJSON(w, r, http.StatusOK, out)
 }

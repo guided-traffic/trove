@@ -6381,6 +6381,14 @@ type ManualSection struct {
 
 // Member A member of a project (Q-AUTHZ-207). Only users and groups are members; a service account reaches a project through its policies.
 type Member struct {
+	// AvatarUrl The path of a user's avatar image, `null` for none. Not on the answer of a write.
+	AvatarUrl *string `json:"avatarUrl,omitempty"`
+
+	// DisplayName The display name of a user. Not on the answer of a write.
+	DisplayName *string `json:"displayName,omitempty"`
+
+	// Id The ID of the principal; the seed of a user's generated avatar. Not on the answer of a write.
+	Id   *string    `json:"id,omitempty"`
 	Kind MemberKind `json:"kind"`
 	Name string     `json:"name"`
 

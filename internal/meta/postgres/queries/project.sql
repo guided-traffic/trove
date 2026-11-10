@@ -92,10 +92,14 @@ SELECT name, version FROM authz_policy WHERE project_id = sqlc.arg(id)::text::uu
 
 -- name: ProjectMembers :many
 -- The members of one project with their role (Q-AUTHZ-207).
-SELECT p.id::text AS principal_id, p.kind AS principal_kind, p.name AS principal_name, m.role
+SELECT p.id::text AS principal_id, p.kind AS principal_kind, p.name AS principal_name, m.role,
+       coalesce(u.display_name, '')::text AS display_name,
+       coalesce(encode(a.blob_sha256, 'hex'), '')::text AS avatar_sha256
   FROM project_member m
   JOIN project pr ON pr.id = m.project_id
   JOIN principal p ON p.id = m.principal_id
+  LEFT JOIN app_user u ON u.principal_id = p.id
+  LEFT JOIN user_avatars a ON a.user_id = p.id
  WHERE pr.key = sqlc.arg(key)::text
  ORDER BY p.kind, p.name;
 

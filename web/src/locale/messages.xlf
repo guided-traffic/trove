@@ -13020,81 +13020,18 @@
         <source>Actions</source>
       </segment>
     </unit>
-    <unit id="project.members">
-      <notes>
-        <note category="location">src/app/features/projects/project-members-page.ts:11,13</note>
-      </notes>
-      <segment>
-        <source>Members</source>
-      </segment>
-    </unit>
-    <unit id="project-members.hint">
-      <notes>
-        <note category="location">src/app/features/projects/project-members-page.ts:14,16</note>
-      </notes>
-      <segment>
-        <source> Users and groups with their role in the project. The role decides what a member may do in the project&apos;s repositories. </source>
-      </segment>
-    </unit>
-    <unit id="project-members.last-owner">
-      <notes>
-        <note category="location">src/app/features/projects/project-members.ts:28,31</note>
-      </notes>
-      <segment>
-        <source>A project keeps at least one Owner. Make another member an Owner first.</source>
-      </segment>
-    </unit>
-    <unit id="project-members.empty">
-      <notes>
-        <note category="location">src/app/features/projects/project-members.ts:36,37</note>
-      </notes>
-      <segment>
-        <source>The project has no member yet.</source>
-      </segment>
-    </unit>
-    <unit id="project-members.col.member">
-      <notes>
-        <note category="location">src/app/features/projects/project-members.ts:41,42</note>
-      </notes>
-      <segment>
-        <source>Member</source>
-      </segment>
-    </unit>
-    <unit id="project-members.col.role">
-      <notes>
-        <note category="location">src/app/features/projects/project-members.ts:42,43</note>
-      </notes>
-      <segment>
-        <source>Role</source>
-      </segment>
-    </unit>
-    <unit id="project-members.col.actions">
-      <notes>
-        <note category="location">src/app/features/projects/project-members.ts:43,45</note>
-      </notes>
-      <segment>
-        <source>Actions</source>
-      </segment>
-    </unit>
-    <unit id="project-members.remove">
-      <notes>
-        <note category="location">src/app/features/projects/project-members.ts:66,67</note>
-      </notes>
-      <segment>
-        <source>Remove</source>
-      </segment>
-    </unit>
     <unit id="project-members.add">
       <notes>
-        <note category="location">src/app/features/projects/project-members.ts:79,80</note>
+        <note category="location">src/app/features/projects/project-member-dialog.ts:25,26</note>
+        <note category="location">src/app/features/projects/project-members-page.ts:19,22</note>
       </notes>
       <segment>
-        <source>Add a member</source>
+        <source>Add member</source>
       </segment>
     </unit>
     <unit id="project-members.find">
       <notes>
-        <note category="location">src/app/features/projects/project-members.ts:82,84</note>
+        <note category="location">src/app/features/projects/project-member-dialog.ts:30,32</note>
       </notes>
       <segment>
         <source>Find a user or group</source>
@@ -13102,31 +13039,176 @@
     </unit>
     <unit id="project-members.role">
       <notes>
-        <note category="location">src/app/features/projects/project-members.ts:95,96</note>
+        <note category="location">src/app/features/projects/project-member-dialog.ts:41,42</note>
       </notes>
       <segment>
         <source>Role</source>
       </segment>
     </unit>
+    <unit id="project-members.cancel">
+      <notes>
+        <note category="location">src/app/features/projects/project-member-dialog.ts:50,51</note>
+      </notes>
+      <segment>
+        <source>Cancel</source>
+      </segment>
+    </unit>
     <unit id="project-members.add-confirm">
       <notes>
-        <note category="location">src/app/features/projects/project-members.ts:102,105</note>
+        <note category="location">src/app/features/projects/project-member-dialog.ts:52,55</note>
       </notes>
       <segment>
         <source> Add member </source>
       </segment>
     </unit>
+    <unit id="project.members">
+      <notes>
+        <note category="location">src/app/features/projects/project-members-page.ts:13,14</note>
+      </notes>
+      <segment>
+        <source>Members</source>
+      </segment>
+    </unit>
+    <unit id="project-members.hint">
+      <notes>
+        <note category="location">src/app/features/projects/project-members-page.ts:15,17</note>
+      </notes>
+      <segment>
+        <source> Users and groups with their role in the project. The role decides what a member may do in the project&apos;s repositories. </source>
+      </segment>
+    </unit>
+    <unit id="project-members.last-owner">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:33,36</note>
+      </notes>
+      <segment>
+        <source>A project keeps at least one Owner. Make another member an Owner first.</source>
+      </segment>
+    </unit>
+    <unit id="project-members.tab">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:42,43</note>
+      </notes>
+      <segment>
+        <source>Members</source>
+      </segment>
+    </unit>
+    <unit id="project-members.empty">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:48,49</note>
+      </notes>
+      <segment>
+        <source>The project has no member yet.</source>
+      </segment>
+    </unit>
+    <unit id="project-members.filter">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:57,58</note>
+        <note category="location">src/app/features/projects/project-members.ts:59,61</note>
+      </notes>
+      <segment>
+        <source>Filter members</source>
+      </segment>
+    </unit>
+    <unit id="project-members.direction">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:85,86</note>
+      </notes>
+      <segment>
+        <source>Reverse the order</source>
+      </segment>
+    </unit>
+    <unit id="project-members.col.source">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:96,97</note>
+      </notes>
+      <segment>
+        <source>Source</source>
+      </segment>
+    </unit>
+    <unit id="project-members.col.actions">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:98,100</note>
+      </notes>
+      <segment>
+        <source>Actions</source>
+      </segment>
+    </unit>
+    <unit id="project-members.me">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:114,116</note>
+      </notes>
+      <segment>
+        <source>It&apos;s you</source>
+      </segment>
+    </unit>
+    <unit id="project-members.kind-group">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:118,120</note>
+      </notes>
+      <segment>
+        <source>Group</source>
+      </segment>
+    </unit>
+    <unit id="project-members.direct">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:124,126</note>
+      </notes>
+      <segment>
+        <source>Direct member</source>
+      </segment>
+    </unit>
+    <unit id="project-members.remove">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:156,157</note>
+      </notes>
+      <segment>
+        <source> Remove member </source>
+      </segment>
+    </unit>
+    <unit id="project-members.no-match">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:165,168</note>
+      </notes>
+      <segment>
+        <source>No member matches.</source>
+      </segment>
+    </unit>
+    <unit id="project-members.col.account">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:290</note>
+      </notes>
+      <segment>
+        <source>Account</source>
+      </segment>
+    </unit>
+    <unit id="project-members.col.role">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:291</note>
+      </notes>
+      <segment>
+        <source>Role</source>
+      </segment>
+    </unit>
     <unit id="project-members.caption">
       <notes>
-        <note category="location">src/app/features/projects/project-members.ts:159</note>
+        <note category="location">src/app/features/projects/project-members.ts:305</note>
       </notes>
       <segment>
         <source>Members of the project</source>
       </segment>
     </unit>
+    <unit id="project-members.actions-of">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:329</note>
+      </notes>
+      <segment>
+        <source>Actions for <ph id="0" equiv="member" disp="m.principal"/></source>
+      </segment>
+    </unit>
     <unit id="project-members.role-of">
       <notes>
-        <note category="location">src/app/features/projects/project-members.ts:179</note>
+        <note category="location">src/app/features/projects/project-members.ts:341</note>
       </notes>
       <segment>
         <source>Role of <ph id="0" equiv="member" disp="m.principal"/></source>
@@ -13134,7 +13216,7 @@
     </unit>
     <unit id="project-members.added">
       <notes>
-        <note category="location">src/app/features/projects/project-members.ts:205</note>
+        <note category="location">src/app/features/projects/project-members.ts:362</note>
       </notes>
       <segment>
         <source>Member added.</source>
@@ -13142,7 +13224,7 @@
     </unit>
     <unit id="project-members.changed">
       <notes>
-        <note category="location">src/app/features/projects/project-members.ts:213</note>
+        <note category="location">src/app/features/projects/project-members.ts:370</note>
       </notes>
       <segment>
         <source>Role changed.</source>
@@ -13150,7 +13232,7 @@
     </unit>
     <unit id="project-members.removed">
       <notes>
-        <note category="location">src/app/features/projects/project-members.ts:220</note>
+        <note category="location">src/app/features/projects/project-members.ts:377</note>
       </notes>
       <segment>
         <source>Member removed.</source>

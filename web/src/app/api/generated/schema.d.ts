@@ -5482,6 +5482,12 @@ export interface components {
             /** @enum {string} */
             kind: "user" | "group";
             name: string;
+            /** @description The ID of the principal; the seed of a user's generated avatar. Not on the answer of a write. */
+            id?: string;
+            /** @description The display name of a user. Not on the answer of a write. */
+            displayName?: string | null;
+            /** @description The path of a user's avatar image, `null` for none. Not on the answer of a write. */
+            avatarUrl?: string | null;
             role: components["schemas"]["ProjectRole"];
         };
         /** @description The role of a member. The read-only members of `Member` are accepted and ignored. */

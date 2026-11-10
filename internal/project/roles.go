@@ -25,4 +25,8 @@ type Member struct {
 	Project   string
 	Principal PrincipalRef
 	Role      Role
+	// DisplayName and AvatarSHA256 describe a user for the members screen (Q-UI-214): empty for a group, for a user
+	// without them, and on the answer of a write.
+	DisplayName  string
+	AvatarSHA256 string
 }

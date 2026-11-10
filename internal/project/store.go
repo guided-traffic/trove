@@ -197,6 +197,7 @@ func load(ctx context.Context, qs *q.Queries, key string) (Project, error) {
 	members := make([]Member, 0, len(mem))
 	for _, m := range mem {
 		if member, ok := memberOf(key, m.PrincipalKind, m.PrincipalName, m.PrincipalID, m.Role); ok {
+			member.DisplayName, member.AvatarSHA256 = m.DisplayName, m.AvatarSha256
 			members = append(members, member)
 		}
 	}

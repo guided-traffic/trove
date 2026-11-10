@@ -1,25 +1,30 @@
+import { CdkMenu, CdkMenuItem, CdkMenuItemRadio, CdkMenuTrigger } from '@angular/cdk/menu';
 import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
 import { ApiError } from '../../api/problem';
 import { PROJECT_ROLES, ProjectMember, ProjectRole, ProjectsApi } from '../../api/projects-api';
 import { SessionStore } from '../../core/session-store';
 import { Notifier } from '../../core/notifier';
-import { SelectField, SelectOption } from '../../shared/access/fields';
+import { SelectOption } from '../../shared/access/fields';
+import { TroveAvatar } from '../../shared/ui/avatar';
+import { TroveDialog } from '../../shared/ui/dialog';
 import { ErrorNotice } from '../../shared/error-notice';
 import { asApiError } from '../../shared/paged-resource';
 import { ProjectNeeds } from './project-access';
-import { PickablePrincipal, PrincipalPicker } from './principal-picker';
-import { projectRoleHint, projectRoleLabel } from './project-roles';
+import { PickablePrincipal } from './principal-picker';
+import { ProjectMemberChoice, ProjectMemberDialog, ProjectMemberDialogData } from './project-member-dialog';
+import { projectRoleLabel } from './project-roles';
 
 /**
- * The members of a project with their roles (R-UI-041, R-AUTHZ-026, Q-AUTHZ-207): the list, adding a user or group
- * with a role, changing a role and removing a member. The Owner of the project and the holder of `projects:write`
+ * The members of a project with their roles (R-UI-041, R-AUTHZ-026, Q-AUTHZ-207, Q-UI-214): the list, adding a user or group
+ * with a role in a dialog, changing a role and removing a member. The Owner of the project and the holder of `projects:write`
  * change it; every other member reads. Removing or demoting the last Owner is refused by the server (409
  * `last_owner`, Q-AUTHZ-217) and the refusal is shown here; an administrator of trove may leave a project without an
  * Owner, so the UI does not hide the action. The API decides in any case (R-UI-005).
  */
 @Component({
   selector: 'trove-project-members',
-  imports: [ErrorNotice, PrincipalPicker, ProjectNeeds, SelectField],
+  imports: [CdkMenu, CdkMenuItem, CdkMenuItemRadio, CdkMenuTrigger, ErrorNotice, ProjectNeeds, TroveAvatar],
   template: `
     @if (error(); as e) {
       @if (e.code === 'last_owner') {
@@ -32,83 +37,173 @@ import { projectRoleHint, projectRoleLabel } from './project-roles';
       }
     }
 
+    <div class="tab-nav">
+      <span class="tab-link" aria-current="page">
+        <ng-container i18n="@@project-members.tab">Members</ng-container>
+        <span class="badge count">{{ members().length }}</span>
+      </span>
+    </div>
+
     @if (members().length === 0 && loaded()) {
       <p class="muted" i18n="@@project-members.empty">The project has no member yet.</p>
     } @else if (members().length > 0) {
+      <div class="toolbar">
+        <div class="filter">
+          <input
+            class="text-input"
+            type="search"
+            name="member-filter"
+            i18n-placeholder="@@project-members.filter"
+            placeholder="Filter members"
+            i18n-aria-label="@@project-members.filter"
+            aria-label="Filter members"
+            [value]="filter()"
+            (input)="filter.set($any($event.target).value)"
+          />
+          <span class="material-icons" aria-hidden="true">search</span>
+        </div>
+        <button class="btn btn-default" type="button" [cdkMenuTriggerFor]="sortMenu">
+          {{ sort() === 'role' ? roleLabel : accountLabel }}
+          <span class="material-icons" aria-hidden="true">expand_more</span>
+        </button>
+        <ng-template #sortMenu>
+          <div class="menu" cdkMenu>
+            <button type="button" class="menu-item" cdkMenuItemRadio [cdkMenuItemChecked]="sort() === 'account'" (cdkMenuItemTriggered)="sort.set('account')">
+              <span class="material-icons" aria-hidden="true">{{ sort() === 'account' ? 'check' : '' }}</span>
+              {{ accountLabel }}
+            </button>
+            <button type="button" class="menu-item" cdkMenuItemRadio [cdkMenuItemChecked]="sort() === 'role'" (cdkMenuItemTriggered)="sort.set('role')">
+              <span class="material-icons" aria-hidden="true">{{ sort() === 'role' ? 'check' : '' }}</span>
+              {{ roleLabel }}
+            </button>
+          </div>
+        </ng-template>
+        <button
+          class="btn btn-default btn-icon"
+          type="button"
+          i18n-aria-label="@@project-members.direction"
+          aria-label="Reverse the order"
+          (click)="descending.set(!descending())"
+        >
+          <span class="material-icons" aria-hidden="true">{{ descending() ? 'south' : 'north' }}</span>
+        </button>
+      </div>
+
       <table class="members" [attr.aria-label]="caption">
         <thead>
           <tr>
-            <th scope="col" i18n="@@project-members.col.member">Member</th>
-            <th scope="col" i18n="@@project-members.col.role">Role</th>
+            <th scope="col">{{ accountLabel }}</th>
+            <th scope="col" i18n="@@project-members.col.source">Source</th>
+            <th scope="col">{{ roleLabel }}</th>
             <th scope="col"><span class="visually-hidden" i18n="@@project-members.col.actions">Actions</span></th>
           </tr>
         </thead>
         <tbody>
-          @for (m of members(); track m.principal) {
+          @for (m of shown(); track m.principal) {
             <tr>
-              <th scope="row" translate="no">{{ m.principal }}</th>
+              <th scope="row" class="account">
+                @if (m.kind === 'group') {
+                  <span class="avatar group" aria-hidden="true"><span class="material-icons">groups</span></span>
+                } @else {
+                  <trove-avatar class="avatar" aria-hidden="true" [seed]="m.id ?? m.principal" [imageUrl]="m.avatarUrl" />
+                }
+                <span class="who">
+                  <span class="line">
+                    <span class="name" translate="no">{{ m.displayName || m.name }}</span>
+                    @if (isMe(m)) {
+                      <span class="badge info" i18n="@@project-members.me">It's you</span>
+                    }
+                  </span>
+                  @if (m.kind === 'group') {
+                    <span class="muted" i18n="@@project-members.kind-group">Group</span>
+                  } @else {
+                    <span class="muted" translate="no">&#64;{{ m.name }}</span>
+                  }
+                </span>
+              </th>
+              <td i18n="@@project-members.direct">Direct member</td>
               <td>
                 @if (canWrite()) {
-                  <trove-select-field
-                    [label]="roleOf(m)"
+                  <select
+                    class="select-input role"
                     [name]="'role-' + m.principal"
-                    [options]="roleOptions"
-                    [value]="m.role"
-                    (valueChange)="change(m, $event)"
-                  />
+                    [attr.aria-label]="roleOf(m)"
+                    [disabled]="busy()"
+                    (change)="change(m, $any($event.target).value)"
+                  >
+                    @for (o of roleOptions; track o.value) {
+                      <option [value]="o.value" [selected]="o.value === m.role">{{ o.label }}</option>
+                    }
+                  </select>
                 } @else {
                   {{ roleText(m.role) }}
                 }
               </td>
               <td class="actions">
                 @if (canWrite()) {
-                  <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="remove(m)">
-                    <ng-container i18n="@@project-members.remove">Remove</ng-container>
-                    <span class="visually-hidden"> {{ m.principal }}</span>
+                  <button
+                    class="btn btn-tertiary btn-icon"
+                    type="button"
+                    [attr.aria-label]="actionsOf(m)"
+                    [disabled]="busy()"
+                    [cdkMenuTriggerFor]="rowMenu"
+                  >
+                    <span class="material-icons" aria-hidden="true">more_vert</span>
                   </button>
+                  <ng-template #rowMenu>
+                    <div class="menu" cdkMenu>
+                      <button type="button" class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="remove(m)" i18n="@@project-members.remove">
+                        Remove member
+                      </button>
+                    </div>
+                  </ng-template>
                 }
               </td>
+            </tr>
+          } @empty {
+            <tr>
+              <td colspan="4" class="muted" i18n="@@project-members.no-match">No member matches.</td>
             </tr>
           }
         </tbody>
       </table>
     }
 
-    @if (canWrite()) {
-      <fieldset class="add">
-        <legend i18n="@@project-members.add">Add a member</legend>
-        <trove-principal-picker
-          i18n-label="@@project-members.find"
-          label="Find a user or group"
-          name="member-search"
-          [search]="search"
-          [exclude]="refs()"
-          (picked)="chosen.set($event)"
-        />
-        @if (chosen(); as c) {
-          <p class="chosen">
-            <span translate="no">{{ c }}</span>
-          </p>
-          <trove-select-field
-            i18n-label="@@project-members.role"
-            label="Role"
-            name="new-role"
-            [options]="roleOptions"
-            [value]="newRole()"
-            (valueChange)="newRole.set($any($event))"
-          />
-          <p class="muted">{{ hint(newRole()) }}</p>
-          <button class="btn btn-confirm" type="button" [disabled]="busy()" (click)="add(c)" i18n="@@project-members.add-confirm">
-            Add member
-          </button>
-        }
-      </fieldset>
-    } @else {
+    @if (!canWrite()) {
       <trove-project-needs capability="projects:write" [state]="'denied'" />
     }
   `,
   styleUrl: '../../shared/access/access.scss',
   styles: `
+    .count {
+      margin-inline-start: var(--trove-space-1);
+    }
+    .toolbar {
+      display: flex;
+      gap: var(--trove-space-2);
+      align-items: center;
+      padding: var(--trove-space-3);
+      background: var(--trove-surface-subtle, transparent);
+      border-block-end: 1px solid var(--trove-border);
+    }
+    .filter {
+      position: relative;
+      flex: 1;
+    }
+    .filter input {
+      inline-size: 100%;
+      box-sizing: border-box;
+      padding-inline-end: var(--trove-space-6);
+    }
+    .filter .material-icons {
+      position: absolute;
+      inset-inline-end: var(--trove-space-2);
+      inset-block-start: 50%;
+      transform: translateY(-50%);
+      color: var(--trove-text-muted);
+      font-size: 1.125rem;
+      pointer-events: none;
+    }
     .members {
       inline-size: 100%;
       border-collapse: collapse;
@@ -116,15 +211,53 @@ import { projectRoleHint, projectRoleLabel } from './project-roles';
     }
     .members th,
     .members td {
-      padding: var(--trove-space-2);
+      padding: var(--trove-space-3);
       text-align: start;
+      vertical-align: middle;
       border-block-end: 1px solid var(--trove-border);
     }
-    .add {
-      margin: 0;
-      padding: var(--trove-space-2) var(--trove-space-3);
-      border: 1px solid var(--trove-border);
-      border-radius: var(--trove-radius-m);
+    .members thead th {
+      font-weight: 600;
+    }
+    .account {
+      display: flex;
+      align-items: center;
+      gap: var(--trove-space-3);
+      font-weight: 400;
+    }
+    .avatar {
+      flex: none;
+      inline-size: 3rem;
+      block-size: 3rem;
+      border-radius: 50%;
+    }
+    .avatar.group {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--trove-badge-neutral-bg);
+      color: var(--trove-badge-neutral-fg);
+    }
+    .who,
+    .line {
+      display: flex;
+      gap: var(--trove-space-1);
+    }
+    .who {
+      flex-direction: column;
+    }
+    .line {
+      align-items: center;
+      gap: var(--trove-space-2);
+    }
+    .name {
+      font-weight: 600;
+    }
+    .role {
+      inline-size: auto;
+    }
+    .actions {
+      text-align: end;
     }
     .notice {
       display: flex;
@@ -145,14 +278,27 @@ export class ProjectMembers {
   private readonly api = inject(ProjectsApi);
   private readonly session = inject(SessionStore);
   private readonly notifier = inject(Notifier);
+  private readonly dialog = inject(TroveDialog);
 
   protected readonly members = signal<readonly ProjectMember[]>([]);
   protected readonly loaded = signal(false);
   protected readonly busy = signal(false);
   protected readonly error = signal<ApiError | null>(null);
-  protected readonly chosen = signal<string | null>(null);
-  protected readonly newRole = signal<ProjectRole>('developer');
+  protected readonly filter = signal('');
+  protected readonly sort = signal<'account' | 'role'>('account');
+  protected readonly descending = signal(false);
+  protected readonly accountLabel = $localize`:@@project-members.col.account:Account`;
+  protected readonly roleLabel = $localize`:@@project-members.col.role:Role`;
   protected readonly refs = computed(() => this.members().map((m) => m.principal));
+  /** The members that match the filter, in the chosen order. */
+  protected readonly shown = computed(() => {
+    const text = this.filter().trim().toLowerCase();
+    const found = this.members().filter((m) => !text || accountOf(m).toLowerCase().includes(text) || m.name.toLowerCase().includes(text));
+    const by = this.sort() === 'role'
+      ? (a: ProjectMember, b: ProjectMember) => PROJECT_ROLES.indexOf(b.role) - PROJECT_ROLES.indexOf(a.role) || accountOf(a).localeCompare(accountOf(b))
+      : (a: ProjectMember, b: ProjectMember) => accountOf(a).localeCompare(accountOf(b));
+    return [...found].sort((a, b) => (this.descending() ? by(b, a) : by(a, b)));
+  });
   protected readonly canWrite = computed(
     () => this.session.has('projects:write') || this.session.isOwnerOf(this.project()),
   );
@@ -175,16 +321,28 @@ export class ProjectMembers {
     });
   }
 
+  protected isMe(m: ProjectMember): boolean {
+    return m.kind === 'user' && m.name === this.session.whoami()?.principal?.name;
+  }
+
+  protected actionsOf(m: ProjectMember): string {
+    return $localize`:@@project-members.actions-of:Actions for ${m.principal}:member:`;
+  }
+
+  /** Opens the dialog that adds a member. */
+  async openAdd(): Promise<void> {
+    const data: ProjectMemberDialogData = { search: this.search, exclude: this.refs() };
+    const ref = this.dialog.open<ProjectMemberDialog, ProjectMemberDialogData, ProjectMemberChoice>(ProjectMemberDialog, { data, width: '32rem' });
+    const choice = await firstValueFrom(ref.closed);
+    if (choice) await this.add(choice);
+  }
+
   protected roleOf(m: ProjectMember): string {
     return $localize`:@@project-members.role-of:Role of ${m.principal}:member:`;
   }
 
   protected roleText(role: ProjectRole): string {
     return projectRoleLabel(role);
-  }
-
-  protected hint(role: ProjectRole): string {
-    return projectRoleHint(role);
   }
 
   protected async load(): Promise<void> {
@@ -198,10 +356,9 @@ export class ProjectMembers {
     }
   }
 
-  protected async add(principal: string): Promise<void> {
+  private async add(choice: ProjectMemberChoice): Promise<void> {
     await this.write(async () => {
-      await this.api.setMember(this.project(), principal, this.newRole());
-      this.chosen.set(null);
+      await this.api.setMember(this.project(), choice.principal, choice.role);
       this.notifier.status($localize`:@@project-members.added:Member added.`);
     });
   }
@@ -235,4 +392,8 @@ export class ProjectMembers {
     this.error.set(failure);
     this.busy.set(false);
   }
+}
+
+function accountOf(m: ProjectMember): string {
+  return m.displayName || m.name;
 }

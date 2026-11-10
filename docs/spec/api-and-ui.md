@@ -4289,7 +4289,7 @@ the model gives the screens:
 - The project's settings show the logical size the project is charged (`logicalBytes`, in binary units, with the exact byte count as its
   tooltip), for every member and every holder of `projects:read`. The physical size of the object store is a figure of the admin
   dashboard only.
-- Members screen (`/projects/{project}/members`): the users and groups of the project with their roles, read for every member; an Owner and an
+- Members screen (`/projects/{project}/members`, Q-UI-214): the users and groups of the project with their roles, read for every member; an Owner and an
   administrator add a member through the principal lookup (Q-AUTHZ-182), change a role and remove a member. The last
   Owner cannot be removed or demoted except by an administrator: the action is shown disabled with the reason, and a
   `409 last_owner` from a concurrent change is reported as such
@@ -9331,6 +9331,22 @@ Context: the owner created a personal token with **All permissions of the owner*
 Not covered: the form of a service-account token offers no administrator rights (the account's role is not known to the form; `trove admin token create --scope-file` and the API set them), and the token administration (R-UI-030) does not know the role of each owner, so it shows no such notice.
 
 **Applied in the spec:** R-UI-029. Code: `TokenForm` and `scopeSummary` in `web/src/app/shared/access/`.
+
+### Q-UI-214 · The members screen takes the reference's member list
+
+Status: **Decided by the owner** (2026-11-10): the screenshot of the reference's member list, "bitte anpassen".
+
+Context: the screen showed `user:name` in a plain table with a labelled select per row and a form below the list. The reference shows an account with avatar, name and user name, its source, its role and a row menu, under a tab with the count and a filter bar; adding is a dialog behind a button at the top right.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The reference's layout with what trove knows (chosen) | Header with **Add member**, tab with the count, filter and sort, columns Account, Source and Role, a row menu, the add form in a dialog; `GET /api/v1/projects/{key}/members` carries `id`, `displayName` and `avatarUrl` | The reference's reading order, with real people instead of references | The list answer grows by three members |
+| (b) The layout without new data | The name alone, a robot seeded by the name | No API change | The robot differs from the one the same user has elsewhere (it is seeded by the ID), no picture, no real name |
+| (c) Also Expiration and Activity | The reference's two further columns | Identical columns | trove stores neither for a member: a membership has no expiry and no recorded activity, so the columns would be empty |
+
+**Choice:** (a). Every project reader sees the display name and the avatar of the project's members: the avatar image is available to every authenticated caller by its digest (R-API-055), and the display name comes from the identity provider and is shown to the same readers next to the user name they already see. **Rationale:** the reference's list is about people, and a list of references is not. The source is always **Direct member**, because a project has no other kind of membership. The badge **It's you** is blue, not the reference's green, because green is a positive status alone (Q-UI-96). The development agent would add Expiration or Activity with a feature that stores them.
+
+**Applied in the spec:** R-UI-041. Code: `web/src/app/features/projects/project-members.ts`, `project-member-dialog.ts`, `toProjectMember`'s caller in `internal/api/v1/projects_api.go`.
 
 ### Q-API-246 · An operation that is allowed while the installation is read-only declares `x-trove-maintenance: allowed`
 

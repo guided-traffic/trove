@@ -496,10 +496,14 @@ func (q *Queries) ProjectMemberSetRole(ctx context.Context, arg ProjectMemberSet
 }
 
 const projectMembers = `-- name: ProjectMembers :many
-SELECT p.id::text AS principal_id, p.kind AS principal_kind, p.name AS principal_name, m.role
+SELECT p.id::text AS principal_id, p.kind AS principal_kind, p.name AS principal_name, m.role,
+       coalesce(u.display_name, '')::text AS display_name,
+       coalesce(encode(a.blob_sha256, 'hex'), '')::text AS avatar_sha256
   FROM project_member m
   JOIN project pr ON pr.id = m.project_id
   JOIN principal p ON p.id = m.principal_id
+  LEFT JOIN app_user u ON u.principal_id = p.id
+  LEFT JOIN user_avatars a ON a.user_id = p.id
  WHERE pr.key = $1::text
  ORDER BY p.kind, p.name
 `
@@ -509,6 +513,8 @@ type ProjectMembersRow struct {
 	PrincipalKind string
 	PrincipalName string
 	Role          string
+	DisplayName   string
+	AvatarSha256  string
 }
 
 // The members of one project with their role (Q-AUTHZ-207).
@@ -526,6 +532,8 @@ func (q *Queries) ProjectMembers(ctx context.Context, key string) ([]ProjectMemb
 			&i.PrincipalKind,
 			&i.PrincipalName,
 			&i.Role,
+			&i.DisplayName,
+			&i.AvatarSha256,
 		); err != nil {
 			return nil, err
 		}

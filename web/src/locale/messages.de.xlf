@@ -14122,13 +14122,104 @@
         <target>Das Projekt hat noch kein Mitglied.</target>
       </segment>
     </unit>
-    <unit id="project-members.col.member">
+    <unit id="project-members.cancel">
       <notes>
-        <note category="location">src/app/features/projects/project-members.ts:41,42</note>
+        <note category="location">src/app/features/projects/project-member-dialog.ts:50,51</note>
       </notes>
       <segment>
-        <source>Member</source>
-        <target>Mitglied</target>
+        <source>Cancel</source>
+        <target>Abbrechen</target>
+      </segment>
+    </unit>
+    <unit id="project-members.tab">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:42,43</note>
+      </notes>
+      <segment>
+        <source>Members</source>
+        <target>Mitglieder</target>
+      </segment>
+    </unit>
+    <unit id="project-members.filter">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:57,58</note>
+        <note category="location">src/app/features/projects/project-members.ts:59,61</note>
+      </notes>
+      <segment>
+        <source>Filter members</source>
+        <target>Mitglieder filtern</target>
+      </segment>
+    </unit>
+    <unit id="project-members.direction">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:85,86</note>
+      </notes>
+      <segment>
+        <source>Reverse the order</source>
+        <target>Reihenfolge umkehren</target>
+      </segment>
+    </unit>
+    <unit id="project-members.col.source">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:96,97</note>
+      </notes>
+      <segment>
+        <source>Source</source>
+        <target>Quelle</target>
+      </segment>
+    </unit>
+    <unit id="project-members.me">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:114,116</note>
+      </notes>
+      <segment>
+        <source>It&apos;s you</source>
+        <target>Das bist du</target>
+      </segment>
+    </unit>
+    <unit id="project-members.kind-group">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:118,120</note>
+      </notes>
+      <segment>
+        <source>Group</source>
+        <target>Gruppe</target>
+      </segment>
+    </unit>
+    <unit id="project-members.direct">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:124,126</note>
+      </notes>
+      <segment>
+        <source>Direct member</source>
+        <target>Direktes Mitglied</target>
+      </segment>
+    </unit>
+    <unit id="project-members.no-match">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:165,168</note>
+      </notes>
+      <segment>
+        <source>No member matches.</source>
+        <target>Kein Mitglied passt.</target>
+      </segment>
+    </unit>
+    <unit id="project-members.col.account">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:290</note>
+      </notes>
+      <segment>
+        <source>Account</source>
+        <target>Konto</target>
+      </segment>
+    </unit>
+    <unit id="project-members.actions-of">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:329</note>
+      </notes>
+      <segment>
+        <source>Actions for <ph id="0" equiv="member" disp="m.principal"/></source>
+        <target>Aktionen für <ph id="0" equiv="member" disp="m.principal"/></target>
       </segment>
     </unit>
     <unit id="project-members.col.role">
@@ -14154,8 +14245,8 @@
         <note category="location">src/app/features/projects/project-members.ts:66,67</note>
       </notes>
       <segment>
-        <source>Remove</source>
-        <target>Entfernen</target>
+        <source> Remove member </source>
+        <target> Mitglied entfernen </target>
       </segment>
     </unit>
     <unit id="project-members.add">
@@ -14163,7 +14254,7 @@
         <note category="location">src/app/features/projects/project-members.ts:79,80</note>
       </notes>
       <segment>
-        <source>Add a member</source>
+        <source>Add member</source>
         <target>Mitglied hinzufügen</target>
       </segment>
     </unit>
