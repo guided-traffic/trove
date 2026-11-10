@@ -624,7 +624,8 @@ Priority: **P1** · Covers: PKG-ANSIBLE-008, PKG-ANSIBLE-009
 - **Pages.** The upstream's list is stored in pages of 100 (`limit=100&offset=<n>`), one stored document per page with the variant
   `offset=<n>` ([Q-ANS-12](#q-ans-12--a-remote-stores-the-version-list-in-pages-of-100-and-cuts-the-clients-page-when-it-serves)). When a client asks `limit=L&offset=O` the handler reads the stored pages that cover the range (fetching
   the missing ones through the engine, one flight each), cuts the range, computes `meta.count` from the first page and renders the
-  links at this repository's address. The default client request (`limit=100`) is one stored page per 100 versions. Reading is
+  links at this repository's address. The default client request (`limit=100`) is one stored page per 100 versions; an upstream that answers fewer entries than it was asked for is
+  read at its own page size ([Q-ANS-39](#q-ans-39--a-remote-reads-the-version-list-at-the-upstreams-page-size-starting-with-the-first-page)). Reading is
   bounded per request (512 pages, 51,200 versions); a longer list is 502 `upstream_unavailable` with that reason.
 - **Rewriting.** In the served documents `download_url` is the repository's `v3/artifacts/collections/<file>`, every `href` and link
   the repository's address, `metadata.contents`, `metadata.docs_blob`, `metadata.manifest` and `metadata.files` are dropped (Q-ANS-10); all
@@ -663,12 +664,14 @@ Priority: **P1** · Covers: PKG-ANSIBLE-009
   lookup); the engine verifies the bytes against it whatever `integrity.checksumPolicy` says; the policies `ignore` and `pass-through`
   are refused when the repository is created or updated. A mismatch is 502 `upstream_integrity_mismatch`, nothing is stored, the
   security event of R-REPO-041 is written.
-- **The first digest recorded for a version stays.** If a refreshed version document announces a different SHA-256 for a version already
-  recorded, the recorded row and the cached archive are kept, `proxy.upstream_digest_changed` is written, and the client's own digest
-  comparison against the (unchanged) served document passes; an operator resolves by deleting the cached item.
+- **The first digest recorded for a version stays while its archive is cached.** If a refreshed version document announces a different
+  SHA-256 for a version already recorded whose archive is cached, the recorded row and the cached archive are kept,
+  `proxy.upstream_digest_changed` is written, and the served version document keeps announcing the recorded digest and size, so the client's own
+  digest comparison passes; an operator resolves by deleting the cached item, after which the next fill records the digest the upstream announces
+  now ([Q-ANS-38](#q-ans-38--the-first-digest-of-a-version-stays-only-while-its-archive-is-cached)).
 - **Inspect on fill.** `FillInspector` reads the fetched archive's `MANIFEST.json` (R-ANS-010, bounded) and refuses an archive whose
   declared identity or version differs from the path (502 `upstream_unavailable`, `identity_mismatch`); nothing of it reaches a client
-  before that, and nothing is stored. The `requires_ansible` of the row is checked against the document's.
+  before that, and nothing is stored. The `requires_ansible` of the manifest is not compared with the document's ([Q-ANS-37](#q-ans-37--a-fetched-archive-is-held-to-the-identity-of-its-path-requires_ansible-is-not-compared)).
 - **Cache.** The archive is an item of the remote repository, counted in its usage; the cache of a remote never writes a row of
   `ansible_collection_versions` (the commit hook does nothing for a fetched file beyond the generic package row).
 
@@ -740,11 +743,10 @@ serves the three role operations of the client, in the `v1` shape:
   256 MiB). The upstream announces **no digest** for it, so nothing is verified except that it is a gzip-compressed tar archive within
   the limits of R-ANS-031 and that the identity of nothing is claimed ([H-840](#h-840--a-role-archive-has-no-announced-digest-and-the-source-is-not-byte-stable)); under `integrity.checksumPolicy: require` the archive is
   refused with 502 `upstream_digest_missing`, as the policy says.
-- **Names.** A role document has no `<ns>.<name>` package. The documents and archives of roles are classified as metadata and artifacts
-  of the package name `role/<id>`, which no collection can have; they are decided by the repository's grants and path patterns
-  (`roles/**`), not by a package name an operator would know. (Whether the core's name machinery takes that package name is open and
-  proven by WP0; the fallback is a classification without a package, in which case claims and ownership do not apply to roles, which
-  nothing in the design needs.)
+- **Names** ([Q-ANS-36](#q-ans-36--a-role-is-a-package-of-the-cores-name-machinery-named-role-and-its-id)). A role document has no `<ns>.<name>` package. The version pages and the archives of a role are classified as
+  metadata and artifacts of the package `role/<id>`, which no collection can have, and the format's name rule takes that name: the URL map of
+  the archive, the include and exclude patterns of the repository, the grants and the shadowing check treat a role like any package. The
+  lookup document names no role and has no package.
 - **Not mirrored.** The mirror (R-ANS-021) never reads the role index.
 - A remote whose upstream has no `v1` answers 404 in the `v1` shape for these routes.
 
@@ -995,7 +997,7 @@ security-relevant event for repeated failures of one principal); `ansible.versio
 integrity failure).
 
 Metrics (`trove_ansible_*`): `trove_ansible_publish_total{outcome}` (`completed`, `failed`, `exists`, `tombstoned`),
-`trove_ansible_role_versions_dropped_total{repository}`, `trove_ansible_virtual_digest_conflicts_total{repository}`,
+`trove_ansible_role_versions_dropped_total{repo}`, `trove_ansible_virtual_digest_conflicts_total{repository}`,
 `trove_ansible_document_bytes{kind}` (histogram of stored document sizes), `trove_ansible_hub_exchanges_total{outcome}`; the series of a
 deleted repository are forgotten as for other formats (the metrics-forget test of NuGet is the pattern).
 
@@ -1719,6 +1721,114 @@ read and filtered ([H-854](#h-854--a-caller-whose-grants-hide-versions-makes-the
 
 **Applied in the spec:** R-ANS-004.
 
+### Q-ANS-36 · A role is a package of the core's name machinery, named role/ and its id
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Classify` gives the paths of a role's version pages and archive the package `role/<id>`, and the format's name rule takes that name (chosen) | The URL map, the include and exclude patterns, the grants and the shadowing check treat a role like a package | The URL map of the archive of a role needs a package the document and the archive share (R-REPO-043); one mechanism for roles and collections | A role is named `role/<id>`, which no operator knows, in a pattern |
+| (b) A classification without a package for roles | A role is decided by paths alone | Nothing to name | The URL map records only paths of the document's own package, so no role archive could be fetched (`OwnPath`) |
+
+**Choice:** (a). **Rationale:** (b) cannot work: the engine records a URL-map row only when the document and the archive classify under the
+same non-empty package. The name has no slash-free form, so it cannot collide with a collection (`<ns>.<name>`). The lookup document names no
+role and has no package. Include and exclude patterns of a remote match `role/<id>` (the format's pattern subject is the name), so an
+operator who limits a remote to `acme.*` also hides every role ([H-856](../../security/ansible-remote.md#h-856--the-patterns-of-a-remote-see-a-role-by-its-id-and-not-by-owner-and-name)). Revisit when
+an operator needs to select roles by owner and name: the lookup then has to be stored per role.
+
+**Applied in the spec:** R-ANS-020.
+
+### Q-ANS-37 · A fetched archive is held to the identity of its path; `requires_ansible` is not compared
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The fill hook compares the archive's namespace, name and version with the path and nothing else (chosen) | `identity_mismatch` is 502; the digest check of R-ANS-018 ties the bytes to the version document | The hook has no data port and no transaction (`FillInspector`), so it cannot read the recorded row | The `requires_ansible` of the manifest and of the document are not compared |
+| (b) Also compare `requires_ansible` with the recorded row | The plan's reading of R-ANS-018 | A fully consistent upstream | Needs a data-port read inside the hook, which the contract does not give |
+
+**Choice:** (a). **Rationale:** an archive whose bytes match the digest its document announced is the archive the upstream published; a
+`requires_ansible` that differs between its two statements is the upstream's inconsistency and `ansible-galaxy` reads the document's. Revisit if
+the contract hands the fill hook a read port.
+
+**Applied in the spec:** R-ANS-018 (the last bullet of "Inspect on fill").
+
+### Q-ANS-38 · The first digest of a version stays only while its archive is cached
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `RecordAnnounced` keeps the recorded digest while a live item exists at the archive's path, and follows the document when there is none (chosen) | Deleting the cached item (or a restore without caches) resolves a republished version | The operator's remedy of R-ANS-018 needs no second step; the rule is one statement | A version that was evicted and republished upstream in between is believed at its new digest |
+| (b) The recorded digest stays forever | Strict immutability | Simple | The operator has to delete the row as well, and no API does |
+| (c) The row follows the document always | No state | | The cached bytes become unverifiable and the engine's own check raises the event on every request |
+
+**Choice:** (a). **Rationale:** the digest protects bytes that are in the cache; where there are none, nothing is protected and the fetch is
+verified against what the upstream announces now. The served version document shows the recorded digest and size, so the document a client
+checks the archive against is the one the cached bytes were verified against. The event `proxy.upstream_digest_changed` is queued by the data
+port when the offered digest was not taken ([H-857](../../security/ansible-remote.md#h-857--a-republished-version-whose-archive-was-evicted-is-trusted-at-its-new-digest)).
+Revisit if the audit shows an upstream that republishes versions as a habit.
+
+**Applied in the spec:** R-ANS-018.
+
+### Q-ANS-39 · A remote reads the version list at the upstream's page size, starting with the first page
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every request reads page 0 for the count, takes the page size from it when the upstream answers fewer than 100 entries, and reads the stored pages that cover the range (chosen) | An upstream that caps `limit` below 100 is read at its cap; one document per page, variant `offset=<n>` | Correct counts and ranges whatever the cap | A request for a later page also needs page 0 (cached after the first) |
+| (b) Assume 100 | The public Galaxy's cap | No special case | A capped upstream would show holes at every page border |
+
+**Choice:** (a). **Rationale:** the version list's cap of the public Galaxy was not probed (the page "Client and library behaviour"). The
+variant space stays bounded: offsets below 51,200 (512 pages of 100), a page number of a role at most 1,000.
+
+**Applied in the spec:** R-ANS-017.
+
+### Q-ANS-40 · The role host rule is applied twice: when a version list is stored and when it is served
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `PrepareFill` records an archive address only for a version whose `download_url` is an https URL on a host of `extraHosts` and counts the others, the served list leaves the others out (chosen) | The URL map holds addresses the operator allowed; a client is never offered another | The stored document still holds the dropped entries as received | The same rule in two places |
+| (b) Only the engine's host check at fetch time | A version is listed and its download fails | Less code | A client is sent to an address that then answers an error |
+
+**Choice:** (a). **Rationale:** [R-ANS-020](#r-ans-020--remote-repository-roles-by-translation) promises that no client is sent to download from elsewhere than the operator allowed. The
+size bound `ansible.role_archive_max_bytes` is applied by `AcceptResponse` (the declared length) and by a reader around the body (the
+bytes), from the configuration of the replica that was bound last ([H-858](#h-858--the-role-archive-limit-is-one-value-per-process)).
+
+**Applied in the spec:** R-ANS-020, R-ANS-030 (the label of the metric is `repo`, the one label R-OPS-007 allows for a repository).
+
+### Q-ANS-41 · A restore without remote caches deletes the recorded digests with the cache
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The purger `ansible-remote` of the restore fixups empties the caches of every Ansible remote and deletes `ansible_upstream_versions` of each (chosen) | As npm's `npm_remote_packages` | A restored installation fetches and records afresh | A purger of its own |
+| (b) Leave the rows | Less code | | A digest recorded for bytes that are gone would refuse an upstream that republished meanwhile |
+
+**Choice:** (a). **Rationale:** the rows describe documents and archives of the cache and must go with it (R-BAK-008).
+
+**Applied in the spec:** R-ANS-029.
+
+### Q-ANS-42 · The gate of an archive reads the recorded digest through the port, without the facts of the item lookup
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `BeforeArtifact` asks the data port for the row on every request (chosen) | One indexed read per archive request | No change of the frozen `ServeFacts` of the contract | One statement more per download than npm's gate |
+| (b) Implement `FactsGate` and let the item lookup read the row | As npm | No second statement | A new member of `ServeFacts` and of the item lookup for one format |
+
+**Choice:** (a). **Rationale:** a change of the contract for a statement that is a primary-key read is not earned yet. Revisit when the query
+budget test of the Galaxy downloads shows the statement (the integration area `querybudget`).
+
+**Applied in the spec:** R-ANS-018.
+
+## What this does not cover
+
 ### Q-ANS-43 · The roles of the source are reported once per run, with the first collection
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -1871,6 +1981,19 @@ inflation, per request, and the member is cut at 64 KiB. Live for every screen t
 When a grant decides versions by path (`VersionsByPath`), the version list of a collection is read whole (at most 50,000 versions) and
 filtered before it is paged, so a hidden version is neither listed nor counted (R-AUTHZ-005). Dormant for every repository whose grants do
 not narrow by path; real for one that does and whose collection has thousands of versions.
+
+### H-858 · The role archive limit is one value per process
+
+`ansible.role_archive_max_bytes` reaches the response check of a fetch through the configuration of the replica that was bound last in the
+process (`internal/formats/ansible/remote_bind.go`): the check has no Host to ask. Dormant: the replicas of one process share one configuration
+in production. Real only for a test that starts replicas of different limits in one process.
+
+### H-860 · The upstream test does not give the hint for an upstream URL that is no API root
+
+[R-ANS-016](#r-ans-016--remote-repository-upstream-and-discovery) asks that a URL such as `https://galaxy.ansible.com/` is reported "with the hint that the API root of a Galaxy usually ends in
+`/api/`". The 502 of every request through such a repository carries the hint (`parseDiscovery`); the generic upstream test of R-REPO-024 requests
+the URL and judges the status alone, so it reports a URL that answers 200 with something else as reachable. Live today for every remote repository
+of the format; the first request names the reason.
 
 ### H-864 · Only two ansible-core releases are tested
 

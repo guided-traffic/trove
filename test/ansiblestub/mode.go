@@ -67,6 +67,10 @@ type Mode struct {
 	// WrongDigest lists collections whose archives the stub serves with other bytes than their documents announce: the second
 	// archive is served and the announced SHA-256 and size are those of the first. It wins over DigestChanged.
 	WrongDigest []string `json:"wrong_digest,omitempty"`
+	// WrongIdentity lists collections whose archives are those of another collection ("swapped.other", the same version): the
+	// document announces the digest of the bytes it serves, so the digest verifies and only the identity inside the archive is
+	// wrong. It wins over the digest modes.
+	WrongIdentity []string `json:"wrong_identity,omitempty"`
 }
 
 // Validate rejects a mode the stub does not implement.
@@ -92,7 +96,7 @@ func (m Mode) Validate() error {
 			return fmt.Errorf("fail_status %q: %d is no 5xx status", class, status)
 		}
 	}
-	for _, list := range [][]string{m.DigestChanged, m.WrongDigest} {
+	for _, list := range [][]string{m.DigestChanged, m.WrongDigest, m.WrongIdentity} {
 		for _, n := range list {
 			if n != AllCollections && !validFullName(n) {
 				return fmt.Errorf("collection %q: want <namespace>.<name> or %q", n, AllCollections)
@@ -131,5 +135,6 @@ func (m Mode) clone() Mode {
 	m.FailStatus = maps.Clone(m.FailStatus)
 	m.DigestChanged = slices.Clone(m.DigestChanged)
 	m.WrongDigest = slices.Clone(m.WrongDigest)
+	m.WrongIdentity = slices.Clone(m.WrongIdentity)
 	return m
 }

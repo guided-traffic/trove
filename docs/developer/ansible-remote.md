@@ -1,8 +1,73 @@
 # Ansible Galaxy remote repositories
 
-The remote class, the roles, the mirror and the hub exchange of the format `ansible` ([R-ANS-016 to R-ANS-021](../spec/formats/ansible.md#r-ans-016--remote-repository-upstream-and-discovery)).
-This page grows with the packages that build them; today it holds the counting stub, which every test of the format uses as its
-upstream.
+The remote class and the roles of the format `ansible` ([R-ANS-016 to R-ANS-018, R-ANS-020](../spec/formats/ansible.md#r-ans-016--remote-repository-upstream-and-discovery)),
+and the counting stub every test of the format uses as its upstream. The mirror (R-ANS-021) and the hub's token exchange (R-ANS-019) are built
+after this page's contents and add their sections. The security view is [security/ansible-remote.md](../security/ansible-remote.md); the format as a
+whole is [ansible.md](ansible.md).
+
+## What has to be in your head first
+
+- **The engine does the I/O, the format decides what a document is.** The remote engine (`internal/proxy`) owns the fetch, the freshness, the
+  collapsing across replicas, the negative entries and the circuit. The format adds where a document lives (`UpstreamRequest`), what it must be
+  before it is stored (`PrepareFill`), what is recorded when it is stored (`OnFill`) and how it is rendered (`handlers_remote.go`, `Rewrite`).
+- **Stored bytes are the upstream's, a response is a rendering.** `Rewrite` and the handlers put the repository's addresses into the documents
+  ([galaxydoc](../../internal/formats/ansible/galaxydoc/galaxydoc.go)) and leave the plugin listing out; nothing the upstream sent as an address
+  reaches a client.
+- **Every document is a canonical path with a variant** ([paths.go](../../internal/formats/ansible/paths.go)):
+
+| Document | Path | Variant | Upstream address (below `remote.url` and the prefix of the API root) |
+|---|---|---|---|
+| API root (discovery) | `api-root.json` | `doc` | `remote.url` itself |
+| Collection | `collections/<ns>/<name>/collection.json` | `doc` | `<v3>collections/<ns>/<name>/` |
+| Version list, one page | `collections/<ns>/<name>/versions.json` | `offset=<n>` | `<v3>collections/<ns>/<name>/versions/?limit=100&offset=<n>` |
+| Version | `collections/<ns>/<name>/<version>.json` | `doc` | `<v3>collections/<ns>/<name>/versions/<version>/` |
+| Collection archive | `collections/<ns>/<name>/<ns>-<name>-<version>.tar.gz` | none | the `download_url` of the version document (URL map) |
+| Role lookup | `roles/lookup.json` | `owner=<o>&name=<n>` | `<v1>roles/?owner__username=<o>&name=<n>` |
+| A role's versions, one page | `roles/<id>/versions.json` | `page=<n>` | `<v1>roles/<id>/versions/?page_size=50&page=<n>` |
+| Role archive | `roles/<id>/<ref>.tar.gz` | none | the `download_url` of the version entry (URL map) |
+
+- **The package of a role is `role/<id>`** ([Q-ANS-36](../spec/formats/ansible.md#q-ans-36--a-role-is-a-package-of-the-cores-name-machinery-named-role-and-its-id)): `Classify`,
+  `PackageDocumentPath` and `Names.Normalize` know it, which is what lets the URL map record the archive a version page names.
+- **One request per document.** However many clients and replicas ask, the engine fetches a document once while it is fresh and once per period
+  after; the collapsing across replicas needs Valkey (the integration test starts the stack with it).
+
+## The files
+
+| File | Responsibility |
+|---|---|
+| [`handlers_remote.go`](../../internal/formats/ansible/handlers_remote.go) | the registration of the class (`registerClass(formats.Remote, ...)`), the eight handlers of its routes, the validators and replies |
+| [`remote.go`](../../internal/formats/ansible/remote.go) | the adapter: `AcceptResponse` (the role archive bound), `ExpectsType`, `PrepareFill`, `OnFill`, `Rewrite`; the checks of a collection and a version document |
+| [`remote_discovery.go`](../../internal/formats/ansible/remote_discovery.go) | `Discoverer` (the API root, its prefixes) and `UpstreamRequest` |
+| [`remote_target.go`](../../internal/formats/ansible/remote_target.go) | a canonical path taken apart, the variants and their grammar, the paging bounds |
+| [`remote_docs.go`](../../internal/formats/ansible/remote_docs.go) | the upstream collection and page documents, the role documents and their rendering, the host rules |
+| [`remote_gate.go`](../../internal/formats/ansible/remote_gate.go) | `BeforeArtifact`: the recorded digest of a version, the revalidation of a document that was never stored |
+| [`remote_fill.go`](../../internal/formats/ansible/remote_fill.go) | `FillInspector`: the identity of a collection archive, the shape of a role archive |
+| [`remote_bind.go`](../../internal/formats/ansible/remote_bind.go) | `Bind`: the replica's configuration and metrics (`trove_ansible_role_versions_dropped_total`, `trove_ansible_document_bytes`) |
+| [`internal/formatdata/ansible/remote_store.go`](../../internal/formatdata/ansible/remote_store.go) | `RecordAnnounced`, `Announced`, `AnnouncedNames` on `ansible_upstream_versions` (migration 00070, [ansible_remote.sql](../../internal/meta/postgres/queries/ansible_remote.sql)) |
+| [`remote_tables.go`](../../internal/formatdata/ansible/remote_tables.go), [`remote_purge.go`](../../internal/formatdata/ansible/remote_purge.go), [`internal/backup/fixup/ansible_remote.go`](../../internal/backup/fixup/ansible_remote.go) | the table's export class and the purge of a restore without remote caches |
+| [`test/integration/ansibleremote`](../../test/integration/ansibleremote) | the area: one request per document, paging, rewriting, digests, roles, credentials |
+
+## The flows
+
+**A version list.** The handler reads page 0 (`offset=0`) for the count and the page size, then the stored pages that cover the requested range,
+cuts the range and renders `meta.count` and the links at the repository's address ([Q-ANS-12](../spec/formats/ansible.md#q-ans-12--a-remote-stores-the-version-list-in-pages-of-100-and-cuts-the-clients-page-when-it-serves),
+[Q-ANS-39](../spec/formats/ansible.md#q-ans-39--a-remote-reads-the-version-list-at-the-upstreams-page-size-starting-with-the-first-page)). The entries are in the upstream's order.
+
+**A collection archive.** The handler authorizes the package and the version, then `Host.Remote().Artifact` runs the gate: the recorded digest of
+the version (a document that was never stored is fetched first), the engine fetches the archive from the URL-map address under the host rule,
+verifies it against the digest, the fill hook checks its identity, and the item is stored. The first request of a version thus costs two upstream
+requests (document, archive) and every later request none.
+
+**A role.** Lookup, version pages and archives follow the table above; the version page's `PrepareFill` records an archive address for each version
+that passes the host rule and counts the others. The archive has no digest; the hook checks that it is a gzip-compressed tar archive within bounds.
+
+## Tests
+
+| Tier | Where | What |
+|---|---|---|
+| Unit | `internal/formats/ansible/remote*_test.go` | the API root, the upstream addresses, the checks of a version document, the role rendering and its host rule, the role archive bound, the fill hook |
+| Kit | `conformance_test.go`, `remote_fixture_test.go` | `Rewrite` (deterministic, idempotent, no upstream address left), the discovery documents of check 6, the name `role/16` |
+| Integration | `test/integration/ansibleremote` | against the stub through the slot wrapper; the role routes of the kit's content check are listed in `NoContent` because the kit's host is a local repository |
 
 ## The counting stub
 
@@ -72,6 +137,7 @@ returns the whole stub to its start.
 | `reject_token` | `Mode.RejectToken` | every Galaxy request is 401 in the Galaxy shape |
 | `digest_changed` | `Mode.DigestChanged` | the listed collections ("ns.name" or "all") have a second archive per version, announced with its own SHA-256 and size |
 | `wrong_digest` | `Mode.WrongDigest` | the second archive is served, the document keeps the first digest; wins over `digest_changed` |
+| — | `Mode.WrongIdentity` | the archive of another collection (`swapped.other`, the same version) is served and announced with its own digest: the digest verifies, only the identity inside the archive is wrong; wins over the digest modes |
 | — | `Mode.NoV1`, `Down`, `FailStatus` | a hub without `v1`; 503, reset or hang; a 5xx per class |
 | the hub's realm | `SetRealm` | `Require` makes the Galaxy accept only `Bearer` tokens the realm issued, not expired and not revoked; `RefreshTokens` are the offline tokens the realm takes, `ClientID` the client it requires; `ExpireAccessTokens` revokes what was issued |
 | — | `AddVersion`, `DropVersion` | the upstream publishes or removes a version (a dropped one is 404 everywhere) |

@@ -51,6 +51,9 @@ func init() {
 
 // Bind gives the format the ansible section of the configuration of the replica that owns the Host h (R-ANS-031 bounds) and registers
 // the metric families of R-ANS-030 on m. It must be called once per Host, before the replica serves.
+//
+// It is the one place a class binds per-replica state: the local class's publish counter is registered above, the remote class's metrics
+// in remote_bind.go, and the virtual class adds its own with registerBinder from its class file; no class defines a second Bind.
 func (f *Format) Bind(h formats.Host, cfg *config.Config, m *observability.Metrics) {
 	r := &replica{cfg: cfg.Ansible, ext: map[any]any{}}
 	if m != nil {
@@ -58,7 +61,21 @@ func (f *Format) Bind(h formats.Host, cfg *config.Config, m *observability.Metri
 			fn(r, m)
 		}
 	}
+	roleMax.Store(int64(cfg.Ansible.RoleArchiveMaxBytes))
 	f.replicas.Store(h, r)
+	if d := h.FormatData(ID); d != nil {
+		f.ports.Store(d, r)
+	}
+}
+
+// replicaOfPort finds the replica a data port was bound for: the storage hooks and the remote fill meet the format without a Host.
+func (f *Format) replicaOfPort(port any) *replica {
+	if port != nil {
+		if r, ok := f.ports.Load(port); ok {
+			return r.(*replica)
+		}
+	}
+	return defaultReplica()
 }
 
 // replicaOf finds the replica of a request's Host.

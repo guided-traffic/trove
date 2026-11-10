@@ -504,7 +504,8 @@ Two expand migrations of unit F0 ([ansible.md](ansible.md)), registered in [tabl
 | Table | Migration | What it holds |
 |---|---|---|
 | `ansible_collection_versions`, `ansible_tombstones` | [00068_ansible_collections](../../internal/meta/postgres/migrations/00068_ansible_collections.sql) | A row per stored version of a local repository with the metadata read from its archive and a `sort_key` that orders the version list in one index scan, and the versions that were deleted and whose numbers are not accepted again (R-ANS-011, R-ANS-012). No blob column and no revision column (Q-ANS-31) |
-| `ansible_import_tasks` | [00069_ansible_import_tasks](../../internal/meta/postgres/migrations/00069_ansible_import_tasks.sql) | The final import task of every publish, deleted after `ansible.import_task_keep` (R-ANS-009). The table of the digests a remote announces, `ansible_upstream_versions`, comes with the remote class |
+| `ansible_import_tasks` | [00069_ansible_import_tasks](../../internal/meta/postgres/migrations/00069_ansible_import_tasks.sql) | The final import task of every publish, deleted after `ansible.import_task_keep` (R-ANS-009). |
+| `ansible_upstream_versions` | [00070_ansible_upstream_versions](../../internal/meta/postgres/migrations/00070_ansible_upstream_versions.sql) | The SHA-256 and size a remote repository's version documents announce, per version, written in the fill's transaction; the first digest of a version whose archive is cached stays (R-ANS-018, Q-ANS-38). No blob or item column; a restore without remote caches deletes the rows (R-BAK-008) |
 
 ## Debian tables (00060 to 00065)
 

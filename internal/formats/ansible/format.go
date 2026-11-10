@@ -63,8 +63,9 @@ type Format struct {
 	remote  formats.RemoteAdapter
 	virtual formats.VirtualAdapter
 	view    formats.ViewAdapter
-	// replicas holds the replica of each Host the composition root bound (bind.go).
-	replicas sync.Map
+	// replicas holds the replica of each Host the composition root bound (bind.go); ports the same replica by the Host's data port, for
+	// the hooks and the fill, which meet the format without a Host.
+	replicas, ports sync.Map
 }
 
 var (

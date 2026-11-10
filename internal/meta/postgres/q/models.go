@@ -50,6 +50,16 @@ type AnsibleTombstone struct {
 	DeletedBy string
 }
 
+type AnsibleUpstreamVersion struct {
+	RepoID          int64
+	Name            string
+	Version         string
+	Sha256          []byte
+	Size            int64
+	RequiresAnsible string
+	RecordedAt      pgtype.Timestamptz
+}
+
 type ApiIdempotencyKey struct {
 	PrincipalID     pgtype.UUID
 	IdemKey         string

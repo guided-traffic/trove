@@ -70,7 +70,7 @@ internal/config/ansible.go     # the ansible: section
 
 | File | Responsibility |
 |---|---|
-| `class_remote.go`, `handlers_remote.go`, `remote*.go`, `mirror.go`, `hub.go` | Not created yet: the remote class (work package B2) |
+| `handlers_remote.go`, `remote*.go` | The remote class and the roles: [ansible-remote.md](ansible-remote.md). `mirror.go` and `hub.go` are not created yet (B2, later stages) |
 | `class_virtual.go`, `handlers_virtual.go`, `virtual*.go`, `merge/` | Not created yet: the virtual class (B3) |
 | `setup*.go`, `guide*.go`, `guide/` | Not created yet: the setup templates and the guide (B4); the conformance fixture skips check 8 until then |
 
@@ -120,7 +120,7 @@ header with that scheme. Everywhere else the header is "not a trove token" and i
 
 [00068_ansible_collections](../../internal/meta/postgres/migrations/00068_ansible_collections.sql) and
 [00069_ansible_import_tasks](../../internal/meta/postgres/migrations/00069_ansible_import_tasks.sql) create the tables of R-ANS-011; the
-table of the announced digests of a remote comes with the remote class. The port is `Store` in [store.go](../../internal/formats/ansible/store.go),
+table of the announced digests of a remote, [00070_ansible_upstream_versions](../../internal/meta/postgres/migrations/00070_ansible_upstream_versions.sql), comes with the remote class. The port is `Store` in [store.go](../../internal/formats/ansible/store.go),
 implemented by [internal/formatdata/ansible](../../internal/formatdata/ansible/port.go). It speaks repository ids and the values of the `rows` leaf
 (Q-ANS-33), carries no revision column (Q-ANS-31), and its reindex step is `RebuildRows`, the enqueue being the `Reindexer` the endpoint
 already finds (Q-ANS-32). The job kinds `ansible-reindex` and `ansible-import-task-sweep` are registered in [jobs.go](../../internal/formatdata/ansible/jobs.go).

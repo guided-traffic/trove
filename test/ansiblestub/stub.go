@@ -311,7 +311,7 @@ func (s *Server) Corpus() (CorpusInfo, error) {
 		info := CollectionInfo{Namespace: c.ns, Name: c.name}
 		for i := len(c.versions) - 1; i >= 0; i-- {
 			v := c.versions[i]
-			a, err := s.archives.collection(c, v, false)
+			a, err := s.archives.collection(c, v, kindOriginal)
 			if err != nil {
 				return CorpusInfo{}, err
 			}
@@ -336,16 +336,23 @@ func (s *Server) Corpus() (CorpusInfo, error) {
 
 // served resolves what the stub serves for an archive of a version under the mode: the bytes, and what the documents announce.
 func (s *Server) served(c *collectionDef, v *versionDef, m Mode) (file ansiblegen.Archive, ann announced, err error) {
-	orig, err := s.archives.collection(c, v, false)
+	orig, err := s.archives.collection(c, v, kindOriginal)
 	if err != nil {
 		return ansiblegen.Archive{}, announced{}, err
 	}
 	ann = announced{filename: orig.Filename, sha256: orig.SHA256, size: orig.Size}
+	if listed(m.WrongIdentity, c.fullName()) {
+		swapped, err := s.archives.collection(c, v, kindSwapped)
+		if err != nil {
+			return ansiblegen.Archive{}, announced{}, err
+		}
+		return swapped, announced{filename: orig.Filename, sha256: swapped.SHA256, size: swapped.Size}, nil
+	}
 	wrong, changed := listed(m.WrongDigest, c.fullName()), listed(m.DigestChanged, c.fullName())
 	if !wrong && !changed {
 		return orig, ann, nil
 	}
-	alt, err := s.archives.collection(c, v, true)
+	alt, err := s.archives.collection(c, v, kindVariant)
 	if err != nil {
 		return ansiblegen.Archive{}, announced{}, err
 	}

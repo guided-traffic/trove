@@ -50,13 +50,21 @@ func TestR_ANS_003_TheRouteTable(t *testing.T) {
 			t.Errorf("route %s declares the API key header", r.Name)
 		}
 	}
-	// With the local class alone, the routes of the other classes are not in the table and the others are narrowed to it.
+	// With the local and the remote class files, the table is narrowed to those classes: the role routes serve the remote class
+	// alone, publish and the import task the local class alone.
 	for _, r := range New().Routes() {
-		if r.Name == routeRolesFind || r.Name == routeRoleVersions || r.Name == routeRoleArchive {
-			t.Errorf("the table of a format with the local class alone holds %s", r.Name)
+		switch r.Name {
+		case routeRolesFind, routeRoleVersions, routeRoleArchive:
+			if !reflect.DeepEqual(r.Classes, []formats.Class{remote}) {
+				t.Errorf("route %s serves %v", r.Name, r.Classes)
+			}
+		case routePublish, routeImport:
+			if !reflect.DeepEqual(r.Classes, []formats.Class{local}) {
+				t.Errorf("route %s serves %v", r.Name, r.Classes)
+			}
 		}
-		if len(r.Classes) > 0 && !reflect.DeepEqual(r.Classes, []formats.Class{local}) {
-			t.Errorf("route %s serves %v", r.Name, r.Classes)
+		if r.ServesClass(formats.Virtual) && len(r.Classes) > 0 {
+			t.Errorf("route %s serves the virtual class, which has no class file", r.Name)
 		}
 	}
 }

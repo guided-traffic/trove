@@ -60,6 +60,9 @@ func VersionDocumentPath(namespace, name, ver string) string {
 // PackageDocumentPath implements the contract: the canonical path of the document that stands for a normalized package name
 // upstream, the collection document (R-REPO-029, R-REPO-048). ok is false for a string that is no collection name.
 func (f *Format) PackageDocumentPath(name string) (formats.Path, bool) {
+	if id, ok := strings.CutPrefix(name, RolePrefix); ok && digits(id, maxRoleIDDigits) {
+		return formats.Path{Path: RoleVersionsDocumentPath(id)}, true
+	}
 	ns, n, ok := collection.SplitName(name)
 	if !ok {
 		return formats.Path{}, false
@@ -121,15 +124,61 @@ func classifyCollection(rest []string) formats.PathInfo {
 	return meta
 }
 
-// classifyRole classifies a path below "roles/" (R-ANS-020): the lookup and version documents are metadata and the archive
-// "roles/<id>/<ref>.tar.gz" is content. A role has no "<ns>.<name>" package and no version a grant could name, so the paths carry
-// none: the repository's grants and path patterns decide them. This is the one place the remote class's work package may refine when
-// it settles whether the name machinery takes "role/<id>" (R-ANS-020).
+// RolePrefix is the first segment of the package name a role has: "role/<id>" (Q-ANS-36). No collection can have it, because a
+// collection name has no slash.
+const RolePrefix = "role/"
+
+// RolePackage is the package name of the role with the upstream's numeric id.
+func RolePackage(id string) string { return RolePrefix + id }
+
+// RoleLookupDocument is the canonical path of the stored role lookup (variant "owner=<o>&name=<n>"); the version pages of a role are
+// roles/<id>/versions.json (variant "page=<n>") and its archives roles/<id>/<ref>.tar.gz (R-ANS-020).
+const (
+	RoleLookupDocument   = dirRoles + "/lookup" + jsonSuffix
+	roleVersionsDocument = "versions" + jsonSuffix
+)
+
+// RoleVersionsDocumentPath is the canonical path of the stored version-list page of a role.
+func RoleVersionsDocumentPath(id string) string {
+	return dirRoles + "/" + id + "/" + roleVersionsDocument
+}
+
+// RoleArchivePath is the canonical path of the archive of a role version.
+func RoleArchivePath(id, ref string) string {
+	return dirRoles + "/" + id + "/" + ref + collection.ArchiveSuffix
+}
+
+// classifyRole classifies a path below "roles/" (R-ANS-020, Q-ANS-36). The lookup document names no role. The version documents and
+// the archive of the role with the upstream's id belong to the package "role/<id>", which no collection can have: the core's name
+// machinery takes it (names.go), so the URL map, the include and exclude patterns and the grants decide a role like any package. A
+// role has no version a grant could name, so the paths carry none.
 func classifyRole(rest []string) formats.PathInfo {
-	if len(rest) == 2 && digits(rest[0], maxRoleIDDigits) && strings.HasSuffix(rest[1], collection.ArchiveSuffix) && len(rest[1]) > len(collection.ArchiveSuffix) {
-		return formats.PathInfo{Kind: formats.Content}
+	meta := formats.PathInfo{Kind: formats.PathMetadata}
+	if len(rest) != 2 || !digits(rest[0], maxRoleIDDigits) {
+		return meta
 	}
-	return formats.PathInfo{Kind: formats.PathMetadata}
+	meta.Package = RolePackage(rest[0])
+	ref, isArchive := strings.CutSuffix(rest[1], collection.ArchiveSuffix)
+	if isArchive && roleRefOK(ref) {
+		return formats.PathInfo{Kind: formats.Content, Package: meta.Package}
+	}
+	return meta
+}
+
+// roleRefOK reports whether s is the name of a role version, the grammar [A-Za-z0-9._+-]{1,128} (R-ANS-020).
+func roleRefOK(s string) bool {
+	if s == "" || len(s) > 128 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '.', c == '_', c == '+', c == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // digits reports whether s is one to max decimal digits.
@@ -163,6 +212,14 @@ func CanonicalPath(route string, p formats.Params) (string, bool) {
 			return "", false
 		}
 		return ArtifactPath(ns, name, ver), true
+	case routeRoleVersions:
+		return RoleVersionsDocumentPath(p[paramID]), true
+	case routeRoleArchive:
+		ref, ok := strings.CutSuffix(p[paramFile], collection.ArchiveSuffix)
+		if !ok {
+			return "", false
+		}
+		return RoleArchivePath(p[paramID], ref), true
 	}
 	return "", false
 }

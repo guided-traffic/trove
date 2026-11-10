@@ -25,6 +25,10 @@ func (names) Normalize(s string) (string, bool) {
 // normalizeName folds a request's "<ns>.<name>" to lower case and checks it.
 func normalizeName(s string) (string, bool) {
 	l := strings.ToLower(s)
+	if id, ok := strings.CutPrefix(l, RolePrefix); ok && digits(id, maxRoleIDDigits) {
+		// The package of a role of a remote's upstream (R-ANS-020, Q-ANS-36): no collection name has a slash.
+		return l, true
+	}
 	if _, _, ok := collection.SplitName(l); !ok {
 		return "", false
 	}

@@ -157,8 +157,18 @@ func defaultCorpus(fillers int) ([]*collectionDef, []*roleDef) {
 // archiveKey names a generated archive.
 type archiveKey struct {
 	ns, name, version string
-	variant           bool
+	kind              archiveKind
 }
+
+// archiveKind says which archive of a version the stub builds: the original, a second one with another file (the digest modes), or
+// the archive of another collection that declares itself as that other collection (the identity mode).
+type archiveKind uint8
+
+const (
+	kindOriginal archiveKind = iota
+	kindVariant
+	kindSwapped
+)
 
 // archiveCache keeps the generated archives; a version's two archives (the original and the variant of the digest modes) are
 // different files.
@@ -168,16 +178,20 @@ type archiveCache struct {
 	roles map[string][]byte
 }
 
-func (c *archiveCache) collection(def *collectionDef, v *versionDef, variant bool) (ansiblegen.Archive, error) {
-	key := archiveKey{def.ns, def.name, v.version, variant}
+func (c *archiveCache) collection(def *collectionDef, v *versionDef, kind archiveKind) (ansiblegen.Archive, error) {
+	key := archiveKey{def.ns, def.name, v.version, kind}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if a, ok := c.items[key]; ok {
 		return a, nil
 	}
 	spec := ansiblegen.Spec{Namespace: def.ns, Name: def.name, Version: v.version, Dependencies: v.deps, RequiresAnsible: v.requiresAnsible}
-	if variant {
+	switch kind {
+	case kindVariant:
 		spec.Extra = map[string]string{"variant.txt": "the second archive of this version\n"}
+	case kindSwapped:
+		// The archive declares another collection than the path names, with the version of the path.
+		spec.Namespace, spec.Name = "swapped", "other"
 	}
 	a, err := ansiblegen.Collection(spec)
 	if err != nil {
