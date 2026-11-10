@@ -12,11 +12,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/guided-traffic/trove/internal/config"
+	"github.com/guided-traffic/trove/internal/outbound"
+	"github.com/guided-traffic/trove/test/ansiblestub"
 )
 
 // galaxyVersion is one version of a collection in the fake source.
@@ -277,7 +283,7 @@ func (f *fakeTarget) publish(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	base := strings.TrimSuffix(fileName, ".tar.gz")
-	parts := strings.Split(base, "-")
+	parts := strings.SplitN(base, "-", 3)
 	if len(parts) != 3 {
 		f.apiError(w, http.StatusUnprocessableEntity, "invalid_archive", "bad file name "+fileName)
 		return
@@ -605,5 +611,117 @@ func TestR_ANS_027_ADryRunReadsBothSidesAndSendsNothing(t *testing.T) {
 	}
 	if len(f.published) != 0 {
 		t.Error("a dry run published")
+	}
+}
+
+// stubSource starts the counting stub Galaxy of the tests (R-ANS-032) behind TLS and returns it with its API root and the factory
+// that trusts it.
+func stubSource(t *testing.T) (*ansiblestub.Server, *ansiblestub.Running, *outbound.Factory) {
+	t.Helper()
+	cert, err := ansiblestub.NewSelfSigned(ansiblestub.LoopbackHosts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, err := ansiblestub.New(ansiblestub.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := srv.Start("127.0.0.1:0", cert.ServerConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = run.Close() })
+	ca := filepath.Join(t.TempDir(), "ca.pem")
+	if err := os.WriteFile(ca, cert.CAPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f := outbound.New(config.Outbound{
+		TLS:           config.OutboundTLS{CAFiles: []string{ca}, MinVersion: "1.2"},
+		AddressPolicy: config.OutboundAddressPolicy{AllowCIDRs: []string{"127.0.0.0/8"}},
+	}, outbound.WithDialOverride(run.DialOverride()))
+	if err := f.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return srv, run, f
+}
+
+func TestR_ANS_027_TheImporterCopiesTheCollectionsOfTheCountingStubAndASecondRunSkipsThem(t *testing.T) {
+	srv, run, factory := stubSource(t)
+	corpus, err := srv.Corpus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tools ansiblestub.CollectionInfo
+	for _, c := range corpus.Collections {
+		if c.Namespace == "acme" && c.Name == "tools" {
+			tools = c
+		}
+	}
+	if len(tools.Versions) < 2 {
+		t.Fatalf("the corpus has no acme.tools: %+v", corpus.Collections)
+	}
+	target := newFakeTarget(t)
+	build := func() Options {
+		format, src, dst, err := Build(factory, Params{Format: "ansible", From: run.APIRoot(), To: target.srv.URL + targetRoot, Token: "trv_x", ExtraHosts: []string{"*.localhost"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return Options{Format: format, Source: src, Target: dst, Names: []string{"acme.tools"}, Dir: t.TempDir(), Concurrency: 1}
+	}
+	rep, err := Run(context.Background(), build())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := pkgOf(t, rep, "acme.tools")
+	if len(p.Versions) != len(tools.Versions) {
+		t.Fatalf("%d versions reported, the stub holds %d: %+v", len(p.Versions), len(tools.Versions), p.Versions)
+	}
+	for _, v := range p.Versions {
+		if v.Outcome != OutcomeImported {
+			t.Errorf("%s: %+v", v.Version, v)
+		}
+	}
+	for _, v := range tools.Versions {
+		if got := sum(target.stored["acme.tools/"+v.Version]); got != v.SHA256 {
+			t.Errorf("%s: the target stores sha256 %s, the stub announced %s", v.Version, got, v.SHA256)
+		}
+	}
+	rep, err = Run(context.Background(), build())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range pkgOf(t, rep, "acme.tools").Versions {
+		if v.Outcome != OutcomeSkipped {
+			t.Errorf("second run %s: %+v", v.Version, v)
+		}
+	}
+	// Roles are reported once, with the first collection, and not imported.
+	var roles bool
+	for _, n := range p.NotKept {
+		roles = roles || strings.Contains(n, "roles of the source")
+	}
+	if !roles {
+		t.Errorf("notKept %v names no roles", p.NotKept)
+	}
+}
+
+func TestR_ANS_027_ASearchOfTheCountingStubFindsTheCollectionsByTheirFullName(t *testing.T) {
+	_, run, factory := stubSource(t)
+	_, src, _, err := Build(factory, Params{Format: "ansible", From: run.APIRoot(), To: "https://t.example/api/ansible/p/r/", Token: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	names, err := (&Ansible{}).Search(context.Background(), src, "acme.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"acme.base", "acme.tools", "acme.signed"} {
+		found := false
+		for _, n := range names {
+			found = found || n == want
+		}
+		if !found {
+			t.Errorf("%s not in %v", want, names)
+		}
 	}
 }

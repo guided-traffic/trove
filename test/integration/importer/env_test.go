@@ -33,6 +33,7 @@ const (
 	rNPM2      = "npm-imp-b"
 	rNuGet     = "nuget-imp"
 	rNuGetHard = "nuget-imp-hard"
+	rAnsible   = "ansible-imp"
 )
 
 type env struct {
@@ -93,7 +94,8 @@ func newEnv(t *testing.T) *env {
 	st.Repository(rNPM2, "local", "npm", `{}`)
 	st.Repository(rNuGet, "local", "nuget", `{}`)
 	st.Repository(rNuGetHard, "local", "nuget", `{"nuget":{"deleteMode":"delete"}}`)
-	repos := []string{rNPM, rNPM2, rNuGet, rNuGetHard}
+	st.Repository(rAnsible, "local", "ansible", `{}`)
+	repos := []string{rNPM, rNPM2, rNuGet, rNuGetHard, rAnsible}
 	st.Policy("import-writers", []string{"read", "deploy"}, repos, writer)
 	st.Policy("import-readers", []string{"read"}, repos, reader)
 	e.rep = st.Start(t, testenv.ReplicaOptions{Name: "imp1"})

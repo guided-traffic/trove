@@ -796,8 +796,10 @@ A virtual repository serves local and remote Ansible repositories behind one ser
   walk the same plan.
 - **Version list.** The union of the members' versions; for a version in several members the entry of the lowest (tier, position)
   wins, and a local member's version never loses to a remote's. If the SHA-256 of the same version differs between members, the
-  entry stays the winner's and a metric `trove_ansible_virtual_digest_conflicts_total` counts it (the client reads the winner's
-  document and archive, so it is consistent). Order: semver descending; `meta.count` is the merged count; pagination is cut after
+  entry stays the winner's and a metric `trove_ansible_virtual_digest_conflicts_total` counts it once per merge that is built
+  (the client reads the winner's document and archive, so it is consistent). The digest of a remote version is the one its version
+  document announces, so the merge reads the document of every version that a local and a remote member both hold, and of no other
+  ([Q-ANS-45](#q-ans-45--the-digest-conflict-is-looked-for-in-the-versions-a-local-and-a-remote-member-share)). Order: semver descending; `meta.count` is the merged count; pagination is cut after
   the merge, so a client's `limit` and `offset` are consistent across members.
 - **Collection document.** `highest_version` is the highest of the merged list; `created_at` is the earliest, `updated_at` the latest of
   the members'.
@@ -833,25 +835,35 @@ Priority: **P1** · Covers: PKG-ANSIBLE-011
 - The **member paths** (`/api/ansible/<project>/<member>/…`) of the members stay reachable by their own grants; a cached-view request
   (a read that may not fill, R-AUTHZ-008) is served from stored documents and items only.
 - A remote member that cannot be asked (offline, circuit open) makes the merge **fail**: partial results are never cached and are
-  answered with 503 `upstream_unavailable` and `Cache-Status: detail=partial` (R-REPO-020); H-348's limitation (a merge cannot mark one
-  member partial) is that of NuGet's merge and carries over.
+  answered with 503 `upstream_unavailable` and `Cache-Status: detail=partial` when other members answered (R-REPO-020, [Q-ANS-44](#q-ans-44--a-merge-that-could-not-ask-a-member-fails-instead-of-serving-a-partial-list));
+  H-348's limitation (a merge cannot mark one member partial) is that of NuGet's merge and carries over.
 - The archive route walks the plan of R-REPO-019 step 6 and serves the first hit with the headers of R-ANS-005.
+- **Versions a grant hides.** When a grant or a token scope of the caller decides versions by path on a member (`VersionsByPath`,
+  R-AUTHZ-005, Q-AUTHZ-255), a version whose archive path it hides is in no document of the virtual repository: not in the version list
+  (and not in `meta.count`), not as the `highest_version` or in the times of the collection document, and its version document is 404. The
+  version is decided on the member that serves it, the winner of the merge; the merged document stays shared by every caller and the
+  view is the caller's. A collection of which the caller may read no version is 404. A caller whose grants decide no version by path costs
+  no per-version question.
 
 Acceptance criteria:
 
 - A caller who can read only the local member sees the local versions through the virtual repository and no error for the remote one.
-- With the stub down and the remote's version list not cached, the merged list is 503 `partial`, and after the stub is back it is complete.
+- With the stub down and the remote's version list not cached, the merged list of a collection the local member holds too is 503 `partial`
+  (a collection only the remote could hold is the engine's 502 `upstream_unavailable`), and after the stub is back it is complete.
 
 ### R-ANS-024 · Publishing through a virtual repository
 Priority: **P1** · Covers: PKG-ANSIBLE-003
 
 `POST v3/artifacts/collections/` to a virtual repository forwards to its **deploy target** (R-REPO-021): the target must be a local
-repository of the format, else 405 `no_deploy_target` in the Galaxy shape. The target's checks (R-ANS-008) apply to the caller's
+repository of the format, else 405 `no_deploy_target` in the Galaxy shape (a target that is not a local repository of the format). The target's checks (R-ANS-008) apply to the caller's
 principal, with the virtual repository's patterns and claims in front of the shadowing check (R-REPO-048: a first publish of a name
 that a remote member of the virtual repository serves is refused 403 `shadows_remote_package` unless the caller holds `manage`).
 
 - The answer's `task` is the address of `v3/imports/collections/<id>/` **on the virtual repository** (the address the client was given),
   which looks the task up in the deploy target (R-ANS-009).
+- The handler of the virtual class resolves the target, makes a request for it and runs the handler of the local class on that
+  request; the 202 answer's task address is then rewritten to the virtual repository
+  ([Q-ANS-46](#q-ans-46--a-publish-through-a-virtual-repository-runs-the-local-handler-on-the-target-and-rewrites-the-task-address)).
 - The upload through `/files/` of a virtual repository is routed to the deploy target the same way (an upload needs no code of the format,
   as in R-DEB-028).
 
@@ -859,7 +871,7 @@ Acceptance criteria:
 
 - `ansible-galaxy collection publish -s <virtual URL>` stores the version in the local target, the command's polling succeeds through
   the virtual address, and a subsequent `collection install` through the virtual repository installs it.
-- A virtual repository without a deploy target answers 405 `no_deploy_target`.
+- A virtual repository without a deploy target answers 403 `permission_denied`: the decision point refuses the deploy action before the format is asked, as for npm ([Q-NPM-36](npm.md)); 405 `no_deploy_target` is left for a target that is not a local repository of the format.
 
 ### R-ANS-025 · Client setup instructions and the guide
 Priority: **P1** · Covers: PKG-ANSIBLE-012
@@ -997,7 +1009,7 @@ security-relevant event for repeated failures of one principal); `ansible.versio
 integrity failure).
 
 Metrics (`trove_ansible_*`): `trove_ansible_publish_total{outcome}` (`completed`, `failed`, `exists`, `tombstoned`),
-`trove_ansible_role_versions_dropped_total{repo}`, `trove_ansible_virtual_digest_conflicts_total{repository}`,
+`trove_ansible_role_versions_dropped_total{repo}`, `trove_ansible_virtual_digest_conflicts_total{repo}`,
 `trove_ansible_document_bytes{kind}` (histogram of stored document sizes), `trove_ansible_hub_exchanges_total{outcome}`; the series of a
 deleted repository are forgotten as for other formats (the metrics-forget test of NuGet is the pattern).
 
@@ -1827,8 +1839,6 @@ budget test of the Galaxy downloads shows the statement (the integration area `q
 
 **Applied in the spec:** R-ANS-018.
 
-## What this does not cover
-
 ### Q-ANS-43 · The roles of the source are reported once per run, with the first collection
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -1843,6 +1853,66 @@ Status: **Decided by the development agent** — selected from the options below
 source and not to a package: a run-level note then earns the report field of (b).
 
 **Applied in the spec:** R-ANS-027.
+
+### Q-ANS-44 · A merge that could not ask a member fails instead of serving a partial list
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The merge fails: 503 `upstream_unavailable`, `Cache-Status: detail=partial`, `Retry-After`, nothing cached (chosen) | R-ANS-023 | A client never resolves against a list that lacks the versions of a member that was down: `ansible-galaxy` picks the newest version of the list, so an incomplete list silently installs an older one | A remote that is down takes the virtual list of every collection it holds down with it, even when a local member holds the collection |
+| (b) Serve the partial list uncached, as the NuGet class does (R-NUGET-017) | The list of the members that answered | The local versions stay available | A dependency resolves to an older version without any sign; the sign (`Cache-Status`) is not read by the client |
+
+**Choice:** (a). **Rationale:** the Galaxy client has no way to tell a short list from a complete one, and what it installs from one is a
+decision about the software of the installation. Revisit when a member can be marked optional (the engine's partial result per member,
+H-348): a local-first repository would then serve the members that answered.
+
+**Applied in the spec:** R-ANS-023.
+
+### Q-ANS-45 · The digest conflict is looked for in the versions a local and a remote member share
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Read the version document of a remote member for each version that a local member also holds, through the member; count once per merge built (chosen) | The digest of a remote version is known when its document was read; the merge makes it known where a conflict can be | The acceptance criterion holds without a prior read of the remote's document; the cost is the number of shared versions, each read cached by the remote class and paid from the page budget of the merge | A merge makes a few member reads |
+| (b) Use the digests the remote class recorded (`ansible_upstream_versions`) only | No reads | Cheap | A conflict is seen only after somebody read the remote version's document: the first install after the publish does not count it |
+| (c) Compare in every request that serves a version document | The counter follows the requests | Exact for the version served | The counter then counts requests, not versions |
+
+**Choice:** (a). **Rationale:** a conflict is a property of the two members' versions, so it is counted where the merge sees both. Revisit if
+the reads show up in the remote's request counts of a repository with many shared versions: (b) then becomes the rule and the criterion
+the one of a version read at least once ([H-861](#h-861--the-digest-conflict-counter-counts-a-merge-that-is-built-not-a-request)).
+
+**Applied in the spec:** R-ANS-022.
+
+### Q-ANS-46 · A publish through a virtual repository runs the local handler on the target and rewrites the task address
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The route serves the classes local and virtual; the virtual handler resolves the target, makes a request for it and runs the local class's handler, then gives the task address of the 202 the virtual repository's (chosen) | The OCI pattern (writes act on `Request.WriteTarget`) | The checks, the ownership and the shadowing check are written once; the client keeps polling the address it was given (R-ANS-024); no redirect, which would drop the `Authorization` header of some clients | The handler holds the 202 answer to rewrite it, and depends on the local handler putting the task address into the body |
+| (b) The dispatcher redirects the write to the target (`redirectClass`) | NuGet's pattern | No code | The task address then names the target, and the client polls the repository that is not the one it configured: a deploy target changed later makes polls fail |
+
+**Choice:** (a). **Rationale:** R-ANS-024 asks for the task on the address the client was given, and the polling is the part of the
+protocol the client cannot do without. Revisit if the local handler stops writing the task address into the body; the unit test of the
+rewrite fails then.
+
+**Applied in the spec:** R-ANS-024.
+
+### Q-ANS-47 · The conflict counter's label is `repo`, and the format has one `Bind`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The label is `repo`, the cardinality-capped label of every format (R-OPS-007); the class registers its families with `registerBinder`, run by the format's one `Bind` (chosen) | The metrics registry refuses any other name for a repository | The series leave with the repository; one rule for all formats | The text of R-ANS-030 said `repository` |
+| (b) A label `repository` | As the first text | | Refused by the registry at start (the unit test of the bind proves it) |
+
+**Choice:** (a). **Rationale:** the registry decides. The composition root binds a format through one `Bind(h, cfg, metrics)`, so the classes
+add their families to that one function (`virtual_metrics.go` registers the virtual ones; a remote class adds its own there).
+
+**Applied in the spec:** R-ANS-022, R-ANS-030.
 
 ### Q-ANS-48 · The setup snippets: ids by the core's convention, a `hostname` template function, and PowerShell and cmd forms of the token variable
 
@@ -1994,6 +2064,21 @@ in production. Real only for a test that starts replicas of different limits in 
 `/api/`". The 502 of every request through such a repository carries the hint (`parseDiscovery`); the generic upstream test of R-REPO-024 requests
 the URL and judges the status alone, so it reports a URL that answers 200 with something else as reachable. Live today for every remote repository
 of the format; the first request names the reason.
+
+### H-861 · The digest conflict counter counts a merge that is built, not a request
+
+`trove_ansible_virtual_digest_conflicts_total` is raised when a merge is built (R-ANS-022, Q-ANS-45). A merge the engine serves from its
+merged-metadata cache is not built again, so a conflict that stays for a day is counted once per cache period and per replica, not per
+install; and a remote member the caller may not fill takes part with its cached versions only and is read only for the versions it has
+cached, so a conflict in an uncached version is not counted for that caller. Live today for any virtual repository with a local and a
+remote member that hold one version with two digests: the number says that a conflict exists, not how often it is met.
+
+### H-863 · A role lookup is answered by one member, and the ids inside a role document are the upstream's
+
+The lookup of a role through a virtual repository is answered by the first remote member whose answer is not empty (Q-ANS-19); two
+members that hold different roles under one owner and name are not merged, and the second is never offered. The ids of the versions inside
+a role document (`summary_fields.versions[].id`) are the upstream's own and are not rewritten: the client does not use them as routes.
+Live for a virtual repository over two remotes of a Galaxy each; dormant with one.
 
 ### H-864 · Only two ansible-core releases are tested
 

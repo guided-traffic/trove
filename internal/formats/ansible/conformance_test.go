@@ -49,6 +49,7 @@ func conformance() formattest.Fixture {
 		},
 		Host:      hostOptions,
 		Remote:    remoteFixture(),
+		Merge:     mergeFixture(),
 		Discovery: discoveryFixture(),
 		Names: []formattest.NameCase{
 			{Spellings: []string{"acme.tools"}},
@@ -91,9 +92,6 @@ func conformance() formattest.Fixture {
 		View: &formattest.ViewFixture{
 			Versions: versions, Package: "acme.tools",
 			Seed: func(h *formattest.Host) error { return seed(versions...)(h) },
-		},
-		Skip: map[formattest.Check]string{
-			formattest.CheckMerge: "the virtual adapter joins with the virtual class (R-ANS-022)",
 		},
 	}
 }

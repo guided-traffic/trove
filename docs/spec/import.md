@@ -1,6 +1,6 @@
 # Import tooling
 
-Status: built (2026-11-10) for npm and NuGet; the tool as built is described on [developer/import.md](../developer/import.md), the
+Status: built (2026-11-10) for npm and NuGet, and for Ansible Galaxy collections; the tool as built is described on [developer/import.md](../developer/import.md), the
 operator's page is [manual/admin/import.md](../manual/admin/import.md), and the security perspective is
 [../security/import.md](../security/import.md). The decisions are Q-IMP-1 to Q-IMP-9, decided by the development agent for the
 owner's walkthrough.
@@ -29,10 +29,17 @@ repositories of project `web` *(examples)*; `https://registry.example.com/` is t
 
 ## Scope
 
-The formats are **npm** and **NuGet**. Ansible Galaxy is left out: trove has no Galaxy format, and a package that no repository can
-hold cannot be imported. The importer is built so that a format is one implementation of one interface (R-IMP-009); when a Galaxy
-format exists, its import is that implementation and its documentation, and nothing in the runner, the report or the state file
-changes.
+The formats are **npm**, **NuGet** and **Ansible Galaxy**. Of Ansible Galaxy the **collections** are imported
+([formats/ansible.md](formats/ansible.md) R-ANS-027, Q-ANS-21); the roles of a Galaxy are not, because a local repository cannot hold
+one (R-ANS-014), and the report names their number. The importer is built so that a format is one implementation of one interface
+(R-IMP-009); the Galaxy import is that implementation and its documentation, and nothing in the runner, the report or the state file
+changed for it.
+
+| Format | Implementation | `--from` and `--to` | The names | Source of the versions | Publish road of the target | Not kept (reported) |
+|---|---|---|---|---|---|---|
+| `npm` | [npm.go](../../internal/importer/npm.go) | the registry address | package names, scoped or not | the package document | `PUT` of the package document | deprecations, provenance |
+| `nuget` | [nuget.go](../../internal/importer/nuget.go) | the service index | package IDs | the registration | `PUT` of a multipart body to the publish resource | deprecation, the unlisted state where unsafe |
+| `ansible` | [ansible.go](../../internal/importer/ansible.go) | the API root of the Galaxy (`https://galaxy.example.com/api/`), and the repository address of trove (`.../api/ansible/web/ansible-local/`) | `<namespace>.<name>` | `v3/collections/…/versions/` and the version documents | `POST v3/artifacts/collections/`, then the import task | roles, the deprecation flag, signatures, publication times |
 
 ## Requirements
 
@@ -50,11 +57,13 @@ trove admin import npm   --from https://registry.example.com/ \
                          --to   https://trove.example.com/api/npm/web/npm-local/ [flags]
 trove admin import nuget --from https://nuget.example.com/v3/index.json \
                          --to   https://trove.example.com/api/nuget/web/nuget-local/v3/index.json [flags]
+trove admin import ansible --from https://galaxy.example.com/api/ \
+                           --to   https://trove.example.com/api/ansible/web/ansible-local/ [flags]
 ```
 
 | Flag | Meaning | Default |
 |---|---|---|
-| `--from`, `--to` | the source and the target, each as a package manager is given its registry: the registry address for npm, the service index for NuGet | required |
+| `--from`, `--to` | the source and the target, each as a package manager is given its registry: the registry address for npm, the service index for NuGet, the API root of the Galaxy and the repository address for Ansible | required |
 | `--package <name>` (repeatable), `--packages-file <file>` | the packages to copy (R-IMP-003) | none |
 | `--search <text>` | also copy what the source's search finds (R-IMP-003) | not given |
 | `--source-auth none\|basic\|bearer`, `--source-username`, `--source-password-file`, `--source-extra-host <pattern>` (repeatable) | how the source is asked (R-IMP-002) | `none` |
@@ -192,6 +201,9 @@ Priority: **P1** · Covers: trove-only
 | npm: deprecation messages | **no, reported** | trove has no way to set a deprecation yet (R-NPM-018 answers `404`); the report names the deprecated versions under "not kept". When R-NPM-018 is built, the importer sets it after the versions, as it sets tags |
 | NuGet: deprecation, vulnerabilities | no | trove stores neither for a local package (R-NUGET-009); trove evaluates the vulnerabilities of what it stores itself |
 | npm: provenance attestations, signatures | no, reported | the importer sends no `.sigstore` attachment; the source's bundle is for the source's tarball URL and publisher |
+| Ansible: the collection archives, hence their manifest and README | yes | the verified bytes; trove reads the manifest from the archive, as for any publish (R-ANS-010) |
+| Ansible: roles | **no, reported** | a local repository has no role API (R-ANS-014); the report names the number of roles the source's `v1` API counts, once per run, with the first collection planned ([Q-ANS-43](formats/ansible.md#q-ans-43--the-roles-of-the-source-are-reported-once-per-run-with-the-first-collection)) |
+| Ansible: the deprecation flag of a collection, signatures, namespace metadata | no, reported or ignored | trove stores none of them for a local collection (R-ANS-027) |
 | Owners, maintainers, download counts, the source's users and tokens | no | trove's ownership and permissions are its own; the importing token's principal owns a name by the rules of the repository (`local.autoClaim`, R-REPO-023) |
 | npm: unpublished versions, the source's tombstones | no | only versions the source lists are copied |
 
@@ -293,9 +305,9 @@ protocol) and `Finish` (the state a publish cannot carry). The runner, the limit
 digest rule are shared and know no format.
 
 The formats of the importer are the formats of the target repositories: a format the importer gains needs the format in trove first.
-Ansible Galaxy is not a trove format, so it is not an importer format ([Scope](#scope)). Adding it later means the Galaxy format of
-trove, then its `importer.Format`, its `FormatByID` line, a section on the pages of the admin manual and of the developer
-documentation, and tests against a stub of the Galaxy API.
+Ansible Galaxy is both ([Scope](#scope)): its `importer.Format` is [ansible.go](../../internal/importer/ansible.go), registered in
+`FormatByID`, with a section on the pages of the admin manual and of the developer documentation and tests against the counting stub
+of the Galaxy API (R-ANS-027).
 
 ## Security notes
 
@@ -311,7 +323,9 @@ the limiter, the retry, the address rules, the egress denial, the credential sco
 format, the npm plan and publish body. The integration suite [test/integration/importer](../../test/integration/importer) runs the
 importer against the counting stubs [test/npmstub](../../test/npmstub) and [test/nugetstub](../../test/nugetstub) and a replica on
 the shared stack: a full import of each format, the rerun, a run cut short and resumed, a conflicting version, a digest the file does
-not have, a token without the publish right, and the unlisted state with a repository whose delete removes the version.
+not have, a token without the publish right, and the unlisted state with a repository whose delete removes the version. The Galaxy
+format is run against [test/ansiblestub](../../test/ansiblestub) the same way (`ansible_test.go` in both places); its unit tests also
+run against a small Galaxy and trove target written in the test file, which is where the cases the stub cannot produce are.
 No end-to-end test with the real clients is written: it needs the kind cluster, which the tooling run did not use; the e2e wave
 adds `npm install` and `dotnet restore` of imported packages to the sets of the two formats.
 
@@ -483,4 +497,4 @@ The open gaps of the mechanism are on [../security/import.md](../security/import
 - Timestamps, deprecations and attestations of the source are not copied (R-IMP-005); the importer reports them.
 - An import is a copy at a moment; changes at the source afterwards are copied by a later run (with a new state file). A standing
   synchronization of a foreign registry is the mirror mode of a remote repository ([repositories-and-proxy.md](repositories-and-proxy.md)).
-- Ansible Galaxy, and every format trove does not have.
+- The roles of an Ansible Galaxy, and every format trove does not have.

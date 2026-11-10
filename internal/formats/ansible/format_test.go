@@ -50,20 +50,18 @@ func TestR_ANS_001_Descriptor(t *testing.T) {
 	}
 }
 
-// A class joins the format by adding a class file (format.go): with the local and the remote class files, the format has those
-// classes and the routes of the virtual class alone are not in its table.
+// A class joins the format by adding a class file (format.go): with the three class files the format has the three classes, in the order
+// local, remote, virtual, and its table is the whole table.
 func TestNewRegistersTheClassesOfTheClassFiles(t *testing.T) {
 	f := New()
-	if got := f.Classes(); !reflect.DeepEqual(got, []formats.Class{formats.Local, formats.Remote}) {
+	if got := f.Classes(); !reflect.DeepEqual(got, []formats.Class{formats.Local, formats.Remote, formats.Virtual}) {
 		t.Fatalf("classes = %v", got)
 	}
 	if err := formats.Validate(f); err != nil {
 		t.Fatal(err)
 	}
-	for _, r := range f.Routes() {
-		if !r.ServesClass(formats.Local) && !r.ServesClass(formats.Remote) {
-			t.Errorf("route %s is in the table of a format with the local and the remote class and serves neither", r.Name)
-		}
+	if len(f.Routes()) != len(allClasses().Routes()) {
+		t.Errorf("%d routes, the whole table has %d", len(f.Routes()), len(allClasses().Routes()))
 	}
 }
 

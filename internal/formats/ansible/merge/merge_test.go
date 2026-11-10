@@ -115,6 +115,15 @@ func TestR_ANS_022_TheCollectionTakesTheHighestVersionTheEarliestCreationAndTheL
 	}
 }
 
+func TestR_ANS_022_TwoPartsOfOneMemberNeverConflictWithEachOther(t *testing.T) {
+	// A remote member's cached and uncached versions are two parts; the same member is no conflict with itself.
+	a := Part{Member: "remote", Tier: 2, Entries: entries("1.0.0"), SHA256: map[string][32]byte{"1.0.0": sum(1)}}
+	b := Part{Member: "remote", Tier: 3, Entries: entries("1.0.0"), SHA256: map[string][32]byte{"1.0.0": sum(2)}}
+	if c := MergeLists([]Part{a, b}).Conflicts; len(c) != 0 {
+		t.Errorf("conflicts %v", c)
+	}
+}
+
 func TestCompareIsAnOrder(t *testing.T) {
 	vs := []string{"0.0.1", "1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-alpha.beta", "1.0.0-beta", "1.0.0-beta.2", "1.0.0-beta.11", "1.0.0-rc.1", "1.0.0", "1.0.1", "1.1.0", "2.0.0", "10.0.0"}
 	for i := range vs {

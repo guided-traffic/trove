@@ -132,7 +132,7 @@ func galaxyCode(code string, kind errs.Kind) string {
 		return "permission_denied"
 	case errs.CodeInvalid:
 		return "invalid_request"
-	case errs.CodeUpstreamFailed, errs.CodeUpstreamTimeout, errs.CodeUnavailable:
+	case errs.CodeUpstreamFailed, errs.CodeUpstreamError, errs.CodeUpstreamTimeout, errs.CodeUnavailable:
 		return "upstream_unavailable"
 	}
 	return strings.TrimPrefix(code, "ansible_")

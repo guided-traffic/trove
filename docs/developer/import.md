@@ -1,6 +1,6 @@
 # Import tooling
 
-Status: built (2026-11-10) for npm and NuGet. Specified on [import.md](../spec/import.md) (R-IMP-001 to R-IMP-009, Q-IMP-1 to Q-IMP-9);
+Status: built (2026-11-10) for npm, NuGet and Ansible Galaxy collections. Specified on [import.md](../spec/import.md) (R-IMP-001 to R-IMP-009, Q-IMP-1 to Q-IMP-9);
 the operator's page is [manual/admin/import.md](../manual/admin/import.md), the security perspective is
 [security/import.md](../security/import.md).
 
@@ -40,6 +40,7 @@ test/integration/importer # the importer against the counting stubs and a replic
 | [assemble.go](../../internal/importer/assemble.go) | `Params`, `Build` (address rule through `repository.NormalizeUpstreamURL`, the two clients, the hop policies), `FormatByID` |
 | [npm.go](../../internal/importer/npm.go) | `NPM`: name grammar, search, `Plan` from the full document, `Held` from the target's document, `Publish` (the `package.json` of the tarball, the streamed base64 body), `Finish` (dist-tags) |
 | [nuget.go](../../internal/importer/nuget.go) | `NuGet`: service index of both sides, search, `Plan` from the registration (paged or inline, gzip tolerated), `Held` (registration plus a `HEAD` for `Repr-Digest`), `Publish` (multipart), `Finish` (unlist only where `deleteMode` is read as `unlist`) |
+| [ansible.go](../../internal/importer/ansible.go) | `Ansible`: name grammar (R-ANS-002, folded to lower case), `Preflight` (the discovery document is a trove one with `v3`), `Search` (the collection index, `links.next` followed), `Plan` (version list and version documents, `artifact.sha256` as the digest, the roles of the source and the deprecation flag as `NotKept`), `Held` (the target's version documents), `Publish` (multipart `sha256` and `file`, then the import task is polled), `Finish` (nothing) |
 | [journal.go](../../internal/importer/journal.go) | the state file: header, one flushed line per complete package, a cut last line ignored |
 | [order.go](../../internal/importer/order.go) | the import order (source time, then version number), `compareVersions`, `maybeGunzip` |
 | [cmd/trove/admin_import.go](../../cmd/trove/admin_import.go) | `importCmd`, `secret` (file or environment, never an argument), `readNames`, `writeReport` |
@@ -62,8 +63,9 @@ test/integration/importer # the importer against the counting stubs and a replic
 
 ## Add a format ("how to add an X")
 
-The format has to exist in trove first: the importer writes a trove repository through that format's protocol. Ansible Galaxy is
-not a trove format, so there is nothing to import into.
+The format has to exist in trove first: the importer writes a trove repository through that format's protocol. The Galaxy
+collections are the example of a publish that answers with a task: `Ansible.Publish` returns when the task is finished, and a task
+that failed becomes a `*Refusal` with the task's code.
 
 1. Implement `importer.Format` in a new file `internal/importer/<format>.go`: `ValidName` (a conservative grammar; the name goes into
    an address), `Preflight`, `Search` (return nil, nil when the source has no search), `Plan` (versions in `sortVersions` order, the

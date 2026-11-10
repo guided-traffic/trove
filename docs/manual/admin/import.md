@@ -1,10 +1,10 @@
 # Importing from another registry
 
-How to copy the packages of an existing npm registry or NuGet feed into a trove local repository, so that a team can move to trove without publishing every version again by hand: what the command needs, how to run it, what is copied and what is not, how it reports, and how to resume a run that was cut short.
+How to copy the packages of an existing npm registry, NuGet feed or Ansible Galaxy into a trove local repository, so that a team can move to trove without publishing every version again by hand: what the command needs, how to run it, what is copied and what is not, how it reports, and how to resume a run that was cut short.
 
 The command is `trove admin import`. It is a client of both registries: it reads the old registry the way a package manager does and writes the trove repository through its normal publish protocol with a trove token. It needs no database and no access to trove's storage, and it can run on a workstation, in any trove pod, or as a Kubernetes Job. Because every version goes in through the publish protocol, everything a publish checks is checked for an imported version too: the permissions of the token on the repository and on each package name, the digest of the bytes, the rule that a stored version never changes, the audit event, the vulnerability evaluation and the storage quota.
 
-The formats are **npm** and **NuGet**. Ansible Galaxy is not imported, because trove has no Galaxy format.
+The formats are **npm**, **NuGet** and **Ansible Galaxy** (the collections; see [Ansible Galaxy](#ansible-galaxy)).
 
 ## Before you start
 
@@ -44,7 +44,7 @@ trove admin import npm \
   --dry-run                                           # example
 ```
 
-The `--to` address is the repository's address as `npm config set registry` takes it. For NuGet, `--from` and `--to` are the service indexes, `.../v3/index.json`.
+The `--to` address is the repository's address as `npm config set registry` takes it. For NuGet, `--from` and `--to` are the service indexes, `.../v3/index.json`. For Ansible Galaxy, `--from` is the API root of the old Galaxy and `--to` the address of the repository, [see below](#ansible-galaxy).
 
 Then run it, with a state file and a report:
 
@@ -56,7 +56,7 @@ trove admin import npm ... --state import.state --report import-report.json
 |---|---|---|
 | `--package <name>` | A package to copy; repeat it for several | none |
 | `--packages-file <file>` | Names, one per line | none |
-| `--search <text>` | Also copy what the old registry's search finds for the text. npm: `GET -/v1/search`; NuGet: the search resource. A registry without the endpoint finds nothing, and only the named packages are copied. A NuGet package whose versions are all unlisted is not found by a search; name it | not given |
+| `--search <text>` | Also copy what the old registry's search finds for the text. npm: `GET -/v1/search`; NuGet: the search resource; Ansible Galaxy: the collection index, filtered on `<namespace>.<name>` (`--search ''` copies every collection). A registry without the endpoint finds nothing, and only the named packages are copied. A NuGet package whose versions are all unlisted is not found by a search; name it | not given |
 | `--source-auth none\|basic\|bearer` | How the old registry is asked | `none` |
 | `--source-username <name>` | The account for `basic` | none |
 | `--source-password-file <file>` | The password (`basic`) or token (`bearer`) of the old registry; the environment variable `TROVE_IMPORT_SOURCE_PASSWORD` works too | none |
@@ -86,11 +86,14 @@ In a Kubernetes Job, use the image of trove and the same configuration as the ot
 | npm: deprecation messages | **No.** trove cannot set a deprecation yet. The report lists the deprecated versions under "not kept" |
 | NuGet: deprecation | **No.** trove stores none for a local package |
 | npm: provenance attestations | **No**, listed in the report |
+| Ansible Galaxy: the collection archives, with the manifest and the README they hold | Yes |
+| Ansible Galaxy: roles | **No.** A trove local repository has no role API. The report names the number of roles the old Galaxy counts, once, with the first collection. Publish a role you need as a collection (`roles/` directory of a collection) |
+| Ansible Galaxy: the deprecation flag, signatures, namespace metadata | **No** (the deprecation flag is reported) |
 | Owners, maintainers, download counts, the old registry's users and tokens | **No.** The user of the token owns the names it publishes, by the rules of the repository ([Permissions](permissions.md)) |
 
 ## How a version is checked
 
-For each version the command takes the strongest digest the old registry announces (npm: the strongest entry of `dist.integrity`, else `dist.shasum`; NuGet: the `packageHash` of the registration) and compares it with the digest of the bytes it downloaded.
+For each version the command takes the strongest digest the old registry announces (npm: the strongest entry of `dist.integrity`, else `dist.shasum`; NuGet: the `packageHash` of the registration; Ansible Galaxy: the `artifact.sha256` of the version document) and compares it with the digest of the bytes it downloaded.
 
 - **The digest does not match:** the version fails with `digest_mismatch`, the file is thrown away and nothing is sent to trove.
 - **The registry announces no digest:** the version fails with `no_digest`. There is no switch to import it anyway. Publish that version by hand if you need it.
@@ -132,7 +135,29 @@ not kept @acme/forms: deprecation of 0.9.0 (trove has no way to set a deprecatio
 
 The exit status is `0` when every package is complete, `1` when something needs a look or the run was stopped, and `2` for a wrong command line. A failure of one package does not stop the others. Two answers stop the whole run, because no other package can get around them: trove does not accept the token (401), and trove is full (507, the storage quota or capacity). The report says which.
 
-Every imported version is an ordinary publish in the audit log: the event `npm.publish` (npm) or `package.published` (NuGet), with the user or service account of the token as the actor.
+Every imported version is an ordinary publish in the audit log: the event `npm.publish` (npm) or `package.published` (NuGet and Ansible Galaxy), with the user or service account of the token as the actor.
+
+## Ansible Galaxy
+
+The command copies the **collections** of an existing Galaxy (the public one, `galaxy_ng`, Pulp-based or Automation Hub) into a local repository of the format Ansible Galaxy. It speaks the Galaxy API v3 that `ansible-galaxy` speaks.
+
+```shell
+trove admin import ansible \
+  --from https://galaxy.old.example.com/api/ \
+  --to https://trove.example.com/api/ansible/web/ansible-local/ \
+  --package acme.tools --package acme.base \
+  --source-auth bearer --source-password-file source-token \
+  --token-file trove-token --dry-run                    # example
+```
+
+- **`--from` is the API root** of the old Galaxy, the address `ansible-galaxy` has as `url=` in its `ansible.cfg`, with a trailing slash. The command asks it for `v3/collections/…`. A Galaxy that serves its collections below a prefix (`content/<repository>/`, as some Automation Hubs do) is given with the prefix: `--from https://hub.example.com/api/galaxy/content/published/`. The command does not guess. **Run `--dry-run` first**: it reads the version lists and documents of the old Galaxy and the repository of trove and tells you what it would copy, so a Galaxy that answers differently shows up before anything is written.
+- **`--to` is the repository's URL** as `ansible-galaxy` takes it. The command reads the discovery document there first: it must be a trove repository (its description starts with `trove`) that lists `v3`.
+- **Names** are `<namespace>.<name>`, folded to lower case. A name the target does not accept (trove's grammar is `[a-z0-9_]`, 1 to 64 characters, not starting with `_`, with a letter) is `invalid_name`. `--search <text>` lists the index of the old Galaxy and keeps the names that contain the text; without `--package`, `--packages-file` and `--search` the command is refused, and `--search ''` copies everything.
+- **The road** is the one of `ansible-galaxy collection publish`: a `POST` of the archive and its SHA-256 to `v3/artifacts/collections/` with the token as `Authorization: Bearer`, then the import task is read until it is finished. A task that failed is `target_refused` with the code of the task (`invalid_archive`, `version_exists`, …).
+- **Digests.** The old Galaxy's `artifact.sha256` is the digest the file is compared with before a byte is sent. A version document without it is `no_digest`.
+- **Versions** are copied in the order the old Galaxy published them. Their dates are the date of the import.
+- **What the report names under "not kept":** the number of roles of the old Galaxy (its `v1` API, asked once, when it answers), and a collection the old Galaxy marks as deprecated.
+- **The first real source.** The command was written against the documents of the public Galaxy and the counting stub of the tests, not against your Galaxy. If a dry run shows something odd (versions missing, `source_error`), send the output of `--dry-run --report` and the API root; do not work around it by hand before that.
 
 ## Running it again
 

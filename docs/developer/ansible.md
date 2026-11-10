@@ -10,8 +10,9 @@ packages, the schema, the scheme `Token` of the authentication stage and the dat
 What is built today is the **skeleton, the leaves and the local class**: the format registers with its route table, the grammars, the classification of
 paths, the Galaxy error shape, the settings schema and the data port with its tables; the local class publishes, serves the three read operations and the
 download, records the import tasks, deletes with tombstones and replays them, reindexes, sweeps old tasks and reads its rows for the package screens; the
-scheme `Token` is in the authentication stage. The remote class, the virtual class and the client surface are not built; a route of a class that has no
-handler answers 501 `ansible_not_implemented`. [What is built and what is not](#what-is-built-and-what-is-not) says which.
+scheme `Token` is in the authentication stage. The remote class ([ansible-remote.md](ansible-remote.md)), the virtual class
+([ansible-virtual.md](ansible-virtual.md)), the setup, the guide and the screens are built too; a route of a class that has no handler answers
+501 `ansible_not_implemented`. [What is built and what is not](#what-is-built-and-what-is-not) says which.
 
 ## What has to be in your head first
 
@@ -71,7 +72,7 @@ internal/config/ansible.go     # the ansible: section
 | File | Responsibility |
 |---|---|
 | `handlers_remote.go`, `remote*.go` | The remote class and the roles: [ansible-remote.md](ansible-remote.md). `mirror.go` and `hub.go` are not created yet (B2, later stages) |
-| `class_virtual.go`, `handlers_virtual.go`, `virtual*.go`, `merge/` | Not created yet: the virtual class (B3) |
+| `class_virtual.go`, `handlers_virtual.go`, `virtual*.go`, `merge/` | The virtual class: [ansible-virtual.md](ansible-virtual.md) |
 | `setup*.go`, `guide*.go`, `guide/` | Not created yet: the setup templates and the guide (B4); the conformance fixture skips check 8 until then |
 
 ## The routes
@@ -170,6 +171,6 @@ The remote adapter implements `FillCommitter` (the commit of a cached archive) a
 
 ## What is built and what is not
 
-Built: the skeleton, the leaves, the scheme, the tables, the data port and the local class. Not built yet: the remote class (work package B2), the virtual class (B3, which
-also lists the import tasks of a deployment target), the setup and the guide (B4), the restore from the trash (H-852). The management operations and the
-Galaxy routes of the local class are served; the deploy dialog is not offered (Q-ANS-34).
+Built: the skeleton, the leaves, the scheme, the tables, the data port, the local, remote and virtual classes, the setup, the guide and the
+screens. Not built yet: the mirror and the hub's token exchange of the remote class, the e2e set `ansible`, the restore from the trash (H-852).
+The deploy dialog is not offered (Q-ANS-34).

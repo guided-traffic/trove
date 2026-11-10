@@ -15839,7 +15839,7 @@ components:
     VirtualFormatName:
       type: string
       description: The formats whose classes contain `virtual`. The create form offers these for a virtual repository.
-      enum: [deb, npm, nuget, oci]
+      enum: [ansible, deb, npm, nuget, oci]
     # <<< WP2.1 formats
     RepositoryWarning:
       type: object

@@ -2988,15 +2988,18 @@ func (e ValkeyViewState) Valid() bool {
 
 // Defines values for VirtualFormatName.
 const (
-	VirtualFormatNameDeb   VirtualFormatName = "deb"
-	VirtualFormatNameNpm   VirtualFormatName = "npm"
-	VirtualFormatNameNuget VirtualFormatName = "nuget"
-	VirtualFormatNameOci   VirtualFormatName = "oci"
+	VirtualFormatNameAnsible VirtualFormatName = "ansible"
+	VirtualFormatNameDeb     VirtualFormatName = "deb"
+	VirtualFormatNameNpm     VirtualFormatName = "npm"
+	VirtualFormatNameNuget   VirtualFormatName = "nuget"
+	VirtualFormatNameOci     VirtualFormatName = "oci"
 )
 
 // Valid indicates whether the value is a known member of the VirtualFormatName enum.
 func (e VirtualFormatName) Valid() bool {
 	switch e {
+	case VirtualFormatNameAnsible:
+		return true
 	case VirtualFormatNameDeb:
 		return true
 	case VirtualFormatNameNpm:
