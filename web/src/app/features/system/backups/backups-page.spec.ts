@@ -316,7 +316,7 @@ describe('The backups screen: stored backups, the manual command and a restore (
     const notice = root.querySelector('.restored')!;
     expect(text(notice)).toContain('20261020T020000Z-aaaa');
     expect(text(notice)).toContain('this screen offers no restore action');
-    expect(notice.querySelector('a')?.getAttribute('href')).toBe('/help/admin/operations');
+    expect(notice.querySelector('a')?.getAttribute('href')).toBe('/help/admin/backup-and-restore');
     expect([...root.querySelectorAll('button')].some((b) => /restore/i.test(text(b)) && !/restored/i.test(text(b)))).toBe(false);
   });
 

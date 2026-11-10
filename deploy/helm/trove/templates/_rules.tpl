@@ -168,7 +168,7 @@ the alert and the report banner agree (R-VULN-004). It is a duration parsed by t
     severity: warning
   annotations:
     summary: The mirror {{ "{{ $labels.repo }}" }} has failed three pass attempts in a row.
-    description: The last error is in GET /api/v1/repositories/{key}/mirror and in the audit event mirror.pass_failed (R-REPO-053, R-REPO-057). The pass in progress stays, and the dispatch continues it after the back-off; a complete pass resets the count. A paused mirror is not reported.
+    description: The last error is in GET /api/v1/projects/{projectKey}/repositories/{repoKey}/mirror and in the audit event mirror.pass_failed (R-REPO-053, R-REPO-057). The pass in progress stays, and the dispatch continues it after the back-off; a complete pass resets the count. A paused mirror is not reported.
 - alert: TroveMirrorStale
   expr: time() - max by (repo) (trove_mirror_next_pass_timestamp_seconds{ {{ $ns }} }) > 3600
   for: 30m

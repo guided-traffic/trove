@@ -9,7 +9,7 @@ trove keeps your packages and files in repositories. You use it in two ways:
 - **In the browser**, to find packages and files, read their details, copy install commands and set up your package manager.
 - **With your tools**, such as npm, pnpm, Yarn or curl, which install, publish, download and upload through the repository addresses trove shows you.
 
-The browser signs you in through your organization's identity provider. Tools never use your password: they use a token you create in trove. In this version trove serves npm packages and generic files; [Known limitations](../admin/limitations.md) lists what is not built yet.
+The browser signs you in through your organization's identity provider. Tools never use your password: they use a token you create in trove. trove serves npm and NuGet packages, container images, Debian packages and generic files; [Known limitations](../admin/limitations.md) lists what is not built yet.
 
 ## Sign in
 

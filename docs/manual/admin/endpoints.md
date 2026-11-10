@@ -20,7 +20,7 @@ Every installation has the default endpoint: the client listener on port 8080 wi
 | Replica header | when `X-Trove-Replica` names the answering replica: `authenticated`, `always`, `never` | `never` |
 | Concurrent requests | per replica and endpoint; over it the endpoint answers `503 server_busy` while other endpoints are unaffected | 1024 |
 
-A path of a family outside the surface answers `404`, the same as an unknown path. Generic repositories are served under `/files/`, so an endpoint that should serve them needs `files` in its surface; npm is in `packages`. The `ci_exchange` family is reserved and has no working route yet.
+A path of a family outside the surface answers `404`, the same as an unknown path. Generic repositories are served under `/files/`, so an endpoint that should serve them needs `files` in its surface; npm, NuGet, OCI and Debian are in `packages`. The `ci_exchange` family is reserved and has no working route yet.
 
 ### Host check and 421
 
@@ -113,7 +113,7 @@ On an endpoint in mode `rules`, exposure rules are a ceiling on what anyone may 
 - **Read-only.** Every write on such an endpoint answers `403 endpoint_read_only`, whether or not the target exists.
 - **Rules add up.** A rule belongs to one endpoint and one repository; content is exposed when any enabled rule admits it. Inside a rule, an exclude pattern wins over an include, and an empty include list leaves that dimension open. A rule with no patterns exposes the whole repository.
 - **Listings follow.** Repository lists on the endpoint show only repositories with an enabled rule.
-- **Formats.** Generic repositories are narrowed by paths; npm repositories by package names, versions, version range, pre-releases and dist-tags; NuGet repositories by package IDs, versions, version range and pre-releases (NuGet has no tags). A repository of a format without exposure support takes no rule and serves nothing on such an endpoint.
+- **Formats.** Generic repositories are narrowed by paths; npm repositories by package names, versions, version range, pre-releases and dist-tags; NuGet repositories by package IDs, versions, version range and pre-releases (NuGet has no tags). A repository of a format without exposure support, OCI and Debian today, takes no rule and serves nothing on such an endpoint.
 
 An endpoint in mode `all` has no ceiling; its rules have no effect. At most 1,000 rules can exist per endpoint.
 

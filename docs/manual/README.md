@@ -44,8 +44,10 @@ Readers on GitHub can browse the same files here.
 17. [Security dashboard](admin/security-dashboard.md)
 18. [Admin dashboard](admin/dashboard.md)
 19. [Monitoring and operations](admin/operations.md)
-20. [Upgrades](admin/upgrades.md)
-21. [Known limitations](admin/limitations.md)
+20. [Backup and restore](admin/backup-and-restore.md)
+21. [Runbook](admin/runbook.md)
+22. [Upgrades](admin/upgrades.md)
+23. [Known limitations](admin/limitations.md)
 
 The order of these two lists is the order of the manual in the UI; a test in
 [internal/manual](../../internal/manual/) fails when this page and the embedded contents disagree.

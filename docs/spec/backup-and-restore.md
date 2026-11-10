@@ -1359,9 +1359,9 @@ R-HA-060, Q-HA-18):
 helm repo add trove https://guided-traffic.github.io/trove/
 # <v>: the chart version to install; example 0.1.0
 helm install trove trove/trove -n trove -f values.yaml --version <v> \
-  --set web.replicaCount=0 --set web.autoscaling.enabled=false \
+  --set api.replicaCount=0 --set api.autoscaling.enabled=false \
+  --set packages.replicaCount=0 --set packages.autoscaling.enabled=false \
   --set worker.replicaCount=0 --set worker.autoscaling.enabled=false \
-  --set highAvailability.enforce=false \
   --set restore.enabled=true --set restore.backupId=20261028T020000Z-7f3a   # example ID
 kubectl -n trove wait --for=condition=complete job/trove-restore --timeout=24h
 helm repo update trove

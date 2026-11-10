@@ -267,6 +267,9 @@ describe('App shell', () => {
     await TestBed.inject(Router).navigateByUrl('/admin/system/jobs');
     await fixture.whenStable();
     expect(help()?.getAttribute('href')).toBe('/help/admin/operations');
+    await TestBed.inject(Router).navigateByUrl('/admin/system/backups');
+    await fixture.whenStable();
+    expect(help()?.getAttribute('href')).toBe('/help/admin/backup-and-restore');
     // A screen without a manual page of its own (here the not-found screen) opens the overview.
     await TestBed.inject(Router).navigateByUrl('/no/such/page');
     await fixture.whenStable();

@@ -29,28 +29,19 @@ The chart's probes use these paths: startup and liveness `/healthz`, readiness `
 
 ## Metrics
 
-The families are named `trove_*`, plus the Go runtime and process families. The label `endpoint` holds the configured endpoint names (`default` for the main listener), so its values are bounded. The chart renders no ServiceMonitor yet; create one yourself, for example through `extraObjects`:
+The families are named `trove_*`, plus the Go runtime and process families. The label `endpoint` holds the configured endpoint names (`default` for the main listener), so its values are bounded. With the Prometheus operator's CRDs installed, the chart renders the ServiceMonitor:
 
 ```yaml
-apiVersion: monitoring.coreos.com/v1    # example
-kind: ServiceMonitor                      # example
-metadata:
-  name: trove                                     # example
-  namespace: monitoring                           # example
-spec:
-  namespaceSelector: {matchNames: [trove]}        # example: the release namespace
-  selector:
-    matchLabels:
-      app.kubernetes.io/instance: trove           # example: the release name
-      app.kubernetes.io/component: ops            # example: the label of the ops Service <fullname>-ops
-  endpoints:
-    - port: ops                                   # example: the port name of the ops Service
-      scheme: https                               # example: https while tls.enabled
-      path: /metrics                              # example
-      tlsConfig:
-        ca: {secret: {name: trove-tls, key: ca.crt}}   # example: a Secret in the monitoring namespace with trove's CA
-        serverName: trove-ops.trove.svc           # example: a name the ops certificate holds
+metrics:
+  serviceMonitor:
+    enabled: true                              # default: false
+    namespace: ""                              # default: the release namespace; with tls.enabled it must be the release namespace, because the CA Secret is read from it
+    interval: 30s                              # default
+    scrapeTimeout: 10s                         # default
+    labels: {release: kube-prometheus-stack}   # example: what your Prometheus selects ServiceMonitors by
 ```
+
+With `tls.enabled` the ServiceMonitor verifies the pods against `ca.crt` of the ops listener's Secret and the name `<fullname>-ops.<namespace>.svc`.
 
 The ops Service selects every `api`, `packages`, `worker` and `web` pod, so each replica is scraped. `trove_build_info{role}` and the `role` of every log record name the role of the process (`api`, `packages`, `worker`, `web` or `all`); the ServiceMonitor copies `role` and `pool` onto every other series. To require a token, set `config.metrics.auth: static` and name a Secret in `secrets.metricsToken`; trove reads the token file on every scrape, so a rotated token applies without a restart.
 
@@ -74,6 +65,7 @@ The ops Service selects every `api`, `packages`, `worker` and `web` pod, so each
 | Caches | `trove_cache_requests_total`, `trove_cache_entries`, `trove_cache_bytes`, `trove_cache_flushes_total` |
 | Vulnerability scanning | `trove_vuln_source_last_success_timestamp_seconds`, `trove_vuln_source_records`, `trove_vuln_source_consecutive_failures` (labels `source`, `ecosystem`), `trove_vuln_sync_runs_total`, `trove_vuln_sync_records_total`, `trove_vuln_unevaluable_ranges_total`, `trove_vuln_evaluations_total`, `trove_vuln_evaluation_duration_seconds`, `trove_vuln_findings` (`severity`, `status`, `kind`), `trove_vuln_downloads_blocked_total`, `trove_vuln_audit_requests_total`, `trove_vuln_claimed_name_matches` (`ecosystem`, `kind`) |
 | Audit and telemetry | `trove_audit_events_total`, `trove_audit_events_dropped_total`, `trove_metrics_label_overflow_total`, `trove_tracing_spans_dropped_total` |
+| Package formats | Each format adds families named `trove_npm_*`, `trove_nuget_*`, `trove_oci_*` and `trove_deb_*`; [Container image repositories](container-repositories.md), [Debian (APT) repositories](apt-repositories.md) and the guide of a format name the ones an operator reads |
 
 Gauges read from PostgreSQL, such as `trove_jobs_queued`, `trove_jobs_oldest_queued_age_seconds` and `trove_valkey_primary_views`, are reported by every replica; aggregate them with `max`, not `sum`.
 
@@ -127,7 +119,7 @@ The **Result** column of a job that did not succeed shows the error: its code (`
 
 ### Backups
 
-The chart's backup is off until you set `backup.enabled: true` and a bucket of its own in `config.backup.target.bucket` ([Installation](installation.md)); while it is off, the screen below shows **No backup yet** and the command to start a backup carries placeholders.
+The chart's backup is off until you set `backup.enabled: true` and a bucket of its own in `config.backup.target.bucket` ([Installation](installation.md)); while it is off, the screen below shows **No backup yet** and the command to start a backup carries placeholders. [Backup and restore](backup-and-restore.md) explains how to set the backup up, verify one and restore.
 
 **Admin area › System › System status › Backups** (capability `settings:read`) shows the backup job and changes nothing: no control starts, deletes, verifies or restores a backup. It refreshes on the same interval as the status screen, with the same **Pause automatic refresh** and **Refresh now**.
 
@@ -317,4 +309,4 @@ A name in `disabledAlerts` that is no alert of the chart fails the install. If y
 | `TroveVulnerabilityClaimedNameMalicious` | a malicious-package advisory names a package name your installation treats as internal |
 | `trove_endpoint_misdirected_total` rising | clients or the ingress send an endpoint hosts it does not serve |
 
-TLS details are in [TLS and certificates](tls-and-certificates.md); endpoint metrics in [Endpoints and exposure rules](endpoints.md).
+TLS details are in [TLS and certificates](tls-and-certificates.md); endpoint metrics in [Endpoints and exposure rules](endpoints.md). What to do when one of these fires is in the [Runbook](runbook.md).

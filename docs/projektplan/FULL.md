@@ -35,7 +35,7 @@ repositories) before it counts as done.
 - ⚪ Beta feedback collected, triaged and worked off
 - ⚪ Upgrade path from the beta to the next releases tested (rolling upgrade, data kept)
 - 🟡 Import tooling: copy existing packages from the registries trove replaces into trove ([import.md](../spec/import.md), R-IMP-001 to R-IMP-009). Built: `trove admin import` for npm and NuGet, with integration tests. Open: Ansible Galaxy (waits for that format), and e2e rows with real clients installing imported packages
-- ⚪ User documentation: getting started, client setup per registry, administration, operations runbook
+- 🟢 User documentation: getting started, client setup per registry, administration, backup and restore, operations runbook ([docs/manual](../manual/README.md))
 - ⚪ The release that closes the beta phase (cut by Semantic Release)
 
 ## B · Registries after the beta (P1)
