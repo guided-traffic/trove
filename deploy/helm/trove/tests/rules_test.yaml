@@ -420,11 +420,12 @@ tests:
               summary: "The Deployment trove-worker-vuln has fewer than two available replicas."
               description: "A role or pool with fewer than two available replicas has no redundancy, and a node drain or a rollout takes it away (R-HA-001, R-HA-059). Look at the pods of the Deployment, their readiness (GET /readyz?verbose=1) and the events. Needs kube-state-metrics. A Deployment scaled to one replica by choice fires too."
 
+  # interval 15s is the scrape interval: the range selectors are left-open, so a one-minute rate needs more than one sample in the window
   - name: "TroveDatabaseUnreachable fires when connection retries and 503 answers go together for two minutes"
-    interval: 1m
+    interval: 15s
     input_series:
-      - {series: "trove_db_retries_total{namespace=\"default\",kind=\"connection\",pod=\"p1\"}", values: "0+1x60"}
-      - {series: "trove_http_requests_total{namespace=\"default\",code=\"503\",pod=\"p1\"}", values: "0+3x60"}
+      - {series: "trove_db_retries_total{namespace=\"default\",kind=\"connection\",pod=\"p1\"}", values: "0+1x240"}
+      - {series: "trove_http_requests_total{namespace=\"default\",code=\"503\",pod=\"p1\"}", values: "0+3x240"}
     alert_rule_test:
       - {eval_time: 1m, alertname: TroveDatabaseUnreachable, exp_alerts: []}
       - eval_time: 10m
@@ -434,6 +435,19 @@ tests:
             exp_annotations:
               summary: "The replicas keep retrying their connection to PostgreSQL and answer 503."
               description: "The primary is unreachable beyond the retry budget (database.retry, R-HA-009, R-HA-015), or the pooler in front of it is. Check the PostgreSQL primary, the Service that points to it and the pooler, and the database check of GET /readyz?verbose=1."
+
+  # A switchover of the primary that a drain causes retries connections and may leave a 503 behind for a few scrapes; the rate window of one
+  # minute lets that last about one minute, below the two minutes of `for` (Q-HA-290). With a window of five minutes the same blip held
+  # the expression true for five minutes and fired the alert in the drain variants of R-HA-059.
+  - name: "TroveDatabaseUnreachable stays silent on a short burst of connection retries and 503 answers"
+    interval: 15s
+    input_series:
+      - {series: "trove_db_retries_total{namespace=\"default\",kind=\"connection\",pod=\"p1\"}", values: "0x12 5 10 10x200"}
+      - {series: "trove_http_requests_total{namespace=\"default\",code=\"503\",pod=\"p1\"}", values: "0x12 1 2 2x200"}
+    alert_rule_test:
+      - {eval_time: 4m, alertname: TroveDatabaseUnreachable, exp_alerts: []}
+      - {eval_time: 6m, alertname: TroveDatabaseUnreachable, exp_alerts: []}
+      - {eval_time: 20m, alertname: TroveDatabaseUnreachable, exp_alerts: []}
 
   - name: "TroveDatabaseUnreachable stays silent on connection retries without a 503, and on a 503 without retries"
     interval: 1m

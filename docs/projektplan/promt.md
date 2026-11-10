@@ -396,7 +396,7 @@ run 42839263211 (2513be80) was still running with `unit tests` and `e2e (push)` 
 - The step `Install the Docker Compose plugin` took 20 minutes on one runner (Test and Release 42861234699, `integration (shard c)`, 17:06:53 to 17:26:51 on 2026-11-10; 13 s in the run before) and pushed the shard past its 45-minute limit: the job was cancelled while `vulnsync` ran, no test failed. Where the step lost the time is not known. Same family as F-117: the jobs download their tools during setup.
 - `drain-load-e`: the replacement of the evicted backup pod still ran after 15 minutes (`Job var-e-281d-1`); its log is not in the artifacts.
 - `vuln-pooler`: 12 of 4683 answers were the ingress's 503 in drain variant D.
-- `alerts`: `TroveDatabaseUnreachable` fired during maintenance (R-OPS-046); red in two of about ten runs.
+- `alerts`, `MaintenanceStaysQuiet` in nightly 42793416589: `valkey-failover.sh` reported "the primary did not move within 60 s" right after drain variant B; not found, possibly the Sentinel that variant B restarted had not rebuilt its view (9.6 s locally). (`TroveDatabaseUnreachable` during maintenance was the rule's five-minute rates, fixed by Q-HA-290.)
 - `bastion`, `TestBastion_R_BAS_049_RoutingByPath`: 0 hits on both replicas, once in twelve runs.
 - `TestGarbageCollection` (`gc_test.go:170`, row in state `deleting`), `TestE14Drain` (a packages pod unready for 5 s at the end, Valkey `circuit_open`), R-ARCH-034 (26 held against 24, once), `TestR_DEB_010_DelayBound` (503 `database_unavailable`, once in nightly 42677190569; the suspicion on the retry budget of Q-HA-259 is unverified).
 - The mirror tests moved into the format and HA sets (Q-REPO-306) get their worker pool from the first mirror test of a process, and `TestNPMHA` and `TestNuGetHA` see four workers only because of the sort order of the test files. Fragile.
@@ -413,7 +413,7 @@ run 42839263211 (2513be80) was still running with `unit tests` and `e2e (push)` 
 - A disk watcher in the jobs, so that a lost runner can be read, was proposed and not built.
 - The coverage badge and the evidence record stand still until the first stable release (Q-ARCH-457).
 
-**Phase 7, not closed** (BETA.md stays 🟡): E5.9, E5.10 and E5.5 need green runs, E5.1 the drill with the new commands on a cluster, H-798 is unexplained (drained pods killed after their grace period), and E5.6 misses 18 MVP IDs. The beta candidate is published only when every criterion is met.
+**Phase 7, not closed** (BETA.md stays 🟡): E5.9, E5.10 and E5.5 need green runs, E5.1 a run of the nightly job on a fresh cluster (the drill with the new commands passed on kind on 2026-11-10, Q-HA-289), H-798 is unexplained (drained pods killed after their grace period), and E5.6 misses 18 MVP IDs. The beta candidate is published only when every criterion is met.
 
 **Housekeeping**: finished builder worktrees under `.claude/worktrees` and the origin branches `p7-*` exist; deleting them is for the owner to approve. The local `docker buildx` is still behind its pin (see above).
 

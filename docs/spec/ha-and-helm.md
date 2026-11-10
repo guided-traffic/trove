@@ -5294,7 +5294,7 @@ templates over metrics the MVP already exports, so the change adds no backend wo
 | Alert | Expression (sketch) | For | Severity |
 |---|---|---|---|
 | `TroveReplicasNotReady` | `min by (deployment) (kube_deployment_status_replicas_available{deployment=~"<fullname>-(api\|packages\|worker\|web)(-.*)?"}) < 2`, per Deployment, so one role or pool without replicas fires while the others are healthy (the Deployments are `<fullname>-<role>` and `<fullname>-<role>-<pool>` for the roles `api`, `packages`, `worker` and the bridge `web`, R-HA-062, R-HA-064; needs kube-state-metrics) | 5m | critical |
-| `TroveDatabaseUnreachable` | `sum(rate(trove_db_retries_total{kind="connection"}[5m])) > 0 and sum(rate(trove_http_requests_total{code="503"}[5m])) > 0` | 2m | critical |
+| `TroveDatabaseUnreachable` | `sum(rate(trove_db_retries_total{kind="connection"}[1m])) > 0 and sum(rate(trove_http_requests_total{code="503"}[1m])) > 0` | 2m | critical |
 | `TroveObjectStoreUnreachable` | `min(trove_storage_s3_circuit_open) == 1` (all replicas) | 2m | critical |
 | `TroveObjectStoreUnreachableSingleReplica` | `max(trove_storage_s3_circuit_open) == 1 and min(trove_storage_s3_circuit_open) == 0` | 5m | warning |
 | `TroveDatabasePoolSaturated` | `histogram_quantile(0.95, rate(trove_db_pool_acquire_duration_seconds_bucket{db_pool="request"}[5m])) > 0.1`; the control connection's waits are the next row's ([operations-and-observability.md](operations-and-observability.md) R-OPS-046) | 10m | warning |
@@ -9268,6 +9268,49 @@ Evidence (artifacts of run 42839263211, per-second counts of `k6-rotate/console.
 **Rationale:** The defect is in the load shape, not in the product: a load that grows when the cluster slows measures the runner. Revisit when a run of the row shows a request unanswered for more than two seconds with the closed loop and no cluster-wide stall in the access lines, or when the stall at 15:15:46 is traced to the product or to the open loop's connections.
 
 **Applied:** [load.js](../../test/e2e/k6/load.js), [env_test.go](../../test/e2e/env_test.go), [e15_tls_test.go](../../test/e2e/e15_tls_test.go), [npm_load_test.go](../../test/e2e/npm_load_test.go), [nuget_load_test.go](../../test/e2e/nuget_load_test.go), [upgrade_loops_test.go](../../test/e2e/upgrade_loops_test.go); [e2e.md](../developer/e2e.md) (the file table and E0.15).
+
+### Q-HA-289 · The point-in-time drill and the dev stack's release install take over the replica counts that earlier tests set with kubectl
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: E5.1. The drill (`TestBackupPITR…`, set `backup-pitr`) called the one-off commands `trove admin storage restore-versions`, `trove admin maintenance pause-deletions` and `resume-deletions` for the first time on a cluster on 2026-11-10. Run 1 failed before the first step because the migration Job could not reach `trove-db-rw`: the cluster was in the rolling restart that `TROVE_PITR=1` causes (`up.sh` adds the Barman Cloud plugin to the Cluster, the primary restarted without a switchover); the same run, started after the Cluster was ready, was run 2. Run 2 failed in step 1: `helm upgrade` stopped with `conflict with "kubectl" with subresource "scale" using apps/v1: .spec.replicas` on `trove-worker`, because Deployments of a cluster that earlier tests used carry `kubectl scale` as the field manager of `spec.replicas` (the tests of the set `alerts` and the mirror tests scale `trove-worker`). Helm applies server-side, so a field owned by another manager is a conflict. Run 3 (below) passed.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `--force-conflicts` on the drill's `helm upgrade` (chosen) | The drill's own release values win over a leftover field manager | The drill sets every role to zero, so it has to own the replica count; one flag, in the one helper `pitrHelm` | Hides a conflict on another field too; the drill's values are the profile's and should win there as well |
+| (b) Remove the `kubectl scale` calls of the other tests | Those tests restore the count through helm | No flag | Many callers (`alerts_test.go`, `mirror_env_test.go`, shell scripts), and each cleanup is itself a `kubectl scale` |
+| (c) Run the drill only on a fresh cluster | Document it | No change | The nightly job runs it after the `backup` set on the same cluster; local runs reuse clusters |
+
+**Choice:** (a), in `pitrHelm` of [backup_pitr_test.go](../../test/e2e/backup_pitr_test.go) and, for the same conflict met by a second run of the set `alerts` on the local cluster (its last test scales `trove-worker` with `kubectl`; the next `up.sh` stopped at the release install), in the `helm upgrade --install trove` of [up.sh](../../deploy/dev/up.sh). Not changed: the order of the cluster's plugin rollout and the first helm install in `up.sh` (a run started while the Cluster still restarts fails in the migration Job; CI starts from a fresh cluster and the set waits for it).
+
+**Evidence (run 3, `make e2e SET=backup-pitr`, local kind, image of the working tree, 2026-11-10):** all 13 tests and subtests passed in 455 s: the base backup, the state before t, step 1 (roles stopped, `postRestore.hold`), step 2 (recovery into `trove-db-pitr` up to t), steps 3 and 4 (the post-restore Job replays the revocation journal), step 5 (`trove admin storage restore-versions --before t`), step 6 (roles on the new cluster), the byte-for-byte state at t, `storage verify` (2,257 blobs checked, 0 without object), the token revoked after t stays rejected, and step 7 (`trove admin maintenance resume-deletions`: "deletion pause cleared … deletions resume"). Not verified: a run on a fresh cluster (the nightly's form) of this commit.
+
+**Revisit** when the drill fails on a conflict of a field other than `spec.replicas`.
+
+**Applied:** [backup_pitr_test.go](../../test/e2e/backup_pitr_test.go) (`pitrHelm`), [up.sh](../../deploy/dev/up.sh) (the release install).
+
+### Q-HA-290 · `TroveDatabaseUnreachable` reads a one-minute rate, so a drain's brief switchover does not keep it true for five minutes
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the plan named `TroveDatabaseUnreachable` firing during maintenance (R-OPS-046, R-HA-052 "Maintenance stays quiet"), red in about two of ten runs of the set `alerts`. The nightly 42793416589 (job 129752337429) is not an instance of it: its `MaintenanceStaysQuiet` failed because `valkey-failover.sh` reported "the primary did not move within 60 s" right after variant B (a different cause, recorded below); no alert fired in it during maintenance. The finding was reproduced on the local kind cluster (`make e2e SET=alerts`, 2026-11-10): `alerts_test.go:321: R-OPS-046: the alert TroveDatabaseUnreachable fired during maintenance`.
+
+Evidence (the Prometheus of that run, queried afterwards). The alert was pending from 18:04:24 and firing from 18:06:24. Its two inputs were two short blips on different pods: `trove_http_requests_total{code="503"}` grew by about two on one `packages` pod (`trove-packages-8584c6d58c-mh8cz`) from 18:02:42 to 18:03:12, while variant C's drain ended and variant B's PostgreSQL switchover (`failover.sh`) ran (rate over five minutes about 0.004 a second, until 18:07:24); and `trove_db_retries_total{kind="connection"}` grew by a few on three other pods (`dbwcq`, `wcq6n`, `nqxjb`) from 18:03:42 to 18:04:27, the first seconds of variant B's drain of their node (about 0.02 a second, until 18:08:24). Not verified: why that `packages` pod answered 503 (the pod logs of the run were not read). The rule joins two `sum`s over all pods with `and`, each over `[5m]`: any single increment holds a `rate(...[5m])` above zero for five minutes, the two five-minute windows overlapped for 3.7 minutes, and `for: 2m` was met. The rule did not say "beyond the retry budget", which its description claims, and the two blips were not even on the same pod. The real outage of `TestAlerts_R_OPS_046_PostgreSQLOutage` (fenced for 3 minutes) has retries and 503s on every pod at the same time throughout.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Exclude the drained pods or the window from the test | The test removes alerts that fired within a drain | Green | The rule would fire in production at every drain; the criterion is that maintenance stays quiet |
+| (b) A one-minute rate (chosen) | `rate(...[1m])` for both terms, `for: 2m` unchanged | A blip is true for about one minute, below the two of `for`; a sustained outage is true throughout and fires after about two minutes; one number changed | Two blips that overlap for two minutes still fire; a scrape interval above 30 s leaves one sample in the window (the sketch assumes the 15 s of the ServiceMonitor) |
+| (c) Longer `for` (5 m) | | The blips pass | The outage alert is later by three minutes for the same flaw; `TestAlerts_R_OPS_046_PostgreSQLOutage` fences for 3 minutes and would not see it fire |
+| (d) Join on the pod | `sum by (pod)` and `and on (pod)` | Needs the same pod | A pod that meets a 503 for another reason and also retries once still matches; a pooler outage has the same pods in both |
+
+**Choice:** (b), in [_rules.tpl](../../deploy/helm/trove/templates/_rules.tpl) and the sketch row of the alert table above. [rules_test.yaml](../../deploy/helm/trove/tests/rules_test.yaml) runs the rule at the 15 s scrape interval (the range selectors of Prometheus 3 are left-open, so a one-minute rate needs more than one sample in the window and the earlier tests, at a one-minute interval, could not have exercised it) and has a new case: a burst of retries and 503s of one minute stays silent. Not changed: the description; the severity.
+
+**Rationale:** An alert that is true for as long as its rate window remembers a single event measures the window, not the outage. Revisit when a drain variant fires the alert again with the one-minute window (then join on the pod, (d)), or when the ServiceMonitor's scrape interval is set above 30 s in the examples.
+
+**Applied:** [_rules.tpl](../../deploy/helm/trove/templates/_rules.tpl), [rules_test.yaml](../../deploy/helm/trove/tests/rules_test.yaml), the alert table of this page.
+
+**Also found, not changed** (the nightly 42793416589): variant B ends, `waitServingSettled` returns after trove has settled, and `valkey-failover.sh` runs `SENTINEL FAILOVER` on `trove-valkey-sentinel-0`, which answers `OK`, but the primary does not move within 60 s. Not verified: the cause. A candidate is that the Sentinel which variant B restarted has not yet rebuilt its view of the others (the failover needs the authorisation of a majority). It did not recur in the local run, in which the same step took 9.6 s. The step waits for trove, not for the Sentinels; a wait for three Sentinels that agree on the primary and the replica before the planned failover would remove the candidate.
 
 ### Q-HA-204 · The SPDX file of the release is written by the pinned syft image from the registry tag
 

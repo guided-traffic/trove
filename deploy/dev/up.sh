@@ -354,8 +354,10 @@ else
   release_values "$DEV_DIR" "$PROFILE" 1
   values=("${RELEASE_VALUES[@]}")
   log "installing the trove release (helm upgrade --install trove, migration Job first)"
+  # --force-conflicts: helm applies server-side, and on a cluster that tests have used a `kubectl scale` is the field manager of
+  # spec.replicas of a Deployment; the profile's values own the replica count again (Q-HA-289).
   # shellcheck disable=SC2086
-  helm --kube-context "$CTX" upgrade --install trove "$chart" -n "$NS" \
+  helm --kube-context "$CTX" upgrade --install trove "$chart" -n "$NS" --force-conflicts \
     "${values[@]}" --wait --timeout 10m ${TROVE_HELM_EXTRA:-}
   kn get deploy,pods -l app.kubernetes.io/instance=trove -o wide
   log "check: curl -s --cacert $STATE_DIR/pki/ca.crt https://localhost:$EDGE_PORT/api/v1/system/ping"

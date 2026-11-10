@@ -102,10 +102,13 @@ func pitrNewDatabase() []string {
 	}
 }
 
-// pitrHelm upgrades the release with the values of the dev profile and the extra arguments.
+// pitrHelm upgrades the release with the values of the dev profile and the extra arguments. --force-conflicts: helm applies
+// server-side, and a cluster that earlier tests used has their `kubectl scale` as the field manager of spec.replicas of a
+// Deployment (the alerts and mirror tests scale trove-worker); without it the upgrade stops with "conflict with kubectl with
+// subresource scale", and the drill, which sets every role to zero, has to own the replica count.
 func pitrHelm(t testing.TB, label string, extra ...string) {
 	t.Helper()
-	args := append([]string{"upgrade", "trove", upChart(), "-n", cfg.namespace}, pitrReleaseValues(t)...)
+	args := append([]string{"upgrade", "trove", upChart(), "-n", cfg.namespace, "--force-conflicts"}, pitrReleaseValues(t)...)
 	args = append(append(args, extra...), "--wait", "--timeout", "12m")
 	if out, err := upHelm(t, label, 14*time.Minute, args...); err != nil {
 		t.Fatalf("helm upgrade (%s): %v\n%s", label, err, tail(out, 3000))

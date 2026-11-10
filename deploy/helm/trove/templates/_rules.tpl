@@ -37,7 +37,7 @@ the alert and the report banner agree (R-VULN-004). It is a duration parsed by t
     summary: The Deployment {{ "{{ $labels.deployment }}" }} has fewer than two available replicas.
     description: A role or pool with fewer than two available replicas has no redundancy, and a node drain or a rollout takes it away (R-HA-001, R-HA-059). Look at the pods of the Deployment, their readiness (GET /readyz?verbose=1) and the events. Needs kube-state-metrics. A Deployment scaled to one replica by choice fires too.
 - alert: TroveDatabaseUnreachable
-  expr: sum(rate(trove_db_retries_total{ {{ $ns }},kind="connection" }[5m])) > 0 and sum(rate(trove_http_requests_total{ {{ $ns }},code="503" }[5m])) > 0
+  expr: sum(rate(trove_db_retries_total{ {{ $ns }},kind="connection" }[1m])) > 0 and sum(rate(trove_http_requests_total{ {{ $ns }},code="503" }[1m])) > 0
   for: 2m
   labels:
     severity: critical
