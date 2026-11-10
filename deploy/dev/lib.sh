@@ -39,7 +39,7 @@ kn() { kubectl --context "$CTX" -n "$NS" "$@"; }
 # CHART_PULL_ATTEMPTS attempts (default 7) and until CHART_PULL_SECONDS (default 600) have passed since the first one. The
 # deadline is checked between attempts, so one attempt that is already running may end after it: a single pull was seen
 # to take 4 min 55 s. A chart version that the repository does not list ("not found in") is not retried. A caller that
-# retries itself, such as release-smoke's wait loop, sets CHART_PULL_ATTEMPTS=1.
+# retries itself sets CHART_PULL_ATTEMPTS=1.
 chart_tgz() {
   local url="$1" chart="$2" version="$3" dir="$STATE_DIR/charts" tmp attempt=1 start=$SECONDS err
   local attempts="${CHART_PULL_ATTEMPTS:-7}" limit="${CHART_PULL_SECONDS:-600}"
@@ -282,26 +282,6 @@ release_values() {
   [ "$profile" = "bastion" ] && RELEASE_VALUES+=(-f "$dir/values-bastion.yaml" \
     --set-json "config.server.additional_base_urls=[\"https://trove-api.trove.svc:8080\",\"https://trove-packages.trove.svc:8080\",\"https://bastion-volume.trove.localhost:$EDGE_PORT\",\"https://bastion-bucket.trove.localhost:$EDGE_PORT\"]")
   return 0
-}
-
-# published_pull_secret creates or replaces the Secret dockerhub-pull in $NS (published mode of up.sh) and returns 0, or returns
-# 1 when the Docker config holds no Docker Hub login. The Secret carries the Docker Hub entry of the config only (the host
-# matched whole: docker.io, index.docker.io, with or without https:// and a path), never the rest of the file, whatever
-# other registries it holds. The namespace must exist. The credential is written to a private temporary file, not to an argument.
-published_pull_secret() {
-  local cfg="${DOCKER_CONFIG:-$HOME/.docker}/config.json" tmp rc=0
-  [ -s "$cfg" ] || return 1
-  tmp="$(mktemp)"; chmod 600 "$tmp"
-  # shellcheck disable=SC2016 # a jq program
-  jq -c '{auths: ((.auths // {}) | with_entries(select((.key | test("^(https://)?(index\\.)?docker\\.io(/|$)")) and ((.value.auth // "") != ""))))}' "$cfg" > "$tmp" 2>/dev/null || rc=1
-  if [ "$rc" = 0 ] && [ "$(jq '.auths | length' "$tmp")" -gt 0 ]; then
-    kn create secret generic dockerhub-pull --type=kubernetes.io/dockerconfigjson --from-file=.dockerconfigjson="$tmp" \
-      --dry-run=client -o yaml | kn apply -f - >/dev/null || rc=1
-  else
-    rc=1
-  fi
-  rm -f "$tmp"
-  return "$rc"
 }
 
 # require_cluster fails with a hint when the kind cluster is not there.

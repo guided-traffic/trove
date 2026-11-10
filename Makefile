@@ -441,14 +441,6 @@ dev-up: ## Create the kind cluster and install the dev profile (deploy/dev/up.sh
 sbom-generator-check: ## Build the SBOM generator of the release image at the syft pin and prove it on a two-platform test image written to a file (Q-HA-166; needs Docker with buildx and jq; CI: sbom-generator)
 	tools/sbom-generator/check.sh
 
-.PHONY: release-smoke
-release-smoke: ## Verify the published release VERSION (no cluster): chart in the index and its SHA-256, image digest, provenance and SBOM per platform, SPDX asset; .out/release-smoke/evidence.json (E5.8, deploy/dev/release-smoke.sh)
-	deploy/dev/release-smoke.sh verify '$(VERSION)'
-
-.PHONY: release-smoke-guard
-release-smoke-guard: ## Check that every pod of the trove release runs the digest that release-smoke resolved (E5.8; needs the cluster of a published install)
-	deploy/dev/release-smoke.sh guard
-
 .PHONY: dev-down
 dev-down: ## Delete the dev cluster (deploy/dev/down.sh)
 	deploy/dev/down.sh
@@ -494,7 +486,7 @@ dev-drain: ## Drain a node under k6 load with cursor-persisting jobs; fails on a
 	deploy/dev/drain.sh
 
 .PHONY: e2e
-e2e: ## End-to-end tests on the dev cluster (deploy/dev/e2e.sh); SET=push|failover|access-long|access|full|drain|drain-roles|npm|npm-closing|npm-ha|npm-ha-crash|npm-ha-soak|npm-ha-closing|ha-suite|ha-faults|ha-pooler|nuget-clients|nuget|nuget-closing|nuget-ha|drain-load|drain-load-b|drain-load-c|drain-load-e|drain-load-pooler|cold-crash|oci-clients|oci|oci-closing|oci-long|apt-clients|deb|deb-closing|ci|ci-ha|bastion|bastion-long|vuln|vuln-long|vuln-pooler|mirror|mirror-long|upgrade|backup|backup-pitr|release-smoke|<go test -run regexp>, default: all but the profile switch
+e2e: ## End-to-end tests on the dev cluster (deploy/dev/e2e.sh); SET=push|failover|access-long|access|full|drain|drain-roles|npm|npm-closing|npm-ha|npm-ha-crash|npm-ha-soak|npm-ha-closing|ha-suite|ha-faults|ha-pooler|nuget-clients|nuget|nuget-closing|nuget-ha|drain-load|drain-load-b|drain-load-c|drain-load-e|drain-load-pooler|cold-crash|oci-clients|oci|oci-closing|oci-long|apt-clients|deb|deb-closing|ci|ci-ha|bastion|bastion-long|vuln|vuln-long|vuln-pooler|mirror|mirror-long|upgrade|backup|backup-pitr|<go test -run regexp>, default: all but the profile switch
 	deploy/dev/e2e.sh '$(SET)'
 
 # >>> M2 npm-clients

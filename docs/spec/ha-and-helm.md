@@ -5426,22 +5426,13 @@ Priority: **P1** · Covers: HA-056
   The chart pulls no other image. No init container image, no bundled database or Valkey, no proxy
   image. Copy the image index as a whole, so that its attestation manifests come along. Whether a
   given mirror keeps them is not verified here.
-- **Post-release check (Q-HA-163, Q-HA-164, Q-HA-165; roadmap E5.8).** After both publish jobs of a release,
-  the job `smoke-published` of [build.yml](../../.github/workflows/build.yml) takes the artifacts as an installer
-  gets them: the chart package from the chart repository by its version, the image by the digest that its tag
-  resolves to. It installs the chart with `image.digest` into a kind cluster with the dev profile's dependencies
-  and runs the scenarios of Q-HA-165 against it. It also checks that the package's SHA-256 is the digest the index
-  lists, that the image index carries a provenance and an SBOM attestation for `linux/amd64` and `linux/arm64`, and
-  that the release has its SPDX file attached. The check runs in the pipeline and reads the attestations; no cluster
-  verifies them (H-79). A red check leaves the release published (Q-HA-163).
+- **No check after the release (Q-HA-281).** Everything that decides whether a commit may be released runs before Semantic Release publishes it. `Release Docker & Helm` builds and publishes and runs no test.
 
 Acceptance criteria:
 
 - `helm template … | grep -E 'image:' | sort -u` lists exactly one image.
 - The image index of a release carries a provenance and an SBOM attestation, and the release has its
   SPDX file `guidedtraffic-trove_*.spdx.json` attached.
-- The job `smoke-published` of the release is green: the chart installed by `image.digest` passes the scenarios of
-  Q-HA-165, and the pods of the installation run that digest.
 - An installation from a mirror with `global.imageRegistry: registry.internal.example` pulls
   nothing from the public registry (verified with a deny-all egress policy on the nodes' public
   registry access in the test).
@@ -8862,6 +8853,8 @@ Status: Decided by the development agent — selected from the options below; th
 
 ### Q-HA-163 · A red post-release check leaves the release published and is a finding, not a withdrawal
 
+**Superseded by [Q-HA-281](#q-ha-281--tests-run-before-a-release-not-after-it) (owner, 2026-11-10): there is no post-release check.**
+
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 | Option | What it means | For | Against |
@@ -8883,9 +8876,11 @@ Each step of the job has its own name, so the reader sees the case without openi
 
 The development agent would revisit this at the first stable release, from which reliability and compatibility come first, and whenever a red check shows that a broken version reached users before its fix. Then option (b) for the index alone (a re-index without the version) is a decision of its own.
 
-**Applied:** R-HA-047 (post-release check). The job `smoke-published`, its scripts and the case table of [releasing.md](../developer/releasing.md#the-post-release-check) carry it.
+**Applied:** R-HA-047 (post-release check). The job `smoke-published`, its scripts and the case table of releasing.md (removed, Q-HA-281) carry it.
 
 ### Q-HA-164 · The post-release check is a job of `Release Docker & Helm`, and a dispatch runs only that job
+
+**Superseded by [Q-HA-281](#q-ha-281--tests-run-before-a-release-not-after-it) (owner, 2026-11-10): there is no post-release check.**
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
@@ -8906,6 +8901,8 @@ Token permissions follow the same split. The workflow default is `contents: read
 **Applied:** R-HA-047 (post-release check bullet). [build.yml](../../.github/workflows/build.yml) carries the gates, the permissions and the job; `deploy/dev/release-smoke.sh`, `deploy/dev/up.sh`, `deploy/dev/e2e.sh` (which refuses the set `release-smoke` without both `TROVE_RELEASE_*` variables) and the Makefile carry the rest; `TestR_HA_047_ADispatchRunsOnlyThePostReleaseCheck` and `TestR_HA_047_TheTokensHoldWhatTheJobsUse` guard the gates and the permissions (the test pins `pages: write` on `release-helm-gh`).
 
 ### Q-HA-165 · The smoke scenarios of E5.8 are the E2.1 matrix and the client smoke test
+
+**Superseded by [Q-HA-281](#q-ha-281--tests-run-before-a-release-not-after-it) (owner, 2026-11-10): there is no post-release check.**
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
@@ -9611,6 +9608,16 @@ Context: the logs of a pod go with the pod. The drain test of E0.14 and the drai
 **Rationale:** The helper exists and its streams end with the pods. Revisit when a profile ships its logs anyway.
 
 **Applied in the spec:** none beyond H-798. Code: `Run` in `test/e2e/drain_variants_test.go`.
+
+### Q-HA-281 · Tests run before a release, not after it
+
+Status: **Decided by the owner** (2026-11-10): "Ein Test des Releases? Woll wir nicht. Es wird vor einem Release getestet. Ein veröffentlichtes Release ist schon öffentlich, ein Test der Fehlschlagen kann an dieser Stelle ist bereits zu spät."
+
+Context: the job `smoke-published` of `Release Docker & Helm` (Q-HA-163 to Q-HA-165) installed each published release by digest and ran the E2.1 matrix against it. A red result could not stop anything: the release was already public, and Q-HA-163 could only record it as a finding.
+
+**Choice:** the job, its dispatch input, the published mode of `deploy/dev/up.sh`, the set `release-smoke`, `deploy/dev/release-smoke.sh`, `step-time.sh`, `index-digest.awk`, the pull secret and H-577 are removed. **Rationale:** a check belongs where its failure can still change the outcome. What is lost, and accepted: nothing confirms after publishing that the image and the chart can be pulled from Docker Hub and GitHub Pages, that the index lists the package's digest, or that the attestations are attached.
+
+**Applied:** R-HA-047; roadmap E5.8; `.github/workflows/build.yml`; [releasing.md](../developer/releasing.md).
 
 ### Q-HA-259 · The retry budget bounds the wait for a pooled connection
 

@@ -55,14 +55,6 @@
 #                         built by `make image`). It must be present in the local Docker.
 #   TROVE_DEV_HTTP_PORT=n the host port of the edge, default 8080 (https://localhost:8080). Set it when
 #                         8080 is taken; the chart's base_url follows. Fixed when the cluster is created.
-#   TROVE_RELEASE_VERSION=<x.y.z> and TROVE_RELEASE_DIGEST=<sha256:...>, set together: the published mode of the post-release
-#                         check (E5.8, deploy/dev/release-smoke.sh). The release is installed as an installer gets it: the chart
-#                         package of that version from https://guided-traffic.github.io/trove/ and the image by that digest from
-#                         docker.io/guidedtraffic/trove, which the nodes pull. Nothing is built or loaded from the working
-#                         tree, and the chart of the working tree is not used. The e2e suite runs up.sh again for its profile
-#                         switches and inherits both variables, so a switch keeps the published release. They exclude
-#                         TROVE_IMAGE and TROVE_SKIP_RELEASE=1. The pull secret `dockerhub-pull` is created from
-#                         ~/.docker/config.json when that file holds a Docker Hub login (the nodes pull anonymously otherwise).
 #   TROVE_HELM_EXTRA=...  extra arguments for the helm upgrade of the trove release.
 set -euo pipefail
 # shellcheck source=deploy/dev/lib.sh
@@ -74,18 +66,6 @@ PITR="${TROVE_PITR:-0}"
 PROFILE="${TROVE_PROFILE:-default}"
 case "$PROFILE" in default|scatter|bastion|vuln|mirror|backup|edge|alerts|drain) ;; *) die "TROVE_PROFILE must be default, scatter, bastion, vuln, mirror, backup, edge, alerts or drain, not '$PROFILE'" ;; esac
 IMAGE="${TROVE_IMAGE:-guidedtraffic/trove:dev}"
-# The published mode: both variables or none. A mixed setting would install a local build while the caller expects the release.
-RELEASE_VERSION="${TROVE_RELEASE_VERSION:-}"
-RELEASE_DIGEST="${TROVE_RELEASE_DIGEST:-}"
-PUBLISHED=0
-if [ -n "$RELEASE_VERSION$RELEASE_DIGEST" ]; then
-  [ -n "$RELEASE_VERSION" ] && [ -n "$RELEASE_DIGEST" ] || die "TROVE_RELEASE_VERSION and TROVE_RELEASE_DIGEST must be set together"
-  [ "$SKIP_RELEASE" != "1" ] || die "TROVE_RELEASE_VERSION and TROVE_SKIP_RELEASE=1 exclude each other"
-  [ -z "${TROVE_IMAGE:-}" ] || die "TROVE_RELEASE_VERSION and TROVE_IMAGE exclude each other: the published mode installs the published image"
-  [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "TROVE_RELEASE_VERSION must look like 0.25.0, not '$RELEASE_VERSION'"
-  [[ "$RELEASE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || die "TROVE_RELEASE_DIGEST must be sha256:<64 hex digits>, not '$RELEASE_DIGEST'"
-  PUBLISHED=1
-fi
 LOGS="$STATE_DIR/logs"
 START="$(date +%s)"
 
@@ -367,30 +347,16 @@ log "PostgreSQL primary: $(kn get cluster trove-db -o jsonpath='{.status.current
 if [ "$SKIP_RELEASE" = "1" ]; then
   log "TROVE_SKIP_RELEASE=1: the trove release is not installed"
 else
-  if [ "$PUBLISHED" = "1" ]; then
-    # The chart package is the file that release-smoke.sh verified when it ran in this checkout; it is fetched here otherwise.
-    chart="$(chart_tgz https://guided-traffic.github.io/trove/ trove "$RELEASE_VERSION")" || die "the chart trove $RELEASE_VERSION cannot be pulled from the chart repository"
-    pull_args=()
-    if published_pull_secret; then
-      pull_args=(--set-json 'global.imagePullSecrets=[{"name":"dockerhub-pull"}]')
-    else
-      log "no Docker Hub login in ${DOCKER_CONFIG:-$HOME/.docker}/config.json: the nodes pull the image anonymously"
-    fi
-    release_values "$DEV_DIR" "$PROFILE" 0
-    values=("${RELEASE_VALUES[@]}" --set "image.digest=$RELEASE_DIGEST" ${pull_args[@]+"${pull_args[@]}"})
-    log "installing the published release $RELEASE_VERSION by digest $RELEASE_DIGEST (helm upgrade --install trove, migration Job first)"
-  else
-    if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-      die "the image $IMAGE is not in the local Docker; build it with 'make image' (or set TROVE_SKIP_RELEASE=1 for the dependencies only)"
-    fi
-    log "loading $IMAGE into the kind cluster"
-    kind load docker-image "$IMAGE" --name "$CLUSTER" > "$LOGS/image-load.log" 2>&1 \
-      || { tail -20 "$LOGS/image-load.log" >&2; die "kind load docker-image failed"; }
-    chart="$REPO_ROOT/deploy/helm/trove"
-    release_values "$DEV_DIR" "$PROFILE" 1
-    values=("${RELEASE_VALUES[@]}")
-    log "installing the trove release (helm upgrade --install trove, migration Job first)"
+  if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+    die "the image $IMAGE is not in the local Docker; build it with 'make image' (or set TROVE_SKIP_RELEASE=1 for the dependencies only)"
   fi
+  log "loading $IMAGE into the kind cluster"
+  kind load docker-image "$IMAGE" --name "$CLUSTER" > "$LOGS/image-load.log" 2>&1 \
+    || { tail -20 "$LOGS/image-load.log" >&2; die "kind load docker-image failed"; }
+  chart="$REPO_ROOT/deploy/helm/trove"
+  release_values "$DEV_DIR" "$PROFILE" 1
+  values=("${RELEASE_VALUES[@]}")
+  log "installing the trove release (helm upgrade --install trove, migration Job first)"
   # shellcheck disable=SC2086
   helm --kube-context "$CTX" upgrade --install trove "$chart" -n "$NS" \
     "${values[@]}" --wait --timeout 10m ${TROVE_HELM_EXTRA:-}

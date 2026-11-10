@@ -3,23 +3,11 @@
 # linux/amd64 and linux/arm64, built from the Containerfile, and the Helm charts trove and trove-bastion in the
 # gh-pages branch (the chart repository https://guided-traffic.github.io/trove/) with the release's assets.
 # docs/developer/releasing.md (The release pipeline) describes the jobs and the secrets.
-#
-# After both publish jobs, the job smoke-published installs the published artifacts into a kind cluster and runs the
-# scenarios of E5.8 against them (R-HA-047, Q-HA-163 to Q-HA-165). A dispatch with the input `version` runs only that
-# job, against a release that already exists: the publish jobs run on `release` events only, so a dispatch never builds
-# the image, never pushes a tag and never touches the gh-pages branch (test/chart/release_workflow_test.go guards both
-# conditions).
 name: Release Docker & Helm
 
 on:
   release:
     types: [published]
-  workflow_dispatch:
-    inputs:
-      version:
-        description: The published release to check, without the v, for example 0.25.0 (runs the job smoke-published only)
-        type: string
-        required: true
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -32,7 +20,6 @@ jobs:
   build:
     name: Build Docker Image
     # Publishes: release events only (a dispatch runs the check alone).
-    if: github.event_name == 'release'
     runs-on: self-hosted
     # contents: write for the release assets (softprops/action-gh-release uploads the SPDX file).
     # Nothing else of the token is used: no OIDC token, no attestation API, no pages.
@@ -247,7 +234,6 @@ jobs:
     name: Release Helm Chart to GitHub Pages
     needs: build
     # Publishes: release events only (a dispatch runs the check alone).
-    if: github.event_name == 'release'
     runs-on: self-hosted
     # The gh-pages branch is pushed with git. contents: write is what the push needs; pages: write stays as the workflow always had it,
     # because dropping it gains no least privilege and whether the Pages build runs for a GITHUB_TOKEN push is not verified here.
@@ -352,223 +338,3 @@ jobs:
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # The post-release check of E5.8 (R-HA-047, Q-HA-163 to Q-HA-165, docs/developer/releasing.md#the-post-release-check): the
-  # artifacts as an installer gets them. On a release it runs after both publish jobs; on a dispatch it runs alone. A red
-  # result leaves the release published (Q-HA-163): each step is named by the case it decides, and a re-run of the
-  # failed job (`gh run rerun <id> --failed`) covers an infrastructure fault. It is a kind leg, hence `large`
-  # (docs/developer/releasing.md#ci); the port (8101) differs from the ports of the jobs in release.yml so that runs can share a host.
-  smoke-published:
-    name: Smoke the published release (E5.8)
-    needs: [build, release-helm-gh]
-    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || (needs.build.result == 'success' && needs.release-helm-gh.result == 'success')) }}
-    runs-on: large
-    timeout-minutes: 120
-    permissions:
-      contents: read
-    env:
-      TROVE_DEV_CLUSTER: trove-smoke-${{ github.run_id }}
-      TROVE_DEV_HTTP_PORT: "8101"
-    steps:
-      # The version comes from the release's tag or from the dispatch input. The input reaches the shell through the
-      # environment only, never through the text of a command, and must be a plain x.y.z before anything uses it.
-      - name: Name the release to check
-        id: version
-        env:
-          EVENT: ${{ github.event_name }}
-          REF_NAME: ${{ github.ref_name }}
-          INPUT_VERSION: ${{ inputs.version }}
-        run: |
-          set -euo pipefail
-          if [ "$EVENT" = "release" ]; then raw="$REF_NAME"; else raw="$INPUT_VERSION"; fi
-          [[ "$raw" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::the version must look like 0.25.0 (the input is not echoed)"; exit 1; }
-          echo "version=${raw#v}" >> "$GITHUB_OUTPUT"
-          echo "Release to check: ${raw#v}"
-
-      # A release checks out its tag. A dispatch checks out the ref it was started on: the harness and the dev profile come from
-      # that ref and the chart and image from the release named by the input, so a dispatch on main checks an older release
-      # with today's harness.
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - name: Load the tool pins
-        uses: ./.github/actions/load-pins
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-
-      - name: Install build tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential jq
-
-      - name: Install the pinned helm
-        uses: azure/setup-helm@v5
-        with:
-          version: ${{ env.HELM_VERSION }}
-
-      - name: Install the pinned kubectl
-        uses: azure/setup-kubectl@v5
-        with:
-          version: ${{ env.KUBECTL_VERSION }}
-
-      - name: Install the pinned kind
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/bin"
-          GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-
-      - name: Install the pinned Docker Buildx
-        timeout-minutes: 16
-        uses: ./.github/actions/install-buildx
-        with:
-          version: ${{ env.BUILDX_VERSION }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-        with:
-          cache-binary: false
-
-      # The login also gives the nodes a pull secret for the trove image (deploy/dev/up.sh, published mode).
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v4
-        with:
-          username: guidedtraffic
-          password: ${{ secrets.DOCKERHUB_PAT }}
-
-      - name: The runner architecture and the dev profile's chart repositories
-        run: |
-          set -euo pipefail
-          [ "$(uname -m)" = "x86_64" ] || { echo "::error::the dev profile needs an amd64 runner (or qemu), got $(uname -m)"; exit 1; }
-          kind version
-          kubectl version --client
-          helm version --short
-          for u in https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator; do
-            curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
-          done
-
-      # Cases decided here: release not found, chart not published (the wait for GitHub Pages ran out), chart package differs
-      # from the index, image not published, attestation missing, release asset missing.
-      - name: Verify the published artifacts (release, chart, image, attestations)
-        id: verify
-        timeout-minutes: 30
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: deploy/dev/step-time.sh verify make release-smoke VERSION="$VERSION"
-
-      - name: Fetch the dev charts that are GitHub release assets
-        timeout-minutes: 16
-        env:
-          # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
-          GITHUB_TOKEN: ${{ github.token }}
-        run: make dev-charts
-
-      # The chart package from the chart repository and the image by the digest from the step above; nothing is built or loaded
-      # from the working tree. The scenarios' profile switches run the same script with the same variables.
-      - name: Install the published release
-        id: install
-        timeout-minutes: 25
-        env:
-          TROVE_RELEASE_VERSION: ${{ steps.version.outputs.version }}
-          TROVE_RELEASE_DIGEST: ${{ steps.verify.outputs.digest }}
-        run: deploy/dev/step-time.sh install make dev-up
-
-      - name: Run the scenarios against the published install (make e2e SET=release-smoke)
-        timeout-minutes: 60
-        env:
-          TROVE_RELEASE_VERSION: ${{ steps.version.outputs.version }}
-          TROVE_RELEASE_DIGEST: ${{ steps.verify.outputs.digest }}
-        run: deploy/dev/step-time.sh scenarios make e2e SET=release-smoke
-
-      # Red when a scenario's profile switch replaced the published release with something else (case: wrong image in the cluster).
-      # It runs when the install succeeded, also after red scenarios: those may be red for exactly that reason.
-      - name: Check that every pod runs the published digest
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        env:
-          TROVE_RELEASE_DIGEST: ${{ steps.verify.outputs.digest }}
-        run: deploy/dev/step-time.sh guard make release-smoke-guard
-
-      - name: Summarise the wall time of the steps
-        if: always()
-        run: |
-          set -uo pipefail
-          times=.out/release-smoke/times.tsv
-          [ -s "$times" ] || exit 0
-          {
-            echo "### Wall time"
-            echo
-            echo "| Step | Seconds | Exit code |"
-            echo "|---|---|---|"
-            awk -F'\t' '{printf "| %s | %s | %s |\n", $1, $2, $3}' "$times"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Summarise the matrix per gate row
-        if: always()
-        run: |
-          set -uo pipefail
-          report=.out/e2e/npm-matrix.json
-          [ -s "$report" ] || { echo "No matrix report was written." >> "$GITHUB_STEP_SUMMARY"; exit 0; }
-          {
-            echo "### Matrix of E2.1 per gate row"
-            echo
-            echo "| Row | Passed | Failed | Not applicable |"
-            echo "|---|---|---|---|"
-            jq -r 'group_by(.row)[] | "| \(.[0].row) | \(map(select(.outcome=="passed"))|length) | \(map(select(.outcome=="failed"))|length) | \(map(select(.outcome=="not applicable"))|length) |"' "$report"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload the go test -json report
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-smoke-report
-          path: .out/test-e2e.json
-          if-no-files-found: warn
-          retention-days: 90
-
-      # 90 days: the walkthrough that closes E5.8 reads this evidence weeks later.
-      - name: Upload the matrix report, the client logs and the evidence of the verification
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-smoke-artifacts
-          path: |
-            .out/e2e/
-            .out/release-smoke/
-          if-no-files-found: warn
-          retention-days: 90
-
-      - name: Cluster state (failure only)
-        if: failure()
-        run: |
-          set -u
-          ctx="kind-${TROVE_DEV_CLUSTER}"
-          mkdir -p .out/cluster-state
-          for ns in trove ingress-controller cert-manager valkey-operator-system internal-secrets-operator-system cnpg-system kube-system; do
-            kubectl --context "$ctx" -n "$ns" get pods -o wide > ".out/cluster-state/pods-$ns.txt" 2>&1 || true
-            kubectl --context "$ctx" -n "$ns" describe pods > ".out/cluster-state/describe-$ns.txt" 2>&1 || true
-            kubectl --context "$ctx" -n "$ns" get events --sort-by=.lastTimestamp > ".out/cluster-state/events-$ns.txt" 2>&1 || true
-          done
-          deploy/dev/cluster-logs.sh .out/cluster-state
-          kubectl --context "$ctx" get nodes -o wide > .out/cluster-state/nodes.txt 2>&1 || true
-          helm --kube-context "$ctx" -n trove status trove > .out/cluster-state/helm-status.txt 2>&1 || true
-          docker ps -a > .out/cluster-state/docker-ps.txt 2>&1 || true
-          cp -r .dev/logs .out/cluster-state/dev-logs 2>/dev/null || true
-
-      - name: Upload the cluster state (failure only)
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-smoke-cluster-state
-          path: .out/cluster-state/
-          if-no-files-found: warn
-          retention-days: 90
-
-      - name: make dev-down
-        if: always()
-        run: make dev-down
