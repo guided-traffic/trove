@@ -63,6 +63,26 @@ func TestStartupErrors(t *testing.T) {
 			t.Fatalf("R-OPS-001 reason code = %q, want auth_failed", code)
 		}
 	})
+	t.Run("Q-HA-13 a wrong password behind a first attempt that runs into its deadline is not a startup error: the verdict needs an answer", func(t *testing.T) {
+		// The Sentinels answer and name the primary; the connection to the primary does not complete within the connect
+		// timeout (here 1 ms; on a starved node the same: F-119, E0.12 in Test and Release 42885398204, where the replica
+		// with the wrong password reported reason "timeout" and became ready after 29 s). Unreachability never holds back the
+		// first readiness (Q-HA-13 (d)), and a rejected credential is only seen when the server answers, so the client is
+		// degraded and has no startup error, however wrong the password is.
+		cfg := stackConfig(t, 2*time.Second)
+		cfg.PasswordFile = writeFile(t, "password", "not-the-password-0451\n")
+		cfg.ConnectTimeout = time.Millisecond
+		c := newClient(t, cfg)
+		if err := c.StartupError(); err != nil {
+			t.Fatalf("StartupError = %v: a deadline is not an answer, the premise of the test does not hold", err)
+		}
+		if c.Available() {
+			t.Fatal("available with a wrong password")
+		}
+		if code := c.Status().ReasonCode; code != cluster.ReasonTimeout && code != cluster.ReasonConnecting {
+			t.Fatalf("reason code = %q, want timeout or connecting (status %+v)", code, c.Status())
+		}
+	})
 	t.Run("R-HA-056 a wrong Sentinel password is a startup error", func(t *testing.T) {
 		cfg := stackConfig(t, 2*time.Second)
 		cfg.Sentinel.PasswordFile = writeFile(t, "sentinel-password", "wrong\n")

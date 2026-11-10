@@ -673,11 +673,14 @@ func (r k6result) only200(t testing.TB) {
 }
 
 // clientsRanThrough fails the test unless every one of the `clients` clients of a closed loop was running during [from, to]:
-// at every instant of the window each client either has a request in flight or is within maxIdle of the end of its last
-// one (the pause of a client is at most a second), and the client does not stop before `to`. A client that stalled in a slow
-// request is running; a client that was never started, or died, leaves a gap.
-func (r k6result) clientsRanThrough(t testing.TB, clients int, from, to time.Time, maxIdle time.Duration) {
+// it sent a request, none of its pauses between two requests was longer than a quarter of the window (at least 2 s), and it
+// was still going at the end of the window, with a request in flight or started at or after `to`. A client that stalled in a
+// slow request is running, and so is one that k6 itself could not schedule for a second or two on a starved runner (Q-HA-291,
+// amended: a fixed 2 s allowance failed a client that was idle for 2.2 s in Test and Release 42885398204); a client that was
+// never started, or died, leaves a gap that grows with the window and ends before `to`.
+func (r k6result) clientsRanThrough(t testing.TB, clients int, from, to time.Time) {
 	t.Helper()
+	maxIdle := max(2*time.Second, to.Sub(from)/4)
 	by := map[int][]k6request{}
 	for _, q := range r.Requests {
 		if q.VU >= 0 {
@@ -701,7 +704,7 @@ func (r k6result) clientsRanThrough(t testing.TB, clients int, from, to time.Tim
 				covered = end
 			}
 		}
-		if !covered.Add(maxIdle).After(to) {
+		if covered.Before(to) {
 			bad = append(bad, fmt.Sprintf("client %d accounted for only until %s", vu, covered.Format("15:04:05.000")))
 		}
 	}

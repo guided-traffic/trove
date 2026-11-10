@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -141,23 +142,25 @@ func TestE12Valkey(t *testing.T) {
 	t.Run("R-ARCH-031 R-ARCH-019 E0.12 CLIENT LIST on the primary shows trove:<pod>:… from every pod, TLS only, at most six per replica", checkClientList)
 
 	t.Run("R-HA-056 Q-HA-13 E0.12 a new replica with a wrong primary_name stays not ready and logs the cause", func(t *testing.T) {
-		clonedReplica(t, "trove-e2e-wrong-primary", func(spec map[string]any) { addEnv(spec, "TROVE_VALKEY_SENTINEL_PRIMARY_NAME", "wrong-primary") })
-		expectStuckWithCause(t, "trove-e2e-wrong-primary")
+		expectStuckWithCause(t, "trove-e2e-wrong-primary", func(t *testing.T, name string) {
+			clonedReplica(t, name, func(spec map[string]any) { addEnv(spec, "TROVE_VALKEY_SENTINEL_PRIMARY_NAME", "wrong-primary") })
+		})
 	})
 
 	t.Run("R-HA-056 Q-HA-13 E0.12 a new replica with a wrong password stays not ready and logs the cause", func(t *testing.T) {
 		kn(t, "delete", "secret", "trove-e2e-valkey-wrong", "--ignore-not-found")
 		kn(t, "create", "secret", "generic", "trove-e2e-valkey-wrong", "--from-literal=password=not-the-password")
 		t.Cleanup(func() { _, _ = kubectl("-n", cfg.namespace, "delete", "secret", "trove-e2e-valkey-wrong") })
-		clonedReplica(t, "trove-e2e-wrong-password", func(spec map[string]any) {
-			for _, v := range spec["volumes"].([]any) {
-				vol := v.(map[string]any)
-				if vol["name"] == "secret-valkey" {
-					vol["secret"].(map[string]any)["secretName"] = "trove-e2e-valkey-wrong"
+		expectStuckWithCause(t, "trove-e2e-wrong-password", func(t *testing.T, name string) {
+			clonedReplica(t, name, func(spec map[string]any) {
+				for _, v := range spec["volumes"].([]any) {
+					vol := v.(map[string]any)
+					if vol["name"] == "secret-valkey" {
+						vol["secret"].(map[string]any)["secretName"] = "trove-e2e-valkey-wrong"
+					}
 				}
-			}
+			})
 		})
-		expectStuckWithCause(t, "trove-e2e-wrong-password")
 	})
 
 	t.Run("R-HA-056 Q-HA-13 E0.12 with every Sentinel unreachable at its first start a new replica becomes ready, degraded valkey", func(t *testing.T) {
@@ -184,9 +187,42 @@ func TestE12Valkey(t *testing.T) {
 	})
 }
 
-// expectStuckWithCause waits for the replica to start, shows that it does not become ready for
-// 45 s while /readyz names valkey as failing, and finds the cause in its log.
-func expectStuckWithCause(t *testing.T, name string) {
+// inconclusiveValkey are the reasons a replica reports for a Valkey it could not reach. Q-HA-13 (d): unreachability never holds
+// back the first readiness, and a rejected credential or an unknown primary name is only seen when a Sentinel or Valkey
+// answers. A replica whose first attempts ran into their deadline on a starved node (F-119; Test and Release 42885398204:
+// reason "timeout", ready after 29 s) is therefore ready by the specification, and the replica says nothing about the
+// misconfiguration it was started with.
+var inconclusiveValkey = []string{"timeout", "connecting", "no_sentinel"}
+
+// expectStuckWithCause starts the replica (start) and shows that it does not become ready for 45 s while /readyz names valkey
+// as failing, and finds the cause in its log. A replica that becomes ready with the Valkey check unreachable for one of the
+// inconclusiveValkey reasons has not been able to see its misconfiguration: it is deleted and the case is run again with a new
+// replica, up to three times, and fails if none of them could. A replica that becomes ready with any other state fails the test.
+func expectStuckWithCause(t *testing.T, name string, start func(t *testing.T, name string)) {
+	t.Helper()
+	const attempts = 3
+	var seen []string
+	for i := 1; i <= attempts; i++ {
+		n := name
+		if i > 1 {
+			n = fmt.Sprintf("%s-%d", name, i)
+		}
+		inconclusive := ""
+		t.Run(fmt.Sprintf("attempt %d", i), func(t *testing.T) {
+			start(t, n)
+			inconclusive = stuckWithCause(t, n)
+		})
+		if inconclusive == "" {
+			return
+		}
+		seen = append(seen, inconclusive)
+		t.Logf("attempt %d: %s became ready with the Valkey check %q, which cannot tell the misconfiguration; trying with a new replica", i, n, inconclusive)
+	}
+	t.Fatalf("%d replicas became ready with the Valkey check unreachable (%v): none of them could see its misconfiguration", attempts, seen)
+}
+
+// stuckWithCause is one attempt of expectStuckWithCause. It returns the inconclusive reason when the replica became ready for it.
+func stuckWithCause(t *testing.T, name string) (inconclusive string) {
 	t.Helper()
 	waitFor(t, name+" to run", 2*time.Minute, 2*time.Second, func() bool {
 		code, _ := ops(name, "/healthz")
@@ -198,6 +234,14 @@ func expectStuckWithCause(t *testing.T, name string) {
 		code, b := ops(name, "/readyz?verbose=1")
 		body = b
 		if code == 200 {
+			var r struct {
+				Checks map[string]struct {
+					Reason string `json:"reason"`
+				} `json:"checks"`
+			}
+			if err := json.Unmarshal([]byte(b), &r); err == nil && slices.Contains(inconclusiveValkey, r.Checks["valkey"].Reason) {
+				return r.Checks["valkey"].Reason
+			}
 			t.Fatalf("%s became ready although valkey is misconfigured: %s", name, b)
 		}
 		time.Sleep(3 * time.Second)
@@ -220,5 +264,5 @@ func expectStuckWithCause(t *testing.T, name string) {
 		t.Logf("%s readyz: %s", name, strings.TrimSpace(body))
 		t.Logf("%s cause in the log (%d lines), first: %s", name, len(cause), cause[0])
 	}
-	_ = fmt.Sprint()
+	return ""
 }

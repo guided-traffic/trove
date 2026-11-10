@@ -295,7 +295,7 @@ func TestE15TLS(t *testing.T) {
 		// The load is a closed loop, so the count of its requests follows how fast the cluster answered and is not asserted (Q-HA-291).
 		// What makes "only 200" a statement is that the whole load ran in the window the row is about, from the trigger until the last
 		// pod served the new certificate, and that every api pod (the pods the load's paths reach) answered in it.
-		res.clientsRanThrough(t, k6Clients, renewedAt, servedAt, 2*time.Second)
+		res.clientsRanThrough(t, k6Clients, renewedAt, servedAt)
 		var apis []string
 		for _, p := range pods {
 			if strings.HasPrefix(p.Name, "trove-api-") {
