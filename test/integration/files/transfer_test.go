@@ -518,6 +518,7 @@ func TestConcurrentWritersOnOnePath(t *testing.T) {
 		stop := make(chan struct{})
 		var wg sync.WaitGroup
 		var fail atomic.Int64
+		var firstFail atomic.Value // the first refused request, so that a failure names its status
 		for w := range 6 {
 			wg.Add(1)
 			go func() {
@@ -530,11 +531,13 @@ func TestConcurrentWritersOnOnePath(t *testing.T) {
 					default:
 					}
 					p := fmt.Sprintf("/files/it/generic-local/orph/d%d/f%d.bin", w%3, i%4)
-					if s := r.put("maint", p, fmt.Sprint(w, i)).status; s != 201 && s != 200 {
+					if a := r.put("maint", p, fmt.Sprint(w, i)); a.status != 201 && a.status != 200 {
 						fail.Add(1)
+						firstFail.CompareAndSwap(nil, fmt.Sprintf("PUT %s: %d %s", p, a.status, a.body))
 					}
-					if s := r.do("maint", "DELETE", p, nil).status; s != 204 && s != 404 {
+					if a := r.do("maint", "DELETE", p, nil); a.status != 204 && a.status != 404 {
 						fail.Add(1)
+						firstFail.CompareAndSwap(nil, fmt.Sprintf("DELETE %s: %d %s", p, a.status, a.body))
 					}
 				}
 			}()
@@ -543,7 +546,7 @@ func TestConcurrentWritersOnOnePath(t *testing.T) {
 		close(stop)
 		wg.Wait()
 		if fail.Load() != 0 {
-			t.Errorf("%d requests failed", fail.Load())
+			t.Errorf("%d requests failed, the first: %v", fail.Load(), firstFail.Load())
 		}
 		orphans := te.number(`SELECT count(*) FROM items i WHERE i.parent_path <> ''
 			AND NOT EXISTS (SELECT 1 FROM items p WHERE p.repo_id = i.repo_id AND p.path = i.parent_path AND p.kind = 'folder')`)
