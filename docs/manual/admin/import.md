@@ -57,9 +57,9 @@ trove admin import npm ... --state import.state --report import-report.json
 | `--package <name>` | A package to copy; repeat it for several | none |
 | `--packages-file <file>` | Names, one per line | none |
 | `--search <text>` | Also copy what the old registry's search finds for the text. npm: `GET -/v1/search`; NuGet: the search resource; Ansible Galaxy: the collection index, filtered on `<namespace>.<name>` (`--search ''` copies every collection). A registry without the endpoint finds nothing, and only the named packages are copied. A NuGet package whose versions are all unlisted is not found by a search; name it | not given |
-| `--source-auth none\|basic\|bearer` | How the old registry is asked | `none` |
+| `--source-auth none\|basic\|bearer\|token` | How the old registry is asked; `token` is the API token of a Galaxy server (galaxy_ng), sent as `Authorization: Token` | `none` |
 | `--source-username <name>` | The account for `basic` | none |
-| `--source-password-file <file>` | The password (`basic`) or token (`bearer`) of the old registry; the environment variable `TROVE_IMPORT_SOURCE_PASSWORD` works too | none |
+| `--source-password-file <file>` | The password (`basic`) or token (`bearer`, `token`) of the old registry; the environment variable `TROVE_IMPORT_SOURCE_PASSWORD` works too | none |
 | `--source-extra-host <pattern>` | A host, besides the old registry's own, that serves its files (a CDN, an object store); a host name or a pattern such as `*.cdn.example.com`. Repeat it. The file requests to such a host carry no credential | none |
 | `--token-file <file>` | The trove token; the environment variable `TROVE_IMPORT_TOKEN` works too | none |
 | `--state <file>` | Remember the packages that are complete (see [Resuming](#resuming-a-cut-run)) | none |
@@ -146,7 +146,7 @@ trove admin import ansible \
   --from https://galaxy.old.example.com/api/ \
   --to https://trove.example.com/api/ansible/web/ansible-local/ \
   --package acme.tools --package acme.base \
-  --source-auth bearer --source-password-file source-token \
+  --source-auth token --source-password-file source-token \
   --token-file trove-token --dry-run                    # example
 ```
 

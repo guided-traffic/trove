@@ -20,7 +20,7 @@ import (
 
 const importUsage = `usage: trove admin import npm|nuget|ansible --from <source address> --to <trove repository address>
          [--package <name>]... [--packages-file <file>] [--search <text>]
-         [--source-auth none|basic|bearer] [--source-username <name>] [--source-extra-host <pattern>]...
+         [--source-auth none|basic|bearer|token] [--source-username <name>] [--source-extra-host <pattern>]...
          [--state <file>] [--report <file>] [--concurrency 2] [--rate 5] [--max-package-bytes 536870912]
          [--spool-dir <dir>] [--dry-run] [--config <file>]
 
@@ -55,7 +55,7 @@ func importCmd(args []string, s streams) error {
 	c.fs.Var(&extra, "source-extra-host", "a host pattern, besides the source's origin, that may serve files; may be repeated")
 	pkgFile := c.fs.String("packages-file", "", "a file with one package name per line")
 	search := c.fs.String("search", "", "also copy the packages the source's search finds for this text")
-	auth := c.fs.String("source-auth", "none", "how the source is asked: none, basic or bearer")
+	auth := c.fs.String("source-auth", "none", "how the source is asked: none, basic, bearer or token (a Galaxy API token)")
 	user := c.fs.String("source-username", "", "the account for --source-auth basic")
 	srcPassFile := c.fs.String("source-password-file", "", "a file holding the source's password or token")
 	tokenFile := c.fs.String("token-file", "", "a file holding the trove token of the target")
@@ -81,7 +81,7 @@ func importCmd(args []string, s streams) error {
 		return fmt.Errorf("the target token: %w", err)
 	}
 	srcPass, err := secret(s, envSourcePassword, *srcPassFile)
-	if err != nil && (*auth == importer.AuthBasic || *auth == importer.AuthBearer) {
+	if err != nil && (*auth == importer.AuthBasic || *auth == importer.AuthBearer || *auth == importer.AuthToken) {
 		return fmt.Errorf("the source password: %w", err)
 	}
 	if *pkgFile != "" {
@@ -91,7 +91,7 @@ func importCmd(args []string, s streams) error {
 		}
 		names = append(names, more...)
 	}
-	loaded, err := c.loadConfig(s, config.CommandAdmin, flags, fnames)
+	loaded, err := c.loadConfig(s, config.CommandImport, flags, fnames)
 	if err != nil {
 		return err
 	}

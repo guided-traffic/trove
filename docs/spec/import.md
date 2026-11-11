@@ -66,7 +66,7 @@ trove admin import ansible --from https://galaxy.example.com/api/ \
 | `--from`, `--to` | the source and the target, each as a package manager is given its registry: the registry address for npm, the service index for NuGet, the API root of the Galaxy and the repository address for Ansible | required |
 | `--package <name>` (repeatable), `--packages-file <file>` | the packages to copy (R-IMP-003) | none |
 | `--search <text>` | also copy what the source's search finds (R-IMP-003) | not given |
-| `--source-auth none\|basic\|bearer`, `--source-username`, `--source-password-file`, `--source-extra-host <pattern>` (repeatable) | how the source is asked (R-IMP-002) | `none` |
+| `--source-auth none\|basic\|bearer\|token`, `--source-username`, `--source-password-file`, `--source-extra-host <pattern>` (repeatable) | how the source is asked (R-IMP-002) | `none` |
 | `--token-file` | the trove token of the target (R-IMP-002) | `TROVE_IMPORT_TOKEN` |
 | `--state <file>` | the state file (R-IMP-007) | none |
 | `--report <file>` | the report as JSON (R-IMP-006) | none |
@@ -107,7 +107,9 @@ Priority: **P1** · Covers: trove-only
   Any other address makes that version fail with `foreign_host` and nothing is requested. The extra hosts are asked **without** the
   credential.
 - **Source credential.** `--source-auth basic` sends `Authorization: Basic` with `--source-username` and the password;
-  `bearer` sends `Authorization: Bearer <password>`, as `authMode` of a remote repository does (R-REPO-033). The password is read from
+  `bearer` sends `Authorization: Bearer <password>`, as `authMode` of a remote repository does (R-REPO-033); `token` sends
+  `Authorization: Token <password>`, the scheme of a Galaxy server's API token (galaxy_ng answers a Bearer token as "credentials were not
+  provided", read on 2026-11-11). The password is read from
   `--source-password-file` (the trailing line break removed, at most 8 KiB) or from `TROVE_IMPORT_SOURCE_PASSWORD`. It is **never** a
   command-line argument. The credential is attached by the hop policy of a remote repository (`outbound.CredentialPolicy`): it goes
   to the source's origin on every hop to that origin, to no other host and to no redirect target, and over `https` only, unless the

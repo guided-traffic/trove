@@ -23,7 +23,13 @@ const (
 	// CommandBackup is `trove backup …`: the database, the blob store and the backup keys, no role and no Valkey
 	// (R-BAK-009).
 	CommandBackup
+	// CommandImport is `trove admin import …`: a client of two registries that reads the outbound settings and opens no
+	// database, no Valkey and no object store (Q-IMP-1), so the keys of the database are not required.
+	CommandImport
 )
+
+// needsDatabase reports whether the command opens the database; the keys of the database section are checked only then.
+func (c Command) needsDatabase() bool { return c != CommandImport }
 
 // runsReplica reports whether the command needs what a serving replica needs:
 // Valkey, the object store and the key ring.

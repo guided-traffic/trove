@@ -401,11 +401,17 @@ func (l *loader) role() string {
 // validate runs the tag rules, the section validators and the command checks.
 func (l *loader) validate() {
 	for _, k := range l.schema.Keys {
+		if !l.opts.Command.needsDatabase() && strings.HasPrefix(k.Path, "database.") {
+			continue
+		}
 		for _, msg := range k.check(l.field(k)) {
 			l.issues = append(l.issues, Issue{Message: msg})
 		}
 	}
 	for _, s := range l.schema.Sections {
+		if !l.opts.Command.needsDatabase() && (s.Path == "database" || strings.HasPrefix(s.Path, "database.")) {
+			continue
+		}
 		prefix := ""
 		if s.Path != "" {
 			prefix = s.Path + "."

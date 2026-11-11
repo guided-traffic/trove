@@ -58,3 +58,17 @@ func TestDatabaseLeaseSessionBound(t *testing.T) {
 		}
 	})
 }
+
+// R-IMP-001, Q-IMP-1: `trove admin import` opens no database, so an empty configuration loads for it; another admin command still
+// needs the database's keys.
+func TestR_IMP_001_TheImportCommandNeedsNoDatabase(t *testing.T) {
+	opts := func(cmd Command) Options {
+		return Options{File: "/c.yaml", ReadFile: fakeFS(map[string]string{"/c.yaml": ""}), Environ: nil, Command: cmd}
+	}
+	if _, err := Load(opts(CommandImport)); err != nil {
+		t.Fatalf("the import command refused an empty configuration: %v", err)
+	}
+	if _, err := Load(opts(CommandAdmin)); !hasIssue(err, "database.host") {
+		t.Fatalf("an admin command loaded without database.host: %v", err)
+	}
+}

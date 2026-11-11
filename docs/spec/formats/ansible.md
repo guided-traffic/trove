@@ -85,8 +85,6 @@ Not verified, and to be proven by the package that builds the mechanism:
 
 - the import task document beyond what the client reads (galaxy_ng's own serializer was not read; the fields `id`, `state`,
   `created_at`, `started_at`, `finished_at`, `error`, `messages` come from the client and from the catalog);
-- whether the Galaxy of the owner (the import source, R-ANS-027) speaks the same v3 documents; it is not named on this page and the
-  development agent has not seen it (H-847);
 - the Red Hat Automation Hub: its API root URL, whether a client's `url` for it answers `available_versions` directly, and the token
   exchange of an offline token (R-ANS-019, H-842); no Red Hat account was available;
 - the grammar Galaxy applies to namespaces and names when publishing, and its maximum upload size;
@@ -957,9 +955,11 @@ codes are those of R-IMP-001 to R-IMP-008, and nothing in the runner, the report
   local repository, R-ANS-014; the report names the role count when the source's v1 API answers).
 - **The source's API.** The importer speaks the Galaxy v3 documents of R-ANS-004 (the public Galaxy's own shape, also the galaxy_ng
   shape) at the API root it is given; for a source whose `v3` collection routes are served below a prefix (`content/<repo>/`), the
-  operator passes that prefix as part of `--from`. The importer does not guess. **The owner's instance has not been seen** by the
-  development agent ([H-847](#h-847--the-import-is-written-against-the-public-galaxy-and-not-against-the-owners-instance)): the package that builds this requirement runs the importer against the first real source
-  through `--dry-run` before any copy and records what differs.
+  operator passes that prefix as part of `--from`. The importer does not guess. The owner's instance, galaxy_ng 4.12
+  at `https://galaxy.wds18.de/api/galaxy/`, was read with `--dry-run` on 2026-11-11: the API root as `--from`, `--source-auth token`
+  (galaxy_ng takes Basic and its own `Token` scheme and answers Bearer as "credentials were not provided"), the 302 of `v3/collections/`
+  to the distribution `published` followed with the credential on the same origin; 3 collections, 7 versions would import, no conflict,
+  nothing left out.
 - The format is [`internal/importer/ansible.go`](../../../internal/importer/ansible.go); the importer's tool page is
   [developer/import.md](../../developer/import.md) and the operator's page [manual/admin/import.md](../../manual/admin/import.md).
 - The importer's tests use the counting stub of R-ANS-032 as the source and a local repository of the integration stack as the target.
@@ -1533,7 +1533,7 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Choice:** (a).
 
-**Rationale:** the importer's seam exists for this. Revisit after the first run against the owner's instance (H-847).
+**Rationale:** the importer's seam exists for this. The first run against the owner's instance (2026-11-11, R-ANS-027) found no difference; revisit when a later source does.
 
 **Applied in the spec:** R-ANS-027; import.md Scope.
 
@@ -2088,16 +2088,6 @@ hole, recorded because the owner's current system may rely on it.
 The public Galaxy listed 4,685 collections (2026-11-10); the number of versions and the bytes were not counted, and the hosting
 requirements of a full mirror (storage, the time of a pass, the Galaxy's rate limits) are unknown (R-ANS-021). Dormant until an operator
 configures an unbounded mirror; real when they do.
-
-### H-847 · The import is written against the public Galaxy and not against the owner's instance
-
-The importer speaks the v3 documents of the public Galaxy (R-ANS-027). The owner's instance is galaxy_ng (owner, 2026-11-11), read
-without credentials on 2026-11-11: the API root `https://galaxy.wds18.de/api/galaxy/` answers `available_versions` with `v3` and `pulp-v3`
-only (galaxy_ng 4.12.0dev, pulp_ansible 0.25.1), so it serves no roles; `v3/collections/` answers 302 to the distribution `published`
-(`v3/plugin/ansible/content/published/collections/index/`), and the index answers 401 without a token. About 1,562 collection versions
-(the owner's count of 2026-10-28). Not seen: whether it enforces a different name grammar, and how the importer follows the 302 with its
-credential. Dormant until the first run; real then, when a dry run may show differences. The package that builds the importer
-runs a `--dry-run` against the first real source and records them.
 
 ### H-848 · A remote does not track versions that an upstream removes
 

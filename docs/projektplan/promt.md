@@ -379,7 +379,6 @@ next unit of [FULL.md](FULL.md) (block B, F1).
 
 **Decisions only the owner can take**
 
-- **H-847** (Ansible Galaxy import): the existing Galaxy is galaxy_ng at `https://galaxy.wds18.de/api/galaxy/` (owner, 2026-11-11; `v3` only, distribution `published`, the index needs a credential). Open: a `trove admin import ansible --dry-run` against it, which the development agent runs once the owner has put the credentials in place (owner, 2026-11-11); galaxy_ng takes Basic and its own `Token` scheme and refuses Bearer (read 2026-11-11), and the importer offers only `basic` and `bearer`, so an API token of galaxy_ng cannot be used yet, a user and password can; the import is built and tested against the stub only.
 - **Q-HA-293, to be discussed, not decided**: a replica whose first Valkey attempts get no answer becomes ready degraded (Q-HA-13 (d)), so a wrong password behind an unanswered first attempt is noticed only later. Should the first readiness wait for a verdict? Waiting would stall a replica started during a Valkey failover, which Q-HA-13 (c) rejected.
 
 - **H-812** ([image-scanning.md](../security/image-scanning.md)): Trivy shares the file system and network of the worker pod, so a crafted image that compromises it can read the secrets mounted there. Close it before images from untrusted remotes are scanned (a sandbox or a pod per scan, a further component), or accept it? A dedicated `vuln` worker pool would shrink it; the owner kept the plain workers on 2026-11-10 (Q-VULN-137).
@@ -562,7 +561,7 @@ What a run did, in short, so the next run starts where it stopped. The plan item
 - F0, Ansible Galaxy: planned by one agent (R-ANS-001 to 032), built by four in stages (core and local; stub, remote, mirror and hub exchange;
   virtual and import; setup, UI and e2e). The real clients found three defects every integration test had missed: ansible-core sends the
   archive base64-encoded (every publish failed), the netrc snippet sent its variable name as the password, the mirror lacked the collection
-  document. The set `ansible` passed on kind with both clients (67 tests) and its CI leg is green. Open: the owner's dry run of the import (H-847).
+  document. The set `ansible` passed on kind with both clients (67 tests) and its CI leg is green. The owner's dry run of the import followed on 2026-11-11: 3 collections, 7 versions would import, nothing differed.
 - Leads that were wrong, with the evidence that refuted them: dropped SYNs behind the edge 502s (no kernel counter moved), the drain
   change behind `TestE14Drain` (the 502s came 1.5 minutes after the drain, in a stall of the whole CI cluster). The common factor of most red
   e2e and integration runs of the day is a stalled runner; no CI job records its CPU pressure yet.

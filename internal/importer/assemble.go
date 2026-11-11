@@ -16,6 +16,8 @@ const (
 	AuthNone   = "none"
 	AuthBasic  = "basic"
 	AuthBearer = "bearer"
+	// AuthToken sends "Authorization: Token <token>", the scheme of a Galaxy server's API token (galaxy_ng), which refuses Bearer.
+	AuthToken = "token"
 )
 
 // Params is what the command line gives (R-IMP-001, R-IMP-002).
@@ -25,7 +27,7 @@ type Params struct {
 	// From is the source: the registry address of npm, the service index of NuGet, the API root of a Galaxy. To is the target repository's address
 	// in the same form, as a package manager is given it.
 	From, To string
-	// SourceAuth, SourceUsername and SourcePassword are the credential for the source; the password is the token for bearer.
+	// SourceAuth, SourceUsername and SourcePassword are the credential for the source; the password is the token for bearer and token.
 	SourceAuth, SourceUsername, SourcePassword string
 	// ExtraHosts are host patterns, besides the source's origin, that may serve files; they are asked without a credential.
 	ExtraHosts []string
@@ -88,8 +90,14 @@ func Build(f *outbound.Factory, p Params) (Format, *SourceClient, *TargetClient,
 		}
 		value := "Bearer " + p.SourcePassword
 		srcHeaders = func() http.Header { return http.Header{"Authorization": {value}} }
+	case AuthToken:
+		if p.SourcePassword == "" {
+			return nil, nil, nil, fmt.Errorf("--source-auth token needs a token: --source-password-file or TROVE_IMPORT_SOURCE_PASSWORD")
+		}
+		value := "Token " + p.SourcePassword
+		srcHeaders = func() http.Header { return http.Header{"Authorization": {value}} }
 	default:
-		return nil, nil, nil, fmt.Errorf("--source-auth %q: want none, basic or bearer", p.SourceAuth)
+		return nil, nil, nil, fmt.Errorf("--source-auth %q: want none, basic, bearer or token", p.SourceAuth)
 	}
 	for _, h := range p.ExtraHosts {
 		if h = strings.TrimSpace(h); h == "" || strings.ContainsAny(h, "/: ") {

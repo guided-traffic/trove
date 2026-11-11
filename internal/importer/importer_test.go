@@ -181,6 +181,45 @@ func TestR_IMP_002_TheSourceIsReachedOnlyWhereTheEgressPolicyAdmits(t *testing.T
 	}
 }
 
+// R-IMP-002: --source-auth token sends a Galaxy server's API token in its own scheme, to the source's origin only.
+func TestR_IMP_002_AGalaxyAPITokenGoesAsTheTokenSchemeToTheOriginOnly(t *testing.T) {
+	var originAuth, otherAuth atomic.Value
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		originAuth.Store(r.Header.Get("Authorization"))
+		_, _ = w.Write([]byte("{}"))
+	}))
+	defer origin.Close()
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		otherAuth.Store(r.Header.Get("Authorization"))
+		_, _ = w.Write([]byte("file"))
+	}))
+	defer other.Close()
+	_, src, _, err := Build(factory(), Params{
+		Format: "ansible", From: origin.URL + "/api/galaxy/", To: "https://t.example/", Token: "tok",
+		SourceAuth: AuthToken, SourcePassword: "s3cret", ExtraHosts: []string{"127.0.0.1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := src.GetStatus(context.Background(), origin.URL+"/api/galaxy/", "", 1024); err != nil {
+		t.Fatal(err)
+	}
+	if got := originAuth.Load(); got != "Token s3cret" {
+		t.Errorf("the origin got Authorization %q, want the Token scheme", got)
+	}
+	f, err := src.Download(context.Background(), other.URL+"/file", t.TempDir(), 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Remove()
+	if got := otherAuth.Load(); got != "" {
+		t.Errorf("an extra host got Authorization %q; it must be asked without the credential", got)
+	}
+	if _, _, _, err := Build(factory(), Params{Format: "ansible", From: origin.URL + "/", To: "https://t.example/", Token: "tok", SourceAuth: AuthToken}); err == nil {
+		t.Error("--source-auth token without a token was accepted")
+	}
+}
+
 func TestR_IMP_002_TheCredentialGoesToTheSourcesOriginAndToNoOtherHost(t *testing.T) {
 	var originAuth, otherAuth atomic.Value
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
