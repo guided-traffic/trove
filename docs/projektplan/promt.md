@@ -374,7 +374,7 @@ Found on 2026-11-01 while writing the manual (`docs/manual`) and the design chan
 ### Open at the end of the run of 2026-11-10
 
 Handed over at the end of the session of 2026-11-10/11 ([section 11](#11--run-record)). v0.43.2 is released (Go 1.27.4); the push of
-f8719487 (the format logos) was in Test and Release when the session ended: read its result first. The owner's installation follows the chart
+f8719487 (the format logos, v0.44.0) ran green in every job (Test and Release 42995232524). The owner's installation follows the chart
 by `version: "*"`. Red pipelines are worked on even though they no longer hold a release
 ([releasing.md](../developer/releasing.md#until-the-first-stable-release)). The next run starts with the owner's tasks of
 [section 10](#owner-tasks-of-2026-11-11), **T-18, then T-19 and T-20**, with the red legs below beside them; the next unit of
