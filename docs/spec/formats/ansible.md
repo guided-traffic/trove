@@ -2091,9 +2091,12 @@ configures an unbounded mirror; real when they do.
 
 ### H-847 · The import is written against the public Galaxy and not against the owner's instance
 
-The importer speaks the v3 documents of the public Galaxy (R-ANS-027). The owner's instance is galaxy_ng, which is built on Pulp (owner,
-2026-11-11); it has not been seen by the development agent (which version, whether its collection routes sit below a distribution prefix
-such as `/api/galaxy/content/<distribution>/`, whether it holds roles, whether it enforces a different name grammar). Dormant until the first run; real then, when a dry run may show differences. The package that builds the importer
+The importer speaks the v3 documents of the public Galaxy (R-ANS-027). The owner's instance is galaxy_ng (owner, 2026-11-11), read
+without credentials on 2026-11-11: the API root `https://galaxy.wds18.de/api/galaxy/` answers `available_versions` with `v3` and `pulp-v3`
+only (galaxy_ng 4.12.0dev, pulp_ansible 0.25.1), so it serves no roles; `v3/collections/` answers 302 to the distribution `published`
+(`v3/plugin/ansible/content/published/collections/index/`), and the index answers 401 without a token. About 1,562 collection versions
+(the owner's count of 2026-10-28). Not seen: whether it enforces a different name grammar, and how the importer follows the 302 with its
+credential. Dormant until the first run; real then, when a dry run may show differences. The package that builds the importer
 runs a `--dry-run` against the first real source and records them.
 
 ### H-848 · A remote does not track versions that an upstream removes
