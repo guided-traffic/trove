@@ -469,6 +469,46 @@ agents. The check step (3) below does not run during ALPHA: a builder lands its 
 No registry task is open: T-16 (Docker) and T-17 (APT, closed with the FULL.md block D row "Debian / APT repositories" at 🟢,
 evidence in [apt-work-packages.md](apt-work-packages.md#24--closing)) are done. A new registry task of the owner is added here.
 
+### Owner tasks of 2026-11-11
+
+Set by the owner on 2026-11-11 after reading the galaxy_ng screens of his collections. Both are confirmed features, not parked ideas, and
+the next run takes them in this order, each planned by a planning agent (spec and a work-package plan) before anything is built. A planning
+start in the session of 2026-11-11 was stopped when the owner moved both tasks to a later run; its unfinished, unreviewed drafts are kept
+on the local branches `wip-t18-visibility-plan` (a part of authorization.md) and `wip-t19-galaxy-docs-plan` (spec sections and a work-package
+plan), which the next planner may read. Nothing of them is on `main`.
+
+- **T-18 · Visibility levels.** Private, internal and public, as in the owner's GitLab:
+  - **private**: only members, that is principals that hold a grant on it;
+  - **internal**: seen automatically by every signed-in user except users flagged **external** (owner, 2026-11-11); trove therefore gets a
+    user flag "external" as GitLab has it, set by an administrator, and an external user sees only what it is a member of or what is public;
+    decide whether the technical accounts of external parties of a project (phase 5a) and the Bastion's partners count as external;
+  - **public**: readable without authentication.
+
+  A default per installation (the general settings), a setting per project and a setting per repository; on a repository the **wiki** part
+  is set separately from the artifacts, for example "the artifacts of this repository are public, its wiki is internal". What exists and must
+  be read first: the built-in principals `anonymous` (R-AUTHZ-003) and `authenticated` (R-AUTHZ-030), the runtime switch `anonymousAccess` and
+  its ceiling `auth.anonymous.allowed` (R-AUTH-037), policies, path-scoped grants and the decision point with `ReadScope`. trove is pre-alpha
+  (CLAUDE.md): one mechanism, not a second one beside the anonymous switch; replacing it is allowed. To decide in the spec: inheritance and
+  whether a repository may be more open than its project (GitLab: no); what "wiki" is per format (the package pages' READMEs, a README inside
+  a protocol document such as npm's packument, the collection documentation of T-19) and what a client gets when the artifacts are visible and
+  the wiki is not (an absent field, 404, a redacted document) on the protocol routes, in the API and in the UI; how visibility composes with
+  path-scoped grants, the Bastion, exposure rules, endpoints and search; the settings pages (one-column form), the OpenAPI operations, the
+  audit events, the schema, and the caches a change must reach (the authz snapshot, the claims index) within the existing bound. Security
+  pages change (who can read what), with their gaps. e2e with real clients: "public artifacts, internal wiki" (an anonymous `npm install` works,
+  an anonymous request for the documentation gets what was decided), and an external user who sees nothing internal.
+- **T-19 · The documentation of Ansible Galaxy collections.** galaxy_ng shows a collection's documentation (the owner's screenshots of
+  `hans_fischer.common` 1.5.0): an Install tab (description, license, the install command, a download link, "Requires Ansible"), a
+  Documentation tab with a search field and a tree (the Readme, Modules with 8 entries, Plugins with 24, each with its own page), tabs
+  Contents, Import log, Dependencies, Distributions, and links Docs site, Website, Issue tracker, Repo. trove serves and shows the same for
+  local, remote and virtual repositories. Today the remote class drops `metadata.docs_blob` and `metadata.contents` (Q-ANS-10) and the local
+  class never stores them. galaxy_ng builds `docs_blob` at import (galaxy-importer runs ansible-doc over the plugins), so the spec decides
+  whether trove generates it for a local publish from the archive (the `DOCUMENTATION` strings of the plugin sources, bounded, as untrusted
+  input) or passes it through from an upstream only; how large documentation is bounded and stored (community.general has hundreds of
+  plugins); how its Markdown and RST are rendered safely (the existing README rendering); the API the UI reads (the tree per version, one
+  page per entry); search inside it. The owner's galaxy_ng (`https://galaxy.wds18.de/api/galaxy/`, `--source-auth token`, the owner gives
+  the token for a run) holds real documents to read. A collection's documentation is **wiki** content of T-18: define the seam (which routes
+  and fields are wiki) so that T-18's check gates them.
+
 ## 11 · Run record
 
 What a run did, in short, so the next run starts where it stopped. The plan items, findings and decisions carry the details.
