@@ -43,7 +43,18 @@ import (
 var (
 	profileMu      sync.Mutex
 	currentProfile = "default" // what the suite last switched the cluster to
+	// mirrorPoolOn is whether the release carries the worker pool of the mirror tests (mirrorPoolValues): every up.sh run installs the
+	// release from the profile and its environment alone, so it is on exactly when the last run was given the pool.
+	mirrorPoolOn bool
 )
+
+// recordProfile notes what an up.sh run with the profile and the environment left the cluster in.
+func recordProfile(profile string, env []string) {
+	profileMu.Lock()
+	defer profileMu.Unlock()
+	currentProfile = profile
+	mirrorPoolOn = slices.ContainsFunc(env, func(e string) bool { return strings.Contains(e, mirrorPoolValues) })
+}
 
 // runUp runs deploy/dev/up.sh with the profile; the cluster name and the ports come from the environment, as
 // make dev-up got them.
@@ -60,9 +71,7 @@ func runUp(profile string, env ...string) error {
 	if err != nil {
 		return fmt.Errorf("up.sh with TROVE_PROFILE=%s: %w\n%s", profile, err, tail(string(out), 2000))
 	}
-	profileMu.Lock()
-	currentProfile = profile
-	profileMu.Unlock()
+	recordProfile(profile, env)
 	return nil
 }
 

@@ -601,9 +601,7 @@ func bootstrapAdmin(t testing.TB) {
 // cluster to the default profile at the end.
 func markScatterProfile() {
 	scatterOnce.Do(func() {})
-	profileMu.Lock()
-	currentProfile = "scatter"
-	profileMu.Unlock()
+	recordProfile("scatter", nil)
 }
 
 // restoreCurrentRelease leaves the cluster with the current dev release installed, in the default profile, so that the

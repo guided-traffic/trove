@@ -10094,6 +10094,24 @@ runner, so the cause is not known; a disk of the runner filled by the copies (2 
 or the Job copies the file.
 **Applied:** `test/e2e/drain_variants_test.go` (`BackupFiles`), `test/e2e/drain_load_test.go`.
 
+### Q-HA-294 · The worker pool of the mirror tests is a state the tests name, not what the first mirror test of a process leaves behind
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: [Q-REPO-306](repositories-and-proxy.md#q-repo-306--the-mirror-tests-are-part-of-the-formats-and-of-the-nightly-ha-sets-the-worker-pool-is-added-by-the-tests) moved the mirror tests into the format sets and the nightly HA sets and has the tests add the worker pool (`mirrorPoolValues`, two processes of the queue `mirror`) with a second `up.sh`. The first `mirrorFx` of a process did that, once. `TestNPMHA` and `TestNuGetHA` wait for four workers (`troveSettled(t, 3, 3, 4)`: the main worker and the pool `vuln`), and they saw four only because `npm_ha_test.go` and `nuget_ha_test.go` sort before the worker pool tests of their sets: a test that ran after the first mirror test of the process would have waited for four workers among six. Verified in the code: `mirrorOnce` guards the whole build, `useScatter` is a `sync.Once` as well, and nothing recorded which of the two states the release was in.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Record the state of the release, and let each test name the one it needs (chosen) | `runUp` and `runUpWith` record whether the environment they were given carries the pool (`mirrorPoolOn`); `requireMirrorPool(t, on)` runs `up.sh` only when the release is in the other state and waits for the pods of that state; `mirrorFx` asks for the pool on every call, `npmHAFx` (the HA tests that count workers) asks for it off | The order of the files stops mattering in either direction; no extra `up.sh` in the order the sets have today; one place that knows the pool | A test of a set that mixes the two pays one `up.sh` per change of state |
+| (b) Count the workers by what is there | `troveSettled` accepts four or six | Small | A test that wants no pool would pass with one; the count no longer states what the test runs against |
+| (c) Put the pool into every scatter profile | The pool is always on | No state | Rejected in Q-REPO-306 (b): the pod counts of every other scatter set change |
+
+**Choice:** (a), in [mirror_env_test.go](../../test/e2e/mirror_env_test.go) (`requireMirrorPool`, `mirrorFx`), [m1_env_test.go](../../test/e2e/m1_env_test.go) (`recordProfile`) and [npm_load_test.go](../../test/e2e/npm_load_test.go) (`npmHAFx`).
+
+**Rationale:** The pool is a property of the release, and a release changes only by an `up.sh`, so the harness can know it. A test that depends on a state says so; the order of the files is then no part of the test. The development agent would revisit the choice if a set came to alternate between mirror tests and worker-counting tests (it would then pay an `up.sh` per alternation), by cutting the set.
+
+**Applied in the spec:** none. [docs/developer/e2e.md](../developer/e2e.md#what-is-deployed).
+
 ## What this does not cover
 
 ### H-37 · A database restore revives revoked credentials and removed grants

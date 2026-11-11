@@ -87,6 +87,10 @@ var (
 // mirrorFx puts the cluster into the scatter profile with the worker pool of the mirror and builds the installation of the tests.
 func mirrorFx(t testing.TB) *mirrorEnv {
 	t.Helper()
+	// The pool is a state of the release that the test names, not one the first mirror test of the process leaves behind: a test
+	// that counts the workers of the scatter profile takes it out (npmHAFx), and the next mirror test puts it back.
+	useScatter(t)
+	requireMirrorPool(t, true)
 	mirrorOnce.Do(func() {
 		mirrorErr = fmt.Errorf("the environment did not finish (see the first failure)")
 		mirrorVal, mirrorErr = buildMirrorEnv(t)
@@ -97,13 +101,27 @@ func mirrorFx(t testing.TB) *mirrorEnv {
 	return mirrorVal
 }
 
-func buildMirrorEnv(t testing.TB) (*mirrorEnv, error) {
-	useScatter(t)
-	if err := runUp(scatterProfile(), "TROVE_HELM_EXTRA=--set-json "+mirrorPoolValues); err != nil {
-		return nil, err
+// requireMirrorPool puts the release into the scatter profile with the worker pool of the mirror tests (on), or without it, unless it
+// is in that state already, and waits until the worker pods are the ones of that state: two of the main worker and two of the pool
+// vuln, and two more of the pool mirror when it is on.
+func requireMirrorPool(t testing.TB, on bool) {
+	t.Helper()
+	profileMu.Lock()
+	have := mirrorPoolOn
+	profileMu.Unlock()
+	if have == on {
+		return
+	}
+	var env []string
+	want := 0
+	if on {
+		env, want = []string{"TROVE_HELM_EXTRA=--set-json " + mirrorPoolValues}, 2
+	}
+	if err := runUp(scatterProfile(), env...); err != nil {
+		t.Fatal(err)
 	}
 	waitServingSettled(t)
-	waitFor(t, "two ready worker pods (the main worker) and two of the pool mirror", 5*time.Minute, 2*time.Second, func() bool {
+	waitFor(t, fmt.Sprintf("the worker pods of the release with the mirror pool %v", on), 5*time.Minute, 2*time.Second, func() bool {
 		ready := func(sel string) int {
 			n := 0
 			for _, p := range livePods(t, sel) {
@@ -113,8 +131,11 @@ func buildMirrorEnv(t testing.TB) (*mirrorEnv, error) {
 			}
 			return n
 		}
-		return ready(selMainWorker) == 2 && ready(selMirrorPool) == 2
+		return ready(selMainWorker) == 2 && ready(selMirrorPool) == want && len(livePods(t, selMirrorPool)) == want
 	})
+}
+
+func buildMirrorEnv(t testing.TB) (*mirrorEnv, error) {
 	b := make([]byte, 3)
 	_, _ = rand.Read(b)
 	e := &mirrorEnv{run: hex.EncodeToString(b)}

@@ -217,9 +217,7 @@ func runUpWith(t testing.TB, profile string, env ...string) {
 	if err != nil {
 		t.Fatalf("up.sh with TROVE_PROFILE=%s %v: %v\n%s", profile, env, err, tail(string(out), 2000))
 	}
-	profileMu.Lock()
-	currentProfile = profile
-	profileMu.Unlock()
+	recordProfile(profile, env)
 }
 
 // background runs a command and returns a function that waits for it and returns its error.

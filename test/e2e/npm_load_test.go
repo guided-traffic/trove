@@ -88,6 +88,9 @@ var (
 func npmHAFx(t *testing.T) *npmHAFixture {
 	t.Helper()
 	fx := npmFx(t)
+	// The HA tests wait for the workers of the profile (troveSettled: the main worker and the pool vuln); the pool of the mirror tests
+	// is not among them, whether a mirror test ran before in this process or not.
+	requireMirrorPool(t, false)
 	requireScatter(t, fx)
 	haFxOnce.Do(func() {
 		haFxErr = fmt.Errorf("the fixture did not finish (see the first failure)")
