@@ -83,8 +83,9 @@ Hard rules, also for every subagent (put them into every subagent prompt):
 1. `git status` must be clean; then `git pull --rebase origin main`.
 2. During the alpha (rule 10) a run works on two fronts at once: the first open task of
    [section 10](#10--owner-tasks-of-2026-11-07-the-next-registries), cut into work packages with an agent and a branch each, and
-   every open finding of section 8 with an agent each. No registry task is open there now (T-16 Docker and T-17 APT are closed), so
-   a run takes the findings and then the next unit of item 3. The open items of BETA.md phase 7 are findings of the same kind. Outside the alpha: open [BETA.md](BETA.md), table
+   every open finding of section 8 with an agent each. Open there now: the owner tasks of 2026-11-11, **T-18 (visibility levels) and then
+   T-19 (the documentation of Galaxy collections)**; they come before the next unit of item 3. The open items of BETA.md phase 7 are
+   findings of the same kind. Outside the alpha: open [BETA.md](BETA.md), table
    **Where we are**; the current phase is the first row whose status is not 🟢, and a row at 🟡 is resumed (step 2, item 4).
 3. If every row of BETA.md is 🟢, open [FULL.md](FULL.md) and take the first unit that is not 🟢,
    in document order: block A as one phase; in block B each format (F0, F1, …) is one phase; in
@@ -372,10 +373,12 @@ Found on 2026-11-01 while writing the manual (`docs/manual`) and the design chan
 
 ### Open at the end of the run of 2026-11-10
 
-Handed over at the end of the run of 2026-11-10 ([section 11](#11--run-record)). v0.43.0 is released; the owner's installation follows the chart by `version: "*"`.
-Every job that gates Semantic Release is green on `main`; red pipelines are worked on even though they no longer hold a release
-([releasing.md](../developer/releasing.md#until-the-first-stable-release)). Start with the integration and e2e legs below that the last run left red, then the
-next unit of [FULL.md](FULL.md) (block B, F1).
+Handed over at the end of the session of 2026-11-10/11 ([section 11](#11--run-record)). v0.43.2 is released (Go 1.27.4); the push of
+f8719487 (the format logos) was in Test and Release when the session ended: read its result first. The owner's installation follows the chart
+by `version: "*"`. Red pipelines are worked on even though they no longer hold a release
+([releasing.md](../developer/releasing.md#until-the-first-stable-release)). The next run starts with the owner's tasks of
+[section 10](#owner-tasks-of-2026-11-11), **T-18 and then T-19**, with the red legs below beside them; the next unit of
+[FULL.md](FULL.md) (block B, F1) comes after them.
 
 **Decisions only the owner can take**
 
