@@ -7,8 +7,10 @@
 # The coverage evidence job reads the reports of every test tier. The kind legs of Test and Release are path-filtered (a push may
 # run none of them) and the long legs run in the nightly workflow, so for every leg whose report artifact is not among the
 # reports of this run, the newest report of that leg on main is taken, whichever workflow wrote it: the last completed runs of
-# release.yml and performance.yml are listed, and each artifact named like `e2e[-<group>]-report[-<set>]` is a candidate. Of
-# several candidates with one name the newest wins. Each report lands in <destination>/<artifact name>/.
+# release.yml and performance.yml are listed, and each artifact named like `e2e[-<group>]-report[-<set>]` is a candidate. A
+# cancelled run is not a source: a push cancels the run before it, and a leg cut off mid-set uploads the report of the tests
+# it reached, which would withdraw what the rest proves (Test and Release 43065872066 carried such a report of e2e (deb) and
+# lost R-DEB-004). Of several candidates with one name the newest wins. Each report lands in <destination>/<artifact name>/.
 #
 # A leg that has no unexpired report (artifacts live 30 days) is simply not fetched: the requirements only that leg proves are then
 # not proven, and the evidence job says so. This script never decides what a report proves.
@@ -42,7 +44,7 @@ for entry in "release.yml:${TROVE_E2E_REPORT_RUNS_RELEASE:-40}" "performance.yml
   workflow="${entry%%:*}"
   count="${entry##*:}"
   call "$api/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?branch=main&status=completed&per_page=$count" |
-    jq -r --arg self "$GITHUB_RUN_ID" '.workflow_runs[] | select((.id | tostring) != $self) | .id' > "$tmp/runs.txt"
+    jq -r --arg self "$GITHUB_RUN_ID" '.workflow_runs[] | select((.id | tostring) != $self) | select(.conclusion != "cancelled") | .id' > "$tmp/runs.txt"
   while read -r run; do
     page=1
     while :; do
