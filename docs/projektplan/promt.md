@@ -292,8 +292,9 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   earlier passed. An outage outside the repository (at 03:10 UTC `archive.ubuntu.com` did not answer from the owner's network either,
   `security.ubuntu.com` did); it makes every such job depend on the archive. Done when the runner image carries
   `make` and the C compiler (the owner's runner) or the jobs keep a local package cache. Again on 2026-11-11 from 14:25 (Test and Release 43037911704): `azure.archive.ubuntu.com`
-  did not resolve on the runners for about three minutes, and `e2e (nuget)` and `e2e (ci)` failed in their `apt-get install build-essential`; the
-  next push ran them again.
+  did not resolve for about three minutes on the GitHub-hosted runners (the self-hosted ones were not affected), and `e2e (nuget)` and `e2e (ci)`
+  failed in their `apt-get install build-essential`; again at 15:05 for `e2e (nuget)` in 43044075096 (re-run). `e2e (vuln)` and `e2e (bastion)` on
+  the same kind of runner passed in both runs.
 - **F-119 · The transfer loop of the drain tests saw 429 and 502 when the cluster stalled** (Test and Release 42561072166, 2026-11-09, and
   the nightly dispatch 42578594755 of the set `drain-roles` alone on the large class). Cause found and fixed for the transfer loop (Q-HA-230):
   the cluster stalled for about 40 s (07:50:08 to 07:50:50), the open-loop `transfer.js` released its piled-up iterations in one burst of
@@ -423,7 +424,7 @@ by `version: "*"`. Red pipelines are worked on even though they no longer hold a
   At the walkthrough: the logos in the running app, light and dark, in Firefox and Safari (only Chrome on a static page was looked at).
 - T-19, the documentation of Ansible collections, is built for local, remote and virtual repositories (the set `ansible`, 87 tests, green on kind on 2026-11-11). Open: its four wiki seam sites still ask the repository read until T-18's check replaces them (T-18 WP1d), so a wiki-denied member of a virtual repository has no proof yet; gaps H-900 to H-903 ([ansible-documentation.md](../security/ansible-documentation.md)); the job `e2e (ansible)` installs Node.js and Playwright since this change and has not run on CI with them yet.
 - The ansible client-setup fake (`web/src/app/api/testing/fakes-packages.ts`) answers 404 for the install panel, so every ansible package-detail spec shows the error notice; the specs scope their checks around it.
-- T-20's address field (R-UI-065): the browser check in `web/e2e/tests/02-repository-and-files.spec.ts` is type-checked, not yet run on kind; at the walkthrough: Q-UI-274 gives the field the editable control's fill instead of the read-only grey, not compared with GitLab's clone field in a browser.
+- T-20's address field (R-UI-065): the browser check in `web/e2e/tests/02-repository-and-files.spec.ts` passed on kind in `e2e (access-long)` of Test and Release 43007020170; at the walkthrough: Q-UI-274 gives the field the editable control's fill instead of the read-only grey, not compared with GitLab's clone field in a browser.
 - `repository-detail` is the only settings page not yet in the one-column form of the [style guide](../developer/ui-style-guide.md#settings-pages) (Q-UI-222): what its tabs become needs the owner's reference at the walkthrough.
 - H-836: a holder of `tokens:read` alone sees which token owners are administrators; only a custom role is affected, because the three system roles with `tokens:read` also hold `identities:read`.
 - The committed `messages.xlf` and `messages.de.xlf` carry stale location notes, so `extract-i18n` rewrites about 17,000 lines of them.
