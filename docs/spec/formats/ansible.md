@@ -4,6 +4,8 @@ Status: specification, building (block B, unit F0 of [FULL.md](../../projektplan
 [ansible-work-packages.md](../../projektplan/ansible-work-packages.md)). Built: the format skeleton and the local class (publish, import
 tasks, the three read operations, tombstones, the reindex, the package screens). Not built yet: the remote class, the virtual class and
 the client surface. It is the first registry after the beta because it replaces a Galaxy system the owner runs today.
+The documentation of a collection version (the Documentation and Contents tabs, R-ANS-033 to R-ANS-046, owner task T-19) is specified and not built; its plan is
+[galaxy-docs-work-packages.md](../../projektplan/galaxy-docs-work-packages.md).
 
 This page specifies how trove serves Ansible content to `ansible-galaxy`: the format `ansible` for local, remote and virtual
 repositories; the subset of the Galaxy API that `ansible-galaxy collection install`, `collection publish`, `role install` and a
@@ -69,6 +71,9 @@ collection and a role were installed from the public Galaxy with `-vvvv` and the
 | The fields of a version document that the client reads: `namespace.name`, `collection.name`, `version`, `download_url` (must be absolute or start with `/`), `artifact.sha256`, `metadata.dependencies`, `href`, `signatures` (list of objects with `signature`), `requires_ansible`; of the version list: `data[].version`, `data[].requires_ansible` and `links.next`; of the collection document: `updated_at`, `created_at` (cache invalidation) | `get_collection_version_metadata`, `get_collection_versions`, `get_collection_metadata` in 2.21.6 | The documents trove renders (R-ANS-004) |
 | The public Galaxy serves `GET /api/v3/collections/<ns>/<name>/...` as a **302** to `/api/v3/plugin/ansible/content/published/collections/index/<ns>/<name>/...`; its version list has `meta.count`, `links.{first,previous,next,last}` and `data[]` ordered newest first, `limit` at most 100 on the collection index (the version list's cap was not probed); a missing collection answers 404 `{"errors":[{"status":"404","code":"not_found","title":"Not found."}]}` | `curl -D -` | The remote adapter follows redirects of the upstream; the error shape (R-ANS-007) |
 | The version document of the public Galaxy is large (community.general 10.0.0: 848,148 bytes, because `metadata.contents` lists every plugin) and its `download_url` is `https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/artifacts/<ns>-<name>-<version>.tar.gz`, which answers 302 to a signed `https://galaxy.ansible.com/api/pulp/content/published/<file>?expires=…&validate_token=…` on the same host | `curl` | Bound of a stored document and the trimmed rendering (R-ANS-017, Q-ANS-10) |
+| The documentation of a version is **not** in the version document. The public Galaxy and the owner's galaxy_ng serve it at the version's `href` plus `docs-blob/` (`…/collections/index/<ns>/<name>/versions/<version>/docs-blob/`) as `{"docs_blob":{"contents":[…],"collection_readme":{"name","html"},"documentation_files":[{"name","html"}]}}`. The version document carries `metadata.contents` (`name`, `description`, `content_type` per entry) and, outside `metadata`, `manifest`, `files`, `git_url` and `git_commit_sha`; it has no `docs_blob` member (checked on both servers). An item of `docs_blob.contents` is `{content_name, content_type, doc_strings, readme_file, readme_html}`; `doc_strings` is `{doc, return, examples, metadata}` in the form ansible-doc prints it, except that `doc.options` and `return` are lists of named objects (`name` plus the fields) with `suboptions` and `contains` nested the same way; `readme_*` are set for roles. Sizes of the `docs-blob/` answer on 2026-11-11: community.general 10.0.0 3,472,149 bytes (833 entries: 591 module, 77 module_utils, 42 doc_fragments, 34 lookup, 26 callback, 21 filter, 13 inventory, 10 become, 10 connection, 4 cache, 3 test, 2 action; 709 with `doc_strings`, a median entry 3.6 KB, the largest 59 KB), community.general 14.0.1 3.3 MB, fortinet.fortios 2.6.0 6.5 MB, amazon.aws 12.1.0 2.0 MB, cisco.ios 11.6.0 1.2 MB, ansible.netcommon 8.7.1 155 KB. The owner's `hans_fischer.common` 1.5.0: 4,122 bytes, 32 entries (8 module, 8 filter, 16 module_utils), **every `doc_strings` null**, `collection_readme.html` set, `documentation_files` empty | `curl` (GET, 2026-11-11); `galaxy_importer/schema.py` (`DocsBlob`, `DocsBlobContentItem`) and `loaders/doc_string.py` (`_transform_doc_strings`) of galaxy-importer, master | R-ANS-033 to R-ANS-036, Q-ANS-56 |
+| The importer produces the document at import, not from the archive as such: it unpacks the collection into a collections tree and runs the program `ansible-doc --json` of its own environment once per plugin type (`become`, `cache`, `callback`, `cliconf`, `connection`, `filter`, `httpapi`, `inventory`, `lookup`, `shell`, `module`, `strategy`, `test`, `vars`); without that program it logs a warning and leaves `doc_strings` empty (the state of the owner's collection). A content item exists for every file of `plugins/<type>/`, for `module_utils` and `doc_fragments` too, which have no `doc_strings`. The README is `README.md`, the documentation files are the `.md` files directly in `docs/`, each at most 512 KiB, rendered by Python-Markdown (`extra`) and sanitized by nh3 against a small allowlist; **reStructuredText is not rendered** (`DOCFILE_EXTENSIONS = [".md"]`). A content name must match `^(?!.*__)[a-z_][0-9a-z_]*$`. A role has a `readme_html` from the `README.md` of the role | `galaxy_importer/loaders/doc_string.py`, `loaders/content.py`, `utils/markup.py`, `constants.py` of galaxy-importer, master | Q-ANS-57, Q-ANS-58, Q-ANS-64 |
+| Whether `ansible-doc` executes plugin code was **not verified** here: for modules it reads the `DOCUMENTATION`, `EXAMPLES` and `RETURN` strings from the source without importing it; for some plugin types it loads the plugin. Fragments (`extends_documentation_fragment`) are merged by ansible-doc, from the same collection, from `ansible.builtin` and from other collections | reading the importer; ansible-doc itself was not read | Q-ANS-58, H-891 |
 | Publishing is `POST <api root>v3/artifacts/collections/` with `multipart/form-data` of two parts, `sha256` (the hex digest of the archive) and `file`; the answer is JSON with `task` (resolved with `urljoin(api root, task)`); the client then polls that URL with GET, reading `state`, `finished_at`, `messages[].level/message` and, when `state` is `failed`, `error.code` and `error.description`; a 404 while polling is retried | `publish_collection`, `wait_import_task` in 2.21.6 | R-ANS-008, R-ANS-009 |
 | The galaxy_ng documentation shows the part order `file`, then `sha256`; the client sends `sha256` first | the documentation page of the v3 API; `prepare_multipart` call in 2.21.6 | A publish handler accepts both orders (R-ANS-008) |
 | The client sends a configured `token=` or `--token` as `Authorization: Token <token>` (class `GalaxyToken`), a configured `username` and `password` as Basic, and a `token` with `auth_url` as a Bearer token it obtains from that URL with a refresh-token grant; the download of the archive carries the same header with `unredirected_headers=['Authorization']`; a role archive is downloaded with `open_url` **without** that header, which falls back to `~/.netrc` (a preemptive Basic header for the host) | `token.py`, `cli/galaxy.py` lines 650 to 690, `_download_file`, `role.py` `fetch`, `urls.py` `_configure_auth` in 2.21.6 | R-ANS-006, R-ANS-015 |
@@ -223,8 +228,10 @@ the public Galaxy:
 - **The version document** carries what the client reads (section "Client and library behaviour"): `version`, `href`, `created_at`,
   `updated_at`, `requires_ansible`, `marks: []`, `artifact{filename,sha256,size}`, `collection{id,name,href}`, `download_url`,
   `name`, `namespace{name}`, `signatures` and `metadata{authors,dependencies,description,documentation,homepage,issues,license,
-  license_file,readme,repository,tags}`. trove omits `metadata.contents`, `metadata.docs_blob`, `metadata.manifest` and `metadata.files`:
-  no client in the matrix reads them, and they make a document of the public Galaxy 848 KB ([Q-ANS-10](#q-ans-10--the-version-document-leaves-out-the-plugin-listing)).
+  license_file,readme,repository,tags}`. trove omits `metadata.contents` and the members `manifest`, `files`, `git_url` and `git_commit_sha`
+  that the public Galaxy writes beside `metadata`: no client in the matrix reads them, and they make a document of the public Galaxy
+  848 KB ([Q-ANS-10](#q-ans-10--the-version-document-leaves-out-the-plugin-listing)). The documentation of the version is a document of its own
+  at `docs-blob/` below the version (R-ANS-035), not a member of this one.
   `collection.id` is a stable UUID derived from the repository and the name (the local class), or the upstream's (remote).
 - **Absolute addresses.** `download_url`, every `href` and every pagination link are absolute URLs on `<base>` (the response base URL of
   the endpoint, R-EP-003) and point to this repository's own routes, never to an upstream or a member, whatever the class. The next
@@ -628,7 +635,8 @@ Priority: **P1** · Covers: PKG-ANSIBLE-008, PKG-ANSIBLE-009
   read at its own page size ([Q-ANS-39](#q-ans-39--a-remote-reads-the-version-list-at-the-upstreams-page-size-starting-with-the-first-page)). Reading is
   bounded per request (512 pages, 51,200 versions); a longer list is 502 `upstream_unavailable` with that reason.
 - **Rewriting.** In the served documents `download_url` is the repository's `v3/artifacts/collections/<file>`, every `href` and link
-  the repository's address, `metadata.contents`, `metadata.docs_blob`, `metadata.manifest` and `metadata.files` are dropped (Q-ANS-10); all
+  the repository's address, `metadata.contents` and the members `manifest`, `files`, `git_url`, `git_commit_sha` are dropped (Q-ANS-10); the documentation is fetched
+  separately (R-ANS-035); all
   other fields pass unchanged, `signatures` included. The URL a rewritten `download_url` maps back to is recorded as the URL
   map row of the archive path when the version document is parsed (R-REPO-043): the upstream's own `download_url`, host-checked
   against the upstream origin and `extraHosts`; a version document of collection A cannot map the path of collection B.
@@ -784,6 +792,8 @@ The owner required a full mirror for Docker and APT as an option; the same is of
 - **Politeness.** The public Galaxy's rate limits were not probed; the engine's throttling and window halving on a 429 or a
   `Retry-After` (R-REPO-054) apply, and the default concurrency of the mirror is the engine's.
 - **Roles and the hub's index** are not read.
+- **Documentation.** With `ansible.fetchDocumentation` on, the pass also queues the documentation fetch (R-ANS-040, R-ANS-042) for each version it keeps, after the archive; the
+  fetch is the job's, with the engine's throttling. Its size is not measured ([H-890](#h-890--the-size-of-the-documentation-of-a-full-mirror-and-of-many-local-versions-is-not-measured)).
 
 Acceptance criteria:
 
@@ -922,6 +932,8 @@ Priority: **P1** · Covers: PKG-ANSIBLE-004
   (string), `dependencies` (object, collection to version range), `authors` (list) and the links `homepage`, `repositoryUrl`,
   `documentationUrl` and `bugsUrl` (the names the other formats use); the licenses and the tags travel in the generic `licenses` and
   `keywords` fields of the version. A member that is empty is left out and not shown.
+- The **Documentation and Contents tabs** of the package page, the operations behind them and the setting `ansible.fetchDocumentation` (remote only, in the
+  format's settings schema) are R-ANS-033 to R-ANS-037 and R-ANS-039 to R-ANS-043, and [Q-UI-240](../api-and-ui.md#q-ui-240--an-ansible-package-has-a-documentation-tab-and-a-contents-tab-the-readme-tab-is-its-first-page) to Q-UI-244; for the format the README tab is replaced by the Documentation tab.
 - The **deploy dialog** (UI-013) is not offered for the format: `/files/` deploys nothing into a repository with a protocol of its own
   (R-STOR-007), so the screens show `ansible-galaxy collection publish` and the raw-body publish of R-ANS-008 instead (Q-ANS-34).
 - The UI shows the import tasks of a local repository on its edit form (a lazy tab, newest first, state and messages) through the
@@ -998,6 +1010,9 @@ Priority: **P1** · Covers: trove-only
   checks that every version row has its item and the other way round (R-BAK-022's check), and an archive without a row gets one from the
   reindex. `ansible_upstream_versions` goes with the cache of a remote and is dropped by a restore without remote caches (R-BAK-008): the
   next version document refills it, and an archive without a row revalidates its document first (R-ANS-018).
+- `ansible_version_docs`, `ansible_doc_entries` and `ansible_doc_files` (R-ANS-033) are derived and **not exported**: a restore enqueues the reindex, which rebuilds
+  the generated rows from the archives and the remote's rows from the stored documents; a restore without remote caches drops the stored `docs/` documents of a remote and the
+  rows with them, and the next version document queues the fetch again.
 - **Tombstones are journaled.** The deletion of a version writes the revocation journal entry `ansible.version.deleted`
   (`{repoId, name, version}`) in the transaction of the deletion; a restore replays it and **withholds** the version number again, so a
   restore from an older backup cannot make a deleted number publishable (R-BAK-024). The clearing of a tombstone is journaled the same
@@ -1038,8 +1053,15 @@ The archive a client uploads, an upstream's archive that a fill inspects and the
 | Pages / versions read for one list | 512 / 51,200 | remote list |
 | Role archive (`ansible.role_archive_max_bytes`) | 256 MiB | role fetch |
 | Discovery document | 64 KiB | `ParseDiscovery` |
+| Documentation: a `DOCUMENTATION`/`EXAMPLES`/`RETURN` literal / a Python source read for it | 512 KiB / 2 MiB | `Inspect` (R-ANS-034) |
+| Documentation: YAML nodes / nesting / anchors, aliases, tags, merge keys | 20,000 / 24 / refused | `Inspect` (R-ANS-034) |
+| Documentation: one stored entry / entries per version / stored bytes per version | 1 MiB / 5,000 / 16 MiB | publish, remote fill (R-ANS-033, R-ANS-035) |
+| Documentation: a README or Markdown file / files below `docs/` | 512 KiB / 64 | publish (R-ANS-034) |
+| Documentation: the stored `docs-blob/` document of a remote | 16 MiB (`MaxDocumentBytes`) | remote fill (R-ANS-035) |
+| Documentation: search terms / characters per term / entries answered | 8 / 64 / 5,000 | the operations (R-ANS-036) |
+| Documentation: Python source scanned per archive / input of one markup conversion | 256 MiB / 64 KiB | `Inspect` (R-ANS-034), the operations (R-ANS-039) |
 
-A bound crossed is 422 `invalid_archive` (a failed task for a publish) or 413 `payload_too_large` for sizes declared before reading,
+A bound crossed is 422 `invalid_archive` (a failed task for a publish; the exception is the documentation, whose bounds drop the part and warn, R-ANS-034) or 413 `payload_too_large` for sizes declared before reading,
 502 for an upstream's. The crafted-input corpus of the kit (R-ARCH-010) includes: a tar bomb, a path traversal member, a link member,
 a duplicate member name, a `MANIFEST.json` with a name that differs from the file name, a `FILES.json` that lies, an oversized YAML,
 and a version document whose `download_url` points to another collection's path.
@@ -1075,8 +1097,544 @@ counting stub of the public Galaxy, and e2e with the real client on several repl
   one list, publish through the target); `role install` by token-less `~/.netrc` on a private remote; a wrong token and a repository
   without a token fail with the client's own messages; `server_list` of two servers; a digest the stub changed fails the client; the
   `scatter` profile; the closing run adds Valkey stopped.
+- The documentation (R-ANS-033 to R-ANS-046) adds `docs-blob/` to the stub, the integration cases per class (R-ANS-038) and an e2e row per class with a real collection (R-ANS-046).
 - The assertions of the e2e tests name R-ANS IDs; a leg that is red is a finding, not a blocker of the release (CLAUDE.md, CI until the
   first stable release).
+
+### R-ANS-033 · The documentation of a collection version: what trove keeps, per class
+Priority: **P1** · Covers: trove-only
+
+The owner's galaxy_ng shows a collection's documentation (README, modules, plugins, roles, each with its page; Q-ANS-56 records why trove
+shows it too). In trove it is the **wiki part** of the repository (R-ANS-037). "The documentation of a version" is: the README, the Markdown
+files of the collection's `docs/` directory, and one **entry** per content item of the collection: a module, a plugin of any type, a role.
+An entry has a type, a name, a short description and, where the source documents it, the documentation of the plugin in the Galaxy form
+(`doc`, `return`, `examples`, R-ANS-035). The documentation is **derived data**: nothing in it is a source of truth for the archive, and it
+can be rebuilt (below).
+
+| Class | Where the documentation comes from | What is kept | When |
+|---|---|---|---|
+| **Local** | **Generated by trove** from the archive at publish (R-ANS-034) | Rows of the three tables below, `source = 'generated'` | In the commit transaction of the publish; rebuilt by the `ansible-reindex` job |
+| **Remote**, pull-through | The upstream's `docs-blob/` document, taken as it is (R-ANS-035, R-ANS-042) | The document as a stored remote document (R-REPO-043, bounded) **and** the rows derived from it, `source = 'upstream'` | After the version document is filled, by a job (R-ANS-042), or by a client's request for the route; only when the setting `ansible.fetchDocumentation` is on (default `true`) |
+| **Remote**, mirror | As pull-through, for every version the pass keeps | As pull-through | The pass queues the same job after the archive (R-ANS-040) |
+| **Virtual** | The member that serves the version document (first match, R-ANS-022) | Nothing of its own | A read resolves the winner and reads its rows (R-ANS-041) |
+
+- **The tables** (data port `internal/formatdata/ansible`; migrations **00074** `ansible_doc_tables` (the first three tables) and **00075**
+  `ansible_doc_fetches` (the fourth); **00076** is reserved and unused unless a builder needs a column; each file starts with `-- trove:phase expand`
+  and comments its tables as 00070 does; `name` and `version` are `text COLLATE "C"` with the length checks of 00070; every column below is the
+  contract, the indexes beyond the primary keys are the builder's):
+
+```sql
+-- one row per version that has documentation
+CREATE TABLE ansible_version_docs (
+  repo_id      bigint  NOT NULL REFERENCES repositories (id) ON DELETE CASCADE,
+  name         text    NOT NULL,                  -- <ns>.<name>
+  version      text    NOT NULL,
+  source       text    NOT NULL CHECK (source IN ('generated', 'upstream')),
+  generator    integer NOT NULL,                  -- the version of the code that derived the rows; a reindex rebuilds older ones
+  entry_count  integer NOT NULL,
+  total_bytes  bigint  NOT NULL,                  -- of the stored entries and files, against the bound of R-ANS-031
+  truncated    boolean NOT NULL DEFAULT false,    -- a bound cut entries or files off
+  warnings     jsonb   NOT NULL DEFAULT '[]',     -- [{path, code, message}], at most 100
+  built_at     timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (repo_id, name, version)
+);
+-- one row per content item
+CREATE TABLE ansible_doc_entries (
+  repo_id bigint NOT NULL, name text NOT NULL, version text NOT NULL,                    -- the key of the row above
+  content_type text NOT NULL, content_name text NOT NULL,                                 -- the Galaxy's content_type and content_name
+  short_description text NOT NULL DEFAULT '',
+  has_docs    boolean NOT NULL,                   -- doc_strings present
+  doc         jsonb,                              -- doc_strings in the Galaxy form of R-ANS-035; null when has_docs is false
+  readme_md   text,  readme_html text,            -- roles: the generated source, or the upstream's HTML as received
+  search_text text NOT NULL DEFAULT '',           -- built by Go, at most 4 KiB: the name with '_' and '.' as spaces, option and return names, the plain text of the descriptions
+  search      tsvector GENERATED ALWAYS AS (to_tsvector('simple', search_text)) STORED,
+  PRIMARY KEY (repo_id, name, version, content_type, content_name),
+  FOREIGN KEY (repo_id, name, version) REFERENCES ansible_version_docs ON DELETE CASCADE
+);
+-- the README and the Markdown files of docs/
+CREATE TABLE ansible_doc_files (
+  repo_id bigint NOT NULL, name text NOT NULL, version text NOT NULL,
+  file_name text NOT NULL,                                       -- 'README.md' or the file name below docs/
+  format text NOT NULL CHECK (format IN ('markdown', 'html')),   -- generated: the source; upstream: HTML as received
+  body   text NOT NULL,
+  PRIMARY KEY (repo_id, name, version, file_name),
+  FOREIGN KEY (repo_id, name, version) REFERENCES ansible_version_docs ON DELETE CASCADE
+);
+-- remote only: what the last attempt to fetch the documentation of a version came to (the states pending and unavailable)
+CREATE TABLE ansible_doc_fetches (
+  repo_id bigint NOT NULL REFERENCES repositories (id) ON DELETE CASCADE, name text NOT NULL, version text NOT NULL,
+  state      text NOT NULL CHECK (state IN ('queued', 'unavailable', 'none')),
+  reason     text NOT NULL DEFAULT '' CHECK (reason IN ('', 'upstream_error', 'too_large', 'invalid_document')),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (repo_id, name, version)
+);
+```
+
+- **Why the search text is a column of its own.** The plain text of the descriptions is extracted in Go (once, bounded), so the generated
+  `tsvector` is a function of one text column and the same on every replica. An identifier such as `check_host_reachable` is one token for the
+  `simple` configuration, which is why the search text repeats the name with its separators as spaces and the search also matches the name as a
+  substring (R-ANS-036).
+- **Deleting the version** deletes its rows (`OnItemsRemoved`; the cascade of the repository). The four tables are **not exported** by a backup
+  (R-BAK-004): a restore enqueues the reindex, which rebuilds the generated rows from the archives and the remote's rows from the stored
+  documents; a restore without remote caches (R-BAK-008) drops the remote's rows with the documents (R-ANS-029, R-ANS-044).
+- **States** the screens and the operations report: `available` (an `ansible_version_docs` row exists), `pending` (a `queued` fetch row and no
+  documentation row), `unavailable` (a fetch row with that state; `reason` is `upstream_error`, `too_large` or `invalid_document`), `none` (neither: the
+  upstream says 404, `fetchDocumentation` is off, a mirror has not reached the version, or a local version has not been reindexed since the feature exists).
+  A `queued` row older than one hour is treated as `none` (the job is lost; the next version document queues it again).
+- **A version without documentation is not an error.** The package page shows the tab only when the state is not `none` or the version has a
+  README (R-UI-060); the protocol route answers 404 in the Galaxy shape.
+- **No migration of old versions.** A local version published before this feature has state `none` until the reindex has read it. The
+  reindex job is the way (Q-ANS-26), nothing more is built for it (CLAUDE.md, pre-alpha).
+
+Acceptance criteria:
+
+- After the publish of a collection with 2 modules and 1 filter plugin, `ansible_version_docs` has one row with `source = 'generated'` and
+  `entry_count` 3 (plus the entries of `module_utils` and `doc_fragments` files, which have `has_docs` false), in the commit transaction: a publish that
+  fails after the generation leaves no row.
+- A version deleted through the management API leaves no row in any of the four tables.
+- A remote with `fetchDocumentation: false` makes no request for `docs-blob/` against the stub (its counters show it).
+
+### R-ANS-034 · Generating the documentation of a local publish
+Priority: **P1** · Covers: trove-only
+
+`Inspect` (R-ANS-010) reads the archive once as a stream (Q-ANS-30) and additionally collects the documentation inputs. The generator is a
+leaf package of the format (`internal/formats/ansible/docgen`, no I/O, no database); the archive reader hands it members, it hands back entries
+and files. **It executes nothing**: no `ansible-doc`, no Python, no import of a plugin, no template; every input is text that is scanned and
+decoded under bounds ([Q-ANS-58](#q-ans-58--the-generator-scans-the-python-source-for-its-documentation-strings-and-decodes-them-as-yaml-nodes-it-runs-no-ansible-doc)).
+
+- **Which members.** The content items are found from the file list: a `.py` file below `plugins/<dir>/` (also in sub-directories), for `<dir>` in
+  `modules`, `module_utils`, `doc_fragments`, `action`, `become`, `cache`, `callback`, `cliconf`, `connection`, `filter`, `httpapi`, `inventory`,
+  `lookup`, `netconf`, `shell`, `strategy`, `terminal`, `test`, `vars`; the content type is the directory (`modules` becomes `module`); the
+  content name is the path below the directory with dots for slashes and without `.py` (`storage/s3.py` is `storage.s3`); a file named
+  `__init__.py` is no item, nor is one whose name starts with `_` (private and deprecated modules); a name that does not match
+  `^(?!.*__)[a-z_][0-9a-z_]*$` per part makes the entry a warning and no item. Roles: a directory `roles/<role>/` is a role item with the role
+  name; its `README.md` (at most 512 KiB) is its `readme_md`. `playbooks/` and `meta/` are no items. The README is the member named by
+  `collection_info.readme` or, if empty, `README.md` at the root; the files are the `.md` files directly in `docs/` (at most 64, each at most
+  512 KiB; the importer's bound); a file that is not UTF-8 is a warning and no file.
+- **How the reader hands members over (one pass).** `collection.ReadArchive` takes an optional tap (`collection.WithTap(Tap)`; `Tap.Wants(path)
+  bool` and `Tap.Take(path, io.Reader)`); for a member the tap wants, the reader streams it through a writer that hashes it (as for every member) **and**
+  keeps its first N bytes (N is the generator's bound for that member, 2 MiB for a source, 512 KiB for Markdown) and discards the rest, so a
+  member over its bound costs time and no memory and never refuses the archive. The tap keeps only what the generator needs of a member (the
+  literals, the Markdown) and drops the source at once. The name of the README is known only when MANIFEST.json has been read, which may come
+  after the member in the tar: the generator keeps every Markdown candidate (`README.md` at the root and `docs/*.md`) and `Build(readmeName)` picks.
+  A tap that fails does not fail the archive: its error is a warning.
+- **Which strings.** For a `.py` item whose type is not `module_utils` or `doc_fragments`, up to 2 MiB of source is scanned for module-level
+  assignments `DOCUMENTATION`, `EXAMPLES` and `RETURN` whose value is one string literal (single, double or triple quotes; prefixes `r`, `u`, `R`, `U`; a
+  parenthesized literal; implicit concatenation of adjacent literals). A sidecar `plugins/<dir>/<name>.yml` (or `.yaml`) next to the module or
+  plugin holds the same three keys as YAML and wins over the source. Anything else (an f-string, a value built by a name or a call, a literal
+  inside a class or a function) is **not read**: the item stays in the list with `has_docs` false and no warning, except for a literal that
+  exceeds 512 KiB or does not close, which is a warning (`docs_literal_too_large`, `docs_literal_unterminated`). `doc_fragments` and
+  `module_utils` are listed and have no `doc` ([H-891](#h-891--documentation-fragments-are-not-merged-into-the-documentation-of-a-generated-entry)).
+- **Decoding.** The text of `DOCUMENTATION` and `RETURN` is YAML decoded into a node tree and walked, never into Go values, with the walker and the
+  refusals of `meta/runtime.yml` (Q-ANS-30): an anchor, an alias, a tag or a merge key, more than 20,000 nodes or a nesting deeper than 24 makes
+  the entry `has_docs` false with the warning `docs_yaml_refused`. `EXAMPLES` stays a text. The result is shaped like the Galaxy's
+  `doc_strings` (below): `doc.options` and `return` become lists of named objects, with `suboptions` and `contains` nested; keys not in the list of
+  R-ANS-035 are dropped; scalar values keep their type (a default `1000` stays a number, `true` a boolean, a string a string).
+- **Short description.** `doc.short_description` as text, at most 300 characters, control characters removed; an entry without one has an empty
+  string.
+- **Bounds.** Those of R-ANS-031 (a literal 512 KiB, a source file 2 MiB, 256 MiB of source scanned per archive, 1 MiB per stored entry, 5,000 entries and 16 MiB per version, 512 KiB
+  per README and file). Past the 256 MiB the remaining sources are listed with `has_docs` false and one warning `docs_budget_exhausted`, so a crafted archive cannot spend the request's deadline on scanning. A bound crossed never fails the publish: the entry (or file) is kept with `has_docs` false (or dropped), the warning names
+  the member and the code, `truncated` is set when entries were dropped, and the import task of the publish carries the warnings as messages of level
+  `WARNING` (R-ANS-009; at most 100 warnings, the rest counted in one last message). The documentation is a convenience; a collection that
+  `ansible-galaxy collection build` accepted is never refused for its documentation.
+- **Determinism.** The same archive gives the same rows, entry by entry (the order of the entries is by type, then name); the `generator` column is the
+  integer the package constant `docgen.Version` holds, bumped by a change of the generator's output. The reindex rebuilds a row whose `generator`
+  is below the constant (R-ANS-012's job reads the archive anyway).
+- **Where it runs.** In the publish request, in the same pass as the rest of `Inspect` (Q-ANS-57), under the 30-second deadline of the core ([H-843](#h-843--a-publish-inspects-the-archive-inside-the-request)):
+  the inputs are kept in memory while the stream is read (at most the bounds above: 16 MiB of entries, 32 MiB of files and sources in flight), and the rows
+  are written by `OnCommit` in the commit transaction (R-ANS-011), after the version row. If the deadline is crossed while generating, the publish
+  fails as it does for any slow inspection; there is no partial documentation.
+- **Untrusted by construction.** The text of an entry is written by whoever published the collection. It is stored as text and structure, never as
+  HTML, never evaluated, and it reaches a browser only through the converter and the sanitizer of R-ANS-039. Names are not concatenated into a
+  path of the blob store; they are values of a column.
+
+Acceptance criteria:
+
+- Crafted sources through `formattest.InspectTarGz` and the generator's unit tests: a module with a `DOCUMENTATION` in a triple-quoted raw string
+  with options and suboptions; one with a sidecar `.yml`; one whose `DOCUMENTATION` is assembled by `"".join(...)` (no docs, no warning); an
+  unterminated literal (warning); a 600 KiB literal (warning); YAML with an anchor, with `<<` and with 30,000 nodes (each `docs_yaml_refused`); a
+  `DOCUMENTATION` inside a function (not read); an `__init__.py` and `_private.py` (no items); a name with a double underscore (warning); an
+  `EXAMPLES` with a `</script>` (kept as text); 6,000 plugin files (5,000 entries and `truncated`); the same archive twice (identical rows).
+- The README of `hans_fischer.common`-like collection (`README.md` with one heading) is `ansible_doc_files` row `README.md`, `markdown`.
+- A publish whose documentation hits a bound is accepted, and the import task shows the warning.
+- No test, no code path of the generator imports `os/exec`: `go list -deps` of the package contains no `os/exec` (a test).
+
+### R-ANS-035 · The documentation as a protocol document, per class
+Priority: **P1** · Covers: trove-only
+
+One new route in the route table of the format: `ansible.version.docs`, `GET v3/collections/{ns}/{name}/versions/{version}/docs-blob/`, kind
+Metadata, action `read`, classes all, gated by the wiki check of R-AUTHZ-034 (R-ANS-037). It is the document a Galaxy-compatible tool and another
+trove (as the upstream of a remote) read; no client of the matrix does. The version document keeps leaving `metadata.contents` out
+([Q-ANS-62](#q-ans-62--the-documentation-is-served-at-docs-blob-and-the-version-document-keeps-leaving-the-plugin-listing-out)); a tool that wants the list reads this document.
+
+- **Shape** (the Galaxy's, as observed on both servers, Client and library behaviour above):
+
+```json
+{"docs_blob": {
+  "collection_readme": {"name": "README.md", "html": "<h1>hans_fischer.common</h1>…"},
+  "documentation_files": [{"name": "install.md", "html": "…"}],
+  "contents": [
+    {"content_name": "check_host_reachable", "content_type": "module",
+     "doc_strings": {"doc": {"module": "check_host_reachable", "short_description": "…", "description": ["…"],
+                              "options": [{"name": "host", "type": "str", "required": true, "description": ["…"],
+                                           "suboptions": [{"name": "…"}]}],
+                              "author": ["…"], "version_added": "1.2.0", "notes": ["…"], "requirements": ["…"], "seealso": [{"…": "…"}],
+                              "attributes": {"…": {}}, "deprecated": {"…": "…"}},
+                     "return": [{"name": "…", "returned": "always", "type": "str", "description": ["…"], "sample": "…", "contains": [{"name": "…"}]}],
+                     "examples": "- name: …\n  …\n", "metadata": null},
+     "readme_file": null, "readme_html": null}]}}
+```
+
+  `doc` keeps these keys: `module` (the plugin's name), `plugin_type`, `short_description`, `description`, `version_added`, `author`, `notes`,
+  `requirements`, `options` (each: `name`, `type`, `elements`, `required`, `default`, `choices`, `aliases`, `description`, `version_added`,
+  `suboptions`), `seealso`, `attributes`, `deprecated`, `extends_documentation_fragment`; `return` is a list (each: `name`, `type`, `elements`,
+  `returned`, `description`, `sample`, `version_added`, `contains`). A key not in this list is dropped when the rows are written. The prose values
+  (`description`, `notes`, `requirements`, `short_description`, `seealso[].description`, `options[].description`) are the Ansible markup of
+  R-ANS-039 as text, never HTML, **except** in the `html` and `readme_html` members, which are HTML.
+- **Local**: rendered from the rows; `collection_readme.html` and `documentation_files[].html` are the HTML the Host's Markdown renderer makes of the
+  Markdown rows, and `readme_html` of a role likewise (R-ANS-039; the format imports no renderer). The order of `contents` is by type, then name. Weak `ETag` (a digest of the bytes) and
+  `If-None-Match` as the other documents (Q-ANS-35). A version without a row is 404 `not_found`.
+- **Remote**: the route is an ordinary **metadata document of the remote** (R-ARCH-013): the engine fetches it from the upstream, stores it as
+  received at the canonical path `collections/<ns>/<name>/docs/<version>.json` (`Classify` maps it to metadata of the package, never to an artifact),
+  revalidates it like every other document and serves it through `Rewrite`. The format adds three things to the engine's path:
+  - `UpstreamRequest` maps the path to the upstream URL: the version document's `href` (read from the stored version document, never from the
+    request) plus `docs-blob/`; the URL must be on the upstream's origin or an `extraHosts` entry and its path must end in `/versions/<version>/docs-blob/` (the
+    host check of the `download_url`, R-ANS-018); a version document without a usable `href` has no documentation (404, state `none`).
+  - `PrepareFill` validates the shape before anything is stored, outside every transaction (as for the version document, R-ANS-017): JSON of the shape
+    above, `contents` an array of at most 5,000 items with `content_name` matching `^(?!.*__)[a-z_][0-9a-z_.]*$` and a `content_type` among the types of
+    R-ANS-034 and `role`, no item above 1 MiB of `doc_strings` kept (a larger one is kept as a name and short description with `has_docs` false and the
+    set `truncated`), the document at most `MaxDocumentBytes` (16 MiB, the descriptor's bound; the largest seen is 6.5 MB). An error is 502
+    `upstream_unavailable` and keeps the previous entry; the fetch row becomes `unavailable` (`too_large` or `invalid_document`).
+  - `OnFill` writes the rows (`source = 'upstream'`, `generator` 0) in the fill transaction, under the entry's row lock, with `PutDocs`; an upstream 404 (a
+    negative entry of 300 s) writes the fetch row `none`; a 5xx or a network error writes `unavailable` with `upstream_error`.
+  The upstream's `html` and `readme_html` members are **untrusted HTML**: `Rewrite` serves the stored document with every one of them run through the
+  Host's sanitizer (R-ANS-039); the rest of the document passes unchanged. The engine's rules apply as they are: the credential and its host rule,
+  the egress check, the rate limit, the circuit and the one-flight rule. Who triggers the fetch: a client's request for this route (another
+  trove, a Galaxy-compatible tool) and the job of R-ANS-042; **a UI read never queries the upstream** (R-API-029), it reads rows.
+- **Virtual**: the member that serves the version document (R-ANS-022, first match over the same plan) serves this document too, through its own
+  class (R-ANS-041); a caller who may not fill a remote member's cache (R-AUTHZ-008) gets the documentation of the cached or local members only.
+- **Setting.** `ansible.fetchDocumentation` (boolean, remote only, default `true`; the format's settings schema, R-ANS-026) switches the **job**
+  and the fetch by the route off: with `false` the route answers 404 for a remote and the rows are not written; a client that wants the document
+  from an upstream goes to that upstream.
+- **Not served**: the `docs-blob/` of a collection (without a version), a listing of versions' documentation, any write.
+
+Acceptance criteria:
+
+- Against the stub with a `docs_blob` (R-ANS-038, R-ANS-046): `GET …/versions/1.0.0/docs-blob/` on the remote answers the stub's contents; the stub counts one
+  request for it however many clients and replicas read; the stored document is byte-identical to the stub's.
+- The same on a local repository for a published collection returns `contents` with the generated entries, and the same document for the
+  virtual repository over it.
+- An upstream whose `readme_html` holds `<script>` is served without it; the stored document still holds it.
+- A `href` on another origin is not fetched (the stub counts none) and the state is `none`.
+- A document with an item without `content_name` is 502 and the previous document stays; the fetch row says `invalid_document`.
+- A remote whose upstream answers 404 for `docs-blob/` has state `none` and its screen shows no documentation, not an error.
+
+### R-ANS-036 · The documentation operations of the screens, their rendering and the search
+Priority: **P1** · Covers: trove-only
+
+Three management operations under the package, read by the UI (api-and-ui.md, [Q-UI-240](../api-and-ui.md#q-ui-240--an-ansible-package-has-a-documentation-tab-and-a-contents-tab-the-readme-tab-is-its-first-page), R-API-029's family; each is declared wiki content in the OpenAPI document, Q-API-260, R-ANS-037). They
+are bound to the generic package and version (the ids of R-API-029), because the screen already holds them; a `repository` query parameter
+(`<projectKey>/<repoKey>`) selects the repository, and without it the first repository that may be read and holds the version with a state other than `none` is
+used (local before remote, the order of the repositories list); a virtual repository in `repository` is resolved to its winner member by the
+plan of R-ANS-022. The answer names the repository it was read from.
+
+| Operation | Method and path | Answer |
+|---|---|---|
+| `getPackageVersionDocs` | `GET /api/v1/packages/{packageId}/versions/{version}/docs?repository=&q=` | The tree: state, source, the groups with their entries, the files (below) |
+| `getPackageVersionDocEntry` | `GET /api/v1/packages/{packageId}/versions/{version}/docs/entries/{type}/{name}?repository=` | One page: the documentation of one module, plugin or role |
+| `getPackageVersionDocFile` | `GET /api/v1/packages/{packageId}/versions/{version}/docs/files/{file}?repository=` | The README or a Markdown file as sanitized HTML |
+
+- **The tree** (`getPackageVersionDocs`):
+
+```json
+{"state": "available", "source": "generated", "repository": "acme/galaxy-local", "builtAt": "2026-11-11T09:41:02Z", "truncated": false,
+ "files": [{"name": "README.md", "title": "hans_fischer.common"}, {"name": "install.md", "title": "install"}],
+ "groups": [
+   {"category": "module", "label": "Modules", "count": 8, "types": [
+     {"type": "module", "count": 8, "entries": [
+       {"type": "module", "name": "check_host_reachable", "shortDescription": "Checks whether a host answers", "hasDocs": true}]}]},
+   {"category": "plugin", "label": "Plugins", "count": 24, "types": [
+     {"type": "filter", "count": 8, "entries": [{"type": "filter", "name": "is_cidr", "shortDescription": "", "hasDocs": false}]},
+     {"type": "module_utils", "count": 16, "entries": []}]},
+   {"category": "role", "label": "Roles", "count": 0, "types": []}],
+ "warnings": [{"path": "plugins/modules/x.py", "code": "docs_literal_unterminated", "message": "…"}]}
+```
+
+  `state` is one of `available`, `pending`, `unavailable`, `none` (R-ANS-033); for the last three only `state`, `reason` where it applies and
+  `repository` are present. `files[0]` is the README when there is one (`title` is the first heading of the Markdown as text, at most 120
+  characters, the file name otherwise). `category` is `module` for type `module`, `role` for `role`, `plugin` for every other type;
+  groups are always in the order modules, plugins, roles; types and entries are in alphabetical order. `count` is the number of entries of
+  the group **before** `q` filtered them, so the counts of the tree do not change while one searches (the owner's screen: "Modules 8",
+  "Plugins 24"); `matchCount` (only with `q`) is the number of entries left. `warnings` only for a caller who holds `deploy` on the
+  repository (they describe the publisher's sources). The answer is at most 5,000 entries and about 1 MB.
+- **Search** (`q`): the text is split on white space into at most 8 terms of at most 64 characters; control characters are removed; a text of
+  fewer than 2 characters is `422 invalid_query`. An entry matches when **every** term matches its name (case-insensitive substring) or its
+  `search` vector (prefix match of a term over the words of short description, description, option names and return names; the terms are
+  reduced to letters and digits for the vector, never put into a query text). Matching entries keep the order above; a `files` item
+  matches by its title. `q` is evaluated in SQL over the rows of one version (at most 5,000), no index is needed beyond the primary key and the
+  vector's own. The search is **inside the documentation of one version**; trove has no search across collections here.
+- **The entry** (`getPackageVersionDocEntry`): `{type, name, fullName, shortDescription, hasDocs, source, builtAt, versionAdded, deprecated,
+  description[], notes[], requirements[], author[], options[], returnValues[], examples, seealso[], attributes[], extendsFragments[],
+  readmeHtml}` where `description`, `notes`, `requirements` and the `description` of an option or return value are **arrays of sanitized HTML
+  strings**, one per paragraph; names, types, `returned`, `version_added`, authors, choices, defaults and samples are text and typed JSON
+  values (the UI shows them as text, a default of `1000` as `1000`); `options` and `returnValues` are the named lists of R-ANS-035 with
+  `suboptions` and `contains` nested to a depth of 12 (deeper is dropped with the warning kept in the tree's `warnings`); `examples` is the text
+  (the UI shows it in a code block; trove does not highlight, does not run); `seealso` entries carry `module`, `description` and `link` (a link is kept only
+  for `http` and `https`); `extendsFragments` is the list of fragment names that were **not** merged (H-891); `readmeHtml` is set for roles. `fullName` is
+  `<ns>.<name>.<content name>`. An entry that does not exist is `404 not_found`; one with `hasDocs` false answers 200 with the header
+  fields and no sections.
+- **The file** (`getPackageVersionDocFile`): `{name, contentType, html, truncated, externalImagesBlocked}`, as the README answer of R-API-029 (the
+  README operation stays as it is; the Documentation tab of an Ansible version uses this one for its first page). The `file` is `README.md` or a name from the tree; any
+  other is 404. Markdown rows are rendered by the renderer and sanitizer of R-UI-008 on every request with a strong `ETag` over the source,
+  the renderer version and the image policy hash (the README rule of R-API-029); HTML rows (upstream) are sanitized by the same policy.
+- **Rendering of prose and Markdown** is R-ANS-039: the three operations convert the Ansible markup of the prose with `docgen.RenderMarkup` and sanitize
+  the result with the README renderer's policy (R-UI-008) in `internal/api/v1`, so the answer holds sanitized HTML and no field is HTML that was not.
+  **reStructuredText is not rendered** (the importer of the Galaxy does not either, Client and library behaviour): a `README.rst` is no README, a
+  `.rst` file below `docs/` is no file.
+- **Version details.** The generic version details of R-API-029 get, for the format `ansible`, the member `metadata.docs`
+  (`{"state": "available", "source": "generated", "entries": 32}`) so that the page chooses its tabs without a probing request. It is wiki content and is
+  **absent** for a caller who may not read the wiki (R-ANS-037). `hasReadme` stays what R-API-029 says.
+- **Limits and cost.** The three operations are `read` bucket calls (R-API-016). A page of the documentation is one primary-key read; the tree is one
+  query over at most 5,000 rows; the request path never reads the archive or the stored document of a remote.
+
+Acceptance criteria:
+
+- The tree of a published collection with 8 modules, 8 filters and 16 `module_utils` files has groups Modules 8 and Plugins 24, and `q=host` returns the
+  entries whose name, short description or option names contain a prefix of `host` while the counts stay 8 and 24 and `matchCount` is the number left.
+- An entry whose description holds `C(<img src=x onerror=1>)` renders the text escaped inside `code`; one whose `L(x,javascript:alert(1))` renders the
+  text `x` and no `a`.
+- An entry of a remote whose upstream `doc_strings` is null is `hasDocs` false and 200.
+- `q=a` is `422 invalid_query`.
+- A caller who may not read the repository gets 404 with the answer of an id that does not exist (R-API-029).
+- A caller who may read the repository and not its wiki gets what R-ANS-037 says for each of the three operations (the wiki check of R-AUTHZ-034 answered no).
+
+### R-ANS-037 · The documentation is wiki content: which routes, documents and fields the wiki check gates
+Priority: **P1** · Covers: trove-only
+
+Task T-18 gives a repository a **wiki part** whose visibility is set apart from its artifacts. [R-AUTHZ-034](../authorization.md) is the one
+requirement that defines the wiki part, **the wiki check** that format code calls, and what a caller gets who may read a repository's artifacts and
+not its wiki. This page does not define the check. It lists **exactly which surfaces of the Ansible format are wiki content**, states that each
+is gated by the wiki check of R-AUTHZ-034, and what the Galaxy client and the UI see when the check says no.
+
+| Surface | Wiki content | When the wiki check says no |
+|---|---|---|
+| The route `ansible.version.docs`, `GET v3/collections/{ns}/{name}/versions/{version}/docs-blob/` (R-ANS-035), all classes | **yes**: it serves only wiki content | The answer R-AUTHZ-034 decides for a route that serves only wiki content; the format passes the check's refusal on **unchanged** and rewrites nothing |
+| The operations `getPackageVersionDocs`, `getPackageVersionDocEntry`, `getPackageVersionDocFile` (R-ANS-036) | **yes**: they serve only wiki content | As R-AUTHZ-034 decides for an operation of the management API that serves only wiki content |
+| The member `metadata.docs` of the version details (R-ANS-036) | **yes**: it announces documentation | The member is **absent**; the details of the version are otherwise as before |
+| The generic `readme` operation and the member `hasReadme` of the version details, for the format `ansible` | **yes**: the README is the first page of the documentation. What a README is per format is R-AUTHZ-034's; for `ansible` the README and the Documentation tab are one thing | As R-AUTHZ-034 decides for the generic README: `hasReadme` is false, the operation answers as for a version without a README |
+| The stored rows and documents of R-ANS-033 and R-ANS-035 | **yes** (the data the above read); no other code path reads them | Not reachable except through the surfaces above |
+| `metadata.contents` and `metadata.docs_blob` of a version document, were they served | **yes**: both are wiki fields. **Today trove serves neither** (Q-ANS-10, Q-ANS-62), so no field is to be removed; a future change that serves one gates it | The **fields are absent** from the document |
+| The version document (`description`, `homepage`, `documentation`, `issues` and `repository` links, `metadata.readme`, which is a **file name**, not the README text), the version list, the collection document, the archive, the import tasks | **no**: artifact and management content | They follow the artifact check as before |
+| The `warnings` of the tree | **no**: shown only to a caller who holds `deploy`, as the import task is | `deploy` |
+
+- **One call site.** Every handler of the table asks the wiki check through one function of the format package, `wikiReadable(ctx, rq or caller,
+  repository)` in the new file `wikigate.go`, and nowhere else: it is the only file that names the check's Go name (fixed by T-18's WP0, "the wiki
+  check of R-AUTHZ-034"). The format imports no authorization package (R-ARCH-008); the check reaches it as a Host method or a field of the request,
+  as T-18's WP0 decides, and `wikigate.go` is the adapter. A test proves that **every** surface in the table calls `wikiReadable`, from a registry of the surfaces
+  that the handlers register themselves into, so a surface added later cannot skip the gate: `TestR_ANS_037_EverySurfaceAsksTheWikiGate`.
+- **Declared in the OpenAPI document.** The three operations are marked as wiki content in `api/openapi.yaml` (Q-API-260), and the route carries the
+  wiki part in its descriptor; where T-18 enforces the check before the handler (the dispatcher, the OpenAPI-driven authorization), the marker is
+  what it reads, and the call in the handler stays as the second layer.
+- **Virtual and remote.** The check is asked for the repository the documentation is **read from**: the remote itself for a remote repository; for a
+  virtual repository, for **the virtual repository addressed** (its own wiki level) **and** for the member the first-match plan picks among the
+  members the caller may read (R-ANS-022). Both must allow; a member the caller may not read the wiki of is skipped like a member the caller may not
+  read, and the member is never named. The documentation never mixes members (Q-ANS-61).
+- **What the UI sees** (Q-UI-244): `metadata.docs` absent, so the Documentation and Contents tabs are not shown and not requested; a 404 or the
+  refusal of an operation removes the tab without a message.
+- **What a Galaxy client sees:** `ansible-galaxy` reads none of these surfaces; installs, listings and `requirements.yml` are unchanged whatever the
+  wiki level is. A tool that reads `docs-blob/` gets the answer of the first row of the table.
+- **Not decided here:** the levels, the settings, the defaults, the inheritance, the role of an external user, the audit of a wiki read, the caches a change
+  must reach. R-AUTHZ-034 decides them and a change of its answers needs no change on this page.
+
+Acceptance criteria:
+
+- `TestR_ANS_037_EverySurfaceAsksTheWikiGate` fails when a handler of the table does not call `wikiReadable`.
+- With a fake check that denies, each surface of the table answers as the table says (the route and the operations as the fake's refusal says, the member
+  absent) **and** the version document, the version list and the archive of the same version are still served.
+- With the fake denying for one of two members of a virtual repository, the documentation of the other member is served and the denied one is not named.
+- The `wiki` row of R-ANS-046 (a user who reads the artifacts and not the wiki) runs against T-18's real check.
+
+### R-ANS-038 · Tests of the documentation: unit and integration
+Priority: **P1** · Covers: trove-only
+
+- **Unit.** `docgen` (R-ANS-034): the crafted sources of its acceptance criteria and a corpus of module sources written for the tests in the shape of real
+  ones (options with suboptions, choices, defaults of several types, return values with `contains`, a sidecar, the markup macros), the markup converter with a table of macros and
+  hostile inputs (unbalanced macros, 10,000 nested macros, a macro in a macro, `\)` escapes) and a fuzz target for both; the tree and
+  entry builders over rows; `Rewrite` of the stored document with a `<script>`; `ParseUpstreamDocs` over excerpts of the two real documents (below); the wiki gate registry (R-ANS-037). A test whose name carries
+  `R_ANS_03n` proves that requirement's criterion and only that.
+- **Real documents as test data.** The testdata of `galaxydoc` are cut-down excerpts of `docs-blob/` documents of the public Galaxy (a small collection
+  such as `ansible.netcommon` 8.7.1, 155 KB, with its README HTML, and ten entries of `community.general` 10.0.0) and a document in the shape of the owner's
+  `hans_fischer.common` 1.5.0 (32 entries, every `doc_strings` null). They hold no token and no address of a private server.
+- **The stub** (`test/ansiblestub`) serves `docs-blob/` for the versions of its corpus: a collection with 8 modules (one with suboptions and a
+  return value, one with `doc_strings` null), 8 filters, 16 `module_utils`, a role with a `readme_html`, a README with a script tag, and a
+  collection of 600 entries for the bounds (about 4 MB, built by the corpus generator, no fixture file is binary); the control API adds the
+  modes `docs_404`, `docs_500` and `docs_huge` (17 MiB) and the counters `docs-blob` per path.
+- **Integration** (through the slot wrapper, one area per class): `ansiblelocal` publishes a collection built with the tar writer (modules with
+  documentation, a sidecar, a role, README and `docs/`) and reads the tree, an entry, a file, the search and `docs-blob/`, the deletion of the version, the
+  reindex after the rows were deleted by the test, the warnings in the import task, the wiki gate with a denying fake; `ansibleremote` fills the version document, waits for
+  the job and reads the same operations from the stub's document, `fetchDocumentation: false`, the 404, 500 and huge modes, the origin check of `href`, the sanitizing of
+  the stub's script tag, one stub request however many reads, and a mirror pass that queues the fetch (R-ANS-040); `ansiblevirtual` reads the winner's documentation and the first-match rule for a version in two members (R-ANS-041). The
+  Sentinel areas stay with the integration builder.
+- **e2e** is R-ANS-046.
+
+Acceptance criteria: the tests above exist and pass; the coverage generator lists R-ANS-033 to R-ANS-046 as implemented only through test names that carry
+the IDs (`docs/coverage/implemented.txt` is not touched by this specification).
+
+### R-ANS-039 · Rendering and sanitizing: Markdown, HTML and the Ansible markup
+Priority: **P1** · Covers: trove-only
+
+Three kinds of text reach a browser or a client from the documentation, and each leaves trove sanitized by the policy of the README renderer
+(R-UI-008, `internal/packages/readme`: goldmark, bluemonday, the link and image rules, the `ui.readme.external_image_origins` list):
+
+| Text | Arrives as | Rendered by | Sanitized by |
+|---|---|---|---|
+| A README, a file of `docs/`, a role README of a **generated** version | Markdown rows | The Host's Markdown renderer (goldmark) | The same renderer's allowlist |
+| `collection_readme.html`, `documentation_files[].html`, `readme_html` of an **upstream** | HTML rows, untrusted | Not rendered | The Host's HTML sanitizer on every serving (R-ANS-035 `Rewrite`; the file operation of R-ANS-036) |
+| The prose of a plugin (`description`, `notes`, option and return descriptions, `short_description`, `seealso`) | Ansible markup in the JSON | `docgen.RenderMarkup`: escape all text, then the macros | The same allowlist, in `internal/api/v1`, before the answer leaves |
+
+- **Where it runs.** A format package may import neither the renderer nor bluemonday (R-ARCH-008, `internal/archtest`). The contract therefore
+  gains a narrow Host capability, `formats.Markup` returned by `Host.Markup()`: `Markdown(src string) (html string, truncated bool)` and
+  `SanitizeHTML(html string) string`, implemented by the composition root over `internal/packages/readme` (which gains `Renderer.SanitizeHTML`, the
+  existing allowlist applied to HTML and nothing else), by a deterministic in-memory implementation in the conformance kit's Host, and by a Host
+  that has no renderer returning errors, never the input (`NoMarkup`, as `NoVulnerabilityData`). The Ansible format stores the Host's `Markup` in its replica
+  (`bind.go`, `Format.Bind`). The three management operations run in `internal/api/v1`, which holds the renderer already (`ps.Readme`) and imports `docgen`
+  for `RenderMarkup`; the pure converter is in the leaf `internal/formats/ansible/docgen` so that both can call it.
+- **The Ansible markup.** The converter **escapes all text first**, then recognizes `I(x)` and `E(x)` as emphasis, `B(x)` as strong, `C(x)`, `O(x)`,
+  `V(x)`, `RV(x)`, `M(x)`, `P(x)` and `R(text,ref)` as `code` (a reference is shown as its text and made no link), `U(url)` and `L(text,url)` as a
+  link when the URL is `http` or `https` and as the text otherwise, `HORIZONTALLINE` as a rule, and the backslash escapes of the markup. A macro that
+  does not close, or nests deeper than 4, is text; the input of one conversion is at most 64 KiB (more is cut and the answer is marked truncated). The
+  output then runs through the sanitizer so that the converter cannot be the weak point; links get `rel="nofollow noopener noreferrer"`.
+- **reStructuredText is not rendered**, and neither does the Galaxy's importer (Client and library behaviour): a `README.rst` is no README, a `.rst`
+  file below `docs/` is no file, and the page says so in a muted line when `collection_info.readme` names one (the warning `readme_not_markdown`).
+- **No HTML is stored for a generated entry.** A generated row holds Markdown and structured text; HTML exists only in an answer. An upstream's HTML is stored
+  as received (so the stored document is byte-identical to the upstream's, R-ANS-035) and sanitized on the way out.
+- **The UI** binds the HTML the operations return with `[innerHTML]` and everything else as text (R-UI-008's component rules, Q-UI-242).
+
+Acceptance criteria:
+
+- The table of macros has one case per macro, the hostile inputs of R-ANS-038 produce text that contains no tag the allowlist does not name, and the fuzz target
+  has no finding in the runs of the gate: for any input, the output of `RenderMarkup` followed by the sanitizer contains no `script`, no `on*` attribute and no URL
+  scheme other than `http`, `https` and `mailto`.
+- A stored upstream `readme_html` with `<script>`, `<img onerror>` and `<a href="javascript:">` is served at `docs-blob/` and by the file operation without them.
+- A kit Host without a renderer makes the Markdown rows of a local `docs-blob/` fail with 500 `internal`, not serve unrendered text.
+
+### R-ANS-040 · A mirror keeps the documentation of the versions it keeps
+Priority: **P1** · Covers: trove-only
+
+A remote in mode `mirror` (R-ANS-021) with `ansible.fetchDocumentation` on queues, after the archive of each version it keeps, the documentation fetch job
+of R-ANS-042 for that version; the pass does not wait for it and a job that fails does not fail the pass. The job's fetches go through the pass's
+background window (`MirrorHost.Background`, the engine's throttling and window halving on a 429 or `Retry-After`, R-REPO-054), so a mirror of many
+collections spaces its documentation requests with its archive requests. A version the pass drops (the retention rule of the mirror) loses its rows with
+its item (`ItemsRemoved`). The size of a full mirror's documentation is not measured ([H-890](#h-890--the-size-of-the-documentation-of-a-full-mirror-and-of-many-local-versions-is-not-measured)).
+
+Acceptance criteria:
+
+- A mirror pass over the stub with three versions queues three `ansible-docs-fill` jobs and, once they ran, the three versions have `available` documentation;
+  with `fetchDocumentation: false` the stub's `docs-blob` counter is 0.
+- A stub in mode `docs_500` leaves the pass completed and the versions `unavailable` with `upstream_error`; the jobs retry with the engine's backoff.
+
+### R-ANS-041 · A virtual repository shows the winner's documentation
+Priority: **P1** · Covers: trove-only
+
+The virtual class serves `docs-blob/`, and its package screens read documentation, from the member that serves the version document (R-ANS-022, first
+match), through that member's class: a local member renders its rows, a remote member serves its stored document through `Rewrite`. The member is the
+same one the version document and the archive come from, so the document and its documentation agree. The operations of R-ANS-036 take the virtual
+repository in `repository`, resolve the winner by the same plan and name the **winner** in the answer only when the caller may read that member
+(otherwise the virtual repository's key is named). A virtual repository fills no remote member's documentation on behalf of a caller who may not fill its
+cache (R-AUTHZ-008): the cached rows are served, and a member with none is skipped for documentation only if the version document would be skipped too.
+The wiki check applies to both the virtual repository and the winner (R-ANS-037).
+
+Acceptance criteria:
+
+- A virtual repository over a local and a remote member serves, for a version only the remote has, the remote's documentation, and for one the local has,
+  the local's, with the same document the member serves directly.
+- For a version in both members the first-match member's documentation is served and no entry of the other appears.
+- A caller who may not read the first member's repository gets the second member's documentation, and the answer does not name the first.
+
+### R-ANS-042 · The job that fetches a remote's documentation
+Priority: **P1** · Covers: trove-only
+
+- **Kind and keys.** `ansible-docs-fill` (queue `index`, dedup `Coalesce` on the key `ansible-docs:<repoId>:<name>:<version>`, at most 5 attempts, the engine's
+  backoff, a timeout of 5 minutes per attempt), registered in `internal/formatdata/ansible/jobs.go` beside `ansible-reindex`. Its handler is built by the
+  composition root (`Handlers.DocsFill`) over `MirrorHost.Background(ctx, repoID)`, the form the jobs of a data port use (as the Debian format's), and calls
+  `Upstream.Document(ctx, DocsDocumentPath(ns, name, version), "")`, which is the engine's metadata fetch: the fill runs `PrepareFill` and `OnFill`
+  of R-ANS-035, so there is one code path for the route and the job. The credential, the egress rules and the throttle are the engine's.
+- **Who queues it.** `OnFill` of a **version document** of a remote with `fetchDocumentation` on (through the data port, in the fill transaction: a
+  `queued` fetch row and the job, `EnqueueDocsFill(ctx, tx, ...)`, as `Reindex` enqueues in a transaction), when the version has no `available` rows
+  or the version document's digest changed; the mirror pass (R-ANS-040). Nothing else: not a UI read, not a request for the route (that one fetches
+  inline).
+- **Outcome.** `available` rows (the fill wrote them); an upstream 404 or a `href` that fails the origin check: the fetch row `none` and the job
+  succeeds; `upstream_error`: the job fails and retries; `too_large`, `invalid_document`: the fetch row says so and the job ends permanently (a retry would
+  repeat it). A job for a version that was deleted ends at once.
+- **Metrics and audit** are R-ANS-045.
+
+Acceptance criteria:
+
+- Eleven concurrent version-document fills of one version queue one job (`Coalesce`), and the stub counts one `docs-blob` request in total.
+- A version document refilled with a changed digest queues a new job; one refilled unchanged does not.
+- With the stub in mode `docs_huge` the fetch row is `unavailable` with `too_large`, the job is not retried, and no row of the other tables exists.
+
+### R-ANS-043 · Storage and bounds of the documentation
+Priority: **P1** · Covers: trove-only
+
+- **Where it lives.** In the rows of R-ANS-033 (PostgreSQL) and, for a remote, as one stored remote document per version (the object store, as every
+  document, bounded by `MaxDocumentBytes`). No blob of the documentation is written for a local version: the archive stays the one source.
+- **Bounds** are those of R-ANS-031 (the documentation rows of its table), applied by the generator for a local publish and by `PrepareFill` for a remote:
+  512 KiB per literal and per Markdown file, 2 MiB per source read, 1 MiB per entry, 5,000 entries, 16 MiB of rows per version, 64 files; the answer of a tree is
+  at most 5,000 entries. A bound crossed drops that part, sets `truncated` and warns; it never fails a publish or a fill.
+- **Eviction.** A remote's stored `docs/` document is a cache entry and is evicted like any (R-REPO-032); its rows stay until the version's item goes or the
+  next fill replaces them, because the rows are what the screens read. A restore without remote caches drops both (R-ANS-029).
+- **Per repository.** There is no total bound per repository, only per version ([H-890](#h-890--the-size-of-the-documentation-of-a-full-mirror-and-of-many-local-versions-is-not-measured)); the measured largest set of
+  rows is 3.5 MB of JSON for 833 entries (community.general) and 6.5 MB for fortinet.fortios.
+
+Acceptance criteria:
+
+- A collection of 6,000 plugin files publishes and has 5,000 entries and `truncated`; the tree answer is under 1.5 MB.
+- The stored document of a remote is evicted and the screens still show the documentation; the route fetches it again.
+
+### R-ANS-044 · Reindex, restore and the generator version
+Priority: **P1** · Covers: trove-only
+
+The `ansible-reindex` job (R-ANS-012) gains a documentation step: for every stored archive after the checkpoint it regenerates the rows of a version that has
+none or whose `generator` is below `docgen.Version` (the archive is read anyway); for a remote repository it re-derives the rows from the stored `docs/` documents
+(`RebuildRemoteDocs`) and queues the fetch for a version with neither. The enqueue of a restore (R-BAK-008) covers it. A step never changes stored bytes of an
+archive, writes rows in one transaction per version, and leaves a version whose archive is unreadable with its old rows and a warning in the job log.
+
+Acceptance criteria:
+
+- Rows deleted by the test are rebuilt by the reindex of a local repository, equal to the first generation.
+- A bumped `Version` rebuilds every row once; a second reindex rebuilds none.
+
+### R-ANS-045 · Metrics and audit of the documentation
+Priority: **P1** · Covers: trove-only
+
+Metric families (R-ANS-030's rules, no label with a repository or collection name): `trove_ansible_docs_generated_total{outcome}` (`completed`, `truncated`, `refused`),
+`trove_ansible_docs_fill_total{outcome}` (`available`, `none`, `upstream_error`, `too_large`, `invalid_document`) and `trove_ansible_docs_read_total{operation,outcome}` for the
+three operations and the route (`ok`, `not_found`, `denied`). No audit event: generation and fill are derived data, and a read is not audited unless R-AUTHZ-034 decides
+that a wiki read is. The import task of a publish carries the warnings (R-ANS-034).
+
+Acceptance criteria: each series moves in the integration test of its path and no label value is a name of the user's data.
+
+### R-ANS-046 · End-to-end rows per class
+Priority: **P1** · Covers: trove-only
+
+Real clients found three defects in F0 that integration missed, so the set `ansible` (kind, `make e2e`) gets a row per class, each with the real client for the
+protocol and a browser journey for the screen. The source tree of the collection is checked in under `test/e2e/testdata/ansible_docs/` (a namespace with two modules
+with full `DOCUMENTATION`, `EXAMPLES` and `RETURN`, a filter, a role with a README, a README and one `docs/` file); the collection is built with `ansible-galaxy
+collection build` in the client pod.
+
+| Row | What the real client does | What the browser journey checks |
+|---|---|---|
+| **local** | `ansible-galaxy collection publish` to a local repository; `ansible-galaxy collection install` of it; `GET docs-blob/` with the client's own token | On the package page: the Documentation tab with the tree (Modules 2, Plugins, Roles 1), the README first, a module page with its parameter table and example, the search narrowing the tree and keeping the counts, the Contents tab, the Import log tab with the publish |
+| **remote** | `ansible-galaxy collection install` through a remote repository over the stub (the real client; the stub serves `docs-blob/`); `GET docs-blob/` of the remote | After the job ran: the same tabs from the upstream's document; the stub's README with a script tag shows without it |
+| **virtual** | `ansible-galaxy collection install` through a virtual repository over the two; `GET docs-blob/` of the virtual repository | The same tabs on the virtual repository's package page, from the winner |
+| **wiki** | A user who may read the artifacts and not the wiki installs the collection with the real client | The package page has no Documentation or Contents tab; `docs-blob/` answers as R-AUTHZ-034 decides. Built by the package that builds T-18's check, in this row |
+
+The journeys run from the Go test like `TestE1_11Journeys`, the assertions name the R-ANS and R-UI IDs, and each row asserts the first tab's content, not only its
+presence. A leg that is red is a finding, not a blocker of the release (CLAUDE.md, CI until the first stable release).
+
+Acceptance criteria: the rows local, remote and virtual exist in `test/e2e/ansible_docs_test.go` and are registered in the set `ansible`; the `wiki` row is
+added by whichever of T-19's UI builder and the builder of T-18's check lands second, and no row is committed skipped.
 
 ## Mirror discovery
 
@@ -1109,6 +1667,7 @@ The engine, the bounds and the throttling are the core's; this is what the forma
 | R-ANS-022 to R-ANS-024 (virtual) | merge over fixtures | `ansiblevirtual`: merge, conflict, claims, publish through the target, role ids | `ansible` (virtual) |
 | R-ANS-025, R-ANS-026 (setup, screens) | templates render, kit check 8 | view API | `ansible` (rendered snippets), browser journey of the package screen |
 | R-ANS-027 (import) | plan and held over the stub | `importer`: `ansible_test.go` | — |
+| R-ANS-033 to R-ANS-046 (documentation) | `docgen` over crafted sources, the markup converter and its fuzz target, the tree and entry builders, `Rewrite` of the stored document, the wiki gate registry | `ansiblelocal`, `ansibleremote`, `ansiblevirtual`: generation, job, rows, tree, entry, file, search, `docs-blob/`, the denying gate | `ansible`: a built collection published, the Documentation tab on local, remote and virtual |
 | R-ANS-028 to R-ANS-032 | crafted inputs (kit) | Valkey stopped, journal replay of deletions, metric series | `ansible` in `scatter`; the closing run |
 
 ## Catalog coverage
@@ -1150,7 +1709,13 @@ Each change is made by the work package that builds its mechanism, in the same c
 | [endpoints.md](../endpoints.md) | R-EP-018: the format has no exposure adapter | Q-ANS-25 |
 | [import.md](../import.md) | The Scope paragraph: Galaxy is imported (R-ANS-027), the format table | Q-ANS-21 |
 | [vulnerability-scanning.md](../vulnerability-scanning.md) | The format's repositories are `not_covered` (no OSV ecosystem) | Q-ANS-15 |
-| [decisions.md](../../decisions.md) | ADR-191 and the table rows of Q-ANS-1 to Q-ANS-28 | — |
+| [api-and-ui.md](../api-and-ui.md) | R-API-029: a pointer to the three documentation operations of R-ANS-036 and the `metadata.docs` member; R-UI-007: the tabs of an Ansible version; R-UI-060 to R-UI-064; Q-UI-240 to Q-UI-247; Q-API-260 to Q-API-262 | R-ANS-036, Q-ANS-63 |
+| [backup-and-restore.md](../backup-and-restore.md) | R-BAK-004: the four documentation tables are derived and not exported | R-ANS-029, R-ANS-044, Q-ANS-59 |
+| [authorization.md](../authorization.md) | R-AUTHZ-034 (T-18): the list of Ansible surfaces that are wiki content (R-ANS-037) is the format's input to the wiki check | R-ANS-037 |
+| [architecture.md](../architecture.md) | R-ARCH-008: the Host method `Markup` (R-ANS-039) is added to the contract's list of Host capabilities | Q-ANS-66 |
+| [operations-and-observability.md](../operations-and-observability.md) | The job kind `ansible-docs-fill` and the three series of R-ANS-045 | R-ANS-042, R-ANS-045 |
+| [repositories-and-proxy.md](../repositories-and-proxy.md) | R-REPO-043: a remote document that fills derived rows (`docs/<version>.json`) | R-ANS-035 |
+| [decisions.md](../../decisions.md) | ADR-191 and the table rows of Q-ANS-1 to Q-ANS-28; ADR-196 and ADR-197 (written with this specification) | Q-ANS-66, Q-ANS-69 |
 
 ## Deferred
 
@@ -1183,6 +1748,10 @@ Each change is made by the work package that builds its mechanism, in the same c
   URL bypasses all of it (H-844).
 - **The hub's offline token is a long-lived credential.** It is a stored secret of the repository (sealed with the key ring), sent only
   to the realm, and the access token is kept in a replica's cache for its lifetime and no longer (R-ANS-019).
+- **Documentation is text from the publisher or the upstream, shown to other people.** It is scanned and decoded under bounds, never executed, never stored as HTML for a
+  local entry, converted by an escaping-first converter and sanitized by the one policy of R-UI-008 before it reaches a browser; an upstream's HTML is sanitized on the way
+  out. A screen never makes trove query an upstream (R-ANS-034 to R-ANS-039, H-893; [ansible-documentation.md](../../security/ansible-documentation.md)).
+- **Documentation is wiki content.** Every surface that reads it asks one function, which calls the wiki check of R-AUTHZ-034 (R-ANS-037, H-894).
 - **Task documents name no secret.** An import task is readable by whoever reads the repository and names the collection and the
   version (R-ANS-009).
 
@@ -1360,6 +1929,8 @@ Status: **Decided by the development agent** — selected from the options below
 **Choice:** (a).
 
 **Rationale:** a registry serves what its clients read. Revisit when a client in the matrix reads `contents`.
+
+**Correction of 2026-11-11 ([Q-ANS-62](#q-ans-62--the-documentation-is-served-at-docs-blob-and-the-version-document-keeps-leaving-the-plugin-listing-out)):** `docs_blob` is not a member of `metadata`; the Galaxy serves it as the sub-resource `docs-blob/` of the version, and `manifest` and `files` sit beside `metadata`, not in it. The choice stands; the documentation is served at its own route (R-ANS-035).
 
 **Applied in the spec:** R-ANS-004, R-ANS-017.
 
@@ -2036,6 +2607,254 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied in the spec:** R-ANS-025, R-ANS-015.
 
+### Q-ANS-56 · trove stores and shows the documentation of a collection: generated for a local publish, kept as received for a remote
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: task T-19 (owner, 2026-11-11). galaxy_ng shows the README, the modules, the plugins and the roles of a collection with their pages. The
+documentation is not in the archive as such: galaxy-importer builds `docs_blob` at import, by running `ansible-doc` (Client and library behaviour
+above). So the question is what trove, which never ran a collection through an importer, can honestly offer for a **local** publish.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Local: generated by trove at publish from the archive's text; remote: kept as received; virtual: the winner's (chosen) | R-ANS-033 to R-ANS-036 | The owner's own collections are local ones and the screen he asked for needs exactly this; no process is run; the three classes show the same screens | A parser to maintain; the result is weaker than ansible-doc's where fragments matter (H-891) |
+| (b) Local: only the README and the contents list (file names), remote: as received | No parsing | Cheap and cannot be wrong | The pages "Modules (8)" would open empty for a local collection: the screen exists to read what a module takes |
+| (c) Pass through from an upstream only | Remote and virtual only | Nothing to generate | Nothing for a local repository, the class the owner publishes his collections to |
+| (d) Run `ansible-doc` as the importer does | Exact output, fragments merged | Fidelity | A Python and ansible-core installation in the image, a process that loads plugin code of uploaded archives: rejected as a trust boundary (R-ARCH-028) and as a second runtime |
+
+**Choice:** (a). **Rationale:** (b) and (c) leave the repository the owner uses without the feature, (d) puts uploaded code next to the server.
+The galaxy_ng of the owner shows `doc_strings` null for every entry of `hans_fischer.common` 1.5.0: even there the pages hold what the
+importer's environment could produce, so "the plugin's own DOCUMENTATION string, shown as written" is not below the reference. Revisit if the
+owner finds generated pages too thin for his collections (then fragments, H-891) or if a safe way to run `ansible-doc` exists.
+
+**Applied in the spec:** R-ANS-033 to R-ANS-036, R-ANS-038.
+
+### Q-ANS-57 · The documentation of a publish is generated in the inspection pass and written in the commit transaction
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) In `Inspect`'s pass; rows written by `OnCommit`; bounded and non-fatal (chosen) | R-ANS-034 | One read of the archive; version and documentation commit or fail together; the import task can carry the warnings; no state "documentation missing" after a successful publish | The publish request does the work under the 30-second deadline (H-843); inputs sit in memory |
+| (b) A job after the commit | Documentation appears seconds later | The request stays as fast as today | A second read of the archive for every publish; a state between publish and documentation; the warnings have no task to go to |
+| (c) On first read | Generated when a person opens the tab | Nothing is done for versions nobody reads | The request path reads and inflates an archive (H-853 again), a write in a GET |
+
+**Choice:** (a). **Rationale:** the archive is already being streamed and digested; the documentation inputs are text files in it. Measured on the
+public Galaxy: 833 entries and 3.5 MB of output for the largest collection, a median entry of 3.6 KB, so memory and time are small next to the
+archive. The reindex job covers the other direction (versions published before, a changed generator). Revisit if a publish of a very large
+collection comes near the deadline in practice (then (b) for the bounds above a size).
+
+**Applied in the spec:** R-ANS-034, R-ANS-033.
+
+### Q-ANS-58 · The generator scans the Python source for its documentation strings and decodes them as YAML nodes; it runs no ansible-doc
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A lexical scan for module-level `DOCUMENTATION`, `EXAMPLES`, `RETURN` string literals, plus YAML sidecars; YAML decoded into a node tree under the bounds of `meta/runtime.yml`; fragments not merged (chosen) | R-ANS-034 | No execution; what ansible-doc itself does for modules (it reads these strings from the source); bounded; deterministic; a leaf package with a fuzz target | A value built by an expression is not read; fragments are listed, not merged (H-891, H-892) |
+| (b) A real Python parser | Parse the module to an AST | Handles every literal form | A Go Python parser is a large dependency and a new untrusted-input parser for little gain |
+| (c) Merge same-collection fragments too | Resolve `extends_documentation_fragment` of `plugins/doc_fragments/` | Closer to ansible-doc for collections that use their own fragments | The merge rules (options override, lists extend, per-key exceptions) are ansible-doc's to define; a wrong merge shows wrong parameters; the builtin and other collections' fragments stay unresolvable anyway |
+
+**Choice:** (a). **Rationale:** a documentation string that is not shown is a visible gap, a parameter table that is wrong is a lie; (a) shows exactly
+what the author wrote and names the fragments, (c) can be added later without changing the stored shape (`extendsFragments` already carries the names). Revisit
+when an owner collection uses fragments for its parameters.
+
+**Applied in the spec:** R-ANS-034; H-891, H-892.
+
+### Q-ANS-59 · The documentation is derived tables, one row per entry, not a document per version
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `ansible_version_docs`, `ansible_doc_entries`, `ansible_doc_files`, and for a remote the small `ansible_doc_fetches`; derived, not exported (chosen) | R-ANS-033 | A page is a primary-key read; the tree never loads entry bodies; search is SQL; the same rows for generated and upstream entries; rebuilt from the archive or the stored document | Three tables; the remote's data exists twice (document and rows) |
+| (b) One `jsonb` per version | The Galaxy's `docs_blob` as is | One write, one read | A page loads up to 6.5 MB to show 4 KB; no search without scanning; the whole document is rewritten on any change |
+| (c) Only the stored remote document, parsed per request | No rows for remotes | No duplication | 6.5 MB parsed per page view and per search; two code paths (rows for local, parse for remote) |
+| (d) Files in the blob store | An item per entry | Reuses the item store | Thousands of tiny blobs per version, garbage collection and reads for what a table holds |
+
+**Choice:** (a). **Rationale:** the access pattern is "the tree of a version" and "one entry of it", both small, from a table of at most 5,000 rows
+per version. The remote's duplication is bounded (a stored document is a cache and is evicted like any, the rows are the index); the rows are derived,
+so a backup does not carry them (R-BAK-004's classes are untouched) and a restore rebuilds them with the reindex. Revisit if the rows of a mirror of
+the whole public Galaxy are measured to cost too much (H-890).
+
+**Applied in the spec:** R-ANS-033, R-ANS-029 (the tables are not exported).
+
+### Q-ANS-60 · A remote's documentation is an ordinary metadata document of the engine, filled by the route and by a job; a screen never queries the upstream
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Verified in this repository: a format cannot enqueue a job (R-ARCH-008), but its data port can, in the fill transaction (`Reindex` of the Debian port
+does); `MirrorHost.Background(ctx, repoID)` returns the upstream a data port's job uses, and its `Document` is the engine's metadata fetch with
+`PrepareFill` and `OnFill` (`internal/formathost/mirror_host.go`), throttled by the mirror window. So no change of the remote contract is needed.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The route is a normal engine document (`UpstreamRequest`, `PrepareFill`, `OnFill`, `Rewrite`); `OnFill` of the version document queues `ansible-docs-fill`, whose handler calls `Background(...).Document`; a mirror pass queues the same job; setting `fetchDocumentation` (default true) (chosen) | R-ANS-035, R-ANS-040, R-ANS-042 | One code path for the route, the job and the pass; the credential, egress, rate limit and flight rules are the engine's; R-API-029 holds (a screen reads rows); an operator can switch it off | An upstream request per version, 150 KB to 6.5 MB; the first view after an install may find `pending` |
+| (b) On the first screen read | The UI read fills | Only what is read | A GET that fetches 6.5 MB from an upstream on behalf of a viewer, breaking R-API-029 and giving an anonymous reader a lever on the upstream |
+| (c) Inside the fill of the version document | One flight | No `pending` state | Every client install waits for up to 6.5 MB it does not use (the reason `metadata.contents` is left out of the version document) |
+| (d) Never for remotes | Local only | Nothing to fetch | The owner's virtual repository over a remote Galaxy shows nothing for most collections |
+
+**Choice:** (a). **Rationale:** it adds an upstream request that today does not exist, so it is a setting, and the work is the engine's own kind. The mirror
+rule follows "keeps what the patterns select" (Q-ANS-16): a mirror that serves the archive should serve the page. Revisit when the size of a full mirror with
+documentation is measured (H-890) or the public Galaxy is found to rate limit `docs-blob/`.
+
+**Applied in the spec:** R-ANS-035, R-ANS-040, R-ANS-042, R-ANS-026 (the setting); H-890.
+
+### Q-ANS-61 · A virtual repository shows the winner's documentation; the screen names the repository
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The member that serves the version document serves the documentation; the operations take a `repository` and answer which one was read (chosen) | R-ANS-035, R-ANS-036 | The document and its documentation always agree (one first-match plan); members are not named to a caller who may not see them; no merge | A version in two members shows one member's text |
+| (b) Merge the entries of all members | Union of entries | More entries | Entries of different builds of one version mixed: wrong, since versions are immutable per member and the digests may differ (R-ANS-022) |
+| (c) Prefer the member with the richest documentation | Highest entry count | Better pages | A rule nobody can predict |
+
+**Choice:** (a). **Rationale:** same rule as the version document and the archive. Revisit with Q-ANS-18.
+
+**Applied in the spec:** R-ANS-035, R-ANS-036.
+
+### Q-ANS-62 · The documentation is served at `docs-blob/` and the version document keeps leaving the plugin listing out
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A route `…/versions/<v>/docs-blob/` in the Galaxy's shape; `metadata.contents` stays out of the version document (chosen) | R-ANS-035; Q-ANS-10 stands | Another trove or a Galaxy-compatible tool reads the documentation where it expects it; a trove remote over a trove repository works; installs read the small document as before | One more route in the frozen table |
+| (b) No protocol route; the UI operations only | Smaller surface | Less to build | A remote over another trove has no documentation; the route is nearly free once the rows exist |
+| (c) Bring `metadata.contents` back into the version document | The Galaxy's full document | Same bytes as the public Galaxy | 848 KB for every `ansible-galaxy` install of a large collection; Q-ANS-10's reason is unchanged: no client reads it |
+
+**Choice:** (a). **Rationale:** the correction to Q-ANS-10: the documentation was never a member of `metadata`; it is a sub-resource (verified on both servers), so
+serving it separately costs a route and keeps Q-ANS-10's reason intact. Revisit with Q-ANS-10 (a client that reads `contents`).
+
+**Applied in the spec:** R-ANS-004, R-ANS-017, R-ANS-035.
+
+### Q-ANS-63 · The screens read three operations: a tree per version, a page per entry, a file per document; the search is a parameter of the tree
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `getPackageVersionDocs` (tree and search), `getPackageVersionDocEntry`, `getPackageVersionDocFile` under the package and version of R-API-029 (chosen) | R-ANS-036 | The screen already holds package and version ids; tree and entry sizes are small and cacheable; the wiki marker is one per operation | Format-specific operations under the generic package path |
+| (b) Under the repository: `/api/v1/ansible/{projectKey}/{repoKey}/…` | Next to `listAnsibleImportTasks` | Fits the management operations of the format | The package screen is cross-repository; it would have to pick the repository first and the virtual winner by hand |
+| (c) One operation returning the whole `docs_blob` | The protocol document | One call | Up to 6.5 MB per tab view; no sanitized prose |
+| (d) Client-side search over the whole tree | The tree carries all text | No search request | The tree would carry every description (hundreds of KB); a second matching implementation |
+
+**Choice:** (a). **Rationale:** the tree carries only names and short descriptions (about 100 bytes per entry), so the UI can show the tree at once; `q` runs in SQL
+over one version's rows, so it can match descriptions and parameter names without shipping them. Revisit if search across collections is asked for (Deferred).
+
+**Applied in the spec:** R-ANS-036; api-and-ui.md R-API-029 (a pointer).
+
+### Q-ANS-64 · Plugin prose is the Ansible markup converted by trove; Markdown goes through the README renderer; reStructuredText is not rendered
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Escape first, convert the macros `I() B() C() U() L() R() M() O() V() E() P() RV()` to `em strong code a`, then the README renderer's sanitizer (R-UI-008); Markdown by goldmark; no reStructuredText (chosen) | R-ANS-039 | The author's text never reaches a browser as markup; one sanitizer policy; the importer renders no reStructuredText either | A README in `.rst` shows no README tab entry |
+| (b) Pass the upstream's `readme_html` and own-rendered HTML unsanitized | As received | Faithful | An upstream or a publisher can inject script into the UI origin |
+| (c) A reStructuredText renderer | `README.rst`, `docs/*.rst` | More collections show a README | A large parser for a format the reference does not render |
+| (d) Render the macros in the browser | The UI converts | No server work | A second sanitizer policy in the client (R-UI-008 has one, server side) |
+
+**Choice:** (a). **Rationale:** R-UI-008 puts rendering on the server so one policy serves every client; the converter is a pure function with a fuzz target and the sanitizer
+behind it is the second layer. A `.rst` README is reported as "no README" by the documentation tab, which is what the reference does, and costs the author a Markdown file. Revisit if
+the owner's collections use reStructuredText. Where the sanitizer is reachable from is Q-ANS-66.
+
+**Applied in the spec:** R-ANS-039, R-ANS-036, R-ANS-034 (the README choice).
+
+### Q-ANS-65 · Bounds: entries, bytes and files per version, and a bound crossed never fails the publish
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) 512 KiB per literal, 2 MiB per source, 1 MiB per entry, 5,000 entries and 16 MiB per version, 512 KiB and 64 per Markdown files; a crossed bound drops that part and warns (chosen) | R-ANS-031 | About 6 times the largest collection seen (833 entries, 3.5 MB; the largest entry 59 KB; the largest `docs-blob/` 6.5 MB); a hostile archive cannot fill the table; a collection is never lost for its documentation | A giant collection loses its tail (the entries are in alphabetical order by type and name; `truncated` says so) |
+| (b) Refuse the publish | `invalid_archive` | Strict | `ansible-galaxy collection build` accepted it; the documentation is a convenience |
+| (c) No bounds on the Markdown/JSON of a remote | Take what comes | Fidelity | The document bound (`MaxDocumentBytes`) already applies; the rows need the per-entry bounds |
+
+**Choice:** (a). **Rationale:** the numbers come from the measurements in the verification table; the same bounds apply to the rows of a remote. Revisit when a real
+collection hits one.
+
+**Applied in the spec:** R-ANS-031, R-ANS-034, R-ANS-035.
+
+### Q-ANS-66 · The Host gains a `Markup` capability, because a format may import neither the renderer nor bluemonday
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Verified in this repository: `internal/archtest/imports.go` (`formatAllowed`) lets a format import the contract, its catalog, the untrusted-content leaf, the
+error kinds, configuration, observability and a few leaves; `internal/packages/readme` and every third-party HTML library are outside it. The README is rendered in
+`internal/api/v1` (`ps.Readme`). The `docs-blob/` route is served by the format and holds HTML members.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A Host method `Markup() formats.Markup` (`Markdown`, `SanitizeHTML`), implemented over `internal/packages/readme` by the composition root, in memory by the kit, an error-returning `NoMarkup` by a bare Host (chosen) | R-ANS-039 | One policy for every surface; the format stays inside its import rule; the same pattern as `Vulnerabilities()` | A change of the contract (ADR-196) |
+| (b) The format ships its own sanitizer | A second policy | No contract change | Two allowlists that drift; a new HTML parser in the format; the format of untrusted input becomes a security component |
+| (c) The route serves Markdown and the client renders | `readme_md` members | No renderer | Not the Galaxy's shape (`html`); a tool that reads `docs-blob/` gets no HTML |
+| (d) Add `internal/packages/readme` to `formatAllowed` | The format imports it | Smallest change | Opens the rule for one package and pulls goldmark and bluemonday into every format's dependency set |
+
+**Choice:** (a). **Rationale:** the rule exists so that a format cannot reach what it should not; a capability is how the contract lets it. The sanitizer of
+untrusted HTML is exactly the thing that must not exist twice. Revisit if a second format needs more than Markdown and HTML sanitizing.
+
+**Applied in the spec:** R-ANS-039; [ADR-196](../../decisions.md#adr-196--the-host-gains-a-markup-capability-for-the-rendering-and-sanitizing-of-a-formats-documentation).
+
+### Q-ANS-67 · The search runs in SQL: substring on the name, prefix on a `simple` text-search vector, every term must match
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `strpos(lower(name), term) > 0` or `search @@ to_tsquery('simple', 'term:*')`, terms reduced to letters and digits, ANDed, over one version's rows (chosen) | R-ANS-036 | No injection (terms become bound parameters of a built tsquery from alphanumerics only); finds identifiers and words; no stemming surprises | No ranking, no typo tolerance |
+| (b) `ILIKE '%term%'` over name, description and options | Simple | Easy | Scans `doc` jsonb text; slower for 5,000 rows; escaping of `%` and `_` |
+| (c) Filter in the browser | No request | Instant | Names only; the tree must carry all text |
+| (d) A search engine | Ranking | Better | A new component for a table of at most 5,000 rows |
+
+**Choice:** (a). **Rationale:** the corpus is one version (at most 5,000 rows, the measured largest 833). Revisit if search across collections is asked for.
+
+**Applied in the spec:** R-ANS-036, R-ANS-033 (`search_text`).
+
+### Q-ANS-68 · For a virtual repository the wiki check is asked for the repository addressed and for the winning member
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Both must allow; a member whose wiki the caller may not read is skipped like a member it may not read (chosen) | R-ANS-037, R-ANS-041 | A virtual repository cannot widen a member's wiki; its own level also counts; the first-match plan stays one plan | A caller may see a later member's documentation where the first member's wiki is closed to it, which equals what it sees for artifacts |
+| (b) Only the virtual repository's | One question | Simple | A virtual repository would publish the documentation of a private member's wiki |
+| (c) Only the member's | One question | The member owns its content | The virtual repository's own wiki setting would mean nothing |
+
+**Choice:** (a). **Rationale:** it is the rule R-AUTHZ-008 applies to artifacts, applied to the second part. Revisit with R-AUTHZ-034's treatment of virtual repositories.
+
+**Applied in the spec:** R-ANS-037, R-ANS-041.
+
+### Q-ANS-69 · The wiki of the format `ansible` is the documentation and the README; the version document is not wiki
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Wiki: `docs-blob/`, the three operations, `metadata.docs`, the README (generic operation and `hasReadme`), `metadata.contents` and `docs_blob` if ever served; not wiki: the version document and its description and links, the lists, the archive, the import tasks (chosen) | R-ANS-037 | The version document is what `ansible-galaxy` reads to install; making any field of it wiki would break installs for a caller who may read the artifacts; the list is exact and testable | The one-line `description` is visible with the artifacts |
+| (b) Everything the screens show besides the install panel | A wider wiki | More closed | Breaks installs or hides data a client needs |
+| (c) Only `docs-blob/` | A narrower wiki | Simple | The UI operations would leak the same text |
+
+**Choice:** (a). **Rationale:** the line follows R-AUTHZ-034's definition: documentation of a version's contents and READMEs. Revisit when R-AUTHZ-034 changes the definition.
+
+**Applied in the spec:** R-ANS-037; [ADR-197](../../decisions.md#adr-197--a-formats-documentation-is-gated-by-one-call-the-wiki-check-and-never-by-the-artifact-check).
+
+### Q-ANS-70 · The end-to-end rows are one per class in the set `ansible`, with a real collection and a browser journey each
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A row per class (local, remote on the stub, virtual) plus the wiki row, each with the real `ansible-galaxy` and a Playwright journey, in the existing set `ansible` (chosen) | R-ANS-046 | The three defects of F0 that integration missed were client behaviours; a set is cut by what it tests (CLAUDE.md) | Kind time for three journeys |
+| (b) One journey against the local repository | Less | Cheap | The remote's job and the virtual winner are the parts integration cannot show with a client |
+| (c) A new set `ansible-docs` | A leg of its own | Isolation | Sets are cut by what they test, and this is the format's |
+
+**Choice:** (a). **Rationale:** the rows are cheap beside a kind boot and are the only proof that a real client's install and the screen agree. Revisit if the leg's time matters.
+
+**Applied in the spec:** R-ANS-046.
+
 ## What this does not cover
 
 ### H-839 · A remote's signatures are passed through and not verified by trove
@@ -2185,3 +3004,43 @@ the default `local.autoClaim`), so the end-to-end set never has one name with ve
 runs with the real clients that the merged list of such a name is the union, first tier winning per version (R-ANS-022, Q-ANS-18). The kit and
 the integration area `ansiblevirtual` prove the merge; the clients' view of it, and of a conflict of digests, is not run. Live for a virtual
 repository whose local member has the claim switched off.
+
+### H-890 · The size of the documentation of a full mirror and of many local versions is not measured
+
+The rows of R-ANS-033 cost, for the largest collections of the public Galaxy, 1 to 7 MB per version (community.general 14.0.1 3.3 MB, fortinet.fortios
+2.6.0 6.5 MB of JSON; the stored `jsonb` is compressed, by how much was not measured), and a remote keeps the document as well. A mirror (R-ANS-021) with
+`fetchDocumentation` on keeps both for every version it keeps, and each version is one upstream request. Nothing bounds the total per repository, only
+the bounds per version (R-ANS-031). Live for a mirror whose patterns select large collections with many versions, and for a local repository that
+publishes a documented version often; dormant for a pull-through remote that only fills what clients ask for. The setting switches the fetch off per remote.
+
+### H-891 · Documentation fragments are not merged into the documentation of a generated entry
+
+ansible-doc merges `extends_documentation_fragment` (fragments of the same collection, of `ansible.builtin` and of other collections) into a plugin's
+options, notes and requirements. trove's generator shows the plugin's own `DOCUMENTATION` and lists the fragment names (`extendsFragments`), so a
+parameter that a plugin takes through a fragment is missing from its parameter table, and `module_utils` and `doc_fragments` files are listed without a
+page. Live for every generated entry that extends a fragment (collections with a shared connection or authentication fragment); an entry of a **remote** is not affected, its upstream merged them. The owner's `hans_fischer.common` 1.5.0 has none to show:
+its `doc_strings` are null on his galaxy_ng.
+
+### H-892 · The generator reads literals, not Python, and does not read role argument specs
+
+A `DOCUMENTATION`, `EXAMPLES` or `RETURN` that is not a module-level string literal (built by concatenation with a name, a call, an f-string, assigned inside
+a class or function, or imported from another file) is not read: the entry is listed with `has_docs` false and **no warning**, because a lexical scan cannot tell "no
+documentation" from "documentation in a form it does not understand". Roles are listed with their README only; `meta/argument_specs.yml` and `meta/main.yml` are
+not read. Live for collections that generate their documentation at build time or document roles by argument specs; the page then says the plugin has no
+documentation although the author wrote some.
+
+### H-893 · An upstream's HTML and the sanitizer policy can differ in what they keep
+
+A remote's `collection_readme.html`, `documentation_files[].html` and `readme_html` are HTML rendered by the upstream (galaxy-importer: Python-Markdown
+`extra` and a small allowlist) and are sanitized again by trove's policy (R-UI-008) before they are shown or served. Constructs the upstream kept and the policy removes
+(images from origins not on `ui.readme.external_image_origins`, which become links; `style` and `class` attributes other than `language-*`) are lost, and
+the document served at `docs-blob/` by a remote is therefore not byte-identical to the stored one. Live for any upstream README with an external image
+(the usual badge); the stored document keeps the original. reStructuredText READMEs are not rendered by anyone in this chain (Q-ANS-64).
+
+### H-894 · The wiki gate registry proves the surfaces it lists, not that it lists every surface
+
+Stage: R-ANS-037. Every surface of the format that serves documentation calls `wikiReadable`, and `TestR_ANS_037_EverySurfaceAsksTheWikiGate` walks a registry of the
+surfaces that the handlers register themselves into. A handler added later that serves documentation text (a new route, a new field of the version document, a
+search that returns a description from the documentation) and is not registered is not gated, and nothing fails. Live today for none of the routes and operations of
+the format (the list is complete as of this specification); what makes it real is a later change to the format or to the generic package operations. The gate itself,
+its levels and their enforcement are R-AUTHZ-034's and appear on [permissions.md](../../security/permissions.md).

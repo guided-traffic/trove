@@ -95,8 +95,8 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 		for _, r := range m.Reqs {
 			count[r.Priority]++
 		}
-		if len(m.Reqs) != 815 || count[prioMVP] != 548 || count[prioP1] != 226 || count[prioP2] != 41 {
-			t.Errorf("requirements: got %d (MVP %d, P1 %d, P2 %d), want 815 (548, 226, 41)",
+		if len(m.Reqs) != 834 || count[prioMVP] != 548 || count[prioP1] != 245 || count[prioP2] != 41 {
+			t.Errorf("requirements: got %d (MVP %d, P1 %d, P2 %d), want 834 (548, 245, 41)",
 				len(m.Reqs), count[prioMVP], count[prioP1], count[prioP2])
 		}
 	})

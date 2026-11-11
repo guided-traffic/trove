@@ -211,6 +211,8 @@ checked every earlier decision against them:
 | [ADR-173](#adr-173--the-registry-root-is-one-pattern-one-handler-and-one-match) | The registry root is one pattern, one handler and one match | Decided by the development agent — owner review at the walkthrough |
 | [ADR-188](#adr-188--the-oci-e2e-clients-run-privileged-in-a-namespace-of-their-own-and-the-kubelet-row-is-served-by-a-forwarder-on-the-node) | The OCI e2e clients run privileged in a namespace of their own, and the kubelet row is served by a forwarder on the node | Decided by the development agent — owner review at the walkthrough |
 | [ADR-182](#adr-182--the-oci-mirror-stores-through-the-hosts-artifact-fill-and-the-engine-counts-versions) | The OCI mirror stores through the host's artifact fill, and the engine counts versions | Decided by the development agent — owner review at the walkthrough |
+| [ADR-197](#adr-197--a-formats-documentation-is-gated-by-one-call-the-wiki-check-and-never-by-the-artifact-check) | A format's documentation is gated by one call, the wiki check, and never by the artifact check | Decided by the development agent — owner review at the walkthrough |
+| [ADR-196](#adr-196--the-host-gains-a-markup-capability-for-the-rendering-and-sanitizing-of-a-formats-documentation) | The Host gains a Markup capability for the rendering and sanitizing of a format's documentation | Decided by the development agent — owner review at the walkthrough |
 | [ADR-191](#adr-191--the-format-contract-gains-the-route-flag-for-the-galaxy-token-scheme-and-the-hub-token-exchange-is-an-optional-interface-of-the-remote-adapter) | The format contract gains the route flag for the Galaxy `Token` scheme, and the hub token exchange is an optional interface of the remote adapter | Decided by the development agent — owner review at the walkthrough |
 | [ADR-190](#adr-190--the-format-contract-gains-the-optional-interface-imagescanned-and-a-port-of-the-host-for-the-block-of-an-image-pull) | The format contract gains the optional interface `ImageScanned` and a port of the Host for the block of an image pull | Decided by the development agent — owner review at the walkthrough |
 | [ADR-189](#adr-189--the-oci-conformance-suite-and-the-protocol-criteria-run-against-replicas-of-the-whole-application) | The OCI conformance suite and the protocol criteria run against replicas of the whole application | Decided by the development agent — owner review at the walkthrough |
@@ -6578,6 +6580,47 @@ second matcher that tracks ServeMux).
 
 **Spec:** [spec/formats/oci.md](spec/formats/oci.md) R-OCI-001, R-OCI-003, R-OCI-017, R-OCI-029, Q-OCI-100, Q-OCI-101;
 [spec/architecture.md](spec/architecture.md) R-ARCH-005, Q-ARCH-390; [spec/endpoints.md](spec/endpoints.md) R-EP-006, R-EP-007, Q-EP-80.
+
+### ADR-197 · A format's documentation is gated by one call, the wiki check, and never by the artifact check
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** Task T-18 gives a repository a wiki part whose visibility is set apart from its artifacts (R-AUTHZ-034). The documentation of an Ansible collection (T-19)
+is wiki content, and so will be the documentation other formats grow. A route that answers the artifact `read` for such content would show it to a caller who may
+install but not read.
+
+**Decision.** A format lists exactly which of its routes, documents and fields are wiki content, and every one of them is served only after one call of the format
+package, `wikiReadable`, which calls the wiki check of R-AUTHZ-034; the format neither decides the levels nor imports the authorization package. The surfaces are registered
+in a registry that a test walks, so a surface added later cannot skip the call. A route that serves only wiki content passes the check's refusal on unchanged; a
+document that embeds a wiki field leaves the field out. The Ansible list is [R-ANS-037](spec/formats/ansible.md#r-ans-037--the-documentation-is-wiki-content-which-routes-documents-and-fields-the-wiki-check-gates).
+
+**Consequences.** Each format that adds documentation adds its list and a registry; the version document of a protocol stays an artifact document, so a client's
+install never depends on the wiki level. The registry proves the surfaces it lists, not that it lists all (H-894).
+
+**Alternatives considered.** The artifact `read` for documentation: leaks the wiki. A check at the dispatcher only: cannot gate a field inside a document. The format deciding levels: a second model beside T-18's.
+
+**Revisit condition:** R-AUTHZ-034 changes what it asks of a format.
+
+**Spec:** [spec/formats/ansible.md](spec/formats/ansible.md) R-ANS-037, Q-ANS-68, Q-ANS-69; [spec/authorization.md](spec/authorization.md) R-AUTHZ-034.
+
+### ADR-196 · The Host gains a Markup capability for the rendering and sanitizing of a format's documentation
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** A format package may import neither the README renderer nor an HTML library (R-ARCH-008), yet the Galaxy's `docs-blob/` document, which the format serves, holds
+HTML members, and an upstream's HTML is untrusted.
+
+**Decision.** The contract's Host gains `Markup() Markup` with `Markdown(src) (html, truncated)` and `SanitizeHTML(html) string`. The composition root implements it over
+`internal/packages/readme`, which gains `Renderer.SanitizeHTML`; the conformance kit's Host has a deterministic stand-in; a Host without a renderer returns an error-returning
+`NoMarkup`, never its input. The contract stays at its version and gains an addition only.
+
+**Consequences.** One allowlist serves every surface; no format carries an HTML parser. A test that uses the stand-in proves wiring, not the policy (H-898).
+
+**Alternatives considered.** A sanitizer inside the format: two policies. Serving Markdown only: not the Galaxy's shape. Widening `formatAllowed`: opens the rule for one package and pulls goldmark and bluemonday into every format.
+
+**Revisit condition:** a second format needs more than Markdown and HTML sanitizing.
+
+**Spec:** [spec/formats/ansible.md](spec/formats/ansible.md) R-ANS-039, Q-ANS-66; [spec/architecture.md](spec/architecture.md) R-ARCH-008.
 
 ### ADR-191 · The format contract gains the route flag for the Galaxy `Token` scheme, and the hub token exchange is an optional interface of the remote adapter
 

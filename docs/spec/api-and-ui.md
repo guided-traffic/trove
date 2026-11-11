@@ -1538,6 +1538,7 @@ remain as their owners define them.)
 | GET | `/api/v1/packages/{packageId}/versions` | Versions; filters `prerelease`, `repository`; `sort` `-publishedAt` (default), `publishedAt`, `-version`, `version` (the format's version precedence); `include=digest` (R-UI-052) | as list |
 | GET | `/api/v1/packages/{packageId}/versions/{version}` | Version details | as list |
 | GET | `/api/v1/packages/{packageId}/versions/{version}/readme` | Sanitized README HTML | as list |
+| GET | `/api/v1/packages/{packageId}/versions/{version}/docs`, `…/docs/entries/{type}/{name}`, `…/docs/files/{file}` | The documentation of a version of a format that has one (Ansible Galaxy: the tree with search, one plugin's page, a Markdown file): `getPackageVersionDocs`, `getPackageVersionDocEntry`, `getPackageVersionDocFile`, [formats/ansible.md](formats/ansible.md) R-ANS-036; wiki content (Q-API-260, Q-API-261); 404 for a format without documentation | as list, then the wiki check of R-AUTHZ-034 ([formats/ansible.md](formats/ansible.md) R-ANS-037) |
 
 - A package is identified by format plus normalized name (npm names as stored; NuGet IDs
   case-insensitive, displayed in their original casing). Version strings are percent-encoded in the
@@ -3013,7 +3014,7 @@ Priority: **MVP** · Covers: UI-009, ART-049
   the format's version rules (npm SemVer pre-release tags, NuGet SemVer 2.0 pre-release labels). An
   "All versions" tab lists versions with published time, size, repositories and downloads.
 - Tabs: README (default when the version has one, `hasReadme`; a version without one has no README
-  tab and the README is not requested, R-UI-008); Metadata (format-specific: npm dist-tags and
+  tab and the README is not requested, R-UI-008; for the format `ansible` the tabs **Documentation**, **Contents** and, on a local repository, **Import log** replace and extend it: [Q-UI-240](#q-ui-240--an-ansible-package-has-a-documentation-tab-and-a-contents-tab-the-readme-tab-is-its-first-page) to Q-UI-244, shown by `metadata.docs` of the version details); Metadata (format-specific: npm dist-tags and
   dependency kinds, NuGet target frameworks and dependency groups, authors, project URL as a text
   link with an external-link marker; the members the page reads are in Q-UI-93, among them the unlisted state; OCI the digest, media type, artifact type and
   size of the tag and the platforms of an index, Q-UI-177); Files (files of the version with size, SHA-256 copy button,
@@ -3707,6 +3708,7 @@ Priority: **MVP** · Covers: UI-031
   `listAnsibleTombstones` and `clearAnsibleTombstone` (`manage`; local only, the clearing writes the journaled event
   `ansible.tombstone.cleared`) are in `api/openapi.yaml` and answer 501 `ansible_not_implemented` until the local class builds them; the
   `ansible` member of the repository document holds `authUrl` and `clientId` for remote repositories.
+- Ansible Galaxy documentation ([formats/ansible.md](formats/ansible.md) R-ANS-033 to R-ANS-037): the three operations above, and `listAnsibleImportTasks` gains the optional query parameters `package` and `version` (the Import log tab of a version, Q-UI-240).
 - Debian (APT) repositories ([formats/debian.md](formats/debian.md) R-DEB-030, Q-DEB-100 to Q-DEB-102): a local or virtual repository
   has the tabs **Signing keys** (the keys in every state with fingerprint in groups of four, state in words, type, origin, times and
   the public certificate; **Generate a next key**, **Import a key** with a write-only secret key and passphrase, **Promote**,
@@ -4736,6 +4738,95 @@ Acceptance criteria:
 - An administrator with `identities:write` sees **Remove avatar** on the user screen of a user who has an image, after a
   confirmation the image is gone and the robot is shown; without the capability the button is not shown.
 - While the profile and the top bar are used, no request leaves trove's origin.
+
+### R-UI-060 · The Documentation tab of an Ansible collection
+Priority: **P1** · Covers: trove-only
+
+The package page (R-UI-007) of a version of the format `ansible` shows the tab **Documentation** instead of README when `metadata.docs.state` is not `none` or
+the version has a README, and makes it the default tab then. The data is that of [R-ANS-036](formats/ansible.md#r-ans-036--the-documentation-operations-of-the-screens-their-rendering-and-the-search);
+the tab is wiki content and follows the wiki check of [R-ANS-037](formats/ansible.md#r-ans-037--the-documentation-is-wiki-content-which-routes-documents-and-fields-the-wiki-check-gates).
+
+- **Layout** (Q-UI-241): two panes. Tree pane (`clamp(18rem, 30%, 26rem)`): the search field in its head ([Q-UI-243](#q-ui-243--the-search-field-filters-the-tree-through-the-server-and-keeps-the-counts)),
+  below it the tree, rows of 32 px: **Documentation** (the README, the other Markdown files as children), **Modules (n)**, **Plugins (n)** (children by type, collapsed at first with
+  their counts, opened when they hold the open page or a match) and **Roles (n)**, each group with its count as a neutral badge; an entry row shows its name, the short description
+  as the tooltip; an entry without documentation is muted and labelled "no documentation". Page pane: the open page. Under 48 rem of content width one pane shows at a time with a back action.
+- **Addressing.** The open page is the query parameter `doc` of the package URL (`README.md`, `module/<name>`, `filter/<name>`, `role/<name>`, `file/<name>`); the search text is `q`;
+  a link, a reload and the back button restore both. Changing the version or the repository resets `doc` and `q`. An unknown `doc` shows the first page and no error.
+- **Requests.** The tree is one call of `getPackageVersionDocs` per version, repeated only for a search (300 ms after the last key, at least 2 characters); a page is one call of
+  `getPackageVersionDocEntry` or `getPackageVersionDocFile`; nothing is requested for a tab that is not shown, and `include` of the version details is not used to learn the state.
+- **Pages** are R-UI-061. **States**: `pending` shows "The documentation of this version is being fetched." and a refresh action; `unavailable` shows the reason in words
+  (upstream error, too large, invalid document); `none` shows no tab. A search with no match shows "No entries match" in the pane, never an empty tree.
+
+Acceptance criteria:
+
+- The tab for `hans_fischer.common`-like data shows the groups Modules (8) and Plugins (24) with their counts, the README first, and keeps the counts while a search narrows the tree.
+- A reload of `…?doc=module/check_host_reachable&q=host` shows the same page and the same narrowed tree.
+- A version without a README and with state `none` has no Documentation tab and the page requests none of the operations.
+- Keyboard: the tree is a `role="tree"` of links; arrow keys move, Enter opens, `aria-current="page"` marks the open entry; the search field has the label "Search the documentation" and Escape clears it.
+
+### R-UI-061 · An entry page and a file page
+Priority: **P1** · Covers: trove-only
+
+An entry page (Q-UI-242) shows, in the order ansible-doc prints, a head (the full name `<ns>.<name>.<entry>` with a copy button, the short description, "added in", a `warn` badge for a
+deprecated plugin) and the sections Synopsis, Parameters, Notes, Requirements, Attributes, See also, Examples, Return values and Authors, each only when it has content. **Parameters** is the shared data
+table (no frame, hairlines) with the columns Name (with aliases), Type (and element type), Required (a text badge), Default, Choices and Description; a suboption row is indented 16 px per level
+with a "suboptions of <name>" label for the screen reader, and a parameter with suboptions is collapsible (the first level open). Defaults, choices and samples are text as written. Examples and a sample are a `<pre>` in the code block
+control of the README with a copy button, no highlighting. A role shows its README only. A page whose entry has `hasDocs` false shows the head and "This plugin has no documentation in its source." (generated) or "The upstream sent no
+documentation for this plugin." (upstream). A muted line below says where the documentation comes from ("Generated by trove from the archive, 2026-11-11 09:41" or "Taken from the upstream") and names
+the repository when the version is in more than one. A file page is the README renderer's output (R-UI-008) for a Markdown file.
+
+- **Safety.** The HTML an operation returns is bound with `[innerHTML]` as the README component binds it (Angular's sanitizer and Trusted Types stay on); **every other value of an entry is bound as text**, so a
+  hostile default or sample cannot become markup. The lint rule that forbids `bypassSecurityTrust*` (R-UI-046) covers the new components.
+
+Acceptance criteria:
+
+- A module whose parameters nest three levels deep renders three indented levels; a parameter named `<img src=x onerror=1>` appears as that text.
+- An entry with `hasDocs` false shows the head and the line, no empty sections.
+- A role page shows the README HTML and no Parameters section.
+
+### R-UI-062 · The Contents tab
+Priority: **P1** · Covers: trove-only
+
+The tab **Contents** (shown with the Documentation tab, with the count as a neutral badge) is the flat list of what the version contains: a data table with the columns Name, Type and Short description, a type
+filter (a select of the types present with their counts), sorted by type then name, one request (the tree of `getPackageVersionDocs`, shared with the Documentation tab so the two never disagree). A row whose entry has documentation links to
+`?tab=documentation&doc=<type>/<name>`; one without is plain text. A version with 5,000 entries (the bound) shows the list in pages of 100 with "Load more".
+
+Acceptance criteria:
+
+- The table lists the 32 entries of the owner's collection with their types; selecting `module` shows 8 and the badge on the tab stays 32.
+- A row with documentation opens the entry in the Documentation tab.
+
+### R-UI-063 · The Import log tab and the other tabs of the reference
+Priority: **P1** · Covers: trove-only
+
+The tab **Import log** is shown on a version held by a **local** repository (not for a remote or a virtual repository's remote member): the import task of that version, newest first, through `listAnsibleImportTasks` with the optional query
+parameters `package` and `version` (Q-API-262), state as a badge, the time, and the messages as text (level, message); the warnings of the generator (R-ANS-034) are among them. It is readable by whoever reads the repository, as the task is (R-ANS-009), and is
+**not** wiki content.
+
+The other tabs and facts the reference shows are the page's existing ones; nothing is duplicated (Q-UI-240, Q-UI-245):
+
+| Reference | trove | Where |
+|---|---|---|
+| Install: description, license, install command, download, Requires Ansible | The install panel (the command of R-API-030 with the real address), the Metadata tab (description, **Requires Ansible**, licenses, tags), the Files tab (the archive with its SHA-256 and download) | R-UI-007, R-ANS-026 |
+| Dependencies | A **Dependencies** section of the Metadata tab: the collections the version needs with their ranges, each a link to that package's page when the installation holds it (muted text otherwise) | Q-UI-245 |
+| Distributions | The **Repositories** tab (the repositories that hold the version) | R-UI-007 |
+| Docs site, Website, Issue tracker, Repo | The links of the Metadata tab: "Docs site" (`documentationUrl`, so named for this format), "Homepage", "Issue tracker" and "Source repository", shown as text links with the external-link marker and only for `http` and `https` | Q-UI-245 |
+| Contents, Import log, Documentation | New tabs: R-UI-062, this requirement, R-UI-060 | |
+
+Acceptance criteria:
+
+- A local version shows its import task with the warning of a documentation bound; the same version through a virtual repository over it shows the task of its target, and a remote version has no Import log tab.
+- A version with `dependencies` shows the Dependencies section with a link for a collection the installation holds; a link with another scheme than `http` or `https` is not rendered as a link.
+
+### R-UI-064 · States, the wiki check, responsiveness and tests of the documentation screens
+Priority: **P1** · Covers: trove-only
+
+- **The wiki check.** `metadata.docs` absent means no Documentation and no Contents tab and no request (Q-UI-244); a 404 or a refusal of an operation removes the tab without a message. The Import log and the other tabs are unaffected.
+- **Responsiveness.** At 390 px the tree and the page are one pane at a time; at 1440 px both; the parameter table scrolls horizontally inside its region, never the page.
+- **Accessibility and style.** Controls are the GitLab-style controls of Q-UI-126 (the tab group, the data table, the text input, the badges), the tree follows R-UI-007's keyboard rules, colours are the tokens of the design language (green only for positive status).
+- **Tests.** Web unit tests: the tab choice from `metadata.docs` and `hasReadme`, the tree grouping and counts, the search debounce, minimum length, live region and empty state, the entry sections, text-only binding of hostile values, keyboard, the narrow layout. Browser journeys named in R-ANS-046 (local, remote, virtual, wiki), each asserting the first page's content.
+
+Acceptance criteria: the tests above exist and run in `make web-test`; the journeys run in the e2e set `ansible`; `make web-lint` is green.
 
 ### R-UI-065 · One read-only address field with a joined copy button for every client address
 Priority: **MVP** · Covers: trove-only
@@ -9882,6 +9973,197 @@ Context and options are those of [Q-OPS-208](operations-and-observability.md#q-o
 **Rationale:** the document is the one place that already says, per operation, who may call it (R-API-008), so what stays callable in maintenance belongs next to it. The development agent would revisit the single value if an operation needs "allowed for administrators only".
 
 **Applied in the spec:** R-API-008 (declarations), R-API-037 (the two rows of the settings index now exist). Code: [document.go](../../internal/api/v1/document.go). Tests: `TestR_OPS_024_MaintenanceDeclarationIsValidated`, `TestR_OPS_024_OperationsAllowedInMaintenanceMode`.
+
+### Q-UI-240 · An Ansible package has a Documentation tab and a Contents tab; the README tab is its first page
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: task T-19. The owner's galaxy_ng shows, per collection version: Install (description, license, install command, download, requires Ansible), Documentation (search and tree), Contents, Import log, Dependencies, Distributions, and the links Docs site, Website, Issue tracker, Repo. trove's package page (R-UI-007) already has an install panel, a Metadata tab (authors, license, `requires_ansible`, dependencies, links), Files, Repositories and All versions.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) For the format `ansible`: tabs **Documentation** (replaces README), **Contents**, Metadata, Files, Repositories, All versions, and **Import log** on a local repository (chosen) | Install = the install panel, Dependencies = a section of Metadata with links to the packages, Distributions = the Repositories tab, the links = the Metadata tab | Nothing exists twice; the page keeps the layout of the other formats; the new tabs are exactly what trove lacks | Dependencies is not a tab of its own, which the reference has |
+| (b) Mirror the reference's tab names one by one | Install, Documentation, Contents, Import log, Dependencies, Distributions | Familiar | An Install tab duplicates the sticky install panel; Distributions duplicates Repositories; the layout of R-UI-007 is a decision of the owner (Q-UI-3) |
+| (c) Documentation only | No Contents tab | Smaller | The flat list "what is in this collection" is one click in the reference and cheap here (the tree's data) |
+
+**Choice:** (a). **Rationale:** the tabs of the reference that hold information trove does not show yet are Documentation, Contents and the Import log; the rest are shown already, by the
+install panel, the Metadata tab and the Repositories tab. **Documentation** is shown when `metadata.docs.state` is not `none` or the version has a README, and is the default tab
+then (as README is elsewhere); its first page is the README. **Contents** is a data table (name, type, short description, a link to the page where `hasDocs`), a type filter, and
+the count in its tab as a neutral badge; shown with the Documentation tab. **Import log** (local only) lists the import task of this version through `listAnsibleImportTasks`, extended by the optional query
+parameters `package` and `version` (the tasks are readable by whoever reads the repository, R-ANS-009), newest first, state as a badge and the messages as text. All tabs are `<trove-tab-group>`
+lazy tabs in GitLab's strip (design-language.md, Controls). A `404` of the documentation operations removes the tab without an error message (Q-UI-244). Dependencies is a section of the Metadata tab and the links of the reference are its links ([Q-UI-245](#q-ui-245--dependencies-and-the-links-of-the-reference-are-sections-of-the-metadata-tab-not-tabs-the-documentation-link-is-called-docs-site)). Revisit at the walkthrough.
+
+**Applied in the spec:** R-UI-007 (the tab list for the format), R-UI-060 to R-UI-064, [R-ANS-026](formats/ansible.md#r-ans-026--package-screens-and-the-deploy-dialog), [R-ANS-036](formats/ansible.md#r-ans-036--the-documentation-operations-of-the-screens-their-rendering-and-the-search).
+
+### Q-UI-241 · The Documentation tab is the file browser's two panes: a tree with a search field, and the page
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Two panes as the file browser (Q-UI-98): the tree pane (`clamp(18rem, 30%, 26rem)`) with the search field in its head, the page pane taking the rest (chosen) | The pattern of design-language.md "two panes" | Already built, specified and in the GitLab style (the wiki sidebar has this shape); each pane scrolls on its own; narrow widths show one pane with a back button | A tab inside a page that has its own two columns (tabs left, install panel right, R-UI-007): the content column is narrower |
+| (b) A tree above the page | One column | Simple | The page scrolls away from the tree on long module pages |
+| (c) A separate route for the documentation | `/packages/ansible/<name>/docs` | Full width | The page leaves the package page; the version selector and the install panel are lost |
+
+**Choice:** (a). **Rationale:** the pattern exists and the owner chose it for hierarchies (design-language.md). The tree's rows are 32 px: the first row is **Documentation** (the README, the other
+Markdown files below it as children), then the groups **Modules (8)**, **Plugins (24)** (children by type, each type collapsed at first with its count, expanded when it holds the current page or a search match) and **Roles (n)**, as the reference's
+tree is, each group with its count as a neutral badge; an entry is a row with its name (the short description as the tooltip); an entry with `hasDocs` false is muted and labelled "no documentation". The selected row is
+`--trove-accent-container`. The page is addressed by the query parameter `doc` of the package URL (`doc=README.md`, `doc=module/check_host_reachable`, `doc=file/install.md`), so a link, reload and back button work, and the tree follows it.
+Under 48 rem of content width one pane shows at a time. The tree is a `role="tree"` of links (`aria-current="page"` on the open one), reachable by keyboard; it takes the width of the content container query, not of the viewport (the package
+page is two columns from 960 px). Revisit if the owner finds the tab too narrow beside the install panel (then the install panel moves above the tabs for this tab).
+
+**Applied in the spec:** R-UI-007, [R-ANS-036](formats/ansible.md#r-ans-036--the-documentation-operations-of-the-screens-their-rendering-and-the-search).
+
+### Q-UI-242 · An entry page shows the plugin's documentation in the order ansible-doc prints it, from the structured answer
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A page head (full name with a copy button, short description, "added in", a deprecation notice), then the sections Synopsis, Parameters, Notes, Requirements, Attributes, See also, Examples, Return values, Authors, each only when it has content (chosen) | The structure of the answer of R-ANS-036 | Familiar to anyone who has read ansible-doc; a section appears only with content; prose is the server's sanitized HTML | A table with nested rows for suboptions is wide |
+| (b) The raw `doc_strings` as formatted JSON | Whatever came | Trivial | Not documentation |
+| (c) Tabs inside the page (Parameters, Examples, Return) | Fewer scrolls | Compact | A page of 59 KB (nmcli) in four tabs hides what the search matched |
+
+**Choice:** (a). **Rationale:** Parameters is the shared data table (no frame, hairlines): the columns are Name (with `aliases`), Type (and `elements`), Required (a text badge), Default, Choices and Description; a suboption row is
+indented by its depth (16 px per level, a "suboptions of <name>" label for the screen reader) and a parameter with suboptions is collapsible with a chevron (open for the first level). Defaults, choices and samples are
+text (typed JSON shown as written, a boolean as `true`/`false`). Examples and a sample are a `<pre>` in the same code block control as the README's, scrolling horizontally, with a copy button; there is no highlighting. A deprecated plugin
+shows a `warn` badge. A role shows its README only. A page whose entry has `hasDocs` false shows the head and the line "This plugin has no documentation in its source." (generated) or "The upstream sent no documentation for this plugin." (upstream).
+Below the page, one muted line says where the documentation comes from ("Generated by trove from the archive, 2026-11-11 09:41" or "Taken from the upstream") and names the repository when the version is in more than one. States: `pending`
+("The documentation of this version is being fetched.", with a refresh action), `unavailable` (the reason in words), `none` (no tab). Revisit at the walkthrough.
+
+**Applied in the spec:** [R-ANS-036](formats/ansible.md#r-ans-036--the-documentation-operations-of-the-screens-their-rendering-and-the-search).
+
+### Q-UI-243 · The search field filters the tree through the server and keeps the counts
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The field in the tree pane head sends `q` to `getPackageVersionDocs` after 300 ms of silence and at least 2 characters; the tree shows the matching entries, the groups keep their counts and the head says "5 of 32" (chosen) | R-ANS-036 | Matches descriptions and parameter names the tree does not carry; one matching implementation; the counts of the reference's tree do not jump | A request per search |
+| (b) Filter the loaded tree in the browser by name | No request | Instant | Names only; a second matching rule |
+| (c) A search page | Results as a list | Room for snippets | Leaves the tab |
+
+**Choice:** (a). **Rationale:** the search "inside the documentation" has to find a parameter by what it does, which only the server has. The field is a `text-input` with a search icon and an `aria-label` "Search the documentation"; Escape clears it; the
+matches are a live region ("5 of 32 entries"); a search with no match shows "No entries match" in the pane, not an empty tree; the open page stays open while one searches; the query is the URL parameter `q`. Groups with no match are
+hidden, groups with matches are expanded. Matching text is not highlighted on the page (no client-side matching). Revisit if the owner wants snippets.
+
+**Applied in the spec:** [R-ANS-036](formats/ansible.md#r-ans-036--the-documentation-operations-of-the-screens-their-rendering-and-the-search).
+
+### Q-UI-244 · The tab follows the wiki check: absent, not forbidden
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `metadata.docs` is absent for a caller who may not read the wiki; the Documentation and Contents tabs are then not shown and no request for them is made; a 404 from an operation removes the tab and says nothing (chosen) | R-ANS-037 | Existence is not revealed (R-API-029); the UI needs no knowledge of T-18's levels | A person who is allowed to read artifacts but not the wiki is not told why the tab is missing |
+| (b) Show the tab with "You may not read this wiki" | Explicit | Honest to the viewer | Reveals that documentation exists to a caller who may not know it does |
+
+**Choice:** (a). **Rationale:** the seam is one function on the server (R-ANS-037); the client asks nothing about levels. T-18 may decide to show a notice (then this decision is revisited with its model). The README tab of other
+formats is unaffected.
+
+**Applied in the spec:** [R-ANS-037](formats/ansible.md#r-ans-037--the-documentation-is-wiki-content-which-routes-documents-and-fields-the-wiki-check-gates), R-UI-007.
+
+### Q-UI-245 · Dependencies and the links of the reference are sections of the Metadata tab, not tabs; the documentation link is called "Docs site"
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Verified in this repository: the Metadata tab shows `Requires Ansible`, licences and tags for the format (`ansibleFacts`, `package-detail.ts`), the generic links (Homepage, Documentation, Source
+repository, Issue tracker, from `homepage`, `documentationUrl`, `repositoryUrl`, `bugsUrl` that the view adapter sends) and the dependencies member; the Repositories tab lists the repositories of a version.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Dependencies: a section of the Metadata tab whose entries link to the package page when the installation holds the collection; the `documentationUrl` link is labelled "Docs site" for this format; Distributions is the Repositories tab (chosen) | R-UI-063 | Nothing exists twice; the page keeps the layout of the other formats (Q-UI-3); the link label no longer collides with the new Documentation tab | A tab the reference has is not there |
+| (b) A Dependencies tab of its own | Six reference tabs one by one | Familiar | A tab for a list of at most a few entries; the Metadata tab holds the same data today |
+| (c) Leave the label "Documentation" | No change | Nothing to do | Two things named Documentation on one page, one a tab and one a link out |
+
+**Choice:** (a). **Rationale:** the question the first draft left to the owner is decided: the data already exists on the page, a tab would only move it. Revisit at the walkthrough if the owner wants
+the tab.
+
+**Applied in the spec:** R-UI-063, [Q-UI-240](#q-ui-240--an-ansible-package-has-a-documentation-tab-and-a-contents-tab-the-readme-tab-is-its-first-page).
+
+### Q-UI-246 · The Documentation tab keeps its place in the URL and resets with the version
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `tab=documentation`, `doc=<type>/<name>` and `q` are query parameters; a change of version or repository drops `doc` and `q` (chosen) | R-UI-060 | A page is linkable and survives reload and back; no stale page from another version | A person comparing two versions starts at the README each time |
+| (b) Keep `doc` across versions | The same module page of the next version | Comparison | The entry may not exist in the other version; an error state to design |
+| (c) State in memory only | No URL parameters | Simple | Not linkable; reload loses the page |
+
+**Choice:** (a). **Rationale:** consistent with `version`, `tab` and `prerelease`, which are already URL state (R-UI-007). Revisit if comparing versions is asked for.
+
+**Applied in the spec:** R-UI-060.
+
+### Q-UI-247 · The Contents tab shares the tree's request and lists in pages of 100
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The Contents table and the tree read the same `getPackageVersionDocs` answer and the table pages client-side in 100s (chosen) | R-UI-062 | One request; the two tabs cannot disagree; the answer is already bounded at 5,000 entries and about 1 MB | Up to 5,000 rows held in the page, shown 100 at a time |
+| (b) A list operation with cursor paging | `listAnsiblePackageContents` | Server paging | A fourth operation and a second query for data the tree has |
+| (c) No Contents tab | The tree is the list | Smaller | The flat view with types and descriptions of the reference is not there |
+
+**Choice:** (a). **Rationale:** the tree carries only names, types and short descriptions (about 100 bytes per entry). Revisit if the bound is raised.
+
+**Applied in the spec:** R-UI-062.
+
+### Q-API-260 · The documentation operations are declared wiki content in the OpenAPI document; the marker follows R-AUTHZ-034
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `x-trove-part: wiki` on the three operations, read into `Operation.Part` by the document validator (the analogue of `x-trove-maintenance`, Q-API-246); where T-18's check runs before the handler it reads this marker, and the handler's call is the second layer (chosen) | R-ANS-037 | One declarative place; the generated document and a test can list every wiki operation | The name is a placeholder until R-AUTHZ-034 fixes its own marker; the development agent aligns them when the two plans merge |
+| (b) Only the call in the handler | No marker | Nothing to align | A test cannot list the wiki operations from the document; the gate is invisible in the API description |
+| (c) A path convention (`/wiki/` in the path) | Visible in the URL | Obvious | The operations sit under the generic package path (Q-ANS-63) |
+
+**Choice:** (a). **Rationale:** the declaration is cheap and makes the seam checkable. Revisit with R-AUTHZ-034's wording.
+
+**Applied in the spec:** R-ANS-036, R-ANS-037; [R-API-029](#r-api-029--packages-versions-and-readme).
+
+### Q-API-261 · The operations take a package and a version and an optional `repository`; the entry and the file are path parameters
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `GET /packages/{packageId}/versions/{version}/docs`, `…/docs/entries/{type}/{name}`, `…/docs/files/{file}`, with `repository` (`<project>/<repo>`) and, for the tree, `q`; `type` is the content type, `name` the content name (letters, digits, `_`, `.`), `file` one path segment percent-encoded (chosen) | R-ANS-036 | The screen already holds the ids; the entry URL is stable and linkable; no cursor needed | The files are addressed by name, so two files of one name cannot exist (they cannot: one directory) |
+| (b) Entry id in the query | `?entry=module/x` | One path | Cache keys and logs show the same path for every entry |
+| (c) Under the repository (`/projects/.../ansible/...`) | Next to `listAnsibleImportTasks` | Fits the management operations of the format | The package screen is cross-repository and would have to pick the repository first (Q-ANS-63) |
+
+**Choice:** (a). **Rationale:** same as Q-ANS-63; a `type` or `name` that does not match its grammar is 404 (it names no entry), a `q` below 2 characters is 422 `invalid_query`. Answers carry a strong `ETag` over the stored row's version (`built_at` and `generator`) or, for a file, the README rule (R-API-029), and `Cache-Control: no-store` as the README answer.
+
+**Applied in the spec:** R-ANS-036; [R-API-029](#r-api-029--packages-versions-and-readme).
+
+### Q-API-262 · `listAnsibleImportTasks` gains the optional filters `package` and `version`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The existing operation takes `package` (`<ns>.<name>`) and `version` as filters beside `state` (chosen) | R-UI-063 | The Import log tab of one version is one request; no new operation | The operation is under the repository, so the tab names the repository first |
+| (b) A task operation under the package | New path | Fits the screen | A second operation for the same rows |
+| (c) The tab filters in the browser | No change | None | Pages through every task of the repository to find one |
+
+**Choice:** (a). **Rationale:** the rows are indexed by repository, then time; filtering by name and version is a predicate on a bounded list (the sweep keeps 30 days). An unknown `package` or `version` yields an empty page.
+
+**Applied in the spec:** R-UI-063, [Q-UI-240](#q-ui-240--an-ansible-package-has-a-documentation-tab-and-a-contents-tab-the-readme-tab-is-its-first-page).
+
+### Q-API-263 · The `metadata.docs` member of the version details announces the documentation, and is absent for a caller who may not read the wiki
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `metadata.docs = {state, source, entries}` for the format `ansible`, built by the view adapter; absent when the wiki check says no (chosen) | R-ANS-036, R-ANS-037 | The page picks its tabs from the details it already reads; no probing request; existence is not revealed | The view adapter asks the wiki check per version of a page of details |
+| (b) The UI probes `getPackageVersionDocs` | One more request per page | No details change | A request and a 404 per version view; the tab flickers |
+| (c) A field outside `metadata` | New schema member | Typed | A generic schema change for one format |
+
+**Choice:** (a). **Rationale:** `metadata` is the format-specific member by design (R-API-029). The adapter's cost is one indexed read of `ansible_version_docs` per version of the page (batched with `ViewDetails`), and the wiki check is asked once per repository of the page, not per version.
+
+**Applied in the spec:** R-ANS-036, R-ANS-037, R-UI-060.
 
 ## What this does not cover
 

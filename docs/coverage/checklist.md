@@ -9,14 +9,14 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 620 of 815 spec requirements are implemented: a passing test names them and no
+**Status.** 620 of 834 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
 **Totals.** 2,239 catalog features on 60 pages: 787 specified (521 of them implemented), 1,452 open.
-815 spec requirements: 632 cover catalog features, 183 cover none (`trove-only`, [listed at the
+834 spec requirements: 632 cover catalog features, 202 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
 ## Pages
@@ -2969,7 +2969,7 @@ Requirements whose `Covers:` line says `trove-only`: trove's own design work tha
 catalog feature measures. They count toward the requirement total, not toward any share.
 
 <details>
-<summary>183 requirements</summary>
+<summary>202 requirements</summary>
 
 | Requirement | Title | Priority | Spec page |
 |---|---|---|---|
@@ -2999,6 +2999,11 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-UI-046 (implemented) | State management with signals | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-047 (implemented) | Testing | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-051 (implemented) | Avatar upload | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-060 | The Documentation tab of an Ansible collection | P1 | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-061 | An entry page and a file page | P1 | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-062 | The Contents tab | P1 | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-063 | The Import log tab and the other tabs of the reference | P1 | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-064 | States, the wiki check, responsiveness and tests of the documentation screens | P1 | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-065 | One read-only address field with a joined copy button for every client address | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-066 | The screens that show a client address use the address field | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-ARCH-003 (implemented) | Go module and package layout | MVP | [architecture.md](../spec/architecture.md) |
@@ -3070,6 +3075,20 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-ANS-030 | Audit events and metrics | P1 | [formats/ansible.md](../spec/formats/ansible.md) |
 | R-ANS-031 | Limits for untrusted content | P1 | [formats/ansible.md](../spec/formats/ansible.md) |
 | R-ANS-032 | Test suites | P1 | [formats/ansible.md](../spec/formats/ansible.md) |
+| R-ANS-033 | The documentation of a collection version: what trove keeps, per class | P1 | [formats/ansible.md](../spec/formats/ansible.md) |
+| R-ANS-034 | Generating the documentation of a local publish | P1 | [formats/ansible.md](../spec/formats/ansible.md) |
+| R-ANS-035 | The documentation as a protocol document, per class | P1 | [formats/ansible.md](../spec/formats/ansible.md) |
+| R-ANS-036 | The documentation operations of the screens, their rendering and the search | P1 | [formats/ansible.md](../spec/formats/ansible.md) |
+| R-ANS-037 | The documentation is wiki content: which routes, documents and fields the wiki check gates | P1 | [formats/ansible.md](../spec/formats/ansible.md) |
+| R-ANS-038 | Tests of the documentation: unit and integration | P1 | [formats/ansible.md](../spec/formats/ansible.md) |
+| R-ANS-039 | Rendering and sanitizing: Markdown, HTML and the Ansible markup | P1 | [formats/ansible.md](../spec/formats/ansible.md) |
+| R-ANS-040 | A mirror keeps the documentation of the versions it keeps | P1 | [formats/ansible.md](../spec/formats/ansible.md) |
+| R-ANS-041 | A virtual repository shows the winner's documentation | P1 | [formats/ansible.md](../spec/formats/ansible.md) |
+| R-ANS-042 | The job that fetches a remote's documentation | P1 | [formats/ansible.md](../spec/formats/ansible.md) |
+| R-ANS-043 | Storage and bounds of the documentation | P1 | [formats/ansible.md](../spec/formats/ansible.md) |
+| R-ANS-044 | Reindex, restore and the generator version | P1 | [formats/ansible.md](../spec/formats/ansible.md) |
+| R-ANS-045 | Metrics and audit of the documentation | P1 | [formats/ansible.md](../spec/formats/ansible.md) |
+| R-ANS-046 | End-to-end rows per class | P1 | [formats/ansible.md](../spec/formats/ansible.md) |
 | R-DEB-004 (implemented) | Permissions per operation | P2 | [formats/debian.md](../spec/formats/debian.md) |
 | R-DEB-005 | Errors and response headers | P2 | [formats/debian.md](../spec/formats/debian.md) |
 | R-DEB-024 (implemented) | Mirror settings of a Debian remote | P2 | [formats/debian.md](../spec/formats/debian.md) |
