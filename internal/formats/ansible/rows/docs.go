@@ -74,6 +74,8 @@ type DocSet struct {
 	Truncated bool
 	// Warnings are at most [MaxDocWarnings].
 	Warnings []DocWarning
+	// MoreWarnings counts the warnings left out beyond [MaxDocWarnings]; the import task reports them in one last message.
+	MoreWarnings int
 }
 
 // DocFile is the README or a Markdown file of docs/. Format is [DocFormatMarkdown] for a generated set and [DocFormatHTML] for an
