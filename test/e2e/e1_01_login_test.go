@@ -199,6 +199,9 @@ func TestE1_01Login(t *testing.T) {
 		}
 		t.Cleanup(restore)
 		kn(t, "set", "env", "deployment/trove-api", "TROVE_AUTH_BREAK_GLASS_ENABLED=false")
+		// Right after `set env` the old pods are still the ready ones, so the settled check alone passes before the
+		// rollout has replaced a single pod (access-long of Test and Release 43007020170: all nine attempts 204).
+		kn(t, "rollout", "status", "deployment/trove-api", "--timeout=5m")
 		waitServingSettled(t)
 
 		fresh := newBrowser(t)
