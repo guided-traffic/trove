@@ -190,7 +190,7 @@ jobs:
       - name: Install the Docker Compose plugin (the integration stack)
         run: |
           set -euo pipefail
-          docker compose version >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y docker-compose-v2; }
+          docker compose version >/dev/null 2>&1 || { sudo apt-get update || echo "::warning::apt-get update could not read every package index; installing from the indexes it read"; sudo apt-get install -y docker-compose-v2; }
           docker compose version
 
       - name: Log in to Docker Hub (stack image pulls)
@@ -263,7 +263,7 @@ jobs:
       - name: Install the Docker Compose plugin (the integration stack)
         run: |
           set -euo pipefail
-          docker compose version >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y docker-compose-v2; }
+          docker compose version >/dev/null 2>&1 || { sudo apt-get update || echo "::warning::apt-get update could not read every package index; installing from the indexes it read"; sudo apt-get install -y docker-compose-v2; }
           docker compose version
 
       - name: Log in to Docker Hub (stack image pulls)
@@ -560,7 +560,7 @@ jobs:
         run: |
           set -euo pipefail
           # Node.js 26 links libatomic.so.1, which the runner image does not ship (Q-ARCH-218).
-          sudo apt-get update
+          sudo apt-get update || echo "::warning::apt-get update could not read every package index; installing from the indexes it read"
           sudo apt-get install -y libatomic1
 
       - name: Set up Node.js (the Playwright journeys)

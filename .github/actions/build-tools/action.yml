@@ -29,5 +29,10 @@ runs:
           exit 0
         fi
         echo "installing ${missing[*]}"
-        sudo apt-get update
+        # A source the runner image adds besides the Ubuntu archive (a PPA) that cannot be read makes apt-get update exit 100
+        # although the archive's indexes were read (Release Tooling of Test and Release 43063590899: a Launchpad PPA answered
+        # 503). The install below still has to succeed from the indexes that were read.
+        if ! sudo apt-get update; then
+          echo "::warning::apt-get update could not read every package index; installing from the indexes it read"
+        fi
         sudo apt-get install -y "${missing[@]}"
