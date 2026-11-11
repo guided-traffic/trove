@@ -420,7 +420,9 @@ R-UI-006 to R-UI-009, R-UI-016 and R-UI-017 against the contract of R-API-029 an
 ([packages.md](packages.md)); the component specs run against the generated types and the fakes of
 [fakes-packages.ts](../../web/src/app/api/testing/fakes-packages.ts), and the Playwright journeys against the real server. The clients are the
 format's own ids (`npm`, `pnpm`, `yarn`, `yarn-classic`, Q-UI-77; `curl` for generic, R-GENERIC-016). The setup fake answers the npm repositories with
-npm's snippets and `generic-local` with curl's.
+npm's snippets, `generic-local` with curl's, the NuGet and OCI repositories with theirs and `ansible-local` (`ANSIBLE_REPOSITORIES`, the repository of `ansibleFixture`) with
+the `ansible-galaxy` snippets of [setup.go](../../internal/formats/ansible/setup.go), so the install panel of an Ansible package opens without an error notice and the specs
+look for an alert anywhere on the page.
 
 OCI (R-OCI-030, R-OCI-031, Q-UI-177, Q-UI-178): the clients are `docker` and `podman` in [clients.ts](../../web/src/app/features/setup/clients.ts) with an
 explanation for each snippet id the API derives from the template ids of [setup.go](../../internal/formats/oci/setup.go) (`<client>.<section>[.<name>]`, Q-API-160: `docker.configure.shell`, `docker.configure.kubernetes`, `docker.publish.buildx`); the setup fake renders the same snippets (`ociSetup` in `fakes-packages.ts`,

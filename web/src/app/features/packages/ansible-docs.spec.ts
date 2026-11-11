@@ -107,7 +107,7 @@ describe('The Documentation tab of an Ansible collection', () => {
     it('R-UI-060 R-UI-064 a 404 of the tree removes the Documentation and Contents tabs without a message', async () => {
       const r = await open({}, (fake) => fake.docFixtures.clear());
       expect(tabLabels(r)).toEqual(['Metadata', 'Files', 'Repositories', 'All versions', 'Import log']);
-      expect(r.root.querySelector('.pkg-tabs [role="alert"]')).toBeNull();
+      expect(r.root.querySelector('[role="alert"]')).toBeNull();
     });
 
     it('R-UI-060 the install panel stays above the tabs while Documentation or Contents is open, and beside them for the others', async () => {
@@ -175,7 +175,7 @@ describe('The Documentation tab of an Ansible collection', () => {
     it('R-UI-060 an unknown doc shows the first page and no error', async () => {
       const r = await open({ doc: 'module/does_not_exist' });
       expect(label(current(r)!)).toBe('hans_fischer.common');
-      expect(r.root.querySelector('.pkg-tabs [role="alert"]')).toBeNull();
+      expect(r.root.querySelector('[role="alert"]')).toBeNull();
       expect(r.fake.docCalls).not.toContain('entry:module/does_not_exist');
     });
 

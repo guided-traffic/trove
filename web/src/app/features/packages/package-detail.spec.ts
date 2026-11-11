@@ -518,6 +518,13 @@ describe('Package details', () => {
       await expectAccessible(r.root);
     });
 
+    it('R-ANS-025 the install panel shows the collection install command of the selected version, and no error notice', async () => {
+      const r = await collection();
+      expect(r.root.querySelector('trove-install-panel pre')?.textContent).toBe('ansible-galaxy collection install acme.tools:1.2.0');
+      expect(r.root.querySelector('[role="alert"]')).toBeNull();
+      expect(r.root.querySelector('trove-error-notice')).toBeNull();
+    });
+
     it('R-ANS-026 the metadata lists the Ansible versions it needs, the licences and tags of the generic fields, the dependencies on other collections, the authors and the links', async () => {
       const r = await collection({ tab: 'metadata' });
       expect(facts(r)).toEqual({ 'Requires Ansible': '>=2.15.0', License: 'Apache-2.0, MIT', Tags: 'tools, linux' });

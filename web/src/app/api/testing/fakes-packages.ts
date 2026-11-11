@@ -71,6 +71,11 @@ export const NUGET_REPOSITORIES: readonly Repository[] = [
   { key: 'nuget-all', project: 'web', class: 'virtual', format: 'nuget', description: 'Everything for NuGet clients' },
 ];
 
+/** The Ansible repository of the fakes: the one the package of {@link ansibleFixture} is in. */
+export const ANSIBLE_REPOSITORIES: readonly Repository[] = [
+  { key: 'ansible-local', project: 'web', class: 'local', format: 'ansible', description: 'Internal collections' },
+];
+
 interface FakeVersion extends PackageVersion {
   readme: PackageReadme | null;
 }
@@ -659,6 +664,11 @@ export class FakeClientSetupApi extends ClientSetupApi {
       const mayPublish = !this.readOnly.has(repository) && !this.noTarget.has(repository);
       return ociSetup(oci, query, mayPublish, this.ttl);
     }
+    const ansible = ANSIBLE_REPOSITORIES.find((r) => refOf(r) === repository);
+    if (ansible) {
+      const mayPublish = !this.readOnly.has(repository) && !this.noTarget.has(repository);
+      return ansibleSetup(ansible, query, mayPublish, this.ttl);
+    }
     const repo = NPM_REPOSITORIES.find((r) => refOf(r) === repository);
     if (!repo) throw notFound();
     const credentials = query.credentials ?? 'placeholder';
@@ -849,6 +859,97 @@ function nugetSetup(repo: Repository, query: ClientSetupQuery, mayPublish: boole
     credentials,
     registryUrl,
     endpointPath: source.replace(/^https?:/, ''),
+    username: credentials === 'none' ? null : 'alice',
+    publishTarget: target,
+    tokenTtlSeconds: ttl,
+    snippets,
+  };
+}
+
+/**
+ * The Ansible snippets as the server renders them (internal/formats/ansible/setup.go, R-ANS-025; the ids are
+ * `<client>.<section>[.<name>]` and `snippet-ids.fixture.ts` pins them against the Go side). The server is named `trove` in an
+ * `ansible.cfg` that holds no token, the token is the environment variable `ANSIBLE_GALAXY_SERVER_TROVE_TOKEN` in the spelling of each
+ * shell, and a `~/.netrc` line is a command that names the host alone. The credential reference is rewritten by the mode of the request
+ * the way the API does (`applyCredentials` of internal/api/v1/setup_snippets.go): the placeholder, the variable, or the line dropped.
+ * `PowerShell` and `cmd` are reported as `shell`, the one language the document knows for them (Q-API-191).
+ */
+function ansibleSetup(repo: Repository, query: ClientSetupQuery, mayPublish: boolean, ttl: number): ClientSetup {
+  if (query.client !== 'ansible-galaxy') {
+    throw new ApiError(400, { code: 'malformed_request', detail: 'unknown client' }, null);
+  }
+  const credentials = query.credentials ?? 'placeholder';
+  const registryUrl = `${BASE}/api/ansible/${refOf(repo)}/`;
+  const host = new URL(BASE).hostname;
+  const target = mayPublish ? refOf(repo) : null;
+  const auth = credentials !== 'none';
+  const sh = '${TROVE_TOKEN}';
+  const cmd = '%TROVE_TOKEN%';
+  const ps = '$env:TROVE_TOKEN';
+  const variable = 'ANSIBLE_GALAXY_SERVER_TROVE_TOKEN';
+  const anonymous = 'This repository is open to anonymous readers: no credential is needed to install from it.';
+  const credential = (content: string): string => {
+    if (credentials === 'env') return content;
+    if (credentials === 'none') {
+      return content
+        .split(/(?<=\n)/)
+        .filter((line) => ![sh, cmd, ps].some((ref) => line.includes(ref)))
+        .join('');
+    }
+    return content.split(sh).join('{{token}}').split(cmd).join('{{token}}').split(ps).join('{{token}}');
+  };
+  const pkg = query.package ? shellQuote(query.package) : null;
+  const snippets: ClientSnippet[] = [];
+  const add = (id: string, tab: ClientSnippet['tab'], language: ClientSnippet['language'], content: string, fileName: string | null = null): void => {
+    snippets.push({ id, tab, fileName, language, content: credential(content) });
+  };
+  add('ansible-galaxy.configure.ansible-cfg', 'configure', 'ini', `[galaxy]\nserver_list = trove\n\n[galaxy_server.trove]\nurl=${registryUrl}\n`, 'ansible.cfg');
+  add(
+    'ansible-galaxy.configure.token-env',
+    'configure',
+    'shell',
+    auth ? `export ${variable}="${sh}"\n` : `# ${anonymous}\n`,
+  );
+  add(
+    'ansible-galaxy.configure.token-env-powershell',
+    'configure',
+    'shell',
+    auth ? `$env:${variable} = "${ps}"\n` : `# ${anonymous}\n`,
+  );
+  add('ansible-galaxy.configure.token-env-cmd', 'configure', 'shell', auth ? `set ${variable}=${cmd}\n` : `REM ${anonymous}\n`);
+  add(
+    'ansible-galaxy.configure.netrc',
+    'configure',
+    'shell',
+    auth
+      ? `touch ~/.netrc && chmod 600 ~/.netrc\nprintf 'machine %s login trove password %s\\n' ${host} "${sh}" >>~/.netrc\n`
+      : '# This repository is open to anonymous readers: no ~/.netrc entry is needed.\n',
+  );
+  const version = query.package && query.version ? query.version : null;
+  add('ansible-galaxy.install.collection', 'install', 'shell', `ansible-galaxy collection install ${pkg === null ? '<package>' : version ? `${pkg}:${shellQuote(version)}` : pkg}\n`);
+  add(
+    'ansible-galaxy.install.requirements',
+    'install',
+    'yaml',
+    '---\ncollections:\n' +
+      `  - name: ${query.package ?? '<package>'}${version ? `\n    version: "${version}"` : ''}\n` +
+      '    source: trove\n' +
+      '# Roles are served by remote and virtual repositories of a Galaxy only. Install them with\n' +
+      '#   ansible-galaxy role install -r requirements.yml\n' +
+      '# roles:\n' +
+      '#   - name: <owner>.<role>\n',
+    'requirements.yml',
+  );
+  if (target !== null) {
+    add('ansible-galaxy.publish.collection', 'publish', 'shell', `ansible-galaxy collection publish ./acme-tools-1.0.0.tar.gz --server ${shellQuote(registryUrl)} --token=${sh}\n`);
+  }
+  return {
+    repository: refOf(repo),
+    format: 'ansible',
+    client: query.client,
+    credentials,
+    registryUrl,
+    endpointPath: registryUrl.replace(/^https?:/, ''),
     username: credentials === 'none' ? null : 'alice',
     publishTarget: target,
     tokenTtlSeconds: ttl,
