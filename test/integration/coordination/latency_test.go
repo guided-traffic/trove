@@ -17,9 +17,9 @@ import (
 )
 
 // perfGateEnv switches on the percentile bounds of P-13 and P-14 with Valkey:
-// the p99 of both and the p50 of the pick-up. The per-change tier asserts
-// delivery, the p50 of the propagation, and for the pick-up a structural
-// property instead of a percentile (Q-ARCH-468); the percentiles are enforced by
+// the p99 of both and the p50 of both. The per-change tier asserts delivery
+// and, for the pick-up and the propagation, a structural property instead of a
+// percentile (Q-ARCH-468, Q-ARCH-495); the percentiles are enforced by
 // the nightly performance workflow, which sets the switch (Q-ARCH-220): a CPU
 // limit of the shared runner pods throttles a process for 100 ms or more at a
 // time, and a loaded runner delays the whole process, which says nothing about
@@ -119,7 +119,7 @@ func TestJobPickup(t *testing.T) {
 			if mode.gated {
 				// The structural check replaces the p50 bound per change: the percentile of a
 				// job that is woken in milliseconds is a statement about the runner's load.
-				checkWoken(t, lat, mode.poll)
+				checkWoken(t, "pick-ups", "jobs", lat, mode.poll)
 				if !perfGate() {
 					if p50Bound > 0 && p50 > p50Bound {
 						t.Logf("p50 %s above %s; enforced with %s=1 (Q-ARCH-468)", p50, p50Bound, perfGateEnv)
@@ -132,11 +132,12 @@ func TestJobPickup(t *testing.T) {
 	}
 }
 
-// checkWoken asserts that the signal and not the poll picked the jobs up. The poll runs every poll and a job it finds waited a uniform
-// share of that period, so a job that took a fifth of a poll or more did not start on the notification (with the poll at 5 s a fifth is
-// 1 s, ten times what a woken job needs on a quiet machine). A broken wake-up leaves four in five jobs there; one in ten is the
-// room a stalled runner gets for the jobs in flight while it stands still (Q-ARCH-468).
-func checkWoken(t *testing.T, lat []time.Duration, poll time.Duration) {
+// checkWoken asserts that the signal and not the poll carried the work: what is the name of the samples ("pick-ups", "changes"), what the
+// thing that was carried. The poll runs every poll and a sample it finds waited a uniform share of that period, so one that took a fifth
+// of a poll or more did not start on the notification (with the poll at 5 s a fifth is 1 s, ten times what a woken job needs on a quiet
+// machine). A broken wake-up leaves four in five samples there; one in ten is the room a stalled runner gets for the samples in flight
+// while it stands still (Q-ARCH-468, Q-ARCH-495).
+func checkWoken(t *testing.T, what, carried string, lat []time.Duration, poll time.Duration) {
 	t.Helper()
 	window := poll / 5
 	var late int
@@ -145,9 +146,9 @@ func checkWoken(t *testing.T, lat []time.Duration, poll time.Duration) {
 			late++
 		}
 	}
-	t.Logf("pick-ups not woken by the notification (at least %s): %d of %d", window, late, len(lat))
+	t.Logf("%s not woken by the notification (at least %s): %d of %d", what, window, late, len(lat))
 	if late > len(lat)/10 {
-		t.Fatalf("%d of %d pick-ups took %s or more with the poll at %s: the jobs were found by the poll, not woken by the notification", late, len(lat), window, poll)
+		t.Fatalf("%d of %d %s took %s or more with the poll at %s: the %s were found by the poll, not woken by the notification", late, len(lat), what, window, poll, carried)
 	}
 }
 
@@ -220,7 +221,19 @@ func TestChangePropagation(t *testing.T) {
 				lat = append(lat, time.Since(t0))
 			}
 			p50, p99 := report(t, "propagation "+mode.name, lat)
-			checkLatency(t, p50, p99, mode.p50, mode.bound(mode.poll), mode.gated)
+			p50Bound := mode.p50
+			if mode.gated {
+				// As for the pick-up (Q-ARCH-468): per change the check is that the notification carried the changes, and the
+				// percentiles are enforced where the machine is known.
+				checkWoken(t, "changes", "changes", lat, mode.poll)
+				if !perfGate() {
+					if p50Bound > 0 && p50 > p50Bound {
+						t.Logf("p50 %s above %s; enforced with %s=1 (Q-ARCH-495)", p50, p50Bound, perfGateEnv)
+					}
+					p50Bound = 0
+				}
+			}
+			checkLatency(t, p50, p99, p50Bound, mode.bound(mode.poll), mode.gated)
 			// The poll applied the same changes afterwards: B's applied epoch caught up.
 			waitFor(t, "B's applied epoch", 5*time.Second, func() bool {
 				return b.changes.Applied("cache") == a.changes.Applied("cache") || b.changes.Applied("cache") >= int64(mode.n)

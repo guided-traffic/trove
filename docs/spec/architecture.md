@@ -4754,7 +4754,7 @@ Latencies are measured at the replica.
 | P-10 | Concurrency | ≥ 5,000 open connections and ≥ 500 concurrent transfers per replica; ≤ 256 KiB memory per transfer |
 | P-11 | Upload finish after the last byte arrives | ≤ 1 s + size ÷ 150 MiB/s |
 | P-12 | Collapsing | N concurrent identical misses → 1 upstream request in the cluster while Valkey is available; at most 1 per replica while it is not |
-| P-13 | Propagation of changes in change areas (R-ARCH-018), from the return of the writer's `COMMIT` until another replica no longer serves the old value (Q-ARCH-220) | p99 ≤ 100 ms while Valkey is available; enforced by the nightly performance run, per change p50 ≤ 20 ms and delivery (Q-ARCH-220); p99 ≤ `cluster.epoch_poll_interval` + 1 s while it is not |
+| P-13 | Propagation of changes in change areas (R-ARCH-018), from the return of the writer's `COMMIT` until another replica no longer serves the old value (Q-ARCH-220) | p99 ≤ 100 ms while Valkey is available; enforced by the nightly performance run, with p50 ≤ 20 ms; per change delivery and that the notification, not the poll, carried the changes (Q-ARCH-220, Q-ARCH-495); p99 ≤ `cluster.epoch_poll_interval` + 1 s while it is not |
 | P-14 | Job pick-up after enqueue | p99 ≤ 1 s and p50 ≤ 100 ms while Valkey is available; both enforced by the nightly performance run, per change at most one pick-up in ten takes `jobs.poll_interval` / 5 or longer, which only a wake-up that failed explains (Q-ARCH-468); p99 ≤ `jobs.poll_interval` + 1 s while it is not |
 | P-15 | Process start to ready (10,000 repositories, 50,000 policy grants) | ≤ 15 s |
 | P-16 | Scale-out: throughput of P-7 and P-8 with 6 `web` replicas compared with 3 | ≥ 1.8 × at the same p99 |
@@ -7218,6 +7218,24 @@ Context: The mirror of an Ansible remote kept the version lists, the version doc
 **Rationale:** The mirror's promise is that a client is served with the upstream away, so the test cuts the upstream and replays the client's sequence; the first request of the sequence is the one the earlier test left out. The development agent would revisit the choice when a second format's mirror needs the same list (then (b)).
 
 **Applied in the spec:** none (R-ANS-021 already states the promise). Test: [ansible_test.go](../../test/integration/mirror/ansible_test.go).
+
+### Q-ARCH-495 · The per-change check of P-13 is that the notification carried the change, and the p50 bound moves to the nightly run
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `TestChangePropagation` with Valkey kept a p50 bound of 20 ms per change, the weakness `TestJobPickup` had before [Q-ARCH-468](#q-arch-468--the-per-change-check-of-p-14-is-that-the-notification-woke-the-job-and-the-p50-bound-moves-to-the-nightly-run): the test runs both replicas, the database and the observer in one process on a runner other jobs share, so a percentile of the path measures the load of the runner. Q-ARCH-468 left it as it was on the argument that the poll there is 2 s and a polled change misses 20 ms by a factor of a hundred. That argument is about the structure, and the structure can be asserted directly. Measured here with the poll at 2 s and Valkey: p50 1.3 ms, p99 6.3 ms of 200; without Valkey, where only the poll carries the change, p50 828 ms.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Raise the 20 ms | A larger number | One number | The next slower runner fails it again |
+| (b) Per change: at most one change in ten takes a fifth of the poll (400 ms) or longer; the p50 bound with the p99 bound in the nightly run (chosen) | A change the poll finds waited a uniform share of the 2 s period, so four in five are over 400 ms when the message path is broken; `checkWoken`, shared with `TestJobPickup` | Fails a lost or unsubscribed message at once and with certainty (about 160 of 200); a runner stall hits the few changes in flight, not twenty of two hundred; no number to tune per runner | A message path that is late by 20 to 400 ms but works shows up only in the nightly run |
+| (c) Drop the p50 bound altogether | Delivery and p99 only | Simplest | The median has the nightly run as its only guard |
+
+**Choice:** (b). The mode with Valkey of `TestChangePropagation` calls `checkWoken` ([latency_test.go](../../test/integration/coordination/latency_test.go)) and enforces its p50 of 20 ms with the p99 of 100 ms under `TROVE_PERF_GATE=1`. The mode without Valkey keeps its p99 bound per change.
+
+**Rationale:** The structure is what a regression of the message path breaks; the numbers of P-13 are enforced where the machine is known. The development agent would revisit the choice when the nightly run has its own runners without a competing load: the p50 returns to every change.
+
+**Applied in the spec:** the P-13 row of R-ARCH-027; [docs/developer/coordination.md](../developer/coordination.md) ("Bounds P-13 and P-14"). Test: `TestChangePropagation`.
 
 ### Q-ARCH-226 · The host answers an early, read-only ownership question
 

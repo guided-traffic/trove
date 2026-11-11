@@ -323,7 +323,7 @@ last value, n is at least 1, and `Get` is the `Replicas` function of `proxy.Opti
 
 | Bound | Spec | Test | Per change | With `TROVE_PERF_GATE=1` (nightly) | Measured (this machine, `-race`) |
 |---|---|---|---|---|---|
-| Change propagation with Valkey | P-13 | `TestChangePropagation`, with poll 2 s, so only the message can explain it | every change reaches B; p50 ≤ 20 ms | p99 ≤ 100 ms | p50 1.2 to 9 ms, p99 4 to 88 ms (host load 15 to 40) |
+| Change propagation with Valkey | P-13 | `TestChangePropagation`, with poll 2 s, so only the message can explain it | every change reaches B; at most 20 of 200 changes take 400 ms or longer (`checkWoken`, [Q-ARCH-495](../spec/architecture.md#q-arch-495--the-per-change-check-of-p-13-is-that-the-notification-carried-the-change-and-the-p50-bound-moves-to-the-nightly-run)) | p50 ≤ 20 ms, p99 ≤ 100 ms | p50 1.2 to 9 ms, p99 4 to 88 ms (host load 15 to 40) |
 | Change propagation without Valkey | P-13 | same, Sentinel address that does not answer, poll 1 s | p99 ≤ `epoch_poll_interval` + 1 s | same | p99 about 1.0 s |
 | Job pick-up with Valkey | P-14 | `TestJobPickup`, with `jobs.poll_interval` 5 s | at most 6 of 60 pick-ups take 1 s or longer (`checkWoken`: only the poll explains those, [Q-ARCH-468](../spec/architecture.md#q-arch-468--the-per-change-check-of-p-14-is-that-the-notification-woke-the-job-and-the-p50-bound-moves-to-the-nightly-run)) | p50 ≤ 100 ms, p99 ≤ 1 s | p50 5 ms, p99 13 to 52 ms |
 | Job pick-up without Valkey | P-14 | same, poll 1 s | p99 ≤ `poll_interval` + 1 s | same | p99 1.0 s |
