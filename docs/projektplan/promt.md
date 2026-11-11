@@ -294,7 +294,9 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   `make` and the C compiler (the owner's runner) or the jobs keep a local package cache. Again on 2026-11-11 from 14:25 (Test and Release 43037911704): `azure.archive.ubuntu.com`
   did not resolve for about three minutes on the GitHub-hosted runners (the self-hosted ones were not affected), and `e2e (nuget)` and `e2e (ci)`
   failed in their `apt-get install build-essential`; again at 15:05 for `e2e (nuget)` in 43044075096 (re-run). `e2e (vuln)` and `e2e (bastion)` on
-  the same kind of runner passed in both runs.
+  the same kind of runner passed in both runs; `e2e (nuget)` and `e2e (ci)` stayed red after the first re-run. Since then the jobs call
+  [build-tools](../../.github/actions/build-tools/action.yml), which installs only what the runner lacks, so the GitHub-hosted runners no longer touch
+  the archive; the self-hosted image still lacks `make` and the compiler, so this finding stays open for it.
 - **F-119 · The transfer loop of the drain tests saw 429 and 502 when the cluster stalled** (Test and Release 42561072166, 2026-11-09, and
   the nightly dispatch 42578594755 of the set `drain-roles` alone on the large class). Cause found and fixed for the transfer loop (Q-HA-230):
   the cluster stalled for about 40 s (07:50:08 to 07:50:50), the open-loop `transfer.js` released its piled-up iterations in one burst of

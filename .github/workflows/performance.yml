@@ -185,9 +185,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install build tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential
+        uses: ./.github/actions/build-tools
 
       - name: Install the Docker Compose plugin (the integration stack)
         run: |
@@ -258,9 +256,9 @@ jobs:
           go-version-file: go.mod
 
       - name: Install build tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential jq
+        uses: ./.github/actions/build-tools
+        with:
+          commands: jq
 
       - name: Install the Docker Compose plugin (the integration stack)
         run: |
@@ -369,9 +367,9 @@ jobs:
           go-version-file: go.mod
 
       - name: Install build tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential jq
+        uses: ./.github/actions/build-tools
+        with:
+          commands: jq
 
       - name: Install the pinned helm
         uses: azure/setup-helm@v5
@@ -533,9 +531,9 @@ jobs:
 
       - name: Install build tools
         if: steps.leg.outputs.run == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential jq
+        uses: ./.github/actions/build-tools
+        with:
+          commands: jq
 
       - name: Install the pinned helm
         if: steps.leg.outputs.run == 'true'
@@ -769,9 +767,9 @@ jobs:
 
       - name: Install build tools
         if: steps.leg.outputs.run == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential jq
+        uses: ./.github/actions/build-tools
+        with:
+          commands: jq
 
       - name: Install the pinned helm
         if: steps.leg.outputs.run == 'true'
@@ -969,9 +967,9 @@ jobs:
 
       - name: Install build tools
         if: steps.leg.outputs.run == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential jq
+        uses: ./.github/actions/build-tools
+        with:
+          commands: jq
 
       - name: Install the pinned helm
         if: steps.leg.outputs.run == 'true'
@@ -1157,9 +1155,9 @@ jobs:
 
       - name: Install build tools
         if: steps.leg.outputs.run == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential jq
+        uses: ./.github/actions/build-tools
+        with:
+          commands: jq
 
       - name: Install the pinned helm
         if: steps.leg.outputs.run == 'true'
@@ -1347,9 +1345,9 @@ jobs:
 
       - name: Install build tools
         if: steps.leg.outputs.run == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential jq
+        uses: ./.github/actions/build-tools
+        with:
+          commands: jq
 
       - name: Install the pinned helm
         if: steps.leg.outputs.run == 'true'
@@ -1527,9 +1525,9 @@ jobs:
 
       - name: Install build tools
         if: steps.leg.outputs.run == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential jq
+        uses: ./.github/actions/build-tools
+        with:
+          commands: jq
 
       - name: Install the pinned helm
         if: steps.leg.outputs.run == 'true'
@@ -1708,9 +1706,9 @@ jobs:
 
       - name: Install build tools
         if: steps.leg.outputs.run == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential jq
+        uses: ./.github/actions/build-tools
+        with:
+          commands: jq
 
       - name: Set up Node.js (the Playwright journey)
         if: steps.leg.outputs.run == 'true'
@@ -1924,9 +1922,9 @@ jobs:
 
       - name: Install build tools
         if: steps.leg.outputs.run == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential jq
+        uses: ./.github/actions/build-tools
+        with:
+          commands: jq
 
       - name: Set up Node.js (the Playwright journeys)
         if: matrix.journeys == true && steps.leg.outputs.run == 'true'
@@ -2117,9 +2115,9 @@ jobs:
 
       - name: Install build tools
         if: steps.leg.outputs.run == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential jq
+        uses: ./.github/actions/build-tools
+        with:
+          commands: jq
 
       - name: Install the pinned helm
         if: steps.leg.outputs.run == 'true'
@@ -2300,9 +2298,9 @@ jobs:
 
       - name: Install build tools
         if: steps.leg.outputs.run == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential jq
+        uses: ./.github/actions/build-tools
+        with:
+          commands: jq
 
       - name: Install the pinned helm
         if: steps.leg.outputs.run == 'true'
@@ -2487,9 +2485,9 @@ jobs:
 
       - name: Install build tools
         if: steps.leg.outputs.run == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential jq
+        uses: ./.github/actions/build-tools
+        with:
+          commands: jq
 
       - name: Install the pinned helm
         if: steps.leg.outputs.run == 'true'
@@ -2660,9 +2658,9 @@ jobs:
           go-version-file: go.mod
 
       - name: Install build tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential jq
+        uses: ./.github/actions/build-tools
+        with:
+          commands: jq
 
       - name: Set up Node.js (the browser journey of the upgrade)
         uses: actions/setup-node@v7

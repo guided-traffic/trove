@@ -1,0 +1,33 @@
+name: Install build tools
+description: >-
+  Makes make, the C compiler and the extra commands a job names available. A runner that already has them (the GitHub-hosted
+  images do) installs nothing, so the job does not depend on the Ubuntu archive being reachable (F-117: the archive did not
+  resolve on the GitHub-hosted runners for over an hour on 2026-11-11); a runner that lacks them installs build-essential and
+  the missing commands from the Ubuntu package of the same name.
+inputs:
+  commands:
+    description: Extra commands the job needs, separated by spaces; each is also the name of its Ubuntu package (for example "jq file").
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Install what the runner lacks
+      shell: bash
+      env:
+        EXTRA: ${{ inputs.commands }}
+      run: |
+        missing=()
+        if ! command -v make >/dev/null || ! command -v gcc >/dev/null; then
+          missing+=(build-essential)
+        fi
+        for c in $EXTRA; do
+          command -v "$c" >/dev/null || missing+=("$c")
+        done
+        if [ "${#missing[@]}" -eq 0 ]; then
+          echo "make, gcc ${EXTRA:+and $EXTRA }are on the runner; nothing to install"
+          exit 0
+        fi
+        echo "installing ${missing[*]}"
+        sudo apt-get update
+        sudo apt-get install -y "${missing[@]}"
