@@ -41,7 +41,7 @@ Hard rules, also for every subagent (put them into every subagent prompt):
 4. **Spec first.** [docs/spec/](../spec/README.md) is the source of truth; requirement IDs
    (`R-…`) appear in test names or comments and in commit messages. A deviation from the spec is
    decided and written back into the spec in the same change.
-5. **One version per tool.** Go 1.27.3, Angular 22, every tool pinned once and read from that pin
+5. **One version per tool.** Go 1.27.4, Angular 22, every tool pinned once and read from that pin
    by local builds and CI (see the global rule in your instructions).
 6. **Documentation in the same change.** Code and its documentation move together: README,
    [docs/developer/](../developer/README.md), [docs/security/](../security/README.md), spec,
@@ -561,7 +561,7 @@ What a run did, in short, so the next run starts where it stopped. The plan item
 - F0, Ansible Galaxy: planned by one agent (R-ANS-001 to 032), built by four in stages (core and local; stub, remote, mirror and hub exchange;
   virtual and import; setup, UI and e2e). The real clients found three defects every integration test had missed: ansible-core sends the
   archive base64-encoded (every publish failed), the netrc snippet sent its variable name as the password, the mirror lacked the collection
-  document. The set `ansible` passed on kind with both clients (67 tests) and its CI leg is green. The owner's dry run of the import followed on 2026-11-11: 3 collections, 7 versions would import, nothing differed.
+  document. The set `ansible` passed on kind with both clients (67 tests) and its CI leg is green. The import against the owner's galaxy_ng followed on 2026-11-11: a dry run, then the copy of 3 collections and 7 versions into the owner's installation, installed from there by ansible-galaxy 2.21.
 - Leads that were wrong, with the evidence that refuted them: dropped SYNs behind the edge 502s (no kernel counter moved), the drain
   change behind `TestE14Drain` (the 502s came 1.5 minutes after the drain, in a stall of the whole CI cluster). The common factor of most red
   e2e and integration runs of the day is a stalled runner; no CI job records its CPU pressure yet.
