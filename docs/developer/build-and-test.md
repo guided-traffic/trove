@@ -11,7 +11,7 @@ read it from there.
 
 | Tool | Pinned in | Notes |
 |---|---|---|
-| Go | the `go` line of [go.mod](../../go.mod) (`1.27.3`) | `make versions-check` fails when `go version` differs |
+| Go | the `go` line of [go.mod](../../go.mod) (`1.27.4`) | `make versions-check` fails when `go version` differs |
 | sqlc, oapi-codegen | the `tool` directives of [go.mod](../../go.mod) | run as `go tool sqlc …`, `go tool oapi-codegen …`; `versions-check` compares the running version with the module version |
 | golangci-lint, kind, kubectl, Helm, k6, CloudNativePG chart | [tools/versions.env](../../tools/versions.env) | `KEY=value` lines; the Makefile `include`s the file and exports its keys, CI appends it to `$GITHUB_ENV` |
 | Container images (PostgreSQL, PgBouncer, Valkey 9.1 (the only line tested while trove is in development), SeaweedFS, the release base image, the dev-profile images) | [tools/versions.env](../../tools/versions.env), each with its digest | `docker buildx imagetools inspect <tag>` prints the digest to pin |

@@ -239,7 +239,7 @@ export function sampleInfo(over: Partial<SystemInfo> = {}): SystemInfo {
     installationId: null,
     incarnation: null,
     answeredBy: { replica: 'trove-api-0', role: 'api' },
-    version: { version: '0.1.1', revision: 'abc', goVersion: 'go1.27.3' },
+    version: { version: '0.1.1', revision: 'abc', goVersion: 'go1.27.4' },
     baseUrl: 'https://trove.example.net',
     baseUrlSource: 'config',
     maintenanceMode: 'normal',

@@ -17,7 +17,7 @@ end-to-end wave's. The contracts of the backup lane exist (phase 7, [backup.md](
   repository manager does. The [specification](../spec/README.md) says *how* trove does it, one
   requirement at a time (`R-<AREA>-nnn`). [Coverage](../coverage/README.md) measures the gap, and
   [decisions.md](../decisions.md) records *why*.
-- **Owner constraints are fixed.** Go 1.27.3, Angular 22, PostgreSQL, S3-compatible storage, Helm, OIDC
+- **Owner constraints are fixed.** Go 1.27.4, Angular 22, PostgreSQL, S3-compatible storage, Helm, OIDC
   login, own tokens, detailed permissions, GitLab CI OIDC, pull-through proxying, npm and NuGet first, and
   the high-availability and scale constraints of 2026-10-28 ([spec/README.md](../spec/README.md#owner-constraints)).
 - **Invariants `INV-1` to `INV-20` bind every spec page.** A page may refine an invariant but must not
@@ -142,7 +142,7 @@ One fact per line; each links to the page that explains it.
 ```text
 trove/
 ├── Makefile                  # the task runner: build, generate, lint, scans, test, web, chart, image, dev profile, integration, Silo
-├── go.mod                    # go 1.27.3; sqlc and oapi-codegen as tool directives
+├── go.mod                    # go 1.27.4; sqlc and oapi-codegen as tool directives
 ├── tools/versions.env        # pins of every tool and image that is not a Go module or an npm package
 ├── tools/github-download.sh  # downloads a GitHub release asset, with the job's token when there is one (Q-ARCH-356)
 ├── tools/sbom-generator/     # the BuildKit SBOM generator that runs the pinned syft (registry.sh serves it during the release build), and check-pins.sh for make versions-check

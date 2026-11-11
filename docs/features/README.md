@@ -30,7 +30,7 @@ features.
 ## Priority rubric
 
 The priority is trove's, judged against the owner's goals: a self-hosted repository manager
-with Go 1.27.3 backend, Angular 22 UI, PostgreSQL, S3, high availability, Helm deployment, OIDC
+with Go 1.27.4 backend, Angular 22 UI, PostgreSQL, S3, high availability, Helm deployment, OIDC
 login, tokens, fine-grained permissions, GitLab CI OIDC federation and pull-through proxying; npm
 and NuGet first.
 

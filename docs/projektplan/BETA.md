@@ -65,7 +65,7 @@ The [test matrix](#test-matrix) at the end tracks both levels per registry.
 Details: [roadmap M0](../coverage/roadmap.md#m0--foundation)
 
 **Repository and toolchain**
-- 🟢 Go module (Go 1.27.3) with pinned tools, task runner, architecture test
+- 🟢 Go module (Go 1.27.4) with pinned tools, task runner, architecture test
 - 🟢 Angular 22 workspace; UI embedded in the Go binary
 - 🟢 CI pipeline: lint, unit tests, integration tier, image build, chart lint, one version per tool
 - 🟢 Coverage generator as a Go tool in the repository

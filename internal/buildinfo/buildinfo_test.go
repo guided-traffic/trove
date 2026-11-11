@@ -7,8 +7,8 @@ import (
 
 func TestString(t *testing.T) {
 	t.Run("R-ARCH-001 version line names version, commit and date", func(t *testing.T) {
-		s := Info{Version: "v0.1.0", Commit: "abc123", Date: "2026-10-29T00:00:00Z", GoVersion: "go1.27.3"}.String()
-		for _, want := range []string{"trove v0.1.0", "abc123", "2026-10-29T00:00:00Z", "go1.27.3"} {
+		s := Info{Version: "v0.1.0", Commit: "abc123", Date: "2026-10-29T00:00:00Z", GoVersion: "go1.27.4"}.String()
+		for _, want := range []string{"trove v0.1.0", "abc123", "2026-10-29T00:00:00Z", "go1.27.4"} {
 			if !strings.Contains(s, want) {
 				t.Errorf("%q does not contain %q", s, want)
 			}

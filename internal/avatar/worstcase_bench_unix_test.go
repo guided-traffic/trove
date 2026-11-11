@@ -11,7 +11,7 @@ import (
 // The wall time is what DecodeTimeout bounds; the CPU time is what a replica with a CPU limit is charged. It is not independent of
 // the host's load (a decoder is bound by memory, which processes share), so take the least of several runs, not the median. Run it without -race, in the cgroup of a replica:
 //
-//	docker run --rm --cpus=1 -v "$PWD":/src -v "$HOME/go/pkg/mod":/go/pkg/mod -w /src -e GOTOOLCHAIN=local golang:1.27.3 \
+//	docker run --rm --cpus=1 -v "$PWD":/src -v "$HOME/go/pkg/mod":/go/pkg/mod -w /src -e GOTOOLCHAIN=local golang:1.27.4 \
 //	  go test -run xxx -bench ProcessWorstCase -benchtime 3x -count 5 ./internal/avatar/
 func BenchmarkProcessWorstCase(b *testing.B) {
 	for _, c := range worstCases(b) {

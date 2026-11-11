@@ -260,7 +260,8 @@ checked every earlier decision against them:
 
 **Decision.** The backend is written in Go and built with Go 1.27.3. INV-1 records the check made
 on 2026-10-28: the local `go version` and the go.dev download list both showed go1.27.3 as the
-current stable release.
+current stable release. Patch releases of Go 1.27 are taken when they appear: 1.27.4 on 2026-11-11, because `govulncheck` reported
+GO-2026-6859 in `net/http` of 1.27.3 ([INV-1](spec/README.md)).
 
 **Consequences.** Libraries come from the Go ecosystem; the choices are decided in
 [Q-ARCH-1](spec/architecture.md#q-arch-1--http-router) to [Q-ARCH-5](spec/architecture.md#q-arch-5--job-queue-implementation). The binary is statically linked without cgo ([R-ARCH-001](spec/architecture.md#r-arch-001--one-binary-identical-replicas-process-roles)).

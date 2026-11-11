@@ -14,7 +14,7 @@ requirement. Each requirement names the catalog features it covers (`Covers:` li
 
 Given by the project owner; not up for redesign in these pages:
 
-- Backend in Go 1.27.3; frontend in Angular 22.
+- Backend in Go 1.27.4; frontend in Angular 22.
 - PostgreSQL as database; S3 as binary storage.
 - High availability; deployment through a Helm chart.
 - OIDC user login, token issuance, detailed permission management.
@@ -84,8 +84,9 @@ not contradict it. A page that finds an invariant wrong raises a question in its
 section; a choice that changes an invariant says so and edits it here as a cross-page consequence,
 as the choices behind INV-6, INV-8, INV-9, INV-12, INV-15 and INV-17 did.
 
-**INV-1 · Toolchain.** Go 1.27.3 (verified 2026-10-28: local `go version` and the go.dev
-download list both show go1.27.3 as current stable). Angular 22 (npm `@angular/core` dist-tag
+**INV-1 · Toolchain.** Go 1.27.4 (Go 1.27.3 verified 2026-10-28: local `go version` and the go.dev
+download list both showed go1.27.3 as current stable; raised to the patch release 1.27.4 on 2026-11-11, which closes GO-2026-6859 in
+`net/http`). Angular 22 (npm `@angular/core` dist-tag
 `latest` = 22.2.3 on 2026-10-28). The Angular build is embedded into the Go binary (`embed`), so
 one container image serves UI, management API and package protocols.
 

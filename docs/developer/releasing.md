@@ -164,7 +164,7 @@ of run 42465102401 where a row says so):
 | Tool | Where the job gets it | Host | Handled |
 |---|---|---|---|
 | Docker Buildx | [install-buildx](../../.github/actions/install-buildx/action.yml), 23 jobs | github.com release asset | runner copy, cache, bounded retry, SHA-256 (this section) |
-| Go 1.27.3 | `actions/setup-go@v7`, 43 uses | github.com `actions/go-versions` release asset (run 42465102401: 504 twice, then success) | not yet: [Q-ARCH-355](../spec/architecture.md#q-arch-355--how-do-the-ci-jobs-get-their-pinned-tools-without-a-live-release-asset-download-per-job) names it as the next application |
+| Go 1.27.4 | `actions/setup-go@v7`, 43 uses | github.com `actions/go-versions` release asset (run 42465102401: 504 twice, then success) | not yet: [Q-ARCH-355](../spec/architecture.md#q-arch-355--how-do-the-ci-jobs-get-their-pinned-tools-without-a-live-release-asset-download-per-job) names it as the next application |
 | Helm v4.3.1 | `azure/setup-helm@v5` | get.helm.sh (run 42465102401) | action's own download; no failure seen |
 | kubectl v1.37.2 | `azure/setup-kubectl@v5` | dl.k8s.io (run 42465102401) | action's own download; no failure seen |
 | Node.js | `actions/setup-node@v7` | not checked | action's own download |

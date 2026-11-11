@@ -855,7 +855,7 @@ parts are in place today and which are pending.
 ## 🚀 TL;DR fast start
 
 **Prerequisites.** The pins are in [tools/versions.env](tools/versions.env) (kind, kubectl, Helm, golangci-lint and more), in
-`go.mod` (Go 1.27.3) and in `web/.nvmrc` (Node.js 26.13.0). Install Docker, Go, Node.js and GNU Make 3.81 or later, plus the pinned
+`go.mod` (Go 1.27.4) and in `web/.nvmrc` (Node.js 26.13.0). Install Docker, Go, Node.js and GNU Make 3.81 or later, plus the pinned
 kind, kubectl and Helm for the dev profile. `make versions-check` reports any installed tool that differs from its pin.
 
 **Install a release.** The image is `docker.io/guidedtraffic/trove` on Docker Hub, and the chart is in its own repository.

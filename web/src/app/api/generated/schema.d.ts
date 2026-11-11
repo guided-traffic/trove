@@ -9512,7 +9512,7 @@ export interface operations {
                      *       "version": "0.1.0",
                      *       "revision": "4f1c2a9e0d7b8a6c5e3f1d2b4a6c8e0f1a3b5c7d",
                      *       "buildTime": "2026-10-20T09:12:00Z",
-                     *       "goVersion": "go1.27.3",
+                     *       "goVersion": "go1.27.4",
                      *       "formats": []
                      *     }
                      */

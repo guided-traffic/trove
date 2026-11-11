@@ -381,7 +381,7 @@ A user uploads a picture for their own record; the server keeps a new image made
   [process_test.go](../../internal/avatar/process_test.go), and a change of R-API-055; do not add a format whose decoder reads
   a stream the header does not bound.
 - **A new format or a changed bound** needs a slowest-case input in `worstCases` and a reading of the benchmark in the cgroup of a
-  pod, as Q-UI-173 did: `docker run --rm --cpus=1 -v "$PWD":/src -v "$HOME/go/pkg/mod":/go/pkg/mod -w /src -e GOTOOLCHAIN=local golang:1.27.3 go test -run xxx -bench ProcessWorstCase -benchtime 3x -count 5 ./internal/avatar/`
+  pod, as Q-UI-173 did: `docker run --rm --cpus=1 -v "$PWD":/src -v "$HOME/go/pkg/mod":/go/pkg/mod -w /src -e GOTOOLCHAIN=local golang:1.27.4 go test -run xxx -bench ProcessWorstCase -benchtime 3x -count 5 ./internal/avatar/`
   (not on a loaded host: take the least CPU time, which is the image's cost, not the median). The inputs are not part of the plain run of `make test`: building them takes 14 s, so `make test-performance` runs them.
 - **Tests.** Unit: `go test ./internal/avatar/` (fixtures in `testdata/`, made with a WebP encoder outside the repository; the
   animated ones are two-frame files). Integration, against the stack with the role `api`:
