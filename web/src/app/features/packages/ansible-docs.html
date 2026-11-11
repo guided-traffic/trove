@@ -1,0 +1,165 @@
+@if (failure(); as f) {
+  <trove-error-notice [error]="f" (retry)="refresh.emit()" />
+} @else if (loading() || (!tree() && !readmeOnly())) {
+  <p role="status" i18n="@@pkg.loading">Loading.</p>
+} @else if (state() === 'pending') {
+  <div class="docs-state" data-testid="docs-pending">
+    <p i18n="@@docs.pending">The documentation of this version is being fetched.</p>
+    <button type="button" class="btn btn-default" (click)="refresh.emit()" i18n="@@docs.refresh">Refresh</button>
+  </div>
+} @else if (state() === 'unavailable') {
+  <div class="docs-state" data-testid="docs-unavailable">
+    <p>{{ reason() }}</p>
+  </div>
+} @else {
+  <ng-template #nodeList let-nodes="nodes" let-parent="parent">
+    @for (node of nodes; track node.id) {
+      <li role="none">
+        @if (node.children.length > 0) {
+          <span
+            ngTreeItem
+            #item="ngTreeItem"
+            class="tree-row"
+            [parent]="parent"
+            [value]="node.id"
+            [label]="node.label"
+            [selectable]="false"
+            [expanded]="isOpen(node.id)"
+            (expandedChange)="setOpen(node.id, $event)"
+          >
+            <span class="node-label">
+              <span class="material-icons node-chevron" aria-hidden="true">{{
+                isOpen(node.id) ? 'expand_more' : 'chevron_right'
+              }}</span>
+              <span class="node-name" [attr.translate]="node.kind === 'type' ? 'no' : null">{{ node.label }}</span>
+              @if (node.count !== null) {
+                <span class="badge">{{ node.count }}</span>
+              }
+            </span>
+          </span>
+          <ul role="group">
+            <ng-template ngTreeItemGroup [ownedBy]="item" #group="ngTreeItemGroup">
+              <ng-container *ngTemplateOutlet="nodeList; context: { nodes: node.children, parent: group }" />
+            </ng-template>
+          </ul>
+        } @else {
+          <a
+            ngTreeItem
+            class="tree-row"
+            [parent]="parent"
+            [value]="node.id"
+            [label]="node.label"
+            [routerLink]="[]"
+            [queryParams]="{ doc: node.doc }"
+            queryParamsHandling="merge"
+            [attr.title]="node.tooltip || null"
+          >
+            <span class="node-label" [class.muted]="node.muted">
+              <span class="node-chevron" aria-hidden="true"></span>
+              <span class="node-name" translate="no">{{ node.label }}</span>
+              @if (node.muted) {
+                <span class="tag" i18n="@@docs.tree.no-docs">no documentation</span>
+              }
+            </span>
+          </a>
+        }
+      </li>
+    }
+  </ng-template>
+
+  <div class="browse docs" [class.has-selection]="hasSelection()" [class.readme-only]="!tree()">
+    @if (tree(); as t) {
+      <section class="pane pane-tree" aria-labelledby="docs-tree-heading">
+        <h2 id="docs-tree-heading" class="visually-hidden" i18n="@@docs.tree.heading">Documentation</h2>
+        <div class="pane-head tree-toolbar">
+          <label class="filter-field">
+            <span class="material-icons" aria-hidden="true">search</span>
+            <input
+              class="filter-input"
+              type="search"
+              autocomplete="off"
+              spellcheck="false"
+              aria-label="Search the documentation"
+              i18n-aria-label="@@docs.search.label"
+              placeholder="Search the documentation"
+              i18n-placeholder="@@docs.search.label"
+              [value]="draft()"
+              (input)="onInput($any($event.target).value)"
+              (keydown.escape)="clear()"
+            />
+          </label>
+          <p class="pane-count match-count" role="status">{{ matchText() }}</p>
+        </div>
+        <div class="pane-body">
+          <div class="tree-scroll">
+            @if (searchFailure(); as sf) {
+              <trove-error-notice [error]="sf" />
+            }
+            @if (noMatch()) {
+              <div class="pane-empty" data-testid="docs-no-match">
+                <p i18n="@@docs.search.none">No entries match</p>
+                <button type="button" class="btn btn-default" (click)="clear()" i18n="@@docs.search.clear">Clear the search</button>
+              </div>
+            } @else {
+              <ul
+                ngTree
+                #navTree="ngTree"
+                class="tree"
+                [nav]="true"
+                aria-label="Documentation"
+                i18n-aria-label="@@docs.tree.label"
+                [value]="treeValue()"
+              >
+                <ng-container *ngTemplateOutlet="nodeList; context: { nodes: nodes(), parent: navTree }" />
+              </ul>
+            }
+            @if (t.truncated) {
+              <p class="status-row" role="note" data-testid="docs-truncated" i18n="@@docs.truncated">
+                Not every entry is listed: the documentation of this version is larger than trove keeps.
+              </p>
+            }
+          </div>
+        </div>
+      </section>
+    }
+
+    <section class="pane pane-details" aria-labelledby="docs-page-heading">
+      <h2 id="docs-page-heading" class="visually-hidden" i18n="@@docs.page.heading">Page</h2>
+      <div class="pane-body details-body" #pagePane>
+        @if (tree()) {
+          <button type="button" class="btn btn-tertiary back" (click)="back()">
+            <span class="material-icons" aria-hidden="true">arrow_back</span>
+            <ng-container i18n="@@docs.back">Back to the tree</ng-container>
+          </button>
+        }
+        @if (pageFailure(); as pf) {
+          <trove-error-notice [error]="pf" (retry)="page.reload()" />
+        } @else if (page.isLoading()) {
+          <p role="status" i18n="@@pkg.loading">Loading.</p>
+        } @else if (pageValue(); as p) {
+          @if (p.kind === 'file') {
+            <trove-package-readme [readme]="p.file" />
+          } @else {
+            <trove-ansible-doc-entry [entry]="p.entry" />
+          }
+        } @else {
+          <p class="pane-status" data-testid="docs-empty" i18n="@@docs.empty">This version has no documentation pages.</p>
+        }
+        @if (source(); as s) {
+          <p class="doc-source" data-testid="docs-source">
+            @if (s.source === 'upstream') {
+              <ng-container i18n="@@docs.source.upstream">Taken from the upstream</ng-container>
+            } @else {
+              <ng-container i18n="@@docs.source.generated">Generated by trove from the archive</ng-container>{{ ', ' }}<time [attr.datetime]="s.builtAt">{{ s.builtAt | date: 'yyyy-MM-dd HH:mm' }}</time>
+            }
+            @if (severalRepositories()) {
+              <span>
+                {{ ' · ' }}<ng-container i18n="@@docs.source.repository">Repository</ng-container>{{ ': ' }}<span translate="no">{{ s.repository }}</span></span
+              >
+            }
+          </p>
+        }
+      </div>
+    </section>
+  </div>
+}

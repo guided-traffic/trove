@@ -1,0 +1,271 @@
+<article class="doc-entry" data-testid="doc-entry">
+  <header class="doc-head">
+    <h2 class="doc-title">
+      <span translate="no">{{ entry().fullName }}</span>
+      <trove-copy-button [value]="entry().fullName" [label]="copyName" />
+    </h2>
+    @if (entry().shortDescription) {
+      <p class="doc-short" translate="no">{{ entry().shortDescription }}</p>
+    }
+    <p class="doc-facts">
+      @if (entry().versionAdded) {
+        <span><ng-container i18n="@@docs.added-in">added in</ng-container>{{ ' ' }}<span translate="no">{{ entry().versionAdded }}</span></span>
+      }
+      @if (entry().deprecated) {
+        <span class="badge warn"><span class="material-icons" aria-hidden="true">warning</span><ng-container i18n="@@docs.deprecated">Deprecated</ng-container></span>
+      }
+    </p>
+    @if (entry().deprecated; as dep) {
+      <div class="doc-deprecation" role="note">
+        @if (dep.why) {
+          <trove-doc-prose [html]="[dep.why]" />
+        }
+        @if (dep.removedIn) {
+          <p>
+            <ng-container i18n="@@docs.removed-in">Removed in</ng-container>{{ ' ' }}<span translate="no">{{ dep.removedIn }}</span>
+          </p>
+        }
+        @if (dep.removedAtDate) {
+          <p>
+            <ng-container i18n="@@docs.removed-at">Removed after</ng-container>{{ ' ' }}<span translate="no">{{ dep.removedAtDate }}</span>
+          </p>
+        }
+        @if (dep.alternative) {
+          <p>
+            <strong i18n="@@docs.alternative">Alternative</strong>
+          </p>
+          <trove-doc-prose [html]="[dep.alternative]" />
+        }
+      </div>
+    }
+  </header>
+
+  @if (!entry().hasDocs) {
+    <p class="doc-none" data-testid="doc-no-docs">
+      @if (entry().source === 'upstream') {
+        <ng-container i18n="@@docs.no-docs-upstream">The upstream sent no documentation for this plugin.</ng-container>
+      } @else {
+        <ng-container i18n="@@docs.no-docs-generated">This plugin has no documentation in its source.</ng-container>
+      }
+    </p>
+  } @else if (readme(); as r) {
+    <trove-package-readme [readme]="r" />
+  } @else {
+    @if (entry().description?.length) {
+      <section aria-labelledby="doc-synopsis">
+        <h3 id="doc-synopsis" i18n="@@docs.synopsis">Synopsis</h3>
+        <trove-doc-prose [html]="entry().description ?? []" />
+      </section>
+    }
+
+    @if (entry().extendsFragments?.length) {
+      <p class="doc-muted" data-testid="doc-fragments">
+        <ng-container i18n="@@docs.fragments">Documentation fragments that are not merged into this page:</ng-container>{{ ' ' }}<span translate="no">{{ (entry().extendsFragments ?? []).join(', ') }}</span>
+      </p>
+    }
+
+    @if (options().length > 0) {
+      <section aria-labelledby="doc-parameters">
+        <h3 id="doc-parameters" i18n="@@docs.parameters">Parameters</h3>
+        <trove-data-table [caption]="optionsCaption" [columns]="optionColumns" [empty]="false">
+          @for (row of options(); track row.id) {
+            <tr [attr.data-depth]="row.depth">
+              <th scope="row" class="param-name" [style.padding-inline-start]="indent(row)">
+                <span class="name-line">
+                  @if (row.children > 0) {
+                    <button
+                      type="button"
+                      class="btn btn-icon fold"
+                      [attr.aria-expanded]="!foldedOptions().has(row.id)"
+                      [attr.aria-label]="foldLabel(row, foldedOptions())"
+                      (click)="toggleOption(row)"
+                    >
+                      <span class="material-icons" aria-hidden="true">{{ foldedOptions().has(row.id) ? 'chevron_right' : 'expand_more' }}</span>
+                    </button>
+                  } @else {
+                    <span class="fold-space" aria-hidden="true"></span>
+                  }
+                  @if (row.depth > 0) {
+                    <span class="visually-hidden"
+                      ><ng-container i18n="@@docs.suboption-of">suboptions of</ng-container>{{ ' ' }}<span translate="no">{{ row.parent }}</span>:
+                    </span>
+                  }
+                  <code translate="no">{{ row.name }}</code>
+                </span>
+                @if (row.aliases) {
+                  <span class="doc-muted aliases"
+                    ><ng-container i18n="@@docs.aliases">aliases:</ng-container>{{ ' ' }}<span translate="no">{{ row.aliases }}</span></span
+                  >
+                }
+              </th>
+              <td translate="no">{{ row.type }}</td>
+              <td>
+                @if (row.required) {
+                  <span class="badge" i18n="@@docs.required">required</span>
+                }
+              </td>
+              <td>
+                @if (row.hasDefault) {
+                  <code translate="no">{{ row.defaultText }}</code>
+                }
+              </td>
+              <td>
+                @if (row.choices.length > 0) {
+                  <ul class="choices">
+                    @for (c of row.choices; track $index) {
+                      <li><code translate="no">{{ c }}</code></li>
+                    }
+                  </ul>
+                }
+              </td>
+              <td class="param-description">
+                <trove-doc-prose [html]="row.description" />
+                @if (row.versionAdded) {
+                  <span class="doc-muted"
+                    ><ng-container i18n="@@docs.added-in">added in</ng-container>{{ ' ' }}<span translate="no">{{ row.versionAdded }}</span></span
+                  >
+                }
+              </td>
+            </tr>
+          }
+        </trove-data-table>
+      </section>
+    }
+
+    @if (entry().notes?.length) {
+      <section aria-labelledby="doc-notes">
+        <h3 id="doc-notes" i18n="@@docs.notes">Notes</h3>
+        <trove-doc-prose [html]="entry().notes ?? []" />
+      </section>
+    }
+
+    @if (entry().requirements?.length) {
+      <section aria-labelledby="doc-requirements">
+        <h3 id="doc-requirements" i18n="@@docs.requirements">Requirements</h3>
+        <ul class="doc-list">
+          @for (r of entry().requirements ?? []; track $index) {
+            <li><trove-doc-prose [html]="[r]" /></li>
+          }
+        </ul>
+      </section>
+    }
+
+    @if (entry().attributes?.length) {
+      <section aria-labelledby="doc-attributes">
+        <h3 id="doc-attributes" i18n="@@docs.attributes">Attributes</h3>
+        <dl class="doc-attributes">
+          @for (a of entry().attributes ?? []; track a.name) {
+            <dt>
+              <code translate="no">{{ a.name }}</code>
+              @if (a.support) {
+                <span class="badge" translate="no">{{ a.support }}</span>
+              }
+            </dt>
+            <dd>
+              <trove-doc-prose [html]="a.description ?? []" />
+              <trove-doc-prose [html]="a.details ?? []" />
+            </dd>
+          }
+        </dl>
+      </section>
+    }
+
+    @if (entry().seealso?.length) {
+      <section aria-labelledby="doc-seealso">
+        <h3 id="doc-seealso" i18n="@@docs.see-also">See also</h3>
+        <ul class="doc-list">
+          @for (s of entry().seealso ?? []; track $index) {
+            <li>
+              @if (s.module) {
+                <code translate="no">{{ s.module }}</code>
+              }
+              @if (s.description) {
+                <trove-doc-prose [html]="[s.description]" />
+              }
+              @if (s.link; as link) {
+                @if (safeHttpUrl(link); as href) {
+                  <a [href]="href" target="_blank" [attr.rel]="externalRel" translate="no">{{ link }}</a>
+                  <span class="material-icons inline" aria-hidden="true">open_in_new</span>
+                  <span class="visually-hidden" i18n="@@pkg.meta.external">(opens another site)</span>
+                }
+              }
+            </li>
+          }
+        </ul>
+      </section>
+    }
+
+    @if (entry().examples) {
+      <section aria-labelledby="doc-examples">
+        <h3 id="doc-examples" i18n="@@docs.examples">Examples</h3>
+        <div class="code-wrap">
+          <pre class="code-block" translate="no" tabindex="0">{{ entry().examples }}</pre>
+          <trove-copy-button [value]="entry().examples ?? ''" [label]="copyExamples" />
+        </div>
+      </section>
+    }
+
+    @if (returns().length > 0) {
+      <section aria-labelledby="doc-returns">
+        <h3 id="doc-returns" i18n="@@docs.returns">Return values</h3>
+        <trove-data-table [caption]="returnsCaption" [columns]="returnColumns" [empty]="false">
+          @for (row of returns(); track row.id) {
+            <tr [attr.data-depth]="row.depth">
+              <th scope="row" class="param-name" [style.padding-inline-start]="indent(row)">
+                <span class="name-line">
+                  @if (row.children > 0) {
+                    <button
+                      type="button"
+                      class="btn btn-icon fold"
+                      [attr.aria-expanded]="!foldedReturns().has(row.id)"
+                      [attr.aria-label]="foldLabel(row, foldedReturns())"
+                      (click)="toggleReturn(row)"
+                    >
+                      <span class="material-icons" aria-hidden="true">{{ foldedReturns().has(row.id) ? 'chevron_right' : 'expand_more' }}</span>
+                    </button>
+                  } @else {
+                    <span class="fold-space" aria-hidden="true"></span>
+                  }
+                  @if (row.depth > 0) {
+                    <span class="visually-hidden"
+                      ><ng-container i18n="@@docs.suboption-of">suboptions of</ng-container>{{ ' ' }}<span translate="no">{{ row.parent }}</span>:
+                    </span>
+                  }
+                  <code translate="no">{{ row.name }}</code>
+                </span>
+              </th>
+              <td translate="no">{{ row.type }}</td>
+              <td translate="no">{{ row.returned }}</td>
+              <td class="param-sample">
+                @if (row.sample !== '') {
+                  @if (inlineSample(row)) {
+                    <code translate="no">{{ row.sample }}</code>
+                  } @else {
+                    <div class="code-wrap">
+                      <pre class="code-block" translate="no" tabindex="0">{{ row.sample }}</pre>
+                      <trove-copy-button [value]="row.sample" [label]="copyExamples" />
+                    </div>
+                  }
+                }
+              </td>
+              <td class="param-description">
+                <trove-doc-prose [html]="row.description" />
+              </td>
+            </tr>
+          }
+        </trove-data-table>
+      </section>
+    }
+
+    @if (entry().author?.length) {
+      <section aria-labelledby="doc-authors">
+        <h3 id="doc-authors" i18n="@@docs.authors">Authors</h3>
+        <ul class="doc-list" translate="no">
+          @for (a of entry().author ?? []; track $index) {
+            <li>{{ a }}</li>
+          }
+        </ul>
+      </section>
+    }
+  }
+</article>

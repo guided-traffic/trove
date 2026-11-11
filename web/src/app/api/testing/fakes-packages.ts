@@ -1,5 +1,9 @@
 import { Provider } from '@angular/core';
 import {
+  DocsQuery,
+  PackageDocEntry,
+  PackageDocFile,
+  PackageDocTree,
   ClientSetup,
   ClientSetupApi,
   ClientSetupQuery,
@@ -12,6 +16,7 @@ import {
   PackagesApi,
   VersionFilters,
 } from '../packages-api';
+import { DocsFixture, commonFixture, docFile, docTree } from './fakes-ansible-docs';
 import { Page, PageFetcher } from '../pagination';
 import { ApiError } from '../problem';
 import { Repository, refOf } from '../repositories-api';
@@ -416,6 +421,25 @@ export function ansibleFixture(fake: FakePackagesApi): void {
   );
 }
 
+/**
+ * Gives `acme.tools@1.2.0` the documentation of {@link commonFixture} (or `fx`): the version announces it in `metadata.docs` and has a
+ * README, as a version that the generator has read does (R-ANS-036). Call it after {@link ansibleFixture}.
+ */
+export function ansibleDocsFixture(fake: FakePackagesApi, fx: DocsFixture = commonFixture(), version = '1.2.0'): DocsFixture {
+  const v = fake.versionList.find((x) => x.packageId === ANSIBLE_PACKAGE.id && x.version === version);
+  if (!v) throw new Error(`no version ${version}`);
+  fake.docFixtures.set(`${ANSIBLE_PACKAGE.id}@${version}`, fx);
+  v.hasReadme = fx.files.some((f) => f.name === 'README.md');
+  v.metadata = {
+    ...v.metadata,
+    docs: {
+      state: fx.state,
+      ...(fx.state === 'available' ? { source: fx.source, entries: fx.entries.length } : {}),
+    },
+  };
+  return fx;
+}
+
 export class FakePackagesApi extends PackagesApi {
   packages: PackageSummary[] = [
     {
@@ -480,6 +504,14 @@ export class FakePackagesApi extends PackagesApi {
   /** Rejects the next `list` page once. */
   listError: ApiError | null = null;
   readmeCalls: string[] = [];
+  /** The documentation by `<packageId>@<version>`; a version without an entry answers 404 (R-ANS-036). */
+  docFixtures = new Map<string, DocsFixture>();
+  /** Each call of the three documentation operations: `tree`, `tree?q=…`, `entry:<type>/<name>`, `file:<name>`. */
+  docCalls: string[] = [];
+  /** The refusal the next call of a documentation operation throws once. */
+  docFailure: ApiError | null = null;
+  /** The repository each documentation call asked for, in call order (`''`: none). */
+  docRepositories: string[] = [];
 
   override list(filters: PackageFilters): PageFetcher<PackageSummary> {
     this.listFilters.push(filters);
@@ -555,6 +587,36 @@ export class FakePackagesApi extends PackagesApi {
   override async readme(packageId: string, v: string): Promise<PackageReadme | null> {
     this.readmeCalls.push(`${packageId}@${v}`);
     return this.versionList.find((x) => x.packageId === packageId && x.version === v)?.readme ?? null;
+  }
+
+  private doc(call: string, packageId: string, v: string, repository: string | undefined): DocsFixture | null {
+    this.docCalls.push(call);
+    this.docRepositories.push(repository ?? '');
+    if (this.docFailure) {
+      const e = this.docFailure;
+      this.docFailure = null;
+      throw e;
+    }
+    return this.docFixtures.get(`${packageId}@${v}`) ?? null;
+  }
+
+  override async docs(packageId: string, v: string, query: DocsQuery = {}): Promise<PackageDocTree | null> {
+    const fx = this.doc(query.q ? `tree?q=${query.q}` : 'tree', packageId, v, query.repository);
+    return fx ? docTree(fx, query.q) : null;
+  }
+
+  override async docEntry(packageId: string, v: string, type: string, name: string, repository?: string): Promise<PackageDocEntry> {
+    const fx = this.doc(`entry:${type}/${name}`, packageId, v, repository);
+    const found = fx?.entries.find((e) => e.type === type && e.name === name);
+    if (!found) throw notFound();
+    return found;
+  }
+
+  override async docFile(packageId: string, v: string, file: string, repository?: string): Promise<PackageDocFile> {
+    const fx = this.doc(`file:${file}`, packageId, v, repository);
+    const found = fx ? docFile(fx, file) : null;
+    if (!found) throw notFound();
+    return found;
   }
 }
 

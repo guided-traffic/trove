@@ -27545,5 +27545,583 @@
         <source>Documentation</source>
       </segment>
     </unit>
+    <unit id="docs.pending">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-contents.ts:22,23</note>
+        <note category="location">src/app/features/packages/ansible-docs.html:7,8</note>
+      </notes>
+      <segment>
+        <source>The documentation of this version is being fetched.</source>
+      </segment>
+    </unit>
+    <unit id="docs.refresh">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-contents.ts:23,25</note>
+        <note category="location">src/app/features/packages/ansible-docs.html:8,10</note>
+      </notes>
+      <segment>
+        <source>Refresh</source>
+      </segment>
+    </unit>
+    <unit id="docs.contents.type">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-contents.ts:30,31</note>
+      </notes>
+      <segment>
+        <source>Type</source>
+      </segment>
+    </unit>
+    <unit id="docs.contents.caption">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-contents.ts:128</note>
+      </notes>
+      <segment>
+        <source>Contents of this version</source>
+      </segment>
+    </unit>
+    <unit id="docs.contents.empty">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-contents.ts:129</note>
+      </notes>
+      <segment>
+        <source>This version contains no modules, plugins or roles.</source>
+      </segment>
+    </unit>
+    <unit id="docs.col.name">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-contents.ts:131</note>
+        <note category="location">src/app/features/packages/ansible-doc-entry.ts:54</note>
+        <note category="location">src/app/features/packages/ansible-doc-entry.ts:62</note>
+      </notes>
+      <segment>
+        <source>Name</source>
+      </segment>
+    </unit>
+    <unit id="docs.col.type">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-contents.ts:132</note>
+        <note category="location">src/app/features/packages/ansible-doc-entry.ts:55</note>
+        <note category="location">src/app/features/packages/ansible-doc-entry.ts:63</note>
+      </notes>
+      <segment>
+        <source>Type</source>
+      </segment>
+    </unit>
+    <unit id="docs.col.short">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-contents.ts:133</note>
+      </notes>
+      <segment>
+        <source>Short description</source>
+      </segment>
+    </unit>
+    <unit id="docs.contents.all-types">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-contents.ts:138</note>
+      </notes>
+      <segment>
+        <source>All types (<ph id="0" equiv="count" disp="n"/>)</source>
+      </segment>
+    </unit>
+    <unit id="docs.added-in">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.html:12</note>
+        <note category="location">src/app/features/packages/ansible-doc-entry.html:125</note>
+      </notes>
+      <segment>
+        <source>added in</source>
+      </segment>
+    </unit>
+    <unit id="docs.deprecated">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.html:15,16</note>
+      </notes>
+      <segment>
+        <source>Deprecated</source>
+      </segment>
+    </unit>
+    <unit id="docs.removed-in">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.html:25</note>
+      </notes>
+      <segment>
+        <source>Removed in</source>
+      </segment>
+    </unit>
+    <unit id="docs.removed-at">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.html:30</note>
+      </notes>
+      <segment>
+        <source>Removed after</source>
+      </segment>
+    </unit>
+    <unit id="docs.alternative">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.html:35,37</note>
+      </notes>
+      <segment>
+        <source>Alternative</source>
+      </segment>
+    </unit>
+    <unit id="docs.no-docs-upstream">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.html:46,48</note>
+      </notes>
+      <segment>
+        <source>The upstream sent no documentation for this plugin.</source>
+      </segment>
+    </unit>
+    <unit id="docs.no-docs-generated">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.html:48,51</note>
+      </notes>
+      <segment>
+        <source>This plugin has no documentation in its source.</source>
+      </segment>
+    </unit>
+    <unit id="docs.synopsis">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.html:56,57</note>
+      </notes>
+      <segment>
+        <source>Synopsis</source>
+      </segment>
+    </unit>
+    <unit id="docs.fragments">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.html:63</note>
+      </notes>
+      <segment>
+        <source>Documentation fragments that are not merged into this page:</source>
+      </segment>
+    </unit>
+    <unit id="docs.parameters">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.html:69,70</note>
+      </notes>
+      <segment>
+        <source>Parameters</source>
+      </segment>
+    </unit>
+    <unit id="docs.suboption-of">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.html:90</note>
+        <note category="location">src/app/features/packages/ansible-doc-entry.html:231</note>
+      </notes>
+      <segment>
+        <source>suboptions of</source>
+      </segment>
+    </unit>
+    <unit id="docs.aliases">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.html:97</note>
+      </notes>
+      <segment>
+        <source>aliases:</source>
+      </segment>
+    </unit>
+    <unit id="docs.required">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.html:104,106</note>
+      </notes>
+      <segment>
+        <source>required</source>
+      </segment>
+    </unit>
+    <unit id="docs.notes">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.html:137,138</note>
+      </notes>
+      <segment>
+        <source>Notes</source>
+      </segment>
+    </unit>
+    <unit id="docs.requirements">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.html:144,145</note>
+      </notes>
+      <segment>
+        <source>Requirements</source>
+      </segment>
+    </unit>
+    <unit id="docs.attributes">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.html:155,156</note>
+      </notes>
+      <segment>
+        <source>Attributes</source>
+      </segment>
+    </unit>
+    <unit id="docs.see-also">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.html:175,176</note>
+      </notes>
+      <segment>
+        <source>See also</source>
+      </segment>
+    </unit>
+    <unit id="docs.examples">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.html:200,201</note>
+      </notes>
+      <segment>
+        <source>Examples</source>
+      </segment>
+    </unit>
+    <unit id="docs.returns">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.html:210,211</note>
+      </notes>
+      <segment>
+        <source>Return values</source>
+      </segment>
+    </unit>
+    <unit id="docs.authors">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.html:262,263</note>
+      </notes>
+      <segment>
+        <source>Authors</source>
+      </segment>
+    </unit>
+    <unit id="docs.col.required">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.ts:56</note>
+      </notes>
+      <segment>
+        <source>Required</source>
+      </segment>
+    </unit>
+    <unit id="docs.col.default">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.ts:57</note>
+      </notes>
+      <segment>
+        <source>Default</source>
+      </segment>
+    </unit>
+    <unit id="docs.col.choices">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.ts:58</note>
+      </notes>
+      <segment>
+        <source>Choices</source>
+      </segment>
+    </unit>
+    <unit id="docs.col.description">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.ts:59</note>
+        <note category="location">src/app/features/packages/ansible-doc-entry.ts:66</note>
+      </notes>
+      <segment>
+        <source>Description</source>
+      </segment>
+    </unit>
+    <unit id="docs.col.returned">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.ts:64</note>
+      </notes>
+      <segment>
+        <source>Returned</source>
+      </segment>
+    </unit>
+    <unit id="docs.col.sample">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.ts:65</note>
+      </notes>
+      <segment>
+        <source>Sample</source>
+      </segment>
+    </unit>
+    <unit id="docs.options.caption">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.ts:68</note>
+      </notes>
+      <segment>
+        <source>Parameters of this entry</source>
+      </segment>
+    </unit>
+    <unit id="docs.returns.caption">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.ts:69</note>
+      </notes>
+      <segment>
+        <source>Return values of this entry</source>
+      </segment>
+    </unit>
+    <unit id="docs.copy-name">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.ts:70</note>
+      </notes>
+      <segment>
+        <source>Copy the full name</source>
+      </segment>
+    </unit>
+    <unit id="docs.copy-examples">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.ts:71</note>
+      </notes>
+      <segment>
+        <source>Copy the examples</source>
+      </segment>
+    </unit>
+    <unit id="docs.unfold">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.ts:92</note>
+      </notes>
+      <segment>
+        <source>Show the suboptions of <ph id="0" equiv="name" disp="row.name"/></source>
+      </segment>
+    </unit>
+    <unit id="docs.fold">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-doc-entry.ts:93</note>
+      </notes>
+      <segment>
+        <source>Hide the suboptions of <ph id="0" equiv="name" disp="row.name"/></source>
+      </segment>
+    </unit>
+    <unit id="docs.tree.no-docs">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-docs.html:61,63</note>
+      </notes>
+      <segment>
+        <source>no documentation</source>
+      </segment>
+    </unit>
+    <unit id="docs.tree.heading">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-docs.html:73,74</note>
+      </notes>
+      <segment>
+        <source>Documentation</source>
+      </segment>
+    </unit>
+    <unit id="docs.search.label">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-docs.html:82,83</note>
+        <note category="location">src/app/features/packages/ansible-docs.html:84,85</note>
+      </notes>
+      <segment>
+        <source>Search the documentation</source>
+      </segment>
+    </unit>
+    <unit id="docs.search.none">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-docs.html:100,101</note>
+      </notes>
+      <segment>
+        <source>No entries match</source>
+      </segment>
+    </unit>
+    <unit id="docs.search.clear">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-docs.html:101,103</note>
+      </notes>
+      <segment>
+        <source>Clear the search</source>
+      </segment>
+    </unit>
+    <unit id="docs.tree.label">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-docs.html:109,110</note>
+      </notes>
+      <segment>
+        <source>Documentation</source>
+      </segment>
+    </unit>
+    <unit id="docs.truncated">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-docs.html:118,119</note>
+      </notes>
+      <segment>
+        <source> Not every entry is listed: the documentation of this version is larger than trove keeps. </source>
+      </segment>
+    </unit>
+    <unit id="docs.page.heading">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-docs.html:127,128</note>
+      </notes>
+      <segment>
+        <source>Page</source>
+      </segment>
+    </unit>
+    <unit id="docs.back">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-docs.html:132,133</note>
+      </notes>
+      <segment>
+        <source>Back to the tree</source>
+      </segment>
+    </unit>
+    <unit id="docs.empty">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-docs.html:146,148</note>
+      </notes>
+      <segment>
+        <source>This version has no documentation pages.</source>
+      </segment>
+    </unit>
+    <unit id="docs.source.upstream">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-docs.html:151,152</note>
+      </notes>
+      <segment>
+        <source>Taken from the upstream</source>
+      </segment>
+    </unit>
+    <unit id="docs.source.generated">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-docs.html:153</note>
+      </notes>
+      <segment>
+        <source>Generated by trove from the archive</source>
+      </segment>
+    </unit>
+    <unit id="docs.source.repository">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-docs.html:157</note>
+      </notes>
+      <segment>
+        <source>Repository</source>
+      </segment>
+    </unit>
+    <unit id="docs.search.too-short">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-docs.ts:185</note>
+      </notes>
+      <segment>
+        <source>Enter at least 2 characters to search.</source>
+      </segment>
+    </unit>
+    <unit id="docs.search.pending">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-docs.ts:186</note>
+      </notes>
+      <segment>
+        <source>Searching.</source>
+      </segment>
+    </unit>
+    <unit id="docs.search.count">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-docs.ts:189</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="matches" disp="n.matchCount"/> of <ph id="1" equiv="total" disp="total"/> entries</source>
+      </segment>
+    </unit>
+    <unit id="docs.import-log.empty">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-import-log.ts:23,26</note>
+      </notes>
+      <segment>
+        <source> No import task of this version is kept. A task is deleted after the retention period; the version stays. </source>
+      </segment>
+    </unit>
+    <unit id="docs.import-log.task">
+      <notes>
+        <note category="location">src/app/features/packages/ansible-import-log.ts:103</note>
+      </notes>
+      <segment>
+        <source>Import of <ph id="0" equiv="collection" disp="collection"/> <ph id="1" equiv="version" disp="task.version"/></source>
+      </segment>
+    </unit>
+    <unit id="docs.tree.documentation">
+      <notes>
+        <note category="location">src/app/features/packages/docs-model.ts:82</note>
+      </notes>
+      <segment>
+        <source>Documentation</source>
+      </segment>
+    </unit>
+    <unit id="docs.tree.modules">
+      <notes>
+        <note category="location">src/app/features/packages/docs-model.ts:143</note>
+      </notes>
+      <segment>
+        <source>Modules</source>
+      </segment>
+    </unit>
+    <unit id="docs.tree.plugins">
+      <notes>
+        <note category="location">src/app/features/packages/docs-model.ts:145</note>
+      </notes>
+      <segment>
+        <source>Plugins</source>
+      </segment>
+    </unit>
+    <unit id="docs.tree.roles">
+      <notes>
+        <note category="location">src/app/features/packages/docs-model.ts:147</note>
+      </notes>
+      <segment>
+        <source>Roles</source>
+      </segment>
+    </unit>
+    <unit id="docs.unavailable.upstream">
+      <notes>
+        <note category="location">src/app/features/packages/docs-model.ts:302</note>
+      </notes>
+      <segment>
+        <source>The upstream did not deliver the documentation of this version.</source>
+      </segment>
+    </unit>
+    <unit id="docs.unavailable.too-large">
+      <notes>
+        <note category="location">src/app/features/packages/docs-model.ts:304</note>
+      </notes>
+      <segment>
+        <source>The documentation of this version is larger than trove keeps.</source>
+      </segment>
+    </unit>
+    <unit id="docs.unavailable.invalid">
+      <notes>
+        <note category="location">src/app/features/packages/docs-model.ts:306</note>
+      </notes>
+      <segment>
+        <source>The upstream sent a documentation document that trove cannot read.</source>
+      </segment>
+    </unit>
+    <unit id="docs.unavailable.unknown">
+      <notes>
+        <note category="location">src/app/features/packages/docs-model.ts:308</note>
+      </notes>
+      <segment>
+        <source>The documentation of this version is not available.</source>
+      </segment>
+    </unit>
+    <unit id="pkg.tab.documentation">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:281</note>
+      </notes>
+      <segment>
+        <source>Documentation</source>
+      </segment>
+    </unit>
+    <unit id="pkg.tab.contents">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:283</note>
+      </notes>
+      <segment>
+        <source>Contents</source>
+      </segment>
+    </unit>
+    <unit id="pkg.tab.import-log">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:290</note>
+      </notes>
+      <segment>
+        <source>Import log</source>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.docs-site">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:509</note>
+      </notes>
+      <segment>
+        <source>Docs site</source>
+      </segment>
+    </unit>
   </file>
 </xliff>

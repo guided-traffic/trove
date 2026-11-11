@@ -1061,3 +1061,30 @@ The settings form, the wizard step and the edit tab render the NuGet schema with
 | [shared/banner.ts](../../web/src/app/shared/banner.ts), [banner-text.ts](../../web/src/app/shared/banner-text.ts) | `<trove-banner>` in the shell and on the sign-in page; `parseBannerText` splits a message into text and `https` links, everything else stays text |
 
 Specs: [virtual-members.spec.ts](../../web/src/app/features/repositories/virtual-members.spec.ts), [general-settings.spec.ts](../../web/src/app/features/settings/general-settings.spec.ts), [banner-store.spec.ts](../../web/src/app/core/banner-store.spec.ts), [banner.spec.ts](../../web/src/app/shared/banner.spec.ts), [banner-text.spec.ts](../../web/src/app/shared/banner-text.spec.ts). The journeys `18-virtual-members.spec.ts` and `19-general-settings.spec.ts` run in CI on the kind cluster ([e2e.md](e2e.md#browser-journeys)); they were not run locally.
+
+## The Ansible documentation screens
+
+R-UI-060 to R-UI-064 against the three operations of R-ANS-036 ([ansible-docs.md](ansible-docs.md)); the component specs run against the generated types
+and the fakes of [fakes-ansible-docs.ts](../../web/src/app/api/testing/fakes-ansible-docs.ts) (`commonFixture`: a README, one more file, eight modules of which one
+nests its parameters three levels deep and carries a hostile name, eight filters and sixteen `module_utils` files; `docTree` builds the tree the way the server does,
+with the counts before the search). `ansibleDocsFixture` in [fakes-packages.ts](../../web/src/app/api/testing/fakes-packages.ts) gives `acme.tools@1.2.0` that documentation
+and announces it in `metadata.docs`; the fake records each call in `docCalls`.
+
+| File | Responsibility |
+|---|---|
+| [package-detail.ts](../../web/src/app/features/packages/package-detail.ts) | Chooses the tabs of an `ansible` version from `metadata.docs` and `hasReadme` (`announcedTabs`): Documentation and Contents when the state is not `none` or there is a README, no README tab, Import log when a local repository holds the version. Reads the tree once per version when one of the two tabs is open (`wantsDocs`, `docsAsked`); a 404 or 403 removes both tabs (`docsGone`). Looks up the dependencies for their links (`heldDependencies`). The inputs `doc` and `q` are the query parameters; a change of version drops both |
+| [ansible-docs.ts](../../web/src/app/features/packages/ansible-docs.ts), `.html`, `.scss` | The Documentation tab: the file browser's two panes (`.browse` of [_browse.scss](../../web/src/styles/_browse.scss)), the search field (300 ms, from 2 characters, live region, Escape), the tree as `@angular/aria`'s navigation tree, the page resource (`getPackageVersionDocEntry` or `…DocFile`, read from the repository the tree names), the states, the source line |
+| [ansible-doc-entry.ts](../../web/src/app/features/packages/ansible-doc-entry.ts), `.html`, `.scss` | One entry page: the head and the sections in the order of ansible-doc, the parameters and return values as the shared data table with rows flattened by depth |
+| [doc-prose.ts](../../web/src/app/features/packages/doc-prose.ts) | The paragraphs of HTML in an entry, each bound through `<trove-package-readme>` |
+| [docs-model.ts](../../web/src/app/features/packages/docs-model.ts) | Pure functions: the address of a page (`parseDoc`), the nodes of the tree (`docNodes`), the first page, the rows of the tables (`optionRows`, `returnRows`, `visibleRows`), the text of a typed value |
+| [ansible-contents.ts](../../web/src/app/features/packages/ansible-contents.ts) | The Contents tab over the tree's answer: type filter, pages of 100 |
+| [ansible-import-log.ts](../../web/src/app/features/packages/ansible-import-log.ts) | The Import log tab: `AnsibleApi.importTasks(repository, { package, version })` |
+| [tabs.ts](../../web/src/app/shared/ui/tabs.ts) | `<trove-tab [count]>` draws the neutral badge of the Contents tab |
+
+Rules the screens follow:
+
+- *HTML is bound once, the way the README is.* The arrays of prose are bound through `<trove-package-readme>` (`[innerHTML]`, Angular's sanitizer and Trusted Types on, the finishing pass for links and images); a file page is the README component's output. Every other value of an entry, a name, a default, a choice, a sample, an author, is a text binding. `bypassSecurityTrust*` stays forbidden by `check-rules.mjs`. Threat: [ansible-documentation.md](../security/ansible-documentation.md).
+- *No request for a tab that is not there.* Without `metadata.docs` (the caller may not read the wiki, R-ANS-037) the page shows neither tab and calls none of the operations; the README operation is not used for the format.
+- *Whitespace between inline elements.* Angular drops a text node that holds only whitespace; two inline elements that must be one word apart need `{{ ' ' }}` between them (the entry template does).
+- The tree is a `role="tree"` of links; the library prints a console notice per tab of the tab group that has no panel, which is not this tree's.
+- The panes narrow by the container query `content` of `_browse.scss`, as the file browser does. Beside the install panel (from 60 rem of content) the tab is narrower than the content: jsdom has no layout, so the widths of 390 and 1440 px belong to the browser journey of the set `ansible`, which is not written yet.

@@ -95,9 +95,40 @@
     <div class="pkg-tabs">
       <trove-tab-group [selectedIndex]="activeIndex()" (selectedIndexChange)="selectTab($event)">
         @for (t of tabs(); track t.id) {
-          <trove-tab [label]="t.label">
+          <trove-tab [label]="t.label" [count]="t.count ?? null">
             <div class="tab">
               @switch (t.id) {
+                @case ('documentation') {
+                  @if (activeTab() === 'documentation') {
+                    <trove-ansible-docs
+                      [packageId]="d.packageId"
+                      [version]="d.version"
+                      [tree]="docsTree()"
+                      [loading]="docs.isLoading()"
+                      [failure]="docsFailure()"
+                      [readmeOnly]="docsReadmeOnly()"
+                      [severalRepositories]="d.repositories.length > 1"
+                      [doc]="doc()"
+                      [q]="q()"
+                      (refresh)="docs.reload()"
+                    />
+                  }
+                }
+                @case ('contents') {
+                  @if (activeTab() === 'contents') {
+                    <trove-ansible-contents
+                      [tree]="docsTree()"
+                      [loading]="docs.isLoading()"
+                      [failure]="docsFailure()"
+                      (refresh)="docs.reload()"
+                    />
+                  }
+                }
+                @case ('import-log') {
+                  @if (activeTab() === 'import-log' && localRepository(); as repository) {
+                    <trove-ansible-import-log [repository]="repository" [collection]="d.name" [version]="d.version" />
+                  }
+                }
                 @case ('readme') {
                   @if (readmeFailure(); as f) {
                     <trove-error-notice [error]="f" (retry)="readme.reload()" />
@@ -196,7 +227,15 @@
                     <h2>{{ g.label }}</h2>
                     <dl class="facts" translate="no">
                       @for (e of g.entries; track e[0]) {
-                        <dt>{{ e[0] }}</dt>
+                        <dt>
+                          @if (dependencyLink(e[0]); as link) {
+                            <a [routerLink]="link">{{ e[0] }}</a>
+                          } @else if (d.format === 'ansible') {
+                            <span class="secondary-inline">{{ e[0] }}</span>
+                          } @else {
+                            {{ e[0] }}
+                          }
+                        </dt>
                         <dd>{{ e[1] }}</dd>
                       }
                     </dl>
@@ -307,7 +346,7 @@
                         <th scope="row">
                           <a
                             [routerLink]="[]"
-                            [queryParams]="{ version: v.version }"
+                            [queryParams]="{ version: v.version, doc: null, q: null }"
                             queryParamsHandling="merge"
                             translate="no"
                             >{{ v.version }}</a

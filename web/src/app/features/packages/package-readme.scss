@@ -104,3 +104,17 @@ trove-package-readme {
     max-inline-size: 110ch;
   }
 }
+
+// The prose of a documentation entry (R-UI-061) is a run of paragraphs: the first and the last sit flush, so that a table cell and a
+// section keep their own spacing.
+trove-doc-prose {
+  display: block;
+
+  trove-package-readme .readme > :is(p, ul, ol):first-child {
+    margin-block-start: 0;
+  }
+
+  trove-package-readme:last-child .readme > :is(p, ul, ol):last-child {
+    margin-block-end: 0;
+  }
+}

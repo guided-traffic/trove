@@ -1,0 +1,133 @@
+:host {
+  display: block;
+  min-inline-size: 0;
+}
+
+.doc-head {
+  margin-block-end: var(--trove-space-3);
+}
+
+.doc-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--trove-space-1);
+  margin: 0;
+  font: var(--trove-type-title-large);
+  overflow-wrap: anywhere;
+}
+
+.doc-short {
+  margin-block: var(--trove-space-1) 0;
+}
+
+.doc-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--trove-space-3);
+  margin-block: var(--trove-space-1) 0;
+  color: var(--trove-text-muted);
+
+  &:empty {
+    display: none;
+  }
+}
+
+.doc-deprecation {
+  margin-block-start: var(--trove-space-2);
+  padding: var(--trove-space-2) var(--trove-space-3);
+  border: 1px solid var(--trove-border);
+  border-radius: var(--trove-radius-m);
+  background: var(--trove-surface-raised);
+
+  p {
+    margin-block: var(--trove-space-1);
+  }
+}
+
+.doc-none,
+.doc-muted {
+  color: var(--trove-text-muted);
+}
+
+section {
+  margin-block-start: var(--trove-space-4);
+
+  h3 {
+    margin-block: 0 var(--trove-space-2);
+    font: var(--trove-type-title-small);
+  }
+}
+
+.doc-list {
+  margin: 0;
+  padding-inline-start: var(--trove-space-4);
+}
+
+.doc-attributes {
+  margin: 0;
+
+  dt {
+    margin-block-start: var(--trove-space-2);
+    font-weight: 600;
+  }
+
+  dd {
+    margin: 0;
+  }
+}
+
+.name-line {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--trove-space-1);
+}
+
+.fold {
+  min-inline-size: 24px;
+  min-block-size: 24px;
+  padding: 0;
+
+  .material-icons {
+    font-size: 1.125rem;
+  }
+}
+
+.fold-space {
+  display: inline-block;
+  inline-size: 24px;
+  flex: none;
+}
+
+.aliases {
+  display: block;
+  padding-inline-start: 28px;
+}
+
+.choices {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.param-description {
+  min-inline-size: 16rem;
+}
+
+.param-sample {
+  min-inline-size: 8rem;
+}
+
+.code-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--trove-space-2);
+
+  pre {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    margin: 0;
+    overflow-x: auto;
+  }
+}

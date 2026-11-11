@@ -1,5 +1,5 @@
 import { Provider } from '@angular/core';
-import { AnsibleApi, AnsibleImportTask, AnsibleTombstone } from '../ansible-api';
+import { AnsibleApi, AnsibleImportTask, AnsibleTombstone, ImportTaskFilter } from '../ansible-api';
 import { Page, PageFetcher } from '../pagination';
 import { ApiError } from '../problem';
 
@@ -47,6 +47,8 @@ export class FakeAnsibleApi extends AnsibleApi {
   /** The refusal the next call of any operation throws once. */
   failure: ApiError | null = null;
   calls: string[] = [];
+  /** The filter of each call of `importTasks`. */
+  filters: ImportTaskFilter[] = [];
 
   private enter(call: string): void {
     this.calls.push(call);
@@ -66,8 +68,15 @@ export class FakeAnsibleApi extends AnsibleApi {
     };
   }
 
-  override importTasks(): PageFetcher<AnsibleImportTask> {
-    return this.pages('importTasks', () => this.tasks);
+  override importTasks(_ref: string, filter: ImportTaskFilter = {}): PageFetcher<AnsibleImportTask> {
+    this.filters.push(filter);
+    return this.pages('importTasks', () =>
+      this.tasks.filter(
+        (t) =>
+          (filter.package === undefined || `${t.namespace}.${t.name}` === filter.package) &&
+          (filter.version === undefined || t.version === filter.version),
+      ),
+    );
   }
 
   override tombstones(): PageFetcher<AnsibleTombstone> {

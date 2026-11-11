@@ -96,3 +96,5 @@ before using a new term in a German text.
 | promote (a next key), reinstate (a withheld key), confirm the retirement | hochstufen, wieder einsetzen, Außerdienststellung bestätigen |
 | suite, component, architecture, index (of a suite), release (APT), generation | Suite, Komponente, Architektur, Index, Release, Generation |
 | collection (Ansible), import task, tombstone (a deleted version number) | Collection, Import-Aufgabe, Grabstein |
+| documentation (of a collection), module, plugin, role, parameter, suboption, return value | Dokumentation, Modul, Plugin, Rolle, Parameter, Unteroption, Rückgabewert |
+| import log (tab of a version), docs site (link) | Import-Protokoll, Dokumentations-Website |

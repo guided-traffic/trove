@@ -26,6 +26,8 @@ export class TabContent {}
 })
 export class TabPage {
   readonly label = input.required<string>();
+  /** A count shown in the strip as a neutral badge after the label (R-UI-062); `null` shows none. */
+  readonly count = input<number | null>(null);
   readonly eager = viewChild.required(TemplateRef);
   readonly lazy = contentChild(TabContent, { read: TemplateRef });
 }
@@ -50,7 +52,12 @@ export class TabPage {
         (selectedTabChange)="select($event)"
       >
         @for (t of tabs(); track t; let i = $index) {
-          <button ngTab class="tab-link" type="button" [value]="i.toString()">{{ t.label() }}</button>
+          <button ngTab class="tab-link" type="button" [value]="i.toString()">
+            {{ t.label() }}
+            @if (t.count() !== null) {
+              <span class="badge">{{ t.count() }}</span>
+            }
+          </button>
         }
       </div>
       @if (current(); as t) {
@@ -63,6 +70,9 @@ export class TabPage {
   styles: `
     :host {
       display: block;
+    }
+    .tab-link .badge {
+      margin-inline-start: var(--trove-space-1);
     }
   `,
 })

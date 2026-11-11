@@ -3195,6 +3195,99 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/packages/{packageId}/versions/{version}/docs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The server-generated package identifier (R-API-029). */
+                packageId: components["parameters"]["PackageId"];
+                /** @description The version string, percent-encoded. */
+                version: components["parameters"]["PackageVersionPath"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read the documentation tree of a version
+         * @description The tree of the documentation of a visible version: the state, the README and the Markdown files, and the entries (modules,
+         *     plugins, roles) grouped as the Documentation and Contents tabs show them (R-ANS-036, R-UI-061, R-UI-062). The documentation is the
+         *     wiki part of the repository (R-ANS-037): a caller who may not read the wiki gets the answer of a version that does not exist.
+         *     `repository` selects the repository (`<projectKey>/<repoKey>`); without it the first repository the caller may read that holds the
+         *     version with a state other than `none` is used, local before remote. A virtual repository is resolved to the member that serves
+         *     the version document. The answer names the repository it was read from. The counts of the groups are those before `q` filtered;
+         *     `matchCount` is the number of entries left. `warnings` is only for a caller who holds `deploy` on the repository. A read never
+         *     queries an upstream. A version of a format without documentation, and a version that is not visible, are `404`.
+         */
+        get: operations["getPackageVersionDocs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/packages/{packageId}/versions/{version}/docs/entries/{type}/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The server-generated package identifier (R-API-029). */
+                packageId: components["parameters"]["PackageId"];
+                /** @description The version string, percent-encoded. */
+                version: components["parameters"]["PackageVersionPath"];
+                /** @description The content type of the entry, the Galaxy's `content_type` (`module`, `lookup`, `filter`, `role`, ...). */
+                type: string;
+                /** @description The content name of the entry, the Galaxy's `content_name` (letters, digits, `_` and `.`). */
+                name: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Read the documentation page of one module, plugin or role
+         * @description One page of the documentation of a visible version (R-ANS-036, R-UI-061). The prose is sanitized HTML, one string per paragraph;
+         *     names, types and typed values are text and JSON values the client shows as text. An entry that does not exist, and a type or
+         *     name outside its grammar, are `404`; an entry without documentation answers `200` with the header fields and no sections. The
+         *     wiki rule of the tree applies (R-ANS-037).
+         */
+        get: operations["getPackageVersionDocEntry"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/packages/{packageId}/versions/{version}/docs/files/{file}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The server-generated package identifier (R-API-029). */
+                packageId: components["parameters"]["PackageId"];
+                /** @description The version string, percent-encoded. */
+                version: components["parameters"]["PackageVersionPath"];
+                /** @description The name of the README or of a Markdown file below `docs/`, as the tree lists it, percent-encoded. */
+                file: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Read the README or a Markdown file of the documentation of a version
+         * @description The README or a Markdown file of a visible version as sanitized HTML, as the README operation answers it (R-ANS-036, R-API-029,
+         *     R-UI-008). A name the tree does not list is `404`. The `ETag` is a strong tag over the source, the renderer version and the image
+         *     policy. The wiki rule of the tree applies (R-ANS-037).
+         */
+        get: operations["getPackageVersionDocFile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectKey}/repositories/{repoKey}/client-setup": {
         parameters: {
             query?: never;
@@ -7461,15 +7554,206 @@ export interface components {
              *     `distTags` (tag to version), `dependencies`, `devDependencies`, `peerDependencies` and
              *     `optionalDependencies` (name to range), `authors` (strings), `homepage`, `repositoryUrl`
              *     and `bugsUrl` (strings as the package declares them), `engines` (name to range) and
-             *     `deprecated` (string or null). A member that does not apply is absent.
+             *     `deprecated` (string or null). For Ansible Galaxy collections `docs` announces the documentation (R-ANS-036, Q-API-263): it is
+             *     wiki content and absent for a caller who may not read the wiki of the repository. A member that does not apply is absent.
              */
             metadata: {
+                docs?: components["schemas"]["PackageVersionDocs"];
+            } & {
                 [key: string]: unknown;
             };
             repositories: components["schemas"]["PackageVersionRepository"][];
             files: components["schemas"]["PackageFile"][];
         };
         PackageReadme: {
+            /**
+             * @description The type of the source; `html` is always sanitized HTML.
+             * @enum {string}
+             */
+            contentType: "text/markdown";
+            html: string;
+            /** @description The source or the rendered HTML exceeded a limit of R-UI-008. */
+            truncated: boolean;
+            /**
+             * Format: int32
+             * @description The number of external images replaced by links.
+             */
+            externalImagesBlocked: number;
+        };
+        /**
+         * @description The announcement of the documentation of a version, `metadata.docs` of the version details for the format Ansible Galaxy
+         *     (R-ANS-036, Q-API-263), so that the page chooses its tabs without a probing request.
+         */
+        PackageVersionDocs: {
+            /** @enum {string} */
+            state: "available" | "pending" | "unavailable" | "none";
+            /**
+             * @description Set with `available`.
+             * @enum {string}
+             */
+            source?: "generated" | "upstream";
+            /**
+             * Format: int32
+             * @description The number of entries; set with `available`.
+             */
+            entries?: number;
+        };
+        /**
+         * @description The documentation tree of a version (R-ANS-036). For the states `pending`, `unavailable` and `none` only `state`, `reason` where
+         *     it applies and `repository` are present. Groups are always in the order modules, plugins, roles; types and entries are in
+         *     alphabetical order.
+         */
+        PackageDocTree: {
+            /** @enum {string} */
+            state: "available" | "pending" | "unavailable" | "none";
+            /**
+             * @description Set with `unavailable`.
+             * @enum {string}
+             */
+            reason?: "upstream_error" | "too_large" | "invalid_document";
+            /** @enum {string} */
+            source?: "generated" | "upstream";
+            /** @description The repository the documentation was read from, `<projectKey>/<repoKey>`. */
+            repository: string;
+            /** Format: date-time */
+            builtAt?: string;
+            /** @description A bound cut entries or files off. */
+            truncated?: boolean;
+            /**
+             * Format: int32
+             * @description Only with `q`. The number of entries left.
+             */
+            matchCount?: number;
+            /** @description The README first, when there is one, then the Markdown files of `docs/` in name order. */
+            files?: components["schemas"]["PackageDocFileHead"][];
+            groups?: components["schemas"]["PackageDocGroup"][];
+            /** @description What the generator left out and why. Only for a caller who holds `deploy` on the repository. */
+            warnings?: components["schemas"]["PackageDocWarning"][];
+        };
+        PackageDocFileHead: {
+            name: string;
+            /** @description The first heading of the Markdown as text, at most 120 characters; the file name otherwise. */
+            title: string;
+        };
+        PackageDocGroup: {
+            /** @enum {string} */
+            category: "module" | "plugin" | "role";
+            /** @description `Modules`, `Plugins` or `Roles`. */
+            label: string;
+            /**
+             * Format: int32
+             * @description The number of entries of the group before `q` filtered them.
+             */
+            count: number;
+            types: components["schemas"]["PackageDocType"][];
+        };
+        PackageDocType: {
+            /** @description The Galaxy's `content_type`. */
+            type: string;
+            /**
+             * Format: int32
+             * @description The number of entries of the type before `q` filtered them.
+             */
+            count: number;
+            entries: components["schemas"]["PackageDocEntryHead"][];
+        };
+        PackageDocEntryHead: {
+            type: string;
+            name: string;
+            /** @description Plain text. */
+            shortDescription: string;
+            hasDocs: boolean;
+        };
+        PackageDocWarning: {
+            /** @description The member of the archive the warning concerns. */
+            path: string;
+            code: string;
+            message: string;
+        };
+        /**
+         * @description One page of the documentation (R-ANS-036). `description`, `notes`, `requirements` and the `description` of an option or a return
+         *     value are arrays of sanitized HTML strings, one per paragraph; names, types, `returned`, `versionAdded`, authors, choices, defaults and
+         *     samples are text and typed JSON values that the client shows as text. An entry without documentation has the header fields only.
+         */
+        PackageDocEntry: {
+            type: string;
+            name: string;
+            /** @description `<namespace>.<name>.<content name>`. */
+            fullName: string;
+            /** @description Plain text. */
+            shortDescription?: string;
+            hasDocs: boolean;
+            /** @enum {string} */
+            source: "generated" | "upstream";
+            /** Format: date-time */
+            builtAt?: string;
+            versionAdded?: string;
+            deprecated?: components["schemas"]["PackageDocDeprecated"];
+            description?: string[];
+            notes?: string[];
+            requirements?: string[];
+            author?: string[];
+            options?: components["schemas"]["PackageDocOption"][];
+            returnValues?: components["schemas"]["PackageDocReturnValue"][];
+            /** @description Text, shown in a code block; trove does not highlight or run it. */
+            examples?: string;
+            seealso?: components["schemas"]["PackageDocSeeAlso"][];
+            attributes?: components["schemas"]["PackageDocAttribute"][];
+            /** @description The documentation fragments that were not merged into the entry. */
+            extendsFragments?: string[];
+            /** @description Roles. The README of the role as sanitized HTML. */
+            readmeHtml?: string;
+        };
+        PackageDocDeprecated: {
+            /** @description Sanitized HTML. */
+            why?: string;
+            removedIn?: string;
+            removedAtDate?: string;
+            /** @description Sanitized HTML. */
+            alternative?: string;
+        };
+        PackageDocOption: {
+            name: string;
+            type?: string;
+            elements?: string;
+            required?: boolean;
+            /** @description Any JSON value, shown as text. */
+            default?: unknown;
+            choices?: unknown[];
+            aliases?: string[];
+            description?: string[];
+            versionAdded?: string;
+            /** @description Nested to a depth of 12. */
+            suboptions?: components["schemas"]["PackageDocOption"][];
+        };
+        PackageDocReturnValue: {
+            name: string;
+            type?: string;
+            elements?: string;
+            returned?: string;
+            description?: string[];
+            /** @description Any JSON value, shown as text. */
+            sample?: unknown;
+            versionAdded?: string;
+            /** @description Nested to a depth of 12. */
+            contains?: components["schemas"]["PackageDocReturnValue"][];
+        };
+        PackageDocSeeAlso: {
+            module?: string;
+            /** @description Sanitized HTML. */
+            description?: string;
+            /** @description Kept only for `http` and `https`. */
+            link?: string;
+        };
+        PackageDocAttribute: {
+            name: string;
+            support?: string;
+            description?: string[];
+            details?: string[];
+        };
+        /** @description The README or a Markdown file, as the README answer of R-API-029 (R-ANS-036). */
+        PackageDocFile: {
+            name: string;
             /**
              * @description The type of the source; `html` is always sanitized HTML.
              * @enum {string}
@@ -8970,7 +9254,7 @@ export interface components {
         /**
          * @description The settings of the Ansible Galaxy format, the `ansible` member of a repository document (R-REPO-004, R-ANS-019). The document
          *     of the format's JSON Schema is `settingsSchema` of `GET /api/v1/formats`; `TestR_ARCH_008_AnsibleSettingsSchemaEqualsTheOpenAPIMember`
-         *     fails on any difference between the two. Both settings are for remote repositories; local and virtual repositories have no
+         *     fails on any difference between the two. Every setting is for remote repositories; local and virtual repositories have no
          *     settings of the format, and a setting that does not apply to the class of the repository answers 422 `not_applicable`. An
          *     omitted setting takes its default.
          */
@@ -8988,6 +9272,13 @@ export interface components {
              * @default cloud-services
              */
             clientId: string;
+            /**
+             * @description Remote repositories (R-ANS-035, R-ANS-042). Fetch the docs-blob document of a version from the upstream, by the job that
+             *     follows the version document and by a client's request for the route, and keep the documentation it holds. With `false` the
+             *     route answers 404 and no rows are written; a client that wants the document goes to the upstream.
+             * @default true
+             */
+            fetchDocumentation: boolean;
         };
         /** @description The import task of a publish (R-ANS-009), final when it is created. */
         AnsibleImportTask: {
@@ -9428,6 +9719,12 @@ export interface components {
         JobId: string;
         /** @description The server-generated package identifier (R-API-029). */
         PackageId: string;
+        /**
+         * @description The repository to read the documentation from, `<projectKey>/<repoKey>` (R-ANS-036). Without it, the first repository the caller may
+         *     read that holds the version with a state other than `none` is used (local before remote). A virtual repository is resolved to the
+         *     member that serves the version document.
+         */
+        DocRepository: string;
         /** @description The version string, percent-encoded. */
         PackageVersionPath: string;
     };
@@ -16709,6 +17006,148 @@ export interface operations {
             503: components["responses"]["Unavailable"];
         };
     };
+    getPackageVersionDocs: {
+        parameters: {
+            query?: {
+                /**
+                 * @description The repository to read the documentation from, `<projectKey>/<repoKey>` (R-ANS-036). Without it, the first repository the caller may
+                 *     read that holds the version with a state other than `none` is used (local before remote). A virtual repository is resolved to the
+                 *     member that serves the version document.
+                 */
+                repository?: components["parameters"]["DocRepository"];
+                /**
+                 * @description Search inside this version's documentation: split on white space into 1 to 8 terms of at most 64 characters; every term must match an
+                 *     entry's name (substring) or the words of its description (prefix). A text of fewer than 2 or more than 512 characters is
+                 *     `422 invalid_query`.
+                 */
+                q?: string;
+            };
+            header?: {
+                /** @description An ETag the client holds; a match answers `304` (R-API-012). */
+                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+            };
+            path: {
+                /** @description The server-generated package identifier (R-API-029). */
+                packageId: components["parameters"]["PackageId"];
+                /** @description The version string, percent-encoded. */
+                version: components["parameters"]["PackageVersionPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The tree. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackageDocTree"];
+                };
+            };
+            304: components["responses"]["NotModified"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getPackageVersionDocEntry: {
+        parameters: {
+            query?: {
+                /**
+                 * @description The repository to read the documentation from, `<projectKey>/<repoKey>` (R-ANS-036). Without it, the first repository the caller may
+                 *     read that holds the version with a state other than `none` is used (local before remote). A virtual repository is resolved to the
+                 *     member that serves the version document.
+                 */
+                repository?: components["parameters"]["DocRepository"];
+            };
+            header?: {
+                /** @description An ETag the client holds; a match answers `304` (R-API-012). */
+                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+            };
+            path: {
+                /** @description The server-generated package identifier (R-API-029). */
+                packageId: components["parameters"]["PackageId"];
+                /** @description The version string, percent-encoded. */
+                version: components["parameters"]["PackageVersionPath"];
+                /** @description The content type of the entry, the Galaxy's `content_type` (`module`, `lookup`, `filter`, `role`, ...). */
+                type: string;
+                /** @description The content name of the entry, the Galaxy's `content_name` (letters, digits, `_` and `.`). */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The page. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackageDocEntry"];
+                };
+            };
+            304: components["responses"]["NotModified"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getPackageVersionDocFile: {
+        parameters: {
+            query?: {
+                /**
+                 * @description The repository to read the documentation from, `<projectKey>/<repoKey>` (R-ANS-036). Without it, the first repository the caller may
+                 *     read that holds the version with a state other than `none` is used (local before remote). A virtual repository is resolved to the
+                 *     member that serves the version document.
+                 */
+                repository?: components["parameters"]["DocRepository"];
+            };
+            header?: {
+                /** @description An ETag the client holds; a match answers `304` (R-API-012). */
+                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+            };
+            path: {
+                /** @description The server-generated package identifier (R-API-029). */
+                packageId: components["parameters"]["PackageId"];
+                /** @description The version string, percent-encoded. */
+                version: components["parameters"]["PackageVersionPath"];
+                /** @description The name of the README or of a Markdown file below `docs/`, as the tree lists it, percent-encoded. */
+                file: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The file. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackageDocFile"];
+                };
+            };
+            304: components["responses"]["NotModified"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
     getClientSetup: {
         parameters: {
             query: {
@@ -19130,6 +19569,10 @@ export interface operations {
             query?: {
                 /** @description Only the tasks in this state. */
                 state?: "completed" | "failed";
+                /** @description Only the tasks of this collection, `<namespace>.<name>` (Q-API-262). An unknown name yields an empty page. */
+                package?: string;
+                /** @description Only the tasks of this version (Q-API-262). An unknown version yields an empty page. */
+                version?: string;
                 /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
                 limit?: components["parameters"]["Limit"];
                 /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */

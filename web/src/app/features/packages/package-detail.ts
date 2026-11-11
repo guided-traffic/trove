@@ -1,8 +1,8 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { Component, computed, effect, inject, input, resource, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
 import { TabGroup, TabPage } from '../../shared/ui/tabs';
 import { Router, RouterLink } from '@angular/router';
-import { PackageVersionSummary, PackagesApi } from '../../api/packages-api';
+import { PackageDocTree, PackageVersionDocs, PackageVersionSummary, PackagesApi } from '../../api/packages-api';
 import { splitRef } from '../../api/repositories-api';
 import { collectAll } from '../../api/pagination';
 import { CopyButton } from '../../shared/copy-button';
@@ -15,13 +15,32 @@ import { EXTERNAL_REL, packageCommands, safeHttpUrl } from './package-links';
 import { PackageMemory } from './package-memory';
 import { PackageReadmeView } from './package-readme';
 import { FormatIconView } from '../../shared/format-icon';
+import { AnsibleContents } from './ansible-contents';
+import { AnsibleDocs } from './ansible-docs';
+import { AnsibleImportLog } from './ansible-import-log';
 // >>> M4b vulnerabilities
 import { VulnerabilitiesApi, VulnerabilityPackageReport, VulnerabilitySeverity, VulnerabilityVersionReport } from '../../api/vulnerabilities-api';
 import { blockedRepositories, highestOpen, openFindings, PackageVulnerabilities } from '../vulnerabilities/package-vulnerabilities';
 import { SeverityBadge } from '../vulnerabilities/vuln-parts';
 // <<< M4b vulnerabilities
 
-export type DetailTab = 'readme' | 'metadata' | 'files' | 'repositories' | 'versions' | 'vulnerabilities';
+export type DetailTab =
+  | 'readme'
+  | 'documentation'
+  | 'contents'
+  | 'metadata'
+  | 'files'
+  | 'repositories'
+  | 'versions'
+  | 'import-log'
+  | 'vulnerabilities';
+
+interface TabEntry {
+  readonly id: DetailTab;
+  readonly label: string;
+  /** Shown in the strip as a neutral badge after the label (the Contents tab, R-UI-062). */
+  readonly count?: number;
+}
 
 /** A link of the metadata tab: a URL when its scheme is http or https, else the text alone (R-UI-007). */
 interface MetadataLink {
@@ -164,6 +183,9 @@ function frameworkGroups(value: unknown): FrameworkGroup[] {
     InstallPanel,
     PackageReadmeView,
     FormatIconView,
+    AnsibleContents,
+    AnsibleDocs,
+    AnsibleImportLog,
     // >>> M4b vulnerabilities
     PackageVulnerabilities,
     SeverityBadge,
@@ -188,6 +210,9 @@ export class PackageDetail {
   readonly version = input<string | undefined>();
   readonly tab = input<string | undefined>();
   readonly prerelease = input<string | undefined>();
+  /** The open page of the Documentation tab and its search text (R-UI-060); a change of the version drops both. */
+  readonly doc = input<string | undefined>();
+  readonly q = input<string | undefined>();
 
   protected readonly summary = resource({
     params: () => ({ format: this.format(), name: this.name() }),
@@ -223,9 +248,79 @@ export class PackageDetail {
   protected readonly readme = resource({
     params: () => {
       const d = valueOf(this.details);
-      return d?.hasReadme ? { id: d.packageId, version: d.version } : undefined;
+      // The README of an Ansible collection is the first page of its Documentation tab (R-UI-060), not a tab of its own.
+      return d?.hasReadme && d.format !== 'ansible' ? { id: d.packageId, version: d.version } : undefined;
     },
     loader: ({ params }) => this.api.readme(params.id, params.version),
+  });
+
+  /**
+   * What `metadata.docs` of the version announces (R-UI-060): absent for a format without documentation and for a caller who may not
+   * read the wiki of the repository (R-ANS-037, Q-UI-244), and then there is no Documentation tab and no request.
+   */
+  protected readonly docsAnnouncement = computed<PackageVersionDocs | null>(() => {
+    const d = this.detail();
+    return d?.format === 'ansible' ? (d.metadata.docs ?? null) : null;
+  });
+  /** The Documentation tab is announced: the state is not `none`, or the version has a README. */
+  private readonly docsAnnounced = computed(() => {
+    const a = this.docsAnnouncement();
+    return a !== null && (a.state !== 'none' || this.detail()?.hasReadme === true);
+  });
+  protected readonly docsReadmeOnly = computed(() => this.docsAnnounced() && this.docsAnnouncement()?.state === 'none');
+  /** The local repository that holds the version: the Import log tab reads its tasks (R-UI-063). */
+  protected readonly localRepository = computed(() => {
+    const d = this.detail();
+    return d?.format === 'ansible' ? (d.repositories.find((r) => r.class === 'local')?.key ?? null) : null;
+  });
+
+  /** Every tab the version could show; the documentation tabs leave when their operation says the wiki is closed. */
+  private readonly announcedTabs = computed<readonly TabEntry[]>(() => {
+    const announcement = this.docsAnnouncement();
+    return [
+      ...(this.docsAnnounced() ? [{ id: 'documentation' as const, label: $localize`:@@pkg.tab.documentation:Documentation` }] : []),
+      ...(this.docsAnnounced() && announcement?.state !== 'none'
+        ? [{ id: 'contents' as const, label: $localize`:@@pkg.tab.contents:Contents`, ...(announcement?.entries !== undefined ? { count: announcement.entries } : {}) }]
+        : []),
+      ...(this.detail()?.hasReadme && this.detail()?.format !== 'ansible' ? [{ id: 'readme' as const, label: $localize`:@@pkg.tab.readme:README` }] : []),
+      { id: 'metadata', label: $localize`:@@pkg.tab.metadata:Metadata` },
+      { id: 'files', label: $localize`:@@pkg.tab.files:Files` },
+      { id: 'repositories', label: $localize`:@@pkg.tab.repositories:Repositories` },
+      { id: 'versions', label: $localize`:@@pkg.tab.versions:All versions` },
+      ...(this.localRepository() !== null ? [{ id: 'import-log' as const, label: $localize`:@@pkg.tab.import-log:Import log` }] : []),
+      // >>> M4b vulnerabilities
+      ...(this.vulnerabilityReport() !== null || this.vulnerabilities.isLoading()
+        ? [{ id: 'vulnerabilities' as const, label: this.vulnerabilityTabLabel() }]
+        : []),
+      // <<< M4b vulnerabilities
+    ];
+  });
+  /** Whether the tab that is open needs the tree: asked of the announced tabs, so the tree is requested only when its tab is shown. */
+  private readonly wantsDocs = computed(() => {
+    const tabs = this.announcedTabs();
+    const i = tabs.findIndex((t) => t.id === this.tab());
+    const open = tabs[i < 0 ? 0 : i]?.id;
+    return (open === 'documentation' || open === 'contents') && !this.docsReadmeOnly();
+  });
+  private readonly docsKey = computed(() => {
+    const d = this.detail();
+    return d ? `${d.packageId}@${d.version}` : null;
+  });
+  /** The version whose tree was asked for: the tree is read once per version and kept while the user looks at another tab. */
+  private readonly docsAsked = signal<string | null>(null);
+  protected readonly docs = resource({
+    params: () => {
+      const d = this.detail();
+      return d && this.docsAsked() === this.docsKey() ? { id: d.packageId, version: d.version } : undefined;
+    },
+    loader: ({ params }) => this.api.docs(params.id, params.version),
+  });
+  /** The whole tree; null while it loads, and after a refusal (then the tabs are gone). */
+  protected readonly docsTree = computed<PackageDocTree | null>(() => valueOf(this.docs) ?? null);
+  private readonly docsGone = computed(() => this.docs.hasValue() && this.docs.value() === null);
+  protected readonly docsFailure = computed(() => {
+    const e = this.docs.error();
+    return e ? asApiError(e) : null;
   });
 
   // >>> M4b vulnerabilities
@@ -283,18 +378,9 @@ export class PackageDetail {
     return e ? asApiError(e) : null;
   });
 
-  protected readonly tabs = computed<readonly { id: DetailTab; label: string }[]>(() => [
-    ...(this.detail()?.hasReadme ? [{ id: 'readme' as const, label: $localize`:@@pkg.tab.readme:README` }] : []),
-    { id: 'metadata', label: $localize`:@@pkg.tab.metadata:Metadata` },
-    { id: 'files', label: $localize`:@@pkg.tab.files:Files` },
-    { id: 'repositories', label: $localize`:@@pkg.tab.repositories:Repositories` },
-    { id: 'versions', label: $localize`:@@pkg.tab.versions:All versions` },
-    // >>> M4b vulnerabilities
-    ...(this.vulnerabilityReport() !== null || this.vulnerabilities.isLoading()
-      ? [{ id: 'vulnerabilities' as const, label: this.vulnerabilityTabLabel() }]
-      : []),
-    // <<< M4b vulnerabilities
-  ]);
+  protected readonly tabs = computed<readonly TabEntry[]>(() =>
+    this.docsGone() ? this.announcedTabs().filter((t) => t.id !== 'documentation' && t.id !== 'contents') : this.announcedTabs(),
+  );
 
   // >>> M4b vulnerabilities
   /** The tab's label carries the count of the open findings of the selected version (R-VULN-023). */
@@ -309,6 +395,11 @@ export class PackageDetail {
     const i = this.tabs().findIndex((t) => t.id === this.tab());
     return i < 0 ? 0 : i;
   });
+  /**
+   * The tab that is open. The strip creates the content of every tab with the screen and shows one of them, so a tab that reads
+   * from the server on its own (the documentation tabs, the import log) is drawn only while it is the open one.
+   */
+  protected readonly activeTab = computed(() => this.tabs()[this.activeIndex()]?.id);
 
   protected readonly distTags = computed(() => stringRecord(this.detail()?.metadata['distTags']));
   protected readonly dependencyGroups = computed<readonly DependencyGroup[]>(() => {
@@ -320,6 +411,38 @@ export class PackageDetail {
       { label: $localize`:@@pkg.meta.optional-dependencies:Optional dependencies`, entries: stringRecord(m['optionalDependencies']) },
     ].filter((g) => g.entries.length > 0);
   });
+  /**
+   * The collections a collection version depends on that this installation holds (Q-UI-245): each of them is a link to its page, the
+   * others stay muted text. One lookup per dependency, which rejects for a package that no visible repository holds.
+   */
+  protected readonly heldDependencies = resource({
+    params: () => {
+      const d = this.detail();
+      if (d?.format !== 'ansible') return undefined;
+      const names = stringRecord(d.metadata['dependencies']).map(([name]) => name);
+      return names.length > 0 ? names : undefined;
+    },
+    loader: async ({ params }): Promise<ReadonlySet<string>> => {
+      const held = new Set<string>();
+      await Promise.all(
+        params.map(async (name) => {
+          try {
+            await this.api.lookup('ansible', name);
+            held.add(name);
+          } catch {
+            // Not held, or not visible to this caller: the name stays text.
+          }
+        }),
+      );
+      return held;
+    },
+  });
+  /** The router commands of a dependency's page, or null when the installation does not hold it. */
+  protected dependencyLink(name: string): string[] | null {
+    return this.detail()?.format === 'ansible' && valueOf(this.heldDependencies)?.has(name)
+      ? packageCommands(this.project(), 'ansible', name)
+      : null;
+  }
   protected readonly frameworkGroups = computed(() => frameworkGroups(this.detail()?.metadata['dependencyGroups']));
   /** A NuGet version the publisher unlisted (R-NUGET-006): it restores when pinned and is hidden from search. */
   protected readonly unlisted = computed(() => this.detail()?.metadata['listed'] === false);
@@ -385,7 +508,13 @@ export class PackageDetail {
     const entries: [string, unknown][] = [
       [$localize`:@@pkg.meta.homepage:Homepage`, m['homepage']],
       [$localize`:@@pkg.meta.license-url:License`, m['licenseUrl']],
-      [$localize`:@@pkg.meta.documentation:Documentation`, m['documentationUrl']],
+      // The Documentation tab of an Ansible collection holds its documentation; the link out is the collection's own site (Q-UI-245).
+      [
+        this.detail()?.format === 'ansible'
+          ? $localize`:@@pkg.meta.docs-site:Docs site`
+          : $localize`:@@pkg.meta.documentation:Documentation`,
+        m['documentationUrl'],
+      ],
       [$localize`:@@pkg.meta.source:Source repository`, m['repositoryUrl']],
       [$localize`:@@pkg.meta.bugs:Issue tracker`, m['bugsUrl']],
     ];
@@ -479,6 +608,12 @@ export class PackageDetail {
       const s = valueOf(this.summary);
       if (s) untracked(() => this.memory.addRecent({ format: s.format, name: s.name }));
     });
+    // The tree is asked for when a tab that shows it is open, and then once for the version (R-UI-060).
+    effect(() => {
+      if (!this.wantsDocs()) return;
+      const key = this.docsKey();
+      untracked(() => this.docsAsked.set(key));
+    });
   }
 
   protected selectTab(index: number): void {
@@ -488,7 +623,7 @@ export class PackageDetail {
 
   protected chooseVersion(event: Event): void {
     const value = (event.target as HTMLInputElement).value.trim();
-    if (this.all().some((v) => v.version === value)) void this.navigate({ version: value });
+    if (this.all().some((v) => v.version === value)) void this.navigate({ version: value, doc: null, q: null });
   }
 
   protected togglePrereleases(event: Event): void {

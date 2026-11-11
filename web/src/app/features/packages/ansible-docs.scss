@@ -1,0 +1,54 @@
+// The Documentation tab reuses the two panes of the file browser (styles/_browse.scss, Q-UI-241); what follows is only what a tree of
+// links and a documentation page need beyond it.
+
+:host {
+  display: block;
+}
+
+.docs-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--trove-space-3);
+
+  p {
+    margin: 0;
+  }
+}
+
+.tree-row {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.node-label.muted .node-name {
+  color: var(--trove-text-muted);
+}
+
+.node-label .badge {
+  margin-inline-start: auto;
+}
+
+.match-count:empty {
+  display: none;
+}
+
+.doc-source {
+  margin-block: var(--trove-space-4) 0;
+  color: var(--trove-text-muted);
+  font-size: var(--trove-text-muted-size);
+}
+
+// A version that has a README and no entries has no tree: the page takes the whole width, also on a narrow content area.
+.browse.docs.readme-only {
+  grid-template-columns: minmax(0, 1fr);
+
+  .pane-details {
+    display: flex;
+  }
+
+  .back {
+    display: none;
+  }
+}

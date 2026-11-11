@@ -9,7 +9,7 @@ requirements are [R-ANS-033 to R-ANS-046](../spec/formats/ansible.md), the scree
 
 ## What is built and what is not
 
-The backend is built; the screens and the end-to-end rows are builder B2's. Where a part is a stand-in it says so.
+The backend and the screens are built; the end-to-end rows and the browser journey of the set `ansible` are not written yet. Where a part is a stand-in it says so.
 
 | Part | Where | State |
 |---|---|---|
@@ -31,6 +31,7 @@ The backend is built; the screens and the end-to-end rows are builder B2's. Wher
 | The wiki seam | [wikigate.go](../../internal/formats/ansible/wikigate.go) and `docsWiki` in [ansible_docs.go](../../internal/api/v1/ansible_docs.go) | stand-ins: the repository read decision, until task T-18 |
 | Metrics | [docs_metrics.go](../../internal/formats/ansible/docs_metrics.go) | the route and the fills of the request path; see H-903 |
 | The counting stub | [test/ansiblestub](../../test/ansiblestub) (`docs-blob/`, the modes `docs`, `docs_foreign_href`) | built |
+| The Documentation, Contents and Import log tabs, the Dependencies links | [web-ui.md](web-ui.md#the-ansible-documentation-screens) | built against the generated types and the fakes; not yet seen in a browser, the browser journey of the set `ansible` is not written yet |
 
 ## The paths
 

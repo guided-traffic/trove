@@ -176,7 +176,8 @@
       }
     }
 
-    &[aria-selected='true'] > .node-label {
+    &[aria-selected='true'] > .node-label,
+    &[aria-current='page'] > .node-label {
       background: var(--trove-accent-container);
       color: var(--trove-on-accent-container);
       font-weight: 600;
@@ -202,7 +203,7 @@
     color: var(--trove-text-muted);
   }
 
-  [aria-selected='true'] > .node-label :is(.node-chevron, .node-icon) {
+  :is([aria-selected='true'], [aria-current='page']) > .node-label :is(.node-chevron, .node-icon) {
     color: inherit;
   }
 

@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { ApiClient } from './client';
 import { PageFetcher } from './pagination';
-import { seg } from './query';
+import { cleanQuery, seg } from './query';
 import { repositoryUrl } from './repositories-api';
 import { Schema } from './types';
 
@@ -10,9 +10,15 @@ import { Schema } from './types';
 export type AnsibleImportTask = Schema<'AnsibleImportTask'>;
 export type AnsibleTombstone = Schema<'AnsibleTombstone'>;
 
+/** The optional filters of the import tasks (Q-API-262): one collection, `<namespace>.<name>`, and one version of it. */
+export interface ImportTaskFilter {
+  readonly package?: string;
+  readonly version?: string;
+}
+
 export abstract class AnsibleApi {
   /** `GET …/ansible/imports`: the import tasks of a local repository (of the deployment target for a virtual one), newest first. */
-  abstract importTasks(ref: string): PageFetcher<AnsibleImportTask>;
+  abstract importTasks(ref: string, filter?: ImportTaskFilter): PageFetcher<AnsibleImportTask>;
   /** `GET …/ansible/tombstones`: the deleted versions of a local repository whose numbers are not accepted again. */
   abstract tombstones(ref: string): PageFetcher<AnsibleTombstone>;
   /** `DELETE …/ansible/tombstones/{collection}/{version}`: clears a tombstone, so that the number can be published again. */
@@ -23,8 +29,8 @@ export abstract class AnsibleApi {
 export class HttpAnsibleApi extends AnsibleApi {
   private readonly client = inject(ApiClient);
 
-  override importTasks(ref: string): PageFetcher<AnsibleImportTask> {
-    return this.client.page<AnsibleImportTask>(`${repositoryUrl(ref)}/ansible/imports`);
+  override importTasks(ref: string, filter: ImportTaskFilter = {}): PageFetcher<AnsibleImportTask> {
+    return this.client.page<AnsibleImportTask>(`${repositoryUrl(ref)}/ansible/imports`, cleanQuery(filter));
   }
 
   override tombstones(ref: string): PageFetcher<AnsibleTombstone> {

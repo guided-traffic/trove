@@ -62,7 +62,11 @@ describe('Package details', () => {
     const input = versionInput(r);
     input.value = '1.3.0';
     input.dispatchEvent(new Event('change', { bubbles: true }));
-    expect(navigate).toHaveBeenCalledWith([], { queryParams: { version: '1.3.0' }, queryParamsHandling: 'merge' });
+    // A new version starts a documentation page afresh (R-UI-060): `doc` and `q` are dropped.
+    expect(navigate).toHaveBeenCalledWith([], {
+      queryParams: { version: '1.3.0', doc: null, q: null },
+      queryParamsHandling: 'merge',
+    });
     navigate.mockClear();
     input.value = '9.9.9';
     input.dispatchEvent(new Event('change', { bubbles: true }));
