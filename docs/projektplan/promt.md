@@ -296,7 +296,10 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   failed in their `apt-get install build-essential`; again at 15:05 for `e2e (nuget)` in 43044075096 (re-run). `e2e (vuln)` and `e2e (bastion)` on
   the same kind of runner passed in both runs; `e2e (nuget)` and `e2e (ci)` stayed red after the first re-run. Since then the jobs call
   [build-tools](../../.github/actions/build-tools/action.yml), which installs only what the runner lacks, so the GitHub-hosted runners no longer touch
-  the archive; the self-hosted image still lacks `make` and the compiler, so this finding stays open for it.
+  the archive; the self-hosted image still lacks `make` and the compiler, so this finding stays open for it. The outage went on past 15:50 (Test and
+  Release 43052141784): the step passed, and `e2e (nuget)` and `e2e (ci)` then failed in building the NuGet clients image, whose `RUN apt-get
+  install mono-complete` could not resolve `archive.ubuntu.com` while `dist.nuget.org` resolved in the same build. Those two legs depend on the archive
+  through that image; a prebuilt clients image in a registry would remove it.
 - **F-119 · The transfer loop of the drain tests saw 429 and 502 when the cluster stalled** (Test and Release 42561072166, 2026-11-09, and
   the nightly dispatch 42578594755 of the set `drain-roles` alone on the large class). Cause found and fixed for the transfer loop (Q-HA-230):
   the cluster stalled for about 40 s (07:50:08 to 07:50:50), the open-loop `transfer.js` released its piled-up iterations in one burst of
@@ -424,7 +427,7 @@ by `version: "*"`. Red pipelines are worked on even though they no longer hold a
   whale may be shown only with the owner's permission (npm's logo policy, Red Hat's trademark guidelines, Docker's trademark guidelines,
   read 2026-11-11), so npm and Ansible Galaxy keep the neutral glyph. To show them, the owner asks npm, Inc. and Red Hat for permission.
   At the walkthrough: the logos in the running app, light and dark, in Firefox and Safari (only Chrome on a static page was looked at).
-- T-19, the documentation of Ansible collections, is built for local, remote and virtual repositories (the set `ansible`, 87 tests, green on kind on 2026-11-11). Open: its four wiki seam sites still ask the repository read until T-18's check replaces them (T-18 WP1d), so a wiki-denied member of a virtual repository has no proof yet; gaps H-900 to H-903 ([ansible-documentation.md](../security/ansible-documentation.md)); the job `e2e (ansible)` installs Node.js and Playwright since this change and has not run on CI with them yet.
+- T-19, the documentation of Ansible collections, is built for local, remote and virtual repositories (the set `ansible`, 87 tests, green on kind on 2026-11-11). Open: its four wiki seam sites still ask the repository read until T-18's check replaces them (T-18 WP1d), so a wiki-denied member of a virtual repository has no proof yet; gaps H-900 to H-903 ([ansible-documentation.md](../security/ansible-documentation.md)); the job `e2e (ansible)` ran it green on CI with Node.js and Playwright (Test and Release 43044075096, 87 tests, the five `TestAnsibleDocs*` included).
 - The ansible client-setup fake (`web/src/app/api/testing/fakes-packages.ts`) answers 404 for the install panel, so every ansible package-detail spec shows the error notice; the specs scope their checks around it.
 - T-20's address field (R-UI-065): the browser check in `web/e2e/tests/02-repository-and-files.spec.ts` passed on kind in `e2e (access-long)` of Test and Release 43007020170; at the walkthrough: Q-UI-274 gives the field the editable control's fill instead of the read-only grey, not compared with GitLab's clone field in a browser.
 - `repository-detail` is the only settings page not yet in the one-column form of the [style guide](../developer/ui-style-guide.md#settings-pages) (Q-UI-222): what its tabs become needs the owner's reference at the walkthrough.
