@@ -87,7 +87,7 @@
     }
   </section>
 
-  <div class="pkg-layout">
+  <div class="pkg-layout" [class.stacked]="activeTab() === 'documentation' || activeTab() === 'contents'">
     <div class="pkg-install">
       <trove-install-panel [format]="format()" [name]="name()" [version]="d" />
     </div>

@@ -78,19 +78,21 @@
   min-inline-size: 0;
 }
 
+// The Documentation and Contents tabs take the whole width: beside the install panel the page pane of the two-pane tab is too narrow for
+// a table of six columns (Q-UI-257), so the panel stays above the tabs for them.
 @container content (min-width: 60rem) {
-  .pkg-layout {
+  .pkg-layout:not(.stacked) {
     grid-template-columns: minmax(0, 1fr) 24rem;
   }
 
-  .pkg-install {
+  .pkg-layout:not(.stacked) .pkg-install {
     grid-column: 2;
     grid-row: 1;
     position: sticky;
     inset-block-start: var(--trove-space-3);
   }
 
-  .pkg-tabs {
+  .pkg-layout:not(.stacked) .pkg-tabs {
     grid-column: 1;
     grid-row: 1;
   }

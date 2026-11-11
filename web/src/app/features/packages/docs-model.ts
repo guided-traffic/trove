@@ -108,7 +108,8 @@ export function docNodes(view: PackageDocTree, all: PackageDocTree, searching: b
         count: null,
         doc: entryDoc(type, e.name),
         tooltip: e.shortDescription,
-        muted: !e.hasDocs,
+        // A role has its README and no doc_strings: it is not "without documentation" (the page shows the README).
+        muted: !e.hasDocs && e.type !== 'role',
         children: [],
       }));
     const flat = g.types.length === 1 && g.types[0]?.type === g.category;

@@ -1854,7 +1854,7 @@ jobs:
             pull_request) base="$PR_BASE" ;;
             push) base="$PUSH_BEFORE" ;;
           esac
-          paths='^(internal/formats/ansible/|internal/formats/(setup|serve|remote|virtual)\.go$|internal/formathost/|internal/formatdata/ansible/|internal/importer/ansible|internal/api/dispatch/|internal/items/|internal/uploads/|internal/proxy/|internal/virtual/|internal/mirror/|internal/httpserver/|test/ansiblestub/|test/e2e/(ansible_|ansibleclients)|test/e2e/clients/fwd/|deploy/dev/(ansiblestub|ansible-clients|values-dev|values-scatter|pki|kind)\.yaml$|deploy/dev/(up|e2e|lib)\.sh$|deploy/helm/trove/|tools/versions\.env$|docs/spec/formats/ansible\.md$)'
+          paths='^(internal/formats/ansible/|internal/formats/(setup|serve|remote|virtual)\.go$|internal/formathost/|internal/formatdata/ansible/|internal/importer/ansible|internal/api/dispatch/|internal/items/|internal/uploads/|internal/proxy/|internal/virtual/|internal/mirror/|internal/httpserver/|test/ansiblestub/|test/e2e/(ansible_|ansibleclients)|web/e2e/(ansible-docs/|playwright\.ansible-docs)|test/e2e/clients/fwd/|deploy/dev/(ansiblestub|ansible-clients|values-dev|values-scatter|pki|kind)\.yaml$|deploy/dev/(up|e2e|lib)\.sh$|deploy/helm/trove/|tools/versions\.env$|docs/spec/formats/ansible\.md$)'
           if [ "$CLOSING" = "true" ] || [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
             echo "no base to compare with ($EVENT), or a closing run: the Ansible suite runs"
             echo "run=true" >> "$GITHUB_OUTPUT"
@@ -1921,6 +1921,21 @@ jobs:
         with:
           username: guidedtraffic
           password: ${{ secrets.DOCKERHUB_PAT }}
+
+      # The set runs the browser journey of the documentation of collections (TestAnsibleDocsJourney, web/e2e/ansible-docs).
+      - name: Set up Node.js for the browser journeys
+        if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: web/.nvmrc
+
+      - name: Install the Playwright journeys and their browser
+        if: steps.scope.outputs.run == 'true'
+        working-directory: web
+        run: |
+          set -euo pipefail
+          npm ci
+          npx playwright install --with-deps chromium
 
       - name: make ansible-clients-image
         if: steps.scope.outputs.run == 'true'

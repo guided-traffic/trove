@@ -10580,6 +10580,22 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied in the spec:** R-UI-061.
 
+### Q-UI-257 · The install panel stays above the tabs while the Documentation or the Contents tab is open
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Verified in the browser journey of the set `ansible` (the screenshot `docs-1440.png`, 1440 px wide): with the install panel beside the tabs from 60 rem of content (R-UI-007, Q-UI-3), the two panes of the Documentation tab share about 43 rem, the tree takes its minimum of 18 rem, and the page pane is about 27 rem wide, so the parameter table of six columns scrolls sideways at once. This is the case the revisit clause of Q-UI-241 names.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) For the tabs Documentation and Contents the package page is one column: the install panel above the tabs, not beside them (chosen) | The class `stacked` on the page's grid | The page pane is about 49 rem wide at 1440 px and all six columns of the table fit; the other tabs keep the layout of Q-UI-3 | The panel jumps above the tabs when one of the two tabs is opened |
+| (b) Keep the panel beside the tabs | As before | One layout for all tabs | A page pane of 27 rem; every parameter table scrolls sideways |
+| (c) Make the tree pane narrower | `clamp(12rem, 30%, 18rem)` | The panel stays | The tree names are cut; the owner decided the pane width (Q-UI-241) |
+
+**Choice:** (a). **Rationale:** the panel is a convenience of the other tabs, the documentation is what the owner asked for. Revisit if the jump is found distracting (then the panel is collapsed to one line for these tabs).
+
+**Applied in the spec:** R-UI-060, [Q-UI-241](#q-ui-241--the-documentation-tab-is-the-file-browsers-two-panes-a-tree-with-a-search-field-and-the-page).
+
 ### Q-API-260 · The documentation operations are declared wiki content in the OpenAPI document; the marker follows R-AUTHZ-034
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.

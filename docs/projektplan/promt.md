@@ -83,8 +83,7 @@ Hard rules, also for every subagent (put them into every subagent prompt):
 1. `git status` must be clean; then `git pull --rebase origin main`.
 2. During the alpha (rule 10) a run works on two fronts at once: the first open task of
    [section 10](#10--owner-tasks-of-2026-11-07-the-next-registries), cut into work packages with an agent and a branch each, and
-   every open finding of section 8 with an agent each. Open there now: the owner tasks of 2026-11-11, **T-18 (visibility levels), then
-   T-19 (the documentation of Galaxy collections)**; they come before the next unit of item 3. The open items of BETA.md phase 7 are
+   every open finding of section 8 with an agent each. Open there now: the owner task of 2026-11-11 **T-18 (visibility levels)**; it comes before the next unit of item 3. The open items of BETA.md phase 7 are
    findings of the same kind. Outside the alpha: open [BETA.md](BETA.md), table
    **Where we are**; the current phase is the first row whose status is not 🟢, and a row at 🟡 is resumed (step 2, item 4).
 3. If every row of BETA.md is 🟢, open [FULL.md](FULL.md) and take the first unit that is not 🟢,
@@ -292,7 +291,9 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   scan, Trivy) failed in `apt-get` with "Could not connect to archive.ubuntu.com:80" over IPv6 and IPv4; jobs that had installed
   earlier passed. An outage outside the repository (at 03:10 UTC `archive.ubuntu.com` did not answer from the owner's network either,
   `security.ubuntu.com` did); it makes every such job depend on the archive. Done when the runner image carries
-  `make` and the C compiler (the owner's runner) or the jobs keep a local package cache.
+  `make` and the C compiler (the owner's runner) or the jobs keep a local package cache. Again on 2026-11-11 from 14:25 (Test and Release 43037911704): `azure.archive.ubuntu.com`
+  did not resolve on the runners for about three minutes, and `e2e (nuget)` and `e2e (ci)` failed in their `apt-get install build-essential`; the
+  next push ran them again.
 - **F-119 · The transfer loop of the drain tests saw 429 and 502 when the cluster stalled** (Test and Release 42561072166, 2026-11-09, and
   the nightly dispatch 42578594755 of the set `drain-roles` alone on the large class). Cause found and fixed for the transfer loop (Q-HA-230):
   the cluster stalled for about 40 s (07:50:08 to 07:50:50), the open-loop `transfer.js` released its piled-up iterations in one burst of
@@ -377,7 +378,7 @@ Handed over at the end of the session of 2026-11-10/11 ([section 11](#11--run-re
 f8719487 (the format logos, v0.44.0) ran green in every job (Test and Release 42995232524). The owner's installation follows the chart
 by `version: "*"`. Red pipelines are worked on even though they no longer hold a release
 ([releasing.md](../developer/releasing.md#until-the-first-stable-release)). The next run starts with the owner's tasks of
-[section 10](#owner-tasks-of-2026-11-11), **T-18, then T-19**, with the red legs below beside them; the next unit of
+[section 10](#owner-tasks-of-2026-11-11), **T-18**, with the red legs below beside them; the next unit of
 [FULL.md](FULL.md) (block B, F1) comes after them.
 
 **Decisions only the owner can take**
@@ -420,7 +421,7 @@ by `version: "*"`. Red pipelines are worked on even though they no longer hold a
   whale may be shown only with the owner's permission (npm's logo policy, Red Hat's trademark guidelines, Docker's trademark guidelines,
   read 2026-11-11), so npm and Ansible Galaxy keep the neutral glyph. To show them, the owner asks npm, Inc. and Red Hat for permission.
   At the walkthrough: the logos in the running app, light and dark, in Firefox and Safari (only Chrome on a static page was looked at).
-- T-19, the documentation of Ansible collections: backend (generator, storage, the `docs-blob/` route for local, remote and virtual, the fetch job, the three operations) and the screens are on `main`; open: the e2e rows of the set `ansible` with the real client and the browser journey (the narrow layout of the Documentation tab beside the install panel, Q-UI-241's revisit clause, is checked there), and the switch of its four wiki seam sites to T-18's check. Gaps H-900 to H-903 ([ansible-documentation.md](../security/ansible-documentation.md)); a wiki-denied member of a virtual repository has no integration proof until T-18's check exists.
+- T-19, the documentation of Ansible collections, is built for local, remote and virtual repositories (the set `ansible`, 87 tests, green on kind on 2026-11-11). Open: its four wiki seam sites still ask the repository read until T-18's check replaces them (T-18 WP1d), so a wiki-denied member of a virtual repository has no proof yet; gaps H-900 to H-903 ([ansible-documentation.md](../security/ansible-documentation.md)); the job `e2e (ansible)` installs Node.js and Playwright since this change and has not run on CI with them yet.
 - The ansible client-setup fake (`web/src/app/api/testing/fakes-packages.ts`) answers 404 for the install panel, so every ansible package-detail spec shows the error notice; the specs scope their checks around it.
 - T-20's address field (R-UI-065): the browser check in `web/e2e/tests/02-repository-and-files.spec.ts` is type-checked, not yet run on kind; at the walkthrough: Q-UI-274 gives the field the editable control's fill instead of the read-only grey, not compared with GitLab's clone field in a browser.
 - `repository-detail` is the only settings page not yet in the one-column form of the [style guide](../developer/ui-style-guide.md#settings-pages) (Q-UI-222): what its tabs become needs the owner's reference at the walkthrough.
@@ -484,8 +485,8 @@ evidence in [apt-work-packages.md](apt-work-packages.md#24--closing)) are done. 
 
 Set by the owner on 2026-11-11 (T-18 and T-19 after reading the galaxy_ng screens of his collections; T-20, the client addresses in full, is built: R-UI-065). All are confirmed features, not parked ideas, and
 the next run takes them in this order, each planned by a planning agent (spec and a work-package plan) before anything is built.
-Both are planned (run of 2026-11-11): T-18 in [visibility-work-packages.md](visibility-work-packages.md) (R-AUTHZ-033 to 035, ADR-192), T-19 in
-[galaxy-docs-work-packages.md](galaxy-docs-work-packages.md) (R-ANS-033 to 046, ADR-196, ADR-197); the drafts on the local `wip-*` branches are superseded.
+T-18 is planned in [visibility-work-packages.md](visibility-work-packages.md) (R-AUTHZ-033 to 035, ADR-192). T-19 is built (run of 2026-11-11,
+[galaxy-docs-work-packages.md](galaxy-docs-work-packages.md), R-ANS-033 to 046): the set `ansible` ran green on kind with the real clients and both browser journeys.
 
 - **T-18 · Visibility levels.** Private, internal and public, as in the owner's GitLab:
   - **private**: only members, that is principals that hold a grant on it;
@@ -506,19 +507,6 @@ Both are planned (run of 2026-11-11): T-18 in [visibility-work-packages.md](visi
   audit events, the schema, and the caches a change must reach (the authz snapshot, the claims index) within the existing bound. Security
   pages change (who can read what), with their gaps. e2e with real clients: "public artifacts, internal wiki" (an anonymous `npm install` works,
   an anonymous request for the documentation gets what was decided), and an external user who sees nothing internal.
-- **T-19 · The documentation of Ansible Galaxy collections.** galaxy_ng shows a collection's documentation (the owner's screenshots of
-  `hans_fischer.common` 1.5.0): an Install tab (description, license, the install command, a download link, "Requires Ansible"), a
-  Documentation tab with a search field and a tree (the Readme, Modules with 8 entries, Plugins with 24, each with its own page), tabs
-  Contents, Import log, Dependencies, Distributions, and links Docs site, Website, Issue tracker, Repo. trove serves and shows the same for
-  local, remote and virtual repositories. Today the remote class drops `metadata.docs_blob` and `metadata.contents` (Q-ANS-10) and the local
-  class never stores them. galaxy_ng builds `docs_blob` at import (galaxy-importer runs ansible-doc over the plugins), so the spec decides
-  whether trove generates it for a local publish from the archive (the `DOCUMENTATION` strings of the plugin sources, bounded, as untrusted
-  input) or passes it through from an upstream only; how large documentation is bounded and stored (community.general has hundreds of
-  plugins); how its Markdown and RST are rendered safely (the existing README rendering); the API the UI reads (the tree per version, one
-  page per entry); search inside it. The owner's galaxy_ng (`https://galaxy.wds18.de/api/galaxy/`, `--source-auth token`, the owner gives
-  the token for a run) holds real documents to read. A collection's documentation is **wiki** content of T-18: define the seam (which routes
-  and fields are wiki) so that T-18's check gates them.
-
 ## 11 · Run record
 
 What a run did, in short, so the next run starts where it stopped. The plan items, findings and decisions carry the details.

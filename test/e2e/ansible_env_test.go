@@ -188,6 +188,8 @@ type collection struct {
 	deps              map[string]string
 	// salt changes the content of the archive without changing its identity: a re-publish with other bytes
 	salt string
+	// extra is a shell fragment run in the collection's source tree ($d) after the README is written: more files for the archive
+	extra string
 }
 
 func (c collection) full() string    { return c.ns + "." + c.name }
@@ -204,9 +206,10 @@ func (c collection) buildScript() string {
 ansible-galaxy collection init %[1]s.%[2]s --init-path src >/dev/null
 sed -i 's/^version:.*/version: %[3]s/; s/^dependencies:.*/dependencies: {%[4]s}/' $d/galaxy.yml
 printf '%%s\n' %[5]s >$d/README.md
+%[6]s
 mkdir -p out
 ansible-galaxy collection build $d --output-path out --force >/dev/null
-`, c.ns, c.name, c.version, strings.Join(deps, ", "), shellQuoteWord("e2e collection "+c.full()+" "+c.salt))
+`, c.ns, c.name, c.version, strings.Join(deps, ", "), shellQuoteWord("e2e collection "+c.full()+" "+c.salt), c.extra)
 }
 
 // publishScript builds and publishes the archive to the server of the ansible.cfg (the token comes from the environment).

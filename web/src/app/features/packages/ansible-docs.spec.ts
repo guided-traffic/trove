@@ -110,6 +110,16 @@ describe('The Documentation tab of an Ansible collection', () => {
       expect(r.root.querySelector('.pkg-tabs [role="alert"]')).toBeNull();
     });
 
+    it('R-UI-060 the install panel stays above the tabs while Documentation or Contents is open, and beside them for the others', async () => {
+      const r = await open();
+      const layout = () => r.root.querySelector('.pkg-layout')!;
+      expect(layout().classList.contains('stacked')).toBe(true);
+      await set(r, { tab: 'contents' });
+      expect(layout().classList.contains('stacked')).toBe(true);
+      await set(r, { tab: 'metadata' });
+      expect(layout().classList.contains('stacked')).toBe(false);
+    });
+
     it('R-UI-060 the tree is requested when its tab is open, once for the version, and not again when the user comes back', async () => {
       const r = await open({ tab: 'metadata' });
       expect(r.fake.docCalls).toEqual([]);

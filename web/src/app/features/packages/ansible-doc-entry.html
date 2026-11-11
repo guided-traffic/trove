@@ -40,7 +40,9 @@
     }
   </header>
 
-  @if (!entry().hasDocs) {
+  @if (readme(); as r) {
+    <trove-package-readme [readme]="r" />
+  } @else if (!entry().hasDocs) {
     <p class="doc-none" data-testid="doc-no-docs">
       @if (entry().source === 'upstream') {
         <ng-container i18n="@@docs.no-docs-upstream">The upstream sent no documentation for this plugin.</ng-container>
@@ -48,8 +50,6 @@
         <ng-container i18n="@@docs.no-docs-generated">This plugin has no documentation in its source.</ng-container>
       }
     </p>
-  } @else if (readme(); as r) {
-    <trove-package-readme [readme]="r" />
   } @else {
     @if (entry().description?.length) {
       <section aria-labelledby="doc-synopsis">

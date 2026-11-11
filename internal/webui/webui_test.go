@@ -140,6 +140,18 @@ func TestSPAFallback(t *testing.T) {
 		}
 	})
 
+	t.Run("R-UI-007 the page of a package whose name has a dot (a collection) answers the index, an asset that is missing still 404s", func(t *testing.T) {
+		for _, p := range []string{"/ui/en/projects/e2e/packages/ansible/acme.tools", "/ui/en/packages/ansible/acme.tools"} {
+			rec := do(h, "GET", p)
+			if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `<base href="/ui/en/">`) {
+				t.Errorf("%s: code %d", p, rec.Code)
+			}
+		}
+		if rec := do(h, "GET", "/ui/en/missing.js"); rec.Code != http.StatusNotFound {
+			t.Errorf("a missing script: code %d", rec.Code)
+		}
+	})
+
 	t.Run("R-UI-001 HEAD sends headers and no body", func(t *testing.T) {
 		rec := do(h, "HEAD", "/ui/en/admin/jobs")
 		if rec.Code != 200 || rec.Body.Len() != 0 || rec.Header().Get("Content-Security-Policy") == "" {

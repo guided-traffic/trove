@@ -12,7 +12,7 @@
 //   - /ui/<locale>/<file> serves the file; hashed build output is cached as immutable, other
 //     files are revalidated. A hashed file the bundle lacks is served from Options.Shared, the
 //     store every release's replicas publish their hashed files to (R-HA-020, Q-HA-120). Any
-//     other missing path whose last segment has an extension is a 404.
+//     other missing path whose last segment has an extension is a 404, except below `packages/`, where a dot belongs to a package name.
 //   - every other path under a locale is a client-side route and answers with the locale's
 //     index.html (SPA fallback), with a fresh CSP nonce and the document headers of R-UI-001.
 package webui
@@ -229,7 +229,7 @@ func (h *Handler) redirect(w http.ResponseWriter, r *http.Request, target string
 
 func (h *Handler) serveLocale(w http.ResponseWriter, r *http.Request, b *bundle, tail string) {
 	last := tail[strings.LastIndexByte(tail, '/')+1:]
-	if tail == "" || tail == "index.html" || !strings.Contains(last, ".") {
+	if tail == "" || tail == "index.html" || !strings.Contains(last, ".") || isPackageRoute(tail) {
 		h.serveIndex(w, r, b)
 		return
 	}
@@ -251,6 +251,13 @@ func (h *Handler) serveLocale(w http.ResponseWriter, r *http.Request, b *bundle,
 		return
 	}
 	problem(w, http.StatusNotFound, "Not Found")
+}
+
+// isPackageRoute reports whether tail is a package page of the UI (`projects/<key>/packages/<format>/<name>`): the name of a package can
+// have a dot (an Ansible collection is `namespace.name`), which is no file extension, so a reload or a link to the page must reach the
+// index and not a 404 (R-UI-007).
+func isPackageRoute(tail string) bool {
+	return strings.HasPrefix(tail, "packages/") || strings.Contains(tail, "/packages/")
 }
 
 // serveFrom serves the file at tail of the bundle and reports whether it did: false for a path

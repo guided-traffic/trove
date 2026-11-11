@@ -179,6 +179,19 @@ describe('An entry page of the documentation', () => {
     expect(r.root.querySelector('#doc-parameters')).toBeNull();
   });
 
+  it('R-UI-061 a role of an upstream that sends a README and no doc_strings (hasDocs false) still shows its README', async () => {
+    const r = await show({
+      type: 'role',
+      name: 'web',
+      fullName: 'hans_fischer.common.web',
+      hasDocs: false,
+      source: 'upstream',
+      readmeHtml: '<h1>web</h1><p>Installs the web server.</p>',
+    });
+    expect(r.root.querySelector('trove-package-readme .readme h1')?.textContent).toBe('web');
+    expect(r.root.querySelector('[data-testid="doc-no-docs"]')).toBeNull();
+  });
+
   it('R-UI-061 names the documentation fragments that were not merged', async () => {
     const r = await show({ ...CHECK_HOST_REACHABLE, extendsFragments: ['community.general.attributes'] });
     expect(text(r.root.querySelector('[data-testid="doc-fragments"]')!)).toContain('community.general.attributes');
