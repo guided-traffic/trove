@@ -5,7 +5,9 @@ Status: specification — not implemented
 This page specifies how trove decides whether a request may go ahead once the caller is known.
 It covers the principals, the resources a grant can name, the package-name and path patterns that
 narrow a grant, what each of the six repository actions permits, the fixed set of system roles,
-projects, which hold repositories and give their members roles, the evaluation algorithm, the treatment of
+projects, which hold repositories and give their members roles, the visibility levels `private`, `internal` and `public` of
+the installation, a project and a repository with the wiki of a repository, internal and external users, the evaluation
+algorithm, the treatment of
 virtual and remote repositories, how a token's scope caps a principal's rights, package ownership,
 the status code a refused request gets, how replicas keep their compiled permissions consistent,
 what is audited, and the management API for all of it. How a caller proves its identity (OIDC
@@ -34,12 +36,15 @@ claims). It also covers the permission entries of
 
 | Term | Meaning on this page |
 |---|---|
-| Principal | Something a grant can name: a user, a group, a service account, a CI identity mapping, or one of the built-in principals `anonymous` (R-AUTHZ-003) and `authenticated` (R-AUTHZ-030) (R-AUTHZ-002). Principals live in the `principal` table of [identity-and-authentication.md](identity-and-authentication.md) (R-AUTH-016). |
+| Principal | Something a grant can name: a user, a group, a service account or a CI identity mapping (R-AUTHZ-002). Principals live in the `principal` table of [identity-and-authentication.md](identity-and-authentication.md) (R-AUTH-016). A request without a credential runs as the subject `anonymous` (R-AUTHZ-003), which no grant names. |
+| Visibility level | `private`, `internal` or `public`: who reads besides the members of the project and the principals a grant names. A default of the installation, a level of each project, and two levels of each repository, one for its artifacts and one for its wiki; the only way to open content to every internal user or to everyone (R-AUTHZ-033, R-AUTHZ-035). |
+| Internal user | A user acting through a UI session or a personal access token who is not flagged external and whose request did not come through a Bastion (R-AUTHZ-030). Service accounts, CI tokens, Bastion registrations and the anonymous subject are never internal. |
+| Artifacts, wiki | The two parts of a repository: what package clients resolve, install and download, and the documentation of its packages that trove serves or shows apart from their files (R-AUTHZ-034). A coordinate names its part (`Part`). |
 | Subject | What authentication hands to authorization for one request: the principal set, the system roles the credential may exercise, whether the credential carries project roles (a UI session or a personal access token, Q-AUTHZ-215), the token scope and, for CI tokens, the frozen inline grants and the job's project identity. |
 | Permission policy | A named, stored object: one resource set, and entries that give actions on that resource set to principals (R-AUTHZ-021). |
 | Grant | One policy entry seen from the evaluator: principal × resource set × actions. CI inline grants ([gitlab-ci-oidc.md](gitlab-ci-oidc.md), R-CI-013) have the same shape. |
 | Resource set | Repository selectors plus optional package-name and path patterns (R-AUTHZ-004, R-AUTHZ-005). Policies, token scopes and CI inline grants all use it. |
-| Coordinate | The authorization view of the request descriptor of [repositories-and-proxy.md](repositories-and-proxy.md) (R-REPO-003): repository (its project and key), class, format, request kind, canonical path, normalized package name, and the actions the operation needs. |
+| Coordinate | The authorization view of the request descriptor of [repositories-and-proxy.md](repositories-and-proxy.md) (R-REPO-003): repository (its project and key), class, format, request kind, canonical path, normalized package name, the part (artifacts or wiki, R-AUTHZ-034), and the actions the operation needs. |
 | Project, member, role | A project holds repositories, each in exactly one project, and its own policies, service accounts and CI mappings; users and groups are its members, each with one of the roles `reader`, `developer`, `maintainer`, `owner`, which grant actions on the project's repositories and, for an Owner, its administration (R-AUTHZ-026). |
 | Owner | An identity recorded as owner of a package name in an ownership domain (R-AUTHZ-018). |
 | System role, capability | A fixed, instance-wide role and the management capabilities it bundles (R-AUTHZ-010). |
@@ -67,7 +72,10 @@ Decisions this page takes:
 | 401, 403 or 404? | 401 for callers without a credential; 404 for reads the caller may not make; 403 for refused writes and management operations. | R-AUTHZ-016 |
 | Does the endpoint a request arrives on change its rights? | Only downwards: an endpoint with exposure rules is a ceiling for every subject, administrators included, and answers hidden reads with 404 ([endpoints.md](endpoints.md) Q-EP-4, Q-EP-12). | R-AUTHZ-015, R-AUTHZ-016 |
 | Can a token scope grant rights? | Never; it only narrows. Its repository part uses the policy resource set; its resource types are repository content, system capabilities and, from P1, build records (Q-AUTHZ-9, Q-AUTHZ-10). | R-AUTHZ-013 |
-| How do "all signed-in people" get read access? | Through the built-in principal `authenticated`: every user, never service accounts or CI tokens, `read` only (Q-AUTHZ-3). | R-AUTHZ-030 |
+| How do "all signed-in people" or everyone get read access? | Through a visibility level, never a policy entry: `internal` reads for every internal user, `public` for every request. The anonymous switch, the principal `authenticated` and `requireAuthentication` are gone (Q-AUTHZ-263, [ADR-192](../decisions.md#adr-192--visibility-levels-replace-the-anonymous-switch-and-the-principal-authenticated)). | R-AUTHZ-033, R-AUTHZ-035 |
+| How do the installation, a project and a repository combine? | The installation's default is copied when a project or repository is created; a repository is never more open than its project and its wiki never more open than its artifacts; lowering a project lowers its repositories (Q-AUTHZ-264 to Q-AUTHZ-266). | R-AUTHZ-033 |
+| Who is internal? | A user through a session or a personal token who is not flagged external by an administrator and does not come through a Bastion; never a service account, a CI token or a Bastion registration (Q-AUTHZ-268). | R-AUTHZ-030 |
+| What is the wiki, and what does a caller get who reads the artifacts but not the wiki? | The documentation trove serves or shows apart from the files; a route that serves only wiki content refuses the read, a document that embeds it leaves the members out (Q-AUTHZ-270, Q-AUTHZ-271). | R-AUTHZ-034 |
 | Who may publish the next version of a package? | Its owners, or a holder of `manage` on it. The grants that allowed the first publish decide the owners. Ownership is enforced by default in new npm and NuGet local repositories (Q-AUTHZ-2). | R-AUTHZ-018 |
 | Whom does a writing CI inline grant make the owner? | The job's GitLab project (`bind_project`), unless the grant says `"ownership": "none"` (Q-AUTHZ-6). | R-AUTHZ-014 |
 | Which reads are audited by default? | Refused reads only; allowed reads with `authz.audit.reads: all` (Q-AUTHZ-5). | R-AUTHZ-029 |
@@ -81,15 +89,18 @@ Decisions this page takes:
 ### R-AUTHZ-001 · Deny by default, allow-only grants
 Priority: **MVP** · Covers: IAM-019
 
-trove MUST refuse every operation that no grant, no system role (R-AUTHZ-010) and no project
-role (R-AUTHZ-026) allows. A new installation has no permission policies; only
-the break-glass administrator (INV-7, R-AUTH-014) can act until an administrator creates policies.
+trove MUST refuse every operation that no grant, no system role (R-AUTHZ-010), no project
+role (R-AUTHZ-026) and no visibility level (R-AUTHZ-033) allows. A new installation has no permission policies and the
+default level `private`; only the break-glass administrator (INV-7, R-AUTH-014) can act until an administrator creates
+projects, members or policies.
 
-Grants and project roles MUST only add rights; there are no deny rules. A subject's rights can be narrowed only by:
+Grants, project roles and visibility levels MUST only add rights; there are no deny rules. A subject's rights can be
+narrowed only by:
 
 1. exclude patterns inside the same resource set (R-AUTHZ-005);
 2. the token scope (R-AUTHZ-013) and, for CI tokens, the caps and the triggering-user bound of
-   [gitlab-ci-oidc.md](gitlab-ci-oidc.md) (R-CI-013, R-CI-024);
+   [gitlab-ci-oidc.md](gitlab-ci-oidc.md) (R-CI-013, R-CI-024), except for a read that a `public` level admits, which needs
+   no credential at all (R-AUTHZ-035);
 3. the exposure of the endpoint the request arrived on ([endpoints.md](endpoints.md) R-EP-013): a
    ceiling of the same kind, which binds every subject, `content:bypass` included, and never grants;
 4. three checks that are not permissions and never grant anything: the endpoint gate of virtual
@@ -133,9 +144,15 @@ Principal kinds and their reference syntax in this page's API:
 | Group | `group:<name>` | [identity-and-authentication.md](identity-and-authentication.md) (R-AUTH-018) |
 | Service account | `sa:<name>` for an account of no project, `sa:<projectKey>/<name>` for a project's | [identity-and-authentication.md](identity-and-authentication.md) (R-AUTH-020); a name is unique within its project or among the accounts of no project (Q-AUTHZ-209) |
 | CI identity mapping | `ci:<issuer>/<mapping>` for the system tier, `ci:<issuer>/<projectKey>/<mapping>` for a project's tier | [gitlab-ci-oidc.md](gitlab-ci-oidc.md) (R-CI-009); mapping names are unique per CI issuer and tier only, hence the issuer and the project ([Q-AUTHZ-214](#q-authz-214--a-projects-ci-mappings-are-named-within-the-project-like-its-policies-and-service-accounts)) |
-| Anonymous | `anonymous` | [identity-and-authentication.md](identity-and-authentication.md) (R-AUTH-037), R-AUTHZ-003 |
-| Authenticated | `authenticated` | R-AUTHZ-030; a built-in row of the `principal` table like `anonymous` |
 | Bastion | `bastion:<name>` | [bastion.md](bastion.md) R-BAS-004 (phase 5b): owns Bastion tokens only; never holds a grant, a role, an owner record or a membership (`422 principal_not_allowed`) |
+
+- `anonymous`, the subject of a request without a credential (R-AUTHZ-003), and `authenticated` are no principals a
+  policy entry, a role binding, a project membership or an owner record can name: such a reference answers 422
+  `principal_not_allowed` with a detail that names the visibility levels of R-AUTHZ-033, the one way to give everyone or
+  every internal user `read` ([Q-AUTHZ-279](#q-authz-279--a-policy-entry-a-binding-a-membership-or-an-owner-record-that-names-anonymous-or-authenticated-is-refused)).
+  The principal kind `authenticated` and its built-in row no longer exist; the built-in row of `anonymous` stays as the actor
+  of a request without a credential and is refused by every table that grants
+  ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-016).
 
 - Policies, role bindings, project memberships and owner records MUST reference principals by their immutable ID in
   the `principal` table, never by name. The API accepts and returns references by name and
@@ -146,11 +163,11 @@ Principal kinds and their reference syntax in this page's API:
 
 | Credential | Principal set |
 |---|---|
-| UI session of user `u` | `user:u` plus every group of `u`, plus `authenticated`; carries the project roles of `u` |
+| UI session of user `u` | `user:u` plus every group of `u`; carries the project roles of `u`; internal unless `u` is flagged external (R-AUTHZ-030) |
 | Personal access token (`trv_pat_`) of `u` | the same, resolved when the token is used; carries the project roles of `u` within its scope |
-| Service-account token (`trv_sat_`) of `s` | `sa:s` plus every group of `s` (a project's account has none). Never `authenticated` (R-AUTHZ-030), never a project role. |
-| CI token (`trv_cit_`) | `ci:<issuer>/<m>` for every mapping `m` recorded as the token's mapping at exchange, plus the groups those mappings list (R-CI-013); the token additionally carries its frozen inline grants and, from P1, the service accounts of R-CI-024. For a cross-project subject token, a matched mapping without the `read_only` opt-in contributes nothing and is not recorded ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-012), so policies naming it never reach that token. Never `authenticated`. |
-| No credential | `anonymous`, only while anonymous access is enabled (R-AUTHZ-003) |
+| Service-account token (`trv_sat_`) of `s` | `sa:s` plus every group of `s` (a project's account has none). Never internal (R-AUTHZ-030), never a project role. |
+| CI token (`trv_cit_`) | `ci:<issuer>/<m>` for every mapping `m` recorded as the token's mapping at exchange, plus the groups those mappings list (R-CI-013); the token additionally carries its frozen inline grants and, from P1, the service accounts of R-CI-024. For a cross-project subject token, a matched mapping without the `read_only` opt-in contributes nothing and is not recorded ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-012), so policies naming it never reach that token. Never internal. |
+| No credential | none: the subject `anonymous`, which reads only what a `public` level admits, on an endpoint that admits requests without a credential (R-AUTHZ-003) |
 
 - "Every group of `u`" means the local groups `u` belongs to plus the groups synchronized from
   the identity provider's group claim (R-AUTH-008). Membership MUST be resolved when the request is
@@ -162,7 +179,7 @@ Principal kinds and their reference syntax in this page's API:
   carry them; a service-account token and a CI token never do
   ([Q-AUTHZ-215](#q-authz-215--a-members-role-acts-through-its-session-and-personal-tokens-within-their-scope-and-service-accounts-are-not-members)).
 - There are no transient users. A CI token never stands for a user account, never picks up
-  auto-join groups (R-AUTH-019, R-CI-013) and never counts as `authenticated` (R-AUTHZ-030), which
+  auto-join groups (R-AUTH-019, R-CI-013) and never counts as internal (R-AUTHZ-030), which
   removes the catalog's widening of CI tokens through default groups (TOK-015, CIOIDC-014).
 - A disabled or deleted principal's credentials are refused by authentication
   ([identity-and-authentication.md](identity-and-authentication.md)); authorization never sees them.
@@ -177,85 +194,341 @@ Acceptance criteria:
 - Alice is in IdP group `team-web`, synchronized to trove group `team-web`, which holds `read`
   on `web/npm-internal`. After the IdP removes her from `team-web` and she logs in again, her existing
   personal access token no longer reads `npm-internal`, within the latency bound of R-AUTH-023.
-- Group `everyone` is auto-join and holds `read` on `web/npm-all`, and `authenticated` holds `read` on
-  `web/npm-all` as well. A CI token whose mappings list no groups and name no policy covering
-  `npm-all` gets 404 on `npm-all`.
+- Group `everyone` is auto-join and holds `read` on `web/npm-all`, and the artifacts of `web/npm-all` are `internal`
+  (R-AUTHZ-033). A CI token whose mappings list no groups and name no policy covering `npm-all` gets 404 on `npm-all`.
+- `POST /api/v1/permission-policies` with an entry for `authenticated` or for `anonymous` answers 422
+  `principal_not_allowed`.
 - User `bob` is deleted, and a new user `bob` (different OIDC `sub`) logs in.
   `GET /api/v1/permission-policies?principal=user:bob` returns none of the old `bob`'s policies.
 
-### R-AUTHZ-003 · Anonymous access
+### R-AUTHZ-003 · Requests without a credential
 Priority: **MVP** · Covers: IAM-005, AUTHN-036
 
-Whether anonymous access is on, and the hard limits that apply to it regardless of policies, are
-specified in [identity-and-authentication.md](identity-and-authentication.md) (R-AUTH-037: YAML
-ceiling `auth.anonymous.allowed`, runtime switch `anonymousAccess`, default off). This page adds
-the rules for granting to `anonymous`:
+A request that presents no credential runs as the subject `anonymous`. The visibility levels of R-AUTHZ-033 are the
+one way to open content to it; the runtime switch `anonymousAccess`, its ceiling `auth.anonymous.allowed` and the repository
+field `requireAuthentication` are gone ([Q-AUTHZ-263](#q-authz-263--visibility-levels-replace-the-anonymous-switch-the-principal-authenticated-and-requireauthentication),
+[ADR-192](../decisions.md#adr-192--visibility-levels-replace-the-anonymous-switch-and-the-principal-authenticated)).
 
-- Policy entries for `anonymous` MUST contain only `read`. Any other action is rejected with 422
-  `anonymous_write_action`.
-- Policy entries for `anonymous` are allowed only in policies whose repository selectors are all
-  explicit keys (R-AUTHZ-004). Pattern and class selectors are rejected with 422
-  `anonymous_dynamic_selector`, so a repository created later is never exposed to anonymous
-  callers by accident (IAM-005, IAM-020).
-- `anonymous` never holds a system role, is never a project member and never becomes a
-  package owner.
-- Turning anonymous access off keeps the stored anonymous entries; they have no effect until it is
-  turned on again.
-- A repository with `requireAuthentication: true`
-  ([repositories-and-proxy.md](repositories-and-proxy.md)) refuses anonymous callers whatever the
-  policies grant (R-AUTH-037).
+- The anonymous subject reads exactly what a `public` level admits (R-AUTHZ-035): the artifacts of a repository whose
+  artifacts are `public`, and the wiki of one whose wiki is `public` (R-AUTHZ-034). Nothing else reads for it.
+- `anonymous` is no principal that a policy entry, a role binding, a project membership or an owner record can name: such a
+  reference answers 422 `principal_not_allowed`, with a detail that names the visibility levels
+  ([Q-AUTHZ-279](#q-authz-279--a-policy-entry-a-binding-a-membership-or-an-owner-record-that-names-anonymous-or-authenticated-is-refused)).
+- It never writes, never holds a role or a capability and never becomes a package owner; a level admits only `read`.
+- An endpoint whose `auth.anonymous` is `false` admits no request without a credential ([endpoints.md](endpoints.md) R-EP-010):
+  there a `public` level opens nothing. The default endpoint's `auth.anonymous` is the operator's ceiling of public content
+  ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-037,
+  [Q-AUTH-232](identity-and-authentication.md#q-auth-232--the-default-endpoints-authanonymous-is-the-operators-ceiling-of-public-content-and-the-runtime-switch-goes)).
+- A refused request of the anonymous subject answers 401 with the challenge of R-AUTH-002, reads and writes alike
+  (R-AUTHZ-016), so a client retries with its configured credentials. Inside a repository whose artifacts are `public`, a
+  missing package is 404.
+- Through a virtual repository the anonymous subject reads only when the virtual repository and every member, recursively,
+  have `public` artifacts (R-AUTHZ-009 rule 6).
 
 Acceptance criteria:
 
-- Anonymous access off, a policy grants `anonymous` `read` on `web/npm-public`:
-  `npm view left-pad --registry https://trove.example.com/api/npm/web/npm-public/` without any
-  `.npmrc` credential gets `E401`.
-- Anonymous access on, same policy: the same command succeeds.
-- `POST /api/v1/permission-policies` giving `anonymous` `["read", "deploy"]` answers 422
-  `anonymous_write_action`; with the selector `@any-remote` it answers 422
-  `anonymous_dynamic_selector`.
+- Project `web` and its local repository `npm-public` are `public`: `npm view left-pad --registry
+  https://trove.example.com/api/npm/web/npm-public/` without any `.npmrc` credential succeeds; the same command against
+  `npm-internal`, whose artifacts are `internal`, gets `E401`.
+- `npm publish` without a credential to `npm-public` gets `E401`.
+- `POST /api/v1/permission-policies` with an entry for `anonymous` answers 422 `principal_not_allowed`.
+- With `endpoints.default.auth.anonymous: false`, the anonymous `npm view` of the first criterion gets `E401`, and
+  `PUT /api/v1/projects/web/visibility` with `{"level": "public"}` answers 409 `public_not_allowed`.
 
-### R-AUTHZ-030 · The `authenticated` principal
+### R-AUTHZ-030 · Internal and external users
 Priority: **MVP** · Covers: trove-only
 
-The first policy of most installations is "every signed-in person may read the npm and NuGet
-endpoints". trove offers a built-in principal for it. An installation does not need an
-identity-provider group that contains everyone, nor auto-join groups (P1, R-AUTH-019), before the
-first developer can install a package (Q-AUTHZ-3).
+The level `internal` admits every *internal* subject, the people of the organization that runs trove, as GitLab's internal
+level admits every signed-in user who is not external (owner, 2026-11-11). A subject is internal exactly when all of the
+following hold ([Q-AUTHZ-268](#q-authz-268--a-subject-is-internal-when-it-is-a-user-through-a-session-or-a-personal-token-not-flagged-external-and-not-through-a-bastion)):
 
-- `authenticated` is a built-in principal (reference `authenticated`), stored in the `principal`
-  table like `anonymous` ([identity-and-authentication.md](identity-and-authentication.md),
-  R-AUTH-016, R-AUTH-037). It always exists. It cannot be deleted or renamed, holds no tokens or
-  sessions and cannot be a group member.
-- It is in the principal set of every request that authenticates as a user (UI session, personal
-  access token), as listed in R-AUTHZ-002. It is never in the principal set of a service-account
-  token, of a CI token (R-AUTHZ-014) or of an anonymous request. Service accounts and CI mappings
-  receive rights only from grants that name them or their groups (for CI tokens also their inline
-  grants), the same rule that keeps them out of auto-join groups (R-AUTH-019).
-- Policy entries for `authenticated` MUST contain only `read`. Any other action is rejected with
-  422 `authenticated_write_action`. Pattern and class selectors are allowed, unlike for
-  `anonymous`: covering repositories created later is what this principal is for, and every caller
-  it admits is known to trove.
-- `authenticated` never holds a system role (422 `role_not_allowed`, R-AUTHZ-010), is never a
-  project member, and never becomes a package owner. Because it holds only `read`, rule 2
-  of R-AUTHZ-018 never names it as the owner of a claim.
-- Delegated managers (R-AUTHZ-025) and Owners of a project (R-AUTHZ-026) MUST NOT add or change
-  an entry for `authenticated` (403). Opening content to the whole organization stays a decision
-  of a holder of `policies:write`.
-- Token scopes apply as usual (R-AUTHZ-013). A token whose scope does not admit a repository does
-  not read it through `authenticated` either.
+1. it acts as a user through a UI session or a personal access token (R-AUTHZ-002);
+2. the user is not flagged `external` ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-044), as the
+   authentication stage resolved the flag for the request, with the user's status and groups;
+3. the request did not reach the main installation through a Bastion (`Subject.ViaBastion`, [bastion.md](bastion.md)
+   R-BAS-008, [Q-BAS-148](bastion.md#q-bas-148--a-request-through-a-bastion-never-reads-by-the-level-internal)).
+
+- Never internal: a service-account token, a project's service accounts included (the technical accounts of a project's
+  external parties, Q-AUTHZ-169), a CI token, a Bastion registration and the anonymous subject. They read what their grants
+  give (a CI token also its inline grants) and what is `public`. This keeps the rule that the rights of every non-human
+  credential trace back to a grant that names it, its groups or its CI mapping (R-AUTH-019, R-CI-013).
+- An external user reads what its grants and its project roles give and what is `public`: it sees only what it is a member of
+  or what is public (owner, 2026-11-11). A membership gives it the project's repositories with its role like any member.
+- The token scope applies to a read by `internal` like to a grant (R-AUTHZ-013): a personal access token whose scope does not
+  admit a repository does not read it by its level either.
+- `GET /api/v1/authz/me` reports `"internal": true` or `false` for the caller (R-AUTHZ-022); the principal list no longer holds
+  `authenticated`.
 
 Acceptance criteria:
 
-- Policy `everyone-reads-npm` gives `authenticated` `read` on `["@any-virtual:npm",
-  "@any-remote:npm"]`. A user who has just logged in through OIDC and belongs to no group runs
-  `npm view left-pad --registry https://trove.example.com/api/npm/web/npm-all/` and succeeds. The same
-  command with a service-account token of `sa:ci-bot`, which has no grant of its own and no group
-  that holds one, gets `E404`.
-- With the same policy, a CI token whose mappings grant nothing on `web/npm-all` gets `E404` there.
-- `POST /api/v1/permission-policies` giving `authenticated` `["read", "deploy"]` answers 422
-  `authenticated_write_action`. `PUT /api/v1/role-bindings/auditor/authenticated` answers 422
-  `role_not_allowed`.
+- The artifacts of `web/npm-internal` are `internal`. A user who has just logged in through OIDC, belongs to no group and
+  holds no grant runs `npm view @web/button --registry https://trove.example.com/api/npm/web/npm-internal/` with a personal
+  access token and succeeds. The same command with a token of `sa:web/partner`, which has no grant, gets `E404`, and so does a
+  CI token whose mappings grant nothing on `npm-internal`.
+- An administrator flags that user external (`PATCH /api/v1/users/alice` with `{"external": true}`). Within
+  `auth.revocation_bound` her next `npm view` with the same token gets `E404` on every replica, also with Valkey stopped,
+  and `GET /api/v1/repositories` no longer lists `web/npm-internal`. Made a `reader` of `web`, she reads it again.
+- Through a Bastion, the internal user's token reads `web/npm-public` and gets `404` for `web/npm-internal`.
+
+### R-AUTHZ-033 · Visibility levels of the installation, a project and a repository
+Priority: **MVP** · Covers: IAM-062
+
+The owner's task T-18 (2026-11-11): private, internal and public as in his GitLab, a default per installation, a setting per
+project and per repository, and on a repository the wiki set apart from the artifacts. A level names who reads besides the
+members of the project and the principals a grant names:
+
+| Level | Reads besides members and grants | Order |
+|---|---|---|
+| `private` | nobody | most restrictive |
+| `internal` | every internal subject (R-AUTHZ-030) | |
+| `public` | every request, also one without a credential (R-AUTHZ-003) | most open |
+
+Where a level is set and who sets it ([Q-AUTHZ-264](#q-authz-264--a-level-is-stored-on-its-object-and-the-installations-default-is-copied-when-a-project-or-a-repository-is-created),
+[Q-AUTHZ-267](#q-authz-267--an-administrator-sets-the-level-of-a-project-its-owner-sets-the-levels-of-its-repositories-within-it)):
+
+| Object | Value | Set by | Default when created |
+|---|---|---|---|
+| The installation | `defaultLevel` of `/api/v1/settings/visibility` ([api-and-ui.md](api-and-ui.md) R-API-056) | `security-settings:write` | `private` |
+| A project | `visibility`, read with the project, set through `PUT /api/v1/projects/{projectKey}/visibility` (R-API-057) and in the body of `POST /api/v1/projects` | `projects:write` | the installation's `defaultLevel` |
+| A repository | `visibility.artifacts` and `visibility.wiki` of the repository document ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-004) | the project's Owner, or `repositories:write-config` | both: the lower of the installation's `defaultLevel` and the project's level |
+
+1. **Stored, not inherited.** A level is stored on its object. Nothing inherits a level when a request is decided; the
+   installation's default is read once, in the transaction that creates a project or a repository.
+2. **Never more open than the container** ([Q-AUTHZ-265](#q-authz-265--a-repository-is-never-more-open-than-its-project-and-lowering-a-project-lowers-its-repositories),
+   [Q-AUTHZ-266](#q-authz-266--the-wiki-of-a-repository-is-never-more-open-than-its-artifacts)). A repository's artifacts level
+   is never above its project's level, and its wiki level never above its artifacts level. A write that would break either
+   answers 422 `validation_failed` with `visibility_above_project` or `visibility_wiki_above_artifacts` at the member in
+   `errors[]`; the database refuses the state as well (SQLSTATE `AI008`, a check constraint for the wiki).
+3. **Lowering cascades, raising does not.** Lowering a project's level lowers, in the same transaction, every repository of the
+   project whose artifacts or wiki level lies above the new level to it; each lowered repository raises its configuration
+   version and writes `authz.settings.changed` (R-AUTHZ-031) with the cause `project`. Raising a project's level raises
+   nothing. A move of a repository to another project ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-060)
+   lowers its levels to the target project's level the same way, in the move's transaction.
+4. **Who opens.** The project's level is the administrator's decision; the Owner chooses its repositories' levels up to it
+   and cannot change the project's. A write that raises a level needs recent authentication ([api-and-ui.md](api-and-ui.md)
+   R-API-007).
+5. **`public` needs an anonymous door.** `public` can be set only while the default endpoint admits requests without a
+   credential (`endpoints.default.auth.anonymous`, [endpoints.md](endpoints.md) R-EP-010); otherwise every write that sets it
+   answers 409 `public_not_allowed`, and `GET /api/v1/settings/visibility` reports `"publicAvailable": false`. A level that
+   was set to `public` before the endpoint's setting changed stays stored, opens nothing without a credential while the
+   endpoint refuses such requests, and is listed by `GET /api/v1/settings/visibility` (`publicObjects`).
+6. **Read only.** A level never grants a write, a role, a capability or an owner record; it is `read` for its audience on its
+   part of the repository (R-AUTHZ-035).
+7. **Every class.** Local, remote and virtual repositories have both levels. A virtual repository's artifacts level is the
+   gate of R-AUTHZ-009 rule 1 for its audience; the content it serves is decided on each member's own level.
+
+Data model ([Q-AUTHZ-276](#q-authz-276--the-levels-are-columns-and-the-database-holds-the-rules-of-the-container)), migration
+`00071_visibility.sql`:
+
+```sql
+CREATE FUNCTION visibility_rank(level text) RETURNS integer
+    LANGUAGE sql IMMUTABLE STRICT
+    AS $$ SELECT CASE level WHEN 'private' THEN 0 WHEN 'internal' THEN 1 WHEN 'public' THEN 2 END $$;
+
+ALTER TABLE project ADD COLUMN visibility text NOT NULL DEFAULT 'private'
+    CHECK (visibility IN ('private', 'internal', 'public'));
+
+ALTER TABLE repositories
+    ADD COLUMN visibility_artifacts text NOT NULL DEFAULT 'private'
+        CHECK (visibility_artifacts IN ('private', 'internal', 'public')),
+    ADD COLUMN visibility_wiki      text NOT NULL DEFAULT 'private'
+        CHECK (visibility_wiki IN ('private', 'internal', 'public')),
+    ADD CONSTRAINT repositories_wiki_within_artifacts
+        CHECK (visibility_rank(visibility_wiki) <= visibility_rank(visibility_artifacts));
+
+-- A deferred constraint trigger on repositories (INSERT, UPDATE OF visibility_artifacts, project_id) and on project
+-- (UPDATE OF visibility) raises SQLSTATE AI008 at commit when a repository's artifacts level lies above its project's.
+
+CREATE TABLE visibility_settings (
+    singleton      boolean     PRIMARY KEY DEFAULT true CHECK (singleton),
+    default_level  text        NOT NULL DEFAULT 'private' CHECK (default_level IN ('private', 'internal', 'public')),
+    updated_at     timestamptz NOT NULL DEFAULT now(),
+    updated_by     uuid        REFERENCES principal (id) ON DELETE SET NULL
+);
+INSERT INTO visibility_settings (singleton) VALUES (true);
+
+-- The repository document loses requireAuthentication: UPDATE repositories SET config = config - 'requireAuthentication'.
+```
+
+Acceptance criteria:
+
+- With `defaultLevel: internal`, an administrator creates project `team-a`, which reads back `"visibility": "internal"`; its
+  Owner creates the local repository `npm-local`, which reads back `{"artifacts": "internal", "wiki": "internal"}`.
+- In `team-a`, a merge patch `{"visibility": {"artifacts": "public"}}` answers 422 with `visibility_above_project`, and
+  `{"visibility": {"artifacts": "internal", "wiki": "public"}}` 422 with `visibility_wiki_above_artifacts`.
+- `web` is `public` and so are both levels of `npm-public`. `PUT /api/v1/projects/web/visibility` with `{"level":
+  "internal"}` answers 200; `npm-public` then reads back `{"artifacts": "internal", "wiki": "internal"}`, the audit trail holds
+  one `authz.project.visibility_changed` and one `authz.settings.changed` for each lowered repository, and an anonymous `npm
+  view` through `npm-public` gets `E401` on every replica within `cluster.epoch_poll_interval` plus 1 s. Raising `web` to
+  `public` again leaves `npm-public` `internal`.
+- The Owner of `web` gets 403 on `PUT /api/v1/projects/web/visibility`; a direct `UPDATE` that sets a repository's artifacts
+  above its project's level fails at commit with SQLSTATE `AI008`.
+
+### R-AUTHZ-034 · The wiki of a repository
+Priority: **MVP** · Covers: trove-only
+
+Every repository has two parts with a level each (R-AUTHZ-033): its **artifacts**, what package clients resolve, install and
+download (packages, versions, their files, and the documents and searches that describe them), and its **wiki**, the
+documentation of its packages that trove serves or shows apart from their files
+([Q-AUTHZ-270](#q-authz-270--the-wiki-is-the-documentation-trove-serves-or-shows-apart-from-the-files-never-a-file-inside-an-artifact)).
+This requirement is the one place that says what is wiki; a format page marks its own surfaces with a reference to it.
+
+| Format | Wiki content | Surfaces |
+|---|---|---|
+| npm | The README of a package ([formats/npm.md](formats/npm.md) R-NPM-010): `readme` and `readmeFilename` of the full package document | Those two members of the full package document, local, remote and virtual (the abbreviated document carries neither); the README operation and `hasReadme` of R-API-029 |
+| NuGet | The README file a package names ([formats/nuget.md](formats/nuget.md) R-NUGET-024, Q-NUGET-48) | The route `…/flatcontainer/{lower_id}/{lower_version}/readme` from P1; the README operation and `hasReadme` of R-API-029 |
+| Ansible Galaxy | The README and the documentation of a collection version | The README operation and `hasReadme` of R-API-029, and the documentation surfaces that [formats/ansible.md](formats/ansible.md) lists as wiki content (T-19) |
+| OCI | none: a registry serves no documentation | — |
+| Debian | none ([formats/debian.md](formats/debian.md): there is no README) | — |
+| Generic | none: every file is an artifact | — |
+
+- **Not wiki.** The description, keywords, licenses, authors, links and release notes, every member a client reads to resolve,
+  install or list a package, and every file inside an artifact: a README inside an npm tarball, a `.nupkg` or a collection
+  archive is read with the artifact (H-880 in [security/visibility.md](../security/visibility.md)).
+- **One check.** A wiki read is decided by the decision point on the coordinate with `Part: wiki` (R-AUTHZ-035): by a grant,
+  a role or a capability that gives `read` on the coordinate, as for the artifacts, or by the repository's wiki level. Since
+  the wiki is never more open than the artifacts, a caller who reads the wiki reads the artifacts. Code asks it in exactly
+  three forms ([Q-AUTHZ-272](#q-authz-272--the-wiki-check-is-one-coordinate-part-asked-through-a-route-flag-a-host-question-and-a-document-extension)):
+
+  | Form | Asked by | Answer when refused |
+  |---|---|---|
+  | `formats.Route.Wiki: true` on a protocol route that serves only wiki content | the dispatcher's coarse check, before the handler | the refusal of a read (R-AUTHZ-016) |
+  | `Host.WikiReadable(ctx, rq, formats.Target{Package, Version})` | a handler that puts a wiki member into a document whose artifacts it serves | `false`: the handler leaves the member out; nothing is audited |
+  | `x-trove-part: wiki` on a management operation ([api-and-ui.md](api-and-ui.md) R-API-058), and `authz.ReadScope.MayReadWiki` for a wiki member of a management answer | the shared authorization step and the handler | the 404 of a missing resource; the member is absent |
+
+- **What a caller gets who reads the artifacts but not the wiki** ([Q-AUTHZ-271](#q-authz-271--a-caller-who-reads-the-artifacts-but-not-the-wiki-gets-the-refusal-of-a-read-on-a-wiki-route-and-documents-without-the-wiki-members)):
+
+  | Where | Answer |
+  |---|---|
+  | A protocol route that serves only wiki content | 404, byte-identical to a missing resource; 401 with the challenge for a request without a credential (R-AUTHZ-016) |
+  | A protocol document that embeds wiki members | The members are absent: not empty, not a placeholder; every other member is unchanged |
+  | The management API | The README and documentation operations answer the 404 of a missing README; `hasReadme` is `false`, and T-19's `metadata.docs` is absent |
+  | The UI | The README tab and the documentation tabs are not shown (R-UI-057) |
+  | A search over wiki text (T-19's documentation search) | Hits only from packages whose wiki the caller may read; a search over names and descriptions is an artifacts read |
+
+- **The format kit holds every format to it** ([architecture.md](architecture.md) R-ARCH-010): a route with `Wiki: true` is a read
+  (`Metadata` or `Computed`, action `read`); for each format with wiki content a kit test fetches every surface of this table
+  as a caller who reads the artifacts and not the wiki and finds no wiki byte in any answer.
+
+Acceptance criteria:
+
+- `web/npm-public` has `public` artifacts and an `internal` wiki, and `@web/button` 1.0.0 has a README. Without a credential,
+  `npm install @web/button` succeeds and `npm view @web/button readme` prints nothing, because the full package document has no
+  `readme` member; with an internal user's token the same `npm view` prints the README. `GET
+  /api/v1/packages/{id}/versions/1.0.0` answers `"hasReadme": false` to the anonymous caller and `true` to the internal user,
+  and `…/readme` 404 and 200.
+- A NuGet local repository with the same levels: an anonymous `GET …/flatcontainer/acme.widgets/1.5.0/readme` answers 401 with
+  the `Basic` challenge, and the same request with an internal user's token 200.
+- The format kit fails for a test format whose route serves README bytes without `Wiki: true`.
+
+### R-AUTHZ-035 · How a visibility level enters the decision
+Priority: **MVP** · Covers: IAM-005
+
+A level is a source of `read` beside grants, roles and capabilities
+([Q-AUTHZ-269](#q-authz-269--a-level-reads-beside-the-grants-the-token-scope-narrows-internal-and-nothing-narrows-public-but-the-endpoint)).
+`Allowed` of R-AUTHZ-015 asks it after the endpoint's ceiling and before the grants:
+
+```go
+// leveled reports whether the repository's level for the part of the coordinate admits the subject.
+func leveled(sub Subject, idx *Index, a Action, c Coordinate) bool {
+    if a != Read {
+        return false                                               // a level admits read only
+    }
+    switch c.Repo.Level(c.Part) {                                  // artifacts or wiki, R-AUTHZ-034
+    case Public:
+        return true                                                // every subject; no scope, no CI cap
+    case Internal:
+        return sub.Internal() && sub.Scope.Admits(Read, c)         // R-AUTHZ-030, R-AUTHZ-013
+    }
+    return false
+}
+```
+
+1. **Union.** A level adds `read`, grants, roles and capabilities add what they add, and none takes away what another gives.
+2. **The endpoint first.** The exposure of the endpoint (R-EP-013) binds every read by a level: a `public` repository that an
+   endpoint with rules does not expose answers 404 there.
+3. **Ceilings.** The token scope narrows a read by `internal` like a grant. A read by `public` needs no credential, so neither
+   the token scope, nor the caps of a CI token, nor the triggering-user bound of R-CI-024 narrows it: a client whose token is
+   scoped elsewhere reads public content as it would without the token. An invalid credential is still refused with 401 and
+   never read as anonymous (R-AUTH-001).
+4. **Path-scoped grants.** A level admits every package and every path of its part; a grant narrowed by package or path
+   patterns adds nothing to what a caller reads by a level, and keeps giving what it gives where no level reaches.
+5. **Virtual repositories** ([Q-AUTHZ-274](#q-authz-274--a-virtual-repository-has-levels-of-its-own-and-the-anonymous-subject-still-needs-every-member-public)).
+   The gate of R-AUTHZ-009 rule 1 passes by a grant or a role on the virtual repository or by its
+   artifacts level; each member is decided on its own level (rule 2), so a member the caller may not read is skipped. Rule 6
+   keeps the anonymous subject to virtual repositories whose every member is `public`. A merged document takes its wiki
+   members from the member that supplies them and decides them on that member.
+6. **Remote repositories.** A read by a level passes the populate check of R-AUTHZ-008 when the repository's
+   `cacheFillAction` is `read`; setting the artifacts of such a remote repository `public` answers with the warning
+   `public_populates_remote` ([Q-AUTHZ-278](#q-authz-278--a-public-remote-repository-is-filled-by-anonymous-callers-and-the-write-that-opens-it-warns)).
+7. **Read shapes and listings.** A repository whose artifacts level admits the subject, on an endpoint that exposes everything
+   and, for `internal`, under a scope that does not narrow, has the read shape `ReadAll` (`authz.ReadScope`). Listings,
+   searches and their counts, the package API, the repository list and the project list include what a level admits
+   ([Q-AUTHZ-273](#q-authz-273--every-listing-and-every-feature-that-asks-for-read-counts-a-read-by-a-level)); so does every
+   feature that asks for `read` on a repository (the vulnerability findings of R-VULN-019, client setup and guides, the
+   repository's consumer view). `content:metadata-read` reads the wiki of every repository.
+8. **Projects.** A project is visible to a caller its level admits, besides its members and the holders of `projects:read`:
+   `GET /api/v1/projects` lists it without a role and `GET /api/v1/projects/{projectKey}` reads it; its members list stays
+   with its members and `projects:read` ([Q-AUTHZ-277](#q-authz-277--a-project-is-seen-by-whom-its-level-admits-and-its-members-stay-with-its-members)).
+9. **Explanation and audit.** A read allowed by a level has the reason `allow.visibility` and the source `visibility:<level>`
+   (R-AUTHZ-024, R-AUTHZ-029); a wiki read refused where the artifacts read is allowed has the reason `deny.wiki`.
+
+Worked rows, in project `web` (`public`): `npm-public` (artifacts `public`, wiki `internal`), `npm-internal` (both `internal`),
+`npm-private` (both `private`), the virtual `npm-all` (`internal`) over all three; Erin is a user flagged external with
+`read` on `npm-private`; Frank is an internal user without grants; `sa:web/partner` holds nothing:
+
+| # | Subject | Request | Steps | Result |
+|---|---|---|---|---|
+| 1 | no credential | `npm view @web/button` via `npm-public` | artifacts `public` | 200, no `readme` |
+| 2 | no credential | `npm view @web/button` via `npm-all` | gate: artifacts `internal`, refused | 401 |
+| 3 | Frank | `npm view @web/button` via `npm-all` | gate by `internal`; `npm-public` and `npm-internal` read, `npm-private` skipped | 200, with `readme` |
+| 4 | Erin | `npm view @web/lib` via `npm-private` | grant | 200 |
+| 5 | Erin | `npm view @web/button` via `npm-internal` | external, no grant | 404 |
+| 6 | `sa:web/partner` | `npm view @web/button` via `npm-public` | artifacts `public` | 200, no `readme` |
+| 7 | Frank, token scoped to `mobile/*` | `npm view @web/button` via `npm-internal` | `internal`, the scope refuses | 404 |
+| 8 | Frank, token scoped to `mobile/*` | `npm view @web/button` via `npm-public` | `public`, no scope consulted | 200, no `readme` |
+
+Acceptance criteria: each row is an automated test of `internal/authz` on the R-AUTHZ fixture, and rows 1, 3, 5 and 6 run with
+the npm client in the e2e set `npm` ([developer/e2e.md](../developer/e2e.md)).
+
+### R-AUTHZ-036 · Visibility changes: operations, audit, journal and propagation
+Priority: **MVP** · Covers: trove-only
+
+| Change | Operation | Audit event | Journal |
+|---|---|---|---|
+| The installation's default | `PATCH /api/v1/settings/visibility` (R-API-056) | `settings.visibility.changed`, before and after | no: it decides only objects created later |
+| A project's level | `PUT /api/v1/projects/{projectKey}/visibility` (R-API-057) | `authz.project.visibility_changed`: project ID and key, the level before and after, the lowered repositories | `journal: revocation`, comparator below |
+| A repository's levels | the repository document (R-REPO-004); the cascade of R-AUTHZ-033 rule 3 | `authz.settings.changed` with `visibility.artifacts` and `visibility.wiki` before and after, and `cause` (`request`, `project`, `move`) | `journal: revocation`, the settings comparator of R-AUTHZ-031 |
+| A user's `external` flag | `PATCH /api/v1/users/{username}` ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-044) | `user.external_changed` | `journal: revocation`: setting it narrows |
+
+- **Level comparator.** `narrows(current, after)` for `authz.project.visibility_changed` answers true only when the project
+  exists in the restored database and `after.level` comes no later than the current level in the order `private`,
+  `internal`, `public`. Replay sets the project's level and cascades to its repositories as rule 3 of R-AUTHZ-033 says.
+- **Propagation** ([Q-AUTHZ-275](#q-authz-275--a-level-reaches-every-replica-through-the-grant-index-the-external-flag-through-the-principal-cache)):
+
+  | What changed | Written with | Reaches | Bound |
+  |---|---|---|---|
+  | A project's level and the cascade | `cluster.Notify("authz", …)` and, for each lowered repository, `cluster.Notify("repo_config", …)`, in the writing transaction | The compiled grant index of every `api`, `packages` and `worker` replica (R-AUTHZ-028) | R-AUTHZ-028: typically 100 ms plus one build, at most `cluster.epoch_poll_interval` plus 1 s, never above `authz.cache.max_staleness` plus one build |
+  | A repository's levels | `cluster.Notify("repo_config", …)` with the new configuration version | The grant index; the rendition caches of documents with wiki members, whose keys and ETags carry the caller's wiki answer per contributing repository (R-NPM-013, R-REPO-020) | As above |
+  | A user's `external` flag | the change area `auth` (R-AUTH-023) | The principal, session and token caches that hand the flag to the stage | `auth.revocation_bound` |
+  | The installation's default | `visibility_settings`, read in the creating transaction | nothing cached | immediate |
+  | `publicContent` of `login-options` and `anonymousReads` of a Bastion's handshake | computed from the grant index | the next read | as the grant index |
+
+  Not inputs: the namespace-claims index (R-REPO-023), because claims and pin rules apply independently of the caller
+  (R-AUTHZ-009 rule 4); a CI token's frozen bundle (R-CI-013), because levels are read when a request is decided and never
+  frozen into a token; and the Bastion's kept answers, which its feed reaches ([bastion.md](bastion.md) R-BAS-015).
+- The completeness test of R-AUTHZ-028 runs the operations of this table and fails when one changes an input of the index in a
+  transaction that advanced neither the `authz` nor the `repo_config` epoch. Every operation of the table answers with
+  `Trove-Authz-Epoch` (R-AUTHZ-032).
+
+Acceptance criteria:
+
+- A trove backup is taken while `web` is `public`. Then `web` is lowered to `internal` and `alice` is flagged external. `trove
+  backup restore` reports both journal entries `applied`; after the replicas start, an anonymous `npm view` through
+  `npm-public` gets `E401` and alice's token gets `E404` on `npm-internal`.
+- A journaled `authz.project.visibility_changed` from `internal` to `public` is reported `skipped`.
+- `PUT /api/v1/projects/web/visibility` to `private` on one replica with Valkey stopped: a request on another replica is
+  decided on the new level within `cluster.epoch_poll_interval` plus 1 s.
 
 ### R-AUTHZ-004 · Repository selectors
 Priority: **MVP** · Covers: IAM-020
@@ -684,11 +957,12 @@ the remote request path (R-REPO-025, step 9) is this setting.
   link or a README image could otherwise make an administrator's browser bring an
   attacker-chosen package into a frozen mirror. Package clients authenticate with tokens and are
   not affected; the UI shows cached content only.
-- **Anonymous populating is flagged.** When a policy gives `anonymous` `read` on a remote
-  repository whose `cacheFillAction` is `read`, the policy API saves it and returns the warning
-  `anonymous_populates_remote` (R-AUTHZ-021). Once anonymous access is on, every caller on the
-  network can make trove download arbitrary upstream packages, and the warning makes that visible
-  when the grant is made.
+- **Public populating is flagged.** A read by a visibility level passes the populate check like a read by a grant
+  (R-AUTHZ-035). When a write sets the artifacts of a remote repository whose `cacheFillAction` is `read` to `public`, or
+  sets `cacheFillAction: read` on a remote repository whose artifacts are `public`, the repository API saves it and
+  returns the warning `public_populates_remote`: every caller on the network can then make trove download arbitrary
+  upstream packages, and the warning makes that visible when the repository is opened
+  ([Q-AUTHZ-278](#q-authz-278--a-public-remote-repository-is-filled-by-anonymous-callers-and-the-write-that-opens-it-warns)).
 - **One check, asked two ways.** The check is `MayPopulate` of R-AUTHZ-015: the session cookie and
   an endpoint with `cache_fill: false` ([endpoints.md](endpoints.md) R-EP-019) refuse first, then
   `read` and the action of `cacheFillAction`; a `cacheFillAction` that names neither refuses. The
@@ -728,10 +1002,9 @@ Acceptance criteria:
   /api/npm/web/npmjs/is-odd` for the uncached package, carrying only Carol's session cookie, answers
   403 `populate_not_permitted`, and the test upstream records no request. The same request with
   Carol's personal access token fetches the package.
-- `POST /api/v1/permission-policies` giving `anonymous` `read` on `web/npmjs` (`cacheFillAction:
-  read`) answers 201 with `"warnings": ["anonymous_populates_remote"]`, whether anonymous access is
-  currently on or off; the same policy on a remote repository with `cacheFillAction: deploy`
-  answers 201 without that warning.
+- In the `public` project `web`, a merge patch `{"visibility": {"artifacts": "public"}}` on `npmjs` (`cacheFillAction:
+  read`) answers 200 with `"warnings": ["public_populates_remote"]`; the same patch on a remote repository with
+  `cacheFillAction: deploy` answers 200 without that warning.
 
 ### R-AUTHZ-009 · Virtual repositories
 Priority: **MVP** · Covers: IAM-024, PKG-NPM-042, PKG-NPM-045, PKG-NUGET-027
@@ -762,8 +1035,8 @@ Priority: **MVP** · Covers: IAM-024, PKG-NPM-042, PKG-NPM-045, PKG-NUGET-027
    [repositories-and-proxy.md](repositories-and-proxy.md)). Actions and ownership are checked on
    that target with the same coordinate, and the gate of rule 1 applies as well. Grants of
    `annotate`, `deploy`, `overwrite` or `delete` on the virtual repository itself have no effect.
-6. **Anonymous callers** may use a virtual repository only if `anonymous` holds `read` on the
-   virtual repository and on every member, recursively. Otherwise every anonymous request through
+6. **Anonymous callers** may use a virtual repository only if the artifacts of the virtual repository and of every
+   member, recursively, are `public` (R-AUTHZ-033). Otherwise every anonymous request through
    it gets 401. The client then retries with its configured credentials and sees the full view,
    instead of an incomplete merge that it cannot tell apart from the real one.
 7. A virtual repository appears in repository listings and in client setup instructions only for
@@ -793,8 +1066,8 @@ Acceptance criteria:
 - `@acme/ui` 1.0.0 is in `npm-internal-a` (Alice may read it) and 2.0.0 in `npm-internal-b` (she
   may not); both are members of `npm-all`. `npm view @acme/ui versions` through `npm-all` shows
   only `1.0.0` to Alice. Carol, who may read both, sees both, also when Alice's request came first.
-- Anonymous access is on, and `anonymous` holds `read` on `npm-all` and `npmjs` but not on
-  `npm-internal`: an anonymous `npm view left-pad` through `npm-all` gets 401.
+- The artifacts of `npm-all` and `npmjs` are `public`, those of `npm-internal` are `internal`: an anonymous `npm view
+  left-pad` through `npm-all` gets 401.
 - Alice holds `read` on `npm-all` and `deploy` on `npm-internal` (the deploy target):
   `npm publish --registry https://trove.example.com/api/npm/web/npm-all/` succeeds. Without `read` on
   `npm-all`, the same command gets 403.
@@ -830,7 +1103,7 @@ lists as system scope items (R-AUTH-025) use the same names; the others extend t
   applies to every member, including members synchronized from the identity provider. This is how
   an IdP group carries administrator rights; there is no administrator flag on users or groups
   (IAM-016, R-AUTH-008).
-- Roles are never bound to `anonymous`, to `authenticated` (R-AUTHZ-030) or to CI identity
+- Roles are never bound to `anonymous`, to `authenticated` (R-AUTHZ-002) or to CI identity
   mappings (R-CI-013: CI tokens never carry system administration and cannot call management
   endpoints). Such bindings are rejected with 422 `role_not_allowed`.
 - The break-glass administrator (R-AUTH-014) always holds `admin` without a role binding, so
@@ -946,7 +1219,7 @@ Priority: **P1** · Covers: IAM-007, ADMAPI-027
 
 - `repository-admin` creates, changes and deletes repositories of every class, sets their
   authorization-related settings (`cacheFillAction`, `packageOwnership`, `ownershipDomain`,
-  `hideExistence`, `requireAuthentication`) and writes upstream credentials (write-only), in every
+  `hideExistence`, `visibility`, R-AUTHZ-033) and writes upstream credentials (write-only), in every
   project, and moves repositories between projects (R-AUTHZ-026,
   [repositories-and-proxy.md](repositories-and-proxy.md#r-repo-060--move-a-repository-to-another-project) R-REPO-060). It holds no content rights through its role and
   cannot edit policies. Because content is decided on the member (R-AUTHZ-009), adding a repository
@@ -1150,14 +1423,11 @@ func Begin(ctx context.Context, sub Subject, names ...qname.Repo) (*Index, error
 // per member. Every other per-request question has the same form (ReadableOn, ExposedOn,
 // PathsAllowedOn, RequireOn, HoldsOn, CheckOn), so one request is answered on one index.
 func DecideOn(ctx context.Context, idx *Index, sub Subject, c Coordinate) Decision {
-    if sub.Anonymous && !settings.AnonymousAccess() {               // R-AUTH-037
-        return Deny(ReasonUnauthenticated)
-    }
     if c.Repo.Class == Virtual {
         if !Allowed(sub, idx, Read, c.RepositoryLevel()) {
-            return Deny(ReasonVirtualGate)
+            return Deny(ReasonVirtualGate)                          // answered 401 to the anonymous subject
         }
-        if sub.Anonymous && !idx.AnonymousReadsAllMembers(c.Repo) {
+        if sub.Anonymous && !idx.PublicThroughout(c.Repo) {         // every member public, recursively (rule 6)
             return Deny(ReasonAnonymousPartialVirtual)              // answered 401
         }
         if c.Kind == Write {
@@ -1204,6 +1474,9 @@ func Allowed(sub Subject, idx *Index, a Action, c Coordinate) bool {
     if sub.Capabilities().Has(ContentBypass) {                      // roles as admitted by the scope
         return true
     }
+    if leveled(sub, idx, a, c) {                                    // visibility levels, R-AUTHZ-035: public is
+        return true                                                 // read without a scope, internal within it
+    }
     if !sub.Scope.Admits(a, c) || !sub.Caps.Admits(a, c) {          // ceilings, R-AUTHZ-013
         return false
     }
@@ -1222,7 +1495,7 @@ func granted(sub Subject, idx *Index, a Action, c Coordinate) bool {
             return true                                             // R-AUTHZ-026; source role:<projectKey>:<role>
         }
     }
-    for _, p := range sub.Principals {                              // user, groups, sa, ci mappings, anonymous, authenticated
+    for _, p := range sub.Principals {                              // user, groups, sa, ci mappings
         for _, g := range idx.Grants(c.Repo.ID, p) {                // selectors already expanded
             if g.Actions.Has(a) && g.Resources.Matches(c) {
                 return true
@@ -1313,7 +1586,7 @@ func MayPopulate(sub Subject, idx *Index, m Repo, mc Coordinate) bool {
 
 Worked trace (repositories and policies of the team example in
 [Worked examples](#worked-examples), all in project `web`; Alice is in `developers` and `team-web`, Bob in
-`developers`, Carol in no group, Dave in no group and a `reader` of `web`, anonymous access off):
+`developers`, Carol in no group, Dave in no group and a `reader` of `web`; every level `private`):
 
 | # | Subject | Request | Steps | Result |
 |---|---|---|---|---|
@@ -1322,7 +1595,7 @@ Worked trace (repositories and policies of the team example in
 | 3 | Alice | `npm publish @pay/core` via `npm-all` | gate passes; `deploy` on `@pay/core`: no grant | 403 |
 | 4 | Bob | `npm publish @web/button@1.3.1` | `deploy`: no grant | 403 |
 | 5 | Carol | `npm view left-pad` via `npm-all` | gate: no `read` on `npm-all` | 404 |
-| 6 | no credential | `npm view left-pad` via `npm-all` | anonymous access off | 401 |
+| 6 | no credential | `npm view left-pad` via `npm-all` | the artifacts of `npm-all` are not `public` | 401 |
 | 7 | Alice, read-only token | `npm publish @web/button@1.3.2` | grant allows `deploy`, the scope does not (`deny.scope`) | 403 |
 | 8 | Alice | `npm view left-pad` via `npm-all`, not cached | `npm-internal`: not found; `npmjs`: `read` and `cacheFillAction: read` pass; fetched | 200 |
 | 9 | Dave | `npm view @web/button` via `npm-all` | gate: `read` on `npm-all` from `role:web:reader`; member `npm-internal`: `read` from the role; found | 200 |
@@ -1343,7 +1616,7 @@ A refused request is answered as follows (first matching row wins):
 | Situation | Status |
 |---|---|
 | Grant index not confirmed current within the wait of R-AUTHZ-028 | 503 `authz_stale` with `Retry-After` |
-| No credential: anonymous access off, or `anonymous` lacks what the request needs (reads and writes alike) | 401 with the challenge of R-AUTH-002 |
+| No credential, and no `public` level admits what the request needs (reads and writes alike) | 401 with the challenge of R-AUTH-002 |
 | `Trove-Authz-Min-Epoch` names an epoch the database has not reached (R-AUTHZ-032) | 412 `authz_epoch_unknown` |
 | Read-type request (request kinds `artifact`, `metadata`, `search`, R-REPO-003) without `read` on the coordinate; for a virtual repository, without `read` on it | 404 |
 | Read-type request that the endpoint's exposure does not admit ([endpoints.md](endpoints.md) R-EP-013) | 404, byte-identical to a missing resource; R-AUTHZ-017 does not change it |
@@ -1398,7 +1671,7 @@ Acceptance criteria:
   existing `@web/button`.
 - `dotnet restore` against `nuget-internal` without a credential gets 401 with a `Basic`
   challenge, retries with the credential from `nuget.config` and succeeds.
-- `npm publish` without a credential against a repository on which `anonymous` holds `read` gets
+- `npm publish` without a credential against a repository whose artifacts are `public` gets
   `E401`.
 - Bob gets 403 on `GET /api/v1/users/does-not-exist` and on `GET /api/v1/users/alice` alike.
 
@@ -1656,7 +1929,8 @@ an encoded `/` in that segment.
   `sa:` (with or without a project), `ci:<issuer>/<mapping>` and `ci:<issuer>/<projectKey>/<mapping>`, and from M4
   `ci:<issuer>:project:<id>` (R-CI-015); a service account of another project than the repository's is 422
   `principal_outside_project` (R-AUTHZ-026); every other
-  reference, `anonymous` and `authenticated` included, is 422 `unknown_principal` (Q-AUTHZ-157).
+  reference is 422 `unknown_principal` (Q-AUTHZ-157), and `anonymous` or `authenticated` is 422 `principal_not_allowed`
+  (Q-AUTHZ-279).
   The permission is decided before the reference is looked up.
 - Adding and removing are writes: a caller who may not change the owners gets 403 whether or not the
   repository or the name exists (R-AUTHZ-016). Through a session they need recent authentication
@@ -1782,13 +2056,13 @@ Representation:
   answers it (R-AUTHZ-032).
 - Malformed JSON answers 400. Semantic validation answers 422 with one of: `unknown_principal`,
   `unknown_repository`, `unknown_format`, `invalid_pattern`, `invalid_action`,
-  `duplicate_principal`, `anonymous_write_action`, `anonymous_dynamic_selector`,
-  `authenticated_write_action`, `virtual_action_not_applicable`, `action_not_allowed`; `invalid_pattern` also for a
+  `duplicate_principal`, `principal_not_allowed` (an entry for `anonymous` or `authenticated`, Q-AUTHZ-279),
+  `virtual_action_not_applicable`, `action_not_allowed`; `invalid_pattern` also for a
   bare key in a global policy and for a selector with a `/` in a project policy (R-AUTHZ-004), and for a path pattern
   with an upper-case letter in a policy that covers a repository of a format with lower-case paths (NuGet, Q-AUTHZ-253);
   for a project policy also `principal_outside_project` (R-AUTHZ-026). Warnings do not block saving:
   `path_patterns_on_package_format` (any path pattern, include or exclude, over a repository of a format with package
-  names, R-AUTHZ-005), `selector_matches_nothing` and `anonymous_populates_remote` (R-AUTHZ-008).
+  names, R-AUTHZ-005) and `selector_matches_nothing`.
 - The declarative bootstrap file (configuration as code, P1,
   [operations-and-observability.md](operations-and-observability.md)) uses the same
   representation.
@@ -1831,7 +2105,7 @@ Priority: **MVP** · Covers: IAM-002, IAM-016, ADMAPI-001
 | `GET /api/v1/role-bindings?role=&principal=` | List bindings | 200 | `roles:read` |
 | `PUT /api/v1/role-bindings/{role}/{principalRef}` | Bind (idempotent) | 201 new, 200 existing (a binding from the configuration stays one, Q-AUTHZ-171); 409 `auto_join_admin_conflict`; 422 `role_not_allowed`, unknown role or principal | `roles:write` |
 | `DELETE /api/v1/role-bindings/{role}/{principalRef}` | Unbind | 204; 404; 409 `last_admin`; 409 `role_binding_managed_by_configuration` for a binding from the configuration (R-AUTHZ-010) | `roles:write` |
-| `GET /api/v1/authz/me` | The caller's effective capabilities, scope summary, principal set and its project memberships with their roles (`projects`: `[{"key": "web", "role": "owner"}]`, R-AUTHZ-026) | 200 | any subject |
+| `GET /api/v1/authz/me` | The caller's effective capabilities, scope summary, principal set, whether it is internal (`internal`, R-AUTHZ-030) and its project memberships with their roles (`projects`: `[{"key": "web", "role": "owner"}]`, R-AUTHZ-026) | 200 | any subject |
 
 - `principalRef` is percent-encoded (`group:platform-admins`, `sa:ci-bot`, `sa:web%2Fpartner`).
 - Binding any role to an auto-join group is refused with 409 `auto_join_admin_conflict`; the
@@ -1963,8 +2237,9 @@ Priority: **P1** · Covers: IAM-029
 - A delegated manager MUST NOT change an entry whose principal is in its own principal set (403).
   It can neither widen its own rights, also not indirectly through one of its groups, nor lock
   itself out.
-- A delegated manager MUST NOT add `anonymous` or `authenticated` (403, R-AUTHZ-030). The
-  catalog's finer control over anonymous grants by non-administrators (IAM-034) is P2.
+- A delegated manager MUST NOT add `anonymous` or `authenticated`: nobody can (422 `principal_not_allowed`, Q-AUTHZ-279).
+  Opening content to every internal user or to everyone is a visibility level (R-AUTHZ-033), and the catalog's finer control
+  over anonymous grants by non-administrators (IAM-034) stays P2.
 - For the previous two rules, its own principal set also contains every service account it owns
   or may create tokens for (R-AUTH-020, P1) and every CI mapping in a CI delegation whose delegate
   is in its principal set (R-CI-023). Adding or changing an entry for such a principal answers 403.
@@ -2032,7 +2307,7 @@ of its partners without a system administrator. Delegation per policy (`manage`,
 - Users and groups are members of a project with one role each: `reader`, `developer`, `maintainer` or `owner`. A service
   account, a CI mapping, a Bastion principal, `anonymous`, `authenticated` and an auto-join group are never members (422
   `principal_not_allowed`): every user is in an auto-join group, so it would make every user a member, which is what
-  `authenticated` in a global policy says ([Q-AUTHZ-200](#q-authz-200--a-global-policy-never-takes-a-projects-prefix-and-a-project-policy-names-no-auto-join-group)).
+  the level `internal` says (R-AUTHZ-033) ([Q-AUTHZ-200](#q-authz-200--a-global-policy-never-takes-a-projects-prefix-and-a-project-policy-names-no-auto-join-group)).
 - Each role holds what the role before it holds:
 
 | Role | On every repository of the project | In the project |
@@ -2070,14 +2345,15 @@ What the Owner may do, within its project and nowhere else:
 |---|---|
 | Members | Add users and groups, change their roles, remove them; look up users and groups by a name prefix ([Q-AUTHZ-182](#q-authz-182--how-a-project-administrator-finds-the-users-and-groups-it-names)) |
 | Repositories | Create, change and delete the project's repositories of every class: local, remote and virtual ([Q-AUTHZ-173](#q-authz-173--a-project-administrator-creates-remote-repositories)); read their full configuration (as `repositories:read-config` does, never a secret value); test the saved and the unsaved upstream of a remote; request a pass of a mirror (R-REPO-056); move a repository to another project of which it is Owner too (R-REPO-060). A remote's upstream stays subject to the outbound address rules of the installation ([security/egress.md](../security/egress.md)). An Owner without `repositories:write-config` gives an upstream secret as a value, never as a reference of the installation, and a stored one does not follow a new address ([Q-REPO-127](repositories-and-proxy.md#q-repo-127--a-project-administrator-gives-an-upstream-secret-as-a-value-and-a-stored-one-stays-with-its-hosts), 422 `secret_value_required`); it takes the installation's outbound path ([Q-REPO-128](repositories-and-proxy.md#q-repo-128--a-project-administrators-remote-repository-takes-the-installations-outbound-path), 422 `outbound_path_restricted`); and it keeps `remote.mode`, `remote.mirror`, the include and exclude lists, `remote.url` and `remote.extraHosts` of a mirror as stored (Q-REPO-193), pauses and resumes it, or turns the mode back to `pullThrough` ([Q-REPO-142](repositories-and-proxy.md#q-repo-142--who-may-switch-a-remote-to-mirror), 422 `mirror_restricted`) |
-| Policies | Create, change and delete the project's policies, granting any action (`manage` included, except to CI mappings) to users, groups, the project's service accounts, service accounts of no project and CI mappings, never to `anonymous`, `authenticated` or an auto-join group; validate a policy of the project |
+| Policies | Create, change and delete the project's policies, granting any action (`manage` included, except to CI mappings) to users, groups, the project's service accounts, service accounts of no project and CI mappings, never to an auto-join group; validate a policy of the project |
+| Visibility | Set the levels of the project's repositories, artifacts and wiki, up to the project's level (R-AUTHZ-033); the project's own level is the administrator's |
 | Service accounts | Create, change, disable, enable and delete the project's service accounts; issue and revoke their tokens within the bounds below ([Q-AUTHZ-177](#q-authz-177--what-a-project-administrator-may-do-with-service-accounts-and-their-tokens)) |
 | CI mappings | Manage the mappings of the tier `project:<projectKey>`, dry-run them and read the issuances of tokens through them, with the bounds of a project policy: the project's repositories only, its policies only, no groups, never `manage` ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-019) |
-| Settings | Change the display name and the description |
+| Settings | Change the display name and the description; read the project's level |
 
 An Owner cannot bind system roles, see policies of no project (unless it holds `policies:read`), see or change anything of
 a project beyond what its role there allows, create or delete projects, create users, groups or service accounts of no
-project, or add or change an entry for `anonymous` or `authenticated` (R-AUTHZ-030). Delegation of CI mappings to a group
+project, or change the project's level (R-AUTHZ-033). Delegation of CI mappings to a group
 outside projects stays with R-CI-023 (P1).
 
 **Project policies.**
@@ -2094,7 +2370,7 @@ outside projects stays with R-CI-023 (P1).
   without `policies:read` it answers `unknown_principal` as a name that does not exist,
   [Q-AUTHZ-197](#q-authz-197--what-a-project-administrators-policy-list-and-validation-tell-about-other-objects)).
   An auto-join group is refused (422 `principal_outside_project`): every user is a member, so it would stand in for
-  `authenticated` ([Q-AUTHZ-200](#q-authz-200--a-global-policy-never-takes-a-projects-prefix-and-a-project-policy-names-no-auto-join-group)).
+  the level `internal` ([Q-AUTHZ-200](#q-authz-200--a-global-policy-never-takes-a-projects-prefix-and-a-project-policy-names-no-auto-join-group)).
 - The grants of a project policy are stored in their own table, `authz_project_policy_entry`
   ([Q-AUTHZ-174](#q-authz-174--the-grants-of-a-project-policy-live-where-the-previous-release-does-not-read-them),
   [ADR-145](../decisions.md#adr-145--the-grants-of-a-project-policy-are-stored-where-the-previous-release-does-not-read-them)).
@@ -2294,7 +2570,9 @@ table and `LISTEN/NOTIFY` on a dedicated connection per replica; both are gone (
   - role bindings;
   - repositories: project and key, class, format, virtual membership and deploy target, and the
     authorization settings of R-AUTHZ-031's settings table;
-  - projects and their members with their roles (users and groups, R-AUTHZ-026).
+  - projects with their visibility level, and their members with their roles (users and groups, R-AUTHZ-026,
+    R-AUTHZ-033);
+  - the artifacts and wiki levels of every repository (R-AUTHZ-033), read from their columns in the same snapshot.
 
   Project rules enter the build in two places. Each project's members are kept with their roles
   (`project_member`), and a request's role in a project is the highest over the user and its groups, decided from
@@ -2499,7 +2777,7 @@ CREATE TABLE authz_policy_pattern (
 
 CREATE TABLE authz_policy_entry (
   policy_id     uuid NOT NULL REFERENCES authz_policy (id) ON DELETE CASCADE,
-  principal_id  uuid NOT NULL REFERENCES principal (id) ON DELETE CASCADE,   -- anonymous included
+  principal_id  uuid NOT NULL REFERENCES principal (id) ON DELETE CASCADE,   -- never anonymous (SQLSTATE AI009)
   actions       text[] NOT NULL CHECK (cardinality(actions) > 0
                   AND actions <@ ARRAY['read','annotate','deploy','overwrite','delete','manage']),
   PRIMARY KEY (policy_id, principal_id)
@@ -2698,12 +2976,14 @@ Fields of `authz.decision`:
 |---|---|
 | `allow.grant` | A grant or a project role allowed it |
 | `allow.role` | `content:bypass` or a capability allowed it |
-| `deny.unauthenticated` | No credential, or anonymous access off |
+| `allow.visibility` | A visibility level allowed the read; the source is `visibility:internal` or `visibility:public` (R-AUTHZ-035) |
+| `deny.unauthenticated` | No credential, and no `public` level admits the request |
 | `deny.no-grant` | No grant for the action |
 | `deny.scope` | A grant exists, but the token scope or the CI caps exclude it |
 | `deny.triggering-user` | P1: the triggering user lacks the action (R-CI-024) |
 | `deny.virtual-gate` | No `read` on the virtual repository |
-| `deny.anonymous-partial-virtual` | Anonymous caller; a member is not readable anonymously |
+| `deny.anonymous-partial-virtual` | Anonymous caller; a member's artifacts are not `public` |
+| `deny.wiki` | The artifacts may be read, the wiki may not (R-AUTHZ-034) |
 | `deny.populate` | May read the remote repository but not populate it |
 | `deny.ownership` | Action allowed, ownership refused |
 | `deny.shadowing` | Action allowed; the first version would shadow a package a remote member serves (R-AUTHZ-007, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-048) |
@@ -2799,6 +3079,7 @@ restore from a scheduled backup an MVP path. For this page:
 | `authz.project.deleted` | Project ID and key | Delete the project when it holds no repository, no service account and no CI mapping in the restored database; otherwise remove all its members, and report it |
 | `authz.project.member_removed` | Project ID and key; the principal's ID and reference | Remove the membership |
 | `authz.project.member_changed` | Project ID and key; the principal's ID and reference; the role before and after | Update rule of R-HA-054 with the role comparator below |
+| `authz.project.visibility_changed` | Project ID and key; the level before and after (R-AUTHZ-036) | Update rule of R-HA-054 with the level comparator of R-AUTHZ-036; an applied entry lowers the project's repositories as R-AUTHZ-033 rule 3 says |
 | `repository.moved` | Repository ID; the source and the target project, IDs and keys | When the restored database holds the repository in the source project, disable it (`disabled: true`, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-004) and report it `suspended`; `already in effect` when it is in the target project; otherwise `subject unknown` |
 | `repository.disabled` | Repository ID; its qualified name for display | Disable the repository (`disabled: true`); `already in effect` when the restored database holds it disabled or being deleted; `subject unknown` when it holds no repository of the ID. Enabling a repository narrows nothing and is not journaled ([Q-AUTHZ-238](#q-authz-238--disabling-a-repository-is-journaled-as-repositorydisabled-with-a-handler-of-its-own)) |
 | `repository.deleted` | As for `repository.disabled`; both phases of a deletion (R-REPO-013) carry it | As for `repository.disabled`: the repository is disabled, never deleted, so replay deletes no content and an administrator deletes it again ([Q-AUTHZ-239](#q-authz-239--a-deleted-repository-is-journaled-and-replayed-as-disabled)) |
@@ -2862,7 +3143,8 @@ restore from a scheduled backup an MVP path. For this page:
   |---|---|---|
   | `cacheFillAction` | R-AUTHZ-008 | `deploy`, `read` |
   | `packageOwnership` | R-AUTHZ-018 | `enforce`, `off` |
-  | `requireAuthentication` | [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-004, R-AUTHZ-003 | `true`, `false` |
+  | `visibility.artifacts` | R-AUTHZ-033 | `private`, `internal`, `public` |
+  | `visibility.wiki` | R-AUTHZ-033, R-AUTHZ-034 | `private`, `internal`, `public` |
   | `hideExistence` | R-AUTHZ-017 | `true`, `false`; `inherit` compares as the value of `authz.hide_existence` in force at replay |
 
   A change of any of them writes `authz.settings.changed` in the transaction of the repository
@@ -3059,7 +3341,7 @@ Expected results:
 ## Deferred
 
 <details>
-<summary>Deferred catalog entries (25)</summary>
+<summary>Deferred catalog entries (24)</summary>
 
 | ID | Priority | Reason |
 |---|---|---|
@@ -3068,7 +3350,7 @@ Expected results:
 | IAM-027 | Later | Distribution-target resources; distribution to edge instances is not planned soon. |
 | IAM-028 | Out of scope | CI pipeline-source resources; trove bundles no CI engine. |
 | IAM-033 | P2 | Older policy interfaces with whole-policy replacement; the single policy API of R-AUTHZ-021 replaces them. |
-| IAM-034 | P2 | Fine control over anonymous grants by non-administrators; until then, delegated managers and Owners of a project can never grant to `anonymous`. |
+| IAM-034 | P2 | Fine control over anonymous grants by non-administrators; no policy names `anonymous` (Q-AUTHZ-279), and the Owner of a project opens its repositories only up to the level an administrator gave the project (R-AUTHZ-033). |
 | IAM-053 | P2 | Project members through the assignment of custom roles; the projects of R-AUTHZ-026 have members with four fixed roles and project policies. |
 | IAM-054 | P2 | Global roles for projects. |
 | IAM-055 | P2 | Custom project roles; the four fixed roles of R-AUTHZ-026 (Q-AUTHZ-208) cover the MVP. |
@@ -3077,7 +3359,6 @@ Expected results:
 | IAM-059 | Later | Project-aware sharing through internal remote repositories. |
 | IAM-060 | P2 | Per-project build repositories. |
 | IAM-061 | P2 | Project storage quotas. |
-| IAM-062 | P2 | Anonymous access inside projects; R-AUTHZ-026 refuses `anonymous` in project policies meanwhile. |
 | IAM-063 | P2 | Environments. |
 | IAM-064 | P2 | Environments on roles and repositories. |
 | IAM-065 | Later | Project-scoped scan policies. |
@@ -3132,16 +3413,15 @@ Expected results:
   role, but it writes policies and can therefore grant itself any content right. Every such change
   is audited in the transaction that makes it (R-AUTHZ-029); H-22 records the missing two-person
   rule.
-- **Anonymous populating.** With anonymous access on, an anonymous `read` grant on a remote
-  repository with `cacheFillAction: read` lets anyone make trove download arbitrary upstream
-  packages: storage growth, upstream rate limits, possibly upstream cost. The policy API flags such
-  a grant with the warning `anonymous_populates_remote`. The per-repository fetch budget
+- **Public populating.** A remote repository with `public` artifacts and `cacheFillAction: read` lets anyone make trove
+  download arbitrary upstream packages: storage growth, upstream rate limits, possibly upstream cost. The repository API
+  flags the write that opens it with the warning `public_populates_remote`. The per-repository fetch budget
   `limits.maxConcurrentFetches` of [repositories-and-proxy.md](repositories-and-proxy.md)
   R-REPO-040 is shared by the whole installation, so it bounds concurrent upstream fetches of one
   repository whatever the replica count; it bounds concurrency, not volume, and the per-replica
   `proxy.max_concurrent_fetches` grows with the number of `web` replicas and with autoscaling.
-  Where remote repositories are exposed anonymously, set `cacheFillAction: deploy` and grant
-  `deploy` to authenticated groups only (R-AUTHZ-008).
+  Where remote repositories are public, set `cacheFillAction: deploy` and grant `deploy` to named groups only
+  (R-AUTHZ-008).
 - **Removed grants: a bounded window on every replica.** A removed grant stays usable on a replica
   until that replica has applied the change (R-AUTHZ-028). The window is typically 100 ms plus one
   index build while Valkey is available. With Valkey unavailable or its messages lost or forged, it
@@ -3164,11 +3444,11 @@ Expected results:
   audit decision reads Valkey (R-AUTHZ-029). By dropping messages they can delay a change by at
   most `cluster.epoch_poll_interval` plus 1 s, because the change log in PostgreSQL still applies
   it (H-49).
-- **`authenticated` reads, nothing more.** The built-in principal for every signed-in person
-  holds only `read`, never covers service accounts or CI tokens, so a leaked automation token
-  carries only what was granted to it by name, and only holders of `policies:write` can grant to it
-  (R-AUTHZ-030). It cannot become a package owner, so a grant to everyone never makes everyone
-  co-owner of a name.
+- **Levels read, nothing more.** A visibility level gives only `read` (R-AUTHZ-033): it never makes anybody a package owner,
+  never covers a write and never reaches a service account or a CI token through `internal`, so a leaked automation token
+  carries only what was granted to it by name, and what is `public`. Only an administrator opens a project; its Owner opens
+  repositories within it (R-AUTHZ-033 rule 4). The levels and their gaps are the subject of
+  [security/visibility.md](../security/visibility.md).
 - **Administrator power stays out of everyday tokens.** Tokens exercise roles only through
   `admin: true` or `system` items (R-AUTHZ-013). A leaked personal access token of an
   administrator therefore exposes that person's content rights, not the instance. The same holds for a project: an
@@ -3213,7 +3493,7 @@ Status: **Decided by the development agent** — selected from the options below
 
 ### Q-AUTHZ-3 · Built-in principal for all authenticated users
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded by [Q-AUTHZ-263](#q-authz-263--visibility-levels-replace-the-anonymous-switch-the-principal-authenticated-and-requireauthentication)**: the level `internal` reads for every internal user (R-AUTHZ-030, R-AUTHZ-033), and the principal `authenticated` is gone; the reasons of (d) carry over to who is internal (Q-AUTHZ-268).
 
 | Option | What it means | For | Against |
 |---|---|---|---|
@@ -3920,7 +4200,7 @@ Q-AUTHZ-159: the request's holder begins with the keys and learns later ones thr
 
 ### Q-AUTHZ-134 · A change message starts a build of its own, a capability probe records nothing, the anonymous switch is read once
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by [Q-AUTHZ-263](#q-authz-263--visibility-levels-replace-the-anonymous-switch-the-principal-authenticated-and-requireauthentication)**: the anonymous switch of (3) is gone; a request without a credential is decided on the levels of the index it began on.
 
 Three smaller decisions of the decision point. (1) The hint of a change message (this replica's own commit included) requested a
 `poll` build, which is skipped when the index equals the applied state; the poll applies a replica's own write only later, so the
@@ -4788,7 +5068,7 @@ another reason.
 
 ### Q-AUTHZ-188 · A project policy that names anonymous or authenticated is a principal outside the project
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded by [Q-AUTHZ-279](#q-authz-279--a-policy-entry-a-binding-a-membership-or-an-owner-record-that-names-anonymous-or-authenticated-is-refused)**: no policy, global or of a project, names `anonymous` or `authenticated`; both answer 422 `principal_not_allowed`.
 
 Context: R-AUTHZ-026 says a project policy never grants to `anonymous` or `authenticated` and names no code. The existing
 codes of the entry rules are `anonymous_write_action` and `authenticated_write_action`, which refuse an action beyond `read`,
@@ -6018,6 +6298,346 @@ withdrawal of ended sessions); [storage.md](storage.md) R-STOR-018. Code: migrat
 then a sign-out, a planted session of another principal, the end of one own session that had ended, an eviction then the end of the
 other sessions, an administrator's end of an idle session, a break-glass session that idled out then a password change), the unit
 test `TestStanding` (the chain).
+
+### Q-AUTHZ-263 · Visibility levels replace the anonymous switch, the principal `authenticated` and `requireAuthentication`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the owner's task T-18 (2026-11-11) asks for the levels private, internal and public as in his GitLab, with one
+mechanism, not a second one beside the anonymous switch. Before it, three mechanisms opened content: the runtime switch
+`anonymousAccess` with its ceiling `auth.anonymous.allowed` together with policy entries for `anonymous` (R-AUTH-037,
+R-AUTHZ-003), the built-in principal `authenticated` in policy entries (R-AUTHZ-030, Q-AUTHZ-3), and the repository field
+`requireAuthentication`, which closed again what the first opened.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Levels replace all three (chosen) | A level on the project and on each part of a repository is the only way to open content to every internal user or to everyone; no policy names `anonymous` or `authenticated`; the switch, its ceiling and `requireAuthentication` go | One mechanism, the owner's; what is open is read from the object itself, not from the union of policies; the UI shows it where the object is | Every test, fixture and screen that used the switch or the principals changes (pre-alpha: allowed) |
+| (b) Levels compile into policy entries | A level writes or removes entries for `anonymous` and `authenticated` | The decision point stays as it is | Two places that say the same thing and can disagree; a policy edit could open what a level closed |
+| (c) Levels beside the switch | The anonymous switch stays as an installation-wide master switch | Familiar | The second mechanism the owner ruled out |
+
+**Choice:** (a).
+
+**Rationale:** the owner's rule "one mechanism" decides between (a) and (c), and (b) is two mechanisms under one name. With
+(a) the question "who can read this repository" has its answer on the repository and its project, and the evaluator adds one
+read source next to grants and roles (R-AUTHZ-035), which is cheaper than any policy entry because it needs no principal set.
+The operator keeps a lever without a runtime switch: the default endpoint's `auth.anonymous` (Q-AUTH-232). The development
+agent would revisit this if the owner wants per-principal anonymous exceptions that a level cannot express.
+
+**Applied in the spec:** R-AUTHZ-003 and R-AUTHZ-030 rewritten; R-AUTHZ-033 to R-AUTHZ-036 new; R-AUTHZ-001, R-AUTHZ-002,
+R-AUTHZ-008, R-AUTHZ-009, R-AUTHZ-010, R-AUTHZ-012, R-AUTHZ-015, R-AUTHZ-016, R-AUTHZ-019, R-AUTHZ-021, R-AUTHZ-025,
+R-AUTHZ-026, R-AUTHZ-028, R-AUTHZ-029, R-AUTHZ-031; [identity-and-authentication.md](identity-and-authentication.md)
+R-AUTH-016, R-AUTH-037, R-AUTH-040, R-AUTH-044; [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-004;
+[ADR-192](../decisions.md#adr-192--visibility-levels-replace-the-anonymous-switch-and-the-principal-authenticated).
+Q-AUTHZ-3 is superseded.
+
+### Q-AUTHZ-264 · A level is stored on its object, and the installation's default is copied when a project or a repository is created
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Stored levels, the default copied at create (chosen) | Each project and each repository holds its levels; the installation's default is read once, when the object is created | As GitLab: a project's visibility is its own; what a request reads is one column; a change of the default never opens an existing object | Changing the default does not change existing objects (by design) |
+| (b) An `inherit` value | A repository may say `inherit` and follow its project live | One switch opens a whole project | A project raised by an administrator would open every inheriting repository at once, including those whose Owner never chose it; the effective level is computed, not read |
+| (c) Inherit by default, override per object | (b) as the default | Fewer stored values | The same surprise as (b), as the default |
+
+**Choice:** (a).
+
+**Rationale:** raising a level must be a decision on the object that becomes more open; (b) and (c) let a decision on the
+project open repositories nobody looked at. Lowering is where inheritance would help, and Q-AUTHZ-265 gets that effect by a
+cascade. The development agent would revisit this if administrators routinely raise a project and then every repository one by
+one; a bulk action would come before an inherit value.
+
+**Applied in the spec:** R-AUTHZ-033 (the table and rule 1).
+
+### Q-AUTHZ-265 · A repository is never more open than its project, and lowering a project lowers its repositories
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Bound by the project; lowering cascades in one transaction (chosen) | A repository's artifacts level is at most its project's; lowering a project lowers every repository above the new level in the same transaction | One action closes a project for good; stored values never claim more than is in effect; the database can hold the rule | Raising the project back does not restore the repositories' former levels |
+| (b) Bound by the project; lowering is refused while a repository is above | GitLab's answer for a group with more open projects | Nothing changes behind the administrator's back | Closing a project in a hurry needs a write per repository first |
+| (c) No bound; the effective level is the lower of the two | Store anything, decide the minimum | No cascade | A stored `public` that reads back but is not in effect, and that becomes effective again when the project is raised |
+
+**Choice:** (a). The owner's GitLab says a project may not be more open than its group; the bound is kept, and the cascade
+replaces GitLab's refusal.
+
+**Rationale:** lowering a project is the action of someone closing something, often in a hurry, so it must take effect in one
+write and on every replica within the bound of R-AUTHZ-028. (c) keeps a latent `public` that a later raise would silently make
+effective again, which is the surprise (a) avoids. The cascade is audited per repository and journaled, so a restore replays
+it. A move to another project lowers in the same way. The development agent would revisit this if the owner prefers GitLab's
+refusal.
+
+**Applied in the spec:** R-AUTHZ-033 (rules 2 and 3, the data model, `AI008`); [repositories-and-proxy.md](repositories-and-proxy.md)
+R-REPO-060.
+
+### Q-AUTHZ-266 · The wiki of a repository is never more open than its artifacts
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Wiki at most artifacts (chosen) | `visibility.wiki` ≤ `visibility.artifacts` | Every wiki surface may assume that the caller reads the package, so no documentation route tells a package name, a version or a README to someone who cannot see the package; the owner's example ("artifacts public, wiki internal") fits | Public documentation of internal packages is not possible |
+| (b) Independent levels, both bound by the project | As GitLab's project features | Also "documentation public, packages internal" | Every documentation route needs its own existence rules for a package the caller cannot see; a README names what the caller may not list |
+
+**Choice:** (a).
+
+**Rationale:** the owner's example is the restrictive direction. With (b) the wiki routes would have to answer for packages that
+are hidden from the same caller, which turns the documentation into an oracle for names (R-AUTHZ-016). The development agent
+would revisit this if the owner wants public documentation of internal packages; the wiki routes would then need the existence
+rules of R-AUTHZ-016 on their own.
+
+**Applied in the spec:** R-AUTHZ-033 (rule 2, the check constraint), R-AUTHZ-034.
+
+### Q-AUTHZ-267 · An administrator sets the level of a project, its Owner sets the levels of its repositories within it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Project by `projects:write`, repositories by the Owner or `repositories:write-config` up to the project, the default by `security-settings:write` (chosen) | The project's level is the administrator's ceiling, the Owner chooses within it | Keeps the rule of Q-AUTHZ-3 that opening content to the whole organization is an administrator's decision, and still lets a team choose per repository | An Owner who wants an internal project asks an administrator |
+| (b) The Owner sets everything | GitLab's default | No administrator involved | A project Owner opens content to the internet on its own |
+| (c) Only administrators set any level | Every level by `projects:write` or `repositories:write-config` | Central | Owners cannot keep a repository private inside an internal project, which is the most common narrowing |
+
+**Choice:** (a). A write that raises a level needs recent authentication (R-API-007).
+
+**Rationale:** GitLab lets an administrator restrict the levels non-administrators may choose; (a) is that restriction made the
+default, and it matches what trove decided for `authenticated` before (Q-AUTHZ-3: only `policies:write` opened content to
+everyone). The Owner keeps every narrowing and every opening up to the administrator's ceiling. The development agent would
+revisit this if projects are created mostly by their teams, which would call for a setting of restricted levels as in GitLab.
+
+**Applied in the spec:** R-AUTHZ-033 (the table, rule 4), R-AUTHZ-026 (the Owner's table); [api-and-ui.md](api-and-ui.md)
+R-API-007, R-API-056, R-API-057.
+
+### Q-AUTHZ-268 · A subject is internal when it is a user through a session or a personal token, not flagged external and not through a Bastion
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+The user flag is the owner's (2026-11-11); the task leaves open whether a project's technical accounts of external parties and
+the Bastion's partners count as external.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Users through a session or a PAT, without the flag, not through a Bastion (chosen) | Service accounts, project service accounts, CI tokens, Bastion registrations and the anonymous subject are never internal; a request through a Bastion never reads by `internal` | Every non-human credential reads only what names it or what is public, as `authenticated` did; the internet-facing door never serves the organization's internal content to a leaked user token | An employee who uses the Bastion from outside reads only what names him |
+| (b) Project service accounts external, other service accounts internal | Only the partners' accounts are external | Instance automation reads internal content without a grant | A monitoring or SCIM token reads every internal package (the reason of Q-AUTHZ-3 (c)) |
+| (c) As (a), but a request through a Bastion is judged by its user | The Bastion is only a channel | Employees read internal content from outside | A leaked personal token reads everything internal from the internet through a cache shared with partners |
+
+**Choice:** (a). The technical accounts of a project's external parties (phase 5a) are service accounts and never internal; the
+Bastion's partners present service-account tokens of their projects (R-BAS-004's fixture), and a user who presents a personal
+token through a Bastion reads there what names it and what is public ([bastion.md](bastion.md)
+[Q-BAS-148](bastion.md#q-bas-148--a-request-through-a-bastion-never-reads-by-the-level-internal)).
+
+**Rationale:** "internal" is the organization's own people at their own doors. A service account is created for one purpose and
+its token is the credential most often stored elsewhere, which is why `authenticated` never covered it; the same reason holds for
+`internal`. The Bastion exists to serve external parties on the internet, so the level that means "everyone inside" does not
+reach through it. The development agent would revisit the Bastion part if the owner wants employees to read internal content
+through it.
+
+**Applied in the spec:** R-AUTHZ-030, R-AUTHZ-002; [bastion.md](bastion.md) R-BAS-004, R-BAS-008.
+
+### Q-AUTHZ-269 · A level reads beside the grants; the token scope narrows `internal`, and nothing narrows `public` but the endpoint
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A read source in the union; the scope narrows `internal`, not `public`; the endpoint first (chosen) | R-AUTHZ-035 | A client whose token is scoped elsewhere still installs public packages, as it would without the token; `internal` stays a credential's right, bounded like one | A narrowly scoped token reads more than its scope names, but only what anyone reads |
+| (b) The scope narrows both | A level is read under the scope like a grant | Uniform | A CI job with a scoped token gets 404 for a public package that the same request without a token gets; npm sends the token to every URL of the registry host, so the job cannot drop it |
+| (c) A level replaces the grants | Members read by their roles only where the level is `private` | One source per repository | Contradicts the union of R-AUTHZ-001 |
+
+**Choice:** (a).
+
+**Rationale:** the token scope protects what a credential can reach; a public read needs no credential, so a scope protects
+nothing there and only breaks clients. The endpoint's exposure is different: it is a ceiling for every subject including the
+anonymous one, so it binds levels as it binds grants (R-EP-013). The development agent would revisit this if a scoped token
+must be kept from public content for a reason other than access, which would be a property of the client, not of the scope.
+
+**Applied in the spec:** R-AUTHZ-035, R-AUTHZ-015 (`Allowed`), R-AUTHZ-001.
+
+### Q-AUTHZ-270 · The wiki is the documentation trove serves or shows apart from the files, never a file inside an artifact
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) What trove serves or shows apart from the files (chosen) | npm's `readme` members, NuGet's README route, the README operation, T-19's documentation | Every surface is one trove controls; a file the client downloads stays an artifact | A README inside a tarball reaches whoever downloads it (H-880) |
+| (b) Also the README file inside an artifact | Redact or refuse the file | The wiki would be really hidden | Changes the bytes of an artifact: every digest, signature and lockfile integrity check breaks |
+| (c) Every metadata member that is prose (description, release notes) | Hide them with the README | Wider | Descriptions are what a client shows in its list and search; hiding them breaks `npm search`, the NuGet gallery views and the repository list |
+
+**Choice:** (a), with the table of R-AUTHZ-034 per format: npm the `readme` and `readmeFilename` of the full package document
+and the README operation; NuGet the README route and the README operation; Ansible Galaxy the README operation and the
+documentation surfaces of T-19; OCI, Debian and generic none.
+
+**Rationale:** an artifact's bytes are fixed by its digest, so (b) is impossible without breaking every client that verifies.
+(c) hides what clients need to choose a package. The gap that remains is recorded honestly as H-880. The development agent would
+revisit this when a format adds documentation trove generates (T-19 does), which joins the table.
+
+**Applied in the spec:** R-AUTHZ-034; [formats/npm.md](formats/npm.md) R-NPM-010, [formats/nuget.md](formats/nuget.md)
+R-NUGET-024, [formats/oci.md](formats/oci.md), [formats/debian.md](formats/debian.md).
+
+### Q-AUTHZ-271 · A caller who reads the artifacts but not the wiki gets the refusal of a read on a wiki route, and documents without the wiki members
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Route: refusal of a read; document: members absent; UI: tab absent (chosen) | R-AUTHZ-034's table | A client that reads the document keeps working (npm prints nothing for a missing `readme`); a wiki route answers like a missing one, so it tells nothing; a client without credentials gets the 401 it can answer | The caller is not told why there is no README |
+| (b) A redacted document | `readme: "(hidden)"` | Explicit | A value that is not the package's README, cached and shown by clients as if it were |
+| (c) 403 on the document | Refuse the whole packument | Clear | Breaks `npm install` for a caller who may install, the opposite of the owner's example |
+
+**Choice:** (a).
+
+**Rationale:** the owner's example demands that the artifacts keep working, which rules out (c); (b) puts invented content into
+a document that clients cache and display. An absent member is what a package without a README has, so every client already
+handles it. The UI follows: no tab, no request (R-UI-057). The development agent would revisit this if users ask why a README is
+missing often enough to show a hint.
+
+**Applied in the spec:** R-AUTHZ-034; [api-and-ui.md](api-and-ui.md) R-API-029, R-UI-057.
+
+### Q-AUTHZ-272 · The wiki check is one coordinate part, asked through a route flag, a host question and a document extension
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+This is the seam with T-19 (the documentation of Ansible Galaxy collections): its routes and members are wiki content and use
+these forms; it defines no check of its own.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Coordinate.Part` in the decision point; `Route.Wiki`, `Host.WikiReadable`, `x-trove-part: wiki` and `ReadScope.MayReadWiki` as the only ways to ask (chosen) | One evaluation, three entry points by situation | The route flag decides before the handler and audits like every read; the question needs no audit for a member left out; the document extension names the management operations that serve wiki content, for their handlers and a test; the kit can check each | Five names to learn |
+| (b) A new action `wiki` | Grants name it | Fine-grained grants | Every policy, role and preset changes; the owner asked for levels, not for an action |
+| (c) Each format decides in its handlers | No contract change | Easy start | Nothing makes a new handler ask; the T-19 draft's own gate is one function per format |
+
+**Choice:** (a). The Go contracts are in [visibility-work-packages.md](../projektplan/visibility-work-packages.md) WP0.
+
+**Rationale:** grants stay as they are (a `read` covers both parts), so the only new input is the level of the part; a
+coordinate field carries it through every path that already decides a read, listings included. The three forms match the three
+situations a format meets, and the kit test of R-AUTHZ-034 makes a forgotten form visible. The development agent would revisit
+this if a format needs a part that is neither artifacts nor wiki.
+
+**Applied in the spec:** R-AUTHZ-034; [api-and-ui.md](api-and-ui.md) R-API-058; [architecture.md](architecture.md) R-ARCH-010.
+
+### Q-AUTHZ-273 · Every listing and every feature that asks for `read` counts a read by a level
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A read by a level is a read everywhere (chosen) | Repository lists, the package API, search, counts, vulnerability findings, setup snippets | What a caller can download it can also find; one rule | An internal user's repository list grows with every internal repository |
+| (b) Levels only on the protocol routes | Lists show what grants give | Short lists | A caller can install what it cannot find; the UI breaks for the public visitor |
+
+**Choice:** (a). A search over wiki text is a wiki read; a search over names and descriptions an artifacts read.
+
+**Rationale:** R-AUTHZ-016 already requires that listings contain exactly what a caller may read; a level that reads but does not
+list would break it in the other direction. `authz.ReadScope` gives a `ReadAll` shape to a repository a level opens, so the
+filter stays one SQL predicate per repository (Q-API-165). The development agent records no revisit condition.
+
+**Applied in the spec:** R-AUTHZ-035 rule 7; [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-012;
+[api-and-ui.md](api-and-ui.md) R-API-029.
+
+### Q-AUTHZ-274 · A virtual repository has levels of its own, and the anonymous subject still needs every member public
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The virtual repository's artifacts level opens its gate; members by their own levels; rule 6 for the anonymous subject (chosen) | R-AUTHZ-035 rule 5 | Content is always decided on the member (Q-AUTHZ-1); an anonymous client never sees an incomplete merge it cannot tell from the real one | A public virtual repository over one internal member answers 401 to anonymous callers |
+| (b) The gate's level is the lowest of its members' | Computed | No separate setting | Adding a member changes who may use the endpoint |
+| (c) Drop rule 6 for public virtual repositories | Anonymous callers get the public part | Simpler | The dependency-confusion risk rule 6 closes: a public package of the name an internal member holds |
+
+**Choice:** (a).
+
+**Rationale:** rule 6 exists so that a client without credentials is challenged instead of resolving a name from the public
+member that an internal member also holds; the levels do not change that risk. Members keep their own levels, so rearranging
+members never opens content (R-AUTHZ-009). The development agent would revisit this if a public virtual repository over internal
+members turns out to be a common wish, which would need namespace claims that the anonymous subject honours first.
+
+**Applied in the spec:** R-AUTHZ-009 rule 6, R-AUTHZ-035 rule 5, R-AUTHZ-015.
+
+### Q-AUTHZ-275 · A level reaches every replica through the grant index, the external flag through the principal cache
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Levels in the grant index (`authz`, `repo_config`), the flag with the principal (`auth`) (chosen) | Each travels with what already carries its kind of fact | No new change area and no new cache; the bounds are the existing ones; a disabled user and an external user take effect on the same path | Two bounds to state |
+| (b) The flag in the grant index as a set of external users | The index reads `app_user.external` | One cache | Every flag change rebuilds the index of every replica; the index would hold one entry per user |
+| (c) A cache of its own for the levels | A change area `visibility` | Independent | A third bound and a third consistency rule |
+
+**Choice:** (a). The namespace-claims index and a CI token's frozen bundle are no inputs; the rendition caches key on the wiki
+answer per contributing repository.
+
+**Rationale:** the grant index is built from projects and repositories in one snapshot already (R-AUTHZ-028), so a level costs a
+column there. The flag is a user attribute resolved with the user's status and groups (R-AUTH-023), which is the path a disable
+takes and which the job subject re-reads per batch (Q-AUTHZ-260). The development agent records no revisit condition.
+
+**Applied in the spec:** R-AUTHZ-036, R-AUTHZ-028; [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-044.
+
+### Q-AUTHZ-276 · The levels are columns, and the database holds the rules of the container
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Columns on `project` and `repositories`, a check for the wiki, a deferred constraint trigger for the project (chosen) | Migration `00071_visibility.sql` | The cascade is one `UPDATE`; the index reads a column, not the document; every writer (API, configuration as code, journal replay, move) is held to the rule by the database | The repository document maps two columns to one member |
+| (b) Members of the repository's JSON document | As `hideExistence` | No mapping | The rule "never above the project" needs a lock and a JSON read per writer; the cascade rewrites documents |
+
+**Choice:** (a). The repository document shows them as `visibility` (R-REPO-004); the trigger raises `AI008`.
+
+**Rationale:** the guard of Q-AUTH-16 and the project guards of migration 00019 show that trove puts cross-row rules into the
+database when several writers exist. The development agent records no revisit condition.
+
+**Applied in the spec:** R-AUTHZ-033 (data model).
+
+### Q-AUTHZ-277 · A project is seen by whom its level admits, and its members stay with its members
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Listed and readable for its audience; the members list stays with members and `projects:read` (chosen) | `GET /api/v1/projects` lists visible projects without a role; `membership=true` lists only the caller's | An internal user who is a member of nothing still finds the internal projects whose content it reads; no user enumeration for the whole organization | A non-member does not see who maintains a project |
+| (b) As GitLab: the members of a visible project are visible | The members list for every caller who sees the project | Transparent | Every internal user, and on a public project everyone, enumerates users and groups (H-392 in a wider form) |
+| (c) Projects only for members | As before | Nothing new | The start page is empty for an internal user who reads half the installation |
+
+**Choice:** (a).
+
+**Rationale:** what a caller reads it should be able to navigate to, so the project of a readable repository is visible, which
+R-AUTHZ-016 already says for a repository read by a grant. The members list names people and groups; nothing in the levels needs
+it. The development agent would revisit this if the owner wants GitLab's member pages for internal projects.
+
+**Applied in the spec:** R-AUTHZ-035 rule 8; [api-and-ui.md](api-and-ui.md) R-API-047, R-UI-041.
+
+### Q-AUTHZ-278 · A public remote repository is filled by anonymous callers, and the write that opens it warns
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The populate check as for a grant; warning `public_populates_remote` on the repository write (chosen) | R-AUTHZ-008 | The pull-through proxy behaves the same for every reader (Q-AUTHZ-4); the decision is made visible where it is made | Anyone can make trove fetch upstream content |
+| (b) Never populate for the anonymous subject | Cache only | No upstream traffic caused from outside | Inconsistent 404s for a public proxy, the reason Q-AUTHZ-4 rejected (c) |
+
+**Choice:** (a); the warning `anonymous_populates_remote` of the policy API goes with the policy entries for `anonymous`.
+
+**Rationale:** Q-AUTHZ-4 decided that a remote repository behaves alike for every reader and that frozen mirrors use
+`cacheFillAction: deploy`; the levels change who reads, not that decision. The development agent would revisit this with Q-AUTHZ-4.
+
+**Applied in the spec:** R-AUTHZ-008, R-AUTHZ-035 rule 6, Security notes.
+
+### Q-AUTHZ-279 · A policy entry, a binding, a membership or an owner record that names `anonymous` or `authenticated` is refused
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) 422 `principal_not_allowed` everywhere, the detail naming the levels; the row of `authenticated` deleted, the row of `anonymous` kept as the actor and refused by every granting table (chosen) | One answer for every write path, the database included (`AI009`) | A client that still writes such an entry learns what replaced it; no grant can reopen a closed repository | The old reason codes `anonymous_write_action`, `anonymous_dynamic_selector` and `authenticated_write_action` disappear |
+| (b) `unknown_principal` | As for a name that does not exist | Nothing to explain | Hides that the concept moved |
+
+**Choice:** (a). Migration `00073_principal_builtins.sql` deletes the entries that name either, deletes the row and the kind
+`authenticated`, and adds the guard.
+
+**Rationale:** the refusal must hold on every path (API, configuration as code, journal replay, `trove migrate` role bindings),
+which the database guard makes certain, as for the project rules of Q-AUTHZ-203. The development agent records no revisit
+condition.
+
+**Applied in the spec:** R-AUTHZ-002, R-AUTHZ-003, R-AUTHZ-019, R-AUTHZ-021, R-AUTHZ-025, R-AUTHZ-026;
+[identity-and-authentication.md](identity-and-authentication.md) R-AUTH-016.
 
 ## What this does not cover
 

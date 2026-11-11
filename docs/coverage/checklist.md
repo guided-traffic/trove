@@ -9,14 +9,14 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 620 of 834 spec requirements are implemented: a passing test names them and no
+**Status.** 620 of 847 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 787 specified (521 of them implemented), 1,452 open.
-834 spec requirements: 632 cover catalog features, 202 cover none (`trove-only`, [listed at the
+**Totals.** 2,239 catalog features on 60 pages: 788 specified (520 of them implemented), 1,451 open.
+847 spec requirements: 634 cover catalog features, 213 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
 ## Pages
@@ -32,7 +32,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Artifact management](#artifact-management-art) | `ART` | 53 | 10 of 10 | 32 | 21 | 17 |
 | [Search and query language](#search-and-query-language-srch) | `SRCH` | 64 | – | 3 | 61 | 1 |
 | [Builds and CI integration](#builds-and-ci-integration-bld) | `BLD` | 49 | – | 0 | 49 | 0 |
-| [Identity and access](#identity-and-access-iam) | `IAM` | 69 | 24 of 24 | 35 | 34 | 31 |
+| [Identity and access](#identity-and-access-iam) | `IAM` | 69 | 24 of 24 | 36 | 33 | 30 |
 | [Authentication providers and human login](#authentication-providers-and-human-login-authn) | `AUTHN` | 44 | 13 of 13 | 18 | 26 | 14 |
 | [Access tokens](#access-tokens-tok) | `TOK` | 48 | 24 of 24 | 27 | 21 | 26 |
 | [OIDC federation for CI systems](#oidc-federation-for-ci-systems-cioidc) | `CIOIDC` | 40 | 20 of 20 | 31 | 9 | 18 |
@@ -518,10 +518,10 @@ Catalog page: [builds-and-ci.md](../features/builds-and-ci.md) · specified by p
 
 ## Identity and access (IAM)
 
-Catalog page: [identity-and-access.md](../features/identity-and-access.md) · specified by priority: MVP 24 of 24 · P1 11 of 11 · P2 0 of 23 · Later 0 of 6 · Out of scope 0 of 5
+Catalog page: [identity-and-access.md](../features/identity-and-access.md) · specified by priority: MVP 24 of 24 · P1 11 of 11 · P2 1 of 23 · Later 0 of 6 · Out of scope 0 of 5
 
 <details>
-<summary>69 features: 35 specified, 34 open, 31 implemented</summary>
+<summary>69 features: 36 specified, 33 open, 30 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -529,7 +529,7 @@ Catalog page: [identity-and-access.md](../features/identity-and-access.md) · sp
 | IAM-002 | System administrator | MVP | implemented | [R-AUTHZ-010](../spec/authorization.md) (implemented), [R-AUTHZ-022](../spec/authorization.md) (implemented), [R-AUTH-014](../spec/identity-and-authentication.md) (implemented) |
 | IAM-003 | Per-user options | MVP | implemented | [R-AUTH-016](../spec/identity-and-authentication.md) (implemented), [R-AUTH-020](../spec/identity-and-authentication.md) (implemented) |
 | IAM-004 | User status and disabling | MVP | implemented | [R-AUTH-016](../spec/identity-and-authentication.md) (implemented) |
-| IAM-005 | Anonymous user | MVP | implemented | [R-AUTHZ-003](../spec/authorization.md) (implemented), [R-NPM-004](../spec/formats/npm.md) (implemented), [R-AUTH-037](../spec/identity-and-authentication.md) (implemented) |
+| IAM-005 | Anonymous user | MVP | specified | [R-AUTHZ-003](../spec/authorization.md) (implemented), [R-AUTHZ-035](../spec/authorization.md), [R-NPM-004](../spec/formats/npm.md) (implemented), [R-AUTH-037](../spec/identity-and-authentication.md) (implemented) |
 | IAM-006 | Auditor role | P1 | implemented | [R-AUTHZ-011](../spec/authorization.md) (implemented) |
 | IAM-007 | Delegated system roles: resource manager and webhook manager | P1 | implemented | [R-AUTHZ-012](../spec/authorization.md) (implemented) |
 | IAM-008 | Scan-related roles | MVP | implemented | [R-VULN-013](../spec/vulnerability-scanning.md) (implemented), [R-VULN-019](../spec/vulnerability-scanning.md) (implemented) |
@@ -587,7 +587,7 @@ Catalog page: [identity-and-access.md](../features/identity-and-access.md) · sp
 | IAM-059 | Project-aware sharing through internal remote repositories | Later | open | – |
 | IAM-060 | Builds in projects | P2 | open | – |
 | IAM-061 | Project storage quotas | P2 | open | – |
-| IAM-062 | Anonymous access in projects | P2 | open | – |
+| IAM-062 | Anonymous access in projects | P2 | specified | [R-AUTHZ-033](../spec/authorization.md) |
 | IAM-063 | Environments | P2 | open | – |
 | IAM-064 | Environments on roles and repositories | P2 | open | – |
 | IAM-065 | Project-scoped scan policies, scopes and reports | Later | open | – |
@@ -2969,7 +2969,7 @@ Requirements whose `Covers:` line says `trove-only`: trove's own design work tha
 catalog feature measures. They count toward the requirement total, not toward any share.
 
 <details>
-<summary>202 requirements</summary>
+<summary>213 requirements</summary>
 
 | Requirement | Title | Priority | Spec page |
 |---|---|---|---|
@@ -2986,12 +2986,20 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-API-053 (implemented) | Guides of the formats | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-API-054 (implemented) | The manual | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-API-055 (implemented) | User avatars | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-API-056 | The installation's visibility settings | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-API-057 | The visibility of projects and repositories in the API | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-API-058 | Operations that serve wiki content | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-API-048 | Package ownership surface | P1 | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-052 | Repository content page | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-049 (implemented) | Guides for every registry variant | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-050 (implemented) | Help area and the manual | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-026 (implemented) | Service accounts | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-036 (implemented) | Claim tester | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-053 | The installation's visibility in the general settings | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-054 | The visibility of a project | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-055 | The visibility of a repository | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-056 | The external flag on the user page | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-057 | What the UI shows of the wiki and of public content | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-042 (implemented) | Errors, conflicts and feedback | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-043 (implemented) | Secrets in the browser | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-044 (implemented) | Accessibility | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
@@ -3015,7 +3023,9 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-ARCH-023 (implemented) | Error model | MVP | [architecture.md](../spec/architecture.md) |
 | R-ARCH-027 (implemented) | Performance targets | MVP | [architecture.md](../spec/architecture.md) |
 | R-ARCH-028 (implemented) | Resource limits for untrusted package content | MVP | [architecture.md](../spec/architecture.md) |
-| R-AUTHZ-030 (implemented) | The `authenticated` principal | MVP | [authorization.md](../spec/authorization.md) |
+| R-AUTHZ-030 (implemented) | Internal and external users | MVP | [authorization.md](../spec/authorization.md) |
+| R-AUTHZ-034 | The wiki of a repository | MVP | [authorization.md](../spec/authorization.md) |
+| R-AUTHZ-036 | Visibility changes: operations, audit, journal and propagation | MVP | [authorization.md](../spec/authorization.md) |
 | R-AUTHZ-018 (implemented) | Package ownership | MVP | [authorization.md](../spec/authorization.md) |
 | R-AUTHZ-019 (implemented) | Package ownership API | MVP | [authorization.md](../spec/authorization.md) |
 | R-AUTHZ-020 (implemented) | Shared ownership domains | P1 | [authorization.md](../spec/authorization.md) |
@@ -3124,6 +3134,7 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-HA-051 | Local development profile | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |
 | R-HA-052 | Failure-injection test suite | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |
 | R-AUTH-012 (implemented) | CSRF protection for cookie-authenticated requests | MVP | [identity-and-authentication.md](../spec/identity-and-authentication.md) |
+| R-AUTH-044 | The external flag of a user | MVP | [identity-and-authentication.md](../spec/identity-and-authentication.md) |
 | R-AUTH-021 (implemented) | Dormant-user deactivation | P1 | [identity-and-authentication.md](../spec/identity-and-authentication.md) |
 | R-AUTH-043 (implemented) | Scheduled authentication tasks | MVP | [identity-and-authentication.md](../spec/identity-and-authentication.md) |
 | R-IMP-001 | The command, and what it is | P1 | [import.md](../spec/import.md) |

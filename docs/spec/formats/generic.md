@@ -261,7 +261,7 @@ Of the configuration document of R-REPO-004 a generic local repository uses:
 
 | Member | Applies | Note |
 |---|---|---|
-| `key`, `class`, `format`, `description`, `adminNotes`, `disabled`, `requireAuthentication`, `hideExistence`, `includePatterns`, `excludePatterns` | yes | as on any repository |
+| `key`, `class`, `format`, `description`, `adminNotes`, `disabled`, `visibility` (the artifacts level; the format has no wiki content, [authorization.md](../authorization.md) R-AUTHZ-034), `hideExistence`, `includePatterns`, `excludePatterns` | yes | as on any repository |
 | `layout` | read-only | `generic` (R-GENERIC-003) |
 | `priorityMember` | no | answers 422 `not_applicable` when `true` (no priority members for a format without package names) |
 | `local.packageOwnership`, `local.ownershipDomain`, `local.autoClaim` | no | 422 `not_applicable`: ownership and claims act on package names, and a generic item has none (R-AUTHZ-018) |

@@ -287,7 +287,7 @@ Priority: **MVP** · Covers: API-001, ADMAPI-001
 | trove token (`trv_pat_`, `trv_sat_`, `trv_cit_`, INV-8) | `Authorization: Bearer <token>` | Scripts, CI jobs, tooling |
 | The same token as Basic password | `Authorization: Basic` with any username | Tools that only speak Basic, `curl -u` on `/files` |
 | UI session | `__Host-trv_session` cookie (INV-8, Q-AUTH-2) plus CSRF protection (R-API-006) | The Angular UI |
-| None | — | Anonymous caller, where anonymous access is enabled (R-AUTH-040) and a policy grants it |
+| None | — | Anonymous caller, where a `public` level admits the read ([authorization.md](authorization.md) R-AUTHZ-003) or the operation serves every caller while `publicContent` is true (R-AUTH-037) |
 
 - When an `Authorization` header is present, the session cookie is ignored for that request.
 - Invalid, expired or revoked credentials answer 401; the server MUST NOT fall back to anonymous
@@ -305,7 +305,7 @@ Priority: **MVP** · Covers: API-001, ADMAPI-001
 Acceptance criteria:
 
 - `curl -s -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer trv_pat_invalid' "$TROVE_URL/api/v1/auth/whoami"`
-  prints `401`, also with anonymous access enabled.
+  prints `401`, also while repositories are `public`.
 - `curl -s -u "anyname:$TROVE_TOKEN" "$TROVE_URL/api/v1/auth/whoami"` names the token owner.
 - A Playwright test with an expired session sees no browser credential dialog.
 
@@ -351,6 +351,7 @@ operations that require it when called with a session; the OpenAPI document mark
 | Command-line login | Approving or denying an `npm login` or a device-code login (P1; R-AUTH-034, R-AUTH-036) |
 | Permissions | Creating, replacing and deleting permission policies; binding and unbinding system roles (R-API-033) |
 | Projects | Replacing and deleting a project, adding a member, changing a member's role and removing a member ([authorization.md](authorization.md) R-AUTHZ-026); moving a repository to another project ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-060) |
+| Visibility | Setting a project's level, a repository write that raises a level, changing the installation's default ([authorization.md](authorization.md) R-AUTHZ-033, R-API-056, R-API-057); changing a user's `external` flag ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-044) |
 | Package ownership | Adding and removing package owners, releasing a name ([authorization.md](authorization.md) R-AUTHZ-019, Q-AUTHZ-157) |
 | CI identity | Creating, replacing and deleting CI issuers, identity mappings and delegations (R-API-035) |
 | Settings | Changing authentication settings (R-API-037) |
@@ -393,7 +394,7 @@ Priority: **MVP** · Covers: ADMAPI-001, ADMAPI-041, IAM-032
 
 | Situation | Answer |
 |---|---|
-| No credential, and anonymous access does not grant the operation | 401 `unauthenticated` with challenge |
+| No credential, and no `public` level admits the operation | 401 `unauthenticated` with challenge |
 | Authenticated, permission missing, target visible to the caller | 403 `forbidden`, with the extension `requiredPermission` (the action and target the caller asked for, nothing more) |
 | Authenticated, target is a repository, item or package the caller cannot read, and hiding is on | 404 `not_found`, identical to a missing target |
 | Administrative collections (users, groups, settings, …) without permission | 403; the existence of these endpoints is not secret |
@@ -1249,7 +1250,7 @@ Priority: **MVP** · Covers: trove-only
 | Method | Path | Purpose | Permission | Owner |
 |---|---|---|---|---|
 | GET | `/api/v1/auth/whoami` | Principal and credential of the caller | authenticated | R-AUTH in [identity-and-authentication.md](identity-and-authentication.md) |
-| GET | `/api/v1/auth/login-options` | Providers, auto-redirect, break-glass visibility, anonymous access; the sign-in screen renders only from it | anonymous | [identity-and-authentication.md](identity-and-authentication.md) |
+| GET | `/api/v1/auth/login-options` | Providers, auto-redirect, break-glass visibility, `publicContent`; the sign-in screen renders only from it | anonymous | [identity-and-authentication.md](identity-and-authentication.md) |
 | GET | `/api/v1/users/me` | Own user record | authenticated user | [identity-and-authentication.md](identity-and-authentication.md) |
 | GET | `/api/v1/users/me/sessions`, DELETE `/api/v1/users/me/sessions…` | Own sessions; end one or all | `self`, `x-trove-owner-rights` | R-AUTH-010 in [identity-and-authentication.md](identity-and-authentication.md) |
 | GET | `/api/v1/authz/me` | Effective capabilities, scope summary, principal set and the caller's project memberships with their roles (`projects`: `{key, role}`); drives navigation | authenticated | R-AUTHZ-022, R-AUTHZ-026 in [authorization.md](authorization.md) |
@@ -1309,8 +1310,8 @@ Semantics, payloads and status codes: [repositories-and-proxy.md](repositories-a
 
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
-| GET | `/api/v1/formats` | Format descriptors with classes (generated from `Descriptor().Classes`), clients (`clients`: `{id, displayName}` from `Descriptor().Clients`, empty for generic; Q-API-177), settings schema (`settingsSchema`, a JSON Schema 2020-12 or `null`; R-ARCH-008, R-ARCH-010, Q-ARCH-229) and `mirror` (the format's remote can be a mirror, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-050), and `baseUrl`: the configured base URL of the endpoint the request arrived on, or `null` (Q-UI-75) | authenticated; anonymous where anonymous access is on |
-| GET | `/api/v1/repositories` | Instance-wide list over every project; each item carries `project`; filters `class`, `format`, `q`, `state`, `project`; `view`; the cursor orders by project and key | readable repositories; configuration fields only with `repositories:read-config`, or as an Owner of the repository's project |
+| GET | `/api/v1/formats` | Format descriptors with classes (generated from `Descriptor().Classes`), clients (`clients`: `{id, displayName}` from `Descriptor().Clients`, empty for generic; Q-API-177), settings schema (`settingsSchema`, a JSON Schema 2020-12 or `null`; R-ARCH-008, R-ARCH-010, Q-ARCH-229) and `mirror` (the format's remote can be a mirror, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-050), and `baseUrl`: the configured base URL of the endpoint the request arrived on, or `null` (Q-UI-75) | authenticated; anonymous while `publicContent` is true (R-AUTH-037) |
+| GET | `/api/v1/repositories` | Instance-wide list over every project; each item carries `project` and `visibility`; filters `class`, `format`, `q`, `state`, `project`, `visibility` (R-API-057); `view`; the cursor orders by project and key | readable repositories, by a grant, a role or a level; configuration fields only with `repositories:read-config`, or as an Owner of the repository's project |
 | GET | `/api/v1/projects/{projectKey}/repositories` | The repositories of one project; the same filters but `project` | as the instance-wide list, within the project |
 | POST | `/api/v1/projects/{projectKey}/repositories` | Create in the project; the key is unique within the project | `admin` or `repository-admin` role (`repositories:write-config`), or Owner of the project (R-AUTHZ-026) |
 | GET | `/api/v1/projects/{projectKey}/repositories/{repoKey}` | Read; full configuration for `repositories:read-config`, an Owner of the project and `manage` | `read` |
@@ -1537,21 +1538,23 @@ remain as their owners define them.)
 | GET | `/api/v1/packages/{packageId}` | Package summary | as list |
 | GET | `/api/v1/packages/{packageId}/versions` | Versions; filters `prerelease`, `repository`; `sort` `-publishedAt` (default), `publishedAt`, `-version`, `version` (the format's version precedence); `include=digest` (R-UI-052) | as list |
 | GET | `/api/v1/packages/{packageId}/versions/{version}` | Version details | as list |
-| GET | `/api/v1/packages/{packageId}/versions/{version}/readme` | Sanitized README HTML | as list |
+| GET | `/api/v1/packages/{packageId}/versions/{version}/readme` | Sanitized README HTML; wiki content (`x-trove-part: wiki`, R-API-058) | as list, then the wiki check ([authorization.md](authorization.md) R-AUTHZ-034) |
 | GET | `/api/v1/packages/{packageId}/versions/{version}/docs`, `…/docs/entries/{type}/{name}`, `…/docs/files/{file}` | The documentation of a version of a format that has one (Ansible Galaxy: the tree with search, one plugin's page, a Markdown file): `getPackageVersionDocs`, `getPackageVersionDocEntry`, `getPackageVersionDocFile`, [formats/ansible.md](formats/ansible.md) R-ANS-036; wiki content (Q-API-260, Q-API-261); 404 for a format without documentation | as list, then the wiki check of R-AUTHZ-034 ([formats/ansible.md](formats/ansible.md) R-ANS-037) |
 
 - A package is identified by format plus normalized name (npm names as stored; NuGet IDs
   case-insensitive, displayed in their original casing). Version strings are percent-encoded in the
   path.
-- A version is visible to a caller who holds `read` on a repository containing it, with the
-  package-name narrowing of INV-9 applied. A package is listed when at least one version is
+- A version is visible to a caller who holds `read` on a repository containing it, by a grant, a role or the repository's
+  artifacts level ([authorization.md](authorization.md) R-AUTHZ-035), with the package-name narrowing of INV-9 applied. A package is listed when at least one version is
   visible, and `latestVersion` is computed from visible versions only, so a hidden newer version
   leaks neither its number nor its existence. The filter runs in SQL.
 - A virtual repository in the `repository` filter expands to its members. Remote repositories
   contribute only cached versions; this endpoint never queries an upstream.
 - Version details contain `packageId`, `format`, `name`, `version`, `prerelease`, `publishedAt`, `licenses`
   (declared SPDX identifiers or expression, `[]` when none), `sizeBytes`, `downloadCount`, `hasReadme` (whether
-  the `readme` answer is 200, so the UI chooses its default tab without a probing request), `metadata` (a
+  the `readme` answer is 200 for this caller, so the UI chooses its default tab without a probing request; `false` for a caller
+  who may read the version but not the wiki of the repository that holds it, [authorization.md](authorization.md) R-AUTHZ-034),
+  `metadata` (a
   format-specific object whose schema the format page owns), `repositories`
   (`[{"project", "key", "class", "publishedAt"}]`) and `files` (`[{"path", "sizeBytes", "sha256", "downloadUrl"}]`).
   The members of npm's `metadata` that the UI reads are `distTags`, `dependencies`, `devDependencies`,
@@ -1603,7 +1606,8 @@ remain as their owners define them.)
   for `If-None-Match`. The README tag is computed from its source, the renderer version and the hash of the
   origin list before the rendering, so a request that holds it costs no rendering (Q-API-167).
 - README answer: `{"contentType": "text/markdown", "html": "<h1>…</h1>", "truncated": false, "externalImagesBlocked": 2}`;
-  404 when the version has none, with the answer of a version that is not visible. Rendering and sanitizing follow R-UI-008; README extraction (npm
+  404 when the version has none, with the answer of a version that is not visible, and the same 404 when the caller may read
+  the version but not the wiki of the repository that holds it: the README is wiki content (R-AUTHZ-034). Rendering and sanitizing follow R-UI-008; README extraction (npm
   `readme` field or `README.md` in the tarball, NuGet `<readme>` file in the package) is owned by
   the format pages.
 - Formats added in P1 use the same endpoints: Maven coordinates as `name=group:artifact`
@@ -1649,6 +1653,8 @@ Acceptance criteria:
   `GET /api/v1/packages?format=npm&q=team-a` lists the package with `latestVersion` `1.4.0`.
 - A user who can read only the repository containing `1.3.0` sees `latestVersion` `1.3.0`.
 - `GET …/versions/1.4.0/readme` for a README containing `<script>` returns HTML without it.
+- `@team-a/ui` is in a repository whose artifacts are `public` and whose wiki is `internal`: an anonymous `GET
+  …/versions/1.4.0` answers `"hasReadme": false` and `GET …/versions/1.4.0/readme` 404; an internal user gets `true` and 200.
 
 ### R-API-030 · Client setup snippets
 Priority: **MVP** · Covers: UI-023
@@ -1739,7 +1745,7 @@ R-ARCH-008, Q-ARCH-235); this page owns the operations (Q-API-175).
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
 | GET | `/api/v1/projects/{projectKey}/repositories/{repoKey}/guide?client=` | The guide of a repository for one of its format's clients | `read` on the repository (`404` otherwise, like a missing repository) |
-| GET | `/api/v1/formats/{format}/guide?class=&client=` | The guide of a class of a format, without a repository | as `GET /api/v1/formats`: authenticated; anonymous where anonymous access is on |
+| GET | `/api/v1/formats/{format}/guide?class=&client=` | The guide of a class of a format, without a repository | as `GET /api/v1/formats`: authenticated; anonymous while `publicContent` is true (R-AUTH-037) |
 
 - The answer holds `format`, `class`, `client`, `repository` (`null` for the guide of a format), `registryUrl`,
   `publishTarget`, `credentials`, `exposureRules` and `sections` of `{id, topic, title, html, snippets}`. The sections are
@@ -1784,7 +1790,7 @@ manual of the version it runs; [internal/manual](../../internal/manual/) loads a
 
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
-| GET | `/api/v1/manual` | The sections (`user`, `admin`) in reading order with each page's id, title and summary | as `GET /api/v1/formats`: authenticated; anonymous where anonymous access is on |
+| GET | `/api/v1/manual` | The sections (`user`, `admin`) in reading order with each page's id, title and summary | as `GET /api/v1/formats`: authenticated; anonymous while `publicContent` is true (R-AUTH-037) |
 | GET | `/api/v1/manual/{section}/{page}` | One page: `title`, `summary`, `html`, `headings` (levels 2 and 3, with their anchors), `previous` and `next` | as above |
 
 - A page starts with a `# Title` line and a summary paragraph of plain text; the HTML is the page below the title, rendered
@@ -1806,8 +1812,8 @@ Acceptance criteria:
   heading, a link into the repository and a page outside the contents stop the load
   (`TestR_API_054_LinksBecomeHelpRoutes`, `TestR_API_054_DefectsAreRefused`, `TestR_API_054_LinkedRenderingResolvesRelativeLinks`).
 - The contents list `user` before `admin`; a page carries its headings and neighbours; both answer `304` for the ETag and
-  an unknown page `404`; an anonymous caller gets `200` with anonymous access on and `401` with it off
-  (`TestR_API_054_TheManualOperations`, `TestR_API_054_AnonymousReadersFollowTheAnonymousAccessSetting`).
+  an unknown page `404`; an anonymous caller gets `200` while `publicContent` is true and `401` otherwise
+  (`TestR_API_054_TheManualOperations`, `TestR_API_054_AnonymousReadersFollowPublicContent`).
 
 ### R-API-055 · User avatars
 Priority: **MVP** · Covers: trove-only
@@ -1902,6 +1908,116 @@ Acceptance criteria:
   (`TestR_API_055_AvatarLifecycle`, `TestR_API_055_AvatarRefusals`,
   `TestR_API_055_AvatarWritesNeedTheCSRFHeaderOfASession`).
 
+### R-API-056 · The installation's visibility settings
+Priority: **MVP** · Covers: trove-only
+
+Owned by [authorization.md](authorization.md) R-AUTHZ-033 (the installation's default level, Q-AUTHZ-264):
+
+| Method | Path | operationId | Purpose | Permission |
+|---|---|---|---|---|
+| GET | `/api/v1/settings/visibility` | `getVisibilitySettings` | The default level, whether `public` is available, and the objects that are `public` | `settings:read` |
+| PATCH | `/api/v1/settings/visibility` | `updateVisibilitySettings` | Change the default level (JSON Merge Patch, R-API-013; `If-Match`, R-API-012) | `security-settings:write`; recent authentication |
+
+```json
+{
+  "defaultLevel": "private",
+  "publicAvailable": true,
+  "publicObjects": {"projects": ["web"], "repositories": ["web/npm-public"], "truncated": false}
+}
+```
+
+*(example answer; `defaultLevel` `private` is the default)*
+
+- `defaultLevel` (`private`, `internal`, `public`) is the level a project takes when it is created and the upper bound of the
+  levels a repository takes when it is created (R-AUTHZ-033). A `PATCH` is `{"defaultLevel": "internal"}`; the other two
+  members are read-only and ignored in a `PATCH` body, so a `GET` body can be sent back (Q-AUTH-45).
+- `publicAvailable` is the default endpoint's `auth.anonymous` ([endpoints.md](endpoints.md) R-EP-010). While it is `false`,
+  a `defaultLevel` of `public` answers 409 `public_not_allowed`.
+- `publicObjects` lists the projects and the repositories whose artifacts are `public`, at most 100 of each in key order,
+  `truncated` when there are more; the UI shows it as the summary of what anyone can read (R-UI-032, R-UI-053).
+- A change writes `settings.visibility.changed` with the default before and after; it is not journaled, because it decides
+  only objects created later ([authorization.md](authorization.md) R-AUTHZ-036). The value is read in the transaction that
+  creates a project or a repository and is cached nowhere.
+
+Schemas in `api/openapi.yaml`: `VisibilityLevel` (enum `private`, `internal`, `public`), `VisibilitySettings`,
+`VisibilitySettingsPatch`, `PublicObjects`.
+
+Acceptance criteria:
+
+- `PATCH /api/v1/settings/visibility` with `{"defaultLevel": "internal"}` and the `ETag` of the `GET` answers 200; a project
+  created afterwards reads back `"visibility": "internal"`, and the projects that existed keep their levels.
+- With `endpoints.default.auth.anonymous: false`, `GET` answers `"publicAvailable": false` and a `PATCH` to `public` answers
+  409 `public_not_allowed`.
+- A caller with `settings:read` and without `security-settings:write` (the `auditor`) reads the settings and gets 403 on the
+  `PATCH`.
+
+### R-API-057 · The visibility of projects and repositories in the API
+Priority: **MVP** · Covers: trove-only
+
+Owned by [authorization.md](authorization.md) R-AUTHZ-033 and R-AUTHZ-035:
+
+| Method | Path | operationId | Purpose | Permission |
+|---|---|---|---|---|
+| PUT | `/api/v1/projects/{projectKey}/visibility` | `setProjectVisibility` | Set the project's level: `{"level": "internal"}`; `If-Match` with the project's `ETag` | `projects:write`; recent authentication |
+| POST | `/api/v1/projects` | `createProject` | `visibility` in the body, default the installation's `defaultLevel` | `projects:write`; recent authentication for a level above `private` |
+| PATCH, PUT | `/api/v1/projects/{projectKey}/repositories/{repoKey}` | `updateRepository`, `replaceRepository` | the member `visibility` of the document ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-004) | as for the document; the project's Owner or `repositories:write-config`; recent authentication when a level rises |
+
+- **The project's answer.** `setProjectVisibility` answers 200 with the project and a member `lowered`: the qualified names of
+  the repositories whose levels the change lowered, with their levels before (`[{"repository": "web/npm-public", "before":
+  {"artifacts": "public", "wiki": "internal"}}]`), empty when it lowered none. The answer carries `Trove-Authz-Epoch`
+  (R-AUTHZ-032). 409 `public_not_allowed` while the default endpoint admits no request without a credential; 412 for a
+  stale `If-Match`; 403 for an Owner without `projects:write`.
+- **The repository's member.** `visibility` is `{"artifacts": "<level>", "wiki": "<level>"}` in every view of the document,
+  the reduced consumer view of R-REPO-010 included, so every reader sees how open a repository is. A merge patch may name one
+  part. The answers are 422 `validation_failed` with `visibility_above_project` or `visibility_wiki_above_artifacts` at
+  `/visibility/artifacts` or `/visibility/wiki`, and 409 `public_not_allowed`; a write that opens a remote repository with
+  `cacheFillAction: read` to the public carries the warning `public_populates_remote`
+  ([authorization.md](authorization.md) R-AUTHZ-008).
+- **Lists.** `GET /api/v1/repositories` and the project's list accept `visibility=` (one or more levels, comma-separated),
+  matched against the artifacts level, and carry `visibility` in the summary view; `GET /api/v1/projects` carries each
+  project's `visibility` and accepts `membership=true` (R-API-047).
+- Schemas: `VisibilityLevel`, `RepositoryVisibility` (`artifacts`, `wiki`), `ProjectVisibilityRequest`,
+  `ProjectVisibilityResult` (the project and `lowered`), the member `visibility` of `Project` and `Repository`.
+
+Acceptance criteria:
+
+- `PUT /api/v1/projects/web/visibility` with `{"level": "private"}` while `web/npm-public` is `public` answers 200 with
+  `lowered` naming `web/npm-public`; `GET /api/v1/projects/web/repositories/npm-public` then shows `{"artifacts": "private",
+  "wiki": "private"}`.
+- `GET /api/v1/repositories?visibility=public` lists exactly the repositories whose artifacts are `public` among those the
+  caller may read.
+- A merge patch `{"visibility": {"wiki": "internal"}}` on a repository whose artifacts are `public` answers 200 and leaves the
+  artifacts `public`.
+
+### R-API-058 · Operations that serve wiki content
+Priority: **MVP** · Covers: trove-only
+
+An operation of the management API that serves only wiki content ([authorization.md](authorization.md) R-AUTHZ-034) carries
+the extension `x-trove-part: wiki` in `api/openapi.yaml`. The document validator accepts the extension only on a `GET`
+operation whose permission is the read of a repository's content (the declaration of R-API-029's operations) and refuses it
+elsewhere; it is read into `Operation.Part`, as `x-trove-maintenance` is read into `Operation.MaintenanceAllowed`
+([Q-API-247](#q-api-247--the-wiki-part-of-an-operation-is-an-extension-of-the-document-read-into-the-operation)).
+
+- The shared authorization step admits such an operation as it admits the other reads of R-API-029, whose read is decided per
+  repository in the handler; the handler then asks the wiki of the repository that holds the version through
+  `authz.ReadScope.MayReadWiki` and answers the 404 of a missing README when it is refused. Like the filter of a listing, the
+  question writes no `authz.denied` (R-AUTHZ-029): the caller may read the package and asked about a member of it. Nothing tells
+  the caller that a README exists.
+- A member of a management answer that carries wiki content (`hasReadme` of R-API-029, `metadata.docs` of the Ansible format)
+  is decided with `MayReadWiki` and is `false` or absent when refused. The format's view adapter returns the wiki members
+  marked, so that the API, not the format, drops them.
+- Today's operations with `x-trove-part: wiki`: `getPackageVersionReadme`; the documentation operations of
+  [formats/ansible.md](formats/ansible.md) (T-19) join with their requirement.
+- A test walks the document and fails when an operation whose response schema holds a README or a documentation body lacks
+  the extension (`TestR_API_058_WikiOperationsAreMarked`).
+
+Acceptance criteria:
+
+- `getPackageVersionReadme` carries `x-trove-part: wiki`; a document with the extension on a `PUT` operation fails to load.
+- For a caller who reads the artifacts of `web/npm-public` and not its wiki, `GET …/readme` answers 404 with the body of a
+  missing README.
+
+
 ### R-API-031 · Users, groups and service accounts
 Priority: **MVP** · Covers: ADMAPI-004, ADMAPI-005, ADMAPI-006, ADMAPI-007, ADMAPI-008, ADMAPI-009, ADMAPI-012, ADMAPI-013, ADMAPI-014, ADMAPI-015, ADMAPI-016, ADMAPI-017, ADMAPI-018
 
@@ -1910,10 +2026,10 @@ username:
 
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
-| GET | `/api/v1/users` | List; filters `q`, `status`, `origin`, `group`, `admin` | `admin` or `identities:read` |
-| POST | `/api/v1/users` | Pre-provision a user linked to an identity-provider identity | `admin` |
-| GET | `/api/v1/users/{username}` | Read | `admin`, `identities:read` |
-| PATCH | `/api/v1/users/{username}` | Change display name, email, identities | `admin` |
+| GET | `/api/v1/users` | List; filters `q`, `status`, `origin`, `group`, `admin`, `external` | `admin` or `identities:read` |
+| POST | `/api/v1/users` | Pre-provision a user linked to an identity-provider identity, with its `external` flag | `admin` |
+| GET | `/api/v1/users/{username}` | Read, with `external` | `admin`, `identities:read` |
+| PATCH | `/api/v1/users/{username}` | Change display name, email, identities, and the `external` flag (`identities:write`, recent authentication, R-AUTH-044) | `admin` |
 | POST | `/api/v1/users/{username}/disable`, `/enable` | Disable (optionally revoking tokens) or enable | `admin` |
 | DELETE | `/api/v1/users/{username}` | Delete | `admin` |
 | PATCH | `/api/v1/users/{username}/groups` | `{"add": [...], "remove": [...]}` on manual memberships | `admin` |
@@ -2106,7 +2222,8 @@ settings screens (R-UI-031 to R-UI-034) call:
 
 | Setting | Where | Owner |
 |---|---|---|
-| Anonymous access, token default and maximum lifetimes, expiry notices (ADMAPI-042, ADMAPI-047) | `GET`, `PATCH /api/v1/settings/auth`, bounded by YAML ceilings | R-AUTH-040 |
+| New users external, token default and maximum lifetimes, expiry notices (ADMAPI-042, ADMAPI-047) | `GET`, `PATCH /api/v1/settings/auth`, bounded by YAML ceilings | R-AUTH-040, R-AUTH-044 |
+| The installation's default visibility level, whether `public` is available, what is `public` | `GET`, `PATCH /api/v1/settings/visibility` | R-API-056, [authorization.md](authorization.md) R-AUTHZ-033 |
 | Break-glass lockout (ADMAPI-050), client authentication switches including Basic (ADMAPI-055) | YAML; read-only in `GET /api/v1/settings/auth` | R-AUTH-038, R-AUTH-040 |
 | Public base URL (ADMAPI-071) | YAML `server.base_url`; read-only in `GET /api/v1/system/info` | R-OPS-005 |
 | Hiding unauthorized resources | YAML `authz.hide_existence`, per-repository override | R-AUTHZ-017 |
@@ -2376,9 +2493,10 @@ and groups are members with a role, [Q-AUTHZ-206](authorization.md#q-authz-206--
 
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
-| GET | `/api/v1/projects` | Every project for `projects:read`; otherwise the caller's memberships, each with the caller's role | authenticated |
-| POST | `/api/v1/projects` | Create a project | `projects:write` (`admin`) |
-| GET | `/api/v1/projects/{projectKey}` | Read | `projects:read`, or a member |
+| GET | `/api/v1/projects?membership=` | Every project for `projects:read`; otherwise the caller's memberships, each with the caller's role, and the projects whose level admits the caller, without a role; `membership=true` lists the memberships only ([Q-AUTHZ-277](authorization.md#q-authz-277--a-project-is-seen-by-whom-its-level-admits-and-its-members-stay-with-its-members)); each item carries `visibility` | any caller; anonymous while `publicContent` is true |
+| POST | `/api/v1/projects` | Create a project; `visibility` defaults to the installation's `defaultLevel` (R-API-056) | `projects:write` (`admin`); recent authentication for a level above `private` |
+| GET | `/api/v1/projects/{projectKey}` | Read, with `visibility` | `projects:read`, a member, or a caller the project's level admits |
+| PUT | `/api/v1/projects/{projectKey}/visibility` | Set the project's level, `{"level": "internal"}`; lowering lowers the repositories above it (R-API-057) | `projects:write`; recent authentication |
 | PUT | `/api/v1/projects/{projectKey}` | Replace display name and description; `If-Match` required | `projects:write`, or Owner; recent authentication |
 | DELETE | `/api/v1/projects/{projectKey}` | Delete when empty (no repository, service account or CI mapping) | `projects:write`; recent authentication |
 | GET | `/api/v1/projects/{projectKey}/members` | The members (users and groups) with their roles | `projects:read`, or a member |
@@ -2399,7 +2517,8 @@ Acceptance criteria:
 
 - An Owner of `team-a` creates a policy in `POST /api/v1/projects/team-a/policies` (201) and gets 403 for
   `POST /api/v1/permission-policies` (a policy of no project).
-- `GET /api/v1/projects` answers a member its own projects with its role, and the `auditor` every project.
+- `GET /api/v1/projects` answers a member its own projects with its role, and the `auditor` every project. An internal user
+  who is no member gets the `internal` and `public` projects without a role, and with `membership=true` none.
 - An administrator creates project `team-a` and adds `user:alice` as `owner` (201); alice adds `group:team-a-devs` as
   `developer` (201), and removing herself while she is the only Owner answers 409 `last_owner`.
 
@@ -2896,9 +3015,9 @@ The flow and its security properties are owned by
 [identity-and-authentication.md](identity-and-authentication.md); the UI side:
 
 - The UI never shows a username and password form for regular users (INV-7).
-- On load the UI calls `GET /api/v1/auth/whoami`. Success starts the application. 401 with
-  anonymous access off navigates to `/login?returnTo=<current route>`; with anonymous access on
-  (from `login-options`), the application runs anonymously with a "Sign in" button.
+- On load the UI calls `GET /api/v1/auth/whoami`. Success starts the application. 401 while
+  `publicContent` is false navigates to `/login?returnTo=<current route>`; while it is true
+  (from `login-options`), the application runs anonymously with a "Sign in" button (R-UI-057).
 - `/login` renders only from `GET /api/v1/auth/login-options`: one button per provider, each
   navigating (full page) to the provider's `startUrl` with `return_to` set to the UI route. With
   `autoRedirect` set, the page navigates at once unless the URL carries `?auto_sign_in=false`. The
@@ -2942,7 +3061,7 @@ Acceptance criteria:
 - With one provider and auto-redirect, opening `/ui/en/packages` unauthenticated lands at the
   identity provider and, after login, back on `/ui/en/packages`.
 - Signing out in tab A shows `/logged-out` in tab B within two seconds.
-- With one provider, auto-redirect on, anonymous access off and `rp_initiated_logout` false,
+- With one provider, auto-redirect on, nothing public and `rp_initiated_logout` false,
   signing out lands on `/ui/{locale}/logged-out` and stays there. The browser sends no request to
   the identity provider until the user selects "Sign in again".
 - (P1) With `/ui/en/cli-login/{publicId}` open, a poll of the login's `doneUrl` from outside the
@@ -3013,8 +3132,8 @@ Priority: **MVP** · Covers: UI-009, ART-049
 - Version selector: combobox with type-to-filter and an "include pre-releases" switch that follows
   the format's version rules (npm SemVer pre-release tags, NuGet SemVer 2.0 pre-release labels). An
   "All versions" tab lists versions with published time, size, repositories and downloads.
-- Tabs: README (default when the version has one, `hasReadme`; a version without one has no README
-  tab and the README is not requested, R-UI-008; for the format `ansible` the tabs **Documentation**, **Contents** and, on a local repository, **Import log** replace and extend it: [Q-UI-240](#q-ui-240--an-ansible-package-has-a-documentation-tab-and-a-contents-tab-the-readme-tab-is-its-first-page) to Q-UI-244, shown by `metadata.docs` of the version details); Metadata (format-specific: npm dist-tags and
+- Tabs: README (default when the version has one for the caller, `hasReadme`; a version without one, or whose wiki the
+  caller may not read, has no README tab and the README is not requested, R-UI-008, R-UI-057; for the format `ansible` the tabs **Documentation**, **Contents** and, on a local repository, **Import log** replace and extend it: [Q-UI-240](#q-ui-240--an-ansible-package-has-a-documentation-tab-and-a-contents-tab-the-readme-tab-is-its-first-page) to Q-UI-244, shown by `metadata.docs` of the version details); Metadata (format-specific: npm dist-tags and
   dependency kinds, NuGet target frameworks and dependency groups, authors, project URL as a text
   link with an external-link marker; the members the page reads are in Q-UI-93, among them the unlisted state; OCI the digest, media type, artifact type and
   size of the tag and the platforms of an index, Q-UI-177); Files (files of the version with size, SHA-256 copy button,
@@ -3620,7 +3739,7 @@ trove is found, delivered by the frontend. The text is the manual of R-API-054; 
   opens it in a new tab through the browser); a fragment in the address scrolls to its heading. On narrow content the
   contents give way to a link back to the overview.
 - The manual's text is English and marked `lang="en"`; the frame is translated (Q-UI-86). The area sits behind the same
-  guard as the guides: signed-in callers, anonymous ones where anonymous access is on.
+  guard as the guides: signed-in callers, anonymous ones while `publicContent` is true.
 - **Width** (Q-UI-97). The page takes the width of its column, which grows with the viewport; the prose keeps a measure
   of 80 characters, tables and code use the full width. A table sits in a container of its own that scrolls sideways
   when it is wider; its cells break at spaces only, code in a cell stays whole, and the first column has a minimum width.
@@ -3667,7 +3786,8 @@ Acceptance criteria:
 Priority: **MVP** · Covers: UI-031
 
 - Steps: format, class, basic settings, class-specific settings, review. The format comes first
-  because some features are technically impossible for some formats (Q-UI-112). The project is chosen in the basic
+  because some features are technically impossible for some formats (Q-UI-112). The basic settings hold the artifacts'
+  visibility level (R-UI-055). The project is chosen in the basic
   settings, from the projects in which the caller may create repositories (every project for
   `repositories:write-config`, the projects it owns otherwise); inside a project (`/projects/{project}/repositories/new`) the
   project is given, shown as text and not chosen. It is read-only on the edit form, where a move to another project is its
@@ -3828,8 +3948,8 @@ Acceptance criteria:
 Priority: **MVP** · Covers: UI-035, UI-036
 
 - List: username, display name, email, origin (identity provider, administrator-created, SCIM,
-  break-glass), status, last login; filters text, status, origin, group, administrator (filter
-  panel); the user name column sorts (`sort=username`, `-username`).
+  break-glass), status, the badge External (R-UI-056), last login; filters text, status, origin, group, administrator,
+  external (filter panel); the user name column sorts (`sort=username`, `-username`).
 - Detail ([Q-UI-223](#q-ui-223--the-user-the-endpoint-and-the-service-account-and-group-lists-follow-the-guide)): display name and email edited in place with "Save changes" (an administrator's correction lasts until the next login), ID and origin as
   read-only fields; identities (provider and subject, read-only and copyable); attributes from the identity
   provider, read-only and labelled as such; status with "Disable" (choice to revoke tokens) and
@@ -3909,7 +4029,7 @@ Priority: **MVP** · Covers: UI-039, UI-040
   repository filled in, so the draft in the editor stays untouched.
 - Editor sections, following the policy model of
   [authorization.md](authorization.md): general (name on create only, description); principals
-  (users, groups, service accounts, CI identity mappings, anonymous where allowed) through
+  (users, groups, service accounts, CI identity mappings) through
   searchable pickers; resources with a live "covers 4 repositories" preview, whose selectors take the form of the
   policy's context: `<projectGlob>/<keyGlob>[:<format>]` or a class for a policy of no project, bare keys, key globs
   and classes of the project for a project's policy ([authorization.md](authorization.md) R-AUTHZ-004,
@@ -3917,9 +4037,9 @@ Priority: **MVP** · Covers: UI-039, UI-040
   patterns with syntax help and a tester field ("Does `@team-a/ui` match?"); actions with a one-line
   explanation each.
 - Preview panel fed by `POST /api/v1/authz/validate-policy` (debounced 500 ms): covered repositories,
-  errors, warnings. "Try it" answers from the draft alone and applies the server's rule for the
-  built-in principal: `authenticated` covers users, not service accounts, CI identities or anonymous
-  (R-AUTHZ-030, Q-AUTHZ-3).
+  errors, warnings. "Try it" answers from the draft alone, adds what the repository's visibility level gives the principal
+  (`internal` covers users who are not external, never service accounts, CI identities or anonymous; R-AUTHZ-030,
+  R-AUTHZ-035), and says so.
 - The one-line help of the actions says what each covers; `manage` is the administration of content
   (package owners, the override of the shadowing check, namespace claims, cache operations), and
   the settings of a repository need the capability `repositories:write-config`.
@@ -4021,15 +4141,16 @@ Acceptance criteria:
 ### R-UI-031 · Authentication settings
 Priority: **MVP** · Covers: UI-043
 
-`/admin/settings/auth` renders `GET /api/v1/settings/auth`: anonymous access (with a link to what
-the anonymous principal can read), token default and maximum lifetimes per token type, expiry
-notices, and the read-only status block (providers and discovery state, break-glass state, session
+`/admin/settings/auth` renders `GET /api/v1/settings/auth`: **New users are external** (`newUsersExternal`, a checkbox with
+the sentence "Users created from now on start as external users; existing users keep their flag.", R-AUTH-044), token default
+and maximum lifetimes per token type, expiry notices, and the read-only status block (providers and discovery state, break-glass state, session
 timeouts, client switches including Basic, the command-line login poll binding mode, SCIM state).
 YAML-pinned and ceiling-bounded values show their source. Hiding unauthorized resources
 (`authz.hide_existence`) is shown read-only. Save sends `PATCH` with `If-Match`; recent
 authentication applies. The page is one column ([Q-UI-222](#q-ui-222--which-settings-pages-are-one-column-now-and-what-a-sections-save-button-is-called)):
-anonymous access is open at the top, the token lifetimes and the read-only status are sections, and each group with a save button
-sends the members of its own group only.
+**New users are external** is open at the top, the token lifetimes and the read-only status are sections, and each group with a
+save button sends the members of its own group only. Who may read without signing in is the visibility of the general settings
+(R-UI-053).
 
 The status block shows the two poll-binding warnings that the answer carries (R-AUTH-034,
 R-AUTH-040 in [identity-and-authentication.md](identity-and-authentication.md)) as warnings next to
@@ -4041,17 +4162,16 @@ the mode, each with icon and text:
 
 Acceptance criteria:
 
-- Turning anonymous access on lets an unauthenticated `npm view` read a package that a policy grants
-  to the anonymous principal.
+- Ticking **New users are external** and saving makes the next user who signs in for the first time an external user.
 - With the default poll binding and an empty `server.trusted_proxies`, the screen shows the
   trusted-proxy warning; with `poll_binding.mode: off`, it shows the `off` warning.
 
-### R-UI-032 · Sign-in protection and anonymous access
+### R-UI-032 · Sign-in protection and public content
 Priority: **P1** · Covers: UI-038, UI-042
 
 - Break-glass lockout state and threshold (read-only, R-AUTH-038) with "Unlock".
-- A summary of what the anonymous principal can read (policies naming it, from
-  `GET /api/v1/permission-policies?principal=anonymous`).
+- A summary of what anyone can read without signing in: the `publicObjects` of `GET /api/v1/settings/visibility` (R-API-056),
+  linked to the general settings' Visibility section (R-UI-053).
 - Multi-factor authentication, password expiry and password rules belong to the identity provider
   (INV-7); the screen says so instead of offering controls.
 
@@ -4064,7 +4184,7 @@ Acceptance criteria:
 Priority: **MVP** · Covers: UI-044
 
 `/admin/settings/general` shows the public base URL and its source (`GET /api/v1/system/info`,
-read-only field, R-OPS-005) at the top, then the banner and the maintenance mode as sections with a **Save changes** each
+read-only field, R-OPS-005) at the top, then the visibility (R-UI-053), the banner and the maintenance mode as sections with a **Save changes** each
 ([Q-UI-222](#q-ui-222--which-settings-pages-are-one-column-now-and-what-a-sections-save-button-is-called)); the maintenance section opens by
 itself while the mode is on. The banner is `/api/v1/system/banner` (enabled, severity, plain text) and the
 maintenance mode `/api/v1/system/maintenance`. Server name, date format, logo and login notice are
@@ -4335,6 +4455,112 @@ Acceptance criteria:
   field, the error naming the 16-range cap; a template with `{{ define "x" }}` shows an error
   naming `define`.
 
+### R-UI-053 · The installation's visibility in the general settings
+Priority: **MVP** · Covers: trove-only
+
+`/admin/settings/general` gains the section **Visibility** (`<trove-settings-section>`, closed by default) below the public base
+URL, with its own **Save changes**, reading and writing `/api/v1/settings/visibility` (R-API-056):
+
+- **Default visibility level** is a radio group of the three levels, each with its icon and one muted sentence
+  ([Q-UI-228](#q-ui-228--a-level-is-chosen-in-a-radio-group-of-three-each-with-its-icon-and-a-sentence)): Private ("Only
+  members and the principals a policy names read new projects."), Internal ("Every signed-in user who is not external reads
+  new projects."), Public ("Anyone, also without signing in, reads new projects."). The help line under the group says that the
+  default applies to projects and repositories created later.
+- While `publicAvailable` is false, the option Public is shown disabled, muted, with the sentence "The installation's
+  configuration admits no request without a credential (`endpoints.default.auth.anonymous`)."
+- Below the group, read-only: what is public now (`publicObjects`), the projects and repositories each linked to its settings,
+  or "Nothing is public."
+- The section is editable for a holder of `security-settings:write`; for a holder of `settings:read` alone it is read-only
+  with the reason. Saving needs recent authentication (R-API-007), and a `409 public_not_allowed` is shown at the group.
+
+Acceptance criteria:
+
+- An administrator opens the section, chooses Internal and saves; a project created afterwards shows the Internal icon in the
+  project list.
+- With `endpoints.default.auth.anonymous: false` the option Public is disabled and says why.
+
+### R-UI-054 · The visibility of a project
+Priority: **MVP** · Covers: trove-only
+
+- The project's settings (`/projects/{project}/settings`, one column, Q-UI-215) gain the section **Visibility** after the name
+  and the description, with the radio group of Q-UI-228 for the project's level. An administrator (`projects:write`) edits it
+  with its own **Save changes**; the Owner and every other reader see it read-only with "Only an administrator of trove sets
+  the visibility of a project."
+- Lowering the level asks first in a confirmation dialog that lists the repositories that will be lowered with their levels
+  (from the project's repository list, `visibility` above the new level) and names the consequence ("Anyone who reads them only
+  through their visibility loses access."); the answer's `lowered` is shown in the success message
+  ([Q-UI-229](#q-ui-229--lowering-a-project-asks-first-and-names-the-repositories-it-lowers)).
+- The create dialog of a project (R-UI-041) has the same radio group, preset to the installation's `defaultLevel`.
+- The project list (`/projects`, `/admin/projects`) and the project's header show the level's icon before the project's name,
+  with the level's name as its accessible label and tooltip ([Q-UI-230](#q-ui-230--a-level-is-shown-as-an-icon-before-a-name-as-gitlab-shows-it)).
+- The start page lists the caller's projects first with the role, then the other projects it may read with no role; a filter
+  "Your projects" shows the first group alone (`membership=true`).
+
+Acceptance criteria:
+
+- An administrator lowers `web` from Public to Internal; the dialog names `npm-public`; after confirming, the repository list
+  of `web` shows `npm-public` with the Internal icon.
+- The Owner of `web` sees the section read-only with the reason; an internal user who is no member finds `web` on the start
+  page without a role.
+
+### R-UI-055 · The visibility of a repository
+Priority: **MVP** · Covers: trove-only
+
+- The repository's **Access** tab of the edit form (R-UI-021) gains the block **Visibility** in place of the field "Require
+  authentication": one column, two radio groups of Q-UI-228, **Artifacts** ("Who can install, download and list the packages")
+  and **Wiki** ("Who can read the README and the documentation"), and its own **Save changes**
+  ([Q-UI-231](#q-ui-231--a-repository-sets-artifacts-and-wiki-in-one-block-of-its-access-tab-and-the-wizard-sets-the-artifacts)).
+  An option above the project's level is disabled with "The project is internal, so this repository cannot be public."; a wiki
+  option above the artifacts' level is disabled with "The wiki cannot be more open than the artifacts." Choosing an artifacts
+  level below the wiki's lowers the wiki's choice with it. The wiki group is shown only for a format with wiki content
+  (`wiki: true` in `GET /api/v1/formats`, R-AUTHZ-034); for the others the block shows one group, labelled **Visibility**.
+- The creation wizard's basic settings step holds the artifacts group, preset to the lower of the installation's
+  `defaultLevel` and the project's level; the wiki follows the artifacts at create, and the review step shows both.
+- A warning `public_populates_remote` of the answer is shown as a warning at the block, with its sentence (R-AUTHZ-008).
+- The repository list, the repository's header and the client setup dialog show the artifacts level's icon before the
+  repository's name (Q-UI-230).
+- Editable for the project's Owner and for `repositories:write-config`; read-only otherwise.
+
+Acceptance criteria:
+
+- In the Public project `web`, the Owner sets Artifacts to Public and Wiki to Internal and saves; the repository list shows the
+  Public icon, and an anonymous visitor's package page of a package in it has no README tab (R-UI-057).
+- In an Internal project the option Public of both groups is disabled with the reason.
+
+### R-UI-056 · The external flag on the user page
+Priority: **MVP** · Covers: trove-only
+
+- The user detail (R-UI-024) gains the checkbox **External user** with the muted sentence "Sees only the projects it is a member
+  of, what a policy grants it, and what is public. Internal projects and repositories stay hidden.", edited in place with its
+  own **Save changes** ([Q-UI-232](#q-ui-232--the-external-flag-is-a-checkbox-in-place-on-the-user-page-and-a-badge-in-the-list)).
+  It is editable for a holder of `identities:write`; saving needs recent authentication; the break-glass account shows it
+  disabled with "The break-glass account is never external."
+- The users list shows a badge **External** next to the name of an external user and has the filter External (yes, no) in its
+  filter panel (`external=`).
+- "Add user" has the same checkbox, preset to the installation's `newUsersExternal` (R-UI-031).
+
+Acceptance criteria:
+
+- An administrator ticks External on `alice` and saves; the list shows her badge, `?external=true` lists her, and her next
+  request to an internal repository is refused (R-AUTHZ-030).
+
+### R-UI-057 · What the UI shows of the wiki and of public content
+Priority: **MVP** · Covers: trove-only
+
+- The package page (R-UI-007) shows the README tab only when `hasReadme` is true for the caller, and a format's documentation
+  tabs only when their member is present ([authorization.md](authorization.md) R-AUTHZ-034); it never requests the README for
+  a caller who may not read the wiki and never says that one exists.
+- While `publicContent` is true (`login-options`, R-AUTH-009) a visitor without a session uses the application as the anonymous
+  subject: the start page lists the public projects, every screen shows what the public levels admit, and the top bar offers
+  **Sign in**. While it is false a visitor without a session is sent to the sign-in screen (R-UI-004).
+
+Acceptance criteria:
+
+- An anonymous visitor opens the package page of `@web/button` in `web/npm-public` (artifacts Public, wiki Internal): the
+  versions and the install panel are shown, the README tab is not, and the browser made no request for the README.
+- A signed-in internal user sees the README tab on the same page.
+
+
 ### R-UI-040 · Builds
 Priority: **P1** · Covers: UI-028, UI-029
 
@@ -4358,14 +4584,14 @@ screens live inside the project, `/projects/{project}/…`
 the model gives the screens:
 
 - The project is chosen, not filtered: the start page (`/projects`) lists the caller's projects (`GET /api/v1/projects`: the
-  memberships of `authz/me`, every project for a holder of `projects:read`) and a caller with exactly one project starts in
-  it; inside a project the project switcher at the top of the side bar changes it. There is no project filter in the top
+  memberships of `authz/me`, every project for a holder of `projects:read`) and then the projects whose level admits the caller
+  (R-UI-054), and a caller with exactly one project starts in it; inside a project the project switcher at the top of the side bar changes it. There is no project filter in the top
   bar, and no list of a project's content is narrowed by a stored choice.
 - Start page: key, display name, description, the caller's role (for a member), the number of repositories and of members.
   The admin area's list of projects (`/admin/projects`, `projects:read`) keeps the owners, has a column with the logical size the project is
   charged (`logicalBytes`, [R-STOR-049](storage.md#r-stor-049--the-storage-of-a-project)) and creates and edits projects.
 - Create dialog (administrators, `projects:write`): key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$`, immutable), display name,
-  description, and the first Owner; repositories are created in the project afterwards. Edit dialog: display name and
+  description, the visibility level (R-UI-054), and the first Owner; repositories are created in the project afterwards. Edit dialog: display name and
   description, for administrators and the project's Owners. Delete is offered to administrators only, and only for
   projects without repositories, service accounts and CI mappings.
 - The project's settings show the logical size the project is charged (`logicalBytes`, in binary units, with the exact byte count as its
@@ -9867,6 +10093,90 @@ drops Inter's licence (Q-UI-144). The development agent revisits (c) if an owner
 ([notices_test.go](../../internal/webui/notices_test.go)), the `Q-UI-227` case in
 [format-icon.spec.ts](../../web/src/app/shared/format-icon.spec.ts).
 
+### Q-UI-228 · A level is chosen in a radio group of three, each with its icon and a sentence
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A radio group of Private, Internal, Public, each with GitLab's icon (a lock, a shield, a globe) and one muted sentence; an option that cannot be chosen is disabled with its reason (chosen) | The control of the owner's GitLab "Visibility level"; the style guide's rule for three exclusive choices | The reader sees all three and what each means; a disabled option says why; the same control on four screens | Takes vertical space |
+| (b) A select | Compact | One line | Hides the alternatives and their meaning, against the style guide's rule for three choices |
+
+**Choice:** (a), one shared component `trove-visibility-level` in `web/src/app/shared/ui/`, used by the general settings, the project,
+the repository (twice) and the create dialogs; recorded in [ui-style-guide.md](../developer/ui-style-guide.md) by the package
+that builds it.
+
+**Rationale:** the style guide asks for a radio group with a sentence per option for three exclusive choices, and GitLab shows
+exactly this control. The development agent records no revisit condition.
+
+**Applied in the spec:** R-UI-053, R-UI-054, R-UI-055.
+
+### Q-UI-229 · Lowering a project asks first and names the repositories it lowers
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A confirmation dialog that lists the repositories above the new level (chosen) | The list from the project's repositories; the answer's `lowered` in the success message | The administrator sees the cascade before it happens; the cascade is not undone by raising again | A dialog more |
+| (b) Save without asking | As every other section | Fast | A cascade that cannot be undone by the inverse action happens unseen |
+
+**Choice:** (a). Raising asks nothing.
+
+**Rationale:** the style guide keeps dialogs for short steps that confirm a consequence; a cascade over repositories is one. The
+development agent records no revisit condition.
+
+**Applied in the spec:** R-UI-054.
+
+### Q-UI-230 · A level is shown as an icon before a name, as GitLab shows it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The level's icon before the name of a project and a repository in lists and headers, its name as the accessible label (chosen) | GitLab's lists | Visible at a glance where the object is named; no column | An icon needs its label for screen readers (given) |
+| (b) A column "Visibility" | Explicit | Readable as text | A column in every list for a value of three states |
+| (c) Only on the settings pages | Quiet | No change to lists | An administrator cannot see what is public without opening each object |
+
+**Choice:** (a), with the artifacts level for a repository.
+
+**Rationale:** the owner asked to copy GitLab faithfully; GitLab shows the level as an icon beside the name. The development agent
+records no revisit condition.
+
+**Applied in the spec:** R-UI-054, R-UI-055.
+
+### Q-UI-231 · A repository sets artifacts and wiki in one block of its Access tab, and the wizard sets the artifacts
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A one-column block **Visibility** in the Access tab, two groups and one save; the wizard's basic step holds the artifacts group (chosen) | The tab that held "Require authentication"; the block follows the settings-page rules inside the tab | Where access is set today; both parts side by side, so the rule "wiki at most artifacts" is visible; the tabbed editor stays as Q-UI-222 left it | The repository's page is not one column as a whole yet |
+| (b) A tab of its own | A tab **Visibility** | Separate | One more tab for two controls |
+| (c) Both groups in the wizard | Artifacts and wiki at create | Complete at create | A choice most creators do not need at create; the wiki follows the artifacts |
+
+**Choice:** (a). For a format without wiki content the block shows one group named **Visibility**.
+
+**Rationale:** the owner's reference for the repository page is still open (Q-UI-222), so the block is written in the one-column
+form that the page will take and sits where access is configured now. The development agent would revisit this with Q-UI-222.
+
+**Applied in the spec:** R-UI-055, R-UI-021.
+
+### Q-UI-232 · The external flag is a checkbox in place on the user page, and a badge in the list
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A checkbox **External user** with its sentence and its own save on the user page; a badge **External** in the list; a filter (chosen) | GitLab's "External" checkbox under "Access" of the user's admin page, and its "External" badge | As GitLab; the list shows at a glance who is external | None found |
+| (b) An action button "Make external" | A step | Confirmable | Not edited in place, against the settings-page rule |
+
+**Choice:** (a).
+
+**Rationale:** the owner asked for the flag as GitLab has it; GitLab edits it in place and badges it in the list. The development
+agent records no revisit condition.
+
+**Applied in the spec:** R-UI-056, R-UI-024.
+
 ### Q-UI-270 · In the repository list the column grows to the address; the list's region scrolls sideways when it must
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -9973,6 +10283,43 @@ Context and options are those of [Q-OPS-208](operations-and-observability.md#q-o
 **Rationale:** the document is the one place that already says, per operation, who may call it (R-API-008), so what stays callable in maintenance belongs next to it. The development agent would revisit the single value if an operation needs "allowed for administrators only".
 
 **Applied in the spec:** R-API-008 (declarations), R-API-037 (the two rows of the settings index now exist). Code: [document.go](../../internal/api/v1/document.go). Tests: `TestR_OPS_024_MaintenanceDeclarationIsValidated`, `TestR_OPS_024_OperationsAllowedInMaintenanceMode`.
+
+### Q-API-247 · The wiki part of an operation is an extension of the document, read into the operation
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `x-trove-part: wiki` on the operation, read into `Operation.Part` (chosen) | As `x-trove-maintenance` (Q-API-246) | The document says which operations serve wiki content; the shared step and a test can read it; the T-19 operations name it the same way | One more extension |
+| (b) A handler check only | The handler asks the wiki | No document change | Nothing says which operation is wiki; a new operation can forget it |
+
+**Choice:** (a), valid only on a `GET` that reads repository content.
+
+**Rationale:** R-API-008 puts every operation's authorization in the document; the part of a read is part of it. The development
+agent records no revisit condition.
+
+**Applied in the spec:** R-API-058, R-API-029.
+
+### Q-API-248 · The project's level has an operation of its own, a repository's levels are a member of its document
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `PUT /api/v1/projects/{projectKey}/visibility` for the project; `visibility` in the repository document; `/api/v1/settings/visibility` for the default (chosen) | Each where its permission lives | The project's level needs `projects:write` while the Owner may `PUT` the project's name, so one operation would need a field-level rule; the repository's levels need the same permission as its other settings and travel with configuration as code | Three places |
+| (b) `visibility` in the project's `PUT` | A member of `replaceProject` | One operation | An Owner's `PUT` that resends the level would be refused or ignored by a field rule |
+| (c) A visibility sub-resource for repositories as well | `PUT …/repositories/{repoKey}/visibility` | Uniform | Configuration as code loses the member; a second write path for the document |
+
+**Choice:** (a).
+
+**Rationale:** R-API-008 declares one permission per operation; (a) gives each change its operation with one permission, and the
+repository's levels stay where the repository's other authorization members are (R-REPO-004). The development agent records no
+revisit condition.
+
+**Applied in the spec:** R-API-056, R-API-057, R-API-047.
+
+## What this does not cover
+
 
 ### Q-UI-240 · An Ansible package has a Documentation tab and a Contents tab; the README tab is its first page
 
@@ -10237,10 +10584,10 @@ format's guide. Hardening: a change to a requirement that a guide section cites 
 
 ### H-321 · An anonymous reader learns the token variable's name from the guide of a format
 
-Component: `GET /api/v1/formats/{format}/guide` (R-API-053). Subject: installations with anonymous access on; dormant
-otherwise. The operation is as public as the format list and names `ui.client_setup.token_env_var` in its text and
+Component: `GET /api/v1/formats/{format}/guide` (R-API-053). Subject: installations with public content (`publicContent`,
+R-AUTH-037); dormant otherwise. The operation is as public as the format list and names `ui.client_setup.token_env_var` in its text and
 snippets, besides the base URL that the format list already serves. The name is no secret, but it tells someone who can
-read a developer's environment which variable holds a trove token. What makes it real: anonymous access on, a variable
+read a developer's environment which variable holds a trove token. What makes it real: a `public` repository, a variable
 name other than the default, and an attacker with read access to process environments of developer machines or CI
 runners, who could read every variable anyway.
 

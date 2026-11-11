@@ -294,15 +294,15 @@ Acceptance criteria:
   replica started with `--role api` or `--role packages` never appears in `job.locked_by`, and `pg_stat_activity`
   never shows a connection named `trove:<that replica>:lease`.
 - On a `packages` replica, `GET /ui/`, `GET /`, `GET /auth/oidc/corp/start`, `GET /api/v1/system/ping` and
-  `POST /api/v1/auth/oidc/token` answer the problem of `GET /does-not-exist` (the `404` with a token or with anonymous access on, the same `401` `credentials_required` without a credential while it is off, Q-ARCH-302), and a request with a valid
+  `POST /api/v1/auth/oidc/token` answer the problem of `GET /does-not-exist` (the `404` with a token or while `publicContent` is true, the same `401` `credentials_required` without a credential otherwise, Q-ARCH-302), and a request with a valid
   `__Host-trv_session` cookie and no token to `GET /api/npm/web/npm-local/@acme%2fsdk` is treated as one without a
-  credential (`401` `credentials_required` while anonymous access is off); on an `api` replica,
+  credential (`401` `credentials_required` while the repository is not `public`); on an `api` replica,
   `GET /api/npm/web/npm-local/@acme%2fsdk`, `GET /files/web/generic-local/x` and `GET /v2/` answer that problem, and a test
   double of the upstream records no request from it while the e2e suite runs, except the upstream tests it sends.
 - With `api.cors.allowed_origins` set and the rate limits on, each of these requests and `OPTIONS /api/v1/system/ping` on
   `packages`, `OPTIONS /files/web/generic-local/x` on `api`, sent with no credential, a token, a rejected token, a live session
   cookie with and without its CSRF token, an ended session cookie, the Fetch Metadata headers of a browser or as the CORS
-  preflight of an allowed origin, with anonymous access off and on, answers what the request with the same method and
+  preflight of an allowed origin, with nothing `public` and with a `public` repository, answers what the request with the same method and
   headers to `/does-not-exist` answers: the same status, the same header apart from `X-Request-Id`, `Date` and
   `Content-Length`, and the same body apart from `requestId` and `instance` (Q-ARCH-306).
 - One of three `packages` pods is deleted with `kubectl delete pod --grace-period=0 --force` during a
@@ -1124,7 +1124,8 @@ The content host counts as a known host under the base-URL rules of
 
 Authentication on the content host:
 - The session cookie is never accepted there. Bearer and Basic tokens are accepted as on the UI
-  host, and anonymous access follows the repository's grants.
+  host, and a request without a credential reads what a `public` level admits ([authorization.md](authorization.md)
+  R-AUTHZ-003).
 - A redirect for a session-cookie request carries a signed, short-lived grant in the query:
   `trv_exp=<unix seconds>&trv_sid=<session row id>&trv_sig=v1.<key id>.<base64url HMAC-SHA-256>`.
   - The MAC covers the content host, the escaped path, `trv_exp` and `trv_sid`.
@@ -2307,6 +2308,11 @@ own tests:
 14. From M4b, for a format that implements `VulnerabilityAdapter`: the matching corpus of
     [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-009 (the event table test and the
     frozen real-record corpus) gives the expected results (Q-VULN-15).
+15. For a format whose catalog entry says it has wiki content (`Entry.Wiki`, [authorization.md](authorization.md) R-AUTHZ-034):
+    every route declared `Wiki` is a `Metadata` or `Computed` route with the action `read`; every content case is served again
+    with the kit host's `WikiReadable` answering false and `Authorize` refusing a coordinate whose part is the wiki: a `Wiki`
+    route answers the refusal, and no other answer holds a byte of the fixture's wiki samples (`Fixture.WikiSamples`, the README
+    texts it seeds). A format whose entry says it has none declares no `Wiki` route.
 
 A check that cannot apply to a format is skipped in the format's test with a stated reason (generic
 has no routes, no clients and no package names); a skip without a reason fails the check, so a
@@ -2314,7 +2320,7 @@ later class cannot pass a check vacuously. The kit also refuses a skip that the 
 checks 1, 3, 7, 12 and 13 on a format that has routes, check 4 on one with a remote adapter, check 5 with a
 virtual adapter, check 6 with an `Upload` route, check 8 with clients, setup templates or a guide, check 9 with
 package names or a route that writes, check 10 with package names, check 11 with a view adapter, check 14 with a
-vulnerability adapter. Check 2 is never skipped. A check with nothing to run over (an empty fixture) fails unless it
+vulnerability adapter, check 15 with wiki content. Check 2 is never skipped. A check with nothing to run over (an empty fixture) fails unless it
 is skipped. npm and NuGet skip no check (`TestR_ARCH_010_NoCheckIsSkipped`); what a check of theirs does not look at
 is an entry of `NoRevision` or `NoContent`, each with its reason, in the format's `conformance_test.go`.
 

@@ -57,11 +57,12 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 	// UI-003, UI-050, UI-051) moved into the beta, and the mirror mode of phase 6b pulled the pull
 	// replication entries API-082 to API-085 forward (Q-REPO-143), and after formats/oci.md (R-OCI-001 to R-OCI-035) listed the
 	// entries of PKG-DOCKER-* and PKG-OCI-* that phase T-16 builds, and after formats/debian.md (R-DEB-…, phase T-17) listed
-	// its P2 entries and the Later entry PKG-DEB-003, and after formats/ansible.md (R-ANS-001 to R-ANS-032, unit F0) listed the 13 P1 entries of PKG-ANSIBLE-*.
+	// its P2 entries and the Later entry PKG-DEB-003, and after formats/ansible.md (R-ANS-001 to R-ANS-032, unit F0) listed the 13 P1 entries of PKG-ANSIBLE-*,
+	// and after the visibility levels of R-AUTHZ-033 (T-18) covered the P2 entry IAM-062.
 	want := map[string][2]int{
 		prioMVP:   {394, 394},
 		prioP1:    {514, 343},
-		prioP2:    {885, 48},
+		prioP2:    {885, 49},
 		prioLater: {374, 2},
 		prioOut:   {72, 0},
 	}
@@ -83,11 +84,11 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 		if got := len(m.Features); got != 2239 {
 			t.Errorf("catalog entries: got %d, want 2239", got)
 		}
-		if got := m.countSpecified(m.Features); got != 787 {
-			t.Errorf("listed entries: got %d, want 787", got)
+		if got := m.countSpecified(m.Features); got != 788 {
+			t.Errorf("listed entries: got %d, want 788", got)
 		}
-		if got := m.countOpen(m.Features); got != 1452 {
-			t.Errorf("not listed entries: got %d, want 1452", got)
+		if got := m.countOpen(m.Features); got != 1451 {
+			t.Errorf("not listed entries: got %d, want 1451", got)
 		}
 	})
 	t.Run("E0.8 requirement counts", func(t *testing.T) {
@@ -95,8 +96,8 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 		for _, r := range m.Reqs {
 			count[r.Priority]++
 		}
-		if len(m.Reqs) != 834 || count[prioMVP] != 548 || count[prioP1] != 245 || count[prioP2] != 41 {
-			t.Errorf("requirements: got %d (MVP %d, P1 %d, P2 %d), want 834 (548, 245, 41)",
+		if len(m.Reqs) != 847 || count[prioMVP] != 561 || count[prioP1] != 245 || count[prioP2] != 41 {
+			t.Errorf("requirements: got %d (MVP %d, P1 %d, P2 %d), want 847 (561, 245, 41)",
 				len(m.Reqs), count[prioMVP], count[prioP1], count[prioP2])
 		}
 	})

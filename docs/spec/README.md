@@ -412,7 +412,7 @@ acceptance criteria.
 | [repositories-and-proxy.md](repositories-and-proxy.md) | `R-REPO` | Repository model and API, virtual resolution, pull-through proxy semantics, the mirror mode of remote repositories (background passes as jobs on the queue `mirror`, discovery, bounds, throttling, clients first, status; R-REPO-050 to R-REPO-059), proxy state across replicas, without Valkey and during a drain (R-REPO-049) |
 | [storage.md](storage.md) | `R-STOR` | Blob store on S3, metadata schema, upload/download pipeline, garbage collection, quotas, cleanup, storage work per role and across replicas, storage state in backups |
 | [identity-and-authentication.md](identity-and-authentication.md) | `R-AUTH` | OIDC login, sessions, users, groups, service accounts, tokens, client authentication |
-| [authorization.md](authorization.md) | `R-AUTHZ` | Permission model, evaluation, package ownership, administration roles |
+| [authorization.md](authorization.md) | `R-AUTHZ` | Permission model, visibility levels and the wiki, evaluation, package ownership, administration roles |
 | [gitlab-ci-oidc.md](gitlab-ci-oidc.md) | `R-CI` | GitLab CI OIDC token exchange, identity mappings, `CI_JOB_TOKEN` fallback |
 | [formats/npm.md](formats/npm.md) | `R-NPM` | npm registry protocol, local/remote/virtual behavior |
 | [formats/nuget.md](formats/nuget.md) | `R-NUGET` | NuGet v3 protocol, symbols, local/remote/virtual behavior |

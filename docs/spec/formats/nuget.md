@@ -1164,24 +1164,26 @@ NuGet contributes:
 - **Anonymous requests are always challenged, never answered 404** (R-AUTHZ-016). A client sends
   its configured credentials only after a 401
   ([authenticated feeds](https://learn.microsoft.com/en-us/nuget/consume-packages/consuming-packages-authenticated-feeds)).
-- **Forced authentication.** `requireAuthentication: true` on a repository (R-REPO-004) answers
-  every anonymous request with 401 even where the anonymous principal may read. Without it, a
-  client with configured credentials never sends them for reads while anonymous read is granted,
-  so its reads are attributed to the anonymous principal.
+- **Authentication follows the level.** A repository whose artifacts are not `public`
+  ([authorization.md](../authorization.md) R-AUTHZ-033) answers every request without a credential with 401, so a client with
+  configured credentials sends them and its reads are attributed to its principal. A `public` repository answers without a
+  challenge, and such a client's reads are anonymous ([Q-NUGET-122](#q-nuget-122--a-repository-that-is-not-public-challenges-and-the-readme-route-is-a-wiki-route)).
 - **Virtual repositories.** An anonymous request through a virtual repository is challenged unless
-  the anonymous principal may read the virtual repository and every member (R-AUTHZ-009 rule 6).
+  the artifacts of the virtual repository and of every member are `public` (R-AUTHZ-009 rule 6).
 - The service index is subject to the same rules, which makes a client authenticate on its first
   request; NuGet 6.7 and later then pre-authenticate every resource below `<feed>/` (R-NUGET-001).
 
-Configuration (common repository field, shown for context):
+Configuration (common repository member, shown for context; [repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-004):
 
 ```yaml
-requireAuthentication: false   # default (proposed), R-REPO-004
+visibility:
+  artifacts: private   # default: the lower of the installation's default and the project's level
+  wiki: private        # default: as the artifacts
 ```
 
 Acceptance criteria:
 
-- Without any anonymous grant: `curl -i <feed>/index.json` answers 401 with exactly
+- With the artifacts `private` or `internal`: `curl -i <feed>/index.json` answers 401 with exactly
   `WWW-Authenticate: Basic realm="trove"`; `curl -u anything:$TOKEN` answers 200;
   `curl -H "Authorization: Bearer $TOKEN"` answers 200; a revoked token answers 401.
 - `dotnet nuget add source <feed>/index.json --name trove-local --username ci --password "$TOKEN"
@@ -1189,8 +1191,8 @@ Acceptance criteria:
 - `dotnet nuget push … --api-key az` with credentials in `nuget.config` succeeds (first attempt
   401, retry with Basic); `--api-key "$TOKEN"` without credentials succeeds; `--api-key "ci:$TOKEN"`
   succeeds; `--api-key <revoked token>` fails with 401.
-- With anonymous read granted on `nuget-local`: `curl <feed>/index.json` answers 200 without
-  credentials; after setting `requireAuthentication: true` it answers 401, and a restore with
+- With the artifacts of `nuget-local` `public`: `curl <feed>/index.json` answers 200 without
+  credentials; after lowering them to `internal` it answers 401, and a restore with
   `nuget.config` credentials succeeds and is audited under the token's principal.
 - `curl -X POST -b "__Host-trv_session=$S" <feed>/package/acme.widgets/1.2.3` answers 401.
 
@@ -1978,7 +1980,10 @@ Packages may embed an icon, a license file and a README
   is not emitted; the package is still accepted.
 - Endpoints, permission `read` on the ID: `<feed>/flatcontainer/{lower_id}/{lower_version}/icon`
   (`image/png` or `image/jpeg`), `…/license` (`text/plain; charset=utf-8`), `…/readme`
-  (`text/markdown; charset=utf-8`); 404 when the package embeds none.
+  (`text/markdown; charset=utf-8`); 404 when the package embeds none. The `readme` route is wiki content
+  ([authorization.md](../authorization.md) R-AUTHZ-034): it is declared with `Wiki: true`, so a caller who may read the package
+  but not the repository's wiki gets the 404 of a package without README, and a request without a credential the 401 with the
+  challenge. The icon and the license are artifacts metadata.
 - Emitted URLs: `iconUrl` and `licenseUrl` in registration and search point at these endpoints when
   the package embeds the file; the service index lists `ReadmeUriTemplate/6.13.0` with the
   `readme` template. Clients probe that template for every package they show, so the 404 path MUST
@@ -1996,6 +2001,8 @@ Acceptance criteria:
 - `curl -I <feed>/flatcontainer/acme.widgets/1.5.0/readme` returns `text/markdown` with
   `Content-Security-Policy: sandbox; default-src 'none'` and
   `Cross-Origin-Resource-Policy: same-site`; for a package without README it returns 404.
+- With the artifacts `public` and the wiki `internal`, the same request without a credential returns 401, and with an
+  internal user's token 200.
 
 ### R-NUGET-025 · Metadata reindex
 Priority: **P1** · Covers: PKG-NUGET-007, API-040, FMT-012
@@ -2680,10 +2687,9 @@ pre-releases):
   used as filesystem paths (R-NUGET-005).
 - **Unauthorized spooling.** A caller without any `deploy` grant on the repository is refused
   before the body is read (R-NUGET-005 step 5).
-- **Anonymous reads hide identities.** With anonymous read granted and `requireAuthentication`
-  off, clients never send their configured credentials for reads, so downloads are attributed to
-  the anonymous principal (R-NUGET-012). Repositories whose usage must be attributable set
-  `requireAuthentication`.
+- **Anonymous reads hide identities.** On a repository whose artifacts are `public`, clients never send their configured
+  credentials for reads, so downloads are attributed to the anonymous subject (R-NUGET-012). Repositories whose usage must be
+  attributable are `internal` or `private`.
 - **Dependency confusion.** A virtual repository that merges local packages with nuget.org would
   offer a public package with an internal ID and a higher version. Pin rules and namespace
   claims (R-REPO-023) apply to NuGet IDs case-insensitively through `lower_id` (R-NUGET-017,
@@ -4339,7 +4345,7 @@ hand-built request had sent). The development agent would revisit this if a scen
 
 ### Q-NUGET-65 · How the push criteria of R-NUGET-012 get an anonymously readable feed
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by [Q-NUGET-122](#q-nuget-122--a-repository-that-is-not-public-challenges-and-the-readme-route-is-a-wiki-route)**: the feed `nuget-e2e-open` is a repository whose artifacts are `public`, in a `public` project; the test switches nothing.
 
 The criteria `--api-key "$TOKEN"` and `--api-key "ci:$TOKEN"` "without credentials" succeed only when the client can read the
 service index without credentials, because a push reads the index first and the API key is examined on the write routes alone
@@ -5494,6 +5500,24 @@ generated `.nuspec`; a delete in mode delete was decided on the `.nupkg` and rem
 **Applied in the spec:** R-NUGET-013, [authorization.md](../authorization.md) R-AUTHZ-007. Code:
 [handlers_publish.go](../../../internal/formats/nuget/handlers_publish.go), [handlers_delete.go](../../../internal/formats/nuget/handlers_delete.go).
 Test: `TestR_AUTHZ_005_ANuGetWriteIsDecidedOnEveryFileItWritesOrRemoves`.
+
+### Q-NUGET-122 · A repository that is not public challenges, and the README route is a wiki route
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The level decides the challenge; `…/readme` is declared `Wiki: true` (chosen) | R-NUGET-012, R-NUGET-024 | A NuGet client authenticates on every repository that is not `public` without a switch of its own; the README follows the wiki level like npm's | A `public` NuGet repository cannot attribute reads |
+| (b) Keep a forced challenge on public repositories | `requireAuthentication` | Attribution on public feeds | A public feed that answers 401 is not public; the second mechanism of Q-AUTHZ-263 |
+| (c) The README route answers 404 to the anonymous subject | No challenge for a hidden README | Visual Studio shows no credential prompt for a README | Breaks the rule of R-AUTHZ-016 that a request without a credential is challenged, so a client with credentials never gets the README |
+
+**Choice:** (a).
+
+**Rationale:** the levels say who reads; a challenge is how a client is asked to show who it is, and it follows from the level
+(R-AUTHZ-016). The README is the format's only wiki content. The development agent would revisit (c) if the Visual Studio prompt
+on a public feed with an internal wiki turns out to bother users, which needs the client observed first.
+
+**Applied in the spec:** R-NUGET-012, R-NUGET-024, Security notes; [authorization.md](../authorization.md) R-AUTHZ-034.
 
 ## What this does not cover
 

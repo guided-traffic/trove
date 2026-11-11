@@ -4,8 +4,8 @@ Status: specification — not implemented
 
 This page specifies how trove establishes who is calling. It covers the browser login of humans
 through OpenID Connect, the server-side UI session, the break-glass administrator, and the
-principals trove knows: users, groups, service accounts, the anonymous user and the built-in
-principal `authenticated`. It also covers
+principals trove knows: users with their `external` flag, groups, service accounts and the anonymous user. It also
+covers
 the credentials trove issues itself (personal, service-account and CI tokens per INV-8) and
 how every package client and API caller presents them.
 
@@ -538,10 +538,11 @@ Two provider entries with the same issuer resolve to the same user.
 Claim names may be dotted paths into nested JSON objects, for example `realm_access.roles`.
 
 **Reserved usernames.** `anonymous`, `authenticated`, `system`, `me` and the configured
-break-glass username (`auth.break_glass.username`, R-AUTH-014) are reserved. `anonymous` and
-`authenticated` name the built-in principals (R-AUTH-037); a user of either name could be
-mistaken for them wherever principals are shown by name, for example when an administrator picks
-the principal of a policy entry. `me` is reserved because
+break-glass username (`auth.break_glass.username`, R-AUTH-014) are reserved. `anonymous` names the
+subject of a request without a credential (R-AUTH-037) and `authenticated` the declaration of an
+operation open to every caller with a credential ([api-and-ui.md](api-and-ui.md) R-API-008); a user of
+either name could be mistaken for them wherever principals are shown by name, for example in the audit
+trail. `me` is reserved because
 `/api/v1/users/me` is a literal route at the position of `{username}`, so a user of that name
 would be unreachable by name ([api-and-ui.md](api-and-ui.md) R-API-004, Q-API-7). The rule holds
 for every source of a username:
@@ -761,10 +762,15 @@ Priority: **MVP** · Covers: AUTHN-007, AUTHN-037
     {"id": "corp", "displayName": "Corporate SSO", "startUrl": "/auth/oidc/corp/start", "available": true}
   ],
   "localLogin": false,
-  "anonymousAccess": true,
+  "publicContent": true,
   "autoRedirect": "corp"
 }
 ```
+
+- `publicContent` is true when a request without a credential can read something: the default endpoint admits such
+  requests and the artifacts of at least one repository are `public` ([authorization.md](authorization.md) R-AUTHZ-033,
+  R-AUTH-037). The UI then runs without a session and offers "Continue without signing in" ([api-and-ui.md](api-and-ui.md)
+  R-UI-004); it is read from the replica's grant index and follows a change of a level within the bound of R-AUTHZ-028.
 
 - Providers are listed in configuration order: by their `order` key, then by ID (Q-AUTH-30). The response never contains issuers, client IDs
   or error details. Those are for administrators (R-AUTH-040).
@@ -1281,8 +1287,9 @@ Acceptance criteria:
 Priority: **MVP** · Covers: IAM-001, IAM-003, IAM-004, IAM-009, ADMAPI-004, ADMAPI-005, ADMAPI-006, ADMAPI-007, ADMAPI-008, ADMAPI-009
 
 **Principal table.** All principal kinds share one table, so
-[authorization.md](authorization.md) can bind policies to `principal.id` uniformly. The kinds
-`anonymous` and `authenticated` each have exactly one built-in row (R-AUTH-037). The
+[authorization.md](authorization.md) can bind policies to `principal.id` uniformly. The kind
+`anonymous` has exactly one built-in row (R-AUTH-037), the actor of a request without a credential, which no policy entry,
+role binding, membership or owner record may name ([authorization.md](authorization.md) Q-AUTHZ-279). The
 `ci_mapping` subtype is owned by [gitlab-ci-oidc.md](gitlab-ci-oidc.md):
 
 - Its principal `name` is `<CI issuer name>/<mapping name>` for a mapping of the system tier, for
@@ -1309,6 +1316,8 @@ Priority: **MVP** · Covers: IAM-001, IAM-003, IAM-004, IAM-009, ADMAPI-004, ADM
 - Users are addressed by username in paths. The record also returns the stable `id`.
 - `avatarUrl` is the path of the user's uploaded avatar, `/api/v1/avatars/<sha256>`, or `null` for a user without one (R-API-055,
   Q-API-210). It is read-only and changes the revision of the record when the avatar changes.
+- `external` says whether the user is an external user (R-AUTH-044): it reads only what it is a member of, what a grant names
+  and what is `public`, never what is `internal` ([authorization.md](authorization.md) R-AUTHZ-030).
 
 **The catalog's per-user options (IAM-003) map to trove as follows.** trove has none of the
 three switches; the table fixes the behavior that replaces each:
@@ -1343,7 +1352,7 @@ Data model:
 ```sql
 CREATE TABLE principal (
   id          uuid        PRIMARY KEY,                     -- UUIDv7
-  kind        text        NOT NULL CHECK (kind IN ('user', 'group', 'service_account', 'anonymous', 'authenticated', 'ci_mapping')),
+  kind        text        NOT NULL CHECK (kind IN ('user', 'group', 'service_account', 'anonymous', 'ci_mapping', 'bastion')),
   name        text        NOT NULL,                        -- ci_mapping: '<CI issuer name>/<mapping name>'
   status      text        NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
   created_at  timestamptz NOT NULL DEFAULT now(),
@@ -1363,28 +1372,32 @@ CREATE TABLE app_user (
   last_interactive_auth_at  timestamptz,
   disabled_reason           text CHECK (disabled_reason IN ('admin', 'dormant', 'scim')),
   disabled_at               timestamptz,
-  dormancy_warned_at        timestamptz                  -- R-AUTH-021 (P1): last user.dormancy_warning
+  dormancy_warned_at        timestamptz,                 -- R-AUTH-021 (P1): last user.dormancy_warning
+  external                  boolean     NOT NULL DEFAULT false   -- R-AUTH-044, migration 00072
 );
 CREATE UNIQUE INDEX app_user_one_break_glass ON app_user (is_break_glass) WHERE is_break_glass;
 ```
 
 The migration adds the integrity rules of Q-AUTH-16 to this sketch: a `CHECK` on `principal.name` by kind
 (the name rules of R-AUTH-007, R-AUTH-018 and R-AUTH-020, the reserved user names, `<issuer>/<mapping>`
-for `ci_mapping`), a unique index on the built-in kinds, the two built-in rows with the fixed
-identifiers `00000000-0000-0000-0000-000000000001` (`anonymous`) and
-`00000000-0000-0000-0000-000000000002` (`authenticated`), and triggers that refuse a change of those
-rows and a subtype, membership, token or session row that points at a principal of the wrong kind.
+for `ci_mapping`), a unique index on the built-in kind, the built-in row with the fixed
+identifier `00000000-0000-0000-0000-000000000001` (`anonymous`), and triggers that refuse a change of that
+row and a subtype, membership, token or session row that points at a principal of the wrong kind. Migration
+`00073_principal_builtins.sql` removes the kind `authenticated` with its row
+`00000000-0000-0000-0000-000000000002` and the entries that named it, and adds the guard that refuses a policy entry, a project
+policy entry, a role binding, a project membership and an owner record naming `anonymous` (SQLSTATE `AI009`,
+[authorization.md](authorization.md) Q-AUTHZ-279).
 
 API (administrator unless stated; read operations also accept the system scope
 `identities:read`, R-AUTH-025):
 
 | Method and path | Request | Response | Status codes |
 |---|---|---|---|
-| `GET /api/v1/users?q=&status=&origin=&group=&admin=&limit=&cursor=` | — | Page of users (paging per [api-and-ui.md](api-and-ui.md)) | 200 |
+| `GET /api/v1/users?q=&status=&origin=&group=&admin=&external=&limit=&cursor=` | — | Page of users (paging per [api-and-ui.md](api-and-ui.md)) | 200 |
 | `GET /api/v1/users/{username}` | — | User record (below) | 200, 404 |
 | `GET /api/v1/users/me` | — | Own record; any authenticated user | 200, 401 |
-| `POST /api/v1/users` | `{"username", "email", "displayName", "identities": [{"provider": "corp", "subject": null}]}` | User with origin `admin`; `subject: null` is a pending link (R-AUTH-007) | 201, 400, 409 `already_exists`, 422 `reserved_name` (reserved username, R-AUTH-007) |
-| `PATCH /api/v1/users/{username}` | Any of `displayName`, `email` (the IdP overwrites both at the next login), `identities` | User | 200, 400, 404, 412, 428 |
+| `POST /api/v1/users` | `{"username", "email", "displayName", "external", "identities": [{"provider": "corp", "subject": null}]}`; `external` defaults to `newUsersExternal` (R-AUTH-044) | User with origin `admin`; `subject: null` is a pending link (R-AUTH-007) | 201, 400, 409 `already_exists`, 422 `reserved_name` (reserved username, R-AUTH-007) |
+| `PATCH /api/v1/users/{username}` | Any of `displayName`, `email` (the IdP overwrites both at the next login), `identities`, `external` (R-AUTH-044: `identities:write`, recent authentication) | User | 200, 400, 404, 409 (`external` of the break-glass account), 412, 428 |
 | `POST /api/v1/users/{username}/disable` | `{"reason": "…", "revokeTokens": true}` | — | 204, 404, 409 (break-glass) |
 | `POST /api/v1/users/{username}/enable` | — | — | 204, 404 |
 | `DELETE /api/v1/users/{username}` | — | — | 204, 404, 409 (break-glass) |
@@ -1401,6 +1414,7 @@ API (administrator unless stated; read operations also accept the system scope
   "status": "active",
   "isAdmin": false,
   "adminVia": [],
+  "external": false,
   "identities": [{"provider": "corp", "linked": true}],
   "groups": [{"name": "team-web", "source": "oidc:corp"}],
   "lastLoginAt": "2026-10-28T09:12:00Z",
@@ -1423,6 +1437,45 @@ Acceptance criteria:
   the old principal do not apply.
 - `POST /api/v1/users` with an existing username gets 409. With the username `me` it gets 422
   `reserved_name`, and an OIDC login whose mapped username is `me` fails with `username_invalid`.
+
+### R-AUTH-044 · The external flag of a user
+Priority: **MVP** · Covers: trove-only
+
+trove has a user flag `external` as GitLab has it, set by an administrator (owner, 2026-11-11): an external user sees only
+what it is a member of, what a grant names and what is `public`; the level `internal` never admits it
+([authorization.md](authorization.md) R-AUTHZ-030,
+[Q-AUTH-230](#q-auth-230--the-external-flag-is-an-attribute-of-the-user-set-by-an-administrator-and-resolved-with-the-users-status-and-groups)).
+
+- **Who sets it.** A holder of `identities:write` (the roles `admin` and `security-admin`), through `PATCH
+  /api/v1/users/{username}` with `{"external": true}` or `false`, or `POST /api/v1/users`. A change needs recent
+  authentication ([api-and-ui.md](api-and-ui.md) R-API-007). The break-glass account is never external (409); a project
+  Owner cannot set it, and nothing else writes it: no identity-provider claim, no group sync and no SCIM attribute.
+- **New users.** A user created by its first OIDC login, by SCIM or by `POST /api/v1/users` without the member takes the
+  installation's `newUsersExternal` (R-AUTH-040, default `false`) as it stood when the user was created
+  ([Q-AUTH-231](#q-auth-231--a-new-user-takes-the-installations-newusersexternal-whatever-created-it)). Changing the
+  setting changes no existing user.
+- **Only users.** Service accounts, CI mappings and Bastion registrations carry no flag: they are never internal anyway
+  (R-AUTHZ-030). A group carries no flag; GitLab's flag is per user, and a group of external people is their memberships.
+- **Where it acts.** The authentication stage resolves the flag with the user's status and groups for every request of a UI
+  session or a personal access token, from the principal cache of R-AUTH-023, and hands it to authorization in the subject;
+  a job that continues a request reads it again before each step, as it reads the groups
+  ([authorization.md](authorization.md) Q-AUTHZ-260). A change takes effect on every replica within `auth.revocation_bound`,
+  with or without Valkey, because the write records itself in the change area `auth`.
+- **Audit and journal.** Every change writes `user.external_changed` (before, after) in its transaction. Setting the flag
+  narrows what the user reads, so the event is journaled (`journal: revocation`, R-AUTH-041): a restore to a point before the
+  change sets the flag again; clearing it is not replayed.
+- **What it does not change.** Project memberships, grants, roles, tokens and sessions stay. The flag never refuses a login.
+
+Acceptance criteria:
+
+- `PATCH /api/v1/users/alice` with `{"external": true}` and a session older than the window of R-AUTH-011 answers 401
+  `reauthentication_required`; with a recent one 200, and `GET /api/v1/users?external=true` lists `alice`.
+- With `newUsersExternal: true`, the first OIDC login of `erin` creates her with `"external": true`; an `npm view` with her
+  personal access token through a repository whose artifacts are `internal` gets `E404`, and through one whose artifacts are
+  `public` succeeds.
+- A security administrator's token without `admin: true` and without the system item `identities:write` gets 403 on the
+  `PATCH`; a project Owner gets 403.
+
 
 ### R-AUTH-017 · Self-service profile
 Priority: **MVP** · Covers: AUTHN-039, AUTHN-006, AUTHN-040
@@ -1449,8 +1502,7 @@ becomes `auth.tokens.pat.allowed_groups`:
 
 Existing PATs of users who leave those groups keep working until they expire or are revoked.
 
-**Other principals.** Service accounts and the built-in principals `anonymous` and
-`authenticated` have no profile. The break-glass account sees its profile without the tokens
+**Other principals.** Service accounts and the built-in principal `anonymous` have no profile. The break-glass account sees its profile without the tokens
 section.
 
 Configuration:
@@ -1483,8 +1535,8 @@ Priority: **MVP** · Covers: IAM-013, IAM-014, IAM-016, IAM-018, ADMAPI-013, ADM
 - Groups are flat; nesting is not supported.
 
 **Members.** Members are users and service accounts of no project; a project's service account is
-no group member (R-AUTH-020). Member lists write service accounts as `sa:<name>`. The built-in principals `anonymous` and `authenticated` (R-AUTH-037) cannot be
-members.
+no group member (R-AUTH-020). Member lists write service accounts as `sa:<name>`. The built-in principal `anonymous` (R-AUTH-037) cannot be a
+member.
 
 **Memberships carry a source:**
 
@@ -1574,10 +1626,9 @@ Priority: **P1** · Covers: IAM-015
   409 `auto_join_member_conflict` and names the projects; the member write refuses an auto-join group with 422 `principal_not_allowed`.
 - CI tokens never pick up auto-join groups. Their principal is a CI mapping, not a user, so the
   catalog's widening of CI tokens through default groups (TOK-015) cannot occur.
-- The MVP built-in principal `authenticated` (R-AUTH-037, [authorization.md](authorization.md)
-  R-AUTHZ-030) draws the same line: like auto-join groups, it covers users only and never service
-  accounts or CI identities. Until auto-join groups ship, it is how an installation grants `read`
-  to every signed-in user.
+- The visibility level `internal` ([authorization.md](authorization.md) R-AUTHZ-030, R-AUTHZ-033) draws the same line:
+  like auto-join groups, it covers users only, never service accounts or CI identities, and no user flagged external
+  (R-AUTH-044). It is how an installation gives `read` to every signed-in person of the organization.
 
 Acceptance criteria:
 
@@ -2691,8 +2742,8 @@ maps to it as follows:
 | Username and token per package source (NuGet) | Basic after a 401; the API key on push, delete and relist | Accepted, with the API-key rule above. Any non-empty username works, because trove ignores it. |
 | `.netrc`, or credentials inside the repository URL (`https://user:token@host/…`) | Basic. The client turns them into an `Authorization` header; userinfo never appears in the request target ([RFC 9110](https://www.rfc-editor.org/rfc/rfc9110) §4.2.4) | Accepted on every package-protocol endpoint and on `/files/`. trove never reads credentials from the request path or query (R-AUTH-001). |
 | A client that rejects certain usernames, for example email addresses | Basic | Any username works, because trove ignores it. |
-| A client that cannot authenticate at all, or not for some operations | No credential | Served only as the anonymous principal (R-AUTH-037): both anonymous switches on, plus an anonymous `read` grant on exactly the repositories those clients use. trove has no per-repository switch that bypasses the authentication stage or the global anonymous switches. A format page that needs anonymous access for a client names the anonymous grant it needs. |
-| A client that sends configured credentials only after a 401 (NuGet), on a repository that anonymous may read | No credential, so the request runs as anonymous | `requireAuthentication: true` on the repository (R-REPO-004 in [repositories-and-proxy.md](repositories-and-proxy.md), R-NUGET-012) challenges anyway, so reads are authorized and attributed per principal. |
+| A client that cannot authenticate at all, or not for some operations | No credential | Served only as the anonymous subject (R-AUTH-037): it reads the repositories whose artifacts are `public` ([authorization.md](authorization.md) R-AUTHZ-033), on an endpoint that admits requests without a credential. trove has no per-repository switch that bypasses the authentication stage. A format page that needs anonymous access for a client names the level it needs. |
+| A client that sends configured credentials only after a 401 (NuGet) | No credential at first | A repository whose artifacts are not `public` answers 401 with the challenge, so the client retries with its credentials and its reads are authorized and attributed per principal ([formats/nuget.md](formats/nuget.md) R-NUGET-012). A `public` repository answers without a challenge, so its reads are anonymous. |
 
 FMT-013 is MVP for its npm and NuGet rows, which the first two rows and the last row settle. The
 other rows of FMT-013 keep their format's priority and are specified on their format pages
@@ -3025,35 +3076,23 @@ Acceptance criteria:
 
 ## Anonymous access and abuse protection
 
-### R-AUTH-037 · Anonymous access
+### R-AUTH-037 · Requests without a credential
 Priority: **MVP** · Covers: IAM-005, AUTHN-036, PKG-NUGET-016
 
-**The anonymous principal.** A built-in principal named `anonymous` (kind `anonymous`) always
-exists. It cannot be deleted, cannot hold tokens or sessions, and cannot be a group member.
+**The anonymous subject.** A request that presents no credential at all runs as `anonymous`. A built-in principal row of the
+kind `anonymous` exists as its actor; it cannot be deleted, cannot hold tokens or sessions, cannot be a group member, and no
+policy entry, role binding, project membership or owner record may name it ([authorization.md](authorization.md)
+R-AUTHZ-003, Q-AUTHZ-279). There is no principal `authenticated` any more: the level `internal` reads for every internal user
+(R-AUTHZ-030).
 
-**The `authenticated` principal.** A second built-in principal, named `authenticated` (kind
-`authenticated`), always exists:
+**What it reads.** Exactly what a `public` visibility level admits ([authorization.md](authorization.md) R-AUTHZ-033,
+R-AUTHZ-035). There is no runtime switch and no YAML ceiling of its own: the switch `anonymousAccess`, its ceiling
+`auth.anonymous.allowed` and the repository field `requireAuthentication` are gone
+([Q-AUTH-232](#q-auth-232--the-default-endpoints-authanonymous-is-the-operators-ceiling-of-public-content-and-the-runtime-switch-goes)).
+The operator's ceiling is the endpoint's `auth.anonymous` ([endpoints.md](endpoints.md) R-EP-010): on an endpoint where it is
+`false` no request becomes anonymous, and while the default endpoint's is `false` no level can be set to `public`.
 
-- It cannot be deleted or renamed, holds no tokens or sessions, and cannot be a group member.
-- It is part of the principal set of user sessions and personal access tokens only. It is never
-  part of the principal set of service-account tokens, CI tokens or anonymous requests.
-- The anonymous switches below do not affect it.
-
-Its grant rules (`read` only, no roles, no project membership, no ownership, not grantable by
-delegated managers or Owners of projects) are in [authorization.md](authorization.md) R-AUTHZ-030.
-
-**Enabling anonymous access.** Anonymous access is off by default. It takes both of these:
-
-- the YAML ceiling `auth.anonymous.allowed` (the operator's decision; default true);
-- the runtime switch `anonymousAccess` (the administrator's decision, R-AUTH-040; default
-  false).
-
-If the ceiling is false, the switch cannot be enabled and is treated as off.
-
-**Effect when enabled.** A request with no credential at all runs as `anonymous`, with exactly
-the grants that policies give that principal ([authorization.md](authorization.md)).
-
-**Hard limits.** These hold regardless of policies:
+**Hard limits.** These hold whatever the levels say:
 
 - `anonymous` never passes unsafe methods on `/api/v1/…`, read on the unescaped path the router routes by, so
   `POST /api/v%31/…` is refused like `POST /api/v1/…`; the always-open routes below are matched on the path as
@@ -3063,16 +3102,13 @@ the grants that policies give that principal ([authorization.md](authorization.m
 
 **Challenges:**
 
-- If `anonymous` lacks read access to the addressed repository, the answer is 401 with the
-  challenge of R-AUTH-002, never 403 or 404. Clients then send their configured credentials.
+- If no `public` level admits the read of the addressed repository, the answer is 401 with the
+  challenge of R-AUTH-002, never 403 or 404. Clients then send their configured credentials. This is
+  how a NuGet client, which sends credentials only after a 401, is made to authenticate on a
+  repository whose artifacts are not `public` (PKG-NUGET-016).
 - The same 401 is given for a project or repository key that does not exist, so unauthenticated
   callers cannot probe project or repository names.
-- Inside a repository that `anonymous` may read, a missing package is 404.
-- The repository field `requireAuthentication` (R-REPO-004 in
-  [repositories-and-proxy.md](repositories-and-proxy.md); PKG-NUGET-016) overrides anonymous
-  access for that repository: anonymous requests get the 401 challenge even where `anonymous`
-  holds `read`. There is no per-repository switch in the other direction; anonymous access
-  always needs both switches above (R-AUTH-033, FMT-013).
+- Inside a repository whose artifacts are `public`, a missing package is 404.
 
 **Always unauthenticated.** These endpoints are always reachable without a credential:
 
@@ -3089,18 +3125,21 @@ the grants that policies give that principal ([authorization.md](authorization.m
   screen (Q-AUTH-19);
 - whatever [api-and-ui.md](api-and-ui.md) declares public, for example the OpenAPI document.
 
-**Switching it off.** Turning anonymous access off takes effect on every replica within the
-revocation bound of R-AUTH-023, because the runtime setting is a cached row invalidated through
-the change area `auth`.
+**Closing it.** Lowering a level takes effect on every replica within the bound of R-AUTHZ-028, because levels are part of
+the compiled grant index ([authorization.md](authorization.md) R-AUTHZ-036).
+
+**What the UI and the read operations learn.** `GET /api/v1/auth/login-options` reports `publicContent` (R-AUTH-009). The
+management API's reads that serve every caller (the format list, the guides, the manual, R-API-053, R-API-054) serve the
+anonymous subject while `publicContent` is true and answer 401 otherwise.
 
 Acceptance criteria:
 
-- With anonymous access off, `curl -si https://trove.test/api/npm/web/npm-all/lodash` gets 401.
-- With anonymous access on and a policy granting `anonymous` read on `web/npm-all`, the same call
-  gets 200. `curl -si https://trove.test/api/npm/web/no-such-repo/lodash` and
+- With every level `private`, `curl -si https://trove.test/api/npm/web/npm-all/lodash` gets 401.
+- With project `web` and the artifacts of `npm-all` and its members `public`, the same call gets 200.
+  `curl -si https://trove.test/api/npm/web/no-such-repo/lodash` and
   `curl -si https://trove.test/api/npm/no-such-project/npm-all/lodash` get 401, not 404.
-- `curl -X POST https://trove.test/api/v1/projects/web/repositories` without credentials gets 401 even if
-  a policy grants `anonymous` `manage`, and so does `curl -X POST https://trove.test/api/v%31/projects/web/repositories`.
+- `curl -X POST https://trove.test/api/v1/projects/web/repositories` without credentials gets 401 whatever the levels, and so
+  does `curl -X POST https://trove.test/api/v%31/projects/web/repositories`.
 
 ### R-AUTH-038 · Brute-force protection and rate limiting
 Priority: **MVP** · Covers: IAM-042, ADMAPI-012, ADMAPI-050
@@ -3333,7 +3372,7 @@ token with `admin: true`; `If-Match` with the `ETag` of the `GET`, Q-AUTH-50) ac
 
 ```json
 {
-  "anonymousAccess": false,
+  "newUsersExternal": false,
   "tokens": {
     "pat": {"defaultTTLSeconds": 7776000, "maxTTLSeconds": 31536000},
     "sat": {"defaultTTLSeconds": 7776000, "maxTTLSeconds": 31536000},
@@ -3346,11 +3385,13 @@ token with `admin: true`; `If-Match` with the `ETag` of the `GET`, Q-AUTH-50) ac
 
 - Each value must be at most its YAML ceiling, and each default at most its maximum. Otherwise
   400 `exceeds_ceiling` or 400 `default_above_maximum`.
-- Enabling anonymous access while the ceiling forbids it answers 409 `anonymous_not_allowed`.
+- `newUsersExternal` (default `false`) is the `external` flag every user created later starts with (R-AUTH-044); it changes
+  no existing user.
 - Every change writes `settings.auth.changed` with the before and after values, and records
   itself in the change area `auth` in the same transaction, so every replica applies it within
-  the revocation bound of R-AUTH-023. Its journal entry carries `anonymousAccess` and the two runtime maxima
-  (`tokens.pat.maxTTLSeconds`, `tokens.sat.maxTTLSeconds`) before and after (R-AUTH-041).
+  the revocation bound of R-AUTH-023. Its journal entry carries the two runtime maxima
+  (`tokens.pat.maxTTLSeconds`, `tokens.sat.maxTTLSeconds`) before and after (R-AUTH-041); `newUsersExternal` decides only
+  users created later and is not part of it.
 
 The declarative configuration-as-code file (P1,
 [operations-and-observability.md](operations-and-observability.md)) may set these values. It
@@ -3361,7 +3402,7 @@ Data model:
 ```sql
 CREATE TABLE auth_settings (
   singleton            boolean     PRIMARY KEY DEFAULT true CHECK (singleton),
-  anonymous_access     boolean     NOT NULL DEFAULT false,
+  new_users_external   boolean     NOT NULL DEFAULT false,      -- R-AUTH-044; migration 00072 drops anonymous_access
   pat_default_ttl      interval,   -- NULL = YAML value
   pat_max_ttl          interval,
   sat_default_ttl      interval,
@@ -3375,9 +3416,9 @@ CREATE TABLE auth_settings (
 Acceptance criteria:
 
 - `PATCH` with `maxTTLSeconds` above the YAML ceiling gets 400 `exceeds_ceiling`.
-- Switching `anonymousAccess` on takes effect for anonymous requests on every replica within
-  the revocation bound, and one audit event records the change. Switching it off takes effect
-  within the same bound with Valkey stopped.
+- `PATCH` with `{"anonymousAccess": true}` answers 400: the member does not exist (R-API-003).
+- Setting `newUsersExternal` to `true` records one `settings.auth.changed`; the next first login creates an external user,
+  and every user that existed keeps its flag.
 
 ### R-AUTH-041 · Authentication audit events
 Priority: **MVP** · Covers: OPS-022, OPS-023
@@ -3420,6 +3461,7 @@ or authorization codes.
 | `cli_login.approved`, `cli_login.denied` | R-AUTH-034, R-AUTH-036 | yes |
 | `cli_login.poll_refused` | R-AUTH-034 address binding, with the refused and the requesting address | yes, once per change of the refused address within a login, decided under the row's lock (R-AUTH-034) |
 | `settings.auth.changed` | R-AUTH-040 | yes |
+| `user.external_changed` | R-AUTH-044: the user's ID and name, `external` before and after | yes |
 
 **Revocation journal (MVP).** A database restore to time *t* undoes every access removal made
 after *t* (H-37 in [ha-and-helm.md](ha-and-helm.md)). The events below are therefore flagged
@@ -3443,7 +3485,8 @@ is MVP. `trove admin post-restore` re-applies it after a platform restore (Q-HA-
 | `bastion.disabled`, `bastion.deleted` | The registration's principal ID and name ([bastion.md](bastion.md) R-BAS-004, Q-BAS-145) | Disable the registration |
 | `group.members.changed` | The group, and the removed memberships, each with its member and source (`manual`, `auto`, `scim`) | Remove each removed membership with its source |
 | `user.groups.synced` | The user, and the removed memberships, each with its group and source `oidc:<providerId>` | Remove each removed membership with its source |
-| `settings.auth.changed` | On every change: `anonymousAccess` before and after, and `tokens.pat.maxTTLSeconds` and `tokens.sat.maxTTLSeconds` before and after (`null` is the YAML value); the defaults and the expiry notice are not part of the entry | Update rule with the comparators below, value by value ([Q-AUTH-207](#q-auth-207--the-token-lifetime-maxima-are-journaled-and-the-replay-lowers-each-to-the-smaller-value)) |
+| `settings.auth.changed` | On every change: `tokens.pat.maxTTLSeconds` and `tokens.sat.maxTTLSeconds` before and after (`null` is the YAML value); the defaults, the expiry notice and `newUsersExternal` are not part of the entry | Update rule with the comparators below, value by value ([Q-AUTH-207](#q-auth-207--the-token-lifetime-maxima-are-journaled-and-the-replay-lowers-each-to-the-smaller-value)) |
+| `user.external_changed` | Principal ID and username; `external` before and after (R-AUTH-044) | Update rule with the comparator below: set the flag, never clear it |
 
 - **Replay never deletes a user or service account.** A replayed deletion disables the principal,
   which already makes its tokens fail with `principal_disabled` (R-AUTH-016, R-AUTH-020), and
@@ -3453,11 +3496,10 @@ is MVP. `trove admin post-restore` re-applies it after a platform restore (Q-HA-
   of the two membership events, including `PATCH /api/v1/users/{username}/groups` (as
   `group.members.changed`) and SCIM group changes. Added memberships are not part of the entry and
   are never replayed.
-- **Comparator for the anonymous-access switch.** `narrows(current, after)` is true when
-  `after.anonymousAccess` is `false` (off narrows on) or equals `current.anonymousAccess`, and
-  false when `after` is `true` while `current` is `false`. Replay can therefore switch anonymous
-  access off but never on: an entry that switched it on is skipped under case 2 of R-HA-054,
-  whatever its journaled before-state says.
+- **Comparator for the external flag** (R-AUTH-044). `narrows(current, after)` is true when `after.external` is `true`
+  (external narrows internal) or equals the current flag of the user of the journaled ID, and false when `after` is `false`
+  while the current flag is `true`. Replay can therefore set the flag but never clear it; an entry that cleared it is skipped
+  under case 2 of R-HA-054.
 - **Comparator for the auto-join flag** (R-AUTH-019). The same order: `narrows(current, after)` is
   true when `after.autoJoin` is `false` or equals the current flag. Replay clears the flag of the
   group of the journaled ID and never sets it; the group's name and description are not replayed.
@@ -3470,7 +3512,7 @@ is MVP. `trove admin post-restore` re-applies it after a platform restore (Q-HA-
   when `after` is not `null` and at most `current`, where `null` stands for the YAML value and is the longest. Replay sets each
   maximum to the smaller of its current and its journaled after-value and leaves a value that would grow; with a total order
   case 3 of R-HA-054 cannot occur. A runtime default above the new maximum is lowered to it, so the default never exceeds the
-  maximum (R-AUTH-040). The parts of the entry (the anonymous switch, each maximum) are read independently: a part that is
+  maximum (R-AUTH-040). The parts of the entry (each maximum) are read independently: a part that is
   missing, or holds a maximum below 60 seconds (the least the API accepts) or above 100 years (`max=876000h`, the bound of
   `auth.tokens.pat.max_ttl` and `auth.tokens.sat.max_ttl` and of the settings API, so the producer never writes what the
   reader rejects), narrows nothing and takes no other part with it; an entry with no readable part is malformed.
@@ -3485,9 +3527,9 @@ is MVP. `trove admin post-restore` re-applies it after a platform restore (Q-HA-
   transaction of the change, so enabling a restored principal again brings none of its tokens back.
   The events and their journal rows are written in batches, at a fixed number of statements for any
   number of tokens (Q-AUTH-198).
-- **Not journaled.** The break-glass account's `enabled` state, the YAML ceilings of R-AUTH-026 and
-  `auth.anonymous.allowed` live in the configuration file, not in PostgreSQL, so a restore does not
-  change them. The runtime default lifetimes and the expiry notice bound nothing a caller can ask for (a request may name any
+- **Not journaled.** The break-glass account's `enabled` state, the YAML ceilings of R-AUTH-026 and the
+  endpoints' `auth.anonymous` live in the configuration file, not in PostgreSQL, so a restore does not
+  change them; `newUsersExternal` decides only users created later. The runtime default lifetimes and the expiry notice bound nothing a caller can ask for (a request may name any
   lifetime up to the maximum), and a profile change of `email` or `displayName` matches no identity (R-AUTH-007).
 
 **Metrics.** Proposed names, which the operations page may rename:
@@ -4318,7 +4360,7 @@ migration `00007_identity.sql` indexes both columns where they are set.
 
 ### Q-AUTH-16 · Principal integrity enforced in the database
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by [Q-AUTH-233](#q-auth-233--the-built-in-row-of-authenticated-goes-the-row-of-anonymous-stays-as-an-actor)**: only the built-in row of `anonymous` remains, and the database refuses every grant that names it.
 
 R-AUTH-016 to R-AUTH-020 and R-AUTHZ-010 state rules that a foreign key cannot express: the
 built-in principals `anonymous` and `authenticated` exist once and cannot be deleted or renamed;
@@ -4363,7 +4405,7 @@ and `cli_login` together (R-AUTH-038), and `session-cleanup` deletes the expired
 
 ### Q-AUTH-18 · The journal entry of `settings.auth.changed`
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by [Q-AUTH-232](#q-auth-232--the-default-endpoints-authanonymous-is-the-operators-ceiling-of-public-content-and-the-runtime-switch-goes)**: the switch `anonymousAccess` is gone; the entry is still written on every change and carries the two token maxima.
 
 R-AUTH-041 flags `settings.auth.changed` for the revocation journal "only when the change sets
 `anonymousAccess`". The registry rule of R-OPS-014 makes an entry of a type that one page owns alone
@@ -4387,7 +4429,7 @@ type as `required` and `token.SettingsStore.Update` always supplies the entry.
 
 ### Q-AUTH-19 · Which unauthenticated requests the stage lets through
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by [Q-AUTH-232](#q-auth-232--the-default-endpoints-authanonymous-is-the-operators-ceiling-of-public-content-and-the-runtime-switch-goes)**: there are no anonymous switches; a request without a credential that is not on the fixed list reaches the decision point as the anonymous subject, where the endpoint admits it, and the levels decide it.
 
 R-AUTH-001 item 4 makes a request without a credential anonymous "if R-AUTH-037 allows it", and
 R-AUTH-037 lists the endpoints that are always reachable, "whatever api-and-ui.md declares public".
@@ -4818,7 +4860,7 @@ session shows; the UI shell shows the groups of the principal (R-API-021).
 
 ### Q-AUTH-45 · The settings document can be sent back
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Changed by [Q-AUTH-232](#q-auth-232--the-default-endpoints-authanonymous-is-the-operators-ceiling-of-public-content-and-the-runtime-switch-goes)**: the runtime values at the top are `newUsersExternal` and `tokens`.
 
 R-AUTH-040 lists three groups for `GET` and a flat body for `PATCH`.
 
@@ -5798,6 +5840,86 @@ Context: a token with `admin: true` carries administrator power only while its o
 **Security note:** a holder of `tokens:read` learns which token owners are administrators; a holder of `identities:read` already learned it from the user list. See [H-836](#h-836--tokensread-shows-which-owners-are-administrators).
 
 **Applied in the spec:** R-AUTH-020, R-AUTH-028, [openapi.yaml](../../api/openapi.yaml) (`Token`, `ServiceAccount`). Code: `Manager.AdminHolders` and the query `IdentityAdminHolderIDs` ([identity.sql](../../internal/meta/postgres/queries/identity.sql)), `ownerAdmins` in [tokens_api.go](../../internal/api/v1/tokens_api.go). Tests: `TestQ_AUTH_209_TheRecordsStateWhetherTheOwnerIsAnAdministrator` in [admin_state_test.go](../../test/integration/identity/admin_state_test.go).
+
+### Q-AUTH-230 · The external flag is an attribute of the user, set by an administrator and resolved with the user's status and groups
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. That
+trove has a user flag set by an administrator, as GitLab has it, is the owner's decision of 2026-11-11; the options below decide
+its form.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A column of `app_user`, written by `identities:write`, resolved by the stage with status and groups (chosen) | R-AUTH-044 | As GitLab; one place to look; it takes the path a disable takes, so its bound is the revocation bound; a job re-reads it with the groups | Set by hand for each user (H-882) |
+| (b) Groups marked external | A user in such a group is external | One flag for many people; the IdP's group claim can carry it | Not what the owner asked; a user leaves "external" by leaving a group, which the IdP decides |
+| (c) Set from an identity-provider claim at every login | Automatic | No administrator step | The flag follows the IdP's mapping, not trove's administrator, and a token used between logins keeps the old value |
+
+**Choice:** (a).
+
+**Rationale:** the owner chose the GitLab user flag. Its value belongs where the user's status lives, and the stage already
+resolves status and groups per request from the principal cache, so the flag reaches authorization with the same freshness as a
+disable. (c) stays possible later as a source of the same column. The development agent would revisit this if partners are
+onboarded through the same identity provider in numbers that make the hand-set flag a burden; `newUsersExternal` (Q-AUTH-231)
+covers the first step.
+
+**Applied in the spec:** R-AUTH-044, R-AUTH-016 (`external`, the API, the data model), R-AUTH-041;
+[authorization.md](authorization.md) R-AUTHZ-030.
+
+### Q-AUTH-231 · A new user takes the installation's `newUsersExternal`, whatever created it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A runtime setting `newUsersExternal` of the authentication settings, default `false` (chosen) | GitLab's "new users set to external" | An installation whose identity provider serves partners closes the window between a first login and the administrator's flag; small | One more setting |
+| (b) Every new user internal | No setting | Simplest | Between a partner's first login and the flag, the partner reads every internal repository |
+| (c) Every new user external | No setting, the other default | Fail closed | Every employee needs an administrator before reading anything internal |
+
+**Choice:** (a), on `PATCH /api/v1/settings/auth` (R-AUTH-040), applied by every path that creates a user: the first OIDC login,
+SCIM and `POST /api/v1/users` without `external`.
+
+**Rationale:** the default `false` matches GitLab and keeps the usual installation, where the identity provider holds employees,
+usable on day one; the setting gives the other installations a fail-closed start. The development agent would revisit this if
+GitLab's internal-users email pattern is needed, which would be a second input of the same choice.
+
+**Applied in the spec:** R-AUTH-040, R-AUTH-044, R-AUTH-016.
+
+### Q-AUTH-232 · The default endpoint's `auth.anonymous` is the operator's ceiling of public content, and the runtime switch goes
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Drop `auth.anonymous.allowed` and `anonymousAccess`; the default endpoint's `auth.anonymous` is the ceiling (chosen) | `public` cannot be set while the default endpoint admits no request without a credential (409 `public_not_allowed`) | One key for "can anybody reach this installation without a credential"; it already decides every endpoint; no runtime switch beside the levels | An operator who wants anonymous requests for the setup endpoints only cannot have them without allowing `public` |
+| (b) Keep `auth.anonymous.allowed` as the ceiling of `public` | Renamed role of the old key | Familiar | Two keys that both decide whether a request without a credential is served |
+| (c) Keep the runtime switch as a master switch | The administrator turns all public content off at once | One click to close | The second mechanism the owner ruled out (Q-AUTHZ-263) |
+
+**Choice:** (a). `GET /api/v1/settings/visibility` reports `publicAvailable` and lists the objects still set to `public` while it is
+false; `login-options` reports `publicContent` in place of `anonymousAccess`.
+
+**Rationale:** the endpoint's flag is the operator's decision about the door, and the levels are the administrator's decision
+about the content; together they say everything the switch and its ceiling said. Closing all public content at once is lowering
+the projects that are public, which is what an administrator would audit anyway. The development agent would revisit this if an
+operator needs anonymous access on the default endpoint for something that is not content.
+
+**Applied in the spec:** R-AUTH-037, R-AUTH-040, R-AUTH-009; [authorization.md](authorization.md) R-AUTHZ-003, R-AUTHZ-033;
+[endpoints.md](endpoints.md) R-EP-010.
+
+### Q-AUTH-233 · The built-in row of `authenticated` goes, the row of `anonymous` stays as an actor
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Delete `authenticated` and its kind; keep `anonymous` as the actor's row, refused by every granting table (chosen) | Migration `00073_principal_builtins.sql` | The stage keeps its fixed actor ID; nothing that records an actor changes; nothing can grant to either | A row that can hold nothing |
+| (b) Delete both | No built-in row | Smallest table | Every place that records the actor of a request without a credential needs a new form |
+| (c) Keep both, refuse them in the API | The rows stay, the API refuses | No migration | A database writer (replay, configuration as code) could still write a grant |
+
+**Choice:** (a), with the guard `AI009` ([authorization.md](authorization.md) Q-AUTHZ-279).
+
+**Rationale:** the anonymous row is the identity of an actor, not a grant target, and that use stays; `authenticated` has no use
+left. The development agent records no revisit condition.
+
+**Applied in the spec:** R-AUTH-016, R-AUTH-037.
 
 ## What this does not cover
 

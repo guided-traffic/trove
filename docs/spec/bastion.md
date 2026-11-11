@@ -29,7 +29,7 @@ served, and takes as much load as possible off the main installation. It covers:
 | Topic | Owner |
 |---|---|
 | Roles, listeners, middleware chain, client address, change log, limiters, `FlightLock`, TLS reload, versioning | [architecture.md](architecture.md) R-ARCH-001, R-ARCH-005, R-ARCH-006, R-ARCH-018, R-ARCH-024, R-ARCH-025, R-ARCH-033 to R-ARCH-035 |
-| Token format, storage, revocation bound, lifetime, revocation, failed-credential throttle, anonymous access | [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-022, R-AUTH-023, R-AUTH-026, R-AUTH-029, R-AUTH-037, R-AUTH-038 |
+| Token format, storage, revocation bound, lifetime, revocation, failed-credential throttle, requests without a credential | [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-022, R-AUTH-023, R-AUTH-026, R-AUTH-029, R-AUTH-037, R-AUTH-038 |
 | Principals, virtual repositories, populate right, decision point, hidden existence, read shapes, revocation journal | [authorization.md](authorization.md) R-AUTHZ-002, R-AUTHZ-008, R-AUTHZ-009, R-AUTHZ-015, R-AUTHZ-016, R-AUTHZ-031 |
 | The default endpoint, its hosts and credentials, response base URL | [endpoints.md](endpoints.md) R-EP-001, R-EP-003, R-EP-010 |
 | Streaming download, conditional requests answered from PostgreSQL, verifying reader | [storage.md](storage.md) R-STOR-012, R-STOR-013 |
@@ -201,7 +201,8 @@ Priority: **MVP** · Covers: DIST-024
   `/etc/trove/trove.yaml` and the mounted Secrets (R-BAS-046). The Bastion has no runtime settings, no settings API and no
   setting read from the main installation; a change of a value is a rollout.
 - What the Bastion learns from the main installation is state of the main installation, not configuration of the Bastion:
-  whether anonymous access is on, whether downloads are recorded, the main installation's interface version (R-BAS-010).
+  whether it serves anonymous reads at all (`anonymousReads`), whether downloads are recorded, the main installation's interface
+  version (R-BAS-010).
 - The two exceptions to "a change is a rollout" are file reloads of material the chart mounts: the Bastion token (R-BAS-006)
   and the TLS material (R-BAS-044), both picked up without a restart.
 
@@ -247,8 +248,9 @@ Priority: **MVP** · Covers: DIST-025
   `bastion:<name>`, name `^[a-z][a-z0-9-]{0,19}$` ([authorization.md](authorization.md) R-AUTHZ-002). It holds no grants, no
   roles, no group memberships and no package ownership: a policy entry, a role binding, an owner record or a membership that
   names it answers `422 principal_not_allowed` ([Q-BAS-60](#q-bas-60--a-bastion-registration-is-refused-by-every-write-path-with-one-top-level-422-principal_not_allowed)).
-  It is never part of `authenticated` (R-AUTHZ-030): its token is refused by every route that could admit it, and the decision point
-  gives the kind `bastion` an empty principal set (no `authenticated`, no grant, no role), should any route ever decide for it. At most
+  It is never internal ([authorization.md](authorization.md) R-AUTHZ-030): its token is refused by every route that could admit it,
+  and the decision point gives the kind `bastion` an empty principal set (no grant, no role, no level but `public`), should any
+  route ever decide for it. At most
   `bastions.max_registrations` registrations exist. A registration can be disabled, which refuses its tokens like a disabled
   service account's ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-020), and deleted, which revokes
   them.
@@ -450,6 +452,11 @@ installation's ingress or its Service.
   marking is added. A request whose Bastion token is invalid answers `401 bastion_token_invalid`; one whose interface version
   differs answers `400 bastion_interface_mismatch` (R-BAS-009). Both are problem details of the management API, also on a
   package route, because they concern the Bastion, never the caller; the Bastion never passes them on (R-BAS-027).
+- **A recognized forward is never internal.** The recognition marks the request, and the subject the decision point decides on
+  carries `ViaBastion: true` (set by the one conversion of the edge, like the endpoint); the check of R-BAS-011 decides its
+  caller with the same mark. Such a subject never reads by the level `internal`, whoever its user is: it reads what its grants
+  and roles give and what is `public` ([authorization.md](authorization.md) R-AUTHZ-030,
+  [Q-BAS-148](#q-bas-148--a-request-through-a-bastion-never-reads-by-the-level-internal)).
 - `Trove-Bastion-Authorization` is redacted like `Authorization` in every log, span and support bundle (R-OPS-013), and the
   main installation never echoes a `Trove-Bastion-*` request header.
 - The operations are in the OpenAPI document under the tag `bastion`, marked `x-trove-bastion-interface: <n>` and declared
@@ -530,7 +537,7 @@ after every reconnect, and after a feed entry of the kind `settings` (R-BAS-015)
   "bastion": {"name": "partners", "tokenId": "0192f1c4-…", "tokenExpiresAt": "2027-11-02T00:00:00Z"},
   "installation": {"baseUrl": "https://trove.example.com", "release": "0.14.0"},
   "responseBaseUrl": "https://packages.example.com",
-  "anonymousAccess": false,
+  "anonymousReads": false,
   "recordDownloads": true,
   "feed": {"cursor": "MjAyNi0xMS0wMlQxMDowMDowMFp8MDE5MmYx…"},
   "serverTime": "2026-11-02T10:00:00.123Z"
@@ -544,7 +551,10 @@ after every reconnect, and after a feed entry of the kind `settings` (R-BAS-015)
   requires it to equal its own `server.base_url`; otherwise it logs `bastion base URL not honoured by the main installation`,
   sets `trove_bastion_base_url_mismatch 1` and treats the main installation as unreachable, so that no client ever receives a
   document with the main installation's URLs from the Bastion.
-- `anonymousAccess` is the effective anonymous switch of R-AUTH-037 (the YAML ceiling and the runtime setting). `recordDownloads`
+- `anonymousReads` is true when the main installation serves any read without a credential: its default endpoint admits such
+  requests (`endpoints.default.auth.anonymous`) and the artifacts of at least one repository are `public`
+  ([authorization.md](authorization.md) R-AUTHZ-033); it is `publicContent` of R-AUTH-009, read from the grant index of the
+  answering replica ([Q-BAS-150](#q-bas-150--the-handshake-reports-whether-the-main-installation-serves-anonymous-reads-at-all)). `recordDownloads`
   is `audit.record_downloads` (R-BAS-039). `feed.cursor` is the feed position at the time of the answer (R-BAS-015).
 - The main installation records the last contact of the registration (time, client address, `release` from `User-Agent`,
   interface version, `responseBaseUrl`, replica) at most once a minute per replica, and writes `bastion.contact` (asynchronous)
@@ -585,8 +595,8 @@ content is cached and no fetch is needed (R-BAS-022, R-BAS-023).
 - `credential` is the token string the caller presented (R-BAS-019), or `null` for an anonymous caller. The main installation
   runs R-AUTH-023's validation on it, including the failed-credential throttle of R-AUTH-038 for `clientAddress`, and records
   `token.rejected` with `source_ip = clientAddress` as for a direct request.
-- `subject.kind`: `token` (valid; `expiresAt` is the token's expiry), `anonymous` (no credential; anonymous access on),
-  `anonymous_refused` (no credential; anonymous access off), `invalid` (malformed, unknown, expired, revoked, owner disabled:
+- `subject.kind`: `token` (valid; `expiresAt` is the token's expiry), `anonymous` (no credential; the main installation serves
+  anonymous reads), `anonymous_refused` (no credential; it serves none: `anonymousReads` is false), `invalid` (malformed, unknown, expired, revoked, owner disabled:
   R-AUTH-002 does not tell which, and neither does this answer), or `throttled` with `retryAfterSeconds` (the address is in
   R-AUTH-038's throttled mode and the credential is not exempt).
 - `repositories`: at most `bastions.check.max_repositories` qualified names `<projectKey>/<repoKey>`, the addresses the
@@ -613,7 +623,7 @@ bastions:                              # the main installation's section (the Ba
 Acceptance criteria:
 
 - `$FULL` on `["web/npm-all", "web/npm-partner"]` answers `full` and `none` with `404`; `$PART` on `["web/npm-all"]` answers `partial`;
-  a revoked token answers `"kind": "invalid"`; `null` with anonymous access off answers `anonymous_refused`.
+  a revoked token answers `"kind": "invalid"`; `null` while nothing is `public` answers `anonymous_refused`.
 - 400 checks with random well-formed tokens for one `clientAddress` within a minute: from the 301st on the answer is
   `throttled` (R-AUTH-038's default), and a direct request from that address is throttled too.
 
@@ -623,13 +633,15 @@ Priority: **MVP** · Covers: RMT-040
 The read shape of a subject on an addressed repository is computed by the decision point
 ([Q-BAS-28](#q-bas-28--what-reads-the-whole-repository-means)):
 
-- `full`: the subject may read every package and every version reachable through the repository, and every response of a read
-  route of that repository is the same for it as for every other `full` subject. For a local or remote repository: `ReadAll` of
+- `full`: the subject may read every package and every version reachable through the repository, and its wiki, and every response
+  of a read route of that repository is the same for it as for every other `full` subject. A subject that reads the artifacts in
+  full but not the wiki is `partial`: its documents lack the wiki members ([authorization.md](authorization.md) R-AUTHZ-034,
+  [Q-BAS-149](#q-bas-149--a-full-read-shape-includes-the-wiki-so-a-shared-document-never-carries-a-readme-to-a-caller-without-it)). For a local or remote repository: `ReadAll` of
   `authz.ReadScoper` (an unrestricted read grant or `content:bypass`, a token scope that does not narrow, the endpoint's
   exposure `all`), and for a remote repository additionally the populate right of R-AUTHZ-008. For a virtual repository: the
   gate `read` on the repository itself (R-AUTHZ-009 rule 1) and `full` on every member, recursively.
 - `none`: the subject may read nothing through the repository: no gate, `ReadNone` on every member, an anonymous subject on a
-  repository with `requireAuthentication` or anonymous access off, an unknown repository or project.
+  repository whose artifacts are not `public`, an unknown repository or project.
 - `partial`: every other case.
 
 The shape is the answer to the owner's "the main installation confirmed a full read of the repository" (Q-BAS-18): a `full`
@@ -746,7 +758,7 @@ Acceptance criteria:
   64 KiB of the upload body were read.
 - `npm audit` through the Bastion returns the main installation's answer.
 - 1,000 `PUT` requests to one path within a minute cause one probe to the main installation.
-- With anonymous access off, the probe of `npm publish` answers `403 bastion_read_only` with the main installation's URL through the
+- With nothing `public`, the probe of `npm publish` answers `403 bastion_read_only` with the main installation's URL through the
   real authentication stage, the probe of `npm audit` `204`, and no handler runs
   (`TestR_BAS_014_AProbeIsAnsweredThroughTheRealAuthenticationStage`).
 
@@ -764,8 +776,10 @@ the content events below ([Q-BAS-29](#q-bas-29--the-feed-reads-the-journals-even
 | `user.disabled`, `user.deleted`, `serviceaccount.disabled`, `serviceaccount.deleted` | `{"kind": "principal", "principals": [<ID>]}` |
 | `group.members.changed`, `user.groups.synced` | `principal` with every removed member |
 | `authz.role.unbound` of a user or service account | `principal` with that principal |
-| `group.deleted`, `authz.role.unbound` of a group, `authz.policy.deleted`, `authz.policy.updated`, `authz.settings.changed`, the `ci.issuer.*` and `ci.mapping.*` disables, deletions and updates, `endpoint.exposure.deleted` and `.updated` of the default endpoint | `{"kind": "grants"}`: every permission answer of every caller |
-| `settings.auth.changed` | `{"kind": "settings"}`, and `grants` when anonymous access was switched off |
+| `group.deleted`, `authz.role.unbound` of a group, `authz.policy.deleted`, `authz.policy.updated`, `authz.settings.changed`, the `ci.issuer.*` and `ci.mapping.*` disables, deletions and updates, `endpoint.exposure.deleted` and `.updated` of the default endpoint | `{"kind": "grants"}`: every permission answer of every caller; `authz.settings.changed` that changed `visibility.artifacts` yields `settings` as well |
+| `settings.auth.changed` | `{"kind": "settings"}` |
+| `authz.project.visibility_changed` | `{"kind": "settings"}`, so the Bastion asks the handshake for `anonymousReads` again, and `grants` when the level was lowered ([authorization.md](authorization.md) R-AUTHZ-036) |
+| `user.external_changed` | `principal` with the user when the flag was set: a request through a Bastion never reads by `internal` (Q-BAS-148), so this only drops answers that a later change of that rule would make wrong |
 | `npm.unpublish`, `package.deleted` | `{"kind": "content", "repositories": [<projectKey>/<repoKey>, …]}`: the repository and every virtual repository that includes it, recursively, at the time the feed is read, by their qualified names |
 | from M4b: `vulnerability.finding.status_changed` and `vulnerability.finding.reopened` with `block: set` ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-013) | `content` for the finding's repository and its virtual repositories |
 | `repository.moved` | `grants`: the repository left its project's roles and policies behind and changed its address ([Q-BAS-120](#q-bas-120--unassigning-a-repository-from-a-project-drops-every-permission-answer-and-every-journaled-event-is-classified), [repositories-and-proxy.md](repositories-and-proxy.md#r-repo-060--move-a-repository-to-another-project)) |
@@ -986,9 +1000,9 @@ without sessions:
 - **Before any request to the main installation:** a token that fails R-AUTH-022's syntax and checksum answers `401
   invalid_token` with the challenge of R-AUTH-002 for the path family and counts as a failed authentication (R-BAS-036). The
   types `pat`, `sat` and `cit` are accepted; `bst` and an unknown prefix answer the same `401` and count.
-- **Anonymous.** A request without a credential is anonymous exactly when the main installation admits anonymous requests
+- **Anonymous.** A request without a credential is anonymous exactly when the main installation serves anonymous reads
   (owner, [Q-BAS-12](#q-bas-12--anonymous-reads-as-on-the-main-installation-with-misses-absorbed-at-the-bastion)): with
-  `anonymousAccess: false` from the handshake the Bastion answers `401 credentials_required` with the challenge itself, without a
+  `anonymousReads: false` from the handshake the Bastion answers `401 credentials_required` with the challenge itself, without a
   request; before the first successful handshake the setting is not known and an anonymous request answers `503 main_unreachable`
   ([Q-BAS-99](#q-bas-99--a-replica-that-has-not-handshaken-answers-an-anonymous-request-503)); with `true` the anonymous caller's answers are kept under the key `anonymous`, shared by every anonymous caller, since
   the main installation's decision does not depend on the client address ([authorization.md](authorization.md) R-AUTHZ-029).
@@ -999,8 +1013,9 @@ Acceptance criteria:
 
 - `trv_pat_` with one flipped character answers `401` with `WWW-Authenticate: Basic realm="trove"` on `/api/npm/…`, and the
   main installation's counter records no request.
-- With anonymous access off at the main installation, 1,000 anonymous `npm view` within a minute cause no request to the main
-  installation after the handshake; after the administrator switches anonymous access on, the next anonymous request is
+- With nothing `public` at the main installation, 1,000 anonymous `npm view` within a minute cause no request to the main
+  installation after the handshake; after an administrator makes a project and one of its repositories `public`, the next
+  anonymous request is
   checked within `feed.poll_interval` plus 5 s.
 
 ### R-BAS-020 · Answers and their validity
@@ -1190,7 +1205,7 @@ bastion:
 
 Acceptance criteria:
 
-- Anonymous access on, `anonymous` a `full` reader of `npm-all`: 10,000 anonymous requests from 100 addresses for 100 random
+- `npm-all` and its members `public` in both parts, so the anonymous subject is a `full` reader of `npm-all`: 10,000 anonymous requests from 100 addresses for 100 random
   missing names within a minute cause at most one request per name and replica (plus one check per replica) to the main
   installation, and one per name with Valkey.
 - `$PART` asking for a missing name twice sends two requests to the main installation, and asking for a name that is cached but
@@ -1346,7 +1361,7 @@ The Bastion produces only these answers itself; every other body comes from the 
 
 | Status | Code | When |
 |---|---|---|
-| `401` | `invalid_token`, `credentials_required` | a malformed or refused credential (R-BAS-019), a kept `invalid` answer, anonymous access off |
+| `401` | `invalid_token`, `credentials_required` | a malformed or refused credential (R-BAS-019), a kept `invalid` answer, no anonymous reads at the main installation |
 | `404`, `403`, `401` | the code of the kept refusal | a read-shape answer `none` (R-BAS-022) |
 | `404` | `bastion_not_served` | a path outside the mirrored families (R-BAS-018) |
 | `405`, `413`, `421` | `method_not_allowed`, `payload_too_large`, `misdirected_request` | R-BAS-014, R-BAS-018 |
@@ -3774,7 +3789,7 @@ carries both. The development agent would revisit it if the owner wants a metric
 
 ### Q-BAS-68 · The feed advances over every event it consumed, is cut at event boundaries and resolves member names when it is read
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by [Q-BAS-150](#q-bas-150--the-handshake-reports-whether-the-main-installation-serves-anonymous-reads-at-all)**: `settings.auth.changed` yields `settings` only; a lowered project level yields `settings` and `grants` (R-BAS-015).
 
 | Option | What it means | For | Against |
 |---|---|---|---|
@@ -4453,7 +4468,7 @@ revisit this if the volume is ever shared by several pods or by a sidecar.
 
 ### Q-BAS-99 · A replica that has not handshaken answers an anonymous request 503
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Changed by [Q-BAS-150](#q-bas-150--the-handshake-reports-whether-the-main-installation-serves-anonymous-reads-at-all)**: the handshake member is `anonymousReads`; the rule for a replica that has not handshaken is unchanged.
 
 Context: R-BAS-019 admits an anonymous request exactly when the handshake said `anonymousAccess: true`. Before the first successful handshake of a process (a start
 while the main installation is down) the setting is not known.
@@ -5365,6 +5380,61 @@ this if an operator needs the number of writes to unrouted paths; it would be a 
 
 **Applied in the spec:** R-BAS-040; code: `engine.countReadOnly`, `TestR_BAS_040_AFreshAndAReplayedProbeAnswerRaiseTheSameReadOnlyCounter`.
 
+### Q-BAS-148 · A request through a Bastion never reads by the level `internal`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. The
+owner's task T-18 (2026-11-11) leaves open whether the Bastion's partners count as external.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A recognized forward and the check's caller carry `ViaBastion`, and the decision point never reads by `internal` for them (chosen) | The partners read what names them and what is `public`; an employee's personal token through the Bastion reads what names it and what is `public` | The internet-facing door never serves the organization's internal content to a token that a grant does not name; a leaked personal token is worth on the internet only what names its user; a Bastion's shared documents never mix internal readers with partners | An employee outside reads internal content only through the main installation's own door |
+| (b) Judge the caller as on the main installation | The Bastion is a channel | Employees read everything from outside | A leaked personal token reads every internal repository through an internet-facing cache |
+| (c) A setting per Bastion registration | Choose per door | Flexible | A third input of "internal" and a setting nobody reviews |
+
+**Choice:** (a). The partners' own credentials are service-account tokens of their projects (R-BAS-004's fixtures), which are never
+internal anyway ([authorization.md](authorization.md) Q-AUTHZ-268).
+
+**Rationale:** the Bastion exists to give external parties read access from the internet (R-BAS-001). "Internal" means everyone
+inside the organization, which is the audience a Bastion is not for. The mark costs one field on the subject set where the endpoint
+is set. The development agent would revisit this if the owner wants employees to use a Bastion for internal content.
+
+**Applied in the spec:** R-BAS-008, R-BAS-004; [authorization.md](authorization.md) R-AUTHZ-030.
+
+### Q-BAS-149 · A full read shape includes the wiki, so a shared document never carries a README to a caller without it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `full` needs the wiki as well; a caller who reads the artifacts in full but not the wiki is `partial` (chosen) | R-BAS-012 | The promise "every response is the same for every `full` subject" holds, since npm's full document differs by the wiki | An anonymous caller of a repository with `public` artifacts and a non-public wiki gets per-caller documents (shared among anonymous callers anyway, R-BAS-019) |
+| (b) A second shape `full-artifacts` | Share among those who read the same parts | More sharing | A new shape in the interface and the cache keys, for one difference |
+
+**Choice:** (a).
+
+**Rationale:** R-BAS-023 shares a document among `full` readers; a document with a README handed to a caller without the wiki
+would break R-AUTHZ-034. Anonymous answers are kept under one key already, so (a) costs nothing for the common case. The development
+agent would revisit this if partial readers with the same wiki answer dominate a Bastion's load.
+
+**Applied in the spec:** R-BAS-012.
+
+### Q-BAS-150 · The handshake reports whether the main installation serves anonymous reads at all
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `anonymousReads`: the default endpoint admits requests without a credential and some repository is `public` (chosen) | It replaces `anonymousAccess`; a feed entry of the kind `settings` makes the Bastion ask again | The Bastion still answers a flood of anonymous requests itself when nothing is public (R-BAS-019) | A level change reaches it one feed poll later |
+| (b) Always ask the check for the anonymous caller | No member | Exact | Every anonymous miss costs the main installation a check while nothing is public, which R-BAS-019 avoided |
+
+**Choice:** (a). The handshake's member changes and the feed gains the entries of R-BAS-015 for the levels, so the interface version
+rises from 1 to 2 (R-BAS-009) and `internal/bastion/iface/testdata/interface.txt` is regenerated with it.
+
+**Rationale:** the switch was useful to the Bastion because it let it refuse anonymous requests without asking; `anonymousReads` keeps
+that when nothing is public, and the per-repository answer comes from the check as before. The development agent records no revisit
+condition.
+
+**Applied in the spec:** R-BAS-010, R-BAS-011, R-BAS-015, R-BAS-019.
+
 ## What this does not cover
 
 ### H-382 · A volumetric attack on bandwidth is not absorbed by the Bastion
@@ -5440,7 +5510,7 @@ compromise of the Bastion's namespace, where the key, the Valkey credentials and
 
 Stage: R-BAS-025 and R-BAS-035. Subject: the availability of the Bastion for anonymous callers.
 
-Dormant until phase 5b; then live on a Bastion whose main installation allows anonymous access. Per-address limits and blocks do
+Dormant until phase 5b; then live on a Bastion whose main installation has `public` repositories. Per-address limits and blocks do
 not bound a flood spread over many addresses. The anonymous share of `max_concurrent` bounds what reaches the main installation,
 and authenticated callers keep their share, but legitimate anonymous callers wait or get `503 bastion_busy` while it lasts. What
 makes it real: a botnet against a public repository; the edge limit (R-BAS-038) and the network provider are the next lines.
@@ -5830,12 +5900,12 @@ at once; a lower `events_per_second` bounds it.
 ### H-469 · A probe admitted for routing runs any handler below the package families that does not tell the marking its route
 
 Stage: the authentication of a recognized probe (R-BAS-014, Q-BAS-118). Subject: what a holder of the Bastion token can run as the
-anonymous caller while anonymous access is off.
+anonymous caller while nothing is `public`.
 
 Dormant: every route below `/api/<format>/` and `/files/` today is the format dispatcher's or the raw file handler's, which call the
 marking stage's observer after the route match and before any decision, handler or body read, and a probe never passes that call. A
 handler mounted below those prefixes that does not call it would run for a probe as the anonymous caller - the decision point still
-refuses the anonymous caller everything anonymous access off forbids, but a handler that decides nothing would serve. What makes it
+refuses the anonymous caller everything that is not `public`, but a handler that decides nothing would serve. What makes it
 real: a new route below the package families outside the dispatcher; a test of the route table that every pattern below them is the
 dispatcher's or the raw file handler's would hold it.
 ### H-470 · The Bastion assumes the feed's default lookback when it keeps the IDs of applied entries

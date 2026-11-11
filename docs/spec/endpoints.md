@@ -184,7 +184,7 @@ server:
   #     wildcard_host: ""                 # default (proposed)
   #     host_roots: {}                    # default (proposed)
   #     surface: [ui, api, ci_exchange, packages, files]   # default (proposed)
-  #     auth: {token_types: [pat, sat, cit], bound_tokens_only: false, anonymous: true}   # default (proposed); anonymous: true defers to R-AUTH-037
+  #     auth: {token_types: [pat, sat, cit], bound_tokens_only: false, anonymous: true}   # default (proposed); anonymous: true lets the visibility levels decide (R-AUTH-037) and makes `public` available (R-AUTHZ-033)
   #     exposure: all                     # default (proposed)
   #     cache_fill: true                  # default (proposed)
   #     rate_limit_class: ""              # default (proposed): no endpoint class
@@ -712,8 +712,10 @@ lookup that a rule makes unnecessary:
    `invalid_token` on every endpoint it does not name. With `auth.bound_tokens_only: true`, an
    unbound token is rejected the same way.
 4. **Anonymous.** With `auth.anonymous: false`, no request on the endpoint becomes anonymous: a
-   request without a credential gets `401` with the challenge of R-AUTH-002. With `true`,
-   R-AUTH-037 decides as on the default endpoint.
+   request without a credential gets `401` with the challenge of R-AUTH-002. With `true`, such a request
+   is the anonymous subject and reads what a `public` level admits ([authorization.md](authorization.md) R-AUTHZ-003), within
+   the endpoint's exposure. The default endpoint's value is also the operator's ceiling of `public` content: while it is `false`
+   no level can be set to `public` (R-AUTH-037, [Q-EP-86](#q-ep-86--an-endpoints-anonymous-flag-is-the-door-the-levels-are-the-content-and-internal-is-not-bound-to-an-endpoint)).
 
 - A rejection never falls through to a lower-ranked credential or to anonymous (R-AUTH-001). Its
   answer is the `401` `invalid_token` of an unknown token, so it does not tell that the token is
@@ -722,8 +724,8 @@ lookup that a rule makes unnecessary:
 - Type and binding refusals do not count towards the failed-credential throttle of R-AUTH-038: the
   token is known, and the type refusal happens before any lookup.
 - The endpoint never adds a principal and never changes a principal set (R-AUTHZ-002).
-- Defaults: the default endpoint accepts sessions, PATs, SATs and CI tokens, unbound, and defers to
-  R-AUTH-037 for anonymous access, so R-AUTH-001 is unchanged there. A further endpoint accepts only
+- Defaults: the default endpoint accepts sessions, PATs, SATs and CI tokens, unbound, and admits requests without a credential
+  for the levels to decide, so R-AUTH-001 is unchanged there. A further endpoint accepts only
   service-account tokens bound to it, and no anonymous request (Q-EP-10).
 
 Acceptance criteria:
@@ -735,8 +737,8 @@ Acceptance criteria:
   answers `401` `credentials_required`, because the cookie is ignored and anonymous requests are
   off. On the default endpoint, the same cookie on `GET https://trove.example.com/api/npm/web/npm-local/@acme%2fsdk` (a
   `packages` pod) is ignored as well, and the request is decided as one without a credential.
-- Anonymous access on (R-AUTH-037) and `anonymous` granted `read` on `web/npm-customers`: an anonymous
-  `npm view @acme/sdk` succeeds on `default` and gets `E401` on `customers`.
+- With project `web` and the artifacts of `web/npm-customers` `public` and an exposure rule of `customers` on it: an anonymous
+  `npm view @acme/sdk` succeeds on `default` and gets `E401` on `customers`, whose `auth.anonymous` is `false`.
 - Each case increments `trove_endpoint_credentials_refused_total` with its reason.
 
 ### R-EP-011 · Endpoint-bound tokens
@@ -1859,8 +1861,9 @@ pseudo-code decides on `DecideOn(ctx, idx, sub, c)` and `Allowed` uses `sub.Endp
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-Context: R-EP-013 places the ceiling first in `Allowed`. In R-AUTHZ-015, `Decide` looks the repository up and refuses an
-anonymous request for a repository with `requireAuthentication` before `Allowed` runs, so on an endpoint with anonymous access
+Context (written before the visibility levels replaced `requireAuthentication`, Q-AUTHZ-263): R-EP-013 places the ceiling first
+in `Allowed`. In R-AUTHZ-015, `Decide` looked the repository up and refused an
+anonymous request for a repository with `requireAuthentication` before `Allowed` ran, so on an endpoint with anonymous access
 and exposure rules a missing repository (`404`) and a repository that requires authentication (`401`) would answer
 differently whatever the rules say.
 
@@ -2546,6 +2549,27 @@ the grant side (Q-AUTHZ-255).
 **Applied:** R-EP-012 (matching), R-EP-018; code `internal/authz/{exposure.go,exposure_service.go}`. Tests:
 `TestR_EP_018_TheViewDecidesAVersionOnItsFilesPath`, `TestR_EP_018_AVersionPathRuleHidesTheVersionFromNPMDocuments`.
 
+### Q-EP-86 · An endpoint's anonymous flag is the door, the levels are the content, and `internal` is not bound to an endpoint
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the visibility levels of [authorization.md](authorization.md) R-AUTHZ-033 replace the anonymous switch. An endpoint already
+says whether requests without a credential are admitted (`auth.anonymous`), and further endpoints carry exposure rules.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `auth.anonymous` admits the anonymous subject, the levels decide what it reads, the exposure bounds both; `internal` reads wherever the endpoint accepts the user's credential (chosen) | R-EP-010 | Each key keeps one meaning; a further endpoint with its defaults (bound service-account tokens, no anonymous requests) sees no `internal` content because none of its callers is internal | An administrator who gives a further endpoint `token_types: [pat]` and `exposure: all` opens `internal` content there |
+| (b) `internal` only on the default endpoint | A level bound to a door | Further endpoints never serve internal content | A new rule beside the exposure that says the same thing; a user's token behaves differently per endpoint |
+| (c) A per-endpoint list of the levels it serves | Configurable | Explicit | Three inputs for one decision |
+
+**Choice:** (a). The default endpoint's `auth.anonymous` is also the ceiling of `public` (Q-AUTH-232).
+
+**Rationale:** the exposure rules are already the ceiling of an outside audience on a further endpoint and bind every subject
+(R-EP-013); a level is a source of `read` like a grant, so the ceiling applies to it unchanged. The development agent would revisit
+this if further endpoints are configured with personal tokens in practice.
+
+**Applied in the spec:** R-EP-010; [authorization.md](authorization.md) R-AUTHZ-003, R-AUTHZ-035.
+
 ## What this does not cover
 
 ### H-57 · A further endpoint runs with every credential of a `web` replica
@@ -2588,10 +2612,10 @@ Live where the default endpoint checks no hosts (a binary run outside the chart,
 that clear `endpoints.default.hosts`) and an edge route, a LoadBalancer Service or a hand-written
 Ingress sends an external host to port 8080. Identification by listener then gives those requests
 the default endpoint's surface and no ceiling. Bound customer tokens are refused there (R-EP-010),
-so the exposure is limited to what anonymous access and unbound credentials reach on the default
+so the exposure is limited to what `public` levels and unbound credentials reach on the default
 endpoint. The chart renders the default endpoint's hosts whenever further endpoints exist, which
 turns such traffic into `421`, and the NetworkPolicy of port 8080 limits who reaches it. What makes it
-real: an edge misconfiguration together with anonymous access or an unbound token on the external
+real: an edge misconfiguration together with a `public` repository or an unbound token on the external
 side.
 
 ### H-60 · Package-level metadata reveals activity of hidden versions

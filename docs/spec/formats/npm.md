@@ -782,6 +782,13 @@ Priority: **MVP** · Covers: PKG-NPM-025, PKG-NPM-029, FMT-011
   `maintainers` lists the distinct principal names that published the versions present, by name and
   without e-mail; it is informational (ownership is R-AUTHZ-018). The versions and the `time` map
   are in SemVer order, and no version object carries a `readme` (Q-NPM-31).
+- **The README is wiki content** ([authorization.md](../authorization.md) R-AUTHZ-034). `readme` and `readmeFilename` are
+  present only for a caller who may read the wiki of the repository that supplies the version `latest` points to, asked
+  through `Host.WikiReadable`; for any other caller both members are absent and the rest of the document is unchanged
+  ([Q-NPM-87](#q-npm-87--a-caller-who-may-not-read-the-wiki-gets-the-full-document-without-readme-and-readmefilename)). The
+  rendition key and the `ETag` of R-NPM-013 carry that answer, so a cached document with the README never reaches a caller
+  without it, also on a virtual repository (the answer of the member that supplies `latest`). The abbreviated document
+  (R-NPM-011) has no README and is not affected.
 - An unknown package, or one without a live version, answers 404.
 
 Acceptance criteria:
@@ -791,6 +798,9 @@ Acceptance criteria:
   to another one, no session affinity), prints the new version in 100 of 100 runs, with Valkey
   running and with Valkey stopped.
 - `npm view @acme/ui readme` shows the README of the version tagged `latest`.
+- In a repository whose artifacts are `public` and whose wiki is `internal`, `npm view @acme/ui readme` without a credential
+  prints nothing and `npm install @acme/ui` succeeds; with an internal user's token the README is shown. The two callers get
+  different `ETag` values for the same document.
 - The full document of a package with 1,000 versions renders in under 200 ms on a miss and is
   served from cache in under 10 ms *(targets, proposed)*. Test note: `TestR_NPM_010_ThousandVersions`
   enforces these two targets, and 50 ms for a `304` of the same document, only with
@@ -5109,6 +5119,23 @@ version from a caller who cannot see it, and here the tag was readable when the 
 
 **Applied in the spec:** R-NPM-016 (the removal sentence). No code change: the rule as built (`tagsAfterRemoval` in
 [tags.go](../../../internal/formats/npm/tags.go)).
+
+### Q-NPM-87 · A caller who may not read the wiki gets the full document without `readme` and `readmeFilename`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Both members absent; the rendition key and the `ETag` carry the wiki answer (chosen) | R-NPM-010 | npm, pnpm and Yarn read a document without a README as a package without one; `npm install` and the abbreviated document are untouched | Two renditions of one document per wiki answer |
+| (b) An empty `readme` | `"readme": ""` | Same shape | npm prints an empty README as if the package had one; a cache shared across callers would mix the two |
+| (c) Refuse the full document | 404 for the whole document | Simple | `npm view`, `npm outdated` and every tool that reads the full document break for a caller who may install |
+
+**Choice:** (a). On a virtual repository the answer is the one of the member that supplies the version `latest` points to.
+
+**Rationale:** the owner's example ("artifacts public, wiki internal") demands that installing keeps working, and an absent member
+is what a package without a README looks like (Q-AUTHZ-271). The development agent records no revisit condition.
+
+**Applied in the spec:** R-NPM-010; [authorization.md](../authorization.md) R-AUTHZ-034.
 
 ## What this does not cover
 

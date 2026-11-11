@@ -200,7 +200,7 @@ Priority: **P1** · Covers: PKG-ANSIBLE-002
   `ansible-galaxy role install` with `server_list = local, virtual` skips it and takes the first server that lists `v1`
   (`RoleDistributionServer`, verified); a role install against a local repository alone fails with the client's own message that the
   v1 API is not available, and the guide says why (R-ANS-014, R-ANS-025).
-- The document needs `read` on the repository like every other route, so a repository without anonymous access answers 401 here and
+- The document needs `read` on the repository like every other route, so a repository whose artifacts are not `public` answers 401 here and
   the client reports the authentication failure at its first request, not a missing API.
 - A client that falls back to `<repo URL>api/` (when the first request fails for another reason) meets 404 on that path; the fallback
   therefore does not hide a first-request failure.
@@ -292,7 +292,8 @@ The Galaxy clients send a trove token in these forms; the stage accepts all four
   by the dispatcher's own match; the session cookie is not accepted on these routes either when the header is present.
 - A credential that is present and invalid is a rejection and never falls through to anonymous (R-AUTH-001). A 401 carries
   `WWW-Authenticate: Basic realm="trove"` (the path is below `/api/`), so a client that retries on a challenge sends Basic.
-- Anonymous access follows the endpoint's rule (R-AUTH-037) and the repository's read grant for the anonymous principal; an
+- Anonymous access follows the endpoint's rule (R-AUTH-037) and the repository's `public` artifacts level
+  ([authorization.md](../authorization.md) R-AUTHZ-033); an
   anonymously readable repository serves every `GET` route without a token and needs a token for `POST v3/artifacts/collections/`.
 - A token bound to another endpoint, of a type the endpoint does not accept, or scoped to a path or a package that the request is not
   in, is refused as for every format (R-EP-010, R-AUTHZ-005).

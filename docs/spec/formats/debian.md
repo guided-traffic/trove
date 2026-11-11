@@ -1411,7 +1411,8 @@ Priority: **P2** · Covers: PKG-DEB-010
 
 - The view adapter orders versions by dpkg order (`Compare`, R-DEB-002) and describes a version from its rows: the first line of
   `Description`, and as metadata the architectures, the coordinates, `Maintainer`, `Section`, `Priority`, `Installed-Size`,
-  `Homepage`, `Depends` and `Source`. There is no README.
+  `Homepage`, `Depends` and `Source`. There is no README, so the format has no wiki content
+  ([authorization.md](../authorization.md) R-AUTHZ-034) and a repository's wiki level decides nothing for it.
 - For a remote repository the screens show the versions whose files are stored, described from the parsed rows (R-DEB-023).
 - **The repository screen** ([api-and-ui.md](../api-and-ui.md) R-UI-021, Q-DEB-100 to Q-DEB-102): a local or virtual Debian repository
   has the tabs **Signing keys** (R-DEB-015, R-DEB-017, R-DEB-032: the list, the next key generated or imported, the promotion, the

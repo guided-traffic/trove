@@ -227,7 +227,7 @@ API:
 
 | Method and path | Response | Permission |
 |---|---|---|
-| `GET /api/v1/formats` | 200, list of format descriptors | any caller; anonymous where anonymous access is on |
+| `GET /api/v1/formats` | 200, list of format descriptors, each with `wiki` (whether the format has wiki content, [authorization.md](authorization.md) R-AUTHZ-034) | any caller; anonymous while `publicContent` is true ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-037) |
 
 ```json
 {
@@ -269,7 +269,7 @@ read (R-REPO-010) and the object body of configuration as code
 | `adminNotes` | Notes shown only to holders of `repositories:read-config` | `""` (≤ 8000 characters) | this page |
 | `includePatterns`, `excludePatterns` | R-REPO-005 | `[]` (everything), `[]` | this page |
 | `disabled` | Takes no part in resolution, download or deploy. Setting it records `repository.disabled`, journaled, so a restore keeps it set ([authorization.md](authorization.md) R-AUTHZ-031, Q-AUTHZ-238) | `false` | this page |
-| `requireAuthentication` | Anonymous requests are challenged even where anonymous read is granted | `false` | this page |
+| `visibility` | `{"artifacts": "<level>", "wiki": "<level>"}`, each `private`, `internal` or `public`: who reads the repository's artifacts and its wiki besides members and grants; never above the project's level, the wiki never above the artifacts. Stored in two columns, not in `config` ([Q-REPO-307](#q-repo-307--requireauthentication-goes-and-the-repository-document-shows-its-two-levels-as-one-member)) | both the lower of the installation's default and the project's level | [R-AUTHZ-033](authorization.md) |
 | `priorityMember` | R-REPO-022; local and remote only | `false` | this page |
 | `hideExistence` | `inherit`, `true`, `false` | `inherit` | [R-AUTHZ-017](authorization.md) |
 | `layout` | R-REPO-006, read-only | the format's layout | this page |
@@ -294,18 +294,20 @@ read (R-REPO-010) and the object body of configuration as code
 - `disabled: true` MUST make every package-protocol and `/files/` request to the repository answer
   404 `repository_disabled`, MUST remove it from virtual resolution (R-REPO-019) and MUST leave the
   management API working. The repository list shows it as inactive (R-REPO-012).
-- `requireAuthentication: true` MUST answer an anonymous request with 401 and the challenge of
-  [R-AUTHZ-016](authorization.md), even when the anonymous principal holds `read`. It is offered
-  for every format and class, not only the catalog's NuGet and Maven cases.
+- A request without a credential reads the repository only when its artifacts are `public`
+  ([R-AUTHZ-003](authorization.md)); otherwise it gets 401 and the challenge of R-AUTHZ-016, so a client that sends
+  credentials only after a 401 (NuGet, the catalog's Maven case) authenticates on every repository that is not `public`.
+  The former member `requireAuthentication` is gone: like any unknown member it answers 400 `malformed_request` with its
+  pointer (Q-REPO-84).
 
 Acceptance criteria:
 
 - With `disabled: true` on `npm-local`, `npm view @acme/util --registry
   https://trove.example.com/api/npm/web/npm-local/` fails with `E404`, while the same command against
   the virtual repository `npm-all` still succeeds when another member holds the package.
-- With anonymous read granted and `requireAuthentication: true` on `npm-local`, an unauthenticated
+- With the artifacts of `npm-local` `internal`, an unauthenticated
   `curl -i https://trove.example.com/api/npm/web/npm-local/@acme%2futil` returns 401 with a `Basic`
-  challenge.
+  challenge; with them `public` (and project `web` `public`) it returns 200.
 - `GET /api/v1/projects/web/repositories/npm-local` by a caller without `repositories:read-config` contains no
   `adminNotes`.
 
@@ -449,7 +451,7 @@ own transaction, wherever they run:
   job transaction that removes the row (R-REPO-013);
 - every change of the virtual membership (R-REPO-017, R-REPO-018), the deploy target (R-REPO-021),
   the project (a move, R-REPO-060) or one of the authorization
-  settings `cacheFillAction`, `packageOwnership`, `hideExistence` and `requireAuthentication`
+  settings `cacheFillAction`, `packageOwnership`, `hideExistence` and `visibility`
   ([R-AUTHZ-031](authorization.md)).
 
 The payload names the repository id and the `config_version` the write left, never a grant:
@@ -636,14 +638,14 @@ Priority: **MVP** · Covers: REPO-007, REPO-057, REPO-058, API-060, API-061
 | Request | `GET /api/v1/repositories?class=&format=&q=&state=&project=&view=&limit=&cursor=` (every project); `GET /api/v1/projects/{projectKey}/repositories?class=&format=&q=&state=&view=&limit=&cursor=` (one project) |
 | Success | 200, `{"items": [...], "nextCursor": "…"}` (paging per [api-and-ui.md](api-and-ui.md) R-API-010, Q-API-6) |
 | Errors | 400 invalid filter; 401 |
-| Permission | any caller, anonymous included; the result contains only repositories on which the caller holds `read` by a grant or a role ([R-AUTHZ-016](authorization.md)), every repository, those being deleted included, for a holder of `repositories:read-config` (Q-REPO-19), and every repository of its project for an Owner; `view=full` requires `repositories:read-config`, or on the project's list the role `owner`. The project's list answers 404 for a project the caller cannot see, exactly as for one that does not exist: a caller sees a project when it holds `projects:read` or `repositories:read-config`, is a member of it, or reads one of its repositories whatever the filters and the cursor ([authorization.md](authorization.md) R-AUTHZ-016) |
+| Permission | any caller, anonymous included; the result contains only repositories on which the caller holds `read` by a grant, a role or the repository's artifacts level ([R-AUTHZ-016](authorization.md), [R-AUTHZ-035](authorization.md)), every repository, those being deleted included, for a holder of `repositories:read-config` (Q-REPO-19), and every repository of its project for an Owner; `view=full` requires `repositories:read-config`, or on the project's list the role `owner`. The project's list answers 404 for a project the caller cannot see, exactly as for one that does not exist: a caller sees a project when it holds `projects:read` or `repositories:read-config`, is a member of it, or reads one of its repositories whatever the filters and the cursor ([authorization.md](authorization.md) R-AUTHZ-016) |
 
-- Filters: `class` and `format` take comma-separated lists; `q` matches key and description
-  case-insensitively; `project` filters by project key; `state=inactive` returns disabled
+- Filters: `class`, `format` and `visibility` take comma-separated lists (`visibility` matches the artifacts level,
+  [api-and-ui.md](api-and-ui.md) R-API-057); `q` matches key and description case-insensitively; `project` filters by project key; `state=inactive` returns disabled
   repositories, offline remote repositories and remote repositories whose circuit is open
   (R-REPO-029).
 - `view=summary` (default) returns per repository: key, project, class, format, description, client address,
-  `disabled`, `lastActivityAt`, project, and for remote repositories the availability (`online`,
+  `visibility`, `disabled`, `lastActivityAt`, project, and for remote repositories the availability (`online`,
   `offline`, `assumed-offline`). Holders of `repositories:read-config` also get the upstream URL.
 - `view=full` returns complete documents (the catalog's "all configurations").
 - Class and format values are spelled as in configuration documents (lower case).
@@ -664,7 +666,7 @@ Acceptance criteria:
 - `curl -s -H "Authorization: Bearer $TROVE_TOKEN"
   'https://trove.example.com/api/v1/repositories?class=remote&format=npm'` returns only npm remote
   repositories, each with an availability state.
-- An anonymous caller, with anonymous read granted on `web/npm-all` only, sees exactly `web/npm-all`.
+- An anonymous caller, with the artifacts of `web/npm-all` the only `public` ones, sees exactly `web/npm-all`.
 - `GET /api/v1/projects/web/repositories` lists the repositories of `web` only; with `npm-remote` in `web` and in
   `mobile`, the instance-wide list returns both, each with its project.
 - `view=full` without `repositories:read-config` returns 403.
@@ -782,6 +784,9 @@ operation of its own ([Q-REPO-217](#q-repo-217--a-repository-moves-to-another-pr
   [endpoints.md](endpoints.md) R-EP-006, a client's registry URL) matches the new address or no longer matches.
 - **Narrowing.** A move is journaled as a narrowing ([authorization.md](authorization.md) R-AUTHZ-031) and reaches the
   Bastion's feed ([bastion.md](bastion.md) R-BAS-015).
+- **Visibility.** The move lowers the repository's artifacts and wiki levels to the target project's level when they lie
+  above it, in the move's transaction, with `authz.settings.changed` and the cause `move`
+  ([authorization.md](authorization.md) R-AUTHZ-033 rule 3); it never raises them.
 
 Acceptance criteria:
 
@@ -830,7 +835,7 @@ The other members are not journaled ([Q-REPO-246](#q-repo-246--patterns-auto-cla
 `description`, `adminNotes`, `priorityMember`, `virtual.deployTarget`, `virtual.mergedMetadataTtlSeconds`, the `remote` section
 apart from `cacheFillAction`, `storage`, `local.caps`, `local.ownershipDomain` and the format members. A restore reverts them; the
 security-relevant ones are [H-569](../security/backup-and-restore.md#h-569--upstream-storage-and-format-settings-of-a-repository-come-back-with-a-restore).
-`disabled`, `requireAuthentication`, `hideExistence`, `local.packageOwnership` and `remote.cacheFillAction` keep the events of
+`disabled`, `visibility`, `hideExistence`, `local.packageOwnership` and `remote.cacheFillAction` keep the events of
 R-AUTHZ-031. A widening part of an update that also narrows (a pattern added to an include list, a member added) is not part of
 the entry.
 
@@ -7661,7 +7666,7 @@ bears access and what withdraws a version.
 | `virtual.members` | yes | A member out takes its content out of the virtual repository and out of a token scoped to it (R-AUTHZ-009 rule 2, Q-AUTHZ-163) |
 | `virtual.pinning`, `local.autoClaim` | yes | They keep a name from falling through to a remote member (R-REPO-023) |
 | `vulnerabilities` | yes | More blocking withholds versions (R-VULN-002, R-VULN-015) |
-| `disabled`, `requireAuthentication`, `hideExistence`, `local.packageOwnership`, `remote.cacheFillAction` | by R-AUTHZ-031 | Their own events |
+| `disabled`, `visibility`, `hideExistence`, `local.packageOwnership`, `remote.cacheFillAction` | by R-AUTHZ-031 | Their own events |
 | `virtual.deployTarget` | no | A write through the virtual address runs with the target's permissions (R-REPO-021): the target routes, it grants nothing |
 | `priorityMember`, `virtual.mergedMetadataTtlSeconds`, `description`, `adminNotes`, `local.caps` | no | Order, freshness, text and retention: none changes what a caller may reach |
 | `remote` (URL, extra hosts, credentials, integrity, availability, mirror) and `storage` | no, H-569 | They decide how trove talks to an upstream and what it accepts from it and from clients, not what a caller may reach; re-applying them cannot be checked against the restored upstream state |
@@ -8184,6 +8189,33 @@ the defaults, and the path dedupe if a format's plan lists one path in two versi
 **Applied in the spec:** R-REPO-050, R-REPO-051. Code: `SelectItems` ([policy.go](../../internal/mirror/policy.go)), `fillPackage` ([fill.go](../../internal/mirror/fill.go)),
 `checkDelegatedFormatMirror` ([validate_mirror.go](../../internal/repository/validate_mirror.go)). Tests: `TestR_REPO_051_TheVersionBoundsCountVersionsNotItems`,
 `TestR_REPO_051_AVersionOfSeveralItemsIsStoredWholeAndASharedArtifactOnce`, `TestR_OCI_026_AnOwnerKeepsTheFormatsMirrorSettings`.
+
+### Q-REPO-307 · `requireAuthentication` goes, and the repository document shows its two levels as one member
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `requireAuthentication` challenged anonymous requests where `anonymous` held `read` (PKG-NUGET-016: a NuGet client sends
+its credentials only after a 401, so reads on an open repository were anonymous). With the levels of
+[authorization.md](authorization.md) R-AUTHZ-033 a repository is either `public`, and then read without a credential, or not, and
+then every request without a credential is challenged.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Drop the member; the document gains `visibility` with `artifacts` and `wiki`, stored in two columns (chosen) | A repository that wants its NuGet reads attributed is `internal` | One mechanism; the challenge follows from the level | A repository cannot be public for clients without credentials and challenge the others |
+| (b) Keep `requireAuthentication` beside the levels | A `public` repository that still challenges | Covers "public, but authenticate who can" | A `public` level that answers 401 is not public; two members that say the same thing |
+| (c) Levels as separate operations, outside the document | No document change | — | Configuration as code and the edit form lose the setting (Q-API-248) |
+
+**Choice:** (a). The member `visibility` is in every view of the document, the consumer view included; a write through it follows
+R-AUTHZ-033 (bound by the project, wiki at most artifacts, recent authentication to raise) and writes `authz.settings.changed`
+(R-AUTHZ-031). Migration `00071_visibility.sql` removes `requireAuthentication` from every stored document.
+
+**Rationale:** the catalog's case (attributing reads of clients that authenticate only after a 401) is what a level other than
+`public` does by itself; keeping the member would mean a second switch for the same question, which the owner ruled out. The
+development agent would revisit this if public content must still be attributed per principal, which is a question of the
+download record, not of access.
+
+**Applied in the spec:** R-REPO-004, R-REPO-012, R-REPO-060; [authorization.md](authorization.md) R-AUTHZ-012, R-AUTHZ-031;
+[formats/nuget.md](formats/nuget.md) R-NUGET-012; [formats/generic.md](formats/generic.md).
 
 ## What this does not cover
 

@@ -167,8 +167,10 @@ Acceptance criteria:
 - The route-table test fails on a fixture plug-in that registers `GET /v2/x`, and passes with the OCI format registered.
 - `GET /v2/%5Fcatalog` and `GET /v2/_catalog/` answer 404 `NAME_UNKNOWN`; they reach no core route, whatever the router does with
   an escaped literal.
-- With anonymous access on, `curl -si <base>/v2/` answers the same 401 from the version check's own handler, and the anonymous
-  registry token of the token service opens it (Q-OCI-20).
+- While some repository is `public` ([authorization.md](../authorization.md) R-AUTHZ-033), `curl -si <base>/v2/` answers the same
+  401 from the version check's own handler, and the anonymous registry token of the token service opens it (Q-OCI-20). The
+  format has no wiki content ([authorization.md](../authorization.md) R-AUTHZ-034): a repository's wiki level is stored and
+  decides nothing for it.
 
 ### R-OCI-004 · Authentication challenge and token service
 Priority: **P1** · Covers: PKG-DOCKER-011, PKG-DOCKER-012, PKG-DOCKER-015, PKG-DOCKER-052, PKG-OCI-005
