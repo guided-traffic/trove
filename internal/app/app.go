@@ -170,8 +170,10 @@ type App struct {
 	debRemote  late[*debdata.RemoteJobs]
 	// ansibleReindex is the handler of the job ansible-reindex (wire_ansible.go).
 	ansibleReindex late[jobs.Handler]
-	shipper        late[journal.Shipper]
-	checkBucket    late[platform.Bucket]
+	// ansibleDocsFill is the handler of the job ansible-docs-fill (wire_ansible.go).
+	ansibleDocsFill late[jobs.Handler]
+	shipper         late[journal.Shipper]
+	checkBucket     late[platform.Bucket]
 	// registryMetrics are the counters of the registry token service, shared by every endpoint (wire_registry.go).
 	registryMetrics *registrytoken.Metrics
 }

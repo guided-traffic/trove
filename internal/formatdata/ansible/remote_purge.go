@@ -53,7 +53,14 @@ func PurgeRemoteCaches(ctx context.Context, db meta.Runner, erase EraseFunc) err
 			if _, err := qs.BackupDeleteCacheEntries(ctx, r.id); err != nil {
 				return err
 			}
-			_, err = qs.BackupAnsibleDeleteUpstreamVersions(ctx, r.id)
+			if _, err = qs.BackupAnsibleDeleteUpstreamVersions(ctx, r.id); err != nil {
+				return err
+			}
+			// The documentation rows are derived from the stored documents that went (R-ANS-044).
+			if _, err = qs.AnsibleDocsPurgeVersions(ctx, r.id); err != nil {
+				return err
+			}
+			_, err = qs.AnsibleDocsPurgeFetches(ctx, r.id)
 			return err
 		})
 		if err != nil {

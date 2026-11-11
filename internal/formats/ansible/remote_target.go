@@ -23,6 +23,7 @@ const (
 	kindRoleLookup
 	kindRoleVersions
 	kindRoleArchive
+	kindDocs
 )
 
 // The variants of the stored documents (Q-ANS-12, R-ANS-020): the upstream's bytes as they came, per document. A version list is
@@ -55,7 +56,7 @@ type target struct {
 // pkg is "<ns>.<name>" of a collection target, "role/<id>" of a role target.
 func (t target) pkg() string {
 	switch t.kind {
-	case kindCollection, kindVersions, kindVersion, kindArchive:
+	case kindCollection, kindVersions, kindVersion, kindArchive, kindDocs:
 		return t.ns + "." + t.name
 	case kindRoleVersions, kindRoleArchive:
 		return RolePackage(t.roleID)
@@ -84,6 +85,13 @@ func parseTarget(p formats.Path) (target, error) {
 }
 
 func parseCollectionTarget(rest []string) (target, error) {
+	if len(rest) == 4 && rest[2] == dirDocs && collection.ValidPart(rest[0]) && collection.ValidPart(rest[1]) {
+		// The docs-blob document of a version (R-ANS-035).
+		if v, ok := strings.CutSuffix(rest[3], jsonSuffix); ok && version.Valid(v) {
+			return target{kind: kindDocs, ns: rest[0], name: rest[1], version: v}, nil
+		}
+		return target{}, missing()
+	}
 	if len(rest) != 3 || !collection.ValidPart(rest[0]) || !collection.ValidPart(rest[1]) {
 		return target{}, missing()
 	}

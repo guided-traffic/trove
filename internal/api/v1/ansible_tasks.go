@@ -2,6 +2,7 @@ package v1
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
@@ -50,17 +51,12 @@ func ansibleTaskRep(t rows.Task) ansibleTask {
 
 // ListAnsibleImportTasks implements GET /api/v1/projects/{projectKey}/repositories/{repoKey}/ansible/imports (R-ANS-009): the import
 // tasks of a local Ansible Galaxy repository, newest first, optionally of one state; a virtual repository lists its deployment target's.
-func (s *Server) ListAnsibleImportTasks(w http.ResponseWriter, r *http.Request, projectKey gen.ProjectKey, repoKey gen.RepoKey, params gen.ListAnsibleImportTasksParams) {
-	if params.Package != nil || params.Version != nil {
-		// The filters package and version (Q-API-262) are declared in the document; the data port filters by state only until their step lands.
-		docsNotBuilt(w, r, "listAnsibleImportTasks with the filters package and version")
-		return
-	}
+func (s *Server) ListAnsibleImportTasks(w http.ResponseWriter, r *http.Request, projectKey gen.ProjectKey, repoKey gen.RepoKey, _ gen.ListAnsibleImportTasksParams) {
 	store, repo, ok := s.ansibleTarget(w, r, projectKey, repoKey, true)
 	if !ok {
 		return
 	}
-	lq, err := ParseList(r, ListSpec{Filters: []string{"state"}, Sorts: []string{"createdAt"}, DefaultSort: "-createdAt"}, s.o.API.Config)
+	lq, err := ParseList(r, ListSpec{Filters: []string{"state", "package", "version"}, Sorts: []string{"createdAt"}, DefaultSort: "-createdAt"}, s.o.API.Config)
 	if err == nil && lq.After != nil && len(lq.After) != 1 {
 		err = invalidCursor()
 	}
@@ -74,7 +70,7 @@ func (s *Server) ListAnsibleImportTasks(w http.ResponseWriter, r *http.Request, 
 		if lq.After != nil {
 			after = lq.After[0]
 		}
-		list, err = store.Tasks(r.Context(), repo.NumericID(), state, after, lq.FetchLimit())
+		list, err = store.Tasks(r.Context(), repo.NumericID(), rows.TaskFilter{State: state, Name: strings.ToLower(lq.First("package")), Version: lq.First("version")}, after, lq.FetchLimit())
 	}
 	if err != nil {
 		httpserver.Problem(w, r, errs.Wrap(err, "api.listAnsibleImportTasks"))

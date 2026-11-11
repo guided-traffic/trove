@@ -17,7 +17,7 @@ import (
 
 // AnsibleStore is the part of the Ansible Galaxy data port the management operations use.
 type AnsibleStore interface {
-	Tasks(ctx context.Context, repoID int64, state, after string, limit int) ([]rows.Task, error)
+	Tasks(ctx context.Context, repoID int64, f rows.TaskFilter, after string, limit int) ([]rows.Task, error)
 	Tombstones(ctx context.Context, repoID int64, after string, limit int) ([]rows.Tombstone, error)
 	ClearTombstone(ctx context.Context, repoID int64, name, version string, a rows.Audit) (bool, error)
 	// The reads of the documentation operations (R-ANS-036): rows only, never an upstream.

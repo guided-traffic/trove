@@ -153,7 +153,7 @@ func (a *App) registerFormatJobs(r *jobs.Registry) {
 	}
 	r.RegisterTask(ocidata.SweepJobKind, spec)
 	debdata.RegisterJobs(r, a.debRemoteHandlers())
-	ansibledata.RegisterJobs(r, ansibledata.Handlers{Reindex: a.ansibleReindexHandler(), ImportTaskKeep: a.cfg.Ansible.ImportTaskKeep})
+	ansibledata.RegisterJobs(r, ansibledata.Handlers{Reindex: a.ansibleReindexHandler(), DocsFill: a.ansibleDocsFillHandler(), ImportTaskKeep: a.cfg.Ansible.ImportTaskKeep})
 }
 
 // formatsArea is what the hooks and the seam are made of. The seam reads the Host

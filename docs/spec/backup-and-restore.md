@@ -298,6 +298,7 @@ moves one of its tables states it on its own page.
 | `pending_sidecars` | [storage.md](storage.md) R-STOR-010 | `transient` | Declarations are valid for at most `storage.sidecars.pending_ttl` |
 | `blob_gc_queue` | storage.md | `transient` | Candidates only; a restored database has no unreferenced blob rows |
 | `cluster_change` | [architecture.md](architecture.md) R-ARCH-018 | `transient` | Change rows that only running replicas read; `cluster_epoch` stays `data` |
+| `ansible_version_docs`, `ansible_doc_entries`, `ansible_doc_files`, `ansible_doc_fetches` | [formats/ansible.md](formats/ansible.md) R-ANS-033 | `transient` | The documentation of a collection version is derived: a restore enqueues the reindex, which regenerates a local repository's rows from the archives and queues the fetch of a remote's (R-ANS-044) |
 | `ci_issuer_keys` | [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-003 | `transient` | A restored copy would accept keys the issuer removed (revoked) after the snapshot; the first exchange or `ci-keys-refresh` fetches the current set |
 | `replica` | [operations-and-observability.md](operations-and-observability.md) R-OPS-003 | `transient` | Describes pods that do not exist after a restore |
 | `support_bundle`, `support_bundle_part` | operations-and-observability.md R-OPS-027 | `transient` | Diagnostic archives with logs; their blobs are not referenced by any other row |

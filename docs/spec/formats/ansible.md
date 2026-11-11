@@ -4,7 +4,8 @@ Status: specification, building (block B, unit F0 of [FULL.md](../../projektplan
 [ansible-work-packages.md](../../projektplan/ansible-work-packages.md)). Built: the format skeleton and the local class (publish, import
 tasks, the three read operations, tombstones, the reindex, the package screens). Not built yet: the remote class, the virtual class and
 the client surface. It is the first registry after the beta because it replaces a Galaxy system the owner runs today.
-The documentation of a collection version (the Documentation and Contents tabs, R-ANS-033 to R-ANS-046, owner task T-19) is specified and not built; its plan is
+The documentation of a collection version (the Documentation and Contents tabs, R-ANS-033 to R-ANS-046, owner task T-19) is built in the backend (the generator, the rows, the route
+`docs-blob/` for the three classes, the three operations, the fetch job and the counting stub); the screens and the end-to-end rows are the work of builder B2. The plan is
 [galaxy-docs-work-packages.md](../../projektplan/galaxy-docs-work-packages.md).
 
 This page specifies how trove serves Ansible content to `ansible-galaxy`: the format `ansible` for local, remote and virtual
@@ -1299,7 +1300,7 @@ trove (as the upstream of a remote) read; no client of the matrix does. The vers
   received at the canonical path `collections/<ns>/<name>/docs/<version>.json` (`Classify` maps it to metadata of the package, never to an artifact),
   revalidates it like every other document and serves it through `Rewrite`. The format adds three things to the engine's path:
   - `UpstreamRequest` maps the path to the upstream URL: the version document's `href` (read from the stored version document, never from the
-    request) plus `docs-blob/`; the URL must be on the upstream's origin or an `extraHosts` entry and its path must end in `/versions/<version>/docs-blob/` (the
+    request; it reaches the engine as the URL-map row the fill of the version document records, [Q-ANS-73](#q-ans-73--the-address-of-the-documentation-is-the-url-map-row-of-the-version-documents-fill-and-a-recorded-none-keeps-the-route-from-asking-again)) plus `docs-blob/`; the URL must be on the upstream's origin or an `extraHosts` entry and its path must end in `/versions/<version>/docs-blob/` (the
     host check of the `download_url`, R-ANS-018); a version document without a usable `href` has no documentation (404, state `none`).
   - `PrepareFill` validates the shape before anything is stored, outside every transaction (as for the version document, R-ANS-017): JSON of the shape
     above, `contents` an array of at most 5,000 items with `content_name` matching `^(?!.*__)[a-z_][0-9a-z_.]*$` and a `content_type` among the types of
@@ -2883,6 +2884,61 @@ Status: **Decided by the development agent** — selected from the options below
 **Choice:** (a). **Rationale:** R-ANS-036 requires the type and group counts to be those before `q`, and the plan's `DocTree` has only the total. Revisit if a count per type is not needed once the tabs are built.
 
 **Applied in the spec:** R-ANS-036.
+
+### Q-ANS-73 · The address of the documentation is the URL-map row of the version document's fill, and a recorded none keeps the route from asking again
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The fill of a version document records, as a URL-map row (R-REPO-043) of the path `collections/<ns>/<name>/docs/<version>.json`, the `href` plus `docs-blob/` when its host is the upstream's or an extra host and its path ends in `/versions/<version>`; `UpstreamRequest` derives the default address from the API root, which the row replaces; a version document without a usable `href` writes the fetch row `none`, and a fresh `none` row (younger than an hour) keeps the route and the job from asking the upstream (chosen) | R-ANS-035, R-ANS-042 | The engine already takes the address of a stored document from the URL map; no column, no migration; the href is never read from a request; a foreign host is never fetched | A request for `docs-blob/` before the version document was filled uses the derived address, which is on the upstream's origin |
+| (b) `UpstreamRequest` reads the stored version document | The spec's first wording | One place | `UpstreamRequest(ctx, RemoteContext, path, variant)` has no access to a stored document or to the data port |
+| (c) A column `docs_url` in `ansible_upstream_versions` (a migration) | A recorded address | Explicit | `UpstreamRequest` cannot read it either, and the migration numbers are owned by several tasks |
+
+**Choice:** (a). **Rationale:** the stub's foreign-host case is the acceptance criterion; with (a) the stub counts no request. Revisit if a format-side read of stored documents is added to the remote adapter.
+
+**Applied in the spec:** R-ANS-035, R-ANS-042.
+
+### Q-ANS-74 · The virtual route walks the plan itself, local members first, and a member without documentation falls through to the next
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `virtualDocs` takes the plan of the resolver (`Resolver.Plan`), orders the members by tier and position, asks the wiki check for the addressed repository and for each member, and serves the first member that has documentation: the rows of a local one, the stored document of a remote one through the engine (chosen) | R-ANS-041, R-ANS-037 | The check depends on the caller, so no document is shared between callers through the merged-metadata cache; a remote member the caller may not fill is served from the cache only by the engine | A member that holds the version and has no documentation does not stop the walk: a later member's documentation of the same number is served |
+| (b) The merged-metadata cache with a `LocalDocument` for the docs path | First match like the version document | One code path | A document cached for one caller reaches another whose wiki check differs; the winner is not known to the check |
+| (c) Stop at the first member that holds the version | Exact winner | Never mixes members | Needs the version document of every remote member first (a request each) |
+
+**Choice:** (a). **Rationale:** correctness of the wiki gate outweighs the exactness of the winner; the fall-through is listed as H-901. Revisit when T-18 gives the check a cacheable key.
+
+**Applied in the spec:** R-ANS-041.
+
+### Q-ANS-75 · The README of a generated set is named README.md and the generator reads the README at the root or in docs/
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The README is stored as the file `README.md` whatever the manifest called it (`collection_info.readme` names a Markdown file at the root or directly in `docs/`); a name that is not `.md` is the warning `readme_not_markdown`; a file of `docs/` with the name of the README is left out with a warning (chosen) | R-ANS-033, R-ANS-034 | The README is found by one name in the rows, the file operation and the protocol document (`collection_readme.name`) | A README elsewhere in the archive is not read |
+| (b) A column that marks the README | A migration | Any name | The tables are the contract of R-ANS-033 |
+| (c) Keep the manifest's name | `readme.md`, `docs/intro.md` | Faithful | The reader must know which file is the README |
+
+**Choice:** (a). **Rationale:** the tap wants members before the manifest is read, so it keeps every Markdown candidate and `Build(readmeName)` picks. Revisit if a real collection keeps its README elsewhere.
+
+**Applied in the spec:** R-ANS-033, R-ANS-034.
+
+### Q-API-264 · The documentation operations resolve the repository from the version details, and `metadata.docs` is added by the details handler
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The operations read the version details of the caller's scope (`view.Service.Version`) and take its repositories, local before remote, a virtual repository from its members in the order of their tiers; the details handler of the format `ansible` adds `metadata.docs` with the same resolution (chosen) | R-ANS-036, Q-API-263 | No new optional interface of the format contract and no new method of the view service; the same code resolves the tabs and the pages | The resolution ignores the pin rules and claims of a virtual repository (H-902); `metadata.docs` costs the resolution per details request |
+| (b) `DocsAnnouncer` on the view adapter and `Service.VersionRepositories` | The plan's contract | The core builds the member | A format-side optional interface (ADR-141 addition) and a second path for the same answer |
+
+**Choice:** (a). **Rationale:** the plan asks to stop if the plan order cannot be had without a change to the core; it can be had from the details. Revisit when T-18 moves `metadata` members behind the wiki check (`ViewData.WikiMetadata`).
+
+**Applied in the spec:** R-ANS-036, Q-API-263.
 
 ## What this does not cover
 

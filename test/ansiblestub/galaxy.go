@@ -144,7 +144,7 @@ type announced struct {
 }
 
 // versionDocument is the document of one version. base is "https://host[:port]" of the request, so that download_url is absolute.
-func versionDocument(base string, c *collectionDef, v *versionDef, a announced) map[string]any {
+func versionDocument(base string, c *collectionDef, v *versionDef, a announced, foreignHref bool) map[string]any {
 	deps := v.deps
 	if deps == nil {
 		deps = map[string]string{}
@@ -157,8 +157,12 @@ func versionDocument(base string, c *collectionDef, v *versionDef, a announced) 
 			"signing_service":    "ansible-default",
 		})
 	}
+	href := versionHref(c.ns, c.name, v.version)
+	if foreignHref {
+		href = "https://docs.elsewhere.invalid" + href
+	}
 	return map[string]any{
-		"version": v.version, "href": versionHref(c.ns, c.name, v.version),
+		"version": v.version, "href": href,
 		"created_at": stamp(v.created()), "updated_at": stamp(v.created()),
 		"requires_ansible": v.requiresAnsible, "marks": []string{},
 		"artifact":     map[string]any{"filename": a.filename, "sha256": a.sha256, "size": a.size},
@@ -205,7 +209,7 @@ func signedAddress(file string) string {
 
 func isRedirectableShort(kind string) bool {
 	switch kind {
-	case kIndex, kCollection, kVersions, kVersion:
+	case kIndex, kCollection, kVersions, kVersion, kDocs:
 		return true
 	}
 	return false
@@ -219,4 +223,52 @@ func acceptsGzip(r *http.Request) bool {
 		}
 	}
 	return false
+}
+
+// DocsBlobHostile is what the stub's README holds besides text: the three forms of script a remote must not serve (R-ANS-038).
+const DocsBlobHostile = `<script>alert(1)</script><img src="x" onerror="alert(2)"><a href="javascript:alert(3)">link</a>`
+
+// docsDocument is the docs-blob document of a version in the Galaxy's shape (R-ANS-035): the README with HTML an upstream must not be
+// trusted with, a Markdown file rendered, three plugins (a module with a full documentation, a filter without, and a role with a README)
+// and the plugin types besides. mode is Mode.Docs.
+func docsDocument(c *collectionDef, v *versionDef, mode string) map[string]any {
+	module := map[string]any{
+		"content_name": "ping_host", "content_type": "module",
+		"doc_strings": map[string]any{
+			"doc": map[string]any{
+				"module": "ping_host", "short_description": "Pings a host of " + c.fullName(),
+				"description":   []string{"Sends C(count) probes to I(host) and reports the round trip.", "See U(https://example.com/ping)."},
+				"version_added": v.version, "author": []string{"trove test"},
+				"options": []map[string]any{
+					{"name": "host", "type": "str", "required": true, "description": []string{"The host to ping."}},
+					{"name": "count", "type": "int", "default": 3, "description": []string{"How many probes."}},
+					{"name": "proxy", "type": "dict", "description": []string{"A proxy."}, "suboptions": []map[string]any{
+						{"name": "url", "type": "str", "description": []string{"The proxy URL."}},
+					}},
+				},
+			},
+			"return": []map[string]any{
+				{"name": "rtt", "type": "float", "returned": "success", "description": []string{"Milliseconds."}, "sample": 1.5},
+			},
+			"examples": "- name: ping\n  " + c.ns + "." + c.name + ".ping_host:\n    host: example.com\n",
+			"metadata": nil,
+		},
+		"readme_file": nil, "readme_html": nil,
+	}
+	contents := []any{
+		module,
+		map[string]any{"content_name": "is_cidr", "content_type": "filter", "doc_strings": nil, "readme_file": nil, "readme_html": nil},
+		map[string]any{
+			"content_name": "webserver", "content_type": "role", "doc_strings": nil, "readme_file": "README.md",
+			"readme_html": "<h1>webserver</h1>" + DocsBlobHostile,
+		},
+	}
+	if mode == DocsInvalid {
+		contents = append(contents, map[string]any{"content_type": "module", "doc_strings": nil})
+	}
+	return map[string]any{"docs_blob": map[string]any{
+		"collection_readme":   map[string]string{"name": "README.md", "html": "<h1>" + c.fullName() + "</h1><p>Version " + v.version + "</p>" + DocsBlobHostile},
+		"documentation_files": []map[string]string{{"name": "install.md", "html": "<h2>Install</h2><p>ansible-galaxy collection install " + c.fullName() + "</p>"}},
+		"contents":            contents,
+	}}
 }

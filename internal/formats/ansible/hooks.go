@@ -3,6 +3,7 @@ package ansible
 import (
 	"context"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/errs"
@@ -156,6 +157,13 @@ func (f *Format) commitVersion(ctx context.Context, tx formats.Tx, c formats.Com
 	}, p.audit, p.info); err != nil {
 		return err
 	}
+	if d := p.docs; d != nil && (d.Readme != nil || len(d.Files) > 0 || len(d.Entries) > 0) {
+		// The documentation commits with the version: a publish that fails after this leaves no row (R-ANS-033).
+		if err := st.PutDocs(ctx, tx, c.Repo.ID, name, a.Version, *d); err != nil {
+			return err
+		}
+		f.countGenerated(c.Data, d.Truncated)
+	}
 	t := p.task
 	t.Namespace, t.Name, t.Version = a.Namespace, a.Name, a.Version
 	t.State, t.RepoID, t.CreatedBy = rows.TaskCompleted, c.Repo.ID, by
@@ -164,11 +172,32 @@ func (f *Format) commitVersion(ctx context.Context, tx formats.Tx, c formats.Com
 	for _, w := range a.Warnings {
 		t.Messages = append(t.Messages, rows.TaskMessage{Level: "WARNING", Message: w, Time: at})
 	}
+	t.Messages = append(t.Messages, docWarnings(p.docs, at)...)
 	if err := st.CreateTask(ctx, tx, t, p.audit); err != nil {
 		return err
 	}
 	p.taskRecorded = true
 	return nil
+}
+
+// docWarnings are the messages of level WARNING that the documentation of a publish adds to its import task (R-ANS-034): at most
+// rows.MaxDocWarnings, and one last message that counts the rest.
+func docWarnings(d *rows.DocSet, at time.Time) []rows.TaskMessage {
+	if d == nil {
+		return nil
+	}
+	out := make([]rows.TaskMessage, 0, len(d.Warnings)+1)
+	for _, w := range d.Warnings {
+		msg := "documentation: " + w.Message + " (" + w.Code + ")"
+		if w.Path != "" {
+			msg = "documentation: " + w.Path + ": " + w.Message + " (" + w.Code + ")"
+		}
+		out = append(out, rows.TaskMessage{Level: "WARNING", Message: msg, Time: at})
+	}
+	if d.MoreWarnings > 0 {
+		out = append(out, rows.TaskMessage{Level: "WARNING", Message: "documentation: " + strconv.Itoa(d.MoreWarnings) + " more warnings are not listed", Time: at})
+	}
+	return out
 }
 
 func sumOf(b []byte) (d [32]byte) {
@@ -224,6 +253,9 @@ func (f *Format) OnItemsRemoved(ctx context.Context, tx formats.Tx, e formats.It
 				}
 			}
 			if err := st.RemoveVersion(ctx, tx, e.Repo.ID, name, r.version, r.item.SHA256, true, au); err != nil {
+				return err
+			}
+			if err := st.RemoveDocs(ctx, tx, e.Repo.ID, name, r.version); err != nil {
 				return err
 			}
 		}

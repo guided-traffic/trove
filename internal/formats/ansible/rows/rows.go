@@ -41,6 +41,10 @@ type Task struct {
 	CreatedBy string
 }
 
+// TaskFilter narrows a list of import tasks (R-ANS-009, Q-API-262): a state ("" for any), a collection name "<ns>.<name>" and a version as
+// written; a field left empty does not narrow.
+type TaskFilter struct{ State, Name, Version string }
+
 // CollectionSummary is what the collection document shows, computed from the version rows of one collection name.
 type CollectionSummary struct {
 	Namespace, Name string

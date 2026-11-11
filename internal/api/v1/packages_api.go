@@ -426,7 +426,12 @@ func (s *Server) GetPackageVersion(w http.ResponseWriter, r *http.Request, id ge
 		return
 	}
 	base := httpserver.InfoFrom(ctx).BaseURL
-	writeTagged(w, r, versionOf(base, d))
+	out := versionOf(base, d)
+	if format == "ansible" {
+		// The announcement of the documentation is wiki content: absent for a caller who may not read it (R-ANS-036, R-ANS-037).
+		out.Metadata.Docs = s.docsAnnouncement(r, id, version)
+	}
+	writeTagged(w, r, out)
 }
 
 func versionOf(base string, d view.VersionDetail) gen.PackageVersion {

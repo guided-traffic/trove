@@ -102,6 +102,8 @@ func (s *Store) docState(k key) rows.DocState {
 		return rows.DocState{State: rows.DocPending}
 	case f.state == rows.DocFetchUnavailable:
 		return rows.DocState{State: rows.DocUnavailable, Reason: f.reason}
+	case f.state == rows.DocFetchNone && s.now().Sub(f.at) < queuedFetchLife:
+		return rows.DocState{State: rows.DocNone, NoneKnown: true}
 	}
 	return rows.DocState{State: rows.DocNone}
 }

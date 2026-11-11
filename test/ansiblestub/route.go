@@ -23,6 +23,7 @@ const (
 	kCollection   = "collection"
 	kVersions     = "versions"
 	kVersion      = "version"
+	kDocs         = "docs-blob"
 	kArtifact     = "artifact" // below /api/v3/plugin/ansible/content/published/collections/artifacts/
 	kPulp         = "pulp"     // the signed address /api/pulp/content/published/<file> that the public Galaxy redirects to
 	kRoleLookup   = "role-lookup"
@@ -57,6 +58,8 @@ func (rt route) class() string {
 		return ClassVersions
 	case kVersion:
 		return ClassVersion
+	case kDocs:
+		return ClassDocs
 	case kArtifact, kPulp:
 		return ClassArtifact
 	case kRoleLookup, kRoleDoc, kRoleVersions:
@@ -117,6 +120,8 @@ func collectionRoute(rest []string) route {
 		return route{kind: kVersions, ns: rest[0], name: rest[1]}
 	case len(rest) == 4 && rest[2] == "versions":
 		return route{kind: kVersion, ns: rest[0], name: rest[1], vers: rest[3]}
+	case len(rest) == 5 && rest[2] == "versions" && rest[4] == "docs-blob":
+		return route{kind: kDocs, ns: rest[0], name: rest[1], vers: rest[3]}
 	}
 	return route{kind: kOther}
 }

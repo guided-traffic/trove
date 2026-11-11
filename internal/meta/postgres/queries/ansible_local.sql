@@ -106,12 +106,14 @@ SELECT id::text AS id, repo_id, name, version, state, COALESCE(error_code, '')::
  WHERE repo_id = sqlc.arg(repo_id)::bigint AND id = CAST(sqlc.arg(id)::text AS uuid);
 
 -- name: AnsibleListTasks :many
--- Newest first, optionally of one state, after the cursor, which is the id of the last task seen.
+-- Newest first, optionally of one state, collection and version, after the cursor, which is the id of the last task seen.
 SELECT t.id::text AS id, t.repo_id, t.name, t.version, t.state, COALESCE(t.error_code, '')::text AS error_code,
        COALESCE(t.error_description, '')::text AS error_description, t.messages, t.created_by, t.created_at, t.finished_at
   FROM ansible_import_tasks t
  WHERE t.repo_id = sqlc.arg(repo_id)::bigint
    AND (sqlc.arg(state)::text = '' OR t.state = sqlc.arg(state)::text)
+   AND (sqlc.arg(name)::text = '' OR t.name = sqlc.arg(name)::text)
+   AND (sqlc.arg(version)::text = '' OR t.version = sqlc.arg(version)::text)
    AND (sqlc.arg(after)::text = '' OR (t.created_at, t.id) < (SELECT a.created_at, a.id FROM ansible_import_tasks a
                                                                 WHERE a.repo_id = t.repo_id AND a.id = NULLIF(sqlc.arg(after)::text, '')::uuid))
  ORDER BY t.created_at DESC, t.id DESC

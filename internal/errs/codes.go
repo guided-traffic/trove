@@ -627,6 +627,8 @@ const (
 	CodeAnsibleVersionTombstoned = "ansible_version_tombstoned"
 	// CodeAnsibleNotImplemented: ansible_not_implemented (NotImplemented).
 	CodeAnsibleNotImplemented = "ansible_not_implemented"
+	// CodeInvalidQuery: invalid_query (Unprocessable): the search text of the documentation operations is outside its bounds (R-ANS-036).
+	CodeInvalidQuery = "invalid_query"
 )
 
 // CodeNuGetInvalidUpstreamDocument is the 502 of a document a NuGet upstream served that is not
@@ -977,6 +979,7 @@ var registry = []CodeInfo{
 	{CodeAnsibleVersionExists, Conflict, "Collection version exists", "The version is stored in the repository with other bytes. A version is immutable: publish the changed collection under a new version."},
 	{CodeAnsibleVersionTombstoned, Conflict, "Collection version deleted", "The version was deleted and its number is not accepted again until an administrator clears its tombstone."},
 	{CodeAnsibleNotImplemented, NotImplemented, "Ansible Galaxy operation not implemented", "The operation is part of the Galaxy API and is not served by this build of trove yet."},
+	{CodeInvalidQuery, Unprocessable, "Invalid search text", "The search text is shorter than two characters or longer than 512 characters."},
 	// >>> M3 nuget
 	{CodeNuGetInvalidPackage, Invalid, "Invalid NuGet package", "The .nupkg is not a package trove accepts: not a ZIP archive, a name or entry the archive rules refuse, a missing or repeated .nuspec at the root, a limit of nuget.archive exceeded, or a .nuspec that is not well-formed or declares a DOCTYPE. The detail names the rule."},
 	{CodeNuGetInvalidVersion, Invalid, "Invalid NuGet version", "The version is not a NuGet version trove accepts: one to four numeric parts, an optional pre-release and build metadata, at most 255 bytes as given and normalized."},

@@ -77,10 +77,11 @@ func (remoteAdapter) ReadExchange(_ context.Context, _ formats.RemoteContext, _ 
 // memberSettings reads the ansible member of the repository document as the engine hands it over (RemoteContext.Settings is the member
 // itself, not the document), with the default client id.
 func memberSettings(member json.RawMessage) Settings {
-	s := Settings{ClientID: DefaultClientID}
+	s := Settings{ClientID: DefaultClientID, FetchDocumentation: true}
 	var m struct {
-		AuthURL  string `json:"authUrl"`
-		ClientID string `json:"clientId"`
+		AuthURL            string `json:"authUrl"`
+		ClientID           string `json:"clientId"`
+		FetchDocumentation *bool  `json:"fetchDocumentation"`
 	}
 	if json.Unmarshal(member, &m) != nil {
 		return s
@@ -88,6 +89,9 @@ func memberSettings(member json.RawMessage) Settings {
 	s.AuthURL = m.AuthURL
 	if m.ClientID != "" {
 		s.ClientID = m.ClientID
+	}
+	if m.FetchDocumentation != nil {
+		s.FetchDocumentation = *m.FetchDocumentation
 	}
 	return s
 }

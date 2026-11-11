@@ -8,11 +8,12 @@ import (
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/ansible/collection"
+	"github.com/guided-traffic/trove/internal/formats/ansible/docgen"
 	"github.com/guided-traffic/trove/internal/formats/ansible/rows"
 )
 
 // inspected is the Payload of the Inspection of an archive: what the reader made of it and the documentation generated from the same
-// pass (R-ANS-034). docs is nil until the generator is wired into Inspect.
+// pass (R-ANS-034).
 type inspected struct {
 	archive *collection.Archive
 	docs    *rows.DocSet
@@ -29,7 +30,8 @@ func (f *Format) Inspect(ctx context.Context, in formats.InspectInput) (*formats
 		return nil, err
 	}
 	defer func() { _ = body.Close() }()
-	a, err := collection.ReadArchive(ctx, body, in.Limits)
+	gen := docgen.NewGenerator(docgen.DefaultLimits())
+	a, err := collection.ReadArchive(ctx, body, in.Limits, collection.WithTap(gen))
 	if err != nil {
 		return nil, archiveError(err)
 	}
@@ -38,13 +40,15 @@ func (f *Format) Inspect(ctx context.Context, in formats.InspectInput) (*formats
 		return nil, errs.E(errs.Unprocessable, errs.CodeAnsiblePathMismatch,
 			"The path names "+info.Package+" "+info.Version+", the archive declares "+name+" "+a.Version+".")
 	}
+	// The documentation is derived from the same pass (R-ANS-034); it never fails the inspection.
+	docs := gen.Build(a.ReadmeName)
 	return &formats.Inspection{
 		Package: name, Version: a.Version,
 		Properties: map[string]string{
 			"ansible.namespace": a.Namespace, "ansible.name": a.Name, "ansible.requires_ansible": a.RequiresAnsible,
 			"ansible.dependency_count": strconv.Itoa(len(a.Dependencies)),
 		},
-		Payload: &inspected{archive: a},
+		Payload: &inspected{archive: a, docs: &docs},
 	}, nil
 }
 

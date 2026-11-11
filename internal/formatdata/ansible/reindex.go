@@ -160,6 +160,9 @@ func (s localStore) rebuildOne(ctx context.Context, repoID int64, a q.AnsibleArc
 // reindexCheckpoint is the state of the job a drain resumes from.
 type reindexCheckpoint struct {
 	After string `json:"after"`
+	// RowsDone says the version rows are rebuilt; DocsAfter is the checkpoint of the documentation step that follows (R-ANS-044).
+	RowsDone  bool   `json:"rowsDone,omitempty"`
+	DocsAfter string `json:"docsAfter,omitempty"`
 }
 
 // ReindexHandler is the handler of the job ansible-reindex: it reads the repository named by the job's target and steps through its
@@ -183,7 +186,7 @@ func ReindexHandler(st *Store, reader rows.ArchiveReader) jobs.Handler {
 			return err
 		}
 		var total RebuildResult
-		for {
+		for !cp.RowsDone {
 			res, err := st.RebuildStep(ctx, repoID, reader, cp.After)
 			total.Read += res.Read
 			total.Created += res.Created
@@ -192,11 +195,21 @@ func ReindexHandler(st *Store, reader rows.ArchiveReader) jobs.Handler {
 			if err != nil {
 				return err
 			}
-			cp.After = res.Next
+			cp.After, cp.RowsDone = res.Next, res.Done
 			if err := run.SaveCheckpoint(ctx, cp); err != nil {
 				return err
 			}
-			if res.Done {
+		}
+		for {
+			next, done, err := st.RebuildDocs(ctx, repoID, reader, cp.DocsAfter)
+			if err != nil {
+				return err
+			}
+			cp.DocsAfter = next
+			if err := run.SaveCheckpoint(ctx, cp); err != nil {
+				return err
+			}
+			if done {
 				break
 			}
 		}

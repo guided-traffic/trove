@@ -1,6 +1,7 @@
 package rows
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 )
@@ -103,9 +104,12 @@ type DocWarning struct{ Path, Code, Message string }
 type DocState struct {
 	// State is one of the Doc* states, Reason one of the DocReason* values or "", Source [DocSourceGenerated], [DocSourceUpstream] or "".
 	State, Reason, Source string
-	Entries               int
-	Truncated             bool
-	BuiltAt               time.Time
+	// NoneKnown says that the state none is a recorded answer (a fetch row that is younger than an hour said the upstream has no
+	// documentation, or the version document names no usable address), so a request for the route does not ask the upstream again.
+	NoneKnown bool
+	Entries   int
+	Truncated bool
+	BuiltAt   time.Time
 }
 
 // DocQuery is a validated search (R-ANS-036): 1 to [MaxDocSearchTerms] terms of 1 to [MaxDocSearchTermLength] letters or digits, never
@@ -132,4 +136,10 @@ type DocTree struct {
 	Counts map[string]int
 	// Warnings are the stored warnings of the version.
 	Warnings []DocWarning
+}
+
+// DocsReader is the optional interface of an [ArchiveReader] that also generates the documentation of an archive (R-ANS-034): the reindex
+// asks for it through the data port's RebuildDocs. The format implements it over the blob store and the generator.
+type DocsReader interface {
+	ReadDocs(ctx context.Context, ref ArchiveRef) (DocSet, error)
 }

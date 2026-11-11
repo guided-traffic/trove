@@ -444,15 +444,19 @@ SELECT t.id::text AS id, t.repo_id, t.name, t.version, t.state, COALESCE(t.error
   FROM ansible_import_tasks t
  WHERE t.repo_id = $1::bigint
    AND ($2::text = '' OR t.state = $2::text)
-   AND ($3::text = '' OR (t.created_at, t.id) < (SELECT a.created_at, a.id FROM ansible_import_tasks a
-                                                                WHERE a.repo_id = t.repo_id AND a.id = NULLIF($3::text, '')::uuid))
+   AND ($3::text = '' OR t.name = $3::text)
+   AND ($4::text = '' OR t.version = $4::text)
+   AND ($5::text = '' OR (t.created_at, t.id) < (SELECT a.created_at, a.id FROM ansible_import_tasks a
+                                                                WHERE a.repo_id = t.repo_id AND a.id = NULLIF($5::text, '')::uuid))
  ORDER BY t.created_at DESC, t.id DESC
- LIMIT $4::int
+ LIMIT $6::int
 `
 
 type AnsibleListTasksParams struct {
 	RepoID   int64
 	State    string
+	Name     string
+	Version  string
 	After    string
 	RowLimit int32
 }
@@ -471,11 +475,13 @@ type AnsibleListTasksRow struct {
 	FinishedAt       time.Time
 }
 
-// Newest first, optionally of one state, after the cursor, which is the id of the last task seen.
+// Newest first, optionally of one state, collection and version, after the cursor, which is the id of the last task seen.
 func (q *Queries) AnsibleListTasks(ctx context.Context, arg AnsibleListTasksParams) ([]AnsibleListTasksRow, error) {
 	rows, err := q.db.Query(ctx, ansibleListTasks,
 		arg.RepoID,
 		arg.State,
+		arg.Name,
+		arg.Version,
 		arg.After,
 		arg.RowLimit,
 	)

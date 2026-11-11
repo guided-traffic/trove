@@ -26,6 +26,7 @@ const (
 	ClassCollection  = "collection"   // a collection document
 	ClassVersions    = "versions"     // a collection's version list
 	ClassVersion     = "version"      // a collection version document
+	ClassDocs        = "docs"         // the docs-blob document of a collection version (R-ANS-035)
 	ClassArtifact    = "artifact"     // a collection archive, also behind the redirect of the public Galaxy
 	ClassRole        = "role"         // the v1 role routes: lookup, role document, version lists
 	ClassRoleArchive = "role-archive" // a role archive on the GitHub stand-in or the unlisted host, and on the codeload host
@@ -34,7 +35,15 @@ const (
 	ClassAll         = "all"
 )
 
-var classes = []string{ClassRoot, ClassIndex, ClassCollection, ClassVersions, ClassVersion, ClassArtifact, ClassRole, ClassRoleArchive, ClassRealm, ClassOther, ClassAll}
+var classes = []string{ClassRoot, ClassIndex, ClassCollection, ClassVersions, ClassVersion, ClassDocs, ClassArtifact, ClassRole, ClassRoleArchive, ClassRealm, ClassOther, ClassAll}
+
+// The modes of the docs-blob route (Mode.Docs): how the stub answers the documentation of a version.
+const (
+	DocsNotFound = "404"     // the route answers 404, as a Galaxy without documentation
+	DocsError    = "500"     // the route answers 500
+	DocsHuge     = "huge"    // the document is larger than the 16 MiB a remote stores
+	DocsInvalid  = "invalid" // the document has an item without a content_name
+)
 
 // AllCollections in Mode.DigestChanged and Mode.WrongDigest names every collection.
 const AllCollections = "all"
@@ -67,6 +76,11 @@ type Mode struct {
 	// WrongDigest lists collections whose archives the stub serves with other bytes than their documents announce: the second
 	// archive is served and the announced SHA-256 and size are those of the first. It wins over DigestChanged.
 	WrongDigest []string `json:"wrong_digest,omitempty"`
+	// Docs changes the answer of the docs-blob route: DocsNotFound, DocsError, DocsHuge or DocsInvalid. The other routes are unchanged.
+	Docs string `json:"docs,omitempty"`
+	// DocsForeignHref makes the version documents name an href on another host, so that the address of the documentation is not the
+	// upstream's.
+	DocsForeignHref bool `json:"docs_foreign_href,omitempty"`
 	// WrongIdentity lists collections whose archives are those of another collection ("swapped.other", the same version): the
 	// document announces the digest of the bytes it serves, so the digest verifies and only the identity inside the archive is
 	// wrong. It wins over the digest modes.
@@ -79,6 +93,11 @@ func (m Mode) Validate() error {
 	case "", DownUnavailable, DownReset, DownHang:
 	default:
 		return fmt.Errorf("down %q: want %q, %q or %q", m.Down, DownUnavailable, DownReset, DownHang)
+	}
+	switch m.Docs {
+	case "", DocsNotFound, DocsError, DocsHuge, DocsInvalid:
+	default:
+		return fmt.Errorf("docs %q: want %q, %q, %q or %q", m.Docs, DocsNotFound, DocsError, DocsHuge, DocsInvalid)
 	}
 	for class, ms := range m.DelayMS {
 		if !slices.Contains(classes, class) {

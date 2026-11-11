@@ -435,7 +435,7 @@ func (s localStore) Task(ctx context.Context, repoID int64, id string) (rows.Tas
 }
 
 // Tasks lists the tasks newest first, optionally of one state, after the cursor (the id of the last one seen).
-func (s localStore) Tasks(ctx context.Context, repoID int64, state, after string, limit int) ([]rows.Task, error) {
+func (s localStore) Tasks(ctx context.Context, repoID int64, f rows.TaskFilter, after string, limit int) ([]rows.Task, error) {
 	if after != "" {
 		if !uuidOK(after) {
 			return nil, errs.E(errs.Invalid, errs.CodeInvalid, "The cursor is not one this list issued.")
@@ -443,7 +443,7 @@ func (s localStore) Tasks(ctx context.Context, repoID int64, state, after string
 	}
 	var out []rows.Task
 	err := s.read(ctx, nil, func(qs *q.Queries) error {
-		list, err := qs.AnsibleListTasks(ctx, q.AnsibleListTasksParams{RepoID: repoID, State: state, After: after, RowLimit: int32(min(limit, 1<<20))}) //nolint:gosec // bounded above
+		list, err := qs.AnsibleListTasks(ctx, q.AnsibleListTasksParams{RepoID: repoID, State: f.State, Name: f.Name, Version: f.Version, After: after, RowLimit: int32(min(limit, 1<<20))}) //nolint:gosec // bounded above
 		if err != nil {
 			return err
 		}

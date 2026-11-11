@@ -144,6 +144,9 @@ func upstreamURL(root *url.URL, d *discovery, t target, variant string) (*url.UR
 		return build(d.v3, coll(t)+"versions/", "limit="+strconv.Itoa(upstreamListLimit)+"&offset="+strconv.Itoa(offset))
 	case kindVersion:
 		return build(d.v3, coll(t)+"versions/"+escapeSeg(t.version)+"/", "")
+	case kindDocs:
+		// The default address; the version document's own href, when it has a usable one, replaces it through the URL map (R-ANS-035).
+		return build(d.v3, coll(t)+"versions/"+escapeSeg(t.version)+"/"+segDocsBlob+"/", "")
 	case kindArchive:
 		return build(d.v3, "artifacts/collections/"+escapeSeg(t.file), "")
 	}

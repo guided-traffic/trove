@@ -45,6 +45,8 @@ const scratchRepos = 14
 const (
 	rRequire = "ans-require" // checksumPolicy require
 	rNoRoles = "ans-noroles" // extraHosts without the GitHub stand-in
+	// rDocsOff has ansible.fetchDocumentation false.
+	rDocsOff = "ans-docsoff"
 	// rNotGalaxy has an upstream URL that is no API root: it answers a collection document.
 	rNotGalaxy = "ans-notgalaxy"
 	// The hub repositories: authMode bearer with the offline token as the secret and ansible.authUrl at the stub's realm. The realm
@@ -114,12 +116,13 @@ func newEnv(t *testing.T, o options) *aenv {
 		e.hub(k, true)
 	}
 	e.hub(rHubNoHost, false)
+	e.repoWithMember(rDocsOff, e.run.APIRoot(), "verify-if-available", 300, map[string]any{"fetchDocumentation": false}, roleHosts...)
 
 	rita, reader := e.st.User("rita"), e.st.User("reader")
 	e.st.Bind("admin", rita)
 	e.admin = e.st.Token(rita, scope.Scope{Inherit: true, Admin: true})
 	e.reader = e.st.Token(reader, scope.Default())
-	names := []string{rRequire, rNoRoles, rNotGalaxy, rHub1, rHub2, rHub3, rHubNoHost}
+	names := []string{rRequire, rNoRoles, rNotGalaxy, rHub1, rHub2, rHub3, rHubNoHost, rDocsOff}
 	for i := 1; i <= scratchRepos; i++ {
 		names = append(names, "ans-"+strconv.Itoa(i))
 	}
@@ -134,6 +137,12 @@ func (e *aenv) repo(key, policy string, hosts ...string) {
 }
 
 func (e *aenv) repoAt(key, upstream, policy string, ttl int, hosts ...string) {
+	e.t.Helper()
+	e.repoWithMember(key, upstream, policy, ttl, nil, hosts...)
+}
+
+// repoWithMember is repoAt with the ansible member of the repository document (R-REPO-004), nil for none.
+func (e *aenv) repoWithMember(key, upstream, policy string, ttl int, member map[string]any, hosts ...string) {
 	e.t.Helper()
 	extra := make([]any, len(hosts))
 	for i, h := range hosts {
@@ -151,7 +160,11 @@ func (e *aenv) repoAt(key, upstream, policy string, ttl int, hosts ...string) {
 		"availability": map[string]any{"mode": "online", "failureThreshold": 3, "circuitOpenSeconds": 30},
 		"limits":       map[string]any{"maxArtifactBytes": nil, "maxMetadataBytes": nil, "maxConcurrentFetches": 16},
 	}
-	doc, err := json.Marshal(map[string]any{"remote": remote})
+	full := map[string]any{"remote": remote}
+	if member != nil {
+		full["ansible"] = member
+	}
+	doc, err := json.Marshal(full)
 	if err != nil {
 		e.t.Fatal(err)
 	}

@@ -116,6 +116,13 @@ type fillData struct {
 	announced rows.Announced
 	// dropped is the number of role versions the host rule removed from a role's version list.
 	dropped int
+	// version is the version of a version document or a docs-blob document.
+	version string
+	// fetchDocs is ansible.fetchDocumentation of the repository at the time of the fill; docsURL says that a version document names a
+	// usable address for its documentation (R-ANS-035).
+	fetchDocs, docsURL bool
+	// docs is the parsed docs-blob document of a documentation fill.
+	docs *rows.DocSet
 }
 
 // PrepareFill checks a fetched metadata document before anything is stored, outside every transaction (R-ARCH-019): an upstream
@@ -127,7 +134,11 @@ func (a remoteAdapter) PrepareFill(_ context.Context, rc formats.RemoteContext, 
 		return formats.Prepared{}, errs.E(errs.Internal, errs.CodeInternal, "The Ansible remote fills metadata documents of the paths it stores only.")
 	}
 	if size > MaxDocumentBytes {
-		return formats.Prepared{}, errs.E(errs.UpstreamFailed, errs.CodeUpstreamItemTooLarge, "The upstream document is larger than the limit of documents held in memory.")
+		var cause error
+		if t.kind == kindDocs {
+			cause = galaxydoc.ErrDocsTooLarge
+		}
+		return formats.Prepared{}, errs.E(errs.UpstreamFailed, errs.CodeUpstreamItemTooLarge, "The upstream document is larger than the limit of documents held in memory.", errs.WithCause(cause))
 	}
 	doc, err := io.ReadAll(io.NewSectionReader(body, 0, size))
 	if err != nil {
@@ -139,7 +150,7 @@ func (a remoteAdapter) PrepareFill(_ context.Context, rc formats.RemoteContext, 
 		hosts[i] = h.Pattern
 	}
 	out := formats.Prepared{}
-	data := fillData{kind: t.kind, pkg: t.pkg(), size: size}
+	data := fillData{kind: t.kind, pkg: t.pkg(), size: size, version: t.version}
 	switch t.kind {
 	case kindRoot:
 		_, err = parseDiscovery(doc)
@@ -153,6 +164,20 @@ func (a remoteAdapter) PrepareFill(_ context.Context, rc formats.RemoteContext, 
 		_, err = parsePage(doc)
 	case kindVersion:
 		out.Mappings, data.announced, err = a.checkVersion(rc, hosts, doc, t)
+		if err == nil {
+			data.fetchDocs = memberSettings(rc.Settings).FetchDocumentation
+			if u, ok := docsAddress(rc, hosts, doc, t); ok {
+				out.Mappings = append(out.Mappings, formats.URLMapping{Path: formats.Path{Path: DocsDocumentPath(t.ns, t.name, t.version)}, Upstream: u})
+				data.docsURL = true
+			}
+		}
+	case kindDocs:
+		var set rows.DocSet
+		if set, err = galaxydoc.ParseUpstreamDocs(doc); err != nil {
+			err = errs.E(errs.UpstreamFailed, errs.CodeUpstreamFailed, "The upstream sent a documentation document that trove cannot use: "+err.Error()+".", errs.WithCause(err))
+			break
+		}
+		data.docs = &set
 	case kindRoleLookup:
 		if _, _, ok := parseLookupVariant(variant); !ok {
 			err = errs.E(errs.Internal, errs.CodeInternal, "The role lookup is stored with the variant owner=<owner>&name=<name>.")
@@ -210,6 +235,32 @@ func (remoteAdapter) checkVersion(rc formats.RemoteContext, hosts []string, doc 
 	return maps, announcedOf(t.ns, t.name, t.version, v.SHA256, v.Size, v.RequiresAnsible), nil
 }
 
+// docsAddress is the address of the documentation of a version: the href of its version document plus "docs-blob/" (R-ANS-035). It is
+// used only when the address is on the upstream's host or an extra host and its path ends in /versions/<version>/docs-blob/; the engine
+// takes it from the URL map in place of the address it derives, so the request never names it.
+func docsAddress(rc formats.RemoteContext, hosts []string, doc []byte, t target) (string, bool) {
+	href := galaxydoc.UpstreamHref(doc)
+	if href == "" {
+		return "", false
+	}
+	ref, err := url.Parse(href)
+	if err != nil {
+		return "", false
+	}
+	u := rc.Upstream.ResolveReference(ref)
+	u.User, u.Fragment, u.RawFragment, u.RawQuery = nil, "", "", ""
+	if u.Scheme != "http" && u.Scheme != "https" || !collectionHostAllowed(hosts, rc.Upstream, u) {
+		return "", false
+	}
+	base := strings.TrimSuffix(u.Path, "/")
+	if !strings.HasSuffix(base, "/versions/"+t.version) {
+		return "", false
+	}
+	u.Path = base + "/" + segDocsBlob + "/"
+	u.RawPath = ""
+	return u.String(), true
+}
+
 func checkRoleLookup(doc []byte) error {
 	_, err := renderRoleLookup(doc, "https://trove.invalid/", "o", "n")
 	return err
@@ -248,9 +299,26 @@ func (a remoteAdapter) OnFill(ctx context.Context, tx formats.Tx, ev formats.Fil
 		if !ok {
 			return formats.FillByFetchTime, errs.E(errs.Internal, errs.CodeInternal, "The Ansible data port is not bound.")
 		}
+		prev, had, err := st.Announced(ctx, ev.Repo.ID, data.announced.Name, data.announced.Version)
+		if err != nil {
+			return formats.FillByFetchTime, err
+		}
 		if _, err := st.RecordAnnounced(ctx, tx, ev.Repo.ID, []rows.Announced{data.announced}); err != nil {
 			return formats.FillByFetchTime, err
 		}
+		if err := queueDocs(ctx, tx, st, ev.Repo.ID, data, had && prev.SHA256 != data.announced.SHA256); err != nil {
+			return formats.FillByFetchTime, err
+		}
+	}
+	if data.kind == kindDocs && data.docs != nil {
+		st, ok := ev.Data.(Store)
+		if !ok {
+			return formats.FillByFetchTime, errs.E(errs.Internal, errs.CodeInternal, "The Ansible data port is not bound.")
+		}
+		if err := st.PutDocs(ctx, tx, ev.Repo.ID, data.pkg, data.version, *data.docs); err != nil {
+			return formats.FillByFetchTime, err
+		}
+		a.f.countFill(ev.Data, fillAvailable)
 	}
 	if data.kind == kindRoleVersions {
 		rep.rolesDropped(ev.Repo.Name.String(), data.dropped)
@@ -259,6 +327,30 @@ func (a remoteAdapter) OnFill(ctx context.Context, tx formats.Tx, ev formats.Fil
 		return formats.FillByFetchTime, nil
 	}
 	return formats.FillByFetchTime, ev.Packages.Notify(catalog.MetadataChangedArea, catalog.PackageChanged(ev.Repo.ID, data.pkg))
+}
+
+// queueDocs decides, in the fill transaction of a version document, what becomes of the version's documentation (R-ANS-042): with
+// ansible.fetchDocumentation on it queues the job when the version has no documentation and nothing is known about it, or when the digest
+// the document announces changed; a document that names no usable address records that there is nothing to fetch. A state that is already
+// known (documentation, pending, unavailable, a recorded none) is not asked again until the digest changes.
+func queueDocs(ctx context.Context, tx formats.Tx, st Store, repoID int64, data fillData, digestChanged bool) error {
+	if !data.fetchDocs {
+		return nil
+	}
+	state, err := st.DocState(ctx, repoID, data.pkg, data.version)
+	if err != nil {
+		return err
+	}
+	switch {
+	case !data.docsURL:
+		if state.State == rows.DocAvailable {
+			return nil
+		}
+		return st.SetDocFetch(ctx, tx, repoID, data.pkg, data.version, rows.DocFetchNone, "")
+	case digestChanged || state.State == rows.DocNone && !state.NoneKnown:
+		return st.EnqueueDocsFill(ctx, tx, repoID, data.pkg, data.version)
+	}
+	return nil
 }
 
 // Rewrite renders a stored upstream document for one response of the serving repository (R-ANS-017): the documents carry the
@@ -303,6 +395,9 @@ func (a remoteAdapter) Rewrite(_ context.Context, rc formats.RemoteContext, p fo
 		}
 		v.Filename = ArtifactFile(t.ns, t.name, t.version)
 		return galaxydoc.RenderVersion(v, addr), nil
+	case kindDocs:
+		// The documentation holds HTML of the upstream, which only the Host's renderer sanitizes: the route renders it (remoteDocs).
+		return nil, missing()
 	case kindRoleLookup:
 		return renderRoleLookup(doc, repo, "", "")
 	case kindRoleVersions:

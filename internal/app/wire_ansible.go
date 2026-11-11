@@ -11,8 +11,10 @@ import (
 	"github.com/guided-traffic/trove/internal/formats"
 	ansibleformat "github.com/guided-traffic/trove/internal/formats/ansible"
 	"github.com/guided-traffic/trove/internal/formats/ansible/collection"
+	"github.com/guided-traffic/trove/internal/formats/ansible/docgen"
 	"github.com/guided-traffic/trove/internal/formats/ansible/rows"
 	"github.com/guided-traffic/trove/internal/jobs"
+	"github.com/guided-traffic/trove/internal/mirror/discover"
 )
 
 // ansibleBlobs gives the data port of the Ansible Galaxy format whole reads of a stored archive: the README of a version is a file
@@ -34,7 +36,25 @@ func (b ansibleBlobReader) Open(ctx context.Context, sha256 [32]byte, size int64
 // pass under the bounds of R-ANS-031, and the blob store verifies it against its digest.
 type ansibleArchives struct{ blobs ansibledata.BlobReader }
 
-var _ rows.ArchiveReader = ansibleArchives{}
+var (
+	_ rows.ArchiveReader = ansibleArchives{}
+	_ rows.DocsReader    = ansibleArchives{}
+)
+
+// ReadDocs generates the documentation of a stored archive in the one pass of the reader, as a publish does (R-ANS-034, R-ANS-044).
+func (r ansibleArchives) ReadDocs(ctx context.Context, ref rows.ArchiveRef) (rows.DocSet, error) {
+	body, err := r.blobs.Open(ctx, ref.SHA256, ref.Size)
+	if err != nil {
+		return rows.DocSet{}, err
+	}
+	defer func() { _ = body.Close() }()
+	gen := docgen.NewGenerator(docgen.DefaultLimits())
+	a, err := collection.ReadArchive(ctx, body, collection.DefaultLimits(), collection.WithTap(gen))
+	if err != nil {
+		return rows.DocSet{}, err
+	}
+	return gen.Build(a.ReadmeName), nil
+}
 
 func (r ansibleArchives) ReadArchive(ctx context.Context, ref rows.ArchiveRef) (rows.ArchiveFacts, error) {
 	body, err := r.blobs.Open(ctx, ref.SHA256, ref.Size)
@@ -60,7 +80,30 @@ func (a *App) startAnsibleReindex(in infra, ports map[formats.ID]any) error {
 		return fmt.Errorf("formats: the Ansible Galaxy data port is not the PostgreSQL store")
 	}
 	a.ansibleReindex.set(ansibledata.ReindexHandler(st, ansibleArchives{blobs: ansibleBlobs(in.blobs)}))
+	a.ansibleDocsFill.set(ansibledata.DocsFillHandler(st, ansibleBackground{a}))
 	return nil
+}
+
+// ansibleBackground gives the job ansible-docs-fill the upstream of a remote repository for one run (Host.BackgroundUpstream, Q-REPO-272),
+// from the mirror host's builder.
+type ansibleBackground struct{ a *App }
+
+var _ ansibledata.Background = ansibleBackground{}
+
+// Upstream implements [ansibledata.Background].
+func (b ansibleBackground) Upstream(ctx context.Context, repoID int64, jobID string) (discover.Upstream, error) {
+	return debBackground(b).Upstream(ctx, repoID, jobID)
+}
+
+// ansibleDocsFillHandler is the handler registered for the kind ansible-docs-fill.
+func (a *App) ansibleDocsFillHandler() jobs.Handler {
+	return func(ctx context.Context, run *jobs.Run) error {
+		h, ok := a.ansibleDocsFill.get()
+		if !ok {
+			return fmt.Errorf("ansible docs fill: this replica has not wired it yet")
+		}
+		return h(ctx, run)
+	}
 }
 
 // ansibleReindexHandler is the handler registered for the kind ansible-reindex.

@@ -73,6 +73,9 @@ const (
 	CodeReadmeNotMarkdown  = "readme_not_markdown"
 )
 
+// readmeFileName is the name of the README in a set, whatever the manifest called the file (R-ANS-033).
+const readmeFileName = "README.md"
+
 // pluginType maps a directory below plugins/ to the content type of its items (R-ANS-034); ok is false for a directory that holds none.
 func pluginType(dir string) (typ string, ok bool) {
 	switch dir {
@@ -465,7 +468,7 @@ func (g *Generator) files(readmeName string, set *rows.DocSet) (readme *rows.Doc
 	}
 	if body, ok := g.markdown[readmeName]; ok && readmeName != "" {
 		if text, ok := readOK(readmeName, body); ok {
-			readme = &rows.DocFile{Name: path.Base(readmeName), Format: rows.DocFormatMarkdown, Body: text}
+			readme = &rows.DocFile{Name: readmeFileName, Format: rows.DocFormatMarkdown, Body: text}
 			total += int64(len(text))
 		}
 	}

@@ -1,15 +1,15 @@
 # Ansible Galaxy collection documentation
 
-Status: specified, not built (owner task T-19; requirements [R-ANS-033 to R-ANS-046](../spec/formats/ansible.md), work packages in
-[galaxy-docs-work-packages.md](../projektplan/galaxy-docs-work-packages.md)). The page describes the mechanism as the spec fixes it; the builders
-of the work packages correct it in the change that builds each part.
+Status: built in the backend (owner task T-19; requirements [R-ANS-033 to R-ANS-046](../spec/formats/ansible.md), work packages in
+[galaxy-docs-work-packages.md](../projektplan/galaxy-docs-work-packages.md)). The screens are not part of this page's mechanism yet; the wiki check is
+the repository read decision until task T-18 replaces it (`wikigate.go`, `docsWiki`).
 
 This page describes what the text of a collection's documentation can make trove do and show, and who may read it. Two parties write that text and
 neither is trusted: a **publisher** (the plugin sources, the README and the `docs/` files of an archive, read at publish) and an **upstream Galaxy** (the
 `docs-blob/` document of a remote repository). The reader is any caller who may read the repository, and a browser on trove's own origin. The archive
 reader's bounds are on [ansible.md](ansible.md); the remote engine's checks on [remote-repositories.md](remote-repositories.md) and
 [ansible-remote.md](ansible-remote.md); the README renderer's policy is the one of [R-UI-008](../spec/api-and-ui.md); who may read the wiki part is
-decided by [permissions.md](permissions.md) (R-AUTHZ-034). The code will be `internal/formats/ansible/docgen` (the generator and the
+decided by [permissions.md](permissions.md) (R-AUTHZ-034). The code is `internal/formats/ansible/docgen` (the generator and the
 markup converter), [internal/formats/ansible](../../internal/formats/ansible) (`wikigate.go`, the route and the fill), the data port
 [internal/formatdata/ansible](../../internal/formatdata/ansible) and the operations in [internal/api/v1](../../internal/api/v1).
 
@@ -40,7 +40,7 @@ so there is one policy, and a policy change applies to stored upstream documents
 
 | Step | What is decided | Where | Answer |
 |---|---|---|---|
-| 1 | The address of the document is the version document's `href` plus `docs-blob/`, from the stored document and never from the request; its host is the upstream's or an `extraHosts` entry and its path ends in `/versions/<version>/docs-blob/` | `UpstreamRequest` | Otherwise no request is sent and the state is `none` |
+| 1 | The address of the document is the version document's `href` plus `docs-blob/`, recorded as a URL-map row when the version document is filled and never taken from a request; its host is the upstream's or an `extraHosts` entry and its path ends in `/versions/<version>/docs-blob/` ([Q-ANS-73](../spec/formats/ansible.md)) | `PrepareFill` of the version document | Otherwise no row is recorded, the fetch row says `none` and the route and the job send no request |
 | 2 | The document is at most `MaxDocumentBytes` (16 MiB) and its shape is checked before anything is stored: at most 5,000 items, valid names and types, 1 MiB kept per entry | `PrepareFill` | 502, the previous entry stays |
 | 3 | The credential, egress rules, the rate limit, the circuit and the one-flight rule are the engine's | the engine | As for every document |
 | 4 | A screen never contacts the upstream; only a client's request for the route and the job `ansible-docs-fill` do | the operations read rows | A viewer cannot make trove fetch |
@@ -53,6 +53,22 @@ The version document, the lists and the archive are not wiki and follow the arti
 addressed and for the winning member.
 
 ## What this does not cover
+
+### H-900 · A remote version's documentation outlives the eviction of its archive
+
+The rows of a remote version are deleted with the repository and by the purge of the remote caches (R-BAK-008), and not when the cached archive of the version is evicted or a mirror drops the version: the remote class has no removal hook for them. Live today for every remote repository that evicts archives; real for a viewer who sees the documentation of a version whose archive is gone, and for the storage of the rows (they stay small next to an archive). The stored document of the engine follows its own retention.
+
+### H-901 · A virtual repository falls through to a later member's documentation
+
+The route walks the members by tier and position and serves the first that has documentation ([Q-ANS-74](../spec/formats/ansible.md)). A member that holds the version and has none does not stop the walk, so a later member that holds the same number with other bytes can supply the documentation. Live today where two members hold one version number with different archives (the digest conflict counter of R-ANS-022 counts those); the documentation never mixes members within one answer.
+
+### H-902 · The screens' choice of a repository ignores the pin rules and claims of a virtual repository
+
+`resolveDocs` takes the members of a virtual repository in the order of their tiers and the repositories of the caller's read scope; it does not apply the claims and pin rules (R-REPO-023) that keep a name away from a member. Live today for a virtual repository with a claim for a name that a remote member also serves: the Documentation tab may show that member's documentation of the number while an install through the virtual repository takes the claiming member's archive. The protocol route is not affected (it asks the resolver's plan).
+
+### H-903 · The operations' metrics and the job's failures are not counted
+
+`trove_ansible_docs_read_total` counts the route and `trove_ansible_docs_fill_total` the fills of the request path; the three management operations and the failures of the job `ansible-docs-fill` are not counted (R-ANS-045 names them). Live today for every installation; it hides a failing fetch job from the dashboards until the fetch row is read.
 
 - [H-890](../spec/formats/ansible.md#h-890--the-size-of-the-documentation-of-a-full-mirror-and-of-many-local-versions-is-not-measured): the size of a full mirror's documentation is not measured.
 - [H-891](../spec/formats/ansible.md#h-891--documentation-fragments-are-not-merged-into-the-documentation-of-a-generated-entry): fragments are not merged into a generated entry.

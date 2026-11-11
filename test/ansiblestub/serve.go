@@ -204,7 +204,9 @@ func (s *Server) serveGalaxy(w http.ResponseWriter, r *http.Request, rt route, m
 			writeText(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		writeDoc(w, r, m, http.StatusOK, versionDocument(base, c, v, ann))
+		writeDoc(w, r, m, http.StatusOK, versionDocument(base, c, v, ann, m.DocsForeignHref))
+	case kDocs:
+		s.serveDocs(w, r, rt, m)
 	case kArtifact:
 		if m.Redirect {
 			http.Redirect(w, r, signedAddress(rt.file), http.StatusFound)
@@ -351,4 +353,44 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_, _ = w.Write(append(body, '\n'))
+}
+
+// hugeDocsBytes is larger than the 16 MiB a remote stores of a documentation document.
+const hugeDocsBytes = 17 << 20
+
+// writeHugeDocs writes a document of the right shape that is larger than the bound: the contents are an array padded with white space.
+func writeHugeDocs(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Length", strconv.Itoa(hugeDocsBytes))
+	w.WriteHeader(http.StatusOK)
+	const head, tail = `{"docs_blob":{"collection_readme":null,"documentation_files":[],"contents":[`, `]}}`
+	pad := bytes.Repeat([]byte(" "), 64<<10)
+	_, _ = w.Write([]byte(head))
+	for left := hugeDocsBytes - len(head) - len(tail); left > 0; {
+		n := min(left, len(pad))
+		if _, err := w.Write(pad[:n]); err != nil {
+			return
+		}
+		left -= n
+	}
+	_, _ = w.Write([]byte(tail))
+}
+
+// serveDocs answers the docs-blob route under the modes of Mode.Docs.
+func (s *Server) serveDocs(w http.ResponseWriter, r *http.Request, rt route, m Mode) {
+	c := s.findCollection(rt.ns, rt.name)
+	var v *versionDef
+	if c != nil {
+		v = c.find(rt.vers)
+	}
+	switch {
+	case v == nil || m.Docs == DocsNotFound:
+		writeDoc(w, r, m, http.StatusNotFound, notFound())
+	case m.Docs == DocsError:
+		writeText(w, http.StatusInternalServerError, "the test upstream fails the documentation")
+	case m.Docs == DocsHuge:
+		writeHugeDocs(w)
+	default:
+		writeDoc(w, r, m, http.StatusOK, docsDocument(c, v, m.Docs))
+	}
 }

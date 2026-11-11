@@ -56,8 +56,8 @@ type LocalStore interface {
 	CreateTask(ctx context.Context, tx formats.Tx, t rows.Task, a rows.Audit) error
 	// Task reads a task of the repository; found is false for an unknown id.
 	Task(ctx context.Context, repoID int64, id string) (rows.Task, bool, error)
-	// Tasks lists the tasks of a repository newest first, optionally of one state, after the cursor (the id of the last one seen).
-	Tasks(ctx context.Context, repoID int64, state string, after string, limit int) ([]rows.Task, error)
+	// Tasks lists the tasks of a repository newest first, optionally of one state, collection and version, after the cursor (the id of the last one seen).
+	Tasks(ctx context.Context, repoID int64, f rows.TaskFilter, after string, limit int) ([]rows.Task, error)
 	// RebuildRows is one step of the job ansible-reindex (R-ANS-012): it reads the archive of every stored item after the checkpoint
 	// through reader, rewrites the version rows from it and creates the rows of archives that have none. It returns the checkpoint to
 	// continue from, and done true after the last package name. It never changes stored bytes.

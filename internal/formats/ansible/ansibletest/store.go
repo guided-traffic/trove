@@ -173,12 +173,12 @@ func (s *Store) Task(_ context.Context, repoID int64, id string) (rows.Task, boo
 }
 
 // Tasks lists the tasks newest first.
-func (s *Store) Tasks(_ context.Context, repoID int64, state, after string, limit int) ([]rows.Task, error) {
+func (s *Store) Tasks(_ context.Context, repoID int64, f rows.TaskFilter, after string, limit int) ([]rows.Task, error) {
 	defer s.lock()()
 	var out []rows.Task
 	for i := len(s.tasks) - 1; i >= 0; i-- {
 		t := s.tasks[i]
-		if t.RepoID == repoID && (state == "" || t.State == state) {
+		if t.RepoID == repoID && (f.State == "" || t.State == f.State) && (f.Name == "" || t.Namespace+"."+t.Name == f.Name) && (f.Version == "" || t.Version == f.Version) {
 			out = append(out, t)
 		}
 	}
