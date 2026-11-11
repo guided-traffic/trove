@@ -2940,6 +2940,53 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied in the spec:** R-ANS-036, Q-API-263.
 
+### Q-ANS-76 · A remote repository's cache is listed by the generic rows and described by a row of the manifest that the commit of a fill writes
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Generic rows only | `CommitFill` creates the package and the version and links the item | No table of the format | The package has no description, licence, dependencies or links, and the owner's task asks for them for every class |
+| (b) `CommitFill` also writes the row of `ansible_collection_versions` from the manifest the inspection read (`PutCachedVersion`: no event, no tombstone, no claim) (chosen) | R-UI-020, R-UI-021, R-ANS-026 | The screens read one row for every class (`AnsibleViewRows`), so the Install tab, the links, Requires Ansible and the Dependencies of a remote's collection are what a local one's are; the manifest was read under the bounds of R-ANS-031 by `InspectFill`, nothing is read again; the row is deleted with the cached item | A cache entry is in the table of the local class; the code that reads it by class stays scoped by the repository (the reindex and the version documents run for local repositories only) |
+| (c) Read the manifest of the upstream's version document | The version document has the same facts | No archive needed | The listing is by cached archive (Q-ANS-78), and the version document is not stored per version in a row |
+
+**Choice:** (b). **Rationale:** the gap found by the real clients was that a remote's collection was not listed at all; the owner's task shows the same page for local, remote and virtual. Revisit if the table is split by class.
+
+**Applied in the spec:** R-ANS-018, R-ANS-026.
+
+### Q-ANS-77 · A virtual repository lists the collections of its remote members through the rows of the members
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The view lists the holders of a version through the topology: a virtual repository holds what its members hold, so the rows of Q-ANS-76 are listed under the virtual repository without a row of its own (chosen) | R-UI-020, R-ANS-022 | One mechanism; the integration test of `ansiblevirtual` proves it | A collection the remote member has not cached is not listed |
+| (b) A row per virtual repository | Rows in the virtual repository | Explicit | A virtual repository stores nothing (R-REPO-018) |
+
+**Choice:** (a). **Applied in the spec:** R-ANS-022, R-ANS-026.
+
+### Q-ANS-78 · A remote version is listed when its archive is cached, not when its version document is filled
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The row is written by the commit of the archive's fill (chosen) | R-UI-020 | A listed version has a file, a size and a digest; the same moment as the other formats' caches | The documentation of a version whose archive is not cached is reachable by the protocol route only |
+| (b) At the fill of the version document | Earlier | The documentation tab appears before an install | A version without a file |
+
+**Choice:** (a). **Applied in the spec:** R-ANS-026, R-ANS-036.
+
+### Q-ANS-79 · The eviction of a cached archive removes the generic version as the core does and leaves the format's documentation rows
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The core's removal of the item and its version stands; the documentation rows stay until the repository or the cache is purged (H-900) (chosen) | R-ANS-040 | No removal hook for a cache | A viewer can reach rows of a version that is no longer listed (they need the package id, which is gone) |
+| (b) A `RemovalHook` for the remote class | Rows follow items | Clean | A hook for every eviction of a cache |
+
+**Choice:** (a). **Applied in the spec:** H-900.
+
 ## What this does not cover
 
 ### H-839 · A remote's signatures are passed through and not verified by trove

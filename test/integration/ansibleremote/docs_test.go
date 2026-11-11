@@ -23,8 +23,8 @@ func (e *aenv) jobsReplica() *testenv.Replica {
 func (e *aenv) docsRequests() int { return e.stub.Counts().OfKind(ansiblestub.ClassDocs, "GET") }
 
 func (e *aenv) docsState(repo string) string {
-	return e.st.Text(`SELECT COALESCE((SELECT 'available' FROM ansible_version_docs WHERE repo_id = $1 AND version = '1.0.0'),
-		(SELECT state || ':' || reason FROM ansible_doc_fetches WHERE repo_id = $1 AND version = '1.0.0'), 'none')`, e.repoID(repo))
+	return e.st.Text(`SELECT COALESCE((SELECT 'available' FROM ansible_version_docs WHERE repo_id = $1),
+		(SELECT state || ':' || reason FROM ansible_doc_fetches WHERE repo_id = $1), 'none')`, e.repoID(repo))
 }
 
 // TestR_ANS_035_TheUpstreamsDocumentationIsServedSanitizedAndFetchedOnce: a client's request for docs-blob/ fetches the upstream's document once however

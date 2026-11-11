@@ -32,6 +32,7 @@ var (
 	_ formats.RemoteAdapter = remoteAdapter{}
 	_ formats.Discoverer    = remoteAdapter{}
 	_ formats.FillInspector = remoteAdapter{}
+	_ FillCommitter         = remoteAdapter{}
 )
 
 // TracksVersionRemoval is false: a version the upstream drops from its list leaves the served list at the next revalidation and its

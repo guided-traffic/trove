@@ -239,8 +239,15 @@ func TestR_ANS_018_AnArchiveIsFetchedOnceVerifiedAndServedFromTheCache(t *testin
 	if n := e.st.Number(`SELECT count(*) FROM items WHERE repo_id = $1 AND path = 'collections/acme/tools/acme-tools-2.0.0.tar.gz' AND trashed_at IS NULL`, id); n != 1 {
 		t.Errorf("%d items for the archive, want 1", n)
 	}
-	if n := e.st.Number(`SELECT count(*) FROM ansible_collection_versions WHERE repo_id = $1`, id); n != 0 {
-		t.Errorf("a remote repository wrote %d rows of ansible_collection_versions, want none", n)
+	// The row of the cached version holds its manifest for the package screens (Q-ANS-76); nothing else is written for a remote.
+	if n := e.st.Number(`SELECT count(*) FROM ansible_collection_versions WHERE repo_id = $1 AND name = 'acme.tools' AND version = '2.0.0'`, id); n != 1 {
+		t.Errorf("a remote repository wrote %d rows of ansible_collection_versions for the cached version, want 1", n)
+	}
+	if n := e.st.Number(`SELECT count(*) FROM ansible_collection_versions WHERE repo_id = $1`, id); n != 1 {
+		t.Errorf("a remote repository wrote %d rows of ansible_collection_versions, want the one of the cached version", n)
+	}
+	if n := e.st.Number(`SELECT count(*) FROM ansible_tombstones WHERE repo_id = $1`, id); n != 0 {
+		t.Errorf("a remote repository wrote %d tombstones", n)
 	}
 
 	// The cached archive is served without a request to the stub, and a range of it as a range.

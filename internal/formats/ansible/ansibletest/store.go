@@ -198,6 +198,13 @@ func (s *Store) RebuildRows(context.Context, int64, rows.ArchiveReader, string) 
 	return "", true, nil
 }
 
+// PutCachedVersion stores the row of a cached version.
+func (s *Store) PutCachedVersion(_ context.Context, _ formats.Tx, v rows.VersionRow) error {
+	defer s.lock()()
+	s.versions[key{v.RepoID, v.Name, v.Version}] = v
+	return nil
+}
+
 // RecordAnnounced records nothing: the remote class is not under test here.
 func (s *Store) RecordAnnounced(context.Context, formats.Tx, int64, []rows.Announced) ([]rows.Announced, error) {
 	return nil, nil

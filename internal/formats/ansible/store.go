@@ -90,6 +90,10 @@ type RemoteStore interface {
 	Announced(ctx context.Context, repoID int64, name, version string) (rows.Announced, bool, error)
 	// AnnouncedNames lists the versions recorded for a collection name: the virtual repository's cached-version set.
 	AnnouncedNames(ctx context.Context, repoID int64, name string) ([]rows.Announced, error)
+	// PutCachedVersion records what the manifest of an archive a remote cached says, in the transaction of the fill (Q-ANS-76): the row the
+	// package screens read for the description, the licences, the dependencies and the links. It writes no event and no tombstone; a row of
+	// the same version is replaced, and it goes with the cached item.
+	PutCachedVersion(ctx context.Context, tx formats.Tx, v rows.VersionRow) error
 }
 
 // DocsStore is the part of the data port that keeps the documentation of a collection version (R-ANS-033 to R-ANS-036): the tables

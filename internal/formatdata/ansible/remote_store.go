@@ -18,6 +18,30 @@ import (
 // are internal/meta/postgres/queries/ansible_remote.sql, the table is ansible_upstream_versions (migration 00070).
 type remoteStore struct{ *group }
 
+// PutCachedVersion implements ansible.RemoteStore: the row of a cached version, without the event of a publish.
+func (s remoteStore) PutCachedVersion(ctx context.Context, tx meta.Tx, v rows.VersionRow) error {
+	qs, err := txQueries(tx)
+	if err != nil {
+		return err
+	}
+	deps := v.Dependencies
+	if deps == nil {
+		deps = map[string]string{}
+	}
+	depsJSON, err := json.Marshal(deps)
+	if err != nil {
+		return err
+	}
+	if len(v.CollectionInfo) == 0 {
+		v.CollectionInfo = json.RawMessage(`{}`)
+	}
+	return qs.AnsibleUpsertVersion(ctx, q.AnsibleUpsertVersionParams{
+		RepoID: v.RepoID, Name: v.Name, Version: v.Version, SortKey: v.SortKey, ItemID: v.ItemID, Sha256: v.SHA256[:], Size: v.Size,
+		RequiresAnsible: v.RequiresAnsible, Dependencies: depsJSON, CollectionInfo: v.CollectionInfo, PublishedBy: noActor,
+		PublishedAt: stamp(v.PublishedAt),
+	})
+}
+
 // RecordAnnounced records the digests of the version documents a fill stores, in the fill's transaction (the cache entry of each
 // document is locked by the engine, so two fills of one document do not interleave). The first digest recorded for a version stays
 // while the version's archive is cached; the rows whose offered digest was not taken are returned as recorded, and the event
