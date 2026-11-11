@@ -334,6 +334,15 @@ mkdir -p "$OUT" "$REPO_ROOT/.out"
 
 helm --kube-context "$CTX" -n "$NS" status trove >/dev/null 2>&1 || die "the trove release is not installed; run make dev-up"
 
+# ── the evidence of a stalled cluster ────────────────────────────────────────
+# Beside every set, green or red: the pressure of the host and of each kind node, HAProxy's connection counters, the Secrets
+# and the events, and the logs of the pods that were deleted or evicted (deploy/dev/e2e-evidence.sh, docs/developer/e2e.md#reading-a-stall).
+# It ends with this script, whatever the result, and never fails the set.
+if [ "${TROVE_E2E_EVIDENCE:-1}" = 1 ] && [ "${set_name%-down}" = "$set_name" ]; then
+  "$DEV_DIR/e2e-evidence.sh" start "$OUT/evidence" || log "the evidence recorders did not start"
+  trap '"$DEV_DIR/e2e-evidence.sh" stop "$OUT/evidence" || true' EXIT
+fi
+
 # ── k6 ───────────────────────────────────────────────────────────────────────
 [ "${K6_IMAGE#*:}" != "$K6_IMAGE" ] || die "K6_IMAGE is not set in tools/versions.env"
 tag="${K6_IMAGE#*:}"; tag="${tag%%@*}"

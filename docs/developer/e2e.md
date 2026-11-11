@@ -220,7 +220,8 @@ Output: the machine-readable report is `.out/test-e2e.json` (`TROVE_E2E_REPORT=<
 requirement IDs), the artifacts are in `.out/e2e/`: per k6 run the console log (one line per request:
 `R <unix ms> <status> <replica> <ms> <path>`) and k6's own `summary.json`, the driver's JSON per run, the
 pod watch and the events of the drain, the logs of the drained pods, and the result files `e13-*.json`,
-`e14-drain.json`, `e06-*.json`.
+`e14-drain.json`, `e06-*.json`; `evidence/` holds the pressure samples, the Secrets, the events and the logs of lost pods of every set
+([Reading a stall](#reading-a-stall)).
 
 | Variable | Default | Effect |
 |---|---|---|
@@ -235,10 +236,53 @@ pod watch and the events of the drain, the logs of the drained pods, and the res
 | `TROVE_E2E_SCATTER_RETURN` | `1` | `0` leaves the cluster in the `scatter` profile after E0.11 |
 | `TROVE_E2E_RUN` | unset | replaces the `go test -run` expression of any set (`TROVE_E2E_RUN='TestNPMMatrix/rows/E2.1_npm11' deploy/dev/e2e.sh npm`) |
 | `TROVE_E2E_NPM_CRASH_SOAK` | unset | `1` makes `TestNPMHACrash` force-delete ten pods over 20 minutes instead of three; the sets `npm-ha-soak` and `npm-ha-closing` export it |
+| `TROVE_E2E_EVIDENCE` | `1` | `0` records no [stall evidence](#reading-a-stall) |
+| `TROVE_E2E_EVIDENCE_INTERVAL` | `1` | seconds between two samples of the host and of each node |
+| `TROVE_E2E_EVIDENCE_EDGE_INTERVAL` | `2` | seconds between two samples of the edge |
+| `TROVE_E2E_EVIDENCE_LOG_CAP_MIB` | `32` | most that is copied of one container's log |
+| `TROVE_E2E_EVIDENCE_MAX_SECONDS` | `21600` | a recorder's own end, should a run be killed before it can stop them |
 
 The suite runs over TLS by default: the scheme, the CA and the probe scheme are parameters (the defaults above),
 and nothing in the suite hard-codes `http`. What the move to TLS changed is listed in
 [TLS in the suite](#tls-in-the-suite).
+
+## Reading a stall
+
+Every set, green or red, leaves `evidence/` in its artifact (`.out/e2e/evidence/`, uploaded with the rest of `.out/e2e/` as `e2e-artifacts-<set>`). `e2e.sh`
+starts [e2e-evidence.sh](../../deploy/dev/e2e-evidence.sh) before the first step of a set and stops it from its `EXIT` trap, so the stub builds, the image
+loads and the client pods are inside the window; the sets whose name ends in `-down` record nothing. A green run is the baseline to hold a red one against.
+It exists because five findings (H-795, F-119, F-124, F-127 and the stall of the set `push`) ended in "we do not know what starved the nodes"
+([Q-HA-300](../spec/ha-and-helm.md#q-ha-300--every-e2e-set-records-what-starved-the-kind-nodes-inside-the-nodes-whether-it-passes-or-fails)).
+
+| File | What it is |
+|---|---|
+| `samples.csv` | One row per source and sample, by time. `ts_ms` is the epoch in milliseconds (whole seconds for the edge). Sources: `host` (the machine the nodes share: `/proc/pressure` and the load average; on Docker Desktop read inside a node, where it is the VM's), `node:<name>` (the pressure files of that node's cgroup, which differ per node), `edge:<pod>` (HAProxy's counters from its admin socket). Columns: `cpu_` and `mem_` `some`/`full` `avg10` (percent) and `total_us` (microseconds stalled since boot), `load1/5/15`, `edge_curr_conns`, `edge_curr_ssl_conns`, `edge_conn_rate`, `edge_idle_pct`. Empty where a source has no such value |
+| `secrets.tsv` | Every Secret of every namespace at the start (`start`) and at the end (`end`): `resourceVersion`, creation time, `uid` and the managers that wrote it. Names and metadata only; no value is read |
+| `secrets-watch.log` | The watch of the Secrets: first the list at the start, then one line per change with the time it was seen |
+| `events.tsv` | The Kubernetes events of every namespace (time, namespace, object, type, reason, count, message), from the watch, so events older than the cluster's hour of retention are in it |
+| `pods-final.txt` | `kubectl get pods -A -o wide` at the end |
+| `kept-pod-logs/` | Gzipped logs, one per container instance, `<namespace>_<pod>_<uid>__<container>__<n>.log.gz`: of the pods that were deleted or evicted during the run (their uid is no running pod's at the end) and of every pod of the secrets operator (`internal-secrets-operator-system`) and of cert-manager. Lines are the kubelet's own format (time, stream, flag, text) |
+
+How to read one:
+
+1. **Was the machine starved?** The `total_us` columns count stall microseconds, so the difference of two rows is the stall inside that window, whatever
+   the ten-second average smooths. A second of `some` close to 1,000,000 microseconds means a runnable task waited the whole second.
+   ```shell
+   awk -F, '$2=="host" { if (p != "") printf "%s cpu some %6.0f ms in %.1f s  load1 %s\n", $1, ($4-p)/1000, ($1-t)/1000, $11; p=$4; t=$1 }' samples.csv
+   ```
+   Replace `host` by `node:trove-worker` to see which node carried it (a node's cgroup has pressure of its own: look for the node that is far above the others). `mem_` and `cpu_full` are the same arithmetic with columns 8 and 6.
+2. **Did the edge hold connections?** `grep edge: samples.csv`: `edge_curr_conns` is the process's current connections (about 50 while k6 runs at 100 requests/s
+   on kind), `edge_idle_pct` falls when HAProxy itself is busy. About 1,800 connections open as in F-124 reads here as a column, with the minute it began.
+3. **Was a Secret written again?** Compare `start` and `end` in `secrets.tsv`: the same name with another `uid` or a changed `resourceVersion` was written during the run;
+   `secrets-watch.log` gives the second, and `writtenBy` the manager (the secrets operator or cert-manager). Then read the operator's log in `kept-pod-logs/` for the
+   same second, and `events.tsv` for its restarts, leader elections and the Certificate events around it (F-127).
+4. **Which pod was lost and what did it say?** `events.tsv` names the pod (`Killing`, `Evicted`, `Unhealthy`) and its file in `kept-pod-logs/` has the last lines. A pod that is still
+   there at the end is in the failure step's `e2e-cluster-state-<set>` artifact instead (`deploy/dev/cluster-logs.sh`).
+
+What it does not show: a stall inside a single pod that the nodes' cgroups do not see (the pods have no CPU limits on kind, so throttling is not part of it);
+the edge's timestamps have whole seconds because its image's `date` has no more; the log copy polls every 2 seconds, so a log that the kubelet removes within
+2 seconds of its last write, or past the 32 MiB cap or after a rotation, is incomplete; a node on cgroup v1 or a kernel without pressure information leaves those columns empty;
+a replaced edge pod ends its series and the next one starts a new `edge:<pod>`.
 
 ## The driver
 

@@ -10112,6 +10112,34 @@ Context: [Q-REPO-306](repositories-and-proxy.md#q-repo-306--the-mirror-tests-are
 
 **Applied in the spec:** none. [docs/developer/e2e.md](../developer/e2e.md#what-is-deployed).
 
+### Q-HA-300 · Every e2e set records what starved the kind nodes, inside the nodes, whether it passes or fails
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: five findings (H-795, F-119, F-124, F-127 and the stall of the set `push`) end with the same next step: a red leg leaves no reading of what starved the
+cluster (the CPU pressure of the runner, the connections at the edge, the log of the secrets operator, the pods that were deleted before their logs were
+read). The artifacts held the k6 logs, the pod watch of the drain and, on failure only, the pod logs as they were at the end. The probe of E0.15 once used more CPU than the
+installation (Q-HA-292), so the recorder must not become the next load.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Recorders inside the node containers, started and collected by `e2e.sh` for every set (chosen) | `deploy/dev/e2e-evidence.sh`: a bash loop per node (`docker exec -d`) reads the pressure files with builtins and forks `date` and `sleep` once a second; a second loop copies the appended bytes of the kubelet's container logs every 2 s; the edge's HAProxy counters come through `kubectl exec` and the admin socket every 2 s; one watch each for Secrets (columns only) and events | One process per node and no pipe to a host client, so nothing outlives a killed run (the loops end at a stop file); no per-sample `docker exec`; the log copy survives a force delete; green runs leave the baseline | A few files per leg; the edge's image has whole-second timestamps only; a log removed within 2 s of its last write is not caught |
+| (b) A `docker exec` or `kubectl exec` per sample from the host | Simple | Nothing to clean up in the nodes | A process start per node per second on the host (the cost Q-HA-292 left behind), and a stalled host is the moment it would miss samples |
+| (c) `kubectl logs -f` per pod | The API's own log stream | No node-side copy | One client process per container (about 40), a new one per pod, and a stream that ends with the pod loses the lines the kubelet had not yet sent |
+| (d) Only on failure, in the step "Cluster state (failure only)" | No cost on green runs | Nothing new in the workflow | A stall has no baseline to compare with, and the pressure of a minute that is over cannot be read afterwards |
+
+**Choice:** (a). The pressure of the machine the nodes share is read once (`/proc/pressure` on Linux, inside a node on Docker Desktop, where it is the VM's), and
+each node adds its own cgroup's pressure files, which differ per node. The files go to `.out/e2e/evidence/`, which every e2e job already uploads as
+`e2e-artifacts-<set>`: no workflow changes.
+
+**Rationale:** What decides whether a stall was starvation is the stall time per second (the difference of two `total` readings), the nodes that carry it, the
+edge's connection count at that moment and whether a Secret was written in the window. Only the first is lost for good if it is not sampled during the run.
+The development agent would revisit the choice if the recorders' own cost shows in a run (a leg with `TROVE_E2E_EVIDENCE=0` against one without), by raising
+`TROVE_E2E_EVIDENCE_INTERVAL`. Measured on kind on 2026-11-11: the loops of a node used under one second of CPU time in a minute (below the
+resolution of `ps`); the host side was the Secret watch (0.9 s in its first minute, mostly the initial list) and three clients of 0.1 s each.
+
+**Applied in the spec:** none. [docs/developer/e2e.md](../developer/e2e.md#reading-a-stall).
+
 ## What this does not cover
 
 ### H-37 · A database restore revives revoked credentials and removed grants
