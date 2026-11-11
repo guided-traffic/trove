@@ -423,7 +423,11 @@ next unit of [FULL.md](FULL.md) (block B, F1).
 
 **Phase 7, not closed** (BETA.md stays 🟡): E5.9, E5.10 and E5.5 need green runs, E5.1 a run of the nightly job on a fresh cluster (the drill with the new commands passed on kind on 2026-11-10, Q-HA-289), H-798 is unexplained (drained pods killed after their grace period), and E5.6 misses 18 MVP IDs. The beta candidate is published only when every criterion is met.
 
-**Housekeeping**: finished builder worktrees under `.claude/worktrees` (the run of 2026-11-10 added fifteen) and the origin branches `p7-*` exist; deleting them is for the owner to approve. The local `docker buildx` is still behind its pin (see above).
+**Housekeeping**: finished worktrees are removed at the end of a run, with the local branches of work that has landed (owner, 2026-11-11). On
+2026-11-11 all 88 worktrees and 125 local branches were removed. Kept: two local branches whose work never landed, each with a WIP commit of
+the changes left uncommitted on 2026-11-08: `worktree-agent-a135bce1ea0ac051f` (the clients-first test of the mirror) and
+`worktree-agent-aa6a3feeee93a6b37` (the slow npm publish test, F-105, a temp sweep and an S3 cleanup of the test stack). The origin branches
+`p7-*` still exist; deleting them is for the owner to approve. The local `docker buildx` is still behind its pin (see above).
 
 ## 9 · Owner review of 2026-11-06: tasks and open questions
 
