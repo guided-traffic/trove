@@ -55,7 +55,7 @@ func TestNPMClosing(t *testing.T) {
 			"remote": map[string]any{"url": "https://registry.npmjs.org/"},
 		}).want(t, "create "+remote, 201)
 		fx.adm.do(http.MethodPost, reposRoute, map[string]any{
-			"key": all, "class": "virtual", "format": "npm", "requireAuthentication": true,
+			"key": all, "class": "virtual", "format": "npm",
 			"virtual": map[string]any{"members": []string{npmLocalKey, remote}, "deployTarget": npmLocalKey},
 		}).want(t, "create "+all, 201)
 		ensurePolicy(t, fx.adm, "e2e-npm-public-"+fx.run, []string{remote, all}, [2]any{"sa:" + npmPublisher, []string{"read"}})

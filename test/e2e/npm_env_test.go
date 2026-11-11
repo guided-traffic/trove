@@ -85,7 +85,7 @@ func buildNPMFixture(t testing.TB) (*npmFixture, error) {
 	create := func(body map[string]any) (reply, error) {
 		return adm.send(http.MethodPost, reposRoute, body)
 	}
-	r, err := create(map[string]any{"key": npmLocalKey, "class": "local", "format": "npm", "requireAuthentication": true})
+	r, err := create(map[string]any{"key": npmLocalKey, "class": "local", "format": "npm"})
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +98,7 @@ func buildNPMFixture(t testing.TB) (*npmFixture, error) {
 	for _, body := range []map[string]any{
 		{"key": npmRemoteKey, "class": "remote", "format": "npm", "remote": map[string]any{"url": "https://" + fx.stubHost + "/"}},
 		{
-			"key": npmAllKey, "class": "virtual", "format": "npm", "requireAuthentication": true,
+			"key": npmAllKey, "class": "virtual", "format": "npm",
 			"virtual": map[string]any{"members": []string{npmLocalKey, npmRemoteKey}, "deployTarget": npmLocalKey},
 		},
 	} {

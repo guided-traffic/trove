@@ -177,12 +177,10 @@ func TestQ_AUTHZ_215_AMembershipReachesATokenWithinItsScope(t *testing.T) {
 func TestQ_AUTHZ_215_OnlyUsersCarryARole(t *testing.T) {
 	f := roleFixture().member(pWeb, idBot, "owner")
 	f.s.ProjectMembers[len(f.s.ProjectMembers)-1].PrincipalKind = dbServiceAcct
-	f.member(pWeb, AuthenticatedID, "reader")
-	f.s.ProjectMembers[len(f.s.ProjectMembers)-1].PrincipalKind = dbAuthenticated
 	e := roleEngine(t, f)
 	bastion := Subject{Kind: principal.KindBastion, ID: idDave, Name: "partners"}
 	for name, sub := range map[string]Subject{
-		"service account": botSub, "ci": ciSub, "anonymous": anonSub, "bastion": bastion, "any user through authenticated": carolSub,
+		"service account": botSub, "ci": ciSub, "anonymous": anonSub, "bastion": bastion,
 	} {
 		if allows(e, sub, "web-npm", Read) {
 			t.Errorf("%s reads through a role", name)

@@ -611,6 +611,7 @@ func (f fixedScoper) ReadScopeOn(context.Context, *authz.Index, authz.Subject, q
 
 type fixedScope map[string]authz.ReadShape
 
-func (f fixedScope) Shape(key qname.Repo) authz.ReadShape     { return f[key.Key] }
-func (f fixedScope) MayRead(_ qname.Repo, pkg, _ string) bool { return pkg != "secret" }
-func (f fixedScope) VersionsByPath(qname.Repo) bool           { return false }
+func (f fixedScope) Shape(key qname.Repo) authz.ReadShape         { return f[key.Key] }
+func (f fixedScope) MayRead(_ qname.Repo, pkg, _ string) bool     { return pkg != "secret" }
+func (f fixedScope) MayReadWiki(r qname.Repo, pkg, v string) bool { return f.MayRead(r, pkg, v) }
+func (f fixedScope) VersionsByPath(qname.Repo) bool               { return false }

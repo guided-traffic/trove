@@ -89,13 +89,13 @@ type registryFixture struct {
 	now    time.Time
 }
 
-func newRegistryFixture(t *testing.T, anon bool) *registryFixture {
+func newRegistryFixture(t *testing.T) *registryFixture {
 	t.Helper()
 	f := &registryFixture{pat: newToken(t, token.TypePAT), signer: testSigner(t), now: regNow}
 	exp := regNow.Add(24 * time.Hour)
 	f.ft = &fakeTokens{known: map[string]token.Info{f.pat: {ID: "t1", Type: token.TypePAT, Scope: token.Scope{Inherit: true}, Owner: alice, ExpiresAt: &exp}}}
 	f.stage = New(Options{
-		Tokens: hashTokens{f.ft}, Uses: f.ft, Principals: fakeStore{}, Settings: fakeAnon{on: anon}, BasicEnabled: true,
+		Tokens: hashTokens{f.ft}, Uses: f.ft, Principals: fakeStore{}, BasicEnabled: true,
 		Registry: f.signer, Now: func() time.Time { return f.now },
 		RegistryRealm: func(*http.Request) (string, string) {
 			return registrytoken.Realm("https://trove.example.com")
@@ -135,7 +135,7 @@ func (f *registryFixture) issue(t *testing.T, anonymous bool, mutate ...func(*re
 
 // R-OCI-005: named in the test name by WP3 once /v2/ is mounted and the grant check runs.
 func TestRegistryTokenInTheStage(t *testing.T) {
-	f := newRegistryFixture(t, false)
+	f := newRegistryFixture(t)
 	rgt := f.issue(t, false)
 	manifest := "/v2/web/docker-local/app/manifests/1"
 
@@ -171,7 +171,7 @@ func TestRegistryTokenInTheStage(t *testing.T) {
 	t.Run("a tampered, expired or foreign token is refused without a token lookup", func(t *testing.T) {
 		calls := f.ft.calls.Load()
 		flipped := rgt[:20] + string(rgt[20]^1) + rgt[21:]
-		other := newRegistryFixture(t, false)
+		other := newRegistryFixture(t)
 		foreign := other.issue(t, false, func(c *registrytoken.Claims) { c.Binding.SecretSHA256 = token.Hash(f.pat) })
 		for name, raw := range map[string]string{"flipped": flipped, "foreign": foreign} {
 			_, err := f.stage.Authenticate(req("GET", manifest, "Authorization", "Bearer "+raw), defaultRules())
@@ -262,20 +262,15 @@ func TestRegistryTokenInTheStage(t *testing.T) {
 // R-OCI-005: named in the test name by WP3 once /v2/ is mounted and the grant check runs.
 func TestAnonymousRegistryToken(t *testing.T) {
 	manifest := "/v2/web/docker-hub/library/alpine/manifests/3"
-	t.Run("accepted as the anonymous principal while the endpoint and the switch allow anonymous requests", func(t *testing.T) {
-		f := newRegistryFixture(t, true)
+	t.Run("accepted as the anonymous principal while the endpoint allows anonymous requests", func(t *testing.T) {
+		f := newRegistryFixture(t)
 		res, err := f.stage.Authenticate(req("GET", manifest, "Authorization", "Bearer "+f.issue(t, true)), defaultRules())
 		if err != nil || !res.Anonymous || res.Credential.Registry == nil || res.Credential.TokenID != "" {
 			t.Fatalf("%+v %v", res, err)
 		}
 	})
-	t.Run("refused once the runtime switch is off", func(t *testing.T) {
-		f := newRegistryFixture(t, false)
-		_, err := f.stage.Authenticate(req("GET", manifest, "Authorization", "Bearer "+f.issue(t, true)), defaultRules())
-		wantErr(t, err, 401, errs.CodeInvalidToken)
-	})
 	t.Run("refused on an endpoint without anonymous requests", func(t *testing.T) {
-		f := newRegistryFixture(t, true)
+		f := newRegistryFixture(t)
 		seen := &refusals{}
 		rules := defaultRules()
 		rules.Anonymous, rules.Refused = false, seen.hook
@@ -289,10 +284,10 @@ func TestAnonymousRegistryToken(t *testing.T) {
 
 // R-OCI-004: named in the test name by WP3 once /v2/ is mounted and the grant check runs.
 func TestRegistryRoutesInTheStage(t *testing.T) {
-	f := newRegistryFixture(t, false)
+	f := newRegistryFixture(t)
 	t.Run("the session cookie is never a credential below /v2/", func(t *testing.T) {
 		s := New(Options{
-			Tokens: hashTokens{f.ft}, Principals: fakeStore{}, Settings: fakeAnon{}, BasicEnabled: true,
+			Tokens: hashTokens{f.ft}, Principals: fakeStore{}, BasicEnabled: true,
 			Sessions: fakeSessions{info: session.Info{ID: "s1", Principal: alice}},
 			RegistryRealm: func(*http.Request) (string, string) {
 				return registrytoken.Realm("https://trove.example.com")
@@ -301,7 +296,7 @@ func TestRegistryRoutesInTheStage(t *testing.T) {
 		for _, m := range []string{"GET", "HEAD", "PUT", "DELETE"} {
 			r := req(m, "/v2/web/docker-local/app/manifests/1")
 			r.AddCookie(&http.Cookie{Name: SessionCookie, Value: "sess"})
-			_, err := s.Authenticate(r, defaultRules())
+			_, err := s.Authenticate(r, closedRules())
 			e := wantErr(t, err, 401, errs.CodeCredentialsRequired)
 			if e.Challenge != `Bearer realm="https://trove.example.com/v2/_token",service="trove.example.com"` {
 				t.Fatalf("%s: challenge %q", m, e.Challenge)
@@ -309,13 +304,13 @@ func TestRegistryRoutesInTheStage(t *testing.T) {
 		}
 	})
 	t.Run("the challenge below /v2/ names the realm, the service and the scope of the route", func(t *testing.T) {
-		_, err := f.stage.Authenticate(req("POST", "/v2/web/docker-local/app/blobs/uploads/"), defaultRules())
+		_, err := f.stage.Authenticate(req("POST", "/v2/web/docker-local/app/blobs/uploads/"), closedRules())
 		e := wantErr(t, err, 401, errs.CodeCredentialsRequired)
 		want := `Bearer realm="https://trove.example.com/v2/_token",service="trove.example.com",scope="repository:web/docker-local/app:push"`
 		if e.Challenge != want {
 			t.Fatalf("challenge %q", e.Challenge)
 		}
-		_, err = f.stage.Authenticate(req("GET", "/v2/"), defaultRules())
+		_, err = f.stage.Authenticate(req("GET", "/v2/"), closedRules())
 		e = wantErr(t, err, 401, errs.CodeCredentialsRequired)
 		if e.Challenge != `Bearer realm="https://trove.example.com/v2/_token",service="trove.example.com"` {
 			t.Fatalf("version check challenge %q", e.Challenge)
@@ -337,7 +332,7 @@ func TestRegistryRoutesInTheStage(t *testing.T) {
 
 // R-OCI-004: named in the test name by WP3 once /v2/ is mounted and the grant check runs.
 func TestAuthenticateTokenRequest(t *testing.T) {
-	f := newRegistryFixture(t, false)
+	f := newRegistryFixture(t)
 	tokenReq := func(m string, hdr ...string) *http.Request {
 		return req(m, "/v2/_token?service=trove.example.com", hdr...)
 	}
@@ -375,28 +370,23 @@ func TestAuthenticateTokenRequest(t *testing.T) {
 			t.Fatalf("kind %q", k)
 		}
 	})
-	t.Run("without a credential: anonymous where the endpoint and the switch allow it, else 401", func(t *testing.T) {
+	t.Run("without a credential: anonymous where the endpoint allows it, else 401", func(t *testing.T) {
 		none := PresentedFrom(tokenReq("GET"))
 		if !none.None() || none.Kind() != "none" || !PresentedForm("ci", "").None() {
 			t.Fatal("an absent credential is not none")
 		}
-		_, err := f.stage.AuthenticateTokenRequest(tokenReq("GET"), defaultRules(), none)
+		_, err := f.stage.AuthenticateTokenRequest(tokenReq("GET"), closedRules(), none)
 		e := wantErr(t, err, 401, errs.CodeCredentialsRequired)
 		if e.Challenge != `Basic realm="trove"` {
 			t.Fatalf("challenge %q", e.Challenge)
 		}
-		open := newRegistryFixture(t, true)
-		res, err := open.stage.AuthenticateTokenRequest(tokenReq("GET"), defaultRules(), none)
+		res, err := f.stage.AuthenticateTokenRequest(tokenReq("GET"), defaultRules(), none)
 		if err != nil || !res.Anonymous {
 			t.Fatalf("%+v %v", res, err)
 		}
-		rules := defaultRules()
-		rules.Anonymous = false
-		_, err = open.stage.AuthenticateTokenRequest(tokenReq("GET"), rules, none)
-		wantErr(t, err, 401, errs.CodeCredentialsRequired)
 	})
 	t.Run("a browser gets the Bearer challenge on the token service too", func(t *testing.T) {
-		_, err := f.stage.AuthenticateTokenRequest(tokenReq("GET", "Sec-Fetch-Mode", "navigate"), defaultRules(), Presented{})
+		_, err := f.stage.AuthenticateTokenRequest(tokenReq("GET", "Sec-Fetch-Mode", "navigate"), closedRules(), Presented{})
 		e := wantErr(t, err, 401, errs.CodeCredentialsRequired)
 		if e.Challenge != `Bearer realm="trove"` {
 			t.Fatalf("challenge %q", e.Challenge)
@@ -424,10 +414,10 @@ func (l *countingLimiter) of(bucket string) int {
 }
 
 func TestR_AUTH_038_AForgedRegistryTokenCountsAsAFailedCredential(t *testing.T) {
-	f := newRegistryFixture(t, false)
+	f := newRegistryFixture(t)
 	lim := &countingLimiter{n: map[string]int{}}
 	s := New(Options{
-		Tokens: hashTokens{f.ft}, Principals: fakeStore{}, Settings: fakeAnon{}, Registry: f.signer, Now: func() time.Time { return regNow },
+		Tokens: hashTokens{f.ft}, Principals: fakeStore{}, Registry: f.signer, Now: func() time.Time { return regNow },
 		Limiter: lim, ClientAddr: func(*http.Request) netip.Addr { return netip.MustParseAddr("203.0.113.7") },
 	})
 	rgt := f.issue(t, false)
@@ -455,7 +445,7 @@ func TestR_EP_011_TheTroveTokensRulesReachItsRegistryToken(t *testing.T) {
 		f.ft.mu.Unlock()
 	}
 	t.Run("a trove token bound to another endpoint: bound_elsewhere", func(t *testing.T) {
-		f := newRegistryFixture(t, false)
+		f := newRegistryFixture(t)
 		set(f, func(i *token.Info) { i.Scope.Endpoints = []string{"customers"} })
 		seen := &refusals{}
 		rules := defaultRules()
@@ -467,7 +457,7 @@ func TestR_EP_011_TheTroveTokensRulesReachItsRegistryToken(t *testing.T) {
 		}
 	})
 	t.Run("an unbound trove token on an endpoint that takes bound tokens only: unbound", func(t *testing.T) {
-		f := newRegistryFixture(t, false)
+		f := newRegistryFixture(t)
 		seen := &refusals{}
 		rules := defaultRules()
 		rules.BoundTokensOnly, rules.Refused = true, seen.hook
@@ -478,7 +468,7 @@ func TestR_EP_011_TheTroveTokensRulesReachItsRegistryToken(t *testing.T) {
 		}
 	})
 	t.Run("R-AUTH-002 the trove token's owner is disabled: principal_disabled", func(t *testing.T) {
-		f := newRegistryFixture(t, false)
+		f := newRegistryFixture(t)
 		f.ft.mu.Lock()
 		delete(f.ft.known, f.pat)
 		f.ft.errFor = map[string]error{f.pat: token.ErrOwner}

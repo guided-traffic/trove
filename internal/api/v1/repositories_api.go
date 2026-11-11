@@ -46,10 +46,10 @@ type RepositoryServices struct {
 	// repository looks an unknown key up before it decides, so that a repository
 	// created through another replica is usable at once (R-ARCH-011 step 2).
 	Reader repository.Reader
-	// AnonymousAccess is the runtime switch of R-AUTH-037. An anonymous caller is
-	// answered 401 while it is off, and 503 when the switch cannot be read. Nil
-	// means no gate here (a unit test without a decision point).
-	AnonymousAccess func(ctx context.Context) (bool, error)
+	// PublicContent reports whether an anonymous caller reads anything: some repository's artifacts are `public` and the
+	// caller's endpoint admits requests without a credential (R-AUTH-037, R-AUTHZ-003). An anonymous caller is answered 401
+	// while it is false. Nil means no gate here (a unit test without a decision point).
+	PublicContent func(ctx context.Context) bool
 }
 
 // capabilityReadConfig is the capability of reading configuration and
@@ -71,17 +71,13 @@ func (s *Server) repositoryService() (*repository.Service, error) {
 	return s.o.Repositories.Service, nil
 }
 
-// anonymousGate answers 401 for an anonymous caller while anonymous access is off.
+// anonymousGate answers 401 for an anonymous caller while no `public` level opens anything to it.
 func (s *Server) anonymousGate(ctx context.Context) error {
-	gate := s.o.Repositories.AnonymousAccess
+	gate := s.o.Repositories.PublicContent
 	if !httpserver.PrincipalFrom(ctx).Anonymous || gate == nil {
 		return nil
 	}
-	on, err := gate(ctx)
-	if err != nil {
-		return errs.E(errs.Unavailable, errs.CodeUnavailable, "The authentication settings could not be read.", errs.WithRetryAfter(time.Second), errs.WithCause(err))
-	}
-	if !on {
+	if !gate(ctx) {
 		return authz.Unauthenticated()
 	}
 	return nil
@@ -186,13 +182,15 @@ type summaryRep struct {
 	Lifecycle      string     `json:"lifecycle,omitempty"`
 	LastActivityAt *time.Time `json:"lastActivityAt"`
 	Project        *string    `json:"project"`
+	// Visibility is how open the repository is (R-API-057), shown in every view so that every reader sees it.
+	Visibility repository.Visibility `json:"visibility"`
 }
 
 func toSummary(base string, st repository.Stored, showLifecycle bool) summaryRep {
 	r := summaryRep{
 		Key: st.Document.Key, Class: string(st.Document.Class), Format: st.Document.Format,
 		Description: st.Document.Description, Addresses: addresses(base, st.Repository.Name, st.Document), Disabled: st.Repository.Disabled,
-		Project: optString(st.Repository.Name.Project),
+		Project: optString(st.Repository.Name.Project), Visibility: st.Document.Visibility,
 	}
 	if t := st.Repository.LastActivityAt; !t.IsZero() {
 		u := t.UTC()
@@ -385,6 +383,9 @@ func (s *Server) ListFormats(w http.ResponseWriter, r *http.Request) {
 		VulnerabilityScanning bool `json:"vulnerabilityScanning"`
 		// Mirror is the catalog fact Entry.Mirror: a remote of the format can run in mode mirror (R-UI-021).
 		Mirror bool `json:"mirror"`
+		// Wiki is the catalog fact Facts.Wiki: the format has wiki content, so the wiki level of its repositories is worth setting
+		// (R-AUTHZ-034).
+		Wiki bool `json:"wiki"`
 		// SettingsSchema is the JSON Schema of the format's settings member; null for
 		// a format without settings.
 		SettingsSchema json.RawMessage `json:"settingsSchema"`
@@ -405,7 +406,7 @@ func (s *Server) ListFormats(w http.ResponseWriter, r *http.Request) {
 			DefaultCredentialHosts: append([]string{}, d.DefaultCredentialHosts...),
 			ProtocolBasePath:       d.ProtocolBasePath, DefaultMetadataTTLSeconds: d.DefaultMetadataTTLSeconds,
 			DefaultNotFoundTTLSeconds: d.DefaultNotFoundTTLSeconds, PatternSubject: string(d.PatternSubject),
-			PriorityMembers: d.PriorityMembers, PinsAndClaims: d.PinsAndClaims, Caps: d.Caps, SettingsSchema: json.RawMessage("null"),
+			PriorityMembers: d.PriorityMembers, PinsAndClaims: d.PinsAndClaims, Caps: d.Caps, Wiki: d.Wiki, SettingsSchema: json.RawMessage("null"),
 		}
 		if len(d.SettingsSchema) > 0 {
 			x.SettingsSchema = d.SettingsSchema
@@ -439,7 +440,7 @@ func mirrorFact(reg *catalog.Registry, format string) bool {
 
 // repositoryListSpec declares what the list accepts.
 func repositoryListSpec() ListSpec {
-	return ListSpec{Filters: []string{"class", "format", "q", "state", "project", "view"}}
+	return ListSpec{Filters: []string{"class", "format", "q", "state", "project", "view", "visibility"}}
 }
 
 // splitValues flattens repeated and comma-separated values of a filter.
@@ -625,7 +626,12 @@ func (s *Server) configScope(ctx context.Context) (*configScope, error) {
 func repositoryFilter(lq ListQuery) (repository.ListFilter, string, error) {
 	f := repository.ListFilter{
 		Classes: splitValues(lq.Filter["class"]), Formats: splitValues(lq.Filter["format"]),
-		Query: lq.First("q"), State: lq.First("state"), Project: lq.First("project"),
+		Query: lq.First("q"), State: lq.First("state"), Project: lq.First("project"), Visibility: splitValues(lq.Filter["visibility"]),
+	}
+	for _, l := range f.Visibility {
+		if _, ok := authz.ParseLevel(l); !ok {
+			return f, "", badParam("visibility", "has the unknown value "+l)
+		}
 	}
 	for _, c := range f.Classes {
 		if c != "local" && c != "remote" && c != "virtual" {

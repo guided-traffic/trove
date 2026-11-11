@@ -49,7 +49,7 @@ func TestOCISnippets(t *testing.T) {
 	} {
 		t.Run("R-OCI-030 the "+tc.publishID+" snippet pushes, the install snippet pulls it again with "+tc.tool, func(t *testing.T) {
 			key := "oci-snip-" + tc.name + "-" + fx.run
-			fx.adm.do(http.MethodPost, reposRoute, map[string]any{"key": key, "class": "local", "format": "oci", "requireAuthentication": true}).want(t, "create "+key, 201)
+			fx.adm.do(http.MethodPost, reposRoute, map[string]any{"key": key, "class": "local", "format": "oci"}).want(t, "create "+key, 201)
 			t.Cleanup(func() { deleteRepository(t, fx.adm, key) })
 			ensurePolicy(t, fx.adm, "e2e-oci-snip-"+tc.name+"-"+fx.run, []string{key}, [2]any{"sa:" + ociPublisher, []string{"read", "deploy", "delete"}})
 			ociReadableOnEveryReplica(t, fx.token, key)

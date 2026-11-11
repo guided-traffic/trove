@@ -32,6 +32,10 @@ type Host interface {
 	// target's package or path (R-REPO-005): a read answers 404, a write 403
 	// not_admitted.
 	Authorize(ctx context.Context, rq *Request, t Target) error
+	// WikiReadable reports whether rq.Subject may read the wiki of t's package (and version) in rq.Repo, on rq.Index
+	// (authz.Decider.WikiReadableOn). It is a question: nothing is audited or counted. A handler asks it before it puts a wiki
+	// member into a document whose artifacts it serves, and leaves the member out on false (R-AUTHZ-034).
+	WikiReadable(ctx context.Context, rq *Request, t Target) bool
 	// PathsAllowed decides one action for many canonical paths of the request's repository, for the request's subject, on the index the
 	// request decides on, and reports per path whether it is held: the listing form of Authorize (R-AUTHZ-016: a listing contains only what
 	// the subject may read; a subtree is deleted only if every item may be). It completes each path's coordinate with the package and the

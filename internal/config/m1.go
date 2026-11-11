@@ -21,7 +21,6 @@ type Auth struct {
 	// after its last change-log poll started (R-AUTH-023, Q-AUTH-10).
 	RevocationBound time.Duration `yaml:"revocation_bound" default:"2s" validate:"min=500ms,max=10s" doc:"Revocation bound; at least 2 x cluster.epoch_poll_interval."`
 	Tokens          AuthTokens    `yaml:"tokens"`
-	Anonymous       AuthAnonymous `yaml:"anonymous"`
 	Clients         AuthClients   `yaml:"clients"`
 	RateLimit       AuthRateLimit `yaml:"rate_limit"`
 

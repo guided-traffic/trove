@@ -106,14 +106,11 @@ func TestR_BAS_011_ACheckAnswersTheSubjectAndTheShapes(t *testing.T) {
 	}
 }
 
-func TestR_BAS_011_AnAnonymousCallerIsCheckedWhenAnonymousAccessIsOn(t *testing.T) {
+func TestR_BAS_011_AnAnonymousCallerIsCheckedWhenSomethingIsPublic(t *testing.T) {
 	f := newCheckFixture(t, siteOpts{endpointAnonymous: true})
-	on := true
-	if _, err := f.setts.Update(context.Background(), admin, token.SettingsPatch{AnonymousAccess: &on, Expected: errs.AnyRevision}); err != nil {
-		t.Fatal(err)
-	}
+	f.setPublic(true)
 	f.shapes.set("", "it/npm-public", bastionmain.Shape{Read: iface.ReadFull})
-	waitFor(t, "the switch reaches the check", 10*time.Second, func() bool {
+	waitFor(t, "the level reaches the check", 10*time.Second, func() bool {
 		a, _ := f.check(f.bst, nil, "203.0.113.7", "it/npm-public")
 		return a.Subject.Kind == iface.SubjectAnonymous
 	})

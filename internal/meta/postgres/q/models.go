@@ -158,6 +158,7 @@ type AppUser struct {
 	DisabledReason        pgtype.Text
 	DisabledAt            pgtype.Timestamptz
 	DormancyWarnedAt      pgtype.Timestamptz
+	External              bool
 }
 
 type AuditEvent struct {
@@ -200,16 +201,16 @@ type AuthLockout struct {
 }
 
 type AuthSetting struct {
-	Singleton       bool
-	AnonymousAccess bool
-	PatDefaultTtl   pgtype.Interval
-	PatMaxTtl       pgtype.Interval
-	SatDefaultTtl   pgtype.Interval
-	SatMaxTtl       pgtype.Interval
-	ExpiryNotice    pgtype.Interval
-	UpdatedAt       pgtype.Timestamptz
-	UpdatedBy       pgtype.UUID
-	Revision        int64
+	Singleton        bool
+	PatDefaultTtl    pgtype.Interval
+	PatMaxTtl        pgtype.Interval
+	SatDefaultTtl    pgtype.Interval
+	SatMaxTtl        pgtype.Interval
+	ExpiryNotice     pgtype.Interval
+	UpdatedAt        pgtype.Timestamptz
+	UpdatedBy        pgtype.UUID
+	Revision         int64
+	NewUsersExternal bool
 }
 
 type AuthzPolicy struct {
@@ -963,6 +964,7 @@ type Project struct {
 	CreatedBy   pgtype.UUID
 	UpdatedAt   pgtype.Timestamptz
 	UpdatedBy   pgtype.UUID
+	Visibility  string
 }
 
 type ProjectMember struct {
@@ -1036,20 +1038,22 @@ type Replica struct {
 }
 
 type Repository struct {
-	ID             int64
-	Key            string
-	Format         string
-	Class          string
-	Config         json.RawMessage
-	CreatedAt      pgtype.Timestamptz
-	UpdatedAt      pgtype.Timestamptz
-	Lifecycle      string
-	ConfigVersion  int64
-	CreatedBy      pgtype.UUID
-	UpdatedBy      pgtype.UUID
-	LastActivityAt pgtype.Timestamptz
-	ClaimsVersion  int64
-	ProjectID      pgtype.UUID
+	ID                  int64
+	Key                 string
+	Format              string
+	Class               string
+	Config              json.RawMessage
+	CreatedAt           pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+	Lifecycle           string
+	ConfigVersion       int64
+	CreatedBy           pgtype.UUID
+	UpdatedBy           pgtype.UUID
+	LastActivityAt      pgtype.Timestamptz
+	ClaimsVersion       int64
+	ProjectID           pgtype.UUID
+	VisibilityArtifacts string
+	VisibilityWiki      string
 }
 
 type RepositorySecret struct {
@@ -1256,6 +1260,13 @@ type VirtualPinRule struct {
 	VirtualID       int64
 	Position        int32
 	PackagePatterns []string
+}
+
+type VisibilitySetting struct {
+	Singleton    bool
+	DefaultLevel string
+	UpdatedAt    pgtype.Timestamptz
+	UpdatedBy    pgtype.UUID
 }
 
 type VulnAdvisory struct {

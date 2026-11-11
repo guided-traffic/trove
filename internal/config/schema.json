@@ -275,18 +275,6 @@
     "auth": {
       "additionalProperties": false,
       "properties": {
-        "anonymous": {
-          "additionalProperties": false,
-          "properties": {
-            "allowed": {
-              "default": true,
-              "description": "The operator's ceiling. The runtime switch anonymousAccess (R-AUTH-040) takes effect only while this is true.",
-              "type": "boolean",
-              "x-trove-env": "TROVE_AUTH_ANONYMOUS_ALLOWED"
-            }
-          },
-          "type": "object"
-        },
         "break_glass": {
           "additionalProperties": false,
           "properties": {

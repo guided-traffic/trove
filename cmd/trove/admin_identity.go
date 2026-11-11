@@ -58,7 +58,7 @@ func (e *adminEnv) identity() (*identityParts, error) {
 	})
 	principals := principal.NewStore(principal.StoreOptions{DB: e.db, Cache: caches, Gate: gate, SafetyTTL: cfg.Tokens.CacheTTL})
 	settings := token.NewSettingsStore(token.SettingsOptions{
-		DB: e.db, Notifier: e.changes, Recorder: e.recorder, Cache: caches, Gate: gate, Tokens: cfg.Tokens, Anonymous: cfg.Anonymous,
+		DB: e.db, Notifier: e.changes, Recorder: e.recorder, Cache: caches, Gate: gate, Tokens: cfg.Tokens,
 	})
 	tokens := token.NewService(token.ServiceOptions{
 		DB: e.db, Notifier: e.changes, Recorder: e.recorder, Principals: principals, Settings: settings, Cache: caches, Gate: gate,

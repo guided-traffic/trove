@@ -15,8 +15,6 @@ import (
 	"github.com/guided-traffic/trove/internal/auth"
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/auth/token"
-	"github.com/guided-traffic/trove/internal/cache"
-	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/errs"
 )
 
@@ -50,9 +48,6 @@ func TestR_AUTH_001_StageAgainstTheRealStores(t *testing.T) {
 		}
 	})
 	t.Run("R-AUTH-001 an expired PAT on a repository anonymous may read is 401, not the anonymous response", func(t *testing.T) {
-		if _, err := a.settings.Update(ctx, admin, token.SettingsPatch{Expected: errs.AnyRevision, AnonymousAccess: ptr(true)}); err != nil {
-			t.Fatal(err)
-		}
 		short := a.pat(alice, func(r *token.CreateRequest) { s := int64(60); r.TTL.Seconds = &s })
 		e.exec(`UPDATE api_token SET expires_at = now() - interval '1 second', created_at = now() - interval '2 minutes' WHERE id = $1::uuid`, short.Record.ID)
 		_, err := a.bearer(short.Secret, "/api/npm/npm-all/lodash")
@@ -106,30 +101,29 @@ func TestR_AUTH_001_StageAgainstTheRealStores(t *testing.T) {
 	})
 }
 
-func TestR_AUTH_037_AnonymousSwitchReachesEveryReplica(t *testing.T) {
+func TestR_AUTH_040_NewUsersExternalReachesEveryReplica(t *testing.T) {
 	for _, mode := range []vkMode{vkLive, vkDead} {
 		t.Run(mode.String(), func(t *testing.T) {
 			e := newEnv(t)
 			a, b := e.newReplica("a", replicaOpts{valkey: mode}), e.newReplica("b", replicaOpts{valkey: mode})
-			anonymous := func(r *replica) bool {
-				res, err := r.do("", "/api/npm/npm-all/lodash")
+			external := func(r *replica) bool {
+				eff, err := r.settings.Effective(context.Background())
 				if err != nil {
-					wantCode(t, err, 401, errs.CodeCredentialsRequired)
-					return false
+					t.Fatal(err)
 				}
-				return res.Anonymous
+				return eff.NewUsersExternal
 			}
-			if anonymous(a) || anonymous(b) {
-				t.Fatal("anonymous access is off by default")
+			if external(a) || external(b) {
+				t.Fatal("new users are internal by default")
 			}
-			if _, err := a.settings.Update(context.Background(), admin, token.SettingsPatch{Expected: errs.AnyRevision, AnonymousAccess: ptr(true)}); err != nil {
+			if _, err := a.settings.Update(context.Background(), admin, token.SettingsPatch{Expected: errs.AnyRevision, NewUsersExternal: ptr(true)}); err != nil {
 				t.Fatal(err)
 			}
-			waitFor(t, "anonymous access on replica B", revocationBound, func() bool { return anonymous(b) })
-			if _, err := a.settings.Update(context.Background(), admin, token.SettingsPatch{Expected: errs.AnyRevision, AnonymousAccess: ptr(false)}); err != nil {
+			waitFor(t, "newUsersExternal on replica B", revocationBound, func() bool { return external(b) })
+			if _, err := a.settings.Update(context.Background(), admin, token.SettingsPatch{Expected: errs.AnyRevision, NewUsersExternal: ptr(false)}); err != nil {
 				t.Fatal(err)
 			}
-			waitFor(t, "anonymous access off on replica B", revocationBound, func() bool { return !anonymous(b) })
+			waitFor(t, "newUsersExternal off on replica B", revocationBound, func() bool { return !external(b) })
 			evs := a.rec.named(audit.EventSettingsAuthChanged)
 			if len(evs) != 2 || len(evs[0].Journal) == 0 {
 				t.Fatalf("%d settings.auth.changed events", len(evs))
@@ -175,23 +169,6 @@ func TestR_AUTH_040_RuntimeSettings(t *testing.T) {
 			t.Fatalf("%+v", eff)
 		}
 	})
-	t.Run("anonymous access cannot be enabled while the ceiling forbids it", func(t *testing.T) {
-		r := e.newReplicaWithAnonymousCeiling(false)
-		_, err := r.settings.Update(ctx, admin, token.SettingsPatch{Expected: errs.AnyRevision, AnonymousAccess: ptr(true)})
-		wantCode(t, err, 409, errs.CodeAnonymousNotAllowed)
-	})
-}
-
-func (e *env) newReplicaWithAnonymousCeiling(allowed bool) *replica {
-	r := e.newReplica("ceil", replicaOpts{valkey: vkDead})
-	reg, err := cache.NewRegistry(nil, nil)
-	if err != nil {
-		e.t.Fatal(err)
-	}
-	r.settings = token.NewSettingsStore(token.SettingsOptions{
-		DB: r.db, Notifier: r.changes, Recorder: r.rec, Cache: reg, Gate: principal.Gate{}, Tokens: r.tokenCfg, Anonymous: config.AuthAnonymous{Allowed: allowed},
-	})
-	return r
 }
 
 // TestR_AUTH_038_ThrottleExemptions: in throttled mode a credential that is in the
@@ -240,7 +217,7 @@ func TestR_AUTH_038_ThrottleExemptions(t *testing.T) {
 			t.Fatal(err)
 		}
 		d2.stage = auth.New(auth.Options{
-			Tokens: d2.tokens, Uses: d2.tokens, Principals: d2.principals, Settings: d2.settings, Limiter: exceeded{}, BasicEnabled: true,
+			Tokens: d2.tokens, Uses: d2.tokens, Principals: d2.principals, Limiter: exceeded{}, BasicEnabled: true,
 			ClientAddr: func(*http.Request) netip.Addr { return netip.MustParseAddr("203.0.113.7") },
 		})
 		if _, err := d2.bearer(p.Secret, "/x"); err != nil {

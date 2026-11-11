@@ -40,7 +40,7 @@ func (fx *npmFixture) upstreamRepos(t testing.TB, purpose string, settings map[s
 	}
 	fx.adm.do(http.MethodPost, reposRoute, map[string]any{"key": u.remote, "class": "remote", "format": "npm", "remote": remote}).want(t, "create "+u.remote, 201)
 	fx.adm.do(http.MethodPost, reposRoute, map[string]any{
-		"key": u.all, "class": "virtual", "format": "npm", "requireAuthentication": true,
+		"key": u.all, "class": "virtual", "format": "npm",
 		"virtual": map[string]any{"members": []string{npmLocalKey, u.remote}, "deployTarget": npmLocalKey},
 	}).want(t, "create "+u.all, 201)
 	ensurePolicy(t, fx.adm, "e2e-npm-"+purpose+"-"+fx.run, []string{u.remote, u.all}, [2]any{"sa:" + npmPublisher, []string{"read"}})

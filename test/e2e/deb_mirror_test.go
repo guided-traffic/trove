@@ -28,7 +28,7 @@ func TestDebMirror(t *testing.T) {
 	arch := aptArch(t, aptDebian13)
 	key := "deb-mirror-" + fx.run
 	body := map[string]any{
-		"key": key, "class": "remote", "format": "deb", "requireAuthentication": true,
+		"key": key, "class": "remote", "format": "deb",
 		"remote": map[string]any{
 			"url":  "https://" + debStubHost(t) + debstub.ArchiveBase + "/",
 			"mode": "mirror",

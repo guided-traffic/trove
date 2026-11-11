@@ -19,8 +19,8 @@ func (r *txRecorder) RecordTx(_ context.Context, _ meta.Tx, ev audit.Event) erro
 }
 func (r *txRecorder) Record(context.Context, audit.Event) {}
 
-func settingsRepo(class repository.Class, requireAuth bool, hide, config string) repository.Repository {
-	return repository.Repository{ID: "12", Name: qr("r"), Class: class, Format: "generic", RequireAuthentication: requireAuth, HideExistence: hide, Config: []byte(config)}
+func settingsRepo(class repository.Class, hide, config string) repository.Repository {
+	return repository.Repository{ID: "12", Name: qr("r"), Class: class, Format: "generic", HideExistence: hide, Config: []byte(config)}
 }
 
 func TestR_AUTHZ_031_SettingsChangedIsRecordedByTheRepositoryUpdate(t *testing.T) {
@@ -30,27 +30,23 @@ func TestR_AUTHZ_031_SettingsChangedIsRecordedByTheRepositoryUpdate(t *testing.T
 		before, after repository.Repository
 		want          string // the changed members as JSON, "" for no event
 	}{
-		{"nothing changed", settingsRepo(repository.Local, false, "inherit", `{}`), settingsRepo(repository.Local, false, "inherit", `{"description":"x"}`), ""},
+		{"nothing changed", settingsRepo(repository.Local, "inherit", `{}`), settingsRepo(repository.Local, "inherit", `{"description":"x"}`), ""},
 		{
-			"requireAuthentication", settingsRepo(repository.Local, false, "inherit", `{}`), settingsRepo(repository.Local, true, "inherit", `{}`),
-			`{"before":{"requireAuthentication":false},"after":{"requireAuthentication":true}}`,
-		},
-		{
-			"hideExistence", settingsRepo(repository.Local, false, "", `{}`), settingsRepo(repository.Local, false, "false", `{}`),
+			"hideExistence", settingsRepo(repository.Local, "", `{}`), settingsRepo(repository.Local, "false", `{}`),
 			`{"before":{"hideExistence":"inherit"},"after":{"hideExistence":"false"}}`,
 		},
 		{
-			"packageOwnership set", settingsRepo(repository.Local, false, "inherit", `{"local":{}}`), settingsRepo(repository.Local, false, "inherit", `{"local":{"packageOwnership":"off"}}`),
+			"packageOwnership set", settingsRepo(repository.Local, "inherit", `{"local":{}}`), settingsRepo(repository.Local, "inherit", `{"local":{"packageOwnership":"off"}}`),
 			`{"before":{"packageOwnership":null},"after":{"packageOwnership":"off"}}`,
 		},
 		{
-			"cacheFillAction of a remote repository, default read", settingsRepo(repository.Remote, false, "inherit", `{}`), settingsRepo(repository.Remote, false, "inherit", `{"remote":{"cacheFillAction":"deploy"}}`),
+			"cacheFillAction of a remote repository, default read", settingsRepo(repository.Remote, "inherit", `{}`), settingsRepo(repository.Remote, "inherit", `{"remote":{"cacheFillAction":"deploy"}}`),
 			`{"before":{"cacheFillAction":"read"},"after":{"cacheFillAction":"deploy"}}`,
 		},
-		{"the cache fill of a local repository is not a setting", settingsRepo(repository.Local, false, "inherit", `{}`), settingsRepo(repository.Local, false, "inherit", `{"remote":{"cacheFillAction":"deploy"}}`), ""},
+		{"the cache fill of a local repository is not a setting", settingsRepo(repository.Local, "inherit", `{}`), settingsRepo(repository.Local, "inherit", `{"remote":{"cacheFillAction":"deploy"}}`), ""},
 		{
-			"two settings at once", settingsRepo(repository.Local, false, "inherit", `{}`), settingsRepo(repository.Local, true, "true", `{}`),
-			`{"before":{"hideExistence":"inherit","requireAuthentication":false},"after":{"hideExistence":"true","requireAuthentication":true}}`,
+			"two settings at once", settingsRepo(repository.Local, "inherit", `{"local":{}}`), settingsRepo(repository.Local, "true", `{"local":{"packageOwnership":"off"}}`),
+			`{"before":{"hideExistence":"inherit","packageOwnership":null},"after":{"hideExistence":"true","packageOwnership":"off"}}`,
 		},
 	}
 	for _, tc := range cases {

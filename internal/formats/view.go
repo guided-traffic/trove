@@ -125,6 +125,9 @@ type ViewData struct {
 	// Metadata is the format-specific object of the version details; a member that
 	// does not apply is absent. The format page owns its schema.
 	Metadata map[string]any
+	// WikiMetadata names the members of Metadata that are wiki content (R-AUTHZ-034); the core drops them, and the README, for a
+	// caller who may not read the wiki (R-API-058). HasReadme is wiki content as well.
+	WikiMetadata []string
 	// Readme and ReadmeFile are the README source and the name of its file; set
 	// only with ViewReadme.
 	Readme     string

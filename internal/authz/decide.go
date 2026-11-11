@@ -140,18 +140,22 @@ func (e *Engine) Know(ctx context.Context, idx *Index, sub Subject, key qname.Re
 // finish on the index they started with, so a swap of the installed index never
 // changes the decisions of one request (R-AUTHZ-028).
 func (e *Engine) DecideOn(ctx context.Context, idx *Index, sub Subject, c Coordinate) Decision {
-	sub, refused := e.withAnonymous(ctx, sub)
-	if refused != nil {
-		e.count(*refused, sub, c)
-		e.audit(ctx, sub, c, *refused)
-		return *refused
-	}
 	start := time.Now()
 	d := e.evaluate(idx, sub, c)
 	e.m.eval.Observe(time.Since(start).Seconds())
 	e.count(d, sub, c)
 	e.audit(ctx, sub, c, d)
 	return d
+}
+
+// WikiReadableOn implements [Decider]: the question form of a wiki read (R-AUTHZ-034). The coordinate is decided as a read
+// with the part wiki; nothing is audited or counted.
+func (e *Engine) WikiReadableOn(idx *Index, sub Subject, c Coordinate) bool {
+	c.Part, c.Actions = PartWiki, []Action{Read}
+	if c.Kind == "" {
+		c.Kind = KindMetadata
+	}
+	return e.evaluate(idx, sub, c).Outcome == Allow
 }
 
 func (e *Engine) count(d Decision, sub Subject, c Coordinate) {
@@ -167,31 +171,6 @@ func (e *Engine) count(d Decision, sub Subject, c Coordinate) {
 	if d.Reason == ReasonExposure || d.Reason == ReasonEndpointReadOnly {
 		e.m.exposureHidden(sub.Endpoint, "request")
 	}
-}
-
-// withAnonymous reads the runtime switch of R-AUTH-037 for an anonymous subject,
-// once for the request, with the request's context and deadline, and keeps the
-// answer on the returned subject; a subject that is not anonymous, or whose switch
-// was read already, comes back as it is. A switch that cannot be read is no "off":
-// the answer is 503 like every other state the decision point cannot confirm.
-func (e *Engine) withAnonymous(ctx context.Context, sub Subject) (Subject, *Decision) {
-	if !sub.Anonymous || sub.anon != anonUnknown {
-		return sub, nil
-	}
-	sub.anon = anonOff
-	if e.o.AnonymousAccess == nil {
-		return sub, nil
-	}
-	on, err := e.o.AnonymousAccess(ctx)
-	if err != nil {
-		e.log.Warn("authz: the anonymous access switch could not be read", "err", err)
-		d := Decision{Outcome: DenyStale, Reason: ReasonStale}
-		return sub, &d
-	}
-	if on {
-		sub.anon = anonOn
-	}
-	return sub, nil
 }
 
 // evalState is what one decision derives once from the subject.
@@ -437,34 +416,6 @@ func (idx *Index) reaches(v *repoInfo, key qname.Repo, depth int) bool {
 	return false
 }
 
-// anonReadsAllMembers reports whether anonymous holds read on every member of a
-// virtual repository, recursively (R-AUTHZ-009 rule 6).
-func (st *evalState) anonReadsAllMembers(r *repoInfo, depth int) bool {
-	if depth > 16 {
-		return false
-	}
-	for _, key := range r.members {
-		m := st.idx.repo(key)
-		if m == nil {
-			continue
-		}
-		var ok bool
-		for _, g := range st.idx.grantsFor(m.ID, AnonymousID) {
-			if g.actions.Has(Read) {
-				ok = true
-				break
-			}
-		}
-		if !ok {
-			return false
-		}
-		if m.Class == repository.Virtual && !st.anonReadsAllMembers(m, depth+1) {
-			return false
-		}
-	}
-	return true
-}
-
 // evaluate is `Decide` of R-AUTHZ-015 on a given index.
 func (e *Engine) evaluate(idx *Index, sub Subject, c Coordinate) Decision {
 	return e.evaluateWith(idx, sub, nil, c)
@@ -478,7 +429,8 @@ func (e *Engine) evaluateWith(idx *Index, sub Subject, st *evalState, c Coordina
 	deny := func(o Outcome, reason string, missing Action) Decision {
 		return Decision{Outcome: o, Reason: reason, Missing: missing, Target: targetOf(c), Epoch: epoch}
 	}
-	if sub.Anonymous && sub.anon != anonOn {
+	if sub.Anonymous {
+		// No visibility level admits a request without a credential yet (WP1a, R-AUTHZ-003).
 		return deny(DenyUnauthenticated, ReasonUnauthenticated, "")
 	}
 	actions := c.Actions
@@ -486,6 +438,10 @@ func (e *Engine) evaluateWith(idx *Index, sub Subject, st *evalState, c Coordina
 		actions = []Action{Read}
 	}
 	first := actions[0]
+	if c.Part == PartWiki && (len(actions) != 1 || first != Read) {
+		// The wiki is read only (R-AUTHZ-034); anything else is a programming error and is refused.
+		return deny(DenyVisible, ReasonWiki, first)
+	}
 	if d, refused := e.ceilingRefuses(idx, sub, c, actions, epoch); refused {
 		return d
 	}
@@ -494,9 +450,6 @@ func (e *Engine) evaluateWith(idx *Index, sub Subject, st *evalState, c Coordina
 		// A repository the index does not know has no grants; refusing before any
 		// lookup keeps the answer identical to a repository the caller may not see.
 		return e.refusal(sub, c, nil, ReasonNoGrant, first, epoch)
-	}
-	if sub.Anonymous && r.requireAuth {
-		return deny(DenyUnauthenticated, ReasonUnauthenticated, "")
 	}
 	if st == nil {
 		st = e.newEvalState(idx, sub)
@@ -515,9 +468,6 @@ func (e *Engine) evaluateWith(idx *Index, sub Subject, st *evalState, c Coordina
 			return e.refusal(sub, c, r, reason, Read, epoch)
 		}
 		sources = append(sources, by...)
-		if sub.Anonymous && !st.anonReadsAllMembers(r, 0) {
-			return deny(DenyUnauthenticated, ReasonAnonymousPartialVirtual, Read)
-		}
 		if c.Kind == KindWrite && writesContent(actions) {
 			// Writes are decided on the deploy target; the gate applies as well
 			// (R-AUTHZ-009 rule 5). manage on the virtual repository itself
@@ -657,14 +607,9 @@ func (e *Engine) Readable(ctx context.Context, sub Subject, keys []qname.Repo) (
 // ReadableOn implements [Decider]. It decides at repository level, so patterns
 // of a grant do not narrow it (R-AUTHZ-005). On an endpoint with exposure rules
 // (the subject's endpoint) a repository without an enabled rule is left out as
-// well (R-EP-014). An anonymous subject while anonymous access is off reads
-// nothing; a switch that cannot be read is a refusal to decide (503).
-func (e *Engine) ReadableOn(ctx context.Context, idx *Index, sub Subject, keys []qname.Repo) ([]qname.Repo, error) {
-	sub, refused := e.withAnonymous(ctx, sub)
-	if refused != nil {
-		return nil, refused.Err()
-	}
-	if sub.Anonymous && sub.anon != anonOn {
+// well (R-EP-014). An anonymous subject reads nothing.
+func (e *Engine) ReadableOn(_ context.Context, idx *Index, sub Subject, keys []qname.Repo) ([]qname.Repo, error) {
+	if sub.Anonymous {
 		return nil, nil
 	}
 	out := make([]qname.Repo, 0, len(keys))
@@ -848,6 +793,7 @@ func (e *Engine) Effective(ctx context.Context, sub Subject) (Me, error) {
 		me.Principals = []string{"anonymous"}
 		return me, nil
 	}
+	me.Internal = sub.Internal()
 	rs := idx.rolesOf(sub)
 	for _, r := range Roles() {
 		if rs.has(r) {
@@ -868,9 +814,6 @@ func (e *Engine) Effective(ctx context.Context, sub Subject) (Me, error) {
 	}
 	for _, g := range sub.Groups {
 		me.Principals = append(me.Principals, "group:"+g.Name)
-	}
-	if kindOf(sub) == kindUser {
-		me.Principals = append(me.Principals, "authenticated")
 	}
 	return me, nil
 }

@@ -30,7 +30,7 @@ func init() {
 	journal.Register(journal.Handler{
 		Domain: "identity",
 		Events: []string{
-			audit.EventUserDisabled, audit.EventUserDeleted, audit.EventUserUpdated, audit.EventSADisabled, audit.EventSADeleted,
+			audit.EventUserDisabled, audit.EventUserDeleted, audit.EventUserUpdated, audit.EventUserExternalChanged, audit.EventSADisabled, audit.EventSADeleted,
 			audit.EventBastionDisabled, audit.EventBastionDeleted,
 			audit.EventGroupDeleted, audit.EventGroupMembersChanged, audit.EventUserGroupsSynced, audit.EventGroupUpdated,
 		},
@@ -47,6 +47,8 @@ func replayPrincipal(ctx context.Context, tx meta.Tx, env journal.Env, o journal
 		return replayDisableUser(ctx, tx, env, o)
 	case audit.EventUserUpdated:
 		return replayUserUpdated(ctx, tx, o)
+	case audit.EventUserExternalChanged:
+		return replayUserExternal(ctx, tx, env, o)
 	case audit.EventSADisabled, audit.EventSADeleted:
 		return replayDisableAccount(ctx, tx, env, o, KindServiceAccount)
 	case audit.EventBastionDisabled, audit.EventBastionDeleted:
@@ -490,4 +492,35 @@ func replayRenameDetach(ctx context.Context, tx meta.Tx, env journal.Env, e grou
 	}
 	// The group change flushes the principal cache, which holds the memberships.
 	return true, roles, NotifyPrincipals(env, tx, ChangeGroup, g.ID)
+}
+
+// replayUserExternal replays user.external_changed (R-AUTH-044, R-AUTH-041). Setting the flag narrows what the user reads, so an
+// entry whose after-value is true sets it; clearing it would widen and is never replayed. The break-glass account is never
+// external and never touched; a user of the restored database that already has the flag is in effect.
+func replayUserExternal(ctx context.Context, tx meta.Tx, env journal.Env, o journal.Object) (journal.Result, error) {
+	var e struct {
+		PrincipalID string `json:"principalId"`
+		After       *bool  `json:"after"`
+	}
+	if !o.Into(&e) || !journal.IsUUID(e.PrincipalID) || e.After == nil {
+		return o.Malformed("principalId or after is missing"), nil
+	}
+	qs := Queries(tx)
+	u, found, err := principalOf(ctx, qs, e.PrincipalID, KindUser)
+	switch {
+	case err != nil:
+		return journal.Result{}, err
+	case !found:
+		return o.Result(journal.SubjectUnknown, e.PrincipalID), nil
+	case u.IsBreakGlass:
+		return o.Malformed("the break-glass account is not replayed"), nil
+	case !*e.After:
+		return o.Result(journal.Skipped, u.Name), nil // clearing the flag widens
+	case u.External:
+		return o.Result(journal.AlreadyInEffect, u.Name), nil
+	}
+	if _, err := qs.IdentitySetUserExternal(ctx, q.IdentitySetUserExternalParams{ID: u.ID, External: true}); err != nil {
+		return journal.Result{}, err
+	}
+	return o.Result(journal.Applied, u.Name), NotifyPrincipals(env, tx, ChangePrincipal, u.ID)
 }

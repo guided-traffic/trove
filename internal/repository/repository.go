@@ -54,9 +54,8 @@ type Repository struct {
 	Format string
 	// Disabled repositories take no part in resolution, download or deploy.
 	Disabled bool
-	// RequireAuthentication challenges anonymous requests even where anonymous
-	// read is granted.
-	RequireAuthentication bool
+	// Visibility is the levels of the artifacts and the wiki (R-AUTHZ-033), read from the row's columns.
+	Visibility Visibility
 	// HideExistence is "inherit", "true" or "false" (R-AUTHZ-017).
 	HideExistence string
 	Lifecycle     Lifecycle

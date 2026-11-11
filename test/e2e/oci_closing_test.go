@@ -121,7 +121,7 @@ func TestOCIClosingPublic(t *testing.T) {
 	host := ociRegistryHost(t)
 	key := "oci-hub-" + fx.run
 	fx.adm.do("POST", reposRoute, map[string]any{
-		"key": key, "class": "remote", "format": "oci", "requireAuthentication": true,
+		"key": key, "class": "remote", "format": "oci",
 		"remote": map[string]any{
 			"url":        "https://registry-1.docker.io/",
 			"extraHosts": []map[string]any{{"pattern": "auth.docker.io", "sendCredentials": false}},
@@ -147,7 +147,7 @@ func TestOCIClosingPublic(t *testing.T) {
 	t.Run("R-OCI-026 R-OCI-035 a mirror of library/busybox with tags [latest] stores the tag, and docker pulls it from the mirror", func(t *testing.T) {
 		mirror := "oci-hub-mirror-" + fx.run
 		fx.adm.do("POST", reposRoute, map[string]any{
-			"key": mirror, "class": "remote", "format": "oci", "requireAuthentication": true,
+			"key": mirror, "class": "remote", "format": "oci",
 			// both spellings: a read of a Docker Hub name is decided on `busybox` and on `library/busybox` (Q-OCI-129, H-752)
 			"includePatterns": []string{"busybox", "library/busybox"},
 			"remote": map[string]any{

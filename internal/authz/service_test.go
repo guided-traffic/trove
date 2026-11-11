@@ -118,13 +118,6 @@ func TestR_AUTHZ_021_PolicyValidation(t *testing.T) {
 	}{
 		{"a valid policy", input("npm-internal", Entry{"group:team-web", []string{"write"}}), "", ""},
 		{"a policy without entries is valid", input("npm-internal"), "", ""},
-		{"R-AUTHZ-030 authenticated may only read", input("@any-virtual", Entry{"authenticated", []string{"read", "deploy"}}), errs.CodeAuthenticatedWriteAction, "/entries/0/actions"},
-		{"R-AUTHZ-030 authenticated with only read is valid and may use pattern and class selectors", input("@any-virtual:npm", Entry{"authenticated", []string{"read"}}), "", ""},
-		{"R-AUTHZ-030 authenticated with a preset beyond read is refused", input("npm-internal", Entry{"authenticated", []string{"write"}}), errs.CodeAuthenticatedWriteAction, "/entries/0/actions"},
-		{"R-AUTHZ-003 anonymous may only read", input("npm-internal", Entry{"anonymous", []string{"read", "deploy"}}), errs.CodeAnonymousWriteAction, "/entries/0/actions"},
-		{"R-AUTHZ-003 anonymous with a dynamic selector is refused", input("@any-remote", Entry{"anonymous", []string{"read"}}), errs.CodeAnonymousDynamicSelector, "/resources/repositories"},
-		{"R-AUTHZ-003 anonymous with a key pattern is refused", input("npm-*", Entry{"anonymous", []string{"read"}}), errs.CodeAnonymousDynamicSelector, "/resources/repositories"},
-		{"R-AUTHZ-003 anonymous read on a key is valid", input("npm-internal", Entry{"anonymous", []string{"read"}}), "", ""},
 		{"R-AUTHZ-014 a CI mapping never holds manage", input("npm-internal", Entry{"ci:gitlab-internal/acme-publish", []string{"read", "manage"}}), errs.CodeActionNotAllowed, "/entries/0/actions"},
 		{"R-AUTHZ-014 a CI mapping may hold deploy", input("npm-internal", Entry{"ci:gitlab-internal/acme-publish", []string{"read", "deploy"}}), "", ""},
 		{"R-AUTHZ-004 a key selector on a virtual repository accepts only read and manage", input("npm-all", Entry{"group:team-web", []string{"read", "deploy"}}), errs.CodeVirtualActionNotApplicable, "/entries/0/actions"},
@@ -164,12 +157,22 @@ func TestR_AUTHZ_021_PolicyValidation(t *testing.T) {
 	}
 
 	t.Run("R-AUTHZ-021 R-API-009 the answer is 422 validation_failed and every problem keeps its code in errors[]", func(t *testing.T) {
-		err := problemError([]ProblemField{field("/entries/0/actions", errs.CodeAuthenticatedWriteAction, "x"), field("/name", "invalid_name", "y")})
+		err := problemError([]ProblemField{field("/entries/0/actions", errs.CodeInvalidAction, "x"), field("/name", "invalid_name", "y")})
 		ee, _ := errs.As(err)
-		if ee == nil || ee.Status() != 422 || ee.Code != errs.CodeValidation || len(ee.Fields) != 2 || ee.Fields[0].Code != errs.CodeAuthenticatedWriteAction {
+		if ee == nil || ee.Status() != 422 || ee.Code != errs.CodeValidation || len(ee.Fields) != 2 || ee.Fields[0].Code != errs.CodeInvalidAction {
 			t.Fatalf("%#v", ee)
 		}
 	})
+
+	for _, ref := range []string{"anonymous", "authenticated"} {
+		t.Run("R-AUTHZ-003 an entry for "+ref+" is 422 principal_not_allowed: a visibility level opens content", func(t *testing.T) {
+			_, _, err := s.resolve(t.Context(), input("npm-internal", Entry{ref, []string{"read"}}))
+			ee, ok := errs.As(err)
+			if !ok || ee.Status() != 422 || ee.Code != errs.CodePrincipalNotAllowed || !strings.Contains(ee.Detail, "visibility level") {
+				t.Fatalf("err = %v", err)
+			}
+		})
+	}
 
 	t.Run("R-AUTHZ-001 a preset is expanded when the policy is written", func(t *testing.T) {
 		rp, problems, err := s.resolve(t.Context(), input("npm-internal", Entry{"group:team-web", []string{"write"}}))
@@ -209,14 +212,6 @@ func TestR_AUTHZ_021_Warnings(t *testing.T) {
 			t.Fatalf("%v", w)
 		}
 	})
-	t.Run("R-AUTHZ-008 anonymous read on a remote repository that fills on read is flagged", func(t *testing.T) {
-		if w := warn(input("npmjs", Entry{"anonymous", []string{"read"}})); len(w) != 1 || w[0] != WarnAnonymousPopulatesRemote {
-			t.Fatalf("%v", w)
-		}
-		if w := warn(input("npm-frozen", Entry{"anonymous", []string{"read"}})); len(w) != 0 {
-			t.Fatalf("a frozen mirror is not flagged: %v", w)
-		}
-	})
 	t.Run("R-AUTHZ-021 validate reports the repositories the selectors cover", func(t *testing.T) {
 		r, err := s.Validate(t.Context(), input("npm-*"))
 		if err != nil {
@@ -239,8 +234,6 @@ func TestR_AUTHZ_010_RoleBindingRules(t *testing.T) {
 		{"a role to a user", RoleAuditor, "user:alice", ""},
 		{"a role to a group", RoleAdmin, "group:team-web", ""},
 		{"a role to a service account", RoleSecurityAdmin, "sa:ci-bot", ""},
-		{"anonymous holds no role", RoleAuditor, "anonymous", errs.CodeRoleNotAllowed},
-		{"authenticated holds no role", RoleAuditor, "authenticated", errs.CodeRoleNotAllowed},
 		{"a CI identity mapping holds no role", RoleAuditor, "ci:gitlab-internal/acme-publish", errs.CodeRoleNotAllowed},
 		{"an unknown role", Role("owner"), "user:alice", errs.CodeUnknownRole},
 		{"an unknown principal", RoleAuditor, "user:nobody", errs.CodeUnknownPrincipal},
@@ -257,6 +250,15 @@ func TestR_AUTHZ_010_RoleBindingRules(t *testing.T) {
 			}
 			ee, ok := errs.As(err)
 			if !ok || ee.Code != errs.CodeValidation || len(ee.Fields) == 0 || ee.Fields[0].Code != tc.code || ee.Status() != 422 {
+				t.Fatalf("err = %v", err)
+			}
+		})
+	}
+	for _, ref := range []string{"anonymous", "authenticated"} {
+		t.Run("R-AUTHZ-022 "+ref+" holds no role: 422 principal_not_allowed", func(t *testing.T) {
+			_, _, err := s.bindable(t.Context(), RoleAuditor, ref)
+			ee, ok := errs.As(err)
+			if !ok || ee.Status() != 422 || ee.Code != errs.CodePrincipalNotAllowed {
 				t.Fatalf("err = %v", err)
 			}
 		})

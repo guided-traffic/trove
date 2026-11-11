@@ -49,6 +49,8 @@ func principalFromResult(r auth.Result) httpserver.Principal {
 		Kind: httpserver.PrincipalKind(r.Principal.Kind),
 		ID:   r.Principal.ID,
 		Name: r.Principal.Name,
+		// The external flag the stage read with the status and the groups (R-AUTH-044).
+		External: r.Principal.External,
 		Credential: httpserver.Credential{
 			Method:        httpserver.AuthMethod(r.Credential.Method),
 			SessionID:     r.Credential.SessionID,

@@ -72,6 +72,9 @@ type HostOptions struct {
 	// Markup is the renderer a format's documentation uses (ADR-196); nil answers [StandInMarkup], a deterministic stand-in that
 	// escapes and wraps, where the production Host answers formats.NoMarkup until the renderer is wired.
 	Markup formats.Markup
+	// WikiDenied makes the Host answer as for a caller who reads the artifacts and not the wiki (R-AUTHZ-034): WikiReadable is
+	// false and Authorize refuses a target whose part is the wiki as a missing resource. Check 15 sets it.
+	WikiDenied bool
 	// Subject is who acts on every request the Host builds; the zero value is a
 	// subject without a name, which is neither anonymous nor authenticated.
 	Subject authz.Subject
@@ -279,10 +282,23 @@ func (h *Host) Authorize(_ context.Context, rq *formats.Request, t formats.Targe
 	h.mu.Lock()
 	h.authz = append(h.authz, AuthorizeCall{Route: rq.Route.Name, Target: t, Repo: rq.Repo.Name.String(), Addressed: rq.Addressed().String()})
 	h.mu.Unlock()
+	if t.Part == authz.PartWiki && h.opts.WikiDenied {
+		return authz.NotFound()
+	}
 	if h.opts.Allow != nil {
 		return h.opts.Allow(t)
 	}
 	return nil
+}
+
+// WikiReadable implements formats.Host: false when the options say the caller may not read the wiki, else what Allow says of
+// the target as a read. It is a question and records no Authorize call.
+func (h *Host) WikiReadable(_ context.Context, _ *formats.Request, t formats.Target) bool {
+	if h.opts.WikiDenied {
+		return false
+	}
+	t.Part, t.Actions = authz.PartWiki, []formats.Action{formats.ActionRead}
+	return h.opts.Allow == nil || h.opts.Allow(t) == nil
 }
 
 // PathsAllowed implements formats.Host: the Allow function of the options decides each path with the coordinate the format's Classify

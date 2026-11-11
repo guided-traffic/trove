@@ -184,9 +184,8 @@ request ─► edge.SubjectFrom (Subject.Endpoint) ─► DecideOn / ReadableOn 
   refuses every other action as read-only. An endpoint name the configuration does not hold is treated as `rules` with no
   rule; a subject without an endpoint has no ceiling.
 - **Before everything that depends on the repository.** `evaluate` runs the ceiling right after the anonymous gate and
-  before the repository lookup, the `requireAuthentication` check and the virtual gate, for every action; a write is
-  refused as read-only before a read is refused as hidden (Q-EP-21). So a missing repository, a hidden one and one that
-  requires authentication give the same `404`, for every subject, `content:bypass` included.
+  before the repository lookup and the virtual gate, for every action; a write is
+  refused as read-only before a read is refused as hidden (Q-EP-21). So a missing repository and a hidden one give the same `404`, for every subject, `content:bypass` included.
 - **Matching** (`compiledRule.evaluate`): package, path, version globs, range, pre-release and tag, in that order; a
   repository-level coordinate passes any enabled rule; an exclude wins inside a rule only; a version without the format's
   `catalog.Versioning` is refused (fail closed); a path of a format with package names that carries no package is refused

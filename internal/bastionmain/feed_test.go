@@ -82,14 +82,30 @@ func TestR_BAS_015_TheMappingTableOfTheFeed(t *testing.T) {
 			Action:  audit.EventSettingsAuthChanged,
 			Details: []byte(`{"before":{"anonymousAccess":true},"after":{"anonymousAccess":true,"patMaxTTLSeconds":60}}`),
 		}, []rawEntry{{kind: iface.FeedSettings}}},
-		{"settings.auth.changed that switches anonymous access on", FeedEvent{
+		{"settings.auth.changed asks the handshake again and drops nothing", FeedEvent{
 			Action:  audit.EventSettingsAuthChanged,
-			Details: []byte(`{"before":{"anonymousAccess":false},"after":{"anonymousAccess":true}}`),
+			Details: []byte(`{"before":{"newUsersExternal":false},"after":{"newUsersExternal":true}}`),
 		}, []rawEntry{{kind: iface.FeedSettings}}},
-		{"settings.auth.changed that switches anonymous access off", FeedEvent{
-			Action:  audit.EventSettingsAuthChanged,
-			Details: []byte(`{"before":{"anonymousAccess":true},"after":{"anonymousAccess":false}}`),
+		{"a lowered project level asks the handshake again and drops every answer", FeedEvent{
+			Action:  audit.EventProjectVisibilityChanged,
+			Details: []byte(`{"before":"public","after":"internal"}`),
 		}, []rawEntry{{kind: iface.FeedSettings}, {kind: iface.FeedGrants}}},
+		{"a raised project level asks the handshake again only", FeedEvent{
+			Action:  audit.EventProjectVisibilityChanged,
+			Details: []byte(`{"before":"private","after":"public"}`),
+		}, []rawEntry{{kind: iface.FeedSettings}}},
+		{"an unreadable project level pair is read as a lowering", FeedEvent{
+			Action:  audit.EventProjectVisibilityChanged,
+			Details: []byte(`{}`),
+		}, []rawEntry{{kind: iface.FeedSettings}, {kind: iface.FeedGrants}}},
+		{"a user flagged external is dropped from what a Bastion keeps for it", FeedEvent{
+			Action: audit.EventUserExternalChanged, ResourceID: u1,
+			Details: []byte(`{"before":false,"after":true}`),
+		}, []rawEntry{{kind: iface.FeedPrincipal, principals: []string{u1}}}},
+		{"a user whose external flag is cleared widens only", FeedEvent{
+			Action: audit.EventUserExternalChanged, ResourceID: u1,
+			Details: []byte(`{"before":true,"after":false}`),
+		}, nil},
 		{"npm.unpublish names the repository", FeedEvent{Action: audit.EventNPMUnpublish, Repository: "web/npm-local"}, []rawEntry{{kind: iface.FeedContent, repository: "web/npm-local"}}},
 		{"package.deleted names the repository", FeedEvent{Action: audit.EventPackageDeleted, Repository: "web/nuget-local"}, []rawEntry{{kind: iface.FeedContent, repository: "web/nuget-local"}}},
 		{"a withdrawal without a repository yields no entry", FeedEvent{Action: audit.EventPackageDeleted}, nil},
@@ -244,8 +260,8 @@ func TestR_BAS_015_ContentEntriesCarryQualifiedNames(t *testing.T) {
 // TestR_BAS_015_TheEntriesOfOneEventHaveIDsOfTheirOwn: the second entry of an event is "<event ID>:1" (Q-BAS-49).
 func TestR_BAS_015_TheEntriesOfOneEventHaveIDsOfTheirOwn(t *testing.T) {
 	ev := FeedEvent{
-		ID: "0192f2a0-0000-7000-8000-000000000001", Action: audit.EventSettingsAuthChanged,
-		Details: []byte(`{"before":{"anonymousAccess":true},"after":{"anonymousAccess":false}}`),
+		ID: "0192f2a0-0000-7000-8000-000000000001", Action: audit.EventProjectVisibilityChanged,
+		Details: []byte(`{"before":"public","after":"private"}`),
 	}
 	got := lookups{}.entries(ev, mapEvent(ev, "default"))
 	if len(got) != 2 || got[0].ID != ev.ID || got[0].Kind != iface.FeedSettings || got[1].ID != ev.ID+":1" || got[1].Kind != iface.FeedGrants {

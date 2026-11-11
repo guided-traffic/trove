@@ -3172,6 +3172,27 @@ func (e VirtualFormatName) Valid() bool {
 	}
 }
 
+// Defines values for VisibilityLevel.
+const (
+	VisibilityLevelInternal VisibilityLevel = "internal"
+	VisibilityLevelPrivate  VisibilityLevel = "private"
+	VisibilityLevelPublic   VisibilityLevel = "public"
+)
+
+// Valid indicates whether the value is a known member of the VisibilityLevel enum.
+func (e VisibilityLevel) Valid() bool {
+	switch e {
+	case VisibilityLevelInternal:
+		return true
+	case VisibilityLevelPrivate:
+		return true
+	case VisibilityLevelPublic:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for VulnerabilityAffectedRangesType.
 const (
 	ECOSYSTEM VulnerabilityAffectedRangesType = "ECOSYSTEM"
@@ -4614,11 +4635,11 @@ type AuditSource struct {
 // are bound by, and read-only status. The runtime members have the shape `PATCH` takes, so a body
 // obtained by `GET` can be sent back; `ceilings` and `status` are ignored then.
 type AuthSettings struct {
-	// AnonymousAccess Whether anonymous access is in force (the runtime switch within the ceiling).
-	AnonymousAccess bool `json:"anonymousAccess"`
-
 	// Ceilings The YAML values the runtime values are bound by.
 	Ceilings AuthSettingsCeilings `json:"ceilings"`
+
+	// NewUsersExternal The `external` flag every user created later starts with (R-AUTH-044); it changes no existing user.
+	NewUsersExternal bool `json:"newUsersExternal"`
 
 	// Status Read-only status (R-AUTH-040). The break-glass password and the issuer details are not part of it.
 	Status AuthSettingsStatus `json:"status"`
@@ -4627,9 +4648,7 @@ type AuthSettings struct {
 
 // AuthSettingsCeilings The YAML values the runtime values are bound by.
 type AuthSettingsCeilings struct {
-	// AnonymousAllowed `auth.anonymous.allowed`: when false, anonymous access cannot be switched on.
-	AnonymousAllowed bool               `json:"anonymousAllowed"`
-	Tokens           AuthSettingsTokens `json:"tokens"`
+	Tokens AuthSettingsTokens `json:"tokens"`
 }
 
 // AuthSettingsLifetimes defines model for AuthSettingsLifetimes.
@@ -4640,8 +4659,8 @@ type AuthSettingsLifetimes struct {
 
 // AuthSettingsPatch Only the runtime members are writable; `ceilings` and `status` are accepted and ignored. A lifetime is at least 60 seconds.
 type AuthSettingsPatch struct {
-	AnonymousAccess *bool `json:"anonymousAccess,omitempty"`
-	Tokens          *struct {
+	NewUsersExternal *bool `json:"newUsersExternal,omitempty"`
+	Tokens           *struct {
 		ExpiryNoticeSeconds *int `json:"expiryNoticeSeconds,omitempty"`
 		Pat                 *struct {
 			DefaultTTLSeconds *int `json:"defaultTTLSeconds,omitempty"`
@@ -4708,6 +4727,10 @@ type AuthzMe struct {
 	// Capabilities The system capabilities the credential exercises (R-AUTHZ-010), for example `settings:read`.
 	Capabilities []string `json:"capabilities"`
 	Epoch        int64    `json:"epoch"`
+
+	// Internal The caller is an internal subject (R-AUTHZ-030): a user through a session or a personal access token who is not
+	// flagged external and did not come through a Bastion. The level `internal` admits exactly these callers.
+	Internal bool `json:"internal"`
 
 	// Principals The references the caller acts as; it never lists other principals.
 	Principals []string `json:"principals"`
@@ -4997,8 +5020,10 @@ type BastionFeedEntryKind string
 
 // BastionHandshake The answer of the handshake (R-BAS-010).
 type BastionHandshake struct {
-	AnonymousAccess bool `json:"anonymousAccess"`
-	Bastion         struct {
+	// AnonymousReads Some repository's artifacts are `public` and the default endpoint admits requests without a credential, so a Bastion
+	// admits an anonymous request (R-BAS-019); which repositories it then serves is the shape of each (R-BAS-012).
+	AnonymousReads bool `json:"anonymousReads"`
+	Bastion        struct {
 		Name           string             `json:"name"`
 		TokenExpiresAt time.Time          `json:"tokenExpiresAt"`
 		TokenId        openapi_types.UUID `json:"tokenId"`
@@ -6340,6 +6365,11 @@ type FormatDescriptor struct {
 
 	// VulnerabilityScanning Whether stored versions of the format are matched against advisories (the format has the vulnerability adapter, R-VULN-009); a format without it has no vulnerability counts anywhere (R-UI-052).
 	VulnerabilityScanning bool `json:"vulnerabilityScanning"`
+
+	// Wiki Whether the format has wiki content, the documentation trove serves or shows apart from the files (R-AUTHZ-034):
+	// a repository of such a format has a wiki level of its own that is worth setting. `false` for a format whose
+	// repository serves no documentation; its wiki level then changes nothing.
+	Wiki bool `json:"wiki"`
 }
 
 // FormatDescriptorClasses defines model for FormatDescriptor.Classes.
@@ -6641,8 +6671,6 @@ type LocalFormatName string
 
 // LoginOptions What the sign-in screen offers (R-AUTH-009). It names no issuer, client ID or error detail.
 type LoginOptions struct {
-	AnonymousAccess bool `json:"anonymousAccess"`
-
 	// AutoRedirect The provider ID to redirect to at once; `null` shows the buttons. `?auto_sign_in=false` on the sign-in page waives the redirect.
 	AutoRedirect *string `json:"autoRedirect"`
 
@@ -6651,6 +6679,10 @@ type LoginOptions struct {
 
 	// Providers In configuration order (`order`, then ID).
 	Providers []LoginProvider `json:"providers"`
+
+	// PublicContent Some repository's artifacts are `public` and the default endpoint admits requests without a credential, so an
+	// anonymous visitor reads something (R-AUTH-009, R-AUTH-037). The UI offers browsing without signing in by it.
+	PublicContent bool `json:"publicContent"`
 }
 
 // LoginProvider defines model for LoginProvider.
@@ -7065,9 +7097,12 @@ type NewServiceAccount struct {
 
 // NewUser defines model for NewUser.
 type NewUser struct {
-	DisplayName *string            `json:"displayName,omitempty"`
-	Email       *string            `json:"email,omitempty"`
-	Identities  *[]PendingIdentity `json:"identities,omitempty"`
+	DisplayName *string `json:"displayName,omitempty"`
+	Email       *string `json:"email,omitempty"`
+
+	// External The external flag (R-AUTH-044). Absent takes the installation's `newUsersExternal`.
+	External   *bool              `json:"external,omitempty"`
+	Identities *[]PendingIdentity `json:"identities,omitempty"`
 
 	// Username Matches `^[a-z0-9][a-z0-9._@+-]{0,127}$` and is not reserved (R-AUTH-007).
 	Username string `json:"username"`
@@ -7694,7 +7729,7 @@ type PermissionCheckResult struct {
 	Allowed bool `json:"allowed"`
 }
 
-// PermissionPolicy A permission policy (R-AUTHZ-021). `inert` is true when no selector is left (a key selector goes with its repository); the policy stays and grants nothing. `warnings` are `path_patterns_on_package_format`, `selector_matches_nothing` and `anonymous_populates_remote`; a move that would leave a key selector of a project policy behind is refused with `409 repository_in_use`. `version` is the ETag source.
+// PermissionPolicy A permission policy (R-AUTHZ-021). `inert` is true when no selector is left (a key selector goes with its repository); the policy stays and grants nothing. `warnings` are `path_patterns_on_package_format`, and `selector_matches_nothing`; a move that would leave a key selector of a project policy behind is refused with `409 repository_in_use`. `version` is the ETag source.
 type PermissionPolicy struct {
 	CreatedAt time.Time `json:"createdAt"`
 
@@ -7764,7 +7799,7 @@ type PolicyEntry struct {
 	// Actions Actions or presets (`read`, `write`, `maintain`, `full`) on input; the expanded, alphabetical list of actions on output.
 	Actions []string `json:"actions"`
 
-	// Principal `user:<name>`, `group:<name>`, `sa:<name>`, `anonymous` or `authenticated`.
+	// Principal `user:<name>`, `group:<name>`, `sa:<name>`, `sa:<project>/<name>` or `ci:<issuer>/<mapping>`.
 	//
 	// Examples: group:team-web
 	Principal string `json:"principal"`
@@ -7899,6 +7934,11 @@ type Project struct {
 	UpdatedAt       time.Time    `json:"updatedAt"`
 	UpdatedBy       string       `json:"updatedBy"`
 	Version         int64        `json:"version"`
+
+	// Visibility A visibility level (R-AUTHZ-033), from the most restrictive: `private` reads for the members of the project and the
+	// principals a grant names; `internal` besides for every internal subject (R-AUTHZ-030); `public` besides for every
+	// request, also one without a credential.
+	Visibility VisibilityLevel `json:"visibility"`
 }
 
 // ProjectInput What a client writes. The read-only members of `Project` are accepted and ignored, so a body obtained by `GET` can be sent back. A create takes the key; a replace needs `displayName`.
@@ -7927,6 +7967,10 @@ type ProjectInput struct {
 	UpdatedAt       *time.Time   `json:"updatedAt,omitempty"`
 	UpdatedBy       *string      `json:"updatedBy,omitempty"`
 	Version         *int64       `json:"version,omitempty"`
+
+	// Visibility On create, the project's level; absent takes the installation's `defaultLevel` (R-AUTHZ-033). Ignored on replace: the
+	// level changes through `PUT /api/v1/projects/{projectKey}/visibility` only.
+	Visibility *VisibilityLevel `json:"visibility,omitempty"`
 }
 
 // ProjectList defines model for ProjectList.
@@ -7960,6 +8004,42 @@ type ProjectPrincipalList struct {
 // their roles, repositories, permission policies, service accounts and settings. The administration needs a session or a token
 // with `admin: true`.
 type ProjectRole string
+
+// ProjectVisibilityRequest defines model for ProjectVisibilityRequest.
+type ProjectVisibilityRequest struct {
+	// Level A visibility level (R-AUTHZ-033), from the most restrictive: `private` reads for the members of the project and the
+	// principals a grant names; `internal` besides for every internal subject (R-AUTHZ-030); `public` besides for every
+	// request, also one without a credential.
+	Level VisibilityLevel `json:"level"`
+}
+
+// ProjectVisibilityResult The project after the change and the repositories the change lowered (R-API-057).
+type ProjectVisibilityResult struct {
+	Lowered []struct {
+		// Before The levels of a repository's two parts (R-AUTHZ-033, R-AUTHZ-034): `artifacts`, what package clients resolve, install and
+		// download, and `wiki`, the documentation of its packages that trove serves or shows apart from the files. The artifacts
+		// level is at most the project's level and the wiki level at most the artifacts level (`422 validation_failed` with
+		// `visibility_above_project` or `visibility_wiki_above_artifacts`). A merge patch may name one part.
+		Before RepositoryVisibility `json:"before"`
+
+		// Repository The qualified name `<project>/<key>`.
+		Repository string `json:"repository"`
+	} `json:"lowered"`
+
+	// Project A project (R-AUTHZ-026). `version` is the ETag source; it moves with `displayName` and `description` only.
+	Project Project `json:"project"`
+}
+
+// PublicObjects The projects and the repositories whose artifacts are `public`, at most 100 of each in key order (R-API-056).
+type PublicObjects struct {
+	Projects []string `json:"projects"`
+
+	// Repositories Qualified names, `<project>/<key>`.
+	Repositories []string `json:"repositories"`
+
+	// Truncated There are more than 100 of one of the lists.
+	Truncated bool `json:"truncated"`
+}
 
 // RemoteExtraHost defines model for RemoteExtraHost.
 type RemoteExtraHost struct {
@@ -8262,15 +8342,20 @@ type Repository struct {
 	// Remote The `remote` section of a remote repository (R-REPO-024). Every member is returned, the
 	// defaults of the format applied. Omitted members of a request take their defaults. The password
 	// is a secret field: it is never returned (R-REPO-033).
-	Remote                *RemoteSettings         `json:"remote,omitempty"`
-	RequireAuthentication *bool                   `json:"requireAuthentication,omitempty"`
-	Storage               *map[string]interface{} `json:"storage,omitempty"`
-	UpdatedAt             *time.Time              `json:"updatedAt,omitempty"`
+	Remote    *RemoteSettings         `json:"remote,omitempty"`
+	Storage   *map[string]interface{} `json:"storage,omitempty"`
+	UpdatedAt *time.Time              `json:"updatedAt,omitempty"`
 
 	// Virtual The `virtual` section of a virtual repository (R-REPO-017). The members, the deploy target and
 	// the pin rules are stored as rows, so that a repository which is a member or a target cannot be
 	// deleted (`409 repository_referenced`, or `detach=true`); the document is rendered from them.
 	Virtual *VirtualSettings `json:"virtual,omitempty"`
+
+	// Visibility The levels of a repository's two parts (R-AUTHZ-033, R-AUTHZ-034): `artifacts`, what package clients resolve, install and
+	// download, and `wiki`, the documentation of its packages that trove serves or shows apart from the files. The artifacts
+	// level is at most the project's level and the wiki level at most the artifacts level (`422 validation_failed` with
+	// `visibility_above_project` or `visibility_wiki_above_artifacts`). A merge patch may name one part.
+	Visibility *RepositoryVisibility `json:"visibility,omitempty"`
 
 	// Vulnerabilities The `vulnerabilities` member of a repository document (R-VULN-002): local and remote repositories of a format with the
 	// vulnerability adapter (npm, NuGet). Virtual repositories and other formats answer `422 not_applicable` at
@@ -8340,6 +8425,12 @@ type RepositoryConsumerView struct {
 	Format      string                      `json:"format"`
 	Key         string                      `json:"key"`
 	Layout      string                      `json:"layout"`
+
+	// Visibility The levels of a repository's two parts (R-AUTHZ-033, R-AUTHZ-034): `artifacts`, what package clients resolve, install and
+	// download, and `wiki`, the documentation of its packages that trove serves or shows apart from the files. The artifacts
+	// level is at most the project's level and the wiki level at most the artifacts level (`422 validation_failed` with
+	// `visibility_above_project` or `visibility_wiki_above_artifacts`). A merge patch may name one part.
+	Visibility RepositoryVisibility `json:"visibility"`
 }
 
 // RepositoryConsumerViewClass defines model for RepositoryConsumerView.Class.
@@ -8425,6 +8516,12 @@ type RepositorySummary struct {
 
 	// Project The key of the project the repository belongs to; the name is `<project>/<key>` (Q-AUTHZ-206).
 	Project string `json:"project"`
+
+	// Visibility The levels of a repository's two parts (R-AUTHZ-033, R-AUTHZ-034): `artifacts`, what package clients resolve, install and
+	// download, and `wiki`, the documentation of its packages that trove serves or shows apart from the files. The artifacts
+	// level is at most the project's level and the wiki level at most the artifacts level (`422 validation_failed` with
+	// `visibility_above_project` or `visibility_wiki_above_artifacts`). A merge patch may name one part.
+	Visibility RepositoryVisibility `json:"visibility"`
 }
 
 // RepositorySummaryClass defines model for RepositorySummary.Class.
@@ -8432,6 +8529,22 @@ type RepositorySummaryClass string
 
 // RepositorySummaryLifecycle Only a holder of `repositories:read-config` sees a repository being deleted.
 type RepositorySummaryLifecycle string
+
+// RepositoryVisibility The levels of a repository's two parts (R-AUTHZ-033, R-AUTHZ-034): `artifacts`, what package clients resolve, install and
+// download, and `wiki`, the documentation of its packages that trove serves or shows apart from the files. The artifacts
+// level is at most the project's level and the wiki level at most the artifacts level (`422 validation_failed` with
+// `visibility_above_project` or `visibility_wiki_above_artifacts`). A merge patch may name one part.
+type RepositoryVisibility struct {
+	// Artifacts A visibility level (R-AUTHZ-033), from the most restrictive: `private` reads for the members of the project and the
+	// principals a grant names; `internal` besides for every internal subject (R-AUTHZ-030); `public` besides for every
+	// request, also one without a credential.
+	Artifacts VisibilityLevel `json:"artifacts"`
+
+	// Wiki A visibility level (R-AUTHZ-033), from the most restrictive: `private` reads for the members of the project and the
+	// principals a grant names; `internal` besides for every internal subject (R-AUTHZ-030); `public` besides for every
+	// request, also one without a credential.
+	Wiki VisibilityLevel `json:"wiki"`
+}
 
 // RepositoryWarning defines model for RepositoryWarning.
 type RepositoryWarning struct {
@@ -8951,10 +9064,14 @@ type User struct {
 	CreatedAt time.Time `json:"createdAt"`
 
 	// DisabledReason `admin`, `dormant` or `scim` while the user is disabled.
-	DisabledReason    *string               `json:"disabledReason"`
-	DisplayName       *string               `json:"displayName"`
-	Email             *string               `json:"email"`
-	EmailVerified     bool                  `json:"emailVerified"`
+	DisabledReason *string `json:"disabledReason"`
+	DisplayName    *string `json:"displayName"`
+	Email          *string `json:"email"`
+	EmailVerified  bool    `json:"emailVerified"`
+
+	// External The user is flagged external (R-AUTH-044): it reads only what it is a member of, what a grant names and what is
+	// `public`; the level `internal` never admits it. Set by an administrator.
+	External          bool                  `json:"external"`
 	GroupClaimMissing *GroupClaimMissing    `json:"groupClaimMissing"`
 	Groups            []UserGroupMembership `json:"groups"`
 	Id                openapi_types.UUID    `json:"id"`
@@ -9011,6 +9128,9 @@ type UserList struct {
 type UserPatch struct {
 	DisplayName *string `json:"displayName,omitempty"`
 	Email       *string `json:"email,omitempty"`
+
+	// External The external flag (R-AUTH-044); a change needs recent authentication.
+	External *bool `json:"external,omitempty"`
 
 	// Identities Replaces the pending links; a linked identity stays.
 	Identities *[]PendingIdentity `json:"identities,omitempty"`
@@ -9093,6 +9213,38 @@ type VirtualSettings struct {
 	Pinning                  *struct {
 		Rules *[]PinRule `json:"rules,omitempty"`
 	} `json:"pinning,omitempty"`
+}
+
+// VisibilityLevel A visibility level (R-AUTHZ-033), from the most restrictive: `private` reads for the members of the project and the
+// principals a grant names; `internal` besides for every internal subject (R-AUTHZ-030); `public` besides for every
+// request, also one without a credential.
+type VisibilityLevel string
+
+// VisibilitySettings The installation's visibility settings (R-API-056). `publicAvailable` and `publicObjects` are read-only and ignored in a
+// `PATCH` body, so a body obtained by `GET` can be sent back.
+type VisibilitySettings struct {
+	// DefaultLevel A visibility level (R-AUTHZ-033), from the most restrictive: `private` reads for the members of the project and the
+	// principals a grant names; `internal` besides for every internal subject (R-AUTHZ-030); `public` besides for every
+	// request, also one without a credential.
+	DefaultLevel VisibilityLevel `json:"defaultLevel"`
+
+	// PublicAvailable The default endpoint admits requests without a credential (`endpoints.default.auth.anonymous`, R-EP-010); while `false`, no level can be set to `public`.
+	PublicAvailable bool `json:"publicAvailable"`
+
+	// PublicObjects The projects and the repositories whose artifacts are `public`, at most 100 of each in key order (R-API-056).
+	PublicObjects PublicObjects `json:"publicObjects"`
+}
+
+// VisibilitySettingsPatch defines model for VisibilitySettingsPatch.
+type VisibilitySettingsPatch struct {
+	// DefaultLevel A visibility level (R-AUTHZ-033), from the most restrictive: `private` reads for the members of the project and the
+	// principals a grant names; `internal` besides for every internal subject (R-AUTHZ-030); `public` besides for every
+	// request, also one without a credential.
+	DefaultLevel    *VisibilityLevel `json:"defaultLevel,omitempty"`
+	PublicAvailable *bool            `json:"publicAvailable,omitempty"`
+
+	// PublicObjects The projects and the repositories whose artifacts are `public`, at most 100 of each in key order (R-API-056).
+	PublicObjects *PublicObjects `json:"publicObjects,omitempty"`
 }
 
 // VulnerabilityAdvisory One advisory (R-VULN-020). `details` is Markdown from an untrusted source and has to be rendered through the sanitizer (R-UI-008).
@@ -10279,6 +10431,9 @@ type ListProjectsParams struct {
 	// Sort `key` (default) or `-key`.
 	Sort *ListProjectsParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
 
+	// Membership `true` keeps the projects the caller is a member of (R-API-047, R-API-057).
+	Membership *bool `form:"membership,omitempty" json:"membership,omitempty"`
+
 	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
 
@@ -10421,7 +10576,11 @@ type ListProjectRepositoriesParams struct {
 	Format *[]string                           `form:"format,omitempty" json:"format,omitempty"`
 	Q      *string                             `form:"q,omitempty" json:"q,omitempty"`
 	State  *ListProjectRepositoriesParamsState `form:"state,omitempty" json:"state,omitempty"`
-	View   *ListProjectRepositoriesParamsView  `form:"view,omitempty" json:"view,omitempty"`
+
+	// Visibility Keeps the repositories whose artifacts level is one of these (R-API-057); repeat the parameter, or separate values with
+	// commas.
+	Visibility *[]VisibilityLevel                 `form:"visibility,omitempty" json:"visibility,omitempty"`
+	View       *ListProjectRepositoriesParamsView `form:"view,omitempty" json:"view,omitempty"`
 
 	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
@@ -10690,6 +10849,12 @@ type CreateProjectServiceAccountTokenParams struct {
 	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
 }
 
+// SetProjectVisibilityParams defines parameters for SetProjectVisibility.
+type SetProjectVisibilityParams struct {
+	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
+	IfMatch IfMatch `json:"If-Match"`
+}
+
 // ListRepositoriesParams defines parameters for ListRepositories.
 type ListRepositoriesParams struct {
 	// Class Repeat the parameter, or separate values with commas.
@@ -10699,6 +10864,10 @@ type ListRepositoriesParams struct {
 	Format *[]string                    `form:"format,omitempty" json:"format,omitempty"`
 	Q      *string                      `form:"q,omitempty" json:"q,omitempty"`
 	State  *ListRepositoriesParamsState `form:"state,omitempty" json:"state,omitempty"`
+
+	// Visibility Keeps the repositories whose artifacts level is one of these (R-API-057); repeat the parameter, or separate values with
+	// commas.
+	Visibility *[]VisibilityLevel `form:"visibility,omitempty" json:"visibility,omitempty"`
 
 	// Project A project key; keeps the repositories of that project.
 	Project *string                     `form:"project,omitempty" json:"project,omitempty"`
@@ -10787,6 +10956,18 @@ type GetAuthSettingsParams struct {
 
 // UpdateAuthSettingsParams defines parameters for UpdateAuthSettings.
 type UpdateAuthSettingsParams struct {
+	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
+	IfMatch IfMatch `json:"If-Match"`
+}
+
+// GetVisibilitySettingsParams defines parameters for GetVisibilitySettings.
+type GetVisibilitySettingsParams struct {
+	// IfNoneMatch An ETag the client holds; a match answers `304` (R-API-012).
+	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
+// UpdateVisibilitySettingsParams defines parameters for UpdateVisibilitySettings.
+type UpdateVisibilitySettingsParams struct {
 	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
 	IfMatch IfMatch `json:"If-Match"`
 }
@@ -10899,6 +11080,9 @@ type ListUsersParams struct {
 	// Group Only members of this group (any source).
 	Group *string `form:"group,omitempty" json:"group,omitempty"`
 	Admin *bool   `form:"admin,omitempty" json:"admin,omitempty"`
+
+	// External `true` keeps the users flagged external, `false` the others (R-AUTH-044).
+	External *bool `form:"external,omitempty" json:"external,omitempty"`
 
 	// Sort `username` is the default; a leading `-` reverses the order.
 	Sort *ListUsersParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
@@ -11287,6 +11471,9 @@ type CreateProjectServiceAccountTokenJSONRequestBody = CreateTokenRequest
 // TestUpstreamJSONRequestBody defines body for TestUpstream for application/json ContentType.
 type TestUpstreamJSONRequestBody = UpstreamTestRequest
 
+// SetProjectVisibilityJSONRequestBody defines body for SetProjectVisibility for application/json ContentType.
+type SetProjectVisibilityJSONRequestBody = ProjectVisibilityRequest
+
 // CreateServiceAccountJSONRequestBody defines body for CreateServiceAccount for application/json ContentType.
 type CreateServiceAccountJSONRequestBody = NewServiceAccount
 
@@ -11301,6 +11488,9 @@ type CreateServiceAccountTokenJSONRequestBody = CreateTokenRequest
 
 // UpdateAuthSettingsApplicationMergePatchPlusJSONRequestBody defines body for UpdateAuthSettings for application/merge-patch+json ContentType.
 type UpdateAuthSettingsApplicationMergePatchPlusJSONRequestBody = AuthSettingsPatch
+
+// UpdateVisibilitySettingsApplicationMergePatchPlusJSONRequestBody defines body for UpdateVisibilitySettings for application/merge-patch+json ContentType.
+type UpdateVisibilitySettingsApplicationMergePatchPlusJSONRequestBody = VisibilitySettingsPatch
 
 // PutSystemBannerJSONRequestBody defines body for PutSystemBanner for application/json ContentType.
 type PutSystemBannerJSONRequestBody = BannerInput
@@ -11985,6 +12175,9 @@ type ServerInterface interface {
 	// TestUpstream Test an upstream configuration that is not saved
 	// (POST /api/v1/projects/{projectKey}/upstream-tests)
 	TestUpstream(w http.ResponseWriter, r *http.Request, projectKey ProjectKey)
+	// SetProjectVisibility Set the visibility level of a project
+	// (PUT /api/v1/projects/{projectKey}/visibility)
+	SetProjectVisibility(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, params SetProjectVisibilityParams)
 	// ListRepositories List repositories
 	// (GET /api/v1/repositories)
 	ListRepositories(w http.ResponseWriter, r *http.Request, params ListRepositoriesParams)
@@ -12033,6 +12226,12 @@ type ServerInterface interface {
 	// UpdateAuthSettings Change the runtime authentication settings
 	// (PATCH /api/v1/settings/auth)
 	UpdateAuthSettings(w http.ResponseWriter, r *http.Request, params UpdateAuthSettingsParams)
+	// GetVisibilitySettings Read the installation's visibility settings
+	// (GET /api/v1/settings/visibility)
+	GetVisibilitySettings(w http.ResponseWriter, r *http.Request, params GetVisibilitySettingsParams)
+	// UpdateVisibilitySettings Change the installation's default visibility level
+	// (PATCH /api/v1/settings/visibility)
+	UpdateVisibilitySettings(w http.ResponseWriter, r *http.Request, params UpdateVisibilitySettingsParams)
 	// ListBackupRuns List backup runs
 	// (GET /api/v1/system/backups)
 	ListBackupRuns(w http.ResponseWriter, r *http.Request, params ListBackupRunsParams)
@@ -16196,6 +16395,19 @@ func (siw *ServerInterfaceWrapper) ListProjects(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// ------------- Optional query parameter "membership" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "membership", r.URL.Query(), &params.Membership, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "membership"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "membership", Err: err})
+		}
+		return
+	}
+
 	// ------------- Optional query parameter "limit" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
@@ -17475,6 +17687,19 @@ func (siw *ServerInterfaceWrapper) ListProjectRepositories(w http.ResponseWriter
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "visibility" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "visibility", r.URL.Query(), &params.Visibility, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "visibility"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "visibility", Err: err})
 		}
 		return
 	}
@@ -20029,6 +20254,60 @@ func (siw *ServerInterfaceWrapper) TestUpstream(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// SetProjectVisibility operation middleware
+func (siw *ServerInterfaceWrapper) SetProjectVisibility(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SetProjectVisibilityParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetProjectVisibility(w, r, projectKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListRepositories operation middleware
 func (siw *ServerInterfaceWrapper) ListRepositories(w http.ResponseWriter, r *http.Request) {
 
@@ -20086,6 +20365,19 @@ func (siw *ServerInterfaceWrapper) ListRepositories(w http.ResponseWriter, r *ht
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "visibility" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "visibility", r.URL.Query(), &params.Visibility, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "visibility"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "visibility", Err: err})
 		}
 		return
 	}
@@ -20770,6 +21062,92 @@ func (siw *ServerInterfaceWrapper) UpdateAuthSettings(w http.ResponseWriter, r *
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateAuthSettings(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetVisibilitySettings operation middleware
+func (siw *ServerInterfaceWrapper) GetVisibilitySettings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetVisibilitySettingsParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetVisibilitySettings(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateVisibilitySettings operation middleware
+func (siw *ServerInterfaceWrapper) UpdateVisibilitySettings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateVisibilitySettingsParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateVisibilitySettings(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -21723,6 +22101,19 @@ func (siw *ServerInterfaceWrapper) ListUsers(w http.ResponseWriter, r *http.Requ
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "admin"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "admin", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "external" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "external", r.URL.Query(), &params.External, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "external"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "external", Err: err})
 		}
 		return
 	}
@@ -23496,6 +23887,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{projectKey}/service-accounts/{name}/tokens", wrapper.CreateProjectServiceAccountToken)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/settings/auth", wrapper.GetAuthSettings)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/settings/auth", wrapper.UpdateAuthSettings)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/settings/visibility", wrapper.GetVisibilitySettings)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/settings/visibility", wrapper.UpdateVisibilitySettings)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/auth/login-options", wrapper.GetLoginOptions)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/auth/whoami", wrapper.GetWhoami)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/users/me/sessions", wrapper.EndOwnSessions)
@@ -23533,6 +23926,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/members", wrapper.ListProjectMembers)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/projects/{projectKey}/members/{principalRef}", wrapper.RemoveProjectMember)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/projects/{projectKey}/members/{principalRef}", wrapper.SetProjectMember)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/projects/{projectKey}/visibility", wrapper.SetProjectVisibility)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/principals", wrapper.LookupProjectPrincipals)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories", wrapper.ListRepositories)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories", wrapper.ListProjectRepositories)

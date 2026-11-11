@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/audit"
-	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/bastion/iface"
 	"github.com/guided-traffic/trove/internal/bastionmain"
 	"github.com/guided-traffic/trove/internal/errs"
@@ -52,8 +51,8 @@ func TestR_BAS_010_TheHandshakeAnswersWhatTheBastionNeeds(t *testing.T) {
 	if h.Installation.BaseURL != baseURL || h.Installation.Release != "0.14.0" || h.ResponseBaseURL != baseURL {
 		t.Errorf("installation = %+v, responseBaseUrl %q", h.Installation, h.ResponseBaseURL)
 	}
-	if !h.RecordDownloads || h.AnonymousAccess {
-		t.Errorf("recordDownloads %v anonymousAccess %v (the runtime setting is off by default)", h.RecordDownloads, h.AnonymousAccess)
+	if !h.RecordDownloads || h.AnonymousReads {
+		t.Errorf("recordDownloads %v anonymousReads %v (nothing is public by default)", h.RecordDownloads, h.AnonymousReads)
 	}
 	if d := time.Since(h.ServerTime); d < -5*time.Second || d > 5*time.Second {
 		t.Errorf("serverTime = %v", h.ServerTime)
@@ -62,16 +61,13 @@ func TestR_BAS_010_TheHandshakeAnswersWhatTheBastionNeeds(t *testing.T) {
 		t.Errorf("feed cursor %q: %v", h.Feed.Cursor, err)
 	}
 
-	on := true
-	if _, err := s.setts.Update(context.Background(), admin, token.SettingsPatch{AnonymousAccess: &on, Expected: errs.AnyRevision}); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, "the runtime switch reaches the handshake", 10*time.Second, func() bool { h, _ := handshake(t, s, bst); return h.AnonymousAccess })
-	// The endpoint's own rule narrows the switch: anonymous requests of an endpoint that admits none are refused
-	// whatever the runtime setting says (R-AUTH-037, R-EP-010).
+	s.setPublic(true)
+	waitFor(t, "the level reaches the handshake", 10*time.Second, func() bool { h, _ := handshake(t, s, bst); return h.AnonymousReads })
+	// The endpoint's own rule narrows what is public: anonymous requests of an endpoint that admits none are refused
+	// whatever the levels say (R-AUTH-037, R-EP-010).
 	s.rules.anonymous(false)
-	if h, _ := handshake(t, s, bst); h.AnonymousAccess {
-		t.Error("the handshake reports anonymous access for an endpoint that admits none")
+	if h, _ := handshake(t, s, bst); h.AnonymousReads {
+		t.Error("the handshake reports anonymous reads for an endpoint that admits none")
 	}
 }
 

@@ -1,7 +1,6 @@
 package authz
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -73,7 +72,6 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 	t.Run("R-AUTHZ-001 R-AUTHZ-016 deny by default on a fresh installation", func(t *testing.T) {
 		f := newFixture().repo("generic-local", "local", "generic", "").repo("files-internal", "local", "generic", "").repo("npm-internal", "local", "npm", "")
 		off := newTestEngine(t, f, nil)
-		on := newTestEngine(t, f, func(o *Options) { o.AnonymousAccess = func(context.Context) (bool, error) { return true, nil } })
 		subjects := []struct {
 			name string
 			sub  Subject
@@ -94,7 +92,7 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 		for _, repo := range repos {
 			for _, op := range ops {
 				var cs []authzCase
-				cs = append(cs, authzCase{name: fmt.Sprintf("anonymous off %s %s", op.name, repo), sub: anonSub, c: op.c(repo), want: DenyUnauthenticated, reason: ReasonUnauthenticated})
+				cs = append(cs, authzCase{name: fmt.Sprintf("anonymous %s %s", op.name, repo), sub: anonSub, c: op.c(repo), want: DenyUnauthenticated, reason: ReasonUnauthenticated})
 				for _, s := range subjects {
 					want, missing := DenyVisible, op.act
 					if op.read {
@@ -103,7 +101,6 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 					cs = append(cs, authzCase{name: fmt.Sprintf("%s %s %s", s.name, op.name, repo), sub: s.sub, c: op.c(repo), want: want, reason: ReasonNoGrant, missing: missing})
 				}
 				runAuthzCases(t, off, cs, &n)
-				runAuthzCases(t, on, []authzCase{{name: fmt.Sprintf("anonymous on without a grant %s %s", op.name, repo), sub: anonSub, c: op.c(repo), want: DenyUnauthenticated, reason: ReasonNoGrant}}, &n)
 			}
 		}
 	})
@@ -251,49 +248,14 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 		}, &n)
 	})
 
-	t.Run("R-AUTHZ-030 the authenticated principal", func(t *testing.T) {
-		f := newFixture().repo("npm-all", "virtual", "npm", `{"virtual":{"members":["npm-internal"]}}`).repo("npm-internal", "local", "npm", "").repo("npmjs", "remote", "npm", "").repo("generic-local", "local", "generic", "")
-		f.policy(policyDef{name: "everyone-reads-npm", selectors: []string{"@any-virtual:npm", "@any-remote:npm"}, entries: map[string][]string{AuthenticatedID: {"read"}}})
-		f.policy(policyDef{name: "everyone-reads-generic", selectors: []string{"generic-local"}, entries: map[string][]string{AuthenticatedID: {"read"}}})
-		f.policy(policyDef{name: "bot", selectors: []string{"npm-internal"}, entries: map[string][]string{idBot: {"read"}}})
+	t.Run("R-AUTHZ-003 a request without a credential reads nothing that no visibility level admits", func(t *testing.T) {
+		f := newFixture().repo("npm-public", "local", "npm", "").repo("npm-private", "local", "npm", "")
 		e := newTestEngine(t, f, nil)
-		scoped := scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npmjs"}, Actions: []string{"read"}}}}
-		scopedAll := scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-all", "it/generic-local"}, Actions: []string{"read"}}}}
 		runAuthzCases(t, e, []authzCase{
-			{"a user in no group reads through authenticated", carolSub, metadata("npm-all"), Allow, "", ""},
-			{"a user in no group reads a remote repository", carolSub, read("npmjs", "left-pad", ""), Allow, "", ""},
-			{"a user in no group downloads from generic-local", carolSub, read("generic-local", "", "a/b.bin"), Allow, "", ""},
-			{"a service-account token without its own grant gets 404 on the virtual repository", botSub, metadata("npm-all"), DenyHidden, ReasonVirtualGate, Read},
-			{"a service-account token without its own grant gets 404 on generic-local", botSub, read("generic-local", "", "a/b.bin"), DenyHidden, ReasonNoGrant, Read},
-			{"a service account never counts as authenticated", botSub, read("npmjs", "left-pad", ""), DenyHidden, ReasonNoGrant, Read},
-			{"a CI token never counts as authenticated", ciSub, metadata("npm-all"), DenyHidden, ReasonVirtualGate, Read},
-			{"anonymous is not authenticated", anonSub, metadata("npm-all"), DenyUnauthenticated, ReasonUnauthenticated, ""},
-			{"authenticated cannot deploy", carolSub, write("generic-local", "", "a", Deploy), DenyVisible, ReasonNoGrant, Deploy},
-			{"authenticated gives no read on an unselected repository", carolSub, read("npm-internal", "x", ""), DenyHidden, ReasonNoGrant, Read},
-			{"a token whose scope does not admit the repository does not read it through authenticated", tokenScop(carolSub, scoped), metadata("npm-all"), DenyHidden, ReasonVirtualGate, Read},
-			{"a token whose scope admits the repository reads through authenticated", tokenScop(carolSub, scopedAll), metadata("npm-all"), Allow, "", ""},
-			{"a break-glass session is authenticated as well", breakSub, read("generic-local", "", "a"), Allow, "", ""},
-			{"a service account reads with its own grant", botSub, read("npm-internal", "x", ""), Allow, "", ""},
-		}, &n)
-	})
-
-	t.Run("R-AUTHZ-003 anonymous access", func(t *testing.T) {
-		f := newFixture().repo("npm-public", "local", "npm", "").repo("npm-private", "local", "npm", "").repo("strict", "local", "npm", `{"requireAuthentication":true}`)
-		f.policy(policyDef{name: "public", selectors: []string{"npm-public", "strict"}, entries: map[string][]string{AnonymousID: {"read"}}})
-		off := newTestEngine(t, f, nil)
-		on := newTestEngine(t, f, func(o *Options) { o.AnonymousAccess = func(context.Context) (bool, error) { return true, nil } })
-		runAuthzCases(t, off, []authzCase{
-			{"anonymous access off refuses a granted read with 401", anonSub, read("npm-public", "left-pad", ""), DenyUnauthenticated, ReasonUnauthenticated, ""},
-			{"anonymous access off refuses a publish with 401", anonSub, write("npm-public", "x", "", Deploy), DenyUnauthenticated, ReasonUnauthenticated, ""},
-			{"an authenticated user does not get the anonymous grant", carolSub, read("npm-public", "x", ""), DenyHidden, ReasonNoGrant, Read},
-		}, &n)
-		runAuthzCases(t, on, []authzCase{
-			{"anonymous access on allows the granted read", anonSub, read("npm-public", "left-pad", ""), Allow, ReasonAllowGrant, ""},
-			{"anonymous lacking a grant is challenged and never answered 404", anonSub, read("npm-private", "x", ""), DenyUnauthenticated, ReasonNoGrant, ""},
-			{"anonymous write is challenged even where read is granted", anonSub, write("npm-public", "x", "", Deploy), DenyUnauthenticated, ReasonNoGrant, ""},
-			{"requireAuthentication challenges anonymous whatever the policies grant", anonSub, read("strict", "x", ""), DenyUnauthenticated, ReasonUnauthenticated, ""},
-			{"a missing repository is challenged for anonymous", anonSub, read("ghost", "x", ""), DenyUnauthenticated, ReasonNoGrant, ""},
-			{"a user is not affected by requireAuthentication", carolSub, read("strict", "x", ""), DenyHidden, ReasonNoGrant, Read},
+			{"an anonymous read is refused with 401", anonSub, read("npm-public", "left-pad", ""), DenyUnauthenticated, ReasonUnauthenticated, ""},
+			{"an anonymous publish is refused with 401", anonSub, write("npm-public", "x", "", Deploy), DenyUnauthenticated, ReasonUnauthenticated, ""},
+			{"a missing repository is challenged for anonymous as well", anonSub, read("ghost", "x", ""), DenyUnauthenticated, ReasonUnauthenticated, ""},
+			{"a user without a grant is told 404, not challenged", carolSub, read("npm-public", "x", ""), DenyHidden, ReasonNoGrant, Read},
 		}, &n)
 	})
 
@@ -303,10 +265,8 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 			repo("npm-nodeploy", "virtual", "npm", `{"virtual":{"members":["npm-internal"]}}`)
 		f.policy(policyDef{name: "npm-consumers", selectors: []string{"@any-virtual:npm", "@any-local:npm", "@any-remote:npm"}, entries: map[string][]string{idDevs: {"read"}}})
 		f.policy(policyDef{name: "team-web-publish", selectors: []string{"npm-internal"}, pkgInc: []string{"@web/*"}, entries: map[string][]string{idWeb: {"annotate", "deploy", "read"}}})
-		f.policy(policyDef{name: "anon-partial", selectors: []string{"npm-all", "npmjs"}, entries: map[string][]string{AnonymousID: {"read"}}})
 		f.policy(policyDef{name: "virtual-deploy", selectors: []string{"@any-virtual"}, entries: map[string][]string{idBob: {"deploy", "manage"}}})
-		e := newTestEngine(t, f, func(o *Options) { o.AnonymousAccess = func(context.Context) (bool, error) { return true, nil } })
-		off := newTestEngine(t, f, nil)
+		e := newTestEngine(t, f, nil)
 		readOnlyTok := tokenScop(aliceSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"@any"}, Actions: []string{"read"}}}})
 		runAuthzCases(t, e, []authzCase{
 			{"trace 1 alice views through npm-all", aliceSub, read("npm-all", "@web/button", ""), Allow, "", ""},
@@ -319,19 +279,7 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 			{"a virtual repository without a deploy target refuses a write", aliceSub, write("npm-nodeploy", "@web/button", "", Deploy), DenyVisible, ReasonNoGrant, Deploy},
 			{"a grant of deploy on the virtual repository itself has no effect", bobSub, write("npm-nodeploy", "@web/button", "", Deploy), DenyVisible, ReasonNoGrant, Deploy},
 			{"manage on the virtual repository itself is decided on it", bobSub, write("npm-all", "", "", Manage), Allow, "", ""},
-			{"anonymous reads a virtual repository whose members it reads entirely", anonSub, read("npm-nodeploy", "x", ""), DenyUnauthenticated, ReasonVirtualGate, ""},
-			{"trace 6 anonymous through npm-all is challenged when a member is not readable", anonSub, read("npm-all", "left-pad", ""), DenyUnauthenticated, ReasonAnonymousPartialVirtual, ""},
-		}, &n)
-		runAuthzCases(t, off, []authzCase{
-			{"trace 6 without anonymous access npm-all answers 401", anonSub, read("npm-all", "left-pad", ""), DenyUnauthenticated, ReasonUnauthenticated, ""},
-		}, &n)
-
-		f2 := newFixture().repo("npm-internal", "local", "npm", "").repo("npmjs", "remote", "npm", "").
-			repo("npm-all", "virtual", "npm", `{"virtual":{"members":["npm-internal","npmjs"]}}`)
-		f2.policy(policyDef{name: "anon-all", selectors: []string{"npm-all", "npm-internal", "npmjs"}, entries: map[string][]string{AnonymousID: {"read"}}})
-		e2 := newTestEngine(t, f2, func(o *Options) { o.AnonymousAccess = func(context.Context) (bool, error) { return true, nil } })
-		runAuthzCases(t, e2, []authzCase{
-			{"anonymous reads a virtual repository when it reads the virtual repository and every member", anonSub, read("npm-all", "left-pad", ""), Allow, "", ""},
+			{"trace 6 anonymous through npm-all is challenged", anonSub, read("npm-all", "left-pad", ""), DenyUnauthenticated, ReasonUnauthenticated, ""},
 		}, &n)
 	})
 

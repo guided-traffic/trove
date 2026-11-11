@@ -90,11 +90,7 @@ func (e *Engine) populate(idx *Index, sub Subject, c Coordinate) (d Decision, re
 // and counted nowhere. The remote engine asks it where a refusal is answered from
 // the cache (an expired document served stale), and the virtual resolver through
 // [Engine.MemberUsableOn].
-func (e *Engine) MayPopulateOn(ctx context.Context, idx *Index, sub Subject, c Coordinate) Decision {
-	sub, refused := e.withAnonymous(ctx, sub)
-	if refused != nil {
-		return *refused
-	}
+func (e *Engine) MayPopulateOn(_ context.Context, idx *Index, sub Subject, c Coordinate) Decision {
 	d, _ := e.populate(idx, sub, c)
 	return d
 }
@@ -105,12 +101,6 @@ func (e *Engine) MayPopulateOn(ctx context.Context, idx *Index, sub Subject, c C
 // authz.audit.reads says, because it refuses a change of the cache (R-AUTHZ-029);
 // a refused read stays a read and is audited as one.
 func (e *Engine) PopulateOn(ctx context.Context, idx *Index, sub Subject, c Coordinate) Decision {
-	sub, refused := e.withAnonymous(ctx, sub)
-	if refused != nil {
-		e.count(*refused, sub, c)
-		e.audit(ctx, sub, c, *refused)
-		return *refused
-	}
 	start := time.Now()
 	d, readRefused := e.populate(idx, sub, c)
 	e.m.eval.Observe(time.Since(start).Seconds())
@@ -133,11 +123,7 @@ func (e *Engine) PopulateOn(ctx context.Context, idx *Index, sub Subject, c Coor
 // the client addressed (Q-EP-11); fill is the populate check of a remote member
 // and false for any other. A member it may not use is skipped silently: nothing
 // is audited or counted (R-AUTHZ-009 rule 2).
-func (e *Engine) MemberUsableOn(ctx context.Context, idx *Index, sub Subject, member qname.Repo, c Coordinate) (read, fill bool) {
-	sub, refused := e.withAnonymous(ctx, sub)
-	if refused != nil {
-		return false, false
-	}
+func (e *Engine) MemberUsableOn(_ context.Context, idx *Index, sub Subject, member qname.Repo, c Coordinate) (read, fill bool) {
 	mc := c
 	if mc.Addressed.IsZero() {
 		mc.Addressed = c.Repository

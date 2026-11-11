@@ -74,7 +74,7 @@ func (a *App) wireIdentity(ctx context.Context, in infra) (identityArea, error) 
 
 	principals := principal.NewStore(principal.StoreOptions{DB: in.db, Cache: in.caches, Gate: gate, SafetyTTL: cfg.Tokens.CacheTTL})
 	settings := token.NewSettingsStore(token.SettingsOptions{
-		DB: in.db, Notifier: in.changes, Recorder: in.rec, Cache: in.caches, Gate: gate, Tokens: cfg.Tokens, Anonymous: cfg.Anonymous,
+		DB: in.db, Notifier: in.changes, Recorder: in.rec, Cache: in.caches, Gate: gate, Tokens: cfg.Tokens,
 	})
 	recent, err := cluster.NewTokenSeen(in.vk, cfg.RateLimit.RecentTokenWindow)
 	if err != nil {
@@ -98,12 +98,6 @@ func (a *App) wireIdentity(ctx context.Context, in infra) (identityArea, error) 
 	a.tokenSvc.set(tokens)
 	return identityArea{
 		metrics: metrics, principals: principals, manager: manager, provisioner: provisioner, tokens: tokens, settings: settings,
-		// The decision point reads the runtime anonymous switch (R-AUTH-037) from the
-		// same cached settings row the stage reads.
-		anonymousAccess: func(ctx context.Context) (bool, error) {
-			eff, err := settings.Effective(ctx)
-			return eff.AnonymousAccess, err
-		},
 	}, nil
 }
 
@@ -209,7 +203,7 @@ func (a *App) wireAuth(_ context.Context, id identityArea, lim limitsArea, ss se
 		}
 	}
 	stage := auth.New(auth.Options{
-		Tokens: id.tokens, Sessions: sessions, Principals: id.principals, Settings: id.settings, Limiter: lim.failures,
+		Tokens: id.tokens, Sessions: sessions, Principals: id.principals, Limiter: lim.failures,
 		ExemptCIDRs: cfg.RateLimit.ExemptPrefixes(), ClientAddr: clientAddr, BasicEnabled: cfg.Clients.Basic.Enabled,
 		APIKeyHeader: cfg.Clients.NuGetAPIKeyHeader,
 		// The token service validates and records the last use; it is checked above.
@@ -249,7 +243,7 @@ func (a *App) wireShell(context.Context) (shellArea, error) {
 		return shellArea{}, err
 	}
 	stage := auth.New(auth.Options{
-		Tokens: emptyTokens{}, Settings: anonymousOn{}, BasicEnabled: a.cfg.Auth.Clients.Basic.Enabled, ClientAddr: clientAddr, Log: a.log,
+		Tokens: emptyTokens{}, BasicEnabled: a.cfg.Auth.Clients.Basic.Enabled, ClientAddr: clientAddr, Log: a.log,
 		APIKeyHeader: a.cfg.Auth.Clients.NuGetAPIKeyHeader,
 	})
 	return shellArea{auth: authArea{stage: stage, publicOps: publicOps}}, nil
@@ -283,14 +277,6 @@ func (a *App) authStage() authArea {
 // clientAddr is the client address after the trusted-proxy rule, resolved by the
 // chain before the authentication stage (R-ARCH-005 step 5).
 func clientAddr(r *http.Request) netip.Addr { return httpserver.InfoFrom(r.Context()).Client }
-
-// anonymousOn is the settings of a replica without a database: the HTTP shell
-// has no administrator to change the switch, and its stand-in routes are open.
-type anonymousOn struct{}
-
-func (anonymousOn) Effective(context.Context) (token.Effective, error) {
-	return token.Effective{AnonymousAccess: true}, nil
-}
 
 // publicRoute tells the stage which requests match a management API operation
 // that is declared public. The system.bootstrap_anonymous_read bridge of the M0
@@ -384,7 +370,7 @@ func (a *App) registerIdentityJobs(r *jobs.Registry) {
 func (a *App) authServices() v1.AuthServices {
 	id, ss, lg, lim := part[identityArea](a.parts), part[sessionsArea](a.parts), part[loginArea](a.parts), part[limitsArea](a.parts)
 	svc := v1.AuthServices{
-		Manager: id.manager, Tokens: id.tokens, Settings: id.settings, Config: a.cfg.Auth,
+		Manager: id.manager, Tokens: id.tokens, Settings: id.settings, Config: a.cfg.Auth, PublicContent: a.publicContent,
 		EndpointConfigured: TokenScopeOptions(a.cfg).Endpoint,
 	}
 	// A nil *session.Store or *oidc.Service must not become a non-nil interface.

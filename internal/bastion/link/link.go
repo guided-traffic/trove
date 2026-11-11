@@ -113,8 +113,8 @@ type State struct {
 	UnreachableSince time.Time
 	// Handshaken is true once a handshake has succeeded; the settings below are meaningless before.
 	Handshaken bool
-	// AnonymousAccess and RecordDownloads are the main installation's settings from the last handshake.
-	AnonymousAccess bool
+	// AnonymousReads and RecordDownloads are the main installation's settings from the last handshake.
+	AnonymousReads  bool
 	RecordDownloads bool
 	// HistoryStart is the start of the replica's feed history (R-BAS-026), zero until the first read succeeded.
 	HistoryStart time.Time
@@ -322,7 +322,7 @@ func (l *Link) handshake(ctx context.Context) {
 	prev := l.st
 	l.mainVersion = hs.InterfaceVersion
 	l.st.Handshaken = true
-	l.st.AnonymousAccess, l.st.RecordDownloads = hs.AnonymousAccess, hs.RecordDownloads
+	l.st.AnonymousReads, l.st.RecordDownloads = hs.AnonymousReads, hs.RecordDownloads
 	l.st.Registration, l.st.TokenID, l.st.TokenExpiresAt = hs.Bastion.Name, hs.Bastion.TokenID, hs.Bastion.TokenExpiresAt
 	l.st.Installation = hs.Installation
 	l.st.InterfaceMismatch = false
@@ -330,7 +330,7 @@ func (l *Link) handshake(ctx context.Context) {
 	mismatch := !sameOrigin(hs.ResponseBaseURL, l.cfg.BaseURL)
 	l.st.BaseURLMismatch = mismatch
 	l.needHandshake = mismatch
-	changed = prev.AnonymousAccess != l.st.AnonymousAccess || prev.RecordDownloads != l.st.RecordDownloads || !prev.Handshaken
+	changed = prev.AnonymousReads != l.st.AnonymousReads || prev.RecordDownloads != l.st.RecordDownloads || !prev.Handshaken
 	l.mu.Unlock()
 
 	m := l.o.Metrics

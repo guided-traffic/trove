@@ -25,8 +25,7 @@ type Classifier func(path string) (pkg, version string)
 // package and the version its format gives it, so that a listing and a subtree
 // are decided on the coordinate Decide would see for each of them (R-EP-014). A
 // refusal to decide (503 authz_stale, 412 authz_epoch_unknown) is returned as an
-// error. An anonymous subject while anonymous access is off is refused as Decide
-// refuses it, with 401.
+// error. An anonymous subject is refused as Decide refuses it, with 401.
 func (e *Engine) PathsAllowed(ctx context.Context, sub Subject, base Coordinate, a Action, paths []string, classify Classifier) ([]bool, error) {
 	idx, refused := e.forRequest(ctx, sub)
 	if refused != nil {
@@ -37,13 +36,9 @@ func (e *Engine) PathsAllowed(ctx context.Context, sub Subject, base Coordinate,
 
 // PathsAllowedOn implements [Decider]: [Engine.PathsAllowed] on the index the
 // request decides on.
-func (e *Engine) PathsAllowedOn(ctx context.Context, idx *Index, sub Subject, base Coordinate, a Action, paths []string, classify Classifier) ([]bool, error) {
+func (e *Engine) PathsAllowedOn(_ context.Context, idx *Index, sub Subject, base Coordinate, a Action, paths []string, classify Classifier) ([]bool, error) {
 	out := make([]bool, len(paths))
-	sub, refused := e.withAnonymous(ctx, sub)
-	if refused != nil {
-		return nil, refused.Err()
-	}
-	if sub.Anonymous && sub.anon != anonOn {
+	if sub.Anonymous {
 		return out, Unauthenticated()
 	}
 	base.Actions, base.Package, base.Version = []Action{a}, "", ""

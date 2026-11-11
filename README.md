@@ -1742,8 +1742,6 @@ auth:
       pat: 50                           # default
       sat: 20                           # default
       bst: 3                            # default; unrevoked Bastion tokens per registration, so that a renewal's overlap fits (409 token_limit_reached)
-  anonymous:
-    allowed: true                       # default: the ceiling of the runtime switch anonymousAccess
   clients:
     basic:
       enabled: true                     # default; off breaks NuGet restore and _auth users
@@ -2160,7 +2158,6 @@ and the problem details of R-ARCH-023 with the `deb_*` codes of [error codes](#e
 | `auth.break_glass.enabled`, `auth.break_glass.password_file` | `true`, empty | Without a password file the account is unusable, not open. With `secrets.breakGlass` it is the local administrator that holds system administration without a role binding. The password is a file, never inline. | [login](docs/developer/login.md), [Q-AUTH-33](docs/spec/identity-and-authentication.md#q-auth-33--an-enabled-break-glass-account-without-a-password-file) |
 | `auth.clients.basic.enabled` | `true` | Basic authentication for NuGet restore, the `_auth` users and the OCI token service, which takes the trove token as Basic or as the password of the OAuth 2.0 form (Q-OCI-57). Off breaks those clients, Docker, Podman and containerd included; a Basic request with a password is refused either way. | [identity](docs/developer/identity.md), [OCI registry](docs/security/oci-registry.md) |
 | `auth.clients.nuget_api_key_header` | `true` | A token in `X-NuGet-ApiKey` is the credential of a push, delete or relist and decides over `Authorization`; a rejected one is `401` without fallback. Off, only `Authorization` counts there. A damaged key falls back to the source credentials. | [tokens and credentials](docs/security/tokens-and-credentials.md#credential-sources-and-precedence), [H-332](docs/security/tokens-and-credentials.md#h-332--a-broken-token-in-the-api-key-header-falls-back-to-the-source-credentials) |
-| `auth.anonymous.allowed` | `true` | The operator's ceiling for the runtime `anonymousAccess` switch. `false` refuses anonymous access whatever the runtime setting says. | [identity](docs/developer/identity.md), [Q-AUTH-19](docs/spec/identity-and-authentication.md#q-auth-19--which-unauthenticated-requests-the-stage-lets-through) |
 | `authz.role_bindings` | `[]` | Each entry binds a system role in `trove migrate`; whoever controls the membership of a declared IdP group holds the role, and the API cannot remove the binding (409). A removal that would leave no active administrator while break-glass is off stops the run. | [permissions](docs/security/permissions.md#role-bindings-from-the-configuration), [Q-AUTHZ-170](docs/spec/authorization.md#q-authz-170--system-role-bindings-declared-in-the-configuration) |
 | `authz.hide_existence` | `true` | A refused read answers 404, indistinguishable from a missing resource. `false` answers 403 for a resource that exists, for troubleshooting only. A repository's `hideExistence` overrides it. | [permissions](docs/security/permissions.md) |
 | `api.rate_limits.exempt_admins` | `false` | Callers who hold the admin capability bypass the rate limits. | [API edge](docs/security/api-edge.md) |
@@ -2312,11 +2309,19 @@ rights because the operation acts on the caller's own account (`x-trove-owner-ri
 | `GET /api/v1/settings/auth` | `getAuthSettings` | `settings:read` |
 | `PATCH /api/v1/settings/auth` | `updateAuthSettings` | `settings:write` · recent sign-in |
 
+**visibility** (R-API-056, R-API-057)
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/settings/visibility` | `getVisibilitySettings` | `settings:read` |
+| `PATCH /api/v1/settings/visibility` | `updateVisibilitySettings` | `security-settings:write` · recent sign-in |
+| `PUT /api/v1/projects/{projectKey}/visibility` | `setProjectVisibility` | `projects:write` · recent sign-in |
+
 **auth**
 
 | Method and path | Operation | Permission |
 |---|---|---|
-| `GET /api/v1/auth/login-options` | `getLoginOptions` | public |
+| `GET /api/v1/auth/login-options` | `getLoginOptions` | public; reports `publicContent` |
 | `GET /api/v1/auth/whoami` | `getWhoami` | authenticated |
 
 **sessions**
@@ -2494,7 +2499,7 @@ The operations of GitLab CI federation ([docs/developer/ci-oidc.md](docs/develop
 
 | Method and path | Operation | Permission |
 |---|---|---|
-| `GET /api/v1/manual` | `getManualContents` | public; anonymous only where anonymous access is on. The manual the binary embeds ([docs/manual](docs/manual/README.md)) |
+| `GET /api/v1/manual` | `getManualContents` | public; anonymous only while some repository's artifacts are `public` (`publicContent`). The manual the binary embeds ([docs/manual](docs/manual/README.md)) |
 | `GET /api/v1/manual/{section}/{page}` | `getManualPage` | public; as above |
 
 **bastions**

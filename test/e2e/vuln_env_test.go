@@ -213,24 +213,24 @@ func (e *vulnEnv) buildRepositories(t testing.TB) {
 	// npm-local holds public packages (vendored copies): its claims serve routing only (matchPublicAdvisories: always).
 	e.ensureRepo(t, npmLocalKey, nil, map[string]any{"vulnerabilities": map[string]any{"matchPublicAdvisories": "always"}})
 	// npm-internal is the holder of the claimed scope: its names are internal, public advisories do not apply to them.
-	e.ensureRepo(t, vulnNPMInternal, map[string]any{"key": vulnNPMInternal, "class": "local", "format": "npm", "requireAuthentication": true}, nil)
+	e.ensureRepo(t, vulnNPMInternal, map[string]any{"key": vulnNPMInternal, "class": "local", "format": "npm"}, nil)
 	g := e.adm.get(reposBase+vulnNPMInternal+"/claims").want(t, "read the claims of "+vulnNPMInternal, 200)
 	e.adm.do(http.MethodPut, reposBase+vulnNPMInternal+"/claims",
 		map[string]any{"claims": []map[string]any{{"pattern": "@acme/*", "scope": "global"}}}, "If-Match", g.Header.Get("ETag")).want(t, "claim @acme/*", 200)
 	ensurePolicy(t, e.adm, "e2e-npm-vuln", []string{vulnNPMInternal}, [2]any{"sa:" + npmPublisher, []string{"read", "deploy", "delete"}})
 
 	remote := map[string]any{"url": "https://" + apiHost + "/v3/index.json", "extraHosts": []map[string]any{{"pattern": contentHost, "sendCredentials": false}}}
-	e.ensureRepo(t, vulnNuGetLocal, map[string]any{"key": vulnNuGetLocal, "class": "local", "format": "nuget", "requireAuthentication": true},
+	e.ensureRepo(t, vulnNuGetLocal, map[string]any{"key": vulnNuGetLocal, "class": "local", "format": "nuget"},
 		map[string]any{"vulnerabilities": map[string]any{"matchPublicAdvisories": "always"}})
 	// nuget-remote serves no vulnerability information itself (R-VULN-018: the data of a restore through it comes from nuget-local).
-	e.ensureRepo(t, vulnNuGetRemote, map[string]any{"key": vulnNuGetRemote, "class": "remote", "format": "nuget", "requireAuthentication": true, "remote": remote},
+	e.ensureRepo(t, vulnNuGetRemote, map[string]any{"key": vulnNuGetRemote, "class": "remote", "format": "nuget", "remote": remote},
 		map[string]any{"nuget": map[string]any{"vulnerabilityInfo": "off"}})
 	// nuget-remote-open restores a malicious version: it does not block it (R-VULN-002 blockMalicious), so that the audit has
 	// a version to warn about; its vulnerability information is the default.
-	e.ensureRepo(t, vulnNuGetRemoteOpen, map[string]any{"key": vulnNuGetRemoteOpen, "class": "remote", "format": "nuget", "requireAuthentication": true, "remote": remote},
+	e.ensureRepo(t, vulnNuGetRemoteOpen, map[string]any{"key": vulnNuGetRemoteOpen, "class": "remote", "format": "nuget", "remote": remote},
 		map[string]any{"vulnerabilities": map[string]any{"blockMalicious": false}})
 	e.ensureRepo(t, vulnNuGetAll, map[string]any{
-		"key": vulnNuGetAll, "class": "virtual", "format": "nuget", "requireAuthentication": true,
+		"key": vulnNuGetAll, "class": "virtual", "format": "nuget",
 		"virtual": map[string]any{"members": []string{vulnNuGetLocal, vulnNuGetRemote}, "deployTarget": vulnNuGetLocal},
 	}, map[string]any{"virtual": map[string]any{"members": []string{vulnNuGetLocal, vulnNuGetRemote}, "deployTarget": vulnNuGetLocal}})
 	// npm-all and nuget-all are keys of the CI tests as well (a different list of members): on a cluster that ran them, the

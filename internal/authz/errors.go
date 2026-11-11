@@ -10,8 +10,12 @@ import (
 
 // Reason codes of R-AUTHZ-029, the values of Decision.Reason.
 const (
-	ReasonAllowGrant              = "allow.grant"
-	ReasonAllowRole               = "allow.role"
+	ReasonAllowGrant = "allow.grant"
+	ReasonAllowRole  = "allow.role"
+	// ReasonAllowVisibility: a visibility level admitted the read (R-AUTHZ-035 rule 9); ReasonWiki: the wiki read was refused
+	// where the artifacts read is allowed (R-AUTHZ-034).
+	ReasonAllowVisibility         = "allow.visibility"
+	ReasonWiki                    = "deny.wiki"
 	ReasonUnauthenticated         = "deny.unauthenticated"
 	ReasonNoGrant                 = "deny.no-grant"
 	ReasonScope                   = "deny.scope"

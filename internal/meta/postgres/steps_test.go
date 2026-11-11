@@ -29,7 +29,9 @@ func TestEmbeddedSteps(t *testing.T) {
 		// tightening that a release before the one it names would meet as a failing insert.
 		// 00058_upload_session_indexes replaces the cleanup index of 00054 by one that orders inside a state (Q-STOR-176).
 		// 00057_upload_session_tails drops the two tail columns of 00054, which is in no release, for a table of segments (Q-STOR-174).
-		contract := map[string]bool{"00033_bastion_kinds": true, "00056_key_grammar": true, "00057_upload_session_tails": true, "00058_upload_session_indexes": true}
+		// 00075_principal_builtins deletes the grants that name the principals anonymous and authenticated, the principal authenticated and
+		// its kind (Q-AUTHZ-279): a release before it would meet a principal it expects (R-AUTH-016).
+		contract := map[string]bool{"00033_bastion_kinds": true, "00056_key_grammar": true, "00057_upload_session_tails": true, "00058_upload_session_indexes": true, "00075_principal_builtins": true}
 		for _, s := range steps {
 			if s.Phase != phaseExpand && !contract[s.Name] {
 				t.Errorf("%s: an unlisted contract step: the migrations are expand steps unless a decision says otherwise, got %s", s.Name, s.Phase)

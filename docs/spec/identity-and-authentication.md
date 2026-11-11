@@ -1373,7 +1373,7 @@ CREATE TABLE app_user (
   disabled_reason           text CHECK (disabled_reason IN ('admin', 'dormant', 'scim')),
   disabled_at               timestamptz,
   dormancy_warned_at        timestamptz,                 -- R-AUTH-021 (P1): last user.dormancy_warning
-  external                  boolean     NOT NULL DEFAULT false   -- R-AUTH-044, migration 00072
+  external                  boolean     NOT NULL DEFAULT false   -- R-AUTH-044, migration 00074
 );
 CREATE UNIQUE INDEX app_user_one_break_glass ON app_user (is_break_glass) WHERE is_break_glass;
 ```
@@ -1383,7 +1383,7 @@ The migration adds the integrity rules of Q-AUTH-16 to this sketch: a `CHECK` on
 for `ci_mapping`), a unique index on the built-in kind, the built-in row with the fixed
 identifier `00000000-0000-0000-0000-000000000001` (`anonymous`), and triggers that refuse a change of that
 row and a subtype, membership, token or session row that points at a principal of the wrong kind. Migration
-`00073_principal_builtins.sql` removes the kind `authenticated` with its row
+`00075_principal_builtins.sql` removes the kind `authenticated` with its row
 `00000000-0000-0000-0000-000000000002` and the entries that named it, and adds the guard that refuses a policy entry, a project
 policy entry, a role binding, a project membership and an owner record naming `anonymous` (SQLSTATE `AI009`,
 [authorization.md](authorization.md) Q-AUTHZ-279).
@@ -3402,7 +3402,7 @@ Data model:
 ```sql
 CREATE TABLE auth_settings (
   singleton            boolean     PRIMARY KEY DEFAULT true CHECK (singleton),
-  new_users_external   boolean     NOT NULL DEFAULT false,      -- R-AUTH-044; migration 00072 drops anonymous_access
+  new_users_external   boolean     NOT NULL DEFAULT false,      -- R-AUTH-044; migration 00074 drops anonymous_access
   pat_default_ttl      interval,   -- NULL = YAML value
   pat_max_ttl          interval,
   sat_default_ttl      interval,
@@ -5910,7 +5910,7 @@ Status: **Decided by the development agent** — selected from the options below
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) Delete `authenticated` and its kind; keep `anonymous` as the actor's row, refused by every granting table (chosen) | Migration `00073_principal_builtins.sql` | The stage keeps its fixed actor ID; nothing that records an actor changes; nothing can grant to either | A row that can hold nothing |
+| (a) Delete `authenticated` and its kind; keep `anonymous` as the actor's row, refused by every granting table (chosen) | Migration `00075_principal_builtins.sql` | The stage keeps its fixed actor ID; nothing that records an actor changes; nothing can grant to either | A row that can hold nothing |
 | (b) Delete both | No built-in row | Smallest table | Every place that records the actor of a request without a credential needs a new form |
 | (c) Keep both, refuse them in the API | The rows stay, the API refuses | No migration | A database writer (replay, configuration as code) could still write a grant |
 

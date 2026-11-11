@@ -79,7 +79,7 @@ func TestVulnLong_R_VULN_011_SwitchoverDuringEvaluation(t *testing.T) {
 	e := vulnFx(t)
 	osv := osvStub(t)
 	const names = 20000
-	e.ensureRepo(t, vulnNPMBulk, map[string]any{"key": vulnNPMBulk, "class": "local", "format": "npm", "requireAuthentication": true},
+	e.ensureRepo(t, vulnNPMBulk, map[string]any{"key": vulnNPMBulk, "class": "local", "format": "npm"},
 		map[string]any{"vulnerabilities": map[string]any{"matchPublicAdvisories": "always"}})
 	repo := sql(t, `SELECT id FROM trove.repositories WHERE key = '`+vulnNPMBulk+`'`)
 	wipe := func() {

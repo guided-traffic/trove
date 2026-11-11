@@ -44,7 +44,7 @@ func toProject(p project.Project, role authz.ProjectRole) gen.Project {
 		}
 	}
 	out := gen.Project{
-		Key: p.Key, DisplayName: p.DisplayName, Description: p.Description,
+		Key: p.Key, DisplayName: p.DisplayName, Description: p.Description, Visibility: gen.VisibilityLevel(p.Visibility),
 		Members: len(p.Members), Owners: owners, Repositories: p.Repositories, ServiceAccounts: p.ServiceAccounts, Policies: p.Policies,
 		LogicalBytes: p.LogicalBytes,
 		Version:      p.Version,

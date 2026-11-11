@@ -119,13 +119,13 @@ func TestSnapshotAcrossReplicas(t *testing.T) {
 		})
 	})
 
-	t.Run("R-REPO-004 disabled and requireAuthentication reach the read model of the other replica", func(t *testing.T) {
-		if _, err := a.svc.Patch(ctx, caller, qr("unknown-key"), repository.MatchAny(), mergePatch(`{"disabled":true,"requireAuthentication":true,"hideExistence":"false"}`)); err != nil {
+	t.Run("R-REPO-004 disabled and hideExistence reach the read model of the other replica", func(t *testing.T) {
+		if _, err := a.svc.Patch(ctx, caller, qr("unknown-key"), repository.MatchAny(), mergePatch(`{"disabled":true,"hideExistence":"false"}`)); err != nil {
 			t.Fatal(err)
 		}
 		waitFor(t, "B to see the settings", within, func() bool {
 			r, err := b.reader.ByName(ctx, qr("unknown-key"))
-			return err == nil && r.Disabled && r.RequireAuthentication && r.HideExistence == "false"
+			return err == nil && r.Disabled && r.HideExistence == "false"
 		})
 	})
 

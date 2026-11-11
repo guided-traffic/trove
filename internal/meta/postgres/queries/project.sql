@@ -9,7 +9,7 @@
 -- still counts: it keeps its row until its content is gone (R-REPO-013). logical_bytes is
 -- the project's charge (Q-STOR-155): the sum of the folded repository_usage rows of its
 -- repositories, read by primary key; no item is scanned.
-SELECT p.id::text AS id, p.key, p.display_name, p.description, p.version,
+SELECT p.id::text AS id, p.key, p.display_name, p.description, p.version, p.visibility,
        (extract(epoch FROM p.created_at) * 1000000)::bigint AS created_us,
        (extract(epoch FROM p.updated_at) * 1000000)::bigint AS updated_us,
        COALESCE(cb.kind, '')::text AS created_by_kind, COALESCE(cb.name, '')::text AS created_by_name,
@@ -27,7 +27,7 @@ SELECT p.id::text AS id, p.key, p.display_name, p.description, p.version,
  ORDER BY p.key;
 
 -- name: ProjectGet :many
-SELECT p.id::text AS id, p.key, p.display_name, p.description, p.version,
+SELECT p.id::text AS id, p.key, p.display_name, p.description, p.version, p.visibility,
        (extract(epoch FROM p.created_at) * 1000000)::bigint AS created_us,
        (extract(epoch FROM p.updated_at) * 1000000)::bigint AS updated_us,
        COALESCE(cb.kind, '')::text AS created_by_kind, COALESCE(cb.name, '')::text AS created_by_name,

@@ -1,9 +1,14 @@
 # Visibility levels: who reads what
 
 Status: specified in [authorization.md](../spec/authorization.md) R-AUTHZ-003, R-AUTHZ-030 and R-AUTHZ-033 to R-AUTHZ-036 and
-[identity-and-authentication.md](../spec/identity-and-authentication.md) R-AUTH-037 and R-AUTH-044 (task T-18), and not built:
-what runs is the anonymous switch and the principal `authenticated` of [permissions.md](permissions.md). This page states the
-perspective the specification decides; the change that builds the mechanism names its code here.
+[identity-and-authentication.md](../spec/identity-and-authentication.md) R-AUTH-037 and R-AUTH-044 (task T-18), and built in
+steps. Built: the schema with the rules of the container in the database ([00073_visibility.sql](../../internal/meta/postgres/migrations/00073_visibility.sql),
+[00074_external_users.sql](../../internal/meta/postgres/migrations/00074_external_users.sql),
+[00075_principal_builtins.sql](../../internal/meta/postgres/migrations/00075_principal_builtins.sql)), the contracts
+([visibility.go](../../internal/authz/visibility.go): `Level`, `Part`, `Subject.Internal`), the levels in the grant index, and the removal of
+the anonymous switch, the principal `authenticated` and `requireAuthentication`. Until the decision point reads the levels, a request
+without a credential is refused with 401 everywhere and no level opens anything; the table below describes the mechanism as specified. The
+change that builds each remaining part names its code here.
 
 This page answers one question: besides the members of a project and the principals a grant names, who reads a repository's
 artifacts and its wiki, who decides that, and what keeps the answer from being wider than intended. The decision point, the grant

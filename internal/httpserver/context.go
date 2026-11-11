@@ -20,6 +20,7 @@ const (
 	keyPrincipal
 	keyShapes
 	keyPrincipalNote
+	keyBastionForward
 )
 
 // RequestInfo is what the chain resolves once per request (R-ARCH-005 step 5).
@@ -149,3 +150,16 @@ func shapeFor(r *http.Request) ShapeFunc {
 
 // CodeServerBusy is the problem code of the in-flight limit (R-ARCH-005 step 4).
 const CodeServerBusy = errs.CodeServerBusy
+
+// WithBastionForward marks the request as one that reached the main installation through a recognized Bastion forward or
+// the Bastion check (R-BAS-008, Q-BAS-148): its subject never reads by the level internal. Only the Bastion recognition stage
+// and the check call it.
+func WithBastionForward(ctx context.Context) context.Context {
+	return context.WithValue(ctx, keyBastionForward, true)
+}
+
+// BastionForward reports whether the request came through a Bastion (see [WithBastionForward]).
+func BastionForward(ctx context.Context) bool {
+	v, _ := ctx.Value(keyBastionForward).(bool)
+	return v
+}

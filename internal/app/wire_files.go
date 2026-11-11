@@ -158,12 +158,8 @@ func (a *App) registerFiles(r *httpserver.Router) {
 // repositoryAPI returns the services of the repository operations of the
 // management API.
 func (a *App) repositoryAPI() v1.RepositoryServices {
-	repo, id := part[repositoryArea](a.parts), part[identityArea](a.parts)
-	anonymous := id.anonymousAccess
-	if anonymous == nil { // the shell profile: no switch, so anonymous access is off
-		anonymous = func(context.Context) (bool, error) { return false, nil }
-	}
-	return v1.RepositoryServices{Service: repo.service, Authz: a.decider(), Reader: a.Repositories(), AnonymousAccess: anonymous}
+	repo := part[repositoryArea](a.parts)
+	return v1.RepositoryServices{Service: repo.service, Authz: a.decider(), Reader: a.Repositories(), PublicContent: a.publicContent}
 }
 
 // registerFilesJobs registers the job that deletes a large subtree (R-STOR-018).

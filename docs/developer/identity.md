@@ -73,8 +73,8 @@ the decisions of this area are Q-AUTH-18 to Q-AUTH-22 and Q-AUTH-41 to Q-AUTH-48
 | `validate.go` | `Service.Check`/`Validate`: the validation path, the cache `auth_tokens`, `token.rejected`; the type `bst` is refused here as unknown before the cache and the table (R-BAS-005); `CheckSecretHash`, the same path from the cache on for a registry token's binding (R-OCI-005) |
 | `standing.go` | `Service.Standing`: a token by its ID from PostgreSQL, never the cache, for a job the token queued (Q-AUTHZ-261): `ErrRevoked`, `ErrUnknown`, or the facts with the scope and a CI token's bundle parsed strictly; an expired token answers its facts |
 | `bastion.go` | The Bastion token (type `bst`, R-BAS-004): `CreateBastion`/`CreateBastionTx` (the lifetime rule of `auth.tokens.bst`, the limit per registration under the owner lock), `RevokeBastionToken`, `RevokeAllOfBastionTx` (deleting a registration), `AuthenticateBastion` (the validation of the interface, through the cache `auth_tokens` and `BastionTokenBySecret`) |
-| `settings.go` | `SettingsStore`: cache `auth_settings`, `Effective`, `Update` (R-AUTH-040); the journal entry of `settings.auth.changed` carries `anonymousAccess` and both runtime maxima before and after, `null` for the YAML value (Q-AUTH-207) |
-| `journal_replay.go` | The replay of the token events; `replaySettings` replays `settings.auth.changed` part by part: the anonymous switch (`switchOrder`) and each maximum (`maxOrder`, a total order with `null` the longest, so it never suspends), lowering by `IdentityLowerPATMax` and `IdentityLowerSATMax`, which also take a default above the new maximum down to it |
+| `settings.go` | `SettingsStore`: cache `auth_settings`, `Effective`, `Update` (R-AUTH-040); the journal entry of `settings.auth.changed` carries both runtime maxima before and after, `null` for the YAML value (Q-AUTH-207) |
+| `journal_replay.go` | The replay of the token events; `replaySettings` replays `settings.auth.changed` part by part: each maximum (`maxOrder`, a total order with `null` the longest, so it never suspends), lowering by `IdentityLowerPATMax` and `IdentityLowerSATMax`, which also take a default above the new maximum down to it |
 | `tasks.go` | `Cleanup` (`token-cleanup`), `NoticeExpiring` (`token-expiry-notice`) |
 
 ## Request path
@@ -109,9 +109,9 @@ request ─► chain stage 6 ─► app.authenticate ─► auth.Stage.Authentic
   (`EndpointRules.Served`), and `""` where it does not, so a request of an unserved family gets the challenge, the cookie
   rule and the anonymous verdict of `/does-not-exist` (Q-ARCH-302, Q-ARCH-306). On `api`, an ended session's cookie on
   `/files/x` is ignored as on an unknown path instead of answering `session_expired`.
-- Anonymous: the endpoint allows it (`EndpointRules.Anonymous`), `anonymousAccess` is on and the ceiling
-  `auth.anonymous.allowed` is true (`SettingsStore.Effective`), and the method is safe if the path is under `/api/v1/`.
-  Independently of the runtime switch, on an endpoint that allows anonymous requests, a request is anonymous when the
+- Anonymous: the endpoint allows it (`EndpointRules.Anonymous`, the operator's ceiling of public content, R-AUTH-037), and
+  the method is safe if the path is under `/api/v1/`. There is no runtime switch: what the anonymous subject reads is decided by
+  the visibility levels in the decision point. On an endpoint that allows anonymous requests, a request is anonymous also when the
   route is in the always-open list (`/auth/`, login options, device endpoints, `POST /api/v1/tokens/revoke`, the CI
   exchange, the npm login start, `GET`/`HEAD` of `/` and `/ui/…`) or when `EndpointRules.PublicRoute` says the matched
   management operation is declared public (Q-AUTH-19). An endpoint that allows no anonymous request (a further endpoint

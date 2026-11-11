@@ -189,12 +189,12 @@ func TestNuGetClosingPublic(t *testing.T) {
 	// No extraHosts: a remote of nuget.org's index admits *.nuget.org by default, where nuget.org serves its search and
 	// its package content (R-NUGET-014).
 	fx.adm.do(http.MethodPost, reposRoute, map[string]any{
-		"key": remote, "class": "remote", "format": "nuget", "requireAuthentication": true,
+		"key": remote, "class": "remote", "format": "nuget",
 		"remote": map[string]any{"url": nugetOrgIndex},
 	}).want(t, "create "+remote, 201)
 	t.Cleanup(func() { deleteRepository(t, fx.adm, remote) })
 	fx.adm.do(http.MethodPost, reposRoute, map[string]any{
-		"key": all, "class": "virtual", "format": "nuget", "requireAuthentication": true,
+		"key": all, "class": "virtual", "format": "nuget",
 		"virtual": map[string]any{"members": []string{nugetAuthKey, remote}, "deployTarget": nugetAuthKey},
 	}).want(t, "create "+all, 201)
 	t.Cleanup(func() { deleteRepository(t, fx.adm, all) }) // before the remote: the virtual repository names it

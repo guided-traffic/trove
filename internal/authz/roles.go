@@ -147,6 +147,8 @@ type Me struct {
 	Capabilities []Capability
 	// Principals are the references of the principal set.
 	Principals []string
+	// Internal says the subject is internal (R-AUTHZ-030): the level internal admits it.
+	Internal bool
 	// Memberships are the projects the subject is a member of, with its role
 	// (Q-AUTHZ-207); empty for a subject that is a member of none.
 	Memberships []Membership

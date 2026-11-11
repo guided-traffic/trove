@@ -113,7 +113,7 @@ A caller without `read` gets the same `404` for a file that exists and one that 
 that does not: the answer is made by the decision before any lookup (R-AUTHZ-016), and every "missing" answer on the same route is
 built from `authz.NotFound()`. The integration test compares the bodies byte for byte, apart from the request path and the request
 ID that the problem echoes. A refused write is `403` whether or not the target exists. An anonymous caller is `401` with a
-challenge while anonymous access is off. The listing operations drop what the caller may not read, with one `PathsAllowed` call per
+challenge where no `public` level admits the read. The listing operations drop what the caller may not read, with one `PathsAllowed` call per
 page instead of a refusal per entry, which would write a denial event for every omitted name. A page reads at most 100,000 rows in
 queries that double in size from `limit + 1` up to 5,000 rows, so a page costs a few dozen queries whatever its size; a page that
 ends at that bound beyond its last visible entry carries the item id of the last row it read as its cursor, never its path

@@ -69,7 +69,7 @@ func settingsStore(t *testing.T, s *twinSide) *token.SettingsStore {
 	}
 	return token.NewSettingsStore(token.SettingsOptions{
 		DB: s.db, Notifier: s.changes, Recorder: s.rec, Cache: caches, Gate: principal.Gate{Bound: 2 * time.Second, Metrics: metrics},
-		Tokens: cfg, Anonymous: config.AuthAnonymous{Allowed: true},
+		Tokens: cfg,
 	})
 }
 
@@ -390,32 +390,26 @@ func TestR_AUTH_026_ALoweredMaximumStaysLoweredAfterARestore(t *testing.T) {
 			return map[string]any{"maxTTLSeconds": map[string]any{"before": before, "after": after}}
 		}
 		settingsEntry := func(pat, sat map[string]any) []byte {
-			return entryJSON(t, map[string]any{
-				"anonymousAccess": map[string]bool{"before": false, "after": false},
-				"tokens":          map[string]any{"pat": pat, "sat": sat},
-			})
+			return entryJSON(t, map[string]any{"tokens": map[string]any{"pat": pat, "sat": sat}})
 		}
 		handWritten(t, forged, "settings.auth.changed", settingsEntry(max(7200, nil), max(nil, nil)))
 		handWritten(t, forged, "settings.auth.changed", settingsEntry(max(3600, 14400), max(nil, nil)))
 		handWritten(t, forged, "settings.auth.changed", settingsEntry(max(nil, nil), max(nil, 59)))
-		handWritten(t, forged, "settings.auth.changed", entryJSON(t, map[string]any{"anonymousAccess": map[string]bool{"before": false, "after": false}}))
 		fs, _ := rst.replay(forged, tw.at, rst.changes)
-		if fs.Counts[journal.Applied] != 0 || fs.Counts[journal.Skipped] != 3 || fs.Counts[journal.AlreadyInEffect] != 1 {
-			t.Errorf("counts %v, want three skipped (a null, a longer value and the null beside the unreadable sat maximum, which is dropped alone) and one in effect (the anonymous part alone)", fs.Counts)
+		if fs.Counts[journal.Applied] != 0 || fs.Counts[journal.Skipped] != 3 || fs.Counts[journal.AlreadyInEffect] != 0 {
+			t.Errorf("counts %v, want three skipped (a null, a longer value and the null beside the unreadable sat maximum, which is dropped alone)", fs.Counts)
 		}
 		if rst.ttl("pat_max_ttl") != 7200 || rst.ttl("sat_max_ttl") != -1 {
 			t.Errorf("pat max %d, sat max %d: a forged entry widened a maximum", rst.ttl("pat_max_ttl"), rst.ttl("sat_max_ttl"))
 		}
-		// An out-of-range maximum narrows nothing and does not take the anonymous switch-off with it.
-		rst.exec(`UPDATE auth_settings SET anonymous_access = true`)
+		// A maximum out of range narrows nothing: an entry with no readable part is skipped as malformed.
 		mixed := newMemStore()
 		handWritten(t, mixed, "settings.auth.changed", entryJSON(t, map[string]any{
-			"anonymousAccess": map[string]bool{"before": true, "after": false},
-			"tokens":          map[string]any{"pat": max(7200, 99999999999), "sat": max(nil, "x")},
+			"tokens": map[string]any{"pat": max(7200, 99999999999), "sat": max(nil, "x")},
 		}))
 		ms, _ := rst.replay(mixed, tw.at, rst.changes)
-		if ms.Counts[journal.Applied] != 1 || rst.text(`SELECT anonymous_access::text FROM auth_settings`) != "false" || rst.ttl("pat_max_ttl") != 7200 {
-			t.Errorf("counts %v, anonymous %s, pat max %d: the switch must go off and the maximum stay", ms.Counts, rst.text(`SELECT anonymous_access::text FROM auth_settings`), rst.ttl("pat_max_ttl"))
+		if ms.Counts[journal.Applied] != 0 || ms.Counts[journal.Skipped] != 1 || rst.ttl("pat_max_ttl") != 7200 {
+			t.Errorf("counts %v, pat max %d: the entry must be skipped and the maximum stay", ms.Counts, rst.ttl("pat_max_ttl"))
 		}
 		shorter := newMemStore()
 		handWritten(t, shorter, "settings.auth.changed", settingsEntry(max(nil, nil), max(nil, 3600)))

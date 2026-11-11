@@ -41,7 +41,7 @@ func TestR_BAS_005_ABastionTokenIsNoCredentialOnAnyOtherRoute(t *testing.T) {
 	}
 	db := &countingDB{}
 	svc := token.NewService(token.ServiceOptions{DB: db, Cache: reg, Gate: principal.Gate{Bound: time.Second}, Tokens: config.AuthTokens{CacheTTL: time.Minute}})
-	s := New(Options{Tokens: svc, Uses: svc, Principals: fakeStore{}, Settings: fakeAnon{on: true}, BasicEnabled: true, APIKeyHeader: true, ClientAddr: clientAddr("203.0.113.9")})
+	s := New(Options{Tokens: svc, Uses: svc, Principals: fakeStore{}, BasicEnabled: true, APIKeyHeader: true, ClientAddr: clientAddr("203.0.113.9")})
 
 	rules := defaultRules()
 	rules.APIKeyRoute = func(*http.Request) bool { return true } // the key is read on every route of this test

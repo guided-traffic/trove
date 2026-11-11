@@ -49,6 +49,9 @@ type AuthServices struct {
 	// that name. A token listing shows the bound names it does not hold under
 	// unknownEndpoints (R-EP-011). Nil: every name counts as configured.
 	EndpointConfigured func(name string) bool
+	// PublicContent reports whether an anonymous visitor reads anything through the endpoint of the request (`publicContent`
+	// of login-options, R-AUTH-009). Nil: false.
+	PublicContent func(ctx context.Context) bool
 	// Config is the auth section: the session windows, the provider issuers for a
 	// pending identity link, the break-glass username, the ceilings.
 	Config config.Auth
@@ -75,7 +78,7 @@ type SessionService interface {
 
 // LoginService renders the options of the sign-in screen (*oidc.Service).
 type LoginService interface {
-	LoginOptions(anonymousAccess bool) oidc.LoginOptions
+	LoginOptions(publicContent bool) oidc.LoginOptions
 	// BreakGlassPassword says whether the replica can verify the break-glass
 	// password; the settings status shows it (R-AUTH-040).
 	BreakGlassPassword() oidc.PasswordStatus

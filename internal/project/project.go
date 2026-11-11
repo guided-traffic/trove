@@ -52,6 +52,8 @@ type Project struct {
 	Key         string
 	DisplayName string
 	Description string
+	// Visibility is the project's level: private, internal or public (R-AUTHZ-033). A repository's levels are at most this.
+	Visibility string
 	// Members are the users and groups that are members, with their role, ordered by kind and name.
 	Members []Member
 	// Repositories, ServiceAccounts, Policies and CIMappings count what belongs to the

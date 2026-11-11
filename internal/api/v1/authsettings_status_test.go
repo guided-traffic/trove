@@ -32,7 +32,7 @@ func breakGlassStatus(t *testing.T, cfg config.AuthBreakGlass, login LoginServic
 	a.Tokens.CacheTTL = 15 * time.Second
 	s := &Server{o: Options{Auth: AuthServices{
 		Config: a, Login: login,
-		Settings: token.NewSettingsStore(token.SettingsOptions{Cache: reg, Tokens: a.Tokens, Anonymous: a.Anonymous}),
+		Settings: token.NewSettingsStore(token.SettingsOptions{Cache: reg, Tokens: a.Tokens}),
 	}}}
 	out, err := s.authSettings(httptest.NewRequestWithContext(context.Background(), "GET", "/api/v1/settings/auth", nil), token.Settings{})
 	if err != nil {

@@ -8,12 +8,12 @@
 -- Principals -----------------------------------------------------------------
 
 -- name: IdentityPrincipalByID :many
-SELECT p.id::text AS id, p.kind, p.name, p.status, coalesce(u.is_break_glass, false) AS is_break_glass
+SELECT p.id::text AS id, p.kind, p.name, p.status, coalesce(u.is_break_glass, false) AS is_break_glass, coalesce(u.external, false) AS external
   FROM principal p LEFT JOIN app_user u ON u.principal_id = p.id
  WHERE p.id = sqlc.arg(id)::text::uuid;
 
 -- name: IdentityPrincipalByName :many
-SELECT p.id::text AS id, p.kind, p.name, p.status, coalesce(u.is_break_glass, false) AS is_break_glass
+SELECT p.id::text AS id, p.kind, p.name, p.status, coalesce(u.is_break_glass, false) AS is_break_glass, coalesce(u.external, false) AS external
   FROM principal p LEFT JOIN app_user u ON u.principal_id = p.id
  WHERE p.kind = sqlc.arg(kind)::text AND p.name = sqlc.arg(name)::text;
 
@@ -177,6 +177,12 @@ UPDATE app_user SET email = NULLIF(sqlc.arg(email)::text, ''), email_verified = 
 UPDATE app_user SET disabled_reason = NULLIF(sqlc.arg(reason)::text, ''),
                     disabled_at = CASE WHEN sqlc.arg(reason)::text = '' THEN NULL ELSE now() END
  WHERE principal_id = sqlc.arg(id)::text::uuid;
+
+-- name: IdentitySetUserExternal :many
+-- The external flag of a user (R-AUTH-044); no row back: the flag already has the value.
+UPDATE app_user SET external = sqlc.arg(external)::boolean
+ WHERE principal_id = sqlc.arg(id)::text::uuid AND external IS DISTINCT FROM sqlc.arg(external)::boolean
+RETURNING principal_id::text AS id;
 
 -- name: IdentityUserDisabledReason :many
 SELECT coalesce(disabled_reason, '')::text AS reason, is_break_glass FROM app_user WHERE principal_id = sqlc.arg(id)::text::uuid;
@@ -642,7 +648,7 @@ RETURNING id::text AS id;
 
 -- name: IdentityGetSettings :many
 -- Intervals travel as seconds; -1 is NULL (the YAML value applies).
-SELECT anonymous_access,
+SELECT new_users_external,
        coalesce(extract(epoch FROM pat_default_ttl), -1)::float8 AS pat_default_secs,
        coalesce(extract(epoch FROM pat_max_ttl), -1)::float8 AS pat_max_secs,
        coalesce(extract(epoch FROM sat_default_ttl), -1)::float8 AS sat_default_secs,
@@ -655,7 +661,7 @@ SELECT anonymous_access,
 -- expected is the revision the caller loaded, or -1 for a blind write (If-Match: *);
 -- no returned row means the revision moved on.
 UPDATE auth_settings
-   SET anonymous_access = sqlc.arg(anonymous_access)::boolean,
+   SET new_users_external = sqlc.arg(new_users_external)::boolean,
        pat_default_ttl = CASE WHEN sqlc.arg(pat_default_secs)::float8 < 0 THEN NULL ELSE make_interval(secs => sqlc.arg(pat_default_secs)::float8) END,
        pat_max_ttl = CASE WHEN sqlc.arg(pat_max_secs)::float8 < 0 THEN NULL ELSE make_interval(secs => sqlc.arg(pat_max_secs)::float8) END,
        sat_default_ttl = CASE WHEN sqlc.arg(sat_default_secs)::float8 < 0 THEN NULL ELSE make_interval(secs => sqlc.arg(sat_default_secs)::float8) END,

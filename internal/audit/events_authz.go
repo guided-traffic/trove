@@ -52,13 +52,21 @@ func init() {
 		`"source":{"type":"string","enum":["api","configuration"]},"previousSource":{"type":"string","enum":["api","configuration"]}}}`
 	Register(EventType{Name: "authz.role.bound", Category: CategoryAuthz, Mode: Transactional, Schema: binding})
 	Register(EventType{Name: "authz.role.unbound", Category: CategoryAuthz, Mode: Transactional, Journal: JournalRevocation, Schema: binding})
-	// The authorization settings of a repository (cacheFillAction,
-	// packageOwnership, requireAuthentication, hideExistence), written by the
-	// repository update next to the repository's own event (R-AUTHZ-031).
+	// The authorization settings of a repository (cacheFillAction, packageOwnership, hideExistence and the visibility levels
+	// artifacts and wiki), written by the repository update next to the repository's own event (R-AUTHZ-031); cause says why:
+	// the request itself, the cascade of a project's lowered level, or a move (R-AUTHZ-033, R-AUTHZ-036).
 	Register(EventType{
 		Name: "authz.settings.changed", Category: CategoryAuthz, Mode: Transactional, Journal: JournalRevocation,
 		Schema: `{"type":"object","properties":{"repository":{"type":"string"},"repositoryId":{"type":"string"},` +
-			`"before":{"type":"object"},"after":{"type":"object"},"epoch":{"type":"integer"}}}`,
+			`"before":{"type":"object"},"after":{"type":"object"},"epoch":{"type":"integer"},` +
+			`"cause":{"type":"string","enum":["request","project","move"]}}}`,
+	})
+	// The installation's default visibility level (R-API-056): the level before and after. It decides only objects created
+	// later, so it is not journaled (R-AUTHZ-036).
+	Register(EventType{
+		Name: "settings.visibility.changed", Category: CategoryConfig, Mode: Transactional,
+		Schema: `{"type":"object","properties":{"before":{"type":"object","properties":{"defaultLevel":{"type":"string"}}},` +
+			`"after":{"type":"object","properties":{"defaultLevel":{"type":"string"}}}}}`,
 	})
 	// >>> M2 ownership
 	// Package ownership (R-AUTHZ-018, R-AUTHZ-019, R-AUTHZ-029), written in the

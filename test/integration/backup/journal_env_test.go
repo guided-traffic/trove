@@ -161,7 +161,7 @@ func newJEnv(t *testing.T) *jenv {
 		CIT: config.AuthTokenCIT{MaxTTL: 6 * time.Hour}, MaxActive: config.AuthTokenMax{PAT: 50, SAT: 20},
 	}
 	principals := principal.NewStore(principal.StoreOptions{DB: db, Cache: caches, Gate: gate, SafetyTTL: tokCfg.CacheTTL})
-	settings := token.NewSettingsStore(token.SettingsOptions{DB: db, Notifier: changes, Recorder: rec, Cache: caches, Gate: gate, Tokens: tokCfg, Anonymous: config.AuthAnonymous{Allowed: true}})
+	settings := token.NewSettingsStore(token.SettingsOptions{DB: db, Notifier: changes, Recorder: rec, Cache: caches, Gate: gate, Tokens: tokCfg})
 	tokens := token.NewService(token.ServiceOptions{
 		DB: db, Notifier: changes, Recorder: rec, Principals: principals, Settings: settings, Cache: caches, Gate: gate, Tokens: tokCfg, Metrics: metrics, Log: quietLog,
 	})
@@ -211,7 +211,7 @@ func (e *jenv) freshTokens() *token.Service {
 	gate := principal.Gate{Bound: 2 * time.Second, Metrics: metrics}
 	cfg := config.AuthTokens{CacheTTL: 15 * time.Second, PAT: config.AuthTokenPAT{DefaultTTL: time.Hour, MaxTTL: time.Hour}, SAT: config.AuthTokenSAT{DefaultTTL: time.Hour, MaxTTL: time.Hour}, MaxActive: config.AuthTokenMax{PAT: 50, SAT: 20}}
 	principals := principal.NewStore(principal.StoreOptions{DB: e.db, Cache: caches, Gate: gate, SafetyTTL: cfg.CacheTTL})
-	settings := token.NewSettingsStore(token.SettingsOptions{DB: e.db, Notifier: e.changes, Recorder: e.rec, Cache: caches, Gate: gate, Tokens: cfg, Anonymous: config.AuthAnonymous{Allowed: true}})
+	settings := token.NewSettingsStore(token.SettingsOptions{DB: e.db, Notifier: e.changes, Recorder: e.rec, Cache: caches, Gate: gate, Tokens: cfg})
 	return token.NewService(token.ServiceOptions{DB: e.db, Notifier: e.changes, Recorder: e.rec, Principals: principals, Settings: settings, Cache: caches, Gate: gate, Tokens: cfg, Metrics: metrics, Log: quietLog})
 }
 

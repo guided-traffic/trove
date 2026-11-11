@@ -80,7 +80,7 @@ func registryStage(t *testing.T, r *replica, ring *secrets.KeyRing) *auth.Stage 
 		t.Fatal(err)
 	}
 	return auth.New(auth.Options{
-		Tokens: r.tokens, Uses: r.tokens, Principals: r.principals, Settings: r.settings, BasicEnabled: true,
+		Tokens: r.tokens, Uses: r.tokens, Principals: r.principals, BasicEnabled: true,
 		Limiter: auth.NewLocalLimiter(300, time.Minute, nil, nil), Log: quiet, Registry: signer,
 		ClientAddr: func(*http.Request) netip.Addr { return netip.MustParseAddr("203.0.113.7") },
 		RegistryRealm: func(*http.Request) (string, string) {
@@ -222,17 +222,10 @@ func TestAnonymousRegistryTokenAgainstTheRealStores(t *testing.T) {
 	ring := keyRing(t, t.TempDir(), "k1", "k1")
 	sa, sb := registryStage(t, a, ring), registryStage(t, b, ring)
 	ctx := context.Background()
-	set := func(on bool) {
-		t.Helper()
-		if _, err := a.settings.Update(ctx, admin, token.SettingsPatch{Expected: errs.AnyRevision, AnonymousAccess: ptr(on)}); err != nil {
-			t.Fatal(err)
-		}
-	}
 
 	t.Run("R-AUTH-037 without auth.anonymous a token request without a credential is 401; with it, an anonymous token", func(t *testing.T) {
 		closed := registryRules
 		closed.Anonymous = false
-		set(true)
 		_, err := sa.AuthenticateTokenRequest(httptest.NewRequest(http.MethodGet, "/v2/_token", nil), closed, auth.PresentedFrom(httptest.NewRequest(http.MethodGet, "/", nil)))
 		if ee, ok := errs.As(err); !ok || ee.Status() != 401 || ee.Challenge != `Basic realm="trove"` {
 			t.Fatalf("endpoint without anonymous: %v", err)
@@ -245,14 +238,6 @@ func TestAnonymousRegistryTokenAgainstTheRealStores(t *testing.T) {
 		if _, err := pull(ctx, sb, rgt, closed); err == nil {
 			t.Fatal("an anonymous registry token passed an endpoint without anonymous requests")
 		}
-
-		t.Run("R-AUTH-037 switching anonymous access off stops the anonymous token on every replica within the bound", func(t *testing.T) {
-			set(false)
-			waitFor(t, "replica B refusing the anonymous registry token", revocationBound, func() bool {
-				_, err := pull(ctx, sb, rgt, registryRules)
-				return err != nil
-			})
-		})
 	})
 }
 

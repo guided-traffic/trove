@@ -210,7 +210,7 @@ func TestR_BAS_001_TheOpsListenerExportsTheBastionMetricsFromTheStart(t *testing
 	for _, want := range []string{
 		"trove_bastion_requests_total", "trove_bastion_main_reachable 0", "trove_bastion_answer_period_seconds 300",
 		"trove_bastion_grace_period_seconds 900", "trove_bastion_token_warn_before_seconds 2.592e+06",
-		`trove_bastion_interface_version{side="bastion"} 1`, `trove_bastion_token_reloads_total{outcome="loaded"} 1`,
+		fmt.Sprintf(`trove_bastion_interface_version{side="bastion"} %d`, iface.InterfaceVersion), `trove_bastion_token_reloads_total{outcome="loaded"} 1`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("metrics lack %q", want)

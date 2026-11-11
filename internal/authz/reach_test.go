@@ -12,7 +12,7 @@ import (
 // reachFixture is the fixture of the read shapes (R-BAS-012). Repositories:
 //
 //	npm-a, npm-b      local
-//	npm-strict        local, requireAuthentication
+//	npm-strict        local
 //	npmjs             remote, fills on read
 //	npm-frozen        remote, fills on deploy
 //	npm-v             virtual over npm-a and npmjs
@@ -22,12 +22,12 @@ import (
 //
 // Subjects: bot reads everything and deploys into the frozen mirror; devs (alice) read npm-a, npmjs and
 // npm-v, and npm-b for @a/* only; bob holds a path-only grant on npm-a; carol holds nothing; anonymous reads
-// npm-a and npmjs; the auditor holds content:metadata-read and no grant; ops holds the admin role.
+// nothing until a level admits it; the auditor holds content:metadata-read and no grant; ops holds the admin role.
 func reachFixture() *fixture {
 	f := newFixture().
 		repo("npm-a", "local", "npm", "").
 		repo("npm-b", "local", "npm", "").
-		repo("npm-strict", "local", "npm", `{"requireAuthentication":true}`).
+		repo("npm-strict", "local", "npm", "").
 		repo("npmjs", "remote", "npm", `{"remote":{"cacheFillAction":"read"}}`).
 		repo("npm-frozen", "remote", "npm", `{"remote":{"cacheFillAction":"deploy"}}`).
 		repo("npm-v", "virtual", "npm", `{"virtual":{"members":["npm-a","npmjs"]}}`).
@@ -41,7 +41,6 @@ func reachFixture() *fixture {
 	f.policy(policyDef{name: "devs", selectors: []string{"npm-a", "npmjs", "npm-v", "npm-vb"}, entries: map[string][]string{idDevs: {"read"}}})
 	f.policy(policyDef{name: "devs-b", selectors: []string{"npm-b"}, pkgInc: []string{"@a/*"}, entries: map[string][]string{idDevs: {"read"}}})
 	f.policy(policyDef{name: "bob-path", selectors: []string{"npm-a"}, pathInc: []string{"x/**"}, entries: map[string][]string{idBob: {"read"}}})
-	f.policy(policyDef{name: "anon", selectors: []string{"npm-a", "npmjs", "npm-strict", "npm-v"}, entries: map[string][]string{AnonymousID: {"read"}}})
 	f.bind(RoleAdmin, idOps).bind(RoleAuditor, idAuditorDirect)
 	f.exposure(ruleDef{endpoint: "customers", name: "acme", repo: "npm-a", dims: ruleDims{
 		Packages: PatternLists{Include: []string{"@acme/*"}},
@@ -98,12 +97,8 @@ func TestR_BAS_012_ShapeAgreesWithTheDecisionPoint(t *testing.T) {
 	versions := []string{"", "1.0.0", "3.0.0-beta"}
 	paths := []string{"", "x/y", "plain/-/plain-1.0.0.tgz"}
 	var counts [3]int
-	for _, anonOnState := range []bool{false, true} {
-		on := anonOnState
-		e := newTestEngine(t, reachFixture(), func(o *Options) {
-			o.Ceiling = reachCeiling()
-			o.AnonymousAccess = func(context.Context) (bool, error) { return on, nil }
-		})
+	{
+		e := newTestEngine(t, reachFixture(), func(o *Options) { o.Ceiling = reachCeiling() })
 		for name, base := range subjects {
 			for _, ep := range []string{"", "default", "customers"} {
 				sub := onEP(base, ep)
@@ -119,11 +114,11 @@ func TestR_BAS_012_ShapeAgreesWithTheDecisionPoint(t *testing.T) {
 				for _, k := range keys {
 					res, ok := got[qr(k)]
 					if !ok {
-						t.Fatalf("%s on %q (anonymous %v): no answer for %s", name, ep, on, k)
+						t.Fatalf("%s on %q: no answer for %s", name, ep, k)
 					}
 					counts[res.Reach]++
 					where := func() string {
-						return name + " on " + ep + " (anonymous access " + map[bool]string{false: "off", true: "on"}[on] + ") " + k
+						return name + " on " + ep + " " + k
 					}
 					if res.Reach != ReachNone && res.Denial != Allow {
 						t.Errorf("%s: reach %s carries the denial %d", where(), res.Reach, res.Denial)
@@ -193,14 +188,7 @@ func TestR_BAS_012_ShapeAgreesWithTheDecisionPoint(t *testing.T) {
 
 // TestR_BAS_012_Shapes pins the cases of the acceptance criteria and of the rules by name.
 func TestR_BAS_012_Shapes(t *testing.T) {
-	on := func(o *Options) {
-		o.Ceiling = reachCeiling()
-		o.AnonymousAccess = func(context.Context) (bool, error) { return true, nil }
-	}
-	off := func(o *Options) {
-		o.Ceiling = reachCeiling()
-		o.AnonymousAccess = func(context.Context) (bool, error) { return false, nil }
-	}
+	on := func(o *Options) { o.Ceiling = reachCeiling() }
 	keys := []string{"npm-a", "npm-strict", "npmjs", "npm-frozen", "npm-v", "npm-v2", "npm-empty", "ghost"}
 	reach := func(t *testing.T, mod func(*Options), sub Subject) map[qname.Repo]ReachResult {
 		t.Helper()
@@ -252,17 +240,11 @@ func TestR_BAS_012_Shapes(t *testing.T) {
 		got = reach(t, on, onEP(botSub, "default"))
 		want(t, got, "npm-a", ReachFull, Allow)
 	})
-	t.Run("an anonymous subject is none while the switch is off, with 401", func(t *testing.T) {
-		got := reach(t, off, anonSub)
+	t.Run("an anonymous subject is none until a level admits it, with 401", func(t *testing.T) {
+		got := reach(t, on, anonSub)
 		for _, k := range keys {
 			want(t, got, k, ReachNone, DenyUnauthenticated)
 		}
-	})
-	t.Run("an anonymous subject is none on a repository that requires authentication", func(t *testing.T) {
-		got := reach(t, on, anonSub)
-		want(t, got, "npm-strict", ReachNone, DenyUnauthenticated)
-		want(t, got, "npm-a", ReachFull, Allow)
-		want(t, got, "npmjs", ReachFull, Allow)
 	})
 	t.Run("an unknown key is none with the refusal of a missing repository", func(t *testing.T) {
 		want(t, reach(t, on, botSub), "ghost", ReachNone, DenyHidden)

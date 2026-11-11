@@ -289,7 +289,7 @@ func TestR_AUTHZ_021_ListFilters(t *testing.T) {
 	for _, p := range []map[string]any{
 		policyBody("team-web-publish", entry("group:team-web", "annotate", "deploy", "read")),
 		policyBody("bob-reads", entry("user:bob", "read")),
-		{"name": "teama", "resources": map[string]any{"repositories": []string{"*/npm-team-*"}}, "entries": []any{entry("authenticated", "read")}},
+		{"name": "teama", "resources": map[string]any{"repositories": []string{"*/npm-team-*"}}, "entries": []any{entry("user:carol", "read")}},
 	} {
 		wantStatus(t, f.cl.Do(me, "POST", policies, p), 201, "")
 	}
@@ -487,22 +487,16 @@ func TestR_AUTHZ_023_ChecksOverHTTP(t *testing.T) {
 		wantStatus(t, f.cl.Do("", "POST", "/api/v1/authz/check", map[string]any{"checks": []any{}}), 401, "")
 		wantStatus(t, f.cl.Do(f.alice.Name, "POST", "/api/v1/authz/check", map[string]any{"chekcs": []any{}}), 400, "malformed_request")
 	})
-	t.Run("R-AUTHZ-030 E1.3 the built-in principal authenticated through the API", func(t *testing.T) {
-		wantStatus(t, f.cl.Do(me, "POST", policies, map[string]any{
-			"name": "everyone-reads", "resources": map[string]any{"repositories": []string{"it/generic-local"}},
-			"entries": []any{entry("authenticated", "read")},
-		}), 201, "")
-		// An entry giving authenticated deploy is refused.
-		wantStatus(t, f.cl.Do(me, "POST", policies, map[string]any{
-			"name": "everyone-writes", "resources": map[string]any{"repositories": []string{"it/generic-local"}},
-			"entries": []any{entry("authenticated", "deploy")},
-		}), 422, "authenticated_write_action")
-		// A user in no group reads; a service account without a grant of its own does not (404 as for a missing repository).
-		if got := check(f.carol.Name, item("generic-local", "read"), item("generic-local", "deploy")); fmt.Sprint(got) != "[true false]" {
-			t.Fatalf("carol: %v", got)
+	t.Run("R-AUTHZ-003 an entry for anonymous or authenticated is 422 principal_not_allowed", func(t *testing.T) {
+		for _, ref := range []string{"anonymous", "authenticated"} {
+			wantStatus(t, f.cl.Do(me, "POST", policies, map[string]any{
+				"name": "everyone-" + ref, "resources": map[string]any{"repositories": []string{"it/generic-local"}},
+				"entries": []any{entry(ref, "read")},
+			}), 422, "principal_not_allowed")
 		}
-		if got := check(f.bot.Name, item("generic-local", "read")); fmt.Sprint(got) != "[false]" {
-			t.Fatalf("service account: %v", got)
+		// No level opens the repository, so a user in no group reads nothing and a request without a credential is 401.
+		if got := check(f.carol.Name, item("generic-local", "read"), item("generic-local", "deploy")); fmt.Sprint(got) != "[false false]" {
+			t.Fatalf("carol: %v", got)
 		}
 		wantStatus(t, f.cl.Do("", "POST", "/api/v1/authz/check", map[string]any{"checks": []any{item("generic-local", "read")}}), 401, "")
 	})
@@ -510,7 +504,7 @@ func TestR_AUTHZ_023_ChecksOverHTTP(t *testing.T) {
 		r := f.cl.Do(f.alice.Name, "GET", "/api/v1/authz/me", nil, f.current()...)
 		wantStatus(t, r, 200, "")
 		m := r.JSON(t)
-		if fmt.Sprint(m["principals"]) != "[user:alice group:team-web authenticated]" || fmt.Sprint(m["capabilities"]) != "[]" || m["scope"] != nil || m["epoch"].(float64) < 1 {
+		if fmt.Sprint(m["principals"]) != "[user:alice group:team-web]" || m["internal"] != true || fmt.Sprint(m["capabilities"]) != "[]" || m["scope"] != nil || m["epoch"].(float64) < 1 {
 			t.Fatalf("%v", m)
 		}
 		adm := f.cl.Do(me, "GET", "/api/v1/authz/me", nil, f.current()...).JSON(t)

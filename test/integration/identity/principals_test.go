@@ -698,7 +698,7 @@ func TestR_AUTHZ_002_PrincipalStoreLookups(t *testing.T) {
 		id   string
 		kind principal.Kind
 		name string
-	}{{principal.AnonymousID, principal.KindAnonymous, "anonymous"}, {principal.AuthenticatedID, principal.KindAuthenticated, "authenticated"}, {alice.ID, principal.KindUser, "alice"}} {
+	}{{principal.AnonymousID, principal.KindAnonymous, "anonymous"}, {alice.ID, principal.KindUser, "alice"}} {
 		p, err := a.principals.ByID(ctx, c.id)
 		if err != nil || p.Kind != c.kind || p.Name != c.name || p.Status != principal.StatusActive {
 			t.Errorf("%s: %+v %v", c.name, p, err)

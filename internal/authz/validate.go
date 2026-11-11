@@ -384,6 +384,10 @@ func (s *Service) resolve(ctx context.Context, in PolicyInput, opts ...WriteOpti
 			// R-BAS-004: a Bastion registration is granted nothing; 422 principal_not_allowed.
 			return nil, nil, principal.BastionNotAllowed("named in a policy")
 		}
+		if ref.IsLevelPrincipal() {
+			// R-AUTHZ-003, Q-AUTHZ-279: a visibility level is the one way to open content to everyone.
+			return nil, nil, principal.LevelPrincipalNotAllowed("named in a policy")
+		}
 		id, perr := s.principalID(ctx, ref)
 		if perr != nil {
 			if errors.Is(perr, principal.ErrNotFound) {
@@ -488,18 +492,13 @@ func upperCaseDetail(pattern string, repo qname.Repo) string {
 }
 
 // projectRule applies the principal rules of R-AUTHZ-026 to one entry: a project
-// policy never names anonymous or authenticated (R-AUTHZ-030) nor the service
-// account of another project, and a global policy names no project service account
-// (Q-AUTHZ-175). It returns the problem, nil when the entry may stand.
+// policy never names the service account of another project, and a global policy
+// names no project service account (Q-AUTHZ-175). It returns the problem, nil when the entry may stand.
 func (s *Service) projectRule(ctx context.Context, ptr string, ref Ref, id string, rp *resolvedPolicy) (*ProblemField, error) {
-	if rp.in.Project != nil && (ref.Kind == principal.KindAnonymous || ref.Kind == principal.KindAuthenticated) {
-		p := field(ptr+"/principal", errs.CodePrincipalOutsideProject, "A project policy grants to users, groups, service accounts and CI mappings, never to "+ref.String()+".")
-		return &p, nil
-	}
 	pl := rp.o.lookup(s)
 	if ref.Kind == principal.KindGroup && rp.in.Project != nil {
 		// An auto-join group holds every user that signs in: in a project policy it
-		// would stand in for authenticated, which the policy never names (Q-AUTHZ-200).
+		// would stand in for every user, which a policy never names (Q-AUTHZ-200).
 		auto, err := pl.AutoJoinGroup(ctx, id)
 		if err != nil {
 			return nil, err
@@ -533,15 +532,9 @@ func (s *Service) projectRule(ctx context.Context, ptr string, ref Ref, id strin
 	return nil, nil
 }
 
-// principalID resolves a reference to a principal-table ID; the two built-in
-// principals have fixed IDs.
+// principalID resolves a reference to a principal-table ID; the write paths refuse anonymous and authenticated before they
+// ask.
 func (s *Service) principalID(ctx context.Context, ref Ref) (string, error) {
-	switch ref.Kind {
-	case principal.KindAnonymous:
-		return AnonymousID, nil
-	case principal.KindAuthenticated:
-		return AuthenticatedID, nil
-	}
 	p, err := s.o.Principals.ByName(ctx, ref.Kind, ref.Name)
 	if err != nil {
 		return "", err
@@ -604,26 +597,8 @@ func (s *Service) resolveSelectors(ctx context.Context, rp *resolvedPolicy) []Pr
 // R-AUTHZ-014 and R-AUTHZ-030 to one entry.
 func (s *Service) entryRules(ptr string, ref Ref, acts ActionSet, rp *resolvedPolicy) []ProblemField {
 	var ps []ProblemField
-	switch ref.Kind {
-	case principal.KindAnonymous:
-		if acts != bitRead {
-			ps = append(ps, field(ptr+"/actions", errs.CodeAnonymousWriteAction, "Entries for anonymous hold only read."))
-		}
-		for _, sel := range rp.selectors {
-			if sel.dynamic() {
-				ps = append(ps, field("/resources/repositories", errs.CodeAnonymousDynamicSelector,
-					"A policy with an entry for anonymous selects repositories by key only."))
-				break
-			}
-		}
-	case principal.KindAuthenticated:
-		if acts != bitRead {
-			ps = append(ps, field(ptr+"/actions", errs.CodeAuthenticatedWriteAction, "Entries for authenticated hold only read."))
-		}
-	case principal.KindCI:
-		if acts.Has(Manage) {
-			ps = append(ps, field(ptr+"/actions", errs.CodeActionNotAllowed, "A CI identity mapping never holds manage."))
-		}
+	if ref.Kind == principal.KindCI && acts.Has(Manage) {
+		ps = append(ps, field(ptr+"/actions", errs.CodeActionNotAllowed, "A CI identity mapping never holds manage."))
 	}
 	if acts&^virtualActions != 0 {
 		for _, sel := range rp.selectors {
@@ -674,28 +649,7 @@ func warningsFor(rp *resolvedPolicy, all []repository.Repository, reg *catalog.R
 			}
 		}
 	}
-	for _, e := range rp.entries {
-		if e.ref.Kind != principal.KindAnonymous || !e.actions.Has(Read) {
-			continue
-		}
-		for _, r := range covered {
-			if r.Class == repository.Remote && cacheFillOf(r.Config) == "read" {
-				warnings = append(warnings, WarnAnonymousPopulatesRemote)
-				return warnings, covers, covered
-			}
-		}
-	}
 	return warnings, covers, covered
-}
-
-// cacheFillOf reads the cacheFillAction of a remote repository's document; the
-// default is read (R-AUTHZ-008).
-func cacheFillOf(cfg []byte) string {
-	c, ok := parseRepoConfig(cfg)
-	if !ok || c.Remote.CacheFillAction == "" {
-		return "read"
-	}
-	return c.Remote.CacheFillAction
 }
 
 // journalSelector, journalEntry and journalState are the access-bearing state of

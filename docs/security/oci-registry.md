@@ -90,8 +90,8 @@ the other one, which is why R-ARCH-021 adds a key everywhere before any replica 
 The reason of a refusal goes to `trove_auth_attempts_total`, not to the client. A forged, tampered, expired or foreign token is refused at
 steps 1 to 4 and costs no database query (`TestRegistryTokensAgainstTheRealStores` in [registrytoken_test.go](../../test/integration/identity/registrytoken_test.go),
 with a statement counter on the replica's pools); it counts as a failed credential of its address (R-AUTH-038). An anonymous registry
-token stops at step 4 and passes only while the endpoint admits anonymous requests and the runtime switch is on, so switching anonymous
-access off ends every anonymous registry token within the revocation bound.
+token stops at step 4 and passes only while the endpoint admits anonymous requests (`auth.anonymous`); what it then pulls is decided by the visibility levels
+([visibility.md](visibility.md)), as for a request without a token.
 
 The result is the trove token's principal with the trove token's scope as its ceiling (R-AUTH-024) and the grant as a further ceiling.
 
@@ -159,12 +159,12 @@ decision point decides every request again (R-AUTHZ-015).
   segments, a project or repository that does not exist, one of another format and one the decision point hides answer the same body
   (`TestNameUnknownIsTheSameForWhatDoesNotExistAndWhatTheCallerCannotSee` compares the bytes). The decision point is asked
   before the repository is looked up.
-- **The challenge of a caller without a credential.** Where anonymous access is on, such a caller meets the decision point's bare `Bearer`
+- **The challenge of a caller without a credential.** Where the endpoint admits anonymous requests, such a caller meets the decision point's bare `Bearer`
   challenge for a private repository (R-AUTHZ-016); below `/v2/` the enforcement point replaces it by the registry's (realm, service and the
   route's scope, [challenge_writer.go](../../internal/api/registry/challenge_writer.go)), so the client learns where to ask for a token and
   the answer is the one for a repository that does not exist.
 - **The version check** answers 401 with the challenge to a caller that is anonymous and carries no registry token; the stage lets such
-  a caller through where anonymous access is on, so the handler builds the challenge itself ([ping.go](../../internal/api/registry/ping.go)).
+  a caller through where the endpoint admits anonymous requests, so the handler builds the challenge itself ([ping.go](../../internal/api/registry/ping.go)).
   An invalid credential never arrives there.
 - **A bound host** (R-OCI-029): the binding counts only for a repository of the format, read per request by
   `Dispatcher.BoundRepository`, which the match, the token service and the catalog all call (Q-EP-80). A binding to a repository of
@@ -181,7 +181,7 @@ decision point decides every request again (R-AUTHZ-015).
 |---|---|
 | The trove token is revoked, expires, or its owner is disabled | Refused on every replica within `auth.revocation_bound` (2 s), with or without Valkey, because step 6 is the trove token's own lookup (`TestRegistryTokensAgainstTheRealStores`, both Valkey states) |
 | A grant of the principal is removed | Requests that need it are refused by the decision point (403 or 404) once the replica's grant index holds the change (R-AUTHZ-015) |
-| Anonymous access is switched off | Every anonymous registry token is refused within the revocation bound |
+| The endpoint stops admitting anonymous requests | Every anonymous registry token is refused (the stage reads the endpoint's rule on every request) |
 | The token's key leaves the key ring | Refused |
 | Nothing | Valid until its expiry: `oci.token_lifetime`, 300 s by default, at most 3600 s, never after the trove token's expiry |
 
@@ -250,7 +250,7 @@ shorter window.
 Stage: the catalog handler ([catalog.go](../../internal/api/registry/catalog.go)) over the data port's page of names.
 
 Subject: any caller that may read at least one repository of the format, including a registry token with `registry:catalog:*` and an
-anonymous caller where anonymous access is on and a grant covers a repository.
+anonymous caller where the endpoint admits anonymous requests and a `public` level covers a repository.
 
 Live. A page is bounded by `n` (at most 1,000) in what it returns, not in what it reads: the handler fetches 500 names of a repository
 at a time and decides each, so a caller whose grants (a package pattern, a narrow token scope) admit one name in a repository of a

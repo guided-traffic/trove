@@ -156,7 +156,7 @@ func LoadDocument(raw []byte) (*Document, error) {
 			if err != nil {
 				problems = append(problems, fmt.Errorf("%s (%s): x-trove-bastion-interface: %w", pattern, id, err))
 			}
-			part, err := parsePart(op)
+			part, err := parsePart(op, m, req)
 			if err != nil {
 				problems = append(problems, fmt.Errorf("%s (%s): x-trove-part: %w", pattern, id, err))
 			}
@@ -240,14 +240,23 @@ func refusedInMaintenance(method string) bool {
 	return true
 }
 
-// parsePart reads x-trove-part of an operation: absent is "", and the only other accepted value is "wiki" (Q-API-260).
-func parsePart(op map[string]any) (string, error) {
+// parsePart reads x-trove-part of an operation: absent is "", and the only other accepted value is "wiki" (Q-API-260, R-API-058). It
+// belongs to a GET operation declared {public: true}, the form of the reads of R-API-029 whose handler decides the caller per
+// repository; on any other method or declaration the document refuses it, because the shared step would decide nothing about the
+// wiki there.
+func parsePart(op map[string]any, method string, req Requirement) (string, error) {
 	raw, has := op["x-trove-part"]
 	if !has {
 		return "", nil
 	}
 	if raw != PartWiki {
 		return "", fmt.Errorf("must be %q, not %v", PartWiki, raw)
+	}
+	if !strings.EqualFold(method, http.MethodGet) {
+		return "", fmt.Errorf("a wiki is read: %s cannot carry it", strings.ToUpper(method))
+	}
+	if !req.Public {
+		return "", fmt.Errorf("only a read declared {public: true}, whose handler decides the caller per repository, carries it, not %s", req)
 	}
 	return PartWiki, nil
 }

@@ -235,12 +235,8 @@ func (a *App) bastionServices(rt *endpointRuntime) v1.BastionServices {
 	rec := a.auditRecorder()
 	return v1.BastionServices{
 		Config: cfg.Bastions, Release: buildVersion(), BaseURL: cfg.Server.BaseURL,
-		Anonymous: func(ctx context.Context) (bool, error) {
-			if !rt.cfg.Anonymous {
-				return false, nil
-			}
-			eff, err := id.settings.Effective(ctx)
-			return eff.AnonymousAccess, err
+		AnonymousReads: func(ctx context.Context) bool {
+			return rt.cfg.Anonymous && a.anonymousReads(ctx, true)
 		},
 		Authenticate: a.credentialStage(rt),
 		Shapes:       a.bastionShapes(),

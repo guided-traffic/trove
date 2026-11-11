@@ -56,7 +56,7 @@ func TestOCILong_R_OCI_011_DrainOfThePodThatReceivesAPush(t *testing.T) {
 	fx := ociFx(t)
 	host := ociRegistryHost(t)
 	key := "oci-long-" + fx.run
-	fx.adm.do("POST", reposRoute, map[string]any{"key": key, "class": "local", "format": "oci", "requireAuthentication": true}).want(t, "create "+key, 201)
+	fx.adm.do("POST", reposRoute, map[string]any{"key": key, "class": "local", "format": "oci"}).want(t, "create "+key, 201)
 	t.Cleanup(func() { deleteRepository(t, fx.adm, key) })
 	ensurePolicy(t, fx.adm, "e2e-oci-long-"+fx.run, []string{key}, [2]any{"sa:" + ociPublisher, []string{"read", "deploy", "delete"}})
 	ociReadableOnEveryReplica(t, fx.token, key)

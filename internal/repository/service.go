@@ -755,6 +755,8 @@ type ListFilter struct {
 	// Project keeps the repositories assigned to the project with this key; an unknown
 	// key keeps none (R-REPO-012, Q-REPO-22).
 	Project string
+	// Visibility keeps the repositories whose artifacts level is one of these (R-API-057); empty keeps every level.
+	Visibility []string
 	// IncludeDeleting adds repositories being deleted, for holders of
 	// repositories:read-config.
 	IncludeDeleting bool
@@ -813,6 +815,9 @@ func (s *Service) List(ctx context.Context, f ListFilter) (ListResult, error) {
 			continue
 		}
 		if f.Project != "" && project != f.Project {
+			continue
+		}
+		if len(f.Visibility) > 0 && !slices.Contains(f.Visibility, row.VisibilityArtifacts) {
 			continue
 		}
 		st, err := s.storedRel(row, project, rels[row.ID], nil)

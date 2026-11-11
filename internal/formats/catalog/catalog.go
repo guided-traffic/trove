@@ -133,6 +133,10 @@ type Facts struct {
 	// and the writers of those refuse a path pattern with an upper-case letter that covers one, as feedback to
 	// whoever wrote it (Q-AUTHZ-253).
 	LowerCasePaths bool
+	// Wiki is true for a format with wiki content, the documentation of its packages that trove serves or shows apart from their
+	// files (R-AUTHZ-034): npm and NuGet serve a README. A repository of such a format has a wiki level worth setting; the kit
+	// holds the format to the wiki rules with check 15 (R-ARCH-010), and a format without wiki content declares no Wiki route.
+	Wiki bool
 	// PatternSubject is what include and exclude patterns match.
 	PatternSubject PatternSubject
 	// PackageNames is true for a format whose content has package names:

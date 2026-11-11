@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -462,7 +463,7 @@ func TestR_BAS_013_HeadersOnlyOnBastionRequests(t *testing.T) {
 				for _, ex := range rt.Examples {
 					// Every request carries the headers a Bastion would send and a token that no stage recognized.
 					rec := r.doBody(rt.Method, "/api/"+id+"/web/"+key+"/"+ex, strings.NewReader(""),
-						iface.HeaderAuthorization, "Bearer trv_bst_nothing", iface.HeaderInterface, "1", iface.HeaderProbe, "1", hCred, "token")
+						iface.HeaderAuthorization, "Bearer trv_bst_nothing", iface.HeaderInterface, strconv.Itoa(iface.InterfaceVersion), iface.HeaderProbe, "1", hCred, "token")
 					if got := hasMarking(rec.Header()); len(got) > 0 {
 						t.Fatalf("%s %s %s (decision %d): %d carries %v", rt.Method, id, ex, outcome, rec.Code, got)
 					}
@@ -511,7 +512,7 @@ func TestR_BAS_013_HeadersOnlyOnBastionRequests(t *testing.T) {
 func TestR_BAS_013_InterfaceRoutes(t *testing.T) {
 	r := newRig(t)
 	rec := r.do("GET", "/api/mk/web/mk-local/d/left-pad", hRecognize, "route", hCred, "token")
-	if got := hasMarking(rec.Header()); len(got) != 2 || rec.Header().Get(iface.HeaderClass) != "pass" || rec.Header().Get(iface.HeaderInterface) != "1" {
+	if got := hasMarking(rec.Header()); len(got) != 2 || rec.Header().Get(iface.HeaderClass) != "pass" || rec.Header().Get(iface.HeaderInterface) != strconv.Itoa(iface.InterfaceVersion) {
 		t.Fatalf("%v", rec.Header())
 	}
 }

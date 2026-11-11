@@ -211,7 +211,7 @@ func TestR_BAS_009_AMissingOrDifferentInterfaceVersionAnswersAMismatch(t *testin
 	m, _ := NewMetrics(nil)
 	for name, r := range map[string]*http.Request{
 		"missing on a package route": forwarded("/api/npm/web/npm-all/lodash", iface.HeaderAuthorization, "Bearer "+tokValid),
-		"another version":            forwarded("/api/npm/web/npm-all/lodash", iface.HeaderAuthorization, "Bearer "+tokValid, iface.HeaderInterface, "2"),
+		"another version":            forwarded("/api/npm/web/npm-all/lodash", iface.HeaderAuthorization, "Bearer "+tokValid, iface.HeaderInterface, strconv.Itoa(iface.InterfaceVersion+1)),
 		"not a number":               forwarded(iface.PathFeed, "Authorization", "Bearer "+tokValid, iface.HeaderInterface, "one"),
 		"leading zero":               forwarded(iface.PathFeed, "Authorization", "Bearer "+tokValid, iface.HeaderInterface, "01"),
 		"missing on a route":         forwarded(iface.PathHandshake, "Authorization", "Bearer "+tokValid),

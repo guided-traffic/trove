@@ -34,7 +34,7 @@ func TestR_BAS_027_AReplicaStartsUnreachableAndBecomesReachableWithAHandshakeAnd
 	r.main.SetAnonymous(true)
 	r.tickAfter(time.Second)
 	st = r.l.State()
-	if !st.Reachable || !st.UnreachableSince.IsZero() || !st.Handshaken || !st.AnonymousAccess || !st.RecordDownloads {
+	if !st.Reachable || !st.UnreachableSince.IsZero() || !st.Handshaken || !st.AnonymousReads || !st.RecordDownloads {
 		t.Fatalf("state after the first tick: %+v", st)
 	}
 	if st.Registration != "partners" || st.Installation.Release != maintest.Release {
@@ -315,11 +315,11 @@ func TestR_BAS_027_ARevocationMadeDuringTheOutageIsAppliedWhenTheLinkIsBack(t *t
 func TestR_BAS_028_AMismatchMakesTheReplicaUnreachableAndClearsWithAnEqualHandshake(t *testing.T) {
 	r := newRig(t, rigOpts{})
 	r.connect()
-	if maintest.Value(r.m.InterfaceVersion.WithLabelValues("main")) != 1 || maintest.Value(r.m.InterfaceVersion.WithLabelValues("bastion")) != 1 {
+	if maintest.Value(r.m.InterfaceVersion.WithLabelValues("main")) != iface.InterfaceVersion || maintest.Value(r.m.InterfaceVersion.WithLabelValues("bastion")) != iface.InterfaceVersion {
 		t.Fatal("the versions are not exported after the first handshake")
 	}
 	a := r.answer(r.clock.Now(), "caller")
-	r.main.SetVersion(2)
+	r.main.SetVersion(iface.InterfaceVersion + 1)
 	r.clock.Advance(time.Second)
 	r.l.RequestHandshake()
 	r.tick()
@@ -327,11 +327,11 @@ func TestR_BAS_028_AMismatchMakesTheReplicaUnreachableAndClearsWithAnEqualHandsh
 	if st.Reachable || !st.InterfaceMismatch {
 		t.Fatalf("state: %+v", st)
 	}
-	if r.gauge("mismatch") != 1 || maintest.Value(r.m.InterfaceVersion.WithLabelValues("main")) != 2 || maintest.Value(r.m.InterfaceVersion.WithLabelValues("bastion")) != 1 {
+	if r.gauge("mismatch") != 1 || maintest.Value(r.m.InterfaceVersion.WithLabelValues("main")) != iface.InterfaceVersion+1 || maintest.Value(r.m.InterfaceVersion.WithLabelValues("bastion")) != iface.InterfaceVersion {
 		t.Errorf("metrics: mismatch %v main %v bastion %v", r.gauge("mismatch"), maintest.Value(r.m.InterfaceVersion.WithLabelValues("main")), maintest.Value(r.m.InterfaceVersion.WithLabelValues("bastion")))
 	}
 	out := r.logs.String()
-	if !strings.Contains(out, "bastion interface version differs") || !strings.Contains(out, `"bastion":1`) || !strings.Contains(out, `"main":2`) || !strings.Contains(out, maintest.Release) {
+	if !strings.Contains(out, "bastion interface version differs") || !strings.Contains(out, fmt.Sprintf(`"bastion":%d`, iface.InterfaceVersion)) || !strings.Contains(out, fmt.Sprintf(`"main":%d`, iface.InterfaceVersion+1)) || !strings.Contains(out, maintest.Release) {
 		t.Errorf("the log does not name both versions and the release:\n%s", out)
 	}
 	// The grace period holds for the answers the replica has; a cold request is the engine's 503.
@@ -340,7 +340,7 @@ func TestR_BAS_028_AMismatchMakesTheReplicaUnreachableAndClearsWithAnEqualHandsh
 		t.Errorf("a held answer during a mismatch, past the period: %v", got)
 	}
 	// Either side is upgraded: the main installation speaks 1 again.
-	r.main.SetVersion(1)
+	r.main.SetVersion(iface.InterfaceVersion)
 	r.tickAfter(2 * time.Second)
 	st = r.l.State()
 	if !st.Reachable || st.InterfaceMismatch || r.gauge("mismatch") != 0 {
@@ -354,7 +354,7 @@ func TestR_BAS_028_AMismatchInAnyAnswerIsNotedAtOnce(t *testing.T) {
 	r := newRig(t, rigOpts{})
 	r.connect()
 	guarded := r.l.Guard(r.c)
-	r.main.SetVersion(2)
+	r.main.SetVersion(iface.InterfaceVersion + 1)
 	_, err := guarded.Check(context.Background(), mainclient.Authenticated, iface.CheckRequest{Repositories: []string{"a"}})
 	if !errors.Is(err, mainclient.ErrInterfaceMismatch) {
 		t.Fatal(err)
@@ -409,12 +409,12 @@ func TestR_BAS_010_TheHandshakesBaseURLMustEqualTheBastions(t *testing.T) {
 	}
 }
 
-// TestR_BAS_010_ASettingsEntryMakesTheNextTickHandshake: anonymousAccess and recordDownloads follow the main
+// TestR_BAS_010_ASettingsEntryMakesTheNextTickHandshake: anonymousReads and recordDownloads follow the main
 // installation within one tick of the settings entry, and the watcher hears of it.
 func TestR_BAS_010_ASettingsEntryMakesTheNextTickHandshake(t *testing.T) {
 	r := newRig(t, rigOpts{})
 	r.connect()
-	if r.l.State().AnonymousAccess || !r.l.State().RecordDownloads {
+	if r.l.State().AnonymousReads || !r.l.State().RecordDownloads {
 		t.Fatalf("flags: %+v", r.l.State())
 	}
 	hs := r.main.Calls("handshake")
@@ -430,13 +430,13 @@ func TestR_BAS_010_ASettingsEntryMakesTheNextTickHandshake(t *testing.T) {
 		t.Errorf("handshakes after the entry = %d, want 1", got)
 	}
 	st := r.l.State()
-	if !st.AnonymousAccess || st.RecordDownloads {
+	if !st.AnonymousReads || st.RecordDownloads {
 		t.Errorf("flags after the handshake: %+v", st)
 	}
 	r.smu.Lock()
 	last := r.states[len(r.states)-1]
 	r.smu.Unlock()
-	if !last.AnonymousAccess || last.RecordDownloads {
+	if !last.AnonymousReads || last.RecordDownloads {
 		t.Errorf("the watcher's last state: %+v", last)
 	}
 	// Nothing changes between handshakes: the interval handshake finds the same flags and does not notify.

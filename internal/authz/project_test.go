@@ -349,8 +349,6 @@ func TestR_AUTHZ_026_ProjectPolicyValidation(t *testing.T) {
 		{"R-AUTHZ-004 Q-AUTHZ-216 a selector with a slash names another project and is refused", projectPolicy("web-q", "web", "shop/shop-npm"), errs.CodeInvalidPattern, "/resources/repositories/0"},
 		{"R-AUTHZ-004 Q-AUTHZ-216 its own project qualified is refused too", projectPolicy("web-q", "web", "web/web-npm"), errs.CodeInvalidPattern, "/resources/repositories/0"},
 		{"R-AUTHZ-004 a class of the project", projectPolicy("web-c", "web", "@any-local:npm"), "", ""},
-		{"anonymous is refused", projectPolicy("web-anon", "web", "web-npm", Entry{"anonymous", []string{"read"}}), errs.CodePrincipalOutsideProject, "/entries/0/principal"},
-		{"authenticated is refused", projectPolicy("web-auth", "web", "web-npm", Entry{"authenticated", []string{"read"}}), errs.CodePrincipalOutsideProject, "/entries/0/principal"},
 		{"a CI mapping never holds manage", projectPolicy("web-ci", "web", "web-npm", Entry{"ci:gitlab-internal/acme-publish", []string{"manage"}}), errs.CodeActionNotAllowed, "/entries/0/actions"},
 		{"a CI mapping may deploy", projectPolicy("web-ci", "web", "web-npm", Entry{"ci:gitlab-internal/acme-publish", []string{"deploy"}}), "", ""},
 		{"a service account of the project", projectPolicy("web-bot", "web", "web-npm", Entry{"sa:web-bot", []string{"deploy"}}), "", ""},

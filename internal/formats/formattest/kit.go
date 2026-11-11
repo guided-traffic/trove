@@ -11,7 +11,8 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/formattest/crafted"
 )
 
-// Check is one of the thirteen checks of R-ARCH-010, numbered as the spec numbers them.
+// Check is one of the checks of R-ARCH-010 that the kit runs, numbered as the spec numbers them. Check 14, the matching corpus of
+// a format with a vulnerability adapter, runs in the vulnerability tests, not here.
 type Check int
 
 // The checks.
@@ -29,9 +30,16 @@ const (
 	CheckView
 	CheckShared
 	CheckAuthzPaths
-
-	lastCheck = CheckAuthzPaths
 )
+
+// CheckWiki is check 15 (R-AUTHZ-034): a caller who reads the artifacts and not the wiki finds no wiki byte in any answer.
+const CheckWiki Check = 15
+
+// kitChecks are the checks the kit runs, in order.
+var kitChecks = [...]Check{
+	CheckAmbiguity, CheckTraversal, CheckClassify, CheckRewrite, CheckMerge, CheckInspect, CheckHeaders, CheckSetup,
+	CheckRevision, CheckNames, CheckView, CheckShared, CheckAuthzPaths, CheckWiki,
+}
 
 // name is the short name of the check.
 func (c Check) name() string {
@@ -62,6 +70,8 @@ func (c Check) name() string {
 		return "shared documents"
 	case CheckAuthzPaths:
 		return "authorization paths"
+	case CheckWiki:
+		return "wiki content"
 	}
 	return "unknown"
 }
@@ -136,6 +146,10 @@ type Fixture struct {
 	NoDocument string
 	// View is the fixture of check 11: sample versions and a package to seed.
 	View *ViewFixture
+	// WikiSamples are the texts of the wiki content the fixture seeds into its content cases (the README texts, R-AUTHZ-034):
+	// check 15 serves every content case again for a caller who reads the artifacts and not the wiki and fails when a sample
+	// is in an answer. A format whose entry says it has wiki content (catalog.Facts.Wiki) needs at least one.
+	WikiSamples []string
 	// OptionNames are literal client option names a setup template may spell
 	// although they contain "token", "password" or "_auth" (check 8): the option's
 	// name, never a value.
@@ -288,8 +302,15 @@ func (r Result) Passed() bool { return r.Skipped == "" && len(r.Failures) == 0 }
 // Report holds the result of every check, indexed by check number minus one.
 type Report []Result
 
-// Result returns the result of a check.
-func (r Report) Result(c Check) Result { return r[c-1] }
+// Result returns the result of a check; a check the kit does not run is the zero Result.
+func (r Report) Result(c Check) Result {
+	for _, res := range r {
+		if res.Check == c {
+			return res
+		}
+	}
+	return Result{Check: c}
+}
 
 // Failed returns the checks with at least one failure.
 func (r Report) Failed() []Check {
@@ -306,20 +327,20 @@ func (r Report) Failed() []Check {
 // what Run reports through a test; the kit's own tests use it to assert that a
 // defective format fails the check the spec names.
 func Evaluate(f formats.Format, fx Fixture) Report {
-	out := make(Report, 0, lastCheck)
-	for c := CheckAmbiguity; c <= lastCheck; c++ {
+	out := make(Report, 0, len(kitChecks))
+	for _, c := range kitChecks {
 		out = append(out, runCheck(c, f, fx))
 	}
 	return out
 }
 
-// Run runs the conformance kit as subtests of t: one per check, named
+// Run runs the conformance kit as subtests of t: one per check it runs, named
 // "R-ARCH-010 check N <name>". A format calls it from its own test:
 //
 //	func TestR_ARCH_010_Conformance(t *testing.T) { formattest.Run(t, npm.Format{}, npmFixture()) }
 func Run(t *testing.T, f formats.Format, fx Fixture) {
 	t.Helper()
-	for c := CheckAmbiguity; c <= lastCheck; c++ {
+	for _, c := range kitChecks {
 		t.Run(c.String(), func(t *testing.T) {
 			res := runCheck(c, f, fx)
 			for _, m := range res.Failures {
@@ -377,6 +398,8 @@ func runCheck(c Check, f formats.Format, fx Fixture) (res Result) {
 		r.shared()
 	case CheckAuthzPaths:
 		r.authzPaths()
+	case CheckWiki:
+		r.wiki()
 	}
 	return res
 }
@@ -433,6 +456,8 @@ func (r *run) skipProblem(c Check, reason string) string {
 		return fmt.Sprintf("%s is skipped (%s) and the format has package names", c, reason)
 	case c == CheckView && r.f.View() != nil:
 		return fmt.Sprintf("%s is skipped (%s) and the format has a view adapter", c, reason)
+	case c == CheckWiki && r.hasWiki():
+		return fmt.Sprintf("%s is skipped (%s) and the format has wiki content", c, reason)
 	}
 	return ""
 }

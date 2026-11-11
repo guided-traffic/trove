@@ -42,6 +42,9 @@ func parseMemberRef(ref string) (PrincipalKind, string, error) {
 	case principal.KindBastion:
 		return "", "", principalNotAllowed(ref, "a Bastion registration holds no grant, role, ownership or membership") // R-BAS-004
 	}
+	if r.IsLevelPrincipal() {
+		return "", "", principalNotAllowed(ref, "a visibility level opens content to everyone or to every internal user; a membership does not")
+	}
 	return "", "", principalNotAllowed(ref, "only users and groups are members of a project; a service account or a CI mapping reaches it through its policies")
 }
 
@@ -54,7 +57,7 @@ func principalNotAllowed(ref, why string) error {
 
 // memberPrincipal reads the user or group a member reference names, in the writer's transaction: 404 for a
 // principal that does not exist, 422 principal_not_allowed for an auto-join group, which every user is in,
-// so that it would make every user a member (what authenticated in a global policy says, Q-AUTHZ-200).
+// so that it would make every user a member (Q-AUTHZ-200).
 func memberPrincipal(ctx context.Context, qs *q.Queries, ref string) (PrincipalRef, error) {
 	kind, name, err := parseMemberRef(ref)
 	if err != nil {

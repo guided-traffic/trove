@@ -78,7 +78,7 @@ deleted with its user.
 ## What a request can read
 
 - `GET /api/v1/avatars/{digest}` is open to every authenticated caller, a session, a personal access token, a service-account
-  token and a CI token alike, and to no anonymous one, also with anonymous access on (Q-AUTH-195).
+  token and a CI token alike, and to no anonymous one, also where a `public` level opens repositories (Q-AUTH-195).
 - It answers only for a digest that some user's avatar currently names. The lookup is the first thing it does
   (`AvatarByDigest`), so the route is not a way to read any other blob of the store by its digest, and a digest of a replaced or
   removed avatar is `404`.

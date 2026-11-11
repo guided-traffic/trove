@@ -88,8 +88,7 @@ func APIConfig() config.API {
 // and one provider for pending identity links.
 func AuthConfig(tokens config.AuthTokens) config.Auth {
 	return config.Auth{
-		Tokens:    tokens,
-		Anonymous: config.AuthAnonymous{Allowed: true},
+		Tokens: tokens,
 		OIDC: config.AuthOIDC{Providers: map[string]config.AuthOIDCProvider{
 			"corp": {DisplayName: "Corporate SSO", Issuer: "https://login.example.com/realms/acme"},
 		}},
@@ -144,10 +143,6 @@ func Handler(t testing.TB, c Components) http.Handler {
 			Source: authz.NewPostgresSource(c.DB, 10*time.Second), Changes: c.Changes,
 			Config:            config.Authz{HideExistence: true, Cache: config.AuthzCache{MaxStaleness: 10 * time.Second, SafetyTTL: time.Hour}},
 			EpochPollInterval: time.Second, RetryBudget: 5 * time.Second, Recorder: c.Recorder, Replica: c.Name, Log: slog.New(slog.DiscardHandler),
-			AnonymousAccess: func(ctx context.Context) (bool, error) {
-				eff, err := c.Settings.Effective(ctx)
-				return eff.AnonymousAccess, err
-			},
 		})
 		if err != nil {
 			t.Fatal(err)

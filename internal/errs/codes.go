@@ -92,10 +92,12 @@ const (
 	CodeNotAToken               = "not_a_token"
 	CodeManagedBySCIM           = "managed_by_scim"
 	CodeLastAdmin               = "last_admin"
-	CodeAnonymousNotAllowed     = "anonymous_not_allowed"
-	CodeAutoJoinAdminConflict   = "auto_join_admin_conflict"
-	CodeAutoJoinMemberConflict  = "auto_join_member_conflict"
-	CodeUsernameInvalid         = "username_invalid"
+	// CodePublicNotAllowed: a write sets a visibility level to public while the default endpoint admits no request without a
+	// credential (409, R-AUTHZ-033 rule 5).
+	CodePublicNotAllowed       = "public_not_allowed"
+	CodeAutoJoinAdminConflict  = "auto_join_admin_conflict"
+	CodeAutoJoinMemberConflict = "auto_join_member_conflict"
+	CodeUsernameInvalid        = "username_invalid"
 )
 
 // <<< M1 identity
@@ -126,21 +128,22 @@ const (
 // Codes of authorization (R-AUTHZ-016, R-AUTHZ-021, R-AUTHZ-022, R-AUTHZ-030,
 // R-AUTHZ-032). The 422 codes name a rule of a policy entry or a role binding.
 const (
-	CodeAuthzStale                 = "authz_stale"
-	CodeAuthzEpochUnknown          = "authz_epoch_unknown"
-	CodeRoleNotAllowed             = "role_not_allowed"
-	CodeUnknownRole                = "unknown_role"
-	CodeAuthenticatedWriteAction   = "authenticated_write_action"
-	CodeAnonymousWriteAction       = "anonymous_write_action"
-	CodeAnonymousDynamicSelector   = "anonymous_dynamic_selector"
-	CodeActionNotAllowed           = "action_not_allowed"
-	CodeInvalidAction              = "invalid_action"
-	CodeInvalidPattern             = "invalid_pattern"
-	CodeUnknownPrincipal           = "unknown_principal"
-	CodeUnknownRepository          = "unknown_repository"
-	CodeUnknownFormat              = "unknown_format"
-	CodeDuplicatePrincipal         = "duplicate_principal"
-	CodeVirtualActionNotApplicable = "virtual_action_not_applicable"
+	CodeAuthzStale        = "authz_stale"
+	CodeAuthzEpochUnknown = "authz_epoch_unknown"
+	CodeRoleNotAllowed    = "role_not_allowed"
+	CodeUnknownRole       = "unknown_role"
+	// CodeVisibilityAboveProject and CodeVisibilityWikiAboveArtifacts are the field codes of a level that breaks the
+	// container rules (422 validation_failed, R-AUTHZ-033 rule 2).
+	CodeVisibilityAboveProject       = "visibility_above_project"
+	CodeVisibilityWikiAboveArtifacts = "visibility_wiki_above_artifacts"
+	CodeActionNotAllowed             = "action_not_allowed"
+	CodeInvalidAction                = "invalid_action"
+	CodeInvalidPattern               = "invalid_pattern"
+	CodeUnknownPrincipal             = "unknown_principal"
+	CodeUnknownRepository            = "unknown_repository"
+	CodeUnknownFormat                = "unknown_format"
+	CodeDuplicatePrincipal           = "duplicate_principal"
+	CodeVirtualActionNotApplicable   = "virtual_action_not_applicable"
 )
 
 // CodeRoleBindingManagedByConfiguration refuses to remove a role binding that
@@ -337,7 +340,7 @@ const (
 	// the last stub.
 	CodeBastionNotImplemented = iface.CodeNotImplemented
 	// CodePrincipalNotAllowed: a policy entry, a role binding, an owner record or a membership names a Bastion
-	// registration (422, R-BAS-004).
+	// registration (422, R-BAS-004), or anonymous or authenticated (422, Q-AUTHZ-279).
 	CodePrincipalNotAllowed = "principal_not_allowed"
 	// The Bastion's own refusals (R-BAS-029): the Bastion produces them, the registry documents them.
 	CodeMainFailed      = iface.CodeMainFailed
@@ -724,7 +727,7 @@ var registry = []CodeInfo{
 	{CodeNotAToken, NotFound, "Not a token", "The request is not authenticated by a token."},
 	{CodeManagedBySCIM, Conflict, "Managed by SCIM", "The object is owned by the identity provider and cannot be changed here."},
 	{CodeLastAdmin, Conflict, "Last administrator", "The change would remove the last administrator."},
-	{CodeAnonymousNotAllowed, Conflict, "Anonymous access not allowed", "The configuration forbids anonymous access."},
+	{CodePublicNotAllowed, Conflict, "Public level not allowed", "The default endpoint admits no request without a credential (endpoints.default.auth.anonymous is false), so no visibility level can be set to public."},
 	{CodeAutoJoinAdminConflict, Conflict, "Auto-join conflicts with an administration role", "A group with an administration role binding cannot be an auto-join group."},
 	{CodeAutoJoinMemberConflict, Conflict, "Auto-join conflicts with a project membership", "A group that is a member of a project cannot be an auto-join group."},
 	{CodeUsernameInvalid, Invalid, "Invalid username", "The username does not match the name rule or is reserved."},
@@ -750,9 +753,8 @@ var registry = []CodeInfo{
 	{CodeAuthzEpochUnknown, PreconditionFailed, "Authorization epoch unknown", "Trove-Authz-Min-Epoch names an epoch the database has not reached. Stop sending that epoch and read the changed object again."},
 	{CodeRoleNotAllowed, Invalid, "Role not allowed", "System roles are bound to users, groups and service accounts only; never to anonymous, authenticated or CI identity mappings."},
 	{CodeUnknownRole, Invalid, "Unknown role", "The role is not one of admin, security-admin, auditor, repository-admin, webhook-admin."},
-	{CodeAuthenticatedWriteAction, Invalid, "Authenticated principal may only read", "Policy entries for the built-in principal authenticated hold only read."},
-	{CodeAnonymousWriteAction, Invalid, "Anonymous principal may only read", "Policy entries for anonymous hold only read."},
-	{CodeAnonymousDynamicSelector, Invalid, "Anonymous grants need explicit repositories", "A policy with entries for anonymous selects repositories by key only; patterns and classes would expose repositories created later."},
+	{CodeVisibilityAboveProject, Invalid, "Level above the project", "The artifacts level of a repository is never above its project's level."},
+	{CodeVisibilityWikiAboveArtifacts, Invalid, "Wiki above the artifacts", "The wiki level of a repository is never above its artifacts level."},
 	{CodeActionNotAllowed, Invalid, "Action not allowed for this principal", "The principal kind cannot hold the action, for example manage for a CI identity mapping."},
 	{CodeInvalidAction, Invalid, "Invalid action", "The name is neither one of the six repository actions nor a preset (read, write, maintain, full)."},
 	{CodeInvalidPattern, Invalid, "Invalid pattern or selector", "A package-name pattern, path pattern or repository selector has invalid syntax or exceeds the limits of R-AUTHZ-005."},
@@ -839,7 +841,7 @@ var registry = []CodeInfo{
 	{CodeBastionNotServed, NotFound, "Not served by a Bastion", "A Bastion serves the package clients' read paths (/api/<format>/… and /files/…) and nothing else."},
 	{CodeBastionBaseURLUnknown, Conflict, "Bastion base URL unknown", "The base URL the Bastion reported at its last handshake is not an entry of server.additional_base_urls; add it, and the snippets are rendered on it."},
 	{CodeBastionNotImplemented, NotImplemented, "Bastion operation not implemented", "The operation is part of the Bastion work and is not built in this release yet."},
-	{CodePrincipalNotAllowed, Unprocessable, "Principal not allowed", "A Bastion registration holds no grant, role, ownership or group membership: it owns Bastion tokens only."},
+	{CodePrincipalNotAllowed, Unprocessable, "Principal not allowed", "A Bastion registration holds no grant, role, ownership or group membership: it owns Bastion tokens only. Nor can anonymous or authenticated be named in a policy, a role binding, a membership or an owner record: a visibility level opens content to everyone or to every internal user."},
 	{CodeMainFailed, UpstreamFailed, "Main installation failed", "The Bastion could not get an answer from the main installation (connect or TLS error, or an unmarked 5xx of a proxy in front of it)."},
 	{CodeMainUnreachable, Unavailable, "Main installation unreachable", "The Bastion cannot reach the main installation and holds no usable answer for this request; retry later."},
 	{CodeBastionBusy, Unavailable, "Bastion busy", "The Bastion's budget of concurrent requests to the main installation is used up; retry after the Retry-After."},

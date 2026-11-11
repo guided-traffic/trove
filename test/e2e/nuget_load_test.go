@@ -123,13 +123,13 @@ func buildNuGetHAFixture(t *testing.T, fx *nugetFixture) *nugetHAFixture {
 	adm := fx.adm
 	apiHost, contentHost := nugetStubHosts(t)
 	for _, body := range []map[string]any{
-		{"key": nugetHALocal, "class": "local", "format": "nuget", "requireAuthentication": true},
+		{"key": nugetHALocal, "class": "local", "format": "nuget"},
 		{
-			"key": nugetHARemote, "class": "remote", "format": "nuget", "requireAuthentication": true,
+			"key": nugetHARemote, "class": "remote", "format": "nuget",
 			"remote": map[string]any{"url": "https://" + apiHost + "/v3/index.json", "extraHosts": []map[string]any{{"pattern": contentHost, "sendCredentials": false}}},
 		},
 		{
-			"key": nugetHAAll, "class": "virtual", "format": "nuget", "requireAuthentication": true,
+			"key": nugetHAAll, "class": "virtual", "format": "nuget",
 			"virtual": map[string]any{"members": []string{nugetHALocal, nugetHARemote}, "deployTarget": nugetHALocal},
 		},
 	} {

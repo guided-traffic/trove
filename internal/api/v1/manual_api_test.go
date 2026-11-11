@@ -16,7 +16,7 @@ import (
 )
 
 // manualServer serves the manual operations to the caller authn produces (nil is
-// anonymous), with anonymous access on or off.
+// anonymous), with public content or without.
 func manualServer(t *testing.T, m *manual.Manual, authn func(*http.Request) (httpserver.Principal, error), anonymous bool) http.Handler {
 	t.Helper()
 	doc, err := LoadDocument(EmbeddedYAML())
@@ -27,7 +27,7 @@ func manualServer(t *testing.T, m *manual.Manual, authn func(*http.Request) (htt
 	New(Options{
 		Document: doc, Identity: Identity{Replica: "r", Role: "web"}, Ready: func() bool { return true },
 		Access: allowAll{}, Replicas: fakeReplicas{}, Facts: fakeFacts{},
-		Repositories: RepositoryServices{AnonymousAccess: func(context.Context) (bool, error) { return anonymous, nil }},
+		Repositories: RepositoryServices{PublicContent: func(context.Context) bool { return anonymous }},
 		Manual:       m,
 	}).Register(router)
 	res, err := httpserver.NewResolver(nil, "https://trove.example.com", nil)
@@ -80,19 +80,19 @@ func TestR_API_054_TheManualOperations(t *testing.T) {
 	}
 }
 
-// TestR_API_054_AnonymousReadersFollowTheAnonymousAccessSetting: an anonymous caller
-// reads the manual where anonymous access is on and gets 401 where it is off; a
+// TestR_API_054_AnonymousReadersFollowPublicContent: an anonymous caller
+// reads the manual while some repository is public (publicContent) and gets 401 otherwise; a
 // replica without a manual answers 503.
-func TestR_API_054_AnonymousReadersFollowTheAnonymousAccessSetting(t *testing.T) {
+func TestR_API_054_AnonymousReadersFollowPublicContent(t *testing.T) {
 	m, err := manual.Load(docs.Files)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if w := get(manualServer(t, m, nil, true), "/api/v1/manual"); w.Code != 200 {
-		t.Errorf("anonymous access on: %d", w.Code)
+		t.Errorf("public content: %d", w.Code)
 	}
 	if w := get(manualServer(t, m, nil, false), "/api/v1/manual"); w.Code != 401 {
-		t.Errorf("anonymous access off: %d", w.Code)
+		t.Errorf("no public content: %d", w.Code)
 	}
 	if w := get(manualServer(t, nil, authed, false), "/api/v1/manual"); w.Code != 503 {
 		t.Errorf("no manual: %d", w.Code)
@@ -112,7 +112,7 @@ func TestR_API_054_TheManualIsLoadedByTheFirstRequestThatNeedsIt(t *testing.T) {
 		New(Options{
 			Document: doc, Identity: Identity{Replica: "r", Role: "web"}, Ready: func() bool { return true },
 			Access: allowAll{}, Replicas: fakeReplicas{}, Facts: fakeFacts{},
-			Repositories: RepositoryServices{AnonymousAccess: func(context.Context) (bool, error) { return false, nil }},
+			Repositories: RepositoryServices{PublicContent: func(context.Context) bool { return false }},
 			LoadManual:   load,
 		}).Register(router)
 		res, err := httpserver.NewResolver(nil, "https://trove.example.com", nil)

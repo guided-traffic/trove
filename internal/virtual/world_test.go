@@ -255,5 +255,3 @@ func counter(t *testing.T, reg *prometheus.Registry, name string, labels map[str
 func subjectFor(id string) authz.Subject {
 	return authz.Subject{Kind: principal.KindUser, ID: id, Name: strings.TrimPrefix(id, "user-"), TokenID: "token-" + id, AuthMethod: "bearer"}
 }
-
-func anonymousSubject() authz.Subject { return authz.Subject{Anonymous: true} }

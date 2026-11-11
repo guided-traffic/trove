@@ -158,7 +158,7 @@ func (s *PGStore) loadByID(ctx context.Context, id string) (entry, error) {
 			return ErrNotFound
 		}
 		r := rows[0]
-		e.p = Principal{ID: r.ID, Kind: KindFromRow(r.Kind, r.IsBreakGlass), Name: r.Name, Status: Status(r.Status)}
+		e.p = Principal{ID: r.ID, Kind: KindFromRow(r.Kind, r.IsBreakGlass), Name: r.Name, Status: Status(r.Status), External: r.External}
 		e.groups, err = groupsOf(ctx, qs, e.p)
 		return err
 	})
@@ -177,7 +177,7 @@ func (s *PGStore) loadByName(ctx context.Context, dbKind, name string, wantBreak
 			return ErrNotFound
 		}
 		r := rows[0]
-		e.p = Principal{ID: r.ID, Kind: KindFromRow(r.Kind, r.IsBreakGlass), Name: r.Name, Status: Status(r.Status)}
+		e.p = Principal{ID: r.ID, Kind: KindFromRow(r.Kind, r.IsBreakGlass), Name: r.Name, Status: Status(r.Status), External: r.External}
 		e.groups, err = groupsOf(ctx, qs, e.p)
 		return err
 	})
@@ -185,7 +185,7 @@ func (s *PGStore) loadByName(ctx context.Context, dbKind, name string, wantBreak
 }
 
 func groupsOf(ctx context.Context, qs *q.Queries, p Principal) ([]GroupRef, error) {
-	if p.Kind == KindGroup || p.Kind == KindAnonymous || p.Kind == KindAuthenticated {
+	if p.Kind == KindGroup || p.Kind == KindAnonymous {
 		return nil, nil
 	}
 	rows, err := qs.IdentityGroupsOfMember(ctx, p.ID)

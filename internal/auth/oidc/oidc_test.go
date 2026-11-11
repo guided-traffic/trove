@@ -317,7 +317,7 @@ func TestR_AUTH_009_LoginOptions(t *testing.T) {
 	})
 	t.Run("R-AUTH-009 one provider with auto_redirect redirects", func(t *testing.T) {
 		one := &Service{o: s.o, providers: s.providers[:1]}
-		if o := one.LoginOptions(true); o.AutoRedirect != "mid" || !o.AnonymousAccess {
+		if o := one.LoginOptions(true); o.AutoRedirect != "mid" || !o.PublicContent {
 			t.Fatalf("%+v", o)
 		}
 	})

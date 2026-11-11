@@ -37,7 +37,7 @@ func withMinEpoch(next func(*http.Request) (httpserver.Principal, error)) func(*
 // is not an input; the engine reaches it only through the change log.
 func (a *App) wireAuthz(ctx context.Context, in infra, repo repositoryArea, id identityArea, ex exposureArea) (authzArea, error) {
 	if err := requireInputs(AreaAuthz, given("repository reader", repo.reader), given("principal store", id.principals),
-		given("anonymous-access switch", id.anonymousAccess), given("exposure ceiling", ex.ceiling)); err != nil {
+		given("exposure ceiling", ex.ceiling)); err != nil {
 		return authzArea{}, err
 	}
 	cfg := a.cfg
@@ -48,7 +48,6 @@ func (a *App) wireAuthz(ctx context.Context, in infra, repo repositoryArea, id i
 		Audit:             cfg.Audit,
 		EpochPollInterval: cfg.Cluster.EpochPollInterval,
 		RetryBudget:       cfg.Database.Retry.MaxElapsed,
-		AnonymousAccess:   id.anonymousAccess,
 		Repositories:      repo.reader,       // the lookup and catch-up of a repository the index lacks (R-API-052)
 		Ceiling:           ex.ceiling,        // the exposure area (R-EP-013, wire_exposure.go)
 		Formats:           catalog.Default(), // the name rule that folds the names and patterns of a format (R-AUTHZ-005)
@@ -71,6 +70,30 @@ func (a *App) wireAuthz(ctx context.Context, in infra, repo repositoryArea, id i
 		DB: in.db, Changes: in.changes, Principals: id.principals, Repositories: repo.reader, Policies: svc, Recorder: in.rec,
 	})
 	return authzArea{engine: eng, service: svc, projects: projects}, nil
+}
+
+// publicContent reports whether an anonymous visitor reads anything through the endpoint of the request: the artifacts of
+// some repository are `public` on the grant index and the endpoint admits requests without a credential (R-AUTH-037,
+// R-AUTHZ-003). False on a replica without the authz area.
+func (a *App) publicContent(ctx context.Context) bool {
+	return a.anonymousReads(ctx, false)
+}
+
+// anonymousReads is publicContent for the endpoint of the request, or, with defaultEndpoint, for the default endpoint a
+// Bastion connects to (R-BAS-019).
+func (a *App) anonymousReads(ctx context.Context, defaultEndpoint bool) bool {
+	e := part[authzArea](a.parts).engine
+	if e == nil {
+		return false
+	}
+	if idx := e.Index(); idx == nil || !idx.PublicContent() {
+		return false
+	}
+	if defaultEndpoint {
+		return true
+	}
+	ep := httpserver.EndpointFrom(ctx)
+	return ep != nil && ep.AnonymousAllowed()
 }
 
 // decider returns the decision point the request paths decide through, nil on a

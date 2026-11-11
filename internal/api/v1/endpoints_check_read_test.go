@@ -47,6 +47,10 @@ func (s checkScope) MayRead(repo qname.Repo, pkg, version string) bool {
 	return repo == qr("npm-local") && (pkg != "@acme/sdk" || version != "2.0.0")
 }
 
+func (s checkScope) MayReadWiki(repo qname.Repo, pkg, version string) bool {
+	return s.MayRead(repo, pkg, version)
+}
+
 func (checkScope) VersionsByPath(qname.Repo) bool { return true }
 
 func checkServer(sc authz.ReadScoper) *Server {

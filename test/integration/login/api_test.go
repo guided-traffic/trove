@@ -110,7 +110,7 @@ func TestR_AUTH_042_LoginJourneyOverTheAPI(t *testing.T) {
 			m := jsonOf(t, body)
 			ps := m["providers"].([]any)
 			if len(ps) != 1 || ps[0].(map[string]any)["id"] != "corp" || ps[0].(map[string]any)["startUrl"] != "/auth/oidc/corp/start" ||
-				m["autoRedirect"] != "corp" || m["localLogin"] != false || m["anonymousAccess"] != false {
+				m["autoRedirect"] != "corp" || m["localLogin"] != false || m["publicContent"] != false {
 				t.Fatalf("%s", body)
 			}
 			if strings.Contains(body, e.idp.issuer) || strings.Contains(body, "client") {

@@ -505,8 +505,8 @@ func (e *basEnv) publishNPM(t testing.TB, repo, name, version string, deps map[s
 func (e *basEnv) buildContent(t testing.TB) {
 	t.Helper()
 	for _, body := range []map[string]any{
-		{"key": basNPMRepo, "class": "local", "format": "npm", "requireAuthentication": true},
-		{"key": basNuGetRepo, "class": "local", "format": "nuget", "requireAuthentication": true},
+		{"key": basNPMRepo, "class": "local", "format": "npm"},
+		{"key": basNuGetRepo, "class": "local", "format": "nuget"},
 	} {
 		e.adm.do(http.MethodPost, reposRoute, body).want(t, fmt.Sprintf("create %v", body["key"]), 201, 409)
 	}

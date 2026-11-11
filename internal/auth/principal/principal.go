@@ -21,10 +21,9 @@ const (
 	// KindBastion is a Bastion registration (R-BAS-004): the owner of Bastion tokens, never a subject of the
 	// decision point and never a holder of a grant, role, ownership or membership.
 	KindBastion Kind = "bastion"
-	// KindAnonymous and KindAuthenticated are the built-in rows (R-AUTHZ-003,
-	// R-AUTHZ-030).
-	KindAnonymous     Kind = "anonymous"
-	KindAuthenticated Kind = "authenticated"
+	// KindAnonymous is the built-in row that is the actor of a request without a credential (R-AUTHZ-003); there is no
+	// built-in principal "authenticated" (Q-AUTHZ-263).
+	KindAnonymous Kind = "anonymous"
 	// KindBreakGlass is the break-glass administrator (R-AUTH-014). It is a user
 	// row whose origin is break-glass; it is a separate kind here because
 	// authorization treats it differently (R-AUTHZ-010).
@@ -50,6 +49,9 @@ type Principal struct {
 	Kind   Kind
 	Name   string
 	Status Status
+	// External is the external flag of a user (R-AUTH-044), read with the status and the groups into the same cache entry;
+	// false for every other kind.
+	External bool
 }
 
 // GroupRef names a group.

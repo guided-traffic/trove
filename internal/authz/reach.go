@@ -73,13 +73,8 @@ const maxReachDepth = 16
 //     and every member, recursively, is full on the request's terms (the virtual repository is the addressed
 //     one: the exposure and the token scope are decided through it, Q-EP-11, Q-AUTHZ-163; the gate of a nested
 //     virtual repository is asked as a member's read); partial otherwise.
-//   - An anonymous subject is none while anonymous access is off and on a repository that requires
-//     authentication.
-func (e *Engine) ReachOn(ctx context.Context, idx *Index, sub Subject, keys []qname.Repo) (map[qname.Repo]ReachResult, error) {
-	sub, refused := e.withAnonymous(ctx, sub)
-	if refused != nil {
-		return nil, refused.Err()
-	}
+//   - An anonymous subject is none until a visibility level admits it.
+func (e *Engine) ReachOn(_ context.Context, idx *Index, sub Subject, keys []qname.Repo) (map[qname.Repo]ReachResult, error) {
 	out := make(map[qname.Repo]ReachResult, len(keys))
 	st := e.newEvalState(idx, sub)
 	// The same state without content:metadata-read: the shape of what the grants alone let the subject read,
@@ -112,7 +107,7 @@ func (e *Engine) reachNone(c *reachCtx, key qname.Repo) ReachResult {
 func (e *Engine) reachOf(c *reachCtx, key qname.Repo) ReachResult {
 	idx, sub := c.st.idx, c.st.sub
 	r := idx.repo(key)
-	if r == nil || (sub.Anonymous && sub.anon != anonOn) {
+	if r == nil || sub.Anonymous {
 		return e.reachNone(c, key)
 	}
 	if r.Class == repository.Virtual {
@@ -134,7 +129,7 @@ func (e *Engine) reachOf(c *reachCtx, key qname.Repo) ReachResult {
 // repository the client named, "" for a request on the repository itself.
 func (e *Engine) leafReach(c *reachCtx, r *repoInfo, addressed qname.Repo) Reach {
 	sub := c.st.sub
-	if r.Class == repository.Virtual || (sub.Anonymous && r.requireAuth) {
+	if r.Class == repository.Virtual {
 		return ReachNone
 	}
 	if e.readShape(c.st, sub, r, c.allEndpoint) == ReadNone {

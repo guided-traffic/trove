@@ -97,7 +97,7 @@ func (fx *debFixture) name(group string) string { return "trove-e2e-" + fx.run +
 func (fx *debFixture) localRepo(t testing.TB, purpose string, settings map[string]any) string {
 	t.Helper()
 	key := fmt.Sprintf("deb-%s-%s", purpose, fx.run)
-	body := map[string]any{"key": key, "class": "local", "format": "deb", "requireAuthentication": !strings.HasPrefix(purpose, "open")}
+	body := map[string]any{"key": key, "class": "local", "format": "deb"}
 	if settings != nil {
 		body["deb"] = settings
 	}
@@ -115,7 +115,7 @@ func (fx *debFixture) remoteRepo(t testing.TB, purpose, archivePath string, sett
 		remote[k] = v
 	}
 	body := map[string]any{
-		"key": key, "class": "remote", "format": "deb", "requireAuthentication": true, "remote": remote,
+		"key": key, "class": "remote", "format": "deb", "remote": remote,
 		"deb": map[string]any{"upstreamKeys": string(debStub(t).keyring(t, "a"))},
 	}
 	fx.createRepo(t, key, body)

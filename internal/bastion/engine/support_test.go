@@ -351,7 +351,7 @@ func (c *testCache) entryRecords() map[string][]byte {
 func handshake() iface.Handshake {
 	return iface.Handshake{
 		InterfaceVersion: iface.InterfaceVersion, ResponseBaseURL: "https://packages.example.com",
-		AnonymousAccess: true, RecordDownloads: true, ServerTime: epoch,
+		AnonymousReads: true, RecordDownloads: true, ServerTime: epoch,
 	}
 }
 
@@ -584,11 +584,11 @@ func (h *harness) setUnreachable(v bool) {
 	}
 }
 
-// setAnonymous changes anonymousAccess of the handshake and lets the link read it.
+// setAnonymous changes anonymousReads of the handshake and lets the link read it.
 func (h *harness) setAnonymous(v bool) {
 	h.t.Helper()
 	h.main.mu.Lock()
-	h.main.hs.AnonymousAccess = v
+	h.main.hs.AnonymousReads = v
 	h.main.mu.Unlock()
 	h.link.RequestHandshake()
 	h.tick()

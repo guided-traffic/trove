@@ -131,7 +131,7 @@ It lives in [bastionmain/feed.go](../../internal/bastionmain/feed.go), over the 
 - **The fields an event must carry** for its entry: `resource_id` (the token, user or service account ID), `repository` (`npm.unpublish`,
   `package.deleted`), `details.predecessor` (`token.rotated`), `details.tokenIds` (`ci.token.revoked`), `details.principal` and `details.principalId`
   (`authz.role.unbound`), `details.removed[].member` (`group.members.changed`), `details.endpoint` (`endpoint.exposure.*`) and `details.before` and
-  `details.after` with `anonymousAccess` (`settings.auth.changed`). Changing one of them in its producer changes the feed.
+  `details.after` of a level (`authz.project.visibility_changed`) and of the external flag (`user.external_changed`). Changing one of them in its producer changes the feed.
 
 ## Query
 

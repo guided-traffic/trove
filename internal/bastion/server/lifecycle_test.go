@@ -138,7 +138,7 @@ func TestR_BAS_043_AReplicaThatCannotReachTheMainInstallationBecomesReadyAndConn
 	main.SetDown(false)
 	eventually(t, 20*time.Second, "reachable without a restart", func() bool { return srv.link.State().Reachable })
 	body := metricsBody(t, srv)
-	for _, want := range []string{"trove_bastion_main_reachable 1", "trove_bastion_main_unreachable_since_timestamp_seconds 0", `trove_bastion_interface_version{side="main"} 1`, "trove_bastion_main_token_refused 0"} {
+	for _, want := range []string{"trove_bastion_main_reachable 1", "trove_bastion_main_unreachable_since_timestamp_seconds 0", fmt.Sprintf(`trove_bastion_interface_version{side="main"} %d`, iface.InterfaceVersion), "trove_bastion_main_token_refused 0"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("metrics lack %q", want)
 		}

@@ -23,9 +23,9 @@ type BastionServices struct {
 	// installation member).
 	Release string
 	BaseURL string
-	// Anonymous reports the effective anonymous switch of the default endpoint: the YAML ceiling, the runtime
-	// setting and the endpoint's own rule (R-AUTH-037).
-	Anonymous func(ctx context.Context) (bool, error)
+	// AnonymousReads reports whether an anonymous request reads anything through the default endpoint: some repository's
+	// artifacts are `public` and the endpoint's own rule admits requests without a credential (R-AUTH-037, R-BAS-019).
+	AnonymousReads func(ctx context.Context) bool
 	// Authenticate is the authentication stage of the default endpoint without the Bastion short-circuit:
 	// the check runs the caller's credential through it exactly as a direct request is (R-AUTH-023,
 	// R-AUTH-038). The request it gets carries the caller's address in its context.

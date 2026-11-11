@@ -480,14 +480,15 @@ export interface paths {
         /**
          * List users
          * @description Users ordered by username (R-AUTH-016). `status=locked` lists the break-glass account while its lockout is
-         *     in force (R-AUTH-038); `admin=true` keeps the users that hold the role `admin` directly or through a group.
-         *     Cursor pagination (R-API-010) over `username`.
+         *     in force (R-AUTH-038); `admin=true` keeps the users that hold the role `admin` directly or through a group;
+         *     `external=true` keeps the users flagged external (R-AUTH-044). Cursor pagination (R-API-010) over `username`.
          */
         get: operations["listUsers"];
         put?: never;
         /**
          * Create a user
-         * @description Creates a user with origin `admin`. A pending identity link (`subject: null`) is completed by the user's first
+         * @description Creates a user with origin `admin`. `external` takes the installation's `newUsersExternal` when the body omits it
+         *     (R-AUTH-044). A pending identity link (`subject: null`) is completed by the user's first
          *     login at that provider (R-AUTH-007). A username that is reserved, such as `me` or the break-glass account's,
          *     answers `422 reserved_name`; an existing one `409`. Optional `Idempotency-Key`.
          */
@@ -620,7 +621,9 @@ export interface paths {
         /**
          * Correct a user's profile data
          * @description An administrator can correct `displayName`, `email` and the pending `identities` until the user's next login
-         *     overwrites the first two (R-AUTH-016). The body is a JSON merge patch; the read-only members of the user
+         *     overwrites the first two (R-AUTH-016), and sets the `external` flag (R-AUTH-044): a change of `external` needs recent
+         *     authentication (`401 reauthentication_required`), writes `user.external_changed` and answers `409` for the break-glass
+         *     account. The body is a JSON merge patch; the read-only members of the user
          *     record are accepted and ignored, so a body obtained by `GET` can be sent back.
          */
         patch: operations["updateUser"];
@@ -793,7 +796,7 @@ export interface paths {
          * Add and remove members of a group
          * @description Adds and removes memberships of one source, `manual` by default (`auto` is the other source the API changes).
          *     A removed member that is still a member through another source stays in the group, and the answer shows the
-         *     remaining sources (R-AUTH-018). An unknown member, or a built-in principal such as `authenticated`, answers
+         *     remaining sources (R-AUTH-018). An unknown member answers
          *     `404` and nothing is applied. A SCIM-owned group answers `409 managed_by_scim`. The answer lists the members
          *     the request named.
          */
@@ -1301,12 +1304,41 @@ export interface paths {
         head?: never;
         /**
          * Change the runtime authentication settings
-         * @description JSON merge patch of `anonymousAccess` and the token lifetimes (R-AUTH-040). Each value must be at most its YAML
-         *     ceiling (`400 exceeds_ceiling`) and each default at most its maximum (`400 default_above_maximum`); anonymous
-         *     access while the ceiling forbids it answers `409 anonymous_not_allowed`.  A session needs a recent authentication (`401 reauthentication_required`). The change is in force on
+         * @description JSON merge patch of `newUsersExternal` and the token lifetimes (R-AUTH-040). Each value must be at most its YAML
+         *     ceiling (`400 exceeds_ceiling`) and each default at most its maximum (`400 default_above_maximum`). A session needs a recent authentication (`401 reauthentication_required`). The change is in force on
          *     every replica within the revocation bound and writes `settings.auth.changed`.
          */
         patch: operations["updateAuthSettings"];
+        trace?: never;
+    };
+    "/api/v1/settings/visibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the installation's visibility settings
+         * @description The installation's default level, whether `public` can be set, and the objects whose artifacts are `public`
+         *     (R-API-056, R-AUTHZ-033). `ETag` is the tag for `PATCH`.
+         */
+        get: operations["getVisibilitySettings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change the installation's default visibility level
+         * @description JSON merge patch of `defaultLevel` (R-API-056): the level a project takes when it is created and the upper bound of the
+         *     levels a repository takes when it is created. While the default endpoint admits no request without a credential, a
+         *     `defaultLevel` of `public` answers `409 public_not_allowed`. The other members of the answer are read-only and ignored,
+         *     so a body obtained by `GET` can be sent back. A session needs a recent authentication
+         *     (`401 reauthentication_required`). Writes `settings.visibility.changed` with the default before and after; the change
+         *     decides only objects created later and is not journaled.
+         */
+        patch: operations["updateVisibilitySettings"];
         trace?: never;
     };
     "/api/v1/auth/login-options": {
@@ -1319,7 +1351,8 @@ export interface paths {
         /**
          * Read what the sign-in screen offers
          * @description The sign-in screen renders only from this answer (R-AUTH-009): the providers in configuration order, whether
-         *     the local break-glass form is offered, whether anonymous access is on, and the provider to redirect to at once.
+         *     the local break-glass form is offered, whether some repository's artifacts are `public` (`publicContent`), and the provider
+         *     to redirect to at once.
          *     It names no issuer, client ID or error detail.
          */
         get: operations["getLoginOptions"];
@@ -1469,7 +1502,7 @@ export interface paths {
          * List permission policies
          * @description Every instance-wide permission policy ordered by name, and, with `policies:read`, the project policies too, with
          *     cursor pagination (R-API-010). Filters: `principal=<ref>` (`user:alice`, `group:team-web`, `sa:ci-bot`,
-         *     `sa:web/deploy`, `anonymous`, `authenticated`) keeps the policies with an entry for that principal and, while
+         *     `sa:web/deploy`) keeps the policies with an entry for that principal and, while
          *     `expandGroups` is `true` (the default), also those with an entry for a group the principal belongs to;
          *     `repository=<project>/<key>` keeps the policies whose selectors cover that repository. A principal or repository that
          *     does not exist answers `422`. The list is read from PostgreSQL on every call (R-API-052). `project=<key>` keeps the
@@ -1486,8 +1519,9 @@ export interface paths {
          *     already_exists`. The answer carries the epoch the write produced in `Trove-Authz-Epoch` and the policy's `ETag`.
          *     Warnings do not block saving; a rule that fails answers `422` with the code of the first problem and every problem in
          *     `errors` (`unknown_principal`, `unknown_repository`, `unknown_format`, `invalid_pattern`, `invalid_action`,
-         *     `duplicate_principal`, `anonymous_write_action`, `anonymous_dynamic_selector`, `authenticated_write_action`,
-         *     `virtual_action_not_applicable`, `action_not_allowed`, `principal_outside_project`). A policy of a project is created
+         *     `duplicate_principal`, `virtual_action_not_applicable`, `action_not_allowed`, `principal_outside_project`). An entry
+         *     for `anonymous` or `authenticated` answers `422 principal_not_allowed`: a visibility level opens content to everyone
+         *     or to every internal user (R-AUTHZ-003, R-AUTHZ-033). A policy of a project is created
          *     under `/api/v1/projects/{projectKey}/policies`.
          */
         post: operations["createPermissionPolicy"];
@@ -1739,7 +1773,8 @@ export interface paths {
         /**
          * What the caller may do
          * @description The system roles and capabilities the caller's credential exercises, the principals the caller
-         *     acts as (the user, its groups, `authenticated`), the projects it is a member of with the role
+         *     acts as (the user and its groups), whether the caller is an internal subject and reads the level `internal`
+         *     (`internal`, R-AUTHZ-030), the projects it is a member of with the role
          *     in force (`memberships`, R-AUTHZ-026, Q-AUTHZ-207) and a summary of the credential's scope, which
          *     is a ceiling (R-AUTHZ-013). The answer says nothing about other principals. `epoch` is the
          *     epoch of the index that answered.
@@ -1790,7 +1825,7 @@ export interface paths {
          *     members of a repository document apply. The list of classes is the single source of truth
          *     for the create form: a class that is not listed answers `422 unsupported_class`. The answer also
          *     carries the `baseUrl` of the endpoint the request arrived on. Any caller; an anonymous caller
-         *     only where anonymous access is on, else `401`.
+         *     only while some repository's artifacts are `public` (`publicContent`, R-AUTH-037), else `401`.
          */
         get: operations["listFormats"];
         put?: never;
@@ -1814,6 +1849,9 @@ export interface paths {
          *     roles `admin`, `security-admin`, `repository-admin` and `auditor`) sees every project; any other caller sees the
          *     projects it is a member of (Q-AUTHZ-207) and no other. The answer carries the owners, the counts, the logical size
          *     the project is charged (`logicalBytes`, Q-STOR-155) and, for a member, the caller's own role in `role`. `q` matches the key and the display name case-insensitively.
+         *     Every item carries the project's `visibility` (R-AUTHZ-033). A project that the caller's level admits (`internal` for an
+         *     internal subject, `public` for everyone) is listed without a role (R-AUTHZ-035 rule 8); `membership=true` keeps the
+         *     projects the caller is a member of.
          */
         get: operations["listProjects"];
         put?: never;
@@ -1825,7 +1863,9 @@ export interface paths {
          *     group, or an auto-join group, `422 principal_not_allowed`, and the whole create is refused. Without `owners` the project has no
          *     member; members are added by `PUT /api/v1/projects/{projectKey}/members/{principalRef}`. A repository is created in it
          *     by `POST /api/v1/projects/{projectKey}/repositories`. Only a holder of
-         *     `projects:write` creates a project. The write notifies the `authz` change area and records `authz.project.created`.
+         *     `projects:write` creates a project. `visibility` takes the installation's default level when the body omits it
+         *     (R-AUTHZ-033); a level above `private` needs recent authentication and, for `public`, an anonymous door
+         *     (`409 public_not_allowed`). The write notifies the `authz` change area and records `authz.project.created`.
          *     Optional `Idempotency-Key`.
          */
         post: operations["createProject"];
@@ -1907,7 +1947,7 @@ export interface paths {
             path: {
                 /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
-                /** @description The percent-encoded reference of a user or a group, for example `group%3Aweb-leads`. A service account, a CI mapping, `anonymous` and `authenticated` are never members of a project (`422`). */
+                /** @description The percent-encoded reference of a user or a group, for example `group%3Aweb-leads`. A service account, a CI mapping, `anonymous` and `authenticated` are never members of a project (`422`); a visibility level opens a project instead. */
                 principalRef: string;
             };
             cookie?: never;
@@ -1932,6 +1972,34 @@ export interface paths {
          *     itself while another Owner remains. Records `authz.project.member_removed`, journaled (R-AUTHZ-031).
          */
         delete: operations["removeProjectMember"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectKey}/visibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set the visibility level of a project
+         * @description Sets the project's level (R-API-057, R-AUTHZ-033): `private`, `internal` or `public`. Lowering the level lowers, in the
+         *     same transaction, every repository of the project whose artifacts or wiki level lies above it; `lowered` in the answer
+         *     names them with their levels before. Raising it raises nothing. A holder of `projects:write` calls it; a project's
+         *     Owner does not (`403`). `If-Match` carries the project's `ETag`. `409 public_not_allowed` while the default endpoint
+         *     admits no request without a credential. Records `authz.project.visibility_changed` and, for each lowered repository,
+         *     `authz.settings.changed`; the answer carries `Trove-Authz-Epoch`.
+         */
+        put: operations["setProjectVisibility"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1981,8 +2049,8 @@ export interface paths {
          *     values as spelled in documents, repeated or comma-separated; `q` matches the key and the description
          *     case-insensitively; `state=inactive` keeps the disabled repositories. `project` selects the repositories of a
          *     project, by its key (`404` is never answered: an unknown key selects none). A repository of a project the caller can
-         *     neither see nor read is not listed. An anonymous caller sees what anonymous holds `read` on, or gets `401` where
-         *     anonymous access is off.
+         *     neither see nor read is not listed. `visibility` keeps the repositories whose artifacts level is one of the listed levels
+         *     (R-API-057). An anonymous caller sees what a `public` level admits, or gets `401` while nothing is `public`.
          */
         get: operations["listRepositories"];
         put?: never;
@@ -2061,7 +2129,7 @@ export interface paths {
          * @description The configuration document of a repository (R-REPO-010). A holder of `repositories:read-config`, or an Owner of the
          *     project, receives the full document, `ETag: "<config_version>"`; a caller who holds a repository action on it (which
          *     a member of the project does through the role, Q-AUTHZ-208) receives the consumer view (`key`, `class`, `format`,
-         *     `description`, `layout`, `addresses`, `project`), `ETag: "<config_version>-consumer"`; a caller who holds nothing on
+         *     `description`, `layout`, `visibility`, `addresses`, `project`), `ETag: "<config_version>-consumer"`; a caller who holds nothing on
          *     it, a caller on a repository that does not exist, and a caller who cannot see the project receive the same `404`
          *     (R-AUTHZ-016). Secrets are never returned. The answer comes from PostgreSQL, so a write that committed on another
          *     replica shows at once (R-API-052).
@@ -3046,7 +3114,7 @@ export interface paths {
          *     whose document the cache holds, R-OCI-036). `q` matches the name and the description case-insensitively, `namePrefix` the start of the name,
          *     `keyword` one keyword exactly. `createdFrom` (inclusive) and `createdTo` (exclusive) bound
          *     the creation time of the first visible version. `sort` takes one field, a leading `-` sorts
-         *     descending; the default is `name`. An anonymous caller sees what anonymous holds `read` on.
+         *     descending; the default is `name`. An anonymous caller sees what a `public` level admits.
          *     The filter runs in SQL. A sort field or filter this document does not list answers
          *     `400 malformed_request`. `include=vulnerabilities` adds `vulnerabilityGrade` to each entry, for a signed-in caller of an
          *     installation that scans: the grade of the entry's `latestVersion` over the repositories the filter names (a virtual repository
@@ -3156,7 +3224,9 @@ export interface paths {
          * Read a version of a package
          * @description The details of one visible version (R-API-029): the format-specific `metadata`, the
          *     repositories that hold it, its files with their SHA-256 and download URLs, the download count
-         *     and whether a README exists. The `ETag` is a strong tag over the representation.
+         *     and whether a README exists. The README is wiki content (R-AUTHZ-034): `hasReadme` is `false` for a caller who may
+         *     read the artifacts of the repositories that hold the version and the wiki of none of them, and the members of
+         *     `metadata` that are wiki content are absent (R-API-058). The `ETag` is a strong tag over the representation.
          */
         get: operations["getPackageVersion"];
         put?: never;
@@ -3183,7 +3253,8 @@ export interface paths {
          * Read the rendered README of a version
          * @description The README of a visible version as sanitized HTML (R-API-029, R-UI-008). The server renders
          *     and sanitizes; the client binds the HTML and never renders Markdown itself. `404` when the
-         *     version has no README (`hasReadme` is `false`) or is not visible. The `ETag` is a strong tag
+         *     version has no README (`hasReadme` is `false`), is not visible, or has one whose wiki the caller may not read
+         *     (R-AUTHZ-034, R-API-058): the answer is then the one of a missing README. The `ETag` is a strong tag
          *     over the README source, the renderer version and the external image origins, so a changed
          *     origin list changes it.
          */
@@ -3371,8 +3442,8 @@ export interface paths {
          * @description The guide of the format for a class and a client without a repository (R-API-053, R-UI-049): the same
          *     sections as `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/guide`, with the addresses of the endpoint's base URL
          *     and `<repository>` where the repository key goes, no deployment target, and the snippets of the
-         *     client setup rendered for that address. Any caller; an anonymous caller only where anonymous access is
-         *     on, else `401`. An unknown format answers `404`; a class or client the format does not have `400`;
+         *     client setup rendered for that address. Any caller; an anonymous caller only while some repository's artifacts are
+         *     `public` (`publicContent`, R-AUTH-037), else `401`. An unknown format answers `404`; a class or client the format does not have `400`;
          *     `503` while no base URL is configured for the endpoint.
          */
         get: operations["getFormatGuide"];
@@ -3395,8 +3466,8 @@ export interface paths {
          * The contents of the manual
          * @description The sections of the trove manual (R-API-054) in reading order, the user guide first, each with the
          *     title and summary of its pages. The manual is the one the binary embeds, so it describes the running
-         *     version; it is English and the same for every caller. Any caller; an anonymous caller only where
-         *     anonymous access is on, else `401`. The strong ETag changes with any page, and a matching
+         *     version; it is English and the same for every caller. Any caller; an anonymous caller only while some
+         *     repository's artifacts are `public` (`publicContent`, R-AUTH-037), else `401`. The strong ETag changes with any page, and a matching
          *     `If-None-Match` answers `304`.
          */
         get: operations["getManualContents"];
@@ -3871,7 +3942,7 @@ export interface paths {
          * @description The Bastion interface (R-BAS-008, interface version in `x-trove-bastion-interface`). Called by a Bastion with its
          *     token as `Authorization: Bearer` at start, every `bastion.main.handshake_interval`, after a reconnect and after a feed
          *     entry of the kind `settings` (R-BAS-010). The answer carries the main installation's interface version, the registration
-         *     and the token in use, the response base URL this request resolved to, the effective anonymous switch, the download
+         *     and the token in use, the response base URL this request resolved to, whether anonymous requests read anything (`anonymousReads`), the download
          *     switch and the feed position. Records the replica's last contact at most once a minute. Not part of the management
          *     API's v1 promise but of the interface version (R-ARCH-025, R-BAS-009).
          */
@@ -5356,6 +5427,7 @@ export interface components {
          *       "emailVerified": true,
          *       "displayName": "Alice Example",
          *       "avatarUrl": null,
+         *       "external": false,
          *       "origin": "jit",
          *       "status": "active",
          *       "disabledReason": null,
@@ -5398,6 +5470,11 @@ export interface components {
             status: "active" | "disabled";
             /** @description `admin`, `dormant` or `scim` while the user is disabled. */
             disabledReason: string | null;
+            /**
+             * @description The user is flagged external (R-AUTH-044): it reads only what it is a member of, what a grant names and what is
+             *     `public`; the level `internal` never admits it. Set by an administrator.
+             */
+            external: boolean;
             isAdmin: boolean;
             /** @description Why the user is an administrator: `direct`, `group:<name>` or `break-glass`. */
             adminVia: string[];
@@ -5443,12 +5520,16 @@ export interface components {
             username: string;
             email?: string | null;
             displayName?: string | null;
+            /** @description The external flag (R-AUTH-044). Absent takes the installation's `newUsersExternal`. */
+            external?: boolean;
             identities?: components["schemas"]["PendingIdentity"][];
         };
         /** @description The members an administrator can correct. The read-only members of `User` are accepted and ignored. */
         UserPatch: {
             email?: string | null;
             displayName?: string | null;
+            /** @description The external flag (R-AUTH-044); a change needs recent authentication. */
+            external?: boolean;
             /** @description Replaces the pending links; a linked identity stays. */
             identities?: components["schemas"]["PendingIdentity"][];
         };
@@ -5590,6 +5671,7 @@ export interface components {
             key: string;
             displayName: string;
             description: string;
+            visibility: components["schemas"]["VisibilityLevel"];
             /** @description References of the members with the role Owner, `user:<name>` and `group:<name>`, ordered by kind and name. */
             owners: string[];
             /** @description The number of members, users and groups. */
@@ -5626,6 +5708,11 @@ export interface components {
             displayName?: string;
             /** @default  */
             description: string;
+            /**
+             * @description On create, the project's level; absent takes the installation's `defaultLevel` (R-AUTHZ-033). Ignored on replace: the
+             *     level changes through `PUT /api/v1/projects/{projectKey}/visibility` only.
+             */
+            visibility?: components["schemas"]["VisibilityLevel"];
             /** @description On create, the references (`user:<name>`, `group:<name>`) that become the first Owners of the project in the transaction of the create (Q-AUTHZ-229); a reference that is no user or group answers `422 principal_not_allowed`, one that does not exist `404`. Ignored on replace. */
             owners?: string[];
             readonly members?: number;
@@ -6473,8 +6560,6 @@ export interface components {
         };
         /** @description The YAML values the runtime values are bound by. */
         AuthSettingsCeilings: {
-            /** @description `auth.anonymous.allowed`: when false, anonymous access cannot be switched on. */
-            anonymousAllowed: boolean;
             tokens: components["schemas"]["AuthSettingsTokens"];
         };
         AuthSettingsProvider: {
@@ -6516,7 +6601,7 @@ export interface components {
          *     are bound by, and read-only status. The runtime members have the shape `PATCH` takes, so a body
          *     obtained by `GET` can be sent back; `ceilings` and `status` are ignored then.
          * @example {
-         *       "anonymousAccess": false,
+         *       "newUsersExternal": false,
          *       "tokens": {
          *         "pat": {
          *           "defaultTTLSeconds": 7776000,
@@ -6529,7 +6614,6 @@ export interface components {
          *         "expiryNoticeSeconds": 604800
          *       },
          *       "ceilings": {
-         *         "anonymousAllowed": true,
          *         "tokens": {
          *           "pat": {
          *             "defaultTTLSeconds": 7776000,
@@ -6568,15 +6652,15 @@ export interface components {
          *     }
          */
         AuthSettings: {
-            /** @description Whether anonymous access is in force (the runtime switch within the ceiling). */
-            anonymousAccess: boolean;
+            /** @description The `external` flag every user created later starts with (R-AUTH-044); it changes no existing user. */
+            newUsersExternal: boolean;
             tokens: components["schemas"]["AuthSettingsTokens"];
             ceilings: components["schemas"]["AuthSettingsCeilings"];
             status: components["schemas"]["AuthSettingsStatus"];
         };
         /** @description Only the runtime members are writable; `ceilings` and `status` are accepted and ignored. A lifetime is at least 60 seconds. */
         AuthSettingsPatch: {
-            anonymousAccess?: boolean;
+            newUsersExternal?: boolean;
             tokens?: {
                 pat?: {
                     defaultTTLSeconds?: number;
@@ -6609,7 +6693,7 @@ export interface components {
          *         }
          *       ],
          *       "localLogin": false,
-         *       "anonymousAccess": false,
+         *       "publicContent": false,
          *       "autoRedirect": "corp"
          *     }
          */
@@ -6618,7 +6702,11 @@ export interface components {
             providers: components["schemas"]["LoginProvider"][];
             /** @description The break-glass form is offered on the page; it is reachable with `?auto_sign_in=false` regardless. */
             localLogin: boolean;
-            anonymousAccess: boolean;
+            /**
+             * @description Some repository's artifacts are `public` and the default endpoint admits requests without a credential, so an
+             *     anonymous visitor reads something (R-AUTH-009, R-AUTH-037). The UI offers browsing without signing in by it.
+             */
+            publicContent: boolean;
             /** @description The provider ID to redirect to at once; `null` shows the buttons. `?auto_sign_in=false` on the sign-in page waives the redirect. */
             autoRedirect: string | null;
         };
@@ -6731,7 +6819,7 @@ export interface components {
         /** @description Actions given to one principal. A policy holds at most one entry per principal. */
         PolicyEntry: {
             /**
-             * @description `user:<name>`, `group:<name>`, `sa:<name>`, `anonymous` or `authenticated`.
+             * @description `user:<name>`, `group:<name>`, `sa:<name>`, `sa:<project>/<name>` or `ci:<issuer>/<mapping>`.
              * @example group:team-web
              */
             principal: string;
@@ -6762,7 +6850,7 @@ export interface components {
             readonly updatedAt?: string;
             readonly updatedBy?: string;
         };
-        /** @description A permission policy (R-AUTHZ-021). `inert` is true when no selector is left (a key selector goes with its repository); the policy stays and grants nothing. `warnings` are `path_patterns_on_package_format`, `selector_matches_nothing` and `anonymous_populates_remote`; a move that would leave a key selector of a project policy behind is refused with `409 repository_in_use`. `version` is the ETag source. */
+        /** @description A permission policy (R-AUTHZ-021). `inert` is true when no selector is left (a key selector goes with its repository); the policy stays and grants nothing. `warnings` are `path_patterns_on_package_format`, and `selector_matches_nothing`; a move that would leave a key selector of a project policy behind is refused with `409 repository_in_use`. `version` is the ETag source. */
         PermissionPolicy: {
             name: string;
             description: string;
@@ -6844,6 +6932,11 @@ export interface components {
         };
         AuthzMe: {
             roles: components["schemas"]["RoleName"][];
+            /**
+             * @description The caller is an internal subject (R-AUTHZ-030): a user through a session or a personal access token who is not
+             *     flagged external and did not come through a Bastion. The level `internal` admits exactly these callers.
+             */
+            internal: boolean;
             /** @description The system capabilities the credential exercises (R-AUTHZ-010), for example `settings:read`. */
             capabilities: string[];
             /** @description The references the caller acts as; it never lists other principals. */
@@ -6914,6 +7007,12 @@ export interface components {
              */
             mirror: boolean;
             /**
+             * @description Whether the format has wiki content, the documentation trove serves or shows apart from the files (R-AUTHZ-034):
+             *     a repository of such a format has a wiki level of its own that is worth setting. `false` for a format whose
+             *     repository serves no documentation; its wiki level then changes nothing.
+             */
+            wiki: boolean;
+            /**
              * @description The JSON Schema 2020-12 of the format's settings member of a repository document (the member named
              *     after the format, R-REPO-004), which the create form renders and the service validates a document
              *     against (R-ARCH-008). Its properties may carry `x-trove-classes`, the classes the setting applies to;
@@ -6963,6 +7062,80 @@ export interface components {
          * @enum {string}
          */
         VirtualFormatName: "ansible" | "deb" | "npm" | "nuget" | "oci";
+        /**
+         * @description A visibility level (R-AUTHZ-033), from the most restrictive: `private` reads for the members of the project and the
+         *     principals a grant names; `internal` besides for every internal subject (R-AUTHZ-030); `public` besides for every
+         *     request, also one without a credential.
+         * @enum {string}
+         */
+        VisibilityLevel: "private" | "internal" | "public";
+        /**
+         * @description The levels of a repository's two parts (R-AUTHZ-033, R-AUTHZ-034): `artifacts`, what package clients resolve, install and
+         *     download, and `wiki`, the documentation of its packages that trove serves or shows apart from the files. The artifacts
+         *     level is at most the project's level and the wiki level at most the artifacts level (`422 validation_failed` with
+         *     `visibility_above_project` or `visibility_wiki_above_artifacts`). A merge patch may name one part.
+         * @example {
+         *       "artifacts": "internal",
+         *       "wiki": "internal"
+         *     }
+         */
+        RepositoryVisibility: {
+            artifacts: components["schemas"]["VisibilityLevel"];
+            wiki: components["schemas"]["VisibilityLevel"];
+        };
+        /** @description The projects and the repositories whose artifacts are `public`, at most 100 of each in key order (R-API-056). */
+        PublicObjects: {
+            projects: string[];
+            /** @description Qualified names, `<project>/<key>`. */
+            repositories: string[];
+            /** @description There are more than 100 of one of the lists. */
+            truncated: boolean;
+        };
+        /**
+         * @description The installation's visibility settings (R-API-056). `publicAvailable` and `publicObjects` are read-only and ignored in a
+         *     `PATCH` body, so a body obtained by `GET` can be sent back.
+         * @example {
+         *       "defaultLevel": "private",
+         *       "publicAvailable": true,
+         *       "publicObjects": {
+         *         "projects": [
+         *           "web"
+         *         ],
+         *         "repositories": [
+         *           "web/npm-public"
+         *         ],
+         *         "truncated": false
+         *       }
+         *     }
+         */
+        VisibilitySettings: {
+            defaultLevel: components["schemas"]["VisibilityLevel"];
+            /** @description The default endpoint admits requests without a credential (`endpoints.default.auth.anonymous`, R-EP-010); while `false`, no level can be set to `public`. */
+            publicAvailable: boolean;
+            publicObjects: components["schemas"]["PublicObjects"];
+        };
+        VisibilitySettingsPatch: {
+            defaultLevel?: components["schemas"]["VisibilityLevel"];
+            readonly publicAvailable?: boolean;
+            readonly publicObjects?: components["schemas"]["PublicObjects"];
+        };
+        /**
+         * @example {
+         *       "level": "internal"
+         *     }
+         */
+        ProjectVisibilityRequest: {
+            level: components["schemas"]["VisibilityLevel"];
+        };
+        /** @description The project after the change and the repositories the change lowered (R-API-057). */
+        ProjectVisibilityResult: {
+            project: components["schemas"]["Project"];
+            lowered: {
+                /** @description The qualified name `<project>/<key>`. */
+                repository: string;
+                before: components["schemas"]["RepositoryVisibility"];
+            }[];
+        };
         RepositoryWarning: {
             code: string;
             pointer?: string;
@@ -6998,7 +7171,7 @@ export interface components {
             includePatterns?: string[];
             excludePatterns?: string[];
             disabled?: boolean;
-            requireAuthentication?: boolean;
+            visibility?: components["schemas"]["RepositoryVisibility"];
             priorityMember?: boolean;
             /** @enum {string} */
             hideExistence?: "inherit" | "true" | "false";
@@ -7163,6 +7336,7 @@ export interface components {
             format: string;
             description: string;
             layout: string;
+            visibility: components["schemas"]["RepositoryVisibility"];
             /** @description The client addresses: absolute URLs, the public base URL followed by the repository's path. */
             addresses: string[];
         };
@@ -7174,6 +7348,7 @@ export interface components {
             class: "local" | "remote" | "virtual";
             format: string;
             description: string;
+            visibility: components["schemas"]["RepositoryVisibility"];
             /** @description The client addresses: absolute URLs, the public base URL followed by the repository's path. */
             addresses: string[];
             disabled: boolean;
@@ -8357,7 +8532,11 @@ export interface components {
                 release: string;
             };
             responseBaseUrl: string;
-            anonymousAccess: boolean;
+            /**
+             * @description Some repository's artifacts are `public` and the default endpoint admits requests without a credential, so a Bastion
+             *     admits an anonymous request (R-BAS-019); which repositories it then serves is the shape of each (R-BAS-012).
+             */
+            anonymousReads: boolean;
             recordDownloads: boolean;
             feed: {
                 cursor: string;
@@ -10570,6 +10749,8 @@ export interface operations {
                 /** @description Only members of this group (any source). */
                 group?: string;
                 admin?: boolean;
+                /** @description `true` keeps the users flagged external, `false` the others (R-AUTH-044). */
+                external?: boolean;
                 /** @description `username` is the default; a leading `-` reverses the order. */
                 sort?: "username";
                 /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
@@ -12352,6 +12533,77 @@ export interface operations {
             503: components["responses"]["Unavailable"];
         };
     };
+    getVisibilitySettings: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description An ETag the client holds; a match answers `304` (R-API-012). */
+                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The settings. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisibilitySettings"];
+                };
+            };
+            304: components["responses"]["NotModified"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    updateVisibilitySettings: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/merge-patch+json": components["schemas"]["VisibilitySettingsPatch"];
+            };
+        };
+        responses: {
+            /** @description The settings after the change. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisibilitySettings"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
     getLoginOptions: {
         parameters: {
             query?: never;
@@ -13533,9 +13785,9 @@ export interface operations {
                      *       ],
                      *       "principals": [
                      *         "user:alice",
-                     *         "group:team-web",
-                     *         "authenticated"
+                     *         "group:team-web"
                      *       ],
+                     *       "internal": true,
                      *       "projects": [
                      *         {
                      *           "key": "web",
@@ -13655,6 +13907,7 @@ export interface operations {
                      *           "caps": false,
                      *           "vulnerabilityScanning": false,
                      *           "mirror": false,
+                     *           "wiki": false,
                      *           "settingsSchema": null
                      *         }
                      *       ],
@@ -13677,6 +13930,8 @@ export interface operations {
                 q?: string;
                 /** @description `key` (default) or `-key`. */
                 sort?: "key" | "-key";
+                /** @description `true` keeps the projects the caller is a member of (R-API-047, R-API-057). */
+                membership?: boolean;
                 /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
                 limit?: components["parameters"]["Limit"];
                 /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
@@ -13705,6 +13960,7 @@ export interface operations {
                      *           "owners": [
                      *             "group:web-leads"
                      *           ],
+                     *           "visibility": "private",
                      *           "members": 4,
                      *           "repositories": 2,
                      *           "serviceAccounts": 1,
@@ -13948,7 +14204,7 @@ export interface operations {
             path: {
                 /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
-                /** @description The percent-encoded reference of a user or a group, for example `group%3Aweb-leads`. A service account, a CI mapping, `anonymous` and `authenticated` are never members of a project (`422`). */
+                /** @description The percent-encoded reference of a user or a group, for example `group%3Aweb-leads`. A service account, a CI mapping, `anonymous` and `authenticated` are never members of a project (`422`); a visibility level opens a project instead. */
                 principalRef: string;
             };
             cookie?: never;
@@ -14004,7 +14260,7 @@ export interface operations {
             path: {
                 /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
-                /** @description The percent-encoded reference of a user or a group, for example `group%3Aweb-leads`. A service account, a CI mapping, `anonymous` and `authenticated` are never members of a project (`422`). */
+                /** @description The percent-encoded reference of a user or a group, for example `group%3Aweb-leads`. A service account, a CI mapping, `anonymous` and `authenticated` are never members of a project (`422`); a visibility level opens a project instead. */
                 principalRef: string;
             };
             cookie?: never;
@@ -14024,6 +14280,51 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    setProjectVisibility: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectVisibilityRequest"];
+            };
+        };
+        responses: {
+            /** @description The project after the change and the repositories it lowered. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    "Trove-Authz-Epoch": components["headers"]["AuthzEpoch"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectVisibilityResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];
@@ -14092,6 +14393,11 @@ export interface operations {
                 format?: string[];
                 q?: string;
                 state?: "inactive";
+                /**
+                 * @description Keeps the repositories whose artifacts level is one of these (R-API-057); repeat the parameter, or separate values with
+                 *     commas.
+                 */
+                visibility?: components["schemas"]["VisibilityLevel"][];
                 /** @description A project key; keeps the repositories of that project. */
                 project?: string;
                 view?: "summary" | "full";
@@ -14125,6 +14431,10 @@ export interface operations {
                      *             "https://trove.example.net/files/web/generic-local/"
                      *           ],
                      *           "disabled": false,
+                     *           "visibility": {
+                     *             "artifacts": "private",
+                     *             "wiki": "private"
+                     *           },
                      *           "lastActivityAt": "2026-10-28T09:14:03.117Z",
                      *           "project": "web"
                      *         }
@@ -14152,6 +14462,11 @@ export interface operations {
                 format?: string[];
                 q?: string;
                 state?: "inactive";
+                /**
+                 * @description Keeps the repositories whose artifacts level is one of these (R-API-057); repeat the parameter, or separate values with
+                 *     commas.
+                 */
+                visibility?: components["schemas"]["VisibilityLevel"][];
                 view?: "summary" | "full";
                 /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
                 limit?: components["parameters"]["Limit"];
@@ -14186,6 +14501,10 @@ export interface operations {
                      *             "https://trove.example.net/files/web/generic-local/"
                      *           ],
                      *           "disabled": false,
+                     *           "visibility": {
+                     *             "artifacts": "private",
+                     *             "wiki": "private"
+                     *           },
                      *           "lastActivityAt": "2026-10-28T09:14:03.117Z",
                      *           "project": "web"
                      *         }
@@ -14298,7 +14617,10 @@ export interface operations {
                      *       ],
                      *       "excludePatterns": [],
                      *       "disabled": false,
-                     *       "requireAuthentication": false,
+                     *       "visibility": {
+                     *         "artifacts": "private",
+                     *         "wiki": "private"
+                     *       },
                      *       "hideExistence": "inherit",
                      *       "lifecycle": "active",
                      *       "createdAt": "2026-10-28T09:00:00.000Z",

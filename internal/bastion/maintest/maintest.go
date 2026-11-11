@@ -217,7 +217,7 @@ func (m *Main) SetVersion(v int) { m.lock(func() { m.version = v }) }
 // the fake's own URL (the main installation lacks the Bastion's host in server.additional_base_urls).
 func (m *Main) SetBaseURLHonoured(on bool) { m.lock(func() { m.honoured = on }) }
 
-// SetAnonymous sets anonymousAccess of the handshake.
+// SetAnonymous sets anonymousReads of the handshake.
 func (m *Main) SetAnonymous(on bool) { m.lock(func() { m.anonymous = on }) }
 
 // SetRecordDownloads sets recordDownloads of the handshake.
@@ -455,7 +455,7 @@ func (m *Main) handshake(w http.ResponseWriter, r *http.Request, rt *regToken) {
 		Bastion:          iface.HandshakeBastion{Name: "partners", TokenID: rt.id, TokenExpiresAt: rt.expires.UTC()},
 		Installation:     iface.HandshakeInstallation{BaseURL: m.srv.URL, Release: Release},
 		ResponseBaseURL:  base,
-		AnonymousAccess:  m.anonymous,
+		AnonymousReads:   m.anonymous,
 		RecordDownloads:  m.record,
 		Feed:             iface.HandshakeFeed{Cursor: m.cursorLocked().String()},
 		ServerTime:       m.now().UTC(),

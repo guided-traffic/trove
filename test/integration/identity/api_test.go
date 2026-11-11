@@ -635,29 +635,29 @@ func TestAPIOperations(t *testing.T) {
 		if etag == "" {
 			t.Fatal("no ETag")
 		}
-		if rp.json(t)["anonymousAccess"] != false {
+		if rp.json(t)["newUsersExternal"] != false {
 			t.Fatalf("%s", rp.Body)
 		}
 		nm := next().call(get, "/api/v1/settings/auth", admin, nil, "If-None-Match", etag)
 		if nm.Status != 304 {
 			t.Fatalf("If-None-Match: %d", nm.Status)
 		}
-		want(t, next().call(patch, "/api/v1/settings/auth", admin, map[string]any{"anonymousAccess": true}), 428, "precondition_required")
-		want(t, next().call(patch, "/api/v1/settings/auth", admin, map[string]any{"anonymousAccess": true}, "If-Match", `"9999"`), 412, "precondition_failed")
-		want(t, next().call(patch, "/api/v1/settings/auth", admin, map[string]any{"anonymousAccess": true}, "If-Match", "bogus"), 400, "invalid_header")
+		want(t, next().call(patch, "/api/v1/settings/auth", admin, map[string]any{"newUsersExternal": true}), 428, "precondition_required")
+		want(t, next().call(patch, "/api/v1/settings/auth", admin, map[string]any{"newUsersExternal": true}, "If-Match", `"9999"`), 412, "precondition_failed")
+		want(t, next().call(patch, "/api/v1/settings/auth", admin, map[string]any{"newUsersExternal": true}, "If-Match", "bogus"), 400, "invalid_header")
 		want(t, next().call(get, "/api/v1/settings/auth", alicePAT, nil), 403, "")
-		want(t, next().call(patch, "/api/v1/settings/auth", alicePAT, map[string]any{"anonymousAccess": true}, "If-Match", "*"), 403, "")
+		want(t, next().call(patch, "/api/v1/settings/auth", alicePAT, map[string]any{"newUsersExternal": true}, "If-Match", "*"), 403, "")
 		want(t, next().call(patch, "/api/v1/settings/auth", admin, map[string]any{"tokens": map[string]any{"pat": map[string]any{"maxTTLSeconds": 99999999999}}}, "If-Match", etag), 400, "exceeds_ceiling")
 		want(t, next().call(patch, "/api/v1/settings/auth", admin, map[string]any{"tokens": map[string]any{"pat": map[string]any{"defaultTTLSeconds": 7000000, "maxTTLSeconds": 3600}}}, "If-Match", etag), 400, "default_above_maximum")
-		rp = next().call(patch, "/api/v1/settings/auth", admin, map[string]any{"anonymousAccess": true, "tokens": map[string]any{"pat": map[string]any{"maxTTLSeconds": 86400, "defaultTTLSeconds": 3600}}}, "If-Match", etag)
+		rp = next().call(patch, "/api/v1/settings/auth", admin, map[string]any{"newUsersExternal": true, "tokens": map[string]any{"pat": map[string]any{"maxTTLSeconds": 86400, "defaultTTLSeconds": 3600}}}, "If-Match", etag)
 		want(t, rp, 200, "")
-		if rp.Header.Get("ETag") == etag || rp.json(t)["anonymousAccess"] != true {
+		if rp.Header.Get("ETag") == etag || rp.json(t)["newUsersExternal"] != true {
 			t.Fatalf("%v %s", rp.Header, rp.Body)
 		}
-		want(t, next().call(patch, "/api/v1/settings/auth", admin, map[string]any{"anonymousAccess": false}, "If-Match", etag), 412, "precondition_failed")
+		want(t, next().call(patch, "/api/v1/settings/auth", admin, map[string]any{"newUsersExternal": false}, "If-Match", etag), 412, "precondition_failed")
 		for range 3 { // the change is visible on every replica
 			g := next().call(get, "/api/v1/settings/auth", admin, nil).json(t)
-			if g["anonymousAccess"] != true || g["tokens"].(map[string]any)["pat"].(map[string]any)["maxTTLSeconds"] != float64(86400) {
+			if g["newUsersExternal"] != true || g["tokens"].(map[string]any)["pat"].(map[string]any)["maxTTLSeconds"] != float64(86400) {
 				t.Fatalf("%v", g)
 			}
 		}
@@ -667,7 +667,7 @@ func TestAPIOperations(t *testing.T) {
 		if now.Header.Get("ETag") == back.Header.Get("ETag") {
 			t.Fatal("a change through the body of a GET left the ETag as it was")
 		}
-		want(t, next().call(patch, "/api/v1/settings/auth", admin, map[string]any{"anonymousAccess": false}, "If-Match", now.Header.Get("ETag")), 200, "")
+		want(t, next().call(patch, "/api/v1/settings/auth", admin, map[string]any{"newUsersExternal": false}, "If-Match", now.Header.Get("ETag")), 200, "")
 		if n := e.scalar(`SELECT count(*) FROM audit_event WHERE action = 'settings.auth.changed'`); n < 3 {
 			t.Fatalf("%d settings.auth.changed events", n)
 		}

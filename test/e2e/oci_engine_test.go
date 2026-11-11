@@ -30,7 +30,6 @@ func TestOCIEngineMirror(t *testing.T) {
 	defer s.resetAll(t)
 
 	body := ociRemoteBody(t, ociEngineMirrorKey, nil)
-	body["requireAuthentication"] = false
 	fx.adm.do(http.MethodPost, reposRoute, body).want(t, "create "+ociEngineMirrorKey, 201, 409)
 	t.Cleanup(func() { deleteRepository(t, fx.adm, ociEngineMirrorKey) })
 	ensurePolicy(t, fx.adm, "e2e-oci-engine-mirror", []string{ociEngineMirrorKey}, [2]any{"anonymous", []string{"read"}})

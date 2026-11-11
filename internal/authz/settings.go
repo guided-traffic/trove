@@ -17,7 +17,7 @@ const EventSettingsChanged = "authz.settings.changed"
 // SettingsHook implements [repository.Hooks]: it records authz.settings.changed,
 // flagged for the revocation journal, in the transaction of the repository update
 // next to the repository's own event. The settings are the ones a restore must
-// not widen (R-AUTHZ-031): requireAuthentication, hideExistence,
+// not widen (R-AUTHZ-031): hideExistence,
 // cacheFillAction and packageOwnership. The hook changes no state, so it does not
 // notify the authz area; the update notifies repo_config, which the grant index
 // follows.
@@ -36,10 +36,9 @@ func NewSettingsHook(rec audit.Recorder) *SettingsHook {
 // accessSettings are the authorization settings of one repository as the journal
 // carries them: only the members that apply to the repository appear.
 type accessSettings struct {
-	RequireAuthentication bool    `json:"requireAuthentication"`
-	HideExistence         string  `json:"hideExistence"`
-	CacheFillAction       *string `json:"cacheFillAction,omitempty"`
-	PackageOwnership      *string `json:"packageOwnership,omitempty"`
+	HideExistence    string  `json:"hideExistence"`
+	CacheFillAction  *string `json:"cacheFillAction,omitempty"`
+	PackageOwnership *string `json:"packageOwnership,omitempty"`
 }
 
 // settingsOf reads the settings from the repository model and its document.
@@ -53,7 +52,7 @@ func settingsOf(r repository.Repository) accessSettings {
 		} `json:"remote"`
 	}
 	_ = json.Unmarshal(r.Config, &doc) // an unreadable document has none of the optional members
-	s := accessSettings{RequireAuthentication: r.RequireAuthentication, HideExistence: r.HideExistence}
+	s := accessSettings{HideExistence: r.HideExistence}
 	if s.HideExistence == "" {
 		s.HideExistence = "inherit"
 	}

@@ -54,7 +54,7 @@ type Deps struct {
 	// closes every body on every path.
 	Main mainclient.Client
 	// Link is the replica's standing connection (internal/bastion/link): Link.State() says reachable or not and
-	// since when, anonymousAccess, recordDownloads and the start of the feed history; Link.AnswerState(now) is
+	// since when, anonymousReads, recordDownloads and the start of the feed history; Link.AnswerState(now) is
 	// the answers.State the validity rules are judged against; Link.Feed() is the log of the feed entries. The
 	// server runs it; the engine hands it its [link.AnswerSink] (Link.SetSink) in [New].
 	Link *link.Link
@@ -199,11 +199,11 @@ func newFlow(d Deps) (*engine, error) {
 
 func (e *engine) now() time.Time { return e.nowFunc() }
 
-// anonymousAccess is the handshake's anonymousAccess (R-BAS-019): an anonymous request is admitted exactly
+// anonymousReads is the handshake's anonymousReads (R-BAS-019): an anonymous request is admitted exactly
 // while it is true; before the first handshake it is not known and nothing is admitted (Q-BAS-99).
-func (e *engine) anonymousAccess() bool {
+func (e *engine) anonymousReads() bool {
 	st := e.d.Link.State()
-	return st.Handshaken && st.AnonymousAccess
+	return st.Handshaken && st.AnonymousReads
 }
 
 // Start implements [Engine].

@@ -86,7 +86,7 @@ func (q *Queries) ProjectDelete(ctx context.Context, arg ProjectDeleteParams) ([
 }
 
 const projectGet = `-- name: ProjectGet :many
-SELECT p.id::text AS id, p.key, p.display_name, p.description, p.version,
+SELECT p.id::text AS id, p.key, p.display_name, p.description, p.version, p.visibility,
        (extract(epoch FROM p.created_at) * 1000000)::bigint AS created_us,
        (extract(epoch FROM p.updated_at) * 1000000)::bigint AS updated_us,
        COALESCE(cb.kind, '')::text AS created_by_kind, COALESCE(cb.name, '')::text AS created_by_name,
@@ -110,6 +110,7 @@ type ProjectGetRow struct {
 	DisplayName     string
 	Description     string
 	Version         int64
+	Visibility      string
 	CreatedUs       int64
 	UpdatedUs       int64
 	CreatedByKind   string
@@ -139,6 +140,7 @@ func (q *Queries) ProjectGet(ctx context.Context, key string) ([]ProjectGetRow, 
 			&i.DisplayName,
 			&i.Description,
 			&i.Version,
+			&i.Visibility,
 			&i.CreatedUs,
 			&i.UpdatedUs,
 			&i.CreatedByKind,
@@ -240,7 +242,7 @@ func (q *Queries) ProjectInsert(ctx context.Context, arg ProjectInsertParams) ([
 
 const projectList = `-- name: ProjectList :many
 
-SELECT p.id::text AS id, p.key, p.display_name, p.description, p.version,
+SELECT p.id::text AS id, p.key, p.display_name, p.description, p.version, p.visibility,
        (extract(epoch FROM p.created_at) * 1000000)::bigint AS created_us,
        (extract(epoch FROM p.updated_at) * 1000000)::bigint AS updated_us,
        COALESCE(cb.kind, '')::text AS created_by_kind, COALESCE(cb.name, '')::text AS created_by_name,
@@ -264,6 +266,7 @@ type ProjectListRow struct {
 	DisplayName     string
 	Description     string
 	Version         int64
+	Visibility      string
 	CreatedUs       int64
 	UpdatedUs       int64
 	CreatedByKind   string
@@ -302,6 +305,7 @@ func (q *Queries) ProjectList(ctx context.Context) ([]ProjectListRow, error) {
 			&i.DisplayName,
 			&i.Description,
 			&i.Version,
+			&i.Visibility,
 			&i.CreatedUs,
 			&i.UpdatedUs,
 			&i.CreatedByKind,

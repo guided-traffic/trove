@@ -318,7 +318,7 @@ Where a level is set and who sets it ([Q-AUTHZ-264](#q-authz-264--a-level-is-sto
    gate of R-AUTHZ-009 rule 1 for its audience; the content it serves is decided on each member's own level.
 
 Data model ([Q-AUTHZ-276](#q-authz-276--the-levels-are-columns-and-the-database-holds-the-rules-of-the-container)), migration
-`00071_visibility.sql`:
+`00073_visibility.sql`:
 
 ```sql
 CREATE FUNCTION visibility_rank(level text) RETURNS integer
@@ -6576,7 +6576,7 @@ Status: **Decided by the development agent** — selected from the options below
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) Columns on `project` and `repositories`, a check for the wiki, a deferred constraint trigger for the project (chosen) | Migration `00071_visibility.sql` | The cascade is one `UPDATE`; the index reads a column, not the document; every writer (API, configuration as code, journal replay, move) is held to the rule by the database | The repository document maps two columns to one member |
+| (a) Columns on `project` and `repositories`, a check for the wiki, a deferred constraint trigger for the project (chosen) | Migration `00073_visibility.sql` | The cascade is one `UPDATE`; the index reads a column, not the document; every writer (API, configuration as code, journal replay, move) is held to the rule by the database | The repository document maps two columns to one member |
 | (b) Members of the repository's JSON document | As `hideExistence` | No mapping | The rule "never above the project" needs a lock and a JSON read per writer; the cascade rewrites documents |
 
 **Choice:** (a). The repository document shows them as `visibility` (R-REPO-004); the trigger raises `AI008`.
@@ -6629,7 +6629,7 @@ Status: **Decided by the development agent** — selected from the options below
 | (a) 422 `principal_not_allowed` everywhere, the detail naming the levels; the row of `authenticated` deleted, the row of `anonymous` kept as the actor and refused by every granting table (chosen) | One answer for every write path, the database included (`AI009`) | A client that still writes such an entry learns what replaced it; no grant can reopen a closed repository | The old reason codes `anonymous_write_action`, `anonymous_dynamic_selector` and `authenticated_write_action` disappear |
 | (b) `unknown_principal` | As for a name that does not exist | Nothing to explain | Hides that the concept moved |
 
-**Choice:** (a). Migration `00073_principal_builtins.sql` deletes the entries that name either, deletes the row and the kind
+**Choice:** (a). Migration `00075_principal_builtins.sql` deletes the entries that name either, deletes the row and the kind
 `authenticated`, and adds the guard.
 
 **Rationale:** the refusal must hold on every path (API, configuration as code, journal replay, `trove migrate` role bindings),

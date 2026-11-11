@@ -200,8 +200,23 @@ func coordinate(rq *formats.Request, t formats.Target) authz.Coordinate {
 	return authz.Coordinate{
 		Repository: rq.Repo.Name, Class: rq.Repo.Class, Format: rq.Repo.Format,
 		Kind: rq.Route.Kind.RequestKind(), Path: t.Path, Package: t.Package, Version: t.Version, Actions: t.Actions,
-		Addressed: rq.Addressed(),
+		Addressed: rq.Addressed(), Part: t.Part,
 	}
+}
+
+// WikiReadable implements [formats.Host]: authz.Decider.WikiReadableOn on the request's index (R-AUTHZ-034). It is a
+// question, so nothing is audited or counted, and the repository's include and exclude patterns apply as they do to a read of
+// the package.
+func (h *Host) WikiReadable(_ context.Context, rq *formats.Request, t formats.Target) bool {
+	c := coordinate(rq, t)
+	c.Actions = []authz.Action{authz.Read}
+	if !h.o.Decider.WikiReadableOn(rq.Index, rq.Subject, c) {
+		return false
+	}
+	if subject, ok := h.patternSubject(rq, t); ok && !rq.Repo.Admits(subject, false) {
+		return false
+	}
+	return true
 }
 
 // Authorize implements [formats.Host]: the decision on the request's index, then

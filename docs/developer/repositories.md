@@ -94,7 +94,7 @@ version for `currentEtag`). An update that changes nothing writes nothing: same 
 records the exposure rules the foreign key takes with it (`endpoint.exposure.deleted`, cause `repository_deleted`, Q-EP-25);
 `repository.MultiHooks` composes the hooks, and a hook error fails the deletion. `Hooks.OnUpdated` runs in the update's
 transaction with the repository before and after; the authorization area uses it
-to record `authz.settings.changed` for `cacheFillAction`, `packageOwnership`, `requireAuthentication` and `hideExistence`
+to record `authz.settings.changed` for `cacheFillAction`, `packageOwnership` and `hideExistence`
 (R-AUTHZ-031): `authz.SettingsHook` ([settings.go](../../internal/authz/settings.go)), which `wireRepository` sets as `Options.Hooks`.
 It records only the settings that changed, before and after, with a journal entry, and nothing for another change.
 

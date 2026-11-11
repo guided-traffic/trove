@@ -20,36 +20,37 @@ const settingsCacheName = "auth_settings"
 // Settings is the row of auth_settings (R-AUTH-040). A nil duration means the
 // YAML value applies.
 type Settings struct {
-	AnonymousAccess bool
-	PATDefaultTTL   *time.Duration
-	PATMaxTTL       *time.Duration
-	SATDefaultTTL   *time.Duration
-	SATMaxTTL       *time.Duration
-	ExpiryNotice    *time.Duration
+	// NewUsersExternal is the external flag every user created later starts with (R-AUTH-044, Q-AUTH-231).
+	NewUsersExternal bool
+	PATDefaultTTL    *time.Duration
+	PATMaxTTL        *time.Duration
+	SATDefaultTTL    *time.Duration
+	SATMaxTTL        *time.Duration
+	ExpiryNotice     *time.Duration
 	// Revision is the ETag number of the row: the microseconds of its last change,
 	// which every update raises by at least one (R-API-012; Q-AUTH-40).
 	Revision int64
 }
 
 // Effective is what the runtime applies: the row's values within the YAML
-// ceilings, and the anonymous switch combined with the operator's ceiling.
+// ceilings.
 type Effective struct {
-	AnonymousAccess bool
-	PATDefaultTTL   time.Duration
-	PATMaxTTL       time.Duration
-	SATDefaultTTL   time.Duration
-	SATMaxTTL       time.Duration
-	ExpiryNotice    time.Duration
+	NewUsersExternal bool
+	PATDefaultTTL    time.Duration
+	PATMaxTTL        time.Duration
+	SATDefaultTTL    time.Duration
+	SATMaxTTL        time.Duration
+	ExpiryNotice     time.Duration
 }
 
 // SettingsPatch is the request of Update; a nil field is unchanged.
 type SettingsPatch struct {
-	AnonymousAccess *bool
-	PATDefaultTTL   *time.Duration
-	PATMaxTTL       *time.Duration
-	SATDefaultTTL   *time.Duration
-	SATMaxTTL       *time.Duration
-	ExpiryNotice    *time.Duration
+	NewUsersExternal *bool
+	PATDefaultTTL    *time.Duration
+	PATMaxTTL        *time.Duration
+	SATDefaultTTL    *time.Duration
+	SATMaxTTL        *time.Duration
+	ExpiryNotice     *time.Duration
 	// Expected is the revision the caller loaded (If-Match), or errs.AnyRevision
 	// for the deliberate blind write; the update is conditional on it in the same
 	// statement and fails with errs.Stale when the row has moved on (R-API-012).
@@ -64,9 +65,8 @@ type SettingsOptions struct {
 	Recorder audit.Recorder
 	Cache    *cache.Registry
 	Gate     principal.Gate
-	// Tokens and Anonymous are the YAML ceilings.
-	Tokens    config.AuthTokens
-	Anonymous config.AuthAnonymous
+	// Tokens are the YAML ceilings.
+	Tokens config.AuthTokens
 }
 
 // SettingsStore reads and changes the runtime authentication settings
@@ -131,8 +131,8 @@ func readSettings(ctx context.Context, qs *q.Queries) (Settings, error) {
 	}
 	r := rows[0]
 	return Settings{
-		AnonymousAccess: r.AnonymousAccess,
-		PATDefaultTTL:   secs(r.PatDefaultSecs), PATMaxTTL: secs(r.PatMaxSecs),
+		NewUsersExternal: r.NewUsersExternal,
+		PATDefaultTTL:    secs(r.PatDefaultSecs), PATMaxTTL: secs(r.PatMaxSecs),
 		SATDefaultTTL: secs(r.SatDefaultSecs), SATMaxTTL: secs(r.SatMaxSecs),
 		ExpiryNotice: secs(r.ExpiryNoticeSecs), Revision: r.Revision,
 	}, nil
@@ -177,10 +177,10 @@ func (s *SettingsStore) effective(row Settings) Effective {
 		return *v
 	}
 	e := Effective{
-		AnonymousAccess: row.AnonymousAccess && s.o.Anonymous.Allowed,
-		PATMaxTTL:       pick(row.PATMaxTTL, t.PAT.MaxTTL),
-		SATMaxTTL:       pick(row.SATMaxTTL, t.SAT.MaxTTL),
-		ExpiryNotice:    pick(row.ExpiryNotice, t.ExpiryNotice),
+		NewUsersExternal: row.NewUsersExternal,
+		PATMaxTTL:        pick(row.PATMaxTTL, t.PAT.MaxTTL),
+		SATMaxTTL:        pick(row.SATMaxTTL, t.SAT.MaxTTL),
+		ExpiryNotice:     pick(row.ExpiryNotice, t.ExpiryNotice),
 	}
 	e.PATDefaultTTL = min(pick(row.PATDefaultTTL, t.PAT.DefaultTTL), e.PATMaxTTL)
 	e.SATDefaultTTL = min(pick(row.SATDefaultTTL, t.SAT.DefaultTTL), e.SATMaxTTL)
@@ -189,8 +189,7 @@ func (s *SettingsStore) effective(row Settings) Effective {
 
 // Update applies a patch (R-AUTH-040): each value at most its YAML ceiling
 // (400 exceeds_ceiling), each default at most its maximum (400
-// default_above_maximum), anonymous access only while the ceiling allows it
-// (409 anonymous_not_allowed). It records settings.auth.changed with the before
+// default_above_maximum). It records settings.auth.changed with the before
 // and after values and the change in the area auth in the same transaction.
 func (s *SettingsStore) Update(ctx context.Context, c principal.Caller, p SettingsPatch) (Settings, error) {
 	var after Settings
@@ -201,8 +200,8 @@ func (s *SettingsStore) Update(ctx context.Context, c principal.Caller, p Settin
 			return err
 		}
 		after = before
-		if p.AnonymousAccess != nil {
-			after.AnonymousAccess = *p.AnonymousAccess
+		if p.NewUsersExternal != nil {
+			after.NewUsersExternal = *p.NewUsersExternal
 		}
 		for _, f := range []struct {
 			patch *time.Duration
@@ -222,8 +221,8 @@ func (s *SettingsStore) Update(ctx context.Context, c principal.Caller, p Settin
 			return err
 		}
 		written, err := qs.IdentityUpdateSettings(ctx, q.IdentityUpdateSettingsParams{
-			AnonymousAccess: after.AnonymousAccess,
-			PatDefaultSecs:  fromSecs(after.PATDefaultTTL), PatMaxSecs: fromSecs(after.PATMaxTTL),
+			NewUsersExternal: after.NewUsersExternal,
+			PatDefaultSecs:   fromSecs(after.PATDefaultTTL), PatMaxSecs: fromSecs(after.PATMaxTTL),
 			SatDefaultSecs: fromSecs(after.SATDefaultTTL), SatMaxSecs: fromSecs(after.SATMaxTTL),
 			ExpiryNoticeSecs: fromSecs(after.ExpiryNotice), UpdatedBy: c.Actor.ID, Expected: p.Expected,
 		})
@@ -243,15 +242,14 @@ func (s *SettingsStore) Update(ctx context.Context, c principal.Caller, p Settin
 		if after, err = readSettings(ctx, qs); err != nil {
 			return err
 		}
-		// The journal entry carries anonymousAccess and the two runtime maxima, each
-		// before and after, on every change, so a producer cannot drop a narrowing
+		// The journal entry carries the two runtime maxima, each before and after, on
+		// every change, so a producer cannot drop a narrowing
 		// (Q-AUTH-18, Q-AUTH-207). A maximum is seconds, or null for the YAML value.
 		maxima := func(b, a *time.Duration) map[string]any {
 			return map[string]any{"maxTTLSeconds": map[string]any{"before": secsOrNil(b), "after": secsOrNil(a)}}
 		}
 		entry := map[string]any{
-			"anonymousAccess": map[string]bool{"before": before.AnonymousAccess, "after": after.AnonymousAccess},
-			"tokens":          map[string]any{"pat": maxima(before.PATMaxTTL, after.PATMaxTTL), "sat": maxima(before.SATMaxTTL, after.SATMaxTTL)},
+			"tokens": map[string]any{"pat": maxima(before.PATMaxTTL, after.PATMaxTTL), "sat": maxima(before.SATMaxTTL, after.SATMaxTTL)},
 		}
 		return s.o.Recorder.RecordTx(ctx, tx, audit.Event{
 			Type: audit.EventSettingsAuthChanged, Outcome: audit.Success, Actor: c.Actor, Source: c.Source,
@@ -268,9 +266,6 @@ func (s *SettingsStore) Update(ctx context.Context, c principal.Caller, p Settin
 
 func (s *SettingsStore) validate(after Settings, p SettingsPatch) error {
 	t := s.o.Tokens
-	if after.AnonymousAccess && !s.o.Anonymous.Allowed && p.AnonymousAccess != nil {
-		return errs.E(errs.Conflict, errs.CodeAnonymousNotAllowed, "auth.anonymous.allowed is false: anonymous access cannot be enabled.")
-	}
 	for _, c := range []struct {
 		key     string
 		v       *time.Duration
@@ -316,7 +311,7 @@ func secsOrNil(d *time.Duration) any {
 func settingsJSON(st Settings) map[string]any {
 	n := secsOrNil
 	return map[string]any{
-		"anonymousAccess": st.AnonymousAccess, "patDefaultTTLSeconds": n(st.PATDefaultTTL), "patMaxTTLSeconds": n(st.PATMaxTTL),
+		"newUsersExternal": st.NewUsersExternal, "patDefaultTTLSeconds": n(st.PATDefaultTTL), "patMaxTTLSeconds": n(st.PATMaxTTL),
 		"satDefaultTTLSeconds": n(st.SATDefaultTTL), "satMaxTTLSeconds": n(st.SATMaxTTL), "expiryNoticeSeconds": n(st.ExpiryNotice),
 	}
 }

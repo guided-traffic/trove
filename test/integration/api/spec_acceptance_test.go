@@ -81,18 +81,9 @@ func TestR_API_005_CallerAuthenticationOnTheManagementAPI(t *testing.T) {
 		}
 		check401(t, "session cookie with an invalid bearer", send(t, c, "GET", whoami, nil, append(browser, "Authorization", "Bearer trv_pat_invalid")...))
 	})
-	t.Run("R-API-005 an invalid token is 401 also with anonymous access enabled, and a request without credentials is not", func(t *testing.T) {
-		patch := send(t, c, "PATCH", "/api/v1/settings/auth", map[string]any{"anonymousAccess": true},
-			append(e.admin.header(), "If-Match", "*", "Content-Type", mergePatch)...)
-		if patch.Status != http.StatusOK {
-			t.Fatalf("enable anonymous access: %d %s", patch.Status, patch.Body)
-		}
-		waitFor(t, "anonymous access on both replicas", 10*time.Second, func() bool {
-			a, b := send(t, c, "GET", "/api/v1/auth/login-options", nil), send(t, c, "GET", "/api/v1/auth/login-options", nil)
-			return a.JSON(t)["anonymousAccess"] == true && b.JSON(t)["anonymousAccess"] == true
-		})
+	t.Run("R-API-005 an invalid token is 401 although a request without credentials may be admitted as anonymous", func(t *testing.T) {
 		for range 4 {
-			check401(t, "invalid bearer, anonymous access on", send(t, c, "GET", whoami, nil, "Authorization", "Bearer trv_pat_invalid"))
+			check401(t, "invalid bearer", send(t, c, "GET", whoami, nil, "Authorization", "Bearer trv_pat_invalid"))
 		}
 	})
 }

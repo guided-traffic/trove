@@ -354,12 +354,13 @@ func (q *Queries) AuthzBuildProjectMembers(ctx context.Context) ([]AuthzBuildPro
 }
 
 const authzBuildProjects = `-- name: AuthzBuildProjects :many
-SELECT id::text AS id, key FROM project ORDER BY key
+SELECT id::text AS id, key, visibility FROM project ORDER BY key
 `
 
 type AuthzBuildProjectsRow struct {
-	ID  string
-	Key string
+	ID         string
+	Key        string
+	Visibility string
 }
 
 func (q *Queries) AuthzBuildProjects(ctx context.Context) ([]AuthzBuildProjectsRow, error) {
@@ -371,7 +372,7 @@ func (q *Queries) AuthzBuildProjects(ctx context.Context) ([]AuthzBuildProjectsR
 	items := []AuthzBuildProjectsRow{}
 	for rows.Next() {
 		var i AuthzBuildProjectsRow
-		if err := rows.Scan(&i.ID, &i.Key); err != nil {
+		if err := rows.Scan(&i.ID, &i.Key, &i.Visibility); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -383,20 +384,23 @@ func (q *Queries) AuthzBuildProjects(ctx context.Context) ([]AuthzBuildProjectsR
 }
 
 const authzBuildRepositories = `-- name: AuthzBuildRepositories :many
-SELECT r.id, r.key, r.class, r.format, r.config, r.project_id::text AS project_id, p.key AS project_key
+SELECT r.id, r.key, r.class, r.format, r.config, r.project_id::text AS project_id, p.key AS project_key,
+       r.visibility_artifacts, r.visibility_wiki
   FROM repositories r
   JOIN project p ON p.id = r.project_id
  WHERE r.lifecycle = 'active' ORDER BY r.id
 `
 
 type AuthzBuildRepositoriesRow struct {
-	ID         int64
-	Key        string
-	Class      string
-	Format     string
-	Config     json.RawMessage
-	ProjectID  string
-	ProjectKey string
+	ID                  int64
+	Key                 string
+	Class               string
+	Format              string
+	Config              json.RawMessage
+	ProjectID           string
+	ProjectKey          string
+	VisibilityArtifacts string
+	VisibilityWiki      string
 }
 
 // Every repository belongs to a project (Q-AUTHZ-206): the row names it by id and key.
@@ -417,6 +421,8 @@ func (q *Queries) AuthzBuildRepositories(ctx context.Context) ([]AuthzBuildRepos
 			&i.Config,
 			&i.ProjectID,
 			&i.ProjectKey,
+			&i.VisibilityArtifacts,
+			&i.VisibilityWiki,
 		); err != nil {
 			return nil, err
 		}

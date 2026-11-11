@@ -16,7 +16,7 @@ invalid one is a 401 that never falls through to a lower source or to anonymous:
 | 1 | `X-NuGet-ApiKey: <token>` or `<any>:<token>` | Only on a route that declares the API key (`Route.APIKey`: NuGet's push, delete, relist and symbol push) and only while `auth.clients.nuget_api_key_header` is on. The value, or its part after the last `:`, must pass the syntax step to be a credential; any other value (the placeholder `az`) is ignored and order 2 applies. A token there decides over `Authorization`, even of another principal. |
 | 2 | `Authorization: Bearer <token>` or `Basic base64(<any>:<token>)` | The value must be a trove token (prefix, length 57, base62, CRC-32). A JWT, an identity-provider token or a password, the break-glass password included, is refused at the syntax step without a database query. The Basic username is recorded and ignored. `auth.clients.basic.enabled: false` refuses Basic. Below `/v2/` a `Bearer` value with the prefix `trv_rgt_` is a registry token, verified as [oci-registry.md](oci-registry.md#verification) describes; the token service `/v2/_token` presents its credential to the stage itself. |
 | 3 | Session cookie `__Host-trv_session` | Only where the endpoint's surface holds `ui` and the path allows it (`/api/v1/` all methods, `/files/` GET HEAD PUT DELETE, `/api/<format>/` GET HEAD), and never on a route that declares the API key, whatever its method; CSRF is the session validator's. A replica without a session validator ignores the cookie. |
-| 4 | none | Anonymous only if the endpoint, `auth.anonymous.allowed` and the runtime switch `anonymousAccess` allow it, and never an unsafe method on `/api/v1/`; or a route that is always open or declared public. |
+| 4 | none | Anonymous if the endpoint admits requests without a credential (`auth.anonymous`, R-EP-010), and never an unsafe method on `/api/v1/`; or a route that is always open or declared public. What the anonymous subject then reads is decided by the visibility levels ([visibility.md](visibility.md)), not by the stage. |
 
 The path rules read two forms of the path (`rulePaths` in [stage.go](../../internal/auth/stage.go)). The rules that limit a
 request - the hard limit on an unsafe anonymous request to `/api/v1/`, the cookie's path rule of order 3 and the challenge -
@@ -126,8 +126,8 @@ never throttled.
 
 ## Principals, groups and the login seam
 
-Names are validated by the application and by `CHECK` constraints and triggers of migration 00007 (the built-in principals
-`anonymous` and `authenticated` cannot be changed or deleted, a membership, token or binding naming a principal of the wrong
+Names are validated by the application and by `CHECK` constraints and triggers of migration 00007 (the built-in principal
+`anonymous` cannot be changed or deleted and no grant, role, membership or owner record can name it; the principal `authenticated` is gone with migration 00075; a membership, token or binding naming a principal of the wrong
 kind is refused). The provisioner trusts the login flow for the identity (`iss`, `sub`), the mapped username and the
 group names; it never matches by username or e-mail: a taken username is `username_taken`, a pending link is completed once
 by a conditional update, two first logins on two replicas end with one user. A user disabled for any reason but dormancy is

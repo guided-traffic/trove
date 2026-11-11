@@ -117,14 +117,18 @@ func TestM1Migrations(t *testing.T) {
 		}
 	})
 
-	t.Run("R-AUTH-037 the built-in principals exist once and cannot be changed", func(t *testing.T) {
-		if n := scalar[int](t, admin, "SELECT count(*) FROM trove.principal WHERE kind IN ('anonymous', 'authenticated') AND name = kind"); n != 2 {
+	t.Run("R-AUTH-037 the built-in principal anonymous exists once and cannot be changed; authenticated is gone", func(t *testing.T) {
+		if n := scalar[int](t, admin, "SELECT count(*) FROM trove.principal WHERE kind = 'anonymous' AND name = kind AND id = '00000000-0000-0000-0000-000000000001'"); n != 1 {
 			t.Fatalf("built-in principals = %d", n)
+		}
+		if n := scalar[int](t, admin, "SELECT count(*) FROM trove.principal WHERE kind = 'authenticated' OR id = '00000000-0000-0000-0000-000000000002'"); n != 0 {
+			t.Fatalf("the principal authenticated still has %d rows", n)
 		}
 		wantState(t, admin, "23505", "INSERT INTO trove.principal (id, kind, name) VALUES (gen_random_uuid(), 'anonymous', 'anonymous')")
 		wantState(t, admin, "AI001", "DELETE FROM trove.principal WHERE kind = 'anonymous'")
-		wantState(t, admin, "AI001", "UPDATE trove.principal SET status = 'disabled' WHERE kind = 'authenticated'")
+		wantState(t, admin, "AI001", "UPDATE trove.principal SET status = 'disabled' WHERE kind = 'anonymous'")
 		wantState(t, admin, "23514", "INSERT INTO trove.principal (id, kind, name) VALUES (gen_random_uuid(), 'anonymous', 'other')")
+		wantState(t, admin, "23514", "INSERT INTO trove.principal (id, kind, name) VALUES (gen_random_uuid(), 'authenticated', 'authenticated')")
 	})
 
 	t.Run("R-AUTH-007 reserved and malformed names are refused per kind", func(t *testing.T) {
@@ -191,7 +195,7 @@ func TestM1Migrations(t *testing.T) {
 	})
 
 	t.Run("R-AUTH-040 the settings row exists from the start and there is only one", func(t *testing.T) {
-		if n := scalar[int](t, admin, "SELECT count(*) FROM trove.auth_settings WHERE singleton AND NOT anonymous_access"); n != 1 {
+		if n := scalar[int](t, admin, "SELECT count(*) FROM trove.auth_settings WHERE singleton AND NOT new_users_external"); n != 1 {
 			t.Fatalf("settings rows = %d", n)
 		}
 		wantState(t, admin, "23505", "INSERT INTO trove.auth_settings (singleton) VALUES (true)")

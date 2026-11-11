@@ -71,9 +71,9 @@ type Snapshot struct {
 // repoInfo is a repository as the index knows it.
 type repoInfo struct {
 	repoView
-	// requireAuth: anonymous requests are challenged whatever the grants say
-	// (R-AUTHZ-003).
-	requireAuth bool
+	// artifacts and wiki are the visibility levels of the two parts of the repository (R-AUTHZ-033, R-AUTHZ-034); a stored
+	// value that is no level reads as private, the most restrictive.
+	artifacts, wiki Level
 	// hide is the per-repository hideExistence: "inherit", "true" or "false".
 	hide string
 	// members and deployTarget are the keys of a virtual repository's members and
@@ -97,6 +97,8 @@ type repoInfo struct {
 // groups, with their role (Q-AUTHZ-207).
 type projectInfo struct {
 	id, key string
+	// level is the project's visibility level (R-AUTHZ-033); a repository's levels lie at most at it.
+	level   Level
 	members map[string]ProjectRole
 	// sources are the sources a role names in a decision, "role:<projectKey>:<role>" per role
 	// (R-AUTHZ-015, R-AUTHZ-029), built once so that a decision allocates none.
@@ -164,6 +166,23 @@ type Index struct {
 	memberships map[string][]membership
 	// policies and entries count what went in, for metrics and diagnostics.
 	policies int
+	// publicContent: the artifacts of some repository are public (PublicContent).
+	publicContent bool
+}
+
+// PublicContent reports whether the artifacts of some repository are `public`: the fact behind `publicContent` of
+// login-options and `anonymousReads` of a Bastion's handshake (R-AUTH-037, R-BAS-019). The default endpoint's ceiling
+// (R-EP-010) is the caller's to apply.
+func (x *Index) PublicContent() bool { return x.publicContent }
+
+// Levels reports the visibility levels of a repository's artifacts and wiki; ok is false for a repository the index does not
+// know. The Bastion's shape and the handlers' warnings read it (R-BAS-012, R-REPO-004).
+func (x *Index) Levels(key qname.Repo) (artifacts, wiki Level, ok bool) {
+	r := x.repos[key]
+	if r == nil {
+		return LevelPrivate, LevelPrivate, false
+	}
+	return r.artifacts, r.wiki, true
 }
 
 // Label returns the label of the index.
@@ -173,9 +192,8 @@ func (x *Index) Label() Label { return x.label }
 func (x *Index) Epoch() int64 { return x.label.AuthzEpoch }
 
 func parseRepoConfig(raw []byte) (c struct {
-	RequireAuthentication bool   `json:"requireAuthentication"`
-	HideExistence         string `json:"hideExistence"`
-	Remote                struct {
+	HideExistence string `json:"hideExistence"`
+	Remote        struct {
 		CacheFillAction string `json:"cacheFillAction"`
 	} `json:"remote"`
 	Local struct {
@@ -292,7 +310,8 @@ func BuildIndex(s *Snapshot, reg *catalog.Registry, log *slog.Logger) *Index {
 // four is skipped (fail closed).
 func (b *builder) addProjects(rows []q.AuthzBuildProjectsRow, members []q.AuthzBuildProjectMembersRow) {
 	for _, r := range rows {
-		pi := &projectInfo{id: r.ID, key: r.Key, members: map[string]ProjectRole{}}
+		level, _ := ParseLevel(r.Visibility)
+		pi := &projectInfo{id: r.ID, key: r.Key, level: level, members: map[string]ProjectRole{}}
 		for role := ProjectRoleReader; role <= ProjectRoleOwner; role++ {
 			pi.sources[role] = "role:" + r.Key + ":" + role.String()
 		}
@@ -312,8 +331,8 @@ func (b *builder) addProjects(rows []q.AuthzBuildProjectsRow, members []q.AuthzB
 			continue
 		}
 		if m.PrincipalAutoJoin {
-			// Every user is in an auto-join group, so its role would reach every user, which
-			// authenticated in a global policy says (R-AUTHZ-026, Q-AUTHZ-200); the member write
+			// Every user is in an auto-join group, so its role would reach every user
+			// (R-AUTHZ-026, Q-AUTHZ-200); the member write
 			// refuses one, so this group became auto-join later. Fail closed.
 			b.log.Error("authz: membership skipped, its group is an auto-join group", "project", pi.key, "principal", m.PrincipalID)
 			continue
@@ -346,11 +365,17 @@ func (b *builder) addRepositories(rows []q.AuthzBuildRepositoriesRow, members []
 		if k := targetKey[r.ID]; k != "" {
 			target = qname.Repo{Project: project, Key: k}
 		}
+		artifacts, _ := ParseLevel(r.VisibilityArtifacts)
+		wiki, _ := ParseLevel(r.VisibilityWiki)
+		wiki = min(wiki, artifacts) // the database holds the order; a state that breaks it never reads wider than the artifacts
 		info := &repoInfo{
-			repoView:    repoView{ID: r.ID, Name: qname.Repo{Project: r.ProjectKey, Key: r.Key}, Class: repository.Class(r.Class), Format: r.Format},
-			requireAuth: cfg.RequireAuthentication || !ok, // an unreadable document fails closed
-			hide:        cfg.HideExistence, members: members, deployTarget: target,
+			repoView:  repoView{ID: r.ID, Name: qname.Repo{Project: r.ProjectKey, Key: r.Key}, Class: repository.Class(r.Class), Format: r.Format},
+			artifacts: artifacts, wiki: wiki,
+			hide: cfg.HideExistence, members: members, deployTarget: target,
 			cacheFill: cfg.Remote.CacheFillAction, ownership: cfg.Local.PackageOwnership,
+		}
+		if artifacts == LevelPublic {
+			b.x.publicContent = true
 		}
 		if pi := b.projectByID[r.ProjectID]; pi != nil {
 			info.proj, info.projectID, info.project = pi, pi.id, pi.key
@@ -359,7 +384,7 @@ func (b *builder) addRepositories(rows []q.AuthzBuildRepositoriesRow, members []
 			info.hide = "inherit"
 		}
 		if !ok {
-			info.ownership = OwnershipEnforce // fails closed like requireAuth
+			info.ownership = OwnershipEnforce // an unreadable document fails closed
 		}
 		b.x.repos[info.Name] = info
 		b.byID[r.ID] = info
@@ -471,8 +496,7 @@ func (b *builder) addPolicy(p q.AuthzBuildPoliciesRow) {
 				continue
 			}
 			if e.PrincipalAutoJoin && p.ProjectID != "" {
-				// An auto-join group is every user: in a project policy it would stand in
-				// for authenticated, which a project policy never names (Q-AUTHZ-200).
+				// An auto-join group is every user: a project policy never names one (Q-AUTHZ-200).
 				b.log.Error("authz: entry skipped, a project policy names an auto-join group", "policy", p.Name, "principal", e.PrincipalName)
 				continue
 			}
@@ -606,7 +630,7 @@ func (x *Index) principalIDs(sub Subject) []string {
 	if sub.Anonymous {
 		return []string{AnonymousID}
 	}
-	out := make([]string, 0, len(sub.Groups)+3)
+	out := make([]string, 0, len(sub.Groups)+2)
 	add := func(id string) {
 		if id != "" {
 			out = append(out, id)
@@ -614,7 +638,7 @@ func (x *Index) principalIDs(sub Subject) []string {
 	}
 	switch kindOf(sub) {
 	case kindBastion:
-		return nil // a Bastion registration is no member of anything, authenticated included (R-BAS-004)
+		return nil // a Bastion registration is no member of anything (R-BAS-004)
 	case kindServiceAccount:
 		add(sub.ID)
 	case kindCI:
@@ -626,9 +650,6 @@ func (x *Index) principalIDs(sub Subject) []string {
 	}
 	for _, g := range sub.Groups {
 		add(g.ID)
-	}
-	if kindOf(sub) == kindUser {
-		out = append(out, AuthenticatedID)
 	}
 	return out
 }

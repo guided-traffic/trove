@@ -30,6 +30,10 @@ func (f *fakeScope) MayRead(repo qname.Repo, pkg, version string) bool {
 	return f.allow(pkg, version)
 }
 
+func (f *fakeScope) MayReadWiki(repo qname.Repo, pkg, version string) bool {
+	return f.MayRead(repo, pkg, version)
+}
+
 // VersionsByPath: the fixture's rows are decided by allow, which may look at the version.
 func (f *fakeScope) VersionsByPath(qname.Repo) bool { return true }
 

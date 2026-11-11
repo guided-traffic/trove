@@ -31,7 +31,7 @@ import (
 )
 
 const (
-	ociLocalKey  = "oci-e2e"      // requireAuthentication: true; the repository of the clients with credentials
+	ociLocalKey  = "oci-e2e"      // private; the repository of the clients with credentials
 	ociOpenKey   = "oci-e2e-open" // anonymous read: the repository a client pulls from without a login
 	ociPublisher = "e2e-oci"      // the publisher: read, deploy and delete on both repositories
 )
@@ -74,7 +74,7 @@ func buildOCIFixture(t testing.TB) (*ociFixture, error) {
 	_, _ = rand.Read(b)
 	fx := &ociFixture{adm: adm, run: hex.EncodeToString(b)}
 	for _, body := range []map[string]any{
-		{"key": ociLocalKey, "class": "local", "format": "oci", "requireAuthentication": true},
+		{"key": ociLocalKey, "class": "local", "format": "oci"},
 		{"key": ociOpenKey, "class": "local", "format": "oci"},
 	} {
 		r, err := adm.send(http.MethodPost, reposRoute, body)
@@ -401,7 +401,7 @@ func ociRemoteBody(t testing.TB, key string, settings map[string]any) map[string
 	for k, v := range settings {
 		remote[k] = v
 	}
-	return map[string]any{"key": key, "class": "remote", "format": "oci", "requireAuthentication": true, "remote": remote}
+	return map[string]any{"key": key, "class": "remote", "format": "oci", "remote": remote}
 }
 
 // ociUpstreamRepos are a local repository, a remote repository over the test upstream and a virtual one over both (the local member is the
@@ -415,10 +415,10 @@ func (fx *ociFixture) upstreamRepos(t testing.TB, purpose string, settings map[s
 		remote: fmt.Sprintf("oci-%s-%s-remote", purpose, fx.run),
 		all:    fmt.Sprintf("oci-%s-%s-all", purpose, fx.run),
 	}
-	fx.adm.do(http.MethodPost, reposRoute, map[string]any{"key": u.local, "class": "local", "format": "oci", "requireAuthentication": true}).want(t, "create "+u.local, 201)
+	fx.adm.do(http.MethodPost, reposRoute, map[string]any{"key": u.local, "class": "local", "format": "oci"}).want(t, "create "+u.local, 201)
 	fx.adm.do(http.MethodPost, reposRoute, ociRemoteBody(t, u.remote, settings)).want(t, "create "+u.remote, 201)
 	fx.adm.do(http.MethodPost, reposRoute, map[string]any{
-		"key": u.all, "class": "virtual", "format": "oci", "requireAuthentication": true,
+		"key": u.all, "class": "virtual", "format": "oci",
 		"virtual": map[string]any{"members": []string{u.local, u.remote}, "deployTarget": u.local},
 	}).want(t, "create "+u.all, 201)
 	ensurePolicy(t, fx.adm, "e2e-oci-"+purpose+"-"+fx.run, []string{u.remote, u.all}, [2]any{"sa:" + ociPublisher, []string{"read"}})

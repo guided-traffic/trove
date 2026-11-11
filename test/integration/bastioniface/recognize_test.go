@@ -42,10 +42,7 @@ func TestR_BAS_008_AForwardedRequestIsRecognizedOnlyByAValidBastionToken(t *test
 	e := newEnv(t)
 	s := e.newSite(siteOpts{endpointAnonymous: true})
 	bst := s.registered("partners", e.registration("partners"))
-	on := true
-	if _, err := s.setts.Update(context.Background(), admin, token.SettingsPatch{AnonymousAccess: &on, Expected: errs.AnyRevision}); err != nil {
-		t.Fatal(err)
-	}
+	s.setPublic(true)
 	sa := s.serviceAccount("acme-full")
 	caller := s.sat(sa).Secret
 	v := strconv.Itoa(iface.InterfaceVersion)
@@ -199,10 +196,7 @@ func TestR_BAS_017_TheRealClientAndTheBastionsHostReachTheMainInstallation(t *te
 			e := newEnv(t)
 			s := e.newSite(siteOpts{forwarded: family, additional: []string{"https://packages.example.com"}, endpointAnonymous: true, failures: 20})
 			bst := s.registered("partners", e.registration("partners"))
-			on := true
-			if _, err := s.setts.Update(context.Background(), admin, token.SettingsPatch{AnonymousAccess: &on, Expected: errs.AnyRevision}); err != nil {
-				t.Fatal(err)
-			}
+			s.setPublic(true)
 			v := strconv.Itoa(iface.InterfaceVersion)
 
 			rp := s.do(packageRequest("/api/npm/it/npm-all/lodash", append(bastionForwarded("203.0.113.7"), iface.HeaderAuthorization, "Bearer "+bst, iface.HeaderInterface, v)...))

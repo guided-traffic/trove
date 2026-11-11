@@ -19,6 +19,10 @@ const (
 	EventProjectMemberAdded   = "authz.project.member_added"
 	EventProjectMemberChanged = "authz.project.member_changed"
 	EventProjectMemberRemoved = "authz.project.member_removed"
+	// EventProjectVisibilityChanged is a change of a project's visibility level (R-AUTHZ-036): the level before and after and the
+	// repositories the change lowered. It takes access away when the level is lowered, so it carries the journal entry; the
+	// comparator replays only a level that is not higher than the current one.
+	EventProjectVisibilityChanged = "authz.project.visibility_changed"
 	// EventRepositoryMoved is the move of a repository to another project (R-REPO-060): the
 	// repository's ID, the source and the target project. It is recorded in the source project
 	// under the repository's former name and carries the journal entry.
@@ -49,6 +53,12 @@ func init() {
 	Register(EventType{Name: EventProjectMemberAdded, Category: CategoryAuthz, Mode: Transactional, Schema: member})
 	Register(EventType{Name: EventProjectMemberChanged, Category: CategoryAuthz, Mode: Transactional, Journal: JournalRevocation, Schema: member})
 	Register(EventType{Name: EventProjectMemberRemoved, Category: CategoryAuthz, Mode: Transactional, Journal: JournalRevocation, Schema: member})
+	visibility := `{"type":"object","properties":{"epoch":{"type":"integer"},"project":{"type":"string"},"projectId":{"type":"string"},` +
+		`"before":{"type":"string","enum":["private","internal","public"]},"after":{"type":"string","enum":["private","internal","public"]},` +
+		`"lowered":{"type":"array","maxItems":1000,"items":{"type":"object","properties":{"repository":{"type":"string"},` +
+		`"repositoryId":{"type":"string"},"before":{"type":"object"},"after":{"type":"object"}}}}},` +
+		`"required":["epoch","project","projectId","before","after"]}`
+	Register(EventType{Name: EventProjectVisibilityChanged, Category: CategoryAuthz, Mode: Transactional, Journal: JournalRevocation, Schema: visibility})
 	// from and to are the project keys, fromId and toId their IDs; repository is the key, which
 	// the move keeps.
 	moved := `{"type":"object","properties":{"epoch":{"type":"integer"},"repository":{"type":"string"},"repositoryId":{"type":"string"},` +

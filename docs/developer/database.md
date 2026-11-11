@@ -354,13 +354,14 @@ long reader).
 
 | Table | Purpose | Key columns other areas reference | Class |
 |---|---|---|---|
-| `principal` | Every principal kind in one table (R-AUTH-016): `user`, `group`, `service_account`, `anonymous`, `authenticated`, `ci_mapping` | `id uuid`, `kind`, `name` (`UNIQUE (kind, name)`), `status`; the two built-in rows are seeded. Every other table that names a principal references `principal (id)` | data (`CycleBreak created_by`) |
-| `app_user` | The user record | `principal_id` (PK, kind `user`), `origin`, `is_break_glass` (at most one true), `scim_external_id`, `last_interactive_auth_at`, `disabled_reason` | data |
+| `principal` | Every principal kind in one table (R-AUTH-016): `user`, `group`, `service_account`, `anonymous`, `ci_mapping`, `bastion` | `id uuid`, `kind`, `name` (`UNIQUE (kind, name)`), `status`; the built-in row of `anonymous` is seeded, the row and the kind `authenticated` went with 00075 (a trigger refuses any grant, role, membership or owner record that names `anonymous`, `AI009`). Every other table that names a principal references `principal (id)` | data (`CycleBreak created_by`) |
+| `app_user` | The user record | `principal_id` (PK, kind `user`), `origin`, `is_break_glass` (at most one true), `external` (R-AUTH-044, 00074), `scim_external_id`, `last_interactive_auth_at`, `disabled_reason` | data |
 | `user_group` | The group record | `principal_id` (PK, kind `group`), `auto_join`, `sync_detached` (set by the replay of a rename, cleared by `PATCH` with `false`; migration 00052), `origin` | data |
 | `group_membership` | Memberships with a source | `(group_id, member_id, source)`; member is a user or a service account; source `manual`, `auto`, `scim` or `oidc:<providerId>` | data |
 | `service_account` | The service account record | `principal_id` (PK, kind `service_account`) | data |
 | `api_token` | PAT, SAT and CIT; only `secret_sha256` is stored (R-AUTH-023) | `id`, `type`, `secret_sha256` (unique, 32 bytes), `principal_id`, `scope jsonb`, `expires_at`, `revoked_at`, `revocation_reason`, `rotated_from` and `derived_from` (plain uuid, Q-AUTH-15), `rejection_logged_at`, `expiry_notified_at`, `ci_context` | data |
-| `auth_settings` | The runtime authentication settings, one seeded row (R-AUTH-040); NULL means the YAML value | `anonymous_access`, `pat_*_ttl`, `sat_*_ttl`, `expiry_notice` | data |
+| `auth_settings` | The runtime authentication settings, one seeded row (R-AUTH-040); NULL means the YAML value | `new_users_external` (00074), `pat_*_ttl`, `sat_*_ttl`, `expiry_notice` | data |
+| `visibility_settings` | The installation's default visibility level, one seeded row (R-API-056, 00073) | `default_level` | data |
 
 `service_account_owner` (P1) and `scim` columns beyond `scim_external_id` come with their requirements.
 
@@ -400,8 +401,10 @@ builder the architecture test allows to assemble SQL text.
 Columns added to `repositories`: `lifecycle` (`active`, `deleting`), `config_version` (ETag, registered),
 `created_by`, `updated_by` (plain uuid), `last_activity_at`, and the constraint `repositories_key_dots`. The row of the
 change area `repo_config` is seeded. `claims_version` is added by 00015 (M2) and `project_id` by 00019 (projects, Q-REPO-11). The authorization
-settings of a repository (`cacheFillAction`, `packageOwnership`, `requireAuthentication`, `hideExistence`) stay in
-`config` (R-REPO-004).
+settings of a repository (`cacheFillAction`, `packageOwnership`, `hideExistence`) stay in
+`config` (R-REPO-004); its visibility levels are the columns `visibility_artifacts` and `visibility_wiki`, and a project's the column
+`project.visibility` (00073): the wiki never above the artifacts is a check constraint, the artifacts never above the project is a
+deferred constraint trigger that raises `AI008` at commit (R-AUTHZ-033).
 
 ### 00011 · Authorization (WP1.3)
 

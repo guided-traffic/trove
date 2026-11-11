@@ -118,10 +118,10 @@ func (fx *nugetFixture) upstreamRepos(t testing.TB, purpose string, settings map
 	remote := map[string]any{"url": "https://" + apiHost + "/v3/index.json", "extraHosts": []map[string]any{{"pattern": contentHost, "sendCredentials": false}}}
 	maps.Copy(remote, settings)
 	fx.adm.do(http.MethodPost, reposRoute, map[string]any{
-		"key": u.remote, "class": "remote", "format": "nuget", "requireAuthentication": true, "remote": remote,
+		"key": u.remote, "class": "remote", "format": "nuget", "remote": remote,
 	}).want(t, "create "+u.remote, 201)
 	fx.adm.do(http.MethodPost, reposRoute, map[string]any{
-		"key": u.all, "class": "virtual", "format": "nuget", "requireAuthentication": true,
+		"key": u.all, "class": "virtual", "format": "nuget",
 		"virtual": map[string]any{"members": []string{nugetAuthKey, u.remote}, "deployTarget": nugetAuthKey},
 	}).want(t, "create "+u.all, 201)
 	ensurePolicy(t, fx.adm, "e2e-nuget-"+purpose+"-"+fx.run, []string{u.remote, u.all}, [2]any{"sa:" + nugetPubSA, []string{"read"}})

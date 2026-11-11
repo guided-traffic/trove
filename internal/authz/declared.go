@@ -217,8 +217,8 @@ func resolveOne(ctx context.Context, tx meta.Tx, qs *q.Queries, b config.AuthzRo
 		return declaredBinding{}, fmt.Sprintf("%q is not a system role (unknown_role)", b.Role), nil
 	case !ok:
 		return declaredBinding{}, "names no principal or more than one", nil
-	case name == dbAnonymous || name == dbAuthenticated:
-		return declaredBinding{}, name + " is a built-in principal and holds no system role (role_not_allowed)", nil
+	case name == dbAnonymous || name == string(kindAuthenticated):
+		return declaredBinding{}, name + " cannot hold a system role (principal_not_allowed); a visibility level opens content", nil
 	}
 	d := declaredBinding{role: role, ref: Ref{Kind: principal.Kind(kind), Name: name}}
 	rows, err := qs.IdentityPrincipalByName(ctx, q.IdentityPrincipalByNameParams{Kind: kind, Name: name})

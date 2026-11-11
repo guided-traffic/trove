@@ -103,7 +103,7 @@ project's objects inside it. It does not repeat the model of permissions ([permi
   ([Q-AUTHZ-209](../spec/authorization.md#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones)).
   No prefix rule and no overlap check exist between keys and names.
 - **Principals of a project policy.** Users, groups, service accounts of no project or of the same project, CI mappings; never
-  `anonymous`, `authenticated`, an auto-join group or another project's service account (422 `principal_outside_project`; to an Owner
+  an auto-join group or another project's service account (422 `principal_outside_project`; to an Owner
   without a policies capability another project's account answers as an unknown one, `AsProjectOwner`). The database refuses a project
   service account in a role binding, a global entry or another project's entry (SQLSTATE `AI005`), and the grants of a project policy
   in the table of global grants (`AI004`).

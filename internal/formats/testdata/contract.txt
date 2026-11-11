@@ -175,6 +175,7 @@ formats.Host: method Resolver() Resolver
 formats.Host: method RestoredAt(context.Context) (time.Time, error)
 formats.Host: method Uploads() UploadSessions
 formats.Host: method Vulnerabilities() VulnerabilityData
+formats.Host: method WikiReadable(context.Context, *Request, Target) bool
 formats.Host: method Write(context.Context, *Request, func(Tx, PackageWriter) error) error
 formats.ID: alias catalog.ID
 formats.ImageScanned: method ImageEcosystem() string
@@ -418,6 +419,7 @@ formats.Route: field Name string
 formats.Route: field PackageParam string
 formats.Route: field Template string
 formats.Route: field TokenScheme bool
+formats.Route: field Wiki bool
 formats.Route: method ServesClass(Class) bool
 formats.RouteKind: method RequestKind() RequestKind
 formats.RouteKind: method ServesContent() bool
@@ -476,6 +478,7 @@ formats.StoredQuery: field Tags bool
 formats.Strategy: type uint8
 formats.Target: field Actions []Action
 formats.Target: field Package string
+formats.Target: field Part authz.Part
 formats.Target: field Path string
 formats.Target: field Version string
 formats.Tier: type uint8
@@ -515,6 +518,7 @@ formats.ViewData: field Licenses []string
 formats.ViewData: field Metadata map[string]any
 formats.ViewData: field Readme string
 formats.ViewData: field ReadmeFile string
+formats.ViewData: field WikiMetadata []string
 formats.ViewFields: method Has(ViewFields) bool
 formats.ViewFields: type uint8
 formats.ViewFind: field Keyword string
@@ -682,6 +686,7 @@ catalog.Facts: field ProbePath string
 catalog.Facts: field ProtocolBasePath string
 catalog.Facts: field RegistryRoot bool
 catalog.Facts: field SettingsSchema []byte
+catalog.Facts: field Wiki bool
 catalog.Facts: method Supports(Class) bool
 catalog.ID: type string
 catalog.Names: method Normalize(string) (string, bool)

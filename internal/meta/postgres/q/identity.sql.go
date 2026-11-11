@@ -560,7 +560,7 @@ func (q *Queries) IdentityGetServiceAccount(ctx context.Context, name string) ([
 
 const identityGetSettings = `-- name: IdentityGetSettings :many
 
-SELECT anonymous_access,
+SELECT new_users_external,
        coalesce(extract(epoch FROM pat_default_ttl), -1)::float8 AS pat_default_secs,
        coalesce(extract(epoch FROM pat_max_ttl), -1)::float8 AS pat_max_secs,
        coalesce(extract(epoch FROM sat_default_ttl), -1)::float8 AS sat_default_secs,
@@ -571,7 +571,7 @@ SELECT anonymous_access,
 `
 
 type IdentityGetSettingsRow struct {
-	AnonymousAccess  bool
+	NewUsersExternal bool
 	PatDefaultSecs   float64
 	PatMaxSecs       float64
 	SatDefaultSecs   float64
@@ -592,7 +592,7 @@ func (q *Queries) IdentityGetSettings(ctx context.Context) ([]IdentityGetSetting
 	for rows.Next() {
 		var i IdentityGetSettingsRow
 		if err := rows.Scan(
-			&i.AnonymousAccess,
+			&i.NewUsersExternal,
 			&i.PatDefaultSecs,
 			&i.PatMaxSecs,
 			&i.SatDefaultSecs,
@@ -2043,7 +2043,7 @@ func (q *Queries) IdentityOIDCMemberships(ctx context.Context, arg IdentityOIDCM
 const identityPrincipalByID = `-- name: IdentityPrincipalByID :many
 
 
-SELECT p.id::text AS id, p.kind, p.name, p.status, coalesce(u.is_break_glass, false) AS is_break_glass
+SELECT p.id::text AS id, p.kind, p.name, p.status, coalesce(u.is_break_glass, false) AS is_break_glass, coalesce(u.external, false) AS external
   FROM principal p LEFT JOIN app_user u ON u.principal_id = p.id
  WHERE p.id = $1::text::uuid
 `
@@ -2054,6 +2054,7 @@ type IdentityPrincipalByIDRow struct {
 	Name         string
 	Status       string
 	IsBreakGlass bool
+	External     bool
 }
 
 // Queries of the identity packages (internal/auth/principal, internal/auth/token;
@@ -2078,6 +2079,7 @@ func (q *Queries) IdentityPrincipalByID(ctx context.Context, id string) ([]Ident
 			&i.Name,
 			&i.Status,
 			&i.IsBreakGlass,
+			&i.External,
 		); err != nil {
 			return nil, err
 		}
@@ -2090,7 +2092,7 @@ func (q *Queries) IdentityPrincipalByID(ctx context.Context, id string) ([]Ident
 }
 
 const identityPrincipalByName = `-- name: IdentityPrincipalByName :many
-SELECT p.id::text AS id, p.kind, p.name, p.status, coalesce(u.is_break_glass, false) AS is_break_glass
+SELECT p.id::text AS id, p.kind, p.name, p.status, coalesce(u.is_break_glass, false) AS is_break_glass, coalesce(u.external, false) AS external
   FROM principal p LEFT JOIN app_user u ON u.principal_id = p.id
  WHERE p.kind = $1::text AND p.name = $2::text
 `
@@ -2106,6 +2108,7 @@ type IdentityPrincipalByNameRow struct {
 	Name         string
 	Status       string
 	IsBreakGlass bool
+	External     bool
 }
 
 func (q *Queries) IdentityPrincipalByName(ctx context.Context, arg IdentityPrincipalByNameParams) ([]IdentityPrincipalByNameRow, error) {
@@ -2123,6 +2126,7 @@ func (q *Queries) IdentityPrincipalByName(ctx context.Context, arg IdentityPrinc
 			&i.Name,
 			&i.Status,
 			&i.IsBreakGlass,
+			&i.External,
 		); err != nil {
 			return nil, err
 		}
@@ -2488,6 +2492,38 @@ type IdentitySetUserDisabledParams struct {
 func (q *Queries) IdentitySetUserDisabled(ctx context.Context, arg IdentitySetUserDisabledParams) error {
 	_, err := q.db.Exec(ctx, identitySetUserDisabled, arg.Reason, arg.ID)
 	return err
+}
+
+const identitySetUserExternal = `-- name: IdentitySetUserExternal :many
+UPDATE app_user SET external = $1::boolean
+ WHERE principal_id = $2::text::uuid AND external IS DISTINCT FROM $1::boolean
+RETURNING principal_id::text AS id
+`
+
+type IdentitySetUserExternalParams struct {
+	External bool
+	ID       string
+}
+
+// The external flag of a user (R-AUTH-044); no row back: the flag already has the value.
+func (q *Queries) IdentitySetUserExternal(ctx context.Context, arg IdentitySetUserExternalParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, identitySetUserExternal, arg.External, arg.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const identityTokenBySecret = `-- name: IdentityTokenBySecret :many
@@ -2888,7 +2924,7 @@ func (q *Queries) IdentityUpdateServiceAccount(ctx context.Context, arg Identity
 
 const identityUpdateSettings = `-- name: IdentityUpdateSettings :many
 UPDATE auth_settings
-   SET anonymous_access = $1::boolean,
+   SET new_users_external = $1::boolean,
        pat_default_ttl = CASE WHEN $2::float8 < 0 THEN NULL ELSE make_interval(secs => $2::float8) END,
        pat_max_ttl = CASE WHEN $3::float8 < 0 THEN NULL ELSE make_interval(secs => $3::float8) END,
        sat_default_ttl = CASE WHEN $4::float8 < 0 THEN NULL ELSE make_interval(secs => $4::float8) END,
@@ -2900,7 +2936,7 @@ RETURNING revision
 `
 
 type IdentityUpdateSettingsParams struct {
-	AnonymousAccess  bool
+	NewUsersExternal bool
 	PatDefaultSecs   float64
 	PatMaxSecs       float64
 	SatDefaultSecs   float64
@@ -2914,7 +2950,7 @@ type IdentityUpdateSettingsParams struct {
 // no returned row means the revision moved on.
 func (q *Queries) IdentityUpdateSettings(ctx context.Context, arg IdentityUpdateSettingsParams) ([]int64, error) {
 	rows, err := q.db.Query(ctx, identityUpdateSettings,
-		arg.AnonymousAccess,
+		arg.NewUsersExternal,
 		arg.PatDefaultSecs,
 		arg.PatMaxSecs,
 		arg.SatDefaultSecs,

@@ -249,8 +249,10 @@ func TestR_AUTH_033_TheAPIKeyRule(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := newStage(c.ft, Options{APIKeyHeader: true, Settings: fakeAnon{on: tc.anonymous}})
-			res, err := s.Authenticate(req(tc.method, tc.path, tc.hdr...), keyRules(nil))
+			s := newStage(c.ft, Options{APIKeyHeader: true})
+			ep := keyRules(nil)
+			ep.Anonymous = tc.anonymous
+			res, err := s.Authenticate(req(tc.method, tc.path, tc.hdr...), ep)
 			if tc.want.status != 0 {
 				e := wantErr(t, err, tc.want.status, tc.want.code)
 				if strings.HasPrefix(tc.path, "/api/nuget/") && e.Challenge != `Basic realm="trove"` {
@@ -292,7 +294,9 @@ func TestR_AUTH_033_TheAPIKeySwitch(t *testing.T) {
 	s := newStage(c.ft, Options{APIKeyHeader: false})
 	var asked atomic.Int64
 	const push = "/api/nuget/nuget-local/package"
-	_, err := s.Authenticate(req("PUT", push, HeaderAPIKey, c.pat), keyRules(&asked))
+	closed := keyRules(&asked)
+	closed.Anonymous = false
+	_, err := s.Authenticate(req("PUT", push, HeaderAPIKey, c.pat), closed)
 	wantErr(t, err, 401, errs.CodeCredentialsRequired)
 	res, err := s.Authenticate(req("PUT", push, HeaderAPIKey, c.revoked, "Authorization", basic("ci", c.bobPAT)), keyRules(&asked))
 	if err != nil || res.Principal.Name != "bob" || res.Credential.Method != MethodBasic {
@@ -330,10 +334,12 @@ func TestR_NUGET_012_NoSessionCookieOnAnAPIKeyRoute(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			validated.Store(0)
-			s := newStage(c.ft, Options{APIKeyHeader: true, Sessions: sv, Settings: fakeAnon{on: tc.anonymous}})
+			s := newStage(c.ft, Options{APIKeyHeader: true, Sessions: sv})
 			r := req(tc.method, tc.path)
 			r.AddCookie(cookie)
-			res, err := s.Authenticate(r, keyRules(nil))
+			ep := keyRules(nil)
+			ep.Anonymous = tc.anonymous
+			res, err := s.Authenticate(r, ep)
 			if tc.wantCode != "" {
 				wantErr(t, err, 401, tc.wantCode)
 			} else if err != nil {
@@ -401,7 +407,9 @@ func TestR_AUTH_033_AnAPIKeyFollowsTheRulesOfABearerToken(t *testing.T) {
 		lim := NewLocalLimiter(2, time.Minute, nil, nil)
 		s := newStage(c.ft, Options{APIKeyHeader: true, Limiter: lim, ClientAddr: clientAddr("203.0.113.9")})
 		for range 5 {
-			_, err := s.Authenticate(req("PUT", push, HeaderAPIKey, "az"), keyRules(nil))
+			ep := keyRules(nil)
+			ep.Anonymous = false
+			_, err := s.Authenticate(req("PUT", push, HeaderAPIKey, "az"), ep)
 			wantErr(t, err, 401, errs.CodeCredentialsRequired)
 		}
 		if lim.Exceeded(context.Background(), "203.0.113.9") {
@@ -466,7 +474,7 @@ func TestR_AUTH_033_AnAPIKeyFollowsTheRulesOfABearerToken(t *testing.T) {
 // nothing for the API key (Q-AUTH-186).
 func TestR_NUGET_012_TheRouteIsAskedOnlyWhenACredentialDependsOnIt(t *testing.T) {
 	c := newAPIKeyCast(t)
-	s := newStage(c.ft, Options{APIKeyHeader: true, Sessions: fakeSessions{info: session.Info{ID: "s1", Principal: alice}}, Settings: fakeAnon{on: true}})
+	s := newStage(c.ft, Options{APIKeyHeader: true, Sessions: fakeSessions{info: session.Info{ID: "s1", Principal: alice}}})
 	cookie := &http.Cookie{Name: SessionCookie, Value: "sess"}
 	for _, tc := range []struct {
 		name         string

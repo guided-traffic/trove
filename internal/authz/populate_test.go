@@ -1,7 +1,6 @@
 package authz
 
 import (
-	"context"
 	"testing"
 
 	"github.com/guided-traffic/trove/internal/config"
@@ -11,8 +10,7 @@ import (
 // populateFixture is the remote side of the team example: npmjs fills on read,
 // npm-frozen is a frozen mirror that fills on deploy, npm-internal is local, and
 // npm-all is the virtual repository over all three. The developers read
-// everything, the CI service account may also deploy into the frozen mirror, and
-// anonymous reads npmjs.
+// everything, and the CI service account may also deploy into the frozen mirror.
 func populateFixture() *fixture {
 	f := newFixture().
 		repo("npmjs", "remote", "npm", `{"remote":{"cacheFillAction":"read"}}`).
@@ -22,7 +20,6 @@ func populateFixture() *fixture {
 		repo("npm-all", "virtual", "npm", `{"virtual":{"members":["npm-internal","npmjs","npm-frozen"],"deployTarget":"npm-internal"}}`)
 	f.policy(policyDef{name: "readers", selectors: []string{"npmjs", "npm-frozen", "npm-odd", "npm-internal", "npm-all"}, entries: map[string][]string{idDevs: {"read"}, idBot: {"read"}}})
 	f.policy(policyDef{name: "release", selectors: []string{"npm-frozen"}, entries: map[string][]string{idBot: {"deploy"}}})
-	f.policy(policyDef{name: "anonymous-mirror", selectors: []string{"npmjs"}, entries: map[string][]string{AnonymousID: {"read"}}})
 	f.bind(RoleAdmin, idOps)
 	return f
 }
@@ -36,8 +33,7 @@ func onFillingEP(s Subject, ep string, fills bool) Subject {
 }
 
 func TestR_AUTHZ_008_PopulateCheck(t *testing.T) {
-	anonymousOn := func(o *Options) { o.AnonymousAccess = func(context.Context) (bool, error) { return true, nil } }
-	e := newTestEngine(t, populateFixture(), anonymousOn)
+	e := newTestEngine(t, populateFixture(), nil)
 	idx, err := e.Begin(t.Context(), bobSub)
 	if err != nil {
 		t.Fatal(err)
@@ -62,7 +58,7 @@ func TestR_AUTHZ_008_PopulateCheck(t *testing.T) {
 		{"a caller who may not read gets the read's refusal, 404", bearer(carolSub), "npmjs", DenyHidden, ReasonNoGrant, Read},
 		{"a local repository has no upstream to fill from", bearer(bobSub), "npm-internal", DenyVisible, ReasonPopulate, ""},
 		{"a cacheFillAction that names no action fills for nobody", bearer(adminSub), "npm-odd", DenyVisible, ReasonPopulate, ""},
-		{"anonymous may populate a remote that fills on read once anonymous access is on", anonSub, "npmjs", Allow, ReasonAllowGrant, ""},
+		{"anonymous populates nothing until a visibility level admits it", anonSub, "npmjs", DenyUnauthenticated, ReasonUnauthenticated, ""},
 	}
 	for _, tc := range cases {
 		t.Run("R-AUTHZ-008 "+tc.name, func(t *testing.T) {
@@ -79,12 +75,6 @@ func TestR_AUTHZ_008_PopulateCheck(t *testing.T) {
 		d := e.MayPopulateOn(t.Context(), idx, session(bobSub), read("npmjs", "left-pad", ""))
 		if ee, ok := errs.As(d.Err()); !ok || ee.Status() != 403 || ee.Code != errs.CodePopulateNotPermitted {
 			t.Fatalf("err = %v", d.Err())
-		}
-	})
-	t.Run("R-AUTHZ-008 anonymous does not populate while anonymous access is off", func(t *testing.T) {
-		off := newTestEngine(t, populateFixture(), nil)
-		if d := off.MayPopulateOn(t.Context(), idx, anonSub, read("npmjs", "left-pad", "")); d.Outcome != DenyUnauthenticated {
-			t.Fatalf("decision %+v", d)
 		}
 	})
 	t.Run("R-AUTHZ-029 an allowed populate names the grants that allowed it", func(t *testing.T) {

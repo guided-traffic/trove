@@ -1315,6 +1315,7 @@ type Route struct {
 	PackageParam string // the placeholder of Params that holds the package name the route acts on ("name" for OCI), "" for none; the core reads the package through it
 	APIKey   bool     // the route accepts a credential in the format's API-key header besides Authorization (NuGet X-NuGet-ApiKey, R-NUGET-012); examined only there, first (Q-ARCH-266)
 	TokenScheme bool  // the route accepts "Authorization: Token <trove token>", the scheme the Galaxy clients send (R-ANS-006); examined only there, from the dispatcher's own match (Q-ANS-4, ADR-191)
+	Wiki     bool     // the route serves only wiki content (R-AUTHZ-034): the dispatcher's coarse check decides it with the part wiki; kit check 15 requires the kind Metadata or Computed and the action read
 }
 
 // ServesClass reports whether the route serves repositories of a class (Classes empty: every class).
@@ -1377,6 +1378,7 @@ func (rq *Request) RepoRef() RepoRef
 type Target struct {
 	Package, Version, Path string // normalized; all empty is the repository level
 	Actions                []Action
+	Part                   authz.Part // PartWiki: Authorize refuses it as a read of the wiki (R-AUTHZ-034); the zero value is the artifacts
 }
 
 type PathKind uint8
@@ -1827,6 +1829,7 @@ type (
 		Keywords    []string
 		Licenses    []string
 		HasReadme   bool
+		WikiMetadata []string // the members of Metadata that are wiki content; the core drops them, and the README, for a caller who may not read the wiki (R-API-058)
 		Metadata    map[string]any
 		Readme      string
 		ReadmeFile  string
@@ -2013,6 +2016,10 @@ type Host interface {
 	// refusal of R-AUTHZ-016, or nil. The host completes the coordinate and applies the repository's
 	// include and exclude patterns (R-REPO-005) to the package name or the path.
 	Authorize(ctx context.Context, rq *Request, t Target) error
+	// WikiReadable reports whether rq.Subject may read the wiki of t's package (and version) in rq.Repo, on rq.Index
+	// (authz.Decider.WikiReadableOn). It is a question: nothing is audited or counted. A handler asks it before it puts a wiki member
+	// into a document whose artifacts it serves, and leaves the member out on false (R-AUTHZ-034).
+	WikiReadable(ctx context.Context, rq *Request, t Target) bool
 	// PathsAllowed decides one action for many canonical paths of the request's repository for the request's subject, on the index the
 	// request decides on, and reports per path whether it is held: the listing form of Authorize, with the coordinate of each path completed
 	// by the format's Classify, the repository's include and exclude patterns and (remote) the refusal of a claimed name applied as Authorize applies them, and no audit event. The filtering of a list and the checks of a cascade use it; the request's own target

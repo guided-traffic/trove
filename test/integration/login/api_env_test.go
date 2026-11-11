@@ -47,12 +47,11 @@ func (e *env) apiHandler(name string, db *postgres.DB, changes *cluster.Changes,
 		MaxActive: config.AuthTokenMax{PAT: 50, SAT: 20},
 	}
 	authCfg.Tokens = tokenCfg
-	authCfg.Anonymous = config.AuthAnonymous{Allowed: true}
 	authCfg.Clients = config.AuthClients{Basic: config.AuthClientBasic{Enabled: true}}
 	gate := principal.Gate{Fresh: changes, Bound: 2 * time.Second, Metrics: metrics}
 	principals := principal.NewStore(principal.StoreOptions{DB: db, Cache: caches, Gate: gate, SafetyTTL: tokenCfg.CacheTTL})
 	settings := token.NewSettingsStore(token.SettingsOptions{
-		DB: db, Notifier: changes, Recorder: e.audit, Cache: caches, Gate: gate, Tokens: tokenCfg, Anonymous: authCfg.Anonymous,
+		DB: db, Notifier: changes, Recorder: e.audit, Cache: caches, Gate: gate, Tokens: tokenCfg,
 	})
 	tokens := token.NewService(token.ServiceOptions{
 		DB: db, Notifier: changes, Recorder: e.audit, Principals: principals, Settings: settings, Cache: caches, Gate: gate,
@@ -60,7 +59,7 @@ func (e *env) apiHandler(name string, db *postgres.DB, changes *cluster.Changes,
 	})
 	manager := principal.NewManager(principal.ManagerOptions{DB: db, Notifier: changes, Recorder: e.audit, BreakGlassName: authCfg.BreakGlass.Username})
 	stage := auth.New(auth.Options{
-		Tokens: tokens, Uses: tokens, Sessions: store, Principals: principals, Settings: settings,
+		Tokens: tokens, Uses: tokens, Sessions: store, Principals: principals,
 		Limiter:      auth.NewLocalLimiter(300, time.Minute, nil, nil),
 		ClientAddr:   func(r *http.Request) netip.Addr { return httpserver.InfoFrom(r.Context()).Client },
 		BasicEnabled: true, Metrics: metrics, Log: quiet,

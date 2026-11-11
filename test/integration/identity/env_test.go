@@ -391,7 +391,7 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	gate := principal.Gate{Fresh: r.fresh, Bound: revocationBound, Metrics: metrics}
 	r.principals = principal.NewStore(principal.StoreOptions{DB: r.db, Cache: r.caches, Gate: gate, SafetyTTL: r.tokenCfg.CacheTTL})
 	r.settings = token.NewSettingsStore(token.SettingsOptions{
-		DB: r.db, Notifier: r.changes, Recorder: r.recorder, Cache: r.caches, Gate: gate, Tokens: r.tokenCfg, Anonymous: config.AuthAnonymous{Allowed: true},
+		DB: r.db, Notifier: r.changes, Recorder: r.recorder, Cache: r.caches, Gate: gate, Tokens: r.tokenCfg,
 	})
 	var recent token.RecentTokens
 	if !o.noRecent {
@@ -430,7 +430,7 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 		limiter = auth.NewLocalLimiter(300, time.Minute, nil, nil)
 	}
 	r.stage = auth.New(auth.Options{
-		Tokens: r.tokens, Uses: r.tokens, Principals: r.principals, Settings: r.settings, Limiter: limiter, BasicEnabled: true, Metrics: metrics,
+		Tokens: r.tokens, Uses: r.tokens, Principals: r.principals, Limiter: limiter, BasicEnabled: true, Metrics: metrics,
 		ClientAddr: func(*http.Request) netip.Addr { return netip.MustParseAddr("203.0.113.7") }, Log: quiet,
 	})
 	return r

@@ -13,9 +13,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth/principal"
-	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/bastion/iface"
-	"github.com/guided-traffic/trove/internal/errs"
 )
 
 // bastionClient is the Bastion's side of the feed: it applies every ID once and keeps the cursor.
@@ -195,8 +193,8 @@ func TestR_BAS_015_AnUnpublishNamesTheRepositoryAndEveryVirtualRepositoryIncludi
 }
 
 // TestR_BAS_015_TheRealEventsOfTheIdentityAndSettingsAreMapped: events written by the real services, not by the
-// test: a group member removed (the member is named in the event, the entry carries the ID), a user disabled, and a
-// switch of anonymous access off, which yields a settings and a grants entry with the IDs of one event.
+// test: a group member removed (the member is named in the event, the entry carries the ID) and a user disabled.
+// The settings and grants entries of a lowered level are the project service's events (work package 1e).
 func TestR_BAS_015_TheRealEventsOfTheIdentityAndSettingsAreMapped(t *testing.T) {
 	s, _, bst := feedSite(t, siteOpts{})
 	b := s.bastionClient(bst)
@@ -223,20 +221,12 @@ func TestR_BAS_015_TheRealEventsOfTheIdentityAndSettingsAreMapped(t *testing.T) 
 	if err := s.manager.DisableUser(ctx, admin, "alice", principal.DisableOptions{Reason: "admin"}); err != nil {
 		t.Fatal(err)
 	}
-	// Switching anonymous access on only widens: a settings entry, so that the Bastion handshakes again.
-	// Switching it off narrows: the same event also yields a grants entry.
-	on, off := true, false
-	for _, v := range []*bool{&on, &off} {
-		if _, err := s.setts.Update(ctx, admin, token.SettingsPatch{AnonymousAccess: v, Expected: errs.AnyRevision}); err != nil {
-			t.Fatal(err)
-		}
-	}
 	all, _ := b.poll(0)
 	var kinds []iface.FeedKind
 	for _, e := range all {
 		kinds = append(kinds, e.Kind)
 	}
-	want := []iface.FeedKind{iface.FeedPrincipal, iface.FeedPrincipal, iface.FeedSettings, iface.FeedSettings, iface.FeedGrants}
+	want := []iface.FeedKind{iface.FeedPrincipal, iface.FeedPrincipal}
 	if !slices.Equal(kinds, want) {
 		t.Fatalf("kinds = %v, want %v: %+v", kinds, want, all)
 	}
@@ -247,9 +237,6 @@ func TestR_BAS_015_TheRealEventsOfTheIdentityAndSettingsAreMapped(t *testing.T) 
 	}
 	if !slices.Equal(all[1].Principals, []string{alice.ID}) {
 		t.Errorf("the disabled user = %v", all[1].Principals)
-	}
-	if all[4].ID != all[3].ID+":1" {
-		t.Errorf("the second entry of one event has the ID %q, want %q", all[4].ID, all[3].ID+":1")
 	}
 	for _, e := range all {
 		if e.Tokens != nil && e.Kind != iface.FeedToken {
@@ -293,9 +280,9 @@ func TestR_BAS_015_AnEventWithTwoEntriesIsNeverSplit(t *testing.T) {
 	s, e, bst := feedSite(t, siteOpts{maxPage: 10})
 	b := s.bastionClient(bst)
 	b.cursor = "t:" + time.Now().Add(-time.Minute).UTC().Format(time.RFC3339Nano)
-	off := `{"before":{"anonymousAccess":true},"after":{"anonymousAccess":false}}`
-	first := e.journaled(audit.EventSettingsAuthChanged, 3*time.Second, "", "", off)
-	second := e.journaled(audit.EventSettingsAuthChanged, 2*time.Second, "", "", off)
+	off := `{"before":"public","after":"private"}`
+	first := e.journaled(audit.EventProjectVisibilityChanged, 3*time.Second, "", "", off)
+	second := e.journaled(audit.EventProjectVisibilityChanged, 2*time.Second, "", "", off)
 	ans, _ := b.read(b.cursor, 1)
 	// A limit of 1 takes the first event whole: both its entries, then more.
 	if !slices.Equal(ids(ans.Entries), []string{first, first + ":1"}) || !ans.More {

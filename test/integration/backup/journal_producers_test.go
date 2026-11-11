@@ -66,7 +66,7 @@ func newIdentity(t *testing.T, s *twinSide) identity {
 		BST: config.AuthTokenBST{DefaultTTL: 24 * time.Hour, MaxTTL: 48 * time.Hour}, MaxActive: config.AuthTokenMax{PAT: 50, SAT: 20, BST: 3},
 	}
 	principals := principal.NewStore(principal.StoreOptions{DB: s.db, Cache: caches, Gate: gate, SafetyTTL: cfg.CacheTTL})
-	settings := token.NewSettingsStore(token.SettingsOptions{DB: s.db, Notifier: s.changes, Recorder: s.rec, Cache: caches, Gate: gate, Tokens: cfg, Anonymous: config.AuthAnonymous{Allowed: true}})
+	settings := token.NewSettingsStore(token.SettingsOptions{DB: s.db, Notifier: s.changes, Recorder: s.rec, Cache: caches, Gate: gate, Tokens: cfg})
 	tokens := token.NewService(token.ServiceOptions{
 		DB: s.db, Notifier: s.changes, Recorder: s.rec, Principals: principals, Settings: settings, Cache: caches, Gate: gate, Tokens: cfg, Metrics: metrics, Log: quietLog,
 	})

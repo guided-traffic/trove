@@ -52,7 +52,8 @@ func feedActions() []string {
 		audit.EventCIIssuerUpdated, audit.EventCIIssuerDisabled, audit.EventCIIssuerDeleted,
 		audit.EventCIMappingUpdated, audit.EventCIMappingDisabled, audit.EventCIMappingDeleted,
 		"endpoint.exposure.updated", "endpoint.exposure.deleted",
-		audit.EventSettingsAuthChanged, eventRepositoryMoved, eventProjectMemberRemoved, eventProjectMemberChanged,
+		audit.EventSettingsAuthChanged, audit.EventProjectVisibilityChanged, audit.EventUserExternalChanged,
+		eventRepositoryMoved, eventProjectMemberRemoved, eventProjectMemberChanged,
 		audit.EventRepositoryDisabled, eventRepositoryDeleted, audit.EventRepositoryNarrowed, eventClaimsChanged,
 		audit.EventNPMUnpublish, audit.EventPackageDeleted,
 		audit.EventVulnFindingStatusChanged, audit.EventVulnFindingReopened,
@@ -152,13 +153,10 @@ type detailsDoc struct {
 	// carry the member shape it differently.
 	Added json.RawMessage `json:"added"`
 	// Block is "set" in the details of a finding event that set a download block (R-VULN-013).
-	Block  string `json:"block"`
-	Before *struct {
-		AnonymousAccess *bool `json:"anonymousAccess"`
-	} `json:"before"`
-	After *struct {
-		AnonymousAccess *bool `json:"anonymousAccess"`
-	} `json:"after"`
+	Block string `json:"block"`
+	// Before and After are the old and the new value of a change event (a level, a flag).
+	Before json.RawMessage `json:"before"`
+	After  json.RawMessage `json:"after"`
 }
 
 // mapper turns one stored event and its parsed details into the entries it yields.
@@ -176,6 +174,8 @@ var mappers = sync.OnceValue(func() map[string]mapper {
 		"endpoint.exposure.updated":         mapExposure,
 		"endpoint.exposure.deleted":         mapExposure,
 		audit.EventSettingsAuthChanged:      mapSettings,
+		audit.EventProjectVisibilityChanged: mapVisibility,
+		audit.EventUserExternalChanged:      mapExternal,
 		audit.EventRepositoryNarrowed:       mapRepository,
 		eventClaimsChanged:                  mapRepository,
 		audit.EventNPMUnpublish:             mapWithdrawal,
@@ -245,13 +245,42 @@ func mapExposure(_ FeedEvent, d *detailsDoc, defaultEndpoint string) []rawEntry 
 	return grantsEntry()
 }
 
-func mapSettings(_ FeedEvent, d *detailsDoc, _ string) []rawEntry {
+// mapSettings: the Bastion asks the handshake again (Q-BAS-150); no setting of settings.auth.changed narrows what a Bastion
+// holds.
+func mapSettings(FeedEvent, *detailsDoc, string) []rawEntry {
+	return []rawEntry{{kind: iface.FeedSettings}}
+}
+
+// mapVisibility: the Bastion asks the handshake for anonymousReads again, and drops what it kept when the level was lowered
+// (R-AUTHZ-036, R-BAS-015).
+func mapVisibility(_ FeedEvent, d *detailsDoc, _ string) []rawEntry {
 	out := []rawEntry{{kind: iface.FeedSettings}}
-	if d.After != nil && d.After.AnonymousAccess != nil && !*d.After.AnonymousAccess &&
-		(d.Before == nil || d.Before.AnonymousAccess == nil || *d.Before.AnonymousAccess) {
-		out = append(out, rawEntry{kind: iface.FeedGrants})
+	var before, after string
+	if json.Unmarshal(d.Before, &before) != nil || json.Unmarshal(d.After, &after) != nil || levelRank(after) < levelRank(before) {
+		out = append(out, rawEntry{kind: iface.FeedGrants}) // an unreadable pair is read as a lowering: it drops answers, never keeps one
 	}
 	return out
+}
+
+// levelRank orders the visibility levels from the most restrictive; an unknown level is the most open, so that a pair that
+// does not read never counts as a raise.
+func levelRank(l string) int {
+	switch l {
+	case "private":
+		return 0
+	case "internal":
+		return 1
+	}
+	return 2
+}
+
+// mapExternal: a user flagged external is dropped from what a Bastion keeps for it; clearing the flag only widens (R-AUTH-044).
+func mapExternal(ev FeedEvent, d *detailsDoc, _ string) []rawEntry {
+	var after bool
+	if json.Unmarshal(d.After, &after) == nil && !after {
+		return nil
+	}
+	return mapPrincipal(ev, d, "")
 }
 
 func mapRepository(ev FeedEvent, d *detailsDoc, _ string) []rawEntry {
@@ -276,8 +305,7 @@ func mapBlock(ev FeedEvent, d *detailsDoc, defaultEndpoint string) []rawEntry {
 }
 
 // mapEvent maps one audit event to the entries it yields (the table of R-BAS-015): none for an event that
-// bounds writes or only widens access, one for most, two for settings.auth.changed that switched anonymous
-// access off. An event whose target cannot be read yields a grants entry, which drops every answer: the
+// bounds writes or only widens access, one for most. An event whose target cannot be read yields a grants entry, which drops every answer: the
 // conservative reading never keeps an answer the event may have narrowed. The one exception is a withdrawal
 // without a repository, which yields none (the caller logs it).
 func mapEvent(ev FeedEvent, defaultEndpoint string) []rawEntry {

@@ -364,7 +364,7 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	gate := principal.Gate{Fresh: r.changes, Bound: revocationBound, Metrics: metrics}
 	r.principals = principal.NewStore(principal.StoreOptions{DB: r.db, Cache: r.caches, Gate: gate, SafetyTTL: cfg.CacheTTL})
 	r.settings = token.NewSettingsStore(token.SettingsOptions{
-		DB: r.db, Notifier: r.changes, Recorder: rec, Cache: r.caches, Gate: gate, Tokens: cfg, Anonymous: config.AuthAnonymous{Allowed: true},
+		DB: r.db, Notifier: r.changes, Recorder: rec, Cache: r.caches, Gate: gate, Tokens: cfg,
 	})
 	caps := map[string]bool{}
 	for _, c := range authz.Capabilities() {
@@ -383,7 +383,7 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	})
 	r.auth = bastionAuth{bastionmain.NewAuthenticator(r.tokens)}
 	r.stage = auth.New(auth.Options{
-		Tokens: r.tokens, Uses: r.tokens, Principals: r.principals, Settings: r.settings, Limiter: auth.NewLocalLimiter(300, time.Minute, nil, nil),
+		Tokens: r.tokens, Uses: r.tokens, Principals: r.principals, Limiter: auth.NewLocalLimiter(300, time.Minute, nil, nil),
 		BasicEnabled: true, APIKeyHeader: true, Metrics: metrics, ClientAddr: func(*http.Request) netip.Addr { return netip.MustParseAddr("203.0.113.7") }, Log: quiet,
 	})
 

@@ -175,7 +175,7 @@ func TestDocumentMembers(t *testing.T) {
 			t.Fatal(err)
 		}
 		cfg, _ := d.marshalConfig()
-		want := `{"description":"","adminNotes":"","includePatterns":[],"excludePatterns":[],"disabled":false,"requireAuthentication":false,"hideExistence":"inherit"}`
+		want := `{"description":"","adminNotes":"","includePatterns":[],"excludePatterns":[],"disabled":false,"hideExistence":"inherit"}`
 		if string(cfg) != want {
 			t.Fatalf("config = %s\nwant     %s", cfg, want)
 		}
@@ -240,7 +240,7 @@ func TestGenericSettings(t *testing.T) {
 	}
 	t.Run("R-GENERIC-008 the shared members apply", func(t *testing.T) {
 		_, _, err := decodeValidate(t, `{"key":"x1","class":"local","format":"generic","description":"d","adminNotes":"n",
-			"disabled":true,"requireAuthentication":true,"hideExistence":"false","storage":{"maxUploadBytes":10},
+			"disabled":true,"hideExistence":"false","storage":{"maxUploadBytes":10},
 			"includePatterns":["a/**"],"excludePatterns":["b/**"]}`, true)
 		if err != nil {
 			t.Fatal(err)
@@ -280,13 +280,14 @@ func TestGenericSettings(t *testing.T) {
 }
 
 func TestConsumerView(t *testing.T) {
-	t.Run("R-REPO-010 the consumer view has identity, description, layout and addresses only", func(t *testing.T) {
+	t.Run("R-REPO-010 the consumer view has identity, description, layout, visibility and addresses only", func(t *testing.T) {
 		d, _, err := decodeValidate(t, `{"key":"files","class":"local","format":"generic","description":"d","adminNotes":"secret note","includePatterns":["a/**"]}`, true)
 		if err != nil {
 			t.Fatal(err)
 		}
+		d.Visibility = Visibility{Artifacts: LevelInternal, Wiki: LevelPrivate} // a column of the row, set by the reader
 		raw, _ := json.Marshal(d.ConsumerView("/files/{project}/{key}/", qname.Repo{Project: "it", Key: "files"}))
-		want := `{"key":"files","project":"it","class":"local","format":"generic","description":"d","layout":"generic","addresses":["/files/it/files/"]}`
+		want := `{"key":"files","project":"it","class":"local","format":"generic","description":"d","layout":"generic","visibility":{"artifacts":"internal","wiki":"private"},"addresses":["/files/it/files/"]}`
 		if string(raw) != want {
 			t.Fatalf("view = %s", raw)
 		}

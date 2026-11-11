@@ -178,6 +178,10 @@ type Principal struct {
 	CI *claims.Frozen
 	// Credential is what proved the principal.
 	Credential Credential
+	// External is the user's external flag as the authentication stage resolved it with the status and the groups from the
+	// principal cache (R-AUTH-044); false for every principal that is no user. It makes the caller not internal
+	// (R-AUTHZ-030).
+	External bool
 	// MinEpoch is the value of the request header Trove-Authz-Min-Epoch of an
 	// authenticated request, 0 when absent or anonymous (R-AUTHZ-032). The
 	// composition root fills it after authentication succeeded.

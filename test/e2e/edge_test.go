@@ -124,8 +124,8 @@ func buildEdgeFixture(t testing.TB) (*edgeEnv, error) {
 	for _, r := range fx.routes {
 		for _, body := range []map[string]any{
 			{"key": "generic-edge-" + r.name, "class": "local", "format": "generic"},
-			{"key": "nuget-edge-" + r.name, "class": "local", "format": "nuget", "requireAuthentication": true},
-			{"key": "npm-edge-" + r.name, "class": "local", "format": "npm", "requireAuthentication": true},
+			{"key": "nuget-edge-" + r.name, "class": "local", "format": "nuget"},
+			{"key": "npm-edge-" + r.name, "class": "local", "format": "npm"},
 		} {
 			adm.do(http.MethodPost, reposRoute, body).want(t, "create repository "+body["key"].(string), 201, 409)
 		}

@@ -534,10 +534,16 @@ func TestR_AUTHZ_019_OwnerOperations(t *testing.T) {
 		if _, err := add(w.b, w.dave, "npm-internal", "@web/shared", "group:team-mobile"); codeOf(err) != errs.CodeAlreadyExists || statusOf(err) != 409 {
 			t.Fatalf("second add %v", err)
 		}
-		for _, ref := range []string{"user:nobody", "anonymous", "authenticated", "ci:gitlab-internal:project:4712", "nonsense"} {
+		for _, ref := range []string{"user:nobody", "ci:gitlab-internal:project:4712", "nonsense"} {
 			_, err := add(w.b, w.dave, "npm-internal", "@web/shared", ref)
 			if ee, ok := errs.As(err); !ok || ee.Status() != 422 || len(ee.Fields) != 1 || ee.Fields[0].Code != errs.CodeUnknownPrincipal {
 				t.Fatalf("%s: %v", ref, err)
+			}
+		}
+		for _, ref := range []string{"anonymous", "authenticated"} {
+			_, err := add(w.b, w.dave, "npm-internal", "@web/shared", ref)
+			if ee, ok := errs.As(err); !ok || ee.Status() != 422 || ee.Code != errs.CodePrincipalNotAllowed {
+				t.Fatalf("%s: %v, want 422 principal_not_allowed", ref, err)
 			}
 		}
 	})
@@ -793,9 +799,7 @@ func TestR_AUTHZ_018_DeletedRepositoryTakesItsOwnershipRows(t *testing.T) {
 
 // TestR_AUTHZ_008_PopulateCheckOnPostgreSQL: Carol holds read and deploy on the
 // frozen mirror; with her session cookie she does not populate it, with her token
-// she does. The policy that gives anonymous read on a remote that fills on read
-// is saved with the warning anonymous_populates_remote, whether anonymous access
-// is on or off; on the frozen mirror it is saved without.
+// she does.
 func TestR_AUTHZ_008_PopulateCheckOnPostgreSQL(t *testing.T) {
 	w := newOwnWorld(t)
 	ctx := t.Context()
@@ -812,23 +816,4 @@ func TestR_AUTHZ_008_PopulateCheckOnPostgreSQL(t *testing.T) {
 	if denied := w.a.rec.ofType(authz.EventDenied); len(denied) != 1 || denied[0].Reason != authz.ReasonPopulate {
 		t.Fatalf("denials %+v", denied)
 	}
-	for i, on := range []bool{false, true} {
-		w.e.anonymous.Store(on)
-		for _, tc := range []struct {
-			repo string
-			warn bool
-		}{{"npmjs", true}, {"npm-frozen", false}} {
-			p, _, err := w.a.svc.Create(ctx, w.root, authz.PolicyInput{
-				Name: fmt.Sprintf("anon-%s-%d", tc.repo, i), Resources: authz.Resources{Repositories: []string{"it/" + tc.repo}},
-				Entries: []authz.Entry{{Principal: "anonymous", Actions: []string{"read"}}},
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := slices.Contains(p.Warnings, authz.WarnAnonymousPopulatesRemote); got != tc.warn {
-				t.Fatalf("anonymous access %v, %s: warnings %v", on, tc.repo, p.Warnings)
-			}
-		}
-	}
-	w.e.anonymous.Store(false)
 }

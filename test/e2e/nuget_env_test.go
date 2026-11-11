@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	nugetAuthKey = "nuget-e2e"       // requireAuthentication: true; the repository of the clients with credentials
+	nugetAuthKey = "nuget-e2e"       // private; the repository of the clients with credentials
 	nugetOpenKey = "nuget-e2e-open"  // anonymous read: the repository a client reaches with the API key alone
 	nugetHardKey = "nuget-e2e-hard"  // deleteMode delete: the protocol DELETE removes the version
 	nugetCustKey = "nuget-customers" // the repository the customers endpoint exposes through rules (E3.7)
@@ -71,10 +71,10 @@ func buildNuGetFixture(t testing.TB) (*nugetFixture, error) {
 	_, _ = rand.Read(b)
 	fx := &nugetFixture{adm: adm, run: hex.EncodeToString(b)}
 	for _, body := range []map[string]any{
-		{"key": nugetAuthKey, "class": "local", "format": "nuget", "requireAuthentication": true},
+		{"key": nugetAuthKey, "class": "local", "format": "nuget"},
 		{"key": nugetOpenKey, "class": "local", "format": "nuget"},
-		{"key": nugetHardKey, "class": "local", "format": "nuget", "requireAuthentication": true, "nuget": map[string]any{"deleteMode": "delete"}},
-		{"key": nugetCustKey, "class": "local", "format": "nuget", "requireAuthentication": true},
+		{"key": nugetHardKey, "class": "local", "format": "nuget", "nuget": map[string]any{"deleteMode": "delete"}},
+		{"key": nugetCustKey, "class": "local", "format": "nuget"},
 	} {
 		r, err := adm.send(http.MethodPost, reposRoute, body)
 		if err != nil {

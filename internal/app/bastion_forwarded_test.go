@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -80,7 +81,7 @@ func through(t *testing.T, h http.Handler, peer, xff, bst string) (client, base 
 	r.Header.Set("X-Forwarded-Host", "packages.example.com")
 	if bst != "" {
 		r.Header.Set(iface.HeaderAuthorization, "Bearer "+bst)
-		r.Header.Set(iface.HeaderInterface, "1")
+		r.Header.Set(iface.HeaderInterface, strconv.Itoa(iface.InterfaceVersion))
 	}
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)

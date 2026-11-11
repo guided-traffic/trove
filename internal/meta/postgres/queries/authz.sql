@@ -44,7 +44,7 @@ SELECT e.policy_id::text, e.principal_id::text, p.kind, p.name, e.actions, COALE
  ORDER BY 1, 2;
 
 -- name: AuthzBuildProjects :many
-SELECT id::text AS id, key FROM project ORDER BY key;
+SELECT id::text AS id, key, visibility FROM project ORDER BY key;
 
 -- name: AuthzBuildProjectMembers :many
 -- The members of every project with their role, users and groups (Q-AUTHZ-207).
@@ -98,7 +98,8 @@ SELECT b.role, b.principal_id::text AS principal_id, COALESCE(sa.project_id::tex
 
 -- name: AuthzBuildRepositories :many
 -- Every repository belongs to a project (Q-AUTHZ-206): the row names it by id and key.
-SELECT r.id, r.key, r.class, r.format, r.config, r.project_id::text AS project_id, p.key AS project_key
+SELECT r.id, r.key, r.class, r.format, r.config, r.project_id::text AS project_id, p.key AS project_key,
+       r.visibility_artifacts, r.visibility_wiki
   FROM repositories r
   JOIN project p ON p.id = r.project_id
  WHERE r.lifecycle = 'active' ORDER BY r.id;

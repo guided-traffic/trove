@@ -23,7 +23,7 @@ func TestAnsibleMirror(t *testing.T) {
 	key := "ansible-mirror-" + fx.run
 	host := ansibleStubHost(t)
 	body := map[string]any{
-		"key": key, "class": "remote", "format": "ansible", "requireAuthentication": true,
+		"key": key, "class": "remote", "format": "ansible",
 		"remote": map[string]any{
 			"url":  "https://" + host + "/api/",
 			"mode": "mirror",

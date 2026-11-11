@@ -53,7 +53,8 @@ func toRepository(r q.Repository, project string, cat *catalog.Registry) (Reposi
 	out := Repository{
 		ID: strconv.FormatInt(r.ID, 10), Name: qname.Repo{Project: project, Key: r.Key}, Class: Class(r.Class), Format: r.Format,
 		HideExistence: HideInherit, Lifecycle: Lifecycle(r.Lifecycle), Version: r.ConfigVersion,
-		Config: r.Config, CreatedAt: r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
+		Visibility: Visibility{Artifacts: r.VisibilityArtifacts, Wiki: r.VisibilityWiki},
+		Config:     r.Config, CreatedAt: r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
 	}
 	if r.LastActivityAt.Valid {
 		out.LastActivityAt = r.LastActivityAt.Time
@@ -67,7 +68,7 @@ func toRepository(r q.Repository, project string, cat *catalog.Registry) (Reposi
 		return out, err
 	}
 	s.normalize()
-	out.Disabled, out.RequireAuthentication, out.HideExistence = s.Disabled, s.RequireAuthentication, s.HideExistence
+	out.Disabled, out.HideExistence = s.Disabled, s.HideExistence
 	subject := SubjectPath
 	info, known := cat.Lookup(r.Format)
 	if known {
@@ -140,7 +141,7 @@ func ptr[T any](v T) *T { return &v }
 
 // toDocument renders the stored row as the configuration document.
 func toDocument(r q.Repository, cat *catalog.Registry) (Document, error) {
-	d := Document{Key: r.Key, Class: Class(r.Class), Format: r.Format}
+	d := Document{Key: r.Key, Class: Class(r.Class), Format: r.Format, Visibility: Visibility{Artifacts: r.VisibilityArtifacts, Wiki: r.VisibilityWiki}}
 	if err := json.Unmarshal(r.Config, &d.Settings); err != nil {
 		return Document{}, err
 	}

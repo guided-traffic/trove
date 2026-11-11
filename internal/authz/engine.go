@@ -51,10 +51,6 @@ type Options struct {
 	// RetryBudget is database.retry.max_elapsed: how long a request waits for a
 	// confirmation of the index besides its own deadline (R-AUTHZ-028).
 	RetryBudget time.Duration
-	// AnonymousAccess reports whether anonymous access is on (R-AUTH-037); nil
-	// means off. It is read once per anonymous request, with the request's
-	// context; an error is a 503, not a "no".
-	AnonymousAccess func(ctx context.Context) (bool, error)
 	// Ceiling is the endpoint exposure (R-EP-013), evaluated on the index of the
 	// request; nil means none. The composition root passes an [ExposureCeiling]
 	// built from the configured endpoints; its endpoint names bound the label of

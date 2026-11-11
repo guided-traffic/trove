@@ -301,14 +301,18 @@ func TestR_AUTHZ_022_RoleBindings(t *testing.T) {
 			ref  string
 			code string
 		}{
-			{authz.RoleAuditor, "anonymous", errs.CodeRoleNotAllowed},
-			{authz.RoleAuditor, "authenticated", errs.CodeRoleNotAllowed},
 			{authz.RoleAuditor, "ci:gitlab-internal/acme-publish", errs.CodeRoleNotAllowed},
 			{authz.RoleAuditor, "user:ghost", errs.CodeUnknownPrincipal},
 			{authz.Role("owner"), "user:carol", errs.CodeUnknownRole},
 		} {
 			_, _, err := a.svc.BindRole(ctx, actor, tc.role, tc.ref)
 			problem(t, err, 422, tc.code)
+		}
+		for _, ref := range []string{"anonymous", "authenticated"} {
+			_, _, err := a.svc.BindRole(ctx, actor, authz.RoleAuditor, ref)
+			if ee, ok := errs.As(err); !ok || ee.Status() != 422 || ee.Code != errs.CodePrincipalNotAllowed {
+				t.Fatalf("%s: %v, want 422 principal_not_allowed", ref, err)
+			}
 		}
 		_, _, err := a.svc.BindRole(ctx, actor, authz.RoleAdmin, "group:everyone")
 		problem(t, err, 409, "auto_join_admin_conflict")

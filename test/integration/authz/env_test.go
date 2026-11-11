@@ -21,7 +21,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -58,8 +57,6 @@ type env struct {
 	cfg   config.Database
 	admin *pgx.Conn
 	mu    sync.Mutex // the admin connection is not safe for concurrent use
-	// anonymous is the switch of R-AUTH-037 the replicas read.
-	anonymous atomic.Bool
 }
 
 func newEnv(t *testing.T) *env {
@@ -444,7 +441,7 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	r.engine, err = authz.New(authz.Options{
 		Source: authz.NewPostgresSource(r.db, o.staleness), Changes: r.changes, Config: cfg,
 		EpochPollInterval: o.poll, RetryBudget: 5 * time.Second,
-		AnonymousAccess: func(context.Context) (bool, error) { return e.anonymous.Load(), nil }, Recorder: r.rec, Replica: name, Log: quiet, Metrics: r.reg,
+		Recorder: r.rec, Replica: name, Log: quiet, Metrics: r.reg,
 		Repositories: sqlRepositories{e}, Formats: integrationFormats(),
 	})
 	if err != nil {

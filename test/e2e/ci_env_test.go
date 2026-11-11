@@ -446,10 +446,10 @@ func buildCIFixture(t testing.TB) (*ciFixture, error) {
 	adm.do(http.MethodPost, "/api/v1/projects", map[string]any{"key": ciProject, "displayName": "End-to-end tests: the project of the CI Examples"}).
 		want(t, "create the project "+ciProject, 201, 409)
 	for _, body := range []map[string]any{
-		{"key": ciKey(ciNpmInt), "class": "local", "format": "npm", "requireAuthentication": true},
+		{"key": ciKey(ciNpmInt), "class": "local", "format": "npm"},
 		{"key": ciKey(ciNugetInt), "class": "local", "format": "nuget"},
 		{
-			"key": ciKey(ciNpmAll), "class": "virtual", "format": "npm", "requireAuthentication": true,
+			"key": ciKey(ciNpmAll), "class": "virtual", "format": "npm",
 			"virtual": map[string]any{"members": []string{ciKey(ciNpmInt)}, "deployTarget": ciKey(ciNpmInt)},
 		},
 		{

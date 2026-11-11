@@ -17,15 +17,6 @@ UPDATE api_token SET expires_at = to_timestamp(sqlc.arg(expires_us)::bigint / 10
    AND (expires_at IS NULL OR expires_at > to_timestamp(sqlc.arg(expires_us)::bigint / 1000000.0))
 RETURNING encode(secret_sha256, 'hex') AS secret_hex;
 
--- name: JournalDisableAnonymousAccess :many
--- settings.auth.changed: the anonymous switch is taken to off, its most restrictive value. No row: it is off already.
-UPDATE auth_settings SET anonymous_access = false, revision = revision + 1, updated_at = now()
- WHERE singleton AND anonymous_access
-RETURNING revision;
-
--- name: JournalAnonymousAccess :one
-SELECT anonymous_access FROM auth_settings WHERE singleton;
-
 -- name: JournalUserState :many
 -- The user behind a principal, to tell a disabled user from a disabled break-glass account.
 SELECT p.kind, p.status, coalesce(u.is_break_glass, false)::boolean AS is_break_glass
@@ -45,6 +36,27 @@ UPDATE repositories
    SET config = sqlc.arg(config)::text::jsonb, config_version = config_version + 1, updated_at = now()
  WHERE id = sqlc.arg(id)::bigint AND lifecycle = 'active'
 RETURNING config_version;
+
+-- name: JournalProjectLevelLock :many
+-- A project by its ID under its row lock, with its level; no row: the project is not in the restored database.
+SELECT key, visibility FROM project WHERE id = sqlc.arg(id)::text::uuid FOR UPDATE;
+
+-- name: JournalProjectSetLevel :exec
+-- The replay of authz.project.visibility_changed (R-AUTHZ-036): the level is taken to the journaled one, which the caller has
+-- compared as not above the current one.
+UPDATE project SET visibility = sqlc.arg(level)::text, version = version + 1, updated_at = now()
+ WHERE id = sqlc.arg(id)::text::uuid;
+
+-- name: JournalProjectLowerRepositories :many
+-- The cascade of R-AUTHZ-033 rule 3: every repository of the project whose artifacts or wiki level lies above the level is
+-- taken down to it; its configuration version moves on.
+UPDATE repositories r
+   SET visibility_artifacts = CASE WHEN visibility_rank(visibility_artifacts) > visibility_rank(sqlc.arg(level)::text) THEN sqlc.arg(level)::text ELSE visibility_artifacts END,
+       visibility_wiki      = CASE WHEN visibility_rank(visibility_wiki) > visibility_rank(sqlc.arg(level)::text) THEN sqlc.arg(level)::text ELSE visibility_wiki END,
+       config_version = config_version + 1, updated_at = now()
+ WHERE r.project_id = sqlc.arg(project_id)::text::uuid
+   AND (visibility_rank(visibility_artifacts) > visibility_rank(sqlc.arg(level)::text) OR visibility_rank(visibility_wiki) > visibility_rank(sqlc.arg(level)::text))
+RETURNING r.id, r.key, r.config_version;
 
 -- name: JournalOwnership :many
 -- The name's claim row, locked; no row: the name is not claimed in the restored database.

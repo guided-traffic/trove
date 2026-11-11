@@ -77,14 +77,10 @@ func NewDecider(tb testing.TB, repos []RepoSpec, grants []Grant) *authz.Engine {
 			snap.Selectors = append(snap.Selectors, q.AuthzBuildSelectorsRow{PolicyID: pid, Ordinal: int16(j), Kind: "key", RepositoryID: ids[k]})
 		}
 		kind, name := "user", strings.TrimPrefix(g.Principal, "user-")
-		if g.Principal == authz.AnonymousID {
-			kind, name = "anonymous", "anonymous"
-		}
 		snap.Entries = append(snap.Entries, q.AuthzBuildEntriesRow{PolicyID: pid, PrincipalID: g.Principal, PrincipalKind: kind, PrincipalName: name, Actions: g.Actions})
 	}
 	e, err := authz.New(authz.Options{
 		Source: &source{snap: snap}, Changes: &changes{}, RetryBudget: time.Second, Formats: Catalog(),
-		AnonymousAccess: func(context.Context) (bool, error) { return true, nil },
 		Config: config.Authz{
 			HideExistence: true,
 			Cache:         config.AuthzCache{MaxStaleness: 10 * time.Second, SafetyTTL: 10 * time.Minute},

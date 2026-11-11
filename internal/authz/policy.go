@@ -94,7 +94,6 @@ type Policy struct {
 const (
 	WarnPathPatternsOnPackageFormat = "path_patterns_on_package_format"
 	WarnSelectorMatchesNothing      = "selector_matches_nothing"
-	WarnAnonymousPopulatesRemote    = "anonymous_populates_remote"
 )
 
 // Report is the answer of the validate-policy operation (R-AUTHZ-021): the

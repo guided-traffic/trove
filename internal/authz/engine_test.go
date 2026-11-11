@@ -29,7 +29,7 @@ func startedEngine(t *testing.T, f *fixture, mod func(*Options)) (*Engine, *fake
 	src.set(f.s)
 	ch := &fakeChanges{}
 	ch.poll(f.s.Label)
-	o := Options{Source: src, Changes: ch, Config: testConfig(), RetryBudget: 500 * time.Millisecond, AnonymousAccess: func(context.Context) (bool, error) { return false, nil }}
+	o := Options{Source: src, Changes: ch, Config: testConfig(), RetryBudget: 500 * time.Millisecond}
 	if mod != nil {
 		mod(&o)
 	}
@@ -517,9 +517,7 @@ func TestR_AUTHZ_029_DecisionAudit(t *testing.T) {
 func TestR_AUTHZ_016_ReadableFiltersListings(t *testing.T) {
 	f := newFixture().repo("a-repo", "local", "generic", "").repo("b-repo", "local", "generic", "").repo("c-repo", "local", "generic", "")
 	f.policy(policyDef{name: "p", selectors: []string{"a-repo", "c-repo"}, entries: map[string][]string{idDevs: {"read"}}})
-	f.policy(policyDef{name: "anon", selectors: []string{"b-repo"}, entries: map[string][]string{AnonymousID: {"read"}}})
 	e := newTestEngine(t, f, nil)
-	on := newTestEngine(t, f, func(o *Options) { o.AnonymousAccess = func(context.Context) (bool, error) { return true, nil } })
 	keys := []string{"c-repo", "b-repo", "a-repo", "ghost"}
 	cases := []struct {
 		name string
@@ -529,8 +527,7 @@ func TestR_AUTHZ_016_ReadableFiltersListings(t *testing.T) {
 	}{
 		{"a member of devs sees a and c in the order given", e, bobSub, []string{"c-repo", "a-repo"}},
 		{"a user in no group sees nothing", e, carolSub, nil},
-		{"anonymous access off lists nothing", e, anonSub, nil},
-		{"anonymous access on lists what anonymous reads", on, anonSub, []string{"b-repo"}},
+		{"an anonymous caller lists nothing", e, anonSub, nil},
 		{"an administrator with bypass sees every existing repository", newTestEngine(t, newFixtureWithAdmin(f), nil), adminSub, []string{"c-repo", "b-repo", "a-repo"}},
 	}
 	for _, tc := range cases {
@@ -616,7 +613,7 @@ func TestR_AUTHZ_023_CheckForTheCaller(t *testing.T) {
 			t.Fatalf("%+v %v", me, err)
 		}
 		joined := strings.Join(me.Principals, ",")
-		for _, want := range []string{"user:alice", "group:developers", "group:team-web", "authenticated"} {
+		for _, want := range []string{"user:alice", "group:developers", "group:team-web"} {
 			if !strings.Contains(joined, want) {
 				t.Errorf("principals %q lack %s", joined, want)
 			}

@@ -64,11 +64,6 @@ type AuthTokenMax struct {
 	BST int `yaml:"bst" default:"3" validate:"min=1" doc:"Unrevoked Bastion tokens per registration, so that a renewal's overlap fits (R-BAS-004)."`
 }
 
-// AuthAnonymous is the operator's ceiling for anonymous access (R-AUTH-037).
-type AuthAnonymous struct {
-	Allowed bool `yaml:"allowed" default:"true" doc:"The operator's ceiling. The runtime switch anonymousAccess (R-AUTH-040) takes effect only while this is true."`
-}
-
 // AuthClients switches client authentication forms (R-AUTH-033).
 type AuthClients struct {
 	Basic             AuthClientBasic `yaml:"basic"`

@@ -296,7 +296,7 @@ func TestR_BAS_011_ACheckBodyIsValidated(t *testing.T) {
 		h := s.handler
 		r := httptest.NewRequest(http.MethodPost, iface.PathCheck, strings.NewReader(`{}`))
 		r.Header.Set("Content-Type", "application/json")
-		r = r.WithContext(bastionmain.WithRecognition(r.Context(), bastionmain.Recognition{Bastion: "p", Route: true, Interface: 1}))
+		r = r.WithContext(bastionmain.WithRecognition(r.Context(), bastionmain.Recognition{Bastion: "p", Route: true, Interface: iface.InterfaceVersion}))
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
 		if w.Code != http.StatusServiceUnavailable {
@@ -324,14 +324,14 @@ func TestR_BAS_016_TheIntakeAnswers204AndRefusesAMalformedBody(t *testing.T) {
 	post := func(body string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(http.MethodPost, iface.PathDownloads, strings.NewReader(body))
 		r.Header.Set("Content-Type", "application/json")
-		r = r.WithContext(bastionmain.WithRecognition(r.Context(), bastionmain.Recognition{Bastion: "partners", BastionID: "0192f1c4-0000-7000-8000-0000000000b1", Route: true, Interface: 1}))
+		r = r.WithContext(bastionmain.WithRecognition(r.Context(), bastionmain.Recognition{Bastion: "partners", BastionID: "0192f1c4-0000-7000-8000-0000000000b1", Route: true, Interface: iface.InterfaceVersion}))
 		w := httptest.NewRecorder()
 		s.handler.ServeHTTP(w, r)
 		return w
 	}
 	ev := `{"at":"` + time.Now().UTC().Format(time.RFC3339) + `","clientAddress":"203.0.113.7","repository":"npm-all","path":"/api/npm/npm-all/x/-/x-1.0.0.tgz","sha256":"` + strings.Repeat("ab", 32) + `","replica":"bastion-0"}`
 	w := post(`{"events":[` + ev + `],"dropped":0}`)
-	if w.Code != http.StatusNoContent || w.Body.Len() != 0 || w.Header().Get(iface.HeaderInterface) != "1" || rec.count() != 1 {
+	if w.Code != http.StatusNoContent || w.Body.Len() != 0 || w.Header().Get(iface.HeaderInterface) != strconv.Itoa(iface.InterfaceVersion) || rec.count() != 1 {
 		t.Errorf("status %d body %q events %d", w.Code, w.Body, rec.count())
 	}
 	for name, body := range map[string]string{

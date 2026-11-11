@@ -142,7 +142,7 @@ func (s *Service) principalFilter(ctx context.Context, f ListFilter) (refs map[s
 		return nil, false, err
 	}
 	refs = map[string]bool{ref.String(): true}
-	if f.ExpandGroups && !f.ProjectOwner && ref.Kind != principal.KindAnonymous && ref.Kind != principal.KindAuthenticated {
+	if f.ExpandGroups && !f.ProjectOwner && !ref.IsLevelPrincipal() {
 		groups, err := s.o.Principals.Groups(ctx, id)
 		if err != nil {
 			return nil, false, err

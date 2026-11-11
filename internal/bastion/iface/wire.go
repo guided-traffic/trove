@@ -51,8 +51,8 @@ type Handshake struct {
 	// this request (R-OPS-005, R-EP-003). The Bastion requires it to equal its own
 	// server.base_url (R-BAS-010).
 	ResponseBaseURL string `json:"responseBaseUrl"`
-	// AnonymousAccess is the effective anonymous switch (R-AUTH-037).
-	AnonymousAccess bool `json:"anonymousAccess"`
+	// AnonymousReads says an anonymous request reads something through the default endpoint: some repository's artifacts are public (R-AUTH-037, R-BAS-019).
+	AnonymousReads bool `json:"anonymousReads"`
 	// RecordDownloads is audit.record_downloads (R-BAS-016, R-BAS-039).
 	RecordDownloads bool `json:"recordDownloads"`
 	// Feed is the feed position at the time of the answer.

@@ -85,12 +85,6 @@ func (s fakeStore) Groups(_ context.Context, id string) ([]principal.GroupRef, e
 	return s.groups[id], nil
 }
 
-type fakeAnon struct{ on bool }
-
-func (f fakeAnon) Effective(context.Context) (token.Effective, error) {
-	return token.Effective{AnonymousAccess: f.on}, nil
-}
-
 type fakeSessions struct {
 	info    session.Info
 	err     error
@@ -115,14 +109,20 @@ func defaultRules() EndpointRules {
 	return EndpointRules{Name: "default", AcceptsSession: true, TokenTypes: []token.Type{token.TypePAT, token.TypeSAT, token.TypeCIT}, Anonymous: true}
 }
 
+// closedRules is defaultRules for an endpoint whose auth.anonymous is false: no request without a credential becomes anonymous
+// there (R-EP-010), so a credential that is none of the stage's is answered 401 and the test can tell it from the anonymous
+// result the open endpoint gives.
+func closedRules() EndpointRules {
+	ep := defaultRules()
+	ep.Anonymous = false
+	return ep
+}
+
 func newStage(ft *fakeTokens, o Options) *Stage {
 	o.Tokens = ft
 	o.Uses = ft
 	if o.Principals == nil {
 		o.Principals = fakeStore{groups: map[string][]principal.GroupRef{alice.ID: {{ID: "g1", Name: "team-web"}}}}
-	}
-	if o.Settings == nil {
-		o.Settings = fakeAnon{}
 	}
 	o.BasicEnabled = true
 	return New(o)
@@ -186,7 +186,7 @@ func TestR_AUTH_001_PrecedenceAndNoFallThrough(t *testing.T) {
 		errFor: map[string]error{expired: token.ErrExpired},
 	}
 	other := principal.Principal{ID: "bob-id", Kind: principal.KindUser, Name: "bob", Status: principal.StatusActive}
-	s := newStage(ft, Options{Sessions: fakeSessions{info: session.Info{ID: "s1", Principal: other}}, Settings: fakeAnon{on: true}})
+	s := newStage(ft, Options{Sessions: fakeSessions{info: session.Info{ID: "s1", Principal: other}}})
 	cookie := &http.Cookie{Name: SessionCookie, Value: "sess"}
 
 	t.Run("R-AUTH-001 the Authorization header wins over a session cookie of another user", func(t *testing.T) {
@@ -260,18 +260,21 @@ func TestR_AUTH_001_SessionRules(t *testing.T) {
 				t.Fatalf("%s: %+v %v", m, res, err)
 			}
 		}
-		_, err := do(fakeSessions{info: sess}, "POST", "/files/r/x", defaultRules())
+		_, err := do(fakeSessions{info: sess}, "POST", "/files/r/x", closedRules())
 		wantErr(t, err, 401, errs.CodeCredentialsRequired)
+		if res, err := do(fakeSessions{info: sess}, "POST", "/files/r/x", defaultRules()); err != nil || !res.Anonymous {
+			t.Fatalf("POST: %+v %v, want the cookie ignored and the request anonymous", res, err)
+		}
 	})
 	t.Run("R-AUTH-001 on /api/<format> only GET and HEAD", func(t *testing.T) {
 		if res, err := do(fakeSessions{info: sess}, "GET", "/api/npm/r/x", defaultRules()); err != nil || res.Credential.Method != MethodSession {
 			t.Fatalf("%+v %v", res, err)
 		}
-		_, err := do(fakeSessions{info: sess}, "PUT", "/api/npm/r/x", defaultRules())
+		_, err := do(fakeSessions{info: sess}, "PUT", "/api/npm/r/x", closedRules())
 		wantErr(t, err, 401, errs.CodeCredentialsRequired)
 	})
 	t.Run("R-EP-010 ignored on an endpoint whose surface holds no ui", func(t *testing.T) {
-		ep := defaultRules()
+		ep := closedRules()
 		ep.AcceptsSession = false
 		_, err := do(fakeSessions{info: sess}, "GET", "/api/v1/tokens", ep)
 		wantErr(t, err, 401, errs.CodeCredentialsRequired)
@@ -294,16 +297,23 @@ func TestR_AUTH_001_SessionRules(t *testing.T) {
 		s := newStage(ft, Options{})
 		r := req("GET", "/api/v1/tokens")
 		r.AddCookie(cookie)
-		_, err := s.Authenticate(r, defaultRules())
+		_, err := s.Authenticate(r, closedRules())
 		wantErr(t, err, 401, errs.CodeCredentialsRequired)
 	})
 }
 
 func TestR_AUTH_037_AnonymousAccess(t *testing.T) {
 	ft := &fakeTokens{}
-	on, off := newStage(ft, Options{Settings: fakeAnon{on: true}}), newStage(ft, Options{Settings: fakeAnon{}})
-	t.Run("R-AUTH-037 off: a package request without credentials is 401 with the Basic challenge", func(t *testing.T) {
-		_, err := off.Authenticate(req("GET", "/api/npm/npm-all/lodash"), defaultRules())
+	on := newStage(ft, Options{})
+	// closedRules is an endpoint whose auth.anonymous is false: no request becomes anonymous there (R-EP-010), the operator's
+	// ceiling of public content (R-AUTH-037).
+	closedRules := func() EndpointRules {
+		ep := defaultRules()
+		ep.Anonymous = false
+		return ep
+	}
+	t.Run("R-AUTH-037 a closed endpoint: a package request without credentials is 401 with the Basic challenge", func(t *testing.T) {
+		_, err := on.Authenticate(req("GET", "/api/npm/npm-all/lodash"), closedRules())
 		e := wantErr(t, err, 401, errs.CodeCredentialsRequired)
 		if e.Challenge != `Basic realm="trove"` {
 			t.Fatalf("challenge %q", e.Challenge)
@@ -323,14 +333,14 @@ func TestR_AUTH_037_AnonymousAccess(t *testing.T) {
 			{"/favicon.ico", nil, `Bearer realm="trove"`},
 			{"/robots.txt", nil, `Bearer realm="trove"`},
 		} {
-			_, err := off.Authenticate(req("GET", tc.path, tc.hdr...), defaultRules())
+			_, err := on.Authenticate(req("GET", tc.path, tc.hdr...), closedRules())
 			e := wantErr(t, err, 401, errs.CodeCredentialsRequired)
 			if e.Challenge != tc.want {
 				t.Errorf("%s %v: challenge %q, want %q", tc.path, tc.hdr, e.Challenge, tc.want)
 			}
 		}
 	})
-	t.Run("R-AUTH-037 on: the request runs as the anonymous principal", func(t *testing.T) {
+	t.Run("R-AUTH-037 the request runs as the anonymous principal; the levels decide what it reads", func(t *testing.T) {
 		res, err := on.Authenticate(req("GET", "/api/npm/npm-all/lodash"), defaultRules())
 		if err != nil || !res.Anonymous || res.Principal.ID != principal.AnonymousID || res.Principal.Kind != principal.KindAnonymous {
 			t.Fatalf("%+v %v", res, err)
@@ -371,16 +381,14 @@ func TestR_AUTH_037_AnonymousAccess(t *testing.T) {
 	t.Run("R-AUTH-037 an escape never opens a route: the always-open rules read the path as received", func(t *testing.T) {
 		for _, c := range []struct{ m, p string }{
 			{"POST", "/api/v1/tokens/revok%65"},
-			{"GET", "/api/v1/auth/login-option%73"},
 			{"POST", "/api/v1/auth%2Fdevice/authorize"},
-			{"GET", "/u%69/"},
 		} {
-			_, err := off.Authenticate(req(c.m, c.p), defaultRules())
+			_, err := on.Authenticate(req(c.m, c.p), defaultRules())
 			wantErr(t, err, 401, errs.CodeCredentialsRequired)
 		}
 	})
 	t.Run("R-AUTH-001 the session cookie's path rule reads the path the router routes by", func(t *testing.T) {
-		live := newStage(ft, Options{Sessions: fakeSessions{info: session.Info{ID: "s1", Principal: alice}}, Settings: fakeAnon{on: true}})
+		live := newStage(ft, Options{Sessions: fakeSessions{info: session.Info{ID: "s1", Principal: alice}}})
 		ep := defaultRules()
 		ep.AcceptsSession = true
 		// /api/np%6d/… is a package route to the router: the cookie is ignored for an unsafe method, as on /api/npm/….
@@ -402,7 +410,7 @@ func TestR_AUTH_037_AnonymousAccess(t *testing.T) {
 		_, err := on.Authenticate(req("GET", "/api/npm/npm-all/lodash"), ep)
 		wantErr(t, err, 401, errs.CodeCredentialsRequired)
 	})
-	t.Run("R-AUTH-037 the always-open routes need no credential and no switch", func(t *testing.T) {
+	t.Run("R-AUTH-037 the always-open routes need no credential", func(t *testing.T) {
 		for _, c := range []struct{ m, p string }{
 			{"GET", "/api/v1/auth/login-options"},
 			{"GET", "/auth/oidc/corp/start"},
@@ -411,7 +419,7 @@ func TestR_AUTH_037_AnonymousAccess(t *testing.T) {
 			{"POST", "/api/v1/auth/device/authorize"},
 			{"GET", "/-/v1/login"},
 		} {
-			res, err := off.Authenticate(req(c.m, c.p), defaultRules())
+			res, err := on.Authenticate(req(c.m, c.p), defaultRules())
 			if err != nil || !res.Anonymous {
 				t.Errorf("%s %s: %+v %v", c.m, c.p, res, err)
 			}
@@ -424,10 +432,6 @@ func TestR_AUTH_037_AnonymousAccess(t *testing.T) {
 			p := r.URL.Path
 			return p == "/files/x" || p == "/does-not-exist" || strings.HasPrefix(p, "/api/npm/")
 		}
-		unknown := func(s *Stage) error {
-			_, err := s.Authenticate(req("GET", "/does-not-exist"), packagesOnly)
-			return err
-		}
 		for _, c := range []struct{ m, p string }{
 			{"GET", "/"},
 			{"GET", "/ui/"},
@@ -438,45 +442,48 @@ func TestR_AUTH_037_AnonymousAccess(t *testing.T) {
 			{"POST", "/api/v1/auth/oidc/token"},
 			{"POST", "/api/v1/tokens/revoke"},
 		} {
-			_, got := off.Authenticate(req(c.m, c.p), packagesOnly)
-			wantErr(t, got, 401, errs.CodeCredentialsRequired)
-			if want := unknown(off); got.Error() != want.Error() {
-				t.Errorf("%s %s: %v differs from the unknown path's %v", c.m, c.p, got, want)
-			}
-			// With the switch on, an unserved route is anonymous exactly as an unknown path of the same method is, never more
-			// and never less: the hard limit of /api/v1 is a rule of the served API (Q-ARCH-306).
+			// An unserved route is anonymous exactly as an unknown path of the same method is, never more and never less: the
+			// hard limit of /api/v1 is a rule of the served API (Q-ARCH-306).
 			res, err := on.Authenticate(req(c.m, c.p), packagesOnly)
 			wantRes, wantE := on.Authenticate(req(c.m, "/does-not-exist"), packagesOnly)
 			if (err == nil) != (wantE == nil) || res.Anonymous != wantRes.Anonymous {
-				t.Errorf("%s %s with the switch on: %+v %v; the unknown path: %+v %v", c.m, c.p, res, err, wantRes, wantE)
+				t.Errorf("%s %s: %+v %v; the unknown path: %+v %v", c.m, c.p, res, err, wantRes, wantE)
+			}
+			// On an endpoint that admits no anonymous request, the answer is the unknown path's 401 as well.
+			closed := packagesOnly
+			closed.Anonymous = false
+			_, got := on.Authenticate(req(c.m, c.p), closed)
+			wantErr(t, got, 401, errs.CodeCredentialsRequired)
+			if _, want := on.Authenticate(req("GET", "/does-not-exist"), closed); want == nil || got.Error() != want.Error() {
+				t.Errorf("%s %s: %v differs from the unknown path's %v", c.m, c.p, got, want)
 			}
 		}
 		// A route it does serve stays open.
-		if res, err := off.Authenticate(req("GET", "/api/npm/it/npm-all/-/v1/login"), packagesOnly); err != nil || !res.Anonymous {
+		if res, err := on.Authenticate(req("GET", "/api/npm/it/npm-all/-/v1/login"), packagesOnly); err != nil || !res.Anonymous {
 			t.Errorf("the npm login start on packages: %+v %v", res, err)
 		}
 		// Without the rule, every family is served, as before.
-		if res, err := off.Authenticate(req("GET", "/ui/"), defaultRules()); err != nil || !res.Anonymous {
+		if res, err := on.Authenticate(req("GET", "/ui/"), defaultRules()); err != nil || !res.Anonymous {
 			t.Errorf("served is nil: %+v %v", res, err)
 		}
 	})
-	t.Run("R-AUTH-037 a public management operation is reachable with the switch off", func(t *testing.T) {
+	t.Run("R-AUTH-037 a public management operation is reachable anonymously with an unsafe method, another is not", func(t *testing.T) {
 		ep := defaultRules()
 		ep.PublicRoute = func(r *http.Request) bool { return r.URL.Path == "/api/v1/system/ping" }
-		if res, err := off.Authenticate(req("GET", "/api/v1/system/ping"), ep); err != nil || !res.Anonymous {
+		if res, err := on.Authenticate(req("POST", "/api/v1/system/ping"), ep); err != nil || !res.Anonymous {
 			t.Fatalf("%+v %v", res, err)
 		}
-		_, err := off.Authenticate(req("GET", "/api/v1/system/replicas"), ep)
+		_, err := on.Authenticate(req("POST", "/api/v1/system/replicas"), ep)
 		wantErr(t, err, 401, errs.CodeCredentialsRequired)
 	})
 	t.Run("R-AUTH-001 exchange routes receive the ID token as Authorization without evaluation", func(t *testing.T) {
 		for _, p := range []string{"/api/v1/auth/oidc/token", "/-/npm/v1/oidc/token/exchange/package/@acme%2Fui", "/api/npm/it/npm-all/-/npm/v1/oidc/token/exchange/package/@acme%2Fui"} {
-			res, err := off.Authenticate(req("POST", p, "Authorization", "Bearer eyJhbGciOiJSUzI1NiJ9.e30.c2ln"), defaultRules())
+			res, err := on.Authenticate(req("POST", p, "Authorization", "Bearer eyJhbGciOiJSUzI1NiJ9.e30.c2ln"), defaultRules())
 			if err != nil || !res.Anonymous {
 				t.Errorf("%s: %+v %v", p, res, err)
 			}
 		}
-		_, err := off.Authenticate(req("GET", "/api/npm/npm-all/@acme%2Fui", "Authorization", "Bearer eyJhbGciOiJSUzI1NiJ9.e30.c2ln"), defaultRules())
+		_, err := on.Authenticate(req("GET", "/api/npm/npm-all/@acme%2Fui", "Authorization", "Bearer eyJhbGciOiJSUzI1NiJ9.e30.c2ln"), defaultRules())
 		wantErr(t, err, 401, errs.CodeInvalidToken)
 	})
 }
@@ -518,7 +525,7 @@ func outcomeOf(res Result, err error) outcome {
 // TestQ_ARCH_306_EveryPathRuleOfTheStageAsksWhetherTheFamilyIsServed: on a role that does not serve a route's family, the
 // stage's verdict on the request is the one on GET (or the same method of) /does-not-exist, whatever the request carries:
 // no credential, a rejected token, a valid token, an ended or a live session cookie, from a package client or a browser,
-// with the anonymous switch off and on (R-EP-005, Q-ARCH-302, Q-ARCH-306). The challenge (Basic on /files/ and the
+// with the endpoint closed to anonymous requests and open (R-EP-005, Q-ARCH-302, Q-ARCH-306). The challenge (Basic on /files/ and the
 // package protocols, error="invalid_token" on /api/v1), the cookie's path rule and the hard limit of /api/v1 are rules
 // of the served family.
 func TestQ_ARCH_306_EveryPathRuleOfTheStageAsksWhetherTheFamilyIsServed(t *testing.T) {
@@ -560,14 +567,15 @@ func TestQ_ARCH_306_EveryPathRuleOfTheStageAsksWhetherTheFamilyIsServed(t *testi
 		},
 	}
 	for role, probes := range unserved {
-		for anon, settings := range map[string]fakeAnon{"off": {}, "on": {on: true}} {
+		for anon, open := range map[string]bool{"off": false, "on": true} {
 			for name, sessions := range map[string]fakeSessions{"live": live, "ended": ended} {
-				s := newStage(ft, Options{Sessions: sessions, Settings: settings})
+				s := newStage(ft, Options{Sessions: sessions})
 				// The default endpoint of api accepts the session; the one of packages does not (R-EP-010), which the
 				// cookie's answer there already shows.
 				ep := defaultRules()
 				ep.AcceptsSession = role == "api"
 				ep.Served = servedBy(role)
+				ep.Anonymous = open
 				ep.PublicRoute = func(r *http.Request) bool { return r.URL.Path == "/api/v1/system/ping" }
 				for cred, hdr := range credentials {
 					for _, p := range probes {
@@ -582,8 +590,8 @@ func TestQ_ARCH_306_EveryPathRuleOfTheStageAsksWhetherTheFamilyIsServed(t *testi
 		}
 	}
 	// The rules still hold where the family is served: the control that the comparison above compares something.
-	s := newStage(ft, Options{Sessions: ended, Settings: fakeAnon{}})
-	ep := defaultRules()
+	s := newStage(ft, Options{Sessions: ended})
+	ep := closedRules()
 	ep.Served = servedBy("packages")
 	if got := outcomeOf(s.Authenticate(req("GET", "/files/generic-local/a.bin"), ep)); got.Challenge != `Basic realm="trove"` {
 		t.Errorf("/files/ on packages: %+v, want the Basic challenge", got)

@@ -40,7 +40,6 @@ func TestE1_3_AuthorizationAgainstPostgreSQL(t *testing.T) {
 		{"nuget-internal", "local", "nuget", ""},
 		{"npmjs", "remote", "npm", `{"remote":{"cacheFillAction":"read"}}`},
 		{"npm-all", "virtual", "npm", `{"virtual":{"members":["npm-internal","npmjs"],"deployTarget":"npm-internal"}}`},
-		{"strict", "local", "generic", `{"requireAuthentication":true}`},
 	} {
 		e.repo(r.key, r.class, r.format, r.cfg)
 	}
@@ -90,9 +89,6 @@ func TestE1_3_AuthorizationAgainstPostgreSQL(t *testing.T) {
 			)
 		}
 		run(cs)
-		e.anonymous.Store(true)
-		run([]itCase{{"anonymous access on, no grant: still 401", anon, read("generic-local", "", "a"), authz.DenyUnauthenticated, authz.ReasonNoGrant, ""}})
-		e.anonymous.Store(false)
 	})
 
 	t.Run("R-AUTHZ-021 a policy is written with expanded presets", func(t *testing.T) {
@@ -195,47 +191,21 @@ func TestE1_3_AuthorizationAgainstPostgreSQL(t *testing.T) {
 		})
 	})
 
-	t.Run("R-AUTHZ-030 the authenticated principal", func(t *testing.T) {
-		_, _, err := a.svc.Create(t.Context(), sub(alice), authz.PolicyInput{
-			Name: "bad", Resources: authz.Resources{Repositories: []string{"it/generic-local"}},
-			Entries: []authz.Entry{{Principal: "authenticated", Actions: []string{"read", "deploy"}}},
-		})
-		problem(t, err, 422, errs.CodeAuthenticatedWriteAction)
-		create(authz.PolicyInput{
-			Name: "everyone-reads-generic", Resources: authz.Resources{Repositories: []string{"@any-local:generic"}},
-			Entries: []authz.Entry{{Principal: "authenticated", Actions: []string{"read"}}},
-		})
+	t.Run("R-AUTHZ-003 an entry for anonymous or authenticated is 422 principal_not_allowed: a level opens content", func(t *testing.T) {
+		for _, ref := range []string{"anonymous", "authenticated"} {
+			_, _, err := a.svc.Create(t.Context(), sub(alice), authz.PolicyInput{
+				Name: "bad-" + ref, Resources: authz.Resources{Repositories: []string{"it/generic-local"}},
+				Entries: []authz.Entry{{Principal: ref, Actions: []string{"read"}}},
+			})
+			if ee, ok := errs.As(err); !ok || ee.Status() != 422 || ee.Code != errs.CodePrincipalNotAllowed {
+				t.Fatalf("%s: err = %v, want 422 principal_not_allowed", ref, err)
+			}
+		}
 		run([]itCase{
-			{"a user in no group downloads", carolSub, read("generic-local", "", "a/b.bin"), authz.Allow, authz.ReasonAllowGrant, ""},
-			{"a user in no group cannot upload", carolSub, write("generic-local", "", "a", authz.Deploy), authz.DenyVisible, authz.ReasonNoGrant, authz.Deploy},
-			{"a service-account token without its own grant gets 404", botSub, read("generic-local", "", "a/b.bin"), authz.DenyHidden, authz.ReasonNoGrant, authz.Read},
-			{"a CI token gets 404", ciSub, read("generic-local", "", "a/b.bin"), authz.DenyHidden, authz.ReasonNoGrant, authz.Read},
+			{"a user in no group gets 404 where no level opens the repository", carolSub, read("generic-local", "", "a/b.bin"), authz.DenyHidden, authz.ReasonNoGrant, authz.Read},
 			{"anonymous gets 401", anon, read("generic-local", "", "a/b.bin"), authz.DenyUnauthenticated, authz.ReasonUnauthenticated, ""},
-		})
-	})
-
-	t.Run("R-AUTHZ-003 anonymous access", func(t *testing.T) {
-		create(authz.PolicyInput{
-			Name: "public", Resources: authz.Resources{Repositories: []string{"it/npm-internal", "it/strict"}},
-			Entries: []authz.Entry{{Principal: "anonymous", Actions: []string{"read"}}},
-		})
-		_, _, err := a.svc.Create(t.Context(), sub(alice), authz.PolicyInput{
-			Name: "public-bad", Resources: authz.Resources{Repositories: []string{"@any-remote"}},
-			Entries: []authz.Entry{{Principal: "anonymous", Actions: []string{"read"}}},
-		})
-		problem(t, err, 422, errs.CodeAnonymousDynamicSelector)
-		_, _, err = a.svc.Create(t.Context(), sub(alice), authz.PolicyInput{
-			Name: "public-write", Resources: authz.Resources{Repositories: []string{"it/npm-internal"}},
-			Entries: []authz.Entry{{Principal: "anonymous", Actions: []string{"read", "deploy"}}},
-		})
-		problem(t, err, 422, errs.CodeAnonymousWriteAction)
-		run([]itCase{{"anonymous access off: 401 although the policy grants", anon, read("npm-internal", "x", ""), authz.DenyUnauthenticated, authz.ReasonUnauthenticated, ""}})
-		e.anonymous.Store(true)
-		defer e.anonymous.Store(false)
-		run([]itCase{
-			{"anonymous access on: the grant works", anon, read("npm-internal", "x", ""), authz.Allow, "", ""},
-			{"anonymous access on: writes are challenged", anon, write("npm-internal", "x", "", authz.Deploy), authz.DenyUnauthenticated, authz.ReasonNoGrant, ""},
-			{"requireAuthentication challenges anonymous whatever the policies grant", anon, read("strict", "", "a"), authz.DenyUnauthenticated, authz.ReasonUnauthenticated, ""},
+			{"anonymous is challenged for a missing repository as well", anon, read("ghost", "", "a"), authz.DenyUnauthenticated, authz.ReasonUnauthenticated, ""},
+			{"anonymous writes are challenged", anon, write("npm-internal", "x", "", authz.Deploy), authz.DenyUnauthenticated, authz.ReasonUnauthenticated, ""},
 		})
 	})
 

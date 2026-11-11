@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 
+	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/journal"
 	"github.com/guided-traffic/trove/internal/meta"
@@ -28,7 +29,7 @@ func init() {
 		Domain: "authz",
 		Events: []string{
 			EventRoleUnbound, EventPolicyDeleted, EventPolicyUpdated,
-			EventOwnershipRemoved, EventOwnershipReleased, EventSettingsChanged,
+			EventOwnershipRemoved, EventOwnershipReleased, EventSettingsChanged, audit.EventProjectVisibilityChanged,
 		},
 		Apply: replayAuthz,
 	})
@@ -48,6 +49,8 @@ func replayAuthz(ctx context.Context, tx meta.Tx, env journal.Env, o journal.Obj
 		return replayPolicyUpdated(ctx, qs, env, tx, o)
 	case EventSettingsChanged:
 		return replaySettings(ctx, qs, env, tx, o)
+	case audit.EventProjectVisibilityChanged:
+		return replayProjectVisibility(ctx, qs, env, tx, o)
 	default:
 		return replayOwnerRemoved(ctx, qs, o)
 	}
@@ -438,7 +441,7 @@ func accessOrder(key string) []string {
 		return []string{"deploy", "read"}
 	case "packageOwnership":
 		return []string{"enforce", "off"}
-	case "requireAuthentication", "hideExistence":
+	case "hideExistence":
 		return []string{"true", "false"}
 	}
 	return nil
@@ -499,11 +502,6 @@ func settingString(raw json.RawMessage) (string, bool) {
 // readSettings reads the settings of a repository document.
 func readSettings(class string, doc map[string]json.RawMessage) repoSettings {
 	out := repoSettings{}
-	if v, ok := doc["requireAuthentication"]; ok {
-		out["requireAuthentication"], _ = settingString(v)
-	} else {
-		out["requireAuthentication"] = "false"
-	}
 	out["hideExistence"] = "inherit"
 	if v, ok := doc["hideExistence"]; ok {
 		if s, ok := settingString(v); ok && s != "" {
@@ -554,8 +552,6 @@ func writeSetting(class string, doc map[string]json.RawMessage, key, value strin
 		return m
 	}
 	switch key {
-	case "requireAuthentication":
-		set(doc, key, value == "true")
 	case "hideExistence":
 		set(doc, key, value)
 	case "packageOwnership":

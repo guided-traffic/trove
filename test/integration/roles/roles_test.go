@@ -285,23 +285,23 @@ func TestR_ARCH_001_AFamilyOfTheOtherRoleIsAnUnknownPath(t *testing.T) {
 				for _, p := range probes {
 					want := seen(t, in.probe(r, p.method, "/does-not-exist", "", hdr...))
 					if got := seen(t, in.probe(r, p.method, p.path, "", hdr...)); got != want {
-						t.Errorf("anonymous access %s, %s on %s, %s: %s %s\n got %s\nwant %s", anonymous, name, role, p.method, p.path, p.method, got, want)
+						t.Errorf("anonymous requests %s, %s on %s, %s: %s %s\n got %s\nwant %s", anonymous, name, role, p.method, p.path, p.method, got, want)
 					}
 				}
 			}
 		}
 	}
-	// With anonymous access off a request without a credential is refused before the router (401), for an unknown path as
-	// for any other: the other role's families must not tell themselves apart from it by that either.
+	// A request without a credential is anonymous on a default endpoint, and an unknown path is a 404 for it as for a token:
+	// the other role's families must not tell themselves apart from it by their own answer.
 	for role, r := range replicas {
-		if got := in.probe(r, http.MethodGet, "/does-not-exist", ""); got.Status != http.StatusUnauthorized {
+		if got := in.probe(r, http.MethodGet, "/does-not-exist", ""); got.Status != http.StatusNotFound {
 			t.Fatalf("%s: an unknown path without a credential answers %d %s", role, got.Status, got.Body)
 		}
 		if got := in.probe(r, http.MethodGet, "/does-not-exist", in.admin); got.Status != http.StatusNotFound {
 			t.Fatalf("%s: an unknown path with a token answers %d %s", role, got.Status, got.Body)
 		}
 	}
-	compare("off")
+	compare("admitted")
 
 	// The controls: the rules the comparison is about are on, where the family is served.
 	if got := in.probe(replicas["api"], http.MethodOptions, "/api/v1/system/ping", "", callers["the preflight of an allowed origin"]...); got.Status != http.StatusNoContent || got.Header.Get("Access-Control-Allow-Origin") != allowedOrigin {
@@ -316,22 +316,6 @@ func TestR_ARCH_001_AFamilyOfTheOtherRoleIsAnUnknownPath(t *testing.T) {
 	if got := in.probe(replicas["api"], http.MethodGet, "/api/v1/users/me/preferences", "", "Cookie", ended); got.Code(t) != "session_expired" {
 		t.Errorf("the ended session on the management API of api: %d %s", got.Status, got.Body)
 	}
-
-	// Anonymous access on: an unserved route is anonymous exactly as an unknown path is, never more and never less.
-	if got := in.st.Do(replicas["api"], http.MethodPatch, "/api/v1/settings/auth", in.admin, map[string]any{"anonymousAccess": true},
-		"If-Match", "*", "Content-Type", "application/merge-patch+json"); got.Status != http.StatusOK {
-		t.Fatalf("anonymous access on: %d %s", got.Status, got.Body)
-	}
-	for role, r := range replicas {
-		deadline := time.Now().Add(20 * time.Second)
-		for in.probe(r, http.MethodGet, "/does-not-exist", "").Status != http.StatusNotFound {
-			if time.Now().After(deadline) {
-				t.Fatalf("%s did not see anonymous access on", role)
-			}
-			time.Sleep(200 * time.Millisecond)
-		}
-	}
-	compare("on")
 }
 
 // TestR_EP_010_PackagesIgnoresASessionCookie: the session of a signed-in user is valid on api and on web and counts for

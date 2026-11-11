@@ -41,7 +41,7 @@ func TestDebClosing(t *testing.T) {
 	ensurePolicy(t, fx.adm, "e2e-deb-manage-cl-"+fx.run, []string{member}, [2]any{"sa:" + debPublisher, []string{"manage"}})
 	virtual := "deb-clapt-" + fx.run
 	fx.createRepo(t, virtual, map[string]any{
-		"key": virtual, "class": "virtual", "format": "deb", "requireAuthentication": true,
+		"key": virtual, "class": "virtual", "format": "deb",
 		"virtual": map[string]any{"members": []string{member, remote}, "deployTarget": member},
 		"deb":     map[string]any{"suites": []string{debSuite}, "components": []string{"main"}},
 	})
@@ -126,7 +126,7 @@ func TestDebClosingPublic(t *testing.T) {
 
 	key := "deb-public-" + fx.run
 	fx.createRepo(t, key, map[string]any{
-		"key": key, "class": "remote", "format": "deb", "requireAuthentication": true,
+		"key": key, "class": "remote", "format": "deb",
 		"remote": map[string]any{"url": "https://deb.debian.org/debian/", "mode": "pullThrough"},
 		"deb":    map[string]any{"upstreamKeys": string(armored)},
 	})

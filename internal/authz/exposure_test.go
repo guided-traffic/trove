@@ -274,11 +274,10 @@ func exposureFixture() *fixture {
 	f := newFixture().
 		repo("generic-local", "local", "generic", "").
 		repo("generic-other", "local", "generic", "").
-		repo("generic-auth", "local", "generic", `{"requireAuthentication": true}`).
+		repo("generic-auth", "local", "generic", "").
 		repo("files-virtual", "virtual", "generic", `{"virtual": {"members": ["generic-local"]}}`).
 		repo("npm-customers", "local", "npm", "")
 	f.policy(policyDef{name: "customers-read", selectors: []string{"@any"}, entries: map[string][]string{idBot: {"read"}, idDevs: {"read", "deploy"}}})
-	f.policy(policyDef{name: "anonymous-read", selectors: []string{"generic-local", "generic-other", "generic-auth"}, entries: map[string][]string{AnonymousID: {"read"}}})
 	f.bind(RoleAdmin, idOps)
 	f.exposure(ruleDef{endpoint: "customers", name: "releases", repo: "generic-local", dims: paths("releases/**")})
 	f.exposure(ruleDef{endpoint: "customers", name: "virtual", repo: "files-virtual", dims: paths("releases/**")})
@@ -297,10 +296,6 @@ func TestR_EP_013_ExposureCeiling(t *testing.T) {
 	f := exposureFixture()
 	reg := prometheus.NewRegistry()
 	e := newTestEngine(t, f, func(o *Options) { o.Ceiling = exposureCeiling(); o.Metrics = reg })
-	on := newTestEngine(t, f, func(o *Options) {
-		o.Ceiling = exposureCeiling()
-		o.AnonymousAccess = func(context.Context) (bool, error) { return true, nil }
-	})
 	n := 0
 	runAuthzCases(t, e, []authzCase{
 		{"R-EP-014 a SAT reads an exposed file on customers", onEP(botSub, "customers"), read("generic-local", "", "releases/1.0/app.zip"), Allow, ReasonAllowGrant, ""},
@@ -328,12 +323,6 @@ func TestR_EP_013_ExposureCeiling(t *testing.T) {
 		{"R-EP-014 Q-EP-59 a raw file of a version the rule hides is hidden", onEP(botSub, "customers"), Coordinate{Repository: qr("npm-customers"), Path: "@acme/sdk/-/sdk-1.9.0.tgz", Package: "@acme/sdk", Version: "1.9.0", Kind: KindArtifact, Actions: []Action{Read}}, DenyHidden, ReasonExposure, Read},
 		{"R-EP-014 Q-EP-59 a path of a format with package names that names no package is hidden", onEP(botSub, "customers"), read("npm-customers", "", "@acme/sdk/-/sdk-2.1.0.tgz"), DenyHidden, ReasonExposure, Read},
 		{"R-EP-014 Q-EP-59 a generic path without a package is decided by the paths as before", onEP(botSub, "customers"), read("generic-local", "", "releases/x"), Allow, ReasonAllowGrant, ""},
-	}, &n)
-	runAuthzCases(t, on, []authzCase{
-		{"R-EP-013 an anonymous read the rules admit passes on an anonymous endpoint", onEP(anonSub, "customers"), read("generic-local", "", "releases/a"), Allow, "", ""},
-		{"R-EP-013 an anonymous read the rules do not admit is 404, not 401", onEP(anonSub, "customers"), read("generic-local", "", "internal/x"), DenyHidden, ReasonExposure, Read},
-		{"R-EP-013 Q-EP-4 a repository that requires authentication and has no rule is the same 404", onEP(anonSub, "customers"), read("generic-auth", "", "a"), DenyHidden, ReasonExposure, Read},
-		{"R-EP-013 Q-EP-4 a missing repository is the same 404 for anonymous", onEP(anonSub, "customers"), read("ghost", "", "a"), DenyHidden, ReasonExposure, Read},
 	}, &n)
 
 	t.Run("R-EP-013 Q-EP-4 a hidden file and a missing file answer the same error", func(t *testing.T) {

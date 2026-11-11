@@ -1,4 +1,4 @@
-interface version 1
+interface version 2
 const APIPrefix = "/api/"
 const APIv1Prefix = "/api/v1/"
 const BearerScheme = "Bearer"
@@ -126,7 +126,7 @@ type FeedEntry: field Repositories []string `json:"repositories,omitempty"`
 type FeedEntry: field Tokens []string `json:"tokens,omitempty"`
 type FeedKind string
 type Handshake struct
-type Handshake: field AnonymousAccess bool `json:"anonymousAccess"`
+type Handshake: field AnonymousReads bool `json:"anonymousReads"`
 type Handshake: field Bastion HandshakeBastion `json:"bastion"`
 type Handshake: field Feed HandshakeFeed `json:"feed"`
 type Handshake: field Installation HandshakeInstallation `json:"installation"`

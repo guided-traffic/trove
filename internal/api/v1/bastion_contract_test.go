@@ -54,11 +54,11 @@ func TestR_BAS_008_TheInterfaceOperationsAreTaggedAndVersioned(t *testing.T) {
 // version of the interface is refused at load, so a version raised in one place only is found at start.
 func TestR_BAS_009_ADocumentedInterfaceVersionOtherThanTheCodesStopsTheLoad(t *testing.T) {
 	raw := string(EmbeddedYAML())
-	if _, err := LoadDocument([]byte(strings.Replace(raw, "x-trove-bastion-interface: 1", "x-trove-bastion-interface: 2", 1))); err == nil ||
+	if _, err := LoadDocument([]byte(strings.Replace(raw, "x-trove-bastion-interface: 2", "x-trove-bastion-interface: 3", 1))); err == nil ||
 		!strings.Contains(err.Error(), "x-trove-bastion-interface") {
-		t.Fatalf("a document for interface version 2 loaded: %v", err)
+		t.Fatalf("a document for another interface version loaded: %v", err)
 	}
-	if _, err := LoadDocument([]byte(strings.Replace(raw, "      x-trove-bastion-interface: 1\n      x-trove-permission:\n        bastion: true\n", "      x-trove-permission:\n        bastion: true\n", 1))); err == nil {
+	if _, err := LoadDocument([]byte(strings.Replace(raw, "      x-trove-bastion-interface: 2\n      x-trove-permission:\n        bastion: true\n", "      x-trove-permission:\n        bastion: true\n", 1))); err == nil {
 		t.Fatal("a {bastion: true} operation without a version loaded")
 	}
 }

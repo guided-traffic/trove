@@ -16,19 +16,14 @@ import (
 // iface.HeaderInterface; the bodies are the types of internal/bastion/iface.
 
 // BastionHandshake implements GET /api/v1/bastion/handshake (R-BAS-010): the interface version, the identity
-// and token expiry of the Bastion, the response base URL derived for this request, the effective anonymous
-// switch, the download switch and the feed position. It records the last contact of the replica.
+// and token expiry of the Bastion, the response base URL derived for this request, whether anonymous requests read
+// anything, the download switch and the feed position. It records the last contact of the replica.
 func (s *Server) BastionHandshake(w http.ResponseWriter, r *http.Request, _ gen.BastionHandshakeParams) {
 	ctx := r.Context()
 	b := s.o.Bastion
 	rec, ok := bastionmain.RecognitionFrom(ctx)
-	if !ok || b.Feed == nil || b.Anonymous == nil {
+	if !ok || b.Feed == nil || b.AnonymousReads == nil {
 		httpserver.Problem(w, r, unavailable("The Bastion interface"))
-		return
-	}
-	anonymous, err := b.Anonymous(ctx)
-	if err != nil {
-		httpserver.Problem(w, r, err)
 		return
 	}
 	cursor, err := b.Feed.Position(ctx)
@@ -53,7 +48,7 @@ func (s *Server) BastionHandshake(w http.ResponseWriter, r *http.Request, _ gen.
 		Bastion:          iface.HandshakeBastion{Name: rec.Bastion, TokenID: rec.TokenID, TokenExpiresAt: rec.TokenExpiresAt.UTC()},
 		Installation:     iface.HandshakeInstallation{BaseURL: b.BaseURL, Release: b.Release},
 		ResponseBaseURL:  info.BaseURL,
-		AnonymousAccess:  anonymous,
+		AnonymousReads:   b.AnonymousReads(ctx),
 		RecordDownloads:  b.Downloads != nil && b.Downloads.Records(),
 		Feed:             iface.HandshakeFeed{Cursor: cursor},
 		ServerTime:       time.Now().UTC(),

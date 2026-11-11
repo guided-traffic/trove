@@ -12,7 +12,7 @@ import (
 // installation to renew its answer. The token string outlives its request for the duration of that check only
 // (H-447).
 func (e *engine) refreshShape(q *rq, shape *answerVal) {
-	if q.cred.anonymous && !e.anonymousAccess() {
+	if q.cred.anonymous && !e.anonymousReads() {
 		return
 	}
 	period := e.cfg.Answers.Period

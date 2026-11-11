@@ -280,7 +280,7 @@ engine, coordination, audit, PostgreSQL and the blob store (`test/integration/au
 | `Stack.Environ()` | The environment every replica of the stack shares, for a suite that runs the binary instead of `Stack.Start` ([overload](../../test/integration/overload): a memory limit is per process) |
 
 The suites on the harness: [transfer](../../test/integration/transfer) (the HTTP surface of the files transfer and the
-repository operations, with the users, grants and anonymous switch of `webenv_test.go`),
+repository operations, with the users and grants of `webenv_test.go`),
 [endpoints](../../test/integration/endpoints) (three replicas behind a dispatcher, Valkey
 running and stopped, requests on the default and the further endpoints), [api](../../test/integration/api) (the
 conventions on a test resource registered through `Extra`, the cluster-wide rate limits, the system operations with a

@@ -48,12 +48,6 @@ type UseNoter interface {
 	NoteUse(tokenID, clientAddr string)
 }
 
-// AnonymousSettings reads the runtime anonymous switch (R-AUTH-037, R-AUTH-040).
-// *token.SettingsStore implements it.
-type AnonymousSettings interface {
-	Effective(ctx context.Context) (token.Effective, error)
-}
-
 // Options configure [New].
 type Options struct {
 	// Tokens validates Bearer, Basic and API-key credentials.
@@ -69,9 +63,6 @@ type Options struct {
 	// Principals resolves the groups of the authenticated principal at request
 	// time (R-AUTHZ-002).
 	Principals principal.Store
-	// Settings gives the runtime anonymous switch with the YAML ceiling
-	// auth.anonymous.allowed folded in; nil means anonymous access is off.
-	Settings AnonymousSettings
 	// Limiter is the failed-credential limiter; nil disables the throttle.
 	Limiter FailureLimiter
 	// ExemptCIDRs are auth.rate_limit.exempt_cidrs: never throttled.
@@ -127,7 +118,6 @@ func New(o Options) *Stage {
 
 // Authenticate implements [Authenticator].
 func (s *Stage) Authenticate(r *http.Request, ep EndpointRules) (Result, error) {
-	ctx := r.Context()
 	p, raw := rulePaths(r, ep)
 	if isExchangeRoute(r.Method, raw) || raw == registrytoken.TokenPath {
 		// The ID token in the Authorization header of an exchange is not a
@@ -156,7 +146,7 @@ func (s *Stage) Authenticate(r *http.Request, ep EndpointRules) (Result, error) 
 			return s.bySession(r, p, c.Value)
 		}
 	}
-	return s.noCredential(ctx, r, p, raw, ep)
+	return s.noCredential(r, p, raw, ep)
 }
 
 // rulePaths are the two readings of the request path the stage's path rules take, where the process serves the route
@@ -519,7 +509,7 @@ func (s *Stage) bySession(r *http.Request, path, cookie string) (Result, error) 
 }
 
 // noCredential is the last source of R-AUTH-001: the request becomes anonymous if
-// the endpoint, the runtime switch and the ceiling allow it (R-AUTH-037), or if
+// the endpoint allows it (R-AUTH-037), or if
 // the route is one that is always reachable without a credential. An endpoint that
 // admits no anonymous request turns every request without a credential into a 401,
 // those routes included (R-EP-010 item 4), so an outside audience learns nothing
@@ -528,7 +518,7 @@ func (s *Stage) bySession(r *http.Request, path, cookie string) (Result, error) 
 // neither always open nor public, and the hard limit of /api/v1 does not apply to it,
 // so it is decided like an unknown path (Q-ARCH-302). The always-open routes read
 // raw, the hard limit reads path.
-func (s *Stage) noCredential(ctx context.Context, r *http.Request, path, raw string, ep EndpointRules) (Result, error) {
+func (s *Stage) noCredential(r *http.Request, path, raw string, ep EndpointRules) (Result, error) {
 	if !ep.Anonymous {
 		ep.refused(r, Refusal{Reason: RefusedAnonymous})
 		return s.fail(MethodNone, "no_credential", s.unauthenticated(r, path, errs.CodeCredentialsRequired, "This endpoint requires a credential.", false))
@@ -536,18 +526,10 @@ func (s *Stage) noCredential(ctx context.Context, r *http.Request, path, raw str
 	if path != "" && (alwaysOpen(r.Method, raw) || (ep.PublicRoute != nil && ep.PublicRoute(r))) {
 		return anonymousResult(), nil
 	}
-	// Anonymous never passes an unsafe method on /api/v1 (R-AUTH-037 hard limit).
-	if s.o.Settings != nil && (!unsafeMethod(r.Method) || !isManagementAPI(path)) {
-		eff, err := s.o.Settings.Effective(ctx)
-		if err != nil {
-			if _, ok := errs.As(err); ok {
-				return Result{}, err
-			}
-			return Result{}, errs.E(errs.Unavailable, errs.CodeDatabaseUnavailable, "The settings cannot be read right now.", errs.WithCause(err))
-		}
-		if eff.AnonymousAccess {
-			return anonymousResult(), nil
-		}
+	// Anonymous never passes an unsafe method on /api/v1 (R-AUTH-037 hard limit). Whether it reads anything is the
+	// decision point's, by the visibility levels (R-AUTHZ-003).
+	if !unsafeMethod(r.Method) || !isManagementAPI(path) {
+		return anonymousResult(), nil
 	}
 	return s.fail(MethodNone, "no_credential", s.unauthenticated(r, path, errs.CodeCredentialsRequired, "This endpoint requires a credential.", false))
 }
@@ -557,7 +539,7 @@ func (s *Stage) noCredential(ctx context.Context, r *http.Request, path, raw str
 // trove token it names through the token cache of R-AUTH-023 and the rules of the endpoint, as for that token presented
 // itself. The grant travels with the result as a further ceiling; the decision point decides the request as for every
 // other (R-AUTHZ-015). An anonymous registry token stands for a request without a credential: it passes while the
-// endpoint and the runtime switch allow anonymous requests (R-AUTH-037).
+// endpoint allows anonymous requests (R-AUTH-037).
 func (s *Stage) byRegistryToken(r *http.Request, path string, ep EndpointRules, raw string) (Result, error) {
 	ctx := r.Context()
 	reject := func(reason string) (Result, error) {
@@ -602,27 +584,14 @@ func (s *Stage) byRegistryToken(r *http.Request, path string, ep EndpointRules, 
 	return s.accept(r, ep, info, Credential{Method: MethodBearer, ExpiresAt: &expires, Registry: &grant}, reject)
 }
 
-// anonymousRegistry accepts an anonymous registry token while the endpoint and the runtime switch allow anonymous
-// requests (R-AUTH-037, R-OCI-005); once either is off, the token is refused like a revoked one.
+// anonymousRegistry accepts an anonymous registry token while the endpoint allows anonymous requests (R-AUTH-037,
+// R-OCI-005); once it does not, the token is refused like a revoked one.
 func (s *Stage) anonymousRegistry(r *http.Request, path string, ep EndpointRules, grant *registrytoken.Grant, expires *time.Time) (Result, error) {
 	reject := func(reason string) (Result, error) {
 		return s.fail(MethodBearer, reason, s.unauthenticated(r, path, errs.CodeInvalidToken, "The token is not valid.", true))
 	}
 	if !ep.Anonymous {
 		ep.refused(r, Refusal{Reason: RefusedAnonymous})
-		return reject("anonymous_off")
-	}
-	if s.o.Settings == nil {
-		return reject("anonymous_off")
-	}
-	eff, err := s.o.Settings.Effective(r.Context())
-	if err != nil {
-		if _, ok := errs.As(err); ok {
-			return Result{}, err
-		}
-		return Result{}, errs.E(errs.Unavailable, errs.CodeDatabaseUnavailable, "The settings cannot be read right now.", errs.WithCause(err))
-	}
-	if !eff.AnonymousAccess {
 		return reject("anonymous_off")
 	}
 	res := anonymousResult()
@@ -730,7 +699,7 @@ func (s *Stage) AuthenticateTokenRequest(r *http.Request, ep EndpointRules, c Pr
 	p, raw := rulePaths(r, ep)
 	switch c.method {
 	case MethodNone:
-		return s.noCredential(r.Context(), r, p, raw, ep)
+		return s.noCredential(r, p, raw, ep)
 	case MethodBasic, MethodBearer:
 		return s.byToken(r, p, ep, c.value(), c.method, c.user)
 	}

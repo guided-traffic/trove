@@ -128,6 +128,9 @@ const (
 	// documents name versions while the rows hold none, so the fifth rule of check 13 has no stored version to judge
 	// and its vacuity rule fails it (Q-AUTHZ-258).
 	VersionsOutsideRows Defect = "versions-outside-rows"
+	// LeaksWiki lets the package document of a format with wiki content (WithWiki) hold the README for every caller, without asking
+	// Host.WikiReadable, so a caller who reads the artifacts and not the wiki gets the wiki: check 15 (R-AUTHZ-034).
+	LeaksWiki Defect = "leaks-wiki"
 	// FiltersDifferently renders the package document otherwise on the path that filters it for the caller, also when
 	// the filter hides nothing: the control run of check 13's fifth rule (Q-AUTHZ-255).
 	FiltersDifferently Defect = "filters-differently"
@@ -149,6 +152,13 @@ const SearchReadsPackages Option = "search-reads-packages"
 // VaryUserAgent names User-Agent in the Vary of the package document. With VariesByHeader the variant passes
 // check 12: a document may vary by a request header it names in Vary.
 const VaryUserAgent Option = "vary-user-agent"
+
+// WithWiki gives the test format wiki content (R-AUTHZ-034): its facts say so and its package document holds the member "readme",
+// which it puts in only for a caller whose Host.WikiReadable says it may read the wiki.
+const WithWiki Option = "with-wiki"
+
+// ReadmeSample is the README text the format of WithWiki puts into the package document; its fixture lists it as a wiki sample.
+const ReadmeSample = "tf wiki sample: the README of this package"
 
 // Format is the test format.
 type Format struct {
@@ -256,7 +266,7 @@ func (f Format) Descriptor() formats.Descriptor {
 		Facts: catalog.Facts{
 			ID: ID, DisplayName: "Test format", Classes: []formats.Class{formats.Local, formats.Remote, formats.Virtual},
 			Layout: "testfmt", ProtocolBasePath: "/api/testfmt/{project}/{key}/", PatternSubject: formats.SubjectName, PackageNames: true,
-			DefaultMetadataTTLSeconds: &ttl, OwnershipDefault: catalog.OwnershipEnforce,
+			DefaultMetadataTTLSeconds: &ttl, OwnershipDefault: catalog.OwnershipEnforce, Wiki: f.has(string(WithWiki)),
 		},
 		ContractVersion:  formats.ContractVersion,
 		Names:            names{caseSensitive: f.has(string(NamesCaseSensitive))},
@@ -736,6 +746,9 @@ func (f Format) document(ctx context.Context, rq *formats.Request, name string) 
 	}
 	if filtered && f.has(string(FiltersDifferently)) {
 		doc["filtered"] = true
+	}
+	if f.has(string(WithWiki)) && (f.has(string(LeaksWiki)) || rq.Host.WikiReadable(ctx, rq, f.documentTarget(name, formats.ActionRead))) {
+		doc["readme"] = ReadmeSample
 	}
 	b, err := json.Marshal(doc)
 	return b, true, err

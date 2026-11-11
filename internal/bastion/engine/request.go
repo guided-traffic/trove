@@ -316,7 +316,7 @@ func (e *engine) stepCredentials(q *rq) bool {
 			// The main installation has not said yet whether it admits anonymous requests (Q-BAS-99).
 			e.unreachable(q)
 			return false
-		case !st.AnonymousAccess:
+		case !st.AnonymousReads:
 			e.refuse(q, errCredentialsRequired(q.r), metrics.RefusedInvalid)
 			return false
 		}

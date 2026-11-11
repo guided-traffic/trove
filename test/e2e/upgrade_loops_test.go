@@ -89,11 +89,11 @@ func buildUpgradeFixture(t *testing.T) *upgradeFx {
 	fx.nugetAll = "nuget-upgrade-" + fx.nuget.run + "-all"
 	adm := fx.nuget.adm
 	adm.do(http.MethodPost, reposRoute, map[string]any{
-		"key": fx.nugetRemote, "class": "remote", "format": "nuget", "requireAuthentication": true,
+		"key": fx.nugetRemote, "class": "remote", "format": "nuget",
 		"remote": map[string]any{"url": "https://" + apiHost + "/v3/index.json", "extraHosts": []map[string]any{{"pattern": contentHost, "sendCredentials": false}}},
 	}).want(t, "create "+fx.nugetRemote, 201)
 	adm.do(http.MethodPost, reposRoute, map[string]any{
-		"key": fx.nugetAll, "class": "virtual", "format": "nuget", "requireAuthentication": true,
+		"key": fx.nugetAll, "class": "virtual", "format": "nuget",
 		"virtual": map[string]any{"members": []string{nugetAuthKey, fx.nugetRemote}, "deployTarget": nugetAuthKey},
 	}).want(t, "create "+fx.nugetAll, 201)
 	ensurePolicy(t, adm, "e2e-nuget-upgrade-"+fx.nuget.run, []string{fx.nugetRemote, fx.nugetAll}, [2]any{"sa:" + nugetPubSA, []string{"read"}})

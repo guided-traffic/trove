@@ -512,6 +512,8 @@ type authzMe struct {
 	Roles        []string `json:"roles"`
 	Capabilities []string `json:"capabilities"`
 	Principals   []string `json:"principals"`
+	// Internal says the caller reads the level internal (R-AUTHZ-030).
+	Internal bool `json:"internal"`
 	// Memberships are the projects the caller is a member of through this credential, with the role in
 	// force (Q-AUTHZ-207); [] for a caller that is a member of none.
 	Memberships []authz.Membership `json:"projects"`
@@ -534,7 +536,7 @@ func (s *Server) GetAuthzMe(w http.ResponseWriter, r *http.Request) {
 		httpserver.Problem(w, r, err)
 		return
 	}
-	out := authzMe{Roles: []string{}, Capabilities: []string{}, Principals: nonNil(me.Principals), Memberships: me.Memberships, Epoch: me.Epoch}
+	out := authzMe{Roles: []string{}, Capabilities: []string{}, Principals: nonNil(me.Principals), Internal: me.Internal, Memberships: me.Memberships, Epoch: me.Epoch}
 	if out.Memberships == nil {
 		out.Memberships = []authz.Membership{}
 	}

@@ -182,8 +182,8 @@ func TestR_AUTH_040_ASettingsChangeCarriesTheMaximaInItsEntry(t *testing.T) {
 	if m := maxOf(got[1], "pat"); m["before"] != float64(7200) || m["after"] != float64(7200) {
 		t.Errorf("a change of the expiry notice must still carry the pat maximum: %v", m)
 	}
-	if got[1]["anonymousAccess"] == nil {
-		t.Error("the anonymous switch is part of every entry")
+	if _, ok := got[1]["anonymousAccess"]; ok {
+		t.Error("the entry still carries the anonymous switch")
 	}
 }
 

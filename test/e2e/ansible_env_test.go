@@ -77,7 +77,7 @@ func ansibleRepoURL(t testing.TB, key string) string {
 func (fx *ansibleFixture) localRepo(t testing.TB, purpose string) string {
 	t.Helper()
 	key := fmt.Sprintf("ansible-%s-%s", purpose, fx.run)
-	fx.createRepo(t, key, map[string]any{"key": key, "class": "local", "format": "ansible", "requireAuthentication": !strings.HasPrefix(purpose, "open")})
+	fx.createRepo(t, key, map[string]any{"key": key, "class": "local", "format": "ansible"})
 	return key
 }
 
@@ -97,7 +97,7 @@ func (fx *ansibleFixture) remoteRepo(t testing.TB, purpose string, remote map[st
 	for k, v := range remote {
 		r[k] = v
 	}
-	fx.createRepo(t, key, map[string]any{"key": key, "class": "remote", "format": "ansible", "requireAuthentication": true, "remote": r})
+	fx.createRepo(t, key, map[string]any{"key": key, "class": "remote", "format": "ansible", "remote": r})
 	return key
 }
 

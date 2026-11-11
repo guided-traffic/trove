@@ -262,7 +262,7 @@ func (o *Ownership) factsOf(idx *Index, sub Subject, k ownKey, c Coordinate) own
 		Package: c.Package, Path: c.Path, Actions: []Action{Manage}, Addressed: firstRepo(c.Addressed, c.Repository),
 	})
 	for _, id := range st.pset {
-		if id != AnonymousID && id != AuthenticatedID {
+		if id != AnonymousID {
 			f.identities[id] = true
 		}
 	}
@@ -688,7 +688,7 @@ func (o *Ownership) manages(idx *Index, sub Subject, repoKey qname.Repo, name st
 // owns reports whether one of the subject's owner identities is among the owners.
 func owns(idx *Index, sub Subject, owners []Owner) bool {
 	for _, id := range idx.principalIDs(sub) {
-		if id == AnonymousID || id == AuthenticatedID {
+		if id == AnonymousID {
 			continue
 		}
 		for _, ow := range owners {
@@ -782,6 +782,8 @@ func ownerRef(ctx context.Context, qs *q.Queries, ref string) (Ref, string, erro
 	switch r.Kind {
 	case principal.KindBastion:
 		return Ref{}, "", principal.BastionNotAllowed("the owner of a package")
+	case principal.KindAnonymous, kindAuthenticated:
+		return Ref{}, "", principal.LevelPrincipalNotAllowed("the owner of a package")
 	case principal.KindUser:
 		kind = dbUser
 	case principal.KindGroup:

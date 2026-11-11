@@ -7,30 +7,31 @@ import (
 	"github.com/guided-traffic/trove/internal/auth/principal"
 )
 
-// The identifiers of the two built-in principals; the migration of the
-// principal table seeds them and a database guard keeps them from changing
-// (R-AUTHZ-003, R-AUTHZ-030).
-const (
-	AnonymousID     = "00000000-0000-0000-0000-000000000001"
-	AuthenticatedID = "00000000-0000-0000-0000-000000000002"
-)
+// AnonymousID is the identifier of the built-in principal anonymous, the actor of a request without a credential; the
+// migration of the principal table seeds it and a database guard keeps it from changing (R-AUTHZ-003). No table that grants
+// may name it (SQLSTATE AI009, Q-AUTHZ-279).
+const AnonymousID = "00000000-0000-0000-0000-000000000001"
 
 // The kinds of the principal table as the database stores them. They differ
 // from principal.Kind only for CI identity mappings.
 const (
-	dbUser          = "user"
-	dbGroup         = "group"
-	dbServiceAcct   = "service_account"
-	dbCIMapping     = "ci_mapping"
-	dbAnonymous     = "anonymous"
-	dbAuthenticated = "authenticated"
+	dbUser        = "user"
+	dbGroup       = "group"
+	dbServiceAcct = "service_account"
+	dbCIMapping   = "ci_mapping"
+	dbAnonymous   = "anonymous"
 )
+
+// kindAuthenticated is the kind of the reference "authenticated", which no longer names a principal (Q-AUTHZ-263). It is
+// parsed only so that every write path refuses it with 422 principal_not_allowed and a detail that names the visibility
+// levels, instead of an unknown kind (Q-AUTHZ-279).
+const kindAuthenticated principal.Kind = "authenticated"
 
 // Ref is a principal reference of the API: user:<name>, group:<name>, sa:<name> or
 // sa:<projectKey>/<name> for a project's service account, ci:<issuer>/<mapping> or
-// ci:<issuer>/<projectKey>/<mapping> for a mapping of a project's tier, anonymous,
-// authenticated (R-AUTHZ-002, Q-AUTHZ-209, Q-AUTHZ-214). Name is the principal's
-// stored name, the project key included.
+// ci:<issuer>/<projectKey>/<mapping> for a mapping of a project's tier (R-AUTHZ-002, Q-AUTHZ-209, Q-AUTHZ-214). Name is
+// the principal's stored name, the project key included. The references anonymous and authenticated parse but name nothing
+// a grant can reach (IsLevelPrincipal).
 type Ref struct {
 	Kind principal.Kind
 	Name string
@@ -43,11 +44,11 @@ func ParseRef(s string) (Ref, error) {
 	case "anonymous":
 		return Ref{Kind: principal.KindAnonymous, Name: "anonymous"}, nil
 	case "authenticated":
-		return Ref{Kind: principal.KindAuthenticated, Name: "authenticated"}, nil
+		return Ref{Kind: kindAuthenticated, Name: "authenticated"}, nil
 	}
 	prefix, name, ok := strings.Cut(s, ":")
 	if !ok || name == "" {
-		return Ref{}, fmt.Errorf("%q is not a principal reference (user:<name>, group:<name>, sa:<name>, sa:<project>/<name>, ci:<issuer>/<mapping>, ci:<issuer>/<project>/<name>, anonymous, authenticated)", s)
+		return Ref{}, fmt.Errorf("%q is not a principal reference (user:<name>, group:<name>, sa:<name>, sa:<project>/<name>, ci:<issuer>/<mapping>, ci:<issuer>/<project>/<name>)", s)
 	}
 	switch prefix {
 	case "user":
@@ -69,7 +70,7 @@ func ParseRef(s string) (Ref, error) {
 // String renders the reference.
 func (r Ref) String() string {
 	switch r.Kind {
-	case principal.KindAnonymous, principal.KindAuthenticated:
+	case principal.KindAnonymous, kindAuthenticated:
 		return string(r.Kind)
 	case principal.KindServiceAccount:
 		return "sa:" + r.Name
@@ -84,7 +85,7 @@ func refOfRow(kind, name string) string {
 	switch kind {
 	case "":
 		return ""
-	case dbAnonymous, dbAuthenticated:
+	case dbAnonymous:
 		return kind
 	case dbServiceAcct:
 		return "sa:" + name
@@ -92,4 +93,10 @@ func refOfRow(kind, name string) string {
 		return "ci:" + name
 	}
 	return kind + ":" + name
+}
+
+// IsLevelPrincipal reports whether the reference is anonymous or authenticated: the two that a visibility level replaced and
+// that no policy entry, role binding, project membership or owner record may name (R-AUTHZ-003, Q-AUTHZ-279).
+func (r Ref) IsLevelPrincipal() bool {
+	return r.Kind == principal.KindAnonymous || r.Kind == kindAuthenticated
 }

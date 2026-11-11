@@ -102,9 +102,6 @@ type env struct {
 	mu    sync.Mutex // the admin connection is not safe for concurrent use
 	s3    *s3Env
 
-	// anonymous is the switch of R-AUTH-037 the replicas read.
-	anonymous atomic.Bool
-
 	peopleMu sync.Mutex
 	people   map[string]person // bearer name -> principal
 }
@@ -556,7 +553,7 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 			Audit: config.AuthzAudit{Reads: config.AuthzReadsDenied},
 		},
 		EpochPollInterval: o.poll, RetryBudget: 5 * time.Second,
-		AnonymousAccess: func(context.Context) (bool, error) { return e.anonymous.Load(), nil }, Recorder: r.rec, Replica: name, Log: quiet, Metrics: r.reg,
+		Recorder: r.rec, Replica: name, Log: quiet, Metrics: r.reg,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -705,7 +702,7 @@ func (r *replica) serve(o replicaOpts) {
 		API: v1.Services{
 			Config: apiConfig(), Store: r.db, Queue: r.queue, Audit: r.rec,
 		},
-		Repositories: v1.RepositoryServices{Service: r.repos, Authz: r.engine, Reader: r.reader, AnonymousAccess: func(context.Context) (bool, error) { return r.e.anonymous.Load(), nil }},
+		Repositories: v1.RepositoryServices{Service: r.repos, Authz: r.engine, Reader: r.reader, PublicContent: func(context.Context) bool { idx := r.engine.Index(); return idx != nil && idx.PublicContent() }},
 		Files:        r.files,
 		FilesDecider: r.engine,
 		Cache:        v1.CacheServices{Invalidations: inv, Repositories: r.repos, Authz: r.engine},

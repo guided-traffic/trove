@@ -54,6 +54,8 @@ func SubjectOf(ctx context.Context) authz.Subject {
 		SessionID:  p.Credential.SessionID,
 		AuthMethod: string(p.Credential.Method),
 		MinEpoch:   p.MinEpoch,
+		External:   p.External,
+		ViaBastion: httpserver.BastionForward(ctx),
 	}
 	for _, g := range p.Groups {
 		s.Groups = append(s.Groups, principal.GroupRef{ID: g.ID, Name: g.Name})

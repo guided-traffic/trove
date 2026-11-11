@@ -122,7 +122,7 @@ Changes WP1.3 made to the contracts above (see [authorization.md](authorization.
 | `authz.Authorizer` implementation | `*authz.Engine` is also the `authz.Decider` (`Begin` and the `…On` forms: one index per request, Q-AUTHZ-159), and offers `Check`, `Effective` and `RecordAllowed`; `authz.NotFound()` is the one 404 for hidden and missing resources |
 | `httpserver.Principal` | `MinEpoch int64`, the parsed `Trove-Authz-Min-Epoch` of an authenticated request (Q-AUTHZ-17); `edge.SubjectFrom` copies it |
 | `v1.Access` | `v1.NewAccess` takes the per-request `authz.Decider` and holds the request's `edge.Access`; `v1.ActionAccess` (`RequireAction`) is the optional second interface it implements for the action form. The services of the composition root (`RepositoryServices.Authz`, `EndpointServices.Authorizer`) are typed `authz.Decider` as well, so there is no conversion from `authz.Authorizer` (`v1.DeciderOf` is gone) |
-| wiring | the authz area (`wireAuthz`) takes the identity area's `anonymousAccess func(ctx) (bool, error)` as an input; it was a field of `m1Wiring` |
+| wiring | the authz area (`wireAuthz`) takes no anonymous-switch input any more (R-AUTH-037); `App.publicContent` reads the installed index |
 | `permission` strings of `Require` | capability names, and `role:<role>` for the role form |
 
 Changes of the leftover items of the backend (wave 3, [http-api.md](http-api.md), Q-API-40 to Q-API-44, Q-AUTH-50, Q-EP-24 to Q-EP-26):

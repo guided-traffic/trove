@@ -21,17 +21,9 @@ func (s *Server) GetLoginOptions(w http.ResponseWriter, r *http.Request) {
 		httpserver.Problem(w, r, unavailable("The login"))
 		return
 	}
-	anonymous := false
-	if s.o.Auth.Settings != nil {
-		eff, err := s.o.Auth.Settings.Effective(r.Context())
-		if err != nil {
-			failIdentity(w, r, principalErr(err))
-			return
-		}
-		anonymous = eff.AnonymousAccess
-	}
-	o := s.o.Auth.Login.LoginOptions(anonymous)
-	out := gen.LoginOptions{Providers: make([]gen.LoginProvider, 0, len(o.Providers)), LocalLogin: o.LocalLogin, AnonymousAccess: o.AnonymousAccess, AutoRedirect: optString(o.AutoRedirect)}
+	public := s.o.Auth.PublicContent != nil && s.o.Auth.PublicContent(r.Context())
+	o := s.o.Auth.Login.LoginOptions(public)
+	out := gen.LoginOptions{Providers: make([]gen.LoginProvider, 0, len(o.Providers)), LocalLogin: o.LocalLogin, PublicContent: o.PublicContent, AutoRedirect: optString(o.AutoRedirect)}
 	for _, p := range o.Providers {
 		out.Providers = append(out.Providers, gen.LoginProvider{Id: p.ID, DisplayName: p.DisplayName, StartUrl: p.StartURL, Available: p.Available})
 	}

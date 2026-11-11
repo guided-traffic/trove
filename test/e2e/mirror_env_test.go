@@ -233,7 +233,7 @@ func (e *mirrorEnv) grant(t testing.TB, format string, keys ...string) {
 func (e *mirrorEnv) create(t testing.TB, body map[string]any) string {
 	t.Helper()
 	key, _ := body["key"].(string)
-	body["class"], body["requireAuthentication"] = "remote", true
+	body["class"] = "remote"
 	e.adm.do(http.MethodPost, reposRoute, body).want(t, "create "+key, 201)
 	e.mu.Lock()
 	e.repos = append(e.repos, key)

@@ -45,6 +45,14 @@ func NotFound(what string) error {
 	return errs.E(errs.NotFound, errs.CodeNotFound, what+" does not exist.")
 }
 
+// LevelPrincipalNotAllowed is the 422 of every write that names anonymous or authenticated as a grantee, a role holder, a
+// member or an owner (R-AUTHZ-003, Q-AUTHZ-279): a visibility level is the one way to open content to everyone or to every
+// internal user. what says which write was asked for.
+func LevelPrincipalNotAllowed(what string) error {
+	return errs.E(errs.Unprocessable, errs.CodePrincipalNotAllowed,
+		"anonymous and authenticated cannot be "+what+": a visibility level (private, internal or public) opens content to everyone or to every internal user.")
+}
+
 // BastionNotAllowed is the 422 of every write that would give a Bastion registration a grant, a role, an
 // ownership or a membership (R-BAS-004): a policy entry, a role binding, an owner record, a group member or a
 // project Owner that names bastion:<name>. what says which of them was asked for.

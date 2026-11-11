@@ -8209,7 +8209,7 @@ then every request without a credential is challenged.
 
 **Choice:** (a). The member `visibility` is in every view of the document, the consumer view included; a write through it follows
 R-AUTHZ-033 (bound by the project, wiki at most artifacts, recent authentication to raise) and writes `authz.settings.changed`
-(R-AUTHZ-031). Migration `00071_visibility.sql` removes `requireAuthentication` from every stored document.
+(R-AUTHZ-031). Migration `00073_visibility.sql` removes `requireAuthentication` from every stored document.
 
 **Rationale:** the catalog's case (attributing reads of clients that authenticate only after a 401) is what a level other than
 `public` does by itself; keeping the member would mean a second switch for the same question, which the owner ruled out. The

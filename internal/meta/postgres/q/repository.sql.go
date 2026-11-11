@@ -56,7 +56,7 @@ func (q *Queries) DeleteRepositoryRow(ctx context.Context, id int64) (int64, err
 }
 
 const getRepositoryByID = `-- name: GetRepositoryByID :many
-SELECT id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version, project_id
+SELECT id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version, project_id, visibility_artifacts, visibility_wiki
   FROM repositories
  WHERE id = $1::bigint
 `
@@ -85,6 +85,8 @@ func (q *Queries) GetRepositoryByID(ctx context.Context, id int64) ([]Repository
 			&i.LastActivityAt,
 			&i.ClaimsVersion,
 			&i.ProjectID,
+			&i.VisibilityArtifacts,
+			&i.VisibilityWiki,
 		); err != nil {
 			return nil, err
 		}
@@ -97,7 +99,7 @@ func (q *Queries) GetRepositoryByID(ctx context.Context, id int64) ([]Repository
 }
 
 const getRepositoryByName = `-- name: GetRepositoryByName :many
-SELECT r.id, r.key, r.format, r.class, r.config, r.created_at, r.updated_at, r.lifecycle, r.config_version, r.created_by, r.updated_by, r.last_activity_at, r.claims_version, r.project_id
+SELECT r.id, r.key, r.format, r.class, r.config, r.created_at, r.updated_at, r.lifecycle, r.config_version, r.created_by, r.updated_by, r.last_activity_at, r.claims_version, r.project_id, r.visibility_artifacts, r.visibility_wiki
   FROM repositories r
   JOIN project p ON p.id = r.project_id
  WHERE p.key = $1::text AND r.key = $2::text
@@ -133,6 +135,8 @@ func (q *Queries) GetRepositoryByName(ctx context.Context, arg GetRepositoryByNa
 			&i.LastActivityAt,
 			&i.ClaimsVersion,
 			&i.ProjectID,
+			&i.VisibilityArtifacts,
+			&i.VisibilityWiki,
 		); err != nil {
 			return nil, err
 		}
@@ -149,7 +153,7 @@ INSERT INTO repositories (key, format, class, config, project_id, created_by, up
 VALUES ($1::text, $2::text, $3::text, $4::text::jsonb,
         $5::text::uuid, NULLIF($6::text, '')::uuid, NULLIF($6::text, '')::uuid)
 ON CONFLICT (project_id, key) DO NOTHING
-RETURNING id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version, project_id
+RETURNING id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version, project_id, visibility_artifacts, visibility_wiki
 `
 
 type InsertRepositoryParams struct {
@@ -196,6 +200,8 @@ func (q *Queries) InsertRepository(ctx context.Context, arg InsertRepositoryPara
 			&i.LastActivityAt,
 			&i.ClaimsVersion,
 			&i.ProjectID,
+			&i.VisibilityArtifacts,
+			&i.VisibilityWiki,
 		); err != nil {
 			return nil, err
 		}
@@ -208,7 +214,7 @@ func (q *Queries) InsertRepository(ctx context.Context, arg InsertRepositoryPara
 }
 
 const listProjectRepositories = `-- name: ListProjectRepositories :many
-SELECT r.id, r.key, r.format, r.class, r.config, r.created_at, r.updated_at, r.lifecycle, r.config_version, r.created_by, r.updated_by, r.last_activity_at, r.claims_version, r.project_id
+SELECT r.id, r.key, r.format, r.class, r.config, r.created_at, r.updated_at, r.lifecycle, r.config_version, r.created_by, r.updated_by, r.last_activity_at, r.claims_version, r.project_id, r.visibility_artifacts, r.visibility_wiki
   FROM repositories r
   JOIN project p ON p.id = r.project_id
  WHERE p.key = $1::text
@@ -240,6 +246,8 @@ func (q *Queries) ListProjectRepositories(ctx context.Context, project string) (
 			&i.LastActivityAt,
 			&i.ClaimsVersion,
 			&i.ProjectID,
+			&i.VisibilityArtifacts,
+			&i.VisibilityWiki,
 		); err != nil {
 			return nil, err
 		}
@@ -253,7 +261,7 @@ func (q *Queries) ListProjectRepositories(ctx context.Context, project string) (
 
 const listRepositories = `-- name: ListRepositories :many
 
-SELECT r.id, r.key, r.format, r.class, r.config, r.created_at, r.updated_at, r.lifecycle, r.config_version, r.created_by, r.updated_by, r.last_activity_at, r.claims_version, r.project_id
+SELECT r.id, r.key, r.format, r.class, r.config, r.created_at, r.updated_at, r.lifecycle, r.config_version, r.created_by, r.updated_by, r.last_activity_at, r.claims_version, r.project_id, r.visibility_artifacts, r.visibility_wiki
   FROM repositories r
   JOIN project p ON p.id = r.project_id
  ORDER BY p.key COLLATE "C", r.key COLLATE "C"
@@ -295,6 +303,8 @@ func (q *Queries) ListRepositories(ctx context.Context) ([]Repository, error) {
 			&i.LastActivityAt,
 			&i.ClaimsVersion,
 			&i.ProjectID,
+			&i.VisibilityArtifacts,
+			&i.VisibilityWiki,
 		); err != nil {
 			return nil, err
 		}
@@ -307,7 +317,7 @@ func (q *Queries) ListRepositories(ctx context.Context) ([]Repository, error) {
 }
 
 const lockRepositoryByName = `-- name: LockRepositoryByName :many
-SELECT r.id, r.key, r.format, r.class, r.config, r.created_at, r.updated_at, r.lifecycle, r.config_version, r.created_by, r.updated_by, r.last_activity_at, r.claims_version, r.project_id
+SELECT r.id, r.key, r.format, r.class, r.config, r.created_at, r.updated_at, r.lifecycle, r.config_version, r.created_by, r.updated_by, r.last_activity_at, r.claims_version, r.project_id, r.visibility_artifacts, r.visibility_wiki
   FROM repositories r
   JOIN project p ON p.id = r.project_id
  WHERE p.key = $1::text AND r.key = $2::text
@@ -344,6 +354,8 @@ func (q *Queries) LockRepositoryByName(ctx context.Context, arg LockRepositoryBy
 			&i.LastActivityAt,
 			&i.ClaimsVersion,
 			&i.ProjectID,
+			&i.VisibilityArtifacts,
+			&i.VisibilityWiki,
 		); err != nil {
 			return nil, err
 		}
@@ -362,7 +374,7 @@ UPDATE repositories
        updated_at = now(),
        updated_by = NULLIF($1::text, '')::uuid
  WHERE id = $2::bigint AND lifecycle = 'active'
-RETURNING id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version, project_id
+RETURNING id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version, project_id, visibility_artifacts, visibility_wiki
 `
 
 type MarkRepositoryDeletingParams struct {
@@ -396,6 +408,8 @@ func (q *Queries) MarkRepositoryDeleting(ctx context.Context, arg MarkRepository
 			&i.LastActivityAt,
 			&i.ClaimsVersion,
 			&i.ProjectID,
+			&i.VisibilityArtifacts,
+			&i.VisibilityWiki,
 		); err != nil {
 			return nil, err
 		}
@@ -477,7 +491,7 @@ UPDATE repositories
        updated_at = now(),
        updated_by = NULLIF($2::text, '')::uuid
  WHERE id = $3::bigint AND config_version = $4::bigint AND lifecycle = 'active'
-RETURNING id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version, project_id
+RETURNING id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version, project_id, visibility_artifacts, visibility_wiki
 `
 
 type UpdateRepositoryConfigParams struct {
@@ -518,6 +532,8 @@ func (q *Queries) UpdateRepositoryConfig(ctx context.Context, arg UpdateReposito
 			&i.LastActivityAt,
 			&i.ClaimsVersion,
 			&i.ProjectID,
+			&i.VisibilityArtifacts,
+			&i.VisibilityWiki,
 		); err != nil {
 			return nil, err
 		}

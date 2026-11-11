@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"net/http"
 
 	"github.com/guided-traffic/trove/internal/api/login"
@@ -126,16 +125,14 @@ type repositoryArea struct {
 	service  *repository.Service
 }
 
-// identityArea is the stores and services of the identity area. anonymousAccess
-// is the runtime switch of R-AUTH-037 that the decision point reads.
+// identityArea is the stores and services of the identity area.
 type identityArea struct {
-	metrics         *principal.Metrics
-	principals      principal.Store
-	manager         *principal.Manager
-	provisioner     principal.Provisioner
-	tokens          *token.Service
-	settings        *token.SettingsStore
-	anonymousAccess func(ctx context.Context) (bool, error)
+	metrics     *principal.Metrics
+	principals  principal.Store
+	manager     *principal.Manager
+	provisioner principal.Provisioner
+	tokens      *token.Service
+	settings    *token.SettingsStore
 }
 
 // authzArea is the decision point and the policy service. The engine is the

@@ -133,6 +133,10 @@ type Route struct {
 	// token with (Ansible Galaxy, R-ANS-006). The authentication stage reads that scheme only on such a route, from the
 	// dispatcher's own match like APIKey, and treats the header as "not a trove token" everywhere else (Q-ANS-4, ADR-191).
 	TokenScheme bool
+	// Wiki marks a route that serves only wiki content (R-AUTHZ-034): the dispatcher's coarse check decides it with the part
+	// wiki, so a caller who may read the artifacts and not the wiki is refused as for a missing resource. The kit (check 15)
+	// requires the Kind Metadata or Computed and the action read.
+	Wiki bool
 }
 
 // matcher returns the route's matcher: Match, or the compiled Template.
@@ -428,6 +432,9 @@ type Target struct {
 	Package, Version, Path string
 	// Actions are the actions the operation needs.
 	Actions []Action
+	// Part is the part of the repository the target reads (R-AUTHZ-034). PartWiki asks the read of the wiki: Authorize refuses
+	// it as a read of the wiki, and any action but read with it is refused.
+	Part authz.Part
 }
 
 // PathKind says how a path behaves in caches (R-REPO-003).

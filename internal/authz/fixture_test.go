@@ -89,6 +89,18 @@ func (f *fixture) ensureProject(key string) string {
 	return id
 }
 
+// levels sets the visibility levels of the repositories' artifacts and wiki (R-AUTHZ-033); a repository the fixture does not
+// know panics. The levels of the fixture are private until a test sets them.
+func (f *fixture) levels(key, artifacts, wiki string) *fixture {
+	for i := range f.s.Repositories {
+		if f.s.Repositories[i].Key == key {
+			f.s.Repositories[i].VisibilityArtifacts, f.s.Repositories[i].VisibilityWiki = artifacts, wiki
+			return f
+		}
+	}
+	panic("unknown repository " + key)
+}
+
 // policyDef describes one policy.
 type policyDef struct {
 	name      string
@@ -154,8 +166,6 @@ func (f *fixture) policy(d policyDef) *fixture {
 		switch pid {
 		case AnonymousID:
 			kind = dbAnonymous
-		case AuthenticatedID:
-			kind = dbAuthenticated
 		case idBot:
 			kind = dbServiceAcct
 		case idAlice, idBob, idCarol, idAudit:
@@ -291,7 +301,6 @@ func newTestEngine(t testing.TB, f *fixture, mod func(*Options)) *Engine {
 	src.set(f.s)
 	o := Options{
 		Source: src, Changes: &fakeChanges{}, Config: testConfig(), RetryBudget: time.Second, Formats: testRegistry(),
-		AnonymousAccess: func(context.Context) (bool, error) { return false, nil },
 	}
 	if mod != nil {
 		mod(&o)

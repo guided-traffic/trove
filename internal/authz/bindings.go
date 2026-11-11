@@ -36,9 +36,12 @@ func (s *Service) bindable(ctx context.Context, role Role, ref string) (Ref, str
 	switch r.Kind {
 	case principal.KindBastion:
 		return Ref{}, "", principal.BastionNotAllowed("bound to a role")
-	case principal.KindAnonymous, principal.KindAuthenticated, principal.KindCI:
+	case principal.KindCI:
 		return Ref{}, "", roleProblem("/principal", errs.CodeRoleNotAllowed,
 			"System roles are bound to users, groups and service accounts only.")
+	}
+	if r.IsLevelPrincipal() {
+		return Ref{}, "", principal.LevelPrincipalNotAllowed("bound to a role")
 	}
 	id, err := s.principalID(ctx, r)
 	if err != nil {

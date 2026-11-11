@@ -129,21 +129,17 @@ type Subject struct {
 	// AuthMethod is how the credential was presented (session, bearer, basic,
 	// api_key), for the actor of an audit event; empty when unknown.
 	AuthMethod string
-	// anon is the runtime switch of R-AUTH-037 as the decision point read it for
-	// this request; it is set by the engine only.
-	anon anonState
+	// External is the user's external flag as the authentication stage resolved it with the status and the groups
+	// (R-AUTH-044); it makes a user subject not internal (R-AUTHZ-030). Set by edge.SubjectOf only.
+	External bool
+	// ViaBastion says the request reached the main installation through a recognized Bastion forward or the Bastion check
+	// (R-BAS-008, Q-BAS-148); such a request never reads by the level internal. Set by edge.SubjectOf only, as Endpoint is;
+	// the architecture test refuses any other writer.
+	ViaBastion bool
 	// MinEpoch is the value of the Trove-Authz-Min-Epoch header (R-AUTHZ-032); zero
 	// when absent.
 	MinEpoch int64
 }
-
-type anonState uint8
-
-const (
-	anonUnknown anonState = iota
-	anonOff
-	anonOn
-)
 
 // Coordinate is the authorization view of the request descriptor (R-REPO-003).
 type Coordinate struct {
@@ -166,6 +162,10 @@ type Coordinate struct {
 	// that resolution consults (R-AUTHZ-015 WithRepo); empty means Repository.
 	// Exposure is decided on the addressed repository (Q-EP-11).
 	Addressed qname.Repo
+	// Part is the part of the repository the coordinate reads (R-AUTHZ-034). The zero value is the artifacts, so every
+	// coordinate keeps its meaning; a coordinate with PartWiki asks only Read, any other action is a programming error and
+	// is refused.
+	Part Part
 }
 
 // Outcome is the class of a decision, one per row of R-AUTHZ-016's table.
@@ -280,6 +280,10 @@ type Decider interface {
 	// question and audits nothing. An unknown project is false, as is one the subject
 	// is no Owner of, so the answer does not tell them apart.
 	OwnsOn(idx *Index, sub Subject, project string) bool
+	// WikiReadableOn reports whether the subject may read the wiki of the coordinate's package in its repository, on the index
+	// the request decides on (R-AUTHZ-034): the question form of a wiki read. Nothing is audited or counted. A handler asks it
+	// before it puts a wiki member into a document whose artifacts it serves, and leaves the member out on false.
+	WikiReadableOn(idx *Index, sub Subject, c Coordinate) bool
 	// MemberUsableOn is MemberUsable of R-AUTHZ-015 for a member of the virtual
 	// repository the coordinate addresses: read says the resolver may consult the
 	// member, fill that it may also populate the member's cache (a remote member

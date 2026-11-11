@@ -8,10 +8,9 @@ import (
 	"time"
 )
 
-// The fixed identifiers of the two built-in principals (migration 00007).
+// The fixed identifier of the built-in principal anonymous (migration 00007; the row of authenticated went with 00075).
 const (
-	AnonymousID     = "00000000-0000-0000-0000-000000000001"
-	AuthenticatedID = "00000000-0000-0000-0000-000000000002"
+	AnonymousID = "00000000-0000-0000-0000-000000000001"
 )
 
 // NewID returns a UUIDv7 (RFC 9562): 48 bits of Unix milliseconds, then random

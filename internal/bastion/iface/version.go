@@ -9,4 +9,4 @@ package iface
 // A change of this value belongs in the same change as the regenerated
 // testdata/interface.txt (go test ./internal/bastion/iface -run TestR_BAS_009
 // -update-interface), and the release notes announce it.
-const InterfaceVersion = 1
+const InterfaceVersion = 2

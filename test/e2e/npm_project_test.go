@@ -27,10 +27,10 @@ func TestNPMProjectPartner(t *testing.T) {
 	outside := fx.pkgName("projout-"+fx.run, "outside", false)
 	fx.clientOn(t, "npm11", 0, npmLocalKey, "projout").publish(outside, "1.0.0")
 
-	local := p.repository(map[string]any{"class": "local", "format": "npm", "requireAuthentication": true}, "local")
+	local := p.repository(map[string]any{"class": "local", "format": "npm"}, "local")
 	remote := p.repository(map[string]any{"class": "remote", "format": "npm", "remote": map[string]any{"url": "https://" + fx.stubHost + "/"}}, "remote")
 	virtual := p.repository(map[string]any{
-		"class": "virtual", "format": "npm", "requireAuthentication": true,
+		"class": "virtual", "format": "npm",
 		"virtual": map[string]any{"members": []string{p.bare(local), p.bare(remote)}, "deployTarget": p.bare(local)},
 	}, "all")
 	p.serviceAccount()

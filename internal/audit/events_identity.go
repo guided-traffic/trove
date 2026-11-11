@@ -12,17 +12,20 @@ package audit
 
 // Names of the identity events, for the producers.
 const (
-	EventTokenCreated        = "token.created"
-	EventTokenRotated        = "token.rotated"
-	EventTokenRevoked        = "token.revoked"
-	EventTokenExpiring       = "token.expiring" //nolint:gosec // G101: an event name, not a credential
-	EventTokenRejected       = "token.rejected"
-	EventUserCreated         = "user.created"
-	EventUserUpdated         = "user.updated"
-	EventUserRenamed         = "user.renamed"
-	EventUserRenameConflict  = "user.rename_conflict"
-	EventUserDisabled        = "user.disabled"
-	EventUserEnabled         = "user.enabled"
+	EventTokenCreated       = "token.created"
+	EventTokenRotated       = "token.rotated"
+	EventTokenRevoked       = "token.revoked"
+	EventTokenExpiring      = "token.expiring" //nolint:gosec // G101: an event name, not a credential
+	EventTokenRejected      = "token.rejected"
+	EventUserCreated        = "user.created"
+	EventUserUpdated        = "user.updated"
+	EventUserRenamed        = "user.renamed"
+	EventUserRenameConflict = "user.rename_conflict"
+	EventUserDisabled       = "user.disabled"
+	EventUserEnabled        = "user.enabled"
+	// EventUserExternalChanged is a change of the external flag of a user (R-AUTH-044): before and after. Setting the flag narrows
+	// what the user reads, so the event is journaled (R-AUTH-041).
+	EventUserExternalChanged = "user.external_changed"
 	EventUserDeleted         = "user.deleted"
 	EventUserDormancyWarning = "user.dormancy_warning"
 	EventUserAvatarSet       = "user.avatar.set"
@@ -45,7 +48,7 @@ const (
 	eventSchemaMemberships    = `{"type":"array","maxItems":1000,"items":{"type":"object","properties":{"group":{"type":"string"},"member":{"type":"string"},"source":{"type":"string"}}}}`
 	eventSchemaNames          = `{"type":"array","maxItems":1000,"items":{"type":"string"}}`
 	eventSchemaScope          = `{"type":"object"}`
-	eventSchemaSettingsValues = `{"type":"object","properties":{"anonymousAccess":{"type":"boolean"},"patDefaultTTLSeconds":{"type":["integer","null"]},"patMaxTTLSeconds":{"type":["integer","null"]},"satDefaultTTLSeconds":{"type":["integer","null"]},"satMaxTTLSeconds":{"type":["integer","null"]},"expiryNoticeSeconds":{"type":["integer","null"]}}}`
+	eventSchemaSettingsValues = `{"type":"object","properties":{"newUsersExternal":{"type":"boolean"},"patDefaultTTLSeconds":{"type":["integer","null"]},"patMaxTTLSeconds":{"type":["integer","null"]},"satDefaultTTLSeconds":{"type":["integer","null"]},"satMaxTTLSeconds":{"type":["integer","null"]},"expiryNoticeSeconds":{"type":["integer","null"]}}}`
 )
 
 func init() {
@@ -81,6 +84,8 @@ func init() {
 	ident(EventUserDisabled, JournalRevocation, `{"type":"object","properties":{`+userSource+`,`+
 		`"reason":{"type":"string"},"note":{"type":"string","maxLength":1024},"tokensRevoked":{"type":"integer"},"sessionsEnded":{"type":"integer"}}}`)
 	ident(EventUserEnabled, NoJournal, `{"type":"object","properties":{`+userSource+`}}`)
+	ident(EventUserExternalChanged, JournalRevocation, `{"type":"object","properties":{`+userSource+`,`+
+		`"before":{"type":"boolean"},"after":{"type":"boolean"}},"required":["before","after"]}`)
 	ident(EventUserDeleted, JournalRevocation, `{"type":"object","properties":{`+userSource+`,`+
 		`"tokensDeleted":{"type":"integer"},"sessionsEnded":{"type":"integer"},"membershipsDeleted":{"type":"integer"},"identitiesDeleted":{"type":"integer"}}}`)
 	// The avatar of a user (R-API-055): the image is the stored PNG, named by its digest; no event holds image bytes.
@@ -113,10 +118,9 @@ func init() {
 	ident(EventSADisabled, JournalRevocation, `{"type":"object","properties":{"tokensRevoked":{"type":"integer"},"project":{"type":"string"}}}`)
 	ident(EventSADeleted, JournalRevocation, `{"type":"object","properties":{"tokensDeleted":{"type":"integer"},"membershipsDeleted":{"type":"integer"},"project":{"type":"string"}}}`)
 
-	// The entry carries anonymousAccess before and after on every change, not
-	// only when the change sets it: an unchanged value is a no-op for the replay
-	// comparator (R-AUTH-041), and a producer that always supplies the entry
-	// cannot drop a narrowing by a bug (Q-AUTH-18).
+	// The entry carries the two runtime maxima before and after on every change, not only when the change sets
+	// them: an unchanged value is a no-op for the replay comparator (R-AUTH-041), and a producer that always
+	// supplies the entry cannot drop a narrowing by a bug (Q-AUTH-18).
 	Register(EventType{
 		Name: EventSettingsAuthChanged, Category: CategoryConfig, Mode: Transactional, Webhook: true,
 		Journal: JournalRevocation, Schema: `{"type":"object","properties":{"before":` + eventSchemaSettingsValues + `,"after":` + eventSchemaSettingsValues + `}}`,

@@ -17,14 +17,14 @@ func TestR_ANS_037_ThePartMarkerIsValidated(t *testing.T) {
 		"other word": {map[string]any{"x-trove-part": "artifacts"}, "", false},
 		"boolean":    {map[string]any{"x-trove-part": true}, "", false},
 	} {
-		got, err := parsePart(tc.op)
+		got, err := parsePart(tc.op, "get", Requirement{Public: true})
 		if (err == nil) != tc.ok || got != tc.want {
 			t.Errorf("%s: %q %v", name, got, err)
 		}
 	}
 }
 
-// TestR_ANS_037_TheDocumentListsTheWikiOperations: the three documentation operations are declared wiki content, and no other operation is,
+// TestR_ANS_037_TheDocumentListsTheWikiOperations: the three documentation operations and the README operation are declared wiki content, and no other operation is,
 // so a test and the check that runs before a handler can list the wiki surface from the document (Q-API-260).
 func TestR_ANS_037_TheDocumentListsTheWikiOperations(t *testing.T) {
 	doc, err := LoadDocument(EmbeddedYAML())
@@ -38,7 +38,7 @@ func TestR_ANS_037_TheDocumentListsTheWikiOperations(t *testing.T) {
 		}
 	}
 	sort.Strings(got)
-	want := []string{"getPackageVersionDocEntry", "getPackageVersionDocFile", "getPackageVersionDocs"}
+	want := []string{"getPackageVersionDocEntry", "getPackageVersionDocFile", "getPackageVersionDocs", "getPackageVersionReadme"}
 	if len(got) != len(want) {
 		t.Fatalf("wiki operations = %v, want %v", got, want)
 	}

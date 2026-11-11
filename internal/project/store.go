@@ -171,7 +171,7 @@ type head = q.ProjectGetRow
 
 func toProject(h head, members []Member) Project {
 	return Project{
-		ID: h.ID, Key: h.Key, DisplayName: h.DisplayName, Description: h.Description,
+		ID: h.ID, Key: h.Key, DisplayName: h.DisplayName, Description: h.Description, Visibility: h.Visibility,
 		Members:      members,
 		Repositories: int(h.Repositories), ServiceAccounts: int(h.ServiceAccounts), Policies: int(h.Policies), CIMappings: int(h.CiMappings),
 		LogicalBytes: h.LogicalBytes,

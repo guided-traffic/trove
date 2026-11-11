@@ -3,12 +3,10 @@
 package bastioniface
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 	"testing"
 
-	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/bastion/iface"
 	"github.com/guided-traffic/trove/internal/errs"
 )
@@ -62,10 +60,7 @@ func TestR_BAS_017_AnUnrecognizedRequestFromTheBastionsEgressForwardsNothing(t *
 	e := newEnv(t)
 	s := e.newSite(siteOpts{additional: []string{"https://packages.example.com"}, endpointAnonymous: true})
 	bst := s.registered("partners", e.registration("partners"))
-	on := true
-	if _, err := s.setts.Update(context.Background(), admin, token.SettingsPatch{AnonymousAccess: &on, Expected: errs.AnyRevision}); err != nil {
-		t.Fatal(err)
-	}
+	s.setPublic(true)
 	v := strconv.Itoa(iface.InterfaceVersion)
 	var got echo
 	rp := s.do(packageRequest("/api/npm/it/npm-all/lodash", bastionForwarded("203.0.113.7")...))

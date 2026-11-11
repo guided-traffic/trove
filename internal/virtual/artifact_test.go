@@ -372,31 +372,6 @@ func TestR_AUTHZ_009_PerMemberDecisions(t *testing.T) {
 		}
 	})
 
-	t.Run("R-AUTHZ-009 rule 6 an anonymous caller needs read on every member, else 401", func(t *testing.T) {
-		everything := []string{"npm-all", "npm-local", "npm-remote"}
-		anon := func(repos ...string) *authz.Engine {
-			return vt.NewDecider(t, specs("read"), []vt.Grant{{Repos: repos, Principal: authz.AnonymousID, Actions: []string{"read"}}})
-		}
-		read := authz.Coordinate{Repository: qr("npm-all"), Class: repository.Virtual, Format: vt.Format, Kind: "metadata", Package: "p", Actions: []authz.Action{authz.Read}}
-		for name, tc := range map[string]struct {
-			repos []string
-			want  authz.Outcome
-		}{
-			"all members readable":      {everything, authz.Allow},
-			"one member not readable":   {[]string{"npm-all", "npm-local"}, authz.DenyUnauthenticated},
-			"no gate on the repository": {[]string{"npm-local", "npm-remote"}, authz.DenyUnauthenticated},
-		} {
-			e := anon(tc.repos...)
-			idx, err := e.Begin(context.Background(), anonymousSubject(), qr("npm-all"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if d := e.DecideOn(context.Background(), idx, anonymousSubject(), read); d.Outcome != tc.want {
-				t.Errorf("%s: outcome %d reason %q, want %d", name, d.Outcome, d.Reason, tc.want)
-			}
-		}
-	})
-
 	t.Run("R-AUTHZ-009 rule 7 a virtual repository is listed only for a subject that holds read on it", func(t *testing.T) {
 		w := newWorld(t)
 		e := vt.NewDecider(t, specs("read"), []vt.Grant{

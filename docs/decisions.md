@@ -6614,8 +6614,8 @@ wiki level apart from the artifacts, and a user flag `external`.
   endpoint's `auth.anonymous` is the operator's ceiling of `public` ([spec/identity-and-authentication.md](spec/identity-and-authentication.md)
   R-AUTH-037, R-AUTH-044, Q-AUTH-230 to Q-AUTH-233; Q-AUTHZ-279).
 - The levels are columns (`project.visibility`, `repositories.visibility_artifacts`, `repositories.visibility_wiki`) with the
-  container rule in the database (`AI008`); migrations `00071_visibility.sql`, `00072_external_users.sql`,
-  `00073_principal_builtins.sql` (Q-AUTHZ-276).
+  container rule in the database (`AI008`); migrations `00073_visibility.sql`, `00074_external_users.sql`,
+  `00075_principal_builtins.sql` (Q-AUTHZ-276).
 
 **Consequences.** The grant index reads the levels in its snapshot, the stage resolves the flag with the user's status and groups,
 and both reach every replica within the existing bounds (R-AUTHZ-036). The Bastion's interface rises to version 2: its handshake

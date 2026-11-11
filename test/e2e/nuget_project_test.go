@@ -27,16 +27,16 @@ func TestNuGetProjectPartner(t *testing.T) {
 	pubOut.mustPush("push outside the project", "dotnet", "nuget", "push", pubOut.place(outside, "1.0.0", fx.nugetPack(t, outside, "1.0.0", "outside the project")),
 		"--source", nugetAuth, "--api-key", fx.token)
 
-	local := p.repository(map[string]any{"class": "local", "format": "nuget", "requireAuthentication": true}, "local")
+	local := p.repository(map[string]any{"class": "local", "format": "nuget"}, "local")
 	remote := p.repository(map[string]any{
-		"class": "remote", "format": "nuget", "requireAuthentication": true,
+		"class": "remote", "format": "nuget",
 		"remote": map[string]any{
 			"url":        "https://" + apiHost + "/v3/index.json",
 			"extraHosts": []map[string]any{{"pattern": contentHost, "sendCredentials": false}},
 		},
 	}, "remote")
 	virtual := p.repository(map[string]any{
-		"class": "virtual", "format": "nuget", "requireAuthentication": true,
+		"class": "virtual", "format": "nuget",
 		"virtual": map[string]any{"members": []string{p.bare(local), p.bare(remote)}, "deployTarget": p.bare(local)},
 	}, "all")
 	p.serviceAccount()

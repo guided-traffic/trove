@@ -90,7 +90,7 @@ Subject (who, groups, credential scope, MinEpoch)  +  Coordinate (repository, pa
                               │ forRequest: confirmed index of at least MinEpoch, else wait / 503 / 412
                               ▼
    anonymous gate ► endpoint ceiling (every action, addressed repository) ► repository lookup ►
-        requireAuthentication ► virtual gate ► per action: content:bypass ► grants (principal set × index) ∩ token scope  ──► Decision
+        virtual gate ► per action: content:bypass ► grants (principal set × index) ∩ token scope  ──► Decision
 ```
 
 - **Principal set** (`Index.principalIDs`): a user or break-glass subject is its own ID, its groups and the built-in
@@ -136,7 +136,7 @@ Subject (who, groups, credential scope, MinEpoch)  +  Coordinate (repository, pa
 
 `BuildIndex(snapshot)` turns the rows of one snapshot into:
 
-- `repos`: the active repositories by key with class, format, `requireAuthentication`, `hideExistence`, virtual members and
+- `repos`: the active repositories by key with class, format, the levels of its artifacts and wiki (`artifacts`, `wiki`, [visibility.go](../../internal/authz/visibility.go)), `hideExistence`, virtual members and
   deploy target (the rows of `virtual_members` and `virtual_deploy_targets`, read in the same snapshot as
   `Snapshot.VirtualMembers` and `DeployTargets`; the remaining settings are decoded from the `config` document by
   `parseRepoConfig`; [virtual.md](virtual.md));
@@ -349,9 +349,8 @@ the populate check. Whether the member needs its upstream (nothing cached, an ex
 nothing is audited, because a member the subject may not use is skipped silently (R-AUTHZ-009 rule 2).
 
 `Subject.CacheFill` is set by `edge.SubjectOf` from the same `httpserver.Endpoint` that names `Subject.Endpoint`; a subject
-without an endpoint (a job, a command) has no cache-fill ceiling. The policy warning `anonymous_populates_remote` (M1,
-`warningsFor` in [validate.go](../../internal/authz/validate.go)) is unchanged: it flags an `anonymous` read entry on a remote
-repository that fills on read, whatever the anonymous switch says.
+without an endpoint (a job, a command) has no cache-fill ceiling. A policy that names `anonymous` or `authenticated` is refused (422 `principal_not_allowed`, `LevelPrincipalNotAllowed`); the warning
+`public_populates_remote` of a repository write takes the place of the old `anonymous_populates_remote`.
 
 ## Read shapes
 
@@ -372,8 +371,7 @@ replays is the main installation's own.
 
 The invariants (a full shape never meets a refused read, a none shape never an allowed one) are held by
 `TestR_BAS_012_ShapeAgreesWithTheDecisionPoint` ([reach_test.go](../../internal/authz/reach_test.go)): it asks `DecideOn` and
-`MayPopulateOn` for every subject, endpoint, repository, package, version, path and request kind of its fixture, with the anonymous switch on
-and off. Change `readShape`, `populate`, the virtual rules of `evaluate` or `MemberUsableOn` and that test is the one to run; add the case
+`MayPopulateOn` for every subject, endpoint, repository, package, version, path and request kind of its fixture, for the anonymous subject as well. Change `readShape`, `populate`, the virtual rules of `evaluate` or `MemberUsableOn` and that test is the one to run; add the case
 that your change introduces to its fixture (`reachFixture`) before you change the rule.
 
 ## Package ownership
@@ -468,7 +466,7 @@ the files seam share. `ownershipHook` is the last entry of the hook list in `wir
 | `authz.write.allowed` | transactional | the writer calls `Engine.RecordAllowed(ctx, tx, sub, coordinate, decision)` in the transaction of the change |
 | `authz.policy.created`, `.updated`, `.deleted`; `authz.role.bound`, `.unbound` | transactional | the writes of `Service`; updated, deleted and unbound are journaled |
 | `authz.project.created`, `.updated`, `.deleted`, `.admin_added`, `.admin_removed`, `.repository_assigned`, `.repository_unassigned` | transactional | the writes of the project service ([projects.md](projects.md)); updated, deleted, admin_removed and repository_unassigned are journaled |
-| `authz.settings.changed` | transactional, journaled | `SettingsHook`, called by the repository update when `requireAuthentication`, `hideExistence`, `cacheFillAction` or `packageOwnership` changed; the event and its journal entry name the changed settings, before and after |
+| `authz.settings.changed` | transactional, journaled | `SettingsHook`, called by the repository update when `hideExistence`, `cacheFillAction` or `packageOwnership` changed (and the levels, with the writes of work package 1b); the event and its journal entry name the changed settings, before and after |
 | `authz.denied` with `deny.populate` or `deny.ownership` | async | `PopulateOn` and `CheckTx`/`ClaimTx`; recorded like a refused write, whatever `authz.audit.reads` says |
 | `authz.ownership.claimed` | transactional | `ClaimTx`: the owners and the claim ID that `package_ownership.claim_event` stores (Q-AUTHZ-158) |
 | `authz.ownership.added` | transactional | `AddOwner`: the owner, its principal ID, the reason (`added`, `pre-assigned`) |
@@ -492,8 +490,7 @@ summary arrives inside the writer's window and is counted as one repeat.
 
 `App.wireAuthz` (step 8, between the identity and files markers) builds the `Engine` over `authz.NewPostgresSource`, the
 replica's `cluster.Changes`, the authz and audit configuration and starts it as a component. It sets `a.m1.authorizer` and
-`a.m1.authzEngine`. `a.m1.anonymousAccess` is the runtime switch of R-AUTH-037 that the identity area sets before this
-step; nil means anonymous access is off. A replica without PostgreSQL wires nothing, and nobody holds a permission.
+`a.m1.authzEngine`. There is no anonymous switch input any more (R-AUTH-037); `App.publicContent` asks the installed index whether some artifacts are `public`. A replica without PostgreSQL wires nothing, and nobody holds a permission.
 `App.access()` returns `bridgeAccess`: the engine behind the dev-profile bridge of `system.bootstrap_anonymous_read`
 (Q-AUTHZ-16), which opens the system information and the replica list only; `endpointStage` puts the request path into the
 context for it (Q-AUTHZ-71).
@@ -502,9 +499,7 @@ context for it (Q-AUTHZ-71).
 alone: the repository list and read of a holder of `repositories:read-config` use it through `visibleKeys`, since that caller
 needs no read grant but is bound by the ceiling (R-EP-014).
 
-The runtime anonymous switch is `Options.AnonymousAccess(ctx) (bool, error)`; the engine reads it once per request for an
-anonymous subject (`withAnonymous`, kept on the subject), with the request's context, and an error is 503 `authz_stale`, not
-401. `Engine.Holds` (interface `authz.Prober`; `v1.Holds` for an `Access`) answers "does the caller hold this permission?" without
+A request without a credential is the anonymous subject; until the decision reads the levels (work package 1a) it is refused with 401 everywhere. `Engine.Holds` (interface `authz.Prober`; `v1.Holds` for an `Access`) answers "does the caller hold this permission?" without
 recording `authz.denied`: the rate limit's administrator exemption and the handlers that pick between two answers use it
 (`authz.ContentBypass`, `authz.SettingsRead`, ...); `Require` is for an operation that is refused.
 
@@ -542,7 +537,7 @@ idempotent policy create answers the epoch of the first answer (`Outcome.Finish`
 | `listRoleBindings` | `GET /role-bindings` | `roles:read` | filters `role`, `principal`; cursor paging; each item's `source` (`api`, `configuration`) |
 | `bindRole` | `PUT /role-bindings/{role}/{principalRef}` | `roles:write` | `201` new, `200` existing (its source kept); `409 auto_join_admin_conflict`; `422 role_not_allowed` |
 | `unbindRole` | `DELETE /role-bindings/{role}/{principalRef}` | `roles:write` | `204`; `404`; `409 last_admin`; `409 role_binding_managed_by_configuration` |
-| `getAuthzMe` | `GET /authz/me` | any authenticated caller | roles, capabilities, principals, scope summary, epoch |
+| `getAuthzMe` | `GET /authz/me` | any authenticated caller | roles, capabilities, principals (never `authenticated`), `internal` (R-AUTHZ-030), memberships, scope summary, epoch |
 | `checkPermissions` | `POST /authz/check` | any authenticated caller | up to 100 checks, one index; nothing is audited |
 | `getPackageOwners` | `GET /repositories/{repoKey}/packages/{packageName}/owners` | action `read` on the repository; `read` on the package in the handler | `state` `claimed`, `released` or `unclaimed`; 404 for a caller without `read` and where ownership does not exist |
 | `addPackageOwner` | `POST /repositories/{repoKey}/packages/{packageName}/owners` | authenticated; an owner, `manage` or `content:bypass` | `Idempotency-Key` optional; `201` with `Location`; pre-assigns an unclaimed name; `403` (also `ci_token_restricted`), `409 already_exists`, `422 unknown_principal`; recent sign-in |
@@ -553,6 +548,21 @@ The handlers ([authz_api.go](../../internal/api/v1/authz_api.go)) do only what t
 `authz.Policy` (so a body obtained by GET can be sent back), `If-Match` into an expected version, the cursor over a sorted list,
 the headers. `Service.List` and `Select` read PostgreSQL on every call (R-API-052); the page assembles the warnings of its own
 items. The list is not a keyset query (Q-AUTHZ-28).
+
+## Visibility levels (T-18)
+
+The mechanism is specified in R-AUTHZ-030 and R-AUTHZ-033 to R-AUTHZ-036 and built in steps; the security view is
+[visibility.md](../security/visibility.md).
+
+| What | Where |
+|---|---|
+| `Level` (`private`, `internal`, `public`; `ParseLevel`, `String`), `Part` (`PartArtifacts` is the zero value, `PartWiki`), `Subject.Internal` | [visibility.go](../../internal/authz/visibility.go) |
+| `Subject.External`, `Subject.ViaBastion`, `Coordinate.Part` | [authz.go](../../internal/authz/authz.go); the first two are set by `edge.SubjectOf` only (from `httpserver.Principal.External` and `httpserver.BastionForward`) |
+| The levels in the index: `repoInfo.artifacts` and `.wiki` (the wiki never above the artifacts), `projectInfo.level`, `Index.Levels`, `Index.PublicContent` | [index.go](../../internal/authz/index.go), fed by the columns of `AuthzBuildProjects` and `AuthzBuildRepositories` |
+| The question form of a wiki read: `Decider.WikiReadableOn`, `ReadScope.MayReadWiki`; a wiki coordinate asks `read` only (`ReasonWiki`) | [decide.go](../../internal/authz/decide.go), [visible.go](../../internal/authz/visible.go) |
+| A policy entry, a role binding, a membership or an owner record that names `anonymous` or `authenticated` | `Ref.IsLevelPrincipal`, `principal.LevelPrincipalNotAllowed` (422 `principal_not_allowed`); the database refuses the row (`AI009`, [00075_principal_builtins.sql](../../internal/meta/postgres/migrations/00075_principal_builtins.sql)) |
+
+Until the decision reads the levels (work package 1a), `Allowed` refuses the anonymous subject first and the level adds nothing.
 
 ## How to
 

@@ -34,12 +34,11 @@ const (
 // derived layout. A member that does not apply to the class or format is absent
 // (R-REPO-010).
 type Settings struct {
-	Description           string   `json:"description"`
-	AdminNotes            string   `json:"adminNotes"`
-	IncludePatterns       []string `json:"includePatterns"`
-	ExcludePatterns       []string `json:"excludePatterns"`
-	Disabled              bool     `json:"disabled"`
-	RequireAuthentication bool     `json:"requireAuthentication"`
+	Description     string   `json:"description"`
+	AdminNotes      string   `json:"adminNotes"`
+	IncludePatterns []string `json:"includePatterns"`
+	ExcludePatterns []string `json:"excludePatterns"`
+	Disabled        bool     `json:"disabled"`
 	// PriorityMember applies to local and remote repositories of a format with
 	// priority members (R-REPO-022); absent otherwise.
 	PriorityMember bool `json:"priorityMember,omitempty"`
@@ -106,8 +105,27 @@ type Document struct {
 	Format  string `json:"format"`
 	// Layout is read-only and equals the format's layout (R-REPO-006).
 	Layout string `json:"layout,omitempty"`
+	// Visibility holds the visibility levels of the repository's artifacts and wiki (R-AUTHZ-033, R-AUTHZ-034). They are
+	// columns of the repository row, not part of repositories.config: the database holds their order and their bound by the
+	// project's level.
+	Visibility Visibility `json:"visibility"`
 	Settings
 }
+
+// Visibility is the `visibility` member of the repository document (R-REPO-004): the level of the artifacts and the level of
+// the wiki, each one of private, internal and public. The wiki is never more open than the artifacts, and the artifacts never
+// more open than the project (R-AUTHZ-033 rule 2).
+type Visibility struct {
+	Artifacts string `json:"artifacts"`
+	Wiki      string `json:"wiki"`
+}
+
+// The levels as the document and the database spell them.
+const (
+	LevelPrivate  = "private"
+	LevelInternal = "internal"
+	LevelPublic   = "public"
+)
 
 // Warning is a finding that does not block a save (R-REPO-008).
 type Warning struct {
@@ -120,13 +138,15 @@ type Warning struct {
 // configuration sees (R-REPO-010): no notes, patterns, upstream settings or
 // members.
 type ConsumerView struct {
-	Key         string   `json:"key"`
-	Project     string   `json:"project"`
-	Class       Class    `json:"class"`
-	Format      string   `json:"format"`
-	Description string   `json:"description"`
-	Layout      string   `json:"layout"`
-	Addresses   []string `json:"addresses"`
+	Key         string `json:"key"`
+	Project     string `json:"project"`
+	Class       Class  `json:"class"`
+	Format      string `json:"format"`
+	Description string `json:"description"`
+	Layout      string `json:"layout"`
+	// Visibility is shown in the reduced view as well, so that every reader sees how open a repository is (R-API-057).
+	Visibility Visibility `json:"visibility"`
+	Addresses  []string   `json:"addresses"`
 }
 
 // WithoutAdminNotes returns the document as a caller without
@@ -141,7 +161,7 @@ func (d Document) WithoutAdminNotes() Document {
 // ProtocolBasePath template ("/files/{project}/{key}/") and name the repository's; the raw file address is always
 // listed (R-REPO-002).
 func (d Document) ConsumerView(protocolBase string, name qname.Repo) ConsumerView {
-	v := ConsumerView{Project: name.Project, Key: d.Key, Class: d.Class, Format: d.Format, Description: d.Description, Layout: d.Layout}
+	v := ConsumerView{Project: name.Project, Key: d.Key, Class: d.Class, Format: d.Format, Description: d.Description, Layout: d.Layout, Visibility: d.Visibility}
 	seen := map[string]bool{}
 	for _, tmpl := range []string{protocolBase, "/files/{project}/{key}/"} {
 		if tmpl == "" {

@@ -459,7 +459,7 @@ func (e *env) newSite(o siteOpts) *site {
 	gate := principal.Gate{Fresh: s.changes, Bound: 2 * time.Second, Metrics: pm}
 	principals := principal.NewStore(principal.StoreOptions{DB: s.db, Cache: caches, Gate: gate, SafetyTTL: tokenCfg.CacheTTL})
 	s.setts = token.NewSettingsStore(token.SettingsOptions{
-		DB: s.db, Notifier: s.changes, Recorder: s.rec, Cache: caches, Gate: gate, Tokens: tokenCfg, Anonymous: config.AuthAnonymous{Allowed: true},
+		DB: s.db, Notifier: s.changes, Recorder: s.rec, Cache: caches, Gate: gate, Tokens: tokenCfg,
 	})
 	s.tokens = token.NewService(token.ServiceOptions{
 		DB: s.db, Notifier: s.changes, Recorder: s.rec, Principals: principals, Settings: s.setts, Cache: caches, Gate: gate,
@@ -476,7 +476,7 @@ func (e *env) newSite(o siteOpts) *site {
 	}
 	limiter := auth.NewLocalLimiter(budget, time.Minute, nil, nil)
 	s.stage = auth.New(auth.Options{
-		Tokens: s.tokens, Uses: s.tokens, Principals: principals, Settings: s.setts, Limiter: limiter,
+		Tokens: s.tokens, Uses: s.tokens, Principals: principals, Limiter: limiter,
 		BasicEnabled: true, Metrics: pm, Log: quiet,
 		ClientAddr: func(r *http.Request) netip.Addr { return httpserver.InfoFrom(r.Context()).Client },
 	})
@@ -484,10 +484,6 @@ func (e *env) newSite(o siteOpts) *site {
 		Source: authz.NewPostgresSource(s.db, 10*time.Second), Changes: s.changes,
 		Config:            config.Authz{HideExistence: true, Cache: config.AuthzCache{MaxStaleness: 10 * time.Second, SafetyTTL: time.Hour}},
 		EpochPollInterval: time.Second, RetryBudget: 5 * time.Second, Recorder: s.rec, Replica: name, Log: quiet,
-		AnonymousAccess: func(ctx context.Context) (bool, error) {
-			eff, err := s.setts.Effective(ctx)
-			return eff.AnonymousAccess, err
-		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -548,12 +544,9 @@ func (e *env) newSite(o siteOpts) *site {
 			Downloads: config.BastionsDownloads{MaxBatch: o.maxBatch, MaxAge: o.maxAge},
 		},
 		Release: "0.14.0", BaseURL: baseURL,
-		Anonymous: func(ctx context.Context) (bool, error) {
-			if !s.rules.get().Anonymous {
-				return false, nil
-			}
-			eff, err := s.setts.Effective(ctx)
-			return eff.AnonymousAccess, err
+		AnonymousReads: func(context.Context) bool {
+			idx := s.engine.Index()
+			return s.rules.get().Anonymous && idx != nil && idx.PublicContent()
 		},
 		Authenticate: credential,
 		Shapes:       s.shapes,
@@ -767,4 +760,19 @@ func (s *site) sat(sa principal.ServiceAccount, mutate ...func(*token.CreateRequ
 		s.t.Fatalf("Create SAT: %v", err)
 	}
 	return c
+}
+
+// setPublic makes every project and repository public, or private again, in the database and has this site's decision point
+// read them (R-AUTHZ-033): the levels are what opens anonymous reads, not a switch.
+func (s *site) setPublic(on bool) {
+	s.t.Helper()
+	level := "private"
+	if on {
+		level = "public"
+	}
+	s.e.exec("UPDATE project SET visibility = $1", level)
+	s.e.exec("UPDATE repositories SET visibility_artifacts = $1, visibility_wiki = $1", level)
+	if err := s.engine.Refresh(context.Background()); err != nil {
+		s.t.Fatal(err)
+	}
 }

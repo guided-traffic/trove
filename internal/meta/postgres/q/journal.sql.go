@@ -10,17 +10,6 @@ import (
 	"encoding/json"
 )
 
-const journalAnonymousAccess = `-- name: JournalAnonymousAccess :one
-SELECT anonymous_access FROM auth_settings WHERE singleton
-`
-
-func (q *Queries) JournalAnonymousAccess(ctx context.Context) (bool, error) {
-	row := q.db.QueryRow(ctx, journalAnonymousAccess)
-	var anonymous_access bool
-	err := row.Scan(&anonymous_access)
-	return anonymous_access, err
-}
-
 const journalDeleteReplicaRows = `-- name: JournalDeleteReplicaRows :execrows
 DELETE FROM replica
 `
@@ -44,33 +33,6 @@ func (q *Queries) JournalDeleteState(ctx context.Context, key string) (int64, er
 		return 0, err
 	}
 	return result.RowsAffected(), nil
-}
-
-const journalDisableAnonymousAccess = `-- name: JournalDisableAnonymousAccess :many
-UPDATE auth_settings SET anonymous_access = false, revision = revision + 1, updated_at = now()
- WHERE singleton AND anonymous_access
-RETURNING revision
-`
-
-// settings.auth.changed: the anonymous switch is taken to off, its most restrictive value. No row: it is off already.
-func (q *Queries) JournalDisableAnonymousAccess(ctx context.Context) ([]int64, error) {
-	rows, err := q.db.Query(ctx, journalDisableAnonymousAccess)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []int64{}
-	for rows.Next() {
-		var revision int64
-		if err := rows.Scan(&revision); err != nil {
-			return nil, err
-		}
-		items = append(items, revision)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const journalGetState = `-- name: JournalGetState :many
@@ -393,6 +355,36 @@ func (q *Queries) JournalProjectHolds(ctx context.Context, id string) (JournalPr
 	return i, err
 }
 
+const journalProjectLevelLock = `-- name: JournalProjectLevelLock :many
+SELECT key, visibility FROM project WHERE id = $1::text::uuid FOR UPDATE
+`
+
+type JournalProjectLevelLockRow struct {
+	Key        string
+	Visibility string
+}
+
+// A project by its ID under its row lock, with its level; no row: the project is not in the restored database.
+func (q *Queries) JournalProjectLevelLock(ctx context.Context, id string) ([]JournalProjectLevelLockRow, error) {
+	rows, err := q.db.Query(ctx, journalProjectLevelLock, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []JournalProjectLevelLockRow{}
+	for rows.Next() {
+		var i JournalProjectLevelLockRow
+		if err := rows.Scan(&i.Key, &i.Visibility); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const journalProjectLock = `-- name: JournalProjectLock :many
 SELECT id::text AS id, key FROM project WHERE id = $1::text::uuid FOR UPDATE
 `
@@ -423,6 +415,49 @@ func (q *Queries) JournalProjectLock(ctx context.Context, id string) ([]JournalP
 	return items, nil
 }
 
+const journalProjectLowerRepositories = `-- name: JournalProjectLowerRepositories :many
+UPDATE repositories r
+   SET visibility_artifacts = CASE WHEN visibility_rank(visibility_artifacts) > visibility_rank($1::text) THEN $1::text ELSE visibility_artifacts END,
+       visibility_wiki      = CASE WHEN visibility_rank(visibility_wiki) > visibility_rank($1::text) THEN $1::text ELSE visibility_wiki END,
+       config_version = config_version + 1, updated_at = now()
+ WHERE r.project_id = $2::text::uuid
+   AND (visibility_rank(visibility_artifacts) > visibility_rank($1::text) OR visibility_rank(visibility_wiki) > visibility_rank($1::text))
+RETURNING r.id, r.key, r.config_version
+`
+
+type JournalProjectLowerRepositoriesParams struct {
+	Level     string
+	ProjectID string
+}
+
+type JournalProjectLowerRepositoriesRow struct {
+	ID            int64
+	Key           string
+	ConfigVersion int64
+}
+
+// The cascade of R-AUTHZ-033 rule 3: every repository of the project whose artifacts or wiki level lies above the level is
+// taken down to it; its configuration version moves on.
+func (q *Queries) JournalProjectLowerRepositories(ctx context.Context, arg JournalProjectLowerRepositoriesParams) ([]JournalProjectLowerRepositoriesRow, error) {
+	rows, err := q.db.Query(ctx, journalProjectLowerRepositories, arg.Level, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []JournalProjectLowerRepositoriesRow{}
+	for rows.Next() {
+		var i JournalProjectLowerRepositoriesRow
+		if err := rows.Scan(&i.ID, &i.Key, &i.ConfigVersion); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const journalProjectMembersRemoveAll = `-- name: JournalProjectMembersRemoveAll :execrows
 DELETE FROM project_member WHERE project_id = $1::text::uuid
 `
@@ -433,6 +468,23 @@ func (q *Queries) JournalProjectMembersRemoveAll(ctx context.Context, id string)
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const journalProjectSetLevel = `-- name: JournalProjectSetLevel :exec
+UPDATE project SET visibility = $1::text, version = version + 1, updated_at = now()
+ WHERE id = $2::text::uuid
+`
+
+type JournalProjectSetLevelParams struct {
+	Level string
+	ID    string
+}
+
+// The replay of authz.project.visibility_changed (R-AUTHZ-036): the level is taken to the journaled one, which the caller has
+// compared as not above the current one.
+func (q *Queries) JournalProjectSetLevel(ctx context.Context, arg JournalProjectSetLevelParams) error {
+	_, err := q.db.Exec(ctx, journalProjectSetLevel, arg.Level, arg.ID)
+	return err
 }
 
 const journalQuarantine = `-- name: JournalQuarantine :exec

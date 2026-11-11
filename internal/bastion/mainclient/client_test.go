@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -124,7 +125,7 @@ func TestR_BAS_008_EveryRequestCarriesTheInterfaceHeaders(t *testing.T) {
 		if h == nil {
 			t.Fatalf("%s: no request arrived", op)
 		}
-		if got := h.Get(iface.HeaderInterface); got != "1" {
+		if got := h.Get(iface.HeaderInterface); got != strconv.Itoa(iface.InterfaceVersion) {
 			t.Errorf("%s: %s = %q", op, iface.HeaderInterface, got)
 		}
 		if got := h.Get("User-Agent"); got != "trove-bastion/1.2.3" {
@@ -386,7 +387,7 @@ func TestR_BAS_006_ARefusedTokenAndAMismatchAreTypedErrors(t *testing.T) {
 	})
 	t.Run("mismatch", func(t *testing.T) {
 		r := newRig(t, nil)
-		r.main.SetVersion(2)
+		r.main.SetVersion(iface.InterfaceVersion + 1)
 		calls := map[string]func() error{
 			"handshake": func() error { _, err := r.c.Handshake(ctx); return err },
 			"feed":      func() error { _, err := r.c.Feed(ctx, iface.Cursor{At: time.Now()}, 1); return err },
@@ -406,7 +407,7 @@ func TestR_BAS_006_ARefusedTokenAndAMismatchAreTypedErrors(t *testing.T) {
 		for name, call := range calls {
 			err := call()
 			var mm *mainclient.MismatchError
-			if !errors.Is(err, mainclient.ErrInterfaceMismatch) || !errors.As(err, &mm) || mm.Main != 2 {
+			if !errors.Is(err, mainclient.ErrInterfaceMismatch) || !errors.As(err, &mm) || mm.Main != iface.InterfaceVersion+1 {
 				t.Errorf("%s: %v", name, err)
 			}
 		}

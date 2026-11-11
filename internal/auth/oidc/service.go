@@ -249,17 +249,17 @@ type LoginOption struct {
 // LoginOptions is the response of GET /api/v1/auth/login-options (R-AUTH-009,
 // wave 2). AutoRedirect is empty when the page shows buttons.
 type LoginOptions struct {
-	Providers       []LoginOption `json:"providers"`
-	LocalLogin      bool          `json:"localLogin"`
-	AnonymousAccess bool          `json:"anonymousAccess"`
-	AutoRedirect    string        `json:"autoRedirect,omitempty"`
+	Providers     []LoginOption `json:"providers"`
+	LocalLogin    bool          `json:"localLogin"`
+	PublicContent bool          `json:"publicContent"`
+	AutoRedirect  string        `json:"autoRedirect,omitempty"`
 }
 
 // LoginOptions renders the login page's options: providers in configuration
 // order (Q-AUTH-30), the local form when the break-glass account is enabled and
-// shown, anonymous access as the identity area's runtime setting says.
-func (s *Service) LoginOptions(anonymousAccess bool) LoginOptions {
-	out := LoginOptions{Providers: []LoginOption{}, AnonymousAccess: anonymousAccess}
+// shown, and whether an anonymous visitor reads anything (publicContent, the caller's fact).
+func (s *Service) LoginOptions(publicContent bool) LoginOptions {
+	out := LoginOptions{Providers: []LoginOption{}, PublicContent: publicContent}
 	for _, p := range s.providers {
 		out.Providers = append(out.Providers, LoginOption{
 			ID: p.ID, DisplayName: p.cfg.DisplayName, StartURL: "/auth/oidc/" + p.ID + "/start", Available: p.document() != nil,

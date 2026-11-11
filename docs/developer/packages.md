@@ -36,7 +36,7 @@ the client setup page of the admin UI ([web-ui.md](web-ui.md#package-screens-and
 ## The request path of a list
 
 1. `ParseList` reads the filters, the sort and the cursor; an unknown parameter or sort is `400`, a cursor of other filters `400 invalid_cursor`.
-2. `packageScope`: the anonymous gate (401 while anonymous access is off), the snapshot of the repositories (`Reader.List`) for the `Topology`, the request's
+2. `packageScope`: the anonymous gate (401 while no `public` level opens anything), the snapshot of the repositories (`Reader.List`) for the `Topology`, the request's
    index (`requestHolder`, so every question of the request is answered on one index), `ReadScopeOn` for the physical repositories (no addressed repository: a
    listing across repositories decides each on its own, Q-AUTHZ-168), `Readable` for the
    virtual ones, then `view.Service.Scope`.

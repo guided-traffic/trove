@@ -162,16 +162,13 @@ func replayRotated(ctx context.Context, tx meta.Tx, env journal.Env, o journal.O
 	return o.Result(journal.Applied, e.Predecessor), principal.NotifyTokens(env, tx, refs...)
 }
 
-// settingsEntry is the journal entry of settings.auth.changed (R-AUTH-041, Q-AUTH-18, Q-AUTH-207): the anonymous switch and
-// the two runtime maxima, before and after, on every change. The parts are read independently: a part the entry lacks or
+// settingsEntry is the journal entry of settings.auth.changed (R-AUTH-041, Q-AUTH-18, Q-AUTH-207): the two runtime
+// maxima, before and after, on every change. The parts are read independently: a part the entry lacks or
 // holds out of range is nil and narrows nothing, and it never takes another part with it.
 type settingsEntry struct {
-	Anonymous *boolChange
 	// PAT and SAT are the maxima after the change, in seconds; nil in the pointer is the YAML value, the longest.
 	PAT, SAT *maxAfter
 }
-
-type boolChange struct{ Before, After bool }
 
 // maxAfter is the journaled after-value of a maximum: Seconds is nil for the YAML value.
 type maxAfter struct{ Seconds *int64 }
@@ -187,8 +184,7 @@ const (
 // readSettingsEntry reads a settings.auth.changed entry part by part. It reports false when no part is readable.
 func readSettingsEntry(o journal.Object) (settingsEntry, bool) {
 	var e struct {
-		Anonymous json.RawMessage `json:"anonymousAccess"`
-		Tokens    struct {
+		Tokens struct {
 			PAT json.RawMessage `json:"pat"`
 			SAT json.RawMessage `json:"sat"`
 		} `json:"tokens"`
@@ -197,15 +193,8 @@ func readSettingsEntry(o journal.Object) (settingsEntry, bool) {
 		return settingsEntry{}, false
 	}
 	var out settingsEntry
-	var a struct {
-		Before *bool `json:"before"`
-		After  *bool `json:"after"`
-	}
-	if json.Unmarshal(e.Anonymous, &a) == nil && a.Before != nil && a.After != nil {
-		out.Anonymous = &boolChange{*a.Before, *a.After}
-	}
 	out.PAT, out.SAT = readMax(e.Tokens.PAT), readMax(e.Tokens.SAT)
-	return out, out.Anonymous != nil || out.PAT != nil || out.SAT != nil
+	return out, out.PAT != nil || out.SAT != nil
 }
 
 // readMax reads {"maxTTLSeconds": {"before": n|null, "after": n|null}}: the after-value is null or a whole number of seconds
@@ -242,20 +231,12 @@ func (maxOrder) Narrows(current, after *int64) bool {
 	return after != nil && (current == nil || *after <= *current)
 }
 
-// replaySettings replays settings.auth.changed (R-AUTH-037, R-AUTH-040, Q-AUTH-18, Q-AUTH-207) part by part: the anonymous
-// switch and the two maxima. The outcome is applied when any part changed something, skipped when none did and a part
+// replaySettings replays settings.auth.changed (R-AUTH-040, Q-AUTH-18, Q-AUTH-207) part by part: the two maxima. The outcome is applied when any part changed something, skipped when none did and a part
 // would have widened, and already in effect otherwise.
 func replaySettings(ctx context.Context, tx meta.Tx, env journal.Env, o journal.Object) (journal.Result, error) {
 	e, ok := readSettingsEntry(o)
 	if !ok {
 		return o.Malformed("no part of the entry is readable"), nil
-	}
-	anon := journal.Result{Outcome: journal.AlreadyInEffect}
-	if e.Anonymous != nil {
-		var err error
-		if anon, err = replayAnonymous(ctx, tx, env, o, *e.Anonymous); err != nil {
-			return journal.Result{}, err
-		}
 	}
 	qs := principal.Queries(tx)
 	cur, err := readSettings(ctx, qs)
@@ -263,10 +244,7 @@ func replaySettings(ctx context.Context, tx meta.Tx, env journal.Env, o journal.
 		return journal.Result{}, err
 	}
 	var parts []string
-	if anon.Outcome == journal.Applied || anon.Outcome == journal.Suspended {
-		parts = append(parts, "anonymousAccess")
-	}
-	widened := anon.Outcome == journal.Skipped
+	widened := false
 	lowered := false
 	for _, m := range []struct {
 		name    string
@@ -307,8 +285,6 @@ func replaySettings(ctx context.Context, tx meta.Tx, env journal.Env, o journal.
 	}
 	r := o.Result(journal.AlreadyInEffect, "settings")
 	switch {
-	case anon.Outcome == journal.Suspended:
-		r.Outcome, r.Detail = journal.Suspended, anon.Detail
 	case len(parts) > 0:
 		r.Outcome = journal.Applied
 		r.Detail = mustJSON(map[string]any{"parts": parts})
@@ -325,41 +301,3 @@ func sameMax(a, b *int64) bool {
 	}
 	return *a == *b
 }
-
-// replayAnonymous is the anonymous-switch part of settings.auth.changed: the order false < true, a value narrows when it is
-// false or equal. Applied turns the switch off; the update rule can never suspend, because with two values the only change
-// that is not a narrowing and not a broadening of the journaled direction is an equal one.
-func replayAnonymous(ctx context.Context, tx meta.Tx, env journal.Env, o journal.Object, c boolChange) (journal.Result, error) {
-	qs := principal.Queries(tx)
-	current, err := qs.JournalAnonymousAccess(ctx)
-	if err != nil {
-		return journal.Result{}, err
-	}
-	act := journal.UpdateActions{
-		Apply: func() error { return switchOff(ctx, qs, env, tx) },
-		Suspend: func() (json.RawMessage, error) {
-			return json.RawMessage(`{"anonymousAccess":false}`), switchOff(ctx, qs, env, tx)
-		},
-	}
-	if current == c.After {
-		return o.Result(journal.AlreadyInEffect, "anonymousAccess"), nil
-	}
-	out, detail, err := journal.ApplyUpdate[bool](switchOrder{}, current, c.Before, c.After, act)
-	r := o.Result(out, "anonymousAccess")
-	r.Detail = detail
-	return r, err
-}
-
-func switchOff(ctx context.Context, qs *q.Queries, env journal.Env, tx meta.Tx) error {
-	rows, err := qs.JournalDisableAnonymousAccess(ctx)
-	if err != nil || len(rows) == 0 {
-		return err
-	}
-	return principal.NotifySettings(env, tx)
-}
-
-// switchOrder is the comparator of the anonymous switch: off grants nothing that on does not.
-type switchOrder struct{}
-
-// Narrows reports whether after grants nothing that current does not.
-func (switchOrder) Narrows(current, after bool) bool { return !after || current }

@@ -71,6 +71,10 @@ type ReadScope interface {
 	// and on the path of its file, and it may be read only if both allow it
 	// (Q-AUTHZ-255).
 	MayRead(repo qname.Repo, pkg, version string) bool
+	// MayReadWiki decides the read of the wiki of one package (and version) of a repository, the question form of
+	// [Decider.WikiReadableOn] for the rows of a management answer that carries a wiki member (R-AUTHZ-034, R-API-058).
+	// It never allows what MayRead refuses: a caller who reads the wiki reads the artifacts.
+	MayReadWiki(repo qname.Repo, pkg, version string) bool
 	// VersionsByPath reports whether the subject's own grants decide the versions of
 	// a package of the repository one by one: a grant or a CI contribution that gives
 	// it read there, or its token scope, narrows paths, so a version's file may be
@@ -132,7 +136,7 @@ func (s *readScope) VersionsByPath(key qname.Repo) bool {
 }
 
 func (s *readScope) MayRead(repo qname.Repo, pkg, version string) bool {
-	if s.sub.Anonymous && s.sub.anon != anonOn {
+	if s.sub.Anonymous {
 		return false
 	}
 	if !s.idx.addressedReaches(s.addressed, repo) {
@@ -153,18 +157,23 @@ func (s *readScope) MayRead(repo qname.Repo, pkg, version string) bool {
 	return !ok || s.e.evaluateWith(s.idx, s.sub, s.st, vc).Outcome == Allow
 }
 
-// ReadScopeOn implements [ReadScoper].
-func (e *Engine) ReadScopeOn(ctx context.Context, idx *Index, sub Subject, addressed qname.Repo, keys []qname.Repo) (ReadScope, error) {
-	sub, refused := e.withAnonymous(ctx, sub)
-	if refused != nil {
-		return nil, refused.Err()
+// MayReadWiki implements [ReadScope]: MayRead on the coordinate with the part wiki.
+func (s *readScope) MayReadWiki(repo qname.Repo, pkg, version string) bool {
+	if s.sub.Anonymous || !s.idx.addressedReaches(s.addressed, repo) {
+		return false
 	}
+	c := Coordinate{Repository: repo, Package: pkg, Version: version, Kind: KindMetadata, Actions: s.read, Addressed: s.addressed, Part: PartWiki}
+	return s.e.evaluateWith(s.idx, s.sub, s.st, s.e.atPackage(s.idx, c)).Outcome == Allow
+}
+
+// ReadScopeOn implements [ReadScoper].
+func (e *Engine) ReadScopeOn(_ context.Context, idx *Index, sub Subject, addressed qname.Repo, keys []qname.Repo) (ReadScope, error) {
 	allEndpoint := e.exposesEverything(sub.Endpoint)
 	rs := &readScope{
 		e: e, idx: idx, sub: sub, addressed: addressed, shapes: make(map[qname.Repo]ReadShape, len(keys)), read: []Action{Read},
 		versionFree: allEndpoint, byPath: make(map[qname.Repo]bool, len(keys)), allEndpoint: allEndpoint,
 	}
-	if sub.Anonymous && sub.anon != anonOn {
+	if sub.Anonymous {
 		return rs, nil
 	}
 	st := e.newEvalState(idx, sub)
@@ -218,9 +227,6 @@ func (e *Engine) exposesEverything(endpoint string) bool {
 // refuse some row, and never ReadNone where it would allow one.
 func (e *Engine) readShape(st *evalState, sub Subject, r *repoInfo, allEndpoint bool) ReadShape {
 	if r == nil || r.Class == repository.Virtual {
-		return ReadNone
-	}
-	if sub.Anonymous && r.requireAuth {
 		return ReadNone
 	}
 	scoped := sub.Scope != nil && !sub.Scope.Inherit

@@ -297,7 +297,7 @@ func (d *Dispatcher) serveRoute(w http.ResponseWriter, r *http.Request, f format
 	// The coarse check: the route's action on the repository, before any body is
 	// read and before the repository is looked up. The exposure ceiling of the
 	// subject's endpoint applies first (R-EP-013).
-	dec := acc.Decide(ctx, authz.Coordinate{Repository: key, Kind: route.Kind.RequestKind(), Actions: []authz.Action{route.Action}})
+	dec := acc.Decide(ctx, authz.Coordinate{Repository: key, Kind: route.Kind.RequestKind(), Actions: []authz.Action{route.Action}, Part: partOf(route)})
 	if !dec.Allowed() {
 		fail(dec.Err())
 		return
@@ -445,4 +445,12 @@ func splitPath(escaped string) (id string, addr qname.Address, ok bool) {
 		return id, qname.Address{}, false
 	}
 	return addr.Format, addr, true
+}
+
+// partOf is the part of the repository a route reads (R-AUTHZ-034): the wiki for a route that serves only wiki content.
+func partOf(route *formats.Route) authz.Part {
+	if route.Wiki {
+		return authz.PartWiki
+	}
+	return authz.PartArtifacts
 }

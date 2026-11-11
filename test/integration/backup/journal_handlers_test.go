@@ -333,7 +333,7 @@ func TestR_AUTHZ_031_ProjectEntries(t *testing.T) {
 	}
 }
 
-// TestR_AUTH_041_IdentityEntries: users, service accounts, groups, memberships, rotation and the anonymous switch.
+// TestR_AUTH_041_IdentityEntries: users, service accounts, groups, memberships, rotation and the settings.
 func TestR_AUTH_041_IdentityEntries(t *testing.T) {
 	e := newJEnv(t)
 	alice := e.stack.User("alice", "devs")
@@ -345,7 +345,6 @@ func TestR_AUTH_041_IdentityEntries(t *testing.T) {
 	devs := e.principalID("group", "devs")
 	oldTok := e.tokenID(e.stack.Token(bob, scope.Default()))
 	rotated := e.tokenID(e.stack.Token(alice, scope.Default()))
-	e.stack.Exec("UPDATE auth_settings SET anonymous_access = true")
 	later := time.Now().Add(10 * time.Minute).UTC().Format(time.RFC3339)
 
 	_, out := e.replayEvents(
@@ -358,11 +357,11 @@ func TestR_AUTH_041_IdentityEntries(t *testing.T) {
 		ev{"group.deleted", fmt.Sprintf(`{"principalId":%q,"name":"devs"}`, devs)},
 		ev{"token.rotated", fmt.Sprintf(`{"predecessor":%q,"expiresAt":%q,"overlapSeconds":600}`, rotated, later)},
 		ev{"token.rotated", fmt.Sprintf(`{"predecessor":%q,"expiresAt":null,"overlapSeconds":0}`, oldTok)},
-		ev{"settings.auth.changed", `{"anonymousAccess":{"before":true,"after":false},"tokens":{"pat":{"maxTTLSeconds":{"before":null,"after":null}},"sat":{"maxTTLSeconds":{"before":null,"after":null}}}}`},
+		ev{"settings.auth.changed", `{"tokens":{"pat":{"maxTTLSeconds":{"before":null,"after":null}},"sat":{"maxTTLSeconds":{"before":null,"after":null}}}}`},
 		ev{"user.disabled", `{"principalId":"not-an-id"}`},
 	)
 	e.want(out, journal.Applied, journal.AlreadyInEffect, journal.Applied, journal.Skipped, journal.Applied, journal.Applied,
-		journal.Applied, journal.Applied, journal.Applied, journal.Applied, journal.Skipped)
+		journal.Applied, journal.Applied, journal.Applied, journal.AlreadyInEffect, journal.Skipped)
 	status := func(id string) string { return e.count("SELECT status FROM principal WHERE id = $1::uuid", id) }
 	for name, id := range map[string]string{"bob": bob.ID, "gone": gone.ID, "ci-bot": sa.ID} {
 		if status(id) != "disabled" {
@@ -381,7 +380,65 @@ func TestR_AUTH_041_IdentityEntries(t *testing.T) {
 	if e.count("SELECT (expires_at <= now() + interval '11 minutes')::text FROM api_token WHERE id = $1::uuid", rotated) != "true" {
 		t.Error("the predecessor's expiry must come forward to the journaled one")
 	}
-	if e.count("SELECT anonymous_access::text FROM auth_settings") != "false" {
-		t.Error("the anonymous switch must be off")
+}
+
+// TestR_AUTHZ_036_ProjectVisibilityReplay: authz.project.visibility_changed lowers a project to the journaled level and
+// cascades to its repositories (R-AUTHZ-033 rule 3); a level that is the current one is in effect, a later one is skipped, an
+// unknown project is reported unknown.
+func TestR_AUTHZ_036_ProjectVisibilityReplay(t *testing.T) {
+	e := newJEnv(t)
+	e.stack.Repository("npm-internal", "local", "npm", "{}")
+	project := e.count("SELECT id::text FROM project WHERE key = 'it'")
+	e.stack.Exec("UPDATE project SET visibility = 'public'")
+	e.stack.Exec("UPDATE repositories SET visibility_artifacts = 'public', visibility_wiki = 'internal'")
+	version := e.count("SELECT config_version::text FROM repositories WHERE key = 'npm-internal'")
+	entry := func(id, before, after string) ev {
+		return ev{"authz.project.visibility_changed", fmt.Sprintf(`{"project":"it","projectId":%q,"before":%q,"after":%q}`, id, before, after)}
+	}
+	_, out := e.replayEvents(
+		entry(project, "public", "internal"),
+		entry(project, "public", "internal"),
+		entry(project, "internal", "public"),
+		entry("0192f1c4-0000-7000-8000-00000000dead", "public", "private"),
+		entry(project, "public", "open"),
+	)
+	e.want(out, journal.Applied, journal.AlreadyInEffect, journal.Skipped, journal.SubjectUnknown, journal.Skipped)
+	if got := e.count("SELECT visibility FROM project WHERE key = 'it'"); got != "internal" {
+		t.Errorf("the project is %s, want internal", got)
+	}
+	if got := e.count("SELECT visibility_artifacts || '/' || visibility_wiki FROM repositories WHERE key = 'npm-internal'"); got != "internal/internal" {
+		t.Errorf("the repository is %s: the cascade lowers the artifacts and leaves the wiki that was not above the level", got)
+	}
+	if e.count("SELECT config_version::text FROM repositories WHERE key = 'npm-internal'") == version {
+		t.Error("the cascade does not raise the configuration version of the repository")
+	}
+}
+
+// TestR_AUTH_044_ExternalFlagReplay: user.external_changed sets the flag when the entry set it and never clears it; the
+// break-glass account is not touched.
+func TestR_AUTH_044_ExternalFlagReplay(t *testing.T) {
+	e := newJEnv(t)
+	alice := e.stack.User("alice")
+	bob := e.stack.User("bob")
+	bg := e.stack.User("breakglass")
+	e.stack.Exec("UPDATE app_user SET is_break_glass = true WHERE principal_id = $1::uuid", bg.ID)
+	e.stack.Exec("UPDATE app_user SET external = true WHERE principal_id = $1::uuid", bob.ID)
+	entry := func(id string, before, after bool) ev {
+		return ev{"user.external_changed", fmt.Sprintf(`{"principalId":%q,"before":%t,"after":%t}`, id, before, after)}
+	}
+	_, out := e.replayEvents(
+		entry(alice.ID, false, true),
+		entry(alice.ID, false, true),
+		entry(bob.ID, true, false),
+		entry(bg.ID, false, true),
+		entry("0192f1c4-0000-7000-8000-00000000dead", false, true),
+		ev{"user.external_changed", fmt.Sprintf(`{"principalId":%q}`, alice.ID)},
+	)
+	e.want(out, journal.Applied, journal.AlreadyInEffect, journal.Skipped, journal.Skipped, journal.SubjectUnknown, journal.Skipped)
+	external := func(id string) string {
+		return e.count("SELECT external::text FROM app_user WHERE principal_id = $1::uuid", id)
+	}
+	if external(alice.ID) != "true" || external(bob.ID) != "true" || external(bg.ID) != "false" {
+		t.Errorf("alice %s, bob %s, break-glass %s: the flag is set, never cleared, and the break-glass account is untouched", external(alice.ID), external(bob.ID), external(bg.ID))
 	}
 }

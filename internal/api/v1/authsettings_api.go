@@ -33,12 +33,11 @@ func (s *Server) authSettings(r *http.Request, row token.Settings) (gen.AuthSett
 	cfg := s.o.Auth.Config
 	eff := s.o.Auth.Settings.Resolve(row)
 	out := gen.AuthSettings{
-		AnonymousAccess: eff.AnonymousAccess,
+		NewUsersExternal: eff.NewUsersExternal,
 		Tokens: gen.AuthSettingsTokens{
 			Pat: lifetimes(eff.PATDefaultTTL, eff.PATMaxTTL), Sat: lifetimes(eff.SATDefaultTTL, eff.SATMaxTTL), ExpiryNoticeSeconds: seconds(eff.ExpiryNotice),
 		},
 		Ceilings: gen.AuthSettingsCeilings{
-			AnonymousAllowed: cfg.Anonymous.Allowed,
 			Tokens: gen.AuthSettingsTokens{
 				Pat: lifetimes(cfg.Tokens.PAT.DefaultTTL, cfg.Tokens.PAT.MaxTTL), Sat: lifetimes(cfg.Tokens.SAT.DefaultTTL, cfg.Tokens.SAT.MaxTTL),
 				ExpiryNoticeSeconds: seconds(cfg.Tokens.ExpiryNotice),
@@ -48,7 +47,7 @@ func (s *Server) authSettings(r *http.Request, row token.Settings) (gen.AuthSett
 	st := &out.Status
 	st.Providers = []gen.AuthSettingsProvider{}
 	if s.o.Auth.Login != nil {
-		for _, p := range s.o.Auth.Login.LoginOptions(eff.AnonymousAccess).Providers {
+		for _, p := range s.o.Auth.Login.LoginOptions(false).Providers {
 			st.Providers = append(st.Providers, gen.AuthSettingsProvider{Id: p.ID, DisplayName: p.DisplayName, Available: p.Available})
 		}
 	}
@@ -141,8 +140,8 @@ func (s *Server) GetAuthSettings(w http.ResponseWriter, r *http.Request, _ gen.G
 // settingsPatchBody is a merge patch of the runtime settings; ceilings and status
 // are the read-only groups of the representation and are ignored.
 type settingsPatchBody struct {
-	AnonymousAccess *bool `json:"anonymousAccess"`
-	Tokens          *struct {
+	NewUsersExternal *bool `json:"newUsersExternal"`
+	Tokens           *struct {
 		PAT                 *lifetimePatch `json:"pat"`
 		SAT                 *lifetimePatch `json:"sat"`
 		ExpiryNoticeSeconds *int           `json:"expiryNoticeSeconds"`
@@ -183,7 +182,7 @@ func (s *Server) UpdateAuthSettings(w http.ResponseWriter, r *http.Request, _ ge
 		failIdentity(w, r, err)
 		return
 	}
-	p := token.SettingsPatch{AnonymousAccess: in.AnonymousAccess}
+	p := token.SettingsPatch{NewUsersExternal: in.NewUsersExternal}
 	if t := in.Tokens; t != nil {
 		p.ExpiryNotice = duration(t.ExpiryNoticeSeconds)
 		if t.PAT != nil {

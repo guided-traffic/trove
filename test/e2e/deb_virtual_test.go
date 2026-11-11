@@ -39,7 +39,7 @@ func TestDebVirtual(t *testing.T) {
 
 	virtual := "deb-apt-" + fx.run
 	fx.createRepo(t, virtual, map[string]any{
-		"key": virtual, "class": "virtual", "format": "deb", "requireAuthentication": true,
+		"key": virtual, "class": "virtual", "format": "deb",
 		"virtual": map[string]any{"members": []string{local, remote}, "deployTarget": local},
 		"deb":     map[string]any{"suites": []string{debSuite}, "components": []string{"main"}},
 	})

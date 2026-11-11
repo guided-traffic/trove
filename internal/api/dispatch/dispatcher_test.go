@@ -43,6 +43,10 @@ func (p probe) Routes() []formats.Route {
 			Action: formats.ActionRead, Kind: formats.Metadata, Handler: p.handler,
 		},
 		{
+			Name: "probe.readme.get", Method: http.MethodGet, Template: "/{package}/-/readme", Examples: []string{"left-pad/-/readme"},
+			Action: formats.ActionRead, Kind: formats.Metadata, Wiki: true, Handler: p.handler,
+		},
+		{
 			Name: "probe.file.put", Method: http.MethodPut, Template: "/{package}/-/{file}", Examples: []string{"left-pad/-/x.tgz"},
 			Action: formats.ActionDeploy, Kind: formats.Upload, Classes: []formats.Class{formats.Local}, Handler: p.handler,
 		},
@@ -550,5 +554,32 @@ func TestR_ARCH_005_TheRegistryRootFormatGetsNoPrefixBelowAPI(t *testing.T) {
 	}
 	if got := strings.Join(d.Prefixes(), ","); got != "probe" {
 		t.Fatalf("prefixes = %s", got)
+	}
+}
+
+// TestR_AUTHZ_034_ARouteThatServesOnlyWikiContentIsDecidedWithThePartWiki: the coarse check of the dispatcher asks the part of
+// the route, so a caller who reads the artifacts and not the wiki is refused before the handler runs (R-AUTHZ-034).
+func TestR_AUTHZ_034_ARouteThatServesOnlyWikiContentIsDecidedWithThePartWiki(t *testing.T) {
+	r := newRig(t)
+	r.decider.decision = authz.Decision{Outcome: authz.Allow}
+	for _, c := range []struct {
+		path string
+		part authz.Part
+	}{
+		{"/api/probe/it/local/left-pad", authz.PartArtifacts},
+		{"/api/probe/it/local/left-pad/-/readme", authz.PartWiki},
+	} {
+		r.decider.asked = nil
+		if rec := r.do("GET", c.path); rec.Code != 204 {
+			t.Fatalf("%s: %d", c.path, rec.Code)
+		}
+		if len(r.decider.asked) == 0 || r.decider.asked[0].Part != c.part {
+			t.Errorf("%s was decided with %+v, want the part %v", c.path, r.decider.asked, c.part)
+		}
+	}
+	r.decider.decision = authz.Decision{Outcome: authz.DenyHidden, Reason: authz.ReasonWiki}
+	r.reached = nil
+	if rec := r.do("GET", "/api/probe/it/local/left-pad/-/readme"); rec.Code != 404 || len(r.reached) != 0 {
+		t.Errorf("a refused wiki read: %d, handler reached %v", rec.Code, r.reached)
 	}
 }
