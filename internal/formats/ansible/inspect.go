@@ -8,7 +8,15 @@ import (
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/ansible/collection"
+	"github.com/guided-traffic/trove/internal/formats/ansible/rows"
 )
+
+// inspected is the Payload of the Inspection of an archive: what the reader made of it and the documentation generated from the same
+// pass (R-ANS-034). docs is nil until the generator is wired into Inspect.
+type inspected struct {
+	archive *collection.Archive
+	docs    *rows.DocSet
+}
 
 // Inspect reads an upload that enters the repository (R-ANS-010, FMT-008): a collection archive is untrusted input and is read within
 // the bounds of R-ANS-031 by internal/formats/ansible/collection before anything uses it. The identity the manifest declares is the
@@ -36,7 +44,7 @@ func (f *Format) Inspect(ctx context.Context, in formats.InspectInput) (*formats
 			"ansible.namespace": a.Namespace, "ansible.name": a.Name, "ansible.requires_ansible": a.RequiresAnsible,
 			"ansible.dependency_count": strconv.Itoa(len(a.Dependencies)),
 		},
-		Payload: a,
+		Payload: &inspected{archive: a},
 	}, nil
 }
 

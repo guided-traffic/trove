@@ -69,6 +69,9 @@ type HostOptions struct {
 	// Vulnerabilities is the scanning's data an audit route reads (R-VULN-017, R-VULN-018); nil answers
 	// formats.NoVulnerabilityData, as the production Host does until the scanning is wired.
 	Vulnerabilities formats.VulnerabilityData
+	// Markup is the renderer a format's documentation uses (ADR-196); nil answers [StandInMarkup], a deterministic stand-in that
+	// escapes and wraps, where the production Host answers formats.NoMarkup until the renderer is wired.
+	Markup formats.Markup
 	// Subject is who acts on every request the Host builds; the zero value is a
 	// subject without a name, which is neither anonymous nor authenticated.
 	Subject authz.Subject
@@ -419,6 +422,14 @@ func (h *Host) Vulnerabilities() formats.VulnerabilityData {
 		return h.opts.Vulnerabilities
 	}
 	return formats.NoVulnerabilityData()
+}
+
+// Markup implements formats.Host.
+func (h *Host) Markup() formats.Markup {
+	if h.opts.Markup != nil {
+		return h.opts.Markup
+	}
+	return StandInMarkup{}
 }
 
 type renditions struct{ h *Host }

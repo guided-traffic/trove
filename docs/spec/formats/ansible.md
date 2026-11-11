@@ -1119,8 +1119,8 @@ can be rebuilt (below).
 | **Remote**, mirror | As pull-through, for every version the pass keeps | As pull-through | The pass queues the same job after the archive (R-ANS-040) |
 | **Virtual** | The member that serves the version document (first match, R-ANS-022) | Nothing of its own | A read resolves the winner and reads its rows (R-ANS-041) |
 
-- **The tables** (data port `internal/formatdata/ansible`; migrations **00074** `ansible_doc_tables` (the first three tables) and **00075**
-  `ansible_doc_fetches` (the fourth); **00076** is reserved and unused unless a builder needs a column; each file starts with `-- trove:phase expand`
+- **The tables** (data port `internal/formatdata/ansible`; migrations **00071** `ansible_doc_tables` (the first three tables) and **00072**
+  `ansible_doc_fetches` (the fourth); each file starts with `-- trove:phase expand`
   and comments its tables as 00070 does; `name` and `version` are `text COLLATE "C"` with the length checks of 00070; every column below is the
   contract, the indexes beyond the primary keys are the builder's):
 
@@ -2855,6 +2855,34 @@ Status: **Decided by the development agent** — selected from the options below
 **Choice:** (a). **Rationale:** the rows are cheap beside a kind boot and are the only proof that a real client's install and the screen agree. Revisit if the leg's time matters.
 
 **Applied in the spec:** R-ANS-046.
+
+### Q-ANS-71 · The renderer of the protocol document takes its own two-method Markup interface, which the Host's value satisfies
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `galaxydoc` declares `Markup` with the two methods it calls (`Markdown`, `SanitizeHTML`), and the Host's `formats.Markup` satisfies it structurally (chosen) | `RenderDocsBlob(d, m galaxydoc.Markup)` | `galaxydoc` stays a leaf (the layer rule allows the standard library, `errs`, the YAML module and the rows leaf); the same pattern as the matcher's `Adapter` (ADR-150) | Two interfaces with the same methods; a drift is caught by the compiler at the call, not at the declaration |
+| (b) `galaxydoc` imports `formats` for `formats.Markup` | The plan's literal signature | One interface | `formats` is the edge layer; a leaf may not import it (R-ARCH-002), and the architecture test fails |
+| (c) Pass two functions | `RenderDocsBlob(d, markdown, sanitize)` | No interface | Every caller builds two closures; the capability is no longer one named thing |
+
+**Choice:** (a). **Rationale:** the plan's signature `RenderDocsBlob(d, m formats.Markup)` cannot compile in a leaf; the structural form keeps the call the plan describes (`RenderDocsBlob(d, rq.Host.Markup())`). Revisit if the Host's capability grows beyond the two methods.
+
+**Applied in the spec:** R-ANS-035, R-ANS-039; [ADR-196](../../decisions.md#adr-196--the-host-gains-a-markup-capability-for-the-rendering-and-sanitizing-of-a-formats-documentation).
+
+### Q-ANS-72 · The tree the port reads carries the counts per type before the search
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `rows.DocTree` carries `Counts` (entries per type before `q`) beside `CountBeforeQuery`, and the stored `Warnings` (chosen) | One query answers the tree and every count of R-ANS-036 | The groups' and types' `count` stay constant while one searches without a second call; the API groups from one value | A map in the neutral form |
+| (b) A second port method `DocCounts` | Two reads per tree | The tree stays a list | Two queries that can disagree under a concurrent rebuild |
+| (c) The API counts the entries it got | No port change | Nothing to store | With `q` the entries are the matches, so the counts before `q` are lost (R-ANS-036 forbids exactly that) |
+
+**Choice:** (a). **Rationale:** R-ANS-036 requires the type and group counts to be those before `q`, and the plan's `DocTree` has only the total. Revisit if a count per type is not needed once the tabs are built.
+
+**Applied in the spec:** R-ANS-036.
 
 ## What this does not cover
 

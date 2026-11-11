@@ -13,7 +13,7 @@ func repoOfClass(c formats.Class) *repository.Repository {
 	return &repository.Repository{ID: "7", Class: c, Format: "ansible"}
 }
 
-// TestR_ANS_003_TheRouteTable is the table of the plan, section 2.4: name, method, kind, action and classes of the ten routes, and the
+// TestR_ANS_003_TheRouteTable is the table of the plan, section 2.4: name, method, kind, action and classes of the eleven routes, and the
 // declaration of the Token scheme on each (R-ANS-006).
 func TestR_ANS_003_TheRouteTable(t *testing.T) {
 	local, remote, virtual := formats.Local, formats.Remote, formats.Virtual
@@ -27,6 +27,7 @@ func TestR_ANS_003_TheRouteTable(t *testing.T) {
 		{routeCollection, "GET", formats.Metadata, formats.ActionRead, nil},
 		{routeVersions, "GET", formats.Metadata, formats.ActionRead, nil},
 		{routeVersion, "GET", formats.Metadata, formats.ActionRead, nil},
+		{routeDocs, "GET", formats.Metadata, formats.ActionRead, nil},
 		{routeArtifact, "GET", formats.Download, formats.ActionRead, nil},
 		{routePublish, "POST", formats.Upload, formats.ActionDeploy, []formats.Class{local, virtual}},
 		{routeImport, "GET", formats.Metadata, formats.ActionRead, []formats.Class{local, virtual}},
@@ -79,6 +80,8 @@ func TestR_ANS_003_MatchResolvesTheProtocolPaths(t *testing.T) {
 		{"GET", "v3/collections/acme/tools/versions/", routeVersions, formats.Params{"ns": "acme", "name": "tools"}},
 		{"GET", "v3/collections/acme/tools/versions", routeVersions, formats.Params{"ns": "acme", "name": "tools"}},
 		{"GET", "v3/collections/acme/tools/versions/1.0.0-rc.1+b.5/", routeVersion, formats.Params{"ns": "acme", "name": "tools", "version": "1.0.0-rc.1+b.5"}},
+		{"GET", "v3/collections/acme/tools/versions/1.0.0/docs-blob/", routeDocs, formats.Params{"ns": "acme", "name": "tools", "version": "1.0.0"}},
+		{"GET", "v3/collections/acme/tools/versions/1.0.0-rc.1+b.5/docs-blob", routeDocs, formats.Params{"ns": "acme", "name": "tools", "version": "1.0.0-rc.1+b.5"}},
 		{"GET", "v3/artifacts/collections/acme-tools-1.0.0.tar.gz", routeArtifact, formats.Params{"file": "acme-tools-1.0.0.tar.gz"}},
 		{"POST", "v3/artifacts/collections/", routePublish, formats.Params{}},
 		{"POST", "v3/artifacts/collections", routePublish, formats.Params{}},

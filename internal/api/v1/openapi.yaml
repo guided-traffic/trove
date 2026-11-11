@@ -9258,6 +9258,166 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
+  /api/v1/packages/{packageId}/versions/{version}/docs:
+    parameters:
+      - $ref: "#/components/parameters/PackageId"
+      - $ref: "#/components/parameters/PackageVersionPath"
+    get:
+      operationId: getPackageVersionDocs
+      tags: [packages]
+      summary: Read the documentation tree of a version
+      description: |
+        The tree of the documentation of a visible version: the state, the README and the Markdown files, and the entries (modules,
+        plugins, roles) grouped as the Documentation and Contents tabs show them (R-ANS-036, R-UI-061, R-UI-062). The documentation is the
+        wiki part of the repository (R-ANS-037): a caller who may not read the wiki gets the answer of a version that does not exist.
+        `repository` selects the repository (`<projectKey>/<repoKey>`); without it the first repository the caller may read that holds the
+        version with a state other than `none` is used, local before remote. A virtual repository is resolved to the member that serves
+        the version document. The answer names the repository it was read from. The counts of the groups are those before `q` filtered;
+        `matchCount` is the number of entries left. `warnings` is only for a caller who holds `deploy` on the repository. A read never
+        queries an upstream. A version of a format without documentation, and a version that is not visible, are `404`.
+      x-trove-permission:
+        public: true
+      x-trove-part: wiki
+      parameters:
+        - $ref: "#/components/parameters/DocRepository"
+        - name: q
+          in: query
+          description: |
+            Search inside this version's documentation: split on white space into 1 to 8 terms of at most 64 characters; every term must match an
+            entry's name (substring) or the words of its description (prefix). A text of fewer than 2 or more than 512 characters is
+            `422 invalid_query`.
+          schema:
+            type: string
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: The tree.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageDocTree"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/packages/{packageId}/versions/{version}/docs/entries/{type}/{name}:
+    parameters:
+      - $ref: "#/components/parameters/PackageId"
+      - $ref: "#/components/parameters/PackageVersionPath"
+      - name: type
+        in: path
+        required: true
+        description: The content type of the entry, the Galaxy's `content_type` (`module`, `lookup`, `filter`, `role`, ...).
+        schema:
+          type: string
+      - name: name
+        in: path
+        required: true
+        description: The content name of the entry, the Galaxy's `content_name` (letters, digits, `_` and `.`).
+        schema:
+          type: string
+    get:
+      operationId: getPackageVersionDocEntry
+      tags: [packages]
+      summary: Read the documentation page of one module, plugin or role
+      description: |
+        One page of the documentation of a visible version (R-ANS-036, R-UI-061). The prose is sanitized HTML, one string per paragraph;
+        names, types and typed values are text and JSON values the client shows as text. An entry that does not exist, and a type or
+        name outside its grammar, are `404`; an entry without documentation answers `200` with the header fields and no sections. The
+        wiki rule of the tree applies (R-ANS-037).
+      x-trove-permission:
+        public: true
+      x-trove-part: wiki
+      parameters:
+        - $ref: "#/components/parameters/DocRepository"
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: The page.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageDocEntry"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/packages/{packageId}/versions/{version}/docs/files/{file}:
+    parameters:
+      - $ref: "#/components/parameters/PackageId"
+      - $ref: "#/components/parameters/PackageVersionPath"
+      - name: file
+        in: path
+        required: true
+        description: The name of the README or of a Markdown file below `docs/`, as the tree lists it, percent-encoded.
+        schema:
+          type: string
+    get:
+      operationId: getPackageVersionDocFile
+      tags: [packages]
+      summary: Read the README or a Markdown file of the documentation of a version
+      description: |
+        The README or a Markdown file of a visible version as sanitized HTML, as the README operation answers it (R-ANS-036, R-API-029,
+        R-UI-008). A name the tree does not list is `404`. The `ETag` is a strong tag over the source, the renderer version and the image
+        policy. The wiki rule of the tree applies (R-ANS-037).
+      x-trove-permission:
+        public: true
+      x-trove-part: wiki
+      parameters:
+        - $ref: "#/components/parameters/DocRepository"
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: The file.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageDocFile"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
   /api/v1/projects/{projectKey}/repositories/{repoKey}/client-setup:
     parameters:
       - $ref: "#/components/parameters/ProjectKey"
@@ -12175,6 +12335,16 @@ paths:
           schema:
             type: string
             enum: [completed, failed]
+        - name: package
+          in: query
+          description: Only the tasks of this collection, `<namespace>.<name>` (Q-API-262). An unknown name yields an empty page.
+          schema:
+            type: string
+        - name: version
+          in: query
+          description: Only the tasks of this version (Q-API-262). An unknown version yields an empty page.
+          schema:
+            type: string
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Cursor"
       responses:
@@ -12475,6 +12645,16 @@ components:
         type: string
         pattern: "^pkg_[0-9A-Za-z]+$"
         x-trove-reserved-names: [lookup]
+    DocRepository:
+      name: repository
+      in: query
+      description: |
+        The repository to read the documentation from, `<projectKey>/<repoKey>` (R-ANS-036). Without it, the first repository the caller may
+        read that holds the version with a state other than `none` is used (local before remote). A virtual repository is resolved to the
+        member that serves the version document.
+      schema:
+        type: string
+        pattern: "^[^/]+/[^/]+$"
     PackageVersionPath:
       name: version
       in: path
@@ -16785,12 +16965,16 @@ components:
         metadata:
           type: object
           additionalProperties: true
+          properties:
+            docs:
+              $ref: "#/components/schemas/PackageVersionDocs"
           description: |
             Format-specific, owned by the format page. For npm the members the UI reads are
             `distTags` (tag to version), `dependencies`, `devDependencies`, `peerDependencies` and
             `optionalDependencies` (name to range), `authors` (strings), `homepage`, `repositoryUrl`
             and `bugsUrl` (strings as the package declares them), `engines` (name to range) and
-            `deprecated` (string or null). A member that does not apply is absent.
+            `deprecated` (string or null). For Ansible Galaxy collections `docs` announces the documentation (R-ANS-036, Q-API-263): it is
+            wiki content and absent for a caller who may not read the wiki of the repository. A member that does not apply is absent.
         repositories:
           type: array
           items:
@@ -16803,6 +16987,348 @@ components:
       type: object
       required: [contentType, html, truncated, externalImagesBlocked]
       properties:
+        contentType:
+          type: string
+          enum: [text/markdown]
+          description: The type of the source; `html` is always sanitized HTML.
+        html:
+          type: string
+        truncated:
+          type: boolean
+          description: The source or the rendered HTML exceeded a limit of R-UI-008.
+        externalImagesBlocked:
+          type: integer
+          format: int32
+          description: The number of external images replaced by links.
+    PackageVersionDocs:
+      type: object
+      additionalProperties: false
+      required: [state]
+      description: |
+        The announcement of the documentation of a version, `metadata.docs` of the version details for the format Ansible Galaxy
+        (R-ANS-036, Q-API-263), so that the page chooses its tabs without a probing request.
+      properties:
+        state:
+          type: string
+          enum: [available, pending, unavailable, none]
+        source:
+          type: string
+          enum: [generated, upstream]
+          description: Set with `available`.
+        entries:
+          type: integer
+          format: int32
+          description: The number of entries; set with `available`.
+    PackageDocTree:
+      type: object
+      additionalProperties: false
+      required: [state, repository]
+      description: |
+        The documentation tree of a version (R-ANS-036). For the states `pending`, `unavailable` and `none` only `state`, `reason` where
+        it applies and `repository` are present. Groups are always in the order modules, plugins, roles; types and entries are in
+        alphabetical order.
+      properties:
+        state:
+          type: string
+          enum: [available, pending, unavailable, none]
+        reason:
+          type: string
+          enum: [upstream_error, too_large, invalid_document]
+          description: Set with `unavailable`.
+        source:
+          type: string
+          enum: [generated, upstream]
+        repository:
+          type: string
+          description: The repository the documentation was read from, `<projectKey>/<repoKey>`.
+        builtAt:
+          type: string
+          format: date-time
+        truncated:
+          type: boolean
+          description: A bound cut entries or files off.
+        matchCount:
+          type: integer
+          format: int32
+          description: Only with `q`. The number of entries left.
+        files:
+          type: array
+          description: The README first, when there is one, then the Markdown files of `docs/` in name order.
+          items:
+            $ref: "#/components/schemas/PackageDocFileHead"
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/PackageDocGroup"
+        warnings:
+          type: array
+          description: What the generator left out and why. Only for a caller who holds `deploy` on the repository.
+          items:
+            $ref: "#/components/schemas/PackageDocWarning"
+    PackageDocFileHead:
+      type: object
+      additionalProperties: false
+      required: [name, title]
+      properties:
+        name:
+          type: string
+        title:
+          type: string
+          description: The first heading of the Markdown as text, at most 120 characters; the file name otherwise.
+    PackageDocGroup:
+      type: object
+      additionalProperties: false
+      required: [category, label, count, types]
+      properties:
+        category:
+          type: string
+          enum: [module, plugin, role]
+        label:
+          type: string
+          description: "`Modules`, `Plugins` or `Roles`."
+        count:
+          type: integer
+          format: int32
+          description: The number of entries of the group before `q` filtered them.
+        types:
+          type: array
+          items:
+            $ref: "#/components/schemas/PackageDocType"
+    PackageDocType:
+      type: object
+      additionalProperties: false
+      required: [type, count, entries]
+      properties:
+        type:
+          type: string
+          description: The Galaxy's `content_type`.
+        count:
+          type: integer
+          format: int32
+          description: The number of entries of the type before `q` filtered them.
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/PackageDocEntryHead"
+    PackageDocEntryHead:
+      type: object
+      additionalProperties: false
+      required: [type, name, shortDescription, hasDocs]
+      properties:
+        type:
+          type: string
+        name:
+          type: string
+        shortDescription:
+          type: string
+          description: Plain text.
+        hasDocs:
+          type: boolean
+    PackageDocWarning:
+      type: object
+      additionalProperties: false
+      required: [path, code, message]
+      properties:
+        path:
+          type: string
+          description: The member of the archive the warning concerns.
+        code:
+          type: string
+        message:
+          type: string
+    PackageDocEntry:
+      type: object
+      additionalProperties: false
+      required: [type, name, fullName, hasDocs, source]
+      description: |
+        One page of the documentation (R-ANS-036). `description`, `notes`, `requirements` and the `description` of an option or a return
+        value are arrays of sanitized HTML strings, one per paragraph; names, types, `returned`, `versionAdded`, authors, choices, defaults and
+        samples are text and typed JSON values that the client shows as text. An entry without documentation has the header fields only.
+      properties:
+        type:
+          type: string
+        name:
+          type: string
+        fullName:
+          type: string
+          description: "`<namespace>.<name>.<content name>`."
+        shortDescription:
+          type: string
+          description: Plain text.
+        hasDocs:
+          type: boolean
+        source:
+          type: string
+          enum: [generated, upstream]
+        builtAt:
+          type: string
+          format: date-time
+        versionAdded:
+          type: string
+        deprecated:
+          $ref: "#/components/schemas/PackageDocDeprecated"
+        description:
+          type: array
+          items:
+            type: string
+            description: Sanitized HTML.
+        notes:
+          type: array
+          items:
+            type: string
+            description: Sanitized HTML.
+        requirements:
+          type: array
+          items:
+            type: string
+            description: Sanitized HTML.
+        author:
+          type: array
+          items:
+            type: string
+            description: Text.
+        options:
+          type: array
+          items:
+            $ref: "#/components/schemas/PackageDocOption"
+        returnValues:
+          type: array
+          items:
+            $ref: "#/components/schemas/PackageDocReturnValue"
+        examples:
+          type: string
+          description: Text, shown in a code block; trove does not highlight or run it.
+        seealso:
+          type: array
+          items:
+            $ref: "#/components/schemas/PackageDocSeeAlso"
+        attributes:
+          type: array
+          items:
+            $ref: "#/components/schemas/PackageDocAttribute"
+        extendsFragments:
+          type: array
+          description: The documentation fragments that were not merged into the entry.
+          items:
+            type: string
+        readmeHtml:
+          type: string
+          description: Roles. The README of the role as sanitized HTML.
+    PackageDocDeprecated:
+      type: object
+      additionalProperties: false
+      properties:
+        why:
+          type: string
+          description: Sanitized HTML.
+        removedIn:
+          type: string
+        removedAtDate:
+          type: string
+        alternative:
+          type: string
+          description: Sanitized HTML.
+    PackageDocOption:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        elements:
+          type: string
+        required:
+          type: boolean
+        default:
+          description: Any JSON value, shown as text.
+        choices:
+          type: array
+          items:
+            description: Any JSON value, shown as text.
+        aliases:
+          type: array
+          items:
+            type: string
+        description:
+          type: array
+          items:
+            type: string
+            description: Sanitized HTML.
+        versionAdded:
+          type: string
+        suboptions:
+          type: array
+          description: Nested to a depth of 12.
+          items:
+            $ref: "#/components/schemas/PackageDocOption"
+    PackageDocReturnValue:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        elements:
+          type: string
+        returned:
+          type: string
+        description:
+          type: array
+          items:
+            type: string
+            description: Sanitized HTML.
+        sample:
+          description: Any JSON value, shown as text.
+        versionAdded:
+          type: string
+        contains:
+          type: array
+          description: Nested to a depth of 12.
+          items:
+            $ref: "#/components/schemas/PackageDocReturnValue"
+    PackageDocSeeAlso:
+      type: object
+      additionalProperties: false
+      properties:
+        module:
+          type: string
+        description:
+          type: string
+          description: Sanitized HTML.
+        link:
+          type: string
+          description: Kept only for `http` and `https`.
+    PackageDocAttribute:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+        support:
+          type: string
+        description:
+          type: array
+          items:
+            type: string
+            description: Sanitized HTML.
+        details:
+          type: array
+          items:
+            type: string
+            description: Sanitized HTML.
+    PackageDocFile:
+      type: object
+      additionalProperties: false
+      required: [name, contentType, html, truncated, externalImagesBlocked]
+      description: The README or a Markdown file, as the README answer of R-API-029 (R-ANS-036).
+      properties:
+        name:
+          type: string
         contentType:
           type: string
           enum: [text/markdown]
@@ -19020,7 +19546,7 @@ components:
       description: |
         The settings of the Ansible Galaxy format, the `ansible` member of a repository document (R-REPO-004, R-ANS-019). The document
         of the format's JSON Schema is `settingsSchema` of `GET /api/v1/formats`; `TestR_ARCH_008_AnsibleSettingsSchemaEqualsTheOpenAPIMember`
-        fails on any difference between the two. Both settings are for remote repositories; local and virtual repositories have no
+        fails on any difference between the two. Every setting is for remote repositories; local and virtual repositories have no
         settings of the format, and a setting that does not apply to the class of the repository answers 422 `not_applicable`. An
         omitted setting takes its default.
       properties:
@@ -19039,6 +19565,13 @@ components:
           default: cloud-services
           pattern: "^[A-Za-z0-9._-]{1,128}$"
           description: Remote repositories with `authUrl` (R-ANS-019). The client id the exchange presents to the realm.
+        fetchDocumentation:
+          type: boolean
+          default: true
+          description: |
+            Remote repositories (R-ANS-035, R-ANS-042). Fetch the docs-blob document of a version from the upstream, by the job that
+            follows the version document and by a client's request for the route, and keep the documentation it holds. With `false` the
+            route answers 404 and no rows are written; a client that wants the document goes to the upstream.
     AnsibleImportTask:
       type: object
       required: [id, state, namespace, name, version, createdAt, finishedAt, error, messages]

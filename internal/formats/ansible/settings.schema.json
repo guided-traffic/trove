@@ -19,6 +19,12 @@
       "default": "cloud-services",
       "pattern": "^[A-Za-z0-9._-]{1,128}$",
       "x-trove-classes": ["remote"]
+    },
+    "fetchDocumentation": {
+      "description": "Remote repositories (R-ANS-035, R-ANS-042). Fetch the docs-blob document of a version from the upstream, by the job that follows the version document and by a client's request for the route, and keep the documentation it holds. With false the route answers 404 and no rows are written; a client that wants the document goes to the upstream.",
+      "type": "boolean",
+      "default": true,
+      "x-trove-classes": ["remote"]
     }
   }
 }

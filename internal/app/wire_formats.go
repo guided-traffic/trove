@@ -345,7 +345,12 @@ func (a *App) wireFormatHost(_ context.Context, in infra, fm formatsArea, repo r
 	if err != nil {
 		return formatHostArea{}, err
 	}
+	markup, err := a.hostMarkup()
+	if err != nil {
+		return formatHostArea{}, err
+	}
 	hostOpts := formathost.Options{
+		Markup: markup,
 		Runner: in.db, Decider: fa.decider, Items: fa.items, Packages: pkgs, Deps: fm.deps, Renditions: rend, Engine: eng.remote(),
 		Resolver: resolver,
 		Vuln:     vz.hostPorts(),

@@ -20,6 +20,11 @@ type AnsibleStore interface {
 	Tasks(ctx context.Context, repoID int64, state, after string, limit int) ([]rows.Task, error)
 	Tombstones(ctx context.Context, repoID int64, after string, limit int) ([]rows.Tombstone, error)
 	ClearTombstone(ctx context.Context, repoID int64, name, version string, a rows.Audit) (bool, error)
+	// The reads of the documentation operations (R-ANS-036): rows only, never an upstream.
+	DocState(ctx context.Context, repoID int64, name, version string) (rows.DocState, error)
+	DocTree(ctx context.Context, repoID int64, name, version string, q *rows.DocQuery) (rows.DocTree, error)
+	DocEntry(ctx context.Context, repoID int64, name, version, typ, entry string) (rows.DocEntry, bool, error)
+	DocFile(ctx context.Context, repoID int64, name, version, file string) (rows.DocFile, bool, error)
 }
 
 // ansibleTarget resolves the repository of an operation: the data port, then the repository of the path. A repository that is not an

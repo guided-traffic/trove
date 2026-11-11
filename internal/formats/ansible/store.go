@@ -13,9 +13,10 @@ import (
 // implements. The format runs no SQL (R-ARCH-008); the composition root binds the implementation per format ID and refuses to start
 // without it ([Format.Descriptor] names the type).
 //
-// The port is two groups, each implemented in files of the package that builds the class: LocalStore by the local class
-// (internal/formatdata/ansible/local_store.go) and RemoteStore by the remote class (remote_store.go). The values that cross it are
-// those of internal/formats/ansible/rows. The two groups are frozen with this file: a change after it goes through the architecture
+// The port is three groups, each implemented in files of the package that builds it: LocalStore by the local class
+// (internal/formatdata/ansible/local_store.go), RemoteStore by the remote class (remote_store.go) and DocsStore by the documentation
+// of collections (docs_store.go, R-ANS-033). The values that cross it are those of internal/formats/ansible/rows. The groups are
+// frozen with this file: a change after it goes through the architecture
 // reviewer, because several packages build against them at once.
 //
 // The reindex job's enqueue (the endpoint POST .../reindex, R-REPO-016) is the optional interface api/v1.Reindexer of the same value,
@@ -23,6 +24,7 @@ import (
 type Store interface {
 	LocalStore
 	RemoteStore
+	DocsStore
 }
 
 // LocalStore is the part of the data port the local class writes and reads (R-ANS-008 to R-ANS-012).
@@ -88,4 +90,40 @@ type RemoteStore interface {
 	Announced(ctx context.Context, repoID int64, name, version string) (rows.Announced, bool, error)
 	// AnnouncedNames lists the versions recorded for a collection name: the virtual repository's cached-version set.
 	AnnouncedNames(ctx context.Context, repoID int64, name string) ([]rows.Announced, error)
+}
+
+// DocsStore is the part of the data port that keeps the documentation of a collection version (R-ANS-033 to R-ANS-036): the tables
+// ansible_version_docs, ansible_doc_entries, ansible_doc_files and ansible_doc_fetches (migrations ansible_doc_tables and ansible_doc_fetches). The documentation is
+// derived data: a local repository's rows are generated from the archive (source generated), a remote's are parsed from the stored
+// docs-blob document (source upstream), a virtual repository has none of its own. The writes join the transaction of the publish
+// (OnCommit), of the fill (OnFill) or of the removal (OnItemsRemoved); the reads never leave the rows (R-ANS-036).
+type DocsStore interface {
+	// PutDocs replaces the documentation of a version in the transaction of the publish (OnCommit) or of the fill (OnFill): the version's
+	// rows are deleted and written again, and the fetch row of the version, if any, is deleted.
+	PutDocs(ctx context.Context, tx formats.Tx, repoID int64, name, version string, d rows.DocSet) error
+	// RemoveDocs deletes the rows of a version (OnItemsRemoved); a missing one is not an error.
+	RemoveDocs(ctx context.Context, tx formats.Tx, repoID int64, name, version string) error
+	// SetDocFetch records, in tx, the fetch row of a remote version: state queued, unavailable or none (rows.DocFetch*), with the reason
+	// (rows.DocReason*, "" for queued and none).
+	SetDocFetch(ctx context.Context, tx formats.Tx, repoID int64, name, version, state, reason string) error
+	// EnqueueDocsFill queues the job ansible-docs-fill in tx and writes the queued fetch row; it queues nothing when a job for the version
+	// exists (the key of the job, R-ANS-042).
+	EnqueueDocsFill(ctx context.Context, tx formats.Tx, repoID int64, name, version string) error
+	// DocState reads the state of the documentation of a version; the state is none when there is nothing, and a queued fetch row older
+	// than one hour counts as none (R-ANS-033).
+	DocState(ctx context.Context, repoID int64, name, version string) (rows.DocState, error)
+	// DocTree reads the tree of a version: the entries and the file titles, with q applied (a nil q is no search) and the counts before q.
+	DocTree(ctx context.Context, repoID int64, name, version string, q *rows.DocQuery) (rows.DocTree, error)
+	// DocEntry reads one entry; found is false for an entry that does not exist.
+	DocEntry(ctx context.Context, repoID int64, name, version, typ, entry string) (rows.DocEntry, bool, error)
+	// DocFile reads the README or a Markdown file; found is false for a name that is none.
+	DocFile(ctx context.Context, repoID int64, name, version, file string) (rows.DocFile, bool, error)
+	// DocSet reads the whole set of a version, for the protocol document; found is false when the version has no rows.
+	DocSet(ctx context.Context, repoID int64, name, version string) (rows.DocSet, bool, error)
+	// RebuildDocs is the documentation step of the job ansible-reindex for a local repository: it reads the archive of every stored item
+	// after the checkpoint through reader and rewrites the rows of the versions whose generator is older than docgen.Version or that have
+	// none. It returns the checkpoint to continue from and done true after the last package name.
+	RebuildDocs(ctx context.Context, repoID int64, reader rows.ArchiveReader, checkpoint string) (next string, done bool, err error)
+	// RebuildRemoteDocs re-derives a remote's rows from its stored docs-blob documents; the same checkpoint rule as RebuildDocs.
+	RebuildRemoteDocs(ctx context.Context, repoID int64, checkpoint string) (next string, done bool, err error)
 }

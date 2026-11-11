@@ -8,6 +8,7 @@ import (
 	"context"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/ansible/collection"
@@ -25,6 +26,12 @@ type Store struct {
 	Audits []rows.Audit
 	// Published are the PublishInfo values of the stored versions, in order.
 	Published []rows.PublishInfo
+	// Now is the clock of the documentation rows (the age of a queued fetch row); nil is the wall clock.
+	Now func() time.Time
+	// DocsJobs are the jobs ansible-docs-fill the store was asked to queue, in order.
+	DocsJobs []DocsFillJob
+	docs     map[key]docRow
+	fetches  map[key]fetchRow
 }
 
 type key struct {

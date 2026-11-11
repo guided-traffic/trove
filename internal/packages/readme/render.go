@@ -158,6 +158,17 @@ func (r *Renderer) Render(source string) Result {
 	return r.render(source, nil)
 }
 
+// SanitizeHTML applies the allowlist and the link and image rules of the policy to HTML that somebody else wrote, such as the
+// documentation an upstream Ansible Galaxy sends (ADR-196, R-ANS-039). It does no Markdown: the input is HTML, and what the policy does
+// not allow is removed. An input above [MaxHTMLBytes] is not parsed; it comes back as escaped text, cut as the fallback of a rendering is.
+func (r *Renderer) SanitizeHTML(src string) string {
+	if len(src) > MaxHTMLBytes {
+		return plain(src)
+	}
+	out, _ := r.finish(r.policy.SanitizeBytes([]byte(src)), nil)
+	return out
+}
+
 // Links resolves the target of a link that is neither an absolute http, https or
 // mailto address: a fragment or a relative reference. It returns the target the
 // link keeps, or false to remove it like any other relative link.

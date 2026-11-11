@@ -14,6 +14,7 @@ const (
 	routeCollection   = "ansible.collection.get"
 	routeVersions     = "ansible.versions.list"
 	routeVersion      = "ansible.version.get"
+	routeDocs         = "ansible.version.docs"
 	routeArtifact     = "ansible.artifact.get"
 	routePublish      = "ansible.collection.publish"
 	routeImport       = "ansible.import.get"
@@ -54,6 +55,8 @@ func (f *Format) buildRoutes() []formats.Route {
 			"v3/collections/acme/tools/versions", "v3/collections/acme/tools/versions/"),
 		route(routeVersion, http.MethodGet, "v3/collections/{ns}/{name}/versions/{version}", formats.Metadata, read, nil, matchVersion,
 			"v3/collections/acme/tools/versions/1.0.0", "v3/collections/acme/tools/versions/1.0.0-rc.1+build.5/"),
+		route(routeDocs, http.MethodGet, "v3/collections/{ns}/{name}/versions/{version}/docs-blob", formats.Metadata, read, nil, matchDocs,
+			"v3/collections/acme/tools/versions/1.0.0/docs-blob", "v3/collections/acme/tools/versions/1.0.0-rc.1+build.5/docs-blob/"),
 		route(routeArtifact, http.MethodGet, "v3/artifacts/collections/{file}", formats.Download, read, nil, matchArtifact,
 			"v3/artifacts/collections/acme-tools-1.0.0.tar.gz", "v3/artifacts/collections/acme-tools-1.0.0-rc.1.tar.gz"),
 		route(routePublish, http.MethodPost, "v3/artifacts/collections", formats.Upload, deploy, []formats.Class{local, virtual}, matchPublish,

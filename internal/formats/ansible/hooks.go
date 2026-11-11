@@ -15,7 +15,10 @@ import (
 // publishCommit travels from the publish handler through the item store to OnCommit as the payload of the commit of the archive.
 type publishCommit struct {
 	archive *collection.Archive
-	audit   rows.Audit
+	// docs is the documentation Inspect generated from the archive, nil when it generated none (R-ANS-034); OnCommit stores it with the
+	// version (R-ANS-033).
+	docs  *rows.DocSet
+	audit rows.Audit
 	// info is what the shadowing check found of a first version (R-REPO-048).
 	info rows.PublishInfo
 	// shadowSkipped says that the repository held a live version when the check was due, so nothing was asked: the commit must not find

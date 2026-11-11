@@ -29,6 +29,7 @@ func conformance() formattest.Fixture {
 	do := func(fn func(h *formattest.Host) error) func(context.Context, *formattest.Host) error {
 		return func(_ context.Context, h *formattest.Host) error { return fn(h) }
 	}
+	const noDocs = "the route answers 501 until the handlers of the documentation land (R-ANS-035); its documents are proven over HTTP in test/integration/ansiblelocal"
 	const notLocal = "the role routes are served by remote and virtual repositories (R-ANS-014) and the kit's host is a local repository; the remote handlers are proven over HTTP in test/integration/ansibleremote"
 	return formattest.Fixture{
 		Rejects: []string{"v3/collections/%2e%2e/x/", "../v3/collections/acme/tools/", "v3/collections/acme/tools%00/"},
@@ -65,6 +66,8 @@ func conformance() formattest.Fixture {
 			{Name: "versions", Path: "v3/collections/acme/tools/versions/", Seed: seed("1.0.0", "1.1.0")},
 			{Name: "version", Path: "v3/collections/acme/tools/versions/1.0.0/", Seed: seed("1.0.0")},
 			{Name: "artifact", Path: "v3/artifacts/collections/acme-tools-1.0.0.tar.gz", Seed: seed("1.0.0")},
+			// The route is declared and answers 501 until the handlers of the documentation land (R-ANS-035).
+			{Name: "documentation of a version", Path: "v3/collections/acme/tools/versions/1.0.0/docs-blob/", Seed: seed("1.0.0"), Status: http.StatusNotImplemented},
 			{Name: "an unknown collection", Path: "v3/collections/acme/nope/", Status: http.StatusNotFound},
 			{Name: "an unknown task", Path: "v3/imports/collections/6f1c0000-0000-4000-8000-000000000002/", Status: http.StatusNotFound},
 			// The kit's host is a local repository, which has no role API: the remote and virtual classes serve the three role
@@ -73,7 +76,7 @@ func conformance() formattest.Fixture {
 			{Name: "role versions", Path: "v1/roles/16/versions/", Status: http.StatusNotImplemented},
 			{Name: "role archive", Path: "v1/roles/archives/16/v1.0.0.tar.gz", Status: http.StatusNotImplemented},
 		},
-		NoContent: map[string]string{routeImport: noTask, routeRolesFind: notLocal, routeRoleVersions: notLocal, routeRoleArchive: notLocal},
+		NoContent: map[string]string{routeDocs: noDocs, routeImport: noTask, routeRolesFind: notLocal, routeRoleVersions: notLocal, routeRoleArchive: notLocal},
 		Changes: []formattest.ChangeCase{
 			{Name: "a first publish (OnCommit)", Package: "acme.tools", Do: do(publishVersion("1.0.0"))},
 			{Name: "a later version (OnCommit)", Package: "acme.tools", Seed: seed("1.0.0"), Do: do(publishVersion("1.1.0"))},

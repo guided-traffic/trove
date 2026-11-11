@@ -148,8 +148,13 @@ func DefaultLimits() untrusted.Limits { return untrusted.DefaultLimits() }
 // ReadArchive reads and validates the collection archive in r in one pass: the stream is read once, every member goes through a digest
 // and the two documents are kept, so the archive needs no random access and a fill can hand it the body it is storing. lim are the
 // bounds of the call (the core's, tightened by the format); the deadline of lim ends the whole read. The error is an [*Error] for an
-// archive that is refused, and the stream's own error for a failure of r or of ctx.
-func ReadArchive(ctx context.Context, r io.Reader, lim untrusted.Limits) (*Archive, error) {
+// archive that is refused, and the stream's own error for a failure of r or of ctx. A [Tap] given with [WithTap] sees the first bytes of the
+// members it wants (R-ANS-034).
+func ReadArchive(ctx context.Context, r io.Reader, lim untrusted.Limits, opts ...Option) (*Archive, error) {
+	var cfg options
+	for _, o := range opts {
+		o(&cfg)
+	}
 	ctx, cancel := lim.Context(ctx)
 	defer cancel()
 	tr := untrusted.NewTarGz(ctx, r, lim)
@@ -193,8 +198,19 @@ func ReadArchive(ctx context.Context, r io.Reader, lim untrusted.Limits) (*Archi
 			}
 		default:
 			h := sha256.New()
-			if _, err = tr.Stream(h); err == nil {
+			var w io.Writer = h
+			var tapped *capWriter
+			if cfg.tap != nil {
+				if max, ok := cfg.tap.Wants(name); ok {
+					tapped = &capWriter{max: max}
+					w = io.MultiWriter(h, tapped)
+				}
+			}
+			if _, err = tr.Stream(w); err == nil {
 				members[name] = hex.EncodeToString(h.Sum(nil))
+				if tapped != nil {
+					cfg.tap.Take(name, tapped.buf)
+				}
 			}
 		}
 		if err != nil {

@@ -1720,6 +1720,16 @@ type VulnerabilityData interface {
 // complete and a read answers 503 vulnerability_data_unavailable.
 func NoVulnerabilityData() VulnerabilityData
 
+// Markup is what a format uses to render and sanitize the text of its documentation (ADR-196, R-ANS-039): the policy of R-UI-008,
+// the one that renders a package's README, because a format may import neither the renderer nor an HTML library.
+type Markup interface {
+	Markdown(src string) (html string, truncated bool) // Markdown to sanitized HTML; truncated when a limit of the renderer applied
+	SanitizeHTML(html string) string                   // the allowlist applied to HTML somebody else wrote
+}
+
+// NoMarkup returns the Markup of a host that has not wired the renderer: it returns the empty string, never its input.
+func NoMarkup() Markup
+
 // CapabilitiesOf reads the capabilities off a format: the one place that asserts to an interface of this package.
 func CapabilitiesOf(f Format) Capabilities
 
@@ -2025,6 +2035,7 @@ type Host interface {
 	FormatData(id ID) any        // the data port bound to a format (Q-ARCH-193); nil without Descriptor.DataPort
 	RestoredAt(ctx context.Context) (time.Time, error) // system_state restored_at; zero until a restore ran
 	Vulnerabilities() VulnerabilityData // the scanning's data for the audit routes (R-VULN-017, R-VULN-018); NoVulnerabilityData until wired
+	Markup() Markup              // render Markdown and sanitize HTML under the README policy (ADR-196, R-ANS-039); NoMarkup until wired
 	Uploads() UploadSessions     // the multi-request upload sessions of R-STOR-011 (Q-OCI-12); every call answers not_implemented until they are built
 }
 

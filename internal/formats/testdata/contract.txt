@@ -166,6 +166,7 @@ formats.Host: method FormatData(ID) any
 formats.Host: method Ingest() Ingestor
 formats.Host: method Items() ItemStore
 formats.Host: method Links(*Request) LinkBuilder
+formats.Host: method Markup() Markup
 formats.Host: method Packages() PackageStore
 formats.Host: method PathsAllowed(context.Context, *Request, Action, []string) ([]bool, error)
 formats.Host: method Remote() RemoteFetcher
@@ -224,6 +225,8 @@ formats.LinkBuilder: method File(qname.Repo, string) string
 formats.LinkBuilder: method Path(string) string
 formats.LinkBuilder: method Registry(qname.Repo) string
 formats.LinkBuilder: method Repository() string
+formats.Markup: method Markdown(string) (string, bool)
+formats.Markup: method SanitizeHTML(string) string
 formats.MemberDocument: field CachedVersions map[string]bool
 formats.MemberDocument: field Doc []byte
 formats.MemberDocument: field Member RepoRef
@@ -554,6 +557,7 @@ formats.List: func() []Format
 formats.LiveVersions: func(context.Context, *Request, PackageRow) ([]string, RevSeq, error)
 formats.Lookup: func(string) (Format, bool)
 formats.MatchRoutes: func([]Route, string, string) (*Route, Params, error)
+formats.NoMarkup: func() Markup
 formats.NoVulnerabilityData: func() VulnerabilityData
 formats.RefusalFrom: func(*http.Request) (Refusal, bool)
 formats.Register: func(Format)

@@ -6,8 +6,8 @@ import (
 )
 
 // settingsSchema is the JSON Schema 2020-12 of the ansible member of a repository document (R-ARCH-008, R-ANS-019). The repository
-// service validates the member against it when a document is written, and GET /api/v1/formats serves it to the create form. Both
-// settings are for remote repositories; local and virtual repositories have none.
+// service validates the member against it when a document is written, and GET /api/v1/formats serves it to the create form. Every
+// setting is for remote repositories; local and virtual repositories have none.
 //
 //go:embed settings.schema.json
 var settingsSchema []byte
@@ -21,16 +21,20 @@ type Settings struct {
 	AuthURL string
 	// ClientID is ansible.clientId.
 	ClientID string
+	// FetchDocumentation is ansible.fetchDocumentation: whether the documentation of a remote's versions is fetched and kept (R-ANS-035,
+	// R-ANS-042). It is true while the document leaves it out.
+	FetchDocumentation bool
 }
 
 // SettingsOf reads the ansible section of a stored repository document. The service refuses a value the schema does not allow, so a
 // document that does not parse can only come from a row written around the service; it yields the defaults.
 func SettingsOf(config []byte) Settings {
-	out := Settings{ClientID: DefaultClientID}
+	out := Settings{ClientID: DefaultClientID, FetchDocumentation: true}
 	var doc struct {
 		Ansible struct {
-			AuthURL  string `json:"authUrl"`
-			ClientID string `json:"clientId"`
+			AuthURL            string `json:"authUrl"`
+			ClientID           string `json:"clientId"`
+			FetchDocumentation *bool  `json:"fetchDocumentation"`
 		} `json:"ansible"`
 	}
 	if json.Unmarshal(config, &doc) != nil {
@@ -39,6 +43,9 @@ func SettingsOf(config []byte) Settings {
 	out.AuthURL = doc.Ansible.AuthURL
 	if doc.Ansible.ClientID != "" {
 		out.ClientID = doc.Ansible.ClientID
+	}
+	if doc.Ansible.FetchDocumentation != nil {
+		out.FetchDocumentation = *doc.Ansible.FetchDocumentation
 	}
 	return out
 }

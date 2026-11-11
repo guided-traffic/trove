@@ -945,16 +945,16 @@ func (e DebSigningKeyAlgorithm) Valid() bool {
 
 // Defines values for DebSigningKeyOrigin.
 const (
-	Generated DebSigningKeyOrigin = "generated"
-	Imported  DebSigningKeyOrigin = "imported"
+	DebSigningKeyOriginGenerated DebSigningKeyOrigin = "generated"
+	DebSigningKeyOriginImported  DebSigningKeyOrigin = "imported"
 )
 
 // Valid indicates whether the value is a known member of the DebSigningKeyOrigin enum.
 func (e DebSigningKeyOrigin) Valid() bool {
 	switch e {
-	case Generated:
+	case DebSigningKeyOriginGenerated:
 		return true
-	case Imported:
+	case DebSigningKeyOriginImported:
 		return true
 	default:
 		return false
@@ -1912,6 +1912,123 @@ func (e OwnedPackageState) Valid() bool {
 	}
 }
 
+// Defines values for PackageDocEntrySource.
+const (
+	PackageDocEntrySourceGenerated PackageDocEntrySource = "generated"
+	PackageDocEntrySourceUpstream  PackageDocEntrySource = "upstream"
+)
+
+// Valid indicates whether the value is a known member of the PackageDocEntrySource enum.
+func (e PackageDocEntrySource) Valid() bool {
+	switch e {
+	case PackageDocEntrySourceGenerated:
+		return true
+	case PackageDocEntrySourceUpstream:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PackageDocFileContentType.
+const (
+	PackageDocFileContentTypeTextmarkdown PackageDocFileContentType = "text/markdown"
+)
+
+// Valid indicates whether the value is a known member of the PackageDocFileContentType enum.
+func (e PackageDocFileContentType) Valid() bool {
+	switch e {
+	case PackageDocFileContentTypeTextmarkdown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PackageDocGroupCategory.
+const (
+	PackageDocGroupCategoryModule PackageDocGroupCategory = "module"
+	PackageDocGroupCategoryPlugin PackageDocGroupCategory = "plugin"
+	PackageDocGroupCategoryRole   PackageDocGroupCategory = "role"
+)
+
+// Valid indicates whether the value is a known member of the PackageDocGroupCategory enum.
+func (e PackageDocGroupCategory) Valid() bool {
+	switch e {
+	case PackageDocGroupCategoryModule:
+		return true
+	case PackageDocGroupCategoryPlugin:
+		return true
+	case PackageDocGroupCategoryRole:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PackageDocTreeReason.
+const (
+	InvalidDocument PackageDocTreeReason = "invalid_document"
+	TooLarge        PackageDocTreeReason = "too_large"
+	UpstreamError   PackageDocTreeReason = "upstream_error"
+)
+
+// Valid indicates whether the value is a known member of the PackageDocTreeReason enum.
+func (e PackageDocTreeReason) Valid() bool {
+	switch e {
+	case InvalidDocument:
+		return true
+	case TooLarge:
+		return true
+	case UpstreamError:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PackageDocTreeSource.
+const (
+	PackageDocTreeSourceGenerated PackageDocTreeSource = "generated"
+	PackageDocTreeSourceUpstream  PackageDocTreeSource = "upstream"
+)
+
+// Valid indicates whether the value is a known member of the PackageDocTreeSource enum.
+func (e PackageDocTreeSource) Valid() bool {
+	switch e {
+	case PackageDocTreeSourceGenerated:
+		return true
+	case PackageDocTreeSourceUpstream:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PackageDocTreeState.
+const (
+	PackageDocTreeStateAvailable   PackageDocTreeState = "available"
+	PackageDocTreeStateNone        PackageDocTreeState = "none"
+	PackageDocTreeStatePending     PackageDocTreeState = "pending"
+	PackageDocTreeStateUnavailable PackageDocTreeState = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the PackageDocTreeState enum.
+func (e PackageDocTreeState) Valid() bool {
+	switch e {
+	case PackageDocTreeStateAvailable:
+		return true
+	case PackageDocTreeStateNone:
+		return true
+	case PackageDocTreeStatePending:
+		return true
+	case PackageDocTreeStateUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PackageOwnerReason.
 const (
 	PackageOwnerReasonAdded        PackageOwnerReason = "added"
@@ -1956,13 +2073,55 @@ func (e PackageOwnersState) Valid() bool {
 
 // Defines values for PackageReadmeContentType.
 const (
-	Textmarkdown PackageReadmeContentType = "text/markdown"
+	PackageReadmeContentTypeTextmarkdown PackageReadmeContentType = "text/markdown"
 )
 
 // Valid indicates whether the value is a known member of the PackageReadmeContentType enum.
 func (e PackageReadmeContentType) Valid() bool {
 	switch e {
-	case Textmarkdown:
+	case PackageReadmeContentTypeTextmarkdown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PackageVersionDocsSource.
+const (
+	PackageVersionDocsSourceGenerated PackageVersionDocsSource = "generated"
+	PackageVersionDocsSourceUpstream  PackageVersionDocsSource = "upstream"
+)
+
+// Valid indicates whether the value is a known member of the PackageVersionDocsSource enum.
+func (e PackageVersionDocsSource) Valid() bool {
+	switch e {
+	case PackageVersionDocsSourceGenerated:
+		return true
+	case PackageVersionDocsSourceUpstream:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PackageVersionDocsState.
+const (
+	PackageVersionDocsStateAvailable   PackageVersionDocsState = "available"
+	PackageVersionDocsStateNone        PackageVersionDocsState = "none"
+	PackageVersionDocsStatePending     PackageVersionDocsState = "pending"
+	PackageVersionDocsStateUnavailable PackageVersionDocsState = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the PackageVersionDocsState enum.
+func (e PackageVersionDocsState) Valid() bool {
+	switch e {
+	case PackageVersionDocsStateAvailable:
+		return true
+	case PackageVersionDocsStateNone:
+		return true
+	case PackageVersionDocsStatePending:
+		return true
+	case PackageVersionDocsStateUnavailable:
 		return true
 	default:
 		return false
@@ -4303,7 +4462,7 @@ type AnsibleImportTaskList struct {
 
 // AnsibleSettings The settings of the Ansible Galaxy format, the `ansible` member of a repository document (R-REPO-004, R-ANS-019). The document
 // of the format's JSON Schema is `settingsSchema` of `GET /api/v1/formats`; `TestR_ARCH_008_AnsibleSettingsSchemaEqualsTheOpenAPIMember`
-// fails on any difference between the two. Both settings are for remote repositories; local and virtual repositories have no
+// fails on any difference between the two. Every setting is for remote repositories; local and virtual repositories have no
 // settings of the format, and a setting that does not apply to the class of the repository answers 422 `not_applicable`. An
 // omitted setting takes its default.
 type AnsibleSettings struct {
@@ -4316,6 +4475,11 @@ type AnsibleSettings struct {
 
 	// ClientId Remote repositories with `authUrl` (R-ANS-019). The client id the exchange presents to the realm.
 	ClientId *string `json:"clientId,omitempty"`
+
+	// FetchDocumentation Remote repositories (R-ANS-035, R-ANS-042). Fetch the docs-blob document of a version from the upstream, by the job that
+	// follows the version document and by a client's request for the route, and keep the documentation it holds. With `false` the
+	// route answers 404 and no rows are written; a client that wants the document goes to the upstream.
+	FetchDocumentation *bool `json:"fetchDocumentation,omitempty"`
 }
 
 // AnsibleTombstone A deleted version whose number is not accepted again (R-ANS-012).
@@ -7014,6 +7178,213 @@ type OwnedPackageList struct {
 	NextCursor *string        `json:"nextCursor"`
 }
 
+// PackageDocAttribute defines model for PackageDocAttribute.
+type PackageDocAttribute struct {
+	Description *[]string `json:"description,omitempty"`
+	Details     *[]string `json:"details,omitempty"`
+	Name        string    `json:"name"`
+	Support     *string   `json:"support,omitempty"`
+}
+
+// PackageDocDeprecated defines model for PackageDocDeprecated.
+type PackageDocDeprecated struct {
+	// Alternative Sanitized HTML.
+	Alternative   *string `json:"alternative,omitempty"`
+	RemovedAtDate *string `json:"removedAtDate,omitempty"`
+	RemovedIn     *string `json:"removedIn,omitempty"`
+
+	// Why Sanitized HTML.
+	Why *string `json:"why,omitempty"`
+}
+
+// PackageDocEntry One page of the documentation (R-ANS-036). `description`, `notes`, `requirements` and the `description` of an option or a return
+// value are arrays of sanitized HTML strings, one per paragraph; names, types, `returned`, `versionAdded`, authors, choices, defaults and
+// samples are text and typed JSON values that the client shows as text. An entry without documentation has the header fields only.
+type PackageDocEntry struct {
+	Attributes  *[]PackageDocAttribute `json:"attributes,omitempty"`
+	Author      *[]string              `json:"author,omitempty"`
+	BuiltAt     *time.Time             `json:"builtAt,omitempty"`
+	Deprecated  *PackageDocDeprecated  `json:"deprecated,omitempty"`
+	Description *[]string              `json:"description,omitempty"`
+
+	// Examples Text, shown in a code block; trove does not highlight or run it.
+	Examples *string `json:"examples,omitempty"`
+
+	// ExtendsFragments The documentation fragments that were not merged into the entry.
+	ExtendsFragments *[]string `json:"extendsFragments,omitempty"`
+
+	// FullName `<namespace>.<name>.<content name>`.
+	FullName string              `json:"fullName"`
+	HasDocs  bool                `json:"hasDocs"`
+	Name     string              `json:"name"`
+	Notes    *[]string           `json:"notes,omitempty"`
+	Options  *[]PackageDocOption `json:"options,omitempty"`
+
+	// ReadmeHtml Roles. The README of the role as sanitized HTML.
+	ReadmeHtml   *string                  `json:"readmeHtml,omitempty"`
+	Requirements *[]string                `json:"requirements,omitempty"`
+	ReturnValues *[]PackageDocReturnValue `json:"returnValues,omitempty"`
+	Seealso      *[]PackageDocSeeAlso     `json:"seealso,omitempty"`
+
+	// ShortDescription Plain text.
+	ShortDescription *string               `json:"shortDescription,omitempty"`
+	Source           PackageDocEntrySource `json:"source"`
+	Type             string                `json:"type"`
+	VersionAdded     *string               `json:"versionAdded,omitempty"`
+}
+
+// PackageDocEntrySource defines model for PackageDocEntry.Source.
+type PackageDocEntrySource string
+
+// PackageDocEntryHead defines model for PackageDocEntryHead.
+type PackageDocEntryHead struct {
+	HasDocs bool   `json:"hasDocs"`
+	Name    string `json:"name"`
+
+	// ShortDescription Plain text.
+	ShortDescription string `json:"shortDescription"`
+	Type             string `json:"type"`
+}
+
+// PackageDocFile The README or a Markdown file, as the README answer of R-API-029 (R-ANS-036).
+type PackageDocFile struct {
+	// ContentType The type of the source; `html` is always sanitized HTML.
+	ContentType PackageDocFileContentType `json:"contentType"`
+
+	// ExternalImagesBlocked The number of external images replaced by links.
+	ExternalImagesBlocked int32  `json:"externalImagesBlocked"`
+	Html                  string `json:"html"`
+	Name                  string `json:"name"`
+
+	// Truncated The source or the rendered HTML exceeded a limit of R-UI-008.
+	Truncated bool `json:"truncated"`
+}
+
+// PackageDocFileContentType The type of the source; `html` is always sanitized HTML.
+type PackageDocFileContentType string
+
+// PackageDocFileHead defines model for PackageDocFileHead.
+type PackageDocFileHead struct {
+	Name string `json:"name"`
+
+	// Title The first heading of the Markdown as text, at most 120 characters; the file name otherwise.
+	Title string `json:"title"`
+}
+
+// PackageDocGroup defines model for PackageDocGroup.
+type PackageDocGroup struct {
+	Category PackageDocGroupCategory `json:"category"`
+
+	// Count The number of entries of the group before `q` filtered them.
+	Count int32 `json:"count"`
+
+	// Label `Modules`, `Plugins` or `Roles`.
+	Label string           `json:"label"`
+	Types []PackageDocType `json:"types"`
+}
+
+// PackageDocGroupCategory defines model for PackageDocGroup.Category.
+type PackageDocGroupCategory string
+
+// PackageDocOption defines model for PackageDocOption.
+type PackageDocOption struct {
+	Aliases *[]string      `json:"aliases,omitempty"`
+	Choices *[]interface{} `json:"choices,omitempty"`
+
+	// Default Any JSON value, shown as text.
+	Default     interface{} `json:"default,omitempty"`
+	Description *[]string   `json:"description,omitempty"`
+	Elements    *string     `json:"elements,omitempty"`
+	Name        string      `json:"name"`
+	Required    *bool       `json:"required,omitempty"`
+
+	// Suboptions Nested to a depth of 12.
+	Suboptions   *[]PackageDocOption `json:"suboptions,omitempty"`
+	Type         *string             `json:"type,omitempty"`
+	VersionAdded *string             `json:"versionAdded,omitempty"`
+}
+
+// PackageDocReturnValue defines model for PackageDocReturnValue.
+type PackageDocReturnValue struct {
+	// Contains Nested to a depth of 12.
+	Contains    *[]PackageDocReturnValue `json:"contains,omitempty"`
+	Description *[]string                `json:"description,omitempty"`
+	Elements    *string                  `json:"elements,omitempty"`
+	Name        string                   `json:"name"`
+	Returned    *string                  `json:"returned,omitempty"`
+
+	// Sample Any JSON value, shown as text.
+	Sample       interface{} `json:"sample,omitempty"`
+	Type         *string     `json:"type,omitempty"`
+	VersionAdded *string     `json:"versionAdded,omitempty"`
+}
+
+// PackageDocSeeAlso defines model for PackageDocSeeAlso.
+type PackageDocSeeAlso struct {
+	// Description Sanitized HTML.
+	Description *string `json:"description,omitempty"`
+
+	// Link Kept only for `http` and `https`.
+	Link   *string `json:"link,omitempty"`
+	Module *string `json:"module,omitempty"`
+}
+
+// PackageDocTree The documentation tree of a version (R-ANS-036). For the states `pending`, `unavailable` and `none` only `state`, `reason` where
+// it applies and `repository` are present. Groups are always in the order modules, plugins, roles; types and entries are in
+// alphabetical order.
+type PackageDocTree struct {
+	BuiltAt *time.Time `json:"builtAt,omitempty"`
+
+	// Files The README first, when there is one, then the Markdown files of `docs/` in name order.
+	Files  *[]PackageDocFileHead `json:"files,omitempty"`
+	Groups *[]PackageDocGroup    `json:"groups,omitempty"`
+
+	// MatchCount Only with `q`. The number of entries left.
+	MatchCount *int32 `json:"matchCount,omitempty"`
+
+	// Reason Set with `unavailable`.
+	Reason *PackageDocTreeReason `json:"reason,omitempty"`
+
+	// Repository The repository the documentation was read from, `<projectKey>/<repoKey>`.
+	Repository string                `json:"repository"`
+	Source     *PackageDocTreeSource `json:"source,omitempty"`
+	State      PackageDocTreeState   `json:"state"`
+
+	// Truncated A bound cut entries or files off.
+	Truncated *bool `json:"truncated,omitempty"`
+
+	// Warnings What the generator left out and why. Only for a caller who holds `deploy` on the repository.
+	Warnings *[]PackageDocWarning `json:"warnings,omitempty"`
+}
+
+// PackageDocTreeReason Set with `unavailable`.
+type PackageDocTreeReason string
+
+// PackageDocTreeSource defines model for PackageDocTree.Source.
+type PackageDocTreeSource string
+
+// PackageDocTreeState defines model for PackageDocTree.State.
+type PackageDocTreeState string
+
+// PackageDocType defines model for PackageDocType.
+type PackageDocType struct {
+	// Count The number of entries of the type before `q` filtered them.
+	Count   int32                 `json:"count"`
+	Entries []PackageDocEntryHead `json:"entries"`
+
+	// Type The Galaxy's `content_type`.
+	Type string `json:"type"`
+}
+
+// PackageDocWarning defines model for PackageDocWarning.
+type PackageDocWarning struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+
+	// Path The member of the archive the warning concerns.
+	Path string `json:"path"`
+}
+
 // PackageFile defines model for PackageFile.
 type PackageFile struct {
 	// ContentUrl The relative URL of the content route of the file item (`/api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path}`), which the session cookie authenticates on the role `api`; the UI's downloads use it (R-API-025, R-API-029, Q-UI-106).
@@ -7145,8 +7516,9 @@ type PackageVersion struct {
 	// `distTags` (tag to version), `dependencies`, `devDependencies`, `peerDependencies` and
 	// `optionalDependencies` (name to range), `authors` (strings), `homepage`, `repositoryUrl`
 	// and `bugsUrl` (strings as the package declares them), `engines` (name to range) and
-	// `deprecated` (string or null). A member that does not apply is absent.
-	Metadata     map[string]interface{}     `json:"metadata"`
+	// `deprecated` (string or null). For Ansible Galaxy collections `docs` announces the documentation (R-ANS-036, Q-API-263): it is
+	// wiki content and absent for a caller who may not read the wiki of the repository. A member that does not apply is absent.
+	Metadata     PackageVersion_Metadata    `json:"metadata"`
 	Name         string                     `json:"name"`
 	PackageId    string                     `json:"packageId"`
 	Prerelease   bool                       `json:"prerelease"`
@@ -7157,6 +7529,36 @@ type PackageVersion struct {
 	SizeBytes int64  `json:"sizeBytes"`
 	Version   string `json:"version"`
 }
+
+// PackageVersion_Metadata Format-specific, owned by the format page. For npm the members the UI reads are
+// `distTags` (tag to version), `dependencies`, `devDependencies`, `peerDependencies` and
+// `optionalDependencies` (name to range), `authors` (strings), `homepage`, `repositoryUrl`
+// and `bugsUrl` (strings as the package declares them), `engines` (name to range) and
+// `deprecated` (string or null). For Ansible Galaxy collections `docs` announces the documentation (R-ANS-036, Q-API-263): it is
+// wiki content and absent for a caller who may not read the wiki of the repository. A member that does not apply is absent.
+type PackageVersion_Metadata struct {
+	// Docs The announcement of the documentation of a version, `metadata.docs` of the version details for the format Ansible Galaxy
+	// (R-ANS-036, Q-API-263), so that the page chooses its tabs without a probing request.
+	Docs                 *PackageVersionDocs    `json:"docs,omitempty"`
+	AdditionalProperties map[string]interface{} `json:"-"`
+}
+
+// PackageVersionDocs The announcement of the documentation of a version, `metadata.docs` of the version details for the format Ansible Galaxy
+// (R-ANS-036, Q-API-263), so that the page chooses its tabs without a probing request.
+type PackageVersionDocs struct {
+	// Entries The number of entries; set with `available`.
+	Entries *int32 `json:"entries,omitempty"`
+
+	// Source Set with `available`.
+	Source *PackageVersionDocsSource `json:"source,omitempty"`
+	State  PackageVersionDocsState   `json:"state"`
+}
+
+// PackageVersionDocsSource Set with `available`.
+type PackageVersionDocsSource string
+
+// PackageVersionDocsState defines model for PackageVersionDocs.State.
+type PackageVersionDocsState string
 
 // PackageVersionList defines model for PackageVersionList.
 type PackageVersionList struct {
@@ -7764,7 +8166,7 @@ type Repository struct {
 
 	// Ansible The settings of the Ansible Galaxy format, the `ansible` member of a repository document (R-REPO-004, R-ANS-019). The document
 	// of the format's JSON Schema is `settingsSchema` of `GET /api/v1/formats`; `TestR_ARCH_008_AnsibleSettingsSchemaEqualsTheOpenAPIMember`
-	// fails on any difference between the two. Both settings are for remote repositories; local and virtual repositories have no
+	// fails on any difference between the two. Every setting is for remote repositories; local and virtual repositories have no
 	// settings of the format, and a setting that does not apply to the class of the repository answers 422 `not_applicable`. An
 	// omitted setting takes its default.
 	Ansible *AnsibleSettings `json:"ansible,omitempty"`
@@ -9169,6 +9571,9 @@ type Cursor = string
 // DebFingerprint defines model for DebFingerprint.
 type DebFingerprint = string
 
+// DocRepository defines model for DocRepository.
+type DocRepository = string
+
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = string
 
@@ -9687,6 +10092,44 @@ type GetPackageVersionParams struct {
 	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
 }
 
+// GetPackageVersionDocsParams defines parameters for GetPackageVersionDocs.
+type GetPackageVersionDocsParams struct {
+	// Repository The repository to read the documentation from, `<projectKey>/<repoKey>` (R-ANS-036). Without it, the first repository the caller may
+	// read that holds the version with a state other than `none` is used (local before remote). A virtual repository is resolved to the
+	// member that serves the version document.
+	Repository *DocRepository `form:"repository,omitempty" json:"repository,omitempty"`
+
+	// Q Search inside this version's documentation: split on white space into 1 to 8 terms of at most 64 characters; every term must match an
+	// entry's name (substring) or the words of its description (prefix). A text of fewer than 2 or more than 512 characters is
+	// `422 invalid_query`.
+	Q *string `form:"q,omitempty" json:"q,omitempty"`
+
+	// IfNoneMatch An ETag the client holds; a match answers `304` (R-API-012).
+	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
+// GetPackageVersionDocEntryParams defines parameters for GetPackageVersionDocEntry.
+type GetPackageVersionDocEntryParams struct {
+	// Repository The repository to read the documentation from, `<projectKey>/<repoKey>` (R-ANS-036). Without it, the first repository the caller may
+	// read that holds the version with a state other than `none` is used (local before remote). A virtual repository is resolved to the
+	// member that serves the version document.
+	Repository *DocRepository `form:"repository,omitempty" json:"repository,omitempty"`
+
+	// IfNoneMatch An ETag the client holds; a match answers `304` (R-API-012).
+	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
+// GetPackageVersionDocFileParams defines parameters for GetPackageVersionDocFile.
+type GetPackageVersionDocFileParams struct {
+	// Repository The repository to read the documentation from, `<projectKey>/<repoKey>` (R-ANS-036). Without it, the first repository the caller may
+	// read that holds the version with a state other than `none` is used (local before remote). A virtual repository is resolved to the
+	// member that serves the version document.
+	Repository *DocRepository `form:"repository,omitempty" json:"repository,omitempty"`
+
+	// IfNoneMatch An ETag the client holds; a match answers `304` (R-API-012).
+	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
 // GetPackageVersionReadmeParams defines parameters for GetPackageVersionReadme.
 type GetPackageVersionReadmeParams struct {
 	// IfNoneMatch An ETag the client holds; a match answers `304` (R-API-012).
@@ -9960,6 +10403,12 @@ type ReplaceRepositoryParams struct {
 type ListAnsibleImportTasksParams struct {
 	// State Only the tasks in this state.
 	State *ListAnsibleImportTasksParamsState `form:"state,omitempty" json:"state,omitempty"`
+
+	// Package Only the tasks of this collection, `<namespace>.<name>` (Q-API-262). An unknown name yields an empty page.
+	Package *string `form:"package,omitempty" json:"package,omitempty"`
+
+	// Version Only the tasks of this version (Q-API-262). An unknown version yields an empty page.
+	Version *string `form:"version,omitempty" json:"version,omitempty"`
 
 	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
@@ -10817,6 +11266,74 @@ type SetVulnerabilityFindingsStatusJSONRequestBody = VulnerabilitySetStatusReque
 // UpdateVulnerabilityFindingApplicationMergePatchPlusJSONRequestBody defines body for UpdateVulnerabilityFinding for application/merge-patch+json ContentType.
 type UpdateVulnerabilityFindingApplicationMergePatchPlusJSONRequestBody = VulnerabilityFindingPatch
 
+// Getter for additional properties for PackageVersion_Metadata. Returns the specified
+// element and whether it was found
+func (a PackageVersion_Metadata) Get(fieldName string) (value interface{}, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for PackageVersion_Metadata
+func (a *PackageVersion_Metadata) Set(fieldName string, value interface{}) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]interface{})
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for PackageVersion_Metadata to handle AdditionalProperties
+func (a *PackageVersion_Metadata) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["docs"]; found {
+		err = json.Unmarshal(raw, &a.Docs)
+		if err != nil {
+			return fmt.Errorf("error reading 'docs': %w", err)
+		}
+		delete(object, "docs")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]interface{})
+		for fieldName, fieldBuf := range object {
+			var fieldVal interface{}
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for PackageVersion_Metadata to handle AdditionalProperties
+func (a PackageVersion_Metadata) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	if a.Docs != nil {
+		object["docs"], err = json.Marshal(a.Docs)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'docs': %w", err)
+		}
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
+
 // AsRepositorySummary returns the union data inside the RepositoryList_Items_Item as a RepositorySummary
 func (t RepositoryList_Items_Item) AsRepositorySummary() (RepositorySummary, error) {
 	var body RepositorySummary
@@ -11141,6 +11658,15 @@ type ServerInterface interface {
 	// GetPackageVersion Read a version of a package
 	// (GET /api/v1/packages/{packageId}/versions/{version})
 	GetPackageVersion(w http.ResponseWriter, r *http.Request, packageId PackageId, version PackageVersionPath, params GetPackageVersionParams)
+	// GetPackageVersionDocs Read the documentation tree of a version
+	// (GET /api/v1/packages/{packageId}/versions/{version}/docs)
+	GetPackageVersionDocs(w http.ResponseWriter, r *http.Request, packageId PackageId, version PackageVersionPath, params GetPackageVersionDocsParams)
+	// GetPackageVersionDocEntry Read the documentation page of one module, plugin or role
+	// (GET /api/v1/packages/{packageId}/versions/{version}/docs/entries/{type}/{name})
+	GetPackageVersionDocEntry(w http.ResponseWriter, r *http.Request, packageId PackageId, version PackageVersionPath, pType string, name string, params GetPackageVersionDocEntryParams)
+	// GetPackageVersionDocFile Read the README or a Markdown file of the documentation of a version
+	// (GET /api/v1/packages/{packageId}/versions/{version}/docs/files/{file})
+	GetPackageVersionDocFile(w http.ResponseWriter, r *http.Request, packageId PackageId, version PackageVersionPath, file string, params GetPackageVersionDocFileParams)
 	// GetPackageVersionReadme Read the rendered README of a version
 	// (GET /api/v1/packages/{packageId}/versions/{version}/readme)
 	GetPackageVersionReadme(w http.ResponseWriter, r *http.Request, packageId PackageId, version PackageVersionPath, params GetPackageVersionReadmeParams)
@@ -14803,6 +15329,262 @@ func (siw *ServerInterfaceWrapper) GetPackageVersion(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// GetPackageVersionDocs operation middleware
+func (siw *ServerInterfaceWrapper) GetPackageVersionDocs(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "packageId" -------------
+	var packageId PackageId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "packageId", r.PathValue("packageId"), &packageId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "packageId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "version" -------------
+	var version PackageVersionPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "version", r.PathValue("version"), &version, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "version", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetPackageVersionDocsParams
+
+	// ------------- Optional query parameter "repository" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "repository", r.URL.Query(), &params.Repository, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "repository"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repository", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPackageVersionDocs(w, r, packageId, version, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPackageVersionDocEntry operation middleware
+func (siw *ServerInterfaceWrapper) GetPackageVersionDocEntry(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "packageId" -------------
+	var packageId PackageId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "packageId", r.PathValue("packageId"), &packageId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "packageId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "version" -------------
+	var version PackageVersionPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "version", r.PathValue("version"), &version, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "version", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "type" -------------
+	var pType string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "type", r.PathValue("type"), &pType, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "type", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetPackageVersionDocEntryParams
+
+	// ------------- Optional query parameter "repository" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "repository", r.URL.Query(), &params.Repository, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "repository"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repository", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPackageVersionDocEntry(w, r, packageId, version, pType, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPackageVersionDocFile operation middleware
+func (siw *ServerInterfaceWrapper) GetPackageVersionDocFile(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "packageId" -------------
+	var packageId PackageId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "packageId", r.PathValue("packageId"), &packageId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "packageId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "version" -------------
+	var version PackageVersionPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "version", r.PathValue("version"), &version, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "version", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "file" -------------
+	var file string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "file", r.PathValue("file"), &file, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "file", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetPackageVersionDocFileParams
+
+	// ------------- Optional query parameter "repository" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "repository", r.URL.Query(), &params.Repository, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "repository"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repository", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPackageVersionDocFile(w, r, packageId, version, file, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetPackageVersionReadme operation middleware
 func (siw *ServerInterfaceWrapper) GetPackageVersionReadme(w http.ResponseWriter, r *http.Request) {
 
@@ -17031,6 +17813,32 @@ func (siw *ServerInterfaceWrapper) ListAnsibleImportTasks(w http.ResponseWriter,
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "package" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "package", r.URL.Query(), &params.Package, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "package"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "package", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "version" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "version", r.URL.Query(), &params.Version, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "version"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "version", Err: err})
 		}
 		return
 	}
@@ -22702,6 +23510,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/packages/{packageId}/versions", wrapper.ListPackageVersions)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/packages/{packageId}/versions/{version}", wrapper.GetPackageVersion)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/packages/{packageId}/versions/{version}/readme", wrapper.GetPackageVersionReadme)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/packages/{packageId}/versions/{version}/docs", wrapper.GetPackageVersionDocs)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/packages/{packageId}/versions/{version}/docs/entries/{type}/{name}", wrapper.GetPackageVersionDocEntry)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/packages/{packageId}/versions/{version}/docs/files/{file}", wrapper.GetPackageVersionDocFile)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/client-setup", wrapper.GetClientSetup)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/guide", wrapper.GetRepositoryGuide)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/formats/{format}/guide", wrapper.GetFormatGuide)

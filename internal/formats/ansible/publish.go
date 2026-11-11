@@ -16,7 +16,6 @@ import (
 
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
-	"github.com/guided-traffic/trove/internal/formats/ansible/collection"
 	"github.com/guided-traffic/trove/internal/formats/ansible/galaxydoc"
 	"github.com/guided-traffic/trove/internal/formats/ansible/rows"
 	"github.com/guided-traffic/trove/internal/formats/ansible/version"
@@ -69,7 +68,8 @@ func (f *Format) handlePublish(ctx context.Context, rq *formats.Request, w http.
 	if err != nil {
 		return f.failedTask(ctx, rq, w, rep, st, au, err)
 	}
-	a, _ := insp.Payload.(*collection.Archive)
+	ins, _ := insp.Payload.(*inspected)
+	a := ins.archive
 	name := insp.Package
 	path := ArtifactPath(a.Namespace, a.Name, a.Version)
 	// The caller holds deploy on the repository (the coarse check ran before the body was read); here the name the archive declares is
@@ -86,7 +86,7 @@ func (f *Format) handlePublish(ctx context.Context, rq *formats.Request, w http.
 	if err := rq.Host.CheckOwnership(ctx, rq, target, formats.OwnershipWrite{Publish: true, FirstVersion: len(live) == 0}); err != nil {
 		return err
 	}
-	pc := &publishCommit{archive: a, audit: au, task: rows.Task{ID: uuid.NewString()}}
+	pc := &publishCommit{archive: a, docs: ins.docs, audit: au, task: rows.Task{ID: uuid.NewString()}}
 	if done, err := f.numberTaken(ctx, rq, w, rep, st, pc, live, sp); done || err != nil {
 		return err
 	}

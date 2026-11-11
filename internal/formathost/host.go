@@ -94,6 +94,9 @@ type Options struct {
 	// Vuln are the ports of the vulnerability scanning behind Host.Vulnerabilities; the zero value is a replica that
 	// has not wired them (vulnerability.go).
 	Vuln VulnPorts
+	// Markup is the renderer and sanitizer behind Host.Markup (ADR-196); the composition root builds it over internal/packages/readme.
+	// nil answers formats.NoMarkup, a replica that has not wired it.
+	Markup formats.Markup
 	// Enforce applies the download policy of the vulnerability scanning to every stored item the host serves
 	// (R-VULN-015, R-VULN-016), and Repos is the snapshot reader that gives it the policy of the repository an item is
 	// read in. A host without either reads no block and refuses nothing (a replica that has not wired the scanning).

@@ -159,7 +159,12 @@ func (b *mirrorHostBuilder) get() (*formathost.MirrorHost, error) {
 		if err != nil {
 			return nil, err
 		}
+		markup, err := b.a.hostMarkup()
+		if err != nil {
+			return nil, err
+		}
 		h, err := formathost.New(formathost.Options{
+			Markup: markup,
 			Runner: b.in.db, Decider: b.fa.decider, Items: b.fa.items, Packages: pkgs, Deps: b.fm.deps, Engine: b.engine,
 			Vuln: b.vz.hostPorts(), Enforce: b.vz.enforcer, Repos: b.repo.reader, Log: b.a.log.With("component", "mirror-host"),
 		})

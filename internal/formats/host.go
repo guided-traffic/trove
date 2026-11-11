@@ -78,6 +78,9 @@ type Host interface {
 	// of an ecosystem's advisory data, its advisories, the internal names and the matcher. A host that has not wired
 	// the scanning answers [NoVulnerabilityData], so a format never meets nil.
 	Vulnerabilities() VulnerabilityData
+	// Markup renders Markdown and sanitizes HTML under the policy of the README renderer (R-UI-008), for the text of a format's
+	// documentation (ADR-196, R-ANS-039). A host that has not wired the renderer answers [NoMarkup], so a format never meets nil.
+	Markup() Markup
 }
 
 // Ingestor is the upload pipeline of R-ARCH-014.

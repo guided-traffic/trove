@@ -6665,8 +6665,9 @@ install never depends on the wiki level. The registry proves the surfaces it lis
 HTML members, and an upstream's HTML is untrusted.
 
 **Decision.** The contract's Host gains `Markup() Markup` with `Markdown(src) (html, truncated)` and `SanitizeHTML(html) string`. The composition root implements it over
-`internal/packages/readme`, which gains `Renderer.SanitizeHTML`; the conformance kit's Host has a deterministic stand-in; a Host without a renderer returns an error-returning
-`NoMarkup`, never its input. The contract stays at its version and gains an addition only.
+`internal/packages/readme`, which gains `Renderer.SanitizeHTML`; the conformance kit's Host has a deterministic stand-in; a Host without a renderer returns a
+`NoMarkup` whose calls return the empty string (and `Markdown` reports truncated), never the input; the two methods return no error, so the refusal
+is an empty result and not an error value. The contract stays at its version and gains an addition only.
 
 **Consequences.** One allowlist serves every surface; no format carries an HTML parser. A test that uses the stand-in proves wiring, not the policy (H-898).
 

@@ -27,6 +27,8 @@ const (
 	CollectionDocument = "collection.json"
 	VersionsDocument   = "versions.json"
 	jsonSuffix         = ".json"
+	// dirDocs is the directory below a collection that holds the stored docs-blob documents of its versions (R-ANS-035).
+	dirDocs = "docs"
 )
 
 // maxRoleIDDigits bounds the upstream's numeric role id (R-ANS-020).
@@ -55,6 +57,12 @@ func VersionsDocumentPath(namespace, name string) string {
 // VersionDocumentPath is the canonical path of the document of one version.
 func VersionDocumentPath(namespace, name, ver string) string {
 	return CollectionDir(namespace, name) + "/" + ver + jsonSuffix
+}
+
+// DocsDocumentPath is the canonical path of the stored docs-blob document of one version of a remote's upstream (R-ANS-035),
+// "collections/<ns>/<name>/docs/<version>.json".
+func DocsDocumentPath(namespace, name, ver string) string {
+	return CollectionDir(namespace, name) + "/" + dirDocs + "/" + ver + jsonSuffix
 }
 
 // PackageDocumentPath implements the contract: the canonical path of the document that stands for a normalized package name
@@ -107,6 +115,13 @@ func classifyCollection(rest []string) formats.PathInfo {
 		return meta
 	}
 	meta.Package = ns + "." + name
+	if len(rest) == 4 && rest[2] == dirDocs {
+		// The docs-blob document of a version: metadata of the package and the version, never an artifact (R-ANS-035).
+		if v, ok := strings.CutSuffix(rest[3], jsonSuffix); ok && version.Valid(v) {
+			meta.Version = v
+		}
+		return meta
+	}
 	if len(rest) != 3 {
 		return meta
 	}
@@ -195,7 +210,7 @@ func digits(s string, max int) bool {
 }
 
 // CanonicalPath returns the canonical path of the stored thing a matched read route addresses: the collection document, the version
-// list's stored page document, the version document or the archive. ok is false for a route that addresses no stored path of a
+// list's stored page document, the version document, the docs-blob document of a version or the archive. ok is false for a route that addresses no stored path of a
 // single collection (the root, an import task, the publish, the role routes). Params are the decoded and normalized parameters of
 // the match.
 func CanonicalPath(route string, p formats.Params) (string, bool) {
@@ -206,6 +221,8 @@ func CanonicalPath(route string, p formats.Params) (string, bool) {
 		return VersionsDocumentPath(p[paramNamespace], p[paramName]), true
 	case routeVersion:
 		return VersionDocumentPath(p[paramNamespace], p[paramName], p[paramVersion]), true
+	case routeDocs:
+		return DocsDocumentPath(p[paramNamespace], p[paramName], p[paramVersion]), true
 	case routeArtifact:
 		ns, name, ver, ok := collection.ParseFileName(p[paramFile])
 		if !ok {

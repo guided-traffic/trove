@@ -22,6 +22,7 @@ const (
 	segV1          = "v1"
 	segCollections = "collections"
 	segVersions    = "versions"
+	segDocsBlob    = "docs-blob"
 	segArtifacts   = "artifacts"
 	segImports     = "imports"
 	segRoles       = "roles"
@@ -92,6 +93,15 @@ func matchVersions(escaped string) (formats.Params, bool) {
 // matchVersion matches "v3/collections/{ns}/{name}/versions/{version}".
 func matchVersion(escaped string) (formats.Params, bool) {
 	s, ok := shape(escaped, 6, map[int]string{0: segV3, 1: segCollections, 4: segVersions})
+	if !ok {
+		return nil, false
+	}
+	return formats.Params{paramNamespace: s[2], paramName: s[3], paramVersion: s[5]}, true
+}
+
+// matchDocs matches "v3/collections/{ns}/{name}/versions/{version}/docs-blob", the documentation of a version (R-ANS-035).
+func matchDocs(escaped string) (formats.Params, bool) {
+	s, ok := shape(escaped, 7, map[int]string{0: segV3, 1: segCollections, 4: segVersions, 6: segDocsBlob})
 	if !ok {
 		return nil, false
 	}

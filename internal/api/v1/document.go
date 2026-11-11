@@ -62,7 +62,15 @@ type Operation struct {
 	// (R-BAS-008, R-BAS-009); 0 for every other operation. It is set exactly on the operations whose
 	// x-trove-permission is {bastion: true}, and equals iface.InterfaceVersion.
 	BastionInterface int
+	// Part is x-trove-part: the part of a repository the operation serves when it is not the artifacts, "" for the artifacts (Q-API-260).
+	// The only value is [PartWiki]: the operation serves the wiki part (documentation) of a repository, which is read under the wiki
+	// check of R-AUTHZ-034 and not under the artifact check alone (R-ANS-037). The marker makes the seam declarative: a test lists the
+	// wiki operations from the document, and the check that runs before the handler reads it.
+	Part string
 }
+
+// PartWiki is the value of x-trove-part for an operation that serves the wiki part of a repository (Q-API-260).
+const PartWiki = "wiki"
 
 // Document is the parsed OpenAPI document.
 type Document struct {
@@ -148,10 +156,14 @@ func LoadDocument(raw []byte) (*Document, error) {
 			if err != nil {
 				problems = append(problems, fmt.Errorf("%s (%s): x-trove-bastion-interface: %w", pattern, id, err))
 			}
+			part, err := parsePart(op)
+			if err != nil {
+				problems = append(problems, fmt.Errorf("%s (%s): x-trove-part: %w", pattern, id, err))
+			}
 			o := Operation{
 				ID: id, Pattern: pattern, Permission: perm, Requirement: req, RecentAuth: recent, OwnerRights: ownerRights,
 				IfMatchRequired: op["x-trove-if-match"] == "required", CIAdmitted: admitted, MaintenanceAllowed: allowed,
-				BastionInterface: bastionVersion,
+				BastionInterface: bastionVersion, Part: part,
 			}
 			if isFilesPattern(pattern) {
 				d.files[pattern] = o
@@ -226,6 +238,18 @@ func refusedInMaintenance(method string) bool {
 		return false
 	}
 	return true
+}
+
+// parsePart reads x-trove-part of an operation: absent is "", and the only other accepted value is "wiki" (Q-API-260).
+func parsePart(op map[string]any) (string, error) {
+	raw, has := op["x-trove-part"]
+	if !has {
+		return "", nil
+	}
+	if raw != PartWiki {
+		return "", fmt.Errorf("must be %q, not %v", PartWiki, raw)
+	}
+	return PartWiki, nil
 }
 
 // parseCIAdmitted reads x-trove-ci of an operation: absent is false, and the only other accepted

@@ -433,7 +433,7 @@ func versionOf(base string, d view.VersionDetail) gen.PackageVersion {
 	out := gen.PackageVersion{
 		PackageId: d.PackageID, Format: d.Format, Name: d.Name, Version: d.Version, Prerelease: d.Prerelease,
 		PublishedAt: d.PublishedAt, Licenses: d.Licenses, SizeBytes: d.SizeBytes, DownloadCount: d.DownloadCount,
-		HasReadme: d.HasReadme, Metadata: d.Metadata,
+		HasReadme: d.HasReadme, Metadata: metadataOf(d.Metadata),
 		Repositories: make([]gen.PackageVersionRepository, 0, len(d.Repositories)),
 		Files:        make([]gen.PackageFile, 0, len(d.Files)),
 	}
@@ -448,6 +448,23 @@ func versionOf(base string, d view.VersionDetail) gen.PackageVersion {
 			// f.Path is the path of the file item in f.Repo, the repository that holds it (PackageViewFiles).
 			ContentUrl: edge.ContentPath(f.Repo, f.Path),
 		})
+	}
+	return out
+}
+
+// metadataOf maps the format-specific metadata of a version to the typed member: the announcement of the documentation (`docs`,
+// R-ANS-036) is the one member the document types, everything else passes as it is.
+func metadataOf(m map[string]any) gen.PackageVersion_Metadata {
+	out := gen.PackageVersion_Metadata{AdditionalProperties: map[string]any{}}
+	for k, v := range m {
+		if k != "docs" {
+			out.AdditionalProperties[k] = v
+			continue
+		}
+		var docs gen.PackageVersionDocs
+		if b, err := json.Marshal(v); err == nil && json.Unmarshal(b, &docs) == nil {
+			out.Docs = &docs
+		}
 	}
 	return out
 }

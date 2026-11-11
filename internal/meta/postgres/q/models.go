@@ -27,6 +27,39 @@ type AnsibleCollectionVersion struct {
 	PublishedAt     time.Time
 }
 
+type AnsibleDocEntry struct {
+	RepoID           int64
+	Name             string
+	Version          string
+	ContentType      string
+	ContentName      string
+	ShortDescription string
+	HasDocs          bool
+	Doc              json.RawMessage
+	ReadmeMd         pgtype.Text
+	ReadmeHtml       pgtype.Text
+	SearchText       string
+	Search           interface{}
+}
+
+type AnsibleDocFetch struct {
+	RepoID    int64
+	Name      string
+	Version   string
+	State     string
+	Reason    string
+	UpdatedAt pgtype.Timestamptz
+}
+
+type AnsibleDocFile struct {
+	RepoID   int64
+	Name     string
+	Version  string
+	FileName string
+	Format   string
+	Body     string
+}
+
 type AnsibleImportTask struct {
 	ID               pgtype.UUID
 	RepoID           int64
@@ -58,6 +91,19 @@ type AnsibleUpstreamVersion struct {
 	Size            int64
 	RequiresAnsible string
 	RecordedAt      pgtype.Timestamptz
+}
+
+type AnsibleVersionDoc struct {
+	RepoID     int64
+	Name       string
+	Version    string
+	Source     string
+	Generator  int32
+	EntryCount int32
+	TotalBytes int64
+	Truncated  bool
+	Warnings   json.RawMessage
+	BuiltAt    pgtype.Timestamptz
 }
 
 type ApiIdempotencyKey struct {
