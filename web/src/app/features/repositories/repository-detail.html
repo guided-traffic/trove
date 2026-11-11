@@ -38,7 +38,7 @@
       <dt i18n="@@repo.col.address">Client address</dt>
       <dd>
         @for (a of c.addresses; track a) {
-          <code translate="no">{{ a }}</code>
+          <trove-address-field [value]="a" />
         }
       </dd>
     </dl>
@@ -76,8 +76,7 @@
       @if (address()) {
         <dt i18n="@@repo.col.address">Client address</dt>
         <dd>
-          <code translate="no">{{ address() }}</code>
-          <trove-copy-button [value]="address()" [label]="copyAddress" />
+          <trove-address-field [value]="address()" />
         </dd>
       }
       @if (repo.createdAt; as at) {

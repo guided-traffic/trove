@@ -138,8 +138,7 @@
                   </td>
                   <td>
                     @if (addressOf(rule); as a) {
-                      <code translate="no">{{ a.url }}</code>
-                      <trove-copy-button [value]="a.url" [label]="copyAddress" />
+                      <trove-address-field [value]="a.url" />
                       @if (!a.served) {
                         <div class="hint" i18n="@@ep.address.not-served">
                           This endpoint does not serve this address.

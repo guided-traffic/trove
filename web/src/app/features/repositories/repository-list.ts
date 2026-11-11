@@ -16,7 +16,7 @@ import { ApiError } from '../../api/problem';
 import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
 import { Confirm } from '../../shared/confirm-dialog';
-import { CopyButton } from '../../shared/copy-button';
+import { AddressField } from '../../shared/address-field';
 import { ErrorNotice } from '../../shared/error-notice';
 import { JobProgress } from '../../shared/job-progress';
 import { DataTable, TableColumn } from '../../shared/ui/data-table';
@@ -37,7 +37,7 @@ import { classLabel } from './repository-wizard';
   imports: [
     DatePipe,
     RouterLink,
-    CopyButton,
+    AddressField,
     DataTable,
     ErrorNotice,
     FilterCategory,
@@ -172,7 +172,12 @@ export class RepositoryList {
   protected classIcon(c: RepositorySummary['class']): string {
     return c === 'local' ? 'storage' : c === 'remote' ? 'cloud_download' : 'layers';
   }
-  protected readonly copyLabel = $localize`:@@repo.copy-address:Copy client address`;
+  protected addressLabel(row: RepositorySummary): string {
+    return $localize`:@@repo.address-of:Client address of ${row.key}:key:`;
+  }
+  protected copyLabel(row: RepositorySummary): string {
+    return $localize`:@@repo.copy-address-of:Copy client address of ${row.key}:key:`;
+  }
   protected readonly deleteLabel = $localize`:@@repo.delete.progress:Repository deletion`;
 
   protected address(row: RepositorySummary): string {

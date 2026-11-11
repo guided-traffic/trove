@@ -32,7 +32,7 @@ import { ServerAddress } from '../../core/server-address';
 import { SessionStore } from '../../core/session-store';
 import { Confirm } from '../../shared/confirm-dialog';
 import { ConflictResolver } from '../../shared/conflict-dialog';
-import { CopyButton } from '../../shared/copy-button';
+import { AddressField } from '../../shared/address-field';
 import { ErrorNotice } from '../../shared/error-notice';
 import { ErrorSummary, SummaryItem, fieldMessage } from '../../shared/field-errors';
 import { DraftStore } from '../../shared/drafts';
@@ -80,7 +80,7 @@ import { UpstreamSettings, upstreamTarget } from './upstream-settings';
     DatePipe,
     TabContent, TabGroup, TabPage,
     RouterLink,
-    CopyButton,
+    AddressField,
     ErrorNotice,
     ErrorSummary,
     JobProgress,
@@ -556,7 +556,6 @@ export class RepositoryDetail implements HasUnsavedChanges {
   }
 
   protected readonly deleteLabel = $localize`:@@repo.delete.progress:Repository deletion`;
-  protected readonly copyAddress = $localize`:@@repo.copy-address:Copy client address`;
   protected readonly tabGeneral = $localize`:@@repo.tab.general:General`;
   protected readonly tabAccess = $localize`:@@repo.tab.access:Access`;
   protected readonly tabMembers = $localize`:@@repo.tab.members:Members`;

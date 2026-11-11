@@ -25,6 +25,7 @@ import { collectAll } from '../../api/pagination';
 import { ProjectsApi } from '../../api/projects-api';
 import { SelectField, SelectOption } from '../../shared/access/fields';
 import { Notifier } from '../../core/notifier';
+import { AddressField } from '../../shared/address-field';
 import { ServerAddress } from '../../core/server-address';
 import { SessionStore } from '../../core/session-store';
 import { ErrorNotice } from '../../shared/error-notice';
@@ -127,6 +128,7 @@ export function classHelp(cls: string): string {
     Option,
     SelectField,
     FormatIconView,
+    AddressField,
   ],
   templateUrl: './repository-wizard.html',
   styleUrl: './repository-wizard.scss',

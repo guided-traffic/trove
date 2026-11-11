@@ -98,3 +98,30 @@ test('R-UI-010 R-UI-011 R-UI-012 wizard, upload, browse and download', async ({ 
   await signOut(page);
   expect(replicas.size, `replicas that answered: ${[...replicas]}`).toBeGreaterThanOrEqual(2);
 });
+
+test('R-UI-065 R-UI-066 the repository list shows the client address in full in a read-only field and its copy button puts it on the clipboard', async ({ page, context, admin }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const key = unique('ui-address');
+  const created = await admin.post(repositories(), {
+    data: { key, class: 'local', format: 'generic', description: 'client address field' },
+  });
+  expect(created.ok(), await created.text()).toBe(true);
+  try {
+    const listed = await admin.get(`${repositories()}?q=${key}`);
+    const row = ((await listed.json()) as { items: { key: string; addresses: string[] }[] }).items.find((r) => r.key === key);
+    expect(row?.addresses[0], 'the API gives the repository a client address').toBeTruthy();
+    const address = row!.addresses[0]!;
+
+    await signInLocal(page);
+    await page.goto(`/ui/en/projects/${e2eProject}/repositories?q=${key}`);
+    const field = page.getByRole('textbox', { name: `Client address of ${key}` });
+    await expect(field).toHaveValue(address);
+    await expect(field).toHaveJSProperty('readOnly', true);
+    await page.getByRole('button', { name: `Copy client address of ${key}` }).click();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(address);
+    await expectAccessible(page, 'repository list with the client address field');
+    await signOut(page);
+  } finally {
+    await admin.delete(repositoryApi(key));
+  }
+});

@@ -109,6 +109,10 @@ export function inProject(options: RenderOptions = {}, url = '/projects/web/pack
 /** The text content of an element with whitespace collapsed. */
 export const text = (root: Element): string => root.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
+/** The addresses of the `trove-address-field`s in `root`: the field holds the address as its value, not as text (R-UI-065). */
+export const addressValues = (root: ParentNode): string[] =>
+  [...root.querySelectorAll<HTMLInputElement>('trove-address-field input')].map((i) => i.value);
+
 /** Fails the spec on a serious or critical axe violation in `root` (R-UI-044). */
 export async function expectAccessible(root: Element): Promise<void> {
   expect(await seriousViolations(root)).toEqual([]);

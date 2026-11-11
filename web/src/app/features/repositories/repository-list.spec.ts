@@ -1,20 +1,23 @@
 import { FakeRepositoriesApi } from '../../api/testing/fakes-catalog';
 import { ApiError } from '../../api/problem';
 import { RepositoriesApi } from '../../api/repositories-api';
-import { button, expectAccessible, renderScreen, settle, text, type } from '../../testing/screen';
+import { addressValues, button, expectAccessible, renderScreen, settle, text, type } from '../../testing/screen';
 import { RepositoryList } from './repository-list';
 
 describe('Repository list', () => {
-  it('R-UI-020 shows key, format, class, description, client address and activity, and has no serious violation', async () => {
+  it('R-UI-020 R-UI-066 shows key, format, class, description, client address and activity, and has no serious violation', async () => {
     const { root } = await renderScreen(RepositoryList);
     const t = text(root);
     expect(t).toContain('generic-local');
     expect(t).toContain('Installers and build outputs');
-    expect(t).toContain('generic-local/');
+    expect(addressValues(root)[0]).toContain('generic-local/');
     expect(root.querySelectorAll('tbody tr').length).toBe(2);
     expect(root.querySelector('table th[scope="col"]')).toBeTruthy();
     expect(
-      root.querySelector('trove-copy-button button[aria-label="Copy client address"]'),
+      root.querySelector('trove-address-field input[aria-label="Client address of generic-local"]'),
+    ).toBeTruthy();
+    expect(
+      root.querySelector('trove-address-field trove-copy-button button[aria-label="Copy client address of generic-local"]'),
     ).toBeTruthy();
     await expectAccessible(root);
   });

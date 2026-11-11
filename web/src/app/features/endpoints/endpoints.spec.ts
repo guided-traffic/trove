@@ -9,7 +9,7 @@ import {
   PACKAGE_FORMAT,
   sampleRule,
 } from '../../api/testing/fakes-catalog';
-import { button, expectAccessible, renderScreen, settle, text, type } from '../../testing/screen';
+import { addressValues, button, expectAccessible, renderScreen, settle, text, type } from '../../testing/screen';
 import { EndpointDetail } from './endpoint-detail';
 import { EndpointList } from './endpoint-list';
 import { ExposureRuleEditor, PREVIEW_DEBOUNCE_MS } from './exposure-rule-editor';
@@ -47,13 +47,15 @@ describe('Endpoint list', () => {
 });
 
 describe('Endpoint screen', () => {
-  it('R-EP-017 shows the configuration read-only and the rule table with enable switch, repository, client address and actions', async () => {
+  it('R-EP-017 R-UI-066 shows the configuration read-only and the rule table with enable switch, repository, client address and actions', async () => {
     const { root } = await renderScreen(EndpointDetail, { inputs: { endpoint: 'customers' } });
     const t = text(root);
     expect(t).toContain('this comes from the configuration file');
     expect(t).toContain('releases');
     expect(root.querySelector('input[role="switch"]')).toBeTruthy();
     expect(t).toContain('This endpoint does not serve this address.');
+    expect(addressValues(root).length).toBeGreaterThan(0);
+    expect(root.querySelector('trove-address-field trove-copy-button button[aria-label="Copy client address"]')).toBeTruthy();
     expect(root.querySelector('table th[scope="col"]')).toBeTruthy();
     await expectAccessible(root);
   });

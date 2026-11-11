@@ -7,7 +7,7 @@ import { RepositoriesApi, refOf } from '../../api/repositories-api';
 import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
 import { Confirm } from '../../shared/confirm-dialog';
-import { CopyButton } from '../../shared/copy-button';
+import { AddressField } from '../../shared/address-field';
 import { ErrorNotice } from '../../shared/error-notice';
 import { TextField } from '../../shared/access/fields';
 import { SettingsSection } from '../../shared/ui/settings-section';
@@ -22,7 +22,7 @@ import { endpointAddress, patternSummary, versionSummary } from './endpoint-mode
  */
 @Component({
   selector: 'trove-endpoint-detail',
-  imports: [RouterLink, CopyButton, ErrorNotice, SettingsSection, TextField],
+  imports: [RouterLink, AddressField, ErrorNotice, SettingsSection, TextField],
   templateUrl: './endpoint-detail.html',
   styleUrl: './endpoint-detail.scss',
 })
@@ -151,5 +151,4 @@ export class EndpointDetail {
     return $localize`:@@ep.rule.toggle:Enabled: ${name}:name:`;
   }
 
-  protected readonly copyAddress = $localize`:@@ep.copy-address:Copy client address`;
 }

@@ -1,5 +1,5 @@
 import { Router } from '@angular/router';
-import { button, expectAccessible, openFilters, renderScreen, settle, type } from '../../testing/screen';
+import { addressValues, button, expectAccessible, openFilters, renderScreen, settle, type } from '../../testing/screen';
 import { RepositoryList } from './repository-list';
 
 async function open(inputs: Record<string, unknown> = {}) {
@@ -60,11 +60,9 @@ describe('Repository list filter panel (R-UI-020)', () => {
     ]);
   });
 
-  it('R-REPO-002 R-UI-020 an absolute client address is shown and copied unchanged, without the origin of the page in front', async () => {
+  it('R-REPO-002 R-UI-020 R-UI-066 an absolute client address is shown and copied unchanged, without the origin of the page in front', async () => {
     const { root } = await open();
-    const code = root.querySelector('tbody tr code')!;
-    expect(code.textContent?.trim()).toBe('https://trove.example.net/files/web/generic-local/');
-    expect(code.getAttribute('title')).toBe('https://trove.example.net/files/web/generic-local/');
+    expect(addressValues(root)[0]).toBe('https://trove.example.net/files/web/generic-local/');
     const write = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText: write }, configurable: true });
     root.querySelector<HTMLButtonElement>('trove-copy-button button')!.click();

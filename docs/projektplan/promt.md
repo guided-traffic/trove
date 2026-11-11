@@ -84,7 +84,7 @@ Hard rules, also for every subagent (put them into every subagent prompt):
 2. During the alpha (rule 10) a run works on two fronts at once: the first open task of
    [section 10](#10--owner-tasks-of-2026-11-07-the-next-registries), cut into work packages with an agent and a branch each, and
    every open finding of section 8 with an agent each. Open there now: the owner tasks of 2026-11-11, **T-18 (visibility levels), then
-   T-19 (the documentation of Galaxy collections) and T-20 (client addresses in full)**; they come before the next unit of item 3. The open items of BETA.md phase 7 are
+   T-19 (the documentation of Galaxy collections)**; they come before the next unit of item 3. The open items of BETA.md phase 7 are
    findings of the same kind. Outside the alpha: open [BETA.md](BETA.md), table
    **Where we are**; the current phase is the first row whose status is not 🟢, and a row at 🟡 is resumed (step 2, item 4).
 3. If every row of BETA.md is 🟢, open [FULL.md](FULL.md) and take the first unit that is not 🟢,
@@ -377,7 +377,7 @@ Handed over at the end of the session of 2026-11-10/11 ([section 11](#11--run-re
 f8719487 (the format logos, v0.44.0) ran green in every job (Test and Release 42995232524). The owner's installation follows the chart
 by `version: "*"`. Red pipelines are worked on even though they no longer hold a release
 ([releasing.md](../developer/releasing.md#until-the-first-stable-release)). The next run starts with the owner's tasks of
-[section 10](#owner-tasks-of-2026-11-11), **T-18, then T-19 and T-20**, with the red legs below beside them; the next unit of
+[section 10](#owner-tasks-of-2026-11-11), **T-18, then T-19**, with the red legs below beside them; the next unit of
 [FULL.md](FULL.md) (block B, F1) comes after them.
 
 **Decisions only the owner can take**
@@ -419,6 +419,7 @@ by `version: "*"`. Red pipelines are worked on even though they no longer hold a
   whale may be shown only with the owner's permission (npm's logo policy, Red Hat's trademark guidelines, Docker's trademark guidelines,
   read 2026-11-11), so npm and Ansible Galaxy keep the neutral glyph. To show them, the owner asks npm, Inc. and Red Hat for permission.
   At the walkthrough: the logos in the running app, light and dark, in Firefox and Safari (only Chrome on a static page was looked at).
+- T-20's address field (R-UI-065): the browser check in `web/e2e/tests/02-repository-and-files.spec.ts` is type-checked, not yet run on kind; at the walkthrough: Q-UI-274 gives the field the editable control's fill instead of the read-only grey, not compared with GitLab's clone field in a browser.
 - `repository-detail` is the only settings page not yet in the one-column form of the [style guide](../developer/ui-style-guide.md#settings-pages) (Q-UI-222): what its tabs become needs the owner's reference at the walkthrough.
 - H-836: a holder of `tokens:read` alone sees which token owners are administrators; only a custom role is affected, because the three system roles with `tokens:read` also hold `identities:read`.
 - The committed `messages.xlf` and `messages.de.xlf` carry stale location notes, so `extract-i18n` rewrites about 17,000 lines of them.
@@ -478,7 +479,7 @@ evidence in [apt-work-packages.md](apt-work-packages.md#24--closing)) are done. 
 
 ### Owner tasks of 2026-11-11
 
-Set by the owner on 2026-11-11 (T-18 and T-19 after reading the galaxy_ng screens of his collections, T-20 from the repository list). All are confirmed features, not parked ideas, and
+Set by the owner on 2026-11-11 (T-18 and T-19 after reading the galaxy_ng screens of his collections; T-20, the client addresses in full, is built: R-UI-065). All are confirmed features, not parked ideas, and
 the next run takes them in this order, each planned by a planning agent (spec and a work-package plan) before anything is built. A planning
 start in the session of 2026-11-11 was stopped when the owner moved both tasks to a later run; its unfinished, unreviewed drafts are kept
 on the local branches `wip-t18-visibility-plan` (a part of authorization.md) and `wip-t19-galaxy-docs-plan` (spec sections and a work-package
@@ -515,13 +516,6 @@ plan), which the next planner may read. Nothing of them is on `main`.
   page per entry); search inside it. The owner's galaxy_ng (`https://galaxy.wds18.de/api/galaxy/`, `--source-auth token`, the owner gives
   the token for a run) holds real documents to read. A collection's documentation is **wiki** content of T-18: define the seam (which routes
   and fields are wiki) so that T-18's check gates them.
-- **T-20 · Client addresses in full, as GitLab's clone field.** The repository list's column "Client address" cuts the address with an
-  ellipsis (`https://trove.k8s-main.…`, the owner's screenshot of 2026-11-11), so the address cannot be read. It is to look like the field
-  "Clone with SSH" of the owner's GitLab: the full address in a read-only, bordered field in a monospace font, the copy button joined to the
-  field's right edge, the address selectable and never cut with an ellipsis (a field narrower than the address scrolls inside itself or the
-  column grows; decide which with the table's layout). Apply it wherever trove shows a client address (the repository list, the repository
-  page, the client setup page, the guide), as one shared component; follow docs/developer/ui-style-guide.md (GitLab's controls, no unasked
-  styling) and record the component there.
 
 ## 11 · Run record
 

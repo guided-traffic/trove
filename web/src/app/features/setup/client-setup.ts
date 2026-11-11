@@ -20,6 +20,7 @@ import { ApiError } from '../../api/problem';
 import { RepositoriesApi, RepositorySummary, refOf } from '../../api/repositories-api';
 import { CreateTokenRequest, TokensApi } from '../../api/tokens-api';
 import { SessionStore } from '../../core/session-store';
+import { AddressField } from '../../shared/address-field';
 import { CopyButton } from '../../shared/copy-button';
 import { ErrorNotice } from '../../shared/error-notice';
 import { asApiError, valueOf } from '../../shared/paged-resource';
@@ -51,7 +52,7 @@ export function fillToken(content: string, token: string | null): string {
  */
 @Component({
   selector: 'trove-client-setup',
-  imports: [TabGroup, TabPage, NgTemplateOutlet, RouterLink, CopyButton, ErrorNotice],
+  imports: [TabGroup, TabPage, NgTemplateOutlet, RouterLink, CopyButton, AddressField, ErrorNotice],
   templateUrl: './client-setup.html',
   styleUrl: './client-setup.scss',
 })

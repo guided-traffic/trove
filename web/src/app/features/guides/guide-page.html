@@ -116,8 +116,9 @@
     } @else if (bastionSetup.isLoading()) {
       <p role="status" i18n="@@guides.loading">Loading the guide.</p>
     } @else if (bastionSetup.hasValue()) {
+      <p i18n="@@guides.bastion.registry">Address of the repository on the Bastion:</p>
       <p>
-        <ng-container i18n="@@guides.bastion.registry">Address of the repository on the Bastion:</ng-container>&ngsp;<code translate="no">{{ bastionSetup.value().registryUrl }}</code>
+        <trove-address-field [value]="bastionSetup.value().registryUrl" />
       </p>
       @for (sn of bastionSnippets(); track sn.id) {
         <div class="snippet" [attr.data-snippet]="sn.id">

@@ -285,8 +285,11 @@
       <p class="banner-warning" role="note">
         <span class="material-icons inline" aria-hidden="true">public</span>
         <span>
-          <ng-container i18n="@@setup.bastion.banner">These snippets point at the Bastion</ng-container>&ngsp;<strong translate="no">{{ chosen }}</strong>:&ngsp;<code translate="no">{{ s.registryUrl }}</code>.&ngsp;<ng-container i18n="@@setup.bastion.banner-text">A Bastion is read only, so there are no publish snippets. Sign-in works with the same token as for this installation.</ng-container>
+          <ng-container i18n="@@setup.bastion.banner">These snippets point at the Bastion</ng-container>&ngsp;<strong translate="no">{{ chosen }}</strong>.&ngsp;<ng-container i18n="@@setup.bastion.banner-text">A Bastion is read only, so there are no publish snippets. Sign-in works with the same token as for this installation.</ng-container>
         </span>
+      </p>
+      <p>
+        <trove-address-field [value]="s.registryUrl" />
       </p>
     }
     @if (needsToken()) {

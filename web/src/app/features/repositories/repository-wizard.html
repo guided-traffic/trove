@@ -248,7 +248,13 @@
         <dt i18n="@@repo.field.description">Description</dt>
         <dd>{{ form().description || '–' }}</dd>
         <dt i18n="@@repo.review.address">Client address</dt>
-        <dd translate="no">{{ address() || '–' }}</dd>
+        <dd>
+          @if (address()) {
+            <trove-address-field [value]="address()" />
+          } @else {
+            –
+          }
+        </dd>
         <dt i18n="@@repo.field.include">Include patterns</dt>
         <dd translate="no">{{ includes().length > 0 ? includes().join(', ') : '–' }}</dd>
         <dt i18n="@@repo.field.exclude">Exclude patterns</dt>

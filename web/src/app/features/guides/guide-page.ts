@@ -5,6 +5,7 @@ import { GuidesApi } from '../../api/guides-api';
 import { ClientSetupApi } from '../../api/packages-api';
 import { FormatDescriptor, RepositoriesApi, RepositorySummary, refOf } from '../../api/repositories-api';
 import { SessionStore } from '../../core/session-store';
+import { AddressField } from '../../shared/address-field';
 import { CopyButton } from '../../shared/copy-button';
 import { ErrorNotice } from '../../shared/error-notice';
 import { asApiError, valueOf } from '../../shared/paged-resource';
@@ -19,7 +20,7 @@ import { GuideView } from './guide-view';
  */
 @Component({
   selector: 'trove-guide-page',
-  imports: [RouterLink, CopyButton, ErrorNotice, GuideView],
+  imports: [RouterLink, CopyButton, AddressField, ErrorNotice, GuideView],
   templateUrl: './guide-page.html',
   styleUrl: './guide-page.scss',
 })

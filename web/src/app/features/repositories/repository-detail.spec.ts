@@ -13,7 +13,7 @@ import { AnsibleApi } from '../../api/ansible-api';
 import { FakeAnsibleApi } from '../../api/testing/fakes-ansible';
 import { DebApi } from '../../api/deb-api';
 import { FakeDebApi } from '../../api/testing/fakes-deb';
-import { button, expectAccessible, renderScreen, settle, text, type } from '../../testing/screen';
+import { addressValues, button, expectAccessible, renderScreen, settle, text, type } from '../../testing/screen';
 import { RepositoryDetail } from './repository-detail';
 
 async function openTab(r: Awaited<ReturnType<typeof open>>, label: string) {
@@ -256,10 +256,10 @@ describe('Repository edit form', () => {
     await expectAccessible(r.root);
   });
 
-  it('R-REPO-002 R-UI-021 the client address and the curl command carry the configured base URL even though the page is served from another origin', async () => {
+  it('R-REPO-002 R-UI-021 R-UI-066 the client address and the curl command carry the configured base URL even though the page is served from another origin', async () => {
     const r = await open((fake) => (fake.formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT]));
     expect(location.origin).not.toBe('https://trove.example.net');
-    expect(text(r.root)).toContain('https://trove.example.net/files/web/generic-local/');
+    expect(addressValues(r.root)).toEqual(['https://trove.example.net/files/web/generic-local/']);
     type(r.root.querySelector<HTMLTextAreaElement>('#f-description')!, 'Api');
     await settle(r.fixture);
     const tab = [...r.root.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) =>
@@ -273,7 +273,7 @@ describe('Repository edit form', () => {
     expect(text(r.root)).not.toContain(location.origin);
   });
 
-  it('R-REPO-002 R-UI-021 a server without a configured base URL leaves the client address out instead of showing the page origin', async () => {
+  it('R-REPO-002 R-UI-021 R-UI-066 a server without a configured base URL leaves the client address out instead of showing the page origin', async () => {
     const r = await renderScreen(RepositoryDetail, {
       inputs: { project: 'web', key: 'generic-local' },
       capabilities: ['repositories:read-config', 'repositories:write-config'],
@@ -283,7 +283,7 @@ describe('Repository edit form', () => {
       },
     });
     expect(text(r.root)).not.toContain(location.origin);
-    expect(text(r.root)).not.toContain('generic-local/');
+    expect(r.root.querySelector('trove-address-field')).toBeNull();
   });
 
   it('R-UI-021 the API tab shows the stored document and the request that saves the change', async () => {

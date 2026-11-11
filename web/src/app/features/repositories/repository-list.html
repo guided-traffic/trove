@@ -72,9 +72,12 @@
             </span>
           </td>
           <td>{{ row.description }}</td>
-          <td>
-            <code class="ellipsis" translate="no" [attr.title]="address(row)">{{ address(row) }}</code>
-            <trove-copy-button [value]="address(row)" [label]="copyLabel" />
+          <td class="address-cell">
+            <trove-address-field
+              [value]="address(row)"
+              [label]="addressLabel(row)"
+              [copyLabel]="copyLabel(row)"
+            />
           </td>
           <td>
             @if (row.lastActivityAt; as at) {

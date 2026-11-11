@@ -16278,13 +16278,36 @@
         <source>Repository deletion</source>
       </segment>
     </unit>
-    <unit id="repo.copy-address">
+    <unit id="address.label">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:545</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:175</note>
+        <note category="location">src/app/shared/address-field.ts:93</note>
+      </notes>
+      <segment>
+        <source>Client address</source>
+      </segment>
+    </unit>
+    <unit id="address.copy">
+      <notes>
+        <note category="location">src/app/shared/address-field.ts:95</note>
       </notes>
       <segment>
         <source>Copy client address</source>
+      </segment>
+    </unit>
+    <unit id="repo.address-of">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-list.ts:176</note>
+      </notes>
+      <segment>
+        <source>Client address of <ph id="0" equiv="key" disp="row.key"/></source>
+      </segment>
+    </unit>
+    <unit id="repo.copy-address-of">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-list.ts:179</note>
+      </notes>
+      <segment>
+        <source>Copy client address of <ph id="0" equiv="key" disp="row.key"/></source>
       </segment>
     </unit>
     <unit id="repo.tab.general">

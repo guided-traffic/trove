@@ -24,3 +24,8 @@
   margin-block: 0 var(--trove-space-3);
   color: var(--trove-text-muted);
 }
+
+// The address is shown in full: the cell does not wrap and the column grows to it (R-UI-066).
+.address-cell {
+  white-space: nowrap;
+}

@@ -14,7 +14,7 @@ import {
 import { spokenText } from '../../testing/axe';
 import { SystemApi } from '../../api/system-api';
 import { FakeSystemApi, sampleInfo } from '../../api/testing/fakes';
-import { button, expectAccessible, renderScreen, settle, text, type } from '../../testing/screen';
+import { addressValues, button, expectAccessible, renderScreen, settle, text, type } from '../../testing/screen';
 import { RepositoryWizard } from './repository-wizard';
 
 const FAKE_NPM: FormatDescriptor = PACKAGE_FORMAT;
@@ -287,7 +287,7 @@ describe('Repository creation wizard', () => {
     expect(navigate).toHaveBeenCalledWith(['/projects', 'web', 'repositories', 'build-output']);
   });
 
-  it('R-REPO-002 R-UI-021 the review shows the client address and the curl command on the configured base URL, not on the origin of the page', async () => {
+  it('R-REPO-002 R-UI-021 R-UI-066 the review shows the client address and the curl command on the configured base URL, not on the origin of the page', async () => {
     const r = await renderScreen(RepositoryWizard, {
       inputs: { project: 'web' },
       setup: (get) =>
@@ -305,14 +305,14 @@ describe('Repository creation wizard', () => {
     await next(r);
 
     const t = text(r.root);
-    expect(t).toContain('https://trove.example.net/api/npm/web/web-libs/');
+    expect(addressValues(r.root)).toEqual(['https://trove.example.net/api/npm/web/web-libs/']);
     expect(r.root.querySelector('details pre:last-of-type')?.textContent).toContain(
       "curl -X POST 'https://trove.example.net/api/v1/projects/web/repositories'",
     );
     expect(t).not.toContain(location.origin);
   });
 
-  it('R-REPO-002 R-UI-021 a caller with repositories:write-config but without settings:read and without a readable repository still sees the client address (Q-UI-75)', async () => {
+  it('R-REPO-002 R-UI-021 R-UI-066 a caller with repositories:write-config but without settings:read and without a readable repository still sees the client address (Q-UI-75)', async () => {
     const r = await renderScreen(RepositoryWizard, {
       inputs: { project: 'web' },
       capabilities: ['repositories:write-config'],
@@ -334,7 +334,7 @@ describe('Repository creation wizard', () => {
     await settle(r.fixture);
     await next(r);
     await next(r);
-    expect(text(r.root)).toContain('https://trove.example.net/api/npm/web/web-libs/');
+    expect(addressValues(r.root)).toEqual(['https://trove.example.net/api/npm/web/web-libs/']);
   });
 
   it('R-UI-021 R-ARCH-004 the settings step renders the members of the format schema that apply to the class, and the create writes only what differs from the default', async () => {
