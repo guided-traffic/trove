@@ -156,15 +156,37 @@ func TestR_VULN_028_TheFirstPageOfAPatternGrantAtTheShapeOfTheRun(t *testing.T) 
 	t.Logf("pattern grant at the shape of the run: first request %s, median %s, p90 %s, p99 %s, slowest %s", first, sorted[50], sorted[90], sorted[98], sorted[99])
 	// The page costs two statements in two transactions, the pair read and the page (Q-VULN-77, Q-VULN-81); a third one, or the
 	// triples instead of the pairs, is the regression that would move V-7b before any runner's load does.
+	// The authentication stage reloads the caller's token, principal and groups when its caches pass their safety TTL
+	// (auth.tokens.cache_ttl, 15 s); a run slower than that meets the reload in one of its requests (Test and Release
+	// 43007020170: request 50 at a median of 196 ms). Those loads are the stage's, not the page's, so they are left out.
 	const wantCost = "[VulnScopePackages] [VulnFindingsList]"
 	for _, i := range []int{0, 50, 99} {
-		if got := describeCost(rt.Of(ids[i])); got != wantCost {
+		if got := describeCost(withoutIdentityLoads(rt.Of(ids[i]))); got != wantCost {
 			t.Errorf("request %d ran %s, want %s", i, got, wantCost)
 		}
 	}
 	if os.Getenv("TROVE_PERF_GATE") != "" && sorted[98] > 300*time.Millisecond {
 		t.Errorf("the p99 of the first page was %s, the bound is 300ms", sorted[98])
 	}
+}
+
+// withoutIdentityLoads drops the transactions that hold only the authentication stage's cache loads (statements named
+// Identity…); a transaction that mixes them with anything else is kept whole, so the page's own cost is never hidden.
+func withoutIdentityLoads(c testenv.RequestCost) testenv.RequestCost {
+	var out testenv.RequestCost
+	for _, tx := range c.Transactions {
+		identityOnly := len(tx) > 0
+		for _, s := range tx {
+			if !strings.HasPrefix(s, "Identity") {
+				identityOnly = false
+				break
+			}
+		}
+		if !identityOnly {
+			out.Transactions = append(out.Transactions, tx)
+		}
+	}
+	return out
 }
 
 func describeCost(c testenv.RequestCost) string {
