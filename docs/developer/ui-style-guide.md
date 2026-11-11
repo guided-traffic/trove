@@ -134,6 +134,40 @@ for general use. In a dialog, the buttons are at the end, **Cancel** first and t
 Use a dialog for a short, self-contained step that leaves the page behind it in place (adding a member, confirming a deletion). A
 long or repeated form is a page. Open it with `TroveDialog`: focus, Escape and the return of focus come with it.
 
+## Address field
+
+`<trove-address-field>` (`web/src/app/shared/address-field.ts`, [R-UI-065](../spec/api-and-ui.md#r-ui-065--one-read-only-address-field-with-a-joined-copy-button-for-every-client-address)) shows
+one client address the way the reference shows **Clone with SSH**: a read-only input group.
+
+```html
+<trove-address-field [value]="address" label="Client address" copyLabel="Copy client address" />
+```
+
+| Input | Meaning |
+|---|---|
+| `value` (required) | The address, one line. An empty value renders nothing |
+| `label` | The accessible name of the field; in a list it names the row (**Client address of npm-internal**) |
+| `copyLabel` | The accessible name and title of the copy button (**Copy client address of npm-internal**) |
+
+- **When.** The address a client puts into its configuration: a repository's base URL or registry host with a path, a Bastion's
+  repository address, an exposure rule's address. A command, a configuration file or a snippet of several lines is not an
+  address and keeps the code block with its copy button ([Q-UI-272](../spec/api-and-ui.md#q-ui-272--an-address-field-holds-one-address-multi-line-snippets-stay-code-blocks-and-the-bastion-address-becomes-a-field)).
+  A hash (digest, fingerprint) is not an address either: `<code>` with its short form and the full text as `title`.
+- **Measures.** Height `--trove-control-height` (32 px); text `--trove-font-mono` at 0.875rem; padding `--trove-space-1`
+  `--trove-space-3`; border 1 px `--trove-control-border` (hover `--trove-control-border-hover`, focus the ring of the other
+  controls); fill `--trove-control-bg`, not the grey of `.text-input[readonly]`
+  ([Q-UI-274](../spec/api-and-ui.md#q-ui-274--the-field-keeps-the-fill-and-border-of-an-editable-control-not-the-grey-of-a-read-only-value)).
+  The button is the 32 px `btn btn-icon` copy button, attached to the input's right edge without a gap, its left border shared
+  with the input's, inner corners square, outer corners `--trove-control-radius`.
+- **Width.** The field is as wide as its address (`ch` of the monospace face) up to the room it is in; a smaller room makes the
+  input scroll inside itself (min. 8 rem), the button stays attached
+  ([Q-UI-271](../spec/api-and-ui.md#q-ui-271--on-a-narrow-viewport-the-field-scrolls-inside-itself-and-keeps-the-button-attached)).
+  In a table the cell does not wrap and the column grows
+  ([Q-UI-270](../spec/api-and-ui.md#q-ui-270--in-the-repository-list-the-column-grows-to-the-address-the-lists-region-scrolls-sideways-when-it-must)).
+  Never an ellipsis.
+- **Behaviour.** Focus or click selects the whole address; copy uses `trove-copy-button` (clipboard, polite status, alert on failure).
+  The address is the input's value, so a test reads `.value`, not the text content.
+
 ## Text
 
 - Sentence case everywhere; upper-case is not used for labels.

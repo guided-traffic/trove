@@ -9,14 +9,14 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 620 of 813 spec requirements are implemented: a passing test names them and no
+**Status.** 620 of 815 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
 **Totals.** 2,239 catalog features on 60 pages: 787 specified (521 of them implemented), 1,452 open.
-813 spec requirements: 632 cover catalog features, 181 cover none (`trove-only`, [listed at the
+815 spec requirements: 632 cover catalog features, 183 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
 ## Pages
@@ -2969,7 +2969,7 @@ Requirements whose `Covers:` line says `trove-only`: trove's own design work tha
 catalog feature measures. They count toward the requirement total, not toward any share.
 
 <details>
-<summary>181 requirements</summary>
+<summary>183 requirements</summary>
 
 | Requirement | Title | Priority | Spec page |
 |---|---|---|---|
@@ -2999,6 +2999,8 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-UI-046 (implemented) | State management with signals | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-047 (implemented) | Testing | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-051 (implemented) | Avatar upload | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-065 | One read-only address field with a joined copy button for every client address | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-066 | The screens that show a client address use the address field | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-ARCH-003 (implemented) | Go module and package layout | MVP | [architecture.md](../spec/architecture.md) |
 | R-ARCH-004 (implemented) | Angular workspace layout | MVP | [architecture.md](../spec/architecture.md) |
 | R-ARCH-007 (implemented) | One origin for UI and package content | MVP | [architecture.md](../spec/architecture.md) |

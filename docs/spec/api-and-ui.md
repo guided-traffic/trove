@@ -4737,6 +4737,81 @@ Acceptance criteria:
   confirmation the image is gone and the robot is shown; without the capability the button is not shown.
 - While the profile and the top bar are used, no request leaves trove's origin.
 
+### R-UI-065 · One read-only address field with a joined copy button for every client address
+Priority: **MVP** · Covers: trove-only
+
+The owner's task of 2026-11-11 (T-20): the column **Client address** of the repository list cut the address with an ellipsis
+(`https://trove.k8s-main.…`), so it could not be read. Every address that trove shows for a client to put into its
+configuration looks like the field **Clone with SSH** of the owner's GitLab: the whole address in a read-only, bordered field
+in a monospace font, with the copy button joined to the field's right edge. It is one shared component,
+`<trove-address-field>` ([ui-style-guide.md](../developer/ui-style-guide.md#address-field)); no screen draws its own
+`<code>` plus copy button for a client address. The development agent decided what the owner did not say (Q-UI-270 to Q-UI-274).
+
+- **The field.** A read-only `<input type="text">` holding the address, 32 px high, the text in `--trove-font-mono` at 0.875rem,
+  a 1 px border in `--trove-control-border`, the fill of an editable control (`--trove-control-bg`), not the grey fill of a
+  read-only value (Q-UI-274). The copy button sits in the same row, attached to the right edge: no gap, one border between
+  them, the field's right corners and the button's left corners square, the outer corners rounded by `--trove-control-radius`.
+  The button is the existing `btn btn-icon` copy button with the glyph `content_copy`.
+- **Never cut.** The address is shown in full: no `text-overflow: ellipsis`, no `title` as the only way to read it, no
+  wrapping. Where the room is smaller than the address, the field scrolls inside itself (an input does so natively). The field
+  is as wide as its address needs (its length in `ch` plus the padding) and never wider than the room it is in
+  (Q-UI-270, Q-UI-271).
+- **Selectable.** A click or focus in the field selects the whole address; the user can also select a part of it and copy
+  with the keyboard. The address is the field's value, so the browser's find, drag and copy work as on any input (Q-UI-273).
+- **Copy button.** `aria-label` and `title` name what is copied (**Copy client address**; in a list the label names the row,
+  **Copy client address of npm-internal**). A click writes the address to the clipboard and the polite live region says
+  **Copied to the clipboard.**; where the clipboard is not available an alert says so and the field stays selectable (the
+  behaviour of `trove-copy-button`, which the component reuses). There is no other visual confirmation, and no green
+  (owner rule).
+- **Name.** The field has an accessible name: `aria-label` = the label of the place (**Client address**, in a list **Client
+  address of npm-internal**).
+- **Keyboard.** Tab reaches the field, then the button; Enter or Space on the button copies. The field takes the focus ring of
+  the other controls; arrow keys, Home and End move inside it. Nothing traps the focus.
+- **Colour schemes.** Light and dark both use the control tokens; the border has at least 3:1 against the surface in both
+  (R-UI-044).
+- **No address, no field.** An empty address renders nothing; the caller decides what stands in its place (a server without a
+  configured base URL shows no address, R-REPO-002).
+- **Scope (Q-UI-272).** The field holds exactly one address: a URL, or a registry host with a path
+  (`trove.k8s-main.wds18.de/docker-hub-remote`). A command, a configuration file or a snippet of several lines is not an
+  address; it keeps the code block with its copy button.
+
+Acceptance criteria:
+
+- Component unit tests: the field's value is the full address for `https://trove.k8s-main.wds18.de/api/npm/npm-internal/`,
+  for `trove.k8s-main.wds18.de/docker-hub-remote` and for a 300-character address; the input is `readonly` and has an
+  accessible name; no element of the component has `text-overflow: ellipsis`; a click on the button writes exactly the address
+  to the clipboard and sets the status message; a failed write sets the alert; focus in the field selects all of its text; an
+  empty address renders nothing; axe finds no violation.
+- Every screen of R-UI-066 shows its address through the component, and no template of those screens gives a client address
+  the class `ellipsis`.
+- Playwright: on the repository list the cell of a row holds an input whose value equals the address the API gave, and a click
+  on the row's copy button puts that value on the clipboard.
+
+### R-UI-066 · The screens that show a client address use the address field
+Priority: **MVP** · Covers: trove-only
+
+Each screen shows its client addresses through `<trove-address-field>` (R-UI-065):
+
+| Screen | Place | Notes |
+|---|---|---|
+| Repository list (R-UI-020), `/projects/{project}/repositories` and `/admin/repositories` | The column **Client address**, one field per row | The first address of the repository; the column grows to the address (Q-UI-270); the label names the row |
+| Repository page (R-UI-021), settings view | The fact **Client address** | The field takes the width of the fact, up to its address |
+| Repository page, consumer view | The fact **Client address**, one field per address of the repository, stacked | |
+| Repository wizard (R-UI-021), review step | The line **Client address** | |
+| Client setup page (R-UI-016), Bastion banner | The Bastion's repository address | The sentence stays; the address is a field below it (Q-UI-272) |
+| Guides (R-UI-049), Bastion section | **Address of the repository on the Bastion** | As above |
+| Endpoint page, the address of an exposure rule | One field per rule | The existing **Copy client address** button becomes the field's |
+
+Not in scope: the text of a guide (server-rendered HTML, where an address is prose in `<code>`), the snippets and commands of
+the setup page and the guides, the install command of a package, the **Base URL** and **Hosts** columns and field of the
+endpoint (configuration of an endpoint, not an address given to a client), and digests and fingerprints (a hash is not an
+address).
+
+Acceptance criteria:
+
+- A unit test per row of the table finds `trove-address-field` with the full address as its value.
+- A test that read an address from text content reads the field's value instead (an input's value is not text content).
+
 ## Deferred
 
 P2, Later and Out-of-scope entries of the three catalog pages this page draws on, plus P1 entries
@@ -9700,6 +9775,101 @@ drops Inter's licence (Q-UI-144). The development agent revisits (c) if an owner
 [build-embed.mjs](../../web/scripts/build-embed.mjs), the README's licence section. Tests: `TestR_UI_001_ThirdPartyNotices`
 ([notices_test.go](../../internal/webui/notices_test.go)), the `Q-UI-227` case in
 [format-icon.spec.ts](../../web/src/app/shared/format-icon.spec.ts).
+
+### Q-UI-270 · In the repository list the column grows to the address; the list's region scrolls sideways when it must
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the list is `<trove-data-table>`: a bordered region that scrolls in both directions (`.table-scroll`, `overflow: auto`)
+with a sticky header; the address was capped at 24 ch with an ellipsis. The longest realistic addresses are
+`https://trove.k8s-main.wds18.de/api/npm/npm-internal/` (53 characters) and `trove.k8s-main.wds18.de/docker-hub-remote` (40);
+at 0.875rem monospace (about 8.4 px per character) the field is about 450 px plus the 32 px button.
+
+| Option | What happens | For | Against |
+|---|---|---|---|
+| (a) The column grows to the field; the region scrolls sideways if the columns are wider than the panel (chosen) | The field is as wide as its address, nothing scrolls inside it | The address is readable at a glance, as the owner asked; the region already scrolls | A very long address widens the table |
+| (b) A fixed-width field (about 24 ch) that scrolls inside itself | Every row has the same field | The table keeps its width | The address is cut again; the reader scrolls each field to read it: the defect the owner reported |
+| (c) A fixed width, the address wraps | The address breaks mid-word | No sideways scroll | An address is not prose; a break inside a URL reads wrongly and is not one selection |
+
+**Choice:** (a). The cell does not wrap (`white-space: nowrap`), the field's width is `calc(<length>ch + padding)` plus the
+button with `max-inline-size: 100%` so that the fields of other screens stay inside their containers, and the address column
+has no maximum. The description column keeps wrapping, so it gives room before the address does.
+**Rationale:** the owner's report is that the address must be readable; (a) is the only option in which the reader does not
+act. The development agent revisits it if installations produce addresses over about 80 characters and the list needs more
+than the panel in the common case; (b) with a 60 ch field is then the fallback.
+
+**Applied in the spec:** R-UI-065, R-UI-066. Code and tests: [client-address-work-packages.md](../projektplan/client-address-work-packages.md).
+
+### Q-UI-271 · On a narrow viewport the field scrolls inside itself and keeps the button attached
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What happens | For | Against |
+|---|---|---|---|
+| (a) The input shrinks (`min-inline-size: 8rem`) and scrolls its text inside; the button stays attached and visible (chosen) | On a facts list or a wizard step the field takes the room that is left; in the list the region scrolls | The button is never pushed out; no new layout | The reader scrolls inside the field to read the end |
+| (b) The button wraps below the field | Two rows | Full field width | The button is no longer joined to the field, the one thing the owner described |
+| (c) The address wraps in a text area | Several lines | Whole address visible | Not the GitLab field; a text area is for text |
+
+**Choice:** (a). The component is `display: inline-flex`, the input `flex: 1 1 auto; min-inline-size: 8rem`, the button
+`flex: none`. There is no breakpoint; the same rule holds from 320 px up (R-UI-044 reflow).
+**Rationale:** it is what the reference does, and select-on-focus puts the end of the address one key away (End). The
+development agent revisits it if the owner's walk on a narrow screen shows addresses that need a second line.
+
+**Applied in the spec:** R-UI-065.
+
+### Q-UI-272 · An address field holds one address; multi-line snippets stay code blocks, and the Bastion address becomes a field
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What happens | For | Against |
+|---|---|---|---|
+| (a) The field is for one address only; snippets, commands and guide text keep their code blocks (chosen) | Seven call sites (R-UI-066); the Bastion address, today a `<code>` in a sentence, becomes a field below the sentence | One meaning per control; a field cannot hold several lines; the reference's clone field is one URL too | Two copy looks on a page (field for an address, block for a command) |
+| (b) Snippets of one line become fields too | A one-line registry command is a field | Uniform copy look | The line is a command, not an address, and the same snippet is several lines with another client: the shape would change with the data |
+| (c) Addresses in the guide's server-rendered HTML become fields | The UI parses the guide's HTML | Uniform | The UI adds format knowledge to server text, which R-UI-049 forbids |
+
+**Choice:** (a). What is out of scope is named in R-UI-066.
+**Rationale:** a field says "this is the thing to put into a configuration"; a code block says "run or save this". The
+development agent revisits (b) if the owner wants the one-line registry command as a field.
+
+**Applied in the spec:** R-UI-065, R-UI-066.
+
+### Q-UI-273 · The field is a native read-only input that selects its text on focus, beside the existing copy button
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What happens | For | Against |
+|---|---|---|---|
+| (a) `<input readonly>` plus `<trove-copy-button>` inside `<trove-address-field>` (chosen) | The browser provides scrolling, selection, caret keys, find and a focus stop | Native behaviour, accessible by default, the reference's markup | The address is not in `textContent`; tests read `.value` |
+| (b) A `<code>` in an overflow container | Text in the DOM | Tests unchanged | Scrolling a non-focusable box needs `tabindex` and a role; selecting exactly the address is fiddly |
+| (c) A new copy button inside the component | Joined look in one place | Full control | A second copy implementation beside `trove-copy-button`, which the rest of the UI uses and tests |
+
+**Choice:** (a). The component sets `readonly`, `spellcheck="false"`, `autocomplete="off"`, `translate="no"` and `aria-label`
+from its `label` input, and selects all on `focus` and `click`. It renders `trove-copy-button` with `[label]="copyLabel"` and
+the default glyph; the joined look is the component's own stylesheet.
+**Rationale:** the clipboard path, the live-region message and the failure alert exist and are tested once. The development
+agent revisits it if `trove-copy-button` gains a visible "copied" state for other places; the field then takes it too.
+
+**Applied in the spec:** R-UI-065.
+
+### Q-UI-274 · The field keeps the fill and border of an editable control, not the grey of a read-only value
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `.text-input[readonly]` in [_controls.scss](../../web/src/styles/_controls.scss) is a transparent border on the disabled
+fill, the look of a value that is shown, not used. The owner asked for "a read-only, bordered field" like GitLab's clone field,
+which has the border and the fill of an input.
+
+| Option | What happens | For | Against |
+|---|---|---|---|
+| (a) The component restates border, fill and radius from the control tokens and overrides the read-only rule for itself (chosen) | A bordered field in the control fill | As the reference and as the owner's words | One more variant of a read-only input |
+| (b) Use `.text-input[readonly]` as it is | A grey borderless value | No new style | Not what the owner asked; the joined button has no edge to meet |
+
+**Choice:** (a), in the component's stylesheet, with the hover and focus states of `.text-input`; the other read-only inputs of
+the UI keep their look.
+**Rationale:** the owner's description is the specification. The development agent revisits it if the owner wants every
+read-only input bordered.
+
+**Applied in the spec:** R-UI-065. The style guide's entry: [Address field](../developer/ui-style-guide.md#address-field).
 
 ### Q-API-246 · An operation that is allowed while the installation is read-only declares `x-trove-maintenance: allowed`
 
