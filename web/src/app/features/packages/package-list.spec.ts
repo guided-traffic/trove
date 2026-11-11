@@ -6,6 +6,7 @@ import { RepositoriesApi } from '../../api/repositories-api';
 import { FakeRepositoriesApi, GENERIC_FORMAT, PACKAGE_FORMAT } from '../../api/testing/fakes-catalog';
 import { FakePackagesApi, NPM_REPOSITORIES } from '../../api/testing/fakes-packages';
 import { BrowserStorage } from '../../core/storage';
+import { spokenText } from '../../testing/axe';
 import {
   button,
   buttonByText,
@@ -104,11 +105,18 @@ describe('Packages list', () => {
     expect(link.getAttribute('href')).toBe('/projects/web/packages/npm/@team-a/ui');
   });
 
-  it('R-UI-006 a format is shown as icon and text, never as icon alone', async () => {
+  it('R-UI-006 Q-UI-225 a format is shown as icon and text, never as icon alone: the owner logo or the neutral glyph, and the name said once', async () => {
     const r = await open();
-    const type = rows(r)[0]!.querySelector('.type-cell')!;
-    expect(type.querySelector('.material-icons')?.getAttribute('aria-hidden')).toBe('true');
-    expect(text(type.querySelector('span:not(.material-icons)')!)).not.toBe('');
+    const typeOf = (name: string) =>
+      rows(r).find((row) => text(row.querySelector('th')!) === name)!.querySelector('.type-cell')!;
+    const nuget = typeOf('Contoso.Logging');
+    expect(nuget.querySelector('trove-format-icon img')?.getAttribute('src')).toBe('formats/nuget/nuget.svg');
+    expect(nuget.querySelector('trove-format-icon img')?.getAttribute('alt')).toBe('');
+    expect(spokenText(nuget)).toBe('NuGet');
+    const npm = typeOf('left-pad');
+    expect(npm.querySelector('trove-format-icon img')).toBeNull();
+    expect(npm.querySelector('trove-format-icon .material-icons')?.getAttribute('aria-hidden')).toBe('true');
+    expect(spokenText(npm)).toBe('npm');
   });
 
   it('R-UI-006 the sort is the one the API offers: name, first created and updated are sortable, the rest carry a help text instead', async () => {
@@ -292,9 +300,18 @@ describe('Packages list', () => {
       const m = r.get(memory);
       m.addRecent({ format: 'npm', name: 'left-pad' });
       m.addRecent({ format: 'npm', name: '@team-a/ui' });
+      m.addRecent({ format: 'nuget', name: 'Contoso.Logging' });
       await settle(r.fixture);
       const items = [...r.root.querySelectorAll('.plain-list a')];
-      expect(items.map((a) => a.getAttribute('href'))).toEqual(['/projects/web/packages/npm/@team-a/ui', '/projects/web/packages/npm/left-pad']);
+      expect(items.map((a) => a.getAttribute('href'))).toEqual([
+        '/projects/web/packages/nuget/Contoso.Logging',
+        '/projects/web/packages/npm/@team-a/ui',
+        '/projects/web/packages/npm/left-pad',
+      ]);
+      // The type in front of each link is the same icon as the table's (Q-UI-225), with the format's name said once.
+      const types = [...r.root.querySelectorAll('.plain-list .type-cell')];
+      expect(types[0]?.querySelector('img')?.getAttribute('src')).toBe('formats/nuget/nuget.svg');
+      expect(types.map((t) => spokenText(t))).toEqual(['NuGet', 'npm', 'npm']);
       expect(r.root.querySelector('.view-tabs a[aria-current="page"]')?.textContent).toContain('Recently viewed');
       await expectAccessible(r.root);
     });

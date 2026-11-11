@@ -412,6 +412,10 @@ next unit of [FULL.md](FULL.md) (block B, F1).
 
 - H-829: the listing of a remote OCI repository (view `oci_remote_tags`, Q-OCI-215) matches a regular expression on the path of every tag entry, without an index, and was not measured on a cache with very many tags. Next step: measure it; a derived table or an expression index if it is slow.
 - Image scanning: no scan seen yet on the owner's installation; push an image and read the page. Not run: a push through the whole app with the real binary, a drain or worker loss in a cluster, and the release image and chart in a cluster. Gaps H-810 to H-818 and H-871 to H-873 are on [image-scanning.md](../security/image-scanning.md); H-819 is closed: a scan takes its working space from the spool budget (Q-VULN-145 to 148). Not checked: the thresholds of `TroveSpoolNearlyFull` against the larger worker spool of 8 GiB.
+- Format logos (owner, 2026-11-11, Q-UI-225 to 227): Debian, NuGet and OCI show their owners' logos. npm, Ansible Galaxy and the Docker
+  whale may be shown only with the owner's permission (npm's logo policy, Red Hat's trademark guidelines, Docker's trademark guidelines,
+  read 2026-11-11), so npm and Ansible Galaxy keep the neutral glyph. To show them, the owner asks npm, Inc. and Red Hat for permission.
+  At the walkthrough: the logos in the running app, light and dark, in Firefox and Safari (only Chrome on a static page was looked at).
 - `repository-detail` is the only settings page not yet in the one-column form of the [style guide](../developer/ui-style-guide.md#settings-pages) (Q-UI-222): what its tabs become needs the owner's reference at the walkthrough.
 - H-836: a holder of `tokens:read` alone sees which token owners are administrators; only a custom role is affected, because the three system roles with `tokens:read` also hold `identities:read`.
 - The committed `messages.xlf` and `messages.de.xlf` carry stale location notes, so `extract-i18n` rewrites about 17,000 lines of them.

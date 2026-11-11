@@ -1,0 +1,57 @@
+Format logos
+
+The web UI shows the logo of a package format's ecosystem next to the format's name, to name the format. The logos and
+the names are trademarks of their owners. trove is not affiliated with, sponsored or endorsed by any of them. Each file is
+the owner's file, unchanged. The terms below were read on 2026-11-11.
+
+--------------------------------------------------------------------------------
+Debian Open Use Logo (without "Debian" label)
+File: formats/deb/openlogo-nd.svg
+SHA-256: 89a3ca1a1bc91610edcc637457e7275a159309f4621829b2a0170e28970cac20
+Source: https://www.debian.org/logos/openlogo-nd.svg (from https://www.debian.org/logos/)
+Owner: Software in the Public Interest, Inc.
+
+Copyright (c) 1999 Software in the Public Interest, Inc. Released under the terms of the GNU Lesser General Public
+License, version 3 or any later version, or, at your option, of the Creative Commons Attribution-ShareAlike 3.0 Unported
+License. trove uses it under the Creative Commons Attribution-ShareAlike 3.0 Unported License
+(https://creativecommons.org/licenses/by-sa/3.0/). No changes were made.
+
+Debian is a registered trademark owned by Software in the Public Interest, Inc. trove is not affiliated with Debian.
+Trademark policy: https://www.debian.org/trademark
+
+--------------------------------------------------------------------------------
+NuGet logo
+Files: formats/nuget/nuget.svg, formats/nuget/nuget_96_mono_w.png (the white variant, on the dark scheme)
+SHA-256: 10b26790266ccb45d89f5af201ace89c69d3c258225bf6d6de996f800d1759e5  nuget.svg
+         4b4402f051f4c9cdbfbfa27fcddeb5935cde960b69c147919e5812a73fd1978e  nuget_96_mono_w.png
+Source: https://github.com/NuGet/Media at 89f7c87245e52e8ce91d94c0a47f44c6576e3a0d,
+        Images/MainLogo/Vector/nuget.svg and Images/MainLogo/96x96/nuget_96_mono_w.png
+Owner: the NuGet project, a project of the .NET Foundation
+
+From the NuGet project's media repository, whose content is available under the Creative Commons Attribution 2.0
+License (https://creativecommons.org/licenses/by/2.0/). No changes were made.
+
+NuGet and the NuGet logo are marks of their owner; trove uses them only to name the NuGet package format.
+
+--------------------------------------------------------------------------------
+Open Container Initiative (OCI) logo, icon
+Files: formats/oci/oci-icon-color.svg, formats/oci/oci-icon-white.svg (the white variant, on the dark scheme)
+SHA-256: ba1010d2edae420cae9589825a68b663b3a0bd688b2b0575b9ef50810c205ccc  oci-icon-color.svg
+         7a5a9db734192f175f53652fb0cd5037baa9226063e41659acda1951de7c7fab  oci-icon-white.svg
+Source: https://github.com/opencontainers/artwork at d8ccfe94471a0236b1d4a3f0f90862c4fe5486ce,
+        oci/icon/color/oci-icon-color.svg and oci/icon/white/oci-icon-white.svg
+Owner: The Linux Foundation
+
+The OCI artwork is licensed under the Apache License, Version 2.0; its text ships next to the files as
+formats/oci/LICENSE.txt (the repository's LICENSE file, unchanged). No changes were made to the files.
+
+Open Container Initiative(R) is a registered trademark and OCI(TM) a trademark of The Linux Foundation. The OCI logo is a
+trademark of The Linux Foundation. Trademark usage: https://www.linuxfoundation.org/legal/trademark-usage
+
+--------------------------------------------------------------------------------
+Formats without a logo
+
+npm, Ansible Galaxy and the generic format show the neutral package glyph of the icon font. The owners of the npm and
+Ansible logos allow their use only with their permission, and the Docker logo is not shown for OCI for the same reason.
+npm is a registered trademark of npm, Inc. Ansible is a trademark of Red Hat, LLC, registered in the United States and
+other countries. Docker is a trademark or registered trademark of Docker, Inc. in the United States and/or other countries.

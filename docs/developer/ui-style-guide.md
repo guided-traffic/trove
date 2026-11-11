@@ -57,6 +57,15 @@ what would need a second one belongs in the [manual](manual.md).
 - **The first column names the thing.** It is a `<th scope="row">`. A person or group is an avatar of 48 px, the name at weight
   600 on the first line and the `@username` or its kind muted on the second.
 - **A status is a badge** with an icon and a word, never colour alone. `ok` is green and means a positive status only.
+- **A package format is its icon and its name**, never the icon alone: `<trove-format-icon [format]>` beside the display name,
+  sized by the place's `font-size` (20 px in a list, 16 px in a badge, 32 px on a tile). The icon is the format owner's logo
+  where the owner's terms allow it, else the neutral `inventory_2`
+  ([Q-UI-225](../spec/api-and-ui.md#q-ui-225--a-format-shows-its-owners-logo-where-the-owners-terms-allow-it-else-the-neutral-glyph)).
+  A logo is never redrawn, recoloured or cropped; on the dark scheme it shows the owner's light variant or stands on the plate
+  ([Q-UI-226](../spec/api-and-ui.md#q-ui-226--a-logo-is-an-image-of-the-owners-file-and-the-dark-scheme-shows-the-owners-light-variant-or-a-plate)).
+  A new logo is the owner's file unchanged under `web/public/formats/<format>/`, a section in
+  [NOTICE.txt](../../web/public/formats/NOTICE.txt) and a case in [format-icon.ts](../../web/src/app/shared/format-icon.ts),
+  after its owner's terms were read.
 - **Actions on a row go into a menu** behind an `btn btn-tertiary btn-icon` showing `more_vert`, with an `aria-label` that names the row
   (**Actions for user:bob**). A list that has one frequent action per row may show it as a quiet button instead.
 - An inline control in a row (the role select) has no visible label and an `aria-label` that names the row. It shows the current
@@ -161,7 +170,7 @@ These differ from the reference on the owner's decision. Everything else that di
 | Green | A positive status only, so the badge **It's you** is blue | [Q-UI-96](../spec/api-and-ui.md#q-ui-96--cogpit-blue-as-the-primary-colour-green-only-for-positive-status) |
 | Content width | The panel's full width, the reference centres 1280 px | Owner, 2026-11-06 ([design-language.md](design-language.md#what-this-does-not-cover)) |
 | Links | Underlined in running text; in tables only under the pointer | [Q-UI-128](../spec/api-and-ui.md#q-ui-128--the-references-type-colours-and-measures), R-UI-044 |
-| Icons | Material Icons, outlined | Owner, 2026-11-06 |
+| Icons | Material Icons, outlined; a package format's icon is its owner's logo where allowed ([Lists](#lists)) | Owner, 2026-11-06 and 2026-11-11 |
 
 ## What does not follow this page yet
 

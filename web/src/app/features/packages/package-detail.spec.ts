@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { PackagesApi } from '../../api/packages-api';
 import { FakePackagesApi, ansibleFixture, debFixture, ociFixture } from '../../api/testing/fakes-packages';
+import { spokenText } from '../../testing/axe';
 import { expectAccessible, inProject, renderScreen, settle, text } from '../../testing/screen';
 import { PackageDetail } from './package-detail';
 import { PackageMemory } from './package-memory';
@@ -310,13 +311,17 @@ describe('Package details', () => {
     const copyButtons = (r: Opened) => [...r.root.querySelectorAll<HTMLButtonElement>('.pkg-tabs trove-copy-button button')];
     const nameOf = (b: HTMLElement) => b.getAttribute('aria-label') ?? text(b);
 
-    it('R-UI-007 R-OCI-031 the image is a package, the tags are its versions, and the header shows the container glyph', async () => {
+    it('R-UI-007 R-OCI-031 Q-UI-225 the image is a package, the tags are its versions, and the header shows the OCI logo beside the format', async () => {
       const r = await image({ version: '1.2.0' });
       expect(text(r.root.querySelector('h1')!)).toBe('team/app');
       expect(versionInput(r).value).toBe('1.2.0');
       expect(options(r)).toEqual(expect.arrayContaining(['1.1.0', '1.2.0']));
-      expect(text(r.root.querySelector('.type-badge')!)).toContain('view_in_ar');
-      expect(text(r.root.querySelector('.type-badge')!)).toContain('oci');
+      const badge = r.root.querySelector('.type-badge')!;
+      expect([...badge.querySelectorAll('trove-format-icon img')].map((i) => [i.getAttribute('src'), i.getAttribute('alt')])).toEqual([
+        ['formats/oci/oci-icon-color.svg', ''],
+        ['formats/oci/oci-icon-white.svg', ''],
+      ]);
+      expect(spokenText(badge)).toBe('oci');
       expect(r.root.querySelector('.chips')?.textContent).toContain('oci-local');
       await expectAccessible(r.root);
     });

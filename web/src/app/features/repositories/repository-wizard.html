@@ -80,7 +80,7 @@
         >
           @for (f of shownFormats(); track f.name) {
             <div ngOption class="tile" [value]="f.name" [label]="f.displayName ?? f.name">
-              <span class="material-icons tile-icon" aria-hidden="true">{{ formatIcon(f.name) }}</span>
+              <trove-format-icon class="tile-icon" [format]="f.name" />
               <span class="tile-name" translate="no">{{ f.displayName ?? f.name }}</span>
             </div>
           }

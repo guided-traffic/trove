@@ -22,7 +22,8 @@
   align-items: center;
   gap: var(--trove-space-2);
 
-  .material-icons {
+  // The format's logo or the neutral glyph (shared/format-icon.ts); the colour reaches the glyph only.
+  trove-format-icon {
     font-size: 1.25rem;
     color: var(--trove-text-muted);
   }

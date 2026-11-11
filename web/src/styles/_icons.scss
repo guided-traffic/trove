@@ -23,3 +23,31 @@
   -webkit-font-smoothing: antialiased;
   font-feature-settings: 'liga';
 }
+
+// The two variants of a format logo (Q-UI-226, shared/format-icon.ts): the owner's mark in the light scheme, the owner's
+// variant for a dark ground in the dark one. The scheme is trove's: an explicit choice (data-theme), else the system's,
+// the same pair of conditions as the tokens' color-scheme. The component sets no display on its images, so these rules
+// alone decide which one shows.
+.logo-on-dark {
+  display: none;
+}
+
+@mixin logo-dark-scheme {
+  .logo-on-light {
+    display: none;
+  }
+
+  .logo-on-dark {
+    display: inline;
+  }
+}
+
+:root[data-theme='dark'] {
+  @include logo-dark-scheme;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    @include logo-dark-scheme;
+  }
+}

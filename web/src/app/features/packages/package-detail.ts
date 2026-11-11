@@ -14,7 +14,7 @@ import { InstallPanel } from './install-panel';
 import { EXTERNAL_REL, packageCommands, safeHttpUrl } from './package-links';
 import { PackageMemory } from './package-memory';
 import { PackageReadmeView } from './package-readme';
-import { formatIcon } from '../../shared/format-icon';
+import { FormatIconView } from '../../shared/format-icon';
 // >>> M4b vulnerabilities
 import { VulnerabilitiesApi, VulnerabilityPackageReport, VulnerabilitySeverity, VulnerabilityVersionReport } from '../../api/vulnerabilities-api';
 import { blockedRepositories, highestOpen, openFindings, PackageVulnerabilities } from '../vulnerabilities/package-vulnerabilities';
@@ -163,6 +163,7 @@ function frameworkGroups(value: unknown): FrameworkGroup[] {
     ErrorNotice,
     InstallPanel,
     PackageReadmeView,
+    FormatIconView,
     // >>> M4b vulnerabilities
     PackageVulnerabilities,
     SeverityBadge,
@@ -454,7 +455,6 @@ export class PackageDetail {
     { id: 'published', label: $localize`:@@pkg.repo.published:Published` },
     { id: 'browse', label: $localize`:@@pkg.repo.browse:Browse`, hideLabel: true },
   ];
-  protected readonly formatIcon = formatIcon;
   protected readonly platformColumns: readonly TableColumn[] = [
     { id: 'platform', label: $localize`:@@pkg.image.platform:Platform` },
     { id: 'digest', label: $localize`:@@pkg.image.digest:Digest` },

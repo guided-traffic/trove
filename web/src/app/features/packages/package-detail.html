@@ -1,7 +1,7 @@
 <header class="page-header">
   <h1 tabindex="-1" translate="no">{{ name() }}</h1>
   <span class="type-badge">
-    <span class="material-icons" aria-hidden="true">{{ formatIcon(format()) }}</span>
+    <trove-format-icon [format]="format()" />
     <span translate="no">{{ format() }}</span>
   </span>
   <a class="btn btn-tertiary" [routerLink]="['/projects', project(), 'packages']" i18n="@@pkg.detail.back">All packages</a>

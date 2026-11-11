@@ -1,4 +1,3 @@
-import { formatIcon } from '../../shared/format-icon';
 import { clientsOf, snippetExplanation } from './clients';
 import { RENDERED_SNIPPET_IDS } from './snippet-ids.fixture';
 
@@ -29,10 +28,5 @@ describe('Ansible Galaxy client setup', () => {
     ]);
     expect(snippetExplanation('ansible-galaxy.configure.netrc')).toContain('roles');
     expect(snippetExplanation('ansible-galaxy.configure.ansible-cfg')).toContain('does not expand variables');
-  });
-
-  it('R-UI-006 the format has an icon of its own', () => {
-    expect(formatIcon('ansible')).toBe('terminal');
-    expect(formatIcon('deb')).not.toBe(formatIcon('ansible'));
   });
 });

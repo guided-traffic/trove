@@ -41,7 +41,7 @@
         @for (p of memory.recent(); track p.format + '/' + p.name) {
           <li>
             <span class="type-cell">
-              <span class="material-icons" aria-hidden="true">{{ formatIcon(p.format) }}</span>
+              <trove-format-icon [format]="p.format" />
               <span translate="no">{{ formatLabel(p.format) }}</span>
             </span>
             <a [routerLink]="commands(p.format, p.name)" translate="no">{{ p.name }}</a>
@@ -153,7 +153,7 @@
             <tr>
               <td>
                 <span class="type-cell">
-                  <span class="material-icons" aria-hidden="true">{{ formatIcon(row.format) }}</span>
+                  <trove-format-icon [format]="row.format" />
                   <span translate="no">{{ formatLabel(row.format) }}</span>
                 </span>
               </td>

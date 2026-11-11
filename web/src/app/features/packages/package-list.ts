@@ -15,7 +15,7 @@ import { PackageFilters, PackageSort, PackageSummary, PackagesApi } from '../../
 import { collectAll } from '../../api/pagination';
 import { RepositoriesApi, refOf } from '../../api/repositories-api';
 import { PagedResource, valueOf } from '../../shared/paged-resource';
-import { formatIcon } from '../../shared/format-icon';
+import { FormatIconView } from '../../shared/format-icon';
 import { DataTable, TableColumn, TableSort } from '../../shared/ui/data-table';
 import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filter-panel';
 import { relativeTime } from './format-time';
@@ -59,6 +59,7 @@ interface Chip {
     FilterCategory,
     FilterPanel,
     FilterToggle,
+    FormatIconView,
   ],
   templateUrl: './package-list.html',
   styleUrl: './package-list.scss',
@@ -271,8 +272,6 @@ export class PackageList {
   protected formatLabel(name: string): string {
     return (valueOf(this.formats) ?? []).find((f) => f.name === name)?.displayName ?? name;
   }
-
-  protected readonly formatIcon = formatIcon;
 
   private createdRange(): { from: string | undefined; to: string | undefined } {
     const p = this.period();

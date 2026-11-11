@@ -3,7 +3,8 @@
 // internal/webui/dist/index.html is never touched; stale locale directories are removed first.
 //
 // Every locale directory gets 3rdpartylicenses.txt (R-UI-001, Q-UI-144): the notices of the scripts and styles that
-// Angular collects, and the licence of the icon font, which carries no licence comment and so is not in that file.
+// Angular collects, the licence of the icon font, which carries no licence comment and so is not in that file, and the
+// owners, sources, licences and trademark notices of the format logos in public/formats (Q-UI-227).
 // The file is written after the hashed-name check, because it is not a hashed file and is never published to the store.
 //
 // TROVE_UI_BUNDLE_MARK=1 builds the second bundle of the upgrade test across two bundles (R-HA-020, Q-HA-124): the licence
@@ -110,11 +111,19 @@ function iconFontNotice() {
   return `Package: ${pkg.name}\nVersion: ${pkg.version}\nLicense: "${pkg.license}"\n\n${text}`;
 }
 
-// Angular's file ends with the rule that opens each package's section; the icon font's section follows it.
+// The format logos (Q-UI-225, Q-UI-227): public/formats/NOTICE.txt names each logo file with its owner, source, licence and
+// trademark notice. The file is also served next to the logos; here it joins the notices of the build.
+const formatLogos = 'formats/NOTICE.txt';
+function formatLogoNotice() {
+  return readFileSync(join(root, 'public', formatLogos), 'utf8');
+}
+
+// Angular's file ends with the rule that opens each package's section; the icon font's section follows it, then the logos.
 const angular = angularNotices().trimEnd();
-const text = `${angular.endsWith(rule) ? angular : `${angular}\n${rule}`}\n${iconFontNotice()}`;
-// The notices must name Inter with its OFL-1.1 licence, the icon font with its Apache-2.0 licence, and DiceBear's core with
-// the licence of the Bottts style (the artist's "free for personal and commercial use", Q-UI-167), or the build fails.
+const text = `${angular.endsWith(rule) ? angular : `${angular}\n${rule}`}\n${iconFontNotice()}\n${rule}\n${formatLogoNotice()}`;
+// The notices must name Inter with its OFL-1.1 licence, the icon font with its Apache-2.0 licence, DiceBear's core with the
+// licence of the Bottts style (the artist's "free for personal and commercial use", Q-UI-167), and each format logo with
+// its trademark notice and the line that no owner endorses trove (Q-UI-227), or the build fails.
 const required = [
   '\nPackage: @fontsource-variable/inter\n',
   'License: "OFL-1.1"',
@@ -125,6 +134,13 @@ const required = [
   '\nPackage: @dicebear/styles\n',
   '### Bottts\n',
   'Free for personal and commercial use',
+  'trove is not affiliated with, sponsored or endorsed by any of them.',
+  'File: formats/deb/openlogo-nd.svg\n',
+  'Debian is a registered trademark owned by Software in the Public Interest, Inc.',
+  'Files: formats/nuget/nuget.svg, formats/nuget/nuget_96_mono_w.png',
+  'Creative Commons Attribution 2.0',
+  'Files: formats/oci/oci-icon-color.svg, formats/oci/oci-icon-white.svg',
+  'Open Container Initiative(R) is a registered trademark',
 ];
 const missing = required.filter((s) => !text.includes(s));
 if (missing.length > 0) {

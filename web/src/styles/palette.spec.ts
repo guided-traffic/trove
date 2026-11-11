@@ -298,4 +298,14 @@ describe('palette', () => {
       expect(green, scheme).toEqual([]);
     }
   });
+
+  it('R-UI-044 Q-UI-226 the logo plate lifts a dark mark off the dark scheme: the mark reaches 3:1 on it, and the plate stands out from every surface', () => {
+    // Debian's swirl (#a80030, its open use logo) has no variant for a dark ground; on the dark surfaces it is 1.9:1 to 2.3:1.
+    const swirl: Rgba = [0xa8, 0x00, 0x30, 1];
+    const plate = colour('--trove-logo-plate', 'dark');
+    expect(ratio(swirl, plate)).toBeGreaterThanOrEqual(3);
+    for (const name of ['--trove-surface', '--trove-surface-raised', '--trove-table-head-bg', '--trove-row-hover', '--trove-accent-container']) {
+      expect(ratio(plate, colour(name, 'dark')), name).toBeGreaterThanOrEqual(3);
+    }
+  });
 });

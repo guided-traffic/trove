@@ -30,7 +30,7 @@ import { SessionStore } from '../../core/session-store';
 import { ErrorNotice } from '../../shared/error-notice';
 import { ErrorSummary, SummaryItem, fieldMessage, problemsAt } from '../../shared/field-errors';
 import { DraftStore } from '../../shared/drafts';
-import { formatIcon } from '../../shared/format-icon';
+import { FormatIconView } from '../../shared/format-icon';
 import { asApiError, valueOf } from '../../shared/paged-resource';
 import { HasUnsavedChanges } from '../../shared/unsaved-guard';
 import { FormatSettings } from './format-settings';
@@ -126,6 +126,7 @@ export function classHelp(cls: string): string {
     Listbox,
     Option,
     SelectField,
+    FormatIconView,
   ],
   templateUrl: './repository-wizard.html',
   styleUrl: './repository-wizard.scss',
@@ -554,7 +555,6 @@ export class RepositoryWizard implements HasUnsavedChanges {
 
   protected classText = classLabel;
   protected classHelpText = classHelp;
-  protected formatIcon = formatIcon;
 
   private scheduleKeyCheck(key: string, project: string, valid: boolean): void {
     clearTimeout(this.keyTimer);

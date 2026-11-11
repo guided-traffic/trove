@@ -190,17 +190,36 @@ mark and the favicon's reduced form side by side at 64, 32 and 16 px, and the al
 parameter, run `node scripts/brand-logo.mjs` in `web/`, and the dev server reloads. The same run rewrites
 `shared/brand/mark-geometry.ts` without the repository's formatting: run Prettier on it when the geometry changed.
 
+## Format logos
+
+A package format is shown by its owner's logo where the owner's terms allow it, else by the neutral `inventory_2` glyph
+(owner, 2026-11-11, [Q-UI-225](../spec/api-and-ui.md#q-ui-225--a-format-shows-its-owners-logo-where-the-owners-terms-allow-it-else-the-neutral-glyph)):
+Debian's Open Use Logo, the NuGet logo and the Open Container Initiative's icon; npm, Ansible Galaxy and the generic format
+keep the glyph, because npm's and Ansible's owners allow their logos only with permission and plain files have no brand.
+The files are the owners' own, unchanged, under [web/public/formats/](../../web/public/formats/NOTICE.txt), with their
+owners, sources, licences and SHA-256 in `NOTICE.txt`. [format-icon.ts](../../web/src/app/shared/format-icon.ts) decides
+(`formatIcon`) and draws (`<trove-format-icon>`): a square of one em, an `<img>` with an empty `alt`, because the format's
+name is always beside it.
+
+No logo is redrawn or recoloured. The dark scheme shows the owner's own variant for a dark ground where there is one (the
+white OCI icon, NuGet's white mono PNG), switched by `.logo-on-light` and `.logo-on-dark` in
+[_icons.scss](../../web/src/styles/_icons.scss) under trove's theme; Debian's red swirl has none and stands on the plate
+`--trove-logo-plate` (`#ececef` in the dark scheme, transparent in the light one), because the dark surfaces leave it at 1.9:1
+to 2.3:1. [Q-UI-226](../spec/api-and-ui.md#q-ui-226--a-logo-is-an-image-of-the-owners-file-and-the-dark-scheme-shows-the-owners-light-variant-or-a-plate)
+has the measurements and the options.
+
 ## Where the values live
 
 | File | What it holds |
 |---|---|
 | [web/src/styles/main.scss](../../web/src/styles/main.scss) | The partials in order, the CDK's overlay structure (`cdk.overlay()`, which dialogs, menus and tooltips open in), the body type and the page title |
 | [web/angular.json](../../web/angular.json) | `@fontsource-variable/inter/wght.css` ahead of `main.scss` in the build's styles: Inter as one variable font (weights 100 to 900) in unicode-range subsets, so a page in Latin script loads the 48 KB Latin file; OFL-1.1, its licence in the build's `3rdpartylicenses.txt` |
-| [web/src/styles/_tokens.scss](../../web/src/styles/_tokens.scss) | trove's own properties: the page palette (`--trove-surface`, `--trove-on-surface`, `--trove-border`, `--trove-text-muted`, `--trove-accent`, `--trove-dialog-bg`, `--trove-error*`, `--trove-inverse-*`, `--trove-banner-*`), the type (`--trove-font-*`, `--trove-text-*`, `--trove-heading-*`, `--trove-type-*` as font shorthands), the radii (`--trove-radius-s` to `-full`), the link, the heading colour, the focus ring, the raised surface, the card, the table head, the frame (`--trove-nav-*`, the panel's radius and gap, the breadcrumb bar's height), the search field, the menus, the status colours |
+| [web/src/styles/_tokens.scss](../../web/src/styles/_tokens.scss) | trove's own properties: the page palette (`--trove-surface`, `--trove-on-surface`, `--trove-border`, `--trove-text-muted`, `--trove-accent`, `--trove-dialog-bg`, `--trove-error*`, `--trove-inverse-*`, `--trove-banner-*`), the type (`--trove-font-*`, `--trove-text-*`, `--trove-heading-*`, `--trove-type-*` as font shorthands), the radii (`--trove-radius-s` to `-full`), the link, the heading colour, the focus ring, the raised surface, the card, the table head, the frame (`--trove-nav-*`, the panel's radius and gap, the breadcrumb bar's height), the search field, the menus, the status colours, the plate behind a format logo (`--trove-logo-plate`) |
 | [web/src/styles/_controls.scss](../../web/src/styles/_controls.scss) | The controls of the table above, from the `--trove-control-*`, `--trove-accent-fill`, `--trove-btn-*` and `--trove-danger-*` tokens |
 | [web/src/styles/_dialog.scss](../../web/src/styles/_dialog.scss) | The dialog panel: backdrop, container, title, body, actions |
 | [web/src/styles/_shell.scss](../../web/src/styles/_shell.scss) | How the frame uses them: the sidebar's entries (28 px, 8 px round, a 16 px icon in a 24 px box), the current entry, the project switcher on top of a project's sidebar (a 40 px button with the project's initial in a 32 px rounded square on `--trove-accent-fill`, a panel on the menu's fill, [Q-UI-129](../spec/api-and-ui.md#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects)), the panel, the breadcrumb bar (40 px), the top bar's actions and the avatar (32 px round on `--trove-surface-variant`, holding the user's generated Bottts robot of `<trove-avatar>` instead of a letter, owner 2026-11-07, Q-UI-168; the SVG is transparent, so the fill follows the theme), the menus |
-| [web/scripts/build-embed.mjs](../../web/scripts/build-embed.mjs) | The notices of the bundled software: Angular's `3rdpartylicenses.txt` (the Inter font's OFL-1.1 notice among the libraries') plus the icon font's Apache-2.0 licence, which Angular does not collect; written as `<locale>/3rdpartylicenses.txt` into the embedded build, and the build fails when either licence is missing (Q-UI-144) |
+| [web/scripts/build-embed.mjs](../../web/scripts/build-embed.mjs) | The notices of the bundled software: Angular's `3rdpartylicenses.txt` (the Inter font's OFL-1.1 notice among the libraries') plus the icon font's Apache-2.0 licence, which Angular does not collect, and the format logos' `formats/NOTICE.txt` (Q-UI-227); written as `<locale>/3rdpartylicenses.txt` into the embedded build, and the build fails when a licence or a logo's notice is missing (Q-UI-144) |
+| [web/src/styles/_icons.scss](../../web/src/styles/_icons.scss) | The icon font and the scheme switch of the format logos (`.logo-on-light`, `.logo-on-dark`) |
 | [web/src/styles/palette.spec.ts](../../web/src/styles/palette.spec.ts) | The contrast of the pairs below, computed from the two stylesheets, and the rule that only `--trove-status-ok` is green |
 
 A scheme is chosen by `color-scheme` on the root element: without a choice the browser's setting decides, the theme button
@@ -357,7 +376,10 @@ on it today.
   by the owner's choice of 2026-11-06 for now. Links differ on purpose: the reference underlines none, trove underlines
   links in running text and, in tables and key-value lists, only under the pointer and on focus (Q-UI-128, R-UI-044).
 - The reference's icons are its own line icons; trove's are Material Icons in the outlined variant (owner, 2026-11-06),
-  close to them but not the same drawings.
+  close to them but not the same drawings. The format logos (Q-UI-225) were checked in Chrome on a static page with the
+  built stylesheet and the component's styles, at 16, 20 and 32 px, in both themes and with the system's scheme opposite
+  to the theme; not in the running app, not in Firefox or Safari. npm and Ansible Galaxy show the glyph until their owners
+  allow their logos.
 - The vulnerability trend is the one chart; its series colours are tokens (`--trove-chart-*`). Another chart takes its series from the same family and adds its pairs to `palette.spec.ts`.
 - The dialogs, tabs, checkboxes, menus and tooltips are trove's own since Q-UI-126 was finished; their measures follow the
   reference's modal and tab strip as far as the development agent measured them, and no screen of the owner has confirmed

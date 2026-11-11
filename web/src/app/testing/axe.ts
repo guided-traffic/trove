@@ -18,3 +18,17 @@ export async function seriousViolations(root: Element): Promise<string[]> {
     .filter((v) => v.impact === 'serious' || v.impact === 'critical')
     .map((v) => `${v.id} (${v.impact}): ${v.help} -- ${v.nodes.map((n) => n.target.join(' ')).join('; ')}`);
 }
+
+/**
+ * What assistive technology reads for `element`'s content, as axe-core computes a text alternative (accname): an image
+ * with an empty `alt` and an `aria-hidden` subtree add nothing, the text does. Whitespace is collapsed. For a spec that
+ * checks that a name is said once, with nothing before or after it.
+ */
+export function spokenText(element: Element): string {
+  axe.setup(element.ownerDocument);
+  try {
+    return axe.commons.text.accessibleText(element, { inLabelledByContext: true }).replace(/\s+/g, ' ').trim();
+  } finally {
+    axe.teardown();
+  }
+}

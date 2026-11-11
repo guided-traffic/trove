@@ -2689,7 +2689,9 @@ Priority: **MVP** · Covers: UI-058
   member editor, R-UI-022). No other component suite is added, and `@angular/material` is not a dependency.
   Colours, type and measures are trove's CSS custom properties (`web/src/styles/_tokens.scss`) for both themes.
   Icons come from a self-hosted icon font used through
-  ligatures (`font-src 'self'`); SVG icon registration is not used,
+  ligatures (`font-src 'self'`). The one exception is the icon of a package format, which is the logo of the
+  format's owner where the owner's terms allow it: the owner's unchanged file under `web/public/formats/`, shown as an
+  `<img>` (`img-src 'self'`) by `<trove-format-icon>` (Q-UI-225, Q-UI-226). SVG icon registration is not used,
   because it takes URLs only as `SafeResourceUrl` values from a security bypass (banned by
   R-UI-046) and inserts the SVG through the Trusted Types policy `angular#components`, which this
   CSP does not list.
@@ -2978,7 +2980,8 @@ Priority: **MVP** · Covers: UI-008, ART-048
 - Backed by R-API-029 (the start page of a project is its repositories, R-UI-052, Q-UI-216). Filters, as the categories of the panel: package type (multi-select),
   repository (multi-select), name or description (`q`), keyword, created period (last 7, 30, 90 days,
   custom; a custom end day is included). Applied filters appear as removable chips and live in the URL.
-- Table: type (icon plus text, never icon alone), name, latest version, one-line description, first
+- Table: type (icon plus text, never icon alone; the icon is the format owner's logo where the owner's terms allow it,
+  else the neutral package glyph, Q-UI-225), name, latest version, one-line description, first
   created, updated (relative, with the absolute time in a `<time datetime>` element and its title),
   number of versions, number of repositories, downloads (Q-UI-72). Sortable by name, first created and
   updated; every other column carries a help text instead. Every sort is the server's (R-API-029).
@@ -3003,7 +3006,7 @@ Priority: **MVP** · Covers: UI-009, ART-049
   as a path separator (`/packages/npm/@team-a/ui`) and is one breadcrumb step (Q-UI-73). The selected
   version is the `version` query parameter, the open tab the `tab` parameter, the pre-release switch
   `prerelease=true`.
-- Header: name, format, selected version (default: the latest stable visible version; the latest
+- Header: name, format (its icon of Q-UI-225 and its name), selected version (default: the latest stable visible version; the latest
   pre-release when no stable one exists), published time, licenses, download count, the
   repositories that contain it.
 - Version selector: combobox with type-to-filter and an "include pre-releases" switch that follows
@@ -3668,7 +3671,8 @@ Priority: **MVP** · Covers: UI-031
   `repositories:write-config`, the projects it owns otherwise); inside a project (`/projects/{project}/repositories/new`) the
   project is given, shown as text and not chosen. It is read-only on the edit form, where a move to another project is its
   own action (R-UI-020). After the create the wizard opens the new repository's content page (R-UI-052); its settings are `/projects/{project}/repositories/{key}/settings`.
-- The format step is a grid of tiles from `GET /api/v1/formats`, each with the format's icon and its
+- The format step is a grid of tiles from `GET /api/v1/formats`, each with the format's icon (its owner's logo where
+  the owner's terms allow it, else the neutral package glyph, Q-UI-225) and its
   name, under a search field ("Search by package type") that filters the tiles by name, a title and
   a one-line hint. Only the formats the installation has appear. The grid is a single-choice listbox
   of `@angular/aria` (R-UI-001, Q-UI-1): one tab stop, arrow keys, Home and End, Enter or Space to
@@ -5252,6 +5256,8 @@ Status: **Decided by the development agent** — selected from the options below
 **Rationale:** The first prototype has to work largely after one development pass, so the widget layer must be ready, accessible and upgradeable with Angular itself. (a) is the only option that is all three: it ships in lockstep with Angular (one version of every dependency), it has been built against Angular's own accessibility patterns, and `@angular/aria` fills the gaps the file browser and the member editor need. (b) adds a vendor whose majors trail Angular's; (c) spends the prototype on widgets. The one conflict with the strict CSP of R-UI-001 is SVG icon registration: `MatIconRegistry` takes URLs only as `SafeResourceUrl` values from a security bypass, which R-UI-046's lint rule bans, and inserts the SVG through the Trusted Types policy `angular#components` (verified in `@angular/cdk` 22.2.5), which the CSP's `trusted-types` list does not name. A self-hosted icon font used through ligatures needs neither, and widening the CSP for icons would weaken the README defense for a cosmetic gain. The development agent revisits this if the owner rejects the look at the walkthrough and token theming cannot fix it; the fallback is (c) for the affected widgets on the same CDK base.
 
 **Applied in the spec:** R-UI-001 gains the component-library bullet (Material and CDK in the Angular release line, `@angular/aria` tree and listbox, token theming, icon font, no SVG icon registration with the reason) and an acceptance criterion; R-UI-010 builds the tree and R-UI-022 the member lists on `@angular/aria`.
+
+*Amended for the format logos by [Q-UI-225](#q-ui-225--a-format-shows-its-owners-logo-where-the-owners-terms-allow-it-else-the-neutral-glyph) and [Q-UI-226](#q-ui-226--a-logo-is-an-image-of-the-owners-file-and-the-dark-scheme-shows-the-owners-light-variant-or-a-plate) (owner, 2026-11-11): "font icons only" no longer holds for the icon of a format, which is its owner's logo as an image file where the owner's terms allow it. The icon font stays the source of every other icon, and SVG icon registration stays excluded for the reasons above: the logos are `<img>` elements of files under `web/public/formats/`, which need neither a security bypass nor a Trusted Types policy.*
 
 ### Q-UI-2 · Visual direction of the shell (example screenshot requested)
 
@@ -7974,7 +7980,9 @@ Status: **Decided by the development agent** — selected from the options below
 **Choice:** (b), with `selectionMode="explicit"` so that moving over a tile does not change the format (a change resets
 settings, Q-UI-116), and a click on the chosen tile keeps the choice. The icon is `formatIcon` (`shared/format-icon.ts`), the one the
 package list shows in its type column: `extension` for NuGet and the neutral `inventory_2` for every other format; the UI holds no
-list of formats (FMT-001). The name is the descriptor's `displayName`.
+list of formats (FMT-001). The name is the descriptor's `displayName`. *Since [Q-UI-225](#q-ui-225--a-format-shows-its-owners-logo-where-the-owners-terms-allow-it-else-the-neutral-glyph)
+the icon is the owner's logo where its terms allow it (Debian, NuGet, OCI) and `inventory_2` elsewhere, rendered by
+`<trove-format-icon>`; it is still the same function as the list's.*
 
 **Rationale:** the wizard now has a picker of one of many that a filter shortens, which is the listbox pattern. Keyboard users move
 with Left and Right, Home, End and typeahead, and the filter shortens the path. The development agent would revisit (a) if the
@@ -9232,6 +9240,9 @@ Context: R-OCI-031 gives an image name as a package and its tags as versions; th
 ### Q-UI-178 · OCI gets the cube icon, and the package page takes its type icon from the same function as the list
 
 Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+**Option (a) superseded by [Q-UI-225](#q-ui-225--a-format-shows-its-owners-logo-where-the-owners-terms-allow-it-else-the-neutral-glyph)**
+(owner, 2026-11-11): OCI shows the Open Container Initiative's logo, not the cube. The second half holds: the package page asks
+`formatIcon`, the one function that decides. The text below is the record of the superseded choice.
 
 Context: `formatIcon` (R-UI-006, R-UI-021) gives `nuget` the puzzle glyph and every other format the neutral package glyph; the package page's type badge named the neutral glyph itself instead of asking the function.
 
@@ -9264,6 +9275,8 @@ Context: the settings form (Q-UI-78) rendered an array as "This setting cannot b
 ### Q-UI-201 · Debian gets the archive-box icon
 
 Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+**Superseded by [Q-UI-225](#q-ui-225--a-format-shows-its-owners-logo-where-the-owners-terms-allow-it-else-the-neutral-glyph)**
+(owner, 2026-11-11): Debian shows its Open Use Logo. The text below is the record of the superseded choice.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
@@ -9566,6 +9579,128 @@ Context: the policy editor has a table of contents, a sticky preview and a revie
 
 **Applied in the spec:** R-UI-027, R-UI-035. Code: `PolicyEditor`, `IssuerDetail`, `IssuerCreate`, `IssuerForm`. Tests: the `Q-UI-224` case in [policy-editor.spec.ts](../../web/src/app/features/permissions/policy-editor.spec.ts), the issuer cases of [ci-issuer-screens.spec.ts](../../web/src/app/features/ci/ci-issuer-screens.spec.ts).
 
+### Q-UI-225 · A format shows its owner's logo where the owner's terms allow it, else the neutral glyph
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+It supersedes option (a) of [Q-UI-178](#q-ui-178--oci-gets-the-cube-icon-and-the-package-page-takes-its-type-icon-from-the-same-function-as-the-list),
+[Q-UI-201](#q-ui-201--debian-gets-the-archive-box-icon) and the "font icons only" part of
+[Q-UI-1](#q-ui-1--component-library) for the icon of a format, on the owner's word of 2026-11-11: the Material glyphs for
+the formats look terrible, he wants the registries' original logos, which may usually be used.
+
+Context: `formatIcon` returned a ligature of the icon font: `extension` for NuGet, `view_in_ar` for OCI, `unarchive` for
+Debian, `terminal` for Ansible Galaxy and `inventory_2` for the rest. It decides the icon in the package list's type column
+and its "Recently viewed" list (R-UI-006), on the package page's type badge (R-UI-007) and on the wizard's format tiles
+(R-UI-021). A logo is a trademark and a copyrighted drawing; whether a product may show it beside the ecosystem it serves
+is its owner's decision. The development agent read each owner's terms on 2026-11-11:
+
+| Format | Mark and official source | Copyright licence | What the owner's terms say about this use | Shown | Conditions trove follows |
+|---|---|---|---|---|---|
+| `deb` | Debian Open Use Logo without label, `openlogo-nd.svg` from [debian.org/logos](https://www.debian.org/logos/) (page modified 2020-10-05) | LGPL-3.0-or-later or, at the user's option, CC BY-SA 3.0; © 1999 Software in the Public Interest, Inc. | [Trademark policy](https://www.debian.org/trademark) (modified 2026-06-10): Debian's marks may "describe or advertise your services or products relating to Debian"; the logos "can be used as part of a page describing your products or services", not as part of a product's own logo; scaling keeps the proportions; acknowledge SPI's ownership prominently and disclaim affiliation. The logos page asks, as a wish, that the image link to debian.org | Yes | The owner's file unchanged, proportions kept (`object-fit: contain`), always beside the format's name and never as trove's branding; CC BY-SA 3.0 chosen, attribution, ownership and non-affiliation in the notices and the README (Q-UI-227). The image is no link: it sits inside a row link and a listbox option, where a second link would break both |
+| `nuget` | NuGet logo, `nuget.svg`, and the owner's white variant `nuget_96_mono_w.png`, from the NuGet project's media repository [NuGet/Media](https://github.com/NuGet/Media) | CC BY 2.0 ("all content in this repository unless stated otherwise") | No logo or trademark guideline of the NuGet project or of the .NET Foundation, whose project NuGet is, was found. nuget.org's terms (Microsoft, January 2025) say Microsoft's logos and product icons need an express licence; Microsoft's trademark list (FY27Q2) does not name NuGet ([H-878](#h-878--the-owner-and-the-terms-of-the-nuget-mark-are-not-published)) | Yes | The owner's files unchanged; CC BY 2.0 attribution (the project, the source at its commit, the licence, no changes) in the notices; the mark only names the NuGet format |
+| `oci` | Open Container Initiative icon, `oci-icon-color.svg` and the owner's white variant `oci-icon-white.svg`, from [opencontainers/artwork](https://github.com/opencontainers/artwork) | Apache-2.0 (the repository's licence) | The Linux Foundation's [trademark usage](https://www.linuxfoundation.org/legal/trademark-usage): official versions only, no colour variations, nothing on top of the logo, never more prominent than the user's own name, no implied endorsement, a trademark notice; a logo in "any commercial or marketing context" other than those the page permits needs written permission ([H-877](#h-877--the-oci-logo-rests-on-a-non-commercial-use-under-the-linux-foundations-terms)) | Yes | The official files unchanged, the owner's white variant on the dark scheme, smaller than and beside the format's name; "Open Container Initiative®" and "OCI™" notices and the Apache-2.0 text next to the files |
+| `oci` | Docker's whale, [Docker trademark guidelines](https://www.docker.com/legal/trademark-guidelines/) | — | Docker's logos "may be taken only from Docker's product sheet or from Docker's service screen shot following authorization"; to indicate compatibility only the word marks, "not logo marks", may be used | No | — |
+| `npm` | npm logo, [npm Logos and Usage](https://docs.npmjs.com/policies/logos-and-usage) (last changed 2025-05-20) | — | "The npm Logos signify us, or a special relationship with us, and you may use them only with our permission"; the logos "may not be used to refer to the project, service, or company in a nominative sense" | No | The neutral glyph; the word mark with "npm is a registered trademark of npm, Inc." in the notices |
+| `ansible` | Ansible's mark and the Ansible Galaxy logo, [ansible/logos](https://github.com/ansible/logos) and Red Hat's [trademark guidelines](https://www.redhat.com/en/about/trademark-guidelines-and-policies) | CC BY-SA 4.0 (the logos repository) | "Any use of the Ansible logos and marks without Ansible approval is prohibited"; Red Hat's guidelines give no permission for a Red Hat logo without a separate written agreement | No | The neutral glyph |
+| `generic` | none: plain files have no brand | — | — | — | The neutral glyph |
+
+Community sets such as Simple Icons (CC0) offer drawings of such marks, but CC0 covers the drawing and not the trademark,
+and every mark that is shown has an official file, so no community file is used.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The owner's logo where the owner's terms allow this use, the neutral glyph elsewhere (chosen) | Debian, NuGet and OCI show their logos; npm, Ansible Galaxy, the generic format and every format the UI does not name show `inventory_2` | The owner's wish wherever an owner allows it; no mark is shown whose owner reserves it | npm, the commonest format, keeps a glyph, and the set mixes logos and a glyph |
+| (b) Every format's logo | npm's and Ansible's logos too | The look the owner asked for | Two owners say "only with our permission"; showing their marks is a use they reserved |
+| (c) Ask npm, Inc. and Red Hat first, glyphs until they answer | Requests by the owner | A complete set later | Holds back the three logos that are allowed today; a request is the owner's to send |
+| (d) Keep the glyphs of Q-UI-178 and Q-UI-201 | No change | No licence question | What the owner rejected |
+
+**Choice:** (a). OCI shows the Open Container Initiative's mark, not Docker's: the type column reads "OCI (Docker)", but
+Docker's terms admit its logo only after its authorization, and the format is the OCI image and distribution specification,
+which Docker's tools implement. The neutral glyph is `inventory_2`; `terminal` and `extension` are gone with the other
+format glyphs. `formatIcon` stays the one function that decides; it returns either a logo (the file, the file for the dark
+scheme or none, and whether the mark stands on a plate, Q-UI-226) or the glyph.
+
+**Rationale:** the owner's request holds wherever the owner of a mark allows the use. Where an owner says "only with our
+permission" (npm, Red Hat for Ansible, Docker), a product that installations run cannot rest on nobody objecting, and the
+name beside every icon (R-UI-006) carries the meaning anyway. The development agent revisits this when npm, Inc. or Red Hat
+grant permission (the owner can ask through [npm's contact page](https://www.npmjs.com/contact) and trademarks@redhat.com),
+when an owner's terms change ([H-879](#h-879--an-owners-terms-can-change-after-the-day-they-were-read)), and when trove is
+offered commercially (H-877).
+
+**Applied in the spec:** R-UI-001 (the icon bullet), R-UI-006, R-UI-007, R-UI-021; the notes on Q-UI-1, Q-UI-114, Q-UI-178
+and Q-UI-201. Documented in [ui-style-guide.md](../developer/ui-style-guide.md), [design-language.md](../developer/design-language.md)
+and [web-ui.md](../developer/web-ui.md). Code: [format-icon.ts](../../web/src/app/shared/format-icon.ts),
+[web/public/formats/](../../web/public/formats/NOTICE.txt). Tests: the `Q-UI-225` cases in
+[format-icon.spec.ts](../../web/src/app/shared/format-icon.spec.ts), [package-list.spec.ts](../../web/src/app/features/packages/package-list.spec.ts),
+[package-detail.spec.ts](../../web/src/app/features/packages/package-detail.spec.ts) and
+[repository-wizard.spec.ts](../../web/src/app/features/repositories/repository-wizard.spec.ts).
+
+### Q-UI-226 · A logo is an image of the owner's file, and the dark scheme shows the owner's light variant or a plate
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-UI-1 excluded SVG icon registration (a security bypass for every URL, banned by R-UI-046, and a Trusted Types
+policy the CSP does not list), and `@angular/material` is no dependency since Q-UI-126. trove's theme is its own: `data-theme`
+overrides the system's scheme, and an `<img>` sees only the system's. Measured against the dark surfaces (`#18171d`,
+`#28272d`, `#1d283e`), Debian's red (`#a80030`) reaches 1.9:1 to 2.3:1, NuGet's blue (`#004880`) 1.6:1 to 1.9:1 and the
+OCI navy (`#262261`) 1.0:1 to 1.3:1; on the light surfaces each is 6.9:1 or more.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An `<img>` of the owner's file under `web/public/formats/`, in a small component; where the owner has a variant for dark grounds, both images, switched by trove's scheme; else a light plate behind the mark in the dark scheme (chosen) | `<trove-format-icon [format]>` | The file is the owner's, byte for byte (its SHA-256 is in the notice), so "unchanged" is checkable and an update is a copy; no bypass, no new CSP source (`img-src 'self'`); the switch follows trove's theme through CSS | OCI and NuGet load the hidden variant too; files of `web/public` are revalidated, not cached as immutable |
+| (b) Inline SVG in a component | The paths copied into a template | One theme mechanism, no request | A transcribed logo is a modified copy, checked by eye; NuGet's light variant is a PNG; the paths ship in the scripts |
+| (c) An icon registry | Material's or a registry of its own | One icon API | A security bypass for every URL and the Trusted Types gap of Q-UI-1 |
+| (d) CSS background images | `url()` in a stylesheet, hashed by the build | Immutable caching | No element to carry an empty `alt`; the build renames the owner's file; the same scheme switch |
+
+**Choice:** (a). `formatIcon` returns the file, the dark-scheme file or none, and the plate flag; `FormatIconView`
+(`<trove-format-icon>`) draws a square of one em, so each place sets the size it had: 20 px in the list and "Recently
+viewed", 16 px on the badge, 32 px on a tile. In the dark scheme OCI shows its owner's white icon and NuGet its owner's white
+variant, which NuGet publishes as PNG only (96 px covers a 32 px tile at three device pixels per CSS pixel); Debian
+publishes none and stands on the plate `--trove-logo-plate` (`#ececef`, 6.6:1 for the swirl; transparent in the light
+scheme). No mark is recoloured. The switch is `.logo-on-light` and `.logo-on-dark` in `_icons.scss`, under
+`:root[data-theme='dark']` and under `prefers-color-scheme: dark` without `data-theme='light'`, the conditions of the
+tokens' `color-scheme`. Every place shows the format's name as text beside the icon, so a logo has `alt=""` and the glyph
+`aria-hidden="true"`: the accessible name of a type cell, the badge and a tile is the display name, said once. The files are
+served at trove's origin without the page's CSP, so a spec refuses scripts, event handlers, foreign objects and references
+outside the file in every SVG that `formatIcon` names.
+
+**Rationale:** the licence and trademark conditions of Q-UI-225 ask for the owner's unchanged file, which (a) ships as it is
+and (b) and (d) do not; (c) is what Q-UI-1 excluded. The plate and the owners' light variants keep a mark visible in the dark
+scheme without recolouring it, which the Linux Foundation forbids ("should not be displayed with color variations") and no
+other owner invites. The development agent
+revisits this if NuGet publishes an SVG for dark grounds, if the request of the hidden variant shows in a measurement, or if
+an owner asks for the logo to be a link.
+
+**Applied in the spec:** R-UI-001 (the icon bullet). Code: [format-icon.ts](../../web/src/app/shared/format-icon.ts),
+[_icons.scss](../../web/src/styles/_icons.scss), [_tokens.scss](../../web/src/styles/_tokens.scss) (`--trove-logo-plate`),
+`package-list.scss`, `package-detail.scss`, `repository-wizard.scss`. Tests: the `Q-UI-226` cases in
+[format-icon.spec.ts](../../web/src/app/shared/format-icon.spec.ts) and [palette.spec.ts](../../web/src/styles/palette.spec.ts),
+`spokenText` in [axe.ts](../../web/src/app/testing/axe.ts).
+
+### Q-UI-227 · The logos' owners, sources and licences travel with the notices, and the README says they imply no endorsement
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: CC BY-SA 3.0 (Debian) and CC BY 2.0 (NuGet) ask for attribution and the licence's address, Apache-2.0 (OCI) for its
+text; Debian asks that SPI's ownership be acknowledged prominently and that affiliation be disclaimed; the Linux Foundation
+asks for a trademark notice; npm asks materials that refer to npm to say "npm is a registered trademark of npm, Inc.". The
+UI's third-party notices are `/ui/<locale>/3rdpartylicenses.txt` (Q-UI-144), linked from the Installation card of the
+system status.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `web/public/formats/NOTICE.txt`, served next to the logos and appended by `build:embed` to the notices, plus a paragraph in the README (chosen) | One section per logo (file, SHA-256, source at its commit, owner, licence, trademark line) and the sentence that no owner is affiliated with or endorses trove; the build fails without it | The notice travels with the files and with the notices of the build; the README is the project's front page, where Debian's "prominently" is met | Two places say the same in different lengths |
+| (b) Only in `3rdpartylicenses.txt` | The text in `build-embed.mjs` | One place | The logo directory carries no notice of its own; the README says nothing |
+| (c) A line in the UI | A footer or an about panel | Seen by every user | The UI has no footer, and the logos stand beside the names they denote |
+
+**Choice:** (a). The Apache-2.0 text ships as `formats/oci/LICENSE.txt`, the artwork repository's file unchanged.
+**Rationale:** each licence wants its notice where the files go, and a build that drops the notice must fail like one that
+drops Inter's licence (Q-UI-144). The development agent revisits (c) if an owner asks for a statement inside the product.
+
+**Applied in the spec:** none beyond Q-UI-225. Code: [NOTICE.txt](../../web/public/formats/NOTICE.txt),
+[build-embed.mjs](../../web/scripts/build-embed.mjs), the README's licence section. Tests: `TestR_UI_001_ThirdPartyNotices`
+([notices_test.go](../../internal/webui/notices_test.go)), the `Q-UI-227` case in
+[format-icon.spec.ts](../../web/src/app/shared/format-icon.spec.ts).
+
 ### Q-API-246 · An operation that is allowed while the installation is read-only declares `x-trove-maintenance: allowed`
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -9656,4 +9791,34 @@ snippets, besides the base URL that the format list already serves. The name is 
 read a developer's environment which variable holds a trove token. What makes it real: anonymous access on, a variable
 name other than the default, and an attacker with read access to process environments of developer machines or CI
 runners, who could read every variable anyway.
+
+### H-877 · The OCI logo rests on a non-commercial use under the Linux Foundation's terms
+
+Component: the format icon of `oci` ([Q-UI-225](#q-ui-225--a-format-shows-its-owners-logo-where-the-owners-terms-allow-it-else-the-neutral-glyph)).
+Subject: every installation that holds an OCI repository. Dormant today: trove is an open-source project and is not sold.
+The Linux Foundation's trademark usage permits a logo expressly only as a link to the project and for private
+merchandise, and asks for written permission for a logo "in any commercial or marketing context"; a project's own
+interface that names a format beside its logo is neither permitted nor forbidden in words. trove follows every other rule
+of the page (official files, no colour change, nothing on top, smaller than the name, the trademark notice). What makes it
+real: trove sold or run as a paid service with the logo in its interface, or a request of the Linux Foundation. Then the
+Linux Foundation's written permission, or the neutral glyph for `oci` (one line in `formatIcon`).
+
+### H-878 · The owner and the terms of the NuGet mark are not published
+
+Component: the format icon of `nuget` (Q-UI-225). Subject: every installation that holds a NuGet repository. Live today.
+The logo's copyright licence is the CC BY 2.0 of the NuGet project's media repository, which publishes the files for the
+community. No trademark guideline for the NuGet name or logo was found from the NuGet project, the .NET Foundation or
+Microsoft; nuget.org's terms (Microsoft) reserve Microsoft's logos and product icons, and Microsoft's trademark list (FY27Q2)
+does not name NuGet. Not verified: who holds a trademark in the NuGet logo, and whether that holder counts it among
+Microsoft's product icons. What makes it real: such a holder stating that the logo needs a licence. Then the neutral glyph
+for `nuget`.
+
+### H-879 · An owner's terms can change after the day they were read
+
+Component: the format logos and their notice ([NOTICE.txt](../../web/public/formats/NOTICE.txt)). Subject: every
+installation. Live from the day after 2026-11-11, when the terms of Q-UI-225 were read. npm's policy calls itself a living
+document, Docker and the Linux Foundation reserve changes without notice, and nothing in trove reads the pages again. What
+makes it real: an owner that narrows its terms (Debian, NuGet, the Linux Foundation) while trove still shows its logo, or one
+that opens them (npm, Red Hat, Docker) while trove still shows the glyph. Hardening: read the pages of the table in Q-UI-225
+again when a format is added and before the first stable release, and record the day in the notice.
 

@@ -49,7 +49,7 @@ Besides `serve`, the binary has these commands:
 | `trove admin …` | Bootstrap and recovery: validate the configuration, the break-glass account, service accounts and their tokens, ending sessions, disabling a user. See [Installation](installation.md#bootstrap-and-recovery-commands). |
 | `trove backup` | The backup of the database and the blobs to a target bucket of its own: `create`, `list`, `verify`, `delete`, `prune` and `restore`. The chart runs `create` as the CronJob `<fullname>-backup` once `backup.enabled: true` is set (off by default) and `restore` as the Job `<fullname>-restore` with `restore.enabled`. See [Backup and restore](backup-and-restore.md).
 
-The web UI is built into the binary with the licences of the software it bundles. Every installation serves their notices as plain text at `/ui/<locale>/3rdpartylicenses.txt`, for example `https://trove.example.com/ui/en/3rdpartylicenses.txt`, with the same English text under `/ui/de/`. The Installation card of the system status screen links the file of its build.
+The web UI is built into the binary with the licences of the software it bundles. Every installation serves their notices as plain text at `/ui/<locale>/3rdpartylicenses.txt`, for example `https://trove.example.com/ui/en/3rdpartylicenses.txt`, with the same English text under `/ui/de/`. The Installation card of the system status screen links the file of its build. The file ends with the format logos the UI shows beside the names of Debian, NuGet and OCI: each logo's owner, source and licence, and the statement that the owners do not endorse trove.
 
 ## The dependencies
 

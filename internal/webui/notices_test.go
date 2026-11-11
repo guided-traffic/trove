@@ -12,6 +12,9 @@ import (
 // noticesFile is the file that web/scripts/build-embed.mjs writes into every locale directory (Q-UI-144).
 const noticesFile = "3rdpartylicenses.txt"
 
+// formatLogoNotice is the notice of the format logos below web/public, which build-embed.mjs appends to the notices (Q-UI-227).
+const formatLogoNotice = "formats/NOTICE.txt"
+
 // noticesSample has the shape of the built file: the section of Inter, whose font licence is OFL-1.1, and the section of the
 // icon font, which is Apache-2.0 (build-embed.mjs appends it, because Angular's file does not carry it).
 const noticesSample = `--------------------------------------------------------------------------------
@@ -70,6 +73,9 @@ func TestR_UI_001_ThirdPartyNotices(t *testing.T) {
 		if !strings.Contains(string(src), "writeFileSync(join(target, locale, notices), text)") {
 			t.Error("web/scripts/build-embed.mjs does not write the notices into each locale directory")
 		}
+		if !strings.Contains(string(src), "const formatLogos = '"+formatLogoNotice+"'") {
+			t.Errorf("web/scripts/build-embed.mjs does not append %s, the notice of the format logos (Q-UI-227)", formatLogoNotice)
+		}
 	})
 
 	t.Run("the notices are not a hashed file, so the store neither holds nor serves them (Q-UI-144)", func(t *testing.T) {
@@ -105,7 +111,26 @@ func TestR_UI_001_ThirdPartyNotices(t *testing.T) {
 		}
 		for _, l := range []string{"en", "de"} {
 			path := "/ui/" + l + "/" + noticesFile
-			assertNotices(t, do(h, "GET", path), path)
+			rec := do(h, "GET", path)
+			assertNotices(t, rec, path)
+			assertFormatLogos(t, h, l, rec.Body.String())
 		}
 	})
+}
+
+// assertFormatLogos checks the format logos of an embedded build (Q-UI-225, Q-UI-227): their notice is part of the notices
+// of the locale, and each logo is served from the copies of web/public, unhashed and revalidated like the notices.
+func assertFormatLogos(t *testing.T, h http.Handler, locale, notices string) {
+	t.Helper()
+	if !strings.Contains(notices, "trove is not affiliated with, sponsored or endorsed by any of them.") {
+		t.Errorf("%s: the notices lack the format logos of %s", locale, formatLogoNotice)
+	}
+	for _, logo := range []string{"formats/deb/openlogo-nd.svg", "formats/nuget/nuget.svg", "formats/oci/oci-icon-color.svg"} {
+		p := "/ui/" + locale + "/" + logo
+		got := do(h, "GET", p)
+		hd := got.Header()
+		if got.Code != http.StatusOK || hd.Get("Content-Type") != "image/svg+xml" || hd.Get("Cache-Control") != "no-cache" {
+			t.Errorf("%s: code %d, Content-Type %q, Cache-Control %q", p, got.Code, hd.Get("Content-Type"), hd.Get("Cache-Control"))
+		}
+	}
 }

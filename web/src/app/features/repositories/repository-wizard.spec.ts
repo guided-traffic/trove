@@ -3,10 +3,15 @@ import { Router } from '@angular/router';
 import { ApiError } from '../../api/problem';
 import { FormatDescriptor, RepositoriesApi } from '../../api/repositories-api';
 import {
+  ANSIBLE_FORMAT,
+  DEB_FORMAT,
   FakeRepositoriesApi,
   GENERIC_FORMAT,
+  NUGET_FORMAT,
+  OCI_FORMAT,
   PACKAGE_FORMAT,
 } from '../../api/testing/fakes-catalog';
+import { spokenText } from '../../testing/axe';
 import { SystemApi } from '../../api/system-api';
 import { FakeSystemApi, sampleInfo } from '../../api/testing/fakes';
 import { button, expectAccessible, renderScreen, settle, text, type } from '../../testing/screen';
@@ -71,11 +76,40 @@ describe('Repository creation wizard', () => {
     expect(text(r.root.querySelector('nav')!)).toMatch(/1\. Format.*2\. Class.*3\. Basic settings/);
     expect(r.root.querySelector('nav [aria-current="step"]')?.textContent).toContain('1. Format');
     expect(tileNames(r)).toEqual(['Generic', 'npm', 'NuGet']);
-    for (const t of tiles(r)) {
-      expect(t.querySelector('.material-icons')?.getAttribute('aria-hidden')).toBe('true');
-    }
     expect(button(r.root, 'Next').disabled).toBe(true);
     expect(r.root.querySelector('input[name="class"]')).toBeNull();
+    await expectAccessible(r.root);
+  });
+
+  it('R-UI-021 Q-UI-225 a tile shows the owner logo of its format or the neutral glyph, and is named by the display name alone', async () => {
+    const r = await renderScreen(RepositoryWizard, {
+      inputs: { project: 'web' },
+      setup: (get) =>
+        ((get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [
+          GENERIC_FORMAT,
+          FAKE_NPM,
+          NUGET_FORMAT,
+          OCI_FORMAT,
+          DEB_FORMAT,
+          ANSIBLE_FORMAT,
+        ]),
+    });
+    const icon = (t: HTMLElement) => {
+      const img = t.querySelector('trove-format-icon img');
+      return img ? `${img.getAttribute('src')} alt="${img.getAttribute('alt')}"` : t.querySelector('trove-format-icon .material-icons')?.textContent?.trim();
+    };
+    expect(tiles(r).map((t) => [spokenText(t), icon(t)])).toEqual([
+      ['Generic', 'inventory_2'],
+      ['npm', 'inventory_2'],
+      ['NuGet', 'formats/nuget/nuget.svg alt=""'],
+      ['OCI (Docker)', 'formats/oci/oci-icon-color.svg alt=""'],
+      ['Debian (APT)', 'formats/deb/openlogo-nd.svg alt=""'],
+      ['Ansible Galaxy', 'inventory_2'],
+    ]);
+    for (const t of tiles(r)) {
+      expect(t.querySelector('trove-format-icon')?.classList.contains('tile-icon')).toBe(true);
+      expect(t.querySelector('trove-format-icon .material-icons')?.getAttribute('aria-hidden') ?? 'true').toBe('true');
+    }
     await expectAccessible(r.root);
   });
 

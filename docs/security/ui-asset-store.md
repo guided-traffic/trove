@@ -18,7 +18,7 @@ stays. It describes [internal/webui/shared.go](../../internal/webui/shared.go) a
   table; a request can only read it.
 - **Only hashed names.** A file is published only when its path below the locale matches the hashed pattern of R-UI-001
   (`webui.IsHashed`, [Q-UI-140](../spec/api-and-ui.md#q-ui-140--which-file-names-of-the-ui-build-are-hashed)): at most two plain
-  directories, then `<name>-<8 characters>.<extension>`. `index.html`, the copies of `web/public` (the favicon) and every other
+  directories, then `<name>-<8 characters>.<extension>`. `index.html`, the copies of `web/public` (the favicon, the logo files, the format logos of [Q-UI-226](../spec/api-and-ui.md#q-ui-226--a-logo-is-an-image-of-the-owners-file-and-the-dark-scheme-shows-the-owners-light-variant-or-a-plate)) and every other
   path are never published, and `build:embed` fails a build in which a copy of `web/public` would match the pattern. The table's
   CHECK refuses a path with a dot segment or a character outside `[A-Za-z0-9_./-]`.
 - **One row per name, renewed by content.** A replica renews only the rows that hold its own bytes. A row with other bytes stays as

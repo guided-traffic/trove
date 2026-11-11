@@ -121,6 +121,9 @@
   // The logo's hues (web/scripts/brand-logo.mjs; the inline mark of shared/brand/trove-mark.ts reads them).
   --trove-brand-blue: light-dark(#0a84ff, #1fb6ff);
   --trove-brand-red: light-dark(#ff1f4b, #ff2d55);
+  // The plate behind a format logo that has no variant of its own for a dark ground (Debian's swirl is 1.9:1 to 2.3:1 on
+  // the dark surfaces), shared/format-icon.ts, Q-UI-226: none in the light scheme, the light text tone in the dark one.
+  --trove-logo-plate: light-dark(transparent, #ececef);
 
   // Controls (_controls.scss, Q-UI-126, Q-UI-128): buttons, text fields, selects and checkboxes of trove's own, in the
   // reference's measures (32 px, 8 px round, label weight 400) and colours. The default button is white with a grey
