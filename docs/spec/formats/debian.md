@@ -3725,15 +3725,42 @@ Context: the task `deb-index-refresh` failed three times with `closed pool` in T
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) The part is part of the registry (chosen) | `RemoteHandlers` carries `Refresh`; `RegisterJobs` builds the task's handler from it, the local and virtual parts are plain calls of the bound indexer; `RegisterRefreshHook` and the list are removed | A registry holds its own part; nothing outlives a replica; fewer moving parts than a hook list | The virtual part is no longer registered from an `init` of its file |
+| (a) The part is part of the registry (chosen) | `Handlers` (then `RemoteHandlers`) carries `Refresh`; `RegisterJobs` builds the task's handler from it, the local and virtual parts are plain calls of the bound indexer; `RegisterRefreshHook` and the list are removed | A registry holds its own part; nothing outlives a replica; fewer moving parts than a hook list | The virtual part is no longer registered from an `init` of its file |
 | (b) Unregister the hook at the shutdown | `Stop` removes the closure | Keeps the list | Another process-wide mutable list to keep in step with every shutdown path; a replica that fails to start leaves its hook |
 | (c) Skip a part whose database is closed | The hook checks the pool | Small | Hides the stale part instead of removing it; the part of a stopped replica would still read the wrong stack's rows if its pools were open |
 
-**Choice:** (a), in [jobs.go](../../../internal/formatdata/deb/jobs.go) and [refresh.go](../../../internal/formatdata/deb/refresh.go); the composition root hands the part over in `debRemoteHandlers` ([wire_deb_remote.go](../../../internal/app/wire_deb_remote.go)).
+**Choice:** (a), in [jobs.go](../../../internal/formatdata/deb/jobs.go) and [refresh.go](../../../internal/formatdata/deb/refresh.go); the composition root hands the part over in `debHandlers` ([wire_deb_remote.go](../../../internal/app/wire_deb_remote.go)).
 
-**Rationale:** A value that belongs to one replica must be held by the registry that replica builds, not by a global. The development agent would revisit the choice if a second kind of task part appeared that is not tied to a replica: it would then be a field of the same struct. The bound indexer (`BindIndexer`) is still one per process; a process that runs two replicas at once uses the last one's builder for the index jobs (not a production shape, noted as finding F-124).
+**Rationale:** A value that belongs to one replica must be held by the registry that replica builds, not by a global. The development agent would revisit the choice if a second kind of task part appeared that is not tied to a replica: it would then be a field of the same struct. The bound indexer (`BindIndexer`) is still one per process; a process that runs two replicas at once uses the last one's builder for the index jobs (not a production shape; closed by [Q-DEB-121](#q-deb-121--the-index-builder-is-held-by-the-replica-that-builds-it-not-by-the-process)).
 
 **Applied in the spec:** none (R-DEB-010 and R-DEB-026 are unchanged). Test: `TestR_DEB_010_TheRefreshTaskRunsTheRemotePartOfItsOwnRegistryOnly` ([refresh_test.go](../../../internal/formatdata/deb/refresh_test.go)).
+
+### Q-DEB-121 · The index builder is held by the replica that builds it, not by the process
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: [Q-DEB-120](#q-deb-120--the-periodic-refresh-task-runs-the-remote-part-of-its-own-registry-only) moved the remote part of the refresh task into the registry
+and left `BindIndexer` and `Bound()`, one atomic pointer per process, which the composition root set on every replica that claims jobs (finding F-125). Verified in the code: a process
+that starts two replicas, as the integration tests do (`deblocal` starts up to three of them), ran the jobs `deb-index` and the local and virtual parts of
+`deb-index-refresh` of both on the builder of the replica started last, with its pools, publication port and fault injection. Not live in production,
+where a process holds one replica.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The builder travels in the registry's handlers (chosen) | `Handlers.Indexer` (a getter, because the replica builds the builder after the registry) is read by `classHandler` and `runRefresh`; the App keeps its builder in a `late` value and gives it to tests as `App.DebIndexer()`; the process-wide pointer, `BindIndexer`, `Bound()` and the exported `RunIndexJob` are removed | The way Q-DEB-120 did it for the remote part: nothing outlives a replica, and a test addresses the builder of the replica it started | The tests that injected a fault through `debdata.Bound()` name their replica |
+| (b) A map from replica to builder in the package | `BindIndexer(name, x)` | Keeps the call shape | Another process-wide list that has to follow every shutdown |
+| (c) Leave it, document the limit | The pointer stays | No change | Two replicas in a process stay unequal, and a stopped replica's builder is what the next test's jobs run on |
+
+**Choice:** (a), in [jobs.go](../../../internal/formatdata/deb/jobs.go) (`Handlers`, `RegisterJobs`, `classHandler`), [build.go](../../../internal/formatdata/deb/build.go) (`runIndexJob`),
+[refresh.go](../../../internal/formatdata/deb/refresh.go) (`runRefresh`) and the composition root ([wire_deb_index.go](../../../internal/app/wire_deb_index.go),
+[wire_deb_remote.go](../../../internal/app/wire_deb_remote.go)). `RemoteHandlers` is renamed `Handlers`: it holds more than the remote class's now.
+
+**Rationale:** The same rule as Q-DEB-120: what belongs to one replica is held by the registry that replica builds. The development agent would revisit the choice if a replica
+came to build two indexers (one per queue, say), which would then be two fields of the same struct.
+
+**Applied in the spec:** none (R-DEB-010 is unchanged). Tests: `TestR_DEB_010_TheIndexJobRunsTheBuilderOfItsOwnRegistry` and
+`TestR_DEB_010_AnIndexJobOfARegistryWithoutABuilderFailsPermanently` ([indexer_binding_test.go](../../../internal/formatdata/deb/indexer_binding_test.go)),
+`TestR_DEB_010_EveryReplicaHasItsOwnIndexBuilder` ([replicas_test.go](../../../test/integration/deblocal/replicas_test.go)).
 
 ## What this does not cover
 

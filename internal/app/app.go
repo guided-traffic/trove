@@ -168,6 +168,7 @@ type App struct {
 	semver2    late[*nugetdata.Semver2]
 	ociSweep   late[*ocidata.Sweeper]
 	debRemote  late[*debdata.RemoteJobs]
+	debIndexer late[*debdata.Indexer]
 	// ansibleReindex is the handler of the job ansible-reindex (wire_ansible.go).
 	ansibleReindex late[jobs.Handler]
 	// ansibleDocsFill is the handler of the job ansible-docs-fill (wire_ansible.go).

@@ -19,7 +19,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	debdata "github.com/guided-traffic/trove/internal/formatdata/deb"
 	"github.com/guided-traffic/trove/internal/formats/deb/control"
 	"github.com/guided-traffic/trove/internal/openpgp"
 	"github.com/guided-traffic/trove/test/integration/testenv"
@@ -399,7 +398,7 @@ func TestR_DEB_010_AStoppedBuildLeavesThePreviousGeneration(t *testing.T) {
 	e.waitIndex("stable", seqOf(e, a, "stable"))
 	before := e.get("dists/stable/InRelease", e.tokA)
 
-	x := debdata.Bound()
+	x := e.r.App.DebIndexer()
 	if x == nil {
 		t.Fatal("no index builder is bound")
 	}

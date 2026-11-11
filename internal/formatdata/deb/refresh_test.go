@@ -14,9 +14,9 @@ func TestR_DEB_010_TheRefreshTaskRunsTheRemotePartOfItsOwnRegistryOnly(t *testin
 	var stale, own int
 	stopped := errors.New("closed pool")
 	first := jobs.NewRegistry()
-	RegisterJobs(first, RemoteHandlers{Refresh: func(context.Context, *jobs.Run) error { stale++; return stopped }})
+	RegisterJobs(first, Handlers{Refresh: func(context.Context, *jobs.Run) error { stale++; return stopped }})
 	second := jobs.NewRegistry()
-	RegisterJobs(second, RemoteHandlers{Refresh: func(context.Context, *jobs.Run) error { own++; return nil }})
+	RegisterJobs(second, Handlers{Refresh: func(context.Context, *jobs.Run) error { own++; return nil }})
 
 	spec, ok := second.Kind(RefreshTaskName)
 	if !ok {

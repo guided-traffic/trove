@@ -5,6 +5,7 @@ package deblocal
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -60,6 +61,23 @@ func (e *env) allByHashOf(r *testenv.Replica, suite string) []string {
 		e.t.Fatal("the Release lists no index file")
 	}
 	return out
+}
+
+// R-DEB-010: every replica of a process that claims jobs has an index builder of its own, so a fault injected into one does not reach the
+// builds of another (the builder was one pointer per process before).
+func TestR_DEB_010_EveryReplicaHasItsOwnIndexBuilder(t *testing.T) {
+	e := newEnvOpts(t, envOpts{replicas: 2})
+	a, b := e.rs[0].App.DebIndexer(), e.rs[1].App.DebIndexer()
+	if a == nil || b == nil {
+		t.Fatalf("builders = %v and %v, want one on each replica", a, b)
+	}
+	if a == b {
+		t.Fatal("both replicas share one index builder")
+	}
+	a.BeforeCommit = func(string) error { return errors.New("injected fault") }
+	if b.BeforeCommit != nil {
+		t.Error("the fault injected into the first replica's builder is on the second's")
+	}
 }
 
 // R-DEB-010, R-DEB-031: fifty uploads of distinct packages in parallel through three replicas are all listed in the published index of

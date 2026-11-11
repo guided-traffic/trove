@@ -167,7 +167,8 @@ purge and writes `deb.package.deleted` with its journal entry. A file in the tra
 deletion, restore from the trash, withholding and reinstating a file. It enqueues `deb-index` under the key `index:<repository id>` after
 `deb.index_delay` (a waiting job is moved to the earlier time, Q-ARCH-384); a key change and a settings change enqueue at once
 (`Options.KeysChanged`). The task `deb-index-refresh` ([refresh.go](../../internal/formatdata/deb/refresh.go)) enqueues for a local repository whose
-retention is due or that has changes no build published, for a virtual repository whose check is due, and runs the remote part that `RemoteHandlers.Refresh` carries, so a registry holds its own part (Q-DEB-120).
+retention is due or that has changes no build published, for a virtual repository whose check is due, and runs the remote part that `Handlers.Refresh` carries, so a registry holds its own part (Q-DEB-120). The local and virtual parts and the job `deb-index`
+run on `Handlers.Indexer`, the builder of the replica the registry belongs to; a process that starts two replicas has two (Q-DEB-121).
 
 **The job.** `deb-index` ([build.go](../../internal/formatdata/deb/build.go), `Indexer.Build`; [jobs.go](../../internal/formatdata/deb/jobs.go) dispatches a
 remote repository to the remote's handler, [below](#the-remote-class), and `Indexer.Build` a virtual one to `buildVirtual`, [below](#the-virtual-class)) reads the repository from the job's target key and `IndexJobArgs` from its
@@ -193,7 +194,7 @@ paths the commit removes: the current generation, the superseded ones younger th
 
 **Metrics and the delay.** `Indexer.Observe` records `trove_deb_index_builds_total{class,outcome}`, `trove_deb_index_build_seconds` and
 `trove_deb_index_delay_seconds` ([wire_deb_index.go](../../internal/app/wire_deb_index.go)). The delay runs from `deb_suites.dirty_since` to the
-commit. The composition root binds the builder on a replica that claims jobs (`startDebIndexer`).
+commit. The composition root builds the indexer on a replica that claims jobs (`startDebIndexer`) and keeps it in the App; the integration tests reach the one of their replica through `App.DebIndexer()`.
 
 ### Publication, builds and the reindex
 

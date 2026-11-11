@@ -152,7 +152,7 @@ func (a *App) registerFormatJobs(r *jobs.Registry) {
 		spec.Schedule, spec.Disabled = t.Schedule, !t.Enabled
 	}
 	r.RegisterTask(ocidata.SweepJobKind, spec)
-	debdata.RegisterJobs(r, a.debRemoteHandlers())
+	debdata.RegisterJobs(r, a.debHandlers())
 	ansibledata.RegisterJobs(r, ansibledata.Handlers{Reindex: a.ansibleReindexHandler(), DocsFill: a.ansibleDocsFillHandler(), ImportTaskKeep: a.cfg.Ansible.ImportTaskKeep})
 }
 

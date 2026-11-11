@@ -51,9 +51,10 @@ func (a *App) startDebRemote(ports map[formats.ID]any) error {
 	return nil
 }
 
-// debRemoteHandlers are the handlers of the jobs the remote class runs; they find the runtime when a job runs.
-func (a *App) debRemoteHandlers() debdata.RemoteHandlers {
-	return debdata.RemoteHandlers{
+// debHandlers are the handlers of the Debian jobs and the replica's index builder; they find the runtime when a job runs.
+func (a *App) debHandlers() debdata.Handlers {
+	return debdata.Handlers{
+		Indexer: func() *debdata.Indexer { x, _ := a.debIndexer.get(); return x },
 		Parse: a.debRemote.handler("Debian remote parse", func(ctx context.Context, j *debdata.RemoteJobs, run *jobs.Run) error {
 			return j.RunParse(ctx, run)
 		}),

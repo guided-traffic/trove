@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/formats/deb/index"
@@ -104,19 +103,15 @@ func (x *Indexer) built(class, outcome string, started time.Time) {
 	}
 }
 
-var bound atomic.Pointer[Indexer]
-
-// Bound returns the Indexer the job runs, or nil. The integration tests set its fault injection through it.
-func Bound() *Indexer { return bound.Load() }
-
-// BindIndexer sets the Indexer the job deb-index runs. The composition root calls it on a replica that claims jobs; a process that
-// binds none fails the job permanently.
-func BindIndexer(x *Indexer) { bound.Store(x) }
-
-// RunIndexJob is the handler of the job deb-index (R-DEB-010): one build of the indexes of a local repository from the rows of a
-// snapshot, signed and published through the publication port.
-func RunIndexJob(ctx context.Context, run *jobs.Run) error {
-	x := bound.Load()
+// runIndexJob is the handler of the job deb-index (R-DEB-010): one build of the indexes of a local or virtual repository from the rows of
+// a snapshot, signed and published through the publication port. indexer gives the Indexer of the registry the handler was built for
+// (Handlers.Indexer), asked when a job runs because the replica builds it after the registry; nil, or a nil result, fails the job
+// permanently.
+func runIndexJob(ctx context.Context, run *jobs.Run, indexer func() *Indexer) error {
+	var x *Indexer
+	if indexer != nil {
+		x = indexer()
+	}
 	if x == nil {
 		return jobs.Permanent(errors.New("deb: this process builds no indexes"))
 	}

@@ -17,7 +17,8 @@ import (
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
-// startDebIndexer binds the builder of the job deb-index (R-DEB-010) on a replica that claims jobs. The publication port is the item
+// startDebIndexer builds the indexer of the job deb-index (R-DEB-010) on a replica that claims jobs and keeps it in the App, where the
+// registry's handlers (debHandlers) and [App.DebIndexer] find it; a second replica of the process has its own. The publication port is the item
 // store, which the files area builds later, so the builder asks for it when a build runs.
 func (a *App) startDebIndexer(ports map[formats.ID]any) {
 	st, ok := ports[debformat.ID].(*debdata.Store)
@@ -31,7 +32,7 @@ func (a *App) startDebIndexer(ports map[formats.ID]any) {
 		delay:   m.NewHistogramVec("trove_deb_index_delay_seconds", "From the first change a published Debian generation covers to its commit (R-DEB-010, R-DEB-033).", debDelayBuckets(), "class"),
 	}
 	remote, _ := a.debRemote.get()
-	debdata.BindIndexer(&debdata.Indexer{
+	a.debIndexer.set(&debdata.Indexer{
 		Observe: obs, Remote: remote, Virtual: debVirtualRepos{a: a, st: st}, Local: debMemberIndexes{a: a},
 		VirtualInterval: a.cfg.Deb.VirtualIndexInterval,
 		Store:           st,
@@ -45,6 +46,13 @@ func (a *App) startDebIndexer(ports map[formats.ID]any) {
 		ByHashKeep: a.cfg.Deb.ByHashKeep,
 		Log:        a.log.With("component", "deb-index"),
 	})
+}
+
+// DebIndexer is this replica's builder of the Debian indexes, or nil on a replica that claims no jobs. The integration tests set its
+// fault injection and enqueue the due builds through it, each on the replica it started.
+func (a *App) DebIndexer() *debdata.Indexer {
+	x, _ := a.debIndexer.get()
+	return x
 }
 
 // debRepos reads the repository a build is for: its names, its class and the settings of its indexes (R-DEB-008).

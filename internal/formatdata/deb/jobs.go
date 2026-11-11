@@ -12,7 +12,7 @@ import (
 // The job kinds and the task of the Debian format (R-DEB-010, R-DEB-023, R-DEB-026, Q-DEB-6, Q-DEB-33).
 const (
 	// IndexJobKind builds the indexes of a local or virtual repository (queue index, coalesce, key "index:<repository id>", the key
-	// R-REPO-016 uses for a reindex). Its handler is [RunIndexJob] (build.go).
+	// R-REPO-016 uses for a reindex). Its handler is [runIndexJob] (build.go).
 	IndexJobKind = "deb-index"
 	// RemoteParseJobKind parses a remote's stored Packages or Sources index into rows (queue index, coalesce per repository, release
 	// directory and index path). Its handler is [RunRemoteParseJob] (remote_parse.go).
@@ -38,20 +38,24 @@ const (
 	refreshTimeout     = 2 * time.Minute
 )
 
-// RemoteHandlers are the handlers of the jobs the remote class runs: the parse of an index and the deb-index job of a remote
-// repository. The composition root builds them over the jobs' runtime ([RemoteJobs]) when it has one; a nil handler answers the
-// permanent not_implemented of a job nothing can run.
-type RemoteHandlers struct {
+// Handlers are what the composition root hands to [RegisterJobs]: the handlers of the jobs the remote class runs (the parse of an index
+// and the deb-index job of a remote repository, built over the jobs' runtime [RemoteJobs] when it has one; a nil handler answers the
+// permanent not_implemented of a job nothing can run) and the index builder of the replica. Everything a replica owns travels here, in
+// the registry it builds, and never in a variable of the process (Q-DEB-120, Q-DEB-121).
+type Handlers struct {
 	Parse jobs.Handler
 	Index jobs.Handler
 	// Refresh is the remote part of the periodic task deb-index-refresh (RemoteJobs.Refresh).
 	Refresh jobs.Handler
+	// Indexer gives the builder of this replica's local and virtual repositories, asked when a job or the task runs; it returns nil on a
+	// replica that claims no jobs, and the job then fails permanently.
+	Indexer func() *Indexer
 }
 
 // RegisterJobs registers the kinds and the task in the registry the composition root freezes. The job deb-index serves two classes:
 // the handler looks at the repository the job is for and hands a remote repository to the remote's handler (re-verification and
 // housekeeping), every other to the index build.
-func RegisterJobs(r *jobs.Registry, remote RemoteHandlers) {
+func RegisterJobs(r *jobs.Registry, remote Handlers) {
 	notBuilt := func(what string) jobs.Handler {
 		return func(context.Context, *jobs.Run) error { return jobs.Permanent(errNotBuilt(what)) }
 	}
@@ -66,19 +70,19 @@ func RegisterJobs(r *jobs.Registry, remote RemoteHandlers) {
 		refresh = func(context.Context, *jobs.Run) error { return nil } // a replica without the runtime claims no job; the task runs where jobs run
 	}
 	r.RegisterKind(IndexJobKind, jobs.KindSpec{
-		Queue: "index", DedupMode: jobs.Coalesce, MaxAttempts: 5, Timeout: indexTimeout, Handler: classHandler(index),
+		Queue: "index", DedupMode: jobs.Coalesce, MaxAttempts: 5, Timeout: indexTimeout, Handler: classHandler(index, remote.Indexer),
 	})
 	r.RegisterKind(RemoteParseJobKind, jobs.KindSpec{
 		Queue: "index", DedupMode: jobs.Coalesce, MaxAttempts: 5, Timeout: remoteParseTimeout, Handler: parse,
 	})
 	r.RegisterKind(RefreshTaskName, jobs.KindSpec{
-		Queue: "maintenance", DedupMode: jobs.Exclusive, MaxAttempts: 3, Timeout: refreshTimeout, Handler: runRefresh(refresh),
+		Queue: "maintenance", DedupMode: jobs.Exclusive, MaxAttempts: 3, Timeout: refreshTimeout, Handler: runRefresh(refresh, remote.Indexer),
 	})
 	r.RegisterTask(RefreshTaskName, jobs.TaskSpec{Schedule: RefreshSchedule})
 }
 
 // classHandler is the handler of deb-index: a remote repository's job is the remote's, any other the build's.
-func classHandler(remote jobs.Handler) jobs.Handler {
+func classHandler(remote jobs.Handler, indexer func() *Indexer) jobs.Handler {
 	return func(ctx context.Context, run *jobs.Run) error {
 		id, err := strconv.ParseInt(run.TargetKey, 10, 64)
 		if err == nil {
@@ -87,6 +91,6 @@ func classHandler(remote jobs.Handler) jobs.Handler {
 				return remote(ctx, run)
 			}
 		}
-		return RunIndexJob(ctx, run)
+		return runIndexJob(ctx, run, indexer)
 	}
 }

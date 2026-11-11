@@ -34,7 +34,7 @@ func (e *venv) ready(name string) {
 func (e *venv) rebuild() {
 	e.t.Helper()
 	time.Sleep(1300 * time.Millisecond)
-	if err := debdata.Bound().EnqueueVirtualsDue(context.Background()); err != nil {
+	if err := e.r.App.DebIndexer().EnqueueVirtualsDue(context.Background()); err != nil {
 		e.t.Fatal(err)
 	}
 }

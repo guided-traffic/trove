@@ -14,10 +14,14 @@ import (
 // (refresh_virtual.go), and runs the remote part (refresh_remote.go). It deletes nothing itself: the removals happen in the commit of
 // the build. The remote part is the one of the registry the handler was built for, never one a process-wide list collected from
 // earlier replicas (Q-DEB-120): a process that builds a second replica, as the integration tests do, would otherwise run the part of
-// a stopped one on its closed pools.
-func runRefresh(remote jobs.Handler) jobs.Handler {
+// a stopped one on its closed pools. The local and virtual parts are those of the registry's own Indexer (Q-DEB-121).
+func runRefresh(remote jobs.Handler, indexer func() *Indexer) jobs.Handler {
 	return func(ctx context.Context, run *jobs.Run) error {
-		if x := bound.Load(); x != nil {
+		var x *Indexer
+		if indexer != nil {
+			x = indexer()
+		}
+		if x != nil {
 			if err := x.EnqueueDue(ctx); err != nil {
 				return err
 			}
