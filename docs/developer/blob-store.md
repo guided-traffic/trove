@@ -232,7 +232,8 @@ session step: `uploadSessionsAborted, uploadSessionsCleaned, uploadObjectsDelete
 4. deletes the claimed objects (`DeleteObjects` when `batch_delete`, else `delete_concurrency` parallel `DeleteObject`)
    only while less than `handover_delay − delete_settle` has passed on the collector's own clock since the reading
    before the earliest claim, with that instant as the call's deadline; records `object_deleted_at`;
-5. waits up to `delete_settle` (plus two polls) to drop the rows it deleted.
+5. waits up to `delete_settle` (plus two polls) to drop the rows it deleted; the wait ends with a pass that started after its deadline
+   ([Q-STOR-216](../spec/storage.md#q-stor-216--the-settle-wait-of-a-collection-run-ends-with-a-pass-that-started-after-its-deadline)).
 
 On cancellation (a drain) the run cancels its S3 calls, waits for them, records the deletes that succeeded and sets
 `state_changed_at = now() − (handover_delay − delete_settle)` on its other claims, so the run that continues finishes
@@ -241,7 +242,7 @@ them after `delete_settle`. A crash needs none of this: the rows wait for `hando
 Extension points on `Collector`: `Hold` (the backup hold of step 2b, runs in the claim transaction; nil holds nothing),
 `Paused` (replaceable; the default reads the key-value row `system_state.deletions_paused_at` because `system_state`
 in migration 00001 is key-value, not the column the sketch in R-HA-025 shows) and `Fault` (a test hook called at named
-points, `claim:before|locked|checked|committed`, `delete:before|after`, `record:after`, `finish:delete`, `drop:before`;
+points, `claim:before|locked|checked|committed`, `delete:before|after`, `record:after`, `finish:delete`, `drop:before`, `settle:counted`;
 a non-nil error ends the run at once as a process kill would, with `errors.Is(err, blob.ErrFault)`).
 
 Not in this package yet: the trash purge that R-STOR-025 puts at the start of a run (its package does not exist; the job handler calls

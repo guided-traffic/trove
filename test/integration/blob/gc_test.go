@@ -534,3 +534,34 @@ func TestGCTakeoverIsExclusive(t *testing.T) {
 		}
 	})
 }
+
+// R-STOR-024: a run's settle wait ends with a pass over the rows after its deadline. A pass that was cut short by the runner (a stall
+// between the pass and the check of the deadline) must not leave the run's own deleted rows in state deleting although they have settled.
+func TestR_STOR_024_TheSettleWaitEndsWithAPassAfterItsDeadline(t *testing.T) {
+	e := newS3(t, "gc")
+	p := newPG(t)
+	r := newReplica(t, e, p, nil)
+	g, _ := garbage(t, r, "settle.bin")
+
+	stalled := false
+	r.coll.Fault = func(point string) error {
+		// The first pass of the settle wait found the row not yet settled; the run is held here for longer than the wait's deadline
+		// (delete_settle plus two polls), which a loaded runner does between a pass and the check of the deadline.
+		if point == "settle:counted" && !stalled {
+			stalled = true
+			time.Sleep(r.cfg.GC.DeleteSettle*3 + 100*time.Millisecond)
+		}
+		return nil
+	}
+	res := run(t, r, blob.RunOptions{Mode: blob.GCIncremental})
+	if res.Deleted != 1 {
+		t.Fatalf("%+v", res)
+	}
+	if !stalled {
+		t.Fatal("the settle wait never reached its first pass")
+	}
+	if !gone(t, e, p, g) {
+		st, _, ok := p.state(t, g)
+		t.Fatalf("the run ended with the row=%v in state %q: its settle wait ended on a pass from before the deadline", ok, st)
+	}
+}

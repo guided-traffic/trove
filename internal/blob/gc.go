@@ -89,7 +89,8 @@ type Collector struct {
 	Paused func(ctx context.Context) (bool, error)
 	// Fault is a test hook called at named points of a run. A non-nil error ends
 	// the run at once as if the process had been killed there: no hand-over, no
-	// bookkeeping. It returns ErrFault wrapped.
+	// bookkeeping. It returns ErrFault wrapped. The settle wait calls it at
+	// "settle:counted", after each pass, so a test can hold the run there.
 	Fault func(point string) error
 }
 
@@ -809,12 +810,17 @@ func (r *run) drop(ctx context.Context, digests []Digest) error {
 
 // settle waits up to delete_settle so that the rows this run deleted (and the
 // rows handed over to it) are removed before it ends: an upload waiting for such
-// a row is not left until the next scheduled run.
+// a row is not left until the next scheduled run. The wait ends with a pass that
+// started after its deadline, so a pass delayed past the deadline cannot be the
+// last one (Q-STOR-216).
 func (r *run) settle(ctx context.Context) error {
 	// A row this run deleted is removable delete_settle after its delete, which
 	// lies at most that far before now; two polls of slack cover the last one.
 	deadline := r.c.now().Add(r.c.cfg.DeleteSettle + 2*r.c.poll)
 	for {
+		// Read before the pass: when the deadline had passed, the pass below ran after it, so every row this run deleted has settled
+		// in it. A stall between the pass and the check must not end the wait on a pass from before the deadline.
+		expired := !r.c.now().Before(deadline)
 		if _, err := r.finishEligible(ctx); err != nil || r.res.Paused {
 			return err
 		}
@@ -830,7 +836,10 @@ func (r *run) settle(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if soon == 0 || !r.c.now().Before(deadline) {
+		if err := r.fault("settle:counted"); err != nil {
+			return err
+		}
+		if soon == 0 || expired {
 			return nil
 		}
 		t := time.NewTimer(r.c.poll)

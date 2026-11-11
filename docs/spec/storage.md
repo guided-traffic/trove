@@ -5252,6 +5252,24 @@ S3 calls in flight, R-STOR-024). The retention run joins the test when R-STOR-04
 from the start of the run to the eviction (the test then fails with the finish time and the eviction time, not silently).
 **Applied:** `deploy/dev/values-drain.yaml`, `deploy/dev/up.sh` (profile `drain`), `test/e2e/drain_storage_test.go`, `docs/developer/e2e.md`.
 
+### Q-STOR-216 · The settle wait of a collection run ends with a pass that started after its deadline
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `TestGarbageCollection` ("the full sweep finds an unreferenced blob...") failed in Test and Release 42818570044 (`gc_test.go:170`): a blob's object was gone and its row stood in state `deleting` after the run that deleted it ended, 1.35 s into a subtest whose settle is 150 ms. The settle wait (step 5 of R-STOR-024) runs a pass over the settled rows, counts the rows still to settle, and left when the deadline (`delete_settle` plus two polls, 180 ms in the tests) had passed. Verified by a test that holds the run for longer than the deadline between the pass and the check: the run ended with its row in `deleting`. A pass is a few statements, so a runner that stalls for 200 ms between two of them is enough. Production meets it only as a delay: the row is dropped by the next run, and an upload that waits for that row (R-STOR-005) waits for it. Nothing is lost and no object is left behind. Not verified: that the failed run was stalled in that place (the log keeps no timing of the passes).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Widen the deadline | More slack than two polls | One number | The next stall is longer; every run that deletes waits longer |
+| (b) Read the deadline before the pass; the wait ends only with a pass that started after it (chosen) | `expired` is read at the top of the loop, so a pass that began after the deadline is the last one | Exact: a row deleted by this run is removable `delete_settle` after its delete, which is before the wait began, so a pass after the deadline drops it; the wait is not longer when nothing stalls | One more pass in the case that needed it |
+| (c) Leave it to the next run | Accept the delay | Nothing to change | An upload waiting for the row waits for the next scheduled run, which the wait exists to avoid |
+
+**Choice:** (b), in `settle` ([gc.go](../../internal/blob/gc.go)); the fault point `settle:counted` after each pass lets a test hold the run there.
+
+**Rationale:** The wait's promise is that the rows a run deleted are gone when it returns; the deadline bounds the time the run spends, not the passes it makes. The development agent would revisit the choice if a run is seen to end with a row in `deleting` that was not deleted by itself or a predecessor within `delete_settle`.
+
+**Applied in the spec:** none (R-STOR-024 step 5 already says the run waits to drop the rows it deleted). Test: `TestR_STOR_024_TheSettleWaitEndsWithAPassAfterItsDeadline` ([gc_test.go](../../test/integration/blob/gc_test.go)).
+
 ## What this does not cover
 
 ### H-11 · Object-store principals bypass trove's authorization and integrity checks
