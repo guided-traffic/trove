@@ -60,17 +60,13 @@ func (a *App) debRemoteHandlers() debdata.RemoteHandlers {
 		Index: a.debRemote.handler("Debian remote housekeeping", func(ctx context.Context, j *debdata.RemoteJobs, run *jobs.Run) error {
 			return j.RunIndex(ctx, run)
 		}),
+		// A replica without the runtime claims no job; the periodic task runs where jobs run, so it does nothing there.
+		Refresh: func(ctx context.Context, run *jobs.Run) error {
+			j, ok := a.debRemote.get()
+			if !ok {
+				return nil
+			}
+			return j.Refresh(ctx, run)
+		},
 	}
-}
-
-// registerDebRemoteRefresh adds the remote part to the periodic task deb-index-refresh. A replica without the runtime (it claims no
-// job) does nothing; the task runs where jobs run.
-func (a *App) registerDebRemoteRefresh() {
-	debdata.RegisterRefreshHook(func(ctx context.Context, run *jobs.Run) error {
-		j, ok := a.debRemote.get()
-		if !ok {
-			return nil
-		}
-		return j.Refresh(ctx, run)
-	})
 }

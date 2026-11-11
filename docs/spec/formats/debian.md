@@ -3703,7 +3703,7 @@ Context: F-118. The merge of a virtual repository read, for `main/binary-amd64/P
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-Context: `TestR_DEB_025_AReleaseNoCurrentKeyVerifiesIsNotMerged` failed in Test and Release 42894886354 (shard c): "the suite to fail with member_unverified did not happen within 1m30s", 106 s against 16 s locally. The test changes the remote member's `deb.upstreamKeys`; `debRepositoryHook.OnUpdated` enqueues the build of the virtual repository in the same transaction and without delay, so the failed suite is the result of one job the test can name. The test polled the suite's state for 90 s. The log of the run shows the replica's readiness checks for the database, schema and object store timing out for minutes and the task `deb-index-refresh` failing with `closed pool` in that window: the runner stood still, and a poll of fixed length turned a slow build into a failed test. Verified: the build is enqueued by the change and is not waiting for the merge period (the test's `mergedMetadataTtlSeconds` is 3600). Not verified: what closed the pool of the refresh task.
+Context: `TestR_DEB_025_AReleaseNoCurrentKeyVerifiesIsNotMerged` failed in Test and Release 42894886354 (shard c): "the suite to fail with member_unverified did not happen within 1m30s", 106 s against 16 s locally. The test changes the remote member's `deb.upstreamKeys`; `debRepositoryHook.OnUpdated` enqueues the build of the virtual repository in the same transaction and without delay, so the failed suite is the result of one job the test can name. The test polled the suite's state for 90 s. The log of the run shows the replica's readiness checks for the database, schema and object store timing out for minutes and the task `deb-index-refresh` failing with `closed pool` in that window: the runner stood still, and a poll of fixed length turned a slow build into a failed test. Verified: the build is enqueued by the change and is not waiting for the merge period (the test's `mergedMetadataTtlSeconds` is 3600). What closed the pool of the refresh task is found in [Q-DEB-120](#q-deb-120--the-periodic-refresh-task-runs-the-remote-part-of-its-own-registry-only).
 
 | Option | What it means | For | Against |
 |---|---|---|---|
@@ -3716,6 +3716,24 @@ Context: `TestR_DEB_025_AReleaseNoCurrentKeyVerifiesIsNotMerged` failed in Test 
 **Rationale:** The event is the end of the job; the state the test asserts is its result. The development agent would revisit the choice if the job's retries (a failed attempt returns it to the queue) were to make a build that failed for another reason look unfinished: the 5-minute bound would then report the hang.
 
 **Applied in the spec:** none (R-DEB-025 is unchanged). Test: `TestR_DEB_025_AReleaseNoCurrentKeyVerifiesIsNotMerged`, `TestR_DEB_025_AReleaseOlderThanTheRecordedDateIsNotMerged`.
+
+### Q-DEB-120 · The periodic refresh task runs the remote part of its own registry only
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the task `deb-index-refresh` failed three times with `closed pool` in Test and Release 42894886354 (shard c, `debvirtual`, 20:46:04 to 20:46:11), while the replica of the test was running and no shutdown had begun (its `shutting down` line is at 20:46:47). Verified in the code: `registerDebRemoteRefresh` appended a closure over the App to a process-wide list (`RegisterRefreshHook`) every time an App was built, and `RunRefreshJob` ran the whole list. A process that builds one replica per test, as the integration tests do, therefore ran the part of every replica built before it, on the pools those replicas had closed at their shutdown. Only a test that lasts past a minute boundary meets it, because the task is cron-scheduled every minute: `TestR_DEB_025_AReleaseNoCurrentKeyVerifiesIsNotMerged` took 106 s. In production a process holds one App, so the list held one part; the defect was the shape of the registration, which let a stopped replica's part run. Reproduced on the old code by a test that registers a failing part and then a good one: the task returns the first error.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The part is part of the registry (chosen) | `RemoteHandlers` carries `Refresh`; `RegisterJobs` builds the task's handler from it, the local and virtual parts are plain calls of the bound indexer; `RegisterRefreshHook` and the list are removed | A registry holds its own part; nothing outlives a replica; fewer moving parts than a hook list | The virtual part is no longer registered from an `init` of its file |
+| (b) Unregister the hook at the shutdown | `Stop` removes the closure | Keeps the list | Another process-wide mutable list to keep in step with every shutdown path; a replica that fails to start leaves its hook |
+| (c) Skip a part whose database is closed | The hook checks the pool | Small | Hides the stale part instead of removing it; the part of a stopped replica would still read the wrong stack's rows if its pools were open |
+
+**Choice:** (a), in [jobs.go](../../../internal/formatdata/deb/jobs.go) and [refresh.go](../../../internal/formatdata/deb/refresh.go); the composition root hands the part over in `debRemoteHandlers` ([wire_deb_remote.go](../../../internal/app/wire_deb_remote.go)).
+
+**Rationale:** A value that belongs to one replica must be held by the registry that replica builds, not by a global. The development agent would revisit the choice if a second kind of task part appeared that is not tied to a replica: it would then be a field of the same struct. The bound indexer (`BindIndexer`) is still one per process; a process that runs two replicas at once uses the last one's builder for the index jobs (not a production shape, noted as finding F-124).
+
+**Applied in the spec:** none (R-DEB-010 and R-DEB-026 are unchanged). Test: `TestR_DEB_010_TheRefreshTaskRunsTheRemotePartOfItsOwnRegistryOnly` ([refresh_test.go](../../../internal/formatdata/deb/refresh_test.go)).
 
 ## What this does not cover
 

@@ -167,7 +167,7 @@ purge and writes `deb.package.deleted` with its journal entry. A file in the tra
 deletion, restore from the trash, withholding and reinstating a file. It enqueues `deb-index` under the key `index:<repository id>` after
 `deb.index_delay` (a waiting job is moved to the earlier time, Q-ARCH-384); a key change and a settings change enqueue at once
 (`Options.KeysChanged`). The task `deb-index-refresh` ([refresh.go](../../internal/formatdata/deb/refresh.go)) enqueues for a local repository whose
-retention is due or that has changes no build published, and runs the parts the remote and the virtual class register with `RegisterRefreshHook`.
+retention is due or that has changes no build published, for a virtual repository whose check is due, and runs the remote part that `RemoteHandlers.Refresh` carries, so a registry holds its own part (Q-DEB-120).
 
 **The job.** `deb-index` ([build.go](../../internal/formatdata/deb/build.go), `Indexer.Build`; [jobs.go](../../internal/formatdata/deb/jobs.go) dispatches a
 remote repository to the remote's handler, [below](#the-remote-class), and `Indexer.Build` a virtual one to `buildVirtual`, [below](#the-virtual-class)) reads the repository from the job's target key and `IndexJobArgs` from its

@@ -19,7 +19,7 @@ const (
 	RemoteParseJobKind = "deb-remote-parse"
 	// RefreshTaskName is the periodic task that enqueues what is due: retention of a repository, the check of a virtual repository, a
 	// remote's housekeeping (queue maintenance, every minute, exclusive). It deletes nothing itself (Q-DEB-33). Its handler is
-	// [RunRefreshJob] (refresh.go).
+	// [runRefresh] (refresh.go).
 	RefreshTaskName = "deb-index-refresh"
 )
 
@@ -44,6 +44,8 @@ const (
 type RemoteHandlers struct {
 	Parse jobs.Handler
 	Index jobs.Handler
+	// Refresh is the remote part of the periodic task deb-index-refresh (RemoteJobs.Refresh).
+	Refresh jobs.Handler
 }
 
 // RegisterJobs registers the kinds and the task in the registry the composition root freezes. The job deb-index serves two classes:
@@ -53,12 +55,15 @@ func RegisterJobs(r *jobs.Registry, remote RemoteHandlers) {
 	notBuilt := func(what string) jobs.Handler {
 		return func(context.Context, *jobs.Run) error { return jobs.Permanent(errNotBuilt(what)) }
 	}
-	parse, index := remote.Parse, remote.Index
+	parse, index, refresh := remote.Parse, remote.Index, remote.Refresh
 	if parse == nil {
 		parse = notBuilt("the parse of a remote index")
 	}
 	if index == nil {
 		index = notBuilt("the housekeeping of a remote")
+	}
+	if refresh == nil {
+		refresh = func(context.Context, *jobs.Run) error { return nil } // a replica without the runtime claims no job; the task runs where jobs run
 	}
 	r.RegisterKind(IndexJobKind, jobs.KindSpec{
 		Queue: "index", DedupMode: jobs.Coalesce, MaxAttempts: 5, Timeout: indexTimeout, Handler: classHandler(index),
@@ -67,7 +72,7 @@ func RegisterJobs(r *jobs.Registry, remote RemoteHandlers) {
 		Queue: "index", DedupMode: jobs.Coalesce, MaxAttempts: 5, Timeout: remoteParseTimeout, Handler: parse,
 	})
 	r.RegisterKind(RefreshTaskName, jobs.KindSpec{
-		Queue: "maintenance", DedupMode: jobs.Exclusive, MaxAttempts: 3, Timeout: refreshTimeout, Handler: RunRefreshJob,
+		Queue: "maintenance", DedupMode: jobs.Exclusive, MaxAttempts: 3, Timeout: refreshTimeout, Handler: runRefresh(refresh),
 	})
 	r.RegisterTask(RefreshTaskName, jobs.TaskSpec{Schedule: RefreshSchedule})
 }

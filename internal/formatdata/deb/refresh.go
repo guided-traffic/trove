@@ -3,48 +3,32 @@ package deb
 import (
 	"context"
 	"slices"
-	"sync"
 
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 )
 
-// RefreshHook is one part of the periodic task deb-index-refresh (Q-DEB-33): it enqueues what is due and deletes nothing. The local
-// part (retention) is the task's own; the remote part (a remote's housekeeping, refresh_remote.go) and the virtual part (the virtual
-// repositories whose check is due, refresh_virtual.go) register theirs from their files.
-type RefreshHook func(ctx context.Context, run *jobs.Run) error
-
-var refreshHooks = struct {
-	mu sync.Mutex
-	l  []RefreshHook
-}{}
-
-// RegisterRefreshHook adds a part to the task. The packages register from init, before the registry is frozen.
-func RegisterRefreshHook(h RefreshHook) {
-	refreshHooks.mu.Lock()
-	defer refreshHooks.mu.Unlock()
-	refreshHooks.l = append(refreshHooks.l, h)
-}
-
-// RunRefreshJob is the handler of the task deb-index-refresh (R-DEB-010, R-DEB-026, Q-DEB-33): it enqueues a deb-index job for each
-// local repository whose retention is due or that has changes no build has published, and calls the registered hooks. It deletes
-// nothing itself: the removals happen in the commit of the build.
-func RunRefreshJob(ctx context.Context, run *jobs.Run) error {
-	if x := bound.Load(); x != nil {
-		if err := x.EnqueueDue(ctx); err != nil {
-			return err
+// runRefresh is the handler of the task deb-index-refresh (R-DEB-010, R-DEB-026, Q-DEB-33): it enqueues a deb-index job for each
+// local repository whose retention is due or that has changes no build has published, for each virtual repository whose check is due
+// (refresh_virtual.go), and runs the remote part (refresh_remote.go). It deletes nothing itself: the removals happen in the commit of
+// the build. The remote part is the one of the registry the handler was built for, never one a process-wide list collected from
+// earlier replicas (Q-DEB-120): a process that builds a second replica, as the integration tests do, would otherwise run the part of
+// a stopped one on its closed pools.
+func runRefresh(remote jobs.Handler) jobs.Handler {
+	return func(ctx context.Context, run *jobs.Run) error {
+		if x := bound.Load(); x != nil {
+			if err := x.EnqueueDue(ctx); err != nil {
+				return err
+			}
+			if x.Virtual != nil {
+				if err := x.EnqueueVirtualsDue(ctx); err != nil {
+					return err
+				}
+			}
 		}
+		return remote(ctx, run)
 	}
-	refreshHooks.mu.Lock()
-	hooks := append([]RefreshHook(nil), refreshHooks.l...)
-	refreshHooks.mu.Unlock()
-	for _, h := range hooks {
-		if err := h(ctx, run); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // EnqueueDue enqueues the builds that are due without a change to trigger them: retention gives up a generation's by-hash files only in
