@@ -379,7 +379,7 @@ next unit of [FULL.md](FULL.md) (block B, F1).
 
 **Decisions only the owner can take**
 
-- **H-847** (Ansible Galaxy import): which software the existing Galaxy is, its API root, and a `trove admin import ansible --dry-run` against it; the import is built and tested against the stub only.
+- **H-847** (Ansible Galaxy import): the existing Galaxy is galaxy_ng (Pulp) (owner, 2026-11-11). Open: its API root with the distribution prefix, and a `trove admin import ansible --dry-run` against it; the import is built and tested against the stub only.
 - **Q-HA-293, to be discussed, not decided**: a replica whose first Valkey attempts get no answer becomes ready degraded (Q-HA-13 (d)), so a wrong password behind an unanswered first attempt is noticed only later. Should the first readiness wait for a verdict? Waiting would stall a replica started during a Valkey failover, which Q-HA-13 (c) rejected.
 
 - **H-812** ([image-scanning.md](../security/image-scanning.md)): Trivy shares the file system and network of the worker pod, so a crafted image that compromises it can read the secrets mounted there. Close it before images from untrusted remotes are scanned (a sandbox or a pod per scan, a further component), or accept it? A dedicated `vuln` worker pool would shrink it; the owner kept the plain workers on 2026-11-10 (Q-VULN-137).

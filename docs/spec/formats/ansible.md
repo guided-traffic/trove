@@ -2091,9 +2091,9 @@ configures an unbounded mirror; real when they do.
 
 ### H-847 · The import is written against the public Galaxy and not against the owner's instance
 
-The importer speaks the v3 documents of the public Galaxy (R-ANS-027). The owner's instance has not been seen by the development agent
-(which software, which version, whether its collection routes sit below a prefix, whether it holds roles, whether it enforces a
-different name grammar). Dormant until the first run; real then, when a dry run may show differences. The package that builds the importer
+The importer speaks the v3 documents of the public Galaxy (R-ANS-027). The owner's instance is galaxy_ng, which is built on Pulp (owner,
+2026-11-11); it has not been seen by the development agent (which version, whether its collection routes sit below a distribution prefix
+such as `/api/galaxy/content/<distribution>/`, whether it holds roles, whether it enforces a different name grammar). Dormant until the first run; real then, when a dry run may show differences. The package that builds the importer
 runs a `--dry-run` against the first real source and records them.
 
 ### H-848 · A remote does not track versions that an upstream removes
