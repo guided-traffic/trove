@@ -1,5 +1,5 @@
 import { DestroyRef, Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { SettingsSection } from '../../shared/ui/settings-section';
+import { Disclosure } from '../../shared/ui/disclosure';
 import { Checkbox } from '../../shared/ui/checkbox';
 import { TroveDialog } from '../../shared/ui/dialog';
 import { Router } from '@angular/router';
@@ -59,7 +59,7 @@ export const PREVIEW_DEBOUNCE_MS = 500;
   imports: [
     PageHeader,
     Checkbox,
-    SettingsSection,
+    Disclosure,
     ErrorNotice,
     Needs,
     PrincipalPicker,
@@ -100,6 +100,10 @@ export class PolicyEditor {
   protected readonly saveError = signal<ApiError | null>(null);
   protected readonly busy = signal(false);
   protected readonly attempted = signal(false);
+  /** Explain was pressed without a principal or a repository: the line under the button says what is missing. */
+  protected readonly askMissing = signal(false);
+  /** The disclosure of package names and paths: open when one of them holds a value or has a problem. */
+  protected readonly limitsOpen = signal(false);
 
   protected readonly policyName = signal('');
   protected readonly description = signal('');
@@ -302,6 +306,9 @@ export class PolicyEditor {
     this.pathsInclude.set(f.pathsInclude);
     this.pathsExclude.set(f.pathsExclude);
     this.entries.set(f.entries);
+    if ([f.packagesInclude, f.packagesExclude, f.pathsInclude, f.pathsExclude].some((v) => v.trim() !== '')) {
+      this.limitsOpen.set(true);
+    }
   }
 
   // Entries.
@@ -370,6 +377,42 @@ export class PolicyEditor {
    * A problem in words: never the server's pattern (UI-A-42). The name's rule is said in plain words; another problem is the
    * shared sentence of its code, else the server's detail.
    */
+  /**
+   * The preview's problems by the fields' rule (UI-A-42): a problem of a field shows once the field holds a value or a save was
+   * tried; a problem of an entry shows at once, because an entry exists only after the user added it.
+   */
+  protected readonly previewProblems = computed<readonly PolicyProblem[]>(() => {
+    const errors = this.validation()?.errors ?? [];
+    if (this.attempted()) return errors;
+    return errors.filter((p) => this.pointerFilled(p.pointer));
+  });
+
+  private pointerFilled(pointer: string): boolean {
+    const filled = (...values: string[]): boolean => values.some((v) => v.trim() !== '');
+    if (pointer.startsWith('/name')) return filled(this.policyName());
+    if (pointer.startsWith('/description')) return filled(this.description());
+    if (pointer.startsWith('/resources/repositories')) return filled(this.repositories());
+    if (pointer.startsWith('/resources/packages')) return filled(this.packagesInclude(), this.packagesExclude());
+    if (pointer.startsWith('/resources/paths')) return filled(this.pathsInclude(), this.pathsExclude());
+    return true;
+  }
+
+  /** The field a problem's JSON pointer names, by the label the user sees, never the pointer. */
+  protected pointerLabel(pointer: string): string {
+    const entry = /^\/entries\/(\d+)/.exec(pointer);
+    if (entry) {
+      const n = Number(entry[1]) + 1;
+      return $localize`:@@policy.pointer-entry:Entry ${n}:n:`;
+    }
+    if (pointer.startsWith('/name')) return $localize`:@@policy.name:Name`;
+    if (pointer.startsWith('/description')) return $localize`:@@policy.description:Description`;
+    if (pointer.startsWith('/resources/repositories')) return $localize`:@@policy.repositories:Repository selectors`;
+    if (pointer.startsWith('/resources/packages')) return $localize`:@@policy.packages:Package names`;
+    if (pointer.startsWith('/resources/paths')) return $localize`:@@policy.paths:Paths`;
+    if (pointer.startsWith('/resources')) return $localize`:@@policy.resources:Repositories and patterns`;
+    return $localize`:@@policy.general:General`;
+  }
+
   protected problemText(p: PolicyProblem): string {
     if (p.pointer === '/name' && p.code === 'invalid_name') {
       return $localize`:@@policy.name-invalid:Use lower-case letters, digits, dots, hyphens and underscores, starting with a letter or digit, at most 128 characters.`;
@@ -406,6 +449,8 @@ export class PolicyEditor {
 
   protected async explain(event: Event): Promise<void> {
     event.preventDefault();
+    this.askMissing.set(this.askPrincipal().trim() === '' || this.askRepository().trim() === '');
+    if (this.askMissing()) return;
     const v = this.validation();
     const draft: ExplainDraft = {
       input: this.body(),

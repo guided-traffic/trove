@@ -497,3 +497,23 @@ details {
   border-color: transparent;
   background: var(--trove-control-disabled-bg);
 }
+
+// One separator for a line of facts (the admin list's project · format · class, a source line): a middle dot with the same space on
+// both sides, in the muted colour. `.dot-separated` puts it between its children; `.dot-before` before one element.
+.dot-separated {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+
+  > * + *::before {
+    content: '·';
+    margin-inline: var(--trove-space-2);
+    color: var(--trove-text-muted);
+  }
+}
+
+.dot-before::before {
+  content: '·';
+  margin-inline: var(--trove-space-2);
+  color: var(--trove-text-muted);
+}

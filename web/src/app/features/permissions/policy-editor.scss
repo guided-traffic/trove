@@ -188,3 +188,20 @@
   gap: var(--trove-space-2);
   margin-block-end: var(--trove-space-2);
 }
+
+// The icon before a line's text keeps a gap to it (the global policy note, the covered repositories).
+.subject .material-icons,
+.covers .material-icons {
+  margin-inline-end: var(--trove-space-1);
+  vertical-align: -0.2em;
+  font-size: 1.125rem;
+}
+
+// Explain sits on the fields' line, at the height of their controls (their margin under them).
+.try {
+  align-items: flex-end;
+
+  .explain {
+    margin-block-end: var(--trove-space-3);
+  }
+}

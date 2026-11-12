@@ -65,8 +65,8 @@ test('R-UI-025 R-UI-026 a group, a policy with its preview, and the effect for b
     await expectAccessible(page, 'policy list');
     await page.getByRole('link', { name: 'New policy' }).click();
     await expect(page.getByRole('heading', { name: 'New permission policy', level: 1 })).toBeVisible();
-    // An empty draft is invalid, and the preview says where.
-    await expect(page.getByText('The policy has problems:')).toBeVisible();
+    // An untouched draft lists no problem: a problem of a field shows once the field holds a value or a save was tried (UI-A-42).
+    await expect(page.getByText('The policy has problems:')).toHaveCount(0);
 
     await page.getByLabel('Name', { exact: true }).first().fill(policyName);
     await page.getByRole('button', { name: 'Add principal' }).click();

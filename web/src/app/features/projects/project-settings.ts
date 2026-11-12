@@ -14,7 +14,7 @@ import { asApiError } from '../../shared/paged-resource';
 import { ConflictResolver } from '../../shared/conflict-dialog';
 import { fieldErrorAt } from '../../shared/field-errors';
 import { TextField } from '../../shared/access/fields';
-import { SettingsSection } from '../../shared/ui/settings-section';
+import { Disclosure } from '../../shared/ui/disclosure';
 import { formatSize } from '../packages/format-size';
 import { projectRoleLabel } from './project-roles';
 import { PageHeader } from '../../shared/ui/page-header';
@@ -28,7 +28,7 @@ import { PageHeader } from '../../shared/ui/page-header';
  */
 @Component({
   selector: 'trove-project-settings',
-  imports: [PageHeader, DatePipe, ErrorNotice, Needs, SettingsSection, TextField],
+  imports: [PageHeader, DatePipe, ErrorNotice, Needs, Disclosure, TextField],
   template: `
     <trove-page-header heading="Settings" i18n-heading="@@project.settings" />
 
@@ -70,11 +70,11 @@ import { PageHeader } from '../../shared/ui/page-header';
           }
         </form>
 
-        <trove-settings-section
+        <trove-disclosure
           i18n-heading="@@project.details"
           heading="Details"
-          i18n-description="@@project.details-hint"
-          description="Who owns the project, your role in it and what it holds."
+          i18n-hint="@@project.details-hint"
+          hint="Who owns the project, your role in it and what it holds."
           class="first"
         >
           <dl class="facts">
@@ -101,14 +101,14 @@ import { PageHeader } from '../../shared/ui/page-header';
             <dt i18n="@@project.updated">Last changed</dt>
             <dd>{{ p.updatedAt | date: 'medium' }}</dd>
           </dl>
-        </trove-settings-section>
+        </trove-disclosure>
 
         @if (canWrite()) {
-          <trove-settings-section
+          <trove-disclosure
             i18n-heading="@@project.advanced"
             heading="Advanced"
-            i18n-description="@@project.advanced-hint"
-            description="Delete this project."
+            i18n-hint="@@project.advanced-hint"
+            hint="Delete this project."
           >
             <p id="project-delete-note" class="muted">
               @if (empty()) {
@@ -129,7 +129,7 @@ import { PageHeader } from '../../shared/ui/page-header';
             >
               Delete project
             </button>
-          </trove-settings-section>
+          </trove-disclosure>
         }
       </div>
     }

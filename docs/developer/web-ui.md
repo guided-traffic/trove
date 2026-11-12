@@ -658,8 +658,8 @@ feeds the two live regions of `<trove-notices>`: `status` is polite, `alert` is 
 `reauthRequired` flags. `signOut()` posts `/auth/logout`, goes to the returned `redirectTo` or `/logged-out`, and tells other tabs over a
 `BroadcastChannel`. `authGuard` loads the session and sends an unauthenticated caller to `/login?returnTo=<route>` unless
 `login-options` allows anonymous access. `safeReturnTo` keeps only server-relative paths. The sign-in screen builds
-`return_to=<base href><route>` from the page's `<base href>` (R-AUTH-009): `/ui/en/…` in a build per locale, `/ui/…` on the dev
-server (UI-A-49); it appends `purpose=reauth` for a re-authentication.
+`return_to=<base path><route>` from the path of the resolved `document.baseURI` (R-AUTH-009): `/ui/en/…` and `/ui/de/…` in the
+builds per locale, `/ui/…` on the dev server (UI-A-49); it appends `purpose=reauth` for a re-authentication.
 `has(capability)` asks for a capability; `hasRole(role)` asks for a system role of `authz/me` and is for the operations the server checks as a role, not as a capability (creating and rotating the token of a service account needs the administrator role). A control follows what the handler checks (R-UI-005): never a capability that merely sounds related.
 
 **Secrets** never enter these services (R-UI-043): token values live in component signals only. `core/storage.ts` is for non-secret

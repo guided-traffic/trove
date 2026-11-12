@@ -46,7 +46,12 @@ function valueFor(previous: unknown, text: string): unknown {
   imports: [PageHeader, ErrorNotice, CiWarnings, SelectField],
   template: `
     <trove-page-header heading="Claim tester" i18n-heading="@@ci.test.heading" />
-    <p class="subject" translate="no">{{ project() ? project() + ' · ' : '' }}{{ issuerName() }}</p>
+    <p class="subject dot-separated" translate="no">
+      @if (project(); as key) {
+        <span>{{ key }}</span>
+      }
+      <span>{{ issuerName() }}</span>
+    </p>
     <p i18n="@@ci.test.hint">
       Check which mapping a job would match. This is a dry run: it issues no token and records nothing. Only the claims are sent to the server, never a token.
     </p>

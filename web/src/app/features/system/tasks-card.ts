@@ -9,6 +9,7 @@ import { SessionStore } from '../../core/session-store';
 import { ErrorNotice } from '../../shared/error-notice';
 import { JobProgress, jobStateText } from '../../shared/job-progress';
 import { asApiError, valueOf } from '../../shared/paged-resource';
+import { DataTable, TableColumn } from '../../shared/ui/data-table';
 
 /**
  * The scheduled tasks card (R-UI-038): schedule, next run, last outcome, and "Run now", which only
@@ -18,7 +19,7 @@ import { asApiError, valueOf } from '../../shared/paged-resource';
  */
 @Component({
   selector: 'trove-tasks-card',
-  imports: [DatePipe, ErrorNotice, JobProgress],
+  imports: [DataTable, DatePipe, ErrorNotice, JobProgress],
   template: `
     <section class="card" aria-labelledby="card-tasks">
       <div class="head">
@@ -33,71 +34,55 @@ import { asApiError, valueOf } from '../../shared/paged-resource';
         @if (list.length === 0) {
           <p class="empty" i18n="@@tasks.empty">No maintenance task is registered.</p>
         } @else {
-          <div class="scroll" tabindex="0" role="region" aria-labelledby="card-tasks">
-            <table class="data">
-              <caption class="visually-hidden" i18n="@@tasks.caption">
-                Maintenance tasks
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col" i18n="@@tasks.col.name">Task</th>
-                  <th scope="col" i18n="@@tasks.col.schedule">Schedule (UTC)</th>
-                  <th scope="col" i18n="@@tasks.col.next">Next run</th>
-                  <th scope="col" i18n="@@tasks.col.last">Last run</th>
-                  <th scope="col" i18n="@@repo.col.actions">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (t of list; track t.name) {
-                  <tr>
-                    <th scope="row" translate="no">{{ t.name }}</th>
-                    <td translate="no">{{ t.schedule ?? '–' }}</td>
-                    <td>
-                      @if (t.nextRunAt; as at) {
-                        <time [attr.datetime]="at">{{ at | date: 'medium' }}</time>
-                      } @else if (t.schedule === null) {
-                        <span i18n="@@tasks.manual">manual only</span>
-                      } @else {
-                        –
-                      }
-                    </td>
-                    <td>
-                      @if (t.lastRun; as r) {
-                        {{ stateText(r.outcome) }}
-                        @if (r.finishedAt; as at) {
-                          <time [attr.datetime]="at"> {{ at | date: 'medium' }}</time>
-                        }
-                      } @else {
-                        –
-                      }
-                    </td>
-                    <td>
-                      @if (t.running || active().get(t.name)) {
-                        <span i18n="@@tasks.running">A run is in progress.</span>
-                      }
-                      @if (active().get(t.name); as id) {
-                        <trove-job-progress
-                          [jobId]="id"
-                          [label]="runLabel(t.name)"
-                          (finished)="completed(t)"
-                        />
-                      } @else if (canRun() && !t.running) {
-                        <button class="btn btn-default"
-                          type="button"
-                          [disabled]="busy() === t.name"
-                          [attr.aria-label]="runLabel(t.name)"
-                          (click)="run(t)"
-                          i18n="@@tasks.run"
-                        >
-                          Run now
-                        </button>
-                      }
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
+          <trove-data-table [caption]="caption" [columns]="columns">
+            @for (t of list; track t.name) {
+              <tr>
+                <th scope="row" translate="no">{{ t.name }}</th>
+                <td translate="no">{{ t.schedule ?? '–' }}</td>
+                <td>
+                  @if (t.nextRunAt; as at) {
+                    <time [attr.datetime]="at">{{ at | date: 'medium' }}</time>
+                  } @else if (t.schedule === null) {
+                    <span i18n="@@tasks.manual">manual only</span>
+                  } @else {
+                    –
+                  }
+                </td>
+                <td>
+                  @if (t.lastRun; as r) {
+                    {{ stateText(r.outcome) }}
+                    @if (r.finishedAt; as at) {
+                      <time [attr.datetime]="at"> {{ at | date: 'medium' }}</time>
+                    }
+                  } @else {
+                    –
+                  }
+                </td>
+                <td>
+                  @if (t.running || active().get(t.name)) {
+                    <span i18n="@@tasks.running">A run is in progress.</span>
+                  }
+                  @if (active().get(t.name); as id) {
+                    <trove-job-progress
+                      [jobId]="id"
+                      [label]="runLabel(t.name)"
+                      (finished)="completed(t)"
+                    />
+                  } @else if (canRun() && !t.running) {
+                    <button class="btn btn-default"
+                      type="button"
+                      [disabled]="busy() === t.name"
+                      [attr.aria-label]="runLabel(t.name)"
+                      (click)="run(t)"
+                      i18n="@@tasks.run"
+                    >
+                      Run now
+                    </button>
+                  }
+                </td>
+              </tr>
+            }
+          </trove-data-table>
         }
         @if (runFailure(); as f) {
           <trove-error-notice [error]="f" />
@@ -119,6 +104,14 @@ import { asApiError, valueOf } from '../../shared/paged-resource';
   `,
 })
 export class TasksCard {
+  protected readonly caption = $localize`:@@tasks.caption:Maintenance tasks`;
+  protected readonly columns: readonly TableColumn[] = [
+    { id: 'name', label: $localize`:@@tasks.col.name:Task`, width: '10rem' },
+    { id: 'schedule', label: $localize`:@@tasks.col.schedule:Schedule (UTC)`, width: '7rem' },
+    { id: 'next', label: $localize`:@@tasks.col.next:Next run`, width: '10rem' },
+    { id: 'last', label: $localize`:@@tasks.col.last:Last run`, width: '10rem' },
+    { id: 'actions', label: $localize`:@@repo.col.actions:Actions`, hideLabel: true },
+  ];
   protected readonly valueOf = valueOf;
   private readonly api = inject(JobsApi);
   private readonly session = inject(SessionStore);

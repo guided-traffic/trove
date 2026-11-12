@@ -1,6 +1,6 @@
 import { Component, DestroyRef, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { Checkbox } from '../../shared/ui/checkbox';
-import { SettingsSection } from '../../shared/ui/settings-section';
+import { Disclosure } from '../../shared/ui/disclosure';
 import { CI_NAME_PATTERN, CiApi, CiIssuer, CiIssuerCreate, CiIssuerInput } from '../../api/ci-api';
 import { ApiError } from '../../api/problem';
 import { Versioned } from '../../api/repositories-api';
@@ -30,7 +30,7 @@ const toLines = (text: string): string[] => splitValues(text.replace(/,/g, '\n')
  */
 @Component({
   selector: 'trove-ci-issuer-form',
-  imports: [Checkbox, ErrorNotice, SettingsSection, TextField],
+  imports: [Checkbox, ErrorNotice, Disclosure, TextField],
   template: `
     @if (configured()) {
       <p class="source-note" role="note">
@@ -128,11 +128,11 @@ const toLines = (text: string): string[] => splitValues(text.replace(/,/g, '\n')
           hint="One per line. Immutable ID claims only. Empty: project_id, namespace_id, job_project_id and job_namespace_id."
         />
 
-        <trove-settings-section
+        <trove-disclosure
           i18n-heading="@@ci.form.advanced"
           heading="More settings"
-          i18n-description="@@ci.form.advanced-hint"
-          description="Discovery, algorithms, claims, lifetimes and the connection to the issuer."
+          i18n-hint="@@ci.form.advanced-hint"
+          hint="Discovery, algorithms, claims, lifetimes and the connection to the issuer."
         >
           <trove-text-field i18n-label="@@ci.form.discovery" label="Discovery document" name="discoveryUrl" [(value)]="discoveryUrl" [error]="fieldError('/discoveryUrl')" i18n-hint="@@ci.form.discovery-hint" hint="Empty: the issuer URL followed by /.well-known/openid-configuration" />
           <trove-text-field i18n-label="@@ci.form.jwks" label="Key set URL" name="jwksUri" [(value)]="jwksUri" [error]="fieldError('/jwksUri')" i18n-hint="@@ci.form.jwks-hint" hint="Empty: the jwks_uri of the discovery document" />
@@ -152,7 +152,7 @@ const toLines = (text: string): string[] => splitValues(text.replace(/,/g, '\n')
           <trove-checkbox [checked]="singleUse()" (checkedChange)="singleUse.set($event)" i18n="@@ci.form.single-use">Reject a second exchange of the same ID token</trove-checkbox>
           <trove-checkbox [checked]="useOutboundProxy()" (checkedChange)="useOutboundProxy.set($event)" i18n="@@ci.form.proxy-check">Fetch discovery and keys through the outbound proxy</trove-checkbox>
           <trove-text-field i18n-label="@@ci.form.ca" label="CA bundle" name="caBundleRef" [(value)]="caBundleRef" [error]="fieldError('/caBundleRef')" i18n-hint="@@ci.form.ca-hint" hint="A reference such as file:/path or env:NAME, for an instance behind a private CA" />
-        </trove-settings-section>
+        </trove-disclosure>
 
         @if (isNew()) {
           <trove-checkbox [checked]="validate()" (checkedChange)="validate.set($event)" i18n="@@ci.form.validate">Check the discovery document and the keys before saving</trove-checkbox>

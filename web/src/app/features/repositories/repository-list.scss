@@ -32,7 +32,12 @@
   margin-block-start: var(--trove-space-1);
 }
 
-// The admin area's line under the key: project · format · class, each with its icon (Q-UI-325).
+// "Recently opened" keeps its distance from the list's toolbar.
+.recent {
+  margin-block-end: var(--trove-space-4);
+}
+
+// The admin area's line under the key: project · format · class, each with its icon (Q-UI-325); the dots are `.dot-separated`.
 .admin-kind {
   .format-name,
   .class-name {

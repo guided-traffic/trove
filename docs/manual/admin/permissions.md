@@ -131,7 +131,7 @@ To create a policy, select **New policy**. **New policy** in a project's **Permi
 
 1. Under **General**, enter a **Name** (it cannot be changed later) and a **Description**.
 2. Under **Principals and actions**, select **Add principal** for each entry, enter a reference such as `group:team-web`, and tick actions or select a **Preset**.
-3. Under **Repositories and patterns**, enter **Repository selectors**, one per line, and optionally **Package names** and **Paths** with **Include** and **Exclude**. **Repositories covered now** counts the matches. The **Pattern tester** checks a package name or path against the patterns.
+3. Under **Repositories and patterns**, enter **Repository selectors**, one per line. **Repositories covered now** counts the matches. To narrow the policy further, open **Limit to package names or paths** (it opens by itself when a policy has such patterns) and enter **Package names** and **Paths** with **Include** and **Exclude**; its **Pattern tester** checks a package name or path against the patterns.
 4. Check the **Preview**. It lists errors with **The policy has problems:**, **Warnings**, and **Covered repositories**.
 5. Select **Create policy**.
 
@@ -141,7 +141,7 @@ The editor refuses an entry for `anonymous` or `authenticated` with any action o
 
 ### Why can X do Y
 
-The **Try it** section of the preview answers whether a principal may do an action on a repository under the draft. Enter a **Principal** such as `user:alice`, a **Repository** and an **Action**, and select **Explain**. The answer lists the steps: whether the selectors cover the repository, which entry applies (directly, through a group of the user, or through `authenticated`), and whether it holds the action. `authenticated` applies to users only, as when a request is decided, so an entry for `authenticated` never allows a service account such as `sa:ci-web`. It ends with **Allowed by this draft** or **Not granted by this draft**, and tells you whether you yourself may do this under the stored policies.
+The **Try it** section of the preview answers whether a principal may do an action on a repository under the draft. Enter a **Principal** such as `user:alice`, a **Repository** and an **Action**, and select **Explain** (without a principal and a repository it says so). The preview's list of problems names each field by its label and shows a problem of a field once you have filled the field or tried to save. The answer lists the steps: whether the selectors cover the repository, which entry applies (directly, through a group of the user, or through `authenticated`), and whether it holds the action. `authenticated` applies to users only, as when a request is decided, so an entry for `authenticated` never allows a service account such as `sa:ci-web`. It ends with **Allowed by this draft** or **Not granted by this draft**, and tells you whether you yourself may do this under the stored policies.
 
 The answer evaluates only the draft. Other policies, token scopes, exposure rules and package ownership are not part of it. To answer the question for all stored policies, filter the policy list by the principal and by the repository.
 

@@ -12,6 +12,7 @@ import { Needs } from '../../shared/access/needs';
 import { asApiError } from '../../shared/paged-resource';
 import { ErrorNotice } from '../../shared/error-notice';
 import { PageHeader } from '../../shared/ui/page-header';
+import { DataTable, TableColumn } from '../../shared/ui/data-table';
 
 /**
  * System roles and their bindings (R-UI-024, R-AUTHZ-022). The five roles are fixed (R-AUTHZ-010);
@@ -26,7 +27,7 @@ import { PageHeader } from '../../shared/ui/page-header';
  */
 @Component({
   selector: 'trove-role-bindings',
-  imports: [PageHeader, DatePipe, ErrorNotice, Needs, TextField],
+  imports: [DataTable, PageHeader, DatePipe, ErrorNotice, Needs, TextField],
   templateUrl: './role-bindings.html',
   styleUrl: '../../shared/access/access.scss',
   styles: `
@@ -62,6 +63,17 @@ export class RoleBindings {
   protected readonly drafts = signal<Readonly<Record<string, string>>>({});
 
   protected readonly canWrite = computed(() => this.session.has('roles:write'));
+  /** The holders of a role in the shared data table, which stacks below 48 rem (no sideways scroll at 390 px). */
+  protected readonly bindingColumns = computed<readonly TableColumn[]>(() => [
+    { id: 'principal', label: $localize`:@@roles.principal:Principal`, width: '10rem' },
+    { id: 'granted', label: $localize`:@@roles.granted-at:Granted`, width: '10rem' },
+    { id: 'grantedBy', label: $localize`:@@roles.granted-by:Granted by`, width: '8rem' },
+    { id: 'source', label: $localize`:@@roles.source:Source`, width: '6rem' },
+    ...(this.canWrite() ? [{ id: 'actions', label: $localize`:@@roles.actions:Actions`, hideLabel: true }] : []),
+  ]);
+  protected holdersCaption(role: string): string {
+    return $localize`:@@roles.holders-caption:Principals that hold the role ${role}:role:`;
+  }
   private readonly adminHolders = computed(() => this.bindings().filter((b) => b.role === 'admin'));
 
   constructor() {

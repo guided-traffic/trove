@@ -1,6 +1,6 @@
 import { Component, DestroyRef, LOCALE_ID, computed, inject, signal } from '@angular/core';
 import { Checkbox } from '../../shared/ui/checkbox';
-import { SettingsSection } from '../../shared/ui/settings-section';
+import { Disclosure } from '../../shared/ui/disclosure';
 import { RouterLink } from '@angular/router';
 import {
   AuthSettings as AuthSettingsModel,
@@ -44,7 +44,7 @@ type Part = 'anonymous' | 'tokens';
  */
 @Component({
   selector: 'trove-auth-settings',
-  imports: [PageHeader, Checkbox, RouterLink, ErrorNotice, Needs, SettingsSection, TextField],
+  imports: [PageHeader, Checkbox, RouterLink, ErrorNotice, Needs, Disclosure, TextField],
   templateUrl: './auth-settings.html',
   styleUrl: '../../shared/access/access.scss',
   styles: `

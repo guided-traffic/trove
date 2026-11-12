@@ -39,11 +39,11 @@
       }
     </form>
 
-    <trove-settings-section
+    <trove-disclosure
       i18n-heading="@@auth-settings.tokens"
       heading="Token lifetimes"
-      i18n-description="@@auth-settings.tokens-note"
-      description="Values are in days (fractions allowed, at least 60 seconds). The ceiling comes from the installation's configuration and cannot be exceeded here."
+      i18n-hint="@@auth-settings.tokens-note"
+      hint="Values are in days (fractions allowed, at least 60 seconds). The ceiling comes from the installation's configuration and cannot be exceeded here."
       [(expanded)]="tokensOpen"
     >
       <form (submit)="save($event, 'tokens')" novalidate>
@@ -109,13 +109,13 @@
           </button>
         }
       </form>
-    </trove-settings-section>
+    </trove-disclosure>
 
-    <trove-settings-section
+    <trove-disclosure
       i18n-heading="@@auth-settings.status"
       heading="Status"
-      i18n-description="@@auth-settings.status-note"
-      description="Read only: these values come from the installation's configuration."
+      i18n-hint="@@auth-settings.status-note"
+      hint="Read only: these values come from the installation's configuration."
     >
       <h3 i18n="@@auth-settings.providers">Identity providers</h3>
       @if (s.status.providers.length === 0) {
@@ -181,6 +181,6 @@
           <ng-container i18n="@@auth-settings.basic-off">HTTP Basic with a token as the password is disabled.</ng-container>
         }
       </p>
-    </trove-settings-section>
+    </trove-disclosure>
   </div>
 }

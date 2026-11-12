@@ -3,6 +3,7 @@ import { Component, computed, inject, input, output } from '@angular/core';
 import { Job, jobActive, jobCancellable } from '../../api/jobs-api';
 import { SessionStore } from '../../core/session-store';
 import { jobStateText } from '../../shared/job-progress';
+import { DataTable, TableColumn } from '../../shared/ui/data-table';
 
 /**
  * A table of jobs (R-UI-038): kind, state with icon and text, start, progress, replica and result.
@@ -11,82 +12,69 @@ import { jobStateText } from '../../shared/job-progress';
  */
 @Component({
   selector: 'trove-job-table',
-  imports: [DatePipe],
+  imports: [DataTable, DatePipe],
+  styles: `
+    /* A replica name and a result are read in full: they wrap in their column, at any character where they must. */
+    .long {
+      overflow-wrap: anywhere;
+    }
+  `,
   template: `
-    <div class="scroll" tabindex="0" role="region" [attr.aria-label]="caption()">
-      <table class="data">
-        <caption class="visually-hidden">
-          {{
-            caption()
-          }}
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col" i18n="@@jobs.col.kind">Kind</th>
-            <th scope="col" i18n="@@jobs.col.state">State</th>
-            <th scope="col" i18n="@@jobs.col.enqueued">Enqueued</th>
-            <th scope="col" i18n="@@jobs.col.progress">Progress</th>
-            <th scope="col" i18n="@@jobs.col.replica">Replica</th>
-            <th scope="col" i18n="@@jobs.col.result">Result</th>
-            <th scope="col" i18n="@@repo.col.actions">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (j of jobs(); track j.id) {
-            <tr>
-              <th scope="row" translate="no">{{ j.kind }}</th>
-              <td>
-                @switch (j.state) {
-                  @case ('succeeded') {
-                    <span class="material-icons inline ok" aria-hidden="true">check_circle</span>
-                  }
-                  @case ('failed') {
-                    <span class="material-icons inline bad" aria-hidden="true">error</span>
-                  }
-                  @case ('cancelled') {
-                    <span class="material-icons inline" aria-hidden="true">cancel</span>
-                  }
-                  @default {
-                    <span class="material-icons inline" aria-hidden="true">hourglass_empty</span>
-                  }
-                }
-                {{ stateText(j) }}
-              </td>
-              <td>
-                <time [attr.datetime]="j.enqueuedAt">{{ j.enqueuedAt | date: 'medium' }}</time>
-              </td>
-              <td translate="no">
-                {{ progressText(j) }}
-              </td>
-              <td translate="no">{{ j.replica ?? '–' }}</td>
-              <td>
-                @if (j.error; as err) {
-                  <span translate="no">{{ err.code }}</span>
-                  @if (err.detail) {
-                    <span class="error-detail" translate="no">{{ err.detail }}</span>
-                    <span class="error-detail" i18n="@@jobs.attempt">Attempt {{ attemptOf(j) }} of {{ j.maxAttempts }}</span>
-                  }
-                } @else {
-                  <span translate="no">{{ summary(j) }}</span>
-                }
-              </td>
-              <td>
-                @if (canCancel(j)) {
-                  <button class="btn btn-tertiary"
-                    type="button"
-                    [attr.aria-label]="cancelLabel(j)"
-                    (click)="cancelRequested.emit(j)"
-                    i18n="@@jobs.cancel"
-                  >
-                    Cancel
-                  </button>
-                }
-              </td>
-            </tr>
-          }
-        </tbody>
-      </table>
-    </div>
+    <!-- The shared data table: a column budget and stacked rows below 48 rem, so the screen never scrolls sideways at 390 px. -->
+    <trove-data-table [caption]="caption()" [columns]="columns">
+      @for (j of jobs(); track j.id) {
+        <tr>
+          <th scope="row" translate="no">{{ j.kind }}</th>
+          <td>
+            @switch (j.state) {
+              @case ('succeeded') {
+                <span class="material-icons inline ok" aria-hidden="true">check_circle</span>
+              }
+              @case ('failed') {
+                <span class="material-icons inline bad" aria-hidden="true">error</span>
+              }
+              @case ('cancelled') {
+                <span class="material-icons inline" aria-hidden="true">cancel</span>
+              }
+              @default {
+                <span class="material-icons inline" aria-hidden="true">hourglass_empty</span>
+              }
+            }
+            {{ stateText(j) }}
+          </td>
+          <td>
+            <time [attr.datetime]="j.enqueuedAt">{{ j.enqueuedAt | date: 'medium' }}</time>
+          </td>
+          <td translate="no">
+            {{ progressText(j) }}
+          </td>
+          <td translate="no" class="wrap long">{{ j.replica ?? '–' }}</td>
+          <td class="long">
+            @if (j.error; as err) {
+              <span translate="no">{{ err.code }}</span>
+              @if (err.detail) {
+                <span class="error-detail" translate="no">{{ err.detail }}</span>
+                <span class="error-detail" i18n="@@jobs.attempt">Attempt {{ attemptOf(j) }} of {{ j.maxAttempts }}</span>
+              }
+            } @else {
+              <span translate="no">{{ summary(j) }}</span>
+            }
+          </td>
+          <td>
+            @if (canCancel(j)) {
+              <button class="btn btn-tertiary"
+                type="button"
+                [attr.aria-label]="cancelLabel(j)"
+                (click)="cancelRequested.emit(j)"
+                i18n="@@jobs.cancel"
+              >
+                Cancel
+              </button>
+            }
+          </td>
+        </tr>
+      }
+    </trove-data-table>
   `,
 })
 export class JobTable {
@@ -95,6 +83,16 @@ export class JobTable {
   readonly jobs = input.required<readonly Job[]>();
   readonly caption = input.required<string>();
   readonly cancelRequested = output<Job>();
+
+  protected readonly columns: readonly TableColumn[] = [
+    { id: 'kind', label: $localize`:@@jobs.col.kind:Kind`, width: '8rem' },
+    { id: 'state', label: $localize`:@@jobs.col.state:State`, width: '6rem' },
+    { id: 'enqueued', label: $localize`:@@jobs.col.enqueued:Enqueued`, width: '8rem' },
+    { id: 'progress', label: $localize`:@@jobs.col.progress:Progress`, width: '4rem' },
+    { id: 'replica', label: $localize`:@@jobs.col.replica:Replica`, width: '7rem' },
+    { id: 'result', label: $localize`:@@jobs.col.result:Result` },
+    { id: 'actions', label: $localize`:@@repo.col.actions:Actions`, hideLabel: true, width: '5rem' },
+  ];
 
   private readonly self = computed(() => this.session.whoami()?.principal.id ?? null);
 

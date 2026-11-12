@@ -32,8 +32,18 @@ describe('Policy editor (R-UI-027)', () => {
     const { root } = await renderScreen(PolicyEditor, { inputs: { name: 'team-web-publish' } });
     expect(root.querySelector('section.card')).toBeNull();
     const toggles = [...root.querySelectorAll('.toggle')].map((e) => text(e));
-    expect(toggles.map((t) => t.replace('chevron_right', ''))).toEqual(['Principals and actions', 'Repositories and patterns', 'Advanced']);
-    const advanced = [...root.querySelectorAll('trove-settings-section')].pop()!;
+    expect(toggles.map((t) => t.replace('chevron_right', ''))).toEqual([
+      'Principals and actions',
+      'Repositories and patterns',
+      'Limit to package names or paths',
+      'Advanced',
+    ]);
+    // Package names and paths are details on demand: open here, where the policy has patterns, closed on a new draft.
+    const expanded = (r: HTMLElement) => r.querySelector('trove-disclosure.limits button[aria-expanded]')?.getAttribute('aria-expanded');
+    expect(expanded(root)).toBe('true');
+    const draft = await renderScreen(PolicyEditor);
+    expect(expanded(draft.root)).toBe('false');
+    const advanced = [...root.querySelectorAll('trove-disclosure')].pop()!;
     expect(advanced.querySelector('button.btn-danger')).toBeTruthy();
     expect(root.querySelector('.save-bar')!.textContent).not.toContain('Delete policy');
   });
@@ -67,15 +77,29 @@ describe('Policy editor (R-UI-027)', () => {
     await afterDebounce();
     await settle(fixture);
     const nameField = () => [...root.querySelectorAll('trove-text-field')].find((f) => text(f).startsWith('Name'))!;
-    // An empty field the user has not touched is never red (UI-A-42).
+    // An empty field the user has not touched is never red (UI-A-42), and the preview lists no problem of it either.
     expect(nameField().querySelector('.field-error')).toBeNull();
     expect(nameField().querySelector('input')?.getAttribute('aria-invalid')).toBeNull();
+    expect(root.querySelector('.preview .problems')).toBeNull();
     typeAndLeave(root, 'Name', 'Team X');
     await afterDebounce();
     await settle(fixture);
     const error = text(nameField().querySelector('.field-error')!);
     expect(error).toContain('lower-case letters, digits');
     expect(text(root)).not.toContain('^[a-z0-9]');
+    // The preview names the field by its label, not by its JSON pointer.
+    const problem = text(root.querySelector('.preview .problems li')!);
+    expect(problem).toMatch(/^Name: Use lower-case letters/);
+    expect(problem).not.toContain('/name');
+  });
+
+  it('R-UI-027 Explain is a normal button that says what is missing when pressed before a principal and a repository are named', async () => {
+    const { fixture, root } = await renderScreen(PolicyEditor);
+    const explain = buttonByText(root, 'Explain') as HTMLButtonElement;
+    expect(explain.disabled).toBe(false);
+    explain.click();
+    await settle(fixture);
+    expect(text(root.querySelector('.preview [role="alert"]')!)).toBe('Name a principal and a repository first.');
   });
 
   it('R-UI-027 shows validation problems next to the field and refuses to save before the API does', async () => {

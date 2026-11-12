@@ -77,6 +77,23 @@ describe('Sign-in screen', () => {
     }
   });
 
+  it('R-UI-004 the German build keeps return_to under /ui/de/, also with a base written relative to the page', async () => {
+    for (const href of ['/ui/de/', 'ui/de/']) {
+      TestBed.resetTestingModule();
+      const done = withBase(href);
+      try {
+        // The browser resolves the base against the page (here the test's document at the origin's root).
+        expect(new URL(document.baseURI).pathname).toBe('/ui/de/');
+        const { root, assign } = await open('/login?returnTo=%2Fadmin%2Fusers');
+        (root.querySelector('main button') as HTMLButtonElement).click();
+        const target = new URL(assign.mock.calls[0]?.[0] ?? '', 'https://trove.test');
+        expect(target.searchParams.get('return_to'), href).toBe('/ui/de/admin/users');
+      } finally {
+        done();
+      }
+    }
+  });
+
   it('R-UI-004 a foreign returnTo is replaced by the start page', async () => {
     const done = withBase('/ui/en/');
     try {

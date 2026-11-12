@@ -18,11 +18,11 @@
   }
 
   @if (stored(); as s) {
-    <trove-settings-section
+    <trove-disclosure
       i18n-heading="@@general.banner"
       heading="Banner"
-      i18n-description="@@general.banner.intro"
-      description="Shown at the top of every screen for every user, including the sign-in page, within a minute after you save."
+      i18n-hint="@@general.banner.intro"
+      hint="Shown at the top of every screen for every user, including the sign-in page, within a minute after you save."
     >
       <form (submit)="saveBanner($event)" novalidate>
         @if (bannerError(); as e) {
@@ -84,14 +84,14 @@
           </div>
         }
       </form>
-    </trove-settings-section>
+    </trove-disclosure>
   }
 
   @if (storedMode(); as m) {
-    <trove-settings-section
+    <trove-disclosure
       i18n-heading="@@general.mode"
       heading="Maintenance mode"
-      [description]="modeSummary()"
+      [hint]="modeSummary()"
       [(expanded)]="modeOpen"
     >
       <p class="muted" i18n="@@general.mode.intro">
@@ -160,6 +160,6 @@
           </div>
         }
       </form>
-    </trove-settings-section>
+    </trove-disclosure>
   }
 </div>

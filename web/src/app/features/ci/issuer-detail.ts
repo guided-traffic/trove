@@ -13,7 +13,7 @@ import { IssuerForm } from './issuer-form';
 import { IssuerKeys } from './issuer-keys';
 import { MappingList } from './mapping-list';
 import { ErrorNotice } from '../../shared/error-notice';
-import { SettingsSection } from '../../shared/ui/settings-section';
+import { Disclosure } from '../../shared/ui/disclosure';
 import { PageHeader } from '../../shared/ui/page-header';
 
 /** The tabs of the issuer page, in this order; the query parameter `tab` names the open one. */
@@ -28,7 +28,7 @@ export type IssuerTab = (typeof ISSUER_TABS)[number];
  */
 @Component({
   selector: 'trove-ci-issuer-detail',
-  imports: [PageHeader, TabContent, TabGroup, TabPage, RouterLink, ErrorNotice, IssuanceList, IssuerForm, IssuerKeys, MappingList, SettingsSection],
+  imports: [PageHeader, TabContent, TabGroup, TabPage, RouterLink, ErrorNotice, IssuanceList, IssuerForm, IssuerKeys, MappingList, Disclosure],
   template: `
     <trove-page-header [heading]="issuer()" [name]="true">
       <span meta class="badge" i18n="@@ci.issuer.heading">CI issuer</span>
@@ -46,15 +46,15 @@ export type IssuerTab = (typeof ISSUER_TABS)[number];
             <div class="settings">
               <trove-ci-issuer-form [issuer]="i" [etag]="etag()" (saved)="saved($event.value, $event.etag)" />
               @if (session.has('ci:write') && deletable()) {
-                <trove-settings-section
+                <trove-disclosure
                   i18n-heading="@@ci.issuer.advanced"
                   heading="Advanced"
-                  i18n-description="@@ci.issuer.advanced-hint"
-                  description="Delete this issuer."
+                  i18n-hint="@@ci.issuer.advanced-hint"
+                  hint="Delete this issuer."
                 >
                   <p class="muted" i18n="@@ci.issuer.delete-note">Deleting the issuer revokes the tokens issued through it and deletes its mappings.</p>
                   <button class="btn btn-danger" type="button" [disabled]="busy()" (click)="remove()" i18n="@@ci.issuer.delete">Delete issuer</button>
-                </trove-settings-section>
+                </trove-disclosure>
               }
             </div>
           </ng-template>

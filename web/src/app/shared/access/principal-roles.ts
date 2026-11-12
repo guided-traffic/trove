@@ -1,4 +1,4 @@
-import { SettingsSection } from '../ui/settings-section';
+import { Disclosure } from '../ui/disclosure';
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
@@ -31,13 +31,13 @@ export const ROLE_NAMES: readonly RoleName[] = [
  */
 @Component({
   selector: 'trove-principal-roles',
-  imports: [DatePipe, RouterLink, ErrorNotice, SelectField, SettingsSection],
+  imports: [DatePipe, RouterLink, ErrorNotice, SelectField, Disclosure],
   template: `
-    <trove-settings-section
+    <trove-disclosure
       i18n-heading="@@principal-roles.heading"
       heading="System roles"
-      i18n-description="@@principal-roles.hint"
-      description="The system roles bound to this principal."
+      i18n-hint="@@principal-roles.hint"
+      hint="The system roles bound to this principal."
     >
       @if (error(); as e) {
         <trove-error-notice [error]="e" (retry)="load()" />
@@ -103,7 +103,7 @@ export const ROLE_NAMES: readonly RoleName[] = [
         }
         <p><a routerLink="/admin/roles" i18n="@@principal-roles.link">All system roles</a></p>
       }
-    </trove-settings-section>
+    </trove-disclosure>
   `,
   styleUrl: './access.scss',
 })

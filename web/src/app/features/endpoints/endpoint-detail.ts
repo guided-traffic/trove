@@ -10,7 +10,7 @@ import { Confirm } from '../../shared/confirm-dialog';
 import { AddressField } from '../../shared/address-field';
 import { ErrorNotice } from '../../shared/error-notice';
 import { TextField } from '../../shared/access/fields';
-import { SettingsSection } from '../../shared/ui/settings-section';
+import { Disclosure } from '../../shared/ui/disclosure';
 import { asApiError, valueOf } from '../../shared/paged-resource';
 import { endpointAddress, patternSummary, versionSummary } from './endpoint-model';
 import { PageHeader } from '../../shared/ui/page-header';
@@ -24,7 +24,7 @@ import { EmptyState } from '../../shared/ui/empty-state';
  */
 @Component({
   selector: 'trove-endpoint-detail',
-  imports: [EmptyState, PageHeader, RouterLink, AddressField, ErrorNotice, SettingsSection, TextField],
+  imports: [EmptyState, PageHeader, RouterLink, AddressField, ErrorNotice, Disclosure, TextField],
   templateUrl: './endpoint-detail.html',
   styleUrl: './endpoint-detail.scss',
 })

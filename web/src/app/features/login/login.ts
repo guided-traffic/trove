@@ -235,12 +235,14 @@ export class Login {
   }
 
   /**
-   * The provider's start URL with `return_to` as the route under the application's own base href (R-AUTH-009): `/ui/en/` in a
-   * build per locale, `/ui/` on the development server, which serves no locale folder (UI-A-49). Without a `<base>` element
-   * the application's base `/ui/` is taken.
+   * The provider's start URL with `return_to` as the route under the application's own base (R-AUTH-009): the path of the
+   * resolved `document.baseURI`, so a relative `<base href>` counts as the browser resolves it; `/ui/en/` in a build per locale,
+   * `/ui/de/` in the German one, `/ui/` on the development server, which serves no locale folder (UI-A-49). A base outside
+   * `/ui/` (no `<base>` element) gives the application's base `/ui/`.
    */
   protected start(startUrl: string): void {
-    const base = (this.document.querySelector('base')?.getAttribute('href') || '/ui/').replace(/\/+$/, '');
+    const resolved = new URL(this.document.baseURI).pathname;
+    const base = (resolved.startsWith('/ui/') ? resolved : '/ui/').replace(/\/+$/, '');
     const target = new URLSearchParams({
       return_to: `${base}${safeReturnTo(this.returnTo())}`,
     });

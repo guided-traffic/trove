@@ -3,9 +3,9 @@ import { Component, input, model } from '@angular/core';
 let nextDisclosureId = 1;
 
 /**
- * The quiet disclosure of a content page (Q-UI-319, Q-UI-322): the details a power user or an administrator opens, closed at
- * first. A small heading at the text's size with a chevron before it, one muted line of hint, and the content that folds with
- * the animation of the style guide. A settings page keeps its larger `<trove-settings-section>`.
+ * The one collapsible section of every screen (Q-UI-322, Q-UI-319): the details of a content page, the groups of a settings page
+ * and of an editor, closed at first unless the screen opens it. A small heading at the text's size with a chevron before it, one
+ * muted line of hint, and the content that folds with the animation of the style guide.
  */
 @Component({
   selector: 'trove-disclosure',

@@ -32,11 +32,11 @@
     </div>
   </form>
 
-  <trove-settings-section
+  <trove-disclosure
     i18n-heading="@@user.details"
     heading="Details"
-    i18n-description="@@user.details-hint"
-    description="Avatar, status, administrator role, last sign-in and creation."
+    i18n-hint="@@user.details-hint"
+    hint="Avatar, status, administrator role, last sign-in and creation."
   >
     <dl class="facts">
       <dt i18n="@@user.avatar">Avatar</dt>
@@ -81,9 +81,9 @@
     @if (session.has('audit:read')) {
       <p><a class="btn btn-tertiary" routerLink="/admin/audit" [queryParams]="{ actor: u.username }" i18n="@@user.audit">Audit log of this user</a></p>
     }
-  </trove-settings-section>
+  </trove-disclosure>
 
-  <trove-settings-section i18n-heading="@@user.identities" heading="Identities" i18n-description="@@user.identities-hint" description="The identity providers linked to this user.">
+  <trove-disclosure i18n-heading="@@user.identities" heading="Identities" i18n-hint="@@user.identities-hint" hint="The identity providers linked to this user.">
     @if (u.identities.length === 0) {
       <p i18n="@@user.no-identities">No identity provider is linked.</p>
     } @else {
@@ -100,9 +100,9 @@
         }
       </ul>
     }
-  </trove-settings-section>
+  </trove-disclosure>
 
-  <trove-settings-section i18n-heading="@@user.groups" heading="Groups" i18n-description="@@user.groups-hint" description="Group memberships and where each comes from.">
+  <trove-disclosure i18n-heading="@@user.groups" heading="Groups" i18n-hint="@@user.groups-hint" hint="Group memberships and where each comes from.">
     @if (u.groupClaimMissing; as missing) {
       <p role="status" class="warn">
         <span class="material-icons" aria-hidden="true">warning</span>
@@ -147,7 +147,7 @@
         <button class="btn btn-confirm" type="submit" [disabled]="busy() || newGroup().trim() === ''" i18n="@@user.add-group-submit">Add</button>
       </form>
     }
-  </trove-settings-section>
+  </trove-disclosure>
 
   @if (session.has('roles:read')) {
     <trove-principal-roles [principal]="'user:' + u.username" />
@@ -160,7 +160,7 @@
     </section>
   }
 
-  <trove-settings-section i18n-heading="@@user.sessions" heading="Sessions" i18n-description="@@user.sessions-hint" description="Open sessions of this user.">
+  <trove-disclosure i18n-heading="@@user.sessions" heading="Sessions" i18n-hint="@@user.sessions-hint" hint="Open sessions of this user.">
     @if (sessionError(); as e) {
       <trove-error-notice [error]="e" (retry)="load()" />
     }
@@ -196,14 +196,14 @@
         }
       }
     }
-  </trove-settings-section>
+  </trove-disclosure>
 
   @if ((canWrite() && editable()) || (locked() && session.has('content:bypass'))) {
-    <trove-settings-section
+    <trove-disclosure
       i18n-heading="@@user.advanced"
       heading="Advanced"
-      i18n-description="@@user.advanced-hint"
-      description="Disable, unlock or delete this account."
+      i18n-hint="@@user.advanced-hint"
+      hint="Disable, unlock or delete this account."
     >
       @if (canWrite() && editable()) {
         <p class="muted" i18n="@@user.disable-note">A disabled user can no longer sign in and their sessions end; you can also revoke their tokens.</p>
@@ -226,7 +226,7 @@
       @if (isSelf()) {
         <p id="self-guard" class="muted" i18n="@@user.self-guard">You cannot disable or delete your own account.</p>
       }
-    </trove-settings-section>
+    </trove-disclosure>
   }
   </div>
 }

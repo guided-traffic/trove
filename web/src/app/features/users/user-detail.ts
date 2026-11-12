@@ -15,7 +15,7 @@ import { asApiError } from '../../shared/paged-resource';
 import { Needs } from '../../shared/access/needs';
 import { PrincipalRoles } from '../../shared/access/principal-roles';
 import { ErrorNotice } from '../../shared/error-notice';
-import { SettingsSection } from '../../shared/ui/settings-section';
+import { Disclosure } from '../../shared/ui/disclosure';
 import { TroveAvatar } from '../../shared/ui/avatar';
 import { TokenManager, TokenOwnerScope } from '../tokens/token-manager';
 import { isLocked, originLabel } from './user-labels';
@@ -30,7 +30,7 @@ import { PageHeader } from '../../shared/ui/page-header';
  */
 @Component({
   selector: 'trove-user-detail',
-  imports: [PageHeader, DatePipe, RouterLink, ErrorNotice, Needs, PrincipalRoles, SettingsSection, TextField, TokenManager, TroveAvatar],
+  imports: [PageHeader, DatePipe, RouterLink, ErrorNotice, Needs, PrincipalRoles, Disclosure, TextField, TokenManager, TroveAvatar],
   templateUrl: './user-detail.html',
   styleUrl: '../../shared/access/access.scss',
   styles: `

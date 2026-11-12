@@ -66,13 +66,11 @@
                  In the admin area the project, the format and the class lead that line instead of two columns, so that a usual
                  address shows whole at 1280 px (Q-UI-325, UI-A-30). -->
             @if (!inProject()) {
-              <span class="secondary admin-kind"
-                ><a class="project-link" [routerLink]="['/projects', row.project]" translate="no">{{ row.project }}</a>
-                ·
+              <span class="secondary admin-kind dot-separated">
+                <a class="project-link" [routerLink]="['/projects', row.project]" translate="no">{{ row.project }}</a>
                 <span class="format-name"><trove-format-icon [format]="row.format" /><span translate="no">{{ formatLabel(row.format) }}</span></span>
-                ·
-                <span class="class-name"><span class="material-icons" aria-hidden="true">{{ classIcon(row.class) }}</span>{{ classText(row.class) }}</span></span
-              >
+                <span class="class-name"><span class="material-icons" aria-hidden="true">{{ classIcon(row.class) }}</span>{{ classText(row.class) }}</span>
+              </span>
             }
             @if (row.description) {
               <span class="secondary">{{ row.description }}</span>

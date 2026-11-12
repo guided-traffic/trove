@@ -118,7 +118,7 @@ describe('User detail (R-UI-024)', () => {
 
   it('R-UI-024 identity-provider memberships are read only; a manual one can be removed', async () => {
     const { fixture, root, get } = await renderScreen(UserDetail, { inputs: { username: 'alice' } });
-    const rows = [...root.querySelectorAll('trove-settings-section tbody tr')];
+    const rows = [...root.querySelectorAll('trove-disclosure tbody tr')];
     const web = rows.find((r) => text(r).includes('team-web'))!;
     const platform = rows.find((r) => text(r).includes('platform'))!;
     expect(web.querySelector('button')).toBeNull();

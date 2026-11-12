@@ -32,6 +32,7 @@ import {
 } from './system-status-model';
 import { valueOf } from '../../shared/paged-resource';
 import { PageHeader } from '../../shared/ui/page-header';
+import { DataTable, TableColumn } from '../../shared/ui/data-table';
 
 /** Automatic refresh interval with a pause control (R-UI-038, WCAG 2.2.2). */
 export const REFRESH_INTERVAL_MS = 15_000;
@@ -51,11 +52,44 @@ export const PRIMARY_DISAGREEMENT_GRACE_MS = 30_000;
 /** System status (R-UI-038): installation facts, replicas per role, Valkey, stored-secret keys. */
 @Component({
   selector: 'trove-system-status',
-  imports: [PageHeader, DatePipe, RouterLink, ErrorNotice, JobProgress, JobTable, TasksCard],
+  imports: [DataTable, PageHeader, DatePipe, RouterLink, ErrorNotice, JobProgress, JobTable, TasksCard],
   templateUrl: './system-status.html',
   styleUrl: './system-status.scss',
 })
 export class SystemStatus {
+  /** The replicas of a role or pool in the shared data table, which stacks below 48 rem (no sideways scroll at 390 px). */
+  protected readonly replicaColumns: readonly TableColumn[] = [
+    { id: 'name', label: $localize`:@@system.col.name:Name`, width: '10rem' },
+    { id: 'node', label: $localize`:@@system.col.node:Node`, width: '6rem' },
+    { id: 'version', label: $localize`:@@system.col.version:Version`, width: '5rem' },
+    { id: 'state', label: $localize`:@@system.col.state:State` },
+    { id: 'heartbeat', label: $localize`:@@system.col.heartbeat:Heartbeat`, width: '6rem' },
+    { id: 'valkey', label: $localize`:@@system.col.valkey:Valkey`, width: '7rem' },
+  ];
+  /** The key tables in the shared data table too: the canary's header names a replica, which pushed the page at 390 px. */
+  protected readonly keysCaption = $localize`:@@system.keys.caption:Key IDs and sealed values`;
+  protected readonly keyColumns = computed<readonly TableColumn[]>(() => {
+    const by = valueOf(this.encryption)?.answeredBy ?? '';
+    return [
+      { id: 'id', label: $localize`:@@system.keys.col.id:Key ID`, width: '5rem' },
+      { id: 'sealed', label: $localize`:@@system.keys.col.sealed:Sealed values`, width: '6rem' },
+      { id: 'canary', label: $localize`:@@system.keys.col.canary-by:Canary (reported by ${by}:replica:)`, width: '8rem' },
+      { id: 'status', label: $localize`:@@system.keys.col.status:Status` },
+    ];
+  });
+  protected readonly keyRingsCaption = $localize`:@@system.keys.replicas.caption:Key rings of the live replicas`;
+  protected readonly keyRingColumns: readonly TableColumn[] = [
+    { id: 'name', label: $localize`:@@system.col.name:Name`, width: '10rem' },
+    { id: 'role', label: $localize`:@@system.keys.replicas.role:Role`, width: '4rem' },
+    { id: 'active', label: $localize`:@@system.keys.active:Active key ID`, width: '6rem' },
+    { id: 'ring', label: $localize`:@@system.keys.replicas.ring:Key IDs held`, width: '6rem' },
+    { id: 'state', label: $localize`:@@system.col.state:State` },
+  ];
+  protected replicasCaption(role: string, pool: string | null): string {
+    return pool === null
+      ? $localize`:@@system.replicas.caption:Replicas of the role ${role}:role:`
+      : $localize`:@@system.replicas.caption-pool:Replicas of the pool ${pool}:pool: of the role ${role}:role:`;
+  }
   protected readonly valueOf = valueOf;
   private readonly system = inject(SystemApi);
   private readonly encryptionApi = inject(EncryptionApi);

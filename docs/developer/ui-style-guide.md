@@ -106,6 +106,8 @@ what would need a second one belongs in the [manual](manual.md).
   `[stack]="false"` keeps the table for a list that cannot be read as blocks.
 - **An empty list** is `<trove-empty-state text>` with the action that fills it as its content; the data table shows it with its
   `emptyText` and the content marked `emptyAction` ([Q-UI-309](../spec/api-and-ui.md#q-ui-309--an-empty-list-or-region-is-a-sentence-and-the-action-that-fills-it-without-a-frame)).
+- **A line of facts** (project, format and class under a key; a source line) separates them with one middle dot, the same space
+  on both sides, in the muted colour: `.dot-separated` around its parts, `.dot-before` on one part ([_controls.scss](../../web/src/styles/_controls.scss)).
 - **Names stay on one line**, except the key of the repository list, which wraps after a hyphen where it is longer than its
   column (`th.wrap-name`, [Q-UI-303](../spec/api-and-ui.md#q-ui-303--the-repository-lists-key-breaks-after-a-hyphen-where-it-is-longer-than-its-column)).
 - An inline control in a row (the role select) has no visible label and an `aria-label` that names the row. It shows the current
@@ -120,8 +122,9 @@ existing ones are moved over ([What does not follow this page yet](#what-does-no
 
 - **One column**, at most `--trove-settings-measure` (56 rem) wide, on the page and without a card around it.
 - **The most used settings are open at the top**, without a section title: the name, the description, the avatar.
-- **Further groups are collapsible sections** (`<trove-settings-section>`), closed by default: a chevron on the left, the title at `--trove-heading-2` weight
-  600, one muted sentence under it, a hairline between sections. The title names the group (**Permissions**, **Advanced**).
+- **Further groups are collapsible sections** (`<trove-disclosure>`, the one collapsible section of every screen), closed by
+  default: a chevron on the left, the title at the text's size, weight 600, one muted sentence under it, a hairline between
+  sections. The title names the group (**Permissions**, **Advanced**).
 - **Everything is edited in place.** A settings page has no read-only view with an **Edit** button that opens a dialog, and no
   key-value list of values that could be fields.
 - **A value that cannot change is a read-only field** with the control's disabled fill and no border (the key of a project, an
@@ -138,8 +141,7 @@ existing ones are moved over ([What does not follow this page yet](#what-does-no
 | Element | How |
 |---|---|
 | A region that stays in the page | `<div class="collapse-region" [class.open]="open()"><div>…</div></div>`; the second element is required |
-| A collapsible group of a settings page | `<trove-settings-section heading description>` ([settings-section.ts](../../web/src/app/shared/ui/settings-section.ts)): the title at `--trove-heading-2`, because the groups are the page |
-| The details of a content page | `<trove-disclosure heading hint>` ([disclosure.ts](../../web/src/app/shared/ui/disclosure.ts), [Q-UI-322](../spec/api-and-ui.md#q-ui-322--a-closed-section-of-details-is-one-quiet-disclosure-a-small-heading-with-a-chevron-and-one-hint-line)): the heading at the text's size, weight 600, a chevron before it, one muted hint line, closed at first; `[(expanded)]` binds its state. Never a settings section below a list or a README |
+| A collapsible section of any screen: the details of a content page, the groups of a settings page or an editor | `<trove-disclosure heading hint>` ([disclosure.ts](../../web/src/app/shared/ui/disclosure.ts), [Q-UI-322](../spec/api-and-ui.md#q-ui-322--a-closed-section-of-details-is-one-quiet-disclosure-a-small-heading-with-a-chevron-and-one-hint-line)): the heading at the text's size, weight 600, a chevron before it, one muted hint line, closed at first; `[(expanded)]` binds its state. Never a settings section below a list or a README |
 | Something added and removed with `@if` | A wrapper with `class="collapse-animated" animate.enter="collapse-in" animate.leave="collapse-out"` around one child |
 | A side panel, a drop-down panel, the sidebar | `panel-in`, `panel-out`; `dropdown-in`, `dropdown-out`; `sidebar-in`, `sidebar-out` |
 | A native `<details>` | Nothing: it animates by itself where the browser can |

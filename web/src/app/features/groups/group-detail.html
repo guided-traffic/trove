@@ -44,11 +44,11 @@
       }
     </form>
 
-  <trove-settings-section
+  <trove-disclosure
     i18n-heading="@@group.members"
     heading="Members ({{ g.memberCount }})"
-    i18n-description="@@group.members-hint"
-    description="Who is in the group and where each membership comes from."
+    i18n-hint="@@group.members-hint"
+    hint="Who is in the group and where each membership comes from."
     [expanded]="true"
   >
     @if (memberError(); as e) {
@@ -114,13 +114,13 @@
         <button class="btn btn-confirm" type="submit" [disabled]="busy() || newMember().trim() === ''" i18n="@@group.add-member-submit">Add</button>
       </form>
     }
-  </trove-settings-section>
+  </trove-disclosure>
 
-  <trove-settings-section
+  <trove-disclosure
     i18n-heading="@@group.roles"
     heading="System roles"
-    i18n-description="@@group.roles-hint"
-    description="The roles bound to this group."
+    i18n-hint="@@group.roles-hint"
+    hint="The roles bound to this group."
   >
     @if (g.roles.length === 0) {
       <p i18n="@@group.no-roles">No system role is bound to this group.</p>
@@ -134,14 +134,14 @@
     @if (session.has('roles:read')) {
       <p><a routerLink="/admin/roles" i18n="@@group.roles-link">Manage role bindings</a></p>
     }
-  </trove-settings-section>
+  </trove-disclosure>
 
   @if (policies(); as list) {
-    <trove-settings-section
+    <trove-disclosure
       i18n-heading="@@group.policies"
       heading="Permission policies naming this group"
-      i18n-description="@@group.policies-hint"
-      description="Read only: the policies that grant to this group."
+      i18n-hint="@@group.policies-hint"
+      hint="Read only: the policies that grant to this group."
     >
       @if (list.length === 0) {
         <p i18n="@@group.no-policies">No policy names this group.</p>
@@ -152,19 +152,19 @@
           }
         </ul>
       }
-    </trove-settings-section>
+    </trove-disclosure>
   }
 
   @if (canWrite() && !readOnly()) {
-    <trove-settings-section
+    <trove-disclosure
       i18n-heading="@@group.advanced"
       heading="Advanced"
-      i18n-description="@@group.advanced-hint"
-      description="Delete this group."
+      i18n-hint="@@group.advanced-hint"
+      hint="Delete this group."
     >
       <p class="muted" i18n="@@group.delete-note">Deleting the group removes its memberships and the role bindings of the group. Policies that name it stop granting to its members.</p>
       <button class="btn btn-danger" type="button" [disabled]="busy()" (click)="remove()" i18n="@@group.delete">Delete group</button>
-    </trove-settings-section>
+    </trove-disclosure>
   }
   </div>
 }

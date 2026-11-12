@@ -332,7 +332,10 @@ describe('The Documentation tab of an Ansible collection', () => {
         }
         ansibleDocsFixture(fake, commonFixture({ source: 'upstream' }));
       });
-      expect(text(several.root.querySelector('[data-testid="docs-source"]')!)).toBe('Taken from the upstream · Repository: web/ansible-local');
+      // The separator is the shared middle dot of a line of facts (`.dot-before`), drawn by the style, not typed into the text.
+      const source = several.root.querySelector('[data-testid="docs-source"]')!;
+      expect(text(source)).toMatch(/^Taken from the upstream/);
+      expect(text(source.querySelector('.dot-before')!)).toBe('Repository: web/ansible-local');
     });
 
     it('R-UI-060 one pane at a time on a narrow content area: the page shows with a back action once a page is chosen', async () => {

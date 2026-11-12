@@ -17796,14 +17796,6 @@
         <source>Nobody holds this role.</source>
       </segment>
     </unit>
-    <unit id="roles.holders-caption">
-      <notes>
-        <note category="location">src/app/features/roles/role-bindings.html:30,31</note>
-      </notes>
-      <segment>
-        <source>Principals that hold the role <ph id="0" equiv="INTERPOLATION" disp="{{ r.name }}"/></source>
-      </segment>
-    </unit>
     <unit id="roles.principal">
       <notes>
         <note category="location">src/app/features/roles/role-bindings.html:33,34</note>
@@ -19101,6 +19093,70 @@
       </notes>
       <segment>
         <source>Use lower-case letters, digits, dots, hyphens and underscores, starting with a letter or digit, at most 128 characters.</source>
+      </segment>
+    </unit>
+    <unit id="roles.holders-caption">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Principals that hold the role <ph id="0" equiv="role" disp="role"/></source>
+      </segment>
+    </unit>
+    <unit id="policy.limits">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Limit to package names or paths</source>
+      </segment>
+    </unit>
+    <unit id="policy.limits-hint">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Patterns that narrow the entries to some package names or paths, and a tester for them.</source>
+      </segment>
+    </unit>
+    <unit id="policy.pointer-entry">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Entry <ph id="0" equiv="n" disp="n"/></source>
+      </segment>
+    </unit>
+    <unit id="policy.try-missing">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Name a principal and a repository first.</source>
+      </segment>
+    </unit>
+    <unit id="system.replicas.caption">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Replicas of the role <ph id="0" equiv="role" disp="role"/></source>
+      </segment>
+    </unit>
+    <unit id="system.replicas.caption-pool">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Replicas of the pool <ph id="0" equiv="pool" disp="pool"/> of the role <ph id="1" equiv="role" disp="role"/></source>
+      </segment>
+    </unit>
+    <unit id="system.keys.col.canary-by">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Canary (reported by <ph id="0" equiv="replica" disp="by"/>)</source>
       </segment>
     </unit>
     <unit id="setup.heading">
@@ -21813,7 +21869,7 @@
         <note category="location">src/app/features/system/system-status.html:369,371</note>
       </notes>
       <segment>
-        <source> Key IDs and sealed values </source>
+        <source>Key IDs and sealed values</source>
       </segment>
     </unit>
     <unit id="system.keys.col.id">
@@ -21830,14 +21886,6 @@
       </notes>
       <segment>
         <source>Sealed values</source>
-      </segment>
-    </unit>
-    <unit id="system.keys.col.canary-by">
-      <notes>
-        <note category="location">src/app/features/system/system-status.html:376,378</note>
-      </notes>
-      <segment>
-        <source> Canary (reported by <ph id="0" equiv="INTERPOLATION" disp="{{ e.answeredBy }}"/>) </source>
       </segment>
     </unit>
     <unit id="system.keys.col.status">
@@ -21909,7 +21957,7 @@
         <note category="location">src/app/features/system/system-status.html:427,430</note>
       </notes>
       <segment>
-        <source> Key rings of the live replicas </source>
+        <source>Key rings of the live replicas</source>
       </segment>
     </unit>
     <unit id="system.keys.replicas.role">
@@ -22133,7 +22181,7 @@
         <note category="location">src/app/features/system/tasks-card.ts:39,40</note>
       </notes>
       <segment>
-        <source> Maintenance tasks </source>
+        <source>Maintenance tasks</source>
       </segment>
     </unit>
     <unit id="tasks.col.name">

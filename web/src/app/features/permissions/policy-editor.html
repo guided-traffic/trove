@@ -64,11 +64,11 @@
       </section>
 
       <div id="sec-principals" tabindex="-1">
-      <trove-settings-section
+      <trove-disclosure
         i18n-heading="@@policy.principals"
         heading="Principals and actions"
-        i18n-description="@@policy.principals-help"
-        description="Each entry gives one principal a set of actions. Actions are independent: holding one never implies another."
+        i18n-hint="@@policy.principals-help"
+        hint="Each entry gives one principal a set of actions. Actions are independent: holding one never implies another."
         [(expanded)]="principalsOpen"
       >
         <dl class="help">
@@ -137,15 +137,15 @@
             />
           }
         }
-      </trove-settings-section>
+      </trove-disclosure>
       </div>
 
       <div id="sec-resources" tabindex="-1">
-      <trove-settings-section
+      <trove-disclosure
         i18n-heading="@@policy.resources"
         heading="Repositories and patterns"
-        i18n-description="@@policy.resources-help"
-        description="Which repositories, package names and paths the entries apply to."
+        i18n-hint="@@policy.resources-help"
+        hint="Which repositories, package names and paths the entries apply to."
         [(expanded)]="resourcesOpen"
       >
         <trove-text-field
@@ -183,6 +183,16 @@
           </p>
         }
 
+      </trove-disclosure>
+      <!-- Package names and paths are an expert's limit of a policy: closed until one of them holds a value (details on demand). -->
+      <trove-disclosure
+        class="limits"
+        i18n-heading="@@policy.limits"
+        heading="Limit to package names or paths"
+        i18n-hint="@@policy.limits-hint"
+        hint="Patterns that narrow the entries to some package names or paths, and a tester for them."
+        [(expanded)]="limitsOpen"
+      >
         <h3 i18n="@@policy.packages">Package names</h3>
         <p class="muted" i18n="@@policy.patterns-help">
           One pattern per line. * is any run of characters except /, ** includes /, ? is one character, \ makes the next character literal. An empty include list is unrestricted; exclude always wins within this policy.
@@ -208,19 +218,19 @@
             {{ verdictText(v) }}
           </p>
         }
-      </trove-settings-section>
+      </trove-disclosure>
       </div>
 
       @if (!isNew() && canWrite()) {
-        <trove-settings-section
+        <trove-disclosure
           i18n-heading="@@policy.advanced"
           heading="Advanced"
-          i18n-description="@@policy.advanced-hint"
-          description="Delete this policy."
+          i18n-hint="@@policy.advanced-hint"
+          hint="Delete this policy."
         >
           <p class="muted" i18n="@@policy.delete-note">Deleting the policy removes every grant it gives, at once on every replica.</p>
           <button class="btn btn-danger" type="button" [disabled]="busy()" (click)="remove()" i18n="@@policy.delete">Delete policy</button>
-        </trove-settings-section>
+        </trove-disclosure>
       }
     </div>
 
@@ -237,13 +247,14 @@
         @if (!canValidate()) {
           <p class="muted" i18n="@@policy.preview-denied">The preview needs the permission to read policies.</p>
         } @else if (validation(); as v) {
+          <!-- A problem shows once its field holds a value or a save was tried, as next to the field (UI-A-42). -->
           @if (v.valid) {
             <p class="ok"><span class="material-icons" aria-hidden="true">check_circle</span> <ng-container i18n="@@policy.valid">No problems found.</ng-container></p>
-          } @else {
+          } @else if (previewProblems().length > 0) {
             <p class="bad" role="status"><span class="material-icons" aria-hidden="true">error</span> <ng-container i18n="@@policy.invalid">The policy has problems:</ng-container></p>
             <ul class="problems">
-              @for (p of v.errors; track $index) {
-                <li><code translate="no">{{ p.pointer }}</code> {{ problemText(p) }}</li>
+              @for (p of previewProblems(); track $index) {
+                <li><strong>{{ pointerLabel(p.pointer) }}</strong>: {{ problemText(p) }}</li>
               }
             </ul>
           }
@@ -275,8 +286,11 @@
           <trove-text-field i18n-label="@@policy.try-principal" label="Principal" name="askPrincipal" [(value)]="askPrincipal" i18n-hint="@@policy.try-principal-hint" hint="for example user:alice" />
           <trove-text-field i18n-label="@@policy.try-repository" label="Repository" name="askRepository" [(value)]="askRepository" />
           <trove-select-field i18n-label="@@policy.try-action" label="Action" name="askAction" [options]="actionOptions" [(value)]="askAction" />
-          <button class="btn btn-default" type="button" [disabled]="askPrincipal().trim() === '' || askRepository().trim() === ''" (click)="explain($event)" i18n="@@policy.try-ask">Explain</button>
+          <button class="btn btn-default explain" type="button" (click)="explain($event)" i18n="@@policy.try-ask">Explain</button>
         </div>
+        @if (askMissing()) {
+          <p class="field-error" role="alert" i18n="@@policy.try-missing">Name a principal and a repository first.</p>
+        }
         @if (explainError(); as e) {
           <trove-error-notice [error]="e" />
         }

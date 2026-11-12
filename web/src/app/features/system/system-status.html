@@ -179,95 +179,76 @@
                 </p>
               }
               @if (p.replicas.length > 0) {
-                <div
-                  class="scroll"
-                  tabindex="0"
-                  role="region"
-                  [attr.aria-labelledby]="headingId(g, p)"
-                >
-                  <table>
-                    <thead>
-                      <tr>
-                        <th scope="col" i18n="@@system.col.name">Name</th>
-                        <th scope="col" i18n="@@system.col.node">Node</th>
-                        <th scope="col" i18n="@@system.col.version">Version</th>
-                        <th scope="col" i18n="@@system.col.state">State</th>
-                        <th scope="col" i18n="@@system.col.heartbeat">Heartbeat</th>
-                        <th scope="col" i18n="@@system.col.valkey">Valkey</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      @for (r of p.replicas; track r.instanceUid) {
-                        <tr>
-                          <th scope="row" translate="no">{{ r.name }}</th>
-                          <td translate="no">{{ r.node ?? '–' }}</td>
-                          <td translate="no">{{ r.version }}</td>
-                          <td>
-                            @if (r.lost) {
+                <trove-data-table [caption]="replicasCaption(g.role, p.pool)" [columns]="replicaColumns">
+                  @for (r of p.replicas; track r.instanceUid) {
+                    <tr>
+                      <th scope="row" translate="no">{{ r.name }}</th>
+                      <td translate="no">{{ r.node ?? '–' }}</td>
+                      <td translate="no">{{ r.version }}</td>
+                      <td>
+                        @if (r.lost) {
+                          <span class="material-icons bad" aria-hidden="true">error</span>
+                          <span i18n="@@system.state.lost">lost</span>
+                        } @else {
+                          @switch (r.state) {
+                            @case ('ready') {
+                              <span class="material-icons ok" aria-hidden="true">check_circle</span>
+                              <span i18n="@@system.state.ready">ready</span>
+                            }
+                            @case ('starting') {
+                              <span class="material-icons" aria-hidden="true">hourglass_empty</span>
+                              <span i18n="@@system.state.starting">starting</span>
+                            }
+                            @case ('draining') {
+                              <span class="material-icons" aria-hidden="true">hourglass_empty</span>
+                              <span i18n="@@system.state.draining">draining</span>
+                            }
+                            @case ('unready') {
                               <span class="material-icons bad" aria-hidden="true">error</span>
-                              <span i18n="@@system.state.lost">lost</span>
-                            } @else {
-                              @switch (r.state) {
-                                @case ('ready') {
-                                  <span class="material-icons ok" aria-hidden="true">check_circle</span>
-                                  <span i18n="@@system.state.ready">ready</span>
-                                }
-                                @case ('starting') {
-                                  <span class="material-icons" aria-hidden="true">hourglass_empty</span>
-                                  <span i18n="@@system.state.starting">starting</span>
-                                }
-                                @case ('draining') {
-                                  <span class="material-icons" aria-hidden="true">hourglass_empty</span>
-                                  <span i18n="@@system.state.draining">draining</span>
-                                }
-                                @case ('unready') {
-                                  <span class="material-icons bad" aria-hidden="true">error</span>
-                                  <span i18n="@@system.state.unready">unready</span>
-                                }
-                              }
+                              <span i18n="@@system.state.unready">unready</span>
                             }
-                            @if (failing(r).length > 0) {
-                              <div class="check-list">
-                                <span i18n="@@system.checks.failing">Failing checks:</span>
-                                <span translate="no">{{ failing(r).join(', ') }}</span>
-                              </div>
+                          }
+                        }
+                        @if (failing(r).length > 0) {
+                          <div class="check-list">
+                            <span i18n="@@system.checks.failing">Failing checks:</span>
+                            <span translate="no">{{ failing(r).join(', ') }}</span>
+                          </div>
+                        }
+                        @for (c of degraded(r); track c) {
+                          <div class="check-list">
+                            <span class="material-icons warn" aria-hidden="true">warning</span>
+                            <span>{{ checkText(c) }}</span>
+                          </div>
+                        }
+                      </td>
+                      <td>
+                        <time [attr.datetime]="r.heartbeatAt">{{
+                          r.heartbeatAt | date: 'mediumTime'
+                        }}</time>
+                      </td>
+                      <td>
+                        @if (r.valkey; as v) {
+                          @if (v.state === 'available') {
+                            <span class="material-icons ok" aria-hidden="true">check_circle</span>
+                            <span i18n="@@system.valkey.available">available</span>
+                          } @else {
+                            <span class="material-icons warn" aria-hidden="true">warning</span>
+                            <span i18n="@@system.valkey.degraded">degraded</span>
+                            @if (v.reason) {
+                              <span translate="no"> ({{ v.reason }})</span>
                             }
-                            @for (c of degraded(r); track c) {
-                              <div class="check-list">
-                                <span class="material-icons warn" aria-hidden="true">warning</span>
-                                <span>{{ checkText(c) }}</span>
-                              </div>
-                            }
-                          </td>
-                          <td>
-                            <time [attr.datetime]="r.heartbeatAt">{{
-                              r.heartbeatAt | date: 'mediumTime'
-                            }}</time>
-                          </td>
-                          <td>
-                            @if (r.valkey; as v) {
-                              @if (v.state === 'available') {
-                                <span class="material-icons ok" aria-hidden="true">check_circle</span>
-                                <span i18n="@@system.valkey.available">available</span>
-                              } @else {
-                                <span class="material-icons warn" aria-hidden="true">warning</span>
-                                <span i18n="@@system.valkey.degraded">degraded</span>
-                                @if (v.reason) {
-                                  <span translate="no"> ({{ v.reason }})</span>
-                                }
-                              }
-                              @if (v.circuit === 'open') {
-                                <span i18n="@@system.valkey.circuit-open">, circuit open</span>
-                              }
-                            } @else {
-                              –
-                            }
-                          </td>
-                        </tr>
-                      }
-                    </tbody>
-                  </table>
-                </div>
+                          }
+                          @if (v.circuit === 'open') {
+                            <span i18n="@@system.valkey.circuit-open">, circuit open</span>
+                          }
+                        } @else {
+                          –
+                        }
+                      </td>
+                    </tr>
+                  }
+                </trove-data-table>
               }
             </section>
           }
@@ -363,98 +344,69 @@
         >
       }
     </p>
-    <table>
-      <caption class="visually-hidden" i18n="@@system.keys.caption">
-        Key IDs and sealed values
-      </caption>
-      <thead>
+    <trove-data-table [caption]="keysCaption" [columns]="keyColumns()">
+      @for (k of e.keys; track k.id) {
         <tr>
-          <th scope="col" i18n="@@system.keys.col.id">Key ID</th>
-          <th scope="col" i18n="@@system.keys.col.sealed">Sealed values</th>
-          <th scope="col" i18n="@@system.keys.col.canary-by">
-            Canary (reported by {{ e.answeredBy }})
-          </th>
-          <th scope="col" i18n="@@system.keys.col.status">Status</th>
+          <th scope="row" translate="no">{{ k.id }}</th>
+          <td translate="no">{{ k.sealedValues }}</td>
+          <td>
+            @switch (k.canary) {
+              @case ('ok') {
+                <span class="material-icons ok" aria-hidden="true">check_circle</span>
+                <span i18n="@@system.keys.canary.ok">ok</span>
+              }
+              @case ('failed') {
+                <span class="material-icons bad" aria-hidden="true">error</span>
+                <span i18n="@@system.keys.canary.failed">failed</span>
+              }
+              @case ('absent') {
+                <span class="material-icons warn" aria-hidden="true">warning</span>
+                <span i18n="@@system.keys.canary.absent">absent</span>
+              }
+            }
+          </td>
+          <td>
+            @switch (keyStatus(k)) {
+              @case ('active') {
+                <span class="material-icons ok" aria-hidden="true">check_circle</span>
+                <span i18n="@@system.keys.status.active">active</span>
+              }
+              @case ('re-encryption-pending') {
+                <span class="material-icons warn" aria-hidden="true">warning</span>
+                <span i18n="@@system.keys.status.pending">re-encryption pending</span>
+              }
+              @case ('unused') {
+                <span i18n="@@system.keys.status.unused"
+                  >No values left under this key: its key file can be removed.</span
+                >
+              }
+            }
+          </td>
         </tr>
-      </thead>
-      <tbody>
-        @for (k of e.keys; track k.id) {
-          <tr>
-            <th scope="row" translate="no">{{ k.id }}</th>
-            <td translate="no">{{ k.sealedValues }}</td>
-            <td>
-              @switch (k.canary) {
-                @case ('ok') {
-                  <span class="material-icons ok" aria-hidden="true">check_circle</span>
-                  <span i18n="@@system.keys.canary.ok">ok</span>
-                }
-                @case ('failed') {
-                  <span class="material-icons bad" aria-hidden="true">error</span>
-                  <span i18n="@@system.keys.canary.failed">failed</span>
-                }
-                @case ('absent') {
-                  <span class="material-icons warn" aria-hidden="true">warning</span>
-                  <span i18n="@@system.keys.canary.absent">absent</span>
-                }
-              }
-            </td>
-            <td>
-              @switch (keyStatus(k)) {
-                @case ('active') {
-                  <span class="material-icons ok" aria-hidden="true">check_circle</span>
-                  <span i18n="@@system.keys.status.active">active</span>
-                }
-                @case ('re-encryption-pending') {
-                  <span class="material-icons warn" aria-hidden="true">warning</span>
-                  <span i18n="@@system.keys.status.pending">re-encryption pending</span>
-                }
-                @case ('unused') {
-                  <span i18n="@@system.keys.status.unused"
-                    >No values left under this key: its key file can be removed.</span
-                  >
-                }
-              }
-            </td>
-          </tr>
-        }
-      </tbody>
-    </table>
+      }
+    </trove-data-table>
 
     <h3 i18n="@@system.keys.replicas.heading">Key IDs per replica</h3>
-    <table>
-      <caption class="visually-hidden" i18n="@@system.keys.replicas.caption">
-        Key rings of the live replicas
-      </caption>
-      <thead>
+    <trove-data-table [caption]="keyRingsCaption" [columns]="keyRingColumns">
+      @for (r of e.replicas; track r.name) {
         <tr>
-          <th scope="col" i18n="@@system.col.name">Name</th>
-          <th scope="col" i18n="@@system.keys.replicas.role">Role</th>
-          <th scope="col" i18n="@@system.keys.active">Active key ID</th>
-          <th scope="col" i18n="@@system.keys.replicas.ring">Key IDs held</th>
-          <th scope="col" i18n="@@system.col.state">State</th>
+          <th scope="row" translate="no">{{ r.name }}</th>
+          <td translate="no">{{ r.role }}</td>
+          <td translate="no">{{ r.activeKeyId }}</td>
+          <td translate="no">{{ r.keyIds.join(', ') }}</td>
+          <td>
+            @if (gapOf(r.name); as gap) {
+              <span class="material-icons bad" aria-hidden="true">error</span>
+              <span i18n="@@system.keys.replicas.missing">lacks</span>
+              <span translate="no"> {{ gap.missing.join(', ') }}</span>
+            } @else {
+              <span class="material-icons ok" aria-hidden="true">check_circle</span>
+              <span i18n="@@system.keys.replicas.complete">complete</span>
+            }
+          </td>
         </tr>
-      </thead>
-      <tbody>
-        @for (r of e.replicas; track r.name) {
-          <tr>
-            <th scope="row" translate="no">{{ r.name }}</th>
-            <td translate="no">{{ r.role }}</td>
-            <td translate="no">{{ r.activeKeyId }}</td>
-            <td translate="no">{{ r.keyIds.join(', ') }}</td>
-            <td>
-              @if (gapOf(r.name); as gap) {
-                <span class="material-icons bad" aria-hidden="true">error</span>
-                <span i18n="@@system.keys.replicas.missing">lacks</span>
-                <span translate="no"> {{ gap.missing.join(', ') }}</span>
-              } @else {
-                <span class="material-icons ok" aria-hidden="true">check_circle</span>
-                <span i18n="@@system.keys.replicas.complete">complete</span>
-              }
-            </td>
-          </tr>
-        }
-      </tbody>
-    </table>
+      }
+    </trove-data-table>
 
     @switch (step()?.kind) {
       @case ('incompatible') {

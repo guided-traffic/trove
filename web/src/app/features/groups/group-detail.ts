@@ -16,7 +16,7 @@ import { fieldErrorAt } from '../../shared/field-errors';
 import { Needs } from '../../shared/access/needs';
 import { PagedResource, asApiError } from '../../shared/paged-resource';
 import { ErrorNotice } from '../../shared/error-notice';
-import { SettingsSection } from '../../shared/ui/settings-section';
+import { Disclosure } from '../../shared/ui/disclosure';
 import { groupOriginLabel } from './group-list';
 import { PageHeader } from '../../shared/ui/page-header';
 
@@ -29,7 +29,7 @@ import { PageHeader } from '../../shared/ui/page-header';
  */
 @Component({
   selector: 'trove-group-detail',
-  imports: [PageHeader, DatePipe, Checkbox, RouterLink, ErrorNotice, Needs, SelectField, SettingsSection, TextField],
+  imports: [PageHeader, DatePipe, Checkbox, RouterLink, ErrorNotice, Needs, SelectField, Disclosure, TextField],
   templateUrl: './group-detail.html',
   styleUrl: '../../shared/access/access.scss',
   styles: `

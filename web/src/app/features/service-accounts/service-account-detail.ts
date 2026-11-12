@@ -14,7 +14,7 @@ import { asApiError } from '../../shared/paged-resource';
 import { Needs } from '../../shared/access/needs';
 import { PrincipalRoles } from '../../shared/access/principal-roles';
 import { ErrorNotice } from '../../shared/error-notice';
-import { SettingsSection } from '../../shared/ui/settings-section';
+import { Disclosure } from '../../shared/ui/disclosure';
 import { TokenManager, TokenOwnerScope } from '../tokens/token-manager';
 import { PageHeader } from '../../shared/ui/page-header';
 
@@ -25,7 +25,7 @@ import { PageHeader } from '../../shared/ui/page-header';
  */
 @Component({
   selector: 'trove-service-account-detail',
-  imports: [PageHeader, DatePipe, ErrorNotice, Needs, PrincipalRoles, SettingsSection, TextField, TokenManager],
+  imports: [PageHeader, DatePipe, ErrorNotice, Needs, PrincipalRoles, Disclosure, TextField, TokenManager],
   template: `
     <trove-page-header [heading]="name()" [name]="true">
       <span meta class="badge" i18n="@@sa.heading">Service account</span>
@@ -59,11 +59,11 @@ import { PageHeader } from '../../shared/ui/page-header';
           }
         </form>
 
-        <trove-settings-section
+        <trove-disclosure
           i18n-heading="@@sa.details"
           heading="Details"
-          i18n-description="@@sa.details-hint"
-          description="Status, administrator role and when the account was created."
+          i18n-hint="@@sa.details-hint"
+          hint="Status, administrator role and when the account was created."
         >
           <dl class="facts">
             <dt i18n="@@sa.status">Status</dt>
@@ -87,7 +87,7 @@ import { PageHeader } from '../../shared/ui/page-header';
             <dt i18n="@@sa.created">Created</dt>
             <dd>{{ a.createdAt | date: 'medium' }}</dd>
           </dl>
-        </trove-settings-section>
+        </trove-disclosure>
 
         @if (session.has('roles:read') && !a.project) {
           <trove-principal-roles [principal]="a.principal" />
@@ -103,11 +103,11 @@ import { PageHeader } from '../../shared/ui/page-header';
         </section>
 
         @if (canWrite()) {
-          <trove-settings-section
+          <trove-disclosure
             i18n-heading="@@sa.advanced"
             heading="Advanced"
-            i18n-description="@@sa.advanced-hint"
-            description="Disable or delete this account."
+            i18n-hint="@@sa.advanced-hint"
+            hint="Disable or delete this account."
           >
             <p class="muted">
               @if (a.status === 'active') {
@@ -125,7 +125,7 @@ import { PageHeader } from '../../shared/ui/page-header';
             </p>
             <p class="muted" i18n="@@sa.delete-note">Deleting the account removes it and its tokens. This cannot be undone.</p>
             <button class="btn btn-danger" type="button" [disabled]="busy()" (click)="remove()" i18n="@@sa.delete">Delete</button>
-          </trove-settings-section>
+          </trove-disclosure>
         }
       </div>
     }

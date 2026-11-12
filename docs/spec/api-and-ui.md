@@ -3021,8 +3021,9 @@ The flow and its security properties are owned by
   `publicContent` is false navigates to `/login?returnTo=<current route>`; while it is true
   (from `login-options`), the application runs anonymously with a "Sign in" button (R-UI-057).
 - `/login` renders only from `GET /api/v1/auth/login-options`: one button per provider, each
-  navigating (full page) to the provider's `startUrl` with `return_to` set to the UI route under the page's own base href
-  (`/ui/en/…` in a build per locale, `/ui/…` on the development server, UI-A-49). With
+  navigating (full page) to the provider's `startUrl` with `return_to` set to the UI route under the path of the page's
+  resolved base (`document.baseURI`, so a relative `<base href>` counts as the browser resolves it): `/ui/en/…` and `/ui/de/…` in
+  the builds per locale, `/ui/…` on the development server (UI-A-49). With
   `autoRedirect` set, the page navigates at once unless the URL carries `?auto_sign_in=false`. The
   break-glass form appears when `localLogin` is true or the URL carries `?auto_sign_in=false`, and
   posts to the local login endpoint of the owning page. The screen stands alone, without the shell,
@@ -4069,10 +4070,13 @@ Priority: **MVP** · Covers: UI-039, UI-040
   policy's context: `<projectGlob>/<keyGlob>[:<format>]` or a class for a policy of no project, bare keys, key globs
   and classes of the project for a project's policy ([authorization.md](authorization.md) R-AUTHZ-004,
   [Q-AUTHZ-216](authorization.md#q-authz-216--repository-selectors-name-the-project-in-instance-contexts-and-a-bare-key-inside-a-project)); include and exclude
-  patterns with syntax help and a tester field ("Does `@team-a/ui` match?"); actions with a one-line
-  explanation each.
+  patterns of package names and paths with syntax help and a tester field ("Does `@team-a/ui` match?") in a closed section
+  **Limit to package names or paths**, open when one of them holds a value (details on demand); actions with a one-line
+  explanation each. Every section is the quiet disclosure of Q-UI-322.
 - Preview panel fed by `POST /api/v1/authz/validate-policy` (debounced 500 ms): covered repositories,
-  errors, warnings. "Try it" answers from the draft alone, adds what the repository's visibility level gives the principal
+  errors, warnings. An error of a field shows once the field holds a value or a save was tried, as next to the field, and names
+  the field by its label ("Name: …"), never its JSON pointer. "Try it" answers from the draft alone; its **Explain** is a
+  secondary button that says what is missing when a principal or a repository is not named yet; the answer adds what the repository's visibility level gives the principal
   (`internal` covers users who are not external, never service accounts, CI identities or anonymous; R-AUTHZ-030,
   R-AUTHZ-035), and says so.
 - The one-line help of the actions says what each covers; `manage` is the administration of content
@@ -4499,7 +4503,7 @@ Acceptance criteria:
 ### R-UI-053 · The installation's visibility in the general settings
 Priority: **MVP** · Covers: trove-only
 
-`/admin/settings/general` gains the section **Visibility** (`<trove-settings-section>`, closed by default) below the public base
+`/admin/settings/general` gains the section **Visibility** (`<trove-disclosure>`, closed by default) below the public base
 URL, with its own **Save changes**, reading and writing `/api/v1/settings/visibility` (R-API-056):
 
 - **Default visibility level** is a radio group of the three levels, each with its icon and one muted sentence
@@ -11022,7 +11026,9 @@ region made each look like a second title of the page below its content.
 details. The development agent revisits (b) if the two components grow apart in behaviour.
 
 **Applied in the spec:** R-UI-067, Q-UI-319; the style guide's components table and its section on details. Built in fix wave 2 on
-the repository page and the package page.
+the repository page and the package page. Revised in fix wave 3 (the coordinator, 2026-11-12): the quiet look serves every
+collapsible section, the groups of the settings pages and the editors too, and `<trove-settings-section>` is gone; one component,
+one look.
 
 ### Q-UI-323 · A project's repository list says in one muted line what the project is and whom to ask; recently opened is the start page's
 
