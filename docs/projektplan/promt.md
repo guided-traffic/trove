@@ -598,6 +598,23 @@ and admins." A confirmed feature, not a parked idea; it runs beside T-18 and is 
       - one closed **Advanced settings** section;
       - the settings page as one column of sections.
       T-18 changes the same flow, so two builders build it after T-18 lands.
+  - **Vulnerabilities shown as cogpit shows them** (owner, 2026-11-12). The owner showed cogpit's grade card and, beside it, trove's
+    column "! High 24", "really bad". The reference is the Trivy integration of the owner's cogpit (`internal/model/imagerating.go`,
+    `internal/ui/fyneui/gradebadge.go`, `drawergrade.go`):
+    - **A grade as a shield:** S, A, B, C, D, E or N/A, with the grade and the count that decides it ("E · 13 Critical");
+    - **the rule it stands for:** "More than 5 Critical";
+    - **a severity bar:** Critical, High, Medium, Low and Unknown, each segment as wide as its count, Unknown hatched;
+    - **a line of facts:** the OS of an image, its end of life, and when it was scanned.
+
+    Cogpit's rules apply:
+    - S: no finding;
+    - A: at most 10 Low or Unknown;
+    - B: Medium, or more than 10 Low or Unknown;
+    - C: High, or an OS at its end of life;
+    - D: 1 to 5 Critical;
+    - E: more than 5 Critical.
+
+    Every place that shows vulnerabilities today uses it: a list shows the shield with its text, a detail page shows the card.
     - Open for the owner, not blocking: should administrators add the installation's own registries (for example the owner's GitLab
       registry) as preset buttons? The development agent's recommendation is not now, and as its own task if wanted.
 
