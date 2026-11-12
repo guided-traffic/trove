@@ -32,7 +32,9 @@ test('R-UI-022 with the keyboard only an administrator adds two members, reorder
 }) => {
   await signInLocal(page);
   await page.goto(`/ui/en/projects/${e2eProject}/repositories/${virtualKey}/settings`);
-  await page.getByRole('tab', { name: 'Members' }).click();
+  // The members are an open section of the settings page (R-UI-087).
+  const section = page.getByRole('region', { name: 'Members' });
+  await expect(section).toBeVisible();
 
   const available = page.getByRole('listbox', { name: 'Available repositories' });
   const members = page.getByRole('listbox', { name: 'Members in resolution order' });
@@ -55,7 +57,7 @@ test('R-UI-022 with the keyboard only an administrator adds two members, reorder
   }
   /** Presses a button of the Members tab with the keyboard (the other tabs' forms have buttons of the same name). */
   async function press(name: string): Promise<void> {
-    const b = page.getByRole('tabpanel', { name: 'Members' }).getByRole('button', { name, exact: true });
+    const b = section.getByRole('button', { name, exact: true });
     await b.focus();
     await page.keyboard.press('Enter');
   }
@@ -80,8 +82,8 @@ test('R-UI-022 with the keyboard only an administrator adds two members, reorder
     await page.getByLabel('Default deployment target').selectOption(localKey);
   });
 
-  await test.step('Save members stores the order', async () => {
-    await press('Save members');
+  await test.step('Save changes stores the order', async () => {
+    await press('Save changes (members)');
     await expect(page.getByText('Members saved.')).toBeVisible();
     const stored = await admin.get(repositoryApi(virtualKey));
     expect(stored.status()).toBe(200);

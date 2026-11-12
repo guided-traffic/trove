@@ -46,9 +46,9 @@ test('R-ANS-025 R-UI-049 the guide of a local repository shows its sections, and
     guideConfigure = (await cfg.textContent()) ?? '';
   });
 
-  await test.step('the How to use tab shows the guide for a local repository and the same configure snippet', async () => {
+  await test.step('the section How to use shows the guide for a local repository and the same configure snippet', async () => {
     await page.goto(`/ui/en/projects/${e2eProject}/repositories/${localKey}/settings`);
-    await page.getByRole('tab', { name: 'How to use' }).click();
+    await page.getByRole('button', { name: 'How to use', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'What a local repository is', level: 2 })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Which credential ansible-galaxy sends', level: 2 })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Remove a version, import tasks and tombstones', level: 2 })).toBeVisible();
@@ -64,13 +64,12 @@ test('R-ANS-025 R-UI-049 the guide of a local repository shows its sections, and
   expect(replicas.size, `replicas that answered: ${[...replicas]}`).toBeGreaterThanOrEqual(2);
 });
 
-test('R-ANS-026 R-ANS-012 the edit form has the import tasks and the tombstones, each with its empty line', async ({ page, replicas }) => {
+test('R-ANS-026 R-ANS-012 the settings page has the import tasks and the tombstones, each with its empty line', async ({ page, replicas }) => {
   await signInLocal(page);
   await page.goto(`/ui/en/projects/${e2eProject}/repositories/${localKey}/settings`);
 
-  await test.step('the import tasks tab says that nothing was published', async () => {
-    await page.getByRole('tab', { name: 'Import tasks', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Import tasks', level: 2 })).toBeVisible();
+  await test.step('the section Import tasks says that nothing was published', async () => {
+    await page.getByRole('button', { name: 'Import tasks', exact: true }).click();
     await expect(page.getByTestId('ansible-imports-table')).toContainText('No collection has been published to this repository yet');
     for (const scheme of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme: scheme });
@@ -78,9 +77,8 @@ test('R-ANS-026 R-ANS-012 the edit form has the import tasks and the tombstones,
     }
   });
 
-  await test.step('the tombstones tab says that no number is blocked', async () => {
-    await page.getByRole('tab', { name: 'Tombstones', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Tombstones', level: 2 })).toBeVisible();
+  await test.step('the section Tombstones says that no number is blocked', async () => {
+    await page.getByRole('button', { name: 'Tombstones', exact: true }).click();
     await expect(page.getByTestId('ansible-tombstones-table')).toContainText('no number is blocked');
     for (const scheme of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme: scheme });

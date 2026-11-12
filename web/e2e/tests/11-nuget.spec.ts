@@ -1,6 +1,6 @@
 import { e2eProject, expect, expectAccessible, qualified, repositories, repositoryApi, signInLocal, signOut, test, unique } from '../support';
 
-// R-UI-047 journey "nuget" (WP3.7; R-UI-007, R-UI-018, R-UI-019, R-UI-021): the repository wizard creates a local NuGet
+// R-UI-047 journey "nuget" (WP3.7; R-UI-007, R-UI-018, R-UI-019, R-UI-021): the creation form creates a local NuGet
 // repository and writes the one setting that differs from the default; the edit form reads it back; the client setup page
 // offers the .NET CLI, nuget.exe and Visual Studio and shows, for each, the snippets of R-NUGET-026 with the index.json
 // URL of the repository; the guides area offers NuGet as soon as the server lists clients. Every screen passes axe in the
@@ -114,51 +114,45 @@ test('R-UI-018 R-UI-019 the NuGet clients, their snippets with the index.json UR
   expect(replicas.size, `replicas that answered: ${[...replicas]}`).toBeGreaterThanOrEqual(2);
 });
 
-test('R-UI-021 R-ARCH-004 the NuGet settings in the wizard and on the edit form, rendered from the settings schema', async ({
+test('R-UI-021 R-ARCH-004 R-UI-083 the NuGet settings in Advanced settings and on the settings page, rendered from the settings schema', async ({
   page,
   replicas,
   admin,
 }) => {
   await signInLocal(page);
-  const mode = page.getByRole('combobox', { name: 'deleteMode' });
+  const mode = page.getByRole('combobox', { name: 'Delete mode' });
   const nugetMember = async () => {
     const res = await admin.get(repositoryApi(wizardKey));
     expect(res.status()).toBe(200);
     return ((await res.json()) as { nuget?: Record<string, unknown> }).nuget;
   };
 
-  await test.step('the wizard offers deleteMode for a local repository only and writes the value that differs from the default', async () => {
-    await page.goto('/ui/en/admin/repositories/new');
-    await page.getByRole('option', { name: 'NuGet' }).click();
-    await page.getByRole('button', { name: 'Next' }).click();
-    await page.getByRole('radio', { name: /^Local/ }).check();
-    await page.getByRole('button', { name: 'Next' }).click();
+  await test.step('the form offers the delete mode of a local repository in Advanced settings and writes the value that differs from the default', async () => {
+    await page.goto('/ui/en/admin/repositories/new/nuget');
+    await expect(page.getByRole('heading', { name: 'New NuGet repository', level: 1 })).toBeVisible();
     await page.getByLabel('Project', { exact: true }).selectOption(e2eProject);
     await page.locator('#f-key').fill(wizardKey);
-    await expect(page.getByText('The key is available.')).toBeVisible();
-    await page.getByRole('button', { name: 'Next' }).click();
-    await expect(page.getByRole('heading', { name: 'NuGet settings', level: 2 })).toBeVisible();
-    await expect(page.getByRole('checkbox', { name: 'forwardSearch' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Advanced settings' }).click();
+    await expect(page.getByRole('heading', { name: 'NuGet settings', level: 3 })).toBeVisible();
+    await expect(page.getByRole('checkbox', { name: 'Forward search' })).toHaveCount(0);
     await expect(mode.locator('option:checked')).toHaveText('unlist'); // the options carry their index as value (format-settings.ts)
     await mode.selectOption('delete');
     for (const scheme of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme: scheme });
-      await expectAccessible(page, `repository wizard, NuGet settings (${scheme})`);
+      await expectAccessible(page, `creation form, NuGet settings (${scheme})`);
     }
-    await page.getByRole('button', { name: 'Next' }).click();
-    await expect(page.getByText('deleteMode: delete')).toBeVisible();
     await page.getByRole('button', { name: 'Create repository' }).click();
     await expect(page).toHaveURL(new RegExp(`/projects/${e2eProject}/repositories/${wizardKey}$`));
     expect(await nugetMember()).toEqual({ deleteMode: 'delete' });
   });
 
-  await test.step('the edit form reads it back and setting the default back removes it from the document', async () => {
+  await test.step('the settings page reads it back and setting the default back removes it from the document', async () => {
     await page.goto(`/ui/en/projects/${e2eProject}/repositories/${wizardKey}/settings`);
-    await page.getByRole('tab', { name: 'NuGet settings' }).click();
+    await page.getByRole('button', { name: 'NuGet settings', exact: true }).click();
     await expect(mode.locator('option:checked')).toHaveText('delete');
-    await expectAccessible(page, 'repository detail, NuGet settings');
+    await expectAccessible(page, 'repository settings, NuGet settings');
     await mode.selectOption('unlist');
-    await page.getByRole('button', { name: 'Save changes' }).click();
+    await page.getByRole('button', { name: 'Save changes (NuGet settings)' }).click();
     await expect(page.getByText('Repository saved.')).toBeVisible();
     await expect.poll(nugetMember).toBeUndefined();
   });

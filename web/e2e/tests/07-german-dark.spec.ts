@@ -24,6 +24,8 @@ test('R-UI-045 the screens in German, in the dark theme, and the switch back to 
     { route: `/ui/de/projects/${e2eProject}/settings`, heading: 'Einstellungen' },
     { route: '/ui/de/admin/repositories', heading: 'Repositories' },
     { route: '/ui/de/admin/repositories/new', heading: 'Neues Repository' },
+    // The creation form is named after its format in German as well (R-UI-080).
+    { route: '/ui/de/admin/repositories/new/npm', heading: 'Neues npm-Repository' },
     { route: '/ui/de/admin/groups', heading: 'Gruppen' },
     { route: '/ui/de/admin/system', heading: 'Systemstatus' },
     { route: '/ui/de/admin/audit', heading: 'Audit-Protokoll' },

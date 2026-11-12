@@ -29,7 +29,7 @@ A local or virtual repository gets its first signing key in the same transaction
 
 ## A local repository
 
-The settings of the format are on the format tab of the repository (**Debian (APT) settings**, one entry per line) and in the member `deb` of the repository document:
+The settings of the format are in **Advanced settings** of the creation form and in the closed section **Debian (APT) settings** of the repository's settings page (one entry per line; the `mirror` settings are in the section **Mirror**) and in the member `deb` of the repository document:
 
 | Setting | Document key | Default | Meaning |
 |---|---|---|---|
@@ -54,7 +54,7 @@ A remote repository is a pull-through cache of an APT archive. The **Upstream UR
 
 | Archive | Upstream URL | Keyring on a client of that distribution |
 |---|---|---|
-| Debian | `https://deb.debian.org/debian/`, the default of the wizard | `/usr/share/keyrings/debian-archive-keyring.gpg`, package `debian-archive-keyring` |
+| Debian | `https://deb.debian.org/debian/`, the default of the creation form | `/usr/share/keyrings/debian-archive-keyring.gpg`, package `debian-archive-keyring` |
 | Ubuntu | `http://archive.ubuntu.com/ubuntu/` | `/usr/share/keyrings/ubuntu-archive-keyring.gpg`, package `ubuntu-keyring` |
 | A flat repository | the directory above it, and the client names the flat directory as its suite (`binary/`); or the flat directory itself, and the client names `./` | the publisher's |
 
@@ -72,7 +72,7 @@ What a remote does with the archive:
 Without keys trove stores what the archive sends and does not check it; the clients check it. With the archive's public keys in `deb.upstreamKeys`, trove checks every release before it stores it, so a damaged or forged release never reaches the cache. Give a remote its keys whenever you can, and always for a mirror, which needs them.
 
 1. Export the archive keyring as ASCII armor on a machine of that distribution (`gpg` must be installed): `gpg --no-default-keyring --keyring /usr/share/keyrings/debian-archive-keyring.gpg --export --armor > debian-archive.asc` (Debian 13 also installs the file as `debian-archive-keyring.pgp`; for Ubuntu name the Ubuntu keyring). The block must be a `PGP PUBLIC KEY BLOCK`; the output of `gpg --enarmor` is refused.
-2. Paste the block into **upstreamKeys** on the format tab, or set `deb.upstreamKeys` through the API. At most 256 KiB and 32 certificates; Debian 13's archive keyring (nine certificates, about 75 KB armored) fits.
+2. Paste the block into **Upstream keys** in the section **Debian (APT) settings**, or set `deb.upstreamKeys` through the API. At most 256 KiB and 32 certificates; Debian 13's archive keyring (nine certificates, about 75 KB armored) fits.
 3. Compare the fingerprints the repository shows read-only (**Fingerprints of the upstream keys**, `deb.upstreamKeyFingerprints`) with the ones the distribution publishes, through a channel you trust.
 
 The save refuses a block that does not parse, holds secret key material, or holds a revoked, expired or non-signing key or an RSA key below 2048 bits (`422 invalid_value` at `/deb/upstreamKeys`, with the reason); remove such a certificate from the block. Once keys are set:
@@ -108,8 +108,8 @@ Only a holder of `repositories:write-config` sets the mode and changes `deb.mirr
 
 A virtual Debian repository is one APT source over local and remote Debian repositories of its own project. A job merges the members'
 indexes into one index per suite and signs it with the virtual repository's own key, which it gets at its creation like a local
-repository; nothing is merged at request time, so every client and replica reads the same signed generation. The wizard creates it
-without members; set the members, in merge order, and the deployment target through the API:
+repository; nothing is merged at request time, so every client and replica reads the same signed generation. The creation form takes its members, in merge order,
+and its deployment target; the settings page's section **Members** changes them, and so does the API:
 
 ```bash
 # example values: the project, the keys, the ETag and the token variable
@@ -147,7 +147,7 @@ curl -X PATCH https://trove.example.com/api/v1/projects/web/repositories/apt \
 
 ## Signing keys
 
-The tab **Signing keys** of a local or virtual repository lists its keys with their fingerprint, state, type, origin and times, and the public certificate of each; no private key is ever shown. The same operations are in the API, below `/api/v1/projects/<projectKey>/repositories/<key>/deb/signing-keys`; listing needs `read`, every change `manage` on the repository (the screen offers the changes to holders of `repositories:write-config` and Owners of the project, a holder of `manage` through a policy alone uses the API):
+The closed section **Signing keys** of a local or virtual repository's settings lists its keys with their fingerprint, state, type, origin and times, and the public certificate of each; no private key is ever shown. The same operations are in the API, below `/api/v1/projects/<projectKey>/repositories/<key>/deb/signing-keys`; listing needs `read`, every change `manage` on the repository (the screen offers the changes to holders of `repositories:write-config` and Owners of the project, a holder of `manage` through a policy alone uses the API):
 
 | State | Signs | In `signing-key.asc` | Private key |
 |---|---|---|---|
@@ -174,7 +174,7 @@ For an archive whose clients already trust a key, **Import a key** (or `POST …
 
 ## The index state and the rebuild
 
-The tab **Index** of a local or virtual repository shows each suite: the number of the last change (`changeSeq`), the number the published generation was built from, the generation, the release date, the keys that signed it, and whether the suite is **current**, **pending** or **failed** with the reason:
+The closed section **Indexes** of a local or virtual repository's settings shows each suite: the number of the last change (`changeSeq`), the number the published generation was built from, the generation, the release date, the keys that signed it, and whether the suite is **current**, **pending** or **failed** with the reason:
 
 | Reason | Meaning | What to do |
 |---|---|---|

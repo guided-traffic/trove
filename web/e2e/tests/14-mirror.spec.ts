@@ -38,17 +38,12 @@ type Remote = {
   availability?: { mode?: string };
 };
 
-/** Opens the wizard of a remote npm repository at its class-specific step, with the key typed. */
-async function remoteWizard(page: import('@playwright/test').Page, key: string): Promise<void> {
-  await page.goto('/ui/en/admin/repositories/new');
-  await page.getByRole('option', { name: 'npm' }).click();
-  await page.getByRole('button', { name: 'Next' }).click();
-  await page.getByRole('radio', { name: /^Remote/ }).check();
-  await page.getByRole('button', { name: 'Next' }).click();
+/** Opens the creation form of a remote npm repository in the admin area (R-UI-080), with the project chosen and the key typed. */
+async function remoteForm(page: import('@playwright/test').Page, key: string): Promise<void> {
+  await page.goto('/ui/en/admin/repositories/new/npm');
   await page.getByLabel('Project', { exact: true }).selectOption(e2eProject);
+  await page.getByRole('radio', { name: /^Remote/ }).check();
   await page.locator('#f-key').fill(key);
-  await expect(page.getByText('The key is available.')).toBeVisible();
-  await page.getByRole('button', { name: 'Next' }).click();
   await expect(page.getByRole('heading', { name: 'Upstream', level: 2 })).toBeVisible();
 }
 
@@ -57,17 +52,17 @@ test('R-REPO-059 R-UI-021 Q-UI-104 Q-UI-105 the status of a mirror, pause, resum
   const remoteOf = async () => ((await (await admin.get(repositoryApi(mirrorKey))).json()) as { remote?: Remote }).remote;
   const state = page.getByTestId('mirror-state');
 
-  await test.step('the wizard creates an npm remote in mode mirror against the test upstream, bounded by a storage limit', async () => {
-    await remoteWizard(page, mirrorKey);
+  await test.step('the form creates an npm remote in mode mirror against the test upstream, bounded by a storage limit', async () => {
+    await remoteForm(page, mirrorKey);
     await page.getByRole('textbox', { name: 'Upstream URL' }).fill(stubUrl);
+    // The mirror is a detail: its group is in the closed Advanced settings (R-UI-083).
+    await page.getByRole('button', { name: 'Advanced settings' }).click();
     await page.getByRole('radio', { name: /^Mirror/ }).check();
     // A mirror of another upstream than the format's well-known one is saved with a warning when it has no bound (Q-UI-118).
     await expect(page.getByText('It is saved with a warning.')).toBeVisible();
     await page.getByRole('textbox', { name: 'Storage limit in bytes' }).fill('104857600');
     await expect(page.getByText('It is saved with a warning.')).toHaveCount(0);
     await page.getByRole('textbox', { name: 'Pass interval in seconds', exact: true }).fill('300');
-    await page.getByRole('button', { name: 'Next' }).click();
-    await expect(page.getByText('Mirror mode: a background pass stores what the upstream offers.')).toBeVisible();
     await page.getByRole('button', { name: 'Create repository' }).click();
     await expect(page).toHaveURL(new RegExp(`/projects/${e2eProject}/repositories/${mirrorKey}$`));
     const remote = await remoteOf();
@@ -76,24 +71,23 @@ test('R-REPO-059 R-UI-021 Q-UI-104 Q-UI-105 the status of a mirror, pause, resum
     expect(remote?.mirror).toMatchObject({ intervalSeconds: 300, maxBytes: 104857600, paused: false });
   });
 
-  await test.step('the Mirror tab shows the status above the settings, with the facts of every part, in words', async () => {
+  await test.step('the section Mirror shows the status above the settings, with the facts of every part, in words', async () => {
     await page.goto(`/ui/en/projects/${e2eProject}/repositories/${mirrorKey}/settings`);
-    await page.getByRole('tab', { name: 'Mirror' }).click();
-    await expect(page.getByRole('heading', { name: 'Mirror status', level: 2 })).toBeVisible();
+    await page.getByRole('button', { name: 'Mirror', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Mirror status' })).toBeVisible();
     // A new mirror starts its first pass by itself, so the state is one of these; the word, not the colour, says which.
     await expect(state.locator('strong')).toHaveText(/^(Scheduled|Running|Waiting|Bound reached|Failing)$/);
     for (const heading of ['Last complete pass', 'Next pass', 'Last error', 'Rate-limit waits', 'Bound']) {
-      await expect(page.getByRole('heading', { name: heading, level: 3 })).toBeVisible();
+      await expect(page.getByRole('heading', { name: heading })).toBeVisible();
     }
     await expect(page.getByTestId('mirror-bound')).toContainText('100.0 MiB');
-    await expect(page.getByRole('heading', { name: 'Mirror', level: 2, exact: true })).toBeVisible();
     // The status sits above the settings.
-    const status = await page.getByRole('heading', { name: 'Mirror status', level: 2 }).boundingBox();
-    const settings = await page.getByRole('heading', { name: 'Mirror', level: 2, exact: true }).boundingBox();
+    const status = await page.getByRole('heading', { name: 'Mirror status' }).boundingBox();
+    const settings = await page.locator('trove-mirror-settings').boundingBox();
     expect(status!.y).toBeLessThan(settings!.y);
     for (const scheme of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme: scheme });
-      await expectAccessible(page, `repository detail, Mirror tab with the status (${scheme})`);
+      await expectAccessible(page, `repository settings, section Mirror with the status (${scheme})`);
     }
   });
 
@@ -108,7 +102,7 @@ test('R-REPO-059 R-UI-021 Q-UI-104 Q-UI-105 the status of a mirror, pause, resum
     await expect(page.getByRole('button', { name: 'Resume', exact: true })).toBeVisible();
     await expect(page.getByTestId('mirror-next')).toContainText('No pass is planned.');
     expect((await remoteOf())?.mirror?.paused).toBe(true);
-    await expectAccessible(page, 'repository detail, Mirror tab, paused');
+    await expectAccessible(page, 'repository settings, section Mirror, paused');
 
     // A run request on a paused mirror is refused in words (409 mirror_paused), not as an error page.
     await page.getByRole('button', { name: 'Run a pass now' }).click();
@@ -130,7 +124,7 @@ test('R-REPO-059 R-UI-021 Q-UI-104 Q-UI-105 the status of a mirror, pause, resum
     await page.getByRole('button', { name: 'More ways to run a pass' }).click();
     await page.getByRole('menuitem', { name: 'Run a full pass' }).click();
     await expect(notice).toContainText(queuedOrRunning);
-    await expectAccessible(page, 'repository detail, Mirror tab, after a run request');
+    await expectAccessible(page, 'repository settings, section Mirror, after a run request');
 
     await notice.getByRole('link', { name: 'Open the mirror jobs' }).click();
     await expect(page).toHaveURL(/\/admin\/system\/jobs\?kind=mirror-pass$/);
@@ -148,17 +142,17 @@ test('F-54 R-UI-021 R-REPO-024 R-REPO-033 a remote with a non-default upstream, 
     return { text: await res.text(), remote: (JSON.parse(await res.text()) as { remote?: Remote }).remote };
   };
 
-  await test.step('the wizard offers the upstream with the preset of npm, the credentials, the periods and the offline switch', async () => {
-    await remoteWizard(page, upstreamKey);
+  await test.step('the form offers the upstream with the preset of npm, the credentials and the periods as values, and no offline switch', async () => {
+    await remoteForm(page, upstreamKey);
     await expect(page.getByRole('textbox', { name: 'Upstream URL' })).toHaveValue('https://registry.npmjs.org/');
-    await expect(page.getByText('The format\'s well-known upstream is')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'npm public registry' })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByRole('combobox', { name: 'Authentication' })).toHaveValue('none');
-    await expect(page.getByRole('textbox', { name: 'Metadata cache period in seconds' })).toHaveValue('');
-    await expect(page.getByText('Default: 7200.')).toBeVisible();
-    await expect(page.getByRole('checkbox', { name: 'Offline' })).not.toBeChecked();
+    await page.getByRole('button', { name: 'Upstream details' }).click();
+    await expect(page.getByRole('textbox', { name: 'Metadata cache period in seconds' })).toHaveValue('7200');
+    await expect(page.getByRole('checkbox', { name: 'Offline' })).toHaveCount(0);
     for (const scheme of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme: scheme });
-      await expectAccessible(page, `repository wizard, Upstream section (${scheme})`);
+      await expectAccessible(page, `creation form, Upstream group (${scheme})`);
     }
   });
 
@@ -170,13 +164,12 @@ test('F-54 R-UI-021 R-REPO-024 R-REPO-033 a remote with a non-default upstream, 
     await page.getByRole('textbox', { name: 'Metadata cache period in seconds' }).fill('600');
     await page.getByRole('button', { name: 'Test connection' }).click();
     const result = page.getByTestId('upstream-test-result');
-    await expect(result).toContainText('The upstream answered.');
+    await expect(result).toContainText('The upstream answered');
     await expect(page.locator('.test-result')).toContainText('accepted');
-    await expectAccessible(page, 'repository wizard, Upstream section, test result');
+    await expectAccessible(page, 'creation form, Upstream group, test result');
   });
 
-  await test.step('the review and the request name the password member and never its value; the create seals it', async () => {
-    await page.getByRole('button', { name: 'Next' }).click();
+  await test.step('the request shown names the password member and never its value; the create seals it', async () => {
     await page.getByText('Show as API request').click();
     await expect(page.getByText('<the password>').first()).toBeVisible();
     await expect(page.locator('body')).not.toContainText(secret);
@@ -194,22 +187,23 @@ test('F-54 R-UI-021 R-REPO-024 R-REPO-033 a remote with a non-default upstream, 
     });
   });
 
-  await test.step('the edit form reads the upstream back with an empty password field; the stored password survives a save of another member', async () => {
+  await test.step('the settings page reads the upstream back with an empty password field; the stored password survives a save of another member', async () => {
     await page.goto(`/ui/en/projects/${e2eProject}/repositories/${upstreamKey}/settings`);
-    await page.getByRole('tab', { name: 'Upstream' }).click();
+    // The upstream is an open section of the settings page (R-UI-087).
     await expect(page.getByRole('textbox', { name: 'Upstream URL' })).toHaveValue(stubUrl);
     await expect(page.getByRole('textbox', { name: 'Username' })).toHaveValue('journey');
     await expect(page.getByLabel('Password or token')).toHaveValue('');
     await expect(page.getByText('A password is stored and is not shown.')).toBeVisible();
+    await page.getByRole('button', { name: 'Upstream details' }).click();
     await expect(page.getByRole('textbox', { name: 'Metadata cache period in seconds' })).toHaveValue('600');
     await expect(page.locator('body')).not.toContainText(secret);
-    await expectAccessible(page, 'repository detail, Upstream tab');
+    await expectAccessible(page, 'repository settings, section Upstream');
 
     await page.getByRole('checkbox', { name: 'Offline' }).check();
     await page.getByRole('button', { name: 'Test connection' }).click();
     await expect(page.getByTestId('upstream-test-result')).toContainText('The upstream could not be reached.');
     await expect(page.locator('.test-result')).toContainText('offline');
-    await page.getByRole('button', { name: 'Save changes' }).click();
+    await page.getByRole('button', { name: 'Save changes (Upstream)' }).click();
     await expect(page.getByText('Repository saved.')).toBeVisible();
     const saved = await remoteOf();
     expect(saved.remote?.availability?.mode).toBe('offline');
@@ -217,7 +211,7 @@ test('F-54 R-UI-021 R-REPO-024 R-REPO-033 a remote with a non-default upstream, 
     expect(saved.text).not.toContain(secret);
 
     await page.getByRole('checkbox', { name: 'Offline' }).uncheck();
-    await page.getByRole('button', { name: 'Save changes' }).click();
+    await page.getByRole('button', { name: 'Save changes (Upstream)' }).click();
     await expect.poll(async () => (await remoteOf()).remote?.availability?.mode).toBe('online');
   });
 

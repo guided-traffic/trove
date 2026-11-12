@@ -129,7 +129,7 @@ test('R-UI-055 the Owner of a public project sets the artifacts of a repository 
 
   await test.step('in the public project both groups offer Public; the wiki cannot be above the artifacts', async () => {
     await bob.goto(`/ui/en/projects/${publicProject}/repositories/${wikiRepo}/settings`);
-    await bob.getByRole('tab', { name: 'Access' }).click();
+    // The visibility is an open section of the settings page (R-UI-087).
     const artifacts = bob.getByRole('group', { name: 'Artifacts' });
     const wiki = bob.getByRole('group', { name: 'Wiki' });
     // the project is public, so the artifacts may be Public; the wiki is at most as open as the artifacts (Internal now)

@@ -1,6 +1,6 @@
 # Managing repositories
 
-This page explains how administrators create, configure, edit and delete repositories. It covers the Repositories screen and its creation wizard, the settings every repository shares, the settings of generic, npm, NuGet, OCI and Debian repositories, how remote and virtual repositories are wired to their upstream and members, the protection against dependency confusion, and the file operations an administrator has.
+This page explains how administrators create, configure, edit and delete repositories. It covers the Repositories screen, the creation form, the settings page, the settings every repository shares, the settings of generic, npm, NuGet, OCI and Debian repositories, how remote and virtual repositories are wired to their upstream and members, the protection against dependency confusion, and the file operations an administrator has.
 
 ## Formats and classes
 
@@ -20,7 +20,7 @@ Every repository belongs to exactly one [project](projects.md), and its key is u
 
 **Admin area › Repositories** lists, in columns, **Repository** (the key, with its description under it), **Project**, **Format** (icon and name), **Class** and **Last activity** (the date; point at it for the time; in a narrower window the column is left out). At the end of each row the copy button copies the repository's client address; point at it to read the address. In a narrow window each repository is a block of its own. Badges mark repositories that are **disabled** or **being deleted**. **Filters** narrow the list by **Key or description**, **Project**, **Class**, **Format** and **State** (**Disabled only**). The repositories you opened last are on the start page.
 
-The menu at the end of each row (**Actions for** the key) offers **Copy client address**, **Settings**, **Browse**, **Vulnerabilities** where the format is scanned and, with `repositories:write-config` or as the project's Owner, **Delete**. **Create repository** opens the wizard.
+The menu at the end of each row (**Actions for** the key) offers **Copy client address**, **Settings**, **Browse**, **Vulnerabilities** where the format is scanned and, with `repositories:write-config` or as the project's Owner, **Delete**. **Create repository** opens the choice of the format.
 
 A project's **Repositories** shows the same repositories of one project with **Repository**, **Format**, **Class** and **Client address**: every address field of the list has the same width, as much as the other columns leave, up to the longest address of the list; where an address is longer than its field, you scroll inside the field (or press End) to read the rest, and the copy button always copies the whole address.
 
@@ -28,13 +28,28 @@ The page of a repository shows its **Project**. A repository is created in its p
 
 ## Create a repository
 
-1. Select **Create repository**.
-2. **Format**: choose the format of the repository from the tiles, for example **Generic**, **npm**, **NuGet**, **OCI (Docker)** or **Debian (APT)**. **Search by package type** narrows the tiles by name. The format comes first because it decides what the rest of the wizard can offer. With the keyboard, move to the tiles with Tab, move over them with the arrow keys and choose one with Enter or Space.
-3. **Class**: choose **Local**, **Remote** or **Virtual**. A class that the chosen format does not implement is shown unavailable, with the reason, and cannot be chosen. Going back and choosing another format keeps the class when the new format has it and starts the format settings and the mirror section afresh.
-4. **Basic settings**: enter the **Key**, a **Description** and **Administrator notes**. The wizard checks the key as you type and reports **The key is available.** or **A repository with this key already exists.**
-5. **Access settings** (or **Access and npm settings** for a format with settings of its own): set the patterns and switches described below and the format settings. For a remote repository the step is **Access and upstream settings**, **Access, upstream and npm settings**, or, for a format that can mirror, **Access, upstream and mirror settings** or **Access, upstream, npm and mirror settings**; it adds the [upstream](#the-upstream-of-a-remote-repository) and the [mirror](#mirror).
-6. **Review**: check the summary. **Show as API request** shows the same request as a JSON body and as a curl command.
-7. Select **Create repository**. The repository is usable on every replica as soon as the wizard confirms, and its page opens.
+1. Select **Create repository**. The page **New repository** shows one tile per installed format, for example **Generic**,
+   **npm**, **NuGet**, **OCI (Docker)** or **Debian (APT)**. **Search by package type** narrows the tiles by name, and Enter opens
+   the one that is left. The format comes first because it decides what the form can offer.
+2. The form is named after the format, for example **New OCI (Docker) repository**. **Change format** goes back to the tiles.
+   In the admin area, choose the **Project** first; inside a project the form names its project.
+3. **Class**: **Local** (preset), **Remote** or **Virtual**. A class the format does not implement is shown unavailable, with the
+   reason. Another class keeps the key you typed, the description and the visibility, and starts its own fields from their
+   defaults.
+4. **Key** starts with a free suggestion, such as `npm-local` or `npm-local-2`; change it if you like. It is part of every
+   address of the repository and cannot be changed later. **Description (optional)** is shown to everyone who can read the
+   repository. **Visibility** starts at the level a new repository of the project gets (see [Visibility](#visibility)).
+5. A remote repository adds its **Upstream**: the buttons of the well-known registries, the address, the authentication and
+   **Test connection** (see [The upstream of a remote repository](#the-upstream-of-a-remote-repository)). A virtual repository adds
+   its **Members** and the **Deployment target**, which starts at the first local member you add
+   (see [Members of a virtual repository](#members-of-a-virtual-repository)).
+6. Everything else is in **Advanced settings**, closed: **Administrator notes**, **Paths** (include and exclude patterns),
+   **Access details** (hiding existence), the **Mirror** of a remote repository of a format that can mirror, and the format's own
+   settings, such as **npm settings**. Every field shows its default as its value; you need to change none of them for a working
+   repository.
+7. Select **Create repository**. A field shows its error once you left it or pressed **Create repository**; the list at the top
+   names every field to fix and opens **Advanced settings** where one of them is. **Show as API request** shows the same request
+   as a JSON body and as a curl command. The repository is usable on every replica as soon as it is created, and its page opens.
 
 The key rules:
 
@@ -44,30 +59,30 @@ The key rules:
 - A key is unique within its project and stays taken there until a deleted repository is completely removed; another project can have a repository of the same key.
 - Key, class and format cannot be changed after creation.
 
-The wizard creates a remote repository with the format's well-known upstream unless you enter another (`https://registry.npmjs.org/` for npm, `https://api.nuget.org/v3/index.json` for NuGet, `https://registry-1.docker.io/` for OCI, `https://deb.debian.org/debian/` for Debian) and a virtual repository without members. Configure a different upstream, the members and the deployment target afterwards as described in [Settings that are set through the API](#settings-that-are-set-through-the-api).
+A repository is never created disabled; disabling is an action of its settings page ([Edit a repository](#edit-a-repository)).
 
 ## Settings every repository has
 
 | UI label | Document key | Default | Meaning |
 |---|---|---|---|
 | **Description** | `description` | empty | Shown to everyone who can read the repository; at most 2000 characters |
-| **Administrator notes** | `adminNotes` | empty | Shown only to holders of `repositories:read-config`; at most 8000 characters |
+| **Notes** (section **Administrator notes**) | `adminNotes` | empty | Shown only to holders of `repositories:read-config`; at most 8000 characters |
 | **Include patterns** | `includePatterns` | empty | What the repository admits; empty admits everything |
 | **Exclude patterns** | `excludePatterns` | empty | What it refuses; an exclude wins over an include |
-| **Disabled: takes no part in resolution, download or deploy** | `disabled` | off | The repository keeps its content but serves and accepts nothing |
+| **Disable repository** in **Advanced** | `disabled` | off | The repository keeps its content but serves and accepts nothing |
 | **Hide existence from callers without access** | `hideExistence` | **Use the installation setting** | **Hide: answer as if it did not exist** answers 404 to refused reads, **Do not hide: answer 403** answers 403 |
 
 For a generic repository the patterns match paths; for npm they match package names, such as `@acme/*`; for OCI they match image names, such as `team/*`; for Debian they match binary package names, such as `acme-*`. Up to 100 patterns per list; **Pattern syntax** in the form explains `*`, `**`, `?` and `\`. Changes to **Hide existence** are recorded as `authz.settings.changed` in the audit log.
 
 ### Visibility
 
-The block **Visibility** of the **Access** tab sets who reads the repository besides the members of its project and the principals a policy names, with its own **Save changes**. For a format with documentation (npm, NuGet, Ansible Galaxy) there are two groups: **Artifacts**, who can install, download and list the packages, and **Wiki**, who can read the README and the documentation; for the other formats there is one group, **Visibility**. Each group offers **Private**, **Internal** and **Public** with a sentence each ([Visibility levels](permissions.md#visibility-levels)). A level above the project's is disabled (the project is internal, so the repository cannot be public); a wiki level above the artifacts' is disabled, and choosing artifacts below the wiki lowers the wiki with them. A new repository starts at the lower of the installation's default and its project's level, with the wiki at the same level; the creation wizard sets the artifacts in its basic settings step and shows the level in its review.
+The open section **Visibility** of the settings page sets who reads the repository besides the members of its project and the principals a policy names, with its own **Save changes**. For a format with documentation (npm, NuGet, Ansible Galaxy) there are two groups: **Artifacts**, who can install, download and list the packages, and **Wiki**, who can read the README and the documentation; for the other formats there is one group, **Visibility**. Each group offers **Private**, **Internal** and **Public** with a sentence each ([Visibility levels](permissions.md#visibility-levels)). A level above the project's is disabled (the project is internal, so the repository cannot be public); a wiki level above the artifacts' is disabled, and choosing artifacts below the wiki lowers the wiki with them. A new repository starts at the lower of the installation's default and its project's level, with the wiki at the same level; the creation form sets the artifacts and leaves the field out when it cannot read that level, so the server applies it.
 
 Saving a **Public** remote repository shows the warning that anyone can fill its cache from the upstream. The Owner of the project and holders of `repositories:write-config` may change the levels, raising needs a recent sign-in; everybody else sees them read-only. The repository list, the repository's page and the client setup show the artifacts level as an icon before the name. The levels are `visibility.artifacts` and `visibility.wiki` of the repository document; a change of either is recorded as `authz.settings.changed`.
 
 ## Format settings
 
-The settings of a format are drawn from the schema the format publishes, so the form shows exactly the settings that apply to the repository's class. Each setting is labelled with its name, its description and its default; a setting left at its default is not written into the repository.
+The settings of a format are drawn from the schema the format publishes, so the form shows exactly the settings that apply to the repository's class. Each setting is labelled with its title and its description and shows its default as its value; a setting left at its default is not written into the repository. A choice whose default depends on other settings offers **Automatic** first. The settings are in **Advanced settings** of the creation form and in the closed section **<Format> settings** of the settings page; the `mirror` settings of OCI and Debian are in the **Mirror** group or section.
 
 | Format and class | Setting | Default | Meaning |
 |---|---|---|---|
@@ -91,7 +106,7 @@ The settings of a format are drawn from the schema the format publishes, so the 
 
 ## The upstream of a remote repository
 
-A remote repository has an **Upstream** section in the access settings step of the wizard (the fourth step, below the access settings) and a tab **Upstream** on its page. It sets where the repository fetches from, in this order:
+A remote repository has an **Upstream** group in the creation form and an open section **Upstream** on its settings page. It sets where the repository fetches from, in this order:
 
 - **Well-known registries**: one button per public registry of the format. The button whose address is in **Upstream URL** is pressed; pressing another one sets its address. A typed address of another registry presses none.
 
@@ -128,7 +143,7 @@ For a container registry the test logs in as a client does: the registry answers
 
 ## Mirror
 
-A remote repository of a format whose upstream trove can list (npm, NuGet, OCI and Debian) has a **Mirror** section in the access settings step of the wizard (the fourth step, below the upstream) and a **Mirror** tab on its page. It is shown only for such formats; a format that cannot list its upstream has none.
+A remote repository of a format whose upstream trove can list (npm, NuGet, OCI and Debian) has a **Mirror** group in **Advanced settings** of the creation form and a closed section **Mirror** on its settings page. It is shown only for such formats; a format that cannot list its upstream has none.
 
 **Mode** is **Pull-through** (the default: fetch and store what clients ask for) or **Mirror** (also store, in background passes, every package of the upstream that the include patterns and the bounds admit). The other members show in mode **Mirror** only:
 
@@ -149,7 +164,7 @@ Only a holder of `repositories:write-config` sets the mode and the members. An O
 
 ### The status of a mirror
 
-On the page of a remote repository that is stored in mode **Mirror**, the tab **Mirror** starts with **Mirror status**, above the settings. It shows what the server records (`GET /api/v1/projects/<projectKey>/repositories/<key>/mirror`), for everyone who can see the repository's configuration:
+On the page of a remote repository that is stored in mode **Mirror**, the section **Mirror**, once opened, starts with **Mirror status**, above the settings. It shows what the server records (`GET /api/v1/projects/<projectKey>/repositories/<key>/mirror`), for everyone who can see the repository's configuration:
 
 | State | Meaning |
 |---|---|
@@ -178,7 +193,7 @@ With `repositories:write-config`, or with `manage` on the repository (the roles 
 
 ## Settings that are set through the API
 
-The UI edits the shared settings, the format settings, the [upstream](#the-upstream-of-a-remote-repository) and the [mirror](#mirror) of a remote repository. The other members of a remote repository (limits, integrity, the source network), the members of a virtual one, package ownership and namespace claims are set through the management API. The **API** tab of a repository shows the **Stored document** and, after a change in the form, **Your change as a request**.
+The UI edits the shared settings, the format settings, the [upstream](#the-upstream-of-a-remote-repository) and the [mirror](#mirror) of a remote repository. The UI also edits the members and the deployment target of a virtual repository. The other members of a remote repository (limits, integrity, the source network), package ownership and namespace claims are set through the management API. The closed section **API** of a repository's settings shows the **Stored document** and, for each section with an unsaved change, the request that saves it.
 
 Read the repository to get its `ETag`, then send a merge patch with `If-Match`:
 
@@ -297,17 +312,32 @@ limits, and the settings of the npm and NuGet members. See [Known limitations](l
 
 ## Members of a virtual repository
 
-A virtual repository has the tab **Members**. **Available repositories** lists the local and remote repositories of its own project and format that are not members yet; **Members in resolution order** lists the members in the order in which they are asked, and the first answer wins. Select repositories and use **Add**; select a member and use **Remove**, **Move up**, **Move down** or **Move to top** (or Alt with the arrow keys or Home). Everything works with the keyboard alone: Tab to a list, arrow keys to move, Space to select, Tab to a button, Enter to press it. A message under the lists announces each change, for example "npm-remote moved to position 2 of 3". **Default deployment target** names the local member that takes a publish; **None** makes the repository read-only. **Save members** stores the order; **Discard changes** goes back to the stored one. A refusal of the server, such as a member that would create a cycle, is shown on that member.
+A virtual repository has the group **Members** in the creation form and the open section **Members** on its settings page. **Available repositories** lists the local and remote repositories of its own project and format that are not members yet; **Members in resolution order** lists the members in the order in which they are asked, and the first answer wins. Select repositories and use **Add**; select a member and use **Remove**, **Move up**, **Move down** or **Move to top** (or Alt with the arrow keys or Home). Everything works with the keyboard alone: Tab to a list, arrow keys to move, Space to select, Tab to a button, Enter to press it. A message under the lists announces each change, for example "npm-remote moved to position 2 of 3". **Default deployment target** names the local member that takes a publish; **None** makes the repository read-only. **Save changes** stores the order; **Discard changes** goes back to the stored one. A refusal of the server, such as a member that would create a cycle, is shown on that member.
 
 Below, **Effective resolution order** lists the stored members, and **Explain a path** shows, for a path as a package client sends it, what each member would do: serve it, not hold it, or not be asked because of a claim or a pin rule.
 
 ## Edit a repository
 
-1. Open the repository from the list or with **Edit**.
-2. Change settings in the tabs **General**, **Access** and **npm settings**. The page shows **You have unsaved changes.**
-3. Select **Save changes**, or **Discard changes**.
+The settings page of a repository (**Settings** in the row's menu, or `/projects/<projectKey>/repositories/<key>/settings`) is
+one column. At the top are the **Key** (read-only) and **Description (optional)**; then, open, **Visibility**, the **Upstream** of
+a remote repository and the **Members** of a virtual one. Every other setting is a closed section: **Mirror**, **<Format> settings**,
+**Access details** (patterns and hiding existence), **Administrator notes**, the format's own sections (**Signing keys** and
+**Indexes** for Debian, **Import tasks** and **Tombstones** for Ansible Galaxy), **How to use**, **Details** (class, format, layout,
+project, client address and dates), **API** and **Advanced**.
 
-Saving sends only your changes with the version you loaded. If someone saved in between, **Changed by someone else since you opened it** compares **Stored now** with **Yours** and offers **Copy my changes**, **Reload (discard mine)** and **Overwrite**. A repository that is being deleted cannot be changed.
+1. Change settings in a section. A closed section that holds an unsaved change says **Unsaved changes** after its title, and
+   leaving the page asks first.
+2. Select the section's **Save changes**, or **Discard changes**. A save sends only that section's settings, with the version you
+   loaded; the other sections keep what you typed.
+
+If someone saved in between, **Changed by someone else since you opened it** compares **Stored now** with **Yours** for that
+section and offers **Copy my changes**, **Reload (discard mine)** and **Overwrite**. A repository that is being deleted cannot be
+changed; a caller who may read but not change the configuration sees the fields read-only.
+
+**Advanced**, last on the page, holds what acts on the running repository: **Disable repository** (after a confirmation: clients
+can no longer download from it or publish to it, and virtual repositories skip it; its content stays) or **Enable repository**,
+**Move to another project** ([Move a repository to another project](projects.md#move-a-repository-to-another-project)) and
+**Delete repository**. A disabled repository shows the badge **Disabled** beside its key.
 
 ## Delete a repository
 
@@ -317,9 +347,9 @@ Saving sends only your changes with the version you loaded. If someone saved in 
 
 Deleting needs a recent sign-in. A local or remote repository is marked **being deleted** and a background job removes its content and then the repository; the key is free again in its project only when the job has finished. A virtual repository is removed at once. Content is deleted permanently; there is no trash. Exposure rules that name the repository are removed with it.
 
-## The How to use tab
+## How to use
 
-**How to use** shows the setup for this repository, with the **Client** to choose: **npm**, **pnpm**, **Yarn Berry (2 and later)** or **Yarn Classic (1.x)** for npm, **.NET CLI (dotnet)**, **NuGet CLI (nuget.exe)** or **Visual Studio** for NuGet, **Docker CLI (with Buildx)** or **Podman** for OCI, **APT (apt, apt-get)** for Debian, **curl** for generic. It explains the class, how to point the client at the repository and sign in, and how to install, publish, manage dist-tags or transfer files, depending on the class. **Open the client setup** leads to the setup assistant described in [Connecting a package client](../user/client-setup.md).
+The closed section **How to use** of the settings page shows the setup for this repository, with the **Client** to choose: **npm**, **pnpm**, **Yarn Berry (2 and later)** or **Yarn Classic (1.x)** for npm, **.NET CLI (dotnet)**, **NuGet CLI (nuget.exe)** or **Visual Studio** for NuGet, **Docker CLI (with Buildx)** or **Podman** for OCI, **APT (apt, apt-get)** for Debian, **curl** for generic. It explains the class, how to point the client at the repository and sign in, and how to install, publish, manage dist-tags or transfer files, depending on the class. **Open the client setup** leads to the setup assistant described in [Connecting a package client](../user/client-setup.md).
 
 ## File operations
 

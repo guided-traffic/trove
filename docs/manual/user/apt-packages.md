@@ -46,7 +46,7 @@ printf 'machine %s\nlogin %s\npassword %s\n' trove.example.com/api/deb/web/deb-l
 - **Nothing turns verification off.** The snippets use no `trusted=yes`, no `allow-insecure` and no `apt-key`, and you need none of them.
 - **The one-line form.** For systems that keep sources in `sources.list.d/*.list`, the page also shows `deb [signed-by=/etc/apt/keyrings/trove-web-deb-local.asc] https://trove.example.com/api/deb/web/deb-local/ stable main` for `/etc/apt/sources.list.d/trove-web-deb-local.list`, once the key file is installed.
 - **Anonymous reads.** A repository whose artifacts are **Public** needs no credential to read: the key download has no `-u` and no credential file is written. Uploading always needs a token.
-- **Compare the key.** Before you trust a key file, you can compare its fingerprints with the ones the repository's **Signing keys** tab shows, through a channel you trust.
+- **Compare the key.** Before you trust a key file, you can compare its fingerprints with the ones the section **Signing keys** of the repository's settings shows, through a channel you trust.
 
 Reading the index needs the read permission on the repository without a package restriction: an index lists every package of a suite, so a token narrowed to some package names can download those package files but cannot use the repository as an APT source (`404` on `dists/<suite>/InRelease`).
 
@@ -131,7 +131,7 @@ virtual repository, never a member's or the archive's. Keep in mind:
 - An upload through the virtual repository goes to its deployment target, a local member; a virtual repository without one refuses uploads with
   `403`. The index wait (`waitFor`) is read on that local member, not on the virtual repository.
 - A new upload reaches the virtual repository's index after the member published it, within about a minute (the installation's
-  `deb.virtual_index_interval`). The virtual repository's **Index** tab shows a suite that could not be built, with the member that stopped it.
+  `deb.virtual_index_interval`). The section **Indexes** of the virtual repository's settings shows a suite that could not be built, with the member that stopped it.
 
 ## Delete a package
 

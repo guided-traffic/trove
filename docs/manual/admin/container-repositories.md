@@ -64,7 +64,7 @@ The tags list of a remote is the stored list of the image name, with the pages b
 
 ## A virtual repository
 
-A virtual OCI repository combines local and remote OCI repositories of its own project. The wizard creates it without members; set the members, in resolution order, and the deployment target through the API:
+A virtual OCI repository combines local and remote OCI repositories of its own project. The creation form takes its members, in resolution order, and its deployment target; the settings page's section **Members** changes them, and so does the API:
 
 ```bash
 # example values: the project, the key, the ETag and the token variable

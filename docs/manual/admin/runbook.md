@@ -178,7 +178,7 @@ The working space of an image scan (`vulnerabilities.images.scan_dir`, below the
 
 ## A mirror that is stuck
 
-**What you see.** `TroveMirrorFailing` or `TroveMirrorStale`. The **Mirror** tab of the repository ([The status of a mirror](repositories.md#the-status-of-a-mirror)) shows **Failing**, **Waiting** or a **Next pass** long in the past, or the Jobs screen shows `mirror-pass` jobs of one repository queued and not running.
+**What you see.** `TroveMirrorFailing` or `TroveMirrorStale`. The section **Mirror** of the repository's settings ([The status of a mirror](repositories.md#the-status-of-a-mirror)) shows **Failing**, **Waiting** or a **Next pass** long in the past, or the Jobs screen shows `mirror-pass` jobs of one repository queued and not running.
 
 **What it means.** Passes run in the queue `mirror`, on a worker that claims it (two at a time per replica by default, `config.jobs.workers.mirror`). A pass keeps its place; after a failure the dispatch, which runs every minute, continues it after a back-off. **Waiting** is a rate-limit wait, a failure or a release; **Bound reached** is a storage bound. A pass that the spool refuses waits 5 seconds and repeats the item.
 

@@ -57,7 +57,6 @@ This page lists what this version of trove does not do, and the known weak spots
 - No search over packages and files from the top bar; it searches repositories only. Use the **Packages** list and **Browse**.
 - No warning before a session ends. Sessions end after 1 hour idle or 12 hours in total by default (`auth.sessions.idle_timeout`, `absolute_timeout`).
 - No trash can: deleted files and packages cannot be restored. The file browser cannot copy or move files or edit properties.
-- The repository wizard has no fields for the members and the deployment target of a virtual repository. Set them through the management API (`/api/v1/projects/{projectKey}/repositories/{repoKey}`).
 - The token screens cannot bind a token to an endpoint; use the management API or `trove admin token`, see [Endpoints and exposure rules](endpoints.md#bind-a-token-to-an-endpoint).
 - The exposure **Preview** judges only the versions you type, although its label says it lists the stored ones when empty, and it never shows which dist-tags stay visible.
 

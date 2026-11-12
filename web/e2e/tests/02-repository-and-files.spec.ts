@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { e2eProject, expect, expectAccessible, repositories, repositoryApi, signInLocal, signOut, test, unique } from '../support';
 
-// R-UI-047 journey "repository wizard" with the file tree (R-UI-010, R-UI-011, R-UI-012, R-UI-020, E1.11): the
-// administrator creates a repository with the wizard, uploads a file in the browser, browses to it and
+// R-UI-047 journey "a new repository" with the file tree (R-UI-010, R-UI-011, R-UI-012, R-UI-020, R-UI-080, E1.11): the
+// administrator creates a repository with the format chooser and its form, uploads a file in the browser, browses to it and
 // downloads it, with the requests spread over three replicas.
 
 const repoKey = unique('ui-files');
@@ -12,43 +12,34 @@ test.afterAll(async ({ admin }) => {
   await admin.delete(repositoryApi(repoKey));
 });
 
-test('R-UI-010 R-UI-011 R-UI-012 wizard, upload, browse and download', async ({ page, replicas }) => {
+test('R-UI-010 R-UI-011 R-UI-012 R-UI-080 create, upload, browse and download', async ({ page, replicas }) => {
   await signInLocal(page);
 
-  await test.step('the wizard creates a local generic repository', async () => {
+  await test.step('the format chooser and the form create a local generic repository', async () => {
     await page.goto(`/ui/en/projects/${e2eProject}/repositories`);
     await expect(page.getByRole('heading', { name: 'Repositories', level: 1 })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toContainText(e2eProject);
     await expectAccessible(page, 'repository list of the project');
     await page.getByRole('link', { name: 'Create repository' }).click();
+    // The format first, as a page of tiles under a search field, each a link to its form (R-UI-080).
     await expect(page.getByRole('heading', { name: 'New repository', level: 1 })).toBeVisible();
-    // The format is the first step (R-UI-021, Q-UI-112): a grid of tiles under a search field.
-    await expect(page.getByRole('heading', { name: 'Choose the repository format', level: 2 })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
-    await expectAccessible(page, 'repository wizard, step format');
+    await expect(page.getByRole('button', { name: 'Next' })).toHaveCount(0);
+    await expectAccessible(page, 'format chooser');
     await page.getByRole('searchbox', { name: 'Search by package type' }).fill('gener');
-    await expect(page.getByRole('option')).toHaveCount(1);
-    await page.getByRole('option', { name: 'Generic' }).click();
-    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.locator('main a.tile')).toHaveCount(1);
+    await page.getByRole('searchbox', { name: 'Search by package type' }).press('Enter');
 
-    // The class step offers the classes of the format; generic has only local, the others are shown unavailable.
-    await expect(page.getByRole('radio', { name: /^Local/ })).toBeEnabled();
+    // One form named after the format; generic has only the class local, the others are shown unavailable.
+    await expect(page.getByRole('heading', { name: 'New Generic repository', level: 1 })).toBeVisible();
+    await expect(page.getByRole('radio', { name: /^Local/ })).toBeChecked();
     await expect(page.getByRole('radio', { name: /^Remote/ })).toBeDisabled();
     await expect(page.getByText('Generic does not implement the class Virtual.')).toBeVisible();
-    await expectAccessible(page, 'repository wizard, step class');
-    await page.getByRole('radio', { name: /^Local/ }).check();
-    await page.getByRole('button', { name: 'Next' }).click();
-    // Inside a project the project is given, not chosen (Q-UI-129).
+    // Inside a project the project is given, not chosen (Q-UI-129); the key starts with a free suggestion and shows no error.
     await expect(page.getByLabel('Project', { exact: true })).toHaveCount(0);
-    // The breadcrumb and the switcher name the project as well: the sentence of the step is what is asserted.
-    await expect(page.locator('p.subject')).toHaveText(`In the project ${e2eProject}`);
+    await expect(page.locator('#f-key')).toHaveValue(/^generic-local/);
+    await expect(page.locator('main .field-error')).toHaveCount(0);
+    await expectAccessible(page, 'creation form of a generic repository');
     await page.locator('#f-key').fill(repoKey);
-    await expect(page.getByText('The key is available.')).toBeVisible();
-    await expectAccessible(page, 'repository wizard, step basic settings');
-    await page.getByRole('button', { name: 'Next' }).click();
-    await page.getByRole('button', { name: 'Next' }).click();
-    await expect(page.getByRole('heading', { name: 'Review', level: 2 })).toBeVisible();
-    await expectAccessible(page, 'repository wizard, review');
     await page.getByRole('button', { name: 'Create repository' }).click();
     await expect(page).toHaveURL(new RegExp(`/projects/${e2eProject}/repositories/${repoKey}$`));
     await expectAccessible(page, 'repository detail');

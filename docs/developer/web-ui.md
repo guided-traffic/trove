@@ -441,7 +441,7 @@ offers controls ([Q-UI-78](../spec/api-and-ui.md#q-ui-78--the-repository-setting
 
 ### The Debian screens
 
-Debian (APT) has no settings panel of its own: its settings are the generic format tab (the lists are the list control above, the `mirror` object of a remote a fieldset, `upstreamKeys` a textarea).
+Debian (APT) has no settings panel of its own: its settings are the generic format settings (the lists are the list control above, `upstreamKeys` a textarea; the `mirror` object of a remote is in the section Mirror), and the signing keys and the indexes are closed sections of the settings page that load when first opened (R-UI-087).
 What the schema cannot express is three components and the Debian additions to shared code ([Q-DEB-100](../spec/formats/debian.md#q-deb-100--the-signing-keys-and-the-index-state-are-two-lazy-tabs-of-a-local-or-virtual-repositorys-edit-form) to Q-DEB-104; the API is [api/deb-api.ts](../../web/src/app/api/deb-api.ts), `DebApi`, with the fake in [fakes-deb.ts](../../web/src/app/api/testing/fakes-deb.ts)).
 
 | File | Responsibility |
@@ -456,7 +456,7 @@ Shared code that names the format: `FORMAT_CLIENTS.deb` (the client `apt`) and t
 `upstreamKeyFingerprints` rides in the form's format member but is equal on both sides of the merge patch, so a save never writes it.
 
 *Tests.* [deb-signing-keys.spec.ts](../../web/src/app/features/repositories/deb-signing-keys.spec.ts), [deb-index-state.spec.ts](../../web/src/app/features/repositories/deb-index-state.spec.ts), the Debian blocks of `format-settings.spec.ts`, `settings-schema.spec.ts`, `repository-detail.spec.ts` and `package-detail.spec.ts` (`debFixture`, `DEB_SETTINGS_SCHEMA`).
-The browser journey [17-deb.spec.ts](../../web/e2e/tests/17-deb.spec.ts) walks the key rotation, the index tab, the creation form and the setup page; it was written against the generated client and the documented shape of the index state and has not been run (the index endpoint was being built in parallel and the cluster was in use).
+The browser journey [17-deb.spec.ts](../../web/e2e/tests/17-deb.spec.ts) walks the key rotation, the section Indexes, the creation form and the setup page; it was written against the generated client and the documented shape of the index state and has not been run (the index endpoint was being built in parallel and the cluster was in use).
 
 ### The Mirror section of a remote repository
 

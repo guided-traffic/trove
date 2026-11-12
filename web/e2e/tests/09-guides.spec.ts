@@ -48,9 +48,9 @@ test('E2.13 R-UI-049 the guide of a virtual repository, and its configure snippe
   });
 
   let guideSnippet = '';
-  await test.step('the repository settings show the guide of the repository in its How to use tab', async () => {
+  await test.step('the repository settings show the guide of the repository in their section How to use', async () => {
     await page.goto(`/ui/en/projects/${e2eProject}/repositories/${virtualKey}/settings`);
-    await page.getByRole('tab', { name: 'How to use' }).click();
+    await page.getByRole('button', { name: 'How to use', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'What a virtual repository is', level: 2 })).toBeVisible();
     await expect(page.getByText(new RegExp(`For (${e2eProject}/)?${virtualKey} that is (${e2eProject}/)?${localKey}\\.`))).toBeVisible();
     const snippet = page.locator('[data-section="npm.configure"] .snippet pre');
