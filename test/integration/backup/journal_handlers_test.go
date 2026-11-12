@@ -442,3 +442,35 @@ func TestR_AUTH_044_ExternalFlagReplay(t *testing.T) {
 		t.Errorf("alice %s, bob %s, break-glass %s: the flag is set, never cleared, and the break-glass account is untouched", external(alice.ID), external(bob.ID), external(bg.ID))
 	}
 }
+
+// TestR_AUTHZ_036_RepositoryLevelsReplay: authz.settings.changed names the two levels of a repository as visibility.artifacts and
+// visibility.wiki (R-AUTHZ-036). A lowering is applied, one that is in effect is reported so, one that opens content is skipped,
+// and the wiki never stays above the artifacts.
+func TestR_AUTHZ_036_RepositoryLevelsReplay(t *testing.T) {
+	e := newJEnv(t)
+	e.stack.Repository("npm-internal", "local", "npm", "{}")
+	id := e.repoID("npm-internal")
+	e.stack.Exec("UPDATE project SET visibility = 'public'")
+	e.stack.Exec("UPDATE repositories SET visibility_artifacts = 'public', visibility_wiki = 'public'")
+	entry := func(before, after string) ev {
+		return ev{"authz.settings.changed", fmt.Sprintf(`{"repositoryId":%q,"before":{%s},"after":{%s}}`, id, before, after)}
+	}
+	levels := func() string {
+		return e.count("SELECT visibility_artifacts || '/' || visibility_wiki FROM repositories WHERE id = $1::bigint", id)
+	}
+	version := e.count("SELECT config_version::text FROM repositories WHERE id = $1::bigint", id)
+	_, out := e.replayEvents(
+		entry(`"visibility.artifacts":"public","visibility.wiki":"public"`, `"visibility.artifacts":"internal","visibility.wiki":"internal"`),
+		entry(`"visibility.artifacts":"public","visibility.wiki":"public"`, `"visibility.artifacts":"internal","visibility.wiki":"internal"`),
+		entry(`"visibility.artifacts":"internal"`, `"visibility.artifacts":"public"`),
+		entry(`"visibility.wiki":"internal"`, `"visibility.wiki":"private"`),
+		entry(`"visibility.artifacts":"internal"`, `"visibility.artifacts":"private"`),
+	)
+	e.want(out, journal.Applied, journal.AlreadyInEffect, journal.Skipped, journal.Applied, journal.Applied)
+	if got := levels(); got != "private/private" {
+		t.Errorf("the repository is %s, want private/private: the last entry lowers the artifacts, and the wiki goes down with them", got)
+	}
+	if e.count("SELECT config_version::text FROM repositories WHERE id = $1::bigint", id) == version {
+		t.Error("the replay does not raise the configuration version of the repository")
+	}
+}

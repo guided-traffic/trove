@@ -361,7 +361,7 @@ long reader).
 | `service_account` | The service account record | `principal_id` (PK, kind `service_account`) | data |
 | `api_token` | PAT, SAT and CIT; only `secret_sha256` is stored (R-AUTH-023) | `id`, `type`, `secret_sha256` (unique, 32 bytes), `principal_id`, `scope jsonb`, `expires_at`, `revoked_at`, `revocation_reason`, `rotated_from` and `derived_from` (plain uuid, Q-AUTH-15), `rejection_logged_at`, `expiry_notified_at`, `ci_context` | data |
 | `auth_settings` | The runtime authentication settings, one seeded row (R-AUTH-040); NULL means the YAML value | `new_users_external` (00074), `pat_*_ttl`, `sat_*_ttl`, `expiry_notice` | data |
-| `visibility_settings` | The installation's default visibility level, one seeded row (R-API-056, 00073) | `default_level` | data |
+| `visibility_settings` | The installation's default visibility level, one seeded row (R-API-056, 00073) | `default_level`, `version` (the ETag of `PATCH /settings/visibility`) | data |
 
 `service_account_owner` (P1) and `scim` columns beyond `scim_external_id` come with their requirements.
 

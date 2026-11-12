@@ -15,11 +15,16 @@ type projectCaller struct {
 	caps    map[string]bool
 	members map[string]authz.ProjectRole
 	owns    map[string]bool
+	// anonymous: the caller sent no credential, so the engine answers Unauthenticated where a signed-in caller gets Forbidden.
+	anonymous bool
 }
 
 func (c projectCaller) Require(_ context.Context, permission string) error {
 	if c.caps[permission] {
 		return nil
+	}
+	if c.anonymous {
+		return errs.E(errs.Unauthenticated, errs.CodeUnauthenticated, "Authentication is required.")
 	}
 	return errs.E(errs.Forbidden, errs.CodeForbidden, "The operation is not permitted.")
 }
@@ -83,15 +88,17 @@ func TestR_AUTHZ_026_TheDeclarationOfAProjectRole(t *testing.T) {
 		return s.get(path).Code
 	}
 	t.Run("R-AUTHZ-026 the shared step admits the capability and a member of a project, and refuses the rest", func(t *testing.T) {
-		// The project service is not wired in this setup: an admitted caller reaches the handler, which answers 503.
-		if got := call(projectCaller{caps: map[string]bool{"projects:read": true}}, "/api/v1/projects"); got != 503 {
+		// The project service is not wired in this setup: an admitted caller reaches the handler, which answers 503. The members
+		// list keeps the declaration; the project list and the project itself are public and decide in the handler (R-AUTHZ-035 rule 8).
+		const path = "/api/v1/projects/web/members"
+		if got := call(projectCaller{caps: map[string]bool{"projects:read": true}}, path); got != 503 {
 			t.Errorf("capability: %d", got)
 		}
-		if got := call(projectCaller{members: map[string]authz.ProjectRole{"web": authz.ProjectRoleReader}}, "/api/v1/projects"); got != 503 {
+		if got := call(projectCaller{members: map[string]authz.ProjectRole{"web": authz.ProjectRoleReader}}, path); got != 503 {
 			t.Errorf("member: %d", got)
 		}
-		if got := call(projectCaller{}, "/api/v1/projects"); got != 403 {
-			t.Errorf("neither: %d", got)
+		if got := call(projectCaller{}, path); got != 404 {
+			t.Errorf("neither: %d, want 404: a project the caller is no member of answers like a missing one", got)
 		}
 	})
 	t.Run("R-AUTHZ-026 the owner role of the declaration asks for the administration of the addressed project", func(t *testing.T) {
@@ -116,8 +123,8 @@ func TestR_AUTHZ_026_TheDeclarationOfAProjectRole(t *testing.T) {
 		}
 	})
 	t.Run("R-AUTHZ-026 an anonymous caller gets 401", func(t *testing.T) {
-		s := newSetup(t, func(o *Options) { o.Access = projectCaller{} }, nil)
-		if got := s.get("/api/v1/projects").Code; got != 401 && got != 403 {
+		s := newSetup(t, func(o *Options) { o.Access = projectCaller{anonymous: true} }, nil)
+		if got := s.get("/api/v1/projects/web/members").Code; got != 401 {
 			t.Errorf("anonymous: %d", got)
 		}
 	})

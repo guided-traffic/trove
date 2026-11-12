@@ -70,6 +70,12 @@ type Service interface {
 	// RemoveMember removes a member; 404 when it was none. Removing the last Owner is 409
 	// last_owner unless bypassLastOwner.
 	RemoveMember(ctx context.Context, actor authz.Subject, key, ref string, bypassLastOwner bool) (epoch int64, err error)
+	// SetVisibility sets the project's level (R-API-057, R-AUTHZ-033): lowering it takes every repository whose artifacts or wiki
+	// lie above it down to it in the same transaction, each with a new configuration version. expected is the version the client
+	// saw; 422 validation_failed for a value that is no level, 409 public_not_allowed while the default endpoint admits no request
+	// without a credential, 412 for a stale version. It returns the project, the lowered repositories with their levels before,
+	// and the epoch. The level it already has changes nothing.
+	SetVisibility(ctx context.Context, actor authz.Subject, key string, expected int64, level string) (Project, []Lowered, int64, error)
 	// MoveRepository moves a repository to another project (R-REPO-060, Q-REPO-217): the address
 	// changes, the id and the content do not. It locks both projects and the repository, refuses
 	// with 409 repository_in_use (problem member `references`, [Reference]) while an object of the
@@ -123,6 +129,9 @@ type Options struct {
 	Policies PolicyDeleter
 	// Recorder records the events of events_projects.go in the transaction of the write.
 	Recorder audit.Recorder
+	// PublicAvailable reports whether the default endpoint admits requests without a credential (R-EP-010): while it does not, a
+	// write that sets a level to public answers 409 public_not_allowed (R-AUTHZ-033 rule 5). Nil means it does not.
+	PublicAvailable func() bool
 }
 
 // New creates the service.

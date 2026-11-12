@@ -340,8 +340,13 @@ func TestR_AUTHZ_026_AMemberSeesItsOwnProjectsOnly(t *testing.T) {
 			t.Errorf("another project %q, an unknown one %q", shop.Code(), unknown.Code())
 		}
 	})
-	t.Run("R-AUTHZ-026 a caller that holds neither projects:read nor a membership is refused the list and reads nothing", func(t *testing.T) {
-		wantStatus(t, f.do(f.bob, "GET", base, nil, authz.HeaderMinEpoch, epoch), 403, "forbidden")
+	t.Run("R-AUTHZ-026 a caller that holds neither projects:read nor a membership lists the projects its level admits, here none, and reads nothing else", func(t *testing.T) {
+		// Every project of this test is private: the list is empty (R-AUTHZ-035 rule 8; the levels are tested in visibility_test.go).
+		list := f.do(f.bob, "GET", base, nil, authz.HeaderMinEpoch, epoch)
+		wantStatus(t, list, 200, "")
+		if n := len(list.Items(t)); n != 0 {
+			t.Errorf("bob lists %d projects", n)
+		}
 		wantStatus(t, f.do(f.bob, "GET", base+"/web", nil, authz.HeaderMinEpoch, epoch), 404, "")
 	})
 	t.Run("R-REPO-012 the repositories of a project the caller cannot see answer 404, as an unknown project's", func(t *testing.T) {

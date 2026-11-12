@@ -113,9 +113,13 @@ func (s *service) CreateIn(ctx context.Context, tx meta.Tx, actor authz.Subject,
 	if err != nil {
 		return Project{}, err
 	}
+	level, err := s.chosenLevel(ctx, qs, in.Visibility)
+	if err != nil {
+		return Project{}, err
+	}
 	id := newID()
 	rows, err := qs.ProjectInsert(ctx, q.ProjectInsertParams{
-		ID: id, Key: in.Key, DisplayName: in.DisplayName, Description: in.Description, Actor: actorID(actor),
+		ID: id, Key: in.Key, DisplayName: in.DisplayName, Description: in.Description, Visibility: level, Actor: actorID(actor),
 	})
 	if err != nil {
 		return Project{}, err

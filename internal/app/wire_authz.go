@@ -9,6 +9,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/project"
+	"github.com/guided-traffic/trove/internal/visibility"
 )
 
 // withMinEpoch wraps the authentication stage: once a request authenticated, the
@@ -68,8 +69,21 @@ func (a *App) wireAuthz(ctx context.Context, in infra, repo repositoryArea, id i
 	})
 	projects := project.New(project.Options{
 		DB: in.db, Changes: in.changes, Principals: id.principals, Repositories: repo.reader, Policies: svc, Recorder: in.rec,
+		PublicAvailable: a.publicAvailable,
 	})
-	return authzArea{engine: eng, service: svc, projects: projects}, nil
+	levels := visibility.New(visibility.Options{DB: in.db, Recorder: in.rec, PublicAvailable: a.publicAvailable})
+	return authzArea{engine: eng, service: svc, projects: projects, visibility: levels}, nil
+}
+
+// publicAvailable reports whether the default endpoint admits requests without a credential
+// (endpoints.default.auth.anonymous, R-EP-010): the condition for setting a level to public (R-AUTHZ-033 rule 5).
+func (a *App) publicAvailable() bool {
+	for _, e := range a.cfg.Server.ResolveEndpoints() {
+		if e.Default {
+			return e.Anonymous
+		}
+	}
+	return false
 }
 
 // publicContent reports whether an anonymous visitor reads anything through the endpoint of the request: the artifacts of
@@ -121,5 +135,5 @@ func (a *App) readScoper() authz.ReadScoper {
 // use; a member is nil on a replica without the authz area.
 func (a *App) authzServices() v1.AuthzServices {
 	az := part[authzArea](a.parts)
-	return v1.AuthzServices{Policies: az.service, Engine: az.engine, Owners: part[ownershipArea](a.parts).service, Projects: az.projects}
+	return v1.AuthzServices{Policies: az.service, Engine: az.engine, Owners: part[ownershipArea](a.parts).service, Projects: az.projects, Visibility: az.visibility}
 }

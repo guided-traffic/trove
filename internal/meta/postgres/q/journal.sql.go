@@ -471,7 +471,7 @@ func (q *Queries) JournalProjectMembersRemoveAll(ctx context.Context, id string)
 }
 
 const journalProjectSetLevel = `-- name: JournalProjectSetLevel :exec
-UPDATE project SET visibility = $1::text, version = version + 1, updated_at = now()
+UPDATE project SET visibility = $1::text, updated_at = now()
  WHERE id = $2::text::uuid
 `
 
@@ -511,20 +511,23 @@ func (q *Queries) JournalQuarantined(ctx context.Context) (int64, error) {
 }
 
 const journalRepositoryLock = `-- name: JournalRepositoryLock :many
-SELECT r.id, r.key, r.class, r.config, r.lifecycle, r.project_id::text AS project_id, p.key AS project_key
+SELECT r.id, r.key, r.class, r.config, r.lifecycle, r.project_id::text AS project_id, p.key AS project_key,
+       r.visibility_artifacts, r.visibility_wiki
   FROM repositories r JOIN project p ON p.id = r.project_id
  WHERE r.id = $1::bigint
    FOR UPDATE OF r
 `
 
 type JournalRepositoryLockRow struct {
-	ID         int64
-	Key        string
-	Class      string
-	Config     json.RawMessage
-	Lifecycle  string
-	ProjectID  string
-	ProjectKey string
+	ID                  int64
+	Key                 string
+	Class               string
+	Config              json.RawMessage
+	Lifecycle           string
+	ProjectID           string
+	ProjectKey          string
+	VisibilityArtifacts string
+	VisibilityWiki      string
 }
 
 // A repository by its ID under its row lock, with its project; a repository being deleted is returned too and the caller
@@ -546,6 +549,8 @@ func (q *Queries) JournalRepositoryLock(ctx context.Context, id int64) ([]Journa
 			&i.Lifecycle,
 			&i.ProjectID,
 			&i.ProjectKey,
+			&i.VisibilityArtifacts,
+			&i.VisibilityWiki,
 		); err != nil {
 			return nil, err
 		}
@@ -571,6 +576,47 @@ type JournalRepositorySetConfigParams struct {
 
 func (q *Queries) JournalRepositorySetConfig(ctx context.Context, arg JournalRepositorySetConfigParams) ([]int64, error) {
 	rows, err := q.db.Query(ctx, journalRepositorySetConfig, arg.Config, arg.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var config_version int64
+		if err := rows.Scan(&config_version); err != nil {
+			return nil, err
+		}
+		items = append(items, config_version)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const journalRepositorySetLevels = `-- name: JournalRepositorySetLevels :many
+UPDATE repositories
+   SET visibility_artifacts = CASE WHEN $1::text = '' THEN visibility_artifacts ELSE $1::text END,
+       visibility_wiki = CASE
+           WHEN visibility_rank(CASE WHEN $2::text = '' THEN visibility_wiki ELSE $2::text END)
+              > visibility_rank(CASE WHEN $1::text = '' THEN visibility_artifacts ELSE $1::text END)
+           THEN CASE WHEN $1::text = '' THEN visibility_artifacts ELSE $1::text END
+           ELSE CASE WHEN $2::text = '' THEN visibility_wiki ELSE $2::text END END,
+       config_version = config_version + 1, updated_at = now()
+ WHERE id = $3::bigint
+RETURNING config_version
+`
+
+type JournalRepositorySetLevelsParams struct {
+	Artifacts string
+	Wiki      string
+	ID        int64
+}
+
+// The replay of authz.settings.changed for the levels of a repository (R-AUTHZ-036): the journaled levels, where an empty one
+// keeps the stored level, and the wiki never above the artifacts (R-AUTHZ-033 rule 2).
+func (q *Queries) JournalRepositorySetLevels(ctx context.Context, arg JournalRepositorySetLevelsParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, journalRepositorySetLevels, arg.Artifacts, arg.Wiki, arg.ID)
 	if err != nil {
 		return nil, err
 	}

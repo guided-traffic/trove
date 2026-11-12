@@ -342,6 +342,7 @@ ALTER TABLE repositories
 CREATE TABLE visibility_settings (
     singleton      boolean     PRIMARY KEY DEFAULT true CHECK (singleton),
     default_level  text        NOT NULL DEFAULT 'private' CHECK (default_level IN ('private', 'internal', 'public')),
+    version        bigint      NOT NULL DEFAULT 1,
     updated_at     timestamptz NOT NULL DEFAULT now(),
     updated_by     uuid        REFERENCES principal (id) ON DELETE SET NULL
 );
@@ -6638,6 +6639,60 @@ condition.
 
 **Applied in the spec:** R-AUTHZ-002, R-AUTHZ-003, R-AUTHZ-019, R-AUTHZ-021, R-AUTHZ-025, R-AUTHZ-026;
 [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-016.
+
+### Q-AUTHZ-280 · Setting a project's level moves neither its version nor its ETag
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The level is no member of the version (chosen) | `PUT /projects/{projectKey}/visibility` compares `If-Match` with the project's version and leaves it as it is | `Project.version` keeps the meaning the document gives it (`displayName` and `description` only, Q-AUTHZ-185); a client that edits the name is not made stale by an administrator who changes the level | Two administrators who set the level at the same time are not told apart by the tag; the last write stands and both are audited |
+| (b) The level bumps the version | The tag moves with every change of the project row | Two level writes are ordered | A rename in the UI fails with 412 after any level change; the document's statement about the version would be wrong |
+
+**Choice:** (a). The comparison with `If-Match` still runs (a stale tag is 412, `*` is the deliberate blind write); an unchanged level
+answers 200 with an empty `lowered`, writes no event and leaves the epoch.
+
+**Rationale:** the level is decided once by an administrator and is audited with its before and after; the version protects the
+fields a team edits together. The development agent would revisit this if two administrators contend for a level in practice.
+
+**Applied in the spec:** R-API-057; the `Project` schema in `api/openapi.yaml`.
+
+### Q-AUTHZ-281 · A write that raises a level asks for a recent authentication inside the write, against the level an absent member would take
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The service calls the caller's gate when a level rises, relative to the stored level on an update and to the level an absent member would take on a create (chosen) | The handler hands a function that is the shared recent-authentication check; the service calls it in the write's transaction, after the rules of the container passed and before anything is stored | Exact: a PATCH that names a level it already has asks for nothing, and a create that follows the installation's default asks for nothing | The refusal is raised from inside a transaction, which rolls back (nothing was written yet) |
+| (b) The handler asks whenever the body names a level above `private` | A check on the body | No change in the services | A merge patch that repeats a `public` level asks again; a create that follows the default but is `internal` cannot tell the two apart |
+
+**Choice:** (a). For a create the baseline is the lower of the installation's default and the project's level, so a repository
+document that names no level takes it without a gate, and one that names a higher level asks for one. An absent `wiki` on a create takes
+the lower of the baseline and the artifacts level; on an update an absent member keeps the stored level, also in a `PUT`, because a level
+is not a setting to revert (a revert to the default could open content).
+
+**Rationale:** R-AUTHZ-033 rule 4 asks for the authentication when a level rises, so the write is the place that knows whether it does.
+The development agent would revisit this with the repository document's `PUT` semantics (R-REPO-011) if the owner wants omitted members
+to revert here as well.
+
+**Applied in the spec:** R-AUTHZ-033 rule 4, R-API-057.
+
+### Q-AUTHZ-282 · The cascade of a lowered project runs under the project's row lock, and a repository write takes the project's lock first
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `PUT .../visibility` locks the project row `FOR UPDATE`, lowers the repositories it names in the same statement chain and lets the deferred trigger (`AI008`) judge the end state; a repository create or update first takes the project `FOR SHARE` (chosen) | The order project, then repository, is the one a move uses | A repository written while its project is lowered either waits and sees the new level, or is lowered by the cascade; no state above the project commits | A project with very many repositories holds its lock for the length of one `UPDATE` |
+| (b) Lower first, check later | No lock for the repository write | Shorter lock | `AI008` is raised at commit as a 500 for a race that a lock avoids |
+
+**Choice:** (a). The lowered repositories raise their configuration version, notify `repo_config` and record `authz.settings.changed`
+with the cause `project`, and the project notifies `authz` once: one write advances the epoch once (R-AUTHZ-028). A move into a
+project of a lower level lowers the moved repository in its own transaction with the cause `move`.
+
+**Rationale:** the database already refuses the end state (Q-AUTHZ-276); the lock order makes the refusal a wait and not an error.
+
+**Applied in the spec:** R-AUTHZ-033 rule 3, R-AUTHZ-036.
 
 ## What this does not cover
 

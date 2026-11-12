@@ -39,6 +39,9 @@ type accessSettings struct {
 	HideExistence    string  `json:"hideExistence"`
 	CacheFillAction  *string `json:"cacheFillAction,omitempty"`
 	PackageOwnership *string `json:"packageOwnership,omitempty"`
+	// The two levels are members of their own, named as the document names them (R-AUTHZ-036).
+	VisibilityArtifacts string `json:"visibility.artifacts"`
+	VisibilityWiki      string `json:"visibility.wiki"`
 }
 
 // settingsOf reads the settings from the repository model and its document.
@@ -52,7 +55,7 @@ func settingsOf(r repository.Repository) accessSettings {
 		} `json:"remote"`
 	}
 	_ = json.Unmarshal(r.Config, &doc) // an unreadable document has none of the optional members
-	s := accessSettings{HideExistence: r.HideExistence}
+	s := accessSettings{HideExistence: r.HideExistence, VisibilityArtifacts: r.Visibility.Artifacts, VisibilityWiki: r.Visibility.Wiki}
 	if s.HideExistence == "" {
 		s.HideExistence = "inherit"
 	}
@@ -103,11 +106,42 @@ func (h *SettingsHook) OnUpdated(ctx context.Context, tx meta.Tx, c repository.C
 	if len(a) == 0 {
 		return nil
 	}
-	details := mustJSON(map[string]any{"repository": after.Name.String(), "repositoryId": after.ID, "before": b, "after": a})
+	details := mustJSON(map[string]any{"repository": after.Name.String(), "repositoryId": after.ID, "before": b, "after": a, "cause": CauseRequest})
 	journal := mustJSON(map[string]any{"repositoryId": after.ID, "key": after.Name.String(), "before": b, "after": a})
 	return h.rec.RecordTx(ctx, tx, audit.Event{
 		Type: EventSettingsChanged, Actor: c.Actor, Source: c.Source, Outcome: audit.Success,
 		Subject:    audit.Subject{Kind: "repository", ID: after.ID, Name: after.Name.String()},
 		Repository: after.Name.String(), Details: details, Journal: journal,
 	})
+}
+
+// The causes of an authz.settings.changed event for the levels of a repository (R-AUTHZ-036): the request that names them, the
+// cascade of a project's lowered level, and the move to a project of a lower level.
+const (
+	CauseRequest = "request"
+	CauseProject = "project"
+	CauseMove    = "move"
+)
+
+// RepositoryLevels are the levels of a repository's two parts, as a string each.
+type RepositoryLevels struct{ Artifacts, Wiki string }
+
+// LevelsChangedEvent builds the authz.settings.changed event of a change of a repository's levels that no repository update
+// wrote: the cascade of a lowered project and the move (R-AUTHZ-033 rule 3). Only the members that changed are named, as the
+// repository update names them; the journal entry carries the same before and after (R-AUTHZ-031).
+func LevelsChangedEvent(actor audit.Actor, name, repositoryID string, before, after RepositoryLevels, cause string, epoch int64) audit.Event {
+	b, a := map[string]any{}, map[string]any{}
+	if before.Artifacts != after.Artifacts {
+		b["visibility.artifacts"], a["visibility.artifacts"] = before.Artifacts, after.Artifacts
+	}
+	if before.Wiki != after.Wiki {
+		b["visibility.wiki"], a["visibility.wiki"] = before.Wiki, after.Wiki
+	}
+	return audit.Event{
+		Type: EventSettingsChanged, Actor: actor, Outcome: audit.Success,
+		Subject:    audit.Subject{Kind: "repository", ID: repositoryID, Name: name},
+		Repository: name,
+		Details:    mustJSON(map[string]any{"repository": name, "repositoryId": repositoryID, "before": b, "after": a, "cause": cause, "epoch": epoch}),
+		Journal:    mustJSON(map[string]any{"repositoryId": repositoryID, "key": name, "before": b, "after": a}),
+	}
 }

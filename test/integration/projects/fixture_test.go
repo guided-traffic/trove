@@ -24,7 +24,10 @@ type fixture struct {
 	a, b                   *stack.Replica
 }
 
-func newFixture(t *testing.T) *fixture {
+func newFixture(t *testing.T) *fixture { return newFixtureWith(t, stack.Options{}) }
+
+// newFixtureWith is newFixture with options of the replicas; the validator is the fixture's own.
+func newFixtureWith(t *testing.T, o stack.Options) *fixture {
 	t.Helper()
 	e := stack.New(t)
 	f := &fixture{t: t, e: e}
@@ -36,7 +39,7 @@ func newFixture(t *testing.T) *fixture {
 	f.alice, f.bob = e.User("alice"), e.User("bob")
 	f.web = e.Group("web-leads")
 	e.Join(f.web, f.alice)
-	o := stack.Options{Validator: apitest.New(t, v1.EmbeddedYAML())}
+	o.Validator = apitest.New(t, v1.EmbeddedYAML())
 	f.a, f.b = e.NewReplica("web-a", o), e.NewReplica("web-b", o)
 	f.cl = stack.NewCluster(f.a, f.b)
 	return f

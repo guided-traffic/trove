@@ -39,6 +39,19 @@ remote repositories are applied by the repository service to a `Restricted` call
   shows the name within the project (`viewPolicy` in [project_policies_api.go](../../internal/api/v1/project_policies_api.go)).
 - **The last Owner.** The member writes take the project's row lock and refuse to take `owner` from the last membership with it
   unless the caller holds `projects:write` (the handler passes `bypassLastOwner`).
+- **A project has a level.** `Project.Visibility` (private, internal, public) is a column; `CreateIn` takes `Input.Visibility` or the
+  installation's default (`visibility_settings`, read in the creating transaction), and `SetVisibility` is the one write after that
+  ([visibility.go](../../internal/project/visibility.go), R-API-057). It locks the project row, compares `If-Match`, sets the level and,
+  when it is lowered, takes every repository above it down in the same transaction (`ProjectLowerRepositories`), each with a new
+  configuration version, a `repo_config` note and an `authz.settings.changed` with the cause `project`; the project notifies `authz`
+  once. It moves neither the version nor the ETag source. A move into a project of a lower level lowers the moved repository the same
+  way, cause `move` (`lowerMoved`). `PublicAvailable` (Options) is the default endpoint's `auth.anonymous`: while it is false a write
+  that sets `public` is 409 `public_not_allowed`. The default level itself lives in [internal/visibility](../../internal/visibility/visibility.go),
+  which both services and the settings operations share; it imports neither the engine nor the repository package.
+- **The projects a caller sees.** `listProjects` and `getProject` are declared `public: true` and decided in the handler
+  ([projects_api.go](../../internal/api/v1/projects_api.go), `projectListed`): `projects:read` sees every project, a member its own with
+  the role, any caller the projects its level admits without one; `membership=true` keeps the memberships; a project the caller may not
+  see is 404 and a caller without a credential gets 401 while nothing is public (Q-API-249).
 - **A move refuses, it never rewrites.** Anything of the source project that names the repository refuses it with
   `repository_in_use` and the list of references; for a restricted caller (an Owner without `repositories:write-config`, the
   handler passes `restricted`) a key selector of a global policy as well (`global_policy`, Q-REPO-232).
@@ -104,6 +117,8 @@ All in [codes.go](../../internal/errs/codes.go).
 | `authz.project.member_added` | no | project, projectId, principal, principalId, role |
 | `authz.project.member_changed` | project, principal, before, after | as above with before and after |
 | `authz.project.member_removed` | project, principal | as above with role |
+| `authz.project.visibility_changed` | project ID and key, the level before and after | project, projectId, before, after, `lowered` (repository, repositoryId, levels before and after) |
+| `authz.settings.changed` with the cause `project` or `move` (one per lowered repository; `authz.LevelsChangedEvent`) | the repository by ID, `visibility.artifacts` and `visibility.wiki` before and after | as the journal entry, with the cause |
 | `repository.moved` (project: the source, repository: the former name) | repositoryId, from and to by ID and key | repository (key), repositoryId, from, fromId, to, toId, configVersion |
 | `repository.moved_in` (project: the target, repository: the new name; `movedEvents` in [move.go](../../internal/project/move.go), Q-REPO-233) | no | as `repository.moved` |
 

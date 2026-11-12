@@ -50,9 +50,10 @@ SELECT *
 -- on the unique constraint repositories_project_key; ON CONFLICT DO NOTHING returns
 -- no row and the caller answers already_exists. The project is required
 -- (Q-AUTHZ-206): the repository is created in it, in this statement.
-INSERT INTO repositories (key, format, class, config, project_id, created_by, updated_by)
+INSERT INTO repositories (key, format, class, config, project_id, visibility_artifacts, visibility_wiki, created_by, updated_by)
 VALUES (sqlc.arg(key)::text, sqlc.arg(format)::text, sqlc.arg(class)::text, sqlc.arg(config)::text::jsonb,
-        sqlc.arg(project_id)::text::uuid, NULLIF(sqlc.arg(actor)::text, '')::uuid, NULLIF(sqlc.arg(actor)::text, '')::uuid)
+        sqlc.arg(project_id)::text::uuid, sqlc.arg(visibility_artifacts)::text, sqlc.arg(visibility_wiki)::text,
+        NULLIF(sqlc.arg(actor)::text, '')::uuid, NULLIF(sqlc.arg(actor)::text, '')::uuid)
 ON CONFLICT (project_id, key) DO NOTHING
 RETURNING *;
 
@@ -61,6 +62,8 @@ RETURNING *;
 -- version already; the version in the WHERE clause is the second guard.
 UPDATE repositories
    SET config = sqlc.arg(config)::text::jsonb,
+       visibility_artifacts = sqlc.arg(visibility_artifacts)::text,
+       visibility_wiki = sqlc.arg(visibility_wiki)::text,
        config_version = config_version + 1,
        updated_at = now(),
        updated_by = NULLIF(sqlc.arg(actor)::text, '')::uuid
@@ -102,4 +105,4 @@ SELECT id::text AS id, key FROM project;
 -- The project a repository is created in or moved into, locked FOR SHARE: a concurrent
 -- delete of the project (FOR UPDATE, which counts the repositories under that lock)
 -- waits for this transaction, so the new repository is counted or the project is gone.
-SELECT id::text AS id, key FROM project WHERE key = sqlc.arg(key)::text FOR SHARE;
+SELECT id::text AS id, key, visibility FROM project WHERE key = sqlc.arg(key)::text FOR SHARE;

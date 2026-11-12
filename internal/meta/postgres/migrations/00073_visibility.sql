@@ -62,6 +62,7 @@ CREATE CONSTRAINT TRIGGER project_visibility_within
 CREATE TABLE visibility_settings (
     singleton      boolean     PRIMARY KEY DEFAULT true CHECK (singleton),
     default_level  text        NOT NULL DEFAULT 'private' CHECK (default_level IN ('private', 'internal', 'public')),
+    version        bigint      NOT NULL DEFAULT 1,
     updated_at     timestamptz NOT NULL DEFAULT now(),
     updated_by     uuid        REFERENCES principal (id) ON DELETE SET NULL
 );

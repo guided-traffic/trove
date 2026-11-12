@@ -92,6 +92,15 @@ func wantStatus(t *testing.T, r stack.Response, status int, code string) {
 	}
 }
 
+// wantProblem asserts the status and the top-level code of an answer, as a refusal that is no validation of a member
+// (principal_not_allowed names a level instead of a principal, R-AUTHZ-033).
+func wantProblem(t *testing.T, r stack.Response, status int, code string) {
+	t.Helper()
+	if r.Status != status || r.Code() != code {
+		t.Fatalf("answered %d %q, want %d %q\n%s", r.Status, r.Code(), status, code, r.Body)
+	}
+}
+
 // current is the header that makes the next request see every write so far on
 // whichever replica answers it (R-AUTHZ-032).
 func (f *apiFixture) current() []string {
@@ -231,7 +240,7 @@ func TestR_AUTHZ_021_ValidationAndPermissions(t *testing.T) {
 			t.Fatalf("errors = %v", errs)
 		}
 		wantStatus(t, f.cl.Do(me, "POST", policies, policyBody("dup", entry("user:bob", "read"), entry("user:bob", "deploy"))), 422, "duplicate_principal")
-		wantStatus(t, f.cl.Do(me, "POST", policies, policyBody("anon", entry("anonymous", "deploy"))), 422, "anonymous_write_action")
+		wantProblem(t, f.cl.Do(me, "POST", policies, policyBody("anon", entry("anonymous", "deploy"))), 422, "principal_not_allowed")
 		wantStatus(t, f.cl.Do(me, "POST", policies, map[string]any{"name": "x", "resources": map[string]any{"repositories": []string{"it/ghost"}}}), 422, "unknown_repository")
 		wantStatus(t, f.cl.Do(me, "POST", policies, map[string]any{"name": "x", "resources": map[string]any{"repositories": []string{"it/npm-internal"}, "packages": map[string]any{"include": []string{"a**b/c\\"}}}}), 422, "invalid_pattern")
 		if n := f.e.Number("SELECT count(*) FROM authz_policy"); n != 0 {
@@ -384,8 +393,8 @@ func TestR_AUTHZ_022_RolesAndBindingsOverHTTP(t *testing.T) {
 		}
 	})
 	t.Run("R-AUTHZ-022 the refusals", func(t *testing.T) {
-		wantStatus(t, f.cl.Do(me, "PUT", bindings+"/admin/authenticated", nil), 422, "role_not_allowed")
-		wantStatus(t, f.cl.Do(me, "PUT", bindings+"/admin/anonymous", nil), 422, "role_not_allowed")
+		wantProblem(t, f.cl.Do(me, "PUT", bindings+"/admin/authenticated", nil), 422, "principal_not_allowed")
+		wantProblem(t, f.cl.Do(me, "PUT", bindings+"/admin/anonymous", nil), 422, "principal_not_allowed")
 		wantStatus(t, f.cl.Do(me, "PUT", bindings+"/god/user:bob", nil), 422, "unknown_role")
 		wantStatus(t, f.cl.Do(me, "PUT", bindings+"/auditor/user:ghost", nil), 422, "unknown_principal")
 		auto := f.e.Group("everyone")
@@ -489,7 +498,7 @@ func TestR_AUTHZ_023_ChecksOverHTTP(t *testing.T) {
 	})
 	t.Run("R-AUTHZ-003 an entry for anonymous or authenticated is 422 principal_not_allowed", func(t *testing.T) {
 		for _, ref := range []string{"anonymous", "authenticated"} {
-			wantStatus(t, f.cl.Do(me, "POST", policies, map[string]any{
+			wantProblem(t, f.cl.Do(me, "POST", policies, map[string]any{
 				"name": "everyone-" + ref, "resources": map[string]any{"repositories": []string{"it/generic-local"}},
 				"entries": []any{entry(ref, "read")},
 			}), 422, "principal_not_allowed")

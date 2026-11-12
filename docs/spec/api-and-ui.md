@@ -11784,6 +11784,38 @@ revisit condition.
 
 **Applied in the spec:** R-API-056, R-API-057, R-API-047.
 
+### Q-API-249 · The project list and the project read are open operations that decide in the handler
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `x-trove-permission: public: true`; the handler lists what the caller's level admits, its memberships and, with `projects:read`, every project; a project it may not see is 404 (chosen) | As `listRepositories` does | One place decides who sees a project; an anonymous caller gets the public projects while a public repository exists and 401 before | The declaration does not tell the rule; the description of the operation does |
+| (b) Keep the declaration (`projects:read` or a member) and add a second path for the levels | Two decisions | The declaration is still the rule | A project that a level admits would be reachable by two paths with two answers |
+
+**Choice:** (a). `membership=true` keeps the caller's memberships. A caller without a credential gets 401 while no repository's artifacts
+are `public` (the gate of the repository list), and 404 for a project it may not see, as an unknown project answers.
+
+**Rationale:** R-AUTHZ-035 rule 8 makes the level part of who sees a project, and the declaration language has no level.
+
+**Applied in the spec:** R-API-047, R-API-057; `listProjects` and `getProject` in `api/openapi.yaml`.
+
+### Q-API-250 · The ETag of the visibility settings is a version of their own row
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `visibility_settings.version`, moved by every change of the default (chosen) | The tag of `GET` is the version; `PATCH` compares it | Stable across replicas, moves only with the default; `publicObjects` is read-only and changes with other writes without moving the tag | One more column |
+| (b) A digest of the answer | The tag follows `publicObjects` as well | No column | A `PATCH` fails with 412 whenever any project changes its level |
+
+**Choice:** (a), migration `00073_visibility.sql`. A merge patch without `defaultLevel`, or with the level the installation has,
+changes nothing and records nothing, and is still compared with `If-Match`.
+
+**Rationale:** the tag protects the one value the operation writes.
+
+**Applied in the spec:** R-API-056, R-AUTHZ-033 data model.
+
 ## What this does not cover
 
 

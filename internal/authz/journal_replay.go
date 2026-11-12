@@ -443,9 +443,18 @@ func accessOrder(key string) []string {
 		return []string{"enforce", "off"}
 	case "hideExistence":
 		return []string{"true", "false"}
+	case settingArtifactsLevel, settingWikiLevel:
+		return []string{"private", "internal", "public"}
 	}
 	return nil
 }
+
+// The names of the two level settings in the journal entry of authz.settings.changed (R-AUTHZ-036): the members of the repository
+// document, flat. They are columns of the repository row, not members of its configuration, so they are read and written apart.
+const (
+	settingArtifactsLevel = "visibility.artifacts"
+	settingWikiLevel      = "visibility.wiki"
+)
 
 // repoSettings is the access-bearing part of a repository's configuration document as strings, "" for a member the document
 // does not set.
@@ -614,6 +623,7 @@ func replaySettings(ctx context.Context, qs *q.Queries, env journal.Env, tx meta
 		return o.Result(journal.SubjectUnknown, subject), nil
 	}
 	current := readSettings(repo.Class, doc)
+	current[settingArtifactsLevel], current[settingWikiLevel] = repo.VisibilityArtifacts, repo.VisibilityWiki
 	// A setting that does not apply to the repository's class is not compared or written.
 	for k := range after {
 		if k == "cacheFillAction" && repo.Class != "remote" || k == "packageOwnership" && repo.Class != "local" {
@@ -632,8 +642,16 @@ func replaySettings(ctx context.Context, qs *q.Queries, env journal.Env, tx meta
 		return o.Result(journal.AlreadyInEffect, subject), nil
 	}
 	save := func(apply func(key string) string) error {
+		levels := q.JournalRepositorySetLevelsParams{ID: id}
 		for k := range after {
-			if v := apply(k); v != "" {
+			v := apply(k)
+			switch {
+			case v == "":
+			case k == settingArtifactsLevel:
+				levels.Artifacts = v
+			case k == settingWikiLevel:
+				levels.Wiki = v
+			default:
 				writeSetting(repo.Class, doc, k, v)
 			}
 		}
@@ -644,6 +662,11 @@ func replaySettings(ctx context.Context, qs *q.Queries, env journal.Env, tx meta
 		ver, err := qs.JournalRepositorySetConfig(ctx, q.JournalRepositorySetConfigParams{ID: id, Config: string(raw)})
 		if err != nil || len(ver) == 0 {
 			return err
+		}
+		if levels.Artifacts != "" || levels.Wiki != "" {
+			if ver, err = qs.JournalRepositorySetLevels(ctx, levels); err != nil || len(ver) == 0 {
+				return err
+			}
 		}
 		if err := env.Notify(tx, cluster.AreaRepoConfig, 1, map[string]any{"id": e.RepositoryID, "key": subject, "op": "updated", "version": ver[0]}); err != nil {
 			return err

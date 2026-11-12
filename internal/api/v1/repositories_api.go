@@ -104,6 +104,9 @@ func (s *Server) writeCaller(r *http.Request) (repository.Caller, error) {
 	if c.MayWeakenVulnerabilities, err = s.holds(ctx, string(authz.VulnerabilitiesTriage)); err != nil {
 		return repository.Caller{}, err
 	}
+	// A write that raises a level asks for a recent authentication (R-AUTHZ-033 rule 4, R-API-057): the service calls this, in the
+	// transaction of the write, when it finds one.
+	c.RaiseGate = func(context.Context) error { return s.requireRecentAuth(r) }
 	return c, nil
 }
 

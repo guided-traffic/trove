@@ -54,6 +54,7 @@ import (
 	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/project"
 	"github.com/guided-traffic/trove/internal/repository"
+	"github.com/guided-traffic/trove/internal/visibility"
 	"github.com/guided-traffic/trove/test/integration/idapi"
 	"github.com/guided-traffic/trove/test/integration/testenv"
 )
@@ -165,6 +166,15 @@ func (e *Env) Exec(sql string, args ...any) {
 	}
 }
 
+// TryExec runs a statement as the superuser and returns its error, for a statement the database is expected to refuse.
+func (e *Env) TryExec(sql string, args ...any) error {
+	e.T.Helper()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	_, err := e.admin.Exec(context.Background(), sql, args...)
+	return err
+}
+
 // Text returns the first column of the first row of a query.
 func (e *Env) Text(sql string, args ...any) string {
 	e.T.Helper()
@@ -271,6 +281,15 @@ func (e *Env) Member(project string, p Person, role string) {
 // AuthzEpoch is the authorization epoch in the database.
 func (e *Env) AuthzEpoch() int64 {
 	return e.Number("SELECT epoch FROM cluster_epoch WHERE area = 'authz'")
+}
+
+// externalOf reads the external flag of a user (R-AUTH-044); false for any other principal.
+func (e *Env) externalOf(ctx context.Context, id string) (bool, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	var external bool
+	err := e.admin.QueryRow(ctx, "SELECT coalesce((SELECT external FROM app_user WHERE principal_id = $1::uuid), false)", id).Scan(&external)
+	return external, err
 }
 
 func (e *Env) groupsOf(ctx context.Context, id string) ([]principal.GroupRef, error) {
@@ -400,6 +419,9 @@ type Options struct {
 	// Remote is the sealing ring and the upstream prober of the repository service; the zero value has neither, so
 	// a secret value and the upstream test answer 503.
 	Remote repository.RemoteDeps
+	// NoPublic closes the anonymous door of the default endpoint: setting a level to public then answers 409 public_not_allowed
+	// (R-AUTHZ-033 rule 5). The zero value leaves it open.
+	NoPublic bool
 }
 
 // LogSink collects the records of the audit log stream of a replica.
@@ -447,6 +469,8 @@ type Replica struct {
 	Service *authz.Service
 	// Projects is the project service (R-AUTHZ-026).
 	Projects project.Service
+	// Visibility is the installation's default level (R-API-056).
+	Visibility *visibility.Service
 	// Repos is the repository service with the authorization area's hook, which
 	// records authz.settings.changed (R-AUTHZ-031).
 	Repos  *repository.Service
@@ -530,11 +554,15 @@ func (e *Env) NewReplica(name string, o Options) *Replica {
 	r.Service = authz.NewService(authz.ServiceOptions{
 		DB: r.DB, Changes: r.Changes, Principals: principals{e}, Repositories: repositories{e}, Recorder: rec,
 	})
+	public := func() bool { return !o.NoPublic }
 	r.Projects = project.New(project.Options{
 		DB: r.DB, Changes: r.Changes, Principals: principals{e}, Repositories: repositories{e}, Policies: r.Service, Recorder: rec,
+		PublicAvailable: public,
 	})
+	r.Visibility = visibility.New(visibility.Options{DB: r.DB, Recorder: rec, PublicAvailable: public})
 	if r.Repos, err = repository.NewService(repository.Options{
 		Runner: r.DB, Catalog: catalog.Default(), Recorder: rec, Notifier: r.Changes, Hooks: authz.NewSettingsHook(rec), Log: quiet(), Remote: o.Remote,
+		PublicAvailable: public,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -570,6 +598,9 @@ func (r *Replica) testAuth(req *http.Request) (httpserver.Principal, error) {
 	for _, g := range groups {
 		out.Groups = append(out.Groups, httpserver.GroupRef{ID: g.ID, Name: g.Name})
 	}
+	if out.External, err = r.E.externalOf(req.Context(), p.ID); err != nil {
+		return httpserver.Principal{}, err
+	}
 	n, err := authz.ParseMinEpoch(req.Header.Get(authz.HeaderMinEpoch))
 	if err != nil {
 		return httpserver.Principal{}, err
@@ -591,7 +622,7 @@ func (r *Replica) serve(o Options, rec audit.Recorder) {
 		Engine: r.Engine, Authenticate: r.testAuth, Validator: o.Validator,
 		Options: func(_ *authz.Engine, o *v1.Options) {
 			o.AuditStore = r.Store
-			o.Authz = v1.AuthzServices{Policies: r.Service, Engine: r.Engine, Projects: r.Projects}
+			o.Authz = v1.AuthzServices{Policies: r.Service, Engine: r.Engine, Projects: r.Projects, Visibility: r.Visibility}
 			o.API = v1.Services{Config: cfg, Store: r.DB, Audit: rec}
 			o.Repositories = v1.RepositoryServices{Service: r.Repos, Authz: r.Engine, Reader: repositories{r.E}}
 		},

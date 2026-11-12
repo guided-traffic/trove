@@ -193,9 +193,9 @@ func (q *Queries) ProjectGroupAutoJoinShare(ctx context.Context, id string) ([]b
 }
 
 const projectInsert = `-- name: ProjectInsert :many
-INSERT INTO project (id, key, display_name, description, created_by, updated_by)
-VALUES ($1::text::uuid, $2::text, $3::text, $4::text,
-        NULLIF($5::text, '')::uuid, NULLIF($5::text, '')::uuid)
+INSERT INTO project (id, key, display_name, description, visibility, created_by, updated_by)
+VALUES ($1::text::uuid, $2::text, $3::text, $4::text, $5::text,
+        NULLIF($6::text, '')::uuid, NULLIF($6::text, '')::uuid)
 ON CONFLICT (key) DO NOTHING
 RETURNING id::text AS id, version
 `
@@ -205,6 +205,7 @@ type ProjectInsertParams struct {
 	Key         string
 	DisplayName string
 	Description string
+	Visibility  string
 	Actor       string
 }
 
@@ -220,6 +221,7 @@ func (q *Queries) ProjectInsert(ctx context.Context, arg ProjectInsertParams) ([
 		arg.Key,
 		arg.DisplayName,
 		arg.Description,
+		arg.Visibility,
 		arg.Actor,
 	)
 	if err != nil {

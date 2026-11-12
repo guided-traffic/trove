@@ -129,10 +129,21 @@ func (s *service) MoveRepository(ctx context.Context, actor authz.Subject, from 
 			return errs.E(errs.NotFound, errs.CodeNotFound, fmt.Sprintf("The repository %q does not exist.", from.String()))
 		}
 		id := strconv.FormatInt(repo.ID, 10)
+		// A repository never lies above its project: a move into a project of a lower level takes its levels down to it, in
+		// this transaction (R-AUTHZ-033 rule 3). The configuration version the cache keys follow is the one the lowering left.
+		lowered, loweredVersion, wasLowered, err := lowerMoved(ctx, qs, repo.ID, toID)
+		if err != nil {
+			return err
+		}
+		version := versions[0]
+		if wasLowered {
+			version = loweredVersion
+			lowered.Repository, lowered.ID = to.String(), id
+		}
 		if err := s.notifyAuthz(tx, "repository", id); err != nil {
 			return err
 		}
-		if err := s.o.Changes.Notify(tx, authz.AreaRepoConfig, payloadVersion, repoChange{ID: id, Key: to.String(), Op: opMoved, Version: versions[0]}); err != nil {
+		if err := s.o.Changes.Notify(tx, authz.AreaRepoConfig, payloadVersion, repoChange{ID: id, Key: to.String(), Op: opMoved, Version: version}); err != nil {
 			return err
 		}
 		afterEpoch(tx, &epoch, func(ctx context.Context, tx meta.Tx, epoch int64) error {
@@ -140,7 +151,14 @@ func (s *service) MoveRepository(ctx context.Context, actor authz.Subject, from 
 			if err := s.o.Recorder.RecordTx(ctx, tx, out); err != nil {
 				return err
 			}
-			return s.o.Recorder.RecordTx(ctx, tx, in)
+			if err := s.o.Recorder.RecordTx(ctx, tx, in); err != nil {
+				return err
+			}
+			if !wasLowered {
+				return nil
+			}
+			return s.o.Recorder.RecordTx(ctx, tx, authz.LevelsChangedEvent(actorOf(actor), lowered.Repository, lowered.ID,
+				authz.RepositoryLevels(lowered.Before), authz.RepositoryLevels(lowered.After), authz.CauseMove, epoch))
 		})
 		return nil
 	})

@@ -26,7 +26,8 @@ SELECT p.kind, p.status, coalesce(u.is_break_glass, false)::boolean AS is_break_
 -- name: JournalRepositoryLock :many
 -- A repository by its ID under its row lock, with its project; a repository being deleted is returned too and the caller
 -- answers it as unknown.
-SELECT r.id, r.key, r.class, r.config, r.lifecycle, r.project_id::text AS project_id, p.key AS project_key
+SELECT r.id, r.key, r.class, r.config, r.lifecycle, r.project_id::text AS project_id, p.key AS project_key,
+       r.visibility_artifacts, r.visibility_wiki
   FROM repositories r JOIN project p ON p.id = r.project_id
  WHERE r.id = sqlc.arg(id)::bigint
    FOR UPDATE OF r;
@@ -37,6 +38,20 @@ UPDATE repositories
  WHERE id = sqlc.arg(id)::bigint AND lifecycle = 'active'
 RETURNING config_version;
 
+-- name: JournalRepositorySetLevels :many
+-- The replay of authz.settings.changed for the levels of a repository (R-AUTHZ-036): the journaled levels, where an empty one
+-- keeps the stored level, and the wiki never above the artifacts (R-AUTHZ-033 rule 2).
+UPDATE repositories
+   SET visibility_artifacts = CASE WHEN sqlc.arg(artifacts)::text = '' THEN visibility_artifacts ELSE sqlc.arg(artifacts)::text END,
+       visibility_wiki = CASE
+           WHEN visibility_rank(CASE WHEN sqlc.arg(wiki)::text = '' THEN visibility_wiki ELSE sqlc.arg(wiki)::text END)
+              > visibility_rank(CASE WHEN sqlc.arg(artifacts)::text = '' THEN visibility_artifacts ELSE sqlc.arg(artifacts)::text END)
+           THEN CASE WHEN sqlc.arg(artifacts)::text = '' THEN visibility_artifacts ELSE sqlc.arg(artifacts)::text END
+           ELSE CASE WHEN sqlc.arg(wiki)::text = '' THEN visibility_wiki ELSE sqlc.arg(wiki)::text END END,
+       config_version = config_version + 1, updated_at = now()
+ WHERE id = sqlc.arg(id)::bigint
+RETURNING config_version;
+
 -- name: JournalProjectLevelLock :many
 -- A project by its ID under its row lock, with its level; no row: the project is not in the restored database.
 SELECT key, visibility FROM project WHERE id = sqlc.arg(id)::text::uuid FOR UPDATE;
@@ -44,7 +59,7 @@ SELECT key, visibility FROM project WHERE id = sqlc.arg(id)::text::uuid FOR UPDA
 -- name: JournalProjectSetLevel :exec
 -- The replay of authz.project.visibility_changed (R-AUTHZ-036): the level is taken to the journaled one, which the caller has
 -- compared as not above the current one.
-UPDATE project SET visibility = sqlc.arg(level)::text, version = version + 1, updated_at = now()
+UPDATE project SET visibility = sqlc.arg(level)::text, updated_at = now()
  WHERE id = sqlc.arg(id)::text::uuid;
 
 -- name: JournalProjectLowerRepositories :many

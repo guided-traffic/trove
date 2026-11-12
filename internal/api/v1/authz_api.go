@@ -17,6 +17,7 @@ import (
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/project"
+	"github.com/guided-traffic/trove/internal/visibility"
 )
 
 // The permission operations of R-AUTHZ-021 to R-AUTHZ-023: policies, role
@@ -37,6 +38,9 @@ type AuthzServices struct {
 	// Projects is the project service behind the project operations
 	// (projects_api.go, R-AUTHZ-026); nil answers them with 503.
 	Projects project.Service
+	// Visibility is the installation's default level behind /settings/visibility (visibility_api.go, R-API-056); nil answers
+	// the two operations with 503.
+	Visibility *visibility.Service
 }
 
 func (s *Server) policies() (*authz.Service, error) {

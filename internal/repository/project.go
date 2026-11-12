@@ -14,15 +14,15 @@ import (
 // held FOR SHARE: a concurrent delete of the project (FOR UPDATE, which counts the repositories under
 // that lock) waits for this transaction, so the new repository is counted or the project is gone. A
 // project that does not exist answers 404 like a missing repository.
-func lockProject(ctx context.Context, qs *q.Queries, project string) (string, error) {
+func lockProject(ctx context.Context, qs *q.Queries, project string) (id, level string, err error) {
 	rows, err := qs.RepositoryProjectShare(ctx, project)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if len(rows) == 0 {
-		return "", errs.E(errs.NotFound, errs.CodeNotFound, "The project does not exist.")
+		return "", "", errs.E(errs.NotFound, errs.CodeNotFound, "The project does not exist.")
 	}
-	return rows[0].ID, nil
+	return rows[0].ID, rows[0].Visibility, nil
 }
 
 // projectKeys maps the id of every project to its key.

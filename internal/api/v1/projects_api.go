@@ -3,6 +3,7 @@ package v1
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
@@ -20,8 +21,9 @@ import (
 //
 // What each handler adds to its declaration (api/openapi.yaml, docs/developer/projects.md):
 //
-//   - listProjects: the declaration admits a member of any project (projectRole: reader);
-//     a caller without projects:read sees the projects it is a member of.
+//   - listProjects and getProject are public in the declaration and decided here: a holder of projects:read sees every
+//     project, a member its own, any caller the projects its level admits (R-AUTHZ-035 rule 8); membership=true keeps the
+//     caller's own.
 //   - the member operations are the project service's (last Owner, group and user only, the audit event);
 //     the handler maps the body and the status (201 added, 200 role set).
 //   - the writes: the declaration is the capability or an Owner of the project. They answer
@@ -77,10 +79,24 @@ func (s *Server) ListProjects(w http.ResponseWriter, r *http.Request, _ gen.List
 		httpserver.Problem(w, r, err)
 		return
 	}
-	lq, err := ParseList(r, ListSpec{Filters: []string{"q"}, Sorts: []string{"key"}, DefaultSort: "key"}, s.o.API.Config)
+	lq, err := ParseList(r, ListSpec{Filters: []string{"q", "membership"}, Sorts: []string{"key"}, DefaultSort: "key"}, s.o.API.Config)
 	if err == nil && lq.After != nil && len(lq.After) != 1 {
 		err = invalidCursor()
 	}
+	membership := false
+	if err == nil {
+		switch lq.First("membership") {
+		case "", "false":
+		case "true":
+			membership = true
+		default:
+			err = badParam("membership", "must be true or false")
+		}
+	}
+	if err == nil {
+		err = s.anonymousGate(r.Context())
+	}
+	sub := caller(r)
 	var roles map[string]authz.ProjectRole // the caller's memberships with its role
 	var all bool                           // the caller holds projects:read and sees every project
 	if err == nil {
@@ -100,7 +116,7 @@ func (s *Server) ListProjects(w http.ResponseWriter, r *http.Request, _ gen.List
 		if lq.Desc {
 			p = list[len(list)-1-i]
 		}
-		if _, ok := roles[p.Key]; (!all && !ok) || !projectMatches(p, lq.First("q")) {
+		if !projectListed(sub, p, roles, all, membership) || !projectMatches(p, lq.First("q")) {
 			continue
 		}
 		if lq.After != nil && (lq.Desc && p.Key >= lq.After[0] || !lq.Desc && p.Key <= lq.After[0]) {
@@ -112,6 +128,30 @@ func (s *Server) ListProjects(w http.ResponseWriter, r *http.Request, _ gen.List
 	}
 	page := NewPage(lq, rows, func(p project.Project) []string { return []string{p.Key} })
 	WritePage(w, r, MapPage(page, func(p project.Project) gen.Project { return toProject(p, roles[p.Key]) }))
+}
+
+// levelAdmits reports whether a project's level admits the caller: internal for an internal subject, public for every request
+// (R-AUTHZ-035 rule 8). The token scope does not narrow it: the project is named, its content is decided repository by repository.
+func levelAdmits(sub authz.Subject, p project.Project) bool {
+	switch p.Visibility {
+	case "public":
+		return true
+	case "internal":
+		return sub.Internal()
+	}
+	return false
+}
+
+// projectListed decides whether the list shows the project: a holder of projects:read sees every project, a member its own, and
+// any caller the projects its level admits, without a role. membership keeps the caller's own projects (R-API-057).
+func projectListed(sub authz.Subject, p project.Project, roles map[string]authz.ProjectRole, all, membership bool) bool {
+	if _, member := roles[p.Key]; member {
+		return true
+	}
+	if membership {
+		return false
+	}
+	return all || levelAdmits(sub, p)
 }
 
 // memberProjects returns the caller's memberships with its role, and whether the caller holds the
@@ -172,6 +212,17 @@ func (s *Server) CreateProject(w http.ResponseWriter, r *http.Request, _ gen.Cre
 	input := project.Input{
 		Key: *in.Key, DisplayName: derefStr(in.DisplayName), Description: derefStr(in.Description),
 	}
+	if in.Visibility != nil {
+		input.Visibility = string(*in.Visibility)
+		// A level named above private asks for a recent authentication (R-API-057); an absent one takes the default, which an
+		// administrator set under one.
+		if input.Visibility != "private" {
+			if err := s.requireRecentAuth(r); err != nil {
+				httpserver.Problem(w, r, err)
+				return
+			}
+		}
+	}
 	if in.Owners != nil {
 		input.Owners = *in.Owners
 	}
@@ -204,8 +255,15 @@ func (s *Server) GetProject(w http.ResponseWriter, r *http.Request, key string) 
 		p, err = svc.Get(r.Context(), key)
 	}
 	var roles map[string]authz.ProjectRole
+	var all bool
 	if err == nil {
-		roles, _, err = s.memberProjects(r.Context(), "projects:read")
+		err = s.anonymousGate(r.Context())
+	}
+	if err == nil {
+		roles, all, err = s.memberProjects(r.Context(), "projects:read")
+	}
+	if err == nil && !projectListed(caller(r), p, roles, all, false) {
+		err = notFoundProject(key)
 	}
 	if err != nil {
 		httpserver.Problem(w, r, err)
@@ -402,4 +460,9 @@ func (s *Server) LookupProjectPrincipals(w http.ResponseWriter, r *http.Request,
 		out.Items = append(out.Items, gen.ProjectPrincipal{Kind: gen.ProjectPrincipalKind(p.Kind), Name: p.Name, Principal: p.String()})
 	}
 	writeJSON(w, r, http.StatusOK, out)
+}
+
+// notFoundProject is the answer for a project the caller may not see: the same as for one that does not exist.
+func notFoundProject(key string) error {
+	return errs.E(errs.NotFound, errs.CodeNotFound, "The project "+strconv.Quote(key)+" does not exist.")
 }

@@ -46,8 +46,8 @@ type JobEnqueuer interface {
 
 // Hooks lets another area write in the transaction of a repository update or
 // deletion. The authorization area uses OnUpdated to record
-// authz.settings.changed when cacheFillAction, packageOwnership,
-// requireAuthentication or hideExistence changed (R-AUTHZ-031), and OnDelete to
+// authz.settings.changed when cacheFillAction, packageOwnership, hideExistence or a
+// visibility level changed (R-AUTHZ-031, R-AUTHZ-036), and OnDelete to
 // record the exposure rules that the removal of the row takes with it (H-164).
 // A hook runs in the same transaction as the write, its audit event and its
 // change-log row; an error fails the whole transaction.
@@ -95,6 +95,9 @@ type Options struct {
 	// Hooks is optional.
 	Hooks Hooks
 	Log   *slog.Logger
+	// PublicAvailable reports whether the default endpoint admits requests without a credential (R-EP-010): while it does not, a
+	// write that opens a part of a repository to public answers 409 public_not_allowed (R-AUTHZ-033 rule 5). Nil means it does not.
+	PublicAvailable func() bool
 	// DeleteBatch is the number of items one transaction of the deletion job
 	// removes (storage.delete.batch_size, R-STOR-018); zero means 5000.
 	DeleteBatch int
@@ -131,6 +134,8 @@ type Service struct {
 
 	// maxMembers bounds the member list of a virtual repository (R-REPO-017).
 	maxMembers int
+	// publicOK is Options.PublicAvailable.
+	publicOK func() bool
 }
 
 // NewService creates the service.
@@ -155,7 +160,7 @@ func NewService(o Options) (*Service, error) {
 	}
 	s := &Service{
 		run: o.Runner, cat: catalog.Or(o.Catalog), rec: o.Recorder, notif: o.Notifier, jobs: o.Jobs,
-		hooks: o.Hooks, log: o.Log, batch: o.DeleteBatch, maxMembers: o.MaxVirtualMembers,
+		hooks: o.Hooks, log: o.Log, batch: o.DeleteBatch, maxMembers: o.MaxVirtualMembers, publicOK: o.PublicAvailable,
 	}
 	s.Bind(o.Remote)
 	return s, nil
@@ -175,6 +180,10 @@ type Caller struct {
 	Restricted bool
 	// MayWeakenVulnerabilities is set for a caller who holds vulnerabilities:triage (Q-VULN-69).
 	MayWeakenVulnerabilities bool
+	// RaiseGate is set by the API layer. A write that raises a level (R-AUTHZ-033 rule 4) calls it, in the transaction of the
+	// write, before anything is stored; it returns the refusal that asks the caller to authenticate again (R-API-007). Nil
+	// asks nothing.
+	RaiseGate func(context.Context) error
 }
 
 // principalID returns the actor id when it is a uuid and "" otherwise (a break-glass
@@ -247,7 +256,11 @@ func (s *Service) CreateTx(ctx context.Context, tx meta.Tx, c Caller, project st
 	if err != nil {
 		return Stored{}, err
 	}
-	projectID, err := lockProject(ctx, qs, project)
+	projectID, projectLevel, err := lockProject(ctx, qs, project)
+	if err != nil {
+		return Stored{}, err
+	}
+	levels, err := s.resolveLevels(ctx, qs, v, c, projectLevel, nil, &d)
 	if err != nil {
 		return Stored{}, err
 	}
@@ -266,6 +279,7 @@ func (s *Service) CreateTx(ctx context.Context, tx meta.Tx, c Caller, project st
 	}
 	rows, err := qs.InsertRepository(ctx, q.InsertRepositoryParams{
 		Key: d.Key, Format: d.Format, Class: string(d.Class), Config: string(cfg), ProjectID: projectID, Actor: c.principalID(),
+		VisibilityArtifacts: levels.Artifacts, VisibilityWiki: levels.Wiki,
 	})
 	if err != nil {
 		return Stored{}, err
@@ -375,14 +389,21 @@ func (s *Service) update(ctx context.Context, c Caller, name qname.Repo, pre Pre
 		if err != nil {
 			return err
 		}
+		// The project is locked FOR SHARE before the repository, as a create does and as the lowering of a project's level orders
+		// its locks: a repository is never written above a level that is being lowered (R-AUTHZ-033 rule 3).
+		shares, err := qs.RepositoryProjectShare(ctx, name.Project)
+		if err != nil {
+			return err
+		}
 		rows, err := qs.LockRepositoryByName(ctx, q.LockRepositoryByNameParams{Project: name.Project, Key: name.Key})
 		if err != nil {
 			return err
 		}
-		if len(rows) == 0 {
+		if len(rows) == 0 || len(shares) == 0 {
 			return notFound(name)
 		}
 		row := rows[0]
+		projectLevel := shares[0].Visibility
 		if Lifecycle(row.Lifecycle) == Deleting {
 			return errs.E(errs.Conflict, errs.CodeConflict, "the repository is being deleted")
 		}
@@ -399,6 +420,11 @@ func (s *Service) update(ctx context.Context, c Caller, name qname.Repo, pre Pre
 			return err
 		}
 		nd, v := s.checkUpdate(cur, nd)
+		levels, err := s.resolveLevels(ctx, qs, v, c, projectLevel, &cur.Visibility, &nd)
+		if err != nil {
+			return err
+		}
+		nd.Visibility = levels
 		restrictedRemote(v, c, &cur, &nd)
 		if err := restrictedVulnerabilities(c, &cur, &nd); err != nil {
 			return err
@@ -431,12 +457,17 @@ func (s *Service) update(ctx context.Context, c Caller, name qname.Repo, pre Pre
 		}
 		changes := changedMembers(oldFull, newFull)
 		changes = withSecretChange(changes, nd)
+		if levels != cur.Visibility {
+			changes = append(changes, "visibility")
+			sort.Strings(changes)
+		}
 		if len(changes) == 0 {
 			out, err = s.stored(ctx, qs, row, name.Project, v.warnings) // nothing to write: same version, no event
 			return err
 		}
 		updated, err := qs.UpdateRepositoryConfig(ctx, q.UpdateRepositoryConfigParams{
 			ID: row.ID, Version: row.ConfigVersion, Config: string(newCfg), Actor: c.principalID(),
+			VisibilityArtifacts: levels.Artifacts, VisibilityWiki: levels.Wiki,
 		})
 		if err != nil {
 			return err

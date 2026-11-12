@@ -208,10 +208,11 @@ func load(ctx context.Context, qs *q.Queries, key string) (Project, error) {
 type state struct {
 	DisplayName string `json:"displayName"`
 	Description string `json:"description"`
+	Visibility  string `json:"visibility"`
 }
 
 func stateOf(p Project) *state {
-	return &state{DisplayName: p.DisplayName, Description: p.Description}
+	return &state{DisplayName: p.DisplayName, Description: p.Description, Visibility: p.Visibility}
 }
 
 // memberOf builds a member from a row; a row of a kind that is neither user nor group is skipped

@@ -190,8 +190,12 @@ func TestR_AUTHZ_019_OwnershipOperationsOverHTTP(t *testing.T) {
 		want(t, api.do(t, api.a, "ci", "DELETE", notYet+"/group:team-web", ""), 403, errs.CodeCITokenRestricted)
 	})
 	t.Run("R-AUTHZ-019 an owner reference that names no owner identity is 422 unknown_principal", func(t *testing.T) {
-		for _, owner := range []string{"user:nobody", "anonymous", "ci:gitlab-internal:project:4712"} {
+		for _, owner := range []string{"user:nobody", "ci:gitlab-internal:project:4712"} {
 			want(t, api.do(t, api.a, "lead", "POST", notYet, `{"owner":"`+owner+`"}`), 422, errs.CodeValidation)
+		}
+		// The anonymous subject and the principal authenticated are levels, never owners (R-AUTHZ-033): the refusal names the levels.
+		for _, owner := range []string{"anonymous", "authenticated"} {
+			want(t, api.do(t, api.a, "lead", "POST", notYet, `{"owner":"`+owner+`"}`), 422, "principal_not_allowed")
 		}
 		want(t, api.do(t, api.a, "lead", "POST", notYet, `{"owner":"group:team-web","extra":1}`), 400, "")
 	})

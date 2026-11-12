@@ -54,8 +54,8 @@ SELECT id::text AS id FROM project WHERE key = sqlc.arg(key)::text FOR UPDATE;
 
 -- name: ProjectInsert :many
 -- No row back means the key exists (409 already_exists).
-INSERT INTO project (id, key, display_name, description, created_by, updated_by)
-VALUES (sqlc.arg(id)::text::uuid, sqlc.arg(key)::text, sqlc.arg(display_name)::text, sqlc.arg(description)::text,
+INSERT INTO project (id, key, display_name, description, visibility, created_by, updated_by)
+VALUES (sqlc.arg(id)::text::uuid, sqlc.arg(key)::text, sqlc.arg(display_name)::text, sqlc.arg(description)::text, sqlc.arg(visibility)::text,
         NULLIF(sqlc.arg(actor)::text, '')::uuid, NULLIF(sqlc.arg(actor)::text, '')::uuid)
 ON CONFLICT (key) DO NOTHING
 RETURNING id::text AS id, version;

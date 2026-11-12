@@ -25,6 +25,7 @@ import (
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/secrets"
 	"github.com/guided-traffic/trove/internal/sysstate"
+	"github.com/guided-traffic/trove/internal/visibility"
 )
 
 // The typed results of the wiring steps (steps.go). Each is the product of one
@@ -142,6 +143,8 @@ type authzArea struct {
 	service *authz.Service
 	// projects is the project service (R-AUTHZ-026); WP-B implements it.
 	projects project.Service
+	// visibility holds the installation's default level (R-API-056).
+	visibility *visibility.Service
 }
 
 // filesArea is the item store, the generic layer over it and the decider the

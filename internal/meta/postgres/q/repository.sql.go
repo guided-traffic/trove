@@ -149,20 +149,23 @@ func (q *Queries) GetRepositoryByName(ctx context.Context, arg GetRepositoryByNa
 }
 
 const insertRepository = `-- name: InsertRepository :many
-INSERT INTO repositories (key, format, class, config, project_id, created_by, updated_by)
+INSERT INTO repositories (key, format, class, config, project_id, visibility_artifacts, visibility_wiki, created_by, updated_by)
 VALUES ($1::text, $2::text, $3::text, $4::text::jsonb,
-        $5::text::uuid, NULLIF($6::text, '')::uuid, NULLIF($6::text, '')::uuid)
+        $5::text::uuid, $6::text, $7::text,
+        NULLIF($8::text, '')::uuid, NULLIF($8::text, '')::uuid)
 ON CONFLICT (project_id, key) DO NOTHING
 RETURNING id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version, project_id, visibility_artifacts, visibility_wiki
 `
 
 type InsertRepositoryParams struct {
-	Key       string
-	Format    string
-	Class     string
-	Config    string
-	ProjectID string
-	Actor     string
+	Key                 string
+	Format              string
+	Class               string
+	Config              string
+	ProjectID           string
+	VisibilityArtifacts string
+	VisibilityWiki      string
+	Actor               string
 }
 
 // A key that is taken in the project (also by a repository being deleted) conflicts
@@ -176,6 +179,8 @@ func (q *Queries) InsertRepository(ctx context.Context, arg InsertRepositoryPara
 		arg.Class,
 		arg.Config,
 		arg.ProjectID,
+		arg.VisibilityArtifacts,
+		arg.VisibilityWiki,
 		arg.Actor,
 	)
 	if err != nil {
@@ -453,12 +458,13 @@ func (q *Queries) RepositoryProjectKeys(ctx context.Context) ([]RepositoryProjec
 }
 
 const repositoryProjectShare = `-- name: RepositoryProjectShare :many
-SELECT id::text AS id, key FROM project WHERE key = $1::text FOR SHARE
+SELECT id::text AS id, key, visibility FROM project WHERE key = $1::text FOR SHARE
 `
 
 type RepositoryProjectShareRow struct {
-	ID  string
-	Key string
+	ID         string
+	Key        string
+	Visibility string
 }
 
 // The project a repository is created in or moved into, locked FOR SHARE: a concurrent
@@ -473,7 +479,7 @@ func (q *Queries) RepositoryProjectShare(ctx context.Context, key string) ([]Rep
 	items := []RepositoryProjectShareRow{}
 	for rows.Next() {
 		var i RepositoryProjectShareRow
-		if err := rows.Scan(&i.ID, &i.Key); err != nil {
+		if err := rows.Scan(&i.ID, &i.Key, &i.Visibility); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -487,18 +493,22 @@ func (q *Queries) RepositoryProjectShare(ctx context.Context, key string) ([]Rep
 const updateRepositoryConfig = `-- name: UpdateRepositoryConfig :many
 UPDATE repositories
    SET config = $1::text::jsonb,
+       visibility_artifacts = $2::text,
+       visibility_wiki = $3::text,
        config_version = config_version + 1,
        updated_at = now(),
-       updated_by = NULLIF($2::text, '')::uuid
- WHERE id = $3::bigint AND config_version = $4::bigint AND lifecycle = 'active'
+       updated_by = NULLIF($4::text, '')::uuid
+ WHERE id = $5::bigint AND config_version = $6::bigint AND lifecycle = 'active'
 RETURNING id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version, project_id, visibility_artifacts, visibility_wiki
 `
 
 type UpdateRepositoryConfigParams struct {
-	Config  string
-	Actor   string
-	ID      int64
-	Version int64
+	Config              string
+	VisibilityArtifacts string
+	VisibilityWiki      string
+	Actor               string
+	ID                  int64
+	Version             int64
 }
 
 // The write of R-REPO-011. The caller holds the row lock and has compared the
@@ -506,6 +516,8 @@ type UpdateRepositoryConfigParams struct {
 func (q *Queries) UpdateRepositoryConfig(ctx context.Context, arg UpdateRepositoryConfigParams) ([]Repository, error) {
 	rows, err := q.db.Query(ctx, updateRepositoryConfig,
 		arg.Config,
+		arg.VisibilityArtifacts,
+		arg.VisibilityWiki,
 		arg.Actor,
 		arg.ID,
 		arg.Version,

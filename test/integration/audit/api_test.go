@@ -509,13 +509,13 @@ func TestR_AUTHZ_031_RepositoryUpdateRecordsSettingsChanged(t *testing.T) {
 	if n := f.e.Number("SELECT count(*) FROM audit_event WHERE action = 'authz.settings.changed'"); n != 0 {
 		t.Fatalf("%d events for a change of the description", n)
 	}
-	if _, err := f.a.Repos.Patch(ctx, caller, qr("generic-hook"), repository.MatchAny(), v1.MergePatcher([]byte(`{"requireAuthentication":true}`))); err != nil {
+	if _, err := f.a.Repos.Patch(ctx, caller, qr("generic-hook"), repository.MatchAny(), v1.MergePatcher([]byte(`{"hideExistence":"true"}`))); err != nil {
 		t.Fatal(err)
 	}
 	ev := f.find(t, "action=authz.settings.changed", 1)[0]
 	before, _ := detail(ev, "before").(map[string]any)
 	after, _ := detail(ev, "after").(map[string]any)
-	if ev["repository"] != "it/generic-hook" || before["requireAuthentication"] != false || after["requireAuthentication"] != true || ev["actor"].(map[string]any)["name"] != "sec-alice" {
+	if ev["repository"] != "it/generic-hook" || before["hideExistence"] != "inherit" || after["hideExistence"] != "true" || detail(ev, "cause") != "request" || ev["actor"].(map[string]any)["name"] != "sec-alice" {
 		t.Fatalf("%v", ev)
 	}
 	// The journal row of the revocation journal was written with the event.

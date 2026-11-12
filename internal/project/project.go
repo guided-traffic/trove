@@ -39,6 +39,9 @@ type Input struct {
 	Key         string
 	DisplayName string
 	Description string
+	// Visibility is the level a create gives the project; empty takes the installation's default (R-AUTHZ-033). A replace
+	// ignores it: the level changes through Service.SetVisibility only.
+	Visibility string
 	// Owners are the references of the users and groups ("user:alice",
 	// "group:web-leads") a create makes the first Owners of the project (Q-AUTHZ-208);
 	// a replace ignores them, the members have operations of their own.
