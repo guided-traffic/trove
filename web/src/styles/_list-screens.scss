@@ -252,6 +252,13 @@ td.class-cell .material-icons {
         flex-wrap: nowrap;
         justify-content: flex-end;
       }
+
+      // A row's copy button (Q-UI-330) is a box of its own, so that the rule above centres it on the row's first line as it
+      // does a menu button.
+      trove-copy-button {
+        display: inline-flex;
+        vertical-align: top;
+      }
     }
 
     // Keys, names and identifiers are never broken at a hyphen; a status keeps icon and label on one line. A list may let
@@ -674,10 +681,3 @@ td.class-cell .material-icons {
   }
 }
 
-// A list whose columns need more than 48 rem at their least widths stacks below 52 rem of columns instead (`stackWide`, the search
-// results with five columns, Q-UI-330), so it never scrolls sideways between.
-@container table (max-width: 53rem) {
-  .trove-data-table.stack.stack-wide {
-    @include stacked-rows;
-  }
-}

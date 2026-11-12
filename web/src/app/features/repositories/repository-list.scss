@@ -18,10 +18,7 @@
 
 // The admin area's row: the quiet copy button and the menu side by side (Q-UI-330).
 td.actions {
-  // A box of its own, so that the table's rule centres it on the row's first line as it does the menu button.
   trove-copy-button {
-    display: inline-flex;
-    vertical-align: top;
     margin-inline-end: var(--trove-space-1);
   }
 }

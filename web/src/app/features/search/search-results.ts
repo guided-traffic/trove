@@ -1,7 +1,7 @@
 import { Component, computed, effect, inject, input, resource, untracked } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { RepositoriesApi, RepositorySummary, refOf } from '../../api/repositories-api';
-import { AddressField } from '../../shared/address-field';
+import { CopyButton } from '../../shared/copy-button';
 import { FormatIconView } from '../../shared/format-icon';
 import { PagedResource, valueOf } from '../../shared/paged-resource';
 import { DataTable, TableColumn } from '../../shared/ui/data-table';
@@ -11,14 +11,15 @@ import { classLabel } from '../repositories/repository-wizard';
 /**
  * The results of the top bar's search (R-UI-002, Q-UI-390): a page of the main area, never of the admin area. The stopgap until the
  * owner's task T-22 brings one search with suggestions for every reader. It lists the repositories `GET /api/v1/repositories?q=`
- * answers, in the shared list layout with the project list's columns plus the project (Q-UI-330): the key a link to the
- * repository's page in its project, with its description, then its project, its format, its class, and its client address as a
- * field of its share; and it offers the start page's package search for the same text.
+ * answers, in the shared list layout with the admin area's pattern (Q-UI-330): who searches wants to find a repository and open
+ * it, so the key (a link to the repository's page in its project, with its description), its project, its format and its class
+ * are the columns, and the client address is a quiet copy button at the end of the row whose name and tooltip carry it; and it
+ * offers the start page's package search for the same text.
  * Every link of the page leads into a project or to the start page.
  */
 @Component({
   selector: 'trove-search-results',
-  imports: [RouterLink, AddressField, DataTable, FormatIconView, PageHeader],
+  imports: [RouterLink, CopyButton, DataTable, FormatIconView, PageHeader],
   template: `
     <trove-page-header [heading]="heading" [description]="description()" />
 
@@ -37,9 +38,6 @@ import { classLabel } from '../repositories/repository-wizard';
       [empty]="!term() || list.items().length === 0"
       [emptyText]="term() ? noMatch() : noTerm"
       [hasMore]="list.hasMore()"
-      [stackWide]="true"
-      [style.--trove-address-chars]="addressChars()"
-      [style.--trove-address-share]="addressChars()"
       (more)="list.more()"
       (retry)="list.reload()"
     >
@@ -61,8 +59,11 @@ import { classLabel } from '../repositories/repository-wizard';
           <td class="class-cell">
             <span class="class-name"><span class="material-icons" aria-hidden="true">{{ classIcon(row.class) }}</span>{{ classText(row.class) }}</span>
           </td>
-          <td class="address-cell">
-            <trove-address-field [value]="address(row)" [label]="addressLabel(row)" [copyLabel]="copyLabel(row)" />
+          <!-- No address field: who searches opens the repository; copying is the button's (Q-UI-330). -->
+          <td class="actions">
+            @if (address(row); as a) {
+              <trove-copy-button [value]="a" [label]="copyValueLabel(a)" [quiet]="true" />
+            }
           </td>
         </tr>
       }
@@ -92,11 +93,12 @@ export class SearchResults {
   );
   protected readonly noMatch = computed(() => $localize`:@@search.none:No repository matches “${this.term()}:term:”.`);
   /**
-   * The project list's columns plus the project (Q-UI-330), each width its column's least (Q-UI-308): the repository prefers
-   * 20 rem, the address takes the rest up to the longest address of the list (Q-UI-300), and the repository what is left over.
+   * The admin area's pattern (Q-UI-330), each width its column's least (Q-UI-308): the repository takes every pixel the others
+   * leave (`prefer`, so project, format and class keep their widths and read as tight columns), and the row ends with the copy
+   * button.
    */
   protected readonly columns: readonly TableColumn[] = [
-    { id: 'key', label: $localize`:@@repo.col.repository:Repository`, width: '12rem', prefer: '20rem' },
+    { id: 'key', label: $localize`:@@repo.col.repository:Repository`, width: '14rem', prefer: '14rem' },
     { id: 'project', label: $localize`:@@projects.col.project:Project`, width: '6.5rem' },
     { id: 'format', label: $localize`:@@repo.col.format:Format`, width: '8rem' },
     {
@@ -105,7 +107,7 @@ export class SearchResults {
       help: $localize`:@@repo.help.class:Local repositories hold what you upload, remote repositories fetch and cache from another registry, virtual repositories combine other repositories behind one address.`,
       width: '5rem',
     },
-    { id: 'address', label: $localize`:@@repo.col.address:Client address`, fill: true, stackLabel: false },
+    { id: 'actions', label: $localize`:@@repo.col.actions:Actions`, hideLabel: true, width: '2rem' },
   ];
   protected readonly refOf = refOf;
   protected readonly classText = classLabel;
@@ -131,17 +133,8 @@ export class SearchResults {
     return row.addresses[0] ?? '';
   }
 
-  /**
-   * The length of the longest address: the column is sized to it, so every field of the list has one width (Q-UI-300); it is also
-   * the address's share, so the address may take its whole length where the room is there (Q-UI-330).
-   */
-  protected readonly addressChars = computed(() => Math.max(0, ...this.list.items().map((r) => this.address(r).length)));
-
-  protected addressLabel(row: RepositorySummary): string {
-    return $localize`:@@repo.address-of:Client address of ${row.key}:key:`;
-  }
-
-  protected copyLabel(row: RepositorySummary): string {
-    return $localize`:@@repo.copy-address-of:Copy client address of ${row.key}:key:`;
+  /** The copy button's name and tooltip carry the address itself, as in the admin area's list (Q-UI-330). */
+  protected copyValueLabel(address: string): string {
+    return $localize`:@@repo.copy-address-value:Copy client address ${address}:address:`;
   }
 }

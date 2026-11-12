@@ -50,8 +50,8 @@ the repository settings; none of them is fixed here.
    stands under the name, and an address field takes what the properties leave, up to its whole length; a render is judged by
    that first. The admin area's
    repository list (repository, project, format, class, last activity, the address as a copy button), a project's list (repository,
-   format, class, the address field) and the search results (the same and the project) follow it; the other lists are judged by
-   it when they are next changed.
+   format, class, the address field) and the search results (repository, project, format, class, the address as a copy button,
+   because who searches finds and opens) follow it; the other lists are judged by it when they are next changed.
 
 ## Work list
 

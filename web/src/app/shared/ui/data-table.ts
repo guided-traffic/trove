@@ -25,8 +25,9 @@ export interface TableColumn {
   readonly fill?: boolean;
   /**
    * The width the column takes before the `fill` column gets the rest (the repository's 20 rem, Q-UI-330). It gives way down to
-   * `width` where the list is narrow, and it takes what is left over where the `fill` column's content is shorter. Every other
-   * column of such a list keeps its `width`.
+   * `width` where the list is narrow, and it takes what is left over where the `fill` column's content is shorter; in a list
+   * without a `fill` column it takes everything the others leave (the search results). Every other column of such a list keeps
+   * its `width`.
    */
   readonly prefer?: string;
   /** When the rows stack (below 48 rem), the cell shows its column's name before its value; false where the value says it. */
@@ -130,7 +131,6 @@ let nextTableId = 1;
   host: {
     class: 'trove-data-table',
     '[class.stack]': 'stack()',
-    '[class.stack-wide]': 'stackWide()',
     '[style.--trove-list-others]': 'others()',
     '[style.--trove-list-narrow]': 'narrowRoom()',
   },
@@ -156,11 +156,6 @@ export class DataTable {
 
   /** Below 48 rem of its width the list shows each row as a block (Q-UI-306); a list whose rows cannot be read so turns it off. */
   readonly stack = input(true);
-  /**
-   * A list whose columns need more than 48 rem at their least widths stacks below 52 rem of columns instead (the search results,
-   * Q-UI-330).
-   */
-  readonly stackWide = input(false);
 
   protected readonly captionId = `trove-table-${nextTableId++}`;
 

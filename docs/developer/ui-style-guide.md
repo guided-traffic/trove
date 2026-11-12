@@ -100,10 +100,12 @@ what would need a second one belongs in the [manual](manual.md).
 - **The list's budget is its columns' widths** ([Q-UI-308](../spec/api-and-ui.md#q-ui-308--every-list-takes-its-layout-from-the-data-table-a-column-budget-a-least-width-for-its-name-one-alignment-stacked-rows)). A column of `<trove-data-table>` declares its least width
   (`width`, which must hold its header and its longest value on one line: a format with its icon 8 rem, a class 5 rem); the name
   column takes 12 to 16 rem and what the others leave. A list with a client address marks that column `fill`: it is the
-  longest address up to its share (Q-UI-300). Where the address is the list's main value (a project's repository list, the
-  search results) the name column `prefer`s 20 rem: the address takes what is left after it and the least widths of the others,
-  up to the longest address, and room left over goes back to the name column; the other columns keep their widths. The least widths of a list sum to at most 48 rem, where its rows
-  stack; a list that needs more sets `[stackWide]="true"` and stacks at 52 rem. A column of lower rank is `narrow`: below 64 rem
+  longest address up to its share (Q-UI-300). Where the address is the list's main value (a project's repository list) the
+  name column `prefer`s 20 rem: the address takes what is left after it and the least widths of the others, up to the longest
+  address, and room left over goes back to the name column; the other columns keep their widths. Where the user finds and opens
+  rather than copies (the admin area's list, the search results) there is no field, and a name column that `prefer`s its least
+  width takes every pixel the others leave. The least widths of a list sum to at most 48 rem, where its rows stack. A column of
+  lower rank is `narrow`: below 64 rem
   of the list's width it is hidden and the others take its room (the list marks its cells `narrow-drop`; the admin area's Last
   activity). The list's width is the table's own (the container `table`),
   and the address's share is of its rows' width without the scrollbar beside them, so a list scrolls sideways neither when
@@ -241,12 +243,13 @@ is the worked example).
   - In a list every field has one width: the column `td.address-cell` is as wide as the list's longest address in the field's
     face, but at most its share (`--trove-address-share`, 46 characters unless the list sets it) and at most what the other
     columns leave (`--trove-list-others`, with a column's `prefer`red width where it has one), never under 10 rem. A project's
-    repository list and the search results set the share to their longest address and let the repository prefer 20 rem: the
-    address takes the rest up to its whole length, and room left over goes back to the repository. The field fills the cell and shows the address from its start, never its tail; a longer address scrolls
+    repository list sets the share to its longest address and lets the repository prefer 20 rem: the address takes the rest up
+    to its whole length, and room left over goes back to the repository. The field fills the cell and shows the address from its start, never its tail; a longer address scrolls
     inside it ([Q-UI-300](../spec/api-and-ui.md#q-ui-300--in-a-list-every-address-field-has-one-width-the-lists-longest-address-up-to-what-the-other-columns-leave), [Q-UI-330](../spec/api-and-ui.md#q-ui-330--a-list-takes-its-columns-from-the-job-of-its-kind-of-user-the-important-properties-are-columns-and-the-address-takes-no-more-than-its-share)).
-  - A list whose user does not copy addresses as its job has no field: the admin area's repository list has a quiet
-    `<trove-copy-button [quiet]="true">` beside the row's menu, its `label` **Copy client address** with the address, which is
-    also the button's tooltip, and the menu offers **Copy client address** ([Q-UI-330](../spec/api-and-ui.md#q-ui-330--a-list-takes-its-columns-from-the-job-of-its-kind-of-user-the-important-properties-are-columns-and-the-address-takes-no-more-than-its-share)).
+  - A list whose user does not copy addresses as its job has no field: the admin area's repository list and the search results
+    have a quiet `<trove-copy-button [quiet]="true">` at the end of the row (beside the menu where the row has one), its `label`
+    **Copy client address** with the address, which is also the button's tooltip; the admin area's menu offers
+    **Copy client address** too ([Q-UI-330](../spec/api-and-ui.md#q-ui-330--a-list-takes-its-columns-from-the-job-of-its-kind-of-user-the-important-properties-are-columns-and-the-address-takes-no-more-than-its-share)).
   - A field alone on its line, or a stack of the addresses of one thing, fills the line up to `--trove-address-measure`
     (40 rem, 70 characters), so a stack is one width ([Q-UI-301](../spec/api-and-ui.md#q-ui-301--a-field-alone-on-its-line-fills-the-line-up-to-a-measure-of-70-characters)).
   - Where the field is shorter than its address, the address scrolls inside it (the input at least 8 rem), the button stays
