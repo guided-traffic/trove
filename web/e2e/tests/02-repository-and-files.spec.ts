@@ -99,7 +99,7 @@ test('R-UI-010 R-UI-011 R-UI-012 wizard, upload, browse and download', async ({ 
   expect(replicas.size, `replicas that answered: ${[...replicas]}`).toBeGreaterThanOrEqual(2);
 });
 
-test('R-UI-065 R-UI-066 the repository list shows the client address in full in a read-only field and its copy button puts it on the clipboard', async ({ page, context, admin }) => {
+test('R-UI-065 R-UI-066 the repository list of a project shows the client address in a read-only field, the one of the admin area a copy button, and each puts it on the clipboard', async ({ page, context, admin }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   const key = unique('ui-address');
   const created = await admin.post(repositories(), {
@@ -120,6 +120,13 @@ test('R-UI-065 R-UI-066 the repository list shows the client address in full in 
     await page.getByRole('button', { name: `Copy client address of ${key}` }).click();
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(address);
     await expectAccessible(page, 'repository list with the client address field');
+
+    // The admin area's list has no field: a quiet copy button beside the row's menu carries the address (Q-UI-330).
+    await page.evaluate(() => navigator.clipboard.writeText(''));
+    await page.goto(`/ui/en/admin/repositories?q=${key}`);
+    await expect(page.getByRole('textbox', { name: `Client address of ${key}` })).toHaveCount(0);
+    await page.getByRole('button', { name: `Copy client address ${address}` }).click();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(address);
     await signOut(page);
   } finally {
     await admin.delete(repositoryApi(key));

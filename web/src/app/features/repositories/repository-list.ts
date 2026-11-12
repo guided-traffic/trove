@@ -20,6 +20,7 @@ import { ProjectContext } from '../../core/project-context';
 import { Confirm } from '../../shared/confirm-dialog';
 import { PageHeader } from '../../shared/ui/page-header';
 import { AddressField } from '../../shared/address-field';
+import { CopyButton } from '../../shared/copy-button';
 import { ErrorNotice } from '../../shared/error-notice';
 import { JobProgress } from '../../shared/job-progress';
 import { DataTable, TableColumn } from '../../shared/ui/data-table';
@@ -30,10 +31,11 @@ import { RecentRepositories } from './recent-repositories';
 import { classLabel } from './repository-wizard';
 
 /**
- * The repository list (R-UI-020): key, project, format, class, description, client address with a copy
- * button, last activity, and the row's actions in a menu (Q-UI-302). Every address field of the list has one width, that of
- * the list's longest address up to what the other columns leave (Q-UI-300); below 48 rem of the list's width the rows stack
- * (Q-UI-306). Filters live in the query parameters (R-UI-003) and restart the cursor
+ * The repository list (R-UI-020), its columns from the job of its kind of user (Q-UI-330). Inside a project, the plain user's:
+ * the repository (key and description), format, class and the client address as a field of one width, its share of 46
+ * characters at most (Q-UI-300), and the row's menu. In the admin area, the administrator's: the repository, project, format,
+ * class, last activity, and a quiet copy button for the address beside the menu (Q-UI-302). Below 48 rem of the list's width
+ * the rows stack (Q-UI-306). Filters live in the query parameters (R-UI-003) and restart the cursor
  * walk; "Load more" continues it. A repository is addressed inside its project (R-REPO-002): its key links to
  * the content page `/projects/<project>/repositories/<key>` (R-UI-052), its Settings action to `…/settings`. Delete asks for the key, may offer to detach the repository from
  * the virtual repositories that include it, and follows the deletion job until the row is gone.
@@ -48,6 +50,7 @@ import { classLabel } from './repository-wizard';
     DatePipe,
     RouterLink,
     AddressField,
+    CopyButton,
     DataTable,
     ErrorNotice,
     FilterCategory,
@@ -167,22 +170,38 @@ export class RepositoryList {
   protected readonly emptyFilteredText = $localize`:@@repo.list.empty-filtered:No repository matches the filters.`;
   protected readonly applyLabel = $localize`:@@repo.filter.apply:Search`;
   /** No sort control: the repository list is ordered by key and the API takes no sort parameter. */
-  protected readonly columns = computed<readonly TableColumn[]>(() =>
-    this.allColumns.filter((c) => !(c.id === 'activity' && !this.showActivity())),
-  );
+  protected readonly columns = computed<readonly TableColumn[]>(() => {
+    const admin = !this.inProject();
+    return this.allColumns.filter((c) => {
+      if (c.id === 'project' || c.id === 'activity') return admin && (c.id === 'project' || this.showActivity());
+      if (c.id === 'address') return !admin;
+      if (c.id === 'actions-admin') return admin;
+      if (c.id === 'actions') return !admin;
+      return true;
+    });
+  });
   /**
-   * The last activity is a fact of maintenance: shown to who may change the list's repositories (Q-UI-312), and only while a
-   * loaded row has one, so that it is no column of dashes (Q-UI-305).
+   * The last activity is a fact of maintenance: the administrator's (Q-UI-330), and only while a loaded row has one, so that it
+   * is no column of dashes (Q-UI-305). A project's list is the plain user's; its maintainers find it in the repository's Details.
    */
   protected readonly showActivity = computed(
-    () =>
-      (this.inProject() ? this.session.canWriteRepositories(this.projectKey()) : this.canCreate()) &&
-      this.list.items().some((r) => !!r.lastActivityAt),
+    () => !this.inProject() && this.canCreate() && this.list.items().some((r) => !!r.lastActivityAt),
   );
+  /**
+   * The widths are each column's least (Q-UI-308); the repository takes what they leave, so the most important property gets
+   * the most room (Q-UI-330). Inside a project the address field has its share, 46 characters at most (Q-UI-300); at 48 rem,
+   * where the rows stack, every column still has its least width.
+   */
   private readonly allColumns: readonly TableColumn[] = [
-    // The widths are the list's budget (Q-UI-308): the address takes the rest. Format and class are the line under the key
-    // (Q-UI-328), so an address of 57 characters shows whole at 1280 and 1440 px and beside the filter panel.
-    { id: 'key', label: $localize`:@@repo.col.repository:Repository`, width: '16rem' },
+    { id: 'key', label: $localize`:@@repo.col.repository:Repository`, width: this.inProject() ? '13rem' : '14rem' },
+    { id: 'project', label: $localize`:@@repo.col.project:Project`, width: '6.5rem' },
+    { id: 'format', label: $localize`:@@repo.col.format:Format`, width: '8rem' },
+    {
+      id: 'class',
+      label: $localize`:@@repo.col.class:Class`,
+      help: $localize`:@@repo.help.class:Local repositories hold what you upload, remote repositories fetch and cache from another registry, virtual repositories combine other repositories behind one address.`,
+      width: '5rem',
+    },
     {
       id: 'address',
       label: $localize`:@@repo.col.address:Client address`,
@@ -195,10 +214,12 @@ export class RepositoryList {
       label: $localize`:@@repo.col.activity:Last activity`,
       help: $localize`:@@repo.help.activity:The last time a client read from or wrote to the repository. A dash means nothing has been recorded yet.`,
       width: '7.5rem',
-      // Below 64 rem of the list's width the address takes this room (UI-A-30): the admin area's list at 1280 px.
+      // Below 64 rem of the list's width the other columns take this room: the admin area's list at 1280 px.
       narrow: true,
     },
     { id: 'actions', label: $localize`:@@repo.col.actions:Actions`, hideLabel: true, width: '2rem' },
+    // The admin area's row has the copy button beside the menu.
+    { id: 'actions-admin', label: $localize`:@@repo.col.actions:Actions`, hideLabel: true, width: '4.5rem' },
   ];
 
   protected classIcon(c: RepositorySummary['class']): string {
@@ -209,6 +230,19 @@ export class RepositoryList {
   }
   protected copyLabel(row: RepositorySummary): string {
     return $localize`:@@repo.copy-address-of:Copy client address of ${row.key}:key:`;
+  }
+  /** The admin area's copy button: its name and its tooltip carry the address itself (Q-UI-330). */
+  protected copyValueLabel(address: string): string {
+    return $localize`:@@repo.copy-address-value:Copy client address ${address}:address:`;
+  }
+  /** The menu's "Copy client address": the same as the row's copy button. */
+  protected async copyAddress(address: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(address);
+      this.notifier.status($localize`:@@copy.done:Copied to the clipboard.`);
+    } catch {
+      this.notifier.alert($localize`:@@copy.failed:The clipboard is not available. Select the text and copy it.`);
+    }
   }
   protected readonly deleteLabel = $localize`:@@repo.delete.progress:Repository deletion`;
 

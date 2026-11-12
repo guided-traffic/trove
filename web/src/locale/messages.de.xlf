@@ -15777,6 +15777,15 @@
         <target>Alle Repositories</target>
       </segment>
     </unit>
+    <unit id="repo.action.copy-address">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Copy client address</source>
+        <target>Client-Adresse kopieren</target>
+      </segment>
+    </unit>
     <unit id="repo.action.browse">
       <notes>
         <note category="location">src/app/features/repositories/repository-detail.html:4,5</note>
@@ -16130,6 +16139,15 @@
       <segment>
         <source>Client address of <ph id="0" equiv="key" disp="row.key"/></source>
         <target>Client-Adresse von <ph id="0" equiv="key" disp="row.key"/></target>
+      </segment>
+    </unit>
+    <unit id="repo.copy-address-value">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Copy client address <ph id="0" equiv="address" disp="address"/></source>
+        <target>Client-Adresse <ph id="0" equiv="address" disp="address"/> kopieren</target>
       </segment>
     </unit>
     <unit id="repo.copy-address-of">
@@ -16680,6 +16698,15 @@
       <segment>
         <source>Repository</source>
         <target>Repository</target>
+      </segment>
+    </unit>
+    <unit id="repo.help.class">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Local repositories hold what you upload, remote repositories fetch and cache from another registry, virtual repositories combine other repositories behind one address.</source>
+        <target>Lokale Repositories enthalten, was Sie hochladen; Remote-Repositories laden aus einer anderen Registry und halten eine Kopie vor; virtuelle Repositories fassen andere Repositories unter einer Adresse zusammen.</target>
       </segment>
     </unit>
     <unit id="repo.help.address">

@@ -15737,6 +15737,14 @@
         <source>Content</source>
       </segment>
     </unit>
+    <unit id="repo.action.copy-address">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Copy client address</source>
+      </segment>
+    </unit>
     <unit id="repo.action.browse">
       <notes>
         <note category="location">src/app/features/repositories/repository-detail.html:5,6</note>
@@ -16051,6 +16059,14 @@
       </notes>
       <segment>
         <source>Client address of <ph id="0" equiv="key" disp="row.key"/></source>
+      </segment>
+    </unit>
+    <unit id="repo.copy-address-value">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Copy client address <ph id="0" equiv="address" disp="address"/></source>
       </segment>
     </unit>
     <unit id="repo.copy-address-of">
@@ -16573,6 +16589,14 @@
       </notes>
       <segment>
         <source>Repository</source>
+      </segment>
+    </unit>
+    <unit id="repo.help.class">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Local repositories hold what you upload, remote repositories fetch and cache from another registry, virtual repositories combine other repositories behind one address.</source>
       </segment>
     </unit>
     <unit id="repo.help.address">

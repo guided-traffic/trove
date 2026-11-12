@@ -19,7 +19,7 @@ async function open(q: string | undefined) {
 const hrefs = (root: HTMLElement) => [...root.querySelectorAll<HTMLAnchorElement>('a[href]')].map((a) => a.getAttribute('href') ?? '');
 
 describe('Search results (R-UI-002)', () => {
-  it('R-UI-002 lists the matching repositories with key, project, format, class and address, each linked into its project, and passes axe', async () => {
+  it('R-UI-002 Q-UI-330 lists the matching repositories with key, project, format, class and address, each a column, each linked into its project, and passes axe', async () => {
     const r = await open('generic');
     const rows = [...r.root.querySelectorAll('tbody tr')];
     expect(rows.length).toBeGreaterThan(0);
@@ -29,7 +29,10 @@ describe('Search results (R-UI-002)', () => {
     const project = first.querySelector('td a')!;
     expect(key.getAttribute('href')).toMatch(/^\/projects\/[^/]+\/repositories\/[^/]+$/);
     expect(project.getAttribute('href')).toMatch(/^\/projects\/[^/]+$/);
-    expect(first.querySelector('.kind-cell')).not.toBeNull();
+    const heads = [...r.root.querySelectorAll('thead th')].map((th) => text(th).replace('help_outline', ''));
+    expect(heads.map((h) => h.split(' ')[0])).toEqual(['Repository', 'Project', 'Format', 'Class', 'Client']);
+    expect(first.querySelector('td.format-cell .format-name trove-format-icon')).not.toBeNull();
+    expect(text(first.querySelector('td.class-cell')!)).not.toBe('');
     expect(addressValues(first)[0]).toMatch(/^https?:\/\//);
     expect(text(r.root.querySelector('h1')!)).toBe('Search results');
     expect(text(r.root)).toContain('Repositories whose key or description matches “generic”.');

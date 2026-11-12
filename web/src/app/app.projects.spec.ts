@@ -176,14 +176,31 @@ describe('The project is the context of the content (Q-UI-129)', () => {
     expect([...root.querySelectorAll('nav.breadcrumbs a')].map((a) => a.getAttribute('href'))).toEqual(['/projects', '/projects/web']);
   });
 
-  it('R-UI-020 inside a project the repository list names format and class under the key, without the project and without a column of them', async () => {
+  it('R-UI-020 Q-UI-330 inside a project the repository list has the columns repository, format, class and client address, without the project', async () => {
     const { root } = await render('/projects/web/repositories', undefined, TWO);
-    const kind = root.querySelector('main tbody th[scope="row"] .repo-kind')!;
-    expect(kind.querySelector('.format-name trove-format-icon')).toBeTruthy();
-    expect(kind.querySelector('.class-name')).toBeTruthy();
-    expect(kind.querySelector('a.project-link')).toBeNull();
-    expect(root.querySelector('main tbody td.kind-cell')).toBeNull();
-    expect([...root.querySelectorAll('main thead th')].some((th) => th.textContent?.trim().startsWith('Format'))).toBe(false);
+    const heads = [...root.querySelectorAll('main thead th')].map((th) => th.textContent?.replace(/help_outline/g, '').trim());
+    expect(heads.slice(0, 4)).toEqual(['Repository', 'Format', 'Class', 'Client address']);
+    const row = root.querySelector('main tbody tr')!;
+    expect(row.querySelector('td.format-cell .format-name trove-format-icon')).toBeTruthy();
+    expect(row.querySelector('td.class-cell .class-name')).toBeTruthy();
+    expect(row.querySelector('th[scope="row"] .secondary:not(:last-child)')).toBeNull();
+    expect(row.querySelector('td.project-cell')).toBeNull();
+    expect(row.querySelector('td.address-cell trove-address-field')).toBeTruthy();
+    expect(heads).not.toContain('Last activity');
+  });
+
+  it('R-UI-065 R-UI-066 Q-UI-300 inside a project every address field of the list has one width: the column is sized to the longest address up to its share, no field to its own', async () => {
+    const { root } = await render('/projects/web/repositories', undefined, TWO);
+    const inputs = [...root.querySelectorAll<HTMLInputElement>('main trove-address-field input')];
+    expect(inputs.length).toBeGreaterThan(0);
+    const table = root.querySelector<HTMLElement>('main trove-data-table')!;
+    expect(table.style.getPropertyValue('--trove-address-chars')).toBe(String(Math.max(...inputs.map((i) => i.value.length))));
+    for (const input of inputs) {
+      expect(input.closest('td')?.classList.contains('address-cell')).toBe(true);
+      expect(input.style.inlineSize).toBe('');
+    }
+    expect(root.querySelector('main trove-address-field input[aria-label^="Client address of "]')).toBeTruthy();
+    expect(root.querySelector('main trove-address-field trove-copy-button button[aria-label^="Copy client address of "]')).toBeTruthy();
   });
 });
 
@@ -218,10 +235,10 @@ describe('The administration area (R-UI-041, Q-UI-129)', () => {
     expect(navLabels(root)).not.toContain('Projects');
   });
 
-  it('Q-UI-129 the admin lists name the project and link to it; the repository list in the line under the key (UI-A-30)', async () => {
+  it('Q-UI-129 Q-UI-330 the admin lists name the project in a column and link to it', async () => {
     const repositories = await render('/admin/repositories');
-    expect([...repositories.root.querySelectorAll('th[scope="col"]')].map((h) => h.textContent?.trim())).not.toContain('Project');
-    expect(repositories.root.querySelector('tbody th .secondary a.project-link[href="/projects/web"]')).toBeTruthy();
+    expect([...repositories.root.querySelectorAll('th[scope="col"]')].map((h) => h.textContent?.trim())).toContain('Project');
+    expect(repositories.root.querySelector('tbody td.project-cell a[href="/projects/web"]')).toBeTruthy();
     expect(repositories.root.querySelector('tbody a[href^="/projects/web/repositories/"]')).toBeTruthy();
     expect(repositories.root.querySelector('tbody a[href="/projects/web"]')).toBeTruthy();
     const accounts = await render('/admin/service-accounts');

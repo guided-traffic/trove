@@ -16,19 +16,12 @@
   color: var(--trove-text-muted);
 }
 
-// The line under the key: the project (in the admin area) · format · class, each with its icon (Q-UI-325, Q-UI-328); the dots
-// are `.dot-separated`.
-.repo-kind {
-  .format-name,
-  .class-name {
+// The admin area's row: the quiet copy button and the menu side by side (Q-UI-330).
+td.actions {
+  // A box of its own, so that the table's rule centres it on the row's first line as it does the menu button.
+  trove-copy-button {
     display: inline-flex;
-    align-items: center;
-    gap: var(--trove-space-1);
-    white-space: nowrap;
-  }
-
-  trove-format-icon,
-  .material-icons {
-    font-size: 1rem;
+    vertical-align: top;
+    margin-inline-end: var(--trove-space-1);
   }
 }

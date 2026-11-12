@@ -12,7 +12,11 @@ The pictures are not in the repository: a path below is under `.out/ui-renders/`
 same screen's other pictures are beside it (`-dark-`, `-1024`, `-390`).
 
 **State.** The repository list and the address fields were changed in the same work (Q-UI-300 to Q-UI-306) and are not in this
-list; what they still lack is UI-A-29 and UI-A-30. Every other line is open. A line is removed when its fix is rendered and
+list. On 2026-11-12 the owner judged the admin area's repository list beside its filter panel ("a huge field for copying a path
+that may not even be needed gets all the room, and every other important property squeezes itself somehow into the artifact's
+row"): the waves had measured it by his earlier complaint, equal widths and the whole address, not by what the list is for. Since
+[Q-UI-330](../spec/api-and-ui.md#q-ui-330--a-list-takes-its-columns-from-the-job-of-its-kind-of-user-the-important-properties-are-columns-and-the-address-takes-no-more-than-its-share) the repository lists and the search results take their columns from their user's job (systemic cause 6). Every other line
+is open. A line is removed when its fix is rendered and
 looked at (rule 11 of the plan). The lines UI-A-31 to UI-A-40 belong to the planner of the creation flow on T-18's tree, not to
 the fix waves of this list. A line marked "→ T-22" belongs to the owner's task T-22 (one search with suggestions), one marked
 "→ B4" to the builder who replaces the vulnerability displays, one marked "→ T-18's planner" to the plan of the creation flow and
@@ -38,6 +42,15 @@ the repository settings; none of them is fixed here.
    or with a product name in brackets. Since fix wave 1 there is one empty-state component and one page header (Q-UI-307,
    Q-UI-309); since fix wave 2 the screens of this audit use them, the tabs are one strip, and a format is its icon and its
    display name.
+
+6. **Lists were measured by a field, not by their user's job.** The repository lists gave the address field every pixel the
+   other columns did not need and packed project, format and class under the key (Q-UI-300, Q-UI-325, Q-UI-328), because the
+   renders were judged by widths and scrolling. Since [Q-UI-330](../spec/api-and-ui.md#q-ui-330--a-list-takes-its-columns-from-the-job-of-its-kind-of-user-the-important-properties-are-columns-and-the-address-takes-no-more-than-its-share) a list takes its columns from the job of its kind of user
+   (R-UI-067): the properties its user decides on are columns, the name column gets the most room, nothing but the description
+   stands under the name, and an address field has a share of 46 characters; a render is judged by that first. The admin area's
+   repository list (repository, project, format, class, last activity, the address as a copy button), a project's list (repository,
+   format, class, the address field) and the search results (the same and the project) follow it; the other lists are judged by
+   it when they are next changed.
 
 ## Work list
 

@@ -119,24 +119,31 @@
             @if (row.lifecycle === 'deleting') {
               <span class="badge" i18n="@@repo.badge.deleting">being deleted</span>
             }
-            <!-- The first column names the thing; the description is its muted second line (ui-style-guide.md, Lists; Q-UI-302).
-                 The project (in the admin area), the format and the class lead the line under the key instead of columns, so that a
-                 usual address shows whole at 1280 px and beside the filter panel (Q-UI-325, Q-UI-328, UI-A-30). -->
-            <span class="secondary repo-kind dot-separated">
-              @if (!inProject()) {
-                <a class="project-link" [routerLink]="['/projects', row.project]" translate="no">{{ row.project }}</a>
-              }
-              <span class="format-name"><trove-format-icon [format]="row.format" /><span translate="no">{{ formatLabel(row.format) }}</span></span>
-              <span class="class-name"><span class="material-icons" aria-hidden="true">{{ classIcon(row.class) }}</span>{{ classText(row.class) }}</span>
-            </span>
+            <!-- The first column names the thing; the description is its muted second line and the only one: every other property
+                 is a column of its own, so the list is scanned column by column (ui-style-guide.md, Lists; Q-UI-302, Q-UI-330). -->
             @if (row.description) {
               <span class="secondary">{{ row.description }}</span>
             }
           </th>
-          <td class="address-cell">
-            <trove-address-field [value]="address(row)" [label]="addressLabel(row)" [copyLabel]="copyLabel(row)" />
+          @if (!inProject()) {
+            <td class="project-cell">
+              <a [routerLink]="['/projects', row.project]" translate="no">{{ row.project }}</a>
+            </td>
+          }
+          <!-- A format is its icon and its name (UI-A-24), a class its icon and its name, each a column (Q-UI-330). -->
+          <td class="format-cell">
+            <span class="format-name"><trove-format-icon [format]="row.format" /><span translate="no">{{ formatLabel(row.format) }}</span></span>
           </td>
-          <!-- The date only, the time is its title (Q-UI-305); for who maintains, and while a row has one (Q-UI-312). -->
+          <td class="class-cell">
+            <span class="class-name"><span class="material-icons" aria-hidden="true">{{ classIcon(row.class) }}</span>{{ classText(row.class) }}</span>
+          </td>
+          <!-- The plain user's job is to copy the address: inside a project it is a field with its share of the row (Q-UI-330). -->
+          @if (inProject()) {
+            <td class="address-cell">
+              <trove-address-field [value]="address(row)" [label]="addressLabel(row)" [copyLabel]="copyLabel(row)" />
+            </td>
+          }
+          <!-- The date only, the time is its title (Q-UI-305); the administrator's, while a row has one (Q-UI-312, Q-UI-330). -->
           @if (showActivity()) {
             <td class="narrow-drop">
               @if (row.lastActivityAt; as at) {
@@ -147,6 +154,11 @@
             </td>
           }
           <td class="actions">
+            <!-- The administrator manages and copies the address now and then: a quiet copy button whose name and tooltip carry the
+                 address, beside the menu, which has the same action (Q-UI-330). -->
+            @if (!inProject() && address(row); as a) {
+              <trove-copy-button [value]="a" [label]="copyValueLabel(a)" [quiet]="true" />
+            }
             <!-- The row's actions are a menu (ui-style-guide.md, Lists; Q-UI-302): four buttons pushed the list sideways. -->
             <button
               class="btn btn-tertiary btn-icon"
@@ -165,6 +177,11 @@
                     (click)="visit(refOf(row))"
                     i18n="@@repo.action.settings"
                     >Settings</a
+                  >
+                }
+                @if (!inProject() && address(row); as a) {
+                  <button class="menu-item" cdkMenuItem type="button" (cdkMenuItemTriggered)="copyAddress(a)" i18n="@@repo.action.copy-address"
+                    >Copy client address</button
                   >
                 }
                 <a class="menu-item" cdkMenuItem [routerLink]="['/projects', row.project, 'browse', row.key]" i18n="@@repo.action.browse"

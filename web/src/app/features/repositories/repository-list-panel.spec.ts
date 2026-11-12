@@ -66,21 +66,23 @@ describe('Repository list filter panel (R-UI-020)', () => {
     expect(extras.queryParams).toEqual({ q: null, class: null, format: null, state: null, project: null });
   });
 
-  it('R-UI-020 the repository table has no sort control because the API takes no sort parameter, and explains the format and the address', async () => {
+  it('R-UI-020 the repository table has no sort control because the API takes no sort parameter, and explains the class', async () => {
     const { root } = await open();
     expect(root.querySelectorAll('th button.th-sort')).toHaveLength(0);
-    // In the admin area format and class are named under the key (Q-UI-325): the address is the one column to explain.
+    // The admin area's list has no address column (Q-UI-330): the class is the column to explain.
     expect([...root.querySelectorAll('th button.th-help')].map((b) => b.getAttribute('aria-label'))).toEqual([
-      'About the column Client address',
+      'About the column Class',
     ]);
   });
 
-  it('R-REPO-002 R-UI-020 R-UI-066 an absolute client address is shown and copied unchanged, without the origin of the page in front', async () => {
+  it('R-REPO-002 R-UI-020 R-UI-066 an absolute client address is copied unchanged, without the origin of the page in front', async () => {
     const { root } = await open();
-    expect(addressValues(root)[0]).toBe('https://trove.example.net/files/web/generic-local/');
+    expect(addressValues(root)).toEqual([]);
     const write = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText: write }, configurable: true });
-    root.querySelector<HTMLButtonElement>('trove-copy-button button')!.click();
+    const copy = root.querySelector<HTMLButtonElement>('td.actions trove-copy-button button')!;
+    expect(copy.getAttribute('aria-label')).toBe('Copy client address https://trove.example.net/files/web/generic-local/');
+    copy.click();
     await Promise.resolve();
     expect(write).toHaveBeenCalledWith('https://trove.example.net/files/web/generic-local/');
   });

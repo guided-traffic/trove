@@ -3803,14 +3803,17 @@ Acceptance criteria:
 ### R-UI-020 · Repository list
 Priority: **MVP** · Covers: UI-030, REPO-007
 
-- Table: the repository (its key, with the format (its icon and display name) and the class as the muted line under it and
-  its description as the line after that, [Q-UI-302](#q-ui-302--the-repository-list-names-a-repository-by-key-and-description-in-its-first-column-and-puts-the-rows-actions-in-a-menu), [Q-UI-328](#q-ui-328--the-projects-repository-list-names-format-and-class-under-the-key-as-the-admin-areas-does)),
-  client URL with copy button (one width for the column, Q-UI-300), last activity (the date, Q-UI-305), and the row's menu;
-  below 48 rem of the list's width the rows stack (Q-UI-306). Filters in
-  the filter panel: project, format, class, text, disabled only. The admin area lists every project's repositories with
-  the project (linked to it) leading the line under the key, so that a 57-character address shows whole at 1280 and 1440 px
-  (Q-UI-325, UI-A-30); the project's own list (`/projects/{project}/repositories`, Q-UI-129) is the same screen
-  for one project, without the project and the project filter. The list is ordered by key; the API takes
+- The columns come from the job of the list's kind of user (R-UI-067, [Q-UI-330](#q-ui-330--a-list-takes-its-columns-from-the-job-of-its-kind-of-user-the-important-properties-are-columns-and-the-address-takes-no-more-than-its-share)); under the key stands only its
+  description ([Q-UI-302](#q-ui-302--the-repository-list-names-a-repository-by-key-and-description-in-its-first-column-and-puts-the-rows-actions-in-a-menu)), every other property is a column, and below 48 rem of the list's width the rows stack (Q-UI-306).
+  - The project's own list (`/projects/{project}/repositories`, Q-UI-129), the plain user's (find a repository, copy its
+    address): **Repository** (key and description), **Format** (icon and display name), **Class** (icon and name), **Client
+    address** (the address field, one width for the column, the longest address up to a share of 46 characters, a longer one
+    scrolling inside its field, Q-UI-300), and the row's menu.
+  - The admin area's list (`/admin/repositories`), the administrator's (manage the repositories): **Repository**, **Project**
+    (linked to it), **Format**, **Class**, **Last activity** (the date, Q-UI-305) and the row's actions: a quiet copy button
+    whose name and tooltip carry the client address, beside the menu, which has **Copy client address** too. The address is no
+    field there. A column **Visibility** (T-18) fits beside them at 1440 px.
+- Filters in the filter panel: project, format, class, text, disabled only. The list is ordered by key; the API takes
   no `sort` parameter yet, so the table has no sort control (sorting by creation arrives with the
   API, and the creation time with the summary, Q-UI-18). "Recently opened" (browser storage, 20) is the start page's: neither
   list shows it ([Q-UI-329](#q-ui-329--recently-opened-is-the-start-pages-only-the-admin-areas-repository-list-leaves-it-out-too)); a project's list says under its heading what the project is and, to a plain user,
@@ -5136,9 +5139,11 @@ the list showed a field of a different width in every row and scrolled sideways.
   Where the field is shorter than the address, the address scrolls inside the field (an input does so natively), and the
   copy button stays joined to it.
 - **One width per place.** A field takes the width of its line, not of its address. In a list every field has the same
-  width: the column is as wide as the list's longest address, at most what the list's other columns leave, which keeps the
-  list free of sideways scrolling from 1280 px with its usual columns; the field fills the cell and shows the address from its
-  start (Q-UI-300); below 48 rem of the list's width the rows stack and the field takes the row's width (Q-UI-306). A field
+  width: the column is as wide as the list's longest address, but never more than its share of 46 characters and never more
+  than the other columns leave at their least widths, so the properties beside it are not squeezed; the field fills the cell and
+  shows the address from its start, a longer address scrolls inside it (Q-UI-300, Q-UI-330); below 48 rem of the list's width
+  the rows stack and the field takes the row's width (Q-UI-306). A list whose kind of user does not copy addresses as its job
+  shows none: the admin area's repository list has a copy button in the row instead (Q-UI-330). A field
   alone on its line fills the line up to a measure of 70 characters, so stacked fields are one width too (Q-UI-301).
 - **Selectable.** A click or focus in the field selects the whole address; the user can also select a part of it and copy
   with the keyboard. The address is the field's value, so the browser's find, drag and copy work as on any input (Q-UI-273).
@@ -5168,13 +5173,14 @@ Acceptance criteria:
   and sets the status message; a failed write sets the alert; focus in the field selects all of its text; an empty address
   renders nothing; axe finds no violation.
 - The lists of R-UI-066 size their address column to their longest address, and every field of a list is in that column.
-- Rendered (rule 11 of the plan, `make ui-renders`): in the repository lists of a project and of the admin area every
-  address field has one width, and neither list scrolls sideways at 1440, 1280, 1024 or 390 px, in both schemes; in a project's
-  list at 1440 px an address of 56 characters is shown whole.
+- Rendered (rule 11 of the plan, `make ui-renders`): in a project's repository list and the search results every address field
+  has one width, at most 46 characters, and no repository list scrolls sideways at 1920, 1440, 1280, 1024 or 390 px, in both
+  schemes, with the filter panel open or closed (Q-UI-330).
 - Every screen of R-UI-066 shows its address through the component, and no template of those screens gives a client address
   the class `ellipsis`.
-- Playwright: on the repository list the cell of a row holds an input whose value equals the address the API gave, and a click
-  on the row's copy button puts that value on the clipboard.
+- Playwright: on a project's repository list the cell of a row holds an input whose value equals the address the API gave, and a
+  click on the row's copy button puts that value on the clipboard; on the admin area's list the row's copy button, named with the
+  address, does the same.
 
 ### R-UI-066 · The screens that show a client address use the address field
 Priority: **MVP** · Covers: trove-only
@@ -5183,7 +5189,7 @@ Each screen shows its client addresses through `<trove-address-field>` (R-UI-065
 
 | Screen | Place | Notes |
 |---|---|---|
-| Repository list (R-UI-020), `/projects/{project}/repositories` and `/admin/repositories` | The column **Client address**, one field per row | The first address of the repository; one width for the column, the list's longest address up to its share (Q-UI-300); the label names the row |
+| Repository list (R-UI-020), `/projects/{project}/repositories`, and the search results (`/search`) | The column **Client address**, one field per row | The first address of the repository; one width for the column, the list's longest address up to its share of 46 characters (Q-UI-300); the label names the row. The admin area's list (`/admin/repositories`) has no field: a copy button in the row (Q-UI-330) |
 | Repository page (R-UI-021), settings view | The fact **Client address** | The field fills the fact up to the measure (Q-UI-301) |
 | Repository page, consumer view | The fact **Client address**, one field per address of the repository, stacked | Stacked fields are one width (Q-UI-301) |
 | Repository content page (R-UI-052) | The header: the repository's first address; **Details**: each further address with its label | Q-UI-320 |
@@ -10575,6 +10581,11 @@ addresses whole at 1440 px (its project could then be the key's second line).
 the repository list (`addressChars`, `addressOthers`) and the endpoint page. Style guide:
 [Address field](../developer/ui-style-guide.md#address-field).
 
+**Revised by [Q-UI-330](#q-ui-330--a-list-takes-its-columns-from-the-job-of-its-kind-of-user-the-important-properties-are-columns-and-the-address-takes-no-more-than-its-share) (2026-11-12):** the address is no longer what gets every pixel the other columns do not need. The column is
+the list's longest address up to a share of 46 characters (`--trove-address-share`), and never more than the other columns
+leave at their least widths, never under 9 rem; the other columns take the rest, the repository the most. A longer address
+scrolls inside its field from its start, never an ellipsis. The admin area's list shows no field at all.
+
 ### Q-UI-301 · A field alone on its line fills the line up to a measure of 70 characters
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -10597,6 +10608,9 @@ addresses are read whole at the two wider widths. The development agent revisits
 are longer than 70 characters.
 
 **Applied in the spec:** R-UI-065, R-UI-066. Code: the token `--trove-address-measure` in [_tokens.scss](../../web/src/styles/_tokens.scss).
+
+**Unchanged by [Q-UI-330](#q-ui-330--a-list-takes-its-columns-from-the-job-of-its-kind-of-user-the-important-properties-are-columns-and-the-address-takes-no-more-than-its-share):** a field alone on its line is not one of a list's columns; in a stacked row the field takes the row's
+width (Q-UI-306).
 
 ### Q-UI-302 · The repository list names a repository by key and description in its first column and puts the row's actions in a menu
 
@@ -10621,6 +10635,9 @@ its share. The development agent would revisit the menu if the owner names one f
 
 **Applied in the spec:** R-UI-020 (the row actions are the same; their place is the menu). Code: [repository-list.html](../../web/src/app/features/repositories/repository-list.html).
 
+**Revised by [Q-UI-330](#q-ui-330--a-list-takes-its-columns-from-the-job-of-its-kind-of-user-the-important-properties-are-columns-and-the-address-takes-no-more-than-its-share) (2026-11-12):** the description is the only line under the key; project, format and class are columns. The
+admin area's row has one quiet button beside the menu, the copy of the client address, which the menu offers too.
+
 ### Q-UI-303 · The repository list's key breaks after a hyphen where it is longer than its column
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -10643,6 +10660,9 @@ list sideways at 1440 px whatever the address column did.
 room for Q-UI-300. The development agent revisits it with the columns of the other lists.
 
 **Applied in the spec:** the data table's styles ([_list-screens.scss](../../web/src/styles/_list-screens.scss)).
+
+**Unchanged by [Q-UI-330](#q-ui-330--a-list-takes-its-columns-from-the-job-of-its-kind-of-user-the-important-properties-are-columns-and-the-address-takes-no-more-than-its-share):** the key still breaks after a hyphen where it is longer than its column, which is now the widest of the
+admin area's list.
 
 ### Q-UI-304 · make ui-renders renders the working tree through the dev server, signs the three kinds of user in through a provider of the profile, and seeds through the API
 
@@ -10671,6 +10691,10 @@ cheap enough to be done every time. The development agent revisits (b) for a che
 
 **Applied in the spec:** R-UI-047. Code and documentation: [web-ui.md](../developer/web-ui.md#renders-of-every-screen).
 
+**Revised by [Q-UI-330](#q-ui-330--a-list-takes-its-columns-from-the-job-of-its-kind-of-user-the-important-properties-are-columns-and-the-address-takes-no-more-than-its-share) (2026-11-12):** a picture is judged first by the job of its kind of user (does the most important
+information get the most room, and can the properties be scanned column by column) and only then by widths and scrolling, which
+the report measures.
+
 ### Q-UI-305 · The repository list puts format and class in one cell and shows the date of the last activity
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -10697,6 +10721,10 @@ owner prefers **Type**.
 **Revised in fix wave 4 (2026-11-12):** format and class are no column any more, in the project's list either; they are the line
 under the key (Q-UI-328).
 
+**Revised by [Q-UI-330](#q-ui-330--a-list-takes-its-columns-from-the-job-of-its-kind-of-user-the-important-properties-are-columns-and-the-address-takes-no-more-than-its-share) (2026-11-12):** that revision is reversed. **Format** (icon and name, on one line) and **Class** (icon and
+name) are columns of their own in both lists and the search results, with the help on **Class**; the last activity is the admin
+area's column only.
+
 **Applied in the spec:** R-UI-020. Code: [repository-list.html](../../web/src/app/features/repositories/repository-list.html).
 
 ### Q-UI-306 · Below 48 rem of its width the repository list stacks each row, with the address across the row
@@ -10721,6 +10749,11 @@ which names each cell by its column itself.
 width, also beside the open filter panel. The development agent revisits the 48 rem if a list with fewer columns fits wider.
 
 **Applied in the spec:** R-UI-020, R-UI-065. Code: [_list-screens.scss](../../web/src/styles/_list-screens.scss) (Stacked rows).
+
+**Revised by [Q-UI-330](#q-ui-330--a-list-takes-its-columns-from-the-job-of-its-kind-of-user-the-important-properties-are-columns-and-the-address-takes-no-more-than-its-share) (2026-11-12):** a stacked row shows format and class each on a line with its column's name; the admin
+area's row has no address field, its copy button stands beside the menu on the first line. The rows stack below 49 rem of the
+list's frame, 48 rem of columns and 1 rem for a scrollbar beside the rows, and a list whose least widths need more (the search
+results, 52 rem) stacks below 53 rem (`stackWide`), so no list scrolls sideways before it stacks.
 
 ### Q-UI-307 · A page's own actions are buttons at the right end of its header; views of the same thing are tabs
 
@@ -10858,6 +10891,10 @@ Status: **Decided by the development agent** — selected from the options below
 The development agent revisits it if readers ask when a repository was last used.
 
 **Applied in the spec:** R-UI-067, R-UI-020.
+
+**Revised by [Q-UI-330](#q-ui-330--a-list-takes-its-columns-from-the-job-of-its-kind-of-user-the-important-properties-are-columns-and-the-address-takes-no-more-than-its-share) (2026-11-12):** a project's list is the plain user's, in the same layout for every kind (R-UI-067), so it
+shows **Last activity** to nobody; it is a column of the admin area's list, the administrator's job, and a fact of the repository
+page's **Details** (Q-UI-313).
 
 ### Q-UI-313 · The repository page shows the address and the setup first; its configuration facts are Details, and a reader gets no settings page
 
@@ -11121,6 +11158,11 @@ development agent revisits it if administrators sort or scan the list by format,
 **Applied in the spec:** R-UI-020, Q-UI-300 (revisit). Built in fix wave 3. Since fix wave 4 the project's own list does the same
 (Q-UI-328).
 
+**Superseded by [Q-UI-330](#q-ui-330--a-list-takes-its-columns-from-the-job-of-its-kind-of-user-the-important-properties-are-columns-and-the-address-takes-no-more-than-its-share) (2026-11-12):** the owner on the render of this list: "A huge field for copying a path that may not even
+be needed gets all the room, and every other important property squeezes itself somehow into the artifact's row." The measure of
+this decision, a whole address in the admin area, was the wrong one: the administrator manages repositories. Project, format and
+class are columns again, and the address is a copy button in the row.
+
 ### Q-UI-326 · The admin area has one group Settings, with a page per topic: General and Authentication
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -11195,6 +11237,9 @@ the list where a column was scanned before. The development agent revisits it wi
 
 **Applied in the spec:** R-UI-020, Q-UI-305, Q-UI-325. Built in fix wave 4.
 
+**Reversed by [Q-UI-330](#q-ui-330--a-list-takes-its-columns-from-the-job-of-its-kind-of-user-the-important-properties-are-columns-and-the-address-takes-no-more-than-its-share) (2026-11-12):** format and class are columns of the project's list again, and the address field has a share
+of 46 characters instead of the room the others leave, so the repository, the format and the class are not squeezed.
+
 ### Q-UI-329 · Recently opened is the start page's only: the admin area's repository list leaves it out too
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -11212,6 +11257,47 @@ and a project's list leaves them to the start page since Q-UI-323.
 what is needed to use them. The development agent revisits it if administrators miss it in the walkthrough.
 
 **Applied in the spec:** R-UI-020; Q-UI-323 holds for both lists. Built in the follow-up of fix wave 4.
+
+### Q-UI-330 · A list takes its columns from the job of its kind of user; the important properties are columns, and the address takes no more than its share
+
+Status: **Decided by the development agent** — the rule is the coordinator's (2026-11-12), after the owner's review of a render;
+the columns per list are selected from the options below; the owner reviews them at the walkthrough.
+
+Context: the owner on `admin/admin-repositories-filters-dark-1440.png` (2026-11-12): "This looks like shit. A huge field for
+copying a path that may not even be needed gets all the room, and every other important property squeezes itself somehow into the
+artifact's row." The coordinator: both had measured the list against the owner's earlier complaint (equal widths, the whole
+address, Q-UI-300, Q-UI-325, Q-UI-328) instead of asking what the list is for. The rule from then on: each list gets its columns
+from the job of its kind of user (R-UI-067), not from the address field; the most important properties get their own columns;
+nothing is packed under the key except the description; the address field never takes more than its share.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Per list, its user's job: the admin area's list (manage) has **Repository**, **Project**, **Format**, **Class**, **Last activity** and a quiet copy button with the address in its name and tooltip beside the menu, which has **Copy client address** too; a project's list (find and copy) has **Repository**, **Format**, **Class**, **Client address** (a field of one width, the longest address up to 46 characters, a longer one scrolling inside it) and the menu; the search results the project list's columns plus **Project**. The repository column takes what the others leave at their least widths (chosen) | Columns from the job; the address a share | Each list is scanned column by column for what its user decides on; the repository gets the most room where the user manages, the address its share where the user copies; room is left for **Visibility** (T-18) | The admin area copies an address with one click more than a field's text selection; a 57-character address scrolls in a project's field |
+| (b) One set of columns for both lists, the address field with its share in the admin area too | One layout | One template | The administrator's list spends 480 px at 1440 px on a value it rarely needs, and the visibility column will not fit |
+| (c) As after Q-UI-325 and Q-UI-328 | Properties under the key, the address takes the rest | Whole addresses | The owner's verdict on the render |
+
+**Choice:** (a). Measured on the renders and in Chromium with the scrollbars shown, at 1440 px: the admin area's list gives the
+repository 449 px, project 136, format 160, class 112, last activity 152 and the two row buttons 104; at 1920 px beside the open
+filter panel the repository gets 609 px. A project's list gives the repository 299 px, format 160, class 112 and the address
+field 478 px with an input of 415 px (46 characters); at 1920 px beside the panel the repository gets 459 px, at 1280 px 240 px
+with an address of 34 characters. The search results give the repository 227 px at 1440 px and 590 px at 1920 px. No list
+scrolls sideways at 1920, 1440, 1280, 1170 to 1090 or 390 px, with the panel open or closed. The least widths: repository 14 rem
+in the admin area, 13 rem in a project, 12 rem in the search results (which have the project too), project 6.5 rem, format
+8 rem (**Ansible Galaxy** with its icon on one line), class 5 rem, last activity 7.5 rem (gone below 64 rem of the list), the
+address field 10 rem (its input keeps 8 rem). The repository lists' least widths sum to 48 rem and the search results' to 52 rem;
+they stack below that and 1 rem for a scrollbar beside the rows (`stackWide` for the search results). A project's list shows no
+last activity any more (Q-UI-312).
+
+**Rationale:** a list is read across its rows for the properties its user decides on, so they need columns, and the column that
+names the thing gets the room; an address is copied, not read, so a share that shows its host and path is enough and a longer one
+scrolls inside its field. The development agent revisits the share if the walkthrough shows that readers cannot tell addresses
+apart at 46 characters, and the repository's least width when **Visibility** joins the admin area's list.
+
+**Applied in the spec:** R-UI-020, R-UI-065, R-UI-066, Q-UI-300, Q-UI-301, Q-UI-302, Q-UI-303, Q-UI-304, Q-UI-305, Q-UI-306,
+Q-UI-312, Q-UI-325, Q-UI-328. Code: [repository-list.html](../../web/src/app/features/repositories/repository-list.html),
+[search-results.ts](../../web/src/app/features/search/search-results.ts), `td.address-cell`, `td.format-cell` and
+`td.class-cell` in [_list-screens.scss](../../web/src/styles/_list-screens.scss). Style guide:
+[Lists](../developer/ui-style-guide.md#lists), [Address field](../developer/ui-style-guide.md#address-field).
 
 ### Q-UI-370 · The grades take cogpit's colours, and S, A and B are the greens of a good grade
 

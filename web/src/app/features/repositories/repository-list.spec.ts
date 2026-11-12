@@ -5,34 +5,47 @@ import { addressValues, button, expectAccessible, renderScreen, settle, text, ty
 import { RepositoryList } from './repository-list';
 
 describe('Repository list', () => {
-  it('R-UI-020 R-UI-066 shows key, format, class, description, client address and activity, and has no serious violation', async () => {
+  it('R-UI-020 Q-UI-330 the admin area\'s list has the columns repository, project, format and class, and no address field, and has no serious violation', async () => {
     const { root } = await renderScreen(RepositoryList);
     const t = text(root);
     expect(t).toContain('generic-local');
     expect(t).toContain('Installers and build outputs');
-    expect(addressValues(root)[0]).toContain('generic-local/');
     expect(root.querySelectorAll('tbody tr').length).toBe(2);
-    expect(root.querySelector('table th[scope="col"]')).toBeTruthy();
-    expect(
-      root.querySelector('trove-address-field input[aria-label="Client address of generic-local"]'),
-    ).toBeTruthy();
-    expect(
-      root.querySelector('trove-address-field trove-copy-button button[aria-label="Copy client address of generic-local"]'),
-    ).toBeTruthy();
+    const heads = [...root.querySelectorAll('thead th')].map((th) => text(th).replace('help_outline', '').split(' ')[0]);
+    expect(heads.slice(0, 4)).toEqual(['Repository', 'Project', 'Format', 'Class']);
+    const row = [...root.querySelectorAll('tbody tr')].find((tr) => text(tr).includes('generic-local'))!;
+    expect(row.querySelector('td.project-cell a')?.getAttribute('href')).toBe('/projects/web');
+    expect(row.querySelector('td.format-cell .format-name trove-format-icon')).toBeTruthy();
+    expect(text(row.querySelector('td.format-cell span[translate="no"]')!)).toBe('Generic');
+    expect(text(row.querySelector('td.class-cell')!)).toContain('Local');
+    expect(root.querySelector('trove-address-field')).toBeNull();
+    expect(addressValues(root)).toEqual([]);
     await expectAccessible(root);
   });
 
-  it('R-UI-065 R-UI-066 every address field of the list has one width: the column is sized to the longest address, no field to its own', async () => {
-    const { root } = await renderScreen(RepositoryList);
-    const addresses = addressValues(root);
-    expect(addresses.length).toBe(2);
-    expect(new Set(addresses.map((a) => a.length)).size).toBeGreaterThan(1);
-    const table = root.querySelector<HTMLElement>('trove-data-table')!;
-    expect(table.style.getPropertyValue('--trove-address-chars')).toBe(String(Math.max(...addresses.map((a) => a.length))));
-    for (const input of root.querySelectorAll<HTMLInputElement>('trove-address-field input')) {
-      expect(input.closest('td')?.classList.contains('address-cell')).toBe(true);
-      expect(input.style.inlineSize).toBe('');
-    }
+  it('R-UI-066 Q-UI-330 in the admin area the address is a quiet copy button beside the menu, its name and tooltip carrying the address, and an item of the menu', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const { root, fixture } = await renderScreen(RepositoryList);
+    const row = [...root.querySelectorAll('tbody tr')].find((tr) => text(tr).includes('generic-local'))!;
+    const copy = row.querySelector<HTMLButtonElement>('td.actions trove-copy-button button')!;
+    const label = copy.getAttribute('aria-label')!;
+    expect(label).toMatch(/^Copy client address https?:\/\/.*generic-local\/$/);
+    expect(copy.getAttribute('title')).toBe(label);
+    expect(copy.classList.contains('btn-tertiary')).toBe(true);
+    const address = label.replace('Copy client address ', '');
+    copy.click();
+    await settle(fixture);
+    expect(writeText).toHaveBeenLastCalledWith(address);
+    row.querySelector<HTMLButtonElement>('button[aria-label="Actions for generic-local"]')!.click();
+    await settle(fixture);
+    const item = [...root.ownerDocument.body.querySelectorAll<HTMLButtonElement>('.menu [role="menuitem"]')].find(
+      (i) => i.textContent?.trim() === 'Copy client address',
+    )!;
+    writeText.mockClear();
+    item.click();
+    await settle(fixture);
+    expect(writeText).toHaveBeenLastCalledWith(address);
   });
 
   it('R-UI-020 the description is the second line of the first column, and the row actions are one menu named for the row', async () => {
@@ -43,19 +56,13 @@ describe('Repository list', () => {
     const heads = [...root.querySelectorAll('thead th')].map((th) => th.textContent?.trim());
     expect(heads).not.toContain('Description');
     const row = first.closest('tr')!;
-    // In the admin area the project, the format (its icon and its name, UI-A-24) and the class lead the line under the key,
-    // so that the address keeps the room of two columns (Q-UI-325, UI-A-30).
-    const kind = first.querySelector('.repo-kind')!;
-    expect(kind.querySelector('a.project-link')?.getAttribute('href')).toBe('/projects/web');
-    expect(kind.querySelector('.format-name trove-format-icon')).toBeTruthy();
-    expect(kind.querySelector('.format-name span[translate="no"]')?.textContent).toBe('Generic');
-    expect(kind.textContent).toContain('Local');
-    expect(row.querySelector('td.kind-cell')).toBeNull();
-    expect(heads.some((h) => h?.startsWith('Format'))).toBe(false);
+    // The description is the only line under the key: every other property is a column (Q-UI-330).
+    expect(first.querySelectorAll('.secondary')).toHaveLength(1);
     // No row has a last activity: the column is left out (a column of dashes says nothing).
     expect(heads).not.toContain('Last activity');
     expect(root.querySelector('trove-data-table')?.classList.contains('stack')).toBe(true);
-    expect(row.querySelectorAll('td.actions button')).toHaveLength(1);
+    // The copy button and the menu.
+    expect(row.querySelectorAll('td.actions button')).toHaveLength(2);
     row.querySelector<HTMLButtonElement>('button[aria-label="Actions for generic-local"]')!.click();
     await settle(fixture);
     const menu = root.ownerDocument.body.querySelector('.menu')!;

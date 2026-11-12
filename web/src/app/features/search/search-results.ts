@@ -11,8 +11,9 @@ import { classLabel } from '../repositories/repository-wizard';
 /**
  * The results of the top bar's search (R-UI-002, Q-UI-390): a page of the main area, never of the admin area. The stopgap until the
  * owner's task T-22 brings one search with suggestions for every reader. It lists the repositories `GET /api/v1/repositories?q=`
- * answers, in the shared list layout: the key a link to the repository's page in its project, with its description, then its
- * project, its format and its class, and its client address; and it offers the start page's package search for the same text.
+ * answers, in the shared list layout with the project list's columns plus the project (Q-UI-330): the key a link to the
+ * repository's page in its project, with its description, then its project, its format, its class, and its client address as a
+ * field of its share; and it offers the start page's package search for the same text.
  * Every link of the page leads into a project or to the start page.
  */
 @Component({
@@ -36,6 +37,7 @@ import { classLabel } from '../repositories/repository-wizard';
       [empty]="!term() || list.items().length === 0"
       [emptyText]="term() ? noMatch() : noTerm"
       [hasMore]="list.hasMore()"
+      [stackWide]="true"
       [style.--trove-address-chars]="addressChars()"
       (more)="list.more()"
       (retry)="list.reload()"
@@ -48,19 +50,15 @@ import { classLabel } from '../repositories/repository-wizard';
               <span class="secondary">{{ row.description }}</span>
             }
           </th>
-          <td>
+          <td class="project-cell">
             <a [routerLink]="['/projects', row.project]" translate="no">{{ row.project }}</a>
           </td>
-          <!-- Format and class in one cell, the class under the format (Q-UI-305), as in a project's repository list. -->
-          <td class="kind-cell">
-            <span class="format-name">
-              <trove-format-icon [format]="row.format" />
-              <span translate="no">{{ formatLabel(row.format) }}</span>
-            </span>
-            <span class="type-cell secondary">
-              <span class="material-icons" aria-hidden="true">{{ classIcon(row.class) }}</span>
-              {{ classText(row.class) }}
-            </span>
+          <!-- Format and class, each a column, as in a project's repository list (Q-UI-330). -->
+          <td class="format-cell">
+            <span class="format-name"><trove-format-icon [format]="row.format" /><span translate="no">{{ formatLabel(row.format) }}</span></span>
+          </td>
+          <td class="class-cell">
+            <span class="class-name"><span class="material-icons" aria-hidden="true">{{ classIcon(row.class) }}</span>{{ classText(row.class) }}</span>
           </td>
           <td class="address-cell">
             <trove-address-field [value]="address(row)" [label]="addressLabel(row)" [copyLabel]="copyLabel(row)" />
@@ -72,24 +70,6 @@ import { classLabel } from '../repositories/repository-wizard';
   styles: `
     .search-packages {
       margin-block: 0 var(--trove-space-3);
-    }
-    .kind-cell > .format-name {
-      display: inline-flex;
-      align-items: flex-start;
-      gap: var(--trove-space-2);
-    }
-    .kind-cell > .format-name trove-format-icon {
-      font-size: 1.25rem;
-      color: var(--trove-text-muted);
-    }
-    .kind-cell > .type-cell {
-      display: flex;
-      align-items: center;
-      gap: var(--trove-space-1);
-      margin-block-start: var(--trove-space-1);
-    }
-    .kind-cell .material-icons {
-      font-size: 1rem;
     }
   `,
 })
@@ -110,11 +90,20 @@ export class SearchResults {
     this.term() ? $localize`:@@search.description:Repositories whose key or description matches “${this.term()}:term:”.` : '',
   );
   protected readonly noMatch = computed(() => $localize`:@@search.none:No repository matches “${this.term()}:term:”.`);
-  /** The list's budget (Q-UI-308): the key is the name column, the address takes what the others leave (Q-UI-300). */
+  /**
+   * The project list's columns plus the project (Q-UI-330), each width its column's least (Q-UI-308): the address field has its
+   * share of 46 characters at most (Q-UI-300), the repository takes the rest.
+   */
   protected readonly columns: readonly TableColumn[] = [
-    { id: 'key', label: $localize`:@@repo.col.repository:Repository`, width: '16rem' },
-    { id: 'project', label: $localize`:@@projects.col.project:Project`, width: '8rem' },
-    { id: 'format', label: $localize`:@@repo.col.format:Format`, width: '7rem', stackLabel: false },
+    { id: 'key', label: $localize`:@@repo.col.repository:Repository`, width: '12rem' },
+    { id: 'project', label: $localize`:@@projects.col.project:Project`, width: '6.5rem' },
+    { id: 'format', label: $localize`:@@repo.col.format:Format`, width: '8rem' },
+    {
+      id: 'class',
+      label: $localize`:@@repo.col.class:Class`,
+      help: $localize`:@@repo.help.class:Local repositories hold what you upload, remote repositories fetch and cache from another registry, virtual repositories combine other repositories behind one address.`,
+      width: '5rem',
+    },
     { id: 'address', label: $localize`:@@repo.col.address:Client address`, fill: true, stackLabel: false },
   ];
   protected readonly refOf = refOf;

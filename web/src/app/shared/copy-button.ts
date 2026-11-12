@@ -10,6 +10,7 @@ import { Notifier } from '../core/notifier';
   imports: [],
   template: `
     <button class="btn btn-icon"
+      [class.btn-tertiary]="quiet()"
       type="button"
       [attr.aria-label]="label()"
       [title]="label()"
@@ -26,6 +27,8 @@ export class CopyButton {
   readonly label = input($localize`:@@copy.label:Copy`);
   /** The Material icon; the default is the copy glyph, a different one tells apart two copy buttons side by side. */
   readonly icon = input('content_copy');
+  /** Without a border, as a row's other icon buttons (the copy action of the admin area's repository list, Q-UI-330). */
+  readonly quiet = input(false);
 
   protected async copy(): Promise<void> {
     try {

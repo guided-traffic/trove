@@ -92,18 +92,25 @@ what would need a second one belongs in the [manual](manual.md).
   (**Actions for user:bob**). A list that has one frequent action per row may show it as a quiet button instead. The repository
   list is the example of a thing with a description: the key, the description as the muted second line, the actions in the
   menu ([Q-UI-302](../spec/api-and-ui.md#q-ui-302--the-repository-list-names-a-repository-by-key-and-description-in-its-first-column-and-puts-the-rows-actions-in-a-menu)).
+- **The columns come from the job of the list's kind of user** (R-UI-067, [Q-UI-330](../spec/api-and-ui.md#q-ui-330--a-list-takes-its-columns-from-the-job-of-its-kind-of-user-the-important-properties-are-columns-and-the-address-takes-no-more-than-its-share)). Ask first what the list is for: the
+  properties its user decides on get columns of their own, the column that names the thing gets the most room, and nothing is
+  packed under the name but its description. The repository lists are the example: in a project (find and copy) repository,
+  format, class, client address; in the admin area (manage) repository, project, format, class, last activity, and the address
+  as a copy button. Judge a render by that first, and only then by widths and scrolling.
 - **The list's budget is its columns' widths** ([Q-UI-308](../spec/api-and-ui.md#q-ui-308--every-list-takes-its-layout-from-the-data-table-a-column-budget-a-least-width-for-its-name-one-alignment-stacked-rows)). A column of `<trove-data-table>` declares its least width
-  (`width`, which must hold its header); the name column of a list takes 16 rem. A list with a client address marks that
-  column `fill`: it takes what the declared widths leave, up to its longest address (Q-UI-300). A column of lower rank is
-  `narrow`: below 64 rem of the list's width it is hidden and the address takes its room (the list marks its cells
-  `narrow-drop`; the repository list's Last activity, UI-A-30). The list's width is the table's own (the container `table`),
+  (`width`, which must hold its header and its longest value on one line: a format with its icon 8 rem, a class 5 rem); the name
+  column takes 12 to 16 rem and what the others leave. A list with a client address marks that column `fill`: it is the
+  longest address up to its share of 46 characters (Q-UI-300). The least widths of a list sum to at most 48 rem, where its rows
+  stack; a list that needs more sets `[stackWide]="true"` and stacks at 52 rem. A column of lower rank is `narrow`: below 64 rem
+  of the list's width it is hidden and the others take its room (the list marks its cells `narrow-drop`; the admin area's Last
+  activity). The list's width is the table's own (the container `table`),
   and the address's share is of its rows' width without the scrollbar beside them, so a list scrolls sideways neither when
   its rows scroll nor beside the filter panel, which sits beside a list only where the list keeps 71 rem, else between the
   Filters button and the list
   ([Q-UI-327](../spec/api-and-ui.md#q-ui-327--the-filter-panel-sits-beside-a-list-only-where-the-list-keeps-71-rem-and-a-tables-columns-share-its-rows-width-without-the-scrollbar)).
 - **One alignment.** Every cell starts at the top of its row; a control in a cell (a button, a select, the address field) is
   centred on the first line of text. A list does not set its own vertical alignment.
-- **On a narrow list the rows stack.** Below 48 rem of the list's width every data table shows each row as a block: the name and
+- **On a narrow list the rows stack.** Below 48 rem of columns (49 rem of the list with the room of a scrollbar) every data table shows each row as a block: the name and
   its menu, then each cell on a line, named by its column (the table sets `data-label`; `stackLabel: false` where the value says
   it), a cell without a value ("–") left out, the address across the row
   ([Q-UI-306](../spec/api-and-ui.md#q-ui-306--below-48-rem-of-its-width-the-repository-list-stacks-each-row-with-the-address-across-the-row)).
@@ -112,7 +119,7 @@ what would need a second one belongs in the [manual](manual.md).
   `[stack]="false"` keeps the table for a list that cannot be read as blocks.
 - **An empty list** is `<trove-empty-state text>` with the action that fills it as its content; the data table shows it with its
   `emptyText` and the content marked `emptyAction` ([Q-UI-309](../spec/api-and-ui.md#q-ui-309--an-empty-list-or-region-is-a-sentence-and-the-action-that-fills-it-without-a-frame)).
-- **A line of facts** (project, format and class under a key; a source line) separates them with one middle dot, the same space
+- **A line of facts** (a source line; never the properties of a list's row, which are columns) separates them with one middle dot, the same space
   on both sides, in the muted colour: `.dot-separated` around its parts, `.dot-before` on one part ([_controls.scss](../../web/src/styles/_controls.scss)).
   Where such a line wraps, no line starts with a dot.
 - **Names stay on one line**, except the key of the repository list, which wraps after a hyphen where it is longer than its
@@ -227,12 +234,16 @@ is the worked example).
   ([Q-UI-274](../spec/api-and-ui.md#q-ui-274--the-field-keeps-the-fill-and-border-of-an-editable-control-not-the-grey-of-a-read-only-value)).
   The button is the 32 px `btn btn-icon` copy button, attached to the input's right edge without a gap, its left border shared
   with the input's, inner corners square, outer corners `--trove-control-radius`.
-- **Width: one per place, never per address.** The field fills its line and never takes its address's width.
+- **Width: one per place, never per address, never more than its share.** The field fills its line and never takes its
+  address's width.
   - In a list every field has one width: the column `td.address-cell` is as wide as the list's longest address in the field's
-    face, at most the list's width minus `--trove-list-others` (the room of the other columns) and at least 16 rem; that
-    width is also the column's least, so the other columns give way first. The field fills the cell and shows the address from
-    its start, never its tail. At 1440 px a project's repository list shows an address of 57 characters whole
-    ([Q-UI-300](../spec/api-and-ui.md#q-ui-300--in-a-list-every-address-field-has-one-width-the-lists-longest-address-up-to-what-the-other-columns-leave)).
+    face, but at most its share of 46 characters (`--trove-address-share`) and at most what the other columns leave at their
+    least widths (`--trove-list-others`), never under 10 rem. The other columns keep their least widths and the name column
+    takes the rest. The field fills the cell and shows the address from its start, never its tail; a longer address scrolls
+    inside it ([Q-UI-300](../spec/api-and-ui.md#q-ui-300--in-a-list-every-address-field-has-one-width-the-lists-longest-address-up-to-what-the-other-columns-leave), [Q-UI-330](../spec/api-and-ui.md#q-ui-330--a-list-takes-its-columns-from-the-job-of-its-kind-of-user-the-important-properties-are-columns-and-the-address-takes-no-more-than-its-share)).
+  - A list whose user does not copy addresses as its job has no field: the admin area's repository list has a quiet
+    `<trove-copy-button [quiet]="true">` beside the row's menu, its `label` **Copy client address** with the address, which is
+    also the button's tooltip, and the menu offers **Copy client address** ([Q-UI-330](../spec/api-and-ui.md#q-ui-330--a-list-takes-its-columns-from-the-job-of-its-kind-of-user-the-important-properties-are-columns-and-the-address-takes-no-more-than-its-share)).
   - A field alone on its line, or a stack of the addresses of one thing, fills the line up to `--trove-address-measure`
     (40 rem, 70 characters), so a stack is one width ([Q-UI-301](../spec/api-and-ui.md#q-ui-301--a-field-alone-on-its-line-fills-the-line-up-to-a-measure-of-70-characters)).
   - Where the field is shorter than its address, the address scrolls inside it (the input at least 8 rem), the button stays

@@ -67,32 +67,38 @@
   min-inline-size: 0;
 }
 
-// The column of client addresses (Q-UI-300): one width for every field of the list, that of the list's longest address
-// (`--trove-address-chars`, set by the list) in the field's own face and size, with the field's padding, border and copy
-// button, at most what the list's other columns leave (`--trove-list-others`, which the data table sums from the columns'
-// widths, Q-UI-308), never under 16 rem. `cqi` is the width of the table's scroll region, which a scrollbar beside the rows
-// narrows: measured against the list instead, the table was a scrollbar wider than its region and scrolled sideways.
-// The field fills the cell and shows the address from its start; a longer address scrolls inside its field.
+// The column of client addresses (Q-UI-300, Q-UI-330): one width for every field of the list, that of the list's longest address
+// (`--trove-address-chars`, set by the list) but never more than its share of 46 characters, in the field's own face and size,
+// with the field's padding, border and copy button; and at most what the list's other columns leave at their least widths
+// (`--trove-list-others`, which the data table sums from the columns' widths, Q-UI-308), never under 10 rem (the field's input keeps 8 rem, the copy button 2). The other columns
+// keep their least widths and take the rest: the address never takes more than its share. `cqi` is the width of the table's
+// scroll region, which a scrollbar beside the rows narrows: measured against the list instead, the table was a scrollbar wider
+// than its region and scrolled sideways. The field fills the cell and shows the address from its start; a longer address
+// scrolls inside its field.
 td.address-cell {
+  --trove-address-share: 46;
   // Resolved where it is used, so `ch` is the monospace face's at the field's size, and `cqi` the rows' width.
   --trove-address-column: min(
-    calc(var(--trove-address-chars, 40) * 1ch + 2 * var(--trove-space-3) + 2px + var(--trove-control-height)),
-    max(16rem, 100cqi - var(--trove-list-others, 34rem))
+    calc(
+      min(var(--trove-address-chars, 46), var(--trove-address-share)) * 1ch + 2 * var(--trove-space-3) + 2px +
+        var(--trove-control-height)
+    ),
+    max(10rem, 100cqi - var(--trove-list-others, 34rem))
   );
 
   inline-size: var(--trove-address-column);
   font-family: var(--trove-font-mono);
   font-size: 0.875rem;
 
-  // The field's width is also the column's least: the other columns give way first, never the address.
+  // The field's width is also the column's least, so every field of the list has one width.
   trove-address-field {
     min-inline-size: var(--trove-address-column);
     max-inline-size: none;
   }
 }
 
-// Below 64 rem of the list's width a column marked `narrow` (the data table's `narrow-drop`) gives its room to the address
-// (Q-UI-308, UI-A-30): the admin area's repository list at 1280 px shows the last activity no more, and a usual address whole.
+// Below 64 rem of the list's width a column marked `narrow` (the data table's `narrow-drop`) is hidden and gives its room to the
+// others (Q-UI-308): the admin area's repository list at 1280 px shows the last activity no more.
 @container table (max-width: 64rem) {
   .trove-data-table .narrow-drop {
     display: none;
@@ -100,10 +106,32 @@ td.address-cell {
 
   .trove-data-table td.address-cell {
     --trove-address-column: min(
-      calc(var(--trove-address-chars, 40) * 1ch + 2 * var(--trove-space-3) + 2px + var(--trove-control-height)),
-      max(16rem, 100cqi - var(--trove-list-others, 34rem) + var(--trove-list-narrow, 0px))
+      calc(
+        min(var(--trove-address-chars, 46), var(--trove-address-share)) * 1ch + 2 * var(--trove-space-3) + 2px +
+          var(--trove-control-height)
+      ),
+      max(10rem, 100cqi - var(--trove-list-others, 34rem) + var(--trove-list-narrow, 0px))
     );
   }
+}
+
+// A format is its icon and its name on one line (UI-A-24), a class its icon and its name (Q-UI-330): each a column of its own
+// in the repository lists and the search results, never broken.
+td.format-cell .format-name,
+td.class-cell .class-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--trove-space-2);
+  white-space: nowrap;
+}
+
+td.format-cell trove-format-icon {
+  font-size: 1.25rem;
+}
+
+td.class-cell .material-icons {
+  font-size: 1.25rem;
+  color: var(--trove-text-muted);
 }
 
 .list-toolbar {
@@ -512,119 +540,141 @@ td.address-cell {
 // the address field across the full width. The head shows only its sort buttons, one row above the blocks (Q-UI-391); the data
 // table gives every cell its column's name in `data-label`, shown before the value, and marks an empty one (`data-empty`),
 // which leaves its line out.
-@container table (max-width: 48rem) {
-  .trove-data-table.stack {
-    .table-scroll {
-      max-block-size: none;
-      overflow: visible;
-    }
+@mixin stacked-rows {
+  .table-scroll {
+    max-block-size: none;
+    overflow: visible;
+  }
 
-    table.data {
+  table.data {
+    display: block;
+
+    // The head keeps its sortable columns as a row of sort buttons above the blocks, so a stacked list can still be sorted
+    // (Q-UI-391); a header that sorts nothing stays for assistive technology only. Clipping the whole head left every sort
+    // button of a stacked list out of reach (the report beside its filter panel at 1280 px).
+    thead {
       display: block;
 
-      // The head keeps its sortable columns as a row of sort buttons above the blocks, so a stacked list can still be sorted
-      // (Q-UI-391); a header that sorts nothing stays for assistive technology only. Clipping the whole head left every sort
-      // button of a stacked list out of reach (the report beside its filter panel at 1280 px).
-      thead {
-        display: block;
-
-        tr {
-          display: flex;
-          flex-wrap: wrap;
-          gap: var(--trove-space-1) var(--trove-space-4);
-          padding-block: var(--trove-space-2);
-          border-block-end: 1px solid var(--trove-border);
-        }
-
-        th {
-          position: absolute;
-          inline-size: 1px;
-          block-size: 1px;
-          overflow: hidden;
-          clip-path: inset(50%);
-          white-space: nowrap;
-        }
-
-        th[aria-sort] {
-          position: static;
-          inline-size: auto;
-          block-size: auto;
-          // The column's least width (an inline style from its budget, Q-UI-308) means nothing in a row of buttons.
-          min-inline-size: 0 !important;
-          overflow: visible;
-          clip-path: none;
-          padding: 0;
-          border: 0;
-          background: none;
-        }
-      }
-
-      tbody {
-        display: block;
-      }
-
-      tbody tr {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        align-items: center;
-        gap: var(--trove-space-2) var(--trove-space-3);
-        padding-block: var(--trove-space-3);
+      tr {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--trove-space-1) var(--trove-space-4);
+        padding-block: var(--trove-space-2);
         border-block-end: 1px solid var(--trove-border);
       }
 
-      // A row that only carries an expansion of the row above (one cell across the table) adds no block of its own.
-      tbody tr:has(> td[colspan]:only-child) {
-        padding-block: 0;
-        border-block-end-width: 0;
+      th {
+        position: absolute;
+        inline-size: 1px;
+        block-size: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
       }
 
-      tbody tr > * {
-        display: block;
-        grid-column: 1 / -1;
-        padding: 0 var(--trove-space-2);
-        border-block-end: 0;
-      }
-
-      tbody tr > th[scope='row'] {
-        grid-column: 1;
-        grid-row: 1;
-
-        // A name wraps where it must when the row is a block: there is no column to grow.
-        a {
-          white-space: normal;
-          overflow-wrap: anywhere;
-        }
-      }
-
-      tbody tr > td.actions {
-        grid-column: 2;
-        grid-row: 1;
-      }
-
-      td.address-cell {
+      th[aria-sort] {
+        position: static;
         inline-size: auto;
-
-        trove-address-field {
-          min-inline-size: 0;
-        }
-      }
-
-      td[data-label]::before {
-        content: attr(data-label) ' ';
-        color: var(--trove-text-muted);
-      }
-
-      td[data-empty] {
-        display: none;
-      }
-
-      td.num {
-        text-align: start;
-      }
-
-      tbody :is(th, td) > :is(.btn, trove-address-field, select, .select-input, .text-input, trove-copy-button, .row-actions) {
-        margin-block: 0;
+        block-size: auto;
+        // The column's least width (an inline style from its budget, Q-UI-308) means nothing in a row of buttons.
+        min-inline-size: 0 !important;
+        overflow: visible;
+        clip-path: none;
+        padding: 0;
+        border: 0;
+        background: none;
       }
     }
+
+    tbody {
+      display: block;
+    }
+
+    tbody tr {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: var(--trove-space-2) var(--trove-space-3);
+      padding-block: var(--trove-space-3);
+      border-block-end: 1px solid var(--trove-border);
+    }
+
+    // A row that only carries an expansion of the row above (one cell across the table) adds no block of its own.
+    tbody tr:has(> td[colspan]:only-child) {
+      padding-block: 0;
+      border-block-end-width: 0;
+    }
+
+    tbody tr > * {
+      display: block;
+      grid-column: 1 / -1;
+      padding: 0 var(--trove-space-2);
+      border-block-end: 0;
+    }
+
+    tbody tr > th[scope='row'] {
+      grid-column: 1;
+      grid-row: 1;
+
+      // A name wraps where it must when the row is a block: there is no column to grow.
+      a {
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+    }
+
+    tbody tr > td.actions {
+      grid-column: 2;
+      grid-row: 1;
+    }
+
+    td.address-cell {
+      inline-size: auto;
+
+      trove-address-field {
+        min-inline-size: 0;
+      }
+    }
+
+    td[data-label]::before {
+      content: attr(data-label) ' ';
+      color: var(--trove-text-muted);
+    }
+
+    // A format or a class with its icon: the column's name on the same middle as the icon and the name.
+    td.format-cell,
+    td.class-cell {
+      display: flex;
+      align-items: center;
+      gap: var(--trove-space-2);
+    }
+
+    td[data-empty] {
+      display: none;
+    }
+
+    td.num {
+      text-align: start;
+    }
+
+    tbody :is(th, td) > :is(.btn, trove-address-field, select, .select-input, .text-input, trove-copy-button, .row-actions) {
+      margin-block: 0;
+    }
+  }
+}
+
+// The query asks the list's frame, which holds the scrollbar beside the rows (up to 1 rem where the scrollbars are shown): the
+// rows stack below 48 rem of columns and that room, so a list whose least widths sum to 48 rem never scrolls sideways (Q-UI-330).
+@container table (max-width: 49rem) {
+  .trove-data-table.stack {
+    @include stacked-rows;
+  }
+}
+
+// A list whose columns need more than 48 rem at their least widths stacks below 52 rem of columns instead (`stackWide`, the search
+// results with five columns, Q-UI-330), so it never scrolls sideways between.
+@container table (max-width: 53rem) {
+  .trove-data-table.stack.stack-wide {
+    @include stacked-rows;
   }
 }
