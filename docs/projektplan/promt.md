@@ -464,6 +464,12 @@ by `version: "*"`. Red pipelines are worked on even though they no longer hold a
 - A repository search for readers across projects needs an API that readers can read; until then the start page searches packages
   only (Q-UI-311).
 - A Details section does not remember whether it was open (Q-UI-319).
+- `trove.recent-repositories` is one browser key for every user of a browser (`recent-repositories.ts`), while recent projects are
+  kept per user; T-22 fixes it (Q-UI-405).
+- Q-UI-311's note that a cross-project repository search needs a list readers can read is wrong: `GET /api/v1/repositories` is open to
+  every caller and filtered by read. T-22's WP0 corrects the note.
+- `api-and-ui.md` has Q-API-260 to 263 after its first `## What this does not cover` (line 11329) and a second such heading at line 11663.
+- R-UI-002 and `_shell.scss` cite UI-A-48, which ui-audit.md no longer lists since fix wave 3 removed the fixed lines.
 - T-21 fix wave 2 is on main, from 46ad3022 to 47bab3d4:
   - one client address and one way to the setup per repository; the version and the install command look like the controls they are;
   - the client setup asks only for the client, and a read-only project screen names whom to ask;
@@ -668,6 +674,12 @@ later." It is a confirmed direction, not a parked idea, and it is built after T-
     of the main area instead of `/admin/repositories?q=` ([app.ts](../../web/src/app/app.ts) `submitSearch`).
   - **Order changed** (development agent, 2026-11-12): T-22 is planned now, because the owner pointed at the search twice on one day.
     It is built as soon as T-18 has landed, since its results must respect T-18's visibility levels.
+  - Planned in [search-work-packages.md](search-work-packages.md) (R-API-060 to 064, R-UI-095 to 099, Q-API-270 to 281, Q-UI-400 to 415,
+    H-985 to 987): one suggestions operation plus the three existing lists for the results page; two builders after T-18. The
+    development agent decided the planner's three open questions, for the owner to object to at the walkthrough:
+    - an "instance admin" is the system role `admin` only (Q-UI-412), as the owner's word says;
+    - "frequently visited" stays in the browser, as in the reference;
+    - "Search in <project>" first inside a project is not part of T-22.
 
 ## 11 · Run record
 
