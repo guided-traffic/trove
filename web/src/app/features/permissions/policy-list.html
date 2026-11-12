@@ -8,11 +8,36 @@
 <trove-needs id="needs-policies" capability="policies:write" />
 
 <div class="list-layout" [class.panel-open]="panelOpen()">
-  <div class="list-main">
-    <div class="list-toolbar">
-      <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
-    </div>
+  <div class="list-toolbar">
+    <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
+  </div>
+  <trove-filter-panel
+    #panel
+    class="list-side"
+    [(open)]="panelOpen"
+    [activeCount]="activeCount()"
+    (apply)="apply()"
+    (clearAll)="clear()"
+  >
+    <trove-filter-category i18n-label="@@policies.principal" label="Principal" [active]="!!principalFilter().trim()" [expanded]="!!principalFilter().trim()">
+      <trove-text-field
+        i18n-label="@@policies.principal"
+        label="Principal"
+        name="principal"
+        [(value)]="principalFilter"
+        i18n-hint="@@policies.principal-hint"
+        hint="user:name, group:name, sa:name, anonymous or authenticated"
+      />
+    </trove-filter-category>
+    <trove-filter-category i18n-label="@@policies.repository" label="Repository" [active]="!!repositoryFilter().trim()" [expanded]="!!repositoryFilter().trim()">
+      <trove-text-field i18n-label="@@policies.repository" label="Repository" name="repository" [(value)]="repositoryFilter" />
+    </trove-filter-category>
+    <trove-filter-category i18n-label="@@policies.project" label="Project" [active]="!!projectFilter().trim()" [expanded]="!!projectFilter().trim()">
+      <trove-text-field i18n-label="@@policies.project" label="Project" name="project" [(value)]="projectFilter" />
+    </trove-filter-category>
+  </trove-filter-panel>
 
+  <div class="list-main">
     <trove-data-table
       [caption]="caption"
       [columns]="columns"
@@ -51,30 +76,4 @@
       }
     </trove-data-table>
   </div>
-
-  <trove-filter-panel
-    #panel
-    class="list-side"
-    [(open)]="panelOpen"
-    [activeCount]="activeCount()"
-    (apply)="apply()"
-    (clearAll)="clear()"
-  >
-    <trove-filter-category i18n-label="@@policies.principal" label="Principal" [active]="!!principalFilter().trim()" [expanded]="!!principalFilter().trim()">
-      <trove-text-field
-        i18n-label="@@policies.principal"
-        label="Principal"
-        name="principal"
-        [(value)]="principalFilter"
-        i18n-hint="@@policies.principal-hint"
-        hint="user:name, group:name, sa:name, anonymous or authenticated"
-      />
-    </trove-filter-category>
-    <trove-filter-category i18n-label="@@policies.repository" label="Repository" [active]="!!repositoryFilter().trim()" [expanded]="!!repositoryFilter().trim()">
-      <trove-text-field i18n-label="@@policies.repository" label="Repository" name="repository" [(value)]="repositoryFilter" />
-    </trove-filter-category>
-    <trove-filter-category i18n-label="@@policies.project" label="Project" [active]="!!projectFilter().trim()" [expanded]="!!projectFilter().trim()">
-      <trove-text-field i18n-label="@@policies.project" label="Project" name="project" [(value)]="projectFilter" />
-    </trove-filter-category>
-  </trove-filter-panel>
 </div>

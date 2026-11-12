@@ -66,7 +66,7 @@ export class RepositoryList {
   private readonly notifier = inject(Notifier);
   private readonly confirm = inject(Confirm);
   private readonly route = inject(ActivatedRoute);
-  protected readonly recent = inject(RecentRepositories);
+  private readonly recent = inject(RecentRepositories);
 
   /** Query parameters, bound by the router's component input binding. */
   readonly q = input<string | undefined>();
@@ -139,18 +139,6 @@ export class RepositoryList {
   protected readonly activeCount = computed(
     () => [this.q(), this.class(), this.format(), this.state(), this.filterProject()].filter((v) => !!v).length,
   );
-  /** The recently opened repositories, shown by the admin area's list (a project's list leaves them to the start page, Q-UI-323). */
-  protected readonly recentKeys = computed(() => {
-    const project = this.inProject() ? this.projectKey() : null;
-    return this.recent.keys().filter((k) => project === null || k.startsWith(`${project}/`));
-  });
-
-  /** The screen of a repository, given its qualified name, inside its project. */
-  protected repositoryLink(ref: string): string[] {
-    const [project = '', key = ''] = ref.split('/');
-    return ['/projects', project, 'repositories', key];
-  }
-
   constructor() {
     effect(() => {
       const filters = {

@@ -153,15 +153,53 @@ function dayStart(value: string, plusDays = 0): string | undefined {
   imports: [DatePipe, ErrorNotice, DataTable, FilterCategory, FilterPanel, FilterToggle, SelectField, TextField],
   template: `
     <div class="list-layout" [class.panel-open]="panelOpen()">
+      <div class="list-toolbar">
+        <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
+        @if (canRevoke()) {
+          <button class="btn btn-default" type="button" [disabled]="!revocable() || busy()" aria-describedby="ci-revoke-note" (click)="revokeMatching()" i18n="@@ci.issuances.revoke-matching">
+            Revoke matching tokens
+          </button>
+        }
+      </div>
+      <trove-filter-panel #panel class="list-side" [(open)]="panelOpen" [activeCount]="activeCount()" (apply)="apply()" (clearAll)="clear()">
+        @if (!fixedIssuer()) {
+          <trove-filter-category i18n-label="@@ci.issuances.f.issuer" label="Issuer" [active]="!!issuerFilter().trim()" [expanded]="!!issuerFilter().trim()">
+            <trove-text-field i18n-label="@@ci.issuances.f.issuer" label="Issuer" name="issuer" [(value)]="issuerFilter" />
+          </trove-filter-category>
+        }
+        @if (!project()) {
+          <trove-filter-category i18n-label="@@ci.issuances.f.project-id" label="GitLab project ID" [active]="!!projectId().trim()" [expanded]="!!projectId().trim()">
+            <trove-text-field i18n-label="@@ci.issuances.f.project-id" label="GitLab project ID" name="projectId" [(value)]="projectId" />
+          </trove-filter-category>
+          <trove-filter-category i18n-label="@@ci.issuances.f.project-path" label="Project path" [active]="!!projectPath().trim()" [expanded]="!!projectPath().trim()">
+            <trove-text-field i18n-label="@@ci.issuances.f.project-path" label="Project path" name="projectPath" [(value)]="projectPath" />
+          </trove-filter-category>
+          <trove-filter-category i18n-label="@@ci.issuances.f.pipeline" label="Pipeline ID" [active]="!!pipelineId().trim()" [expanded]="!!pipelineId().trim()">
+            <trove-text-field i18n-label="@@ci.issuances.f.pipeline" label="Pipeline ID" name="pipelineId" [(value)]="pipelineId" />
+          </trove-filter-category>
+        }
+        <trove-filter-category i18n-label="@@ci.issuances.f.job" label="Job ID" [active]="!!jobId().trim()" [expanded]="!!jobId().trim()">
+          <trove-text-field i18n-label="@@ci.issuances.f.job" label="Job ID" name="jobId" [(value)]="jobId" />
+        </trove-filter-category>
+        @if (!project()) {
+          <trove-filter-category i18n-label="@@ci.issuances.f.mapping" label="Mapping" [active]="!!mapping().trim()" [expanded]="!!mapping().trim()">
+            <trove-text-field i18n-label="@@ci.issuances.f.mapping" label="Mapping" name="mapping" [(value)]="mapping" />
+          </trove-filter-category>
+        }
+        <trove-filter-category i18n-label="@@ci.issuances.f.state" label="State" [active]="!!state()" [expanded]="!!state()">
+          <trove-select-field i18n-label="@@ci.issuances.f.state" label="State" name="state" [options]="stateOptions" [(value)]="state" />
+        </trove-filter-category>
+        @if (!project()) {
+          <trove-filter-category i18n-label="@@ci.issuances.f.from" label="Issued from" [active]="!!from()" [expanded]="!!from()">
+            <trove-text-field i18n-label="@@ci.issuances.f.from" label="Issued from" name="from" type="date" [(value)]="from" />
+          </trove-filter-category>
+          <trove-filter-category i18n-label="@@ci.issuances.f.to" label="Issued until" [active]="!!to()" [expanded]="!!to()">
+            <trove-text-field i18n-label="@@ci.issuances.f.to" label="Issued until" name="to" type="date" [(value)]="to" />
+          </trove-filter-category>
+        }
+      </trove-filter-panel>
+
       <div class="list-main">
-        <div class="list-toolbar">
-          <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
-          @if (canRevoke()) {
-            <button class="btn btn-default" type="button" [disabled]="!revocable() || busy()" aria-describedby="ci-revoke-note" (click)="revokeMatching()" i18n="@@ci.issuances.revoke-matching">
-              Revoke matching tokens
-            </button>
-          }
-        </div>
         @if (canRevoke() && !revocable()) {
           @if (unsupported().length > 0) {
             <p id="ci-revoke-note" class="muted" role="note">
@@ -221,44 +259,6 @@ function dayStart(value: string, plusDays = 0): string | undefined {
           </trove-data-table>
         }
       </div>
-
-      <trove-filter-panel #panel class="list-side" [(open)]="panelOpen" [activeCount]="activeCount()" (apply)="apply()" (clearAll)="clear()">
-        @if (!fixedIssuer()) {
-          <trove-filter-category i18n-label="@@ci.issuances.f.issuer" label="Issuer" [active]="!!issuerFilter().trim()" [expanded]="!!issuerFilter().trim()">
-            <trove-text-field i18n-label="@@ci.issuances.f.issuer" label="Issuer" name="issuer" [(value)]="issuerFilter" />
-          </trove-filter-category>
-        }
-        @if (!project()) {
-          <trove-filter-category i18n-label="@@ci.issuances.f.project-id" label="GitLab project ID" [active]="!!projectId().trim()" [expanded]="!!projectId().trim()">
-            <trove-text-field i18n-label="@@ci.issuances.f.project-id" label="GitLab project ID" name="projectId" [(value)]="projectId" />
-          </trove-filter-category>
-          <trove-filter-category i18n-label="@@ci.issuances.f.project-path" label="Project path" [active]="!!projectPath().trim()" [expanded]="!!projectPath().trim()">
-            <trove-text-field i18n-label="@@ci.issuances.f.project-path" label="Project path" name="projectPath" [(value)]="projectPath" />
-          </trove-filter-category>
-          <trove-filter-category i18n-label="@@ci.issuances.f.pipeline" label="Pipeline ID" [active]="!!pipelineId().trim()" [expanded]="!!pipelineId().trim()">
-            <trove-text-field i18n-label="@@ci.issuances.f.pipeline" label="Pipeline ID" name="pipelineId" [(value)]="pipelineId" />
-          </trove-filter-category>
-        }
-        <trove-filter-category i18n-label="@@ci.issuances.f.job" label="Job ID" [active]="!!jobId().trim()" [expanded]="!!jobId().trim()">
-          <trove-text-field i18n-label="@@ci.issuances.f.job" label="Job ID" name="jobId" [(value)]="jobId" />
-        </trove-filter-category>
-        @if (!project()) {
-          <trove-filter-category i18n-label="@@ci.issuances.f.mapping" label="Mapping" [active]="!!mapping().trim()" [expanded]="!!mapping().trim()">
-            <trove-text-field i18n-label="@@ci.issuances.f.mapping" label="Mapping" name="mapping" [(value)]="mapping" />
-          </trove-filter-category>
-        }
-        <trove-filter-category i18n-label="@@ci.issuances.f.state" label="State" [active]="!!state()" [expanded]="!!state()">
-          <trove-select-field i18n-label="@@ci.issuances.f.state" label="State" name="state" [options]="stateOptions" [(value)]="state" />
-        </trove-filter-category>
-        @if (!project()) {
-          <trove-filter-category i18n-label="@@ci.issuances.f.from" label="Issued from" [active]="!!from()" [expanded]="!!from()">
-            <trove-text-field i18n-label="@@ci.issuances.f.from" label="Issued from" name="from" type="date" [(value)]="from" />
-          </trove-filter-category>
-          <trove-filter-category i18n-label="@@ci.issuances.f.to" label="Issued until" [active]="!!to()" [expanded]="!!to()">
-            <trove-text-field i18n-label="@@ci.issuances.f.to" label="Issued until" name="to" type="date" [(value)]="to" />
-          </trove-filter-category>
-        }
-      </trove-filter-panel>
     </div>
   `,
   styleUrl: '../../shared/access/access.scss',

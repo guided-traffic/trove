@@ -122,7 +122,7 @@ import { projectRoleLabel } from './project-roles';
                 </span>
               </th>
               <td i18n="@@project-members.direct">Direct member</td>
-              <td>
+              <td [attr.data-label]="roleLabel">
                 @if (canWrite()) {
                   <select
                     class="select-input role"
@@ -175,6 +175,10 @@ import { projectRoleLabel } from './project-roles';
   `,
   styleUrl: '../../shared/access/access.scss',
   styles: `
+    :host {
+      display: block;
+      container: members / inline-size;
+    }
     .count {
       margin-inline-start: var(--trove-space-1);
     }
@@ -267,6 +271,49 @@ import { projectRoleLabel } from './project-roles';
       border-radius: var(--trove-radius-m);
       background: var(--trove-error-container);
       color: var(--trove-on-error-container);
+    }
+    /* Below 48 rem the rows stack as every list's do (Q-UI-306): the account and its menu, then the source and the role on a
+       line each; at 390 px the four columns scrolled 100 px sideways. The head stays for assistive technology only. */
+    @container members (max-width: 48rem) {
+      .members thead {
+        position: absolute;
+        inline-size: 1px;
+        block-size: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+      .members,
+      .members tbody {
+        display: block;
+      }
+      .members tbody tr {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: var(--trove-space-2) var(--trove-space-3);
+        padding-block: var(--trove-space-3);
+        border-block-end: 1px solid var(--trove-border);
+      }
+      .members tbody tr > * {
+        display: block;
+        grid-column: 1 / -1;
+        padding: 0 var(--trove-space-2);
+        border-block-end: 0;
+      }
+      .members tbody tr > th.account {
+        display: flex;
+        grid-column: 1;
+        grid-row: 1;
+      }
+      .members tbody tr > td.actions {
+        grid-column: 2;
+        grid-row: 1;
+      }
+      .members td[data-label]::before {
+        content: attr(data-label) ' ';
+        color: var(--trove-text-muted);
+      }
     }
   `,
 })

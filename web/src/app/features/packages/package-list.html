@@ -129,65 +129,9 @@
       </ul>
     }
     <div class="list-layout" [class.panel-open]="panelOpen()">
-      <div class="list-main">
-        <div class="list-toolbar">
-          <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
-        </div>
-
-        <trove-data-table
-          [caption]="tableCaption"
-          [columns]="columns"
-          [sort]="tableSort()"
-          [loaded]="list.loaded()"
-          [loading]="list.loading()"
-          [error]="list.error()"
-          [empty]="list.items().length === 0"
-          [emptyText]="filtered() ? emptyFilteredText : emptyText"
-          [hasMore]="list.hasMore()"
-          (sortChange)="sortBy($event)"
-          (more)="list.more()"
-          (retry)="list.more()"
-        >
-          @for (row of list.items(); track row.id) {
-            <!-- What a reader chooses a package by (Q-UI-314): its name and description, format, latest version, when it
-                 changed. Counts and the first publication are on the package's page. -->
-            <tr>
-              <th scope="row" class="wrap-name">
-                <a [routerLink]="commands(row.format, row.name)" translate="no">{{ row.name }}</a>
-                @if (row.description) {
-                  <span class="secondary">{{ row.description }}</span>
-                }
-              </th>
-              <td>
-                <span class="type-cell">
-                  <trove-format-icon [format]="row.format" />
-                  <span translate="no">{{ formatLabel(row.format) }}</span>
-                </span>
-              </td>
-              <td translate="no">{{ row.latestVersion }}</td>
-              <td>
-                <time [attr.datetime]="row.updatedAt" [attr.title]="row.updatedAt | date: 'medium'">{{
-                  since(row.updatedAt)
-                }}</time>
-              </td>
-            </tr>
-          }
-        </trove-data-table>
-        @if (list.loaded() && list.items().length === 0) {
-          @if (filtered()) {
-            <p>
-              <button class="btn btn-default" type="button" (click)="clearFilters()" i18n="@@pkg.list.clear">
-                Clear all filters
-              </button>
-            </p>
-          } @else {
-            <p>
-              <a routerLink="/setup" i18n="@@pkg.list.empty-setup">Set up a client to publish the first package</a>
-            </p>
-          }
-        }
+      <div class="list-toolbar">
+        <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
       </div>
-
       <trove-filter-panel
         #panel
         class="list-side"
@@ -279,6 +223,61 @@
           }
         </trove-filter-category>
       </trove-filter-panel>
+
+      <div class="list-main">
+        <trove-data-table
+          [caption]="tableCaption"
+          [columns]="columns"
+          [sort]="tableSort()"
+          [loaded]="list.loaded()"
+          [loading]="list.loading()"
+          [error]="list.error()"
+          [empty]="list.items().length === 0"
+          [emptyText]="filtered() ? emptyFilteredText : emptyText"
+          [hasMore]="list.hasMore()"
+          (sortChange)="sortBy($event)"
+          (more)="list.more()"
+          (retry)="list.more()"
+        >
+          @for (row of list.items(); track row.id) {
+            <!-- What a reader chooses a package by (Q-UI-314): its name and description, format, latest version, when it
+                 changed. Counts and the first publication are on the package's page. -->
+            <tr>
+              <th scope="row" class="wrap-name">
+                <a [routerLink]="commands(row.format, row.name)" translate="no">{{ row.name }}</a>
+                @if (row.description) {
+                  <span class="secondary">{{ row.description }}</span>
+                }
+              </th>
+              <td>
+                <span class="type-cell">
+                  <trove-format-icon [format]="row.format" />
+                  <span translate="no">{{ formatLabel(row.format) }}</span>
+                </span>
+              </td>
+              <td translate="no">{{ row.latestVersion }}</td>
+              <td>
+                <time [attr.datetime]="row.updatedAt" [attr.title]="row.updatedAt | date: 'medium'">{{
+                  since(row.updatedAt)
+                }}</time>
+              </td>
+            </tr>
+          }
+        </trove-data-table>
+        @if (list.loaded() && list.items().length === 0) {
+          @if (filtered()) {
+            <p>
+              <button class="btn btn-default" type="button" (click)="clearFilters()" i18n="@@pkg.list.clear">
+                Clear all filters
+              </button>
+            </p>
+          } @else {
+            <p>
+              <a routerLink="/setup" i18n="@@pkg.list.empty-setup">Set up a client to publish the first package</a>
+            </p>
+          }
+        }
+      </div>
     </div>
   }
 }

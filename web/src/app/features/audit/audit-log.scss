@@ -73,3 +73,10 @@ td.read-text {
     min-inline-size: 12rem;
   }
 }
+
+// So does an action's key, and its name where the list has none for it and shows the key (`vulnerability.source.imported` made
+// the column 200 px and the log scrolled sideways at 1440 px).
+th[scope='row'] .link,
+th[scope='row'] .secondary {
+  overflow-wrap: anywhere;
+}

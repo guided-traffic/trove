@@ -2911,8 +2911,9 @@ Priority: **MVP** · Covers: UI-001, UI-004
   and error states with retry, "Load more") and, where the screen has filters, one filter panel on
   the right (a toggle button with the number of applied filters above the table, collapsible
   filter categories, "Clear all", a close button, one apply button). The panel sits beside the list only where the list keeps
-  at least 71 rem there, above it otherwise, its categories side by side; a list never scrolls sideways because the panel is
-  open, and a table's columns share the width of its rows without the scrollbar beside them
+  at least 71 rem there, otherwise between the Filters button and the list, its categories side by side and each as tall as its
+  heading while closed; in the page's order it follows the button, so the keyboard reaches it next; a list never scrolls
+  sideways because the panel is open, and a table's columns share the width of its rows without the scrollbar beside them
   ([Q-UI-327](#q-ui-327--the-filter-panel-sits-beside-a-list-only-where-the-list-keeps-71-rem-and-a-tables-columns-share-its-rows-width-without-the-scrollbar)). A column is sortable only
   where the API sorts by it (`sort` of `GET /api/v1/users`, `groups`, `service-accounts`,
   `permission-policies`), or where the whole list is in the browser (endpoints); a filter appears
@@ -3811,9 +3812,9 @@ Priority: **MVP** · Covers: UI-030, REPO-007
   (Q-UI-325, UI-A-30); the project's own list (`/projects/{project}/repositories`, Q-UI-129) is the same screen
   for one project, without the project and the project filter. The list is ordered by key; the API takes
   no `sort` parameter yet, so the table has no sort control (sorting by creation arrives with the
-  API, and the creation time with the summary, Q-UI-18). "Recently opened" (browser storage, 20) above the admin area's list; a
-  project's list leaves it to the start page and says under its heading what the project is and, to a plain user, whom to ask
-  (Q-UI-323).
+  API, and the creation time with the summary, Q-UI-18). "Recently opened" (browser storage, 20) is the start page's: neither
+  list shows it ([Q-UI-329](#q-ui-329--recently-opened-is-the-start-pages-only-the-admin-areas-repository-list-leaves-it-out-too)); a project's list says under its heading what the project is and, to a plain user,
+  whom to ask (Q-UI-323).
 - The key links to the repository's content page (R-UI-052); the Settings action opens `…/settings`.
 - Row actions, in the row's menu (Q-UI-302): settings, browse, client setup, reindex (P1), invalidate cache (remote and virtual),
   from M4b vulnerabilities (local and remote repositories of a format with the vulnerability
@@ -11168,6 +11169,12 @@ the threshold when a list needs more than 71 rem at 1440 px.
 in fix wave 4; the renders open the panel of every list that has one and measure each table at the window's first height, with
 the scrollbars shown.
 
+**Revised in the follow-up of fix wave 4 (2026-11-12):** below 91 rem the panel sat above the Filters button that opened it. It
+now sits between the button and the list, and in the page's order too (toolbar, panel, list), so it opens where it was asked for
+and the keyboard reaches it right after the button; a closed category is as tall as its heading. The audit log's **Action** takes
+9 rem and a key longer than that breaks where it must: an action without a name of its own (`vulnerability.source.imported`)
+showed its key and made the log 42 px wider than its region at 1440 px.
+
 ### Q-UI-328 · The project's repository list names format and class under the key, as the admin area's does
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -11187,6 +11194,24 @@ for a project once the panel is open: the address is what a row is copied for. T
 the list where a column was scanned before. The development agent revisits it with Q-UI-325.
 
 **Applied in the spec:** R-UI-020, Q-UI-305, Q-UI-325. Built in fix wave 4.
+
+### Q-UI-329 · Recently opened is the start page's only: the admin area's repository list leaves it out too
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the follow-up of fix wave 4 (the coordinator, 2026-11-12). Above the admin area's repository list "Recently opened" was a
+large heading with loose links, while the start page shows the same repositories as a list with the address and **Set up client**,
+and a project's list leaves them to the start page since Q-UI-323.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The admin area's list leaves it out; the start page's section is the one place (chosen) | The list starts with its header and the Filters button | One place and one look for one idea; the admin area is for managing, and a repository is found by the top bar's search or the list's filter | An administrator who reopens a repository from the admin list goes through the start page or the search |
+| (b) One small style for every "Recently opened" | A small heading and a line of links above the admin list too | It stays where it was | A second look for the start page's section, and a block above every admin list that the filter does not touch |
+
+**Choice:** (a). **Rationale:** the repositories a person opened are theirs, not the admin area's; the start page shows them with
+what is needed to use them. The development agent revisits it if administrators miss it in the walkthrough.
+
+**Applied in the spec:** R-UI-020; Q-UI-323 holds for both lists. Built in the follow-up of fix wave 4.
 
 ### Q-UI-370 · The grades take cogpit's colours, and S, A and B are the greens of a good grade
 

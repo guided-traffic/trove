@@ -123,6 +123,9 @@
   display: flex;
   flex-wrap: nowrap;
   overflow-x: auto;
+  // Never upwards and downwards: the current tab's line reaches 1 px below the strip, which gave every strip a vertical
+  // scrollbar where the scrollbars are shown (a desktop with a mouse).
+  overflow-y: hidden;
   scrollbar-width: thin;
   border-block-end: 1px solid var(--trove-border);
 

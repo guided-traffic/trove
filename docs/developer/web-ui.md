@@ -103,7 +103,9 @@ binaries and applies new migrations. Repositories, packages and users created in
 the origin check of R-AUTH-012 and trove's redirects work exactly as behind a real edge, and the proxy rewrites
 nothing: it keeps the Host header, adds `X-Forwarded-For` (trove trusts `127.0.0.1` as its edge) and verifies
 trove's certificate against the profile's CA, which `npm run start:local` hands to Node.js in
-`NODE_EXTRA_CA_CERTS`. The proxy is [web/proxy.conf.mjs](../../web/proxy.conf.mjs) (one rule, `^/(?!ui(/|$))`); the
+`NODE_EXTRA_CA_CERTS`. The proxy is [web/proxy.conf.mjs](../../web/proxy.conf.mjs) (`^/(?!ui(/|$))` to trove, and a page of
+the app whose path ends in a file name, such as the file view's `…/browse/<repo>/README.md`, to the app's index: the dev server
+serves the index only for paths without an extension it knows); the
 `local` configuration of the `serve` target in [web/angular.json](../../web/angular.json) sets it, HTTPS and the
 certificate. `TROVE_UI_DEV_BACKEND` points the proxy at another trove (default `https://localhost:19080`); a sign-in
 through the dev server works only against a trove whose base URL is `https://localhost:4200`.
@@ -770,11 +772,8 @@ aligned to the top with a control centred on the first line; below 48 rem of the
 
 ```html
 <div class="list-layout" [class.panel-open]="panelOpen()">
-  <div class="list-main">
-    <div class="list-toolbar">
-      <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
-    </div>
-    <trove-data-table ...>...</trove-data-table>
+  <div class="list-toolbar">
+    <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
   </div>
   <trove-filter-panel #panel class="list-side" [(open)]="panelOpen" [activeCount]="activeCount()"
                       (apply)="apply()" (clearAll)="clear()">
@@ -782,6 +781,9 @@ aligned to the top with a control centred on the first line; below 48 rem of the
       <trove-select-field label="Status" [options]="statusOptions" [(value)]="status" />
     </trove-filter-category>
   </trove-filter-panel>
+  <div class="list-main">
+    <trove-data-table ...>...</trove-data-table>
+  </div>
 </div>
 ```
 
@@ -789,7 +791,7 @@ aligned to the top with a control centred on the first line; below 48 rem of the
 - A category is a heading button with a chevron (`aria-expanded`); give it `[active]` and `[expanded]` of its filter, so that an applied filter is never hidden. A screen that can be reached with a filter in the URL (policies, audit, repositories) opens the panel itself.
 - Focus moves to the panel heading on opening and back to the opener on closing; Escape closes. The form is a `search` landmark named by its heading.
 - Controls inside a category need their own accessible name (`aria-label` for a native control, the label of `TextField` and `SelectField` otherwise); the category button is not their label.
-- `.list-layout` puts the panel to the right of the table where the content area is at least `91rem` wide, so that the list keeps 71 rem beside it, and above the table otherwise, its categories side by side (container query on `.content`, [Q-UI-327](../spec/api-and-ui.md#q-ui-327--the-filter-panel-sits-beside-a-list-only-where-the-list-keeps-71-rem-and-a-tables-columns-share-its-rows-width-without-the-scrollbar)). Only add a filter that a request parameter of the API backs.
+- `.list-layout` puts the panel to the right of the table where the content area is at least `91rem` wide, so that the list keeps 71 rem beside it, and between the toolbar and the table otherwise, its categories side by side (grid areas `bar`, `side`, `main`; container query on `.content`, [Q-UI-327](../spec/api-and-ui.md#q-ui-327--the-filter-panel-sits-beside-a-list-only-where-the-list-keeps-71-rem-and-a-tables-columns-share-its-rows-width-without-the-scrollbar)). Keep the order of the example, toolbar, panel, list: it is the keyboard's order, so the panel comes right after the button that opens it. Only add a filter that a request parameter of the API backs.
 
 ### Add a list screen
 

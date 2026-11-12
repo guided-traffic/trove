@@ -1,5 +1,5 @@
 <!-- The header names the list; inside a project its one muted line is the project's description and, for a plain user, whom
-     to ask (Q-UI-317, UI-A-15). The repositories opened last are the start page's, in the admin area this list's. -->
+     to ask (Q-UI-317, UI-A-15). The repositories opened last are the start page's only (Q-UI-323, Q-UI-329). -->
 <trove-page-header [heading]="heading" [description]="headerLine()">
   @if (inProject() && canCreateHere()) {
     <a actions class="btn btn-confirm" [routerLink]="['/projects', projectKey(), 'repositories', 'new']" i18n="@@repo.list.create"
@@ -12,28 +12,85 @@
   }
 </trove-page-header>
 
-@if (!inProject() && recentKeys().length > 0 && !filtered()) {
-  <section aria-labelledby="recent-heading" class="recent">
-    <h2 id="recent-heading" i18n="@@projects-home.recent">Recently opened</h2>
-    <ul>
-      @for (key of recentKeys(); track key) {
-        <li>
-          <a [routerLink]="repositoryLink(key)" translate="no">{{ key }}</a>
-        </li>
-      }
-    </ul>
-  </section>
-}
-
 @if (deleteFailure(); as f) {
   <trove-error-notice [error]="f" />
 }
 <div class="list-layout" [class.panel-open]="panelOpen()">
-  <div class="list-main">
-    <div class="list-toolbar">
-      <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
-    </div>
+  <div class="list-toolbar">
+    <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
+  </div>
+  <trove-filter-panel
+    #panel
+    class="list-side"
+    [(open)]="panelOpen"
+    [activeCount]="activeCount()"
+    [applyLabel]="applyLabel"
+    (apply)="submitFilters()"
+    (clearAll)="clearFilters()"
+  >
+    <trove-filter-category i18n-label="@@repo.filter.text" label="Key or description" [active]="!!q()" [expanded]="!!q()">
+      <input
+        class="text-input"
+        type="search"
+        autocomplete="off"
+        i18n-aria-label="@@repo.filter.text"
+        aria-label="Key or description"
+        [value]="search()"
+        (input)="search.set($any($event.target).value)"
+      />
+    </trove-filter-category>
+    @if (!inProject()) {
+      <trove-filter-category i18n-label="@@repo.col.project" label="Project" [active]="!!filterProject()" [expanded]="!!filterProject()">
+        <input
+          class="text-input"
+          type="text"
+          autocomplete="off"
+          i18n-aria-label="@@repo.col.project"
+          aria-label="Project"
+          [value]="stagedProject()"
+          (input)="stagedProject.set($any($event.target).value)"
+        />
+      </trove-filter-category>
+    }
+    <trove-filter-category i18n-label="@@repo.col.class" label="Class" [active]="!!class()" [expanded]="!!class()">
+      <select
+        class="select-input"
+        i18n-aria-label="@@repo.col.class"
+        aria-label="Class"
+        (change)="stagedClass.set($any($event.target).value)"
+      >
+        <option value="" [selected]="!stagedClass()" i18n="@@repo.filter.any">Any</option>
+        @for (c of ['local', 'remote', 'virtual']; track c) {
+          <option [value]="c" [selected]="stagedClass() === c">{{ classText(c) }}</option>
+        }
+      </select>
+    </trove-filter-category>
+    <trove-filter-category i18n-label="@@repo.col.format" label="Format" [active]="!!format()" [expanded]="!!format()">
+      <select
+        class="select-input"
+        i18n-aria-label="@@repo.col.format"
+        aria-label="Format"
+        (change)="stagedFormat.set($any($event.target).value)"
+      >
+        <option value="" [selected]="!stagedFormat()" i18n="@@repo.filter.any">Any</option>
+        @for (f of formatOptions(); track f) {
+          <option [value]="f" [selected]="stagedFormat() === f" translate="no">{{ f }}</option>
+        }
+      </select>
+    </trove-filter-category>
+    <trove-filter-category i18n-label="@@repo.filter.state" label="State" [active]="state() === 'inactive'" [expanded]="state() === 'inactive'">
+      <label class="check-row">
+        <input
+          type="checkbox"
+          [checked]="stagedInactive()"
+          (change)="stagedInactive.set($any($event.target).checked)"
+        />
+        <span i18n="@@repo.filter.inactive">Disabled only</span>
+      </label>
+    </trove-filter-category>
+  </trove-filter-panel>
 
+  <div class="list-main">
     <trove-data-table
       [caption]="tableCaption"
       [columns]="columns()"
@@ -142,75 +199,4 @@
       }
     </trove-data-table>
   </div>
-
-  <trove-filter-panel
-    #panel
-    class="list-side"
-    [(open)]="panelOpen"
-    [activeCount]="activeCount()"
-    [applyLabel]="applyLabel"
-    (apply)="submitFilters()"
-    (clearAll)="clearFilters()"
-  >
-    <trove-filter-category i18n-label="@@repo.filter.text" label="Key or description" [active]="!!q()" [expanded]="!!q()">
-      <input
-        class="text-input"
-        type="search"
-        autocomplete="off"
-        i18n-aria-label="@@repo.filter.text"
-        aria-label="Key or description"
-        [value]="search()"
-        (input)="search.set($any($event.target).value)"
-      />
-    </trove-filter-category>
-    @if (!inProject()) {
-      <trove-filter-category i18n-label="@@repo.col.project" label="Project" [active]="!!filterProject()" [expanded]="!!filterProject()">
-        <input
-          class="text-input"
-          type="text"
-          autocomplete="off"
-          i18n-aria-label="@@repo.col.project"
-          aria-label="Project"
-          [value]="stagedProject()"
-          (input)="stagedProject.set($any($event.target).value)"
-        />
-      </trove-filter-category>
-    }
-    <trove-filter-category i18n-label="@@repo.col.class" label="Class" [active]="!!class()" [expanded]="!!class()">
-      <select
-        class="select-input"
-        i18n-aria-label="@@repo.col.class"
-        aria-label="Class"
-        (change)="stagedClass.set($any($event.target).value)"
-      >
-        <option value="" [selected]="!stagedClass()" i18n="@@repo.filter.any">Any</option>
-        @for (c of ['local', 'remote', 'virtual']; track c) {
-          <option [value]="c" [selected]="stagedClass() === c">{{ classText(c) }}</option>
-        }
-      </select>
-    </trove-filter-category>
-    <trove-filter-category i18n-label="@@repo.col.format" label="Format" [active]="!!format()" [expanded]="!!format()">
-      <select
-        class="select-input"
-        i18n-aria-label="@@repo.col.format"
-        aria-label="Format"
-        (change)="stagedFormat.set($any($event.target).value)"
-      >
-        <option value="" [selected]="!stagedFormat()" i18n="@@repo.filter.any">Any</option>
-        @for (f of formatOptions(); track f) {
-          <option [value]="f" [selected]="stagedFormat() === f" translate="no">{{ f }}</option>
-        }
-      </select>
-    </trove-filter-category>
-    <trove-filter-category i18n-label="@@repo.filter.state" label="State" [active]="state() === 'inactive'" [expanded]="state() === 'inactive'">
-      <label class="check-row">
-        <input
-          type="checkbox"
-          [checked]="stagedInactive()"
-          (change)="stagedInactive.set($any($event.target).checked)"
-        />
-        <span i18n="@@repo.filter.inactive">Disabled only</span>
-      </label>
-    </trove-filter-category>
-  </trove-filter-panel>
 </div>

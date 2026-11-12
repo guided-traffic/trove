@@ -3,40 +3,14 @@
 <trove-needs capability="tokens:revoke" />
 
 <div class="list-layout" [class.panel-open]="panelOpen()">
-  <div class="list-main">
-    <div class="list-toolbar">
-      <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
-      @if (session.has('tokens:revoke') && selected().length > 0) {
-        <button class="btn btn-confirm" type="button" (click)="revokeSelected()">
-          <ng-container i18n="@@tokens-admin.revoke-selected">Revoke selected</ng-container> ({{ selected().length }})
-        </button>
-      }
-    </div>
-
-    @if (actionError(); as e) {
-      <trove-error-notice [error]="e" />
-    }
-    @if (list.error(); as e) {
-      <trove-error-notice [error]="e" (retry)="list.reload()" />
-    }
-    @if (list.loaded()) {
-      <trove-token-table
-        [tokens]="list.items()"
-        [emptyText]="activeCount() > 0 ? noMatch : noActive"
-        [showOwner]="true"
-        [selectable]="session.has('tokens:revoke')"
-        [canRevoke]="session.has('tokens:revoke')"
-        [(selected)]="selected"
-        [hasMore]="list.hasMore()"
-        [loading]="list.loading()"
-        (more)="list.more()"
-        (revoke)="revokeOne($event)"
-      />
-    } @else if (list.loading()) {
-      <p role="status" i18n="@@tokens-admin.loading">Loading tokens.</p>
+  <div class="list-toolbar">
+    <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
+    @if (session.has('tokens:revoke') && selected().length > 0) {
+      <button class="btn btn-confirm" type="button" (click)="revokeSelected()">
+        <ng-container i18n="@@tokens-admin.revoke-selected">Revoke selected</ng-container> ({{ selected().length }})
+      </button>
     }
   </div>
-
   <trove-filter-panel
     #panel
     class="list-side"
@@ -80,6 +54,31 @@
       />
     </trove-filter-category>
   </trove-filter-panel>
+
+  <div class="list-main">
+    @if (actionError(); as e) {
+      <trove-error-notice [error]="e" />
+    }
+    @if (list.error(); as e) {
+      <trove-error-notice [error]="e" (retry)="list.reload()" />
+    }
+    @if (list.loaded()) {
+      <trove-token-table
+        [tokens]="list.items()"
+        [emptyText]="activeCount() > 0 ? noMatch : noActive"
+        [showOwner]="true"
+        [selectable]="session.has('tokens:revoke')"
+        [canRevoke]="session.has('tokens:revoke')"
+        [(selected)]="selected"
+        [hasMore]="list.hasMore()"
+        [loading]="list.loading()"
+        (more)="list.more()"
+        (revoke)="revokeOne($event)"
+      />
+    } @else if (list.loading()) {
+      <p role="status" i18n="@@tokens-admin.loading">Loading tokens.</p>
+    }
+  </div>
 </div>
 
 @if (session.has('tokens:revoke')) {

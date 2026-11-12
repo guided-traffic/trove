@@ -112,11 +112,24 @@ export class ServiceAccountCreateDialog {
     </p>
 
     <div class="list-layout" [class.panel-open]="panelOpen()">
-      <div class="list-main">
-        <div class="list-toolbar">
-          <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
-        </div>
+      <div class="list-toolbar">
+        <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
+      </div>
+      <trove-filter-panel
+        #panel
+        class="list-side"
+        [(open)]="panelOpen"
+        [activeCount]="activeCount()"
+        [applyLabel]="applyLabel"
+        (apply)="apply()"
+        (clearAll)="clear()"
+      >
+        <trove-filter-category i18n-label="@@sas.q" label="Name" [active]="!!q().trim()" [expanded]="!!q().trim()">
+          <trove-text-field i18n-label="@@sas.q" label="Name" name="q" [(value)]="q" />
+        </trove-filter-category>
+      </trove-filter-panel>
 
+      <div class="list-main">
         <trove-data-table
           [caption]="caption"
           [columns]="columns"
@@ -154,20 +167,6 @@ export class ServiceAccountCreateDialog {
           }
         </trove-data-table>
       </div>
-
-      <trove-filter-panel
-        #panel
-        class="list-side"
-        [(open)]="panelOpen"
-        [activeCount]="activeCount()"
-        [applyLabel]="applyLabel"
-        (apply)="apply()"
-        (clearAll)="clear()"
-      >
-        <trove-filter-category i18n-label="@@sas.q" label="Name" [active]="!!q().trim()" [expanded]="!!q().trim()">
-          <trove-text-field i18n-label="@@sas.q" label="Name" name="q" [(value)]="q" />
-        </trove-filter-category>
-      </trove-filter-panel>
     </div>
   `,
   styleUrl: '../../shared/access/access.scss',

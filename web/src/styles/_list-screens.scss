@@ -3,25 +3,45 @@
 // <trove-data-table>, but its rows are projected from the screens, so scoped component styles
 // would not reach them. Colours and lengths come from the tokens only (R-UI-044).
 
+// The toolbar with the Filters button, the panel and the list, in this order in the page, so that the panel opens where it
+// was asked for and the keyboard reaches it right after the button (Q-UI-327).
 .list-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--trove-space-4);
+  grid-template-areas: 'bar' 'main';
+  column-gap: var(--trove-space-4);
   align-items: start;
+
+  > .list-toolbar {
+    grid-area: bar;
+  }
+
+  > .list-side {
+    grid-area: side;
+  }
+
+  > .list-main {
+    grid-area: main;
+  }
 
   &.panel-open {
     grid-template-columns: minmax(0, 1fr) 19rem;
+    grid-template-rows: auto 1fr;
+    grid-template-areas: 'bar side' 'main side';
   }
 
   // The panel sits beside the list only where the list keeps at least 71 rem there: a little more than the 70.5 rem it has at
-  // 1440 px without the panel, the width every list's columns are made and checked for. Narrower, the panel sits above the
-  // list, which keeps its whole width (Q-UI-327; at 1860 px a list beside the panel scrolled sideways, the owner's screen).
+  // 1440 px without the panel, the width every list's columns are made and checked for. Narrower, the panel sits between the
+  // Filters button and the list, which keeps its whole width (Q-UI-327; at 1860 px a list beside the panel scrolled sideways,
+  // the owner's screen).
   @container content (max-width: 91rem) {
     &.panel-open {
       grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: none;
+      grid-template-areas: 'bar' 'side' 'main';
 
-      .list-side {
-        order: -1;
+      > .list-side {
+        margin-block-end: var(--trove-space-4);
       }
     }
   }

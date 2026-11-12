@@ -80,6 +80,8 @@ describe('Project members (R-UI-041, Q-AUTHZ-207, Q-AUTHZ-217)', () => {
     expect(text(row)).toContain('Direct member');
     expect(row.querySelector('trove-avatar img')?.getAttribute('src')).toBe('/api/v1/avatars/abc');
     expect(text(members.querySelector('.tab-link') as HTMLElement)).toContain('2');
+    // Below 48 rem the rows stack (Q-UI-306); the role's cell carries its column's name for its own line.
+    expect(row.querySelector('td[data-label="Role"] select')).toBeTruthy();
   });
 
   it('R-UI-041 Q-UI-214 the filter narrows the list by name and the order can be changed', async () => {

@@ -1,6 +1,7 @@
 import { Router } from '@angular/router';
 import { addressValues, button, expectAccessible, openFilters, renderScreen, settle, type } from '../../testing/screen';
 import { RepositoryList } from './repository-list';
+import { RecentRepositories } from './recent-repositories';
 
 async function open(inputs: Record<string, unknown> = {}) {
   const rendered = await renderScreen(RepositoryList, {
@@ -18,6 +19,21 @@ describe('Repository list filter panel (R-UI-020)', () => {
     const categories = [...root.querySelectorAll('button.category-toggle .category-label')].map((l) => l.textContent);
     expect(categories).toEqual(['Key or description', 'Project', 'Class', 'Format', 'State']);
     await expectAccessible(root);
+  });
+
+  it('R-UI-002 the panel follows the Filters button in the page, before the list, and no "Recently opened" stands above them', async () => {
+    const { fixture, root } = await renderScreen(RepositoryList, {
+      setup: (get) => {
+        vi.spyOn(get(Router), 'navigate').mockResolvedValue(true);
+        get(RecentRepositories).add('web/generic-local');
+      },
+    });
+    await openFilters(fixture, root);
+    const layout = root.querySelector('.list-layout')!;
+    const order = [...layout.children].map((c) => (c.classList.contains('list-side') ? 'panel' : c.className.split(' ')[0]));
+    expect(order).toEqual(['list-toolbar', 'panel', 'list-main']);
+    expect(layout.querySelector('.list-toolbar button.filter-toggle')).toBeTruthy();
+    expect(root.textContent).not.toContain('Recently opened');
   });
 
   it('R-UI-020 "Search" in the panel puts every staged value into the query parameters at once', async () => {

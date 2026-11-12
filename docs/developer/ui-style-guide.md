@@ -98,7 +98,8 @@ what would need a second one belongs in the [manual](manual.md).
   `narrow`: below 64 rem of the list's width it is hidden and the address takes its room (the list marks its cells
   `narrow-drop`; the repository list's Last activity, UI-A-30). The list's width is the table's own (the container `table`),
   and the address's share is of its rows' width without the scrollbar beside them, so a list scrolls sideways neither when
-  its rows scroll nor beside the filter panel, which sits beside a list only where the list keeps 71 rem
+  its rows scroll nor beside the filter panel, which sits beside a list only where the list keeps 71 rem, else between the
+  Filters button and the list
   ([Q-UI-327](../spec/api-and-ui.md#q-ui-327--the-filter-panel-sits-beside-a-list-only-where-the-list-keeps-71-rem-and-a-tables-columns-share-its-rows-width-without-the-scrollbar)).
 - **One alignment.** Every cell starts at the top of its row; a control in a cell (a button, a select, the address field) is
   centred on the first line of text. A list does not set its own vertical alignment.

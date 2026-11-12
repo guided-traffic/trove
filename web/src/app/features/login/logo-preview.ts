@@ -111,7 +111,8 @@ const ALTERNATIVES: readonly { key: string; note: string }[] = [
     }
     .grounds {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(28rem, 1fr));
+      /* A ground is never wider than the page: at 390 px a 28 rem ground scrolled the sign-in page 74 px sideways. */
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 28rem), 1fr));
       gap: var(--trove-space-4);
     }
     .ground {

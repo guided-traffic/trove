@@ -44,11 +44,26 @@ export function groupOriginLabel(origin: Group['origin']): string {
     <trove-needs id="needs-groups" capability="identities:write" />
 
     <div class="list-layout" [class.panel-open]="panelOpen()">
-      <div class="list-main">
-        <div class="list-toolbar">
-          <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
-        </div>
+      <div class="list-toolbar">
+        <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
+      </div>
+      <trove-filter-panel
+        #panel
+        class="list-side"
+        [(open)]="panelOpen"
+        [activeCount]="activeCount()"
+        (apply)="apply()"
+        (clearAll)="clear()"
+      >
+        <trove-filter-category i18n-label="@@groups.q" label="Name" [active]="!!q().trim()" [expanded]="!!q().trim()">
+          <trove-text-field i18n-label="@@groups.q" label="Name" name="q" [(value)]="q" />
+        </trove-filter-category>
+        <trove-filter-category i18n-label="@@groups.origin" label="Origin" [active]="!!origin()" [expanded]="!!origin()">
+          <trove-select-field i18n-label="@@groups.origin" label="Origin" name="origin" [options]="originOptions" [(value)]="origin" />
+        </trove-filter-category>
+      </trove-filter-panel>
 
+      <div class="list-main">
         <trove-data-table
           [caption]="caption"
           [columns]="columns"
@@ -74,22 +89,6 @@ export function groupOriginLabel(origin: Group['origin']): string {
           }
         </trove-data-table>
       </div>
-
-      <trove-filter-panel
-        #panel
-        class="list-side"
-        [(open)]="panelOpen"
-        [activeCount]="activeCount()"
-        (apply)="apply()"
-        (clearAll)="clear()"
-      >
-        <trove-filter-category i18n-label="@@groups.q" label="Name" [active]="!!q().trim()" [expanded]="!!q().trim()">
-          <trove-text-field i18n-label="@@groups.q" label="Name" name="q" [(value)]="q" />
-        </trove-filter-category>
-        <trove-filter-category i18n-label="@@groups.origin" label="Origin" [active]="!!origin()" [expanded]="!!origin()">
-          <trove-select-field i18n-label="@@groups.origin" label="Origin" name="origin" [options]="originOptions" [(value)]="origin" />
-        </trove-filter-category>
-      </trove-filter-panel>
     </div>
   `,
   styleUrl: '../../shared/access/access.scss',

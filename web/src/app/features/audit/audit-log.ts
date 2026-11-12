@@ -89,7 +89,8 @@ export class AuditLog {
       help: $localize`:@@audit.help.time:Events are listed newest first. Narrow the time range in the filters to reach older ones.`,
     },
     { id: 'actor', label: $localize`:@@audit.col.actor:Actor` },
-    { id: 'action', label: $localize`:@@audit.col.action:Action` },
+    // An action's name and key wrap in 9 rem; a longer key breaks where it must (audit-log.scss), so that the log fits 1440 px.
+    { id: 'action', label: $localize`:@@audit.col.action:Action`, width: '9rem' },
     { id: 'target', label: $localize`:@@audit.col.target:Target` },
     {
       id: 'project',

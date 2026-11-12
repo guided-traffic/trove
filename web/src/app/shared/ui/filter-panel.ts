@@ -76,7 +76,9 @@ export class FilterToggle {
         </button>
       </h3>
       <div class="collapse-region" [class.open]="expanded()" [id]="bodyId">
-        <div class="category-body"><ng-content /></div>
+        <!-- The region's child has no padding of its own: a closed region keeps the height of its child's padding, and the
+             categories were twice as tall as their heading. -->
+        <div><div class="category-body"><ng-content /></div></div>
       </div>
     </section>
   `,
