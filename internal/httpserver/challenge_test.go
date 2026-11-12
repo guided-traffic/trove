@@ -42,8 +42,8 @@ func TestR_AUTH_002_ARefusedReadOnAPackageRouteCarriesTheBasicChallenge(t *testi
 			t.Errorf("challenge = %q", e.Challenge)
 		}
 		forbidden := errs.E(errs.Forbidden, errs.CodeForbidden, "x")
-		if packageChallenge(r, forbidden) != error(forbidden) {
-			t.Error("a 403 was rewritten")
+		if e, _ := errs.As(packageChallenge(r, forbidden)); e == nil || e.Kind != errs.Forbidden || e.Challenge != "" {
+			t.Errorf("a 403 was rewritten: %+v", e)
 		}
 	})
 }
