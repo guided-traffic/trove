@@ -32,10 +32,13 @@ func TestR_NUGET_001_ARepositoryCanBeCreatedAndItsServiceIndexAnswers(t *testing
 		}
 		var list struct {
 			Formats []struct {
-				Name                      string          `json:"name"`
-				Classes                   []string        `json:"classes"`
-				ProtocolBasePath          string          `json:"protocolBasePath"`
-				DefaultUpstreamURL        string          `json:"defaultUpstreamUrl"`
+				Name             string   `json:"name"`
+				Classes          []string `json:"classes"`
+				ProtocolBasePath string   `json:"protocolBasePath"`
+				UpstreamPresets  []struct {
+					URL     string `json:"url"`
+					Default bool   `json:"default"`
+				} `json:"upstreamPresets"`
 				DefaultMetadataTTLSeconds *int            `json:"defaultMetadataTtlSeconds"`
 				DefaultNotFoundTTLSeconds *int            `json:"defaultNotFoundTtlSeconds"`
 				SettingsSchema            json.RawMessage `json:"settingsSchema"`
@@ -50,8 +53,9 @@ func TestR_NUGET_001_ARepositoryCanBeCreatedAndItsServiceIndexAnswers(t *testing
 				continue
 			}
 			found = true
-			if f.DefaultUpstreamURL != "https://api.nuget.org/v3/index.json" || f.ProtocolBasePath != "/api/nuget/{project}/{key}/" {
-				t.Errorf("upstream %q, base path %q", f.DefaultUpstreamURL, f.ProtocolBasePath)
+			if len(f.UpstreamPresets) != 1 || f.UpstreamPresets[0].URL != "https://api.nuget.org/v3/index.json" || !f.UpstreamPresets[0].Default ||
+				f.ProtocolBasePath != "/api/nuget/{project}/{key}/" {
+				t.Errorf("presets %+v, base path %q", f.UpstreamPresets, f.ProtocolBasePath)
 			}
 			if f.DefaultMetadataTTLSeconds == nil || *f.DefaultMetadataTTLSeconds != 300 || f.DefaultNotFoundTTLSeconds == nil || *f.DefaultNotFoundTTLSeconds != 1800 {
 				t.Errorf("periods %v and %v, want 300 and 1800 (Q-NUGET-2)", f.DefaultMetadataTTLSeconds, f.DefaultNotFoundTTLSeconds)

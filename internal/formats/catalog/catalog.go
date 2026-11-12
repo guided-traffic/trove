@@ -14,7 +14,7 @@ package catalog
 
 import (
 	"fmt"
-	"slices"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -91,15 +91,14 @@ type Facts struct {
 	// "/v2/{project}/{key}/" and the three repository-less routes below "/v2/" belong to the core (R-OCI-001, R-OCI-003,
 	// Q-OCI-4). At most one registered format declares it; the catalog refuses a second.
 	RegistryRoot bool
-	// DefaultUpstreamURL is empty for a format without a well-known upstream;
-	// DefaultExtraHosts are the further hosts a remote repository of the format
-	// may fetch from by default (R-REPO-024).
-	DefaultUpstreamURL string
-	DefaultExtraHosts  []string
-	// DefaultCredentialHosts are the entries of DefaultExtraHosts a remote repository of the format proposes with
-	// sendCredentials: true, because the upstream's token realm lives there (R-OCI-021). Each is also in
-	// DefaultExtraHosts; the catalog refuses an entry that is not.
-	DefaultCredentialHosts []string
+	// UpstreamPresets are the well-known public registries of the format's ecosystem, in the format's order (R-REPO-062):
+	// the one-click choices of a remote repository's upstream. Exactly one is the Default, the upstream an omitted url
+	// takes (R-REPO-024); a create whose url is a preset's and that omits extraHosts stores that preset's hosts; and every
+	// preset's URL needs a bound for a mirror (R-REPO-052). Empty for a format without a well-known upstream, which makes
+	// the url of a remote required. Register refuses presets on a format without the remote class, no default or two, an
+	// id or a URL twice, and a host pattern twice within one preset; formats.Register also refuses a URL that is not in
+	// the form R-REPO-024 normalizes to.
+	UpstreamPresets []UpstreamPreset
 	// ProbePath is the resource the upstream test of a remote repository requests
 	// (R-REPO-024), relative to the upstream URL: "-/ping" for npm. Empty: the
 	// upstream URL itself, which is the probe for a format whose URL names the
@@ -161,6 +160,50 @@ type Facts struct {
 	// x-trove-classes. [Entry.ValidateSettings] checks a document against it, and
 	// GET /api/v1/formats serves it to the create form.
 	SettingsSchema []byte
+}
+
+// UpstreamPreset is one well-known public registry of a format's ecosystem (R-REPO-062, Q-REPO-320, Q-REPO-321).
+type UpstreamPreset struct {
+	// ID is stable and names the preset in the API: lower-case letters and digits with single hyphens between them
+	// ("docker-hub", "ghcr").
+	ID string
+	// DisplayName is a product name, shown as it is and not translated ("Docker Hub", "GitHub (ghcr.io)").
+	DisplayName string
+	// URL is the upstream URL, written as R-REPO-024 normalizes it ("https://registry-1.docker.io/").
+	URL string
+	// ExtraHosts are the further hosts a repository of this upstream needs (R-REPO-024 extraHosts), with whether each
+	// receives the repository's credential: a host of the registry's token service does (R-OCI-021, R-REPO-033).
+	ExtraHosts []PresetHost
+	// Default marks the format's default upstream; exactly one preset of a format has it.
+	Default bool
+}
+
+// PresetHost is one entry of a preset's ExtraHosts: a host pattern of R-REPO-024 and whether the repository's credential
+// is sent to the hosts it matches.
+type PresetHost struct {
+	Pattern         string
+	SendCredentials bool
+}
+
+// DefaultPreset returns the format's default upstream preset; ok is false for a format without presets.
+func (f Facts) DefaultPreset() (UpstreamPreset, bool) {
+	for _, p := range f.UpstreamPresets {
+		if p.Default {
+			return p, true
+		}
+	}
+	return UpstreamPreset{}, false
+}
+
+// PresetFor returns the preset whose URL is url, which the caller passes normalized as R-REPO-024 stores it; ok is false
+// when no preset of the format has that URL.
+func (f Facts) PresetFor(url string) (UpstreamPreset, bool) {
+	for _, p := range f.UpstreamPresets {
+		if p.URL == url {
+			return p, true
+		}
+	}
+	return UpstreamPreset{}, false
 }
 
 // The values of OwnershipDefault (R-AUTHZ-018 packageOwnership).
@@ -290,9 +333,10 @@ func Or(r *Registry) *Registry {
 // reserved ID, a duplicate, no class or a class twice, no layout, a pattern
 // subject that is neither name nor path, package names without a [Names] (or a
 // [Names] without package names), exposure of versions without [Versioning],
-// exposure dimensions of a format that is not exposable, a settings schema that
-// does not compile or is no object schema that refuses unknown members, or a
-// registration after [Registry.Freeze].
+// exposure dimensions of a format that is not exposable, upstream presets that
+// break the rules of [Facts.UpstreamPresets], a settings schema that does not
+// compile or is no object schema that refuses unknown members, or a registration
+// after [Registry.Freeze].
 func (r *Registry) Register(e Entry) {
 	if err := check(e); err != nil {
 		panic(fmt.Sprintf("catalog: %v", err))
@@ -349,10 +393,8 @@ func check(e Entry) error {
 	case !e.Exposure.Exposable && (e.Exposure.Packages || e.Exposure.Versions || e.Exposure.Tags):
 		return fmt.Errorf("%q narrows exposure dimensions and is not exposable", e.ID)
 	}
-	for _, h := range e.DefaultCredentialHosts {
-		if !slices.Contains(e.DefaultExtraHosts, h) {
-			return fmt.Errorf("%q proposes credentials for %q, which is not among its default extra hosts", e.ID, h)
-		}
+	if err := checkPresets(e.Facts); err != nil {
+		return err
 	}
 	seen := map[Class]bool{}
 	for _, c := range e.Classes {
@@ -360,6 +402,48 @@ func check(e Entry) error {
 			return fmt.Errorf("%q lists class %q invalidly", e.ID, c)
 		}
 		seen[c] = true
+	}
+	return nil
+}
+
+// presetID is the shape of an UpstreamPreset's ID.
+var presetID = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+
+// checkPresets applies the registration rules of R-REPO-062 to a format's upstream presets.
+func checkPresets(f Facts) error {
+	if len(f.UpstreamPresets) == 0 {
+		return nil
+	}
+	if !f.Supports(Remote) {
+		return fmt.Errorf("%q has upstream presets and no remote class", f.ID)
+	}
+	defaults := 0
+	ids, urls := map[string]bool{}, map[string]bool{}
+	for _, p := range f.UpstreamPresets {
+		switch {
+		case !presetID.MatchString(p.ID):
+			return fmt.Errorf("%q has an upstream preset with the id %q", f.ID, p.ID)
+		case p.DisplayName == "" || p.URL == "":
+			return fmt.Errorf("%q: the upstream preset %q needs a display name and a URL", f.ID, p.ID)
+		case ids[p.ID]:
+			return fmt.Errorf("%q has the upstream preset %q twice", f.ID, p.ID)
+		case urls[p.URL]:
+			return fmt.Errorf("%q has two upstream presets with the URL %q", f.ID, p.URL)
+		}
+		ids[p.ID], urls[p.URL] = true, true
+		if p.Default {
+			defaults++
+		}
+		patterns := map[string]bool{}
+		for _, h := range p.ExtraHosts {
+			if h.Pattern == "" || patterns[h.Pattern] {
+				return fmt.Errorf("%q: the upstream preset %q names the host pattern %q twice or empty", f.ID, p.ID, h.Pattern)
+			}
+			patterns[h.Pattern] = true
+		}
+	}
+	if defaults != 1 {
+		return fmt.Errorf("%q has %d default upstream presets, not exactly one", f.ID, defaults)
 	}
 	return nil
 }

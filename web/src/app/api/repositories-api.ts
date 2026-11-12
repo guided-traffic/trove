@@ -14,6 +14,17 @@ export type MirrorStatus = Schema<'MirrorStatus'>;
 export type MirrorState = MirrorStatus['state'];
 export type UpstreamTestResult = Schema<'UpstreamTestResult'>;
 export type RepositoryResolution = Schema<'RepositoryResolution'>;
+/** A well-known public registry of a format, one of its `upstreamPresets` (R-REPO-062). */
+export type UpstreamPreset = Schema<'UpstreamPreset'>;
+
+/**
+ * The answer of `GET /api/v1/projects/{project}/repository-defaults` (R-REPO-063): a key that is free in the project, or null
+ * when the ten suggestions are taken, and the document a create of only key, class and format would store, without the key.
+ */
+export interface RepositoryDefaults {
+  readonly suggestedKey: string | null;
+  readonly repository: Omit<Repository, 'key'>;
+}
 
 /**
  * The body of `POST /api/v1/projects/{projectKey}/upstream-tests`: the format and an unsaved `remote` section. Secret values in
@@ -121,8 +132,13 @@ export abstract class RepositoriesApi {
   abstract runMirror(ref: string, full: boolean, idempotencyKey: string): Promise<JobReference>;
   /** `GET …/repositories/{key}/resolution?path=`: how a virtual repository resolves a client path, member by member (R-REPO-019). */
   abstract resolution(ref: string, path: string): Promise<RepositoryResolution>;
-  /** `POST /api/v1/projects/{project}/upstream-tests`: probes an unsaved `remote` section (R-REPO-024). */
+  /** `POST /api/v1/projects/{project}/upstream-tests`: probes an unsaved `remote` section (R-REPO-024, R-REPO-064). */
   abstract testUpstream(project: string, body: UpstreamTestBody): Promise<UpstreamTestResult>;
+  /**
+   * `GET /api/v1/projects/{project}/repository-defaults?format=&class=`: the values a creation form shows in its fields and a
+   * free key (R-REPO-063).
+   */
+  abstract defaults(project: string, format: string, cls: RepositoryClass): Promise<RepositoryDefaults>;
 }
 
 @Injectable()
@@ -215,6 +231,15 @@ export class HttpRepositoriesApi extends RepositoriesApi {
       await this.client.post<UpstreamTestResult>(
         `/api/v1/projects/${encodeURIComponent(project)}/upstream-tests`,
         body,
+      )
+    ).body;
+  }
+
+  async defaults(project: string, format: string, cls: RepositoryClass): Promise<RepositoryDefaults> {
+    return (
+      await this.client.getJson<RepositoryDefaults>(
+        `/api/v1/projects/${encodeURIComponent(project)}/repository-defaults`,
+        { params: { format, class: cls } },
       )
     ).body;
   }

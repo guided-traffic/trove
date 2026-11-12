@@ -2417,7 +2417,7 @@ The operations of GitLab CI federation ([docs/developer/ci-oidc.md](docs/develop
 
 | Method and path | Operation | Permission |
 |---|---|---|
-| `GET /api/v1/formats` | `listFormats` | public; also carries `baseUrl`, the configured base URL of the endpoint (`null` when none is configured) |
+| `GET /api/v1/formats` | `listFormats` | public; also carries `baseUrl`, the configured base URL of the endpoint (`null` when none is configured); each format's `upstreamPresets`, the well-known registries of a remote |
 | `GET /api/v1/repositories` | `listRepositories` | public; the repositories of every project the caller may see, each with its `project`; filter `project` |
 | `GET /api/v1/projects/{projectKey}/repositories` | `listProjectRepositories` | public; the repositories of the project the caller may see |
 | `POST /api/v1/projects/{projectKey}/repositories` | `createProjectRepository` | `repositories:write-config` or Owner of the project |
@@ -2433,6 +2433,7 @@ The operations of GitLab CI federation ([docs/developer/ci-oidc.md](docs/develop
 | `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/cache/entries` | `listCacheEntries` | authenticated; `repositories:read-config`, or `manage` on the repository, decided in the handler |
 | `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/upstream-test` | `testRepositoryUpstream` | `repositories:write-config` or Owner of the project; the saved settings of a remote repository |
 | `POST /api/v1/projects/{projectKey}/upstream-tests` | `testUpstream` | `repositories:write-config` or Owner of the project; settings that are not saved; an Owner without `repositories:write-config` gives secrets as values (`secret_value_required`) |
+| `GET /api/v1/projects/{projectKey}/repository-defaults` | `getRepositoryDefaults` | `repositories:write-config` or Owner of the project; `format` and `class` in the query; what a create of only key, class and format would store, and a free key |
 | `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/claims` | `getRepositoryClaims` | action `read` on `path.projectKey`/`path.repoKey` |
 | `PUT /api/v1/projects/{projectKey}/repositories/{repoKey}/claims` | `putRepositoryClaims` | action `manage` on `path.projectKey`/`path.repoKey` |
 | `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/resolution` | `getRepositoryResolution` | action `read` on `path.projectKey`/`path.repoKey` |

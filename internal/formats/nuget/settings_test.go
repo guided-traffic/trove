@@ -2,6 +2,7 @@ package nuget
 
 import (
 	"encoding/json"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -91,8 +92,12 @@ func TestR_NUGET_001_TheDescriptorCarriesTheCatalogFacts(t *testing.T) {
 	if !slices.Contains(d.Classes, formats.Local) || !slices.Contains(d.Classes, formats.Remote) || !slices.Contains(d.Classes, formats.Virtual) {
 		t.Errorf("classes = %v, want local, remote and virtual (Q-NUGET-28, Q-NUGET-56)", d.Classes)
 	}
-	if d.DefaultUpstreamURL != "https://api.nuget.org/v3/index.json" || len(d.DefaultExtraHosts) != 1 || d.DefaultExtraHosts[0] != "*.nuget.org" || d.ProbePath != "" {
-		t.Errorf("upstream = %q %v probe %q", d.DefaultUpstreamURL, d.DefaultExtraHosts, d.ProbePath)
+	want := []catalog.UpstreamPreset{{
+		ID: "nuget-org", DisplayName: "nuget.org", URL: "https://api.nuget.org/v3/index.json", Default: true,
+		ExtraHosts: []catalog.PresetHost{{Pattern: "*.nuget.org"}},
+	}}
+	if !reflect.DeepEqual(d.UpstreamPresets, want) || d.ProbePath != "" {
+		t.Errorf("R-REPO-062 presets = %+v probe %q", d.UpstreamPresets, d.ProbePath)
 	}
 	if d.DefaultMetadataTTLSeconds == nil || *d.DefaultMetadataTTLSeconds != 300 || d.DefaultNotFoundTTLSeconds == nil || *d.DefaultNotFoundTTLSeconds != 1800 {
 		t.Errorf("periods = %v %v, want 300 and 1800 (Q-NUGET-2)", d.DefaultMetadataTTLSeconds, d.DefaultNotFoundTTLSeconds)

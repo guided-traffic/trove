@@ -1,4 +1,4 @@
-contract version 3
+contract version 4
 formats.Action: alias authz.Action
 formats.Authenticator: method ReadToken(context.Context, RemoteContext, int, []byte) (string, time.Duration, error)
 formats.Authenticator: method TokenRequest(context.Context, RemoteContext, *http.Request, Path, int, http.Header) (*http.Request, string, bool, error)
@@ -582,7 +582,7 @@ formats.ActionRead: value = authz.Read
 formats.Admin: value = (repeated, place 5 of its group)
 formats.Computed: value = (repeated, place 2 of its group)
 formats.Content: value PathKind = iota + 1 (place 0 of its group)
-formats.ContractVersion: value = 3
+formats.ContractVersion: value = 4
 formats.Current: value Currency = iota + 1 (place 0 of its group)
 formats.Delete: value = (repeated, place 4 of its group)
 formats.Download: value RouteKind = iota + 1 (place 0 of its group)
@@ -667,11 +667,8 @@ catalog.Facts: field Caps bool
 catalog.Facts: field ChecksumAlwaysVerified bool
 catalog.Facts: field ChecksumRequireUnsupported bool
 catalog.Facts: field Classes []Class
-catalog.Facts: field DefaultCredentialHosts []string
-catalog.Facts: field DefaultExtraHosts []string
 catalog.Facts: field DefaultMetadataTTLSeconds *int
 catalog.Facts: field DefaultNotFoundTTLSeconds *int
-catalog.Facts: field DefaultUpstreamURL string
 catalog.Facts: field DisplayName string
 catalog.Facts: field ID ID
 catalog.Facts: field Layout string
@@ -686,11 +683,16 @@ catalog.Facts: field ProbePath string
 catalog.Facts: field ProtocolBasePath string
 catalog.Facts: field RegistryRoot bool
 catalog.Facts: field SettingsSchema []byte
+catalog.Facts: field UpstreamPresets []UpstreamPreset
 catalog.Facts: field Wiki bool
+catalog.Facts: method DefaultPreset() (UpstreamPreset, bool)
+catalog.Facts: method PresetFor(string) (UpstreamPreset, bool)
 catalog.Facts: method Supports(Class) bool
 catalog.ID: type string
 catalog.Names: method Normalize(string) (string, bool)
 catalog.PatternSubject: type string
+catalog.PresetHost: field Pattern string
+catalog.PresetHost: field SendCredentials bool
 catalog.Registry: method Freeze()
 catalog.Registry: method List() []Entry
 catalog.Registry: method Lookup(string) (Entry, bool)
@@ -700,6 +702,11 @@ catalog.RequestKind: type string
 catalog.SettingViolation: field Code string
 catalog.SettingViolation: field Detail string
 catalog.SettingViolation: field Pointer string
+catalog.UpstreamPreset: field Default bool
+catalog.UpstreamPreset: field DisplayName string
+catalog.UpstreamPreset: field ExtraHosts []PresetHost
+catalog.UpstreamPreset: field ID string
+catalog.UpstreamPreset: field URL string
 catalog.Versioning: method InRange(string, string) bool
 catalog.Versioning: method Prerelease(string) (bool, bool)
 catalog.Versioning: method ValidateRange(string) error

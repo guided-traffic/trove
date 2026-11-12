@@ -65,8 +65,8 @@ import {
   formOf,
   maskSecrets,
   settingsOf,
-  upstreamDefaultsOf,
 } from './repository-model';
+import { upstreamDefaultsOf } from './upstream-model';
 import { classLabel } from './repository-wizard';
 import { SettingSchema, errorTarget, settingNodes } from './settings-schema';
 import { UpstreamSettings, upstreamTarget } from './upstream-settings';

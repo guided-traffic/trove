@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"path"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -184,12 +183,12 @@ func (r *remoteResolver) resolve(in remoteInput) RemoteSettings {
 	return s
 }
 
-// url resolves url and extraHosts. An omitted url takes the format's well-known
-// upstream; an omitted extraHosts takes the format's proposal only when the
-// upstream is that well-known one (Q-REPO-91).
+// url resolves url and extraHosts. An omitted url takes the format's default
+// preset (R-REPO-062); an omitted extraHosts takes that preset's hosts only when
+// the upstream is the preset's (Q-REPO-91).
 func (r *remoteResolver) url(s *RemoteSettings, in remoteInput) {
-	raw := stringOr(in.URL, r.info.DefaultUpstreamURL)
-	known, _ := NormalizeUpstreamURL(r.info.DefaultUpstreamURL)
+	preset, _ := r.info.DefaultPreset()
+	raw := stringOr(in.URL, preset.URL)
 	if raw == "" {
 		r.v.add("/remote/url", codeInvalidUpstreamURL, "is required: the "+string(r.info.ID)+" format has no default upstream")
 	} else if norm, why := NormalizeUpstreamURL(raw); why != "" {
@@ -203,11 +202,11 @@ func (r *remoteResolver) url(s *RemoteSettings, in remoteInput) {
 	hosts := in.ExtraHosts
 	if hosts == nil {
 		hosts = []ExtraHost{}
-		if s.URL != "" && s.URL == known {
-			for _, h := range r.info.DefaultExtraHosts {
-				// The hosts the format names as holding the upstream's token service receive the repository's credential
-				// (R-OCI-021, R-REPO-033); the catalog guarantees each is also among the default extra hosts.
-				hosts = append(hosts, ExtraHost{Pattern: h, SendCredentials: slices.Contains(r.info.DefaultCredentialHosts, h)})
+		if s.URL != "" && s.URL == preset.URL {
+			for _, h := range preset.ExtraHosts {
+				// A host the preset names as holding the upstream's token service receives the repository's credential
+				// (R-OCI-021, R-REPO-033).
+				hosts = append(hosts, ExtraHost{Pattern: h.Pattern, SendCredentials: h.SendCredentials})
 			}
 		}
 	}

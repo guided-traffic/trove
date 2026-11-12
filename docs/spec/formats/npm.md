@@ -1307,8 +1307,8 @@ Acceptance criteria:
 Priority: **P1** · Covers: PKG-NPM-040, RMT-006
 
 Remote settings are [repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-024; the
-format catalog entry for npm (MVP, like R-REPO-003) proposes `https://registry.npmjs.org/` as
-default upstream, 7,200 s metadata period and 1,800 s negative period, priority members and pins
+format catalog entry for npm (MVP, like R-REPO-003) has one upstream preset ([R-REPO-062](../repositories-and-proxy.md#r-repo-062--upstream-presets-of-a-format)), npm public registry
+(`npmjs`, `https://registry.npmjs.org/`, the default, no extra hosts), 7,200 s metadata period and 1,800 s negative period, priority members and pins
 and claims supported (`pinsAndClaims`), and registers the package document `<name>` (R-NPM-003;
 `n` in R-REPO-003) as the package-document path that R-REPO-029 and R-REPO-048 use. Upstream
 credentials and extra hosts are the generic `remote.*` members of R-REPO-024; npm defines no

@@ -104,7 +104,7 @@ Format registration (R-REPO-003):
 | ID, display name, layout | `deb`, `Debian (APT)`, `deb` |
 | Classes | `local`, `remote`, `virtual` |
 | Protocol base path | `/api/deb/{project}/{key}/` |
-| Default upstream | `https://deb.debian.org/debian/`, no extra hosts; probe path empty (the upstream test reports reachability of the URL) |
+| Upstream presets ([R-REPO-062](../repositories-and-proxy.md#r-repo-062--upstream-presets-of-a-format)) | Debian (`debian`, `https://deb.debian.org/debian/`, the default), Debian security updates (`debian-security`, `https://deb.debian.org/debian-security/`), Ubuntu (`ubuntu`, `https://archive.ubuntu.com/ubuntu/`), Ubuntu security updates (`ubuntu-security`, `https://security.ubuntu.com/ubuntu/`) and Ubuntu ports (`ubuntu-ports`, `https://ports.ubuntu.com/ubuntu-ports/`, where arm64 and the other ports live); no extra hosts and no archive keys (Q-REPO-326); probe path empty (the upstream test reports reachability of the URL) |
 | Cache periods of a remote | metadata 600 s, not-found 300 s (Q-DEB-29) |
 | Pattern subject | `name`: the binary package name |
 | Package names | yes; normalization is the identity after the grammar of R-DEB-002 (upper case is refused, never folded) |
@@ -137,7 +137,7 @@ Signed-By: /etc/apt/keyrings/trove-web-apt.asc
 Acceptance criteria:
 
 - `curl -s <base>/api/v1/formats | jq '.formats[] | select(.name=="deb")'` lists the classes `local`, `remote`, `virtual`, the
-  protocol base path `/api/deb/{project}/{key}/` and the default upstream URL `https://deb.debian.org/debian/`.
+  protocol base path `/api/deb/{project}/{key}/` and the five upstream presets above, `debian` the default.
 - With the source above, `apt-get update` and `apt-get install trove-hello` succeed in a Debian 13 container without
   `trusted=yes` (e2e, R-DEB-035).
 - `curl -X PUT --data-binary @hello.deb <base>/files/web/deb-local/pool/hello.deb` answers 409 and stores nothing.

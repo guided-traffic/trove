@@ -51,7 +51,7 @@ Priority: **MVP** · Covers: PKG-GENERIC-001
 | `classes` | `["local"]`; `["local","remote","virtual"]` once R-GENERIC-009 and R-GENERIC-010 ship | Classes the implementation accepts |
 | `layout` | `generic` | The flat layout (R-GENERIC-003) |
 | `protocolBasePath` | `/files/{project}/{key}/` | The format has no protocol of its own; the raw file URL is the protocol |
-| `defaultUpstreamUrl` | `null` | A generic remote repository names its upstream explicitly (R-GENERIC-009) |
+| `upstreamPresets` | `[]` | A generic remote repository names its upstream explicitly (R-GENERIC-009, R-REPO-062) |
 | `defaultMetadataTtlSeconds`, `defaultNotFoundTtlSeconds` | `null`, `1800` | The format has no metadata documents, so no metadata period; only the not-found period (used by the P1 remote class) has a default |
 | `patternSubject` | `path` | Include and exclude patterns are path patterns (R-GENERIC-007) |
 | `priorityMembers`, `pinsAndClaims`, `caps` | `false` | No package names, so nothing for these mechanisms to act on |

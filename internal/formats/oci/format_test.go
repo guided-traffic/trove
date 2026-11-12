@@ -23,6 +23,26 @@ import (
 // The contract-level tests of the skeleton. They carry no requirement ID: the requirements of the OCI page are counted as
 // implemented when the work package that builds their behaviour names them in its tests.
 
+// TestR_REPO_062_TheOCIPresetsAreTheFourRegistriesTheOwnerNamed: Docker Hub (the default, its token service auth.docker.io
+// receiving the credential), Quay, GitHub (ghcr.io) and GitLab (its token service gitlab.com receiving it), in that order.
+func TestR_REPO_062_TheOCIPresetsAreTheFourRegistriesTheOwnerNamed(t *testing.T) {
+	want := []catalog.UpstreamPreset{
+		{
+			ID: "docker-hub", DisplayName: "Docker Hub", URL: "https://registry-1.docker.io/", Default: true,
+			ExtraHosts: []catalog.PresetHost{{Pattern: "auth.docker.io", SendCredentials: true}},
+		},
+		{ID: "quay", DisplayName: "Quay", URL: "https://quay.io/"},
+		{ID: "ghcr", DisplayName: "GitHub (ghcr.io)", URL: "https://ghcr.io/"},
+		{
+			ID: "gitlab", DisplayName: "GitLab", URL: "https://registry.gitlab.com/",
+			ExtraHosts: []catalog.PresetHost{{Pattern: "gitlab.com", SendCredentials: true}},
+		},
+	}
+	if got := New().Descriptor().UpstreamPresets; !reflect.DeepEqual(got, want) {
+		t.Fatalf("presets = %+v", got)
+	}
+}
+
 func TestDescriptorDeclaresTheRegistryRoot(t *testing.T) {
 	d := New().Descriptor()
 	if d.ID != "oci" || !d.RegistryRoot || d.ProtocolBasePath != "/v2/{project}/{key}/" {
@@ -31,20 +51,8 @@ func TestDescriptorDeclaresTheRegistryRoot(t *testing.T) {
 	if !d.Supports(formats.Local) || !d.Supports(formats.Remote) || !d.Supports(formats.Virtual) {
 		t.Errorf("classes = %v; the format registers local, remote and virtual", d.Classes)
 	}
-	if d.DefaultUpstreamURL != "https://registry-1.docker.io/" || !reflect.DeepEqual(d.DefaultCredentialHosts, []string{"auth.docker.io"}) {
-		t.Errorf("upstream %q, credential hosts %v", d.DefaultUpstreamURL, d.DefaultCredentialHosts)
-	}
-	if !reflect.DeepEqual(d.DefaultExtraHosts, []string{"auth.docker.io"}) || d.ProbePath != "v2/" || !d.ProbeChallengeReachable {
-		t.Errorf("extra hosts %v, probe %q reachable on challenge %v", d.DefaultExtraHosts, d.ProbePath, d.ProbeChallengeReachable)
-	}
-	for _, h := range d.DefaultCredentialHosts {
-		found := false
-		for _, e := range d.DefaultExtraHosts {
-			found = found || e == h
-		}
-		if !found {
-			t.Errorf("credential host %q is not an extra host", h)
-		}
+	if d.ProbePath != "v2/" || !d.ProbeChallengeReachable {
+		t.Errorf("probe %q reachable on challenge %v", d.ProbePath, d.ProbeChallengeReachable)
 	}
 	if !d.VerifyAnnouncedDigests || d.MaxDocumentBytes != 4<<20 || d.DataPort != reflect.TypeFor[Store]() {
 		t.Errorf("verify %v, document bytes %d, port %v", d.VerifyAnnouncedDigests, d.MaxDocumentBytes, d.DataPort)

@@ -3890,8 +3890,8 @@ endpoint with exposure rules changes, and what each answer of the protocol means
 (R-ARCH-008 `Guide()`, kit check 8), rendered by the server (R-API-053); the UI adds no format knowledge.
 
 - **Where.** A side bar entry **Guides** in the area Artifacts, route `/guides`
-  (`?format=&client=&repository=&class=`); a tab **How to use** on the repository screen (and the same guide below the
-  facts of the consumer view) for the repository's class and the client the reader picks; links between the guide and
+  (`?format=&client=&repository=&class=`); the closed section **How to use** of the repository's settings page (R-UI-087, and
+  the same guide below the facts of the consumer view) for the repository's class and the client the reader picks; links between the guide and
   the client setup page of R-UI-016 in both directions, carrying the choice (Q-UI-84).
 - **Choice.** The guides area offers the formats of `GET /api/v1/formats` that list `clients`, in its order and the
   first preselected, their clients, the readable repositories of the format (virtual first), and, without a
@@ -3911,7 +3911,7 @@ endpoint with exposure rules changes, and what each answer of the protocol means
 Acceptance criteria:
 
 - Playwright (`09-guides.spec.ts`): the side bar opens the guides with generic and curl preselected, and offers npm
-  with its four clients; the How to use tab of
+  with its four clients; the How to use section of
   a virtual npm repository shows the virtual repository's sections and names its deployment target; its configure
   snippet equals, character for character, the configure snippet the client setup page shows for the same repository
   and client with "Reference an environment variable"; the setup page links back to the same guide; axe finds no
@@ -3996,36 +3996,33 @@ Acceptance criteria:
 ### R-UI-021 · Repository creation wizard and edit form
 Priority: **MVP** · Covers: UI-031
 
-- Steps: format, class, basic settings, class-specific settings, review. The format comes first
-  because some features are technically impossible for some formats (Q-UI-112). The basic settings hold the artifacts'
-  visibility level (R-UI-055). The project is chosen in the basic
-  settings, from the projects in which the caller may create repositories (every project for
-  `repositories:write-config`, the projects it owns otherwise); inside a project (`/projects/{project}/repositories/new`) the
-  project is given, shown as text and not chosen. It is read-only on the edit form, where a move to another project is its
-  own action (R-UI-020). After the create the wizard opens the new repository's content page (R-UI-052); its settings are `/projects/{project}/repositories/{key}/settings`.
-- The format step is a grid of tiles from `GET /api/v1/formats`, each with the format's icon (its owner's logo where
-  the owner's terms allow it, else the neutral package glyph, Q-UI-225) and its
-  name, under a search field ("Search by package type") that filters the tiles by name, a title and
-  a one-line hint. Only the formats the installation has appear. The grid is a single-choice listbox
-  of `@angular/aria` (R-UI-001, Q-UI-1): one tab stop, arrow keys, Home and End, Enter or Space to
-  choose, one click to choose, a visible focus ring (Q-UI-114, Q-UI-115). Next is disabled until a
-  format is chosen.
-- The class step offers only the classes in the chosen format's `classes` in
-  `GET /api/v1/formats`. Those `classes` are generated from each format's `Descriptor().Classes`
+- A page of format tiles, then one form for the chosen format (R-UI-080, R-UI-081); there are no steps. The format comes first
+  because some features are technically impossible for some formats (Q-UI-112). The form holds the artifacts' visibility level
+  (R-UI-055). In the admin area the project is chosen at the top of the form, from the projects in which the caller may create
+  repositories (every project for `repositories:write-config`, the projects it owns otherwise); inside a project
+  (`/projects/{project}/repositories/new/{format}`) the project is given, shown as text and not chosen. It is read-only on the
+  settings page, where a move to another project is its own action (R-UI-087). After the create the form opens the new
+  repository's content page (R-UI-052); its settings are `/projects/{project}/repositories/{key}/settings` (R-UI-087).
+- The format chooser (R-UI-080) is a page of tiles from `GET /api/v1/formats`, each with the format's icon (its owner's logo where
+  the owner's terms allow it, else the neutral package glyph, Q-UI-225) and its name, under a search field ("Search by package
+  type") that filters the tiles by name. Only the formats the installation has appear. A tile is a link to the form of its format
+  ([Q-UI-340](#q-ui-340--a-new-repository-is-a-format-chooser-and-one-form-as-the-references-new-project)); Enter in the search
+  field opens the one format that is left (Q-UI-115).
+- The form's **Class** (R-UI-080) is a radio group of the three classes; the classes in the chosen format's `classes` in
+  `GET /api/v1/formats` can be chosen. Those `classes` are generated from each format's `Descriptor().Classes`
   (R-ARCH-008, R-ARCH-010 in [architecture.md](architecture.md)); the UI holds no list of classes
   per format of its own (FMT-001). A class the format lacks is shown disabled with one sentence of
-  reason, and cannot be chosen (Q-UI-113). Going back to the format step and choosing another format
-  keeps the class when the new format has it, clears it when not, and starts the format settings and
-  the mirror section afresh (Q-UI-116). A create that names a class the format lacks still fails on
-  the server with 422.
+  reason, and cannot be chosen (Q-UI-113). Another class keeps the identity fields and starts its own parts from that class's
+  defaults; **Change format** returns to the chooser and starts afresh ([Q-UI-341](#q-ui-341--the-class-is-a-radio-group-of-the-form-preset-to-local)).
+  A create that names a class the format lacks still fails on the server with 422.
 - Settings forms render from the format's settings JSON Schema (R-ARCH-004, R-ARCH-008) into the
   format member of the repository document that is named after the format (`npm`, `nuget`;
   [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-004), never into a generic
   `formatSettings` member. A format adds a panel only for interactions a schema cannot express.
-  The form shows the members whose `x-trove-classes` contain the class, in the class-specific step
-  of the wizard and on a tab of the edit form, and writes a setting only where it differs from the
-  schema's default (Q-UI-78 to Q-UI-81).
-- NuGet local repositories: the settings view, in the wizard's review and on the edit form, shows
+  The form shows the members whose `x-trove-classes` contain the class, in **Advanced settings** of the
+  creation form (R-UI-083) and in a closed section of the settings page (R-UI-087), and writes a setting only where it differs
+  from the schema's default (Q-UI-78 to Q-UI-81).
+- NuGet local repositories: the NuGet settings of the settings page show
   the effective `nuget.deleteMode`, `unlist` (the default) or `delete`, with one sentence on what
   `dotnet nuget delete` and `nuget delete` do in this repository: unlist the version, or delete it
   for good with a tombstone ([formats/nuget.md](formats/nuget.md) R-NUGET-007). Deletes through
@@ -4040,49 +4037,50 @@ Priority: **MVP** · Covers: UI-031
   `ansible.tombstone.cleared`) are in `api/openapi.yaml` and answer 501 `ansible_not_implemented` until the local class builds them; the
   `ansible` member of the repository document holds `authUrl` and `clientId` for remote repositories.
 - Ansible Galaxy documentation ([formats/ansible.md](formats/ansible.md) R-ANS-033 to R-ANS-037): the three operations above, and `listAnsibleImportTasks` gains the optional query parameters `package` and `version` (the Import log tab of a version, Q-UI-240).
-- Debian (APT) repositories ([formats/debian.md](formats/debian.md) R-DEB-030, Q-DEB-100 to Q-DEB-102): a local or virtual repository
-  has the tabs **Signing keys** (the keys in every state with fingerprint in groups of four, state in words, type, origin, times and
+- Debian (APT) repositories ([formats/debian.md](formats/debian.md) R-DEB-030, Q-DEB-100 to Q-DEB-102): the settings page of a local
+  or virtual repository has the closed sections **Signing keys** (the keys in every state with fingerprint in groups of four, state in words, type, origin, times and
   the public certificate; **Generate a next key**, **Import a key** with a write-only secret key and passphrase, **Promote**,
-  **Remove**, **Reinstate** and **Confirm retirement**; a private key is never shown) and **Index** (the state of each suite and
-  **Rebuild all indexes**). The calls act at once and are not part of "Save changes"; the destructive ones ask first.
-- Key: live check of the INV-5 pattern and of availability within the chosen project (a `GET` of
-  `/api/v1/projects/{projectKey}/repositories/{repoKey}` answering 404); the same key may exist in another project.
-- Remote: an **Upstream** section, in the class-specific step of the wizard above the format's settings and on a tab
-  **Upstream** of the edit form (Q-UI-122): the upstream URL with the format's preset (`defaultUpstreamUrl`:
-  `https://registry.npmjs.org/`, `https://api.nuget.org/v3/index.json`; the wizard starts with it, an empty field means it, and a
-  format without one needs the URL), the authentication (none, username and password, bearer token) with a write-only password
-  (Q-UI-123), the metadata and negative cache periods with the format's defaults (`defaultMetadataTtlSeconds`,
-  `defaultNotFoundTtlSeconds`), the offline switch (INV-11), and "Test connection" (`POST /api/v1/projects/{projectKey}/upstream-tests`) with the
-  result inline, in words (Q-UI-124). A member is written only where it differs from its default (Q-UI-80); the rest of the
-  `remote` section (extra hosts, limits, integrity, `sourceNetwork`, the other cache members) is set through the API.
-- Virtual: member editor (R-UI-022) and default deployment target.
+  **Remove**, **Reinstate** and **Confirm retirement**; a private key is never shown) and **Indexes** (the state of each suite and
+  **Rebuild all indexes**, R-UI-087). The calls act at once and are not part of "Save changes"; the destructive ones ask first.
+- Key: starts with the suggested key (R-REPO-063); check of the INV-5 pattern and of availability within the chosen project (a `GET`
+  of `/api/v1/projects/{projectKey}/repositories/{repoKey}` answering 404), shown as R-UI-086 says; the same key may exist in
+  another project.
+- Remote: the group **Upstream** of the form and the open section **Upstream** of the settings page (R-UI-082, Q-UI-122): a button
+  per well-known registry of the format (`upstreamPresets`, R-REPO-062), the upstream URL starting with the default preset's (a
+  format without presets needs the URL), the authentication (none, username and password, bearer token) with a write-only password
+  (Q-UI-123), **Test connection** (`POST /api/v1/projects/{projectKey}/upstream-tests`) with the result inline, in words (Q-UI-124),
+  and in **Upstream details** the further hosts (`remote.extraHosts`), the metadata and negative cache periods with the format's
+  defaults as values (`defaultMetadataTtlSeconds`, `defaultNotFoundTtlSeconds`) and, on the settings page, the offline switch
+  (INV-11). A member is written only where it differs from its default (Q-UI-80); the rest of the `remote` section (limits,
+  integrity, `sourceNetwork`, the other cache members) is set through the API.
+- Virtual: the group **Members** of the form with the member picker and the deployment target (R-UI-081), and the section
+  **Members** of the settings page (R-UI-022).
 - From phase 6b, on remote repositories of a format whose upstream can be discovered (`mirror: true` in
   `GET /api/v1/formats`, from the format's registration; the UI holds no list of such formats): a **Mirror**
   section with the mode (`pullThrough` or `mirror`) and the members of `remote.mirror`
   ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-050), the warning or refusal `mirror_unbounded` at the
   mode with the sentence of R-REPO-052, and for an Owner without `repositories:write-config` the section read-only except
-  **Pause** and **Turn off** (Q-REPO-142). The section is in the wizard's class-specific step and on the edit form's tab **Mirror**
-  (Q-UI-117); the members show in mode `mirror` and are written only where they differ from their defaults, and a create in
+  **Pause** and **Turn off** (Q-REPO-142). The section is the group **Mirror** in **Advanced settings** of the creation form
+  (R-UI-083) and the closed section **Mirror** of the settings page (R-UI-087, Q-UI-117); the members show in mode `mirror` and are written only where they differ from their defaults, and a create in
   mode `pullThrough` writes no `remote` member; the early notice at the mode applies the server's bound rule to the upstream
-  URL entered and the server decides (Q-UI-118, Q-UI-122). On the edit form of a remote stored in mode `mirror`, the **Mirror**
-  tab shows, above the settings (Q-UI-119), the status of `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/mirror`: the state in words (off,
+  URL entered and the server decides (Q-UI-118, Q-UI-122). On the settings page of a remote stored in mode `mirror`, the **Mirror**
+  section shows, above the settings (Q-UI-119), the status of `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/mirror`: the state in words (off,
   paused, scheduled, running, waiting, bound reached, failing; green only for a scheduled mirror after a complete pass), the pass
   in progress with its counts and its job, the last complete pass, the next pass, the last error, the rate-limit waits and the
-  bound. While a pass is in progress (`running`, `waiting`) the status is read again every 5 s, and no longer once the tab is
-  left. A caller who may change the repository (the permission of Save, Q-UI-120) has **Pause** and **Resume**, which `PATCH`
+  bound. While a pass is in progress (`running`, `waiting`) the status is read again every 5 s, and no longer once the section
+  is closed or the page left. A caller who may change the repository (the permission of Save, Q-UI-120) has **Pause** and **Resume**, which `PATCH`
   `remote.mirror.paused` with `If-Match` and nothing else of the form (a 412 opens the conflict dialog of R-UI-042), and **Run a
   pass now** (`POST …/mirror/run`, and **Run a full pass** from its menu), which shows the queued job with a link to the jobs of
   the kind `mirror-pass`; `409 mirror_pass_running` shows the running job instead of an error, and `mirror_off` and
   `mirror_paused` are shown in words (Q-UI-104, Q-UI-105, Q-UI-121).
 - From M4b, on local and remote repositories of a format with the vulnerability adapter: the
   `vulnerabilities` member ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-002), and
-  on the edit form a link to the repository's view of the vulnerability report (R-VULN-022).
-- Review: summary plus "Show as API request" with the JSON body and the equivalent `curl` command
-  (INV-17).
-- Create sends the `Idempotency-Key` generated when the wizard opened.
-- Edit form: the same sections as tabs; key, class and format read-only; save sends PATCH with
-  `If-Match`; 412 opens the conflict dialog (R-UI-042); unsaved changes are guarded on navigation. For a
-  format with clients, a tab **How to use** shows the repository's guide (R-UI-049).
+  on the settings page a link to the repository's view of the vulnerability report (R-VULN-022).
+- **Show as API request** at the end of the form: the JSON body and the equivalent `curl` command (INV-17).
+- Create sends the `Idempotency-Key` generated when the form opened.
+- Settings page (R-UI-087): one column of sections; key, class and format read-only; each section's save sends a PATCH of its
+  members with `If-Match`; 412 opens the conflict dialog (R-UI-042) for that section; unsaved changes are guarded on navigation.
+  For a format with clients, the closed section **How to use** shows the repository's guide (R-UI-049).
 - Server field errors (`errors[].pointer`) are shown at their fields and in an error summary.
 
 Acceptance criteria:
@@ -4092,37 +4090,38 @@ Acceptance criteria:
 - Saving an edit after another administrator saved first opens the conflict dialog.
 - With a test build that registers a format whose `Classes` lack `Virtual`, choosing that format
   does not offer the class `virtual`, or shows it disabled with the reason, and `local` can be
-  chosen. Choosing the class `virtual` for npm, going back and choosing that format leaves no
-  class chosen.
-- The format step lists the installed formats as tiles, typing `nu` in the search field leaves the
-  NuGet tile, and the tiles can be reached, moved over and chosen with the keyboard alone.
-- A remote npm repository in the wizard shows the Upstream section with the preset URL, authentication none, empty periods
-  (their defaults in the hints) and the offline switch off, and a create that changes none of them sends no `remote` member.
+  chosen. Choosing the class `virtual` for npm, then **Change format** and that format, leaves Local chosen.
+- The format chooser lists the installed formats as tiles, typing `nu` in the search field leaves the
+  NuGet tile, and the tiles can be reached and opened with the keyboard alone.
+- A remote npm repository in the form shows the Upstream group with the preset URL, authentication none and the periods with
+  their defaults as values, and a create that changes none of them sends no `remote` member.
   A create with another URL, username and password and a metadata period sends
   `remote: {url, authMode: "basic", username, password: {value}, cache: {metadataTtlSeconds}}` and nothing else of `remote`;
-  the value of the password is nowhere on the page, in the request shown in the review, in browser storage or in a read of the
-  repository, which shows `password: {set: true}`. On the edit form its field is empty and says that one is stored, and a save of
-  another member does not touch it. "Test connection" posts the unsaved section and shows the answer: reachable and the credentials
+  the value of the password is nowhere on the page, in the request shown under **Show as API request**, in browser storage or in a
+  read of the repository, which shows `password: {set: true}`. On the settings page its field is empty and says that one is stored,
+  and a save of another member does not touch it. "Test connection" posts the unsaved section and shows the answer: reachable and the credentials
   accepted, or the reason of an upstream that could not be reached.
-- A remote npm repository in the wizard shows the Mirror section in mode pull-through; choosing
+- A remote npm repository in the form shows the Mirror group of **Advanced settings** in mode pull-through; choosing
   mirror shows its members with their defaults, and a create with only `intervalSeconds` changed
   sends `remote: {mode: "mirror", mirror: {intervalSeconds: …}}` and nothing else of `remote`.
   An Owner of the project without `repositories:write-config` sees the section read-only except Pause and Turn off.
-- The Mirror tab of a remote stored in mode `mirror` shows the state and the facts of `GET …/mirror`; **Pause** sends
+- The Mirror section of a remote stored in mode `mirror` shows the state and the facts of `GET …/mirror`; **Pause** sends
   `{"remote": {"mirror": {"paused": true}}}` with the loaded `If-Match` and the state reads Paused, **Resume** reverts it, a
   caller who neither holds `repositories:write-config` nor is Owner of the project sees the status and no button, and **Run a
   pass now** answers with the job of its 202 or, after a 409 `mirror_pass_running`, with the running job. While the state is
-  running or waiting the status is read every 5 s, and no read follows once another tab is open.
-- The edit form of `nuget-local` without a `nuget.deleteMode` shows "unlist"; after
+  running or waiting the status is read every 5 s, and no read follows once the section is closed.
+- The settings page of `nuget-local` without a `nuget.deleteMode` shows "unlist"; after
   `PATCH /api/v1/projects/web/repositories/nuget-local` with `If-Match` and `{"nuget": {"deleteMode": "delete"}}`
   it shows "delete".
-- Creating a local npm repository in the wizard with `latestGuard` turned off stores
-  `{"npm": {"latestGuard": false}}`; turning it on again on the edit form removes the `npm` member,
-  and the wizard offers no `latestGuard` for a virtual repository.
+- Creating a local npm repository in the form with `latestGuard` turned off stores
+  `{"npm": {"latestGuard": false}}`; turning it on again on the settings page removes the `npm` member,
+  and the form offers no `latestGuard` for a virtual repository.
 
 ### R-UI-022 · Virtual repository member editor
 Priority: **MVP** · Covers: UI-032
 
+- The editor is the section **Members** of the settings page (R-UI-087); its picker is also the group **Members** of the creation
+  form (R-UI-081).
 - Two lists: available (repositories of the virtual repository's own project and the same format, excluding the
   repository itself and anything that would create a cycle; a virtual repository never lists a repository of another
   project, [Q-REPO-212](repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared))
@@ -4742,16 +4741,15 @@ Built as Q-UI-229, Q-UI-233 to Q-UI-236: [project-settings.ts](../../web/src/app
 ### R-UI-055 · The visibility of a repository
 Priority: **MVP** · Covers: trove-only
 
-- The repository's **Access** tab of the edit form (R-UI-021) gains the block **Visibility** in place of the field "Require
-  authentication": one column, two radio groups of Q-UI-228, **Artifacts** ("Who can install, download and list the packages")
+- The section **Visibility** of the repository's settings page (R-UI-087) is the block **Visibility**: one column, two radio groups of Q-UI-228, **Artifacts** ("Who can install, download and list the packages")
   and **Wiki** ("Who can read the README and the documentation"), and its own **Save changes**
   ([Q-UI-231](#q-ui-231--a-repository-sets-artifacts-and-wiki-in-one-block-of-its-access-tab-and-the-wizard-sets-the-artifacts)).
   An option above the project's level is disabled with "The project is internal, so this repository cannot be public."; a wiki
   option above the artifacts' level is disabled with "The wiki cannot be more open than the artifacts." Choosing an artifacts
   level below the wiki's lowers the wiki's choice with it. The wiki group is shown only for a format with wiki content
   (`wiki: true` in `GET /api/v1/formats`, R-AUTHZ-034); for the others the block shows one group, labelled **Visibility**.
-- The creation wizard's basic settings step holds the artifacts group, preset to the lower of the installation's
-  `defaultLevel` and the project's level; the wiki follows the artifacts at create, and the review step shows both.
+- The creation form holds the artifacts group (R-UI-081), preset to the `visibility` of R-REPO-063 (the lower of the
+  installation's default and the project's level); the wiki follows the artifacts at create.
 - A warning `public_populates_remote` of the answer is shown as a warning at the block, with its sentence (R-AUTHZ-008).
 - The repository list, the repository's header and the client setup dialog show the artifacts level's icon before the
   repository's name (Q-UI-230).
@@ -5447,6 +5445,212 @@ Acceptance criteria:
 - The plain user reaches a repository's client address from the start page in at most two steps and the client setup of that
   repository in at most three, without passing a settings page.
 - No main view of the plain user shows a capability name, a UUID or a settings page it cannot change.
+
+### R-UI-080 · A new repository: the format first, then one form that names it
+Priority: **MVP** · Covers: UI-031
+
+- **The format chooser.** `/projects/{project}/repositories/new` and `/admin/repositories/new` are a page titled **New
+  repository**, with the sentence "Choose the package format. It decides what the repository can do." and the tiles of the
+  installed formats from `GET /api/v1/formats` (the format's icon, Q-UI-225, and its display name) under the field **Search by
+  package type** (Q-UI-115). A tile is a link to the form of its format; Enter in the search field opens the one format that is
+  left. There is no Next button ([Q-UI-340](#q-ui-340--a-new-repository-is-a-format-chooser-and-one-form-as-the-references-new-project)).
+- **The form.** `/projects/{project}/repositories/new/{format}` and `/admin/repositories/new/{format}` are one page titled
+  **New <display name> repository** ("New OCI (Docker) repository", "New npm repository", Q-UI-353) with a link **Change format**
+  back to the chooser. In this order: the project (admin area only; inside a project it is given and shown as text), **Class**,
+  **Key**, **Description (optional)**, **Visibility**, the class's own group (**Upstream** for remote, **Members** for virtual),
+  the closed section **Advanced settings** (R-UI-083), the disclosure **Show as API request**, then **Create repository** and
+  **Cancel**. One column of at most 56 rem.
+- **Class** is a radio group of the three classes, each with its sentence; a class the format does not implement is disabled with
+  its reason (Q-UI-113). Preset: local. Another class keeps the project, an edited key, the description and the visibility, and
+  starts its own group and the Advanced settings from the defaults of that class (R-REPO-063, [Q-UI-341](#q-ui-341--the-class-is-a-radio-group-of-the-form-preset-to-local)).
+- **Change format** returns to the chooser; what was typed is not carried over, and the unsaved guard asks first when something was.
+- An unknown format in the address shows the chooser with the notice "This installation has no format <name>."
+- **Create repository** sends the document with the `Idempotency-Key` generated when the form opened (R-UI-042) and opens the new
+  repository's content page (R-UI-052). **Show as API request** shows the body (a typed password as `<the password>`, R-UI-043)
+  and the same request as `curl`. A form that asks for a recent sign-in keeps its draft without secrets, as before.
+
+Acceptance criteria:
+
+- **Create repository** on the repository list opens the chooser; typing `nu` leaves the NuGet tile; Enter opens a page whose
+  `<h1>` is "New NuGet repository", with no step list and no Next button.
+- With a test format whose classes lack `virtual`, the class Virtual is disabled with "<Format> does not implement the class
+  Virtual." and Local is chosen.
+- Double-clicking **Create repository** creates one repository.
+
+### R-UI-081 · The standard fields of each class
+Priority: **MVP** · Covers: UI-031, UI-032
+
+- **Every class:** **Key** (R-UI-086; it starts with the `suggestedKey` of R-REPO-063), **Description (optional)**, **Visibility**
+  (the artifacts group of R-UI-055, preset to the `visibility` of R-REPO-063; the wiki follows the artifacts at create).
+- **Remote:** the group **Upstream** of R-UI-082.
+- **Virtual:** the group **Members**: the picker of R-UI-022 over the local and remote repositories of the project and the format,
+  the ordered members with Add, Remove, Move up, Move down and Move to top, and **Deployment target**, a select of **None** and the
+  local members, set to the first local member when the first one is added (Q-UI-347).
+- Nothing else is in the main form: no administrator notes, no patterns, no switches, no format settings ([Q-UI-343](#q-ui-343--the-standard-flow-holds-what-a-repository-needs-to-work-and-no-format-setting)).
+
+Acceptance criteria:
+
+- Pressing **Create repository** on the form of a local generic repository without typing anything creates the repository of
+  the suggested key, and its document holds the defaults of R-REPO-004.
+- A virtual npm repository created with `npm-local` and `npm-remote` as members reads back `virtual.members` in that order and
+  `virtual.deployTarget: "npm-local"` without the deployment target being touched.
+
+### R-UI-082 · Well-known upstreams and Test connection where the upstream is entered
+Priority: **MVP** · Covers: UI-031, RMT-004
+
+- Above **Upstream URL**, the group **Well-known registries** has one button per entry of the format's `upstreamPresets`
+  (R-REPO-062), in the format's order, labelled with its display name (`translate="no"`). A button sets the URL to its preset's.
+  The button whose URL equals the field, compared as the server normalizes it, is pressed (`aria-pressed="true"`); any other URL
+  presses none. A format without presets has no group, and its URL field starts empty and is required ([Q-UI-345](#q-ui-345--the-presets-are-buttons-with-names-and-the-pressed-one-follows-the-url)).
+- The URL field starts with the default preset's URL. **Authentication** (None, Username and password, Bearer token), **Username**
+  and **Password or token** follow (write-only, Q-UI-123). Under the password one muted line names where the credential goes: the
+  URL's host and every further host that receives it ("The credential is sent to registry.gitlab.com and gitlab.com.").
+- **Test connection** follows the credentials. It sends the unsaved section (`testUpstream`, R-REPO-024, R-REPO-064) and shows the
+  verdict in words (Q-UI-124); a result goes when a field of the section changes. When the answer is `foreign_host_denied` with a
+  `tokenService`, the result names that host and offers **Allow <host>**, which adds it to the further hosts (receiving the credential
+  when Authentication is not None) and runs the test again ([Q-UI-346](#q-ui-346--test-connection-names-a-token-service-that-is-not-allowed-and-offers-to-allow-it)).
+- Inside the group, the region **Upstream details** (a toggle with `aria-expanded`, closed by default) holds **Further hosts** (one
+  row per host pattern with a checkbox **Receives the credential**, **Add host**, **Remove**; it starts with the preset's hosts and
+  follows the preset until it is edited), **Metadata cache period in seconds** and **Negative cache period in seconds**, and, on the
+  settings page only, **Offline**.
+- A create writes what Q-UI-122 says, and `extraHosts` only when the list differs from the hosts the server stores for that URL
+  without it (R-REPO-062). The settings page writes the section as Q-UI-122 says, with `extraHosts` always present.
+
+Acceptance criteria:
+
+- **New OCI (Docker) repository**, class Remote: the buttons Docker Hub, Quay, GitHub (ghcr.io) and GitLab; Docker Hub is pressed and
+  the URL is `https://registry-1.docker.io/`. Pressing GitLab sets `https://registry.gitlab.com/` and shows `gitlab.com` under
+  Further hosts as receiving the credential; the create sends `remote: {url: "https://registry.gitlab.com/"}`, and the stored
+  document holds `extraHosts: [{pattern: "gitlab.com", sendCredentials: true}]`.
+- Against a test registry whose token service is on a host the repository does not list, **Test connection** names that host and
+  offers **Allow**; after it, the test runs again and the token service accepts the typed credential.
+- **New npm repository**, class Remote: one button, pressed; the cache periods read 7200 and 1800; a create that changes nothing
+  sends no `remote` member.
+
+### R-UI-083 · Details on demand
+Priority: **MVP** · Covers: UI-031
+
+- The form's section **Advanced settings** (`<trove-settings-section>`, closed) has the sentence "Notes, paths and the settings of
+  the format. The defaults suit most repositories." and these groups, each under its own heading, where they apply:
+  **Administrator notes**; **Paths** (include and exclude patterns, the pattern syntax); **Access details** (Hide existence);
+  **Mirror** (a remote of a format with `mirror`: the mode, and in mode mirror the members of `remote.mirror` and the format's own
+  `mirror` member, such as `oci.mirror` or `deb.mirror`); **<Display name> settings** (the format's other schema members for the class;
+  absent when there are none) ([Q-UI-344](#q-ui-344--where-the-details-go)).
+- **Disabled** and **Offline** are not offered at creation; the settings page has them.
+- The details of the upstream fold inside its group (R-UI-082), not in Advanced settings.
+- A field error inside a closed region opens the region: on **Create repository** and from the link of the error summary.
+
+Acceptance criteria:
+
+- The form of a local npm repository shows **Advanced settings** closed; opened, it shows Administrator notes, Paths, Access details
+  and npm settings with **latestGuard**, and no Disabled.
+- An OCI remote in mode mirror shows the tags and the platforms of `oci.mirror` in the Mirror group, and no group "OCI (Docker)
+  settings".
+- A create refused with a field error at `/includePatterns/0` opens Advanced settings and puts the error at the include patterns.
+
+### R-UI-084 · A default is the value of its field
+Priority: **MVP** · Covers: UI-031
+
+- A field whose setting has a static default shows the default as its value, editable: the key (`suggestedKey`), the class
+  (local), the visibility, the URL (the default preset), the further hosts (the preset's), the cache periods, the members of
+  `remote.mirror`, the deployment target (the first local member) and every member of the format's schema with a `default`,
+  text and number fields included. The values come from `getRepositoryDefaults` (R-REPO-063) for the document's members and from
+  `settingsSchema` for the format's member ([Q-UI-348](#q-ui-348--a-default-is-the-value-of-its-field)).
+- A value equal to its default is not written (Q-UI-80). A field the user empties shows its default again when it is left.
+- A setting whose default is derived from other settings has no static value: a choice offers **Automatic** first (npm
+  `audit.mode`, NuGet `vulnerabilityInfo`), a text stays empty with its description (Debian `label`, which is the key while unset).
+- No "Default: …" hint line remains.
+
+Acceptance criteria:
+
+- An OCI remote shows 300 in both cache periods; in mode mirror, 3600 as the pass interval and 4 as the concurrent fetches; a
+  local Debian repository shows the architectures `amd64` and `arm64` and the origin `trove`. A create that changes none of them
+  writes none of them.
+
+### R-UI-085 · A field is as wide as its expected input
+Priority: **MVP** · Covers: UI-031
+
+- The five widths of the style guide's **Forms**, tokens in `_tokens.scss`, classes in `_controls.scss` and the input `width` of
+  `<trove-text-field>` and `<trove-select-field>` ([Q-UI-334](#q-ui-334--a-picker-is-one-control-from-the-start-held-while-its-list-loads-and-a-field-is-as-wide-as-its-kind-of-input));
+  which field of the repository forms takes which is [Q-UI-349](#q-ui-349--a-field-of-the-repository-forms-takes-the-width-of-its-kind-of-input-and-a-schema-member-the-width-of-its-type):
+
+  | Class | Token | Width | For |
+  |---|---|---|---|
+  | `field-w-number` | `--trove-field-width-number` | 6 rem | a count of up to six digits |
+  | `field-w-duration` | `--trove-field-width-duration` | 8 rem | a period in seconds, up to eight digits |
+  | `field-w-bytes` | `--trove-field-width-bytes` | 13 rem | a byte count, up to nineteen digits |
+  | `field-w-name` | `--trove-field-width-name` | 28 rem, half the column | a key, a name, a host, every select and every picker |
+  | `field-w-full` | — | the column | a URL, a description, a list, a key block |
+
+- A field is never wider than its column; a narrower column shrinks it and its text scrolls inside it.
+- Which field gets which: key, username, password, project, authentication, hide existence, discovery, deployment target, a host
+  of Further hosts: `name`; upstream URL, description, administrator notes, patterns: `full`; the two cache periods, the pass and
+  full-pass intervals: `duration`; concurrent fetches, versions per package: `number`; storage limit: `bytes`. A schema member:
+  `integer` and `number` → `number`; a string with `format: uri` or `maxLength` above 128, and every list → `full`; any other
+  string and every choice → `name`.
+
+Acceptance criteria:
+
+- At the wide width of `make ui-renders`, the metadata cache period field is 8 rem wide and the URL field spans the column; at the
+  narrow width no part of the form scrolls sideways.
+
+### R-UI-086 · An error shows when it helps
+Priority: **MVP** · Covers: UI-031
+
+- A field's own error (its shape, a required value) appears only after the field was left with a value, or after **Create
+  repository** or a section's **Save changes** was pressed; never on a field that was not touched, empty or prefilled
+  ([Q-UI-350](#q-ui-350--an-error-appears-after-the-field-was-left-or-the-form-was-sent)).
+- **Create repository** is enabled while nothing is being sent. Pressed with errors, it sends nothing, shows the error summary
+  with a link per field and moves the focus to the summary.
+- The key's availability is asked 400 ms after the last keystroke; "A repository with this key already exists in the project." is
+  shown when the answer comes, because it answers what was typed. The suggested key is free when the form opens (R-REPO-063).
+- An error says what to do: "Use 2 to 64 lower-case letters and digits, with ., _, __ or - between them." Server field errors
+  appear at their fields whatever was touched.
+
+Acceptance criteria:
+
+- The opened form shows no error. Typing `A` into the key and leaving it shows the message; clearing the key and pressing **Create
+  repository** shows the summary and sends no request.
+
+### R-UI-087 · The repository's settings page
+Priority: **MVP** · Covers: UI-031
+
+The settings page follows the style guide's settings pages: one column of at most 56 rem, no tab group
+([Q-UI-351](#q-ui-351--the-repository-settings-page-is-one-column-of-sections)). In this order, where they apply:
+
+1. At the top, without a title: **Key** (a read-only field) and **Description (optional)**, with **Save changes**.
+2. **Visibility**, open: the block of R-UI-055 with its own save.
+3. **Upstream** (remote), open: R-UI-082 with its **Upstream details** region, which holds **Offline** here.
+4. **Members** (virtual), open: the editor of R-UI-022 with its own save.
+5. Closed: **Mirror** (status above the settings, R-UI-021, and the format's `mirror` member), **<Display name> settings**, **Access
+   details** (include and exclude patterns, Hide existence), **Administrator notes**, **Signing keys** and **Indexes** (Debian local
+   and virtual), **Import tasks** and **Tombstones** (Ansible), **How to use** (R-UI-049), **Details** (class, format, layout, project,
+   client address, created, last changed, last activity), **API** (the stored document; each section's unsaved change as a request),
+   **Advanced** ([Q-UI-352](#q-ui-352--disable-move-and-delete-are-in-advanced)): **Disable repository** or **Enable repository**,
+   **Move to another project**, **Delete repository**.
+
+- Each section's **Save changes** sends only its members as a merge patch with `If-Match`; a `412` opens the conflict dialog of
+  R-UI-042 for that section; the other sections keep their unsaved edits.
+- A closed section that holds an unsaved change says "Unsaved changes" after its title; leaving the page with one asks first.
+- A caller who may not change the repository sees the fields read-only and no save; the reduced view of a caller without
+  `repositories:read-config` is unchanged.
+
+Acceptance criteria:
+
+- The settings of a remote OCI repository show Key, Description, Visibility and Upstream open, every other section closed, and no
+  tab. Saving a changed description sends `{"description": …}` and nothing else.
+- With an unsaved include pattern in the closed Access details, the section says "Unsaved changes", and leaving the page asks.
+
+### R-UI-088 · A title and a heading name one thing
+Priority: **MVP** · Covers: UI-031
+
+- The form's title names the format (R-UI-080). Every section and group heading names one topic; no heading lists several.
+- A label is the setting in sentence case, its unit included ("Metadata cache period in seconds"); a help text is one line. The
+  key's help: "Part of the repository's address. It cannot be changed later."
+
+Acceptance criteria:
+
+- No heading of the form or of the settings page holds "and" between two topics.
 
 ### R-UI-090 · The grade shield
 Priority: **P1** · Covers: trove-only
@@ -9019,6 +9223,8 @@ owner or a screen-reader user finds the missing Up and Down arrows a loss; the t
 **Applied in the spec:** R-UI-021. Code: `repository-wizard.html`, `repository-wizard.scss`, `shared/format-icon.ts`. Tests:
 `repository-wizard.spec.ts` (the keyboard and selection specs).
 
+**Revisited by [Q-UI-340](#q-ui-340--a-new-repository-is-a-format-chooser-and-one-form-as-the-references-new-project) (2026-11-12):** the tiles are links on a chooser page, one tab stop each, and Enter opens a format; the listbox and its explicit selection go with the steps. The icon stays the one of the package list.
+
 ### Q-UI-115 · The search field filters the tiles by name, in the browser
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -9035,6 +9241,8 @@ a status region. A chosen format that the filter hides stays chosen and is named
 development agent would revisit (b) when an installation lists enough formats for the response to matter.
 
 **Applied in the spec:** R-UI-021. Code: `repository-wizard.ts` (`shownFormats`, `chooseOnlyMatch`). Test: `repository-wizard.spec.ts`.
+
+**Revisited by [Q-UI-340](#q-ui-340--a-new-repository-is-a-format-chooser-and-one-form-as-the-references-new-project) (2026-11-12):** the filter stays; Enter in the field opens the one format that is left, and "Chosen: …" goes, because a tile no longer holds a choice.
 
 ### Q-UI-116 · Changing the format resets what no longer applies
 
@@ -9053,6 +9261,8 @@ document is format-independent. The development agent would revisit (a) if the o
 
 **Applied in the spec:** R-UI-021. Code: `repository-wizard.ts` (`chooseFormat`, `resetDependent`). Tests: `repository-wizard.spec.ts`,
 `mirror-settings.spec.ts`.
+
+**Superseded by [Q-UI-340](#q-ui-340--a-new-repository-is-a-format-chooser-and-one-form-as-the-references-new-project) (2026-11-12):** **Change format** returns to the chooser and starts afresh; the unsaved guard asks first when something was typed. Within the form, another class keeps the identity fields ([Q-UI-341](#q-ui-341--the-class-is-a-radio-group-of-the-form-preset-to-local)).
 
 ### Q-UI-117 · The Mirror section: where it sits, what it writes, who may change it
 
@@ -9073,6 +9283,8 @@ mode on.
 
 **Applied in the spec:** R-UI-021. Code: `mirror-settings.ts`, `repository-model.ts` (`remoteOf`, `mirrorOf`), `repository-wizard.*`,
 `repository-detail.*`. Tests: `mirror-settings.spec.ts`.
+
+**Revisited by [Q-UI-344](#q-ui-344--where-the-details-go) (2026-11-12):** where the section sits: the group **Mirror** in **Advanced settings** of the creation form, with the format's own `mirror` member, and a closed section **Mirror** of the settings page. What it shows, writes and patches, and who may change it, stay.
 
 ### Q-UI-118 · The unbounded-mirror notice is an early warning with the server's rule
 
@@ -9168,6 +9380,8 @@ Status: **Decided by the development agent** — selected from the options below
 split of the wizard's step if it grows past what one page carries once the extra hosts, the limits and the integrity members get fields.
 
 **Applied in the spec:** R-UI-021. Code: `upstream-settings.ts`, `repository-model.ts` (`upstreamOf`, `initialUpstream`, `remoteOf`), `repository-wizard.*`, `repository-detail.*`, `mirror-settings.ts` (`upstreamUrl`). Tests: `upstream-settings.spec.ts`.
+
+**Revisited by [Q-UI-344](#q-ui-344--where-the-details-go) and [Q-UI-345](#q-ui-345--the-presets-are-buttons-with-names-and-the-pressed-one-follows-the-url) (2026-11-12):** where the upstream sits: the group **Upstream** of the creation form and an open section of the settings page, with the preset buttons above the URL, **Test connection** under the credentials and the periods, the further hosts and Offline folded into **Upstream details**. The URL field starts with the default preset's URL; what a create writes and what an edit patches stay, and the settings page also writes `extraHosts`.
 
 ### Q-UI-123 · The password is write-only: typed, sealed by the server, never read into a field or shown
 
@@ -10576,6 +10790,8 @@ Context: the style guide ([Settings pages](../developer/ui-style-guide.md#settin
 
 **Applied in the spec:** R-UI-026, R-UI-031, R-UI-033, R-UI-025. Code: `GeneralSettings`, `AuthSettings`, `ServiceAccountDetail`, `GroupDetail`. The group page keeps the creation time as a read-only field (the style guide asks for a value that cannot change to be one, and does not ask for it to go; it was dropped by mistake in the first change and restored in [Q-UI-223](#q-ui-223--the-user-the-endpoint-and-the-service-account-and-group-lists-follow-the-guide)); the service-account page keeps it under Details.
 
+**Revisited by [Q-UI-351](#q-ui-351--the-repository-settings-page-is-one-column-of-sections) (2026-11-12):** the open point, what the tabs of the repository's settings become, is settled by the owner's rule of 2026-11-12: one column of sections, the standard settings open, each detail a closed section, a save per section.
+
 ### Q-UI-223 · The user, the endpoint and the service-account and group lists follow the guide
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -11889,6 +12105,244 @@ use the same names. The development agent revisits a select whose closed text th
 [repository-wizard.html](../../web/src/app/features/repositories/repository-wizard.html),
 [exposure-rule-editor.html](../../web/src/app/features/endpoints/exposure-rule-editor.html),
 [_controls.scss](../../web/src/styles/_controls.scss).
+
+### Q-UI-340 · A new repository is a format chooser and one form, as the reference's New project
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Five steps, as built | Format, class, basic, class-specific, review | Built | A step label lists four topics; the review repeats the form; a step hides what follows |
+| (b) A chooser page of tiles, then one form per format (chosen) | The reference's **New project**: tiles that open one page | Everything the job needs is in view; the title can name the format; the details fold away in one section | The class is chosen on the form, not before it |
+| (c) One page with the format as a select | No chooser | One page | The form changes under the reader when the format changes; the tiles go |
+
+**Choice:** (b). A tile is a link (one tab stop each, Enter opens it), which replaces the listbox of Q-UI-114 and Q-UI-115; the
+review step goes, and **Show as API request** stays at the end of the form.
+
+**Rationale:** the owner's reference does it this way, and the format decides the form (Q-UI-112). The development agent would
+revisit (c) when the number of formats is small enough that a chooser page costs more than it explains.
+
+**Applied in the spec:** R-UI-080, R-UI-021. Revisits Q-UI-114 and Q-UI-115 (the tiles), supersedes Q-UI-116 (Change format starts afresh).
+
+### Q-UI-341 · The class is a radio group of the form, preset to local
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Radio group, preset local (chosen) | Three options with a sentence each; a missing class disabled with its reason | Three exclusive choices are radios (style guide); local is the plainest | A user who wants a remote changes one choice |
+| (b) No preset | The user must choose | No assumption | A field without a value contradicts "a default is a value in the field" |
+| (c) Second row of tiles | Class tiles under the format | Visual | Two choosers before the form |
+
+**Choice:** (a). Another class keeps the identity fields and restarts the class's own parts from that class's defaults.
+
+**Rationale:** a local repository needs nothing beyond the key. The development agent would revisit the preset if the owner's
+installation creates mostly remotes.
+
+**Applied in the spec:** R-UI-080.
+
+### Q-UI-342 · The key starts with a suggestion that is free
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Empty | As built | No guess | A required empty field; the owner's red key |
+| (b) `<format>-<class>`, or the first free of `-2` to `-9`, from the server (chosen) | `suggestedKey` of R-REPO-063 | A value in the field; the manual's own naming (`npm-local`, `npm-remote`); never red on arrival | A suggestion the user may not want |
+| (c) The same, computed in the browser | GETs per candidate | No server change | Several requests; the server already answers the defaults |
+
+**Choice:** (b). The suggestion follows the class until the key is edited.
+
+**Rationale:** the plain user gets a working key without thinking about the pattern. The development agent would revisit it when
+installations name repositories by another rule (then the rule is a setting).
+
+**Applied in the spec:** R-UI-081, R-UI-084, R-UI-086, R-REPO-063.
+
+### Q-UI-343 · The standard flow holds what a repository needs to work, and no format setting
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Key, description, visibility; plus the upstream (remote) or the members (virtual) (chosen) | CLAUDE.md's rule read against the code: the remote needs an upstream to fetch, the virtual members to resolve | A local repository is three fields; nothing the plain user does not decide | A setting a user does want needs one click more |
+| (b) As (a), plus a format's "important" settings in the main form | Per-format exceptions | Shortcuts | Every member of every schema is a sensible default (section 1.3); an exception list is a second rule |
+| (c) As built | Every setting on a step | Complete | The owner's finding |
+
+**Choice:** (a). The brief's list "local: key, description, visibility; remote: plus the upstream; virtual: plus the members" is
+confirmed, corrected in two points: a virtual repository's **deployment target** is standard, because without it the virtual
+address is read-only (R-REPO-021); and today's flow has no member step at all (D10), so the members are added, not moved.
+
+**Rationale:** each format setting has a default that suits a plain repository (1.3). The development agent would revisit (b) for
+a setting whose default is wrong for more than one installation in three.
+
+**Applied in the spec:** R-UI-081.
+
+### Q-UI-344 · Where the details go
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One closed section **Advanced settings** at the end of the form; the upstream's details folded inside its group; on the settings page, one closed section per topic (chosen) | Two folding places in the form | The upstream details stay next to the URL they qualify; the rest is one click away | Two kinds of fold in one form |
+| (b) Everything in Advanced settings | One fold | Uniform | The cache periods and further hosts away from the upstream; Allow host would change a field in a closed section |
+| (c) A step "Details" | A step after the form | Out of the way | Steps again |
+
+**Choice:** (a). Disabled and Offline are not offered at creation (a new repository is not created switched off). The format's
+`mirror` member (`oci.mirror`, `deb.mirror`) goes into the Mirror group, so that a mirror is one topic.
+
+**Rationale:** the owner asked for a detail view, not for the details to go. The development agent would revisit the creation's
+Disabled if an installation stages repositories before opening them.
+
+**Applied in the spec:** R-UI-082, R-UI-083, R-UI-087. Revisits Q-UI-117 (where the Mirror section sits) and Q-UI-122 (where the
+upstream sits; what a create writes stays).
+
+### Q-UI-345 · The presets are buttons with names, and the pressed one follows the URL
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A button per preset, name only, `aria-pressed` from the URL (chosen) | The owner's "buttons" | The owner's words; a typed URL shows that no preset applies | Four or more buttons where the style guide would use a select |
+| (b) A select | The style guide's rule for four or more | Compact | Not what the owner asked |
+| (c) Buttons with the registries' logos | Recognisable | Looks good | Each logo's terms must be read first (Q-UI-225); a logo is no label |
+
+**Choice:** (a), in the order of CLAUDE.md for OCI (Docker Hub, Quay, GitHub (ghcr.io), GitLab).
+
+**Rationale:** an explicit decision of the owner outranks the style guide's rule (rule 2 over rule 3). The development agent would
+revisit (c) once the logos' terms are read.
+
+**Applied in the spec:** R-UI-082.
+
+### Q-UI-346 · Test connection names a token service that is not allowed, and offers to allow it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Name the host and offer **Allow <host>**, which adds a further host receiving the credential and tests again (chosen) | One click from the finding to the fix | The owner's own GitLab registry works from the form | The host comes from the upstream (H-610): the click is the user's consent, and the button names the host |
+| (b) Name the host only | The user edits Further hosts | No action on the upstream's word | An extra trip into the details |
+| (c) Nothing | As built | — | The test passes and the first pull fails (D12) |
+
+**Choice:** (a). Under the password a line names every host the credential goes to.
+
+**Rationale:** a registry whose token service is on its own second host (every self-managed GitLab) cannot be set up from the form
+otherwise. The development agent would revisit the credential default of Allow if a registry is found whose token service must
+not see the credential.
+
+**Applied in the spec:** R-UI-082, R-REPO-064.
+
+### Q-UI-347 · A new virtual repository's deployment target is its first local member
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) None, as the server's default | Read-only virtual | No assumption | Publishing through the virtual address fails (`E405`) until someone finds the setting |
+| (b) The first local member, until the user chooses (chosen) | A value in the field | The recommended practice (clients use the virtual address) works for install and publish | A virtual that should be read-only needs **None** chosen |
+
+**Choice:** (b). Writes through it still pass the target's own checks (R-REPO-021).
+
+**Rationale:** one address for install and publish is what the plain user expects. The development agent would revisit it if
+read-only virtual repositories turn out to be the common case.
+
+**Applied in the spec:** R-UI-081.
+
+### Q-UI-348 · A default is the value of its field
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The value in the field, written only when changed (chosen) | Q-UI-80 stays; the form shows what the repository will do | The owner's rule; no hint lines | A derived default has no value to show |
+| (b) Write every shown value | The document states everything | — | Freezes today's defaults into every repository (Q-UI-80) |
+
+**Choice:** (a). A choice whose default is derived offers **Automatic** first; a derived text stays empty with its description; an
+emptied field shows its default again when it is left.
+
+**Rationale:** the default is what the plain user sees and keeps. The development agent would revisit the emptied-field rule if a
+setting needs "empty" as a value of its own.
+
+**Applied in the spec:** R-UI-084.
+
+### Q-UI-349 · A field of the repository forms takes the width of its kind of input, and a schema member the width of its type
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Each standard field is named to one of the five widths of Q-UI-334, and a member of a format's schema takes the width of its type (chosen) | key, names, hosts and choices `name`; URL, description, notes, patterns and lists `full`; periods `duration`; counts `number`; the storage limit `bytes`; a schema's `integer` and `number` `number`, a string with `format: uri` or `maxLength` above 128 `full`, any other string and every choice `name` | A format's schema needs no annotation; a member a format adds gets a width without a change of the UI | A member whose type does not tell its length (a short string without `maxLength`) takes `name` |
+| (b) A width per schema member (`x-trove-width`) | Each format names the widths of its members | Exact | A fact of the UI in every format's schema |
+| (c) Every field the width of the column | As built | — | The owner's finding |
+
+**Choice:** (a). The five widths are those of [Q-UI-334](#q-ui-334--a-picker-is-one-control-from-the-start-held-while-its-list-loads-and-a-field-is-as-wide-as-its-kind-of-input),
+which took the widths this plan proposed and landed first; there is one set, not two.
+
+**Rationale:** consistency across screens is the other half of T-21. The development agent would revisit (b) for a member whose type
+puts it in a width that the renders show to cut its common values.
+
+**Applied in the spec:** R-UI-085, ui-style-guide.md (Forms).
+
+### Q-UI-350 · An error appears after the field was left or the form was sent
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) On every keystroke | Immediate | — | Red while typing the first letter |
+| (b) After leaving the field with a value, or on submit (chosen) | The common rule of forms | Never red on arrival; the submit still catches empty required fields | An error shows one step later |
+| (c) On submit only | Quiet | — | A long form's errors all at the end |
+
+**Choice:** (b). The submit button stays enabled; a press with errors shows the summary and sends nothing.
+
+**Rationale:** the owner's red key (D3). The development agent would revisit it for a field whose wrong value is costly to type twice.
+
+**Applied in the spec:** R-UI-086.
+
+### Q-UI-351 · The repository settings page is one column of sections
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the tabs | As built | Built | Tabs hide the standard settings among the details; one save for every tab |
+| (b) One column: the standard settings open at the top, every detail a closed section, a save per section (chosen) | The style guide's settings page; the reference's general settings | The same split as the creation form; a section saves only its own group | A long page for a remote of a mirror format |
+
+**Choice:** (b), with the order of R-UI-087. This settles the open point of Q-UI-222 ("what its tabs become needs the owner's
+reference"): the owner's rule of 2026-11-12 is that reference.
+
+**Rationale:** the plain path first, details on demand. The development agent would revisit the order once the owner has walked
+through a remote's page.
+
+**Applied in the spec:** R-UI-087; ui-style-guide.md, "What does not follow this page yet".
+
+### Q-UI-352 · Disable, move and delete are in Advanced
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) **Disable repository** and **Enable repository** act at once after a confirmation that says what stops; Move and Delete beside them (chosen) | The reference's Advanced section (archive, transfer, delete) | A switch that stops every client is not a field next to the description | One more confirmation |
+| (b) A checkbox saved with a section | As built | — | Saved by accident with another change |
+
+**Choice:** (a). A disabled repository shows a badge "Disabled" beside its key at the top of the page.
+
+**Rationale:** disabling is an operation on a running repository. The development agent would revisit it if Disabled becomes a
+state with more than two values.
+
+**Applied in the spec:** R-UI-087.
+
+### Q-UI-353 · The title uses the format's display name
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) "New <displayName> repository" (chosen) | "New OCI (Docker) repository", "New Ansible Galaxy repository" | One name per format on the tiles, in the lists and in the title | Longer than the owner's "New OCI repository" |
+| (b) A short title name per format in the catalog | "New OCI repository" | The owner's words | A second name of each format to keep |
+
+**Choice:** (a); the owner's question 2 in [repository-setup-work-packages.md](../projektplan/repository-setup-work-packages.md) asks him.
+
+**Rationale:** a format is called one thing everywhere. The development agent would revisit (b) on the owner's word.
+
+**Applied in the spec:** R-UI-080.
 
 ### Q-UI-335 · Every text field names the width of its expected input, and a number field is never the column
 

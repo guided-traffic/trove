@@ -36,10 +36,6 @@ const ID formats.ID = "nuget"
 // canonical paths of its storage layout and nowhere else.
 const Layout = "nuget"
 
-// DefaultUpstreamURL is the service index of the upstream a remote repository proposes
-// (R-NUGET-014).
-const DefaultUpstreamURL = "https://api.nuget.org/v3/index.json"
-
 // MaxDocumentBytes bounds an upstream document held in memory: a registration page of the
 // largest package of nuget.org is a few megabytes, so this leaves a wide margin (R-ARCH-028).
 const MaxDocumentBytes = 128 << 20
@@ -78,11 +74,15 @@ func (f *Format) Descriptor() formats.Descriptor {
 			Classes:          []formats.Class{formats.Local, formats.Remote, formats.Virtual},
 			Layout:           Layout,
 			ProtocolBasePath: "/api/nuget/{project}/{key}/",
-			// The upstream a remote repository proposes and the host family nuget.org serves
-			// search and symbols from (R-NUGET-014). The upstream test requests the service
-			// index itself, so there is no probe path (R-REPO-024).
-			DefaultUpstreamURL: DefaultUpstreamURL,
-			DefaultExtraHosts:  []string{"*.nuget.org"},
+			// nuget.org is the one preset of the remote class, with the host family it serves
+			// search and symbols from (R-NUGET-014, R-REPO-062). The upstream test requests the
+			// service index itself, so there is no probe path (R-REPO-024).
+			UpstreamPresets: []catalog.UpstreamPreset{
+				{
+					ID: "nuget-org", DisplayName: "nuget.org", URL: "https://api.nuget.org/v3/index.json", Default: true,
+					ExtraHosts: []catalog.PresetHost{{Pattern: "*.nuget.org"}},
+				},
+			},
 			// 300 s for the service index, version lists, registrations and vulnerability
 			// data; the not-found period stays the generic 1800 s (Q-NUGET-2).
 			DefaultMetadataTTLSeconds: &metadataTTL,

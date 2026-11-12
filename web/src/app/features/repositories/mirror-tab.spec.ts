@@ -15,7 +15,6 @@ import { MIRROR_DEFAULTS } from './repository-model';
 const NPM: FormatDescriptor = {
   ...PACKAGE_FORMAT,
   mirror: true,
-  defaultUpstreamUrl: 'https://registry.npmjs.org/',
 };
 
 const stored = (mode: 'pullThrough' | 'mirror', mirror: Record<string, unknown> = {}): Repository =>

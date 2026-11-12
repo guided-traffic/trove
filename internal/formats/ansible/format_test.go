@@ -29,9 +29,16 @@ func TestR_ANS_001_Descriptor(t *testing.T) {
 	if !reflect.DeepEqual(d.Classes, []formats.Class{formats.Local, formats.Remote, formats.Virtual}) {
 		t.Errorf("classes = %v", d.Classes)
 	}
-	if d.ProtocolBasePath != "/api/ansible/{project}/{key}/" || d.DefaultUpstreamURL != "https://galaxy.ansible.com/api/" || d.ProbePath != "" ||
-		!reflect.DeepEqual(d.DefaultExtraHosts, []string{"github.com", "codeload.github.com"}) {
-		t.Errorf("addresses = %q %q %q %v", d.ProtocolBasePath, d.DefaultUpstreamURL, d.ProbePath, d.DefaultExtraHosts)
+	if d.ProtocolBasePath != "/api/ansible/{project}/{key}/" || d.ProbePath != "" {
+		t.Errorf("addresses = %q %q", d.ProtocolBasePath, d.ProbePath)
+	}
+	// R-REPO-062: the public Galaxy is the one preset, with the GitHub hosts of role archives that receive no credential.
+	wantPresets := []catalog.UpstreamPreset{{
+		ID: "galaxy", DisplayName: "Ansible Galaxy", URL: "https://galaxy.ansible.com/api/", Default: true,
+		ExtraHosts: []catalog.PresetHost{{Pattern: "github.com"}, {Pattern: "codeload.github.com"}},
+	}}
+	if !reflect.DeepEqual(d.UpstreamPresets, wantPresets) {
+		t.Errorf("R-REPO-062 presets = %+v", d.UpstreamPresets)
 	}
 	if d.DefaultMetadataTTLSeconds == nil || *d.DefaultMetadataTTLSeconds != 600 || d.DefaultNotFoundTTLSeconds == nil || *d.DefaultNotFoundTTLSeconds != 300 {
 		t.Errorf("cache periods = %v %v", d.DefaultMetadataTTLSeconds, d.DefaultNotFoundTTLSeconds)

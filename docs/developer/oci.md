@@ -75,7 +75,7 @@ lists them; the blocks of R-ARCH-008 and R-ARCH-009 in [architecture.md](../spec
 
 | Addition | Code | Production host |
 |---|---|---|
-| `Facts.RegistryRoot`, `Facts.DefaultCredentialHosts` | [catalog.go](../../internal/formats/catalog/catalog.go) (checked at `Register`) | — |
+| `Facts.RegistryRoot`, `Facts.DefaultCredentialHosts` (since contract version 4 the hosts of each `Facts.UpstreamPresets` entry, ADR-198) | [catalog.go](../../internal/formats/catalog/catalog.go) (checked at `Register`) | — |
 | `Refusal.Registry()` reads the base path from the catalog by `Format` (no field) | [route.go](../../internal/formats/route.go) | — |
 | `LinkBuilder` renders the base path of the format; `ClientName`; `EndpointFacts.Bound` | [links.go](../../internal/formathost/links.go); the dispatcher sets `Bound` with the mount of bound hosts | yes |
 | `Route.PackageParam` | [route.go](../../internal/formats/route.go); set to `name` by every OCI route | — |

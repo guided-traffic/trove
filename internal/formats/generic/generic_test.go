@@ -16,7 +16,7 @@ func TestDescriptor(t *testing.T) {
 		if len(d.Classes) != 1 || d.Classes[0] != formats.Local {
 			t.Fatalf("classes = %v: only the local class is implemented", d.Classes)
 		}
-		if d.DefaultUpstreamURL != "" || d.DefaultMetadataTTLSeconds != nil || d.DefaultNotFoundTTLSeconds == nil || *d.DefaultNotFoundTTLSeconds != 1800 {
+		if len(d.UpstreamPresets) != 0 || d.DefaultMetadataTTLSeconds != nil || d.DefaultNotFoundTTLSeconds == nil || *d.DefaultNotFoundTTLSeconds != 1800 {
 			t.Fatalf("defaults = %+v", d)
 		}
 		if d.PackageNames || d.PriorityMembers || d.PinsAndClaims || d.Caps {

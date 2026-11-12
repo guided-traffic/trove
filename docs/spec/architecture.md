@@ -1214,8 +1214,9 @@ package formats
 // addition keeps the version, and a breaking change raises it and moves every format in the same
 // change. Version 2 is the project model's (ADR-156): the repository is named by its qualified name, the read scope, the
 // link builder and the refusals changed. Version 3 is the upload sessions' (ADR-178): UploadSessions.Finalize takes the offset of its last
-// bytes and returns the received count with a refusal of it. A format declares the literal it was written against.
-const ContractVersion = 3
+// bytes and returns the received count with a refusal of it. Version 4 is the upstream presets' (ADR-198): catalog.Facts.UpstreamPresets
+// replaces DefaultUpstreamURL, DefaultExtraHosts and DefaultCredentialHosts. A format declares the literal it was written against.
+const ContractVersion = 4
 
 // The types of other packages under the names a format spells them: one type each, no mirrors
 // (Q-ARCH-188, Q-ARCH-189). A format imports this package and nothing else of the core.
@@ -1285,7 +1286,7 @@ type Format interface {
 
 // Descriptor is what a format registers: the catalog facts (R-REPO-003) plus what only the contract needs.
 type Descriptor struct {
-	catalog.Facts                    // ID, DisplayName, Classes (the authoritative class matrix), Layout, ProtocolBasePath ("/api/<id>/{project}/{key}/" for a format with routes, "/v2/{project}/{key}/" for the one that sets RegistryRoot, Q-OCI-4), RegistryRoot, DefaultCredentialHosts, ...
+	catalog.Facts                    // ID, DisplayName, Classes (the authoritative class matrix), Layout, ProtocolBasePath ("/api/<id>/{project}/{key}/" for a format with routes, "/v2/{project}/{key}/" for the one that sets RegistryRoot, Q-OCI-4), RegistryRoot, UpstreamPresets (R-REPO-062), ...
 	ContractVersion  int             // the literal the format was written against; Register panics on a mismatch
 	Names            catalog.Names   // the one package-name normaliser; nil exactly when !PackageNames
 	Clients          []Client        // native clients and tested versions (FMT-002, FMT-003)
@@ -2118,6 +2119,11 @@ type UploadSession struct {
 // catalog.Facts gains RegistryRoot (the one format whose client address is the root of a host: ProtocolBasePath is
 // catalog.RegistryRootBasePath, "/v2/{project}/{key}/"; the catalog refuses a second format that declares it, Q-OCI-4) and
 // DefaultCredentialHosts (the entries of DefaultExtraHosts proposed with sendCredentials: true; each must be among them, R-OCI-021).
+// Version 4 (ADR-198) replaces DefaultUpstreamURL, DefaultExtraHosts and DefaultCredentialHosts by UpstreamPresets ([]UpstreamPreset:
+// ID, DisplayName, URL, ExtraHosts []PresetHost{Pattern, SendCredentials}, Default) and the methods Facts.DefaultPreset and
+// Facts.PresetFor (R-REPO-062): a preset names whether each of its hosts receives the credential; the catalog refuses presets on a
+// format without the class remote, no default or two, an ID or a URL twice and a host pattern twice in one preset, and formats.Validate
+// a preset URL that is not in the form R-REPO-024 stores.
 // Facts also gains ProbeChallengeReachable (the upstream test reads a 401 with a Bearer challenge of the probe resource as reachable, with
 // authenticated null; Register refuses the fact for a format without the class remote, a ProbePath or a remote adapter that implements
 // Authenticator, Q-REPO-280). For the format that declares RegistryRoot the probe resource is at the root of the host, not below the
@@ -2219,8 +2225,9 @@ Priority: **MVP** · Covers: FMT-001, FMT-002, FMT-003
   - an external process would add a network hop to every package request.
 - At start-up, `Register` panics, and the process exits, on any of these:
   - a duplicate or reserved ID;
-  - a `ContractVersion` mismatch (the contract is frozen since the end of M3, E3.3 and ADR-141, at 3 since the upload sessions,
-    ADR-178, after 2 of the project model, ADR-156; a change that raises it moves every format in the same change, R-ARCH-025);
+  - a `ContractVersion` mismatch (the contract is frozen since the end of M3, E3.3 and ADR-141, at 4 since the upstream presets,
+    ADR-198, after 3 of the upload sessions, ADR-178, and 2 of the project model, ADR-156; a change that raises it moves every
+    format in the same change, R-ARCH-025);
   - a route set that fails the kit's ambiguity check, which `Register` runs itself: every route has
     a name, a method, a template, a handler, a kind, an action and at least one example, and every
     entry of `Route.Examples` is matched by its own route and by no other route of the same method;
@@ -4523,7 +4530,7 @@ describe the policy from the first stable release on.
 | Token formats | `trv_*_` prefixes (INV-8) | A prefix never changes meaning. New token types get new prefixes. |
 | Metrics, log and audit fields | Names and labels | Stable within a major. A renamed metric is emitted under both names for at least 2 minors ([operations-and-observability.md](operations-and-observability.md)). |
 | Bastion interface | `bastion.InterfaceVersion`, an integer of its own, carried in `Trove-Bastion-Interface` ([bastion.md](bastion.md) R-BAS-009) | Main installation and Bastion talk only at the same version; every change of the interface raises it, guarded by its surface file; a release that raises it says so in its notes |
-| Format contract | `formats.ContractVersion`, frozen since the end of M3 ([ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)), at 3 since the upload sessions ([ADR-178](../decisions.md#adr-178--the-upload-sessions-finalize-takes-an-offset-and-reports-the-received-count-and-the-contract-is-at-version-3)), after 2 of the project model ([ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project)) | Internal and compile-time checked; no external promise. Every change is an ADR; the rule for changing it is below |
+| Format contract | `formats.ContractVersion`, frozen since the end of M3 ([ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)), at 4 since the upstream presets ([ADR-198](../decisions.md#adr-198--the-format-catalog-names-a-formats-upstream-presets-and-the-contract-is-at-version-4)), at 3 since the upload sessions ([ADR-178](../decisions.md#adr-178--the-upload-sessions-finalize-takes-an-offset-and-reports-the-received-count-and-the-contract-is-at-version-3)), after 2 of the project model ([ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project)) | Internal and compile-time checked; no external promise. Every change is an ADR; the rule for changing it is below |
 
 **Major version 0.** trove releases stay on major version 0 until the owner decides otherwise
 ([ADR-124](../decisions.md#adr-124--releases-stay-on-major-version-0)); Semantic Release sets each version from the

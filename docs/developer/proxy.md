@@ -409,8 +409,8 @@ sequenceDiagram
 | The adapter in tests | [proxytest/handshake.go](../../internal/proxy/proxytest/handshake.go): `Adapter.Auth`, `Adapter.HeadRevalidation`, `Tokens`, `Upstream.TokenService`, `Upstream.Challenge`, `Upstream.As` (a second upstream reached under another host name, `example.com` names, for the credential rules) |
 
 To give a new format a handshake: implement `formats.Authenticator` on its remote adapter (`TokenRequest` takes the scope, and so the key, from the
-request and the path, and the realm and the service from the challenge, which may be the last one the engine remembered; `ReadToken` reads the answer and returns the `Authorization` value and the lifetime), add the format's
-`DefaultCredentialHosts` to its catalog facts when its well-known upstream has a realm on another host, and test it against
+request and the path, and the realm and the service from the challenge, which may be the last one the engine remembered; `ReadToken` reads the answer and returns the `Authorization` value and the lifetime), give each
+upstream preset whose realm is on another host that host with `SendCredentials: true` (`catalog.UpstreamPreset.ExtraHosts`, R-REPO-062), and test it against
 `proxytest` first. The format never sets `Authorization` itself, never opens a connection and never decides which host receives the
 credential.
 

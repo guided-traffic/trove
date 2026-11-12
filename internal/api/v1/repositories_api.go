@@ -366,21 +366,20 @@ func (s *Server) ListFormats(w http.ResponseWriter, r *http.Request) {
 		DisplayName string `json:"displayName"`
 	}
 	type descriptor struct {
-		Name                      string   `json:"name"`
-		DisplayName               string   `json:"displayName"`
-		Classes                   []string `json:"classes"`
-		Clients                   []client `json:"clients"`
-		Layout                    string   `json:"layout"`
-		ProtocolBasePath          string   `json:"protocolBasePath"`
-		DefaultUpstreamURL        *string  `json:"defaultUpstreamUrl"`
-		DefaultExtraHosts         []string `json:"defaultExtraHosts"`
-		DefaultCredentialHosts    []string `json:"defaultCredentialHosts"`
-		DefaultMetadataTTLSeconds *int     `json:"defaultMetadataTtlSeconds"`
-		DefaultNotFoundTTLSeconds *int     `json:"defaultNotFoundTtlSeconds"`
-		PatternSubject            string   `json:"patternSubject"`
-		PriorityMembers           bool     `json:"priorityMembers"`
-		PinsAndClaims             bool     `json:"pinsAndClaims"`
-		Caps                      bool     `json:"caps"`
+		Name             string   `json:"name"`
+		DisplayName      string   `json:"displayName"`
+		Classes          []string `json:"classes"`
+		Clients          []client `json:"clients"`
+		Layout           string   `json:"layout"`
+		ProtocolBasePath string   `json:"protocolBasePath"`
+		// UpstreamPresets are the catalog's well-known upstreams of the format, in its order (R-REPO-062).
+		UpstreamPresets           []gen.UpstreamPreset `json:"upstreamPresets"`
+		DefaultMetadataTTLSeconds *int                 `json:"defaultMetadataTtlSeconds"`
+		DefaultNotFoundTTLSeconds *int                 `json:"defaultNotFoundTtlSeconds"`
+		PatternSubject            string               `json:"patternSubject"`
+		PriorityMembers           bool                 `json:"priorityMembers"`
+		PinsAndClaims             bool                 `json:"pinsAndClaims"`
+		Caps                      bool                 `json:"caps"`
 		// VulnerabilityScanning says whether the format is scanned, by the vulnerability adapter (R-VULN-009) or the image scanning (R-VULN-033), so the screens know whether a repository
 		// of it can have findings at all (R-UI-052).
 		VulnerabilityScanning bool `json:"vulnerabilityScanning"`
@@ -405,9 +404,9 @@ func (s *Server) ListFormats(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, d := range formats.Descriptors() {
 		x := descriptor{
-			Name: string(d.ID), DisplayName: d.DisplayName, Classes: []string{}, Clients: []client{}, Layout: d.Layout, DefaultExtraHosts: append([]string{}, d.DefaultExtraHosts...),
-			DefaultCredentialHosts: append([]string{}, d.DefaultCredentialHosts...),
-			ProtocolBasePath:       d.ProtocolBasePath, DefaultMetadataTTLSeconds: d.DefaultMetadataTTLSeconds,
+			Name: string(d.ID), DisplayName: d.DisplayName, Classes: []string{}, Clients: []client{}, Layout: d.Layout,
+			UpstreamPresets:  presetsOf(d.UpstreamPresets),
+			ProtocolBasePath: d.ProtocolBasePath, DefaultMetadataTTLSeconds: d.DefaultMetadataTTLSeconds,
 			DefaultNotFoundTTLSeconds: d.DefaultNotFoundTTLSeconds, PatternSubject: string(d.PatternSubject),
 			PriorityMembers: d.PriorityMembers, PinsAndClaims: d.PinsAndClaims, Caps: d.Caps, Wiki: d.Wiki, SettingsSchema: json.RawMessage("null"),
 		}
@@ -419,10 +418,6 @@ func (s *Server) ListFormats(w http.ResponseWriter, r *http.Request) {
 			caps := formats.CapabilitiesOf(f)
 			x.VulnerabilityScanning = caps.Vulnerability != nil || caps.ImageScanned != nil
 		}
-		if d.DefaultUpstreamURL != "" {
-			u := d.DefaultUpstreamURL
-			x.DefaultUpstreamURL = &u
-		}
 		for _, c := range d.Classes {
 			x.Classes = append(x.Classes, string(c))
 		}
@@ -432,6 +427,20 @@ func (s *Server) ListFormats(w http.ResponseWriter, r *http.Request) {
 		out.Formats = append(out.Formats, x)
 	}
 	writeJSON(w, r, http.StatusOK, out)
+}
+
+// presetsOf renders a format's upstream presets as the API serves them (R-REPO-062): every member present, an empty list
+// for a preset without hosts.
+func presetsOf(in []catalog.UpstreamPreset) []gen.UpstreamPreset {
+	out := make([]gen.UpstreamPreset, 0, len(in))
+	for _, p := range in {
+		hosts := make([]gen.UpstreamPresetHost, 0, len(p.ExtraHosts))
+		for _, h := range p.ExtraHosts {
+			hosts = append(hosts, gen.UpstreamPresetHost{Pattern: h.Pattern, SendCredentials: h.SendCredentials})
+		}
+		out = append(out, gen.UpstreamPreset{Id: p.ID, DisplayName: p.DisplayName, Url: p.URL, ExtraHosts: hosts, Default: p.Default})
+	}
+	return out
 }
 
 // mirrorFact is the catalog fact Entry.Mirror of a format: whether a remote repository of it can run in mode mirror

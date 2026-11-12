@@ -23,9 +23,11 @@ import (
 // addition keeps the version, and a breaking change raises it and moves every format in the
 // same change. Version 2 is the project model's (ADR-156): the repository is named by its
 // qualified name, the read scope, the link builder and the refusals changed. Version 3 is the upload sessions' (ADR-178):
-// UploadSessions.Finalize takes the offset of its last bytes and returns the received count with a refusal of it. A format declares the literal it was
-// written against in [Descriptor.ContractVersion], and Register panics on a mismatch.
-const ContractVersion = 3
+// UploadSessions.Finalize takes the offset of its last bytes and returns the received count with a refusal of it. Version 4 is the
+// upstream presets' (ADR-198): catalog.Facts.UpstreamPresets replaces DefaultUpstreamURL, DefaultExtraHosts and
+// DefaultCredentialHosts. A format declares the literal it was written against in [Descriptor.ContractVersion], and Register panics
+// on a mismatch.
+const ContractVersion = 4
 
 // The types of other packages under the names a format spells them: one type
 // each, no mirrors (Q-ARCH-188, Q-ARCH-189). A format imports this package and
@@ -414,6 +416,13 @@ func Validate(f Format) error {
 	if caps := CapabilitiesOf(f).Remote; caps.Stood != nil && caps.Auth == nil {
 		// The reading of a stood 401 belongs to a handshake: without an Authenticator the engine never asks it (Q-OCI-127).
 		return fmt.Errorf("%q implements StoodChallengeReader on its remote adapter without an Authenticator", id)
+	}
+	for _, p := range d.UpstreamPresets {
+		// A preset's URL is compared with the stored, normalized URL of a repository (R-REPO-062): written any other way it would
+		// never match one.
+		if norm, why := repository.NormalizeUpstreamURL(p.URL); why != "" || norm != p.URL {
+			return fmt.Errorf("%q: the URL %q of the upstream preset %q is not in the form R-REPO-024 stores (%s)", id, p.URL, p.ID, norm+why)
+		}
 	}
 	if d.ProbeChallengeReachable {
 		// The upstream test reads a Bearer challenge of the probe resource as reachable: that is true only for a format whose upstream

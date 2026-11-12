@@ -13,7 +13,7 @@ func noDigestCatalog() *catalog.Registry {
 	r.Register(catalog.Entry{Facts: catalog.Facts{
 		ID: "nodigest", Classes: []Class{Local, Remote, Virtual}, Layout: "nodigest", ProtocolBasePath: "/api/nodigest/{project}/{key}/",
 		PatternSubject: SubjectName, PackageNames: true, PriorityMembers: true, PinsAndClaims: true,
-		DefaultUpstreamURL: "https://feed.example.org/index.json", ChecksumRequireUnsupported: true,
+		UpstreamPresets: []catalog.UpstreamPreset{{ID: "public", DisplayName: "Public", URL: "https://feed.example.org/index.json", Default: true}}, ChecksumRequireUnsupported: true,
 	}, Names: lower{}})
 	return r
 }

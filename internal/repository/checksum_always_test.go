@@ -15,7 +15,7 @@ func TestR_REPO_041_IgnoreAndPassThroughAreRefusedForAFormatThatAlwaysVerifies(t
 	cat.Register(catalog.Entry{Facts: catalog.Facts{
 		ID: "alwaysverified", Classes: []Class{Local, Remote, Virtual}, Layout: "alwaysverified", ProtocolBasePath: "/api/alwaysverified/{project}/{key}/",
 		PatternSubject: SubjectName, PackageNames: true, PriorityMembers: true, PinsAndClaims: true,
-		DefaultUpstreamURL: "https://feed.example.org/", ChecksumAlwaysVerified: true,
+		UpstreamPresets: []catalog.UpstreamPreset{{ID: "public", DisplayName: "Public", URL: "https://feed.example.org/", Default: true}}, ChecksumAlwaysVerified: true,
 	}, Names: lower{}})
 	validateWith := func(t *testing.T, policy string, create bool) error {
 		t.Helper()

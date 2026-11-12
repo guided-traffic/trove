@@ -82,13 +82,14 @@ func (r *remoteResolver) mirrorRanges(m MirrorSettings) {
 	}
 }
 
-// checkMirrorBound applies R-REPO-052: a mirror of the format's well-known upstream needs include patterns that each
-// bound it, or maxBytes; any other upstream without either is saved with a warning.
+// checkMirrorBound applies R-REPO-052: a mirror of the format's default preset needs include patterns that each bound
+// it, or maxBytes; any other upstream without either is saved with a warning.
 func (r *remoteResolver) checkMirrorBound(s *RemoteSettings) {
 	if s.Mirror.MaxBytes != nil || boundingIncludes(r.include) {
 		return
 	}
-	known, _ := NormalizeUpstreamURL(r.info.DefaultUpstreamURL)
+	preset, _ := r.info.DefaultPreset()
+	known := preset.URL
 	if u, err := url.Parse(s.URL); known != "" && err == nil && discover.SameUpstream(u, known) {
 		r.v.add("/remote/mode", errs.CodeMirrorUnbounded,
 			"a mirror of "+known+" needs a bound: include patterns that each have a literal prefix (such as @types/* or Microsoft.Extensions.*), or remote.mirror.maxBytes")

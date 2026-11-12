@@ -18,18 +18,15 @@ import {
   text,
   type,
 } from '../../testing/screen';
+import { EMPTY_FORM, formOf, maskSecrets, settingsOf } from './repository-model';
 import {
-  EMPTY_FORM,
   EMPTY_UPSTREAM,
   UpstreamForm,
-  formOf,
   initialUpstream,
-  maskSecrets,
-  settingsOf,
   upstreamDefaultsOf,
   upstreamOf,
   upstreamTestBody,
-} from './repository-model';
+} from './upstream-model';
 import { RepositoryDetail } from './repository-detail';
 import { RepositoryWizard } from './repository-wizard';
 import { upstreamPointerLabel, upstreamTarget } from './upstream-settings';
@@ -37,7 +34,6 @@ import { upstreamPointerLabel, upstreamTarget } from './upstream-settings';
 const NPM: FormatDescriptor = {
   ...PACKAGE_FORMAT,
   mirror: true,
-  defaultUpstreamUrl: 'https://registry.npmjs.org/',
   defaultMetadataTtlSeconds: 7200,
   defaultNotFoundTtlSeconds: 1800,
 };
@@ -45,12 +41,11 @@ const NPM: FormatDescriptor = {
 const NUGET: FormatDescriptor = {
   ...NUGET_FORMAT,
   mirror: false,
-  defaultUpstreamUrl: 'https://api.nuget.org/v3/index.json',
   defaultMetadataTtlSeconds: 300,
   defaultNotFoundTtlSeconds: 1800,
 };
 /** A format with no well-known upstream. */
-const PRIVATE_ONLY: FormatDescriptor = { ...NUGET, name: 'nuget', defaultUpstreamUrl: null };
+const PRIVATE_ONLY: FormatDescriptor = { ...NUGET, name: 'nuget', upstreamPresets: [] };
 
 /** The terms of a description list with their descriptions. */
 const facts = (root: Element): Record<string, string> =>

@@ -161,8 +161,8 @@ The `remote` section of a remote repository (R-REPO-024) is validated in the sam
   member, or a wrong type, is `400 malformed_request`. A merge patch reaches the same check, because the service reads the patched
   document like a PUT body.
 - **Validate.** `validate` calls `validateRemote` for the class remote. It reads the section into `remoteInput` (every member a pointer,
-  so an omitted member takes its default), applies the defaults of the format's catalog entry (`DefaultUpstreamURL`,
-  `DefaultExtraHosts` for that upstream only, `DefaultMetadataTTLSeconds`, `DefaultNotFoundTTLSeconds`), checks every range and
+  so an omitted member takes its default), applies the defaults of the format's catalog entry (the URL of `DefaultPreset()` and
+  that preset's `ExtraHosts` for that upstream only, `DefaultMetadataTTLSeconds`, `DefaultNotFoundTTLSeconds`), checks every range and
   enumeration, and **replaces `d.Remote` with the canonical section**: every member present, the URL normalized, the secret fields
   reduced to `{"set": true}` or their reference. The plaintext of a request goes into `Settings.pending` and never into a JSON form
   (`SecretField.MarshalJSON` cannot write it). The warnings (`plain_http_upstream`, `source_network_single_address`) go to
@@ -201,7 +201,8 @@ a repository is addressed inside its project.
 | `GET /api/v1/repositories`, `GET /api/v1/projects/{projectKey}/repositories` | `ListFilter.Project`; keyset cursor over (project key, key); the instance-wide list carries the project of each item |
 | `POST /api/v1/projects/{projectKey}/repositories` | `CreateTx` in the transaction of the `Idempotency-Key`; 201 with `Location`, `ETag: "1"`, the document (with `project`) and `warnings`; 409 `already_exists` for a taken key of that project |
 | `GET`, `PUT`, `PATCH`, `DELETE …/repositories/{repoKey}` | `Get`, `Replace`, `Patch`, `Delete` with a `qname.Repo`; hidden and missing are the same 404 |
-| `POST …/repositories/{repoKey}/upstream-test`, `POST …/upstream-tests` | `UpstreamTest(ctx, name)`, `UpstreamTestUnsaved(ctx, body)` |
+| `POST …/repositories/{repoKey}/upstream-test`, `POST …/upstream-tests` | `UpstreamTest(ctx, name)`, `UpstreamTestUnsaved(ctx, body)`; the result carries `tokenService` (R-REPO-064) |
+| `GET /api/v1/projects/{projectKey}/repository-defaults` | `getRepositoryDefaults` (R-REPO-063): the document a bare create would store and a free key; in the contract, its handler answers `503` until it is built ([repository_defaults_api.go](../../internal/api/v1/repository_defaults_api.go)) |
 | `GET`, `POST …/repositories/{repoKey}/mirror[/run]` | [mirror.md](mirror.md) |
 
 The `project` member of the document is read-only: a create takes the project of the address, and a body that names another project is
@@ -216,7 +217,9 @@ The format catalog is [internal/formats/catalog](../../internal/formats/catalog/
 registry of its own (see `testCatalog` in [validate_test.go](../../internal/repository/validate_test.go)). There is no
 mirror of the facts in this package or in the composition root. The model validates class, layout and the members that only
 some formats have (`PackageNames`, `PriorityMembers`, `PinsAndClaims`, `Caps`) against the entry. The decision point reads
-the same entry for the package-name rule and the exposure facts (`catalog.Names`, `catalog.Exposure`). The generic format sets none
+the same entry for the package-name rule and the exposure facts (`catalog.Names`, `catalog.Exposure`). A remote format's upstream
+presets (`catalog.Facts.UpstreamPresets`, R-REPO-062) are read through `DefaultPreset()` (the URL an omitted `url` takes) and
+`PresetFor(url)` (the preset of a stored URL); `GET /api/v1/formats` serves them as `upstreamPresets`. The generic format sets none
 of them, so `priorityMember`, `local.packageOwnership`, `ownershipDomain`, `autoClaim` and `local.caps` answer
 `not_applicable` (R-GENERIC-008). `OwnershipDefault` is the `packageOwnership` of a format's local repositories while their
 document sets none (npm and NuGet: `enforce`): `applyOwnershipDefault` in [validate.go](../../internal/repository/validate.go)

@@ -15,13 +15,16 @@ import (
 func intp(n int) *int { return &n }
 
 // remoteCatalog is a catalog with a remote-capable format that proposes what the
-// npm format proposes: a well-known upstream, an extra host and the cache periods.
+// npm format proposes: a default preset with an extra host, and the cache periods.
 func remoteCatalog() *catalog.Registry {
 	r := testCatalog()
 	r.Register(catalog.Entry{Facts: catalog.Facts{
 		ID: "npmlike", Classes: []Class{Local, Remote, Virtual}, Layout: "npmlike", ProtocolBasePath: "/api/npmlike/{project}/{key}/",
 		PatternSubject: SubjectName, PackageNames: true, PriorityMembers: true, PinsAndClaims: true,
-		DefaultUpstreamURL: "https://registry.example.org/", DefaultExtraHosts: []string{"*.cdn.example.org"},
+		UpstreamPresets: []catalog.UpstreamPreset{{
+			ID: "public", DisplayName: "Public", URL: "https://registry.example.org/", Default: true,
+			ExtraHosts: []catalog.PresetHost{{Pattern: "*.cdn.example.org"}},
+		}},
 		DefaultMetadataTTLSeconds: intp(7200), DefaultNotFoundTTLSeconds: intp(1800), ProbePath: "-/ping",
 	}, Names: lower{}})
 	return r

@@ -60,8 +60,8 @@ repository speaks the NuGet v3 protocol; there is no per-repository protocol swi
 
 Format registration (R-REPO-003 in [repositories-and-proxy.md](../repositories-and-proxy.md)):
 name `nuget`; classes `local`, `remote`, `virtual`; protocol base path template `/api/nuget/{project}/{key}/`;
-default upstream URL `https://api.nuget.org/v3/index.json`, with the proposed extra host
-`{"pattern": "*.nuget.org", "sendCredentials": false}` for it (R-NUGET-014); default metadata
+one upstream preset ([R-REPO-062](../repositories-and-proxy.md#r-repo-062--upstream-presets-of-a-format)), nuget.org (`nuget-org`, `https://api.nuget.org/v3/index.json`, the default), with the
+extra host `{"pattern": "*.nuget.org", "sendCredentials": false}` (R-NUGET-014); default metadata
 period 300 s and not-found period 1800 s (R-NUGET-015); pattern subject `name` (R-REPO-005);
 priority members (R-REPO-022), pin rules and namespace claims (R-REPO-023) supported; package
 name = package ID, lowercased as R-NUGET-003 defines `lower_id`; package-document path
@@ -124,7 +124,7 @@ Acceptance criteria:
   (`<base>/api/nuget/nope/nuget-local/v3/index.json`) and `curl -i <base>/api/nuget/web` each return 404.
 - Every `@id` in the service index of `nuget-local`, `nuget-org` and `nuget-all` starts with that
   repository's own `<feed>/`.
-- `curl -s <base>/api/v1/formats` lists `nuget` with the default upstream URL above.
+- `curl -s <base>/api/v1/formats` lists `nuget` with the upstream preset above.
 
 ### R-NUGET-002 · Service index and HTTP conventions
 Priority: **MVP** · Covers: PKG-NUGET-041, PKG-NUGET-043, PKG-NUGET-044

@@ -21,7 +21,7 @@ func TestR_REPO_003_TheCatalogFactsOfNPM(t *testing.T) {
 	if d.ID != "npm" || d.Layout != "npm" || d.ProtocolBasePath != "/api/npm/{project}/{key}/" || d.PatternSubject != formats.SubjectName {
 		t.Fatalf("%+v", d.Facts)
 	}
-	if d.DefaultUpstreamURL != "https://registry.npmjs.org/" || d.ProbePath != "-/ping" ||
+	if d.ProbePath != "-/ping" ||
 		d.DefaultMetadataTTLSeconds == nil || *d.DefaultMetadataTTLSeconds != 7200 ||
 		d.DefaultNotFoundTTLSeconds == nil || *d.DefaultNotFoundTTLSeconds != 1800 {
 		t.Fatalf("upstream facts %+v", d.Facts)
@@ -29,6 +29,12 @@ func TestR_REPO_003_TheCatalogFactsOfNPM(t *testing.T) {
 	if !d.PackageNames || !d.PinsAndClaims || !d.PriorityMembers || d.Caps {
 		t.Fatalf("%+v", d.Facts)
 	}
+	t.Run("R-REPO-062 the public registry is the one preset and the default", func(t *testing.T) {
+		want := []catalog.UpstreamPreset{{ID: "npmjs", DisplayName: "npm public registry", URL: "https://registry.npmjs.org/", Default: true}}
+		if !reflect.DeepEqual(d.UpstreamPresets, want) {
+			t.Fatalf("presets = %+v", d.UpstreamPresets)
+		}
+	})
 	t.Run("R-AUTHZ-018 a local repository holds package ownership enforced by default", func(t *testing.T) {
 		if d.OwnershipDefault != catalog.OwnershipEnforce {
 			t.Fatalf("OwnershipDefault = %q", d.OwnershipDefault)

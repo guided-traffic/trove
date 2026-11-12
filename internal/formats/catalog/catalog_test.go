@@ -190,9 +190,9 @@ func TestR_EP_018_ExposureFactsFailClosed(t *testing.T) {
 	}
 }
 
-// The registry root and the credential hosts are facts of the registration (Q-OCI-4, R-OCI-021): at most one format is the root of
-// a host, its base path is the registry's, and a host that receives credentials by default is one of the default extra hosts.
-func TestRegistryRootAndCredentialHostsAreChecked(t *testing.T) {
+// The registry root is a fact of the registration (Q-OCI-4): at most one format is the root of a host, and its base path is
+// the registry's.
+func TestRegistryRootIsChecked(t *testing.T) {
 	root := func(id string) Entry {
 		e := valid(id)
 		e.RegistryRoot, e.ProtocolBasePath = true, RegistryRootBasePath
@@ -226,17 +226,70 @@ func TestRegistryRootAndCredentialHostsAreChecked(t *testing.T) {
 		e.ProtocolBasePath = "/api/probe-api/{project}/{key}/"
 		NewRegistry().Register(e)
 	})
-	t.Run("a credential host is an extra host", func(t *testing.T) {
-		ok := valid("probe-cred")
-		ok.DefaultExtraHosts, ok.DefaultCredentialHosts = []string{"auth.example.com", "cdn.example.com"}, []string{"auth.example.com"}
-		NewRegistry().Register(ok)
-		bad := valid("probe-cred2")
-		bad.DefaultExtraHosts, bad.DefaultCredentialHosts = []string{"cdn.example.com"}, []string{"auth.example.com"}
-		defer func() {
-			if recover() == nil {
-				t.Fatal("no panic")
-			}
-		}()
-		NewRegistry().Register(bad)
+}
+
+// remoteWith is a format with the remote class and the given presets.
+func remoteWith(id string, presets ...UpstreamPreset) Entry {
+	e := valid(id)
+	e.Classes = []Class{Local, Remote}
+	e.UpstreamPresets = presets
+	return e
+}
+
+func preset(id, url string, def bool, hosts ...PresetHost) UpstreamPreset {
+	return UpstreamPreset{ID: id, DisplayName: "Registry " + id, URL: url, Default: def, ExtraHosts: hosts}
+}
+
+// TestR_REPO_062_RegisterRefusesPresetsThatBreakTheRules: a format's upstream presets are refused at registration on a format
+// without the remote class, without a default or with two, with an id or a URL twice, with an id out of its shape, without a
+// name or a URL, and with a host pattern twice in one preset.
+func TestR_REPO_062_RegisterRefusesPresetsThatBreakTheRules(t *testing.T) {
+	a := preset("alpha", "https://a.example.com/", true, PresetHost{Pattern: "auth.example.com", SendCredentials: true})
+	b := preset("beta", "https://b.example.com/", false)
+	local := valid("probe-local")
+	local.UpstreamPresets = []UpstreamPreset{a}
+	bad := map[string]Entry{
+		"presets without the remote class": local,
+		"no default":                       remoteWith("probe-nodef", preset("alpha", "https://a.example.com/", false), b),
+		"two defaults":                     remoteWith("probe-twodef", a, preset("beta", "https://b.example.com/", true)),
+		"an id twice":                      remoteWith("probe-idtwice", a, preset("alpha", "https://b.example.com/", false)),
+		"a URL twice":                      remoteWith("probe-urltwice", a, preset("beta", "https://a.example.com/", false)),
+		"an id out of its shape":           remoteWith("probe-badid", a, preset("Beta_1", "https://b.example.com/", false)),
+		"no display name":                  remoteWith("probe-noname", a, UpstreamPreset{ID: "beta", URL: "https://b.example.com/"}),
+		"no URL":                           remoteWith("probe-nourl", a, UpstreamPreset{ID: "beta", DisplayName: "Beta"}),
+		"a host pattern twice": remoteWith("probe-hosttwice", preset("alpha", "https://a.example.com/", true,
+			PresetHost{Pattern: "auth.example.com", SendCredentials: true}, PresetHost{Pattern: "auth.example.com"})),
+	}
+	for name, e := range bad {
+		t.Run("R-REPO-062 Register panics on "+name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatal("no panic")
+				}
+			}()
+			NewRegistry().Register(e)
+		})
+	}
+	t.Run("R-REPO-062 the presets of a remote format are accepted and served in their order", func(t *testing.T) {
+		r := NewRegistry()
+		r.Register(remoteWith("probe-ok", b, a))
+		e, _ := r.Lookup("probe-ok")
+		if len(e.UpstreamPresets) != 2 || e.UpstreamPresets[0].ID != "beta" || e.UpstreamPresets[1].ID != "alpha" {
+			t.Fatalf("presets = %+v", e.UpstreamPresets)
+		}
+		if d, ok := e.DefaultPreset(); !ok || d.ID != "alpha" {
+			t.Errorf("default = %+v, %v", d, ok)
+		}
+		if p, ok := e.PresetFor("https://b.example.com/"); !ok || p.ID != "beta" {
+			t.Errorf("preset for b = %+v, %v", p, ok)
+		}
+		if _, ok := e.PresetFor("https://c.example.com/"); ok {
+			t.Error("a URL of no preset names one")
+		}
+	})
+	t.Run("R-REPO-062 a format without presets has no default", func(t *testing.T) {
+		if _, ok := valid("probe-none").DefaultPreset(); ok {
+			t.Error("a default without presets")
+		}
 	})
 }

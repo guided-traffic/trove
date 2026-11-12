@@ -159,6 +159,38 @@ func TestR_ARCH_010_RegisterChecksTheProbeChallengeFact(t *testing.T) {
 	})
 }
 
+// TestR_REPO_062_RegisterRefusesAPresetURLThatIsNotNormalized: a preset's URL is compared with a repository's stored URL, so it is
+// written as R-REPO-024 stores it; formats.Register refuses any other spelling, and a format with two default presets.
+func TestR_REPO_062_RegisterRefusesAPresetURLThatIsNotNormalized(t *testing.T) {
+	withPresets := func(id string, presets ...catalog.UpstreamPreset) fake {
+		d := valid(id)
+		d.Classes = []Class{Local, Remote}
+		d.UpstreamPresets = presets
+		return fake{d: d, remote: stubRemote{}}
+	}
+	for name, url := range map[string]string{
+		"an upper-case host": "https://Registry.example.com/",
+		"the default port":   "https://registry.example.com:443/",
+		"no path":            "https://registry.example.com",
+	} {
+		t.Run("R-REPO-062 Register panics on "+name, func(t *testing.T) {
+			mustPanic(t, withPresets("probe-presetnorm", catalog.UpstreamPreset{ID: "public", DisplayName: "Public", URL: url, Default: true}),
+				"is not in the form")
+		})
+	}
+	t.Run("R-REPO-062 Register panics on two default presets", func(t *testing.T) {
+		mustPanic(t, withPresets("probe-presettwo",
+			catalog.UpstreamPreset{ID: "one", DisplayName: "One", URL: "https://one.example.com/", Default: true},
+			catalog.UpstreamPreset{ID: "two", DisplayName: "Two", URL: "https://two.example.com/", Default: true}), "default upstream presets")
+	})
+	t.Run("R-REPO-062 a normalized preset registers", func(t *testing.T) {
+		Register(withPresets("probe-presetok", catalog.UpstreamPreset{ID: "public", DisplayName: "Public", URL: "https://registry.example.com/", Default: true}))
+		if e, ok := catalog.Default().Lookup("probe-presetok"); !ok || len(e.UpstreamPresets) != 1 {
+			t.Fatalf("entry = %+v", e)
+		}
+	})
+}
+
 // handshakeRemote is a remote adapter that implements the token handshake.
 type handshakeRemote struct{ stubRemote }
 

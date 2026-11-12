@@ -268,6 +268,15 @@ the token to a host the repository does not list, to a cleartext address of an `
 builds the token request from the challenge's service and scope, so those strings come from the upstream as well; what the format does with
 them is on its own page.
 
+**Presets.** A format's upstream presets ([R-REPO-062](../spec/repositories-and-proxy.md#r-repo-062--upstream-presets-of-a-format))
+name, for each well-known registry, the hosts a repository of it needs and which of them receives the credential; a create whose URL
+is a preset's and that omits `extraHosts` stores that preset's hosts
+([Q-REPO-322](../spec/repositories-and-proxy.md#q-repo-322--a-presets-hosts-come-with-its-url)). The presets are the format's code,
+checked at registration ([catalog.go](../../internal/formats/catalog/catalog.go) `checkPresets`, `formats.Validate`): each names its
+`sendCredentials` hosts explicitly, and only a host of the registry's own operator is one (`auth.docker.io` for Docker Hub, `gitlab.com`
+for GitLab). Any other URL stores no host, so a private upstream never gets a credential host it did not ask for. The hosts are copied
+into the stored document, not looked up later ([H-970](#h-970--a-presets-credential-host-is-fixed-in-the-repository-when-it-is-created)).
+
 **Revalidation.** A format that gives its own revalidation request ([revalidate.go](../../internal/proxy/revalidate.go)) has that request
 sent like any other (the host check, the hop policy, the handshake on a `401`). A `404` or `410` to it marks the document gone and a `429` or
 `5xx` follows the stale rules and the circuit, as for a conditional `GET`; only a `2xx` goes to the format, whose verdict renews the
@@ -288,6 +297,7 @@ freshness without a body or makes the engine fetch ([Q-OCI-81](../spec/formats/o
 - [H-611](#h-611--handshake-tokens-sit-in-the-memory-of-a-replica-until-they-expire): a token sits in process memory until it expires.
 - [H-612](#h-612--a-failing-token-service-is-asked-by-every-request): a failing token service is asked by every request, and no circuit protects it.
 - [H-613](#h-613--one-upstream-can-evict-the-tokens-of-other-repositories-from-a-replicas-cache): the token cache is shared, with no cap per repository.
+- [H-970](#h-970--a-presets-credential-host-is-fixed-in-the-repository-when-it-is-created): a preset's credential host is copied into a repository when it is created, and a later correction of the preset does not reach it.
 - [H-569](backup-and-restore.md#h-569--upstream-storage-and-format-settings-of-a-repository-come-back-with-a-restore): a restore brings back the upstream URL, the credential's hosts, the integrity settings and the offline mode of the restore point.
 
 ### H-582 · One remote repository can hold every fetch slot of a replica
@@ -346,7 +356,8 @@ upstream's choosing, as often as it can make trove ask (once per token). Hosts w
 get no credential.
 
 What makes it real: an operator who lists more than one `sendCredentials` host for an upstream, one of which is not run by the upstream's
-operator, and an upstream that is compromised. The default proposal for the well-known OCI upstream is one host, `auth.docker.io`.
+operator, and an upstream that is compromised. Each OCI preset proposes at most one `sendCredentials` host, run by the registry's own
+operator: `auth.docker.io` (Docker Hub), `gitlab.com` (GitLab).
 
 ### H-611 · Handshake tokens sit in the memory of a replica until they expire
 
@@ -398,3 +409,18 @@ missing token is fetched again.
 
 What makes it real: a repository that is pulled with very many distinct scopes within a token lifetime (a mirror pass over a large registry),
 next to repositories whose tokens the replica would otherwise keep. No cap per repository exists.
+
+### H-970 · A preset's credential host is fixed in the repository when it is created
+
+Component: the presets of the catalog (`catalog.Facts.UpstreamPresets`) and the create of
+[R-REPO-062](../spec/repositories-and-proxy.md#r-repo-062--upstream-presets-of-a-format), which copies a preset's `extraHosts` into the
+stored `remote` section.
+
+Subject: the upstream credential of a remote created from a preset with a `sendCredentials` host (GitLab: `gitlab.com`; Docker Hub:
+`auth.docker.io`), and the host that receives it.
+
+Live once R-REPO-062 is built. The hosts are the format's knowledge of the registry on the day the format was written. A registry
+that moves its token service to another host makes the remote fail closed (`foreign_host_denied`), never send the credential to the
+new host; but a preset corrected in a later release does not reach repositories created earlier, which keep the stored hosts, so a
+wrong `sendCredentials` host stays until an administrator edits the repository. What makes it real: a preset whose credential host
+is not run by the registry's operator, which the table of R-REPO-062 rules out for the presets listed.

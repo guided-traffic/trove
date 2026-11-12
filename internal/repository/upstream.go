@@ -37,8 +37,22 @@ type UpstreamTestResult struct {
 	OutboundProxy *string `json:"outboundProxy"`
 	// SourceAddress is the local address the probing replica bound (R-REPO-024,
 	// sourceNetwork); nil when the kernel chose.
-	SourceAddress *string            `json:"sourceAddress"`
-	Error         *UpstreamTestError `json:"error"`
+	SourceAddress *string `json:"sourceAddress"`
+	// TokenService is the token service a Bearer challenge of the upstream named
+	// (R-REPO-064); nil without one.
+	TokenService *UpstreamTokenService `json:"tokenService"`
+	Error        *UpstreamTestError    `json:"error"`
+}
+
+// UpstreamTokenService is the realm of a registry's Bearer challenge as the
+// upstream test judged it (R-REPO-064): its host, whether the repository may
+// reach it (the upstream's origin or an extraHosts entry) and whether the
+// repository's credential is sent to it (the origin, or an entry with
+// sendCredentials).
+type UpstreamTokenService struct {
+	Host               string `json:"host"`
+	Allowed            bool   `json:"allowed"`
+	ReceivesCredential bool   `json:"receivesCredential"`
 }
 
 // UpstreamTLS is the leaf certificate of the upstream.
@@ -51,7 +65,7 @@ type UpstreamTLS struct {
 // is one of the stable codes of internal/proxy/upstream (dns_error,
 // connection_refused, timeout, tls_untrusted, egress_denied,
 // source_network_unavailable, upstream_secret_unavailable, offline,
-// too_many_redirects, insecure_redirect, request_failed).
+// too_many_redirects, insecure_redirect, request_failed, foreign_host_denied).
 type UpstreamTestError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`

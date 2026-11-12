@@ -190,6 +190,7 @@ The gaps of the spec pages whose mechanism this page describes:
 - [H-53](../spec/operations-and-observability.md#h-53--span-export-bypasses-the-egress-address-policy): the span export bypasses the egress address policy.
 - [H-56](../spec/architecture.md#h-56--the-object-store-endpoint-skips-the-egress-address-policy): the object-store endpoint, and with it the backup target, skips the egress address policy.
 - [H-504](../spec/repositories-and-proxy.md#h-504--npms-replication-host-is-contacted-although-it-is-not-an-extrahosts-entry): npm's replication host is contacted although it is not an `extraHosts` entry.
+- [H-971](#h-971--the-upstream-test-tells-its-caller-whether-a-credential-is-accepted-from-troves-address): the upstream test tells its caller whether a credential is accepted, from trove's address.
 
 ### H-78 · The NAT64 check knows only the well-known prefix
 
@@ -216,6 +217,21 @@ What makes it real: a principal with the capability and an installation whose cl
 ([H-516](#h-516--the-chart-restricts-no-egress-of-its-pods)). The body of
 the response is never returned, at most 64 KiB are read and dropped, and the messages never repeat the URL; the status and the timing are
 the channel.
+
+### H-971 · The upstream test tells its caller whether a credential is accepted, from trove's address
+
+Stage: the upstream tests of [R-REPO-024](../spec/repositories-and-proxy.md#r-repo-024--remote-repository-settings) and
+[R-REPO-064](../spec/repositories-and-proxy.md#r-repo-064--the-upstream-test-follows-a-token-handshake-and-names-the-token-service)
+([repository/upstream.go](../../internal/repository/upstream.go)).
+
+Subject: the accounts of an upstream registry and of its token service. A holder of `repositories:write-config`, or the Owner of a
+project, can send a typed credential to a registry, or since R-REPO-064 to its token service, and read `authenticated`; the registry
+sees trove's egress address, not the caller's, so its per-address limits and blocks fall on trove. Live today for upstreams that
+answer the probe with Basic; live for token services once R-REPO-064 is built. What bounds it: the management API's rate limits
+([R-API-016](../spec/api-and-ui.md#r-api-016--rate-limits)), the request log that records the call
+([R-OPS-010](../spec/operations-and-observability.md#r-ops-010--request-log)), and that the caller must already be able to configure a
+repository; the test is not an audit event. What makes it real: a caller
+who guesses another account's password through trove.
 
 
 ### H-516 · The chart restricts no egress of its pods

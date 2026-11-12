@@ -5072,8 +5072,8 @@ paths:
       summary: List the package formats
       description: |
         The format catalog (R-REPO-003): for each format the classes the implementation accepts, its
-        layout, the client address template, the cache periods and the facts that decide which
-        members of a repository document apply. The list of classes is the single source of truth
+        layout, the client address template, the upstream presets of a remote repository (R-REPO-062),
+        the cache periods and the facts that decide which members of a repository document apply. The list of classes is the single source of truth
         for the create form: a class that is not listed answers `422 unsupported_class`. The answer also
         carries the `baseUrl` of the endpoint the request arrived on. Any caller; an anonymous caller
         only while some repository's artifacts are `public` (`publicContent`, R-AUTH-037), else `401`.
@@ -5094,9 +5094,7 @@ paths:
                     clients: []
                     layout: generic
                     protocolBasePath: /files/{project}/{key}/
-                    defaultUpstreamUrl: null
-                    defaultExtraHosts: []
-                    defaultCredentialHosts: []
+                    upstreamPresets: []
                     defaultMetadataTtlSeconds: null
                     defaultNotFoundTtlSeconds: 1800
                     patternSubject: path
@@ -5816,6 +5814,76 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
+  # >>> T-21b presets
+  /api/v1/projects/{projectKey}/repository-defaults:
+    parameters:
+      - $ref: "#/components/parameters/ProjectKey"
+    get:
+      operationId: getRepositoryDefaults
+      tags: [repositories]
+      summary: Read the defaults of a new repository
+      description: |
+        What a create of only `key`, `class` and `format` in the project would store, and a key that is free in the project
+        (R-REPO-063): the values the creation form shows in its fields. It writes nothing and records no audit event. An unknown
+        format answers `422 unknown_format`, a class the format lacks `422 not_applicable`; a project the caller cannot see `404`.
+      x-trove-permission:
+        permission: repositories:write-config
+        project: path.projectKey
+        projectRole: owner
+      parameters:
+        - name: format
+          in: query
+          required: true
+          description: A format of `GET /api/v1/formats`.
+          schema:
+            type: string
+        - name: class
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [local, remote, virtual]
+      responses:
+        "200":
+          description: The defaults.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepositoryDefaults"
+              example:
+                suggestedKey: oci-remote
+                repository:
+                  class: remote
+                  format: oci
+                  description: ""
+                  includePatterns: []
+                  excludePatterns: []
+                  disabled: false
+                  visibility: {artifacts: internal, wiki: internal}
+                  remote:
+                    url: https://registry-1.docker.io/
+                    extraHosts: [{pattern: auth.docker.io, sendCredentials: true}]
+                    authMode: none
+                    cache: {metadataTtlSeconds: 300, notFoundTtlSeconds: 300}
+                    mode: pullThrough
+                    mirror: {intervalSeconds: 3600, concurrency: 4}
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  # <<< T-21b presets
   /api/v1/projects/{projectKey}/repositories:
     parameters:
       - $ref: "#/components/parameters/ProjectKey"
@@ -10218,6 +10286,7 @@ paths:
                 tls: {peerSubject: CN=registry.npmjs.org, notAfter: "2027-03-01T00:00:00Z"}
                 outboundProxy: null
                 sourceAddress: null
+                tokenService: null
                 error: null
         "400":
           $ref: "#/components/responses/BadRequest"
@@ -16242,7 +16311,7 @@ components:
     # >>> M1 repository
     FormatDescriptor:
       type: object
-      required: [name, classes, clients, layout, protocolBasePath, defaultUpstreamUrl, defaultExtraHosts, defaultCredentialHosts, defaultMetadataTtlSeconds, defaultNotFoundTtlSeconds, patternSubject, priorityMembers, pinsAndClaims, caps, vulnerabilityScanning, mirror, wiki, settingsSchema]
+      required: [name, classes, clients, layout, protocolBasePath, upstreamPresets, defaultMetadataTtlSeconds, defaultNotFoundTtlSeconds, patternSubject, priorityMembers, pinsAndClaims, caps, vulnerabilityScanning, mirror, wiki, settingsSchema]
       properties:
         name:
           type: string
@@ -16270,22 +16339,17 @@ components:
         protocolBasePath:
           type: string
           description: The client address template; `{project}` and `{key}` are the project and the repository key. `/api/<format>/{project}/{key}/`, or `/v2/{project}/{key}/` for the format that serves the registry root (R-OCI-001).
-        defaultUpstreamUrl:
-          type: [string, "null"]
-        # >>> WP2.1 formats
-        defaultExtraHosts:
-          type: array
-          description: The further hosts a remote repository of the format may fetch from by default (R-REPO-024); empty for a format without any.
-          items:
-            type: string
-        defaultCredentialHosts:
+        # >>> T-21b presets
+        upstreamPresets:
           type: array
           description: |
-            The entries of `defaultExtraHosts` that a remote repository of the format proposes with `sendCredentials: true`, because the
-            upstream's token realm lives there (R-OCI-021); each is also in `defaultExtraHosts`. Empty for a format without any.
+            The well-known public registries of the format's ecosystem, in the format's order (R-REPO-062): the one-click choices of a
+            remote repository's upstream. Exactly one is the `default`, the upstream an omitted `remote.url` takes; a create whose
+            `url` equals a preset's and that omits `extraHosts` stores that preset's hosts. Empty for a format without a well-known
+            upstream, whose remote repositories need a `url`, and for a format without the class `remote`.
           items:
-            type: string
-        # <<< WP2.1 formats
+            $ref: "#/components/schemas/UpstreamPreset"
+        # <<< T-21b presets
         defaultMetadataTtlSeconds:
           type: [integer, "null"]
         defaultNotFoundTtlSeconds:
@@ -16333,6 +16397,60 @@ components:
         displayName:
           type: string
           description: A product name; the UI does not translate it.
+    # >>> T-21b presets
+    UpstreamPreset:
+      type: object
+      required: [id, displayName, url, extraHosts, default]
+      properties:
+        id:
+          type: string
+          pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          description: Stable within the format (`docker-hub`, `ghcr`).
+        displayName:
+          type: string
+          description: A product name (`Docker Hub`, `GitHub (ghcr.io)`); the UI does not translate it.
+        url:
+          type: string
+          description: The upstream URL, written as `remote.url` is stored (R-REPO-024), so it compares equal to a stored URL.
+        extraHosts:
+          type: array
+          description: |
+            The `remote.extraHosts` a repository of this upstream needs, stored with a create whose `url` is this preset's and that
+            omits `extraHosts` (Q-REPO-322). A host with `sendCredentials: true` runs the registry's token service and receives the
+            repository's credential (R-OCI-021, R-REPO-033).
+          items:
+            $ref: "#/components/schemas/UpstreamPresetHost"
+        default:
+          type: boolean
+          description: The format's default upstream; exactly one preset of a format has it.
+    UpstreamPresetHost:
+      type: object
+      required: [pattern, sendCredentials]
+      properties:
+        pattern:
+          type: string
+          description: A host name pattern of `remote.extraHosts` (R-REPO-024).
+        sendCredentials:
+          type: boolean
+    RepositoryDefaults:
+      type: object
+      required: [suggestedKey, repository]
+      properties:
+        suggestedKey:
+          type: [string, "null"]
+          description: |
+            `<format>-<class>`, or the first of `<format>-<class>-2` to `<format>-<class>-9` that no repository of the project holds;
+            `null` when all ten are taken (R-REPO-063).
+        repository:
+          type: object
+          additionalProperties: true
+          description: |
+            The document a create of only `key`, `class` and `format` in the project would store, without `key` (R-REPO-063): the
+            members of `Repository` that apply to the class, at their defaults. `visibility` is the lower of the installation's
+            default and the project's level; a remote's section is canonical, with the default preset's `url` and `extraHosts` and
+            every member of `RemoteSettings`; a virtual's has no members and no deploy target; a local's `packageOwnership` is the
+            format's. The format's own member is absent: its defaults are the `default`s of the format's `settingsSchema`.
+    # <<< T-21b presets
     FormatList:
       type: object
       required: [formats, baseUrl]
@@ -18297,7 +18415,7 @@ components:
           $ref: "#/components/schemas/RemoteSettings"
     UpstreamTestResult:
       type: object
-      required: [reachable, httpStatus, authenticated, durationMs, tls, outboundProxy, sourceAddress, error]
+      required: [reachable, httpStatus, authenticated, durationMs, tls, outboundProxy, sourceAddress, tokenService, error]
       properties:
         reachable:
           type: boolean
@@ -18307,8 +18425,10 @@ components:
         authenticated:
           type: [boolean, "null"]
           description: >-
-            `false` for `401` and `403`; `null` when there was no response, and for the `401` of a container registry that asks
-            for a token (a Bearer challenge): the credential is judged by the registry's token service, which the test does not ask.
+            `false` for `401` and `403`; `null` when there was no response. For the `401` of a container registry that asks for a
+            token (a Bearer challenge) it is the verdict of the registry's token service on the repository's credential, asked once
+            without a scope as a client's login does: `true` for `200`, `false` for `401` and `403`; `null` when no credential was
+            given, when the token service's host does not receive it, or when that host is not allowed (R-REPO-064).
         durationMs:
           type: integer
           format: int64
@@ -18328,6 +18448,21 @@ components:
         sourceAddress:
           type: [string, "null"]
           description: The local address the probing replica bound, when the repository has a `sourceNetwork`.
+        tokenService:
+          type: [object, "null"]
+          description: |
+            The token service a Bearer challenge of the upstream named (R-REPO-064); `null` without one. `allowed` is whether its
+            host is the upstream's origin or an entry of `extraHosts`; `receivesCredential` whether the repository's credential
+            is sent to it (the origin, or an entry with `sendCredentials: true`). A host that is not allowed is the error
+            `foreign_host_denied`, and the token service was not asked.
+          required: [host, allowed, receivesCredential]
+          properties:
+            host:
+              type: string
+            allowed:
+              type: boolean
+            receivesCredential:
+              type: boolean
         error:
           type: [object, "null"]
           required: [code, message]
@@ -18346,6 +18481,7 @@ components:
                 - too_many_redirects
                 - insecure_redirect
                 - request_failed
+                - foreign_host_denied
             message:
               type: string
     # <<< M2 proxy

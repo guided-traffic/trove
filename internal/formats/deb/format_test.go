@@ -20,8 +20,20 @@ func TestDescriptor(t *testing.T) {
 	if !reflect.DeepEqual(d.Classes, []formats.Class{formats.Local, formats.Remote, formats.Virtual}) {
 		t.Errorf("classes = %v", d.Classes)
 	}
-	if d.ProtocolBasePath != "/api/deb/{project}/{key}/" || d.DefaultUpstreamURL != "https://deb.debian.org/debian/" || d.ProbePath != "" || len(d.DefaultExtraHosts) != 0 {
-		t.Errorf("addresses = %q %q %q %v", d.ProtocolBasePath, d.DefaultUpstreamURL, d.ProbePath, d.DefaultExtraHosts)
+	if d.ProtocolBasePath != "/api/deb/{project}/{key}/" || d.ProbePath != "" {
+		t.Errorf("addresses = %q %q", d.ProtocolBasePath, d.ProbePath)
+	}
+	// R-REPO-062: Debian (the default), Debian's security updates and Ubuntu's archive, security updates and ports, without hosts
+	// and without keys (Q-REPO-326).
+	wantPresets := []catalog.UpstreamPreset{
+		{ID: "debian", DisplayName: "Debian", URL: "https://deb.debian.org/debian/", Default: true},
+		{ID: "debian-security", DisplayName: "Debian security updates", URL: "https://deb.debian.org/debian-security/"},
+		{ID: "ubuntu", DisplayName: "Ubuntu", URL: "https://archive.ubuntu.com/ubuntu/"},
+		{ID: "ubuntu-security", DisplayName: "Ubuntu security updates", URL: "https://security.ubuntu.com/ubuntu/"},
+		{ID: "ubuntu-ports", DisplayName: "Ubuntu ports", URL: "https://ports.ubuntu.com/ubuntu-ports/"},
+	}
+	if !reflect.DeepEqual(d.UpstreamPresets, wantPresets) {
+		t.Errorf("R-REPO-062 presets = %+v", d.UpstreamPresets)
 	}
 	if d.DefaultMetadataTTLSeconds == nil || *d.DefaultMetadataTTLSeconds != 600 || d.DefaultNotFoundTTLSeconds == nil || *d.DefaultNotFoundTTLSeconds != 300 {
 		t.Errorf("cache periods = %v %v", d.DefaultMetadataTTLSeconds, d.DefaultNotFoundTTLSeconds)

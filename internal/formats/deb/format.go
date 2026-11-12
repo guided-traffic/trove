@@ -33,8 +33,18 @@ const ID formats.ID = "deb"
 // files below dists/, and nothing else.
 const Layout = "deb"
 
-// DefaultUpstreamURL is the upstream a remote repository proposes (R-DEB-001).
-const DefaultUpstreamURL = "https://deb.debian.org/debian/"
+// upstreamPresets are the public archives of Debian and Ubuntu a remote proposes (R-DEB-001, R-REPO-062, Q-REPO-321), Debian the
+// default. Ubuntu's arm64 and other ports are on ports.ubuntu.com, not on the archive. No preset carries archive keys: they stay the
+// operator's deb.upstreamKeys (Q-REPO-326, Q-DEB-14).
+func upstreamPresets() []catalog.UpstreamPreset {
+	return []catalog.UpstreamPreset{
+		{ID: "debian", DisplayName: "Debian", URL: "https://deb.debian.org/debian/", Default: true},
+		{ID: "debian-security", DisplayName: "Debian security updates", URL: "https://deb.debian.org/debian-security/"},
+		{ID: "ubuntu", DisplayName: "Ubuntu", URL: "https://archive.ubuntu.com/ubuntu/"},
+		{ID: "ubuntu-security", DisplayName: "Ubuntu security updates", URL: "https://security.ubuntu.com/ubuntu/"},
+		{ID: "ubuntu-ports", DisplayName: "Ubuntu ports", URL: "https://ports.ubuntu.com/ubuntu-ports/"},
+	}
+}
 
 // MaxDocumentBytes bounds an upstream document held in memory: a release document is at most 16 MiB (R-DEB-034) and the largest
 // index a remote stores as a metadata document is a compressed Contents file of a few tens of MiB; the parse of a Packages index
@@ -110,7 +120,7 @@ func (f *Format) Descriptor() formats.Descriptor {
 			Layout:           Layout,
 			ProtocolBasePath: "/api/deb/{project}/{key}/",
 			// The upstream test requests the upstream URL itself: there is no probe path (R-DEB-001, R-REPO-024).
-			DefaultUpstreamURL:        DefaultUpstreamURL,
+			UpstreamPresets:           upstreamPresets(),
 			DefaultMetadataTTLSeconds: &metadataTTL,
 			DefaultNotFoundTTLSeconds: &notFoundTTL,
 			PatternSubject:            formats.SubjectName,

@@ -24,12 +24,11 @@ import { RepositoryWizard } from './repository-wizard';
 const NPM: FormatDescriptor = {
   ...PACKAGE_FORMAT,
   mirror: true,
-  defaultUpstreamUrl: 'https://registry.npmjs.org/',
 };
 /** A format whose remote adapter cannot discover packages. */
 const NO_MIRROR: FormatDescriptor = { ...NUGET_FORMAT, mirror: false };
 /** A format that can mirror, with no well-known upstream of its own. */
-const OPEN_UPSTREAM: FormatDescriptor = { ...NUGET_FORMAT, mirror: true, defaultUpstreamUrl: null };
+const OPEN_UPSTREAM: FormatDescriptor = { ...NUGET_FORMAT, mirror: true, upstreamPresets: [] };
 
 type Wizard = Awaited<ReturnType<typeof renderScreen<RepositoryWizard>>>;
 

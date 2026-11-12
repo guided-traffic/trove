@@ -9,14 +9,14 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 620 of 865 spec requirements are implemented: a passing test names them and no
+**Status.** 620 of 877 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 788 specified (520 of them implemented), 1,451 open.
-865 spec requirements: 634 cover catalog features, 231 cover none (`trove-only`, [listed at the
+**Totals.** 2,239 catalog features on 60 pages: 788 specified (515 of them implemented), 1,451 open.
+877 spec requirements: 646 cover catalog features, 231 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
 ## Pages
@@ -26,8 +26,8 @@ end](#requirements-that-cover-no-catalog-feature)).
 
 | Catalog page | Prefix | Features | MVP specified | Specified | Open | Implemented |
 |---|---|---:|---:|---:|---:|---:|
-| [Repositories](#repositories-repo) | `REPO` | 68 | 24 of 24 | 41 | 27 | 30 |
-| [Remote repositories](#remote-repositories-rmt) | `RMT` | 49 | 18 of 18 | 31 | 18 | 25 |
+| [Repositories](#repositories-repo) | `REPO` | 68 | 24 of 24 | 41 | 27 | 29 |
+| [Remote repositories](#remote-repositories-rmt) | `RMT` | 49 | 18 of 18 | 31 | 18 | 23 |
 | [Replication, federation and multi-site topology](#replication-federation-and-multi-site-topology-repl) | `REPL` | 72 | – | 0 | 72 | 0 |
 | [Artifact management](#artifact-management-art) | `ART` | 53 | 10 of 10 | 32 | 21 | 17 |
 | [Search and query language](#search-and-query-language-srch) | `SRCH` | 64 | – | 3 | 61 | 1 |
@@ -43,7 +43,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Events and extensibility](#events-and-extensibility-evt) | `EVT` | 82 | 1 of 1 | 26 | 56 | 3 |
 | [Distribution and release lifecycle](#distribution-and-release-lifecycle-dist) | `DIST` | 70 | 2 of 2 | 2 | 68 | 2 |
 | [Security scanning and curation](#security-scanning-and-curation-sec) | `SEC` | 98 | 18 of 18 | 18 | 80 | 7 |
-| [UI inventory](#ui-inventory-ui) | `UI` | 61 | 33 of 33 | 47 | 14 | 36 |
+| [UI inventory](#ui-inventory-ui) | `UI` | 61 | 33 of 33 | 47 | 14 | 34 |
 | [Content API operation catalog](#content-api-operation-catalog-api) | `API` | 166 | 15 of 15 | 71 | 95 | 28 |
 | [Operation catalog: administration API](#operation-catalog-administration-api-admapi) | `ADMAPI` | 114 | 34 of 34 | 54 | 60 | 41 |
 | [Package formats: matrix and cross-format behavior](#package-formats-matrix-and-cross-format-behavior-fmt) | `FMT` | 14 | 8 of 8 | 9 | 5 | 8 |
@@ -94,7 +94,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 Catalog page: [repositories.md](../features/repositories.md) · specified by priority: MVP 24 of 24 · P1 17 of 26 · P2 0 of 16 · Later 0 of 1 · Out of scope 0 of 1
 
 <details>
-<summary>68 features: 41 specified, 27 open, 30 implemented</summary>
+<summary>68 features: 41 specified, 27 open, 29 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -107,7 +107,7 @@ Catalog page: [repositories.md](../features/repositories.md) · specified by pri
 | REPO-007 | Repository administration list | MVP | implemented | [R-UI-020](../spec/api-and-ui.md) (implemented), [R-REPO-012](../spec/repositories-and-proxy.md) (implemented) |
 | REPO-008 | Quick repository setup wizard | P1 | specified | [R-UI-023](../spec/api-and-ui.md), [R-REPO-015](../spec/repositories-and-proxy.md) |
 | REPO-009 | Recalculate repository index | P1 | specified | [R-NPM-035](../spec/formats/npm.md), [R-REPO-016](../spec/repositories-and-proxy.md) (implemented) |
-| REPO-010 | Public description and internal notes | MVP | implemented | [R-REPO-004](../spec/repositories-and-proxy.md) (implemented) |
+| REPO-010 | Public description and internal notes | MVP | specified | [R-REPO-004](../spec/repositories-and-proxy.md) (implemented), [R-REPO-063](../spec/repositories-and-proxy.md) |
 | REPO-011 | Include and exclude patterns | MVP | implemented | [R-NPM-033](../spec/formats/npm.md) (implemented), [R-REPO-005](../spec/repositories-and-proxy.md) (implemented) |
 | REPO-012 | Repository layout reference | P1 | implemented | [R-REPO-006](../spec/repositories-and-proxy.md) (implemented) |
 | REPO-013 | Project assignment and environments | P1 | open | – |
@@ -174,15 +174,15 @@ Catalog page: [repositories.md](../features/repositories.md) · specified by pri
 Catalog page: [remote-repositories.md](../features/remote-repositories.md) · specified by priority: MVP 18 of 18 · P1 13 of 14 · P2 0 of 17
 
 <details>
-<summary>49 features: 31 specified, 18 open, 25 implemented</summary>
+<summary>49 features: 31 specified, 18 open, 23 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
 | RMT-001 | Remote repository (pull-through proxy and cache) | MVP | implemented | [R-ARCH-013](../spec/architecture.md) (implemented), [R-NPM-024](../spec/formats/npm.md) (implemented), [R-REPO-024](../spec/repositories-and-proxy.md) (implemented), [R-REPO-025](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-002 | Remote repository configuration operations | MVP | implemented | [R-REPO-008](../spec/repositories-and-proxy.md) (implemented), [R-REPO-009](../spec/repositories-and-proxy.md) (implemented), [R-REPO-011](../spec/repositories-and-proxy.md) (implemented), [R-REPO-013](../spec/repositories-and-proxy.md) (implemented), [R-REPO-024](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-003 | Cache view and cached-content management | MVP | implemented | [R-REPO-032](../spec/repositories-and-proxy.md) (implemented) |
-| RMT-004 | Upstream URL | MVP | implemented | [R-NUGET-014](../spec/formats/nuget.md) (implemented), [R-REPO-024](../spec/repositories-and-proxy.md) (implemented) |
-| RMT-005 | Upstream credentials | MVP | implemented | [R-REPO-033](../spec/repositories-and-proxy.md) (implemented) |
+| RMT-004 | Upstream URL | MVP | specified | [R-UI-082](../spec/api-and-ui.md), [R-NUGET-014](../spec/formats/nuget.md) (implemented), [R-REPO-024](../spec/repositories-and-proxy.md) (implemented), [R-REPO-062](../spec/repositories-and-proxy.md), [R-REPO-064](../spec/repositories-and-proxy.md) |
+| RMT-005 | Upstream credentials | MVP | specified | [R-REPO-064](../spec/repositories-and-proxy.md), [R-REPO-033](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-006 | Bearer token authentication to the upstream | P1 | specified | [R-NPM-023](../spec/formats/npm.md), [R-REPO-033](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-007 | Client TLS certificate for the upstream | P1 | specified | [R-REPO-034](../spec/repositories-and-proxy.md) |
 | RMT-008 | Trust for upstream server certificates | P1 | implemented | [R-REPO-035](../spec/repositories-and-proxy.md) (implemented) |
@@ -1366,7 +1366,7 @@ Catalog page: [security-scanning-and-curation.md](../features/security-scanning-
 Catalog page: [ui-inventory.md](../features/ui-inventory.md) · specified by priority: MVP 33 of 33 · P1 14 of 14 · P2 0 of 8 · Later 0 of 3 · Out of scope 0 of 3
 
 <details>
-<summary>61 features: 47 specified, 14 open, 36 implemented</summary>
+<summary>61 features: 47 specified, 14 open, 34 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -1401,8 +1401,8 @@ Catalog page: [ui-inventory.md](../features/ui-inventory.md) · specified by pri
 | UI-028 | Builds list | P1 | specified | [R-UI-040](../spec/api-and-ui.md) |
 | UI-029 | Build run details | P1 | specified | [R-UI-040](../spec/api-and-ui.md) |
 | UI-030 | Repositories screen | MVP | implemented | [R-UI-020](../spec/api-and-ui.md) (implemented) |
-| UI-031 | Create and edit repository form | MVP | implemented | [R-UI-021](../spec/api-and-ui.md) (implemented) |
-| UI-032 | Virtual repository member selector | MVP | implemented | [R-UI-022](../spec/api-and-ui.md) (implemented) |
+| UI-031 | Create and edit repository form | MVP | specified | [R-UI-021](../spec/api-and-ui.md) (implemented), [R-UI-080](../spec/api-and-ui.md), [R-UI-081](../spec/api-and-ui.md), [R-UI-082](../spec/api-and-ui.md), [R-UI-083](../spec/api-and-ui.md), [R-UI-084](../spec/api-and-ui.md), [R-UI-085](../spec/api-and-ui.md), [R-UI-086](../spec/api-and-ui.md), [R-UI-087](../spec/api-and-ui.md), [R-UI-088](../spec/api-and-ui.md), [R-REPO-063](../spec/repositories-and-proxy.md) |
+| UI-032 | Virtual repository member selector | MVP | specified | [R-UI-022](../spec/api-and-ui.md) (implemented), [R-UI-081](../spec/api-and-ui.md) |
 | UI-033 | Quick repository setup wizard | P1 | specified | [R-UI-023](../spec/api-and-ui.md) |
 | UI-034 | Property sets screen | P2 | open | – |
 | UI-035 | Users screen | MVP | implemented | [R-UI-024](../spec/api-and-ui.md) (implemented) |

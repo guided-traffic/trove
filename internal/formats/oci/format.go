@@ -28,8 +28,25 @@ const ID formats.ID = "oci"
 // storage layout and nowhere else.
 const Layout = "oci"
 
-// DefaultUpstreamURL is the upstream a remote repository proposes (R-OCI-001).
-const DefaultUpstreamURL = "https://registry-1.docker.io/"
+// upstreamPresets are the four public registries the owner named (R-OCI-001, R-REPO-062, Q-REPO-321), Docker Hub the default.
+// Docker Hub's and GitLab's token services live on a host of their own, which receives the repository's credential (R-OCI-021);
+// Quay's and ghcr.io's are on the registry's origin. The host Docker Hub redirects blob downloads to
+// (production.cloudfront.docker.com, seen on 2026-11-08 with an anonymous request) is not listed: a redirect is followed whatever
+// extraHosts says and carries no credential (R-REPO-039), so listing it would only widen the hosts a realm may name (Q-OCI-125).
+func upstreamPresets() []catalog.UpstreamPreset {
+	return []catalog.UpstreamPreset{
+		{
+			ID: "docker-hub", DisplayName: "Docker Hub", URL: "https://registry-1.docker.io/", Default: true,
+			ExtraHosts: []catalog.PresetHost{{Pattern: "auth.docker.io", SendCredentials: true}},
+		},
+		{ID: "quay", DisplayName: "Quay", URL: "https://quay.io/"},
+		{ID: "ghcr", DisplayName: "GitHub (ghcr.io)", URL: "https://ghcr.io/"},
+		{
+			ID: "gitlab", DisplayName: "GitLab", URL: "https://registry.gitlab.com/",
+			ExtraHosts: []catalog.PresetHost{{Pattern: "gitlab.com", SendCredentials: true}},
+		},
+	}
+}
 
 // MaxDocumentBytes bounds a manifest, a tags list or a catalog held in memory (R-OCI-020).
 const MaxDocumentBytes = MaxManifestBytes
@@ -63,13 +80,7 @@ func (f *Format) Descriptor() formats.Descriptor {
 			Layout:           Layout,
 			ProtocolBasePath: catalog.RegistryRootBasePath,
 			RegistryRoot:     true,
-			// Docker Hub's token realm receives the repository's credential (R-OCI-021). The host it redirects blob downloads to
-			// (production.cloudfront.docker.com, seen on 2026-11-08 with an anonymous request) is not a default: a redirect is followed
-			// whatever extraHosts says and carries no credential (R-REPO-039), so listing it would only widen the hosts a realm may
-			// name (Q-OCI-125).
-			DefaultUpstreamURL:     DefaultUpstreamURL,
-			DefaultExtraHosts:      []string{"auth.docker.io"},
-			DefaultCredentialHosts: []string{"auth.docker.io"},
+			UpstreamPresets:  upstreamPresets(),
 			// The upstream test requests /v2/, the version check of the distribution API; a registry answers it 401 with a Bearer
 			// challenge, which reads as reachable (R-REPO-024).
 			ProbePath:                 "v2/",

@@ -20,10 +20,13 @@ import {
   MirrorStatus,
   Repository,
   RepositoriesApi,
+  RepositoryClass,
   RepositoryConsumerView,
+  RepositoryDefaults,
   RepositoryFilters,
   RepositoryResolution,
   RepositorySummary,
+  UpstreamPreset,
   UpstreamTestBody,
   UpstreamTestResult,
   Versioned,
@@ -62,6 +65,73 @@ function notFound(): ApiError {
   );
 }
 
+/*
+ * The upstream presets of each format as the catalog serves them (R-REPO-062; internal/formats/<format>/format.go). A fake format
+ * of the component tier names the presets of its real format, so a screen meets the buttons, the default URL and the hosts it
+ * meets on a real installation.
+ */
+export const NPM_PRESETS: readonly UpstreamPreset[] = [
+  { id: 'npmjs', displayName: 'npm public registry', url: 'https://registry.npmjs.org/', extraHosts: [], default: true },
+];
+export const NUGET_PRESETS: readonly UpstreamPreset[] = [
+  {
+    id: 'nuget-org',
+    displayName: 'nuget.org',
+    url: 'https://api.nuget.org/v3/index.json',
+    extraHosts: [{ pattern: '*.nuget.org', sendCredentials: false }],
+    default: true,
+  },
+];
+export const OCI_PRESETS: readonly UpstreamPreset[] = [
+  {
+    id: 'docker-hub',
+    displayName: 'Docker Hub',
+    url: 'https://registry-1.docker.io/',
+    extraHosts: [{ pattern: 'auth.docker.io', sendCredentials: true }],
+    default: true,
+  },
+  { id: 'quay', displayName: 'Quay', url: 'https://quay.io/', extraHosts: [], default: false },
+  { id: 'ghcr', displayName: 'GitHub (ghcr.io)', url: 'https://ghcr.io/', extraHosts: [], default: false },
+  {
+    id: 'gitlab',
+    displayName: 'GitLab',
+    url: 'https://registry.gitlab.com/',
+    extraHosts: [{ pattern: 'gitlab.com', sendCredentials: true }],
+    default: false,
+  },
+];
+export const DEB_PRESETS: readonly UpstreamPreset[] = [
+  { id: 'debian', displayName: 'Debian', url: 'https://deb.debian.org/debian/', extraHosts: [], default: true },
+  {
+    id: 'debian-security',
+    displayName: 'Debian security updates',
+    url: 'https://deb.debian.org/debian-security/',
+    extraHosts: [],
+    default: false,
+  },
+  { id: 'ubuntu', displayName: 'Ubuntu', url: 'https://archive.ubuntu.com/ubuntu/', extraHosts: [], default: false },
+  {
+    id: 'ubuntu-security',
+    displayName: 'Ubuntu security updates',
+    url: 'https://security.ubuntu.com/ubuntu/',
+    extraHosts: [],
+    default: false,
+  },
+  { id: 'ubuntu-ports', displayName: 'Ubuntu ports', url: 'https://ports.ubuntu.com/ubuntu-ports/', extraHosts: [], default: false },
+];
+export const ANSIBLE_PRESETS: readonly UpstreamPreset[] = [
+  {
+    id: 'galaxy',
+    displayName: 'Ansible Galaxy',
+    url: 'https://galaxy.ansible.com/api/',
+    extraHosts: [
+      { pattern: 'github.com', sendCredentials: false },
+      { pattern: 'codeload.github.com', sendCredentials: false },
+    ],
+    default: true,
+  },
+];
+
 export const GENERIC_FORMAT: FormatDescriptor = {
   name: 'generic',
   displayName: 'Generic',
@@ -69,9 +139,7 @@ export const GENERIC_FORMAT: FormatDescriptor = {
   clients: [{ id: 'curl', displayName: 'curl' }],
   layout: 'generic',
   protocolBasePath: '/files/{project}/{key}/',
-  defaultUpstreamUrl: null,
-  defaultExtraHosts: [],
-  defaultCredentialHosts: [],
+  upstreamPresets: [],
   defaultMetadataTtlSeconds: null,
   defaultNotFoundTtlSeconds: 1800,
   patternSubject: 'path',
@@ -166,6 +234,7 @@ export const PACKAGE_FORMAT: FormatDescriptor = {
     { id: 'yarn-classic', displayName: 'Yarn Classic (1.x)' },
   ],
   protocolBasePath: '/api/npm/{project}/{key}/',
+  upstreamPresets: [...NPM_PRESETS],
   patternSubject: 'name',
   vulnerabilityScanning: true,
   mirror: true,
@@ -207,23 +276,31 @@ export const NUGET_FORMAT: FormatDescriptor = {
     { id: 'visual-studio', displayName: 'Visual Studio' },
   ],
   protocolBasePath: '/api/nuget/{project}/{key}/v3/',
+  upstreamPresets: [...NUGET_PRESETS],
   settingsSchema: NUGET_SETTINGS_SCHEMA,
   wiki: true,
 };
 
-/** OCI as the catalog lists it (internal/formats/oci/format.go): the class local only, the Docker CLI and Podman, the registry root as base path. Its settings schema is not copied. */
+/**
+ * OCI as the catalog lists it (internal/formats/oci/format.go): the three classes, the four registries of its presets, the
+ * periods of 300 s, the Docker CLI and Podman, the registry root as base path. Its settings schema is not copied.
+ */
 export const OCI_FORMAT: FormatDescriptor = {
   ...GENERIC_FORMAT,
   name: 'oci',
   vulnerabilityScanning: true,
   displayName: 'OCI (Docker)',
-  classes: ['local'],
+  classes: ['local', 'remote', 'virtual'],
   clients: [
     { id: 'docker', displayName: 'Docker CLI (with Buildx)' },
     { id: 'podman', displayName: 'Podman' },
   ],
   protocolBasePath: '/v2/{project}/{key}/',
+  upstreamPresets: [...OCI_PRESETS],
+  defaultMetadataTtlSeconds: 300,
+  defaultNotFoundTtlSeconds: 300,
   patternSubject: 'name',
+  mirror: true,
 };
 
 /**
@@ -288,6 +365,7 @@ export const DEB_FORMAT: FormatDescriptor = {
   displayName: 'Debian (APT)',
   clients: [{ id: 'apt', displayName: 'APT (apt, apt-get)' }],
   protocolBasePath: '/api/deb/{project}/{key}/',
+  upstreamPresets: [...DEB_PRESETS],
   settingsSchema: DEB_SETTINGS_SCHEMA,
   wiki: false,
 };
@@ -322,6 +400,7 @@ export const ANSIBLE_FORMAT: FormatDescriptor = {
   displayName: 'Ansible Galaxy',
   clients: [{ id: 'ansible-galaxy', displayName: 'Ansible Galaxy (ansible-galaxy)' }],
   protocolBasePath: '/api/ansible/{project}/{key}/',
+  upstreamPresets: [...ANSIBLE_PRESETS],
   settingsSchema: ANSIBLE_SETTINGS_SCHEMA,
   wiki: true,
 };
@@ -588,6 +667,83 @@ export class FakeRepositoriesApi extends RepositoriesApi {
     if (this.upstreamTestError) throw this.upstreamTestError;
     return structuredClone(this.upstreamTestResult);
   }
+
+  /** The calls of `defaults` and what they answer: `defaultsFor` decides when set, else `sampleRepositoryDefaults` over the fake. */
+  defaultsCalls: { project: string; format: string; cls: RepositoryClass }[] = [];
+  defaultsError: ApiError | null = null;
+  defaultsFor: ((project: string, format: string, cls: RepositoryClass) => RepositoryDefaults) | null = null;
+
+  override async defaults(project: string, format: string, cls: RepositoryClass): Promise<RepositoryDefaults> {
+    this.defaultsCalls.push({ project, format, cls });
+    if (this.defaultsError) throw this.defaultsError;
+    if (this.defaultsFor) return structuredClone(this.defaultsFor(project, format, cls));
+    const descriptor = this.formatsResult.find((f) => f.name === format);
+    if (!descriptor || !descriptor.classes.includes(cls)) {
+      throw new ApiError(
+        422,
+        { code: 'validation_failed', detail: `${format} has no class ${cls}`, requestId: 'rid-422' },
+        'rid-422',
+      );
+    }
+    const taken = this.repositories.filter((r) => r.project === project).map((r) => r.key);
+    return sampleRepositoryDefaults(descriptor, cls, taken);
+  }
+}
+
+/**
+ * What `getRepositoryDefaults` answers for a format of the fake (R-REPO-063), from the server's rules: the first free key of
+ * `<format>-<class>` and `-2` to `-9`, the common members at their defaults, the visibility `private`, and the class's section
+ * as a bare create stores it (a remote's default preset with its hosts and the format's periods; a virtual without members).
+ */
+export function sampleRepositoryDefaults(
+  format: FormatDescriptor,
+  cls: RepositoryClass,
+  takenKeys: readonly string[] = [],
+): RepositoryDefaults {
+  const base = `${format.name}-${cls}`;
+  const candidates = [base, ...[2, 3, 4, 5, 6, 7, 8, 9].map((n) => `${base}-${n}`)];
+  const suggestedKey = candidates.find((k) => !takenKeys.includes(k)) ?? null;
+  const repository: RepositoryDefaults['repository'] = {
+    class: cls,
+    format: format.name,
+    description: '',
+    adminNotes: '',
+    includePatterns: [],
+    excludePatterns: [],
+    disabled: false,
+    hideExistence: 'inherit',
+    visibility: { artifacts: 'private', wiki: 'private' },
+  };
+  if (cls === 'remote') {
+    const preset = format.upstreamPresets.find((p) => p.default);
+    (repository as Record<string, unknown>)['remote'] = {
+      url: preset?.url ?? '',
+      extraHosts: (preset?.extraHosts ?? []).map((h) => ({ ...h })),
+      authMode: 'none',
+      username: '',
+      password: null,
+      cache: {
+        metadataTtlSeconds: format.defaultMetadataTtlSeconds ?? 0,
+        notFoundTtlSeconds: format.defaultNotFoundTtlSeconds ?? 0,
+      },
+      availability: { mode: 'online' },
+      mode: 'pullThrough',
+      mirror: {
+        paused: false,
+        intervalSeconds: 3600,
+        fullPassIntervalSeconds: 604800,
+        discovery: 'auto',
+        concurrency: 4,
+        maxVersionsPerPackage: 0,
+        includePrereleases: true,
+        maxBytes: null,
+      },
+    };
+  }
+  if (cls === 'virtual') {
+    (repository as Record<string, unknown>)['virtual'] = { members: [], deployTarget: null };
+  }
+  return { suggestedKey, repository };
 }
 
 /** A mirror status of the API's example: a scheduled mirror after a complete pass. */
@@ -627,6 +783,7 @@ export function sampleUpstreamTestResult(over: Partial<UpstreamTestResult> = {})
     tls: { peerSubject: 'CN=registry.npmjs.org', notAfter: '2027-03-01T00:00:00Z' },
     outboundProxy: null,
     sourceAddress: null,
+    tokenService: null,
     error: null,
     ...over,
   };

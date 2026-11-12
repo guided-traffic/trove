@@ -9,13 +9,8 @@ import {
 import { ErrorNotice } from '../../shared/error-notice';
 import { fieldMessage, problemsAt } from '../../shared/field-errors';
 import { asApiError } from '../../shared/paged-resource';
-import {
-  RepositoryForm,
-  UpstreamAuthMode,
-  UpstreamForm,
-  upstreamDefaultsOf,
-  upstreamTestBody,
-} from './repository-model';
+import { RepositoryForm } from './repository-model';
+import { UpstreamAuthMode, UpstreamForm, upstreamDefaultsOf, upstreamTestBody } from './upstream-model';
 import { controlIdOf, numberOrText } from './settings-schema';
 
 /** The id of the section; a server error at a pointer of the upstream settings that has no control lands here. */

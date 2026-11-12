@@ -7,15 +7,17 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 )
 
-// credentialCatalog proposes a token realm host with credentials and a blob host without, as a container registry format does.
+// credentialCatalog has a default preset with a token realm host that receives the credential and a blob host that does not, as
+// a container registry format has.
 func credentialCatalog() *catalog.Registry {
 	r := testCatalog()
 	r.Register(catalog.Entry{Facts: catalog.Facts{
 		ID: "regfmt", Classes: []Class{Local, Remote, Virtual}, Layout: "regfmt", ProtocolBasePath: "/api/regfmt/{project}/{key}/",
 		PatternSubject: SubjectName, PackageNames: true, PriorityMembers: true, PinsAndClaims: true,
-		DefaultUpstreamURL:     "https://registry.example.org/",
-		DefaultExtraHosts:      []string{"auth.registry.example.org", "*.blobs.example.org"},
-		DefaultCredentialHosts: []string{"auth.registry.example.org"},
+		UpstreamPresets: []catalog.UpstreamPreset{{
+			ID: "registry", DisplayName: "Registry", URL: "https://registry.example.org/", Default: true,
+			ExtraHosts: []catalog.PresetHost{{Pattern: "auth.registry.example.org", SendCredentials: true}, {Pattern: "*.blobs.example.org"}},
+		}},
 	}, Names: lower{}})
 	return r
 }
@@ -37,11 +39,11 @@ func credentialSettings(t *testing.T, remote string) RemoteSettings {
 	return settingsOf(t, d)
 }
 
-// TestR_REPO_024_DefaultCredentialHostsAreProposedWithSendCredentials: for the format's well-known upstream the proposed extra
-// hosts come with sendCredentials true exactly for the hosts the format names as credential hosts (R-REPO-033, R-REPO-024); any
-// other upstream, and an explicit list, take no proposal.
-func TestR_REPO_024_DefaultCredentialHostsAreProposedWithSendCredentials(t *testing.T) {
-	t.Run("the well-known upstream", func(t *testing.T) {
+// TestR_REPO_024_ThePresetsHostsAreStoredWithTheirCredentialFlag: for the format's default preset an omitted extraHosts stores
+// the preset's hosts, with sendCredentials true exactly for the hosts the preset marks (R-REPO-033, R-REPO-024); any other
+// upstream, and an explicit list, take none.
+func TestR_REPO_024_ThePresetsHostsAreStoredWithTheirCredentialFlag(t *testing.T) {
+	t.Run("the default preset", func(t *testing.T) {
 		want := []ExtraHost{{Pattern: "auth.registry.example.org", SendCredentials: true}, {Pattern: "*.blobs.example.org"}}
 		if got := credentialSettings(t, "").ExtraHosts; !reflect.DeepEqual(got, want) {
 			t.Errorf("extraHosts = %+v, want %+v", got, want)

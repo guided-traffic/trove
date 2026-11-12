@@ -32,9 +32,6 @@ const ID formats.ID = "ansible"
 // collections/<ns>/<name>/<ns>-<name>-<version>.tar.gz, the stored upstream documents beside it, and nothing else.
 const Layout = "ansible"
 
-// DefaultUpstreamURL is the API root a remote repository proposes (R-ANS-001, R-ANS-016).
-const DefaultUpstreamURL = "https://galaxy.ansible.com/api/"
-
 // MaxDocumentBytes bounds an upstream document held in memory (R-ANS-031): the largest version document seen is 0.85 MB.
 const MaxDocumentBytes = 16 << 20
 
@@ -109,10 +106,15 @@ func (f *Format) Descriptor() formats.Descriptor {
 			Classes:          f.Classes(),
 			Layout:           Layout,
 			ProtocolBasePath: "/api/ansible/{project}/{key}/",
-			// The upstream test requests the API root itself, which answers the discovery document: there is no probe path
-			// (R-ANS-016). The GitHub hosts serve role archives (R-ANS-020).
-			DefaultUpstreamURL:        DefaultUpstreamURL,
-			DefaultExtraHosts:         []string{"github.com", "codeload.github.com"},
+			// The public Galaxy is the one preset, an API root (R-ANS-001, R-ANS-016, R-REPO-062); its GitHub hosts serve role
+			// archives, without the credential (R-ANS-020). The upstream test requests the API root itself, which answers the
+			// discovery document: there is no probe path.
+			UpstreamPresets: []catalog.UpstreamPreset{
+				{
+					ID: "galaxy", DisplayName: "Ansible Galaxy", URL: "https://galaxy.ansible.com/api/", Default: true,
+					ExtraHosts: []catalog.PresetHost{{Pattern: "github.com"}, {Pattern: "codeload.github.com"}},
+				},
+			},
 			DefaultMetadataTTLSeconds: &metadataTTL,
 			DefaultNotFoundTTLSeconds: &notFoundTTL,
 			// The archive digest is part of the protocol: a remote compares the SHA-256 its version document announces with the

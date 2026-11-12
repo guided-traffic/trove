@@ -40,7 +40,8 @@ func upstreamServer(t *testing.T, prober repository.UpstreamProber) *Server {
 	cat := catalog.NewRegistry()
 	cat.Register(catalog.Entry{Facts: catalog.Facts{
 		ID: "npmlike", Classes: []catalog.Class{catalog.Local, catalog.Remote}, Layout: "npmlike", ProtocolBasePath: "/api/npmlike/{project}/{key}/",
-		PatternSubject: catalog.SubjectPath, DefaultUpstreamURL: "https://registry.example.org/", ProbePath: "-/ping",
+		PatternSubject: catalog.SubjectPath, ProbePath: "-/ping",
+		UpstreamPresets: []catalog.UpstreamPreset{{ID: "public", DisplayName: "Public", URL: "https://registry.example.org/", Default: true}},
 	}})
 	svc, err := repository.NewService(repository.Options{
 		Runner: nopRunner{}, Notifier: noNotifier{}, Catalog: cat, Remote: repository.RemoteDeps{Prober: prober},

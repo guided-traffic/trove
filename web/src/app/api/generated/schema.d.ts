@@ -1821,8 +1821,8 @@ export interface paths {
         /**
          * List the package formats
          * @description The format catalog (R-REPO-003): for each format the classes the implementation accepts, its
-         *     layout, the client address template, the cache periods and the facts that decide which
-         *     members of a repository document apply. The list of classes is the single source of truth
+         *     layout, the client address template, the upstream presets of a remote repository (R-REPO-062),
+         *     the cache periods and the facts that decide which members of a repository document apply. The list of classes is the single source of truth
          *     for the create form: a class that is not listed answers `422 unsupported_class`. The answer also
          *     carries the `baseUrl` of the endpoint the request arrived on. Any caller; an anonymous caller
          *     only while some repository's artifacts are `public` (`publicContent`, R-AUTH-037), else `401`.
@@ -2056,6 +2056,31 @@ export interface paths {
          *     (R-API-057). An anonymous caller sees what a `public` level admits, or gets `401` while nothing is `public`.
          */
         get: operations["listRepositories"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectKey}/repository-defaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read the defaults of a new repository
+         * @description What a create of only `key`, `class` and `format` in the project would store, and a key that is free in the project
+         *     (R-REPO-063): the values the creation form shows in its fields. It writes nothing and records no audit event. An unknown
+         *     format answers `422 unknown_format`, a class the format lacks `422 not_applicable`; a project the caller cannot see `404`.
+         */
+        get: operations["getRepositoryDefaults"];
         put?: never;
         post?: never;
         delete?: never;
@@ -7024,14 +7049,13 @@ export interface components {
             layout: string;
             /** @description The client address template; `{project}` and `{key}` are the project and the repository key. `/api/<format>/{project}/{key}/`, or `/v2/{project}/{key}/` for the format that serves the registry root (R-OCI-001). */
             protocolBasePath: string;
-            defaultUpstreamUrl: string | null;
-            /** @description The further hosts a remote repository of the format may fetch from by default (R-REPO-024); empty for a format without any. */
-            defaultExtraHosts: string[];
             /**
-             * @description The entries of `defaultExtraHosts` that a remote repository of the format proposes with `sendCredentials: true`, because the
-             *     upstream's token realm lives there (R-OCI-021); each is also in `defaultExtraHosts`. Empty for a format without any.
+             * @description The well-known public registries of the format's ecosystem, in the format's order (R-REPO-062): the one-click choices of a
+             *     remote repository's upstream. Exactly one is the `default`, the upstream an omitted `remote.url` takes; a create whose
+             *     `url` equals a preset's and that omits `extraHosts` stores that preset's hosts. Empty for a format without a well-known
+             *     upstream, whose remote repositories need a `url`, and for a format without the class `remote`.
              */
-            defaultCredentialHosts: string[];
+            upstreamPresets: components["schemas"]["UpstreamPreset"][];
             defaultMetadataTtlSeconds: number | null;
             defaultNotFoundTtlSeconds: number | null;
             /** @enum {string} */
@@ -7067,6 +7091,44 @@ export interface components {
             id: string;
             /** @description A product name; the UI does not translate it. */
             displayName: string;
+        };
+        UpstreamPreset: {
+            /** @description Stable within the format (`docker-hub`, `ghcr`). */
+            id: string;
+            /** @description A product name (`Docker Hub`, `GitHub (ghcr.io)`); the UI does not translate it. */
+            displayName: string;
+            /** @description The upstream URL, written as `remote.url` is stored (R-REPO-024), so it compares equal to a stored URL. */
+            url: string;
+            /**
+             * @description The `remote.extraHosts` a repository of this upstream needs, stored with a create whose `url` is this preset's and that
+             *     omits `extraHosts` (Q-REPO-322). A host with `sendCredentials: true` runs the registry's token service and receives the
+             *     repository's credential (R-OCI-021, R-REPO-033).
+             */
+            extraHosts: components["schemas"]["UpstreamPresetHost"][];
+            /** @description The format's default upstream; exactly one preset of a format has it. */
+            default: boolean;
+        };
+        UpstreamPresetHost: {
+            /** @description A host name pattern of `remote.extraHosts` (R-REPO-024). */
+            pattern: string;
+            sendCredentials: boolean;
+        };
+        RepositoryDefaults: {
+            /**
+             * @description `<format>-<class>`, or the first of `<format>-<class>-2` to `<format>-<class>-9` that no repository of the project holds;
+             *     `null` when all ten are taken (R-REPO-063).
+             */
+            suggestedKey: string | null;
+            /**
+             * @description The document a create of only `key`, `class` and `format` in the project would store, without `key` (R-REPO-063): the
+             *     members of `Repository` that apply to the class, at their defaults. `visibility` is the lower of the installation's
+             *     default and the project's level; a remote's section is canonical, with the default preset's `url` and `extraHosts` and
+             *     every member of `RemoteSettings`; a virtual's has no members and no deploy target; a local's `packageOwnership` is the
+             *     format's. The format's own member is absent: its defaults are the `default`s of the format's `settingsSchema`.
+             */
+            repository: {
+                [key: string]: unknown;
+            };
         };
         FormatList: {
             formats: components["schemas"]["FormatDescriptor"][];
@@ -8301,7 +8363,7 @@ export interface components {
             /** @description The upstream answered with an HTTP response, whatever its status. */
             reachable: boolean;
             httpStatus: number | null;
-            /** @description `false` for `401` and `403`; `null` when there was no response, and for the `401` of a container registry that asks for a token (a Bearer challenge): the credential is judged by the registry's token service, which the test does not ask. */
+            /** @description `false` for `401` and `403`; `null` when there was no response. For the `401` of a container registry that asks for a token (a Bearer challenge) it is the verdict of the registry's token service on the repository's credential, asked once without a scope as a client's login does: `true` for `200`, `false` for `401` and `403`; `null` when no credential was given, when the token service's host does not receive it, or when that host is not allowed (R-REPO-064). */
             authenticated: boolean | null;
             /** Format: int64 */
             durationMs: number;
@@ -8315,9 +8377,20 @@ export interface components {
             outboundProxy: string | null;
             /** @description The local address the probing replica bound, when the repository has a `sourceNetwork`. */
             sourceAddress: string | null;
+            /**
+             * @description The token service a Bearer challenge of the upstream named (R-REPO-064); `null` without one. `allowed` is whether its
+             *     host is the upstream's origin or an entry of `extraHosts`; `receivesCredential` whether the repository's credential
+             *     is sent to it (the origin, or an entry with `sendCredentials: true`). A host that is not allowed is the error
+             *     `foreign_host_denied`, and the token service was not asked.
+             */
+            tokenService: {
+                host: string;
+                allowed: boolean;
+                receivesCredential: boolean;
+            } | null;
             error: {
                 /** @enum {string} */
-                code: "dns_error" | "connection_refused" | "timeout" | "tls_untrusted" | "egress_denied" | "source_network_unavailable" | "upstream_secret_unavailable" | "offline" | "too_many_redirects" | "insecure_redirect" | "request_failed";
+                code: "dns_error" | "connection_refused" | "timeout" | "tls_untrusted" | "egress_denied" | "source_network_unavailable" | "upstream_secret_unavailable" | "offline" | "too_many_redirects" | "insecure_redirect" | "request_failed" | "foreign_host_denied";
                 message: string;
             } | null;
         };
@@ -14009,9 +14082,7 @@ export interface operations {
                      *           "clients": [],
                      *           "layout": "generic",
                      *           "protocolBasePath": "/files/{project}/{key}/",
-                     *           "defaultUpstreamUrl": null,
-                     *           "defaultExtraHosts": [],
-                     *           "defaultCredentialHosts": [],
+                     *           "upstreamPresets": [],
                      *           "defaultMetadataTtlSeconds": null,
                      *           "defaultNotFoundTtlSeconds": 1800,
                      *           "patternSubject": "path",
@@ -14567,6 +14638,77 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getRepositoryDefaults: {
+        parameters: {
+            query: {
+                /** @description A format of `GET /api/v1/formats`. */
+                format: string;
+                class: "local" | "remote" | "virtual";
+            };
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The defaults. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "suggestedKey": "oci-remote",
+                     *       "repository": {
+                     *         "class": "remote",
+                     *         "format": "oci",
+                     *         "description": "",
+                     *         "includePatterns": [],
+                     *         "excludePatterns": [],
+                     *         "disabled": false,
+                     *         "visibility": {
+                     *           "artifacts": "internal",
+                     *           "wiki": "internal"
+                     *         },
+                     *         "remote": {
+                     *           "url": "https://registry-1.docker.io/",
+                     *           "extraHosts": [
+                     *             {
+                     *               "pattern": "auth.docker.io",
+                     *               "sendCredentials": true
+                     *             }
+                     *           ],
+                     *           "authMode": "none",
+                     *           "cache": {
+                     *             "metadataTtlSeconds": 300,
+                     *             "notFoundTtlSeconds": 300
+                     *           },
+                     *           "mode": "pullThrough",
+                     *           "mirror": {
+                     *             "intervalSeconds": 3600,
+                     *             "concurrency": 4
+                     *           }
+                     *         }
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["RepositoryDefaults"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];
@@ -18050,6 +18192,7 @@ export interface operations {
                      *       },
                      *       "outboundProxy": null,
                      *       "sourceAddress": null,
+                     *       "tokenService": null,
                      *       "error": null
                      *     }
                      */

@@ -215,6 +215,7 @@ checked every earlier decision against them:
 | [ADR-196](#adr-196--the-host-gains-a-markup-capability-for-the-rendering-and-sanitizing-of-a-formats-documentation) | The Host gains a Markup capability for the rendering and sanitizing of a format's documentation | Decided by the development agent — owner review at the walkthrough |
 | [ADR-191](#adr-191--the-format-contract-gains-the-route-flag-for-the-galaxy-token-scheme-and-the-hub-token-exchange-is-an-optional-interface-of-the-remote-adapter) | The format contract gains the route flag for the Galaxy `Token` scheme, and the hub token exchange is an optional interface of the remote adapter | Decided by the development agent — owner review at the walkthrough |
 | [ADR-192](#adr-192--visibility-levels-replace-the-anonymous-switch-and-the-principal-authenticated) | Visibility levels replace the anonymous switch and the principal `authenticated` | Decided by the development agent — owner review at the walkthrough |
+| [ADR-198](#adr-198--the-format-catalog-names-a-formats-upstream-presets-and-the-contract-is-at-version-4) | The format catalog names a format's upstream presets, and the contract is at version 4 | Decided by the development agent — owner review at the walkthrough |
 | [ADR-190](#adr-190--the-format-contract-gains-the-optional-interface-imagescanned-and-a-port-of-the-host-for-the-block-of-an-image-pull) | The format contract gains the optional interface `ImageScanned` and a port of the Host for the block of an image pull | Decided by the development agent — owner review at the walkthrough |
 | [ADR-189](#adr-189--the-oci-conformance-suite-and-the-protocol-criteria-run-against-replicas-of-the-whole-application) | The OCI conformance suite and the protocol criteria run against replicas of the whole application | Decided by the development agent — owner review at the walkthrough |
 | [ADR-177](#adr-177--the-format-contract-gains-the-optional-viewsizer-for-the-size-of-a-version-that-is-not-the-sum-of-its-files) | The format contract gains the optional ViewSizer for the size of a version that is not the sum of its files | Decided by the development agent — owner review at the walkthrough |
@@ -6634,6 +6635,47 @@ documentation of internal packages.
 **Spec:** [spec/authorization.md](spec/authorization.md) R-AUTHZ-003, R-AUTHZ-030, R-AUTHZ-033 to R-AUTHZ-036, Q-AUTHZ-263 to
 Q-AUTHZ-279; [spec/identity-and-authentication.md](spec/identity-and-authentication.md) R-AUTH-037, R-AUTH-040, R-AUTH-044,
 Q-AUTH-230 to Q-AUTH-233; [spec/api-and-ui.md](spec/api-and-ui.md) R-API-056 to R-API-058, R-UI-053 to R-UI-057.
+
+### ADR-198 · The format catalog names a format's upstream presets, and the contract is at version 4
+
+**Status:** Decided by the development agent — owner review at the walkthrough. The four OCI registries are the owner's (task T-21,
+2026-11-12: "for Docker: Quay, ghcr, Docker Hub, GitLab").
+
+**Context.** A format declared one well-known upstream as three catalog facts: `DefaultUpstreamURL`, the `DefaultExtraHosts` a repository
+of it takes, and the `DefaultCredentialHosts` among them that receive the credential. The owner asked for the well-known public
+registries of a format as one-click choices, so a format has several upstreams, each with hosts of its own (GitLab's token service is
+on `gitlab.com`, Docker Hub's on `auth.docker.io`, Quay's and ghcr.io's on the registry itself). Which host receives a credential is a
+security fact of the registry, which belongs where the handshake is checked and not in the web client
+([Q-REPO-320](spec/repositories-and-proxy.md#q-repo-320--the-presets-are-a-fact-of-the-format-and-the-api-serves-them)).
+
+**Decision.** `catalog.Facts` gains `UpstreamPresets []UpstreamPreset` (`ID`, `DisplayName`, `URL`, `ExtraHosts []PresetHost` with
+`Pattern` and `SendCredentials`, `Default`) and the methods `DefaultPreset` and `PresetFor`; `DefaultUpstreamURL`,
+`DefaultExtraHosts` and `DefaultCredentialHosts` leave. The catalog refuses presets on a format without the class remote, no default
+or two, an ID or a URL twice and a host pattern twice in one preset; `formats.Validate` refuses a preset URL that is not in the form
+R-REPO-024 stores. Fields leave the contract, so `ContractVersion` rises to 4 and every format moves in the same change: OCI
+(Docker Hub, Quay, GitHub (ghcr.io), GitLab), npm (the public registry), NuGet (nuget.org), Debian (Debian, Debian security updates,
+Ubuntu, Ubuntu security updates, Ubuntu ports) and Ansible Galaxy (the public Galaxy), each with the hosts it had or needs. `GET
+/api/v1/formats` serves `upstreamPresets` in place of `defaultUpstreamUrl`, `defaultExtraHosts` and `defaultCredentialHosts`
+([R-REPO-062](spec/repositories-and-proxy.md#r-repo-062--upstream-presets-of-a-format),
+[Q-REPO-327](spec/repositories-and-proxy.md#q-repo-327--the-format-lists-default-upstream-members-are-replaced-by-the-presets)).
+
+**Consequences.** A preset says per host whether it receives the credential, so the old rule "a credential host is one of the extra
+hosts" holds by construction. The default preset is the default upstream of R-REPO-024; a create that names another preset's URL
+takes that preset's hosts (Q-REPO-322), and every preset's URL needs a mirror bound (Q-REPO-323). A preset's hosts are copied into the
+repository at create, so a later correction of a preset does not reach existing repositories
+([H-970](security/remote-repositories.md#h-970--a-presets-credential-host-is-fixed-in-the-repository-when-it-is-created)).
+
+**Alternatives considered.** The presets as a list in the web client (a second list per format, and an API client would create a
+GitLab remote without its token host); keeping the three fields beside the presets (two shapes of one fact, before the first stable
+release); an additive field with the old three kept (no version rise, but a format could declare both and disagree).
+
+**Revisit condition:** the owner wants installation-specific presets (the open question of T-21), which would merge a settings list into
+`upstreamPresets` at the API and leave the contract as it is.
+
+**Spec:** [spec/repositories-and-proxy.md](spec/repositories-and-proxy.md) R-REPO-003, R-REPO-024, R-REPO-052, R-REPO-062, Q-REPO-320 to
+Q-REPO-323, Q-REPO-327; [spec/architecture.md](spec/architecture.md) R-ARCH-008, R-ARCH-025; the format pages
+[oci.md](spec/formats/oci.md) R-OCI-001, R-OCI-021, [npm.md](spec/formats/npm.md) R-NPM-023, [nuget.md](spec/formats/nuget.md)
+R-NUGET-001, [debian.md](spec/formats/debian.md) R-DEB-001, [ansible.md](spec/formats/ansible.md) R-ANS-001.
 
 ### ADR-197 · A format's documentation is gated by one call, the wiki check, and never by the artifact check
 

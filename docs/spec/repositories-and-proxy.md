@@ -189,8 +189,8 @@ Acceptance criteria:
 Priority: **MVP** · Covers: REPO-006
 
 - Each format plug-in ([architecture.md](architecture.md)) MUST register: name; supported classes;
-  layout name (R-REPO-006); protocol base path; default upstream URL and the `extraHosts` entries
-  it proposes for that upstream (R-REPO-024); the probe resource of the upstream test (R-REPO-024;
+  layout name (R-REPO-006); protocol base path; its upstream presets, the well-known public registries with the `extraHosts`
+  each needs, one of them the default (`UpstreamPresets`, R-REPO-062); the probe resource of the upstream test (R-REPO-024;
   npm: `-/ping`, empty for a format whose URL is the service index); default metadata and not-found cache periods; the
   subject of include and exclude patterns (`name` or `path`, R-REPO-005); whether it supports
   priority members (R-REPO-022), pin rules and namespace claims (R-REPO-023), and repository caps
@@ -204,8 +204,8 @@ Priority: **MVP** · Covers: REPO-006
   (an APT archive lists its packages in repository-wide indexes) reports no package document, and its remote adapter then
   names a `NameServer` that answers R-REPO-048 from the rows of the indexes the remote holds, in the scope of the virtual
   repository whose exposure the check decides ([Q-REPO-270](#q-repo-270--a-format-without-a-package-document-answers-the-shadowing-check-from-its-index-rows-in-the-scope-of-the-virtual-repository), [formats/debian.md](formats/debian.md) R-DEB-023).
-- The Ansible Galaxy format registers its default upstream (the API root `https://galaxy.ansible.com/api/`, no probe path: the URL itself
-  answers the discovery document), the extra hosts `github.com` and `codeload.github.com` for role archives, `ChecksumAlwaysVerified`,
+- The Ansible Galaxy format registers its one upstream preset (the API root `https://galaxy.ansible.com/api/`, no probe path: the URL
+  itself answers the discovery document) with the extra hosts `github.com` and `codeload.github.com` for role archives, `ChecksumAlwaysVerified`,
   lower-case canonical paths, `enforce` ownership and the package document `collections/<ns>/<name>/collection.json`
   ([formats/ansible.md](formats/ansible.md) R-ANS-001, R-ANS-002).
 - The MVP formats are `npm` and `nuget`, each with all three classes (INV-14).
@@ -237,7 +237,9 @@ API:
       "classes": ["local", "remote", "virtual"],
       "layout": "npm",
       "protocolBasePath": "/api/npm/{project}/{key}/",
-      "defaultUpstreamUrl": "https://registry.npmjs.org/",
+      "upstreamPresets": [
+        { "id": "npmjs", "displayName": "npm public registry", "url": "https://registry.npmjs.org/", "extraHosts": [], "default": true }
+      ],
       "defaultMetadataTtlSeconds": 7200,
       "defaultNotFoundTtlSeconds": 1800,
       "patternSubject": "name",
@@ -561,6 +563,30 @@ Acceptance criteria:
   201: `mobile/npm-remote` is another repository.
 - The same call with a token lacking `repositories:write-config`, whose user is no Owner of `web`, returns 403 and
   creates nothing; against a project that does not exist it returns 404.
+
+### R-REPO-063 · The defaults of a new repository
+Priority: **MVP** · Covers: UI-031, REPO-010
+
+- `GET /api/v1/projects/{projectKey}/repository-defaults?format=<format>&class=<class>` (`getRepositoryDefaults`) answers
+  `{"suggestedKey", "repository"}` ([Q-REPO-324](#q-repo-324--a-new-repositorys-defaults-come-from-one-operation)):
+  - `repository` is the document that a create of only `key`, `class` and `format` in that project would store, without `key`:
+    `visibility` (the lower of the installation's default and the project's level, R-REPO-004), the common members at their
+    defaults, the class's section in its stored, canonical form (remote: the default preset's `url` and `extraHosts` and every member
+    of R-REPO-024's table; virtual: `members: []`, `deployTarget: null`, `mergedMetadataTtlSeconds`; local: the format's
+    `packageOwnership`), and no format member, whose defaults are the `default`s of `settingsSchema`.
+  - `suggestedKey` is `<format>-<class>`, or the first of `<format>-<class>-2` to `<format>-<class>-9` that is free in the project;
+    `null` when all are taken.
+- Permission: that of a create (`repositories:write-config`, or Owner of the project); `404` for an unknown project; `422` for an
+  unknown format or a class the format lacks (`not_applicable`). It writes nothing and records no audit event, and it answers during
+  maintenance.
+
+Acceptance criteria:
+
+- An Owner without `settings:read`, in an `internal` project of an installation whose default is `internal`, receives
+  `visibility: {artifacts: "internal", wiki: "internal"}`.
+- `format=oci&class=remote` answers `remote.url: "https://registry-1.docker.io/"`, `extraHosts` with `auth.docker.io` receiving the
+  credential, `cache.metadataTtlSeconds: 300` and `mirror.intervalSeconds: 3600`.
+- With `npm-local` in the project, `format=npm&class=local` suggests `npm-local-2`. A reader of the project gets 403.
 
 ### R-REPO-010 · Read a repository configuration
 Priority: **MVP** · Covers: REPO-055, REPO-056, API-057, API-058
@@ -965,7 +991,7 @@ Priority: **P1** · Covers: REPO-008
 | Permission | as create |
 
 - Per format, one transaction creates, in the path's project, `<prefix>-<format>-local`, `<prefix>-<format>-remote`
-  (upstream: the format's default upstream URL) and the virtual `<prefix>-<format>` with members
+  (upstream: the format's default preset, R-REPO-062) and the virtual `<prefix>-<format>` with members
   local then remote, the local repository as deploy target, and `autoClaim` on for the local
   repository (R-REPO-023).
 - The prefix MUST be a valid key fragment of at most 20 characters.
@@ -1683,7 +1709,7 @@ within the remote's patterns and bounds, before a client asks (R-REPO-050 to R-R
 | Member (`remote.…`) | Meaning | Default (proposed) | Range | Catalog | Spec |
 |---|---|---|---|---|---|
 | `url` | Upstream base URL (NuGet: the service index URL) | — (required) | absolute `http`/`https`, no user info, no fragment | RMT-004 | here |
-| `extraHosts` | Further hosts that upstream metadata or redirects may point to: `[{"pattern": "*.nuget.org", "sendCredentials": false}]` | `[]`; a format proposes entries for its well-known upstream, applied when `url` is omitted or equals it (Q-REPO-91) | ≤ 20 | — | R-REPO-043 |
+| `extraHosts` | Further hosts that upstream metadata or redirects may point to: `[{"pattern": "*.nuget.org", "sendCredentials": false}]` | `[]`; a format's presets bring their hosts when `url` equals one and `extraHosts` is omitted (R-REPO-062, Q-REPO-322) | ≤ 20 | — | R-REPO-043 |
 | `authMode` | `none`, `basic`, `bearer` | `none` | | RMT-005, RMT-006 | R-REPO-033 |
 | `username` | Upstream account | `""` | ≤ 256 | RMT-005 | R-REPO-033 |
 | `password` | Password or token; secret field | unset | ≤ 8 KiB | RMT-005 | R-REPO-033 |
@@ -1723,7 +1749,7 @@ within the remote's patterns and bounds, before a client asks (R-REPO-050 to R-R
 </details>
 
 - `url` is stored normalized (scheme and host lower case, default port removed, an empty path as
-  `/`). An omitted `url` takes the format's default upstream; a format without one makes it required
+  `/`). An omitted `url` takes the format's default preset (R-REPO-062); a format without presets makes it required
   (422 `invalid_upstream_url`). The upstream request for a canonical path is derived from it by the
   format plug-in. A plain `http` URL is accepted with the warning `plain_http_upstream`. A URL that
   points at a denied address is accepted too: the refusal is `egress_denied` at the first request
@@ -1782,6 +1808,7 @@ API, besides R-REPO-009 to R-REPO-013:
   "tls": { "peerSubject": "CN=registry.npmjs.org", "notAfter": "2027-03-01T00:00:00Z" },
   "outboundProxy": null,
   "sourceAddress": null,
+  "tokenService": null,
   "error": null
 }
 ```
@@ -1793,13 +1820,15 @@ egress rules, proxy and credentials that real fetches use (Q-REPO-90).
 - The answer is always 200 for a repository that can be tested: an upstream that fails is a result
   with `reachable: false` and the reason in `error`. `reachable` is true when the upstream answered
   with an HTTP response, whatever its status; `authenticated` is false for 401 and 403 and `null`
-  when there was no response, and for the `401` of a format whose upstream authenticates with a token handshake and whose
-  probe resource answers it with a Bearer challenge, unless the repository's `authMode` is `bearer` (OCI, [Q-REPO-280](#q-repo-280--the-upstream-test-reads-a-bearer-challenge-of-a-handshake-format-as-reachable)); `tls` describes the leaf certificate of the host that answered and is
+  when there was no response; for the `401` of a format whose upstream authenticates with a token handshake and whose
+  probe resource answers it with a Bearer challenge, unless the repository's `authMode` is `bearer`, it is the verdict of R-REPO-064
+  (OCI, [Q-REPO-325](#q-repo-325--the-upstream-test-runs-a-registrys-login-for-a-typed-credential)), and `tokenService` names the
+  challenge's token service (`null` without one); `tls` describes the leaf certificate of the host that answered and is
   `null` over plain `http`; `outboundProxy` is `null` until named proxies exist.
 - `error` is `null` or `{"code", "message"}` with one of `dns_error`, `connection_refused`,
   `timeout`, `tls_untrusted`, `egress_denied`, `source_network_unavailable`,
-  `upstream_secret_unavailable`, `offline`, `too_many_redirects`, `insecure_redirect` and
-  `request_failed`. The message names the host and never repeats the URL, whose query may carry a
+  `upstream_secret_unavailable`, `offline`, `too_many_redirects`, `insecure_redirect`,
+  `request_failed` and `foreign_host_denied` (a token service the repository may not reach, R-REPO-064). The message names the host and never repeats the URL, whose query may carry a
   token, or a secret.
 - A repository in `availability.mode: offline` and every repository while `proxy.global_offline` is on
   are not contacted: the result is `reachable: false` with `offline` (R-REPO-030, R-REPO-031).
@@ -1834,6 +1863,82 @@ Acceptance criteria:
   `plain_http_upstream`; `"clientCertificate": "mtls"` returns 422 `not_applicable`.
 - The upstream test of a repository in offline mode sends no request and reports `offline`; the test
   of a local repository returns 400 `not_applicable`.
+
+### R-REPO-062 · Upstream presets of a format
+Priority: **MVP** · Covers: RMT-004
+
+- A format with the remote class registers its **upstream presets** in the catalog (`catalog.Facts.UpstreamPresets`): the
+  well-known public registries of its ecosystem, each with a stable `id`, a `displayName` (a product name, not translated), its
+  `url` (written as R-REPO-024 normalizes it) and the `extraHosts` a repository of that upstream needs (`pattern`,
+  `sendCredentials`). Exactly one is the `default`: it is the format's default upstream of R-REPO-024, which an omitted `url` takes
+  ([Q-REPO-320](#q-repo-320--the-presets-are-a-fact-of-the-format-and-the-api-serves-them)).
+- Registration refuses presets on a format without the remote class, no default or two, two presets with the same `id` or `url`,
+  an `id` that is not lower-case letters and digits joined by single hyphens, a preset without a display name or a URL, a host
+  pattern twice within one preset (the catalog's `checkPresets`), and a `url` that is not in its normalized form
+  (`formats.Validate`). A preset names whether each of its hosts receives the credential, so no host can receive it without being
+  one of the preset's hosts.
+- `GET /api/v1/formats` serves them as `upstreamPresets`, in the format's order; the members `defaultUpstreamUrl`,
+  `defaultExtraHosts` and `defaultCredentialHosts` are gone (Q-REPO-327).
+- **Extra hosts.** A create, or a replace, whose `url` equals a preset's (normalized) and that omits `extraHosts` stores that
+  preset's hosts; any other URL stores none ([Q-REPO-322](#q-repo-322--a-presets-hosts-come-with-its-url)). A merge patch that
+  omits `extraHosts` leaves them as stored.
+- **Mirror bound.** Every preset's URL is a well-known upstream for R-REPO-052 ([Q-REPO-323](#q-repo-323--every-preset-is-a-well-known-upstream-for-the-mirror-bound)).
+
+| Format | `id` | Display name | `url` | `extraHosts` stored with it | Default |
+|---|---|---|---|---|---|
+| `oci` | `docker-hub` | Docker Hub | `https://registry-1.docker.io/` | `auth.docker.io`, receives the credential | yes |
+| `oci` | `quay` | Quay | `https://quay.io/` | none (token service `https://quay.io/v2/auth`, the origin) | |
+| `oci` | `ghcr` | GitHub (ghcr.io) | `https://ghcr.io/` | none (token service `https://ghcr.io/token`, the origin) | |
+| `oci` | `gitlab` | GitLab | `https://registry.gitlab.com/` | `gitlab.com`, receives the credential (token service `https://gitlab.com/jwt/auth`) | |
+| `npm` | `npmjs` | npm public registry | `https://registry.npmjs.org/` | none | yes |
+| `nuget` | `nuget-org` | nuget.org | `https://api.nuget.org/v3/index.json` | `*.nuget.org`, no credential | yes |
+| `deb` | `debian` | Debian | `https://deb.debian.org/debian/` | none | yes |
+| `deb` | `debian-security` | Debian security updates | `https://deb.debian.org/debian-security/` | none | |
+| `deb` | `ubuntu` | Ubuntu | `https://archive.ubuntu.com/ubuntu/` | none | |
+| `deb` | `ubuntu-security` | Ubuntu security updates | `https://security.ubuntu.com/ubuntu/` | none | |
+| `deb` | `ubuntu-ports` | Ubuntu ports | `https://ports.ubuntu.com/ubuntu-ports/` | none | |
+| `ansible` | `galaxy` | Ansible Galaxy | `https://galaxy.ansible.com/api/` | `github.com`, `codeload.github.com`, no credential | yes |
+
+Which registries are presets is [Q-REPO-321](#q-repo-321--which-registries-are-presets). Verified on 2026-11-12 with one request
+each from a workstation: the four OCI registries answer `GET /v2/` with `401` and the token services above; the npm registry's
+`-/ping`, the NuGet service index and Galaxy's `/api/` answer 200; `dists/trixie/InRelease`, `debian-security/dists/trixie-security/InRelease`
+and `dists/noble/InRelease` (archive, security and ports of Ubuntu, over `https`) answer 200. Not verified: a pull or install through a
+trove remote of each new preset; the builder does one each by hand and records it (CI is not assumed to reach these hosts).
+
+Acceptance criteria:
+
+- `GET /api/v1/formats` lists `oci` with the four presets above, `docker-hub` the default, and `generic` with none.
+- A remote OCI repository created with `url: "https://registry.gitlab.com/"` and no `extraHosts` reads back
+  `extraHosts: [{pattern: "gitlab.com", sendCredentials: true}]`; with `https://registry.example.com/` it reads back `[]`.
+- A mirror of `https://quay.io/` without include patterns and without `maxBytes` answers 422 `mirror_unbounded`.
+- A test registration with two default presets is refused by `formats.Register`.
+
+### R-REPO-064 · The upstream test follows a token handshake and names the token service
+Priority: **MVP** · Covers: RMT-004, RMT-005
+
+For a format whose probe resource answers with a Bearer challenge (`ProbeChallengeReachable`, OCI), both upstream tests read the
+challenge's realm ([Q-REPO-325](#q-repo-325--the-upstream-test-runs-a-registrys-login-for-a-typed-credential)):
+
+- A realm whose host is neither the upstream's origin nor an `extraHosts` entry: `error.code` `foreign_host_denied`, whose message
+  names the host; `authenticated: null`; no request to the realm.
+- An allowed realm, `authMode: basic` with a credential, and a host that receives it (the origin, or an entry with
+  `sendCredentials: true`): one `GET` of the realm with the challenge's `service` and no `scope`, with the credential as Basic (the
+  request of a client's login). `200` with a token is `authenticated: true`, and the token is dropped, not cached; `401` and `403` are
+  `false`; another status is `request_failed`. The egress rules, the TLS trust and the 64 KiB read bound of every token request apply.
+- An allowed realm without a credential, or with a host that receives none: no request to the realm; `authenticated: null`.
+- The result gains `tokenService`: `null`, or `{"host", "allowed", "receivesCredential"}`.
+- `authMode: bearer` runs no handshake, as before (R-OCI-021).
+
+Verified on 2026-11-12: Docker Hub's token service answers a wrong credential without scope `401`; an anonymous request without
+scope gets `200` at Docker Hub, `403` at ghcr.io and GitLab and `401` at Quay, which is why the test sends none. Not verified: that
+ghcr.io, Quay and GitLab answer a valid credential without scope with `200` (it is the request `docker login` sends).
+
+Acceptance criteria:
+
+- A test registry whose realm is on a second test host: without `extraHosts`, `foreign_host_denied` naming that host, and the
+  second host saw no request; with `{pattern: <host>, sendCredentials: true}` and the right password, `authenticated: true` and the
+  host saw one request without `scope`; with a wrong password `false`; with `sendCredentials: false`, `null` and no request.
+- The saved test of a stored repository answers the same with its stored credential.
 
 ### R-REPO-025 · Remote request path
 Priority: **MVP** · Covers: RMT-001, RMT-033
@@ -3386,8 +3491,9 @@ Priority: **MVP** · Covers: trove-only
 A mirror of a public registry would be terabytes. The bounds below keep it to what the operator chose; client pull-through is
 never bounded by them.
 
-- **A bound is required for a well-known upstream.** A mirror whose `url` is the format's well-known upstream (the catalog's
-  default upstream: `https://registry.npmjs.org/`, `https://api.nuget.org/v3/index.json`, `https://deb.debian.org/debian/`) is refused with 422
+- **A bound is required for a well-known upstream.** A mirror whose `url` is a preset's URL (R-REPO-062,
+  [Q-REPO-323](#q-repo-323--every-preset-is-a-well-known-upstream-for-the-mirror-bound): `https://registry.npmjs.org/`,
+  `https://api.nuget.org/v3/index.json`, `https://deb.debian.org/debian/`, `https://quay.io/` and every other) is refused with 422
   `mirror_unbounded` at `/remote/mode` unless the repository has a non-empty include list in which every pattern has a literal
   part before its first wildcard (`@types/*`, `Microsoft.Extensions.*`, `lodash`; not `*`, `**`, `@*/*` or `?x`), or a
   `maxBytes` (Q-REPO-132). A mirror of any other upstream without either is saved with the warning `mirror_unbounded`.
@@ -4985,6 +5091,8 @@ Context: R-REPO-024 lists a default for every member but says formats "propose e
 **Rationale:** Refusing is the only behavior that keeps the stored document and the enforced behavior equal. The development agent would revisit it when the P1 requirements are built; each refusal is one line in `validateRemote` and goes with its requirement.
 
 **Applied in the spec:** R-REPO-024 (the `extraHosts` row and the bullets on `url` and the refusals).
+
+**Revisited by [Q-REPO-322](#q-repo-322--a-presets-hosts-come-with-its-url) (2026-11-12):** the proposal is per preset: an omitted `extraHosts` takes the hosts of the preset whose URL the create names, and any other URL takes none; an omitted `url` takes the default preset.
 
 ### Q-REPO-92 · The role of an upstream request in the flight is how its request came to send it
 
@@ -8151,6 +8259,8 @@ format's `Authenticator`).
 **Applied in the spec:** R-REPO-024, [formats/oci.md](formats/oci.md) R-OCI-021. Code: `Clients.probe` in [probe.go](../../internal/proxy/upstream/probe.go). Tests:
 `TestR_REPO_024_ABearerChallengeOfAHandshakeFormatIsReachable`, `TestR_REPO_024_TheUpstreamTestReadsABearerChallengeAsReachable`.
 
+**Revisited by [Q-REPO-325](#q-repo-325--the-upstream-test-runs-a-registrys-login-for-a-typed-credential) (2026-11-12):** the owner's demand to check the connection settings before the save is this decision's revisit condition. The test now reads the challenge's realm, refuses a realm the repository may not reach with `foreign_host_denied`, and asks the token service once without a scope for a typed Basic credential (R-REPO-064); `authenticated` stays `null` only where no credential reaches the token service.
+
 ### Q-REPO-281 · The probe of the registry-root format is at the root of the host
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -8221,6 +8331,139 @@ download record, not of access.
 
 **Applied in the spec:** R-REPO-004, R-REPO-012, R-REPO-060; [authorization.md](authorization.md) R-AUTHZ-012, R-AUTHZ-031;
 [formats/nuget.md](formats/nuget.md) R-NUGET-012; [formats/generic.md](formats/generic.md).
+
+### Q-REPO-320 · The presets are a fact of the format, and the API serves them
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) In the catalog (`catalog.Facts.UpstreamPresets`), served by `GET /api/v1/formats` (chosen) | The format declares them next to its handshake | The format knows which host its registry's token service is on; the server applies a preset's hosts to a create by URL, so an API client gets the same repository as the UI; a new format brings its presets without a UI change (R-UI-021: the UI holds no list per format) | A contract change of the formats (ContractVersion 4, [ADR-198](../decisions.md#adr-198--the-format-catalog-names-a-formats-upstream-presets-and-the-contract-is-at-version-4)) |
+| (b) In the UI | A table in the web client | No server change | A second list per format; the UI would have to send `extraHosts`, and a `curl` create of `https://registry.gitlab.com/` would get none and fail at its first pull |
+
+**Choice:** (a).
+
+**Rationale:** a preset carries security facts (which host receives the credential) that belong where the handshake is checked.
+The development agent would revisit it if presets ever need a translation, which a product name does not.
+
+**Applied in the spec:** R-REPO-062, R-REPO-003.
+
+### Q-REPO-321 · Which registries are presets
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The owner's four for OCI and the format's default elsewhere | Minimal | Nothing unverified | Ubuntu users type the archive's address |
+| (b) A rule: a public registry of the format's ecosystem whose address is the same for every user, whose probe answers without a credential, and that the remote serves with a URL and hosts alone (chosen) | The table of R-REPO-062 | Each preset works for anyone who presses it | A registry the rule leaves out is typed |
+| (c) Every registry that hosts the format | GitHub Packages, GitLab's package endpoints, Red Hat's hub | More buttons | Some need an owner in the URL or a token for every read, some failed their probe |
+
+**Choice:** (b): OCI's four (the owner's), npm's public registry, nuget.org, Ansible Galaxy, and Debian, Debian security, Ubuntu,
+Ubuntu security and Ubuntu ports (arm64 lives on ports, not on the archive). Left out by the rule: GitHub Packages for npm and NuGet
+(a token for every read; NuGet's URL names the owner), GitLab's npm endpoint (its `-/ping` answered `302` on 2026-11-12), Red Hat's
+Automation Hub (needs `ansible.authUrl` and was never reached, H-842), and other public container registries the owner did not name.
+
+**Rationale:** a button that does not work is worse than a field to type in. The development agent would revisit the list when
+a registry passes the rule and an installation asks for it.
+
+**Applied in the spec:** R-REPO-062.
+
+### Q-REPO-322 · A preset's hosts come with its URL
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An omitted `extraHosts` takes the hosts of the preset whose URL the create names; another URL takes none (chosen) | Q-REPO-91 for every preset, not only the default | A GitLab remote works from its URL alone | — |
+| (b) Only the default preset's hosts, as built | Q-REPO-91 | — | A GitLab remote created from its URL fails its handshake |
+
+**Choice:** (a).
+
+**Rationale:** Q-REPO-91's reason (no host is trusted for a private upstream that never asked for it) holds per preset. The
+development agent would revisit it if two presets ever shared a URL.
+
+**Applied in the spec:** R-REPO-062, R-REPO-024. Revisits Q-REPO-91.
+
+### Q-REPO-323 · Every preset is a well-known upstream for the mirror bound
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every preset's URL needs a bound (chosen) | R-REPO-052's refusal for each | Quay, ghcr.io and the Ubuntu archive are as unbounded as Docker Hub | — |
+| (b) The default preset only, as built | — | — | An unbounded mirror of ghcr.io would be saved with a warning |
+
+**Choice:** (a).
+
+**Rationale:** the bound exists because a public registry is terabytes. The development agent would revisit it for a preset that
+is small by nature.
+
+**Applied in the spec:** R-REPO-052, R-REPO-062.
+
+### Q-REPO-324 · A new repository's defaults come from one operation
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `getRepositoryDefaults`: the document a bare create would store, and a free key (chosen) | One read per format and class | One source for every default the form shows: the visibility an Owner without `settings:read` cannot read today (D13), the remote and mirror defaults the client copies today (`MIRROR_DEFAULTS`) | One more operation |
+| (b) Facts spread over existing documents | `newRepositoryLevel` on the project, mirror defaults on the format | No new operation | A new field somewhere for each new default |
+| (c) Client constants | As built | Nothing to build | Copies that drift; the Owner's visibility stays wrong |
+
+**Choice:** (a). The format member is not part of it: its defaults are in `settingsSchema`, which the form already reads.
+
+**Rationale:** the server already resolves every omitted member when it stores a create; the form asks for that result instead of
+guessing it. The development agent would revisit it if the edit form ever needs it too.
+
+**Applied in the spec:** R-REPO-063.
+
+### Q-REPO-325 · The upstream test runs a registry's login for a typed credential
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) As built (Q-REPO-280 (a)): a Bearer challenge is reachable, `authenticated: null` | No second request | — | A wrong password and a token service the repository cannot reach both pass the test (D12) |
+| (b) Check the realm's host always; with a typed credential, ask the token service once without scope, as a client's login does (chosen) | Q-REPO-280's option (b), without an anonymous request | The test judges what the owner asked to check before the save | A second request to a second host; a credential oracle from trove's address (H-971) |
+| (c) Ask the token service also without a credential | One more verdict | — | Anonymous scope-less requests answer 200, 401 or 403 by registry (verified), so the answer means nothing |
+
+**Choice:** (b). The owner's demand to check the connection settings before the save is the revisit condition of Q-REPO-280.
+
+**Rationale:** for Docker, the owner's main case, the credential is judged by the token service, so the test must ask it. The
+development agent would revisit the scope-less request for a registry whose token service refuses it with a valid credential.
+
+**Applied in the spec:** R-REPO-064, R-REPO-024, R-OCI-021. Revisits Q-REPO-280.
+
+### Q-REPO-326 · The Debian and Ubuntu presets carry no archive keys
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) URL only; `deb.upstreamKeys` stays the operator's (chosen) | Q-DEB-14 (a) stands | trove does not follow two archives' key changes; Q-DEB-14 rejected built-in keys | A Debian remote from a preset is unverified until keys are given |
+| (b) Each preset brings its archive keyring | Built-in keys | A verified remote in one click | Q-DEB-14 (d), rejected: every key change of two archives becomes a trove release |
+
+**Choice:** (a). The keys stay a detail in the Debian settings; the help of `upstreamKeys` names the keyring file a Debian or Ubuntu
+host already has.
+
+**Rationale:** the decision of Q-DEB-14 is not changed by presets. The development agent would revisit it with Q-DEB-14.
+
+**Applied in the spec:** R-REPO-062.
+
+### Q-REPO-327 · The format list's default upstream members are replaced by the presets
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `upstreamPresets` replaces `defaultUpstreamUrl`, `defaultExtraHosts` and `defaultCredentialHosts` (chosen) | One shape | One way to read a format's upstreams | Every reader changes in the same commit |
+| (b) Keep the three beside the presets | Two shapes | — | A second way, for no client (pre-alpha, CLAUDE.md) |
+
+**Choice:** (a). `defaultMetadataTtlSeconds` and `defaultNotFoundTtlSeconds` stay: they are periods, not upstreams.
+
+**Rationale:** no backward compatibility before the first stable release. The development agent would revisit nothing here.
+
+**Applied in the spec:** R-REPO-062, R-REPO-003.
 
 ## What this does not cover
 

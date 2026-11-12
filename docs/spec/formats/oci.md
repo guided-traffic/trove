@@ -61,8 +61,10 @@ there is no separate Docker format and no per-repository protocol version: every
 which is a superset of the Docker registry HTTP API V2 (Q-OCI-1).
 
 Format registration (R-REPO-003): name `oci`, display name `OCI (Docker)`; classes `local`, `remote`, `virtual`; protocol
-base path template `/v2/{project}/{key}/` (the registry root of R-ARCH-005, Q-OCI-4); default upstream URL
-`https://registry-1.docker.io/`, with the proposed extra hosts of R-OCI-021; default metadata period 300 s and not-found period
+base path template `/v2/{project}/{key}/` (the registry root of R-ARCH-005, Q-OCI-4); upstream presets ([R-REPO-062](../repositories-and-proxy.md#r-repo-062--upstream-presets-of-a-format)) Docker Hub
+(`docker-hub`, `https://registry-1.docker.io/`, the default, with `auth.docker.io` receiving the credential), Quay (`quay`,
+`https://quay.io/`), GitHub (ghcr.io) (`ghcr`, `https://ghcr.io/`) and GitLab (`gitlab`, `https://registry.gitlab.com/`, with
+`gitlab.com` receiving the credential), the hosts of R-OCI-021; default metadata period 300 s and not-found period
 300 s (R-OCI-022); pattern subject `name` (the image name, R-REPO-005); priority members, pin rules and namespace claims
 supported; package name = image name; package version = tag (R-STOR-039), whose file is the tag's item `<name>/_tags/<tag>`
 (`VersionPath`: the package screens decide a tag on it as well as on the tags list, Q-AUTHZ-258; OCI has no vulnerability
@@ -100,7 +102,7 @@ first two path segments after `/v2/`, the project key and the repository key, ex
 Acceptance criteria:
 
 - `curl -s <base>/api/v1/formats | jq '.[] | select(.name=="oci")'` lists the classes `local`, `remote`, `virtual`, the
-  protocol base path `/v2/{project}/{key}/` and the default upstream URL `https://registry-1.docker.io/`.
+  protocol base path `/v2/{project}/{key}/` and the four upstream presets above, `docker-hub` the default.
 - `docker push trove.example.com/web/docker-local/app:1` followed by `docker pull trove.example.com/web/docker/app:1` on
   another machine succeeds.
 - `GET /v2/web/nope/app/manifests/1`, `GET /v2/nope/docker-local/app/manifests/1` and `GET /v2/web/docker-local` each answer
@@ -824,16 +826,18 @@ Priority: **P1** · Covers: PKG-DOCKER-033, PKG-DOCKER-038, PKG-OCI-003
   challenge, which replaces the remembered one. A cached token that the registry refuses is dropped and the handshake runs once more;
   a fresh token that is refused leaves the `401` as the answer when the `401`'s own challenge names the same token service and key.
   The token goes to the registry's origin only (R-REPO-033).
-- **Default extra hosts** proposed for the well-known upstream (R-REPO-024): `auth.docker.io` with `sendCredentials: true`
-  (Docker Hub's realm). The host Docker Hub redirects blob downloads to (`production.cloudfront.docker.com`, seen on 2026-11-08 with one
+- **The presets' hosts** (R-REPO-062, R-REPO-024): Docker Hub's `auth.docker.io` and GitLab's `gitlab.com`, each with
+  `sendCredentials: true` (the registry's realm); Quay's and ghcr.io's realms are on the registry's origin. The host Docker Hub redirects blob downloads to (`production.cloudfront.docker.com`, seen on 2026-11-08 with one
   anonymous request: a blob `GET` answered `307` to it) is not listed, because `extraHosts` does not gate redirects
   ([Q-OCI-125](#q-oci-125--extrahosts-do-not-gate-redirects-so-the-docker-hub-defaults-list-the-realm-only));
-  the catalog lists the default hosts that receive credentials (`catalog.Facts.DefaultCredentialHosts`, Q-OCI-13).
+  each preset names the hosts that receive credentials (`catalog.UpstreamPreset.ExtraHosts`, Q-OCI-13, Q-REPO-322).
 - **The upstream test** (R-REPO-024) requests `/v2/` at the root of the host: the path of `remote.url` is the namespace prefix of image names, not a
   base of the API ([Q-REPO-281](../repositories-and-proxy.md#q-repo-281--the-probe-of-the-registry-root-format-is-at-the-root-of-the-host)). A registry answers it `401` with a
-  Bearer challenge to a client with no token; that is reported as reachable with `authenticated: null`, because the credential is
-  judged by the realm, which the test does not ask; with `authMode: bearer` there is no handshake and the same answer means the stored token was
-  refused (`authenticated: false`) ([Q-REPO-280](../repositories-and-proxy.md#q-repo-280--the-upstream-test-reads-a-bearer-challenge-of-a-handshake-format-as-reachable)).
+  Bearer challenge to a client with no token; that is reported as reachable, and the test reads the challenge's realm and asks the
+  token service once without a scope for a typed credential, as R-REPO-064 says
+  ([R-REPO-064](../repositories-and-proxy.md#r-repo-064--the-upstream-test-follows-a-token-handshake-and-names-the-token-service),
+  [Q-REPO-325](../repositories-and-proxy.md#q-repo-325--the-upstream-test-runs-a-registrys-login-for-a-typed-credential)); with
+  `authMode: bearer` there is no handshake and the same answer means the stored token was refused (`authenticated: false`).
 - `authMode: bearer` sends the stored secret as a static bearer token and runs no handshake.
 - A write (blob upload, manifest push) to a remote repository answers 405 `UNSUPPORTED`.
 
@@ -1468,7 +1472,7 @@ R-ARCH-009 by `TestR_ARCH_008_TheWrittenContractEqualsTheCode`):
 | Page | Change | Decision |
 |---|---|---|
 | [README.md](../README.md) | INV-5: the key grammar; INV-6: `/v2/` served by the format `oci`, `_catalog` and `_token` at the registry root | Q-OCI-3, Q-OCI-4 |
-| [architecture.md](../architecture.md) | R-ARCH-005: the `/v2/` row and the route-table rule admit the format's prefix and the core's three root routes; R-ARCH-008: `ProtocolBasePath` may be `/v2/{project}/{key}/` for the one format that declares the registry root, `Refusal.Registry` and the link builder render the base path, the optional remote interfaces `Authenticator` and `Revalidator`, `discover.Upstream.Artifact`, the optional `discover.Bounded`, `catalog.Facts.DefaultCredentialHosts`, `SetupData.ImagePrefix`; R-ARCH-009: the upload-session port of the host; R-ARCH-032: the state rows of R-OCI-032 | Q-OCI-4, Q-OCI-12, Q-OCI-13, Q-OCI-16, Q-ARCH-415 |
+| [architecture.md](../architecture.md) | R-ARCH-005: the `/v2/` row and the route-table rule admit the format's prefix and the core's three root routes; R-ARCH-008: `ProtocolBasePath` may be `/v2/{project}/{key}/` for the one format that declares the registry root, `Refusal.Registry` and the link builder render the base path, the optional remote interfaces `Authenticator` and `Revalidator`, `discover.Upstream.Artifact`, the optional `discover.Bounded`, `catalog.Facts.UpstreamPresets` (formerly the default credential hosts, ADR-198), `SetupData.ImagePrefix`; R-ARCH-009: the upload-session port of the host; R-ARCH-032: the state rows of R-OCI-032 | Q-OCI-4, Q-OCI-12, Q-OCI-13, Q-OCI-16, Q-ARCH-415 |
 | [identity-and-authentication.md](../identity-and-authentication.md) | R-AUTH-001: the registry token as a credential of the `Authorization` header on `/v2/`, no session cookie there, `/v2/_token` among the routes whose credential the handler presents; R-AUTH-002: the `/v2/` rows of the challenge table; R-AUTH-022: the registry token, its form and that it is not a reference token; R-AUTH-023: a registry token enters the validation at step 2 with the hash it carries; R-AUTH-033: the Basic switch covers the token service; R-AUTH-041: the event `auth.registry_token.denied` (made with the token service) | Q-OCI-5, Q-OCI-50, Q-OCI-51, Q-OCI-53, Q-OCI-57 |
 | [authorization.md](../authorization.md) | R-AUTHZ-007: the OCI table of R-OCI-006 (made with the token service); R-AUTHZ-026: the project key grammar | Q-OCI-3, Q-OCI-6 |
 | [operations-and-observability.md](../operations-and-observability.md) | R-OPS-015: `auth.registry_token.denied` deduplicated like `token.rejected`; the event registry's row of `auth.registry_token.denied`; the metric `trove_oci_registry_tokens_total` (made with the token service) | Q-OCI-53 |

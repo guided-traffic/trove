@@ -486,7 +486,8 @@ and every change of its exported surface is an ADR (R-ARCH-025, Q-ARCH-256, Q-AR
 The additions of [ADR-161](../decisions.md#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions)
 show the three kinds: `Host.Uploads()` and `Ingestor.Link` are services (the production host implements both over `internal/uploads` and
 the item store, [oci.md](oci.md#upload-sessions-r-stor-011); the in-memory host implements `Link` and takes an `UploadSessions` in `HostOptions.Uploads`),
-`Authenticator` and `Revalidator` are optional interfaces, and `catalog.Facts.RegistryRoot`, `DefaultCredentialHosts`,
+`Authenticator` and `Revalidator` are optional interfaces, and `catalog.Facts.RegistryRoot`, `DefaultCredentialHosts` (since version 4
+`UpstreamPresets`, [ADR-198](../decisions.md#adr-198--the-format-catalog-names-a-formats-upstream-presets-and-the-contract-is-at-version-4)),
 `Refusal.Base` and `SetupData.ImagePrefix` are facts that every layer reads.
 
 1. Ask first whether it is a service a format calls (a method of `Host`, `PackageWriter` or a store): adding one breaks no format. Do that, with the in-memory twin in

@@ -136,8 +136,8 @@ func TestR_NPM_041_TheGuideStatesTheDefaults(t *testing.T) {
 	if *d.DefaultNotFoundTTLSeconds != 1800 || !strings.Contains(remote, "30 minutes unless the repository sets another") {
 		t.Errorf("negative period %d", *d.DefaultNotFoundTTLSeconds)
 	}
-	if !strings.Contains(remote, d.DefaultUpstreamURL) {
-		t.Errorf("the default upstream %s is not the example", d.DefaultUpstreamURL)
+	if preset, _ := d.DefaultPreset(); preset.URL == "" || !strings.Contains(remote, preset.URL) {
+		t.Errorf("the default preset %s is not the example", preset.URL)
 	}
 	publish := renderGuide(t, guideData(formats.Local, "npm", false, false))["npm.publish"]
 	pub := reflect.TypeFor[config.NPMPublish]()

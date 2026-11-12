@@ -55,16 +55,13 @@ import {
   clientAddress,
   curlOf,
   documentOf,
-  effectiveUrl,
-  initialUpstream,
   lines,
   maskSecrets,
   mirrorOf,
   sameMirror,
   settingsOf,
-  upstreamDefaultsOf,
-  upstreamOf,
 } from './repository-model';
+import { effectiveUrl, initialUpstream, upstreamDefaultsOf, upstreamOf } from './upstream-model';
 import { SettingSchema, errorTarget, settingEntries, settingNodes } from './settings-schema';
 import { UpstreamSettings, upstreamPointerLabel, upstreamTarget } from './upstream-settings';
 

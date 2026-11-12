@@ -3048,6 +3048,7 @@ const (
 	UpstreamTestResultErrorCodeConnectionRefused         UpstreamTestResultErrorCode = "connection_refused"
 	UpstreamTestResultErrorCodeDnsError                  UpstreamTestResultErrorCode = "dns_error"
 	UpstreamTestResultErrorCodeEgressDenied              UpstreamTestResultErrorCode = "egress_denied"
+	UpstreamTestResultErrorCodeForeignHostDenied         UpstreamTestResultErrorCode = "foreign_host_denied"
 	UpstreamTestResultErrorCodeInsecureRedirect          UpstreamTestResultErrorCode = "insecure_redirect"
 	UpstreamTestResultErrorCodeOffline                   UpstreamTestResultErrorCode = "offline"
 	UpstreamTestResultErrorCodeRequestFailed             UpstreamTestResultErrorCode = "request_failed"
@@ -3066,6 +3067,8 @@ func (e UpstreamTestResultErrorCode) Valid() bool {
 	case UpstreamTestResultErrorCodeDnsError:
 		return true
 	case UpstreamTestResultErrorCodeEgressDenied:
+		return true
+	case UpstreamTestResultErrorCodeForeignHostDenied:
 		return true
 	case UpstreamTestResultErrorCodeInsecureRedirect:
 		return true
@@ -4204,6 +4207,27 @@ func (e GetClientSetupParamsCredentials) Valid() bool {
 	case GetClientSetupParamsCredentialsNone:
 		return true
 	case GetClientSetupParamsCredentialsPlaceholder:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetRepositoryDefaultsParamsClass.
+const (
+	GetRepositoryDefaultsParamsClassLocal   GetRepositoryDefaultsParamsClass = "local"
+	GetRepositoryDefaultsParamsClassRemote  GetRepositoryDefaultsParamsClass = "remote"
+	GetRepositoryDefaultsParamsClassVirtual GetRepositoryDefaultsParamsClass = "virtual"
+)
+
+// Valid indicates whether the value is a known member of the GetRepositoryDefaultsParamsClass enum.
+func (e GetRepositoryDefaultsParamsClass) Valid() bool {
+	switch e {
+	case GetRepositoryDefaultsParamsClassLocal:
+		return true
+	case GetRepositoryDefaultsParamsClassRemote:
+		return true
+	case GetRepositoryDefaultsParamsClassVirtual:
 		return true
 	default:
 		return false
@@ -6380,19 +6404,11 @@ type FormatDescriptor struct {
 	// Clients The native clients of the format (FMT-002), in the format's order. A format with clients ships a
 	// guide for every class and client (R-UI-049, `GET /api/v1/formats/{format}/guide`); empty for a format
 	// without one. generic, addressed with any HTTP client, names curl (R-GENERIC-016).
-	Clients []FormatClient `json:"clients"`
-
-	// DefaultCredentialHosts The entries of `defaultExtraHosts` that a remote repository of the format proposes with `sendCredentials: true`, because the
-	// upstream's token realm lives there (R-OCI-021); each is also in `defaultExtraHosts`. Empty for a format without any.
-	DefaultCredentialHosts []string `json:"defaultCredentialHosts"`
-
-	// DefaultExtraHosts The further hosts a remote repository of the format may fetch from by default (R-REPO-024); empty for a format without any.
-	DefaultExtraHosts         []string `json:"defaultExtraHosts"`
-	DefaultMetadataTtlSeconds *int     `json:"defaultMetadataTtlSeconds"`
-	DefaultNotFoundTtlSeconds *int     `json:"defaultNotFoundTtlSeconds"`
-	DefaultUpstreamUrl        *string  `json:"defaultUpstreamUrl"`
-	DisplayName               *string  `json:"displayName,omitempty"`
-	Layout                    string   `json:"layout"`
+	Clients                   []FormatClient `json:"clients"`
+	DefaultMetadataTtlSeconds *int           `json:"defaultMetadataTtlSeconds"`
+	DefaultNotFoundTtlSeconds *int           `json:"defaultNotFoundTtlSeconds"`
+	DisplayName               *string        `json:"displayName,omitempty"`
+	Layout                    string         `json:"layout"`
 
 	// Mirror Whether a remote repository of this format can run in mode `mirror` (R-REPO-050): its remote adapter can discover the
 	// packages of its upstream. `false` for a format that cannot; `mode: mirror` on it answers `422 not_applicable`.
@@ -6410,6 +6426,12 @@ type FormatDescriptor struct {
 	// against (R-ARCH-008). Its properties may carry `x-trove-classes`, the classes the setting applies to;
 	// a setting of another class answers `not_applicable`. `null` for a format without settings.
 	SettingsSchema *map[string]interface{} `json:"settingsSchema"`
+
+	// UpstreamPresets The well-known public registries of the format's ecosystem, in the format's order (R-REPO-062): the one-click choices of a
+	// remote repository's upstream. Exactly one is the `default`, the upstream an omitted `remote.url` takes; a create whose
+	// `url` equals a preset's and that omits `extraHosts` stores that preset's hosts. Empty for a format without a well-known
+	// upstream, whose remote repositories need a `url`, and for a format without the class `remote`.
+	UpstreamPresets []UpstreamPreset `json:"upstreamPresets"`
 
 	// VulnerabilityScanning Whether stored versions of the format are matched against advisories (the format has the vulnerability adapter, R-VULN-009); a format without it has no vulnerability counts anywhere (R-UI-052).
 	VulnerabilityScanning bool `json:"vulnerabilityScanning"`
@@ -8540,6 +8562,20 @@ type RepositoryConsumerView struct {
 // RepositoryConsumerViewClass defines model for RepositoryConsumerView.Class.
 type RepositoryConsumerViewClass string
 
+// RepositoryDefaults defines model for RepositoryDefaults.
+type RepositoryDefaults struct {
+	// Repository The document a create of only `key`, `class` and `format` in the project would store, without `key` (R-REPO-063): the
+	// members of `Repository` that apply to the class, at their defaults. `visibility` is the lower of the installation's
+	// default and the project's level; a remote's section is canonical, with the default preset's `url` and `extraHosts` and
+	// every member of `RemoteSettings`; a virtual's has no members and no deploy target; a local's `packageOwnership` is the
+	// format's. The format's own member is absent: its defaults are the `default`s of the format's `settingsSchema`.
+	Repository map[string]interface{} `json:"repository"`
+
+	// SuggestedKey `<format>-<class>`, or the first of `<format>-<class>-2` to `<format>-<class>-9` that no repository of the project holds;
+	// `null` when all ten are taken (R-REPO-063).
+	SuggestedKey *string `json:"suggestedKey"`
+}
+
 // RepositoryList defines model for RepositoryList.
 type RepositoryList struct {
 	Items      []RepositoryList_Items_Item `json:"items"`
@@ -9146,6 +9182,33 @@ type TokenScopePatterns struct {
 	Include *[]string `json:"include,omitempty"`
 }
 
+// UpstreamPreset defines model for UpstreamPreset.
+type UpstreamPreset struct {
+	// Default The format's default upstream; exactly one preset of a format has it.
+	Default bool `json:"default"`
+
+	// DisplayName A product name (`Docker Hub`, `GitHub (ghcr.io)`); the UI does not translate it.
+	DisplayName string `json:"displayName"`
+
+	// ExtraHosts The `remote.extraHosts` a repository of this upstream needs, stored with a create whose `url` is this preset's and that
+	// omits `extraHosts` (Q-REPO-322). A host with `sendCredentials: true` runs the registry's token service and receives the
+	// repository's credential (R-OCI-021, R-REPO-033).
+	ExtraHosts []UpstreamPresetHost `json:"extraHosts"`
+
+	// Id Stable within the format (`docker-hub`, `ghcr`).
+	Id string `json:"id"`
+
+	// Url The upstream URL, written as `remote.url` is stored (R-REPO-024), so it compares equal to a stored URL.
+	Url string `json:"url"`
+}
+
+// UpstreamPresetHost defines model for UpstreamPresetHost.
+type UpstreamPresetHost struct {
+	// Pattern A host name pattern of `remote.extraHosts` (R-REPO-024).
+	Pattern         string `json:"pattern"`
+	SendCredentials bool   `json:"sendCredentials"`
+}
+
 // UpstreamTestRequest defines model for UpstreamTestRequest.
 type UpstreamTestRequest struct {
 	// Format The format of the repository the section is for; its defaults and probe resource apply.
@@ -9159,7 +9222,7 @@ type UpstreamTestRequest struct {
 
 // UpstreamTestResult defines model for UpstreamTestResult.
 type UpstreamTestResult struct {
-	// Authenticated `false` for `401` and `403`; `null` when there was no response, and for the `401` of a container registry that asks for a token (a Bearer challenge): the credential is judged by the registry's token service, which the test does not ask.
+	// Authenticated `false` for `401` and `403`; `null` when there was no response. For the `401` of a container registry that asks for a token (a Bearer challenge) it is the verdict of the registry's token service on the repository's credential, asked once without a scope as a client's login does: `true` for `200`, `false` for `401` and `403`; `null` when no credential was given, when the token service's host does not receive it, or when that host is not allowed (R-REPO-064).
 	Authenticated *bool `json:"authenticated"`
 	DurationMs    int64 `json:"durationMs"`
 	Error         *struct {
@@ -9182,6 +9245,16 @@ type UpstreamTestResult struct {
 		NotAfter    time.Time `json:"notAfter"`
 		PeerSubject string    `json:"peerSubject"`
 	} `json:"tls"`
+
+	// TokenService The token service a Bearer challenge of the upstream named (R-REPO-064); `null` without one. `allowed` is whether its
+	// host is the upstream's origin or an entry of `extraHosts`; `receivesCredential` whether the repository's credential
+	// is sent to it (the origin, or an entry with `sendCredentials: true`). A host that is not allowed is the error
+	// `foreign_host_denied`, and the token service was not asked.
+	TokenService *struct {
+		Allowed            bool   `json:"allowed"`
+		Host               string `json:"host"`
+		ReceivesCredential bool   `json:"receivesCredential"`
+	} `json:"tokenService"`
 }
 
 // UpstreamTestResultErrorCode defines model for UpstreamTestResult.Error.Code.
@@ -10958,6 +11031,16 @@ type RescanRepositoryVulnerabilitiesParams struct {
 	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
 }
 
+// GetRepositoryDefaultsParams defines parameters for GetRepositoryDefaults.
+type GetRepositoryDefaultsParams struct {
+	// Format A format of `GET /api/v1/formats`.
+	Format string                           `form:"format" json:"format"`
+	Class  GetRepositoryDefaultsParamsClass `form:"class" json:"class"`
+}
+
+// GetRepositoryDefaultsParamsClass defines parameters for GetRepositoryDefaults.
+type GetRepositoryDefaultsParamsClass string
+
 // ListProjectServiceAccountsParams defines parameters for ListProjectServiceAccounts.
 type ListProjectServiceAccountsParams struct {
 	// Q Case-insensitive substring of the name.
@@ -12319,6 +12402,9 @@ type ServerInterface interface {
 	// RescanRepositoryVulnerabilities Evaluate every stored version of a repository again
 	// (POST /api/v1/projects/{projectKey}/repositories/{repoKey}/vulnerabilities/rescan)
 	RescanRepositoryVulnerabilities(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string, params RescanRepositoryVulnerabilitiesParams)
+	// GetRepositoryDefaults Read the defaults of a new repository
+	// (GET /api/v1/projects/{projectKey}/repository-defaults)
+	GetRepositoryDefaults(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, params GetRepositoryDefaultsParams)
 	// ListProjectServiceAccounts List the service accounts of a project
 	// (GET /api/v1/projects/{projectKey}/service-accounts)
 	ListProjectServiceAccounts(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, params ListProjectServiceAccountsParams)
@@ -19953,6 +20039,61 @@ func (siw *ServerInterfaceWrapper) RescanRepositoryVulnerabilities(w http.Respon
 	handler.ServeHTTP(w, r)
 }
 
+// GetRepositoryDefaults operation middleware
+func (siw *ServerInterfaceWrapper) GetRepositoryDefaults(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetRepositoryDefaultsParams
+
+	// ------------- Required query parameter "format" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "format", r.URL.Query(), &params.Format, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "format"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "format", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "class" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "class", r.URL.Query(), &params.Class, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "class"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "class", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRepositoryDefaults(w, r, projectKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListProjectServiceAccounts operation middleware
 func (siw *ServerInterfaceWrapper) ListProjectServiceAccounts(w http.ResponseWriter, r *http.Request) {
 
@@ -24178,6 +24319,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/projects/{projectKey}/visibility", wrapper.SetProjectVisibility)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/principals", wrapper.LookupProjectPrincipals)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories", wrapper.ListRepositories)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repository-defaults", wrapper.GetRepositoryDefaults)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories", wrapper.ListProjectRepositories)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories", wrapper.CreateProjectRepository)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}", wrapper.DeleteRepository)

@@ -4,13 +4,8 @@ import { FieldWidth } from '../../shared/access/fields';
 import { FormatDescriptor } from '../../api/repositories-api';
 import { fieldMessage, problemsAt } from '../../shared/field-errors';
 import { JsonObject } from '../../shared/merge-patch';
-import {
-  MIRROR_DEFAULTS,
-  RemoteMode,
-  RepositoryForm,
-  lines,
-  normalizedUrl,
-} from './repository-model';
+import { MIRROR_DEFAULTS, RemoteMode, RepositoryForm, lines } from './repository-model';
+import { defaultPreset, normalizedUrl } from './upstream-model';
 import { controlIdOf, numberOrText } from './settings-schema';
 
 /** The id of the section; a server error at a pointer the section does not render lands here. */
@@ -398,7 +393,7 @@ export class MirrorSettings {
     }
     const includes = lines(f.includePatterns);
     if (includes.length > 0 && includes.every(boundsMirror)) return null;
-    const known = this.format().defaultUpstreamUrl;
+    const known = defaultPreset(this.format())?.url ?? null;
     const entered = this.upstreamUrl()?.trim();
     const url = entered ? entered : known;
     return known && url && normalizedUrl(url) === normalizedUrl(known) ? 'refused' : 'warned';

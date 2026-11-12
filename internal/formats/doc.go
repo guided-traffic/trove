@@ -17,8 +17,9 @@
 // conformance kit (internal/formats/formattest) runs every format's routes, errors,
 // hooks and headers through the contract (R-ARCH-010).
 //
-// ContractVersion is 3, and the contract is frozen since the end of milestone M3 (E3.3,
-// ADR-141); version 2 is the project model's (ADR-156), version 3 the upload sessions' (ADR-178). A change of the exported surface is an ADR of its own: the
+// ContractVersion is 4, and the contract is frozen since the end of milestone M3 (E3.3,
+// ADR-141); version 2 is the project model's (ADR-156), version 3 the upload sessions' (ADR-178), version 4 the upstream
+// presets' (ADR-198). A change of the exported surface is an ADR of its own: the
 // surface file internal/formats/testdata/contract.txt fails the test until the ADR
 // and the regenerated file come in one change. A change adds - an optional interface
 // that CapabilitiesOf finds, a default in Base or RemoteBase, a service of the Host -

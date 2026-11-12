@@ -115,7 +115,7 @@ Format registration (R-REPO-003):
 | ID, display name, layout | `ansible`, `Ansible Galaxy`, `ansible` |
 | Classes | `local`, `remote`, `virtual` |
 | Protocol base path | `/api/ansible/{project}/{key}/` |
-| Default upstream | `https://galaxy.ansible.com/api/` (an API root, R-ANS-016); default extra hosts `github.com` and `codeload.github.com`, without credentials (role archives, R-ANS-020); probe path empty (the URL itself answers the discovery document) |
+| Upstream presets ([R-REPO-062](../repositories-and-proxy.md#r-repo-062--upstream-presets-of-a-format)) | Ansible Galaxy (`galaxy`, `https://galaxy.ansible.com/api/`, an API root, R-ANS-016, the default), with the extra hosts `github.com` and `codeload.github.com`, without credentials (role archives, R-ANS-020); probe path empty (the URL itself answers the discovery document) |
 | Cache periods of a remote | metadata 600 s, not-found 300 s (the periods of the other formats for a mutable index) |
 | Pattern subject | `name`: the collection `<ns>.<name>` |
 | Package names | yes: the normalized `<ns>.<name>` (R-ANS-002); the documents of roles have a package name of their own (R-ANS-020) |
