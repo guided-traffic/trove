@@ -98,7 +98,7 @@ func (db *DB) CheckSchema(ctx context.Context, version string) error {
 		return err
 	}
 	defer conn.Release()
-	sctx, cancel := probeStatementContext(ctx)
+	sctx, cancel := db.probeStatementContext(ctx)
 	defer cancel()
 	st, err := readSchemaState(sctx, conn)
 	if err != nil {

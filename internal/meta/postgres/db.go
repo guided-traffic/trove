@@ -42,6 +42,11 @@ type DB struct {
 	tls     *dbTLS
 
 	closeOnce sync.Once
+	// life ends when CloseContext starts: the statements of the readiness probes, which no check deadline cuts, end with it, so a probe
+	// that started before or during the close does not hold the control connection past the close deadline. Nil for a DB built by a
+	// test or by the backup snapshot, whose probes then run to their own bound.
+	life       context.Context
+	endingLife context.CancelFunc
 }
 
 // Open validates the configuration, opens the pools of the role, waits for the
@@ -76,6 +81,7 @@ func Open(ctx context.Context, cfg config.Database, instance, role string, log *
 		return nil, err
 	}
 	db := &DB{cfg: cfg, log: log, instance: instance, role: role, retry: newRetrier(cfg.Retry)}
+	db.life, db.endingLife = context.WithCancel(context.Background())
 	db.retry.metrics = o.metrics
 	var err error
 	if role == meta.RoleBackup {
@@ -210,9 +216,15 @@ func (db *DB) Config() config.Database { return db.cfg }
 const probeStatementBound = 10 * time.Second
 
 // probeStatementContext is the context of a probe's statements: the values of ctx, the bound of probeStatementBound, not the
-// end of ctx.
-func probeStatementContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.WithoutCancel(ctx), probeStatementBound)
+// end of ctx, and the end of the DB's life: closing the pools cancels a statement that is still running, so the connection it holds
+// comes back before the close deadline (R-ARCH-024 step 6).
+func (db *DB) probeStatementContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), probeStatementBound)
+	if db.life == nil {
+		return sctx, cancel
+	}
+	stop := context.AfterFunc(db.life, cancel)
+	return sctx, func() { stop(); cancel() }
 }
 
 // Ready is the `database` readiness check (R-OPS-001): a statement on the
@@ -225,7 +237,7 @@ func (db *DB) Ready(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	sctx, cancel := probeStatementContext(ctx)
+	sctx, cancel := db.probeStatementContext(ctx)
 	defer cancel()
 	var primary bool
 	err = conn.QueryRow(sctx, "SELECT NOT pg_is_in_recovery()").Scan(&primary)
@@ -299,6 +311,9 @@ func (db *DB) Close() { _ = db.CloseContext(context.Background()) }
 func (db *DB) CloseContext(ctx context.Context) error {
 	var err error
 	db.closeOnce.Do(func() {
+		if db.endingLife != nil {
+			db.endingLife()
+		}
 		var pools []closingPool
 		for _, p := range []struct {
 			name string

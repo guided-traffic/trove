@@ -82,6 +82,10 @@ The connection string carries neither.
   a connection whose statement was cut and the control pool, one connection big, then waits for the cleanup of the closed one
   before it hands out another ([Q-HA-284](../spec/ha-and-helm.md#q-ha-284--a-readiness-probe-does-not-cut-its-statement-at-the-end-of-its-check)).
   Test: `TestR_OPS_001_AProbeWhoseDeadlineEndsDuringItsStatementKeepsTheControlConnection`.
+  The statement context ends with the DB's life, though (`DB.life`, cancelled when `CloseContext` starts): the health checks run
+  until the ops listener stops, after the pools close, so a probe that is stuck on a lock or a stalled connection would hold the
+  control connection for up to 10 s past the close deadline and the stop would fail with "control pool (1 connection held)".
+  Test: `TestR_HA_011_CloseContextEndsAProbeStatementThatIsStillRunning`.
   `Ready` returns `ErrStandby` for a server in recovery and destroys that connection (the control pool holds one, so
   the next check connects again and finds the new primary); `Read` destroys the connection when `fn` panics;
   `classify` treats a failed TLS verification of the server (`x509` and `tls.CertificateVerificationError` inside the
