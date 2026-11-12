@@ -77,13 +77,20 @@ Hard rules, also for every subagent (put them into every subagent prompt):
    - **Why:** the run of 2026-11-08 spent hours in three or four review rounds per work package and per finding, recorded 28 new
      findings (most of them false failures under its own load), and delivered only the local OCI class: OCI remote stayed in
      review, OCI virtual and the mirror and APT were not started ([section 11](#11--run-record)).
+11. **A UI change is rendered and looked at before it lands (owner, 2026-11-12).** The builder renders every screen it changed with
+   `make ui-renders` (light and dark, wide and narrow, with data that has short and long names, several rows and an empty state),
+   opens the pictures itself and judges them against the checklist of [ui-style-guide.md](../developer/ui-style-guide.md#checklist)
+   before it commits; what it found and fixed goes into its report with the paths of the pictures. A unit test or a browser test that
+   checks a value is not a look at the screen.
+   - **Why:** T-20's address fields passed every test and shipped with a different width per row and a list that scrolled sideways;
+     the owner found it in the running installation, not the run.
 
 ## 1 · Find the next phase
 
 1. `git status` must be clean; then `git pull --rebase origin main`.
 2. During the alpha (rule 10) a run works on two fronts at once: the first open task of
    [section 10](#10--owner-tasks-of-2026-11-07-the-next-registries), cut into work packages with an agent and a branch each, and
-   every open finding of section 8 with an agent each. Open there now: the owner task of 2026-11-11 **T-18 (visibility levels)**; it comes before the next unit of item 3. The open items of BETA.md phase 7 are
+   every open finding of section 8 with an agent each. Open there now: the owner task of 2026-11-11 **T-18 (visibility levels)** and, beside it, the owner task of 2026-11-12 **T-21 (a UI that looks right)**; both come before the next unit of item 3. The open items of BETA.md phase 7 are
    findings of the same kind. Outside the alpha: open [BETA.md](BETA.md), table
    **Where we are**; the current phase is the first row whose status is not 🟢, and a row at 🟡 is resumed (step 2, item 4).
 3. If every row of BETA.md is 🟢, open [FULL.md](FULL.md) and take the first unit that is not 🟢,
@@ -511,6 +518,26 @@ T-18 is planned in [visibility-work-packages.md](visibility-work-packages.md) (R
   audit events, the schema, and the caches a change must reach (the authz snapshot, the claims index) within the existing bound. Security
   pages change (who can read what), with their gaps. e2e with real clients: "public artifacts, internal wiki" (an anonymous `npm install` works,
   an anonymous request for the documentation gets what was decided), and an external user who sees nothing internal.
+### Owner task of 2026-11-12
+
+Set by the owner on 2026-11-12, after the repository list showed an address field of a different width in every row: "Our UI still
+looks really bad and I expect more. A consistent design. Easy access to the product for simple users. Optional details for power users
+and admins." A confirmed feature, not a parked idea; it runs beside T-18 and is planned and built under rule 11.
+
+- **T-21 · A UI that looks right.**
+  - **Renders.** A command that brings up the UI development profile with realistic data and renders every screen, in both schemes and
+    at three widths, as the three kinds of user below, into `.out/ui-renders/` with a contact sheet.
+  - **Address fields.** In a list every address field has the same width and the list does not scroll sideways at the usual desktop
+    widths; this replaces Q-UI-270 and Q-UI-271.
+  - **Audit.** Every screen rendered and judged against the style guide, each defect one line with its screen and picture. The audit
+    list is the work list of the fix waves.
+  - **Three kinds of user.** The plain user who reads and installs, the power user who publishes and maintains, and the administrator.
+    The plain user reaches the common job (find the repository or package, copy the address, set up the client) without detours and
+    without settings in the way. What only power users and administrators need sits behind an optional disclosure, not in the main view.
+    To decide in the spec: what each kind sees on the home page, the lists, the repository and package pages, and where the details go.
+  - **Consistency.** One width, height, spacing and alignment per kind of element across screens. Row actions, empty states and page
+    headers follow one pattern each. T-18's screens are rendered under the same rule before T-18 lands.
+
 ## 11 · Run record
 
 What a run did, in short, so the next run starts where it stopped. The plan items, findings and decisions carry the details.
