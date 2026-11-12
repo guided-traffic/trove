@@ -193,7 +193,7 @@ test('E2.8 R-UI-006 R-UI-008 R-UI-016 the published version in the list, its san
     await expect(page.getByRole('heading', { name: 'Client setup', level: 1 })).toBeVisible();
     await expect(page.getByRole('radio', { name: 'Reference an environment variable' })).toBeChecked();
     const port = new URL(baseURL ?? '').port;
-    const clientStep = page.getByRole('group', { name: /^2\s*Client$/ });
+    const clientStep = page.getByRole('group', { name: /^1\s*Client$/ });
     for (const client of clients) {
       await clientStep.getByRole('radio', { name: client.label, exact: true }).check();
       const expected = matrixSnippet(client.id, port);

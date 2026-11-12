@@ -55,7 +55,7 @@ test('R-UI-018 R-UI-019 the NuGet clients, their snippets with the index.json UR
   });
 
   await test.step('the .NET CLI: the source command with the clear-text flag and a nuget.config that clears other sources', async () => {
-    const clientStep = page.getByRole('group', { name: /^2\s*Client$/ });
+    const clientStep = page.getByRole('group', { name: /^1\s*Client$/ });
     await clientStep.getByRole('radio', { name: '.NET CLI (dotnet)', exact: true }).check();
     const configure = page.getByRole('tabpanel', { name: 'Configure' });
     // The server renders the shell form, the PowerShell form and the nuget.config, in that order; the source is
@@ -77,7 +77,7 @@ test('R-UI-018 R-UI-019 the NuGet clients, their snippets with the index.json UR
   });
 
   await test.step('nuget.exe and Visual Studio', async () => {
-    const clientStep = page.getByRole('group', { name: /^2\s*Client$/ });
+    const clientStep = page.getByRole('group', { name: /^1\s*Client$/ });
     await clientStep.getByRole('radio', { name: 'NuGet CLI (nuget.exe)', exact: true }).check();
     await page.getByRole('tab', { name: 'Configure' }).click();
     await expect(
