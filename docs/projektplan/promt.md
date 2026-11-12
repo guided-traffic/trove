@@ -573,7 +573,15 @@ and admins." A confirmed feature, not a parked idea; it runs beside T-18 and is 
       - a step label that lists four topics;
       - a key field red with "does not match the pattern" before anything was typed;
       - administrator notes in the standard flow.
-    - T-18 changes the same creation flow (the visibility level), so this part is planned on T-18's tree and built after T-18 lands.
+    - Planned in [repository-setup-work-packages.md](repository-setup-work-packages.md) (Q-UI-340 to 353, Q-REPO-320 to 327):
+      - a page of format tiles, then one form per format titled with the format's display name;
+      - the standard fields per class, with members and the deployment target for a virtual repository;
+      - the upstream presets per format, served by the format plugins, and **Test connection** under the credentials;
+      - one closed **Advanced settings** section;
+      - the settings page as one column of sections.
+      T-18 changes the same flow, so two builders build it after T-18 lands.
+    - Open for the owner, not blocking: should administrators add the installation's own registries (for example the owner's GitLab
+      registry) as preset buttons? The development agent's recommendation is not now, and as its own task if wanted.
 
 ## 11 · Run record
 
