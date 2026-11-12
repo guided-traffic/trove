@@ -471,20 +471,29 @@ by `version: "*"`. Red pipelines are worked on even though they no longer hold a
   - every screen except the vulnerability pages, the repository settings and the creation flow has the shared header.
 
   The development agent's six render findings of wave 1 are fixed.
-  - Open: UI-A-30. The administrator's repository list shows about 48 characters of an address at 1280 and 1440 px, so a
-    57-character address is still cut. Fixing it needs a narrower first column or no Last activity there.
-  - Open: the profile's sessions page scrolls about 230 px sideways at 390 px. It did before the waves.
-- A full `make ui-renders` run got HTTP 429 on `packages-other-project` and `package-npm` as the power user and the administrator, on
-  main's schema; each screen passes when it is rendered alone. The cause is not verified (trove's rate limiter on the single replica
-  of the UI development profile is the suspect). T-18's e2e set `nuget` showed 429s on cold restores at the same time; on main,
-  `e2e (nuget)` was green in Test and Release 43221171578.
-  - The creation and the settings of a repository are planned on T-18's tree: UI-A-31 to 40, the owner's rules in
-    [CLAUDE.md](../../CLAUDE.md#product-simple-by-default-details-on-demand).
-- UI-A-41: the project owner's service-accounts page calls `GET /api/v1/service-accounts?project=`, which needs `identities:read`. It
-  gets 403 and shows "You do not have the permission" (R-UI-041).
-- UI-A-45: System status reports a single replica of role `all` as "api/packages/worker live 0".
-- UI-A-49 (UI development profile): a sign-in returns to `/ui/en/`, which the dev server does not serve ("Page not found"). The
-  login builds `return_to` from the locale instead of the base href.
+- The 429s of the renders came from the `read` class (50/s, 200 per 4 s, per user): `make ui-renders` opens three pages of one user at once
+  and reached 197 reads in 4 s. The UI development profile now admits 800 (deploy/ui-dev/up.sh). One person in one browser stays far
+  below the default, so it is not a product defect. Not verified: restoring many tabs at once may reach the limit.
+- T-18's e2e set `nuget` refused cold restores locally with 429 from trove's own limiter. The classes were `package_read` (per token,
+  200/s, burst 1000: about 430 refusals on each of two pods) and `package_anonymous` (per address, 20/s, burst 100: about 500 per pod).
+  T-18 does not change the limiter, and on CI the set is green. To decide with the owner: do these budgets fit a cold restore of a
+  real NuGet client, or many CI jobs that share one token?
+- T-21 fix wave 3 is on main, from 64604a4c to c8c7eec3:
+  - a project Owner sees the project's service accounts (UI-A-41 was the UI calling the instance-wide list);
+  - the admin repository list shows a whole address (Q-UI-325);
+  - a form field shows its error only after it was left or a submit was tried, in words;
+  - admin tables stack at 390 px;
+  - every collapsible section is the quiet disclosure;
+  - the policy editor's patterns sit behind "Limit to package names or paths";
+  - a German sign-in returns to the German UI.
+- The policy editor scrolls the page 39 px sideways at 390 px, as before the fix waves (47 px then). Nothing visible is cut; the
+  likely cause is the contents of the closed sections or the closed preview. Not located.
+- The admin sidebar has both **Settings** and **General settings**: two entries for settings confuse the administrator.
+- T-21 vulnerability grades are on main (e4183c73, R-VULN-038 and 039, R-UI-090 to 094). Open:
+  - for the owner, not blocking: should the report's trend chart and the bar share one palette?
+  - the paging of a version's findings, the report table's sideways scroll and the wording of the facts line are being fixed.
+- TestR_DEB_023 failed twice on CI (Test and Release 43022311289 and 43229158954, shard c). The test waited for the first index
+  that lists a name, not for the whole scope; fixed in f2cc9a2d.
 - UI development profile: the volumes of `deploy/ui-dev` are shared by the whole machine, but the key ring in `.dev/ui-dev` belongs to
   each checkout, so a second checkout writes a new key into the same database. [web-ui.md](../developer/web-ui.md) describes the
   workaround.
