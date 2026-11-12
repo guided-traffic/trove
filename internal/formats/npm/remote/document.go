@@ -16,6 +16,9 @@ import (
 type Parsed struct {
 	Top      map[string]json.RawMessage
 	Versions map[string]json.RawMessage
+	// NoReadme leaves readme and readmeFilename out of every version entry a rendering writes: the README is wiki content and
+	// the caller may not read it (R-AUTHZ-034, Q-NPM-88). The top-level members are the caller's to delete from Top.
+	NoReadme bool
 }
 
 // Parse decodes the top level of a package document. It refuses a document that is

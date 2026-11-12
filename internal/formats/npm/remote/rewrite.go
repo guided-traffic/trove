@@ -1,6 +1,7 @@
 package remote
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/url"
 	"sort"
@@ -73,11 +74,26 @@ func Entry(raw json.RawMessage, prefix, pkg, version string, fields []string) (j
 	return objectOf(m), nil
 }
 
+// raw is the entry of a version as a rendering reads it: without the README members when the caller may not read the wiki.
+func (p *Parsed) raw(v string) json.RawMessage {
+	raw := p.Versions[v]
+	if !p.NoReadme || !bytes.Contains(raw, []byte(`"readme`)) {
+		return raw
+	}
+	var m map[string]json.RawMessage
+	if json.Unmarshal(raw, &m) != nil || m == nil {
+		return raw
+	}
+	delete(m, "readme")
+	delete(m, "readmeFilename")
+	return objectOf(m)
+}
+
 // versionsObject writes the entries in SemVer order.
 func (p *Parsed) versionsObject(prefix, pkg string, fields []string) (json.RawMessage, error) {
 	var o builder
 	for _, v := range p.Ordered() {
-		e, err := Entry(p.Versions[v], prefix, pkg, v, fields)
+		e, err := Entry(p.raw(v), prefix, pkg, v, fields)
 		if err != nil {
 			return nil, err
 		}
@@ -164,11 +180,10 @@ func (p *Parsed) Version(pkg, prefix, ref string) (doc []byte, ok bool, err erro
 	if _, direct := p.Versions[ref]; !direct {
 		v = p.Tags()[ref]
 	}
-	raw, found := p.Versions[v]
-	if !found {
+	if _, found := p.Versions[v]; !found {
 		return nil, false, nil
 	}
-	e, err := Entry(raw, prefix, pkg, v, nil)
+	e, err := Entry(p.raw(v), prefix, pkg, v, nil)
 	return e, err == nil, err
 }
 

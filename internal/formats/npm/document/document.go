@@ -222,6 +222,9 @@ func prepare(p *rows.LocalPackage, o Options) ([]rendered, error) {
 		r.readme, _ = stringField(m, "readme")
 		r.readmeFile, _ = stringField(m, "readmeFilename")
 		delete(m, "readme")
+		if o.OmitReadme {
+			delete(m, "readmeFilename")
+		}
 		if pv, err := semver.Parse(v.Version); err == nil {
 			r.parsed, r.ok = pv, true
 		}

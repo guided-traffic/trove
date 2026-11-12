@@ -66,4 +66,5 @@ func takeReadmeMember(p *remote.Parsed) string {
 func dropReadme(p *remote.Parsed) {
 	delete(p.Top, "readme")
 	delete(p.Top, "readmeFilename")
+	p.NoReadme = true // and the same members of every version manifest
 }

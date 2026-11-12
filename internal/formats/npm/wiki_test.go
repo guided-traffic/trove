@@ -68,3 +68,47 @@ func TestR_NPM_010_TheReadmeIsWikiContent(t *testing.T) {
 		}
 	})
 }
+
+// TestR_NPM_010_TheReadmeMembersOfAVersionManifestFollowTheWiki: readmeFilename of a version manifest, in the full document and in the
+// single-version document, is present only for a caller who may read the wiki; the validator of the version document carries the answer
+// (R-AUTHZ-034, Q-NPM-88).
+func TestR_NPM_010_TheReadmeMembersOfAVersionManifestFollowTheWiki(t *testing.T) {
+	var deny atomic.Bool
+	rf := newRepo(t, func(o *formattest.HostOptions) {
+		o.Allow = func(tg formats.Target) error {
+			if tg.Part == authz.PartWiki && deny.Load() {
+				return errs.E(errs.NotFound, errs.CodeNotFound, "no")
+			}
+			return nil
+		}
+	})
+	rf.publish("@acme/ui", "1.0.0", map[string]any{"readmeFilename": "README.md"})
+	manifest := func(path string) map[string]any {
+		t.Helper()
+		doc := jsonOf(t, rf.get(path))
+		if vs, ok := doc["versions"].(map[string]any); ok {
+			return vs["1.0.0"].(map[string]any)
+		}
+		return doc
+	}
+	for _, path := range []string{"@acme%2fui", "@acme/ui/1.0.0"} {
+		deny.Store(false)
+		allowedTag := rf.get(path).Header().Get("ETag")
+		if manifest(path)["readmeFilename"] != "README.md" {
+			t.Errorf("%s: a caller who may read the wiki lost readmeFilename of the manifest", path)
+		}
+		deny.Store(true)
+		m := manifest(path)
+		for _, k := range []string{"readme", "readmeFilename"} {
+			if _, ok := m[k]; ok {
+				t.Errorf("%s: a caller who may not read the wiki got %s in the version manifest", path, k)
+			}
+		}
+		if m["version"] != "1.0.0" {
+			t.Errorf("%s: the rest of the manifest changed: %v", path, m)
+		}
+		if rf.get(path).Header().Get("ETag") == allowedTag {
+			t.Errorf("%s: the validator does not carry the wiki answer", path)
+		}
+	}
+}

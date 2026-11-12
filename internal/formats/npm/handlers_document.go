@@ -153,7 +153,8 @@ func (f *Format) serveRendering(ctx context.Context, rq *formats.Request, w http
 	if err != nil {
 		return err
 	}
-	full := rd.variant == string(document.Full)
+	// The full document and the single-version document carry the README members; the abbreviated one picks the fields an installer reads.
+	bearsReadme := rd.variant != string(document.Abbreviated)
 	cv, err := f.callerVersions(ctx, rq, n, row, &rd)
 	if err != nil {
 		return err
@@ -161,7 +162,7 @@ func (f *Format) serveRendering(ctx context.Context, rq *formats.Request, w http
 	// The README of the full document is wiki content (R-AUTHZ-034, Q-NPM-87): the answer for this caller is part of the key and of
 	// the validator, so a rendition with the README never reaches a caller without it.
 	wiki := true
-	if full {
+	if bearsReadme {
 		wiki = wikiReadableOf(ctx, rq, n)
 		rd.variant += "#wiki=" + wikiBit(wiki)
 	}

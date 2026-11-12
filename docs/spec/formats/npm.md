@@ -784,7 +784,11 @@ Priority: **MVP** · Covers: PKG-NPM-025, PKG-NPM-029, FMT-011
   are in SemVer order, and no version object carries a `readme` (Q-NPM-31).
 - **The README is wiki content** ([authorization.md](../authorization.md) R-AUTHZ-034). `readme` and `readmeFilename` are
   present only for a caller who may read the wiki of the repository that supplies the version `latest` points to, asked
-  through `Host.WikiReadable`; for any other caller both members are absent and the rest of the document is unchanged
+  through `Host.WikiReadable`; for any other caller both members are absent and the rest of the document is unchanged. The wiki content
+  of a packument is the top-level `readme` and `readmeFilename` and the same two members of every version manifest in `versions`
+  (a remote or virtual document passes the manifests of an upstream through, and a manifest may carry a `readme`; a local manifest keeps
+  `readmeFilename`), and the same two members of the single-version document (`GET /<package>/<version>`, R-NPM-014), which is one such
+  manifest; the abbreviated document picks the fields an installer reads and has none. The tarball's own README file is not covered (H-880)
   ([Q-NPM-87](#q-npm-87--a-caller-who-may-not-read-the-wiki-gets-the-full-document-without-readme-and-readmefilename)). The
   rendition key and the `ETag` of R-NPM-013 carry that answer, so a cached document with the README never reaches a caller
   without it, also on a virtual repository (the answer of the member that supplies `latest`). The abbreviated document
@@ -5147,7 +5151,9 @@ Status: **Decided by the development agent** — selected from the options below
 | (b) The key carries only the answer for the addressed repository | One bit | Simpler key | The virtual repository's own wiki level says nothing about the member that supplied the README |
 | (c) No README through a virtual repository | The member is never asked | Nothing to decide | A virtual repository over local members loses the README `npm view` shows |
 
-**Choice:** (a). The private member is `_troveReadmeMember` of `merge.ReadmeMemberKey`; it is removed from every response and from the
+**Choice:** (a), for the top level and for the version manifests alike: a caller without the wiki gets a full document and a version document
+without `readme` and `readmeFilename` in any manifest, and the validator and the rendition key of the version document carry the answer as
+those of the full document do. The private member is `_troveReadmeMember` of `merge.ReadmeMemberKey`; it is removed from every response and from the
 tag, version and abbreviated documents it never reaches. A local or remote repository asks for itself.
 
 **Rationale:** Q-NPM-87 says the answer is the supplying member's; the supplier is known only to the merge.

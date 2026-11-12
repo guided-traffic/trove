@@ -80,7 +80,7 @@ func (f *Format) serveFull(ctx context.Context, rq *formats.Request, w http.Resp
 	if src.form == formVersion {
 		variant += "/" + src.ref
 	}
-	if src.form == formFull {
+	if src.form == formFull || src.form == formVersion {
 		variant += "#wiki=" + src.wikiFp // the README is wiki content: the answer is part of the key and of the validator
 	}
 	settings := fmt.Sprintf("%d/%t/%s", rq.Repo.Version, rep.cfg.AbbreviatedTime, src.content)
