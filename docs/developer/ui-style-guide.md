@@ -19,6 +19,27 @@ When two rules meet, the higher one wins:
 Where a screen needs data trove does not have, leave the element out. A column that would stay empty, or a value made up to
 fill it, is worse than a list that is shorter than the reference's ([Q-UI-214](../spec/api-and-ui.md#q-ui-214--the-members-screen-takes-the-references-member-list)).
 
+## Simple by default, details on demand
+
+The owner's product rules of 2026-11-12 ([CLAUDE.md](../../CLAUDE.md#product-simple-by-default-details-on-demand), T-21 in
+[promt.md](../projektplan/promt.md#owner-task-of-2026-11-12)) come before every other rule of this page that is about what a
+screen shows. trove is for people who keep and fetch their artifacts, not for people who configure a repository manager; the
+three kinds of user they serve are [R-UI-067](../spec/api-and-ui.md#r-ui-067--three-kinds-of-user-the-plain-user-the-power-user-and-the-administrator).
+
+- **The plain path first.** The standard flow of a screen asks and shows only what the thing needs to work, for every format and
+  every class. Access in a standard flow is the members and the visibility level, nothing else.
+- **Details on demand.** A setting or a fact that only an expert needs (include and exclude patterns, disabling, hiding existence,
+  administrator notes, mirror and protocol tuning, statistics, internal names) stays, in a detail view or behind a closed
+  **Details** or advanced-settings section. It is never a step of a creation flow and never part of the main form.
+- **A remote's connection is tested where its upstream is entered**, before the save, and the format's well-known public
+  upstreams are one-click choices (for OCI: Docker Hub, Quay, GitHub `ghcr.io`, GitLab).
+- **A default is a value in the field**, editable, never a hint beside an empty field.
+- **A field is as wide as its expected input**: a number of seconds is a short field, a URL a long one.
+- **A title names the thing**: **New OCI repository**, **New Ansible repository**, not **New repository**.
+- **A field shows an error only after the user had a chance**: once it was touched and left, or on submit. An empty field the
+  user has not touched is never red.
+- **A step or section label names one topic.** "Access, upstream, OCI (Docker) and mirror settings" is four steps or four sections.
+
 ## How to style an element
 
 Take the first of these that fits, in this order:
@@ -67,7 +88,16 @@ what would need a second one belongs in the [manual](manual.md).
   [NOTICE.txt](../../web/public/formats/NOTICE.txt) and a case in [format-icon.ts](../../web/src/app/shared/format-icon.ts),
   after its owner's terms were read.
 - **Actions on a row go into a menu** behind an `btn btn-tertiary btn-icon` showing `more_vert`, with an `aria-label` that names the row
-  (**Actions for user:bob**). A list that has one frequent action per row may show it as a quiet button instead.
+  (**Actions for user:bob**). A list that has one frequent action per row may show it as a quiet button instead. The repository
+  list is the example of a thing with a description: the key, the description as the muted second line, the actions in the
+  menu ([Q-UI-302](../spec/api-and-ui.md#q-ui-302--the-repository-list-names-a-repository-by-key-and-description-in-its-first-column-and-puts-the-rows-actions-in-a-menu)).
+- **On a narrow list the rows stack.** A list that opts in with `class="stack-narrow"` on `<trove-data-table>` shows each row
+  as a block below 48 rem of the list's width: the name and its menu, then each cell on a line, the address across the row; a
+  cell that needs its column's name has `class="labelled"` and `data-label`, an empty one `no-value`
+  ([Q-UI-306](../spec/api-and-ui.md#q-ui-306--below-48-rem-of-its-width-the-repository-list-stacks-each-row-with-the-address-across-the-row)).
+  The repository list does; the other lists still scroll sideways at 390 px ([ui-audit.md](../projektplan/ui-audit.md)).
+- **Names stay on one line**, except the key of the repository list, which wraps after a hyphen where it is longer than its
+  column (`th.wrap-name`, [Q-UI-303](../spec/api-and-ui.md#q-ui-303--the-repository-lists-key-breaks-after-a-hyphen-where-it-is-longer-than-its-column)).
 - An inline control in a row (the role select) has no visible label and an `aria-label` that names the row. It shows the current
   value, and a change is saved at once, with the status message of the `Notifier`.
 - Filter and order work on what is loaded, or are sent to the server where the list is paged. A filter that finds nothing says
@@ -149,6 +179,10 @@ one client address the way the reference shows **Clone with SSH**: a read-only i
 | `label` | The accessible name of the field; in a list it names the row (**Client address of npm-internal**) |
 | `copyLabel` | The accessible name and title of the copy button (**Copy client address of npm-internal**) |
 
+In a list the cell is `<td class="address-cell">`, and the list sets on the table or the data table the length of its longest
+address, `[style.--trove-address-chars]="addressChars()"`, and the room its other columns need, `[style.--trove-address-others]`
+([repository-list.html](../../web/src/app/features/repositories/repository-list.html) is the worked example).
+
 - **When.** The address a client puts into its configuration: a repository's base URL or registry host with a path, a Bastion's
   repository address, an exposure rule's address. A command, a configuration file or a snippet of several lines is not an
   address and keeps the code block with its copy button ([Q-UI-272](../spec/api-and-ui.md#q-ui-272--an-address-field-holds-one-address-multi-line-snippets-stay-code-blocks-and-the-bastion-address-becomes-a-field)).
@@ -159,12 +193,16 @@ one client address the way the reference shows **Clone with SSH**: a read-only i
   ([Q-UI-274](../spec/api-and-ui.md#q-ui-274--the-field-keeps-the-fill-and-border-of-an-editable-control-not-the-grey-of-a-read-only-value)).
   The button is the 32 px `btn btn-icon` copy button, attached to the input's right edge without a gap, its left border shared
   with the input's, inner corners square, outer corners `--trove-control-radius`.
-- **Width.** The field is as wide as its address (`ch` of the monospace face) up to the room it is in; a smaller room makes the
-  input scroll inside itself (min. 8 rem), the button stays attached
-  ([Q-UI-271](../spec/api-and-ui.md#q-ui-271--on-a-narrow-viewport-the-field-scrolls-inside-itself-and-keeps-the-button-attached)).
-  In a table the cell does not wrap and the column grows
-  ([Q-UI-270](../spec/api-and-ui.md#q-ui-270--in-the-repository-list-the-column-grows-to-the-address-the-lists-region-scrolls-sideways-when-it-must)).
-  Never an ellipsis.
+- **Width: one per place, never per address.** The field fills its line and never takes its address's width.
+  - In a list every field has one width: the column `td.address-cell` is as wide as the list's longest address in the field's
+    face, at most the list's width minus `--trove-address-others` (the room of the other columns) and at least 16 rem; that
+    width is also the column's least, so the other columns give way first. The field fills the cell and shows the address from
+    its start, never its tail. At 1440 px a project's repository list shows an address of 57 characters whole
+    ([Q-UI-300](../spec/api-and-ui.md#q-ui-300--in-a-list-every-address-field-has-one-width-the-lists-longest-address-up-to-what-the-other-columns-leave)).
+  - A field alone on its line, or a stack of the addresses of one thing, fills the line up to `--trove-address-measure`
+    (40 rem, 70 characters), so a stack is one width ([Q-UI-301](../spec/api-and-ui.md#q-ui-301--a-field-alone-on-its-line-fills-the-line-up-to-a-measure-of-70-characters)).
+  - Where the field is shorter than its address, the address scrolls inside it (the input at least 8 rem), the button stays
+    attached. Never an ellipsis.
 - **Behaviour.** Focus or click selects the whole address; copy uses `trove-copy-button` (clipboard, polite status, alert on failure).
   The address is the input's value, so a test reads `.value`, not the text content.
 
@@ -187,6 +225,12 @@ contrast of WCAG AA. The unit tier can run axe on a rendered screen (`seriousVio
 
 Before a screen is committed:
 
+- [ ] Follows [Simple by default, details on demand](#simple-by-default-details-on-demand): the standard flow holds only what the
+      thing needs to work, expert settings and facts are behind a disclosure, defaults are field values, fields fit their input,
+      the title names the thing, no field is red before the user touched it, every step or section names one topic.
+- [ ] Rendered with `make ui-renders` ([web-ui.md](web-ui.md#renders-of-every-screen)) and every changed screen looked at in
+      both schemes and at 390 px, as each kind of user that reaches it; the contact sheet lists no failure, no sideways scroll at
+      1024 px and wider that the change brought, and no list whose address fields differ in width.
 - [ ] Compared side by side with the reference's screen for the same job, in a real browser, not only in a unit test.
 - [ ] Seen in the dark and the light scheme, and at a narrow window.
 - [ ] Only shared controls, classes of `_controls.scss` and `--trove-*` tokens; no colour literal.

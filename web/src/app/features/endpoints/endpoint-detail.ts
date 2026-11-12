@@ -74,6 +74,11 @@ export class EndpointDetail {
     return endpointAddress(configuration, format, rule.repository);
   }
 
+  /** The length of the longest address of the rules: `.address-cell` sizes the column to it (Q-UI-300). */
+  protected addressChars(list: readonly ExposureRule[]): number {
+    return Math.max(0, ...list.map((rule) => this.addressOf(rule)?.url.length ?? 0));
+  }
+
   protected hostsText(c: { hosts: readonly string[]; wildcardHost?: string | null }): string {
     return [...c.hosts, ...(c.wildcardHost ? [c.wildcardHost] : [])].join(', ');
   }

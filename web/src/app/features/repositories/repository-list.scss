@@ -25,7 +25,9 @@
   color: var(--trove-text-muted);
 }
 
-// The address is shown in full: the cell does not wrap and the column grows to it (R-UI-066).
-.address-cell {
-  white-space: nowrap;
+// Format and class in one cell (Q-UI-305): the format on the first line, the class with its icon muted under it; one line
+// when the rows stack (_list-screens.scss).
+.kind-cell > .type-cell {
+  display: flex;
+  margin-block-start: var(--trove-space-1);
 }

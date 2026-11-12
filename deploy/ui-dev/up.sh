@@ -47,6 +47,8 @@ put "$secrets/s3-id" trove-it-access
 put "$secrets/s3-secret" trove-it-secret-0123456789abcdef
 put "$secrets/keys/dev.key" "$(head -c 32 /dev/urandom | base64)"
 put "$secrets/break-glass-password" "$(head -c 18 /dev/urandom | base64 | tr '+/' '-_')"
+# The client secret trove and the profile's sign-in provider (test/devidp, started by serve.sh) share.
+put "$secrets/idp-client-secret" "$(head -c 18 /dev/urandom | base64 | tr '+/' '-_')"
 
 "${compose[@]}" up -d --wait --wait-timeout 240
 
@@ -103,12 +105,33 @@ secrets:
   encryption_key_files: ["$secrets/keys/dev.key"]
   active_key_id: dev
 auth:
+  # The profile's sign-in provider (test/devidp, https://localhost:19090, started by serve.sh): it signs in sam, priya
+  # or ada without a password, the three kinds of user of the renders (docs/developer/web-ui.md#renders-of-every-screen).
+  oidc:
+    providers:
+      ui-dev:
+        display_name: UI development users
+        issuer: https://localhost:19090
+        client_id: trove-ui-dev
+        client_secret_file: "$secrets/idp-client-secret"
+  # The sign-in screen offers the provider and the break-glass form instead of leaving for the provider at once.
+  login_page:
+    auto_redirect: false
   break_glass:
     password_file: "$secrets/break-glass-password"
     show_on_login_page: true
     # Longer than the defaults (15m idle, 1h absolute), so a working session is not cut off every hour.
     idle_timeout: 8h
     absolute_timeout: 24h
+proxy:
+  outbound:
+    # The provider is on this machine: its certificate is signed by the profile's CA, and the loopback addresses, which
+    # the egress policy refuses by default (R-REPO-038), are allowed. This also lets a remote repository of this profile
+    # reach a service on this machine.
+    tls:
+      ca_files: ["$certs/ca.crt"]
+    address_policy:
+      allow_cidrs: ["127.0.0.0/8", "::1/128"]
 vulnerabilities:
   sources:
     # The advisory sources default to the public archives; a UI session does not download them.

@@ -3759,14 +3759,16 @@ Acceptance criteria:
 ### R-UI-020 · Repository list
 Priority: **MVP** · Covers: UI-030, REPO-007
 
-- Table: key, project, format, class, description, client URL with copy button, last activity. Filters in
+- Table: the repository (its key, with its description as the muted second line, [Q-UI-302](#q-ui-302--the-repository-list-names-a-repository-by-key-and-description-in-its-first-column-and-puts-the-rows-actions-in-a-menu)), project, format and class,
+  client URL with copy button (one width for the column, Q-UI-300), last activity (the date, Q-UI-305), and the row's menu; the
+  format and the class share a cell (Q-UI-305), and below 48 rem of the list's width the rows stack (Q-UI-306). Filters in
   the filter panel: project, format, class, text, disabled only. The admin area lists every project's repositories with
   the project in a column; the project's own list (`/projects/{project}/repositories`, Q-UI-129) is the same screen
   for one project, without the project column and the project filter. The list is ordered by key; the API takes
   no `sort` parameter yet, so the table has no sort control (sorting by creation arrives with the
   API, and the creation time with the summary, Q-UI-18). "Recently viewed" (browser storage, 20).
 - The key links to the repository's content page (R-UI-052); the Settings action opens `…/settings`.
-- Row actions: settings, browse, client setup, reindex (P1), invalidate cache (remote and virtual),
+- Row actions, in the row's menu (Q-UI-302): settings, browse, client setup, reindex (P1), invalidate cache (remote and virtual),
   from M4b vulnerabilities (local and remote repositories of a format with the vulnerability
   adapter: the repository's view of the report, `/projects/<projectKey>/vulnerabilities?repository=<projectKey>/<repoKey>`,
   [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-022),
@@ -4851,6 +4853,7 @@ Priority: **MVP** · Covers: trove-only
 | Accessibility | axe-core in Playwright, plus the manual pass of R-UI-044 | Every route × theme × locale | Every pull request; manual per release |
 | Internationalization | Build with missing-translation error | Both locales | Every pull request |
 | Security | README XSS corpus; any `securitypolicyviolation` event fails an end-to-end test | Renderer, CSP | Every pull request |
+| Renders | `make ui-renders`: Playwright against the UI development profile with a seed through the API ([Q-UI-304](#q-ui-304--make-ui-renders-renders-the-working-tree-through-the-dev-server-signs-the-three-kinds-of-user-in-through-a-provider-of-the-profile-and-seeds-through-the-api)) | Every screen as each kind of user of R-UI-067, both schemes, 1440, 1024 and 390 px, every tab, the whole length; a screen with an error notice, a 4xx or 5xx of the app's own API or a console error fails | Locally, before a UI change is committed (rule 11 of the plan); no CI job |
 
 - End-to-end tests prepare data through the API, not through the UI (INV-17), and run in Chromium on
   pull requests and, in the full run of Test and Release on the commit that closes the phase, in Chromium, Firefox and WebKit.
@@ -5062,17 +5065,23 @@ The owner's task of 2026-11-11 (T-20): the column **Client address** of the repo
 configuration looks like the field **Clone with SSH** of the owner's GitLab: the whole address in a read-only, bordered field
 in a monospace font, with the copy button joined to the field's right edge. It is one shared component,
 `<trove-address-field>` ([ui-style-guide.md](../developer/ui-style-guide.md#address-field)); no screen draws its own
-`<code>` plus copy button for a client address. The development agent decided what the owner did not say (Q-UI-270 to Q-UI-274).
+`<code>` plus copy button for a client address. The development agent decided what the owner did not say (Q-UI-272 to Q-UI-274);
+the widths are Q-UI-300 and Q-UI-301 since the owner's task of 2026-11-12 (T-21), which replaced Q-UI-270 and Q-UI-271 after
+the list showed a field of a different width in every row and scrolled sideways.
 
 - **The field.** A read-only `<input type="text">` holding the address, 32 px high, the text in `--trove-font-mono` at 0.875rem,
   a 1 px border in `--trove-control-border`, the fill of an editable control (`--trove-control-bg`), not the grey fill of a
   read-only value (Q-UI-274). The copy button sits in the same row, attached to the right edge: no gap, one border between
   them, the field's right corners and the button's left corners square, the outer corners rounded by `--trove-control-radius`.
   The button is the existing `btn btn-icon` copy button with the glyph `content_copy`.
-- **Never cut.** The address is shown in full: no `text-overflow: ellipsis`, no `title` as the only way to read it, no
-  wrapping. Where the room is smaller than the address, the field scrolls inside itself (an input does so natively). The field
-  is as wide as its address needs (its length in `ch` plus the padding) and never wider than the room it is in
-  (Q-UI-270, Q-UI-271).
+- **Never cut.** The address is never cut with an ellipsis, never wrapped, and its `title` is not the only way to read it.
+  Where the field is shorter than the address, the address scrolls inside the field (an input does so natively), and the
+  copy button stays joined to it.
+- **One width per place.** A field takes the width of its line, not of its address. In a list every field has the same
+  width: the column is as wide as the list's longest address, at most what the list's other columns leave, which keeps the
+  list free of sideways scrolling from 1280 px with its usual columns; the field fills the cell and shows the address from its
+  start (Q-UI-300); below 48 rem of the list's width the rows stack and the field takes the row's width (Q-UI-306). A field
+  alone on its line fills the line up to a measure of 70 characters, so stacked fields are one width too (Q-UI-301).
 - **Selectable.** A click or focus in the field selects the whole address; the user can also select a part of it and copy
   with the keyboard. The address is the field's value, so the browser's find, drag and copy work as on any input (Q-UI-273).
 - **Copy button.** `aria-label` and `title` name what is copied (**Copy client address**; in a list the label names the row,
@@ -5096,9 +5105,14 @@ Acceptance criteria:
 
 - Component unit tests: the field's value is the full address for `https://trove.k8s-main.wds18.de/api/npm/npm-internal/`,
   for `trove.k8s-main.wds18.de/docker-hub-remote` and for a 300-character address; the input is `readonly` and has an
-  accessible name; no element of the component has `text-overflow: ellipsis`; a click on the button writes exactly the address
-  to the clipboard and sets the status message; a failed write sets the alert; focus in the field selects all of its text; an
-  empty address renders nothing; axe finds no violation.
+  accessible name; no element of the component has `text-overflow: ellipsis`; the field sets no width of its own from its
+  address; a field shorter than its address shows its start; a click on the button writes exactly the address to the clipboard
+  and sets the status message; a failed write sets the alert; focus in the field selects all of its text; an empty address
+  renders nothing; axe finds no violation.
+- The lists of R-UI-066 size their address column to their longest address, and every field of a list is in that column.
+- Rendered (rule 11 of the plan, `make ui-renders`): in the repository lists of a project and of the admin area every
+  address field has one width, and neither list scrolls sideways at 1440, 1280, 1024 or 390 px, in both schemes; in a project's
+  list at 1440 px an address of 56 characters is shown whole.
 - Every screen of R-UI-066 shows its address through the component, and no template of those screens gives a client address
   the class `ellipsis`.
 - Playwright: on the repository list the cell of a row holds an input whose value equals the address the API gave, and a click
@@ -5111,13 +5125,13 @@ Each screen shows its client addresses through `<trove-address-field>` (R-UI-065
 
 | Screen | Place | Notes |
 |---|---|---|
-| Repository list (R-UI-020), `/projects/{project}/repositories` and `/admin/repositories` | The column **Client address**, one field per row | The first address of the repository; the column grows to the address (Q-UI-270); the label names the row |
-| Repository page (R-UI-021), settings view | The fact **Client address** | The field takes the width of the fact, up to its address |
-| Repository page, consumer view | The fact **Client address**, one field per address of the repository, stacked | |
+| Repository list (R-UI-020), `/projects/{project}/repositories` and `/admin/repositories` | The column **Client address**, one field per row | The first address of the repository; one width for the column, the list's longest address up to its share (Q-UI-300); the label names the row |
+| Repository page (R-UI-021), settings view | The fact **Client address** | The field fills the fact up to the measure (Q-UI-301) |
+| Repository page, consumer view | The fact **Client address**, one field per address of the repository, stacked | Stacked fields are one width (Q-UI-301) |
 | Repository wizard (R-UI-021), review step | The line **Client address** | |
 | Client setup page (R-UI-016), Bastion banner | The Bastion's repository address | The sentence stays; the address is a field below it (Q-UI-272) |
 | Guides (R-UI-049), Bastion section | **Address of the repository on the Bastion** | As above |
-| Endpoint page, the address of an exposure rule | One field per rule | The existing **Copy client address** button becomes the field's |
+| Endpoint page, the address of an exposure rule | One field per rule | The existing **Copy client address** button becomes the field's; one width for the column (Q-UI-300) |
 
 Not in scope: the text of a guide (server-rendered HTML, where an address is prose in `<code>`), the snippets and commands of
 the setup page and the guides, the install command of a package, the **Base URL** and **Hosts** columns and field of the
@@ -5128,6 +5142,61 @@ Acceptance criteria:
 
 - A unit test per row of the table finds `trove-address-field` with the full address as its value.
 - A test that read an address from text content reads the field's value instead (an input's value is not text content).
+
+### R-UI-067 · Three kinds of user: the plain user, the power user and the administrator
+Priority: **MVP** · Covers: trove-only
+
+The owner's task T-21 of 2026-11-12: "Easy access to the product for simple users. Optional details for power users and
+admins." The UI serves three kinds of user. A kind is not a role of its own: it is read from the roles and capabilities the
+caller already has (R-AUTHZ-010, R-AUTHZ-026, `GET /api/v1/authz/me` of R-UI-005), per project
+([Q-UI-310](#q-ui-310--the-kind-of-user-is-read-from-the-roles-in-force-per-project-and-is-no-role-of-its-own)):
+
+| Kind | Who | The job the screens serve first |
+|---|---|---|
+| **Plain user** | In the project of the screen at most the role `reader`, or a reader through the project's visibility level (R-UI-054); no system role | Find a repository or a package, copy its client address, set up the client, install |
+| **Power user** | In the project of the screen the role `developer`, `maintainer` or `owner`; no system role | Publish, maintain the project's repositories and, as its Owner, its members, policies, accounts and settings |
+| **Administrator** | A system role (`admin`, `repository-admin`, `security-admin`, `auditor`, `webhook-admin`); each opens the admin area with the screens of its capabilities | All of the above in every project, and the admin area |
+
+One person can be a plain user in one project and a power user in another; outside a project (the start page, the client setup,
+the guides) the highest kind of the caller's memberships counts.
+
+- **The main view is the plain user's.** Every screen of the main path (the start page, a project's repository and package
+  lists, the repository page, the package page, the client setup) shows first what the plain user's job needs, in the same
+  layout for every kind. The decisions per screen are Q-UI-311 to Q-UI-316.
+- **Details behind one disclosure.** What only power users and administrators need (configuration facts, statistics, owners and
+  claims, internal names) is not in the main view: it sits in one closed section **Details** at the end of the screen's main view,
+  the same component on every screen, which remembers per user and screen whether it was opened
+  ([Q-UI-319](#q-ui-319--the-details-are-one-closed-section-per-screen-that-remembers-whether-the-user-opened-it)). Changes stay on
+  the screen's **Settings**, which is offered only to who may change (R-UI-005).
+- **Nothing in the way.** The plain user is not offered a read-only copy of a settings page, a sidebar entry of an administration
+  screen, or a disabled control of an administrator's action
+  ([Q-UI-317](#q-ui-317--the-plain-users-project-sidebar-holds-the-content-the-projects-members-and-settings-move-into-its-about-section)).
+  Its main views name no internal terms: no capability names (`projects:write`), no stored-format names, no UUIDs, no request
+  IDs outside an error notice ([Q-UI-318](#q-ui-318--the-plain-users-main-views-name-no-internal-terms-a-refusal-says-who-can-do-it)).
+- **The power user's work in place.** The power user sees the main view of the plain user plus the actions of its role in the
+  screen's header and row menus (publish, create, settings, delete) and the Details; the administrator in addition the admin area
+  behind the top bar's Admin button.
+- **Simple by default, details on demand** (the owner's rules of 2026-11-12,
+  [CLAUDE.md](../../CLAUDE.md#product-simple-by-default-details-on-demand)). The power user's flows follow the same rule as the
+  plain user's views: creating and configuring a repository asks only what the repository needs to work, for every format and
+  class; access in it is the members and the visibility level (R-UI-055); every other setting (patterns, disabling, hiding
+  existence, administrator notes, mirror and protocol tuning) is in a detail view or behind an advanced-settings section, never a
+  step; a remote's connection is tested where its upstream is entered; a default is a field's value, a field is as wide as its
+  input, a title names the format, and a field shows an error only after it was touched or on submit. The creation flow and the
+  repository settings are planned on T-18's tree (T-21, "Creating and configuring a repository") and are not decided on this page;
+  their defects are in the audit.
+
+This page specifies the kinds and the decisions; the screens follow them in the fix waves of the audit
+([ui-audit.md](../projektplan/ui-audit.md)), each change rendered under rule 11 (R-UI-047, `make ui-renders`).
+
+Acceptance criteria:
+
+- `make ui-renders` renders every screen of the main path as `sam` (plain user), `priya` (power user) and `ada` (administrator)
+  of its seed, and the pictures show for each kind what Q-UI-311 to Q-UI-319 say; the audit lists every difference until it is
+  fixed.
+- The plain user reaches a repository's client address from the start page in at most two steps and the client setup of that
+  repository in at most three, without passing a settings page.
+- No main view of the plain user shows a capability name, a UUID or a settings page it cannot change.
 
 ## Deferred
 
@@ -10179,7 +10248,8 @@ agent records no revisit condition.
 
 ### Q-UI-270 · In the repository list the column grows to the address; the list's region scrolls sideways when it must
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Replaced by [Q-UI-300](#q-ui-300--in-a-list-every-address-field-has-one-width-the-lists-longest-address-up-to-what-the-other-columns-leave)** (the owner's task T-21 of 2026-11-12: the list showed a field of a different width in every row
+and scrolled sideways at about 1540 px). Kept for its record; nothing in the UI follows it any more.
 
 Context: the list is `<trove-data-table>`: a bordered region that scrolls in both directions (`.table-scroll`, `overflow: auto`)
 with a sticky header; the address was capped at 24 ch with an ellipsis. The longest realistic addresses are
@@ -10203,7 +10273,8 @@ than the panel in the common case; (b) with a 60 ch field is then the fallback.
 
 ### Q-UI-271 · On a narrow viewport the field scrolls inside itself and keeps the button attached
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Replaced by [Q-UI-300](#q-ui-300--in-a-list-every-address-field-has-one-width-the-lists-longest-address-up-to-what-the-other-columns-leave) and [Q-UI-301](#q-ui-301--a-field-alone-on-its-line-fills-the-line-up-to-a-measure-of-70-characters)** (the owner's task T-21 of 2026-11-12: the list showed a field of a different width in every row
+and scrolled sideways at about 1540 px). Kept for its record; nothing in the UI follows it any more.
 
 | Option | What happens | For | Against |
 |---|---|---|---|
@@ -10271,6 +10342,373 @@ the UI keep their look.
 read-only input bordered.
 
 **Applied in the spec:** R-UI-065. The style guide's entry: [Address field](../developer/ui-style-guide.md#address-field).
+
+### Q-UI-300 · In a list every address field has one width, the list's longest address up to what the other columns leave
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the owner's task T-21 (2026-11-12). Under Q-UI-270 each field was as wide as its own address and the column had no
+maximum: every row's field had another width, and the list scrolled sideways at about 1540 px. The renders of
+`make ui-renders` (R-UI-047) showed the same at 1440 px: the description squeezed to a column of single words, the last
+activity and the row actions out of view. The requirement: one width per list; the column as wide as the longest address, up
+to a cap that keeps the list free of sideways scrolling at 1280 px and wider with its usual columns; the field fills the cell;
+a longer address scrolls inside the field, never an ellipsis, the copy button attached. The coordinator's look at the first
+renders (2026-11-12) added: the address is the plain user's main value in the list, so at 1440 px an address of the length of
+the owner's (`https://trove.k8s-main.wds18.net/api/ansible/test/galaxy/`, 57 characters) is shown whole, and a field shows the
+address from its start, never its tail.
+
+| Option | What happens | For | Against |
+|---|---|---|---|
+| (a) The column is `min(longest address, the list's width minus the room of its other columns)`, at least 16 rem; the field fills the cell and shows the address from its start (chosen) | The list passes the length of its longest address (`--trove-address-chars`) and the room its other columns need (`--trove-address-others`, 36 rem in a project, 44 rem in the admin area with its project column); `td.address-cell` computes the width in the field's own monospace face (`ch`) with the padding, the border and the copy button; that width is also the column's least, so the other columns give way first | One width per list by construction; the address takes all the room the list can give it; no measuring in script | The room of the other columns is a number per list, measured on the renders |
+| (b) A share of the list's width (26 %, the first version of this decision) | A fixed proportion | One rule for every list | At 1440 px the field showed 28 characters: the host and a few more; the render showed every row as `https://localhost:4200/api/r…` |
+| (c) The share, with the field scrolled to the address's end | The rows differ at their end | Distinct rows in a narrow field | The host is cut mid-token (`pi/ansible/…`, `t:4200/api/deb/…`), which reads as broken |
+| (d) The column takes what the browser leaves it (`table-layout: auto`, no width) | The browser shares out the room | Adapts to every list | The address column is shrunk first: every field showed `https://loca` in the render |
+
+**Choice:** (a). Measured on the renders (`.out/ui-renders/<kind>/repositories*-<scheme>-<width>.png`, the report's widths): in a
+project's list the input is 521 px at 1440 px (62 characters, the 56-character `https://localhost:4200/api/ansible/platform/collections/`
+of the seed whole) and 361 px at 1280 px (40 characters); in the admin area's list, with its project column, 393 px and 233 px.
+Neither list scrolls sideways at 1440, 1280 or 1024 px, nor at 390 px, where the rows stack (Q-UI-306). The seed's
+`platform/collections` stands for the owner's address: 56 against 57 characters.
+
+**Rationale:** the owner asked for one width per list and no sideways scrolling, and the address is what the plain user comes for,
+so it gets every pixel the other columns do not need. The development agent revisits the room of the other columns when a list's
+columns change (Q-UI-312 would give the plain user the room of the last activity), and the admin area's list if the owner wants its
+addresses whole at 1440 px (its project could then be the key's second line).
+
+**Applied in the spec:** R-UI-065, R-UI-066. Code: `td.address-cell` in [_list-screens.scss](../../web/src/styles/_list-screens.scss),
+the repository list (`addressChars`, `addressOthers`) and the endpoint page. Style guide:
+[Address field](../developer/ui-style-guide.md#address-field).
+
+### Q-UI-301 · A field alone on its line fills the line up to a measure of 70 characters
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the places with one field (the repository page's facts, the wizard's review, the Bastion address of the client setup
+and of the guides). The renders showed the consumer view of a repository with its two addresses stacked in two widths, the same
+defect as the list's.
+
+| Option | What happens | For | Against |
+|---|---|---|---|
+| (a) The field fills its line, at most `--trove-address-measure` (40 rem: 70 characters at 0.875rem with the padding and the button) (chosen) | Every single field and every stack of fields is one width | One rule; a stack is aligned; an address of up to 70 characters is shown whole | A short address has empty room at the end of its field |
+| (b) As wide as its address (Q-UI-271) | The field follows its address | No empty room | Stacked fields differ, as the render showed |
+| (c) The settings column's measure, 56 rem | The widest form measure | One measure for forms | At 1440 px a 53-character address fills half of an 896-px field |
+
+**Choice:** (a). Below the measure the field takes the line and scrolls inside, from 8 rem up (R-UI-044 reflow); several fields
+of one repository stand one under the other with `--trove-space-2` between them.
+
+**Rationale:** the renders of the repository page in both schemes and at 1440, 1024 and 390 px show aligned fields whose
+addresses are read whole at the two wider widths. The development agent revisits the measure if an installation's addresses
+are longer than 70 characters.
+
+**Applied in the spec:** R-UI-065, R-UI-066. Code: the token `--trove-address-measure` in [_tokens.scss](../../web/src/styles/_tokens.scss).
+
+### Q-UI-302 · The repository list names a repository by key and description in its first column and puts the row's actions in a menu
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-UI-300 needs room at 1280 px. The list had seven columns and four quiet buttons per row (Settings, Browse,
+Vulnerabilities, Delete), which alone took about 300 px, and a description column squeezed to single words. The style guide's
+rules for lists ([Lists](../developer/ui-style-guide.md#lists)) say that the first column names the thing with a muted second
+line, and that a row's actions go into a menu behind `more_vert` named for the row.
+
+| Option | What happens | For | Against |
+|---|---|---|---|
+| (a) The first column **Repository** holds the key and, as its muted second line, the description; the actions are one `more_vert` menu (chosen) | Six columns and a 32-px menu button | What the style guide asks of every list; about 400 px for the address and the other columns at 1280 px | One click more to reach Settings or Delete from the list; the key's own page has them too |
+| (b) Keep the columns, give the address less | Fields of about 12 characters | No change of the list's layout | The field is useless at 1280 px |
+| (c) Hide columns below a width | Responsive columns | Room at 1280 px | Columns that come and go with the window; nothing in the guide |
+
+**Choice:** (a). The menu offers Settings, Browse, Vulnerabilities (where the format has the adapter) and Delete (for whoever
+may delete), as the buttons did; its trigger's name is **Actions for &lt;key&gt;**.
+
+**Rationale:** both changes are rules of the style guide that the list broke, and together with Q-UI-303 they give the address
+its share. The development agent would revisit the menu if the owner names one frequent action that should stay a quiet button.
+
+**Applied in the spec:** R-UI-020 (the row actions are the same; their place is the menu). Code: [repository-list.html](../../web/src/app/features/repositories/repository-list.html).
+
+### Q-UI-303 · The repository list's key breaks after a hyphen where it is longer than its column
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the data table kept every key and identifier on one line. A repository key of 51 characters
+(`release-candidates-for-the-customer-portal-frontend` in the seed of the renders) is about 390 px wide at 14 px and pushed the
+list sideways at 1440 px whatever the address column did.
+
+| Option | What happens | For | Against |
+|---|---|---|---|
+| (a) In the repository list the key in the first column (`th.wrap-name`) wraps where it must, after a hyphen; identifiers in other columns and the names of other lists stay on one line (chosen) | A long key takes two or three lines in its row | No sideways scrolling from a long key; a short key is unchanged | A long key reads in parts; the lists differ until the audit's wave decides the rule for all |
+| (b) The same for the first column of every data table | One rule | Consistent | The package list, with nine columns, squeezed its names into lines of one word at 1440 px in the render: its columns need a decision of their own first |
+| (c) Keep keys on one line | Long keys push the list | A key is never broken | The list scrolls sideways, the defect of T-21 |
+| (d) Cut long keys with an ellipsis | One line | Even rows | A name that cannot be read, which R-UI-065 forbids for addresses for the same reason |
+
+**Choice:** (a). The other lists keep their names on one line; whether they follow is item UI-A-29 of the audit
+([ui-audit.md](../projektplan/ui-audit.md)), with their columns.
+
+**Rationale:** a name is read, an address copied; a wrapped key stays readable and selectable, and the repository list needs the
+room for Q-UI-300. The development agent revisits it with the columns of the other lists.
+
+**Applied in the spec:** the data table's styles ([_list-screens.scss](../../web/src/styles/_list-screens.scss)).
+
+### Q-UI-304 · make ui-renders renders the working tree through the dev server, signs the three kinds of user in through a provider of the profile, and seeds through the API
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: rule 11 of the plan (owner, 2026-11-12): a UI change is rendered and looked at before it lands, as each kind of user of
+R-UI-067. The UI development profile ([web-ui.md](../developer/web-ui.md#local-ui-development)) had the break-glass account only:
+without an identity provider no other user can sign in, and the break-glass account cannot hold a token (`break_glass_restricted`)
+for the formats' upload routes.
+
+| Option | What happens | For | Against |
+|---|---|---|---|
+| (a) The dev server (`ng serve --configuration local`) in front of one trove of the profile, a sign-in provider of the profile ([test/devidp](../../test/devidp/devidp.go)) that signs in `sam`, `priya` or `ada` without a password, a seed through the management API as the break-glass account and through the formats' routes with the power user's token (chosen) | The renders show the working tree as it is, in seconds after a change; the users are real users of trove with real grants | No build of the embedded bundle (minutes) per change; the same login as an installation's (code flow, PKCE, the user created at the first sign-in) | English only and no CSP, the dev server's differences that web-ui.md lists |
+| (b) The embedded build (`make web`) served by trove | The installation's bundle | CSP and both locales | A localized production build and a rebuild of trove for every look |
+| (c) Sessions written into the database for each user | No provider | Fast | Bypasses the login and ties the tool to the schema |
+| (d) The browser sends a token instead of the session | No provider | Simple | The UI decides what to show by the session (`whoami`, recent sign-in), so the screens would not be the user's |
+
+**Choice:** (a). The provider listens on `127.0.0.1:19090` only, starts and stops with `make ui-dev-backend`, and is in the
+profile's `trove.yaml` as the provider `ui-dev`; the sign-in screen of the profile offers it beside the break-glass form
+(`auth.login_page.auto_redirect: false`). The profile's outbound configuration trusts its CA and allows the loopback addresses.
+The scheme is the browser's (`prefers-color-scheme`), which the app follows when no theme is stored, the way the theme button's
+"Follow the system" does; the seed clears a stored theme of the three users.
+
+**Rationale:** the tool must show what a user sees, so the users sign in as users do; the dev server makes a render after an edit
+cheap enough to be done every time. The development agent revisits (b) for a check of the CSP or of the German build.
+
+**Applied in the spec:** R-UI-047. Code and documentation: [web-ui.md](../developer/web-ui.md#renders-of-every-screen).
+
+### Q-UI-305 · The repository list puts format and class in one cell and shows the date of the last activity
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: after Q-UI-300 and Q-UI-302 the renders showed **Last activity** spending about 250 px on a dash in almost every row
+(`– ` in 11 of 12 rows of `platform`), with the full time to the second where there is one, and format and class in two narrow
+columns of their own. Every pixel they take is one the address does not get.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One column **Format and class**: the format, the class with its icon muted under it; **Last activity** shows the date (`Nov 12, 2026`), the full time is its `title` (chosen) | Two columns about 230 px narrower | The address gets the room; the date says how fresh a repository is, the time to the second says nothing more in a list | The time needs a pointer; the header **Format and class** is wider than its cells |
+| (b) Leave **Last activity** out when no row of the list has one | The column comes and goes with the data | No column of dashes | Lists of two projects look different; a new activity moves every column |
+| (c) **Last activity** behind Details | Only on the repository page | The list is short | The power user's view of which repository is still used is lost from the list |
+
+**Choice:** (a). Whether the plain user sees the column at all is Q-UI-312, for the owner's review.
+
+**Rationale:** both changes free room for the address without dropping a fact. The development agent revisits the header if the
+owner prefers **Type**.
+
+**Applied in the spec:** R-UI-020. Code: [repository-list.html](../../web/src/app/features/repositories/repository-list.html).
+
+### Q-UI-306 · Below 48 rem of its width the repository list stacks each row, with the address across the row
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: at 390 px (and at 1024 px with the pinned sidebar, where the list is 712 px wide) the table ran off the right edge, the
+address column was out of view and the description wrapped into a tall, narrow column (the coordinator's look at the renders,
+2026-11-12).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A list that opts in (`class="stack-narrow"` on `<trove-data-table>`) shows each row as a block below 48 rem of the list's width: the name and its description with the row's menu on the first line, format and class on one line, the address field across the full width, then the cells that carry a value, each with its column's name (`data-label`) (chosen) | A container query on the list region `.list-main` | The plain user's address is whole and wide on a phone; no sideways scrolling; the same markup, the head kept for assistive technology | A second layout to check; a table whose rows are blocks keeps its semantics in Chromium and Firefox, not reliably in older Safari |
+| (b) The table scrolls sideways in its region | Today | Nothing to build | The address out of view |
+| (c) A separate list of cards for small screens | Two templates | Freedom of layout | Two templates of one list drift apart |
+
+**Choice:** (a), for the repository list now. The other lists still scroll sideways at 390 px (item UI-A-23 of the audit,
+[ui-audit.md](../projektplan/ui-audit.md)) and opt in when their columns are decided.
+
+**Rationale:** the stacked row is the shape the address needs at a narrow width, and a container query follows the list's own
+width, also beside the open filter panel. The development agent revisits the 48 rem if a list with fewer columns fits wider.
+
+**Applied in the spec:** R-UI-020, R-UI-065. Code: [_list-screens.scss](../../web/src/styles/_list-screens.scss) (Stacked rows).
+
+### Q-UI-307 · A page's own actions are buttons at the right end of its header; views of the same thing are tabs
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the renders show four forms of page-level action: a confirm button at the right end of the header (repositories), a
+confirm button under the description on the left (permission policies, personal tokens), quiet text links at the right
+beside the tabs (**Browse files**, **Vulnerabilities** on the repository page; **All repositories**, **Content**, **Browse**,
+**Vulnerabilities** on the repository settings), and a link line under the heading (client setup).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The header's right end holds the page's actions as buttons: at most one `btn btn-confirm` and `btn btn-default` beside it, more in a `more_vert` menu; a link to another view of the same thing (its files, its vulnerabilities, its settings) is a tab of the page; a link up to a list is the breadcrumb (chosen) | One place for actions, one for views | The style guide's anatomy of a page, applied to every page; quiet links stop looking like loose text | The repository page gets tabs **Files** and **Vulnerabilities** beside **Packages** and **Set up client** |
+| (b) Keep the quiet links | Unchanged | Nothing to build | Four patterns |
+
+**Choice:** (a). On the repository page (Q-UI-313) the header holds the address field and **Set up client** as its primary
+action; **Settings** is a default button for who may change.
+
+**Rationale:** a user finds an action where every other page puts it. The development agent revisits the menu if a page has two
+frequent actions.
+
+**Applied in the spec:** R-UI-067; the style guide's [Anatomy of a page](../developer/ui-style-guide.md#anatomy-of-a-page) already
+says it, the screens follow in the fix waves of the audit.
+
+### Q-UI-310 · The kind of user is read from the roles in force, per project, and is no role of its own
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Plain, power and administrator are read from the project role and the system roles of `authz/me`, per project (chosen) | No new data; the kind follows the screen's project | The UI already loads these (R-UI-005); one person can be both kinds in two projects, as the seed's `priya` is | A reader with a system role is an administrator everywhere |
+| (b) A stored preference "show details" per user | The user picks the kind | A power user can see the plain view | A setting to find and keep; nothing the owner asked for |
+| (c) A new system role "power user" | An administrator assigns it | Explicit | A second role system beside the project roles, which the brief rules out |
+
+**Choice:** (a). **Rationale:** the roles already say who publishes and who maintains, so the kind needs no data of its own. The
+development agent revisits (b) if power users ask for the plain view.
+
+**Applied in the spec:** R-UI-067.
+
+### Q-UI-311 · The start page leads the plain user to a repository and its address in two steps
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the start page (`/`, Q-UI-129) is the list of the caller's projects with key, display name, description, role and counts
+(R-UI-041); a caller with exactly one project starts in it. The renders show the plain user `sam` (two projects) a project table
+whose key and display name repeat each other, and no search: **Find a repository** in the top bar needs the permission to read
+repository configuration, and the package search of R-UI-015 is P1 and not built.
+
+| Option | What the plain user sees on `/` | For | Against |
+|---|---|---|---|
+| (a) A search field "Find a package or repository" across the caller's projects first, then the recently opened repositories, each with its client address field and **Set up client**, then the projects (display name with the key as its second line, the caller's role, the number of repositories) (chosen) | The common job on the first screen | Copying the address of a repository used before is one step; a new one is a search away; R-UI-015's suggestions for every reader | Needs a search over what the caller can read, beyond today's configuration read |
+| (b) The project list as today | Projects | Nothing to build | A detour through a project for every job; key and name twice |
+| (c) Every repository of every project, as one list | The repository list across projects | One click to every address | Long for an administrator; the project as context is lost (Q-UI-129) |
+
+**Choice:** (a), for every kind; the power user's projects carry **Create repository** where it is the Owner, the administrator's
+start page is the same and the admin area stays behind the Admin button. A caller with exactly one project still starts in it
+(Q-UI-129), whose repository list is then the page of the two steps.
+
+**Rationale:** the owner asked for easy access to the common job, and the start page is the one screen every user sees first.
+The development agent revisits the order of the three parts once the search exists and the walkthrough shows what is used.
+
+**Applied in the spec:** R-UI-067; it raises the package suggestions of R-UI-015 for the plain user, which stays P1 until the owner
+confirms.
+
+### Q-UI-312 · The repository list shows the plain user the repository, format, class and address; activity and maintenance actions are the power user's
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Main columns for every kind: repository (key and description), format and class (the format with its icon and name), client address; **Last activity** only for who may change the repository; the row menu offers the plain user **Browse**, **Set up client** and **Vulnerabilities**, and adds **Settings** and **Delete** for who may change (chosen) | One layout, fewer columns for the plain user | The address column gets the plain user's room; the last activity, a maintenance fact, is where maintainers look | Two column sets of one list |
+| (b) The same columns for everyone | Today's set after Q-UI-302 | One set | A column that is a dash in most rows of a reader's projects (the renders: `–` in 11 of 12 rows of `platform`) |
+
+**Choice:** (a). **Rationale:** a reader copies addresses and does not maintain, so the list leaves out what only maintenance uses.
+The development agent revisits it if readers ask when a repository was last used.
+
+**Applied in the spec:** R-UI-067, R-UI-020.
+
+### Q-UI-313 · The repository page shows the address and the setup first; its configuration facts are Details, and a reader gets no settings page
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the renders show the plain user the repository page (R-UI-052) without its client address in the main view (it is in the
+tab **Set up client** only), and the action **Settings** of the list opening a read-only "Repository settings" page that says "You
+may use this repository but not read or change its configuration", followed by the facts, the address fields and the whole guide
+of the repository's class, several screens long.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The header holds the key, the description, format and class, the client address field(s) and the primary action **Set up client**; the content tabs follow; **Details** (closed) holds the facts of the class (members of a virtual repository and its deploy target, the upstream of a remote, the layout, created, changed, last activity); **Settings** is offered only to who may change it, and the read-only settings view goes (chosen) | The address on the page the plain user opens | The common job without a tab or a second page; one place for the facts | The read-only settings view's guide moves to the setup tab and the guides, where it already is |
+| (b) Keep the read-only view for readers | Today | Nothing to build | A settings page the reader cannot use, and a guide in the middle of it |
+
+**Choice:** (a). **Rationale:** the repository page is where the list's key leads, so its first lines are the address and the
+setup. The development agent revisits the facts' place if power users miss them in the header.
+
+**Applied in the spec:** R-UI-067, R-UI-052, R-UI-066 (the consumer view's place of the address is the header).
+
+### Q-UI-314 · The package list shows name, format, latest version and when it changed; counts and dates of creation are the package page's
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the package list (R-UI-006) has nine columns (type, name, latest version, description cut at 24 characters, first created,
+updated, versions, repositories, downloads) and scrolls 245 px sideways at 1440 px in the renders, with the counts out of view.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Main columns for every kind: the package (name and, as its second line, the description, never cut), format (icon and name), latest version, updated; versions, repositories, downloads and first created move to the package page's Details (chosen) | Five columns that fit at 1024 px | The list is for choosing a package; the description becomes readable | Sorting by downloads leaves the list (the sort menu keeps it) |
+| (b) Keep nine columns, scroll sideways | Today | All facts in one table | The defect the owner named |
+
+**Choice:** (a). **Rationale:** a reader picks a package by its name and description and checks the version, so those fill the row.
+The development agent revisits a column if the walkthrough shows a fact is used to choose.
+
+**Applied in the spec:** R-UI-067, R-UI-006.
+
+### Q-UI-315 · The package page shows the install command first; the facts and the owners are Details
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Main view: name, description, version choice, the install panel (client, repository, command with copy) and the README; tabs **All versions**, **Files**, **Vulnerabilities**; **Details** (closed): published, licences, downloads, repositories, the metadata of the format, and for who may change the package its owners and claims, the import log and the stored digests (chosen) | The install command beside the README | What the renders show today stays in place for the plain user; the facts above the tabs leave the first screen | The Metadata and Repositories tabs become sections of Details |
+| (b) Today's facts above the tabs and six tabs | Unchanged | Nothing to build | Five lines of facts between the name and the README for a reader who wants the command |
+
+**Choice:** (a). **Rationale:** the plain user comes for the install command, which the panel already holds; the facts are for
+those who maintain or audit the package. The development agent revisits the Repositories tab if readers use it to choose a
+repository.
+
+**Applied in the spec:** R-UI-067, R-UI-007.
+
+### Q-UI-316 · The client setup starts from where the user came, and its advanced choices are closed
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the client setup (R-UI-016) is a page of four numbered groups (package type, client, repository, credentials) followed
+by the snippets; the renders show the plain user the repository list with the note "You cannot publish" on every local repository
+and three credential choices.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Opened from a repository or a package, the format, the client and the repository are chosen and shown as one line with **Change**; the snippets and the address follow at once; the credential is "reference an environment variable" with **Create a token** beside it; the other credential choices, the publish snippets (for who may publish) and the Bastion are a closed section **More options** (chosen) | Three steps become one screen | The plain user reads and copies; nothing to choose that was chosen before | One more click for a different client |
+| (b) Today's four groups | Unchanged | Every choice visible | Choices already made, and notes about publishing for a reader who cannot |
+
+**Choice:** (a). **Rationale:** a user who comes from a repository has chosen it, so the page shows the result and keeps the choices
+one click away. The development agent revisits it if users open the setup from the menu more often than from a repository.
+
+**Applied in the spec:** R-UI-067, R-UI-016.
+
+### Q-UI-317 · The plain user's project sidebar holds the content; the project's members and settings move into its About section
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-UI-041 gives every member the project's members and settings read-only. The renders show the plain user's sidebar with
+**Access › Members** and **Settings**, and on the members screen "Read only: changing this needs the permission `projects:write`".
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) For a plain user the sidebar holds Repositories, Packages, Browse and Vulnerabilities; the project's description, Owners and members are a closed section **About this project** on its repository list; power users and administrators keep Access and Settings (chosen) | No read-only administration in the navigation | Nothing in the way of the content; who to ask (the Owners) is one click away | R-UI-041's read-only screens are not linked for readers |
+| (b) As today | Unchanged | Readers see who else is a member | Two entries a reader cannot use |
+
+**Choice:** (a). **Rationale:** a reader needs to know whom to ask, not a members screen it cannot change. The development agent
+revisits it if readers look for colleagues there.
+
+**Applied in the spec:** R-UI-067, R-UI-041 (the read-only screens stay reachable by URL).
+
+### Q-UI-318 · The plain user's main views name no internal terms; a refusal says who can do it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) No capability names, UUIDs, stored-format names or request IDs in a plain user's main view; a refusal or a disabled action says in words who may do it ("an Owner of web-frontend") (chosen) | Words instead of identifiers | The style guide's rule on internal terms, applied | The exact capability is for administrators, who find it in Details |
+| (b) As today | `projects:write` in a sentence | Precise | A term the reader cannot act on |
+
+**Choice:** (a). **Rationale:** the plain user can act on a person, not on a permission name. The development agent records no
+revisit condition.
+
+**Applied in the spec:** R-UI-067, R-UI-005 (the reason of a disabled action names a role where one grants it).
+
+### Q-UI-319 · The details are one closed section per screen that remembers whether the user opened it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `<trove-settings-section>` with the heading **Details** at the end of the main view, closed at first; whether a user opened it is kept per screen kind in the browser's storage (chosen) | One component, one place, one name | The plain user is not shown it open; a power user opens it once per screen kind | Kept per browser, not per account |
+| (b) Open for power users and administrators, closed for plain users | By kind | No click for the power user | The same screen looks different by role, and a kind is per project |
+| (c) A tab "Details" | A tab per screen | The tab strip exists | A tab hides the main view; screens without tabs get one |
+
+**Choice:** (a). **Rationale:** one look for everyone, and the power user pays one click once. The development agent revisits (b) if
+power users report the click.
+
+**Applied in the spec:** R-UI-067. The style guide gets the component's entry with the first screen that uses it.
 
 ### Q-API-246 · An operation that is allowed while the installation is read-only declares `x-trove-maintenance: allowed`
 

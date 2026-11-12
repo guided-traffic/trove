@@ -113,6 +113,11 @@ ui-dev-web: ## Angular dev server with hot reload on https://localhost:4200/ui/,
 ui-dev-down: ## Stop the UI development services; PURGE=1 also removes their data and .dev/ui-dev (deploy/ui-dev/down.sh)
 	deploy/ui-dev/down.sh $(if $(PURGE),--purge)
 
+# Rule 11 of docs/projektplan/promt.md: a UI change is rendered and looked at before it lands. Local only, no CI job.
+.PHONY: ui-renders
+ui-renders: ## Render every screen as the three kinds of user, light and dark, at 1440, 1024 and 390 px into .out/ui-renders (after web-ci; GREP=<regex> limits the screens; deploy/ui-dev/renders.sh)
+	deploy/ui-dev/renders.sh $(if $(GREP),--grep '$(GREP)')
+
 # The release image builds the Angular bundle itself (Containerfile, stage web); no Node.js is
 # needed on the host. The build arguments read the same pins as the rest of the repository.
 .PHONY: image

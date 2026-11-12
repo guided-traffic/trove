@@ -88,6 +88,19 @@ describe('Address field', () => {
     }
   });
 
+  it('R-UI-065 the field takes the width of its line, not of its address, so that fields of one list or stack are one width', async () => {
+    const short = await render('trove.example.net/npm');
+    expect(short.input!.style.inlineSize).toBe('');
+    expect(short.input!.getAttribute('style') ?? '').not.toContain('ch');
+    const long = await render(LONG);
+    expect(long.input!.style.inlineSize).toBe('');
+  });
+
+  it('R-UI-065 a field shorter than its address shows the address from its start', async () => {
+    const { input } = await render(LONG);
+    expect(input!.scrollLeft).toBe(0);
+  });
+
   it('R-UI-065 an empty address renders nothing', async () => {
     const { root } = await render('');
     expect(root.querySelector('input')).toBeNull();

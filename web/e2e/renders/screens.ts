@@ -1,0 +1,182 @@
+import { Page, expect } from '@playwright/test';
+import { Kind, emptyProject, group, longDebKey, longNpmKey, mainProject, npmPackage, ociPackage, otherProject, projectServiceAccount, serviceAccount } from './seed';
+
+/**
+ * Every screen of the app (web/src/app/app.routes.ts and the route files of the feature areas), with the parameters of the
+ * seed and the kinds of user that reach it from the navigation. A screen's tabs (`role=tab` inside `main`) are found and
+ * rendered one by one; a tab strip of links leads to other routes, which are screens of their own.
+ */
+export interface Screen {
+  /** The file name's screen part and the contact sheet's group. */
+  readonly id: string;
+  readonly path: string;
+  readonly kinds: readonly Kind[];
+  /** Answers of the app's own API calls that are the screen's normal state, not a failure, each with its reason. */
+  readonly expected?: readonly { readonly match: RegExp; readonly why: string }[];
+  /**
+   * A flow through the screen: each value it yields names a state that is rendered, after the actions before it ran. Without a
+   * walk the screen is rendered as it opens and with each of its tabs.
+   */
+  readonly walk?: (page: Page) => AsyncGenerator<string>;
+}
+
+/**
+ * The repository wizard (R-UI-021) for one format and class, as far as its review: every step as it opens, and the basic
+ * settings once more before the key is typed. Nothing is created. A step whose **Next** stays disabled ends the walk there.
+ */
+function wizard(format: string, cls: 'Local' | 'Remote' | 'Virtual'): Screen['walk'] {
+  return async function* (page) {
+    const step = async (): Promise<string> => {
+      const text = (await page.locator('[aria-current="step"]').allTextContents())[0] ?? 'step';
+      return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48);
+    };
+    // Next once it is enabled, then until the step has changed; false where it stays disabled.
+    const next = async (): Promise<boolean> => {
+      const button = page.getByRole('button', { name: 'Next', exact: true });
+      if ((await button.count()) === 0) return false;
+      const ready = await expect(button)
+        .toBeEnabled({ timeout: 5_000 })
+        .then(() => true)
+        .catch(() => false);
+      if (!ready) return false;
+      const before = await step();
+      await button.click();
+      await expect.poll(step, { timeout: 10_000 }).not.toBe(before);
+      return true;
+    };
+    yield await step();
+    await page.getByRole('option', { name: format, exact: true }).click();
+    if (!(await next())) return;
+    yield await step();
+    await page.getByRole('radio', { name: new RegExp(`^${cls}`) }).check();
+    if (!(await next())) return;
+    yield `${await step()}-untouched`;
+    const project = page.getByLabel('Project', { exact: true });
+    if ((await project.count()) > 0) await project.selectOption(mainProject);
+    await page.locator('#f-key').fill(`renders-${format.toLowerCase().replace(/[^a-z]+/g, '')}-${cls.toLowerCase()}`);
+    await page.locator('#f-key').blur();
+    yield await step();
+    for (let i = 0; i < 6; i++) {
+      if (!(await next())) return;
+      const name = await step();
+      yield name;
+      if (name.includes('review')) return;
+    }
+  };
+}
+
+/** The wizard asks whether the typed key is taken; a 404 means it is free. */
+const keyFree = [{ match: /^GET \/api\/v1\/projects\/[^/]+\/repositories\/renders-[a-z-]+ answered 404$/, why: 'the key check: 404 is a free key' }];
+
+const wizards: Screen[] = (['OCI (Docker)', 'npm', 'Ansible Galaxy'] as const).flatMap((format) =>
+  (['Local', 'Remote', 'Virtual'] as const).flatMap((cls): Screen[] => {
+    const id = `wizard-${format.split(' ')[0]!.toLowerCase()}-${cls.toLowerCase()}`;
+    return [
+      { id, path: `/ui/projects/${mainProject}/repositories/new`, kinds: ['power'], walk: wizard(format, cls), expected: keyFree },
+      { id: `admin-${id}`, path: '/ui/admin/repositories/new', kinds: ['admin'], walk: wizard(format, cls), expected: keyFree },
+    ];
+  }),
+);
+
+const all: readonly Kind[] = ['plain', 'power', 'admin'];
+const owners: readonly Kind[] = ['power', 'admin'];
+const admins: readonly Kind[] = ['admin'];
+const P = `/ui/projects/${mainProject}`;
+const O = `/ui/projects/${otherProject}`;
+
+export const screens: readonly Screen[] = [
+  // Without a session (Q-UI-125).
+  { id: 'login', path: '/ui/login', kinds: ['anonymous'] },
+  { id: 'logged-out', path: '/ui/logged-out', kinds: ['anonymous'] },
+
+  // The start and the project's content (Q-UI-129): the plain user's main path.
+  { id: 'home', path: '/ui/', kinds: all },
+  { id: 'projects', path: '/ui/projects', kinds: all },
+  { id: 'repositories', path: `${P}/repositories`, kinds: all },
+  { id: 'repositories-long-keys', path: `${O}/repositories`, kinds: all },
+  { id: 'repositories-empty-project', path: `/ui/projects/${emptyProject}/repositories`, kinds: admins },
+  { id: 'repository-npm-local', path: `${P}/repositories/npm-internal`, kinds: all },
+  { id: 'repository-npm-remote', path: `${P}/repositories/npmjs`, kinds: all },
+  { id: 'repository-npm-virtual', path: `${P}/repositories/npm`, kinds: all },
+  { id: 'repository-long-key', path: `${P}/repositories/${longNpmKey}`, kinds: all },
+  { id: 'repository-generic', path: `${P}/repositories/assets`, kinds: all },
+  { id: 'repository-oci', path: `${P}/repositories/images`, kinds: all },
+  { id: 'repository-empty', path: `${P}/repositories/scratch`, kinds: all },
+  { id: 'repository-oci-remote', path: `${O}/repositories/docker-hub-remote`, kinds: all },
+  { id: 'repository-deb', path: `${O}/repositories/${longDebKey}`, kinds: all },
+  { id: 'repository-nuget-virtual', path: `${O}/repositories/nuget`, kinds: all },
+  { id: 'repository-ansible', path: `${O}/repositories/collections`, kinds: all },
+  { id: 'packages', path: `${P}/packages`, kinds: all },
+  { id: 'packages-other-project', path: `${O}/packages`, kinds: all },
+  { id: 'package-npm', path: `${P}/packages/${npmPackage.format}/${npmPackage.name}`, kinds: all },
+  { id: 'package-oci', path: `${P}/packages/${ociPackage.format}/${ociPackage.name}`, kinds: all },
+  { id: 'browse', path: `${P}/browse`, kinds: all },
+  { id: 'browse-folder', path: `${P}/browse/assets/releases/design-system/2.5.0`, kinds: all },
+  { id: 'browse-file', path: `${P}/browse/assets/README.md`, kinds: all },
+  { id: 'vulnerabilities', path: `${P}/vulnerabilities`, kinds: all },
+  { id: 'members', path: `${P}/members`, kinds: all },
+  { id: 'setup', path: '/ui/setup', kinds: all },
+  { id: 'setup-repository', path: `/ui/setup?repository=${mainProject}/npm`, kinds: all },
+  { id: 'guides', path: '/ui/guides', kinds: all },
+  { id: 'guides-repository', path: `/ui/guides?repository=${mainProject}/npm`, kinds: all },
+  { id: 'help', path: '/ui/help', kinds: all },
+  { id: 'help-user-page', path: '/ui/help/user/getting-started', kinds: all },
+  { id: 'profile', path: '/ui/profile', kinds: all },
+  { id: 'profile-tokens', path: '/ui/profile/tokens', kinds: all },
+  { id: 'profile-sessions', path: '/ui/profile/sessions', kinds: all },
+  { id: 'not-found', path: '/ui/no-such-page', kinds: all },
+
+  // What an Owner of the project maintains, and the settings a reader is offered in the list.
+  { id: 'repository-settings-npm-local', path: `${P}/repositories/npm-internal/settings`, kinds: all },
+  { id: 'repository-settings-npm-remote', path: `${P}/repositories/npmjs/settings`, kinds: owners },
+  { id: 'repository-settings-npm-virtual', path: `${P}/repositories/npm/settings`, kinds: owners },
+  { id: 'repository-settings-generic', path: `${P}/repositories/assets/settings`, kinds: owners },
+  { id: 'repository-settings-oci', path: `${P}/repositories/images/settings`, kinds: owners },
+  { id: 'repository-wizard', path: `${P}/repositories/new`, kinds: owners },
+  { id: 'policies', path: `${P}/policies`, kinds: owners },
+  { id: 'policy-new', path: `${P}/policies/new`, kinds: owners },
+  { id: 'project-service-accounts', path: `${P}/service-accounts`, kinds: owners },
+  { id: 'project-service-account', path: `${P}/service-accounts/${projectServiceAccount}`, kinds: owners },
+  { id: 'project-ci', path: `${P}/ci`, kinds: owners },
+  { id: 'project-settings', path: `${P}/settings`, kinds: owners },
+
+  // The administrator's area (Q-UI-127).
+  { id: 'repository-settings-oci-remote', path: `${O}/repositories/docker-hub-remote/settings`, kinds: admins },
+  { id: 'repository-settings-deb', path: `${O}/repositories/${longDebKey}/settings`, kinds: admins },
+  { id: 'repository-settings-nuget-remote', path: `${O}/repositories/nuget-org/settings`, kinds: admins },
+  { id: 'repository-settings-ansible', path: `${O}/repositories/collections/settings`, kinds: admins },
+  { id: 'help-admin-page', path: '/ui/help/admin/repositories', kinds: admins },
+  { id: 'admin-dashboard', path: '/ui/admin/dashboard', kinds: admins },
+  { id: 'admin-projects', path: '/ui/admin/projects', kinds: admins },
+  { id: 'admin-repositories', path: '/ui/admin/repositories', kinds: admins },
+  { id: 'admin-repository-wizard', path: '/ui/admin/repositories/new', kinds: admins },
+  { id: 'admin-users', path: '/ui/admin/users', kinds: admins },
+  { id: 'admin-user', path: '/ui/admin/users/sam', kinds: admins },
+  { id: 'admin-groups', path: '/ui/admin/groups', kinds: admins },
+  { id: 'admin-group', path: `/ui/admin/groups/${group}`, kinds: admins },
+  { id: 'admin-service-accounts', path: '/ui/admin/service-accounts', kinds: admins },
+  { id: 'admin-service-account', path: `/ui/admin/service-accounts/${serviceAccount}`, kinds: admins },
+  { id: 'admin-permissions', path: '/ui/admin/permissions', kinds: admins },
+  { id: 'admin-permission-new', path: '/ui/admin/permissions/new', kinds: admins },
+  { id: 'admin-roles', path: '/ui/admin/roles', kinds: admins },
+  { id: 'admin-tokens', path: '/ui/admin/tokens', kinds: admins },
+  { id: 'admin-ci', path: '/ui/admin/ci', kinds: admins },
+  { id: 'admin-ci-new', path: '/ui/admin/ci/new', kinds: admins },
+  { id: 'admin-ci-issuances', path: '/ui/admin/ci/issuances', kinds: admins },
+  { id: 'admin-bastions', path: '/ui/admin/bastions', kinds: admins },
+  { id: 'admin-endpoints', path: '/ui/admin/endpoints', kinds: admins },
+  // The endpoint every installation has (R-EP-001).
+  { id: 'admin-endpoint', path: '/ui/admin/endpoints/default', kinds: admins },
+  { id: 'admin-endpoint-rule-new', path: '/ui/admin/endpoints/default/rules/new', kinds: admins },
+
+  // The creation flow, step by step, for three formats and every class (the owner's rules of 2026-11-12, CLAUDE.md).
+  ...wizards,
+  { id: 'admin-security', path: '/ui/admin/security', kinds: admins },
+  { id: 'admin-audit', path: '/ui/admin/audit', kinds: admins },
+  { id: 'admin-advisory-sources', path: '/ui/admin/advisory-sources', kinds: admins },
+  { id: 'admin-system', path: '/ui/admin/system', kinds: admins },
+  { id: 'admin-system-jobs', path: '/ui/admin/system/jobs', kinds: admins },
+  { id: 'admin-system-backups', path: '/ui/admin/system/backups', kinds: admins },
+  { id: 'admin-settings-auth', path: '/ui/admin/settings/auth', kinds: admins },
+  { id: 'admin-settings-general', path: '/ui/admin/settings/general', kinds: admins },
+];

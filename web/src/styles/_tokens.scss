@@ -105,6 +105,9 @@
   --trove-breadcrumb-height: 2.5rem;
   --trove-panel-radius: var(--trove-radius-xl);
   --trove-panel-gap: 8px;
+  // A client address alone on its line fills the line up to this measure: 70 characters of the monospace face at
+  // 0.875rem with the field's padding and the copy button (Q-UI-301). In a list the column sets the width (Q-UI-300).
+  --trove-address-measure: 40rem;
   // The top bar's search field: white with a dark hairline (light), a light veil with a light hairline (dark), 12 px
   // round. The reference's hairlines (alpha 24 % / 16 %) give 1.7:1 against the frame; the outline here is the field
   // outline's grey, deepened in the light scheme to keep 3:1 (WCAG 1.4.11).

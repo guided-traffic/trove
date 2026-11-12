@@ -34,6 +34,7 @@
     </div>
 
     <trove-data-table
+      class="stack-narrow"
       [caption]="tableCaption"
       [columns]="columns()"
       [loaded]="list.loaded()"
@@ -42,12 +43,14 @@
       [empty]="list.items().length === 0"
       [emptyText]="filtered() || projectKey() ? emptyFilteredText : emptyText"
       [hasMore]="list.hasMore()"
+      [style.--trove-address-chars]="addressChars()"
+      [style.--trove-address-others]="addressOthers()"
       (more)="list.more()"
       (retry)="list.more()"
     >
       @for (row of list.items(); track refOf(row)) {
         <tr>
-          <th scope="row">
+          <th scope="row" class="wrap-name">
             <a
               [routerLink]="['/projects', row.project, 'repositories', row.key]"
               (click)="visit(refOf(row))"
@@ -60,60 +63,70 @@
             @if (row.lifecycle === 'deleting') {
               <span class="badge" i18n="@@repo.badge.deleting">being deleted</span>
             }
+            <!-- The first column names the thing; the description is its muted second line (ui-style-guide.md, Lists; Q-UI-302). -->
+            @if (row.description) {
+              <span class="secondary">{{ row.description }}</span>
+            }
           </th>
           @if (!inProject()) {
-            <td><a [routerLink]="['/projects', row.project]" translate="no">{{ row.project }}</a></td>
+            <td class="labelled" [attr.data-label]="projectLabel">
+              <a [routerLink]="['/projects', row.project]" translate="no">{{ row.project }}</a>
+            </td>
           }
-          <td translate="no">{{ row.format }}</td>
-          <td>
-            <span class="type-cell">
+          <!-- Format and class in one cell, the class under the format (Q-UI-305); one line when the rows stack. -->
+          <td class="kind-cell">
+            <span translate="no">{{ row.format }}</span>
+            <span class="type-cell secondary">
               <span class="material-icons" aria-hidden="true">{{ classIcon(row.class) }}</span>
               {{ classText(row.class) }}
             </span>
           </td>
-          <td>{{ row.description }}</td>
           <td class="address-cell">
-            <trove-address-field
-              [value]="address(row)"
-              [label]="addressLabel(row)"
-              [copyLabel]="copyLabel(row)"
-            />
+            <trove-address-field [value]="address(row)" [label]="addressLabel(row)" [copyLabel]="copyLabel(row)" />
           </td>
-          <td>
+          <!-- The date only; the time is its title (Q-UI-305). Stacked, a row without activity leaves the line out. -->
+          <td class="labelled" [class.no-value]="!row.lastActivityAt" [attr.data-label]="activityLabel">
             @if (row.lastActivityAt; as at) {
-              <time [attr.datetime]="at">{{ at | date: 'medium' }}</time>
+              <time [attr.datetime]="at" [title]="at | date: 'medium'">{{ at | date: 'mediumDate' }}</time>
             } @else {
               –
             }
           </td>
           <td class="actions">
-            <div class="row-actions">
-              <a class="btn btn-tertiary"
-                [routerLink]="['/projects', row.project, 'repositories', row.key, 'settings']"
-                (click)="visit(refOf(row))"
-                i18n="@@repo.action.settings"
-                >Settings</a
-              >
-              <a class="btn btn-tertiary" [routerLink]="['/projects', row.project, 'browse', row.key]" i18n="@@repo.action.browse"
-                >Browse</a
-              >
-              <!-- >>> M4b vulnerabilities -->
-              @if (row.format !== 'generic' && row.class !== 'virtual') {
-                <a class="btn btn-tertiary" [routerLink]="['/projects', row.project, 'vulnerabilities']" [queryParams]="{ repository: refOf(row) }" i18n="@@repo.action.vulnerabilities"
-                  >Vulnerabilities</a
+            <!-- The row's actions are a menu (ui-style-guide.md, Lists; Q-UI-302): four buttons pushed the list sideways. -->
+            <button
+              class="btn btn-tertiary btn-icon"
+              type="button"
+              [attr.aria-label]="actionsLabel(row)"
+              [cdkMenuTriggerFor]="rowMenu"
+            >
+              <span class="material-icons" aria-hidden="true">more_vert</span>
+            </button>
+            <ng-template #rowMenu>
+              <div class="menu" cdkMenu>
+                <a class="menu-item" cdkMenuItem
+                  [routerLink]="['/projects', row.project, 'repositories', row.key, 'settings']"
+                  (click)="visit(refOf(row))"
+                  i18n="@@repo.action.settings"
+                  >Settings</a
                 >
-              }
-              <!-- <<< M4b vulnerabilities -->
-              @if (canDeleteRow(row) && row.lifecycle !== 'deleting' && !deleting().has(refOf(row))) {
-                <button class="btn btn-tertiary"
-                  type="button"
-                  (click)="remove(row)"
-                  i18n="@@repo.action.delete"
+                <a class="menu-item" cdkMenuItem [routerLink]="['/projects', row.project, 'browse', row.key]" i18n="@@repo.action.browse"
+                  >Browse</a
                 >
-                  Delete
-                </button>
-              }
-            </div>
+                <!-- >>> M4b vulnerabilities -->
+                @if (row.format !== 'generic' && row.class !== 'virtual') {
+                  <a class="menu-item" cdkMenuItem [routerLink]="['/projects', row.project, 'vulnerabilities']" [queryParams]="{ repository: refOf(row) }" i18n="@@repo.action.vulnerabilities"
+                    >Vulnerabilities</a
+                  >
+                }
+                <!-- <<< M4b vulnerabilities -->
+                @if (canDeleteRow(row) && row.lifecycle !== 'deleting' && !deleting().has(refOf(row))) {
+                  <button class="menu-item" cdkMenuItem type="button" (cdkMenuItemTriggered)="remove(row)" i18n="@@repo.action.delete">
+                    Delete
+                  </button>
+                }
+              </div>
+            </ng-template>
             @if (deleting().get(refOf(row)); as job) {
               <div class="deleting">
                 <span i18n="@@repo.deleting">Deleting</span>

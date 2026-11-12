@@ -27,6 +27,30 @@
 
 .list-main {
   min-inline-size: 0;
+  // A list's columns may take a share of the list's own width (`cqi`), beside the filter panel or without it.
+  container-type: inline-size;
+}
+
+// The column of client addresses (Q-UI-300): one width for every field of the list, that of the list's longest address
+// (`--trove-address-chars`, set by the list) in the field's own face and size, with the field's padding, border and copy
+// button, at most what the list's other columns leave (`--trove-address-others`, set by the list), never under 16 rem.
+// The field fills the cell and shows the address from its start; a longer address scrolls inside its field.
+td.address-cell {
+  // Resolved where it is used, so `ch` is the monospace face's at the field's size, and `cqi` the list's width.
+  --trove-address-column: min(
+    calc(var(--trove-address-chars, 40) * 1ch + 2 * var(--trove-space-3) + 2px + var(--trove-control-height)),
+    max(16rem, 100cqi - var(--trove-address-others, 34rem))
+  );
+
+  inline-size: var(--trove-address-column);
+  font-family: var(--trove-font-mono);
+  font-size: 0.875rem;
+
+  // The field's width is also the column's least: the other columns give way first, never the address.
+  trove-address-field {
+    min-inline-size: var(--trove-address-column);
+    max-inline-size: none;
+  }
 }
 
 .list-toolbar {
@@ -132,8 +156,9 @@
       }
     }
 
-    // Keys, names and identifiers are never broken at a hyphen; a status keeps icon and label on one line.
-    th[scope='row'] a,
+    // Keys, names and identifiers are never broken at a hyphen; a status keeps icon and label on one line. A list may let
+    // the name of its first column wrap after a hyphen (`th.wrap-name`, the repository list, Q-UI-303).
+    th[scope='row']:not(.wrap-name) a,
     td[translate='no']:not(.wrap),
     td time,
     td > .ok,
@@ -409,3 +434,89 @@
   }
 }
 
+
+// ---- Stacked rows ------------------------------------------------------------------------------
+
+// A list that opts in (`class="stack-narrow"` on `<trove-data-table>`) shows each row as a block below 48 rem of the list's
+// width (Q-UI-306): the name with its description and the row's menu on the first line, then each other cell on a line of
+// its own, the address field across the full width. The head stays for assistive technology only; a cell whose column
+// name is needed carries it in `data-label` (`.labelled`), and an empty one (`.no-value`) leaves its line out.
+@container (max-width: 48rem) {
+  .trove-data-table.stack-narrow {
+    .table-scroll {
+      max-block-size: none;
+      overflow: visible;
+    }
+
+    table.data {
+      display: block;
+
+      thead {
+        position: absolute;
+        inline-size: 1px;
+        block-size: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+
+      tbody {
+        display: block;
+      }
+
+      tbody tr {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: var(--trove-space-2) var(--trove-space-3);
+        padding-block: var(--trove-space-3);
+        border-block-end: 1px solid var(--trove-border);
+      }
+
+      tbody tr > * {
+        display: block;
+        grid-column: 1 / -1;
+        padding: 0 var(--trove-space-2);
+        border-block-end: 0;
+      }
+
+      tbody tr > th[scope='row'] {
+        grid-column: 1;
+        grid-row: 1;
+      }
+
+      tbody tr > td.actions {
+        grid-column: 2;
+        grid-row: 1;
+      }
+
+      td.address-cell {
+        inline-size: auto;
+
+        trove-address-field {
+          min-inline-size: 0;
+        }
+      }
+
+      td.labelled::before {
+        content: attr(data-label) ' ';
+        color: var(--trove-text-muted);
+      }
+
+      td.no-value {
+        display: none;
+      }
+
+      td.kind-cell {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--trove-space-3);
+
+        > .type-cell {
+          margin-block-start: 0;
+        }
+      }
+    }
+  }
+}

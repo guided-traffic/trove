@@ -60,6 +60,19 @@ describe('Endpoint screen', () => {
     await expectAccessible(root);
   });
 
+  it('R-UI-065 R-UI-066 the address fields of the rule table share one column, sized to its longest address', async () => {
+    const { root } = await renderScreen(EndpointDetail, { inputs: { endpoint: 'customers' } });
+    const table = root.querySelector<HTMLElement>('table.data')!;
+    const longest = Math.max(...addressValues(root).map((a) => a.length));
+    expect(table.style.getPropertyValue('--trove-address-chars')).toBe(String(longest));
+    const fields = [...root.querySelectorAll('trove-address-field')];
+    expect(fields.length).toBeGreaterThan(0);
+    for (const field of fields) {
+      expect(field.closest('td')?.classList.contains('address-cell')).toBe(true);
+      expect(field.querySelector('input')!.style.inlineSize).toBe('');
+    }
+  });
+
   it('Q-UI-223 the configuration is read-only fields in one column, not a key-value list', async () => {
     const { root } = await renderScreen(EndpointDetail, { inputs: { endpoint: 'customers' } });
     expect(root.querySelector('dl.facts')).toBeNull();

@@ -22,6 +22,40 @@ describe('Repository list', () => {
     await expectAccessible(root);
   });
 
+  it('R-UI-065 R-UI-066 every address field of the list has one width: the column is sized to the longest address, no field to its own', async () => {
+    const { root } = await renderScreen(RepositoryList);
+    const addresses = addressValues(root);
+    expect(addresses.length).toBe(2);
+    expect(new Set(addresses.map((a) => a.length)).size).toBeGreaterThan(1);
+    const table = root.querySelector<HTMLElement>('trove-data-table')!;
+    expect(table.style.getPropertyValue('--trove-address-chars')).toBe(String(Math.max(...addresses.map((a) => a.length))));
+    for (const input of root.querySelectorAll<HTMLInputElement>('trove-address-field input')) {
+      expect(input.closest('td')?.classList.contains('address-cell')).toBe(true);
+      expect(input.style.inlineSize).toBe('');
+    }
+  });
+
+  it('R-UI-020 the description is the second line of the first column, and the row actions are one menu named for the row', async () => {
+    const { root, fixture } = await renderScreen(RepositoryList);
+    const first = [...root.querySelectorAll('tbody th[scope="row"]')].find((th) => th.textContent?.includes('generic-local'))!;
+    expect(first.querySelector('.secondary')?.textContent).toContain('Installers and build outputs');
+    expect([...root.querySelectorAll('thead th')].map((th) => th.textContent?.trim())).not.toContain('Description');
+    const row = first.closest('tr')!;
+    // Format and class share a cell; the rows stack on a narrow list, where the activity cell names its column.
+    const kind = row.querySelector('td.kind-cell')!;
+    expect(kind.querySelector('span[translate="no"]')?.textContent).toBe('generic');
+    expect(kind.querySelector('.type-cell')?.textContent).toContain('Local');
+    expect(row.querySelector('td.labelled[data-label="Last activity"]')).toBeTruthy();
+    expect(root.querySelector('trove-data-table')?.classList.contains('stack-narrow')).toBe(true);
+    expect(row.querySelectorAll('td.actions button')).toHaveLength(1);
+    row.querySelector<HTMLButtonElement>('button[aria-label="Actions for generic-local"]')!.click();
+    await settle(fixture);
+    const menu = root.ownerDocument.body.querySelector('.menu')!;
+    expect([...menu.querySelectorAll('[role="menuitem"]')].map((i) => i.textContent?.trim())).toEqual(
+      expect.arrayContaining(['Settings', 'Browse']),
+    );
+  });
+
   it('R-UI-020 the filters reach the API and restart the walk (class and format)', async () => {
     const { root, get } = await renderScreen(RepositoryList, {
       inputs: { class: 'local', format: 'generic', state: 'inactive' },
@@ -105,10 +139,13 @@ describe('Repository list', () => {
     const row = [...root.querySelectorAll('tbody tr')].find((r) =>
       r.textContent?.includes('generic-local'),
     )!;
-    button(row, 'Delete').click();
+    // The row's actions are a menu (Q-UI-302): open it, then choose Delete.
+    row.querySelector<HTMLButtonElement>('button[aria-label="Actions for generic-local"]')!.click();
+    await settle(fixture);
+    const body = root.ownerDocument.body;
+    button(body.querySelector<HTMLElement>('.menu')!, 'Delete').click();
     await settle(fixture);
 
-    const body = root.ownerDocument.body;
     const confirm = button(body, 'Delete repository');
     expect(confirm.disabled).toBe(true);
     type(body.querySelector<HTMLInputElement>('#confirm-name')!, 'generic-local');

@@ -74,7 +74,7 @@
         <p class="empty" i18n="@@ep.rules.empty">This endpoint has no exposure rule.</p>
       } @else {
         <div class="scroll" tabindex="0" role="region" aria-labelledby="rules-caption">
-          <table class="data">
+          <table class="data" [style.--trove-address-chars]="addressChars(list)">
             <caption id="rules-caption" class="visually-hidden" i18n="@@ep.rules.caption">
               Exposure rules
             </caption>
@@ -136,7 +136,7 @@
                       </span>
                     </label>
                   </td>
-                  <td>
+                  <td class="address-cell">
                     @if (addressOf(rule); as a) {
                       <trove-address-field [value]="a.url" />
                       @if (!a.served) {

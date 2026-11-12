@@ -16313,6 +16313,15 @@
         <target>Client-Adresse kopieren</target>
       </segment>
     </unit>
+    <unit id="repo.actions-of">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-list.ts:196</note>
+      </notes>
+      <segment>
+        <source>Actions for <ph id="0" equiv="key" disp="row.key"/></source>
+        <target>Aktionen für <ph id="0" equiv="key" disp="row.key"/></target>
+      </segment>
+    </unit>
     <unit id="repo.address-of">
       <notes>
         <note category="location">src/app/features/repositories/repository-list.ts:176</note>
@@ -16683,13 +16692,22 @@
         <target>Kein Repository passt zu den Filtern.</target>
       </segment>
     </unit>
-    <unit id="repo.col.key">
+    <unit id="repo.col.format-class">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:150</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:159</note>
       </notes>
       <segment>
-        <source>Key</source>
-        <target>Schlüssel</target>
+        <source>Format and class</source>
+        <target>Format und Klasse</target>
+      </segment>
+    </unit>
+    <unit id="repo.col.repository">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-list.ts:155</note>
+      </notes>
+      <segment>
+        <source>Repository</source>
+        <target>Repository</target>
       </segment>
     </unit>
     <unit id="repo.help.class">
@@ -16699,15 +16717,6 @@
       <segment>
         <source>Local repositories hold what you upload, remote repositories fetch and cache from another registry, virtual repositories combine other repositories behind one address.</source>
         <target>Lokale Repositories enthalten, was Sie hochladen; Remote-Repositories laden aus einer anderen Registry und halten eine Kopie vor; virtuelle Repositories fassen andere Repositories unter einer Adresse zusammen.</target>
-      </segment>
-    </unit>
-    <unit id="repo.col.description">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:158</note>
-      </notes>
-      <segment>
-        <source>Description</source>
-        <target>Beschreibung</target>
       </segment>
     </unit>
     <unit id="repo.help.address">

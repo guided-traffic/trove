@@ -54,7 +54,7 @@ describe('Repository list filter panel (R-UI-020)', () => {
     const { root } = await open();
     expect(root.querySelectorAll('th button.th-sort')).toHaveLength(0);
     expect([...root.querySelectorAll('th button.th-help')].map((b) => b.getAttribute('aria-label'))).toEqual([
-      'About the column Class',
+      'About the column Format and class',
       'About the column Client address',
       'About the column Last activity',
     ]);

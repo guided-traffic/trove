@@ -1,3 +1,4 @@
+import { CdkMenu, CdkMenuItem, CdkMenuTrigger } from '@angular/cdk/menu';
 import { DatePipe } from '@angular/common';
 import {
   Component,
@@ -27,7 +28,9 @@ import { classLabel } from './repository-wizard';
 
 /**
  * The repository list (R-UI-020): key, project, format, class, description, client address with a copy
- * button, last activity. Filters live in the query parameters (R-UI-003) and restart the cursor
+ * button, last activity, and the row's actions in a menu (Q-UI-302). Every address field of the list has one width, that of
+ * the list's longest address up to what the other columns leave (Q-UI-300); below 48 rem of the list's width the rows stack
+ * (Q-UI-306). Filters live in the query parameters (R-UI-003) and restart the cursor
  * walk; "Load more" continues it. A repository is addressed inside its project (R-REPO-002): its key links to
  * the content page `/projects/<project>/repositories/<key>` (R-UI-052), its Settings action to `…/settings`. Delete asks for the key, may offer to detach the repository from
  * the virtual repositories that include it, and follows the deletion job until the row is gone.
@@ -35,6 +38,9 @@ import { classLabel } from './repository-wizard';
 @Component({
   selector: 'trove-repository-list',
   imports: [
+    CdkMenu,
+    CdkMenuItem,
+    CdkMenuTrigger,
     DatePipe,
     RouterLink,
     AddressField,
@@ -147,15 +153,13 @@ export class RepositoryList {
     this.inProject() ? this.allColumns.filter((c) => c.id !== 'project') : this.allColumns,
   );
   private readonly allColumns: readonly TableColumn[] = [
-    { id: 'key', label: $localize`:@@repo.col.key:Key` },
+    { id: 'key', label: $localize`:@@repo.col.repository:Repository` },
     { id: 'project', label: $localize`:@@repo.col.project:Project` },
-    { id: 'format', label: $localize`:@@repo.col.format:Format` },
     {
-      id: 'class',
-      label: $localize`:@@repo.col.class:Class`,
+      id: 'format',
+      label: $localize`:@@repo.col.format-class:Format and class`,
       help: $localize`:@@repo.help.class:Local repositories hold what you upload, remote repositories fetch and cache from another registry, virtual repositories combine other repositories behind one address.`,
     },
-    { id: 'description', label: $localize`:@@repo.col.description:Description` },
     {
       id: 'address',
       label: $localize`:@@repo.col.address:Client address`,
@@ -179,10 +183,26 @@ export class RepositoryList {
     return $localize`:@@repo.copy-address-of:Copy client address of ${row.key}:key:`;
   }
   protected readonly deleteLabel = $localize`:@@repo.delete.progress:Repository deletion`;
+  /** The labels of the cells that name their column when the rows stack (Q-UI-306). */
+  protected readonly projectLabel = $localize`:@@repo.col.project:Project`;
+  protected readonly activityLabel = $localize`:@@repo.col.activity:Last activity`;
 
   protected address(row: RepositorySummary): string {
     // The server serves absolute URLs (public base URL plus path): shown and copied as they are.
     return row.addresses[0] ?? '';
+  }
+
+  /** The length of the list's longest address: `.address-cell` sizes the column to it, so every field has one width. */
+  protected readonly addressChars = computed(() => Math.max(0, ...this.list.items().map((r) => this.address(r).length)));
+
+  /**
+   * The room the other columns take, which the address column leaves them (Q-UI-300): the repository, format and class,
+   * last activity and the menu; in the admin area also the project. Measured on the renders of `make ui-renders`.
+   */
+  protected readonly addressOthers = computed(() => (this.inProject() ? '36rem' : '44rem'));
+
+  protected actionsLabel(row: RepositorySummary): string {
+    return $localize`:@@repo.actions-of:Actions for ${row.key}:key:`;
   }
 
   protected applyFilter(change: Readonly<Record<string, string | null>>): void {
