@@ -184,11 +184,11 @@ func (r *remoteResolver) resolve(in remoteInput) RemoteSettings {
 }
 
 // url resolves url and extraHosts. An omitted url takes the format's default
-// preset (R-REPO-062); an omitted extraHosts takes that preset's hosts only when
-// the upstream is the preset's (Q-REPO-91).
+// preset; an omitted extraHosts takes the hosts of the preset whose URL the
+// upstream is, and none for any other URL (R-REPO-062, Q-REPO-322).
 func (r *remoteResolver) url(s *RemoteSettings, in remoteInput) {
-	preset, _ := r.info.DefaultPreset()
-	raw := stringOr(in.URL, preset.URL)
+	def, _ := r.info.DefaultPreset()
+	raw := stringOr(in.URL, def.URL)
 	if raw == "" {
 		r.v.add("/remote/url", codeInvalidUpstreamURL, "is required: the "+string(r.info.ID)+" format has no default upstream")
 	} else if norm, why := NormalizeUpstreamURL(raw); why != "" {
@@ -202,7 +202,7 @@ func (r *remoteResolver) url(s *RemoteSettings, in remoteInput) {
 	hosts := in.ExtraHosts
 	if hosts == nil {
 		hosts = []ExtraHost{}
-		if s.URL != "" && s.URL == preset.URL {
+		if preset, ok := r.info.PresetFor(s.URL); ok && s.URL != "" {
 			for _, h := range preset.ExtraHosts {
 				// A host the preset names as holding the upstream's token service receives the repository's credential
 				// (R-OCI-021, R-REPO-033).

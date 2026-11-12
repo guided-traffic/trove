@@ -1900,9 +1900,11 @@ Priority: **MVP** · Covers: RMT-004
 | `ansible` | `galaxy` | Ansible Galaxy | `https://galaxy.ansible.com/api/` | `github.com`, `codeload.github.com`, no credential | yes |
 
 Which registries are presets is [Q-REPO-321](#q-repo-321--which-registries-are-presets). Verified on 2026-11-12 with one request
-each from a workstation: the four OCI registries answer `GET /v2/` with `401` and the token services above; the npm registry's
-`-/ping`, the NuGet service index and Galaxy's `/api/` answer 200; `dists/trixie/InRelease`, `debian-security/dists/trixie-security/InRelease`
-and `dists/noble/InRelease` (archive, security and ports of Ubuntu, over `https`) answer 200. Not verified: a pull or install through a
+each from a workstation, by the planning agent and again before the presets were built: the four OCI registries answer `GET /v2/`
+with `401` and the token services above (ghcr.io's challenge also names a default `scope`); the npm registry's `-/ping`, the NuGet
+service index and Galaxy's `/api/` answer 200; `dists/trixie/InRelease`, `debian-security/dists/trixie-security/InRelease`,
+`dists/noble/InRelease` of Ubuntu's archive and ports and `dists/noble-security/InRelease` of its security archive, over `https`,
+answer 200. Not verified: a pull or install through a
 trove remote of each new preset; the builder does one each by hand and records it (CI is not assumed to reach these hosts).
 
 Acceptance criteria:

@@ -161,8 +161,9 @@ The `remote` section of a remote repository (R-REPO-024) is validated in the sam
   member, or a wrong type, is `400 malformed_request`. A merge patch reaches the same check, because the service reads the patched
   document like a PUT body.
 - **Validate.** `validate` calls `validateRemote` for the class remote. It reads the section into `remoteInput` (every member a pointer,
-  so an omitted member takes its default), applies the defaults of the format's catalog entry (the URL of `DefaultPreset()` and
-  that preset's `ExtraHosts` for that upstream only, `DefaultMetadataTTLSeconds`, `DefaultNotFoundTTLSeconds`), checks every range and
+  so an omitted member takes its default), applies the defaults of the format's catalog entry (the URL of `DefaultPreset()`, the
+  `ExtraHosts` of `PresetFor(url)` for a preset's URL and none for any other, `DefaultMetadataTTLSeconds`, `DefaultNotFoundTTLSeconds`;
+  `checkMirrorBound` refuses an unbounded mirror of every preset's URL, R-REPO-062), checks every range and
   enumeration, and **replaces `d.Remote` with the canonical section**: every member present, the URL normalized, the secret fields
   reduced to `{"set": true}` or their reference. The plaintext of a request goes into `Settings.pending` and never into a JSON form
   (`SecretField.MarshalJSON` cannot write it). The warnings (`plain_http_upstream`, `source_network_single_address`) go to

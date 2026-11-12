@@ -383,8 +383,9 @@ export class MirrorSettings {
   });
 
   /**
-   * Whether the mirror is bounded (R-REPO-052): `refused` when the upstream is the format's well-known
-   * one and the server will refuse the save, `warned` when it will save with a warning, else none.
+   * Whether the mirror is bounded (R-REPO-052): `refused` when the upstream is one of the format's presets,
+   * each a public registry the server refuses to mirror without a bound (Q-REPO-323), `warned` when it will
+   * save with a warning, else none.
    */
   protected readonly unbounded = computed<'refused' | 'warned' | null>(() => {
     const f = this.form();
@@ -393,10 +394,11 @@ export class MirrorSettings {
     }
     const includes = lines(f.includePatterns);
     if (includes.length > 0 && includes.every(boundsMirror)) return null;
-    const known = defaultPreset(this.format())?.url ?? null;
     const entered = this.upstreamUrl()?.trim();
-    const url = entered ? entered : known;
-    return known && url && normalizedUrl(url) === normalizedUrl(known) ? 'refused' : 'warned';
+    const url = entered ? entered : (defaultPreset(this.format())?.url ?? null);
+    if (url === null) return 'warned';
+    const preset = this.format().upstreamPresets.some((p) => normalizedUrl(p.url) === normalizedUrl(url));
+    return preset ? 'refused' : 'warned';
   });
 
   protected idOf(name: string): string {

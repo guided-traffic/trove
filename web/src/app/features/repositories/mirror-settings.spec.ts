@@ -27,6 +27,14 @@ const NPM: FormatDescriptor = {
 };
 /** A format whose remote adapter cannot discover packages. */
 const NO_MIRROR: FormatDescriptor = { ...NUGET_FORMAT, mirror: false };
+/** A second preset of a format, which the server refuses to mirror without a bound as it refuses the default (Q-REPO-323). */
+const SECOND_PRESET = {
+  id: 'second',
+  displayName: 'Second registry',
+  url: 'https://npm.second.example/',
+  extraHosts: [],
+  default: false,
+};
 /** A format that can mirror, with no well-known upstream of its own. */
 const OPEN_UPSTREAM: FormatDescriptor = { ...NUGET_FORMAT, mirror: true, upstreamPresets: [] };
 
@@ -215,7 +223,7 @@ describe('Mirror settings of a remote repository', () => {
       });
     });
 
-    it('R-REPO-052 R-UI-021 the well-known upstream without a bound shows the refusal sentence, a literal-prefix include or a storage limit removes it, another upstream shows the warning', async () => {
+    it('R-REPO-052 R-UI-021 the well-known upstream without a bound shows the refusal sentence, a literal-prefix include or a storage limit removes it, every other preset is refused too, another upstream shows the warning', async () => {
       const r = await remoteStep([NPM], 'npm');
       await chooseMirror(r);
       const note = () => r.root.querySelector('#mirror-unbounded')?.textContent?.replace(/\s+/g, ' ');
@@ -233,6 +241,13 @@ describe('Mirror settings of a remote repository', () => {
       type(control(r.root, 'f-remote-mirror-maxBytes'), '2097152');
       await settle(r.fixture);
       expect(note()).toBeUndefined();
+
+      const twoPresets = await remoteStep([{ ...NPM, upstreamPresets: [...NPM.upstreamPresets, SECOND_PRESET] }], 'npm');
+      type(control(twoPresets.root, 'f-remote-url'), 'https://npm.second.example');
+      await settle(twoPresets.fixture);
+      await chooseMirror(twoPresets);
+      const second = twoPresets.root.querySelector('#mirror-unbounded')?.textContent?.replace(/\s+/g, ' ');
+      expect(second).toContain('needs a bound');
 
       const other = await remoteStep([OPEN_UPSTREAM], 'NuGet');
       await chooseMirror(other);

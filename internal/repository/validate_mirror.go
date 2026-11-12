@@ -82,21 +82,35 @@ func (r *remoteResolver) mirrorRanges(m MirrorSettings) {
 	}
 }
 
-// checkMirrorBound applies R-REPO-052: a mirror of the format's default preset needs include patterns that each bound
-// it, or maxBytes; any other upstream without either is saved with a warning.
+// checkMirrorBound applies R-REPO-052: a mirror of one of the format's presets, each a public registry of unbounded size
+// (Q-REPO-323), needs include patterns that each bound it, or maxBytes; any other upstream without either is saved with a
+// warning.
 func (r *remoteResolver) checkMirrorBound(s *RemoteSettings) {
 	if s.Mirror.MaxBytes != nil || boundingIncludes(r.include) {
 		return
 	}
-	preset, _ := r.info.DefaultPreset()
-	known := preset.URL
-	if u, err := url.Parse(s.URL); known != "" && err == nil && discover.SameUpstream(u, known) {
+	if known, ok := r.presetUpstream(s.URL); ok {
 		r.v.add("/remote/mode", errs.CodeMirrorUnbounded,
 			"a mirror of "+known+" needs a bound: include patterns that each have a literal prefix (such as @types/* or Microsoft.Extensions.*), or remote.mirror.maxBytes")
 		return
 	}
 	r.warn(WarnMirrorUnbounded, "/remote/mode",
 		"the mirror has neither include patterns with a literal prefix nor remote.mirror.maxBytes: it stores everything the upstream offers")
+}
+
+// presetUpstream returns the URL of the format's preset that raw names, compared with the one predicate of the bound rule
+// (discover.SameUpstream); ok is false for an upstream that is no preset.
+func (r *remoteResolver) presetUpstream(raw string) (string, bool) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", false
+	}
+	for _, p := range r.info.UpstreamPresets {
+		if discover.SameUpstream(u, p.URL) {
+			return p.URL, true
+		}
+	}
+	return "", false
 }
 
 // boundingIncludes reports whether a non-empty include list bounds a mirror: every pattern has a literal prefix

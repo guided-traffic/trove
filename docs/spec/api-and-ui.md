@@ -9333,6 +9333,8 @@ development agent would revisit the duplicate rule if the catalog serves the rul
 
 **Applied in the spec:** R-UI-021. Code: `mirror-settings.ts` (`boundsMirror`, `unbounded`). Test: `mirror-settings.spec.ts`.
 
+**Revisited by [Q-REPO-323](repositories-and-proxy.md#q-repo-323--every-preset-is-a-well-known-upstream-for-the-mirror-bound) (2026-11-12):** `refused` applies to the URL of every preset of the format (`upstreamPresets`), the URL entered or, while it is empty, the default preset's; any other upstream is `warned`.
+
 ### Q-UI-119 · The status sits above the settings on the Mirror tab and is read only while the tab is open
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
