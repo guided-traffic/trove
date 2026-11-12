@@ -42,9 +42,12 @@ jobs:
           set -euo pipefail
           [[ "$REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::the release tag is not vX.Y.Z"; exit 1; }
 
+      # Only when the runner lacks it; an index the runner cannot read (a PPA of the image answering 503) does not stop the install
+      # from the indexes that were read (the same rule as the build-tools action, releasing.md).
       - name: Install jq
         run: |
-          sudo apt-get update
+          command -v jq >/dev/null && { echo "jq is on the runner"; exit 0; }
+          sudo apt-get update || echo "::warning::apt-get update could not read every package index; installing from the indexes it read"
           sudo apt-get install -y jq
 
       # The SBOM generator (below) is served from a registry container of this run on Docker's default bridge network, reached
