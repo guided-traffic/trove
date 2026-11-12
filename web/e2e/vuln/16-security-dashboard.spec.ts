@@ -79,7 +79,9 @@ test('Q-UI-130 the auditor searches every project by alias, package and project,
       const rows = page.locator('trove-data-table tbody tr').filter({ hasText: 'trove-test-alias' });
       await expect(rows.filter({ hasText: shop })).toHaveCount(1);
       await expect(rows.filter({ hasText: e2eProject })).not.toHaveCount(0);
-      await expect(page.getByRole('columnheader', { name: 'Project' })).toBeVisible();
+      // Q-UI-380: the project is the link of each qualified repository name, not a column of its own.
+      await expect(page.getByRole('columnheader', { name: 'Project' })).toHaveCount(0);
+      await expect(rows.filter({ hasText: shop }).locator('td.qualified-name').getByRole('link', { name: shop })).toBeVisible();
       for (const scheme of ['light', 'dark'] as const) {
         await page.emulateMedia({ colorScheme: scheme });
         await expectAccessible(page, `the security dashboard (${scheme})`);

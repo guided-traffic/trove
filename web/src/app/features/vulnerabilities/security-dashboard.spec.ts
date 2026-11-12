@@ -50,12 +50,17 @@ const navigate = () => vi.spyOn(TestBed.inject(Router), 'navigate').mockResolved
 const field = (root: HTMLElement, name: string) => root.querySelector<HTMLInputElement>(`form[role="search"] input[name="${name}"]`)!;
 
 describe('The auditor\'s security dashboard (Q-UI-130, R-VULN-022)', () => {
-  it('Q-UI-130 shows every project with the project as a column, the counts and the trend over all of them, and passes axe', async () => {
+  it('Q-UI-130 Q-UI-380 shows every project as the link of each qualified repository name, the counts and the trend over all of them, and passes axe', async () => {
     const r = await openDashboard();
     expect(text(r.root.querySelector('h1')!)).toBe('Security dashboard');
-    const headers = [...r.root.querySelectorAll('th')].map((th) => text(th));
-    expect(headers).toContain('Project');
-    expect(headers.indexOf('Project')).toBeLessThan(headers.indexOf('Repository'));
+    const headers = [...r.root.querySelectorAll('thead th')].map((th) => text(th));
+    expect(headers).not.toContain('Project');
+    // Q-UI-380: the project is the first part of the qualified name, a link that narrows the list to it.
+    const cell = rows(r)
+      .map((tr) => tr.querySelector('td.qualified-name'))
+      .find((td) => text(td!).startsWith('shop/'))!;
+    expect(cell.querySelector('a')?.getAttribute('href')).toContain('project=shop');
+    expect(cell.querySelector('wbr')).toBeTruthy();
     const all = rows(r).map((tr) => text(tr));
     expect(all.some((t) => t.includes('shop') && t.includes('minimist'))).toBe(true);
     expect(all.some((t) => t.includes('web') && t.includes('trove-test-vuln'))).toBe(true);

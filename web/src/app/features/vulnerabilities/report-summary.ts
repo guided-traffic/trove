@@ -1,5 +1,5 @@
 import { DecimalPipe } from '@angular/common';
-import { Component, LOCALE_ID, computed, inject, input, resource } from '@angular/core';
+import { Component, computed, inject, input, resource } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { OPEN_STATUSES, VulnerabilitiesApi, VulnerabilitySourceState, VulnerabilitySummary } from '../../api/vulnerabilities-api';
 import { SessionStore } from '../../core/session-store';
@@ -7,7 +7,7 @@ import { VULN_CONTEXT } from './vuln-context';
 import { ErrorNotice } from '../../shared/error-notice';
 import { asApiError, valueOf } from '../../shared/paged-resource';
 import { BAR_SEVERITIES, BarQueries, SeverityBar } from '../../shared/vulnerability/severity-bar';
-import { relativeTime } from '../packages/format-time';
+import { timeAgo } from '../../shared/ui/time-ago';
 
 /** One count of the header: a link that applies its filter (R-VULN-022). */
 export interface SummaryCount {
@@ -78,7 +78,6 @@ export interface DataNotice {
 export class ReportSummary {
   private readonly api = inject(VulnerabilitiesApi);
   private readonly session = inject(SessionStore);
-  private readonly locale = inject(LOCALE_ID);
   protected readonly ctx = inject(VULN_CONTEXT);
 
   /** The projects whose findings are counted (Q-UI-129). */
@@ -161,7 +160,7 @@ export class ReportSummary {
   protected readonly notices = computed<readonly DataNotice[]>(() => {
     const s = valueOf(this.summary);
     if (!s) return [];
-    return dataNotices(s, valueOf(this.sources) ?? [], this.locale);
+    return dataNotices(s, valueOf(this.sources) ?? []);
   });
 
   protected readonly coverageText = computed(() => {
@@ -175,7 +174,6 @@ export class ReportSummary {
 export function dataNotices(
   summary: VulnerabilitySummary,
   sources: readonly VulnerabilitySourceState[],
-  locale: string,
   now: number = Date.now(),
 ): DataNotice[] {
   const out: DataNotice[] = [];
@@ -186,7 +184,7 @@ export function dataNotices(
         text: $localize`:@@vuln.banner.pending:The advisory data of ${d.ecosystem}:ecosystem: has not been imported completely yet. Versions of ${d.ecosystem}:ecosystemAgain: are not evaluated until it has.`,
       });
     } else if (d.stale) {
-      const age = d.syncedAt ? relativeTime(d.syncedAt, locale, now) : '–';
+      const age = d.syncedAt ? timeAgo(d.syncedAt, now) : '–';
       out.push({
         key: `${d.ecosystem}:stale`,
         text: $localize`:@@vuln.banner.stale:The advisory data of ${d.ecosystem}:ecosystem: is stale, it was last synchronised ${age}:age:.`,

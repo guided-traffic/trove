@@ -5260,7 +5260,8 @@ screen draws its own.
   the top to 25 % darker at the bottom of the grade's colour; S has a gold rim. N/A is flat and quiet.
 - **The letter** is SVG text in the sans face at weight 700, 54 % of the side, centred at 46 % of the height (the point takes room
   below); "N/A" at 56 % of that size.
-- **Sizes.** 16 px in a list, a header and a tab; 32 px on the card.
+- **Sizes.** 20 px in a list, a header and a tab, the size of a format's icon in a list
+  ([Q-UI-381](#q-ui-381--the-shield-in-a-list-is-20-px-the-size-of-a-format-icon)); 32 px on the card.
 - **Colours** ([Q-UI-370](#q-ui-370--the-grades-take-cogpits-colours-and-s-a-and-b-are-the-greens-of-a-good-grade)): the tokens
   `--trove-grade-s` to `--trove-grade-e`, `--trove-grade-na`, the rim `--trove-grade-rim` and the letters' inks
   `--trove-grade-s-ink`, `--trove-grade-ink`, `--trove-grade-ink-on-dark`, `--trove-grade-na-ink`; S to E are the same in both
@@ -5271,7 +5272,7 @@ screen draws its own.
 
 Acceptance criteria:
 
-- Unit: for each grade the SVG carries the letter as text and the grade's class; `size` sets 16 or 32 px; with a label it is an
+- Unit: for each grade the SVG carries the letter as text and the grade's class; `size` sets 20 or 32 px; with a label it is an
   image with that name, without one it is hidden from the accessibility tree; axe finds no serious violation.
 - The contrast of every letter on its fill and of N/A's crest and letter is held by `palette.spec.ts`.
 
@@ -5281,7 +5282,7 @@ Priority: **P1** · Covers: trove-only
 - **The text** is the grade and the count that decides it, as R-VULN-038 words it: "E · 13 Critical", "C · OS end of life",
   "S · no known vulnerabilities", "N/A · not scanned"; the letter at weight 600. **The rule** is the sentence of R-VULN-038's
   table; for S of an image "No known vulnerabilities, and the OS is supported", for N/A the evaluation state in words.
-- `<trove-grade>` ([grade.ts](../../web/src/app/shared/vulnerability/grade.ts)) is the shield of 16 px and the text on one line,
+- `<trove-grade>` ([grade.ts](../../web/src/app/shared/vulnerability/grade.ts)) is the shield of 20 px and the text on one line,
   for a list cell, a header and a tab. Its tooltip (`[troveTooltip]`) names every count, "13 Critical · 160 High · 113 Medium ·
   16 Low · 843 Unknown", and "OS end of life" when it is; the text stays the accessible name of the cell.
 - The words are the UI's, translated (`vuln.grade.*`); the grade is the server's (R-VULN-039). `gradeText`, `gradeRule` and
@@ -5311,8 +5312,10 @@ as cogpit draws an image's:
   findings is drawn faint (its fill at 28 % over the surface), and its 0 stays readable in the text colour (4.5:1; the muted tone
   would not be, `palette.spec.ts`).
 - **Name.** The bar is `role="img"` with the name "Open findings: 13 Critical, 160 High, 113 Medium, 16 Low, 843 Unknown"; the
-  numbers inside are hidden from the accessibility tree. With `[links]` (the report's header, R-UI-094) each segment is a link
-  that applies its severity filter, named by its count and severity ("13 Critical"), in a list named "Open findings".
+  numbers inside are hidden from the accessibility tree. With `[queries]` (the report's header and the grade card of the package
+  page, R-UI-094) each segment is a link that applies its severity filter, named by its count and severity ("13 Critical"), in a
+  list named "Open findings"; on the package page the link keeps the page's other query parameters (`merge`) and the segment of
+  the filter in force is marked (`aria-current`).
 
 Acceptance criteria:
 
@@ -5330,10 +5333,13 @@ repository with its details, as cogpit's card:
 - The shield of 32 px on the left, centred on the card's lines; on the right, one below the other: the text (weight 600), the rule
   (muted, 12 px), the severity bar of R-UI-092 and the line of facts (muted, 12 px). No frame: the card sits in its section.
 - **The line of facts**, its parts separated by " · ": for an image **OS** and its name, **end of life** in the warning colour
-  when it is, and **Scanned** with the age and the time ("Scanned 1h ago (Nov 12, 2026, 12:31:51 PM)"); for every other format
-  **Advisory data from** with the age and the time of the data it was checked against (Q-VULN-156); last, the link **Findings in
-  web-frontend/images**, which opens the project's vulnerability report filtered by the repository, the package and the version
-  (R-VULN-022) ([Q-UI-374](#q-ui-374--a-list-shows-the-shield-and-the-text-the-bar-and-the-facts-are-the-cards)).
+  when it is, and **Scanned** with the time of its oldest scan ("Scanned 1 h ago (Nov 12, 2026, 12:31:51 PM)"); for every other
+  format **Checked** with the time of the advisory data it was checked against ("Checked 3 min ago (…)", Q-VULN-156); the time is
+  `<trove-time-ago>`, one relative time ("just now", "3 min ago", "1 h ago", "4 d ago") with the absolute time in brackets
+  ([Q-UI-378](#q-ui-378--a-time-on-the-grade-card-is-one-relative-time-with-the-absolute-time-in-brackets-from-one-component));
+  last, the link **Findings in web-frontend/images**, which opens the project's vulnerability report filtered by the repository,
+  the package and the version (R-VULN-022) ([Q-UI-374](#q-ui-374--a-list-shows-the-shield-and-the-text-the-bar-and-the-facts-are-the-cards)).
+- On the package page the card's bar filters the findings below it ([Q-UI-379](#q-ui-379--the-vulnerabilities-tab-pages-the-open-findings-of-a-version-from-the-findings-api-filtered-by-the-cards-bar)).
 - **N/A** shows the shield, the text and the rule only: there are no counts to draw.
 
 Acceptance criteria:
@@ -5353,7 +5359,7 @@ their severity (R-VULN-022). The list shows the grade; the bar and the facts are
 | Repository content (R-UI-052) | The column **Vulnerabilities** of the items | `<trove-grade>` of the item's latest version (`vulnerabilityGrade`, R-VULN-039); the column sorts by grade ([Q-UI-373](#q-ui-373--the-list-sorts-by-grade-in-the-browser-over-the-whole-list-up-to-1000-entries)) |
 | Repository content, the opened row | The column **Vulnerabilities** of the versions | `<trove-grade>` of each version in this repository |
 | Package page (R-UI-007) | The header's facts | `<trove-grade>` of the selected version (the worst of its repositories), a link to the tab **Vulnerabilities** ([Q-UI-375](#q-ui-375--the-package-page-shows-the-versions-grade-in-its-header-and-a-card-per-repository-on-its-tab)) |
-| Package page, tab **Vulnerabilities** (R-VULN-023) | Each repository's section | `<trove-grade-card>` above the block banner and the findings |
+| Package page, tab **Vulnerabilities** (R-VULN-023) | Each repository's section | `<trove-grade-card>` above the block banner, its bar's segments the severity filter of the findings below (`severity` in the URL); then the open findings, 25 at a time from the findings API, worst first, with their number from the grade's counts ([Q-UI-379](#q-ui-379--the-vulnerabilities-tab-pages-the-open-findings-of-a-version-from-the-findings-api-filtered-by-the-cards-bar)) |
 | Package page, tab **All versions** | The column **Vulnerabilities** | `<trove-grade>` of each version |
 | Vulnerability report (R-VULN-022), a project's and the admin area's security dashboard | The header | `<trove-severity-bar [links]>` of the open findings in scope in place of the five severity counts; the counts **Malicious**, **Needs triage** and **Blocked versions** stay ([Q-UI-376](#q-ui-376--the-reports-header-shows-the-severity-bar-whose-segments-are-its-filter-links)) |
 
@@ -5364,7 +5370,9 @@ Acceptance criteria:
 
 - Unit: the repository content list shows `<trove-grade>` for each row and sorts by grade, worst first, on its second click; the
   opened row grades each version; the package page's header grade links to the tab, the tab shows one card per repository and
-  *All versions* a grade per version; the report's header shows the bar with five filter links; without grades no column.
+  *All versions* a grade per version; the tab asks the findings API for 25 open findings of the version, worst first, says their
+  number, and a segment of the card's bar narrows them to its severity; the report's header shows the bar with five filter links;
+  without grades no column.
 - Rendered (rule 11, `make ui-renders`): the repository content of `npm-internal`, `npm` and `images`, the package pages of the
   npm package and the image with the tabs **Vulnerabilities** and **All versions**, and the vulnerability report of the project
   and of the admin area, as plain user, power user and administrator, light and dark, at 1440, 1024 and 390 px; the seed holds
@@ -11205,6 +11213,72 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Choice:** (a). **Rationale:** the style guide's rule that a column without data is left out. The development agent records no
 revisit condition. **Applied in the spec:** R-UI-094, R-UI-052.
+
+### Q-UI-378 · A time on the grade card is one relative time with the absolute time in brackets, from one component
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the first card read "Advisory data from this minute (Nov 12, 2026, 2:22:37 PM)": the browser's relative-time words
+("this minute") after a phrase that does not say what happened. The coordinator asked for cogpit's form, "Scanned 1h ago (…)".
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `<trove-time-ago>`: "just now", "3 min ago", "1 h ago", "4 d ago", then the absolute time in brackets; the card says **Scanned** for an image and **Checked** for a package (chosen) | One component, the words trove's own | cogpit's form; the same words in every place that shows a time this way; translated | Days do not turn into months or years |
+| (b) The browser's `Intl.RelativeTimeFormat` | No words of our own | Months and years for free | "this minute", "yesterday": the words change their shape, and differ per browser |
+
+**Choice:** (a). **Rationale:** one short, stable form a reader can scan. The development agent revisits months and years if a
+version is shown that was checked more than a month ago, which the sync of R-VULN-004 makes rare. **Applied in the spec:** R-UI-093;
+[time-ago.ts](../../web/src/app/shared/ui/time-ago.ts).
+
+### Q-UI-379 · The Vulnerabilities tab pages the open findings of a version from the findings API, filtered by the card's bar
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the tab listed the findings of the version report on one page: 1,145 rows, 16,000 px, and the report stops at 1,000
+findings per repository without saying so. The coordinator asked for 25 per page, worst first, a filter by severity that the bar
+sets, and a total.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Each repository's section lists the open findings from `GET /vulnerabilities/findings` (`repository`, `package`, `version`, open statuses, `-severity`), 25 per page with **Load more**; the segments of the card's bar set `severity` in the URL; the line above the list says how many there are, from the grade's counts (chosen) | Paged on the server | No cap: every finding is reachable; the total is exact; the table is the shared data table, which stacks at 390 px; the filter is the report's, so a link from the card and from the list mean the same | Dismissed findings are not in the tab: the card's **Findings in** opens the report, which lists them |
+| (b) Page the version report's findings in the browser | No new request | Simple | Still stops at 1,000, so the last page lies |
+| (c) Say "the first 1,000 of 1,145" | One sentence | Honest | A reader cannot reach the other 145 here |
+
+**Choice:** (a). The version report keeps its findings for the block banner, which names the finding that blocks. **Rationale:** the
+findings API already pages, filters and orders by severity with the reader's scope (R-VULN-019, R-VULN-020); the tab only asks it.
+The development agent records no revisit condition. **Applied in the spec:** R-VULN-023, R-UI-092, R-UI-094;
+[version-findings.ts](../../web/src/app/features/vulnerabilities/version-findings.ts).
+
+### Q-UI-380 · The report's list fits at 1440 px: the project is the link of the qualified name, and Fixed in gives way below 64 rem
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: once the render seed had findings, the list scrolled sideways for a triager at 1440 px: 4 px in a project's report, 87 px
+on `/admin/security`. Its cells that cannot wrap (the qualified repository name, the time, the headers, a status with its reason)
+added up to more than the list's 1,128 px; the dashboard had a column **Project** beside **Repository**, whose qualified name names the
+project already.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The shared budget (Q-UI-308): the identifier is the name column (14 rem); the qualified name breaks only after its slash; the dashboard's project is the link of the qualified name's first part, which narrows the list as the column's link did; the headers **Package** and **Fixed in** are as short as their cells; **Fixed in** is `narrow` and gives way below 64 rem of the list; the time of **Detected**, which the list sorts by, may wrap; a status's reason may go to a second line (chosen) | The list fits its width at 1440 px and gives way where it is narrower | No sideways scroll at 1440 px; the project is still one click; nothing is lost but a repeated name | The dashboard loses its column **Project** (Q-UI-165); between 64 rem and the width where the rows stack a list with long names can still scroll a little |
+| (b) Keep the columns and let the list scroll inside its region | Nothing changes | The column stays | The defect stays |
+| (c) Stack the rows from a wider width | The rows become blocks earlier | No column dropped | A list of findings is read as a table; blocks at 1440 px are not a table |
+
+**Choice:** (a). **Rationale:** the qualified name `<project>/<repository>` is how trove names a repository outside its project ([Q-REPO-212](repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared)), so a
+column that repeats its first part costs the room without adding a fact. The development agent revisits the column if the owner wants
+the project as a column of its own. **Applied in the spec:** R-VULN-022 (List, Instance-wide); [Q-UI-165](#q-ui-165--the-security-dashboard-is-the-content-report-mounted-in-the-admin-area-with-its-own-links-project-column-and-search)'s column is replaced by the link.
+
+### Q-UI-381 · The shield in a list is 20 px, the size of a format icon
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) 20 px in a list, a header and a tab, as the style guide sizes a format's icon in a list (chosen) | The letter at about 11 px, bold | Readable; one icon size per place; the letter keeps 4.5:1 on its fill (`palette.spec.ts`) | Wider than cogpit's list shield |
+| (b) cogpit's 16 px | As the reference | Quiet | The letter at about 9 px is hard to read on a laptop screen (the coordinator's look at the renders) |
+
+**Choice:** (a). **Rationale:** one size for an icon in a list. The development agent records no revisit condition. **Applied in the
+spec:** R-UI-090.
 
 ### Q-API-246 · An operation that is allowed while the installation is read-only declares `x-trove-maintenance: allowed`
 

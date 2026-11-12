@@ -315,7 +315,7 @@
                   @if (vulnerabilities.isLoading()) {
                     <p role="status" i18n="@@pkg.loading">Loading.</p>
                   } @else {
-                    <trove-package-vulnerabilities [report]="vulnerabilityReport()" [packageName]="d.name" />
+                    <trove-package-vulnerabilities [report]="vulnerabilityReport()" [packageName]="d.name" [severity]="severityFilter()" />
                   }
                 }
                 @case ('versions') {

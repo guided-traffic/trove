@@ -15,6 +15,34 @@
   }
 }
 
+// A status keeps its icon and label on one line; its reason may go to the next (Q-UI-380).
+.fstatus {
+  flex-wrap: wrap;
+}
+
+.fstatus-main {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--trove-space-1);
+  white-space: nowrap;
+}
+
+// A package's name is not broken at a hyphen (the list's rule for names); the report's package cell holds it on one line.
+.vuln-package a {
+  white-space: nowrap;
+}
+
+// The report's time of detection may wrap ("2 minutes / ago"), so the column fits its header (Q-UI-380).
+.trove-data-table td.vuln-detected time {
+  white-space: normal;
+}
+
+// A qualified repository name `<project>/<key>` breaks after its slash only (Q-UI-380).
+.qualified-name .nobr,
+.qualified-name a {
+  white-space: nowrap;
+}
+
 .sev-critical,
 .sev-high {
   color: var(--trove-status-bad);

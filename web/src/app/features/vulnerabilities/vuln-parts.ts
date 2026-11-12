@@ -36,8 +36,7 @@ export class SeverityBadge {
   selector: 'trove-finding-status',
   template: `
     <span class="fstatus" [class]="cls()">
-      <span class="material-icons" aria-hidden="true">{{ icon() }}</span>
-      <span>{{ label() }}</span>
+      <span class="fstatus-main"><span class="material-icons" aria-hidden="true">{{ icon() }}</span><span>{{ label() }}</span></span>
       @if (reason(); as r) {
         {{ ' ' }}<span class="fstatus-reason">({{ r }})</span>
       }

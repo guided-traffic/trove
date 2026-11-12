@@ -24,7 +24,7 @@ import { AnsibleImportLog } from './ansible-import-log';
 import { VulnerabilitiesApi, VulnerabilityGrade, VulnerabilityPackageReport, VulnerabilityVersionReport } from '../../api/vulnerabilities-api';
 import { GradeLabel } from '../../shared/vulnerability/grade';
 import { worstGrade } from '../../shared/vulnerability/grade-words';
-import { blockedRepositories, openCount, PackageVulnerabilities } from '../vulnerabilities/package-vulnerabilities';
+import { barSeverityOf, blockedRepositories, openCount, PackageVulnerabilities } from '../vulnerabilities/package-vulnerabilities';
 // <<< M4b vulnerabilities
 
 export type DetailTab =
@@ -218,6 +218,8 @@ export class PackageDetail {
   /** The open page of the Documentation tab and its search text (R-UI-060); a change of the version drops both. */
   readonly doc = input<string | undefined>();
   readonly q = input<string | undefined>();
+  /** The Vulnerabilities tab's severity filter, set by the grade card's bar (Q-UI-379). */
+  readonly severity = input<string | undefined>();
 
   protected readonly summary = resource({
     params: () => ({ format: this.format(), name: this.name() }),
@@ -368,6 +370,7 @@ export class PackageDetail {
   protected readonly blockedIn = computed(() => blockedRepositories(this.vulnerabilityReport()));
   protected readonly vulnerabilitiesAvailable = computed(() => !this.vulnerabilities.isLoading() && this.vulnerabilityReport() !== null);
   protected readonly openCount = computed(() => openCount(this.vulnerabilityReport()));
+  protected readonly severityFilter = computed(() => barSeverityOf(this.severity()));
   // <<< M4b vulnerabilities
 
   protected readonly loadFailure = computed(() => {

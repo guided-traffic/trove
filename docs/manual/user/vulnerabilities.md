@@ -25,12 +25,12 @@ Select **Vulnerabilities** in the side bar of a project. The report shows the fi
 | **Severity** | The level as a word with an icon, and the score when the advisory has one. The colour only reinforces the word |
 | **Status** | **Needs triage**, **Confirmed**, **Blocked**, **Dismissed** or **Resolved**. A version whose download is refused shows as **Blocked**, with the reason: **malicious package** or **blocked in triage** |
 | **Identifier** | The advisory identifier, which opens the finding. **Malicious** marks a package reported as malicious; **Known exploited** marks an advisory on the CISA list of exploited vulnerabilities |
-| **Package and version** | Opens the package page on its **Vulnerabilities** tab |
+| **Package** | The package, with the version under it; opens the package page on its **Vulnerabilities** tab |
 | **Repository** | The repository that holds the version |
-| **Fix available** | The versions that fix the advisory |
+| **Fixed in** | The versions that fix the advisory |
 | **Detected** | When trove found it |
 
-Select a heading to sort by severity, status, identifier, package or detection time. The list opens sorted by severity, worst first. **Load more** adds the next page.
+On a narrower window the list leaves out **Fixed in**, which the finding shows. Select a heading to sort by severity, status, identifier, package or detection time. The list opens sorted by severity, worst first. **Load more** adds the next page.
 
 **Filters.** **Filters** opens a panel with severity, status, kind, repository, format, package name and version, advisory (an identifier or an alias such as a CVE number), known exploited, fix available, blocks downloads, block reason, detection dates and a text search. Applied filters appear as chips; the cross on a chip removes one filter. Filters, sort and the trend period are part of the address, so a link or a reload keeps them. To see one repository, filter by it, or use **Vulnerabilities** in the repository list.
 
@@ -89,10 +89,12 @@ The header shows the grade of the selected version next to the version picker; s
 
 The **Vulnerabilities** tab of a package version shows, per repository you may read that holds the version, a card: the grade and
 its rule, the open findings as the severity bar, and a line of facts. For an image the facts are its operating system, **end of
-life** when it has reached it, and when it was scanned; for a package, the date of the advisory data it was checked against. The
-last fact, **Findings in** and the repository, opens the report with the findings of this version in that repository. Below the
-card come whether the download is blocked and why, and the findings with severity, identifier, status and fixed versions. The tab
-label carries the number of open findings.
+life** when it has reached it, and **Scanned** with when; for a package, **Checked** with when its advisory data was synchronised.
+A time reads as "3 min ago" with the date and time in brackets. The last fact, **Findings in** and the repository, opens the report
+with the findings of this version in that repository, the dismissed ones too. Below the card come whether the download is blocked
+and why, how many open findings there are, and the open findings with severity, identifier, status and fixed versions, the worst
+first, 25 at a time; **Load more** adds the next 25. Select a segment of the card's bar to see only the findings of that severity;
+**Show all** returns to all of them. The tab label carries the number of open findings.
 
 **All versions** shows the grade of each version. The header of the page reads **Blocked in** and the repository when the selected
 version is blocked there.

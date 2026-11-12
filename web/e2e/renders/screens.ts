@@ -116,6 +116,8 @@ export const screens: readonly Screen[] = [
   { id: 'package-oci', path: `${P}/packages/${ociPackage.format}/${ociPackage.name}`, kinds: all },
   { id: 'package-npm-graded', path: `${P}/packages/${gradedPackage.format}/${gradedPackage.name}`, kinds: all },
   { id: 'package-npm-fixed', path: `${P}/packages/npm/xml-stream-parser?version=0.9.2`, kinds: ['plain'] },
+  // The tab's findings narrowed by a segment of the card's bar (Q-UI-379).
+  { id: 'package-npm-graded-critical', path: `${P}/packages/${gradedPackage.format}/${gradedPackage.name}?tab=vulnerabilities&severity=critical`, kinds: ['plain'] },
   { id: 'browse', path: `${P}/browse`, kinds: all },
   { id: 'browse-folder', path: `${P}/browse/assets/releases/design-system/2.5.0`, kinds: all },
   { id: 'browse-file', path: `${P}/browse/assets/README.md`, kinds: all },

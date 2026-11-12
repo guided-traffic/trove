@@ -21,7 +21,7 @@ A holder of `content:metadata-read` without `vulnerabilities:triage` reads; the 
 
 **The trend** is the chart of open findings per day by severity over 30, 90 or 365 days, with **Show as table**.
 
-**The list** has the columns of the content report and, before **Repository**, a **Project** column. A project key in a row narrows the list to that project. The identifier of a row opens the finding, **Advisory sources** the sources screen of the installation, and **Export CSV** downloads the rows of the current filter with a `project` column; the findings stay inside the dashboard.
+**The list** has the columns of the content report. In **Repository**, the project part of each repository's name (`web-frontend` of `web-frontend/npm-vendor`) is a link that narrows the list to that project. The identifier of a row opens the finding, **Advisory sources** the sources screen of the installation, and **Export CSV** downloads the rows of the current filter with a `project` column; the findings stay inside the dashboard.
 
 ## Searching
 

@@ -447,7 +447,7 @@ Q-VULN-52 to Q-VULN-54, H-490. The description of the screens, their files and s
 - **Contract changes.** None to the document. Two small additions to shared web code: `ReadOptions.accept` of `ApiClient` (the export asks for `text/csv`), and `trove-chart-*` tokens
   with their pairs in `palette.spec.ts`. The manual page needed a line in `internal/manual/manual.go` (the contents are fixed there) and in `docs/manual/README.md`.
 - **The security dashboard (Q-UI-130, Q-UI-165).** The admin area's `/admin/security` mounts the report, finding and advisory screens a second time through
-  `security.routes.ts` and `VULN_CONTEXT` (links, **Project** column, search); the `project` filter is the API's. Files: `vuln-context.ts`, `security.routes.ts`,
+  `security.routes.ts` and `VULN_CONTEXT` (links, the project as the link of each qualified repository name ([Q-UI-380](../spec/api-and-ui.md#q-ui-380--the-reports-list-fits-at-1440-px-the-project-is-the-link-of-the-qualified-name-and-fixed-in-gives-way-below-64-rem)), search); the `project` filter is the API's. Files: `vuln-context.ts`, `security.routes.ts`,
   `vulnerability-report.*`, `report-summary.ts`, `report-trend.ts`, the entry in `core/navigation.ts`, the start in `core/auth-guard.ts`, the topic in `core/help-topics.ts`, the
   manual page [admin/security-dashboard.md](../manual/admin/security-dashboard.md) (registered in `internal/manual/manual.go` and the contents of `docs/manual/README.md`), the integration tests
   `dashboard_test.go` and `search_scale_test.go` in `test/integration/vulnapi`, and the journey `web/e2e/vuln/16-security-dashboard.spec.ts`. Description in [web-ui.md](web-ui.md#the-vulnerability-screens).

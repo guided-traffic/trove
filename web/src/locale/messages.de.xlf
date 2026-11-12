@@ -23018,15 +23018,6 @@
         <target>Downloads dieser Version werden abgelehnt. Grund:</target>
       </segment>
     </unit>
-    <unit id="pkg.vuln.caption">
-      <notes>
-        <note category="location">src/app/features/vulnerabilities/package-vulnerabilities.ts:80,81</note>
-      </notes>
-      <segment>
-        <source>Findings of this version</source>
-        <target>Befunde dieser Version</target>
-      </segment>
-    </unit>
     <unit id="vuln.col.severity">
       <notes>
         <note category="location">src/app/features/vulnerabilities/package-vulnerabilities.ts:83,84</note>
@@ -23848,11 +23839,11 @@
     <unit id="vuln.col.package">
       <notes>
         <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:101</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:260</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:261</note>
       </notes>
       <segment>
-        <source>Package and version</source>
-        <target>Paket und Version</target>
+        <source>Package</source>
+        <target>Paket</target>
       </segment>
     </unit>
     <unit id="vuln.col.repository">
@@ -24661,24 +24652,6 @@
       <segment>
         <source>Select</source>
         <target>Auswählen</target>
-      </segment>
-    </unit>
-    <unit id="vuln.col.project">
-      <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:261</note>
-      </notes>
-      <segment>
-        <source>Project</source>
-        <target>Projekt</target>
-      </segment>
-    </unit>
-    <unit id="vuln.col.fix">
-      <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:263</note>
-      </notes>
-      <segment>
-        <source>Fix available</source>
-        <target>Fix verfügbar</target>
       </segment>
     </unit>
     <unit id="vuln.list.caption">
@@ -31591,15 +31564,6 @@
         <target>Geprüft</target>
       </segment>
     </unit>
-    <unit id="vuln.grade.fact.data">
-      <notes>
-        <note category="location">src/app/shared/vulnerability/grade-card.ts:44,46</note>
-      </notes>
-      <segment>
-        <source>Advisory data from</source>
-        <target>Advisory-Daten vom</target>
-      </segment>
-    </unit>
     <unit id="vuln.grade.fact.findings">
       <notes>
         <note category="location">src/app/shared/vulnerability/grade-card.ts:51</note>
@@ -31874,6 +31838,114 @@
       <segment>
         <source>Open findings</source>
         <target>Offene Befunde</target>
+      </segment>
+    </unit>
+    <unit id="pkg.vuln.findings-filtered">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/version-findings.ts:41,42</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="INTERPOLATION" disp="{{ shown() | number }}"/> of <ph id="1" equiv="INTERPOLATION_1" disp="{{ total() | number }}"/> open findings: <ph id="2" equiv="INTERPOLATION_2" disp="{{ severityName(s) }}"/>.</source>
+        <target><ph id="0" equiv="INTERPOLATION" disp="{{ shown() | number }}"/> von <ph id="1" equiv="INTERPOLATION_1" disp="{{ total() | number }}"/> offenen Befunden: <ph id="2" equiv="INTERPOLATION_2" disp="{{ severityName(s) }}"/>.</target>
+      </segment>
+    </unit>
+    <unit id="pkg.vuln.findings-all">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/version-findings.ts:42,44</note>
+      </notes>
+      <segment>
+        <source>Show all</source>
+        <target>Alle zeigen</target>
+      </segment>
+    </unit>
+    <unit id="pkg.vuln.findings-total">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/version-findings.ts:44,46</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="INTERPOLATION" disp="{{ total() | number }}"/> open findings, the worst first.</source>
+        <target><ph id="0" equiv="INTERPOLATION" disp="{{ total() | number }}"/> offene Befunde, die schwersten zuerst.</target>
+      </segment>
+    </unit>
+    <unit id="pkg.vuln.findings-none">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/version-findings.ts:93</note>
+      </notes>
+      <segment>
+        <source>No open finding of this severity.</source>
+        <target>Kein offener Befund dieses Schweregrads.</target>
+      </segment>
+    </unit>
+    <unit id="pkg.vuln.caption-in">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/version-findings.ts:94</note>
+      </notes>
+      <segment>
+        <source>Open findings of this version in <ph id="0" equiv="repository" disp="this.repository()"/></source>
+        <target>Offene Befunde dieser Version in <ph id="0" equiv="repository" disp="this.repository()"/></target>
+      </segment>
+    </unit>
+    <unit id="vuln.col.fixed-in">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:263</note>
+      </notes>
+      <segment>
+        <source>Fixed in</source>
+        <target>Behoben in</target>
+      </segment>
+    </unit>
+    <unit id="security.project-filter">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:296</note>
+      </notes>
+      <segment>
+        <source>Show only the findings of project <ph id="0" equiv="project" disp="project"/></source>
+        <target>Nur die Befunde des Projekts <ph id="0" equiv="project" disp="project"/> zeigen</target>
+      </segment>
+    </unit>
+    <unit id="time.ago.now">
+      <notes>
+        <note category="location">src/app/shared/ui/time-ago.ts:10</note>
+      </notes>
+      <segment>
+        <source>just now</source>
+        <target>gerade eben</target>
+      </segment>
+    </unit>
+    <unit id="time.ago.minutes">
+      <notes>
+        <note category="location">src/app/shared/ui/time-ago.ts:11</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="count" disp="minutes"/> min ago</source>
+        <target>vor <ph id="0" equiv="count" disp="minutes"/> Min.</target>
+      </segment>
+    </unit>
+    <unit id="time.ago.hours">
+      <notes>
+        <note category="location">src/app/shared/ui/time-ago.ts:13</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="count" disp="hours"/> h ago</source>
+        <target>vor <ph id="0" equiv="count" disp="hours"/> Std.</target>
+      </segment>
+    </unit>
+    <unit id="time.ago.days">
+      <notes>
+        <note category="location">src/app/shared/ui/time-ago.ts:14</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="count" disp="Math.floor(hours / 24)"/> d ago</source>
+        <target>vor <ph id="0" equiv="count" disp="Math.floor(hours / 24)"/> T.</target>
+      </segment>
+    </unit>
+    <unit id="vuln.grade.fact.checked">
+      <notes>
+        <note category="location">src/app/shared/vulnerability/grade-card.ts:106</note>
+      </notes>
+      <segment>
+        <source>Checked</source>
+        <target>Geprüft</target>
       </segment>
     </unit>
   </file>
