@@ -90,7 +90,7 @@ Hard rules, also for every subagent (put them into every subagent prompt):
 1. `git status` must be clean; then `git pull --rebase origin main`.
 2. During the alpha (rule 10) a run works on two fronts at once: the first open task of
    [section 10](#10--owner-tasks-of-2026-11-07-the-next-registries), cut into work packages with an agent and a branch each, and
-   every open finding of section 8 with an agent each. Open there now: the owner task of 2026-11-11 **T-18 (visibility levels)** and, beside it, the owner task of 2026-11-12 **T-21 (a UI that looks right)**; both come before the next unit of item 3. The open items of BETA.md phase 7 are
+   every open finding of section 8 with an agent each. Open there now: the owner task of 2026-11-11 **T-18 (visibility levels)** and, beside it, the owner task of 2026-11-12 **T-21 (a UI that looks right)**; both come before the next unit of item 3, and **T-22 (a search with suggestions)** follows them. The open items of BETA.md phase 7 are
    findings of the same kind. Outside the alpha: open [BETA.md](BETA.md), table
    **Where we are**; the current phase is the first row whose status is not 🟢, and a row at 🟡 is resumed (step 2, item 4).
 3. If every row of BETA.md is 🟢, open [FULL.md](FULL.md) and take the first unit that is not 🟢,
@@ -600,6 +600,28 @@ and admins." A confirmed feature, not a parked idea; it runs beside T-18 and is 
       T-18 changes the same flow, so two builders build it after T-18 lands.
     - Open for the owner, not blocking: should administrators add the installation's own registries (for example the owner's GitLab
       registry) as preset buttons? The development agent's recommendation is not now, and as its own task if wanted.
+
+### Owner task of 2026-11-12, for later: a search with suggestions
+
+The owner showed his GitLab's search on 2026-11-12: "A sensible search, with suggestions and everything. This is how I picture it for us
+later." It is a confirmed direction, not a parked idea, and it is built after T-18 and T-21, each planned by a planning agent first.
+
+- **T-22 · One search with suggestions.**
+  - **The field.** One search field in the top bar for every user who is signed in, not only for those who may list every repository.
+    Today the field **Find a repository** shows only for `canSearch()` ([app.html](../../web/src/app/app.html)). The field has a
+    filter control that narrows the search to one kind.
+  - **Before anything is typed**, the opened field already offers, as the reference does:
+    - **Places:** the start page, the guides, the profile and its settings, and for an administrator the administration;
+    - **frequently visited repositories:** the format's icon, the key, and the project and path in muted text;
+    - **View all my projects;**
+    - **frequently visited projects.**
+  - **While typing**, suggestions are grouped by kind: repositories, packages, projects, and for an administrator users and groups.
+    Each suggestion shows where the thing is. Everything is reachable by keyboard.
+  - **Visibility.** A suggestion names only what the caller may read, under T-18's levels, and the hiding of a repository's existence
+    holds. To decide in the spec:
+    - the API that readers can read across projects (today the start page of T-21 searches packages only, Q-UI-311);
+    - where "frequently visited" is kept: in the browser, as the reference does, or on the server;
+    - whether the start page's package search becomes this same field.
 
 ## 11 · Run record
 
