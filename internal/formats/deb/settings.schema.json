@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/guided-traffic/trove/internal/formats/deb/settings.schema.json",
   "title": "Debian (APT) repository settings",
-  "description": "The deb member of a repository document (R-REPO-004, R-DEB-008, R-DEB-024). A member lists the classes it applies to in x-trove-classes; a member of another class is refused as not applicable.",
+  "description": "The deb member of a repository document. A member lists the classes it applies to in x-trove-classes; a member of another class is refused as not applicable.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "architectures": {
       "title": "Architectures",
-      "description": "Architectures every suite's indexes are built for; a local repository adds the architectures of its stored files (R-DEB-008). 'all' is not listed: the files of that architecture are listed under every architecture of the suite.",
+      "description": "Architectures every suite's indexes are built for; a local repository adds the architectures of its stored files. 'all' is not listed: the files of that architecture are listed under every architecture of the suite.",
       "type": "array",
       "minItems": 1,
       "maxItems": 32,
@@ -19,7 +19,7 @@
     },
     "compression": {
       "title": "Compression",
-      "description": "Index variants built besides gzip, which is always built (R-DEB-011).",
+      "description": "Index variants built besides gzip, which is always built.",
       "type": "array",
       "maxItems": 1,
       "uniqueItems": true,
@@ -29,7 +29,7 @@
     },
     "origin": {
       "title": "Origin",
-      "description": "The Origin field of every Release (R-DEB-008).",
+      "description": "The Origin field of every Release.",
       "type": "string",
       "default": "trove",
       "x-trove-classes": ["local", "virtual"],
@@ -37,14 +37,14 @@
     },
     "label": {
       "title": "Label",
-      "description": "The Label field of every Release; the repository key while the document does not set it (R-DEB-008).",
+      "description": "The Label field of every Release; the repository key while the document does not set it.",
       "type": "string",
       "x-trove-classes": ["local", "virtual"],
       "pattern": "^[ -9;-~]{1,64}$"
     },
     "suites": {
       "title": "Suites",
-      "description": "Suites a virtual repository serves besides those of its local members (R-DEB-008).",
+      "description": "Suites a virtual repository serves besides those of its local members.",
       "type": "array",
       "maxItems": 32,
       "uniqueItems": true,
@@ -54,7 +54,7 @@
     },
     "components": {
       "title": "Components",
-      "description": "Components a virtual repository merges (R-DEB-008).",
+      "description": "Components a virtual repository merges.",
       "type": "array",
       "minItems": 1,
       "maxItems": 32,
@@ -65,7 +65,7 @@
     },
     "upstreamKeys": {
       "title": "Upstream keys",
-      "description": "ASCII-armored OpenPGP public keys of the upstream (one block of 1 to 32 certificates, at most 256 KiB): a remote verifies the signatures of its upstream's release documents against them (R-DEB-020). Null leaves the remote unverified; a mirror and a member of a virtual repository need them.",
+      "description": "ASCII-armored OpenPGP public keys of the upstream (one block of 1 to 32 certificates, at most 256 KiB): a remote verifies the signatures of its upstream's release documents against them. Null leaves the remote unverified; a mirror and a member of a virtual repository need them.",
       "type": ["string", "null"],
       "default": null,
       "x-trove-classes": ["remote"],
@@ -73,7 +73,7 @@
     },
     "mirror": {
       "title": "Mirror",
-      "description": "What a mirror of an APT archive keeps (R-DEB-024, Q-DEB-17). Present in both modes of a remote repository and effective in mode mirror.",
+      "description": "What a mirror of an APT archive keeps. Present in both modes of a remote repository and effective in mode mirror.",
       "type": "object",
       "additionalProperties": false,
       "x-trove-classes": ["remote"],

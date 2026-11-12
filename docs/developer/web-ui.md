@@ -422,7 +422,7 @@ offers controls ([Q-UI-78](../spec/api-and-ui.md#q-ui-78--the-repository-setting
   edit form's merge patch are pruned the same way, so a stored explicit default is no change, and a value set back to its default sends `null`.
 - *Texts* ([Q-UI-79](../spec/api-and-ui.md#q-ui-79--the-labels-and-descriptions-of-the-settings-form-are-the-schemas)). Labels and descriptions are the schema's, in English;
   only the texts the form adds are translated (`repo.format.*`). A label is the member's `title`, which every member of every format's schema has
-  (`TestR_UI_088_EverySettingOfAFormatHasATitle` in `internal/formats`); the key is shown only for a member without one.
+  (`TestR_UI_088_EverySettingOfAFormatHasATitleAndPlainTexts` in `internal/formats`, which also refuses a requirement or decision ID in a title or a description); the key is shown only for a member without one.
 - *Defaults as values* ([R-UI-084](../spec/api-and-ui.md#r-ui-084--a-default-is-the-value-of-its-field)). A text, a number and a list show the member's
   value or the schema's `default` (`text`, `listText`); a field the user empties shows the default again once left (`showDefaultAgain`) and the member
   stays unwritten. A choice without a static default offers **Automatic** first. No "Default: …" line remains.

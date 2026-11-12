@@ -5682,12 +5682,14 @@ Priority: **MVP** · Covers: UI-031
 - A label is the setting in sentence case, its unit included ("Metadata cache period in seconds"); a help text is one line. The
   key's help: "Part of the repository's address. It cannot be changed later."
 - A format setting's label is the `title` of its member in the format's settings schema (Q-UI-79), which every member of every
-  format's schema has ("Tags to mirror", not `tags`).
+  format's schema has ("Tags to mirror", not `tags`). A title or a description of a schema is read by users and names no
+  requirement or decision ID.
 
 Acceptance criteria:
 
 - No heading of the form or of the settings page holds "and" between two topics.
-- Every member of every format's settings schema has a `title`.
+- Every member of every format's settings schema has a `title`, and no title or description of the five schemas holds an `R-…`
+  or `Q-…` ID.
 
 ### R-UI-090 · The grade shield
 Priority: **P1** · Covers: trove-only
