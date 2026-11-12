@@ -4047,14 +4047,6 @@
         <source>Browse</source>
       </segment>
     </unit>
-    <unit id="route.browse.tree.title">
-      <notes>
-        <note category="location">src/app/features/browse/browse.routes.ts:28</note>
-      </notes>
-      <segment>
-        <source>File tree</source>
-      </segment>
-    </unit>
     <unit id="browse.col.name">
       <notes>
         <note category="location">src/app/features/browse/browse.ts:352</note>
@@ -12286,14 +12278,6 @@
         <source>Personal tokens</source>
       </segment>
     </unit>
-    <unit id="profile.tokens.intro">
-      <notes>
-        <note category="location">src/app/features/profile/profile-tokens.ts:15,17</note>
-      </notes>
-      <segment>
-        <source> A personal token lets a tool such as npm act as you. Give each tool its own token and revoke it when you no longer need it. </source>
-      </segment>
-    </unit>
     <unit id="profile.heading">
       <notes>
         <note category="location">src/app/features/profile/profile.html:2,4</note>
@@ -13644,22 +13628,6 @@
         <source>Filter images</source>
       </segment>
     </unit>
-    <unit id="repo.content.oci.empty-remote">
-      <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:37</note>
-      </notes>
-      <segment>
-        <source>This repository has cached no images yet. Pull an image through it, or set up your client first.</source>
-      </segment>
-    </unit>
-    <unit id="repo.content.oci.empty">
-      <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:38</note>
-      </notes>
-      <segment>
-        <source>This repository holds no images yet. Push an image, or set up your client first.</source>
-      </segment>
-    </unit>
     <unit id="repo.content.oci.empty-filtered">
       <notes>
         <note category="location">src/app/features/repositories/content/content-shape.ts:39</note>
@@ -13747,14 +13715,6 @@
       </notes>
       <segment>
         <source>Filter packages</source>
-      </segment>
-    </unit>
-    <unit id="repo.content.empty">
-      <notes>
-        <note category="location">src/app/features/repositories/content/content-shape.ts:57</note>
-      </notes>
-      <segment>
-        <source>This repository holds no packages yet. Publish a package, or set up your client first.</source>
       </segment>
     </unit>
     <unit id="repo.content.empty-filtered">
@@ -13855,14 +13815,6 @@
         <source>Combines other repositories behind one address. It lists what they resolve to.</source>
       </segment>
     </unit>
-    <unit id="repo.content.sentence.local">
-      <notes>
-        <note category="location">src/app/features/repositories/content/repository-content.ts:89</note>
-      </notes>
-      <segment>
-        <source>Holds what you publish here.</source>
-      </segment>
-    </unit>
     <unit id="repo.content.tab.setup">
       <notes>
         <note category="location">src/app/features/repositories/content/repository-content.ts:129</note>
@@ -13894,14 +13846,6 @@
       </notes>
       <segment>
         <source>Filter files</source>
-      </segment>
-    </unit>
-    <unit id="repo.content.files-empty">
-      <notes>
-        <note category="location">src/app/features/repositories/content/repository-files.ts:127</note>
-      </notes>
-      <segment>
-        <source>This repository holds no files yet.</source>
       </segment>
     </unit>
     <unit id="repo.content.files-empty-filtered">
@@ -19214,6 +19158,78 @@
       </notes>
       <segment>
         <source>The snippets hold the token you pasted.</source>
+      </segment>
+    </unit>
+    <unit id="help.admin-hint">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>For the people who run trove and manage its projects.</source>
+      </segment>
+    </unit>
+    <unit id="profile.tokens.description">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>A personal token lets a tool such as npm act as you; give each tool its own token.</source>
+      </segment>
+    </unit>
+    <unit id="repo.content.empty2">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>This repository holds no packages yet. Publish a package with your client.</source>
+      </segment>
+    </unit>
+    <unit id="repo.content.files-empty2">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>This repository holds no files yet. Upload a file with your client.</source>
+      </segment>
+    </unit>
+    <unit id="repo.content.oci.empty-remote2">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>This repository has cached no images yet. Pull an image through it with your client.</source>
+      </segment>
+    </unit>
+    <unit id="repo.content.oci.empty2">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>This repository holds no images yet. Push an image with your client.</source>
+      </segment>
+    </unit>
+    <unit id="repo.content.sentence.local2">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Holds what is published to it.</source>
+      </segment>
+    </unit>
+    <unit id="tokens.empty-active">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>No active tokens. Revoked and expired ones are shown with the switch above.</source>
+      </segment>
+    </unit>
+    <unit id="tokens.empty-all">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>No tokens yet.</source>
       </segment>
     </unit>
     <unit id="setup.heading">

@@ -14,8 +14,8 @@ same screen's other pictures are beside it (`-dark-`, `-1024`, `-390`).
 **State.** The repository list and the address fields were changed in the same work (Q-UI-300 to Q-UI-306) and are not in this
 list; what they still lack is UI-A-29 and UI-A-30. Every other line is open. A line is removed when its fix is rendered and
 looked at (rule 11 of the plan). The lines UI-A-31 to UI-A-40 belong to the planner of the creation flow on T-18's tree, not to
-the fix waves of this list. A line marked "→ T-22" belongs to the owner's task T-22 (one search with suggestions) and is not fixed
-here.
+the fix waves of this list. A line marked "→ T-22" belongs to the owner's task T-22 (one search with suggestions), one marked
+"→ B4" to the builder who replaces the vulnerability displays; neither is fixed here.
 
 ## Systemic causes
 
@@ -45,13 +45,8 @@ Ranked: the plain user's main path first, then consistency across screens, then 
 
 | ID | Screen | Kind | Picture | What is wrong | Rule |
 |---|---|---|---|---|---|
+| UI-A-16 | Vulnerabilities of a project | plain | `plain/vulnerabilities-dark-1440.png` | → B4 (the vulnerability displays become a grade with a shield, a severity bar and a card). Two warnings about the advisory imports (an administrator's task), eight counters of `0`, an empty chart and "0 internal names only, 4 waiting for advisory data, 2 not covered" | R-UI-067 (Details), Q-UI-318 |
 | UI-A-01 | Top bar | plain | `plain/home-light-1440.png` | → T-22. The top bar has no search for the plain user: **Find a repository** needs the permission to read repository configuration. The start page finds packages since fix wave 1 and stays as it is | R-UI-067, [Q-UI-311](../spec/api-and-ui.md#q-ui-311--the-start-page-leads-the-plain-user-to-a-repository-and-its-address-in-two-steps) |
-| UI-A-16 | Vulnerabilities of a project | plain | `plain/vulnerabilities-dark-1440.png` | Two warnings about the advisory imports (an administrator's task), eight counters of `0`, an empty chart and "0 internal names only, 4 waiting for advisory data, 2 not covered" | R-UI-067 (Details), Q-UI-318 |
-| UI-A-17 | Empty repository | all | `plain/repository-empty-light-1440.png` | "This repository holds no files yet." in a dashed box, without the action that fills it (upload, set up the client); a fallback description "Holds what you publish here." | Lists: an empty list offers the action that fills it |
-| UI-A-18 | Browse | all | `plain/browse-light-1440.png`, `plain/browse-folder-light-1440.png` | One screen, two names: "Browse" at its root, "File tree" in a folder; the tree repeats the project in every name (`web-frontend/assets`) inside the project | Page titles are nouns, one per screen |
-| UI-A-19 | Browse, folder | all | `plain/browse-folder-light-1440.png` | File names in the contents table are underlined (tables underline on hover only); the column "Last…" is cut at the pane's right edge | Design language, links; no cut text |
-| UI-A-20 | Personal tokens | plain | `plain/profile-tokens-light-1440.png` | "No tokens match." with no filter set; the profile's pages are pill links, not the tab strip; **Create token** sits under the description on the left | Lists (empty state), Controls (tabs), Q-UI-307 |
-| UI-A-21 | Documentation | plain | `plain/help-light-1440.png` | The administrator's guide is shown to the plain user under the user guide | R-UI-067 |
 
 ### Consistency across screens
 

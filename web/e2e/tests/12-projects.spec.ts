@@ -179,7 +179,7 @@ test('R-UI-041 an administrator creates a project; a member of its Owner group a
     // The Owner revokes it again.
     await bob.getByRole('row', { name: /browser journey/ }).getByRole('button', { name: 'Revoke' }).click();
     await bob.getByRole('dialog').getByRole('button', { name: 'Revoke' }).click();
-    await expect(bob.getByText('No tokens match.')).toBeVisible();
+    await expect(bob.getByText(/^No active tokens\./)).toBeVisible();
   });
 
   await test.step('the administrator sees the project with what bob created, and the admin lists name the project', async () => {

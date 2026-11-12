@@ -1,4 +1,5 @@
 import { DatePipe } from '@angular/common';
+import { PageHeader } from '../../shared/ui/page-header';
 import { Component, computed, inject, signal } from '@angular/core';
 import { Checkbox } from '../../shared/ui/checkbox';
 import { IdentityApi, User } from '../../api/identity-api';
@@ -25,11 +26,12 @@ import { ProfileNav } from './profile-nav';
  */
 @Component({
   selector: 'trove-profile',
-  imports: [DatePipe, Checkbox, ErrorNotice, ProfileAvatar, ProfileNav, SelectField],
+  imports: [DatePipe, Checkbox, ErrorNotice, PageHeader, ProfileAvatar, ProfileNav, SelectField],
   templateUrl: './profile.html',
   styleUrl: '../../shared/access/access.scss',
 })
 export class Profile {
+  protected readonly heading = $localize`:@@profile.heading:Profile`;
   private readonly identity = inject(IdentityApi);
   private readonly preferencesApi = inject(PreferencesApi);
   private readonly preferencesStore = inject(PreferencesStore);

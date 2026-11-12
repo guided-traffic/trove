@@ -2,6 +2,8 @@ import { Router } from '@angular/router';
 import { ManualApi } from '../../api/manual-api';
 import { ApiError } from '../../api/problem';
 import { FakeManualApi } from '../../api/testing/fakes-manual';
+import { FakeSessionApi } from '../../api/testing/fakes';
+import { SessionApi } from '../../api/session-api';
 import { expectAccessible, renderScreen, settle } from '../../testing/screen';
 import { HelpOverview } from './help-overview';
 import { HelpPage } from './help-page';
@@ -30,6 +32,23 @@ describe('Help', () => {
     expect(cards[0]?.textContent).toContain('How to sign in and find your way around.');
     // The manual is English whatever the language of the frame.
     expect(r.root.querySelector('ul.help-cards')?.getAttribute('lang')).toBe('en');
+    await expectAccessible(r.root);
+  });
+
+  it('R-UI-050 R-UI-067 a plain user gets the administrator guide as a closed section at the end', async () => {
+    const r = await renderScreen(HelpOverview, {
+      capabilities: [],
+      setup: (get) => {
+        (get(SessionApi) as FakeSessionApi).meResult = { roles: [], capabilities: [], principals: ['user:sam'], projects: [{ key: 'web', role: 'reader' }] };
+      },
+    });
+    const sections = [...r.root.querySelectorAll('section.help-section')];
+    expect(sections.map((s) => s.querySelector('h2')?.textContent?.trim())).toEqual(['User guide']);
+    const admin = r.root.querySelector('trove-disclosure.help-section')!;
+    const toggle = admin.querySelector('button[aria-expanded]')!;
+    expect(toggle.textContent).toContain('Administrator guide');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(admin.querySelector('a.help-card[href="/help/admin/overview"]')).toBeTruthy();
     await expectAccessible(r.root);
   });
 

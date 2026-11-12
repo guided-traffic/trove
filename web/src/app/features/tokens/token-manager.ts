@@ -81,7 +81,7 @@ export class RotateDialog {
   imports: [Checkbox, ErrorNotice, TokenForm, TokenSecret, TokenTable],
   template: `
     <div class="toolbar">
-      @if (canCreate() && !formOpen()) {
+      @if (createInToolbar() && offersCreate()) {
         <button class="btn btn-confirm" type="button" (click)="openForm()" i18n="@@tokens.create">Create token</button>
       }
       <trove-checkbox [checked]="showAll()" (checkedChange)="setShowAll($event)">
@@ -129,6 +129,7 @@ export class RotateDialog {
     @if (list.loaded()) {
       <trove-token-table
         [tokens]="list.items()"
+        [emptyText]="emptyText()"
         [canRotate]="canRotate()"
         [canRevoke]="canRevoke()"
         [hasMore]="list.hasMore()"
@@ -145,6 +146,8 @@ export class RotateDialog {
 })
 export class TokenManager {
   readonly scope = input.required<TokenOwnerScope>();
+  /** False when the page's header holds **Create token** (`offersCreate`, `openForm`). */
+  readonly createInToolbar = input(true);
   /** For a service account: whether it holds the administrator role now (`ServiceAccount.isAdmin`, Q-AUTH-209). */
   readonly accountIsAdmin = input(false);
 
@@ -188,6 +191,16 @@ export class TokenManager {
    * token of the account itself, which is no screen); `identities:write` is not enough (R-AUTH-027,
    * R-AUTH-030), so a security administrator would get 403.
    */
+  /** Whether **Create token** is offered now: the caller may create and the form is closed. */
+  protected readonly offersCreate = computed(() => this.canCreate() && !this.formOpen());
+  /** Whether the form is open; a page whose header holds **Create token** hides it meanwhile. */
+  readonly isFormOpen = this.formOpen.asReadonly();
+  /** The empty list says what is missing; nothing is filtered but the revoked and expired tokens (UI-A-20, UI-A-25). */
+  protected readonly emptyText = computed(() =>
+    this.showAll()
+      ? $localize`:@@tokens.empty-all:No tokens yet.`
+      : $localize`:@@tokens.empty-active:No active tokens. Revoked and expired ones are shown with the switch above.`,
+  );
   protected readonly canCreate = computed(() => {
     const s = this.scope();
     return s.kind === 'own' || (s.kind === 'service-account' && (this.session.hasRole('admin') || this.projectIssues()));
@@ -249,7 +262,7 @@ export class TokenManager {
     this.showAll.set(on);
   }
 
-  protected openForm(): void {
+  openForm(): void {
     this.idempotencyKey = newIdempotencyKey();
     this.formError.set(null);
     this.formOpen.set(true);

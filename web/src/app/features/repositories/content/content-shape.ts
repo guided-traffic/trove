@@ -34,8 +34,8 @@ export function contentShapeOf(format: string, repositoryClass = ''): ContentSha
       versionLabel: $localize`:@@repo.content.oci.version:Tag`,
       filterLabel: $localize`:@@repo.content.oci.filter:Filter images`,
       emptyText: remote
-        ? $localize`:@@repo.content.oci.empty-remote:This repository has cached no images yet. Pull an image through it, or set up your client first.`
-        : $localize`:@@repo.content.oci.empty:This repository holds no images yet. Push an image, or set up your client first.`,
+        ? $localize`:@@repo.content.oci.empty-remote2:This repository has cached no images yet. Pull an image through it with your client.`
+        : $localize`:@@repo.content.oci.empty2:This repository holds no images yet. Push an image with your client.`,
       emptyFilteredText: $localize`:@@repo.content.oci.empty-filtered:No image matches the filter.`,
       publishedLabel: remote
         ? $localize`:@@repo.content.oci.fetched:Fetched`
@@ -54,7 +54,7 @@ export function contentShapeOf(format: string, repositoryClass = ''): ContentSha
     versionsLabel: $localize`:@@repo.content.versions:Versions`,
     versionLabel: $localize`:@@repo.content.version:Version`,
     filterLabel: $localize`:@@repo.content.filter:Filter packages`,
-    emptyText: $localize`:@@repo.content.empty:This repository holds no packages yet. Publish a package, or set up your client first.`,
+    emptyText: $localize`:@@repo.content.empty2:This repository holds no packages yet. Publish a package with your client.`,
     emptyFilteredText: $localize`:@@repo.content.empty-filtered:No package matches the filter.`,
     publishedLabel: $localize`:@@repo.content.published:Published`,
     digest: false,

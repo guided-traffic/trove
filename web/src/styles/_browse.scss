@@ -369,9 +369,15 @@
     gap: var(--trove-space-2);
     text-decoration: none;
 
+    // A link in a table is underlined under the pointer and on focus only, as every other table (UI-A-19, Q-UI-128).
     .entry-name {
-      text-decoration: underline;
+      min-inline-size: 0;
+      overflow-wrap: anywhere;
       text-underline-offset: 0.2em;
+    }
+
+    &:is(:hover, :focus-visible) .entry-name {
+      text-decoration: underline;
     }
 
     .material-icons {

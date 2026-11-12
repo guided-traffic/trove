@@ -2952,7 +2952,7 @@ selected tab and selected version live in query parameters.
 | `/projects/{project}/packages` | Packages list | R-UI-006 |
 | `/projects/{project}/packages/{format}/{name…}` (`?version=`) | Package details | R-UI-007 |
 | `/projects/{project}/vulnerabilities` (`?repository=&severity=&status=&…`), `/projects/{project}/vulnerabilities/findings/{id}`, `/projects/{project}/vulnerabilities/advisories/{ecosystem}/{id}` | Vulnerability report of the project, finding, advisory (from M4b) | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-022 |
-| `/projects/{project}/browse/{repo}/{path…}` | File tree with selection | R-UI-010 |
+| `/projects/{project}/browse/{repo}/{path…}` | Browse with a selection | R-UI-010 |
 | `/projects/{project}/repositories`, `/projects/{project}/repositories/new` | Repositories of the project | R-UI-020, R-UI-021 |
 | `/projects/{project}/repositories/{key}` (`?q=&sort=&path=`) | Content of the repository | R-UI-052 |
 | `/projects/{project}/repositories/{key}/settings` | Settings of the repository | R-UI-020 |
@@ -3312,6 +3312,10 @@ Priority: **MVP** · Covers: trove-only
   first and the raw file address after it where the two differ, R-REPO-002; the UI labels by that order and names no path of
   its own, R-ARCH-007), the upstream a remote repository caches (its URL), and the members a virtual repository resolves from,
   each linked to its content page as far as the caller may read them (the consumer view of R-REPO-010 has neither).
+- An empty repository says how it is filled ("This repository holds no packages yet. Publish a package with your client.",
+  for OCI images and generic files the same) and offers **Set up client** under it (the empty state of Q-UI-309), except for
+  a disabled repository. Without a description the header's sentence says what the class means; for a local repository
+  "Holds what is published to it."
 - Opening the page records it in the recently opened repositories of the browser (R-UI-020), which the start page shows
   (Q-UI-311, Q-UI-323).
 
@@ -3337,7 +3341,9 @@ Priority: **MVP** · Covers: UI-011, ART-040, ART-041
 - Tree toolbar: one filter field that narrows the repositories by key text as the user types (no search button; the
   query parameter `q` follows after a short pause), the shared filter panel for class and format with the applied
   filters as removable chips and "Clear all", a sort menu (class, then key; or key), and the number of repositories
-  shown. Tree root: the readable repositories, each labelled with its project (`web/npm-local`). Children load lazily through
+  shown. Tree root: the readable repositories of the project, each labelled with its key (`npm-local`; a repository of
+  another project, a member of a virtual one, with its qualified name). The screen is **Browse** at its root and with a
+  selection: one screen, one name (UI-A-18). Children load lazily through
   `/api/v1/projects/{projectKey}/repositories/{repoKey}/children` (R-API-025) in pages of `ui.browser.page_size` with a "Load more" entry.
   A row shows an icon by class (folder and file icons below), the key, a badge with the format and, where it applies,
   the labels below.
@@ -3749,7 +3755,8 @@ trove is found, delivered by the frontend. The text is the manual of R-API-054; 
   to the administrator guide's endpoints page), or the overview `/help` where none matches (Q-UI-90). The lint
   (`web/scripts/check-rules.mjs`) fails when a page named there is not a file of `docs/manual/`.
 - **Overview** (`/help`): both guides with every page's title and summary, each a link to the page, and a link to the
-  guides of R-UI-049 for the commands of a package client.
+  guides of R-UI-049 for the commands of a package client. For a plain user (R-UI-067) the administrator guide is a closed
+  section at the end (Q-UI-324).
 - **Page** (`/help/<section>/<page>`): the contents of both guides beside the page with the current page marked
   (`aria-current`), the page title as the heading and the document title, "On this page" from the page's headings, the
   page's HTML bound like a README (R-UI-008, the same component and finishing pass), and links to the previous and the
@@ -4118,6 +4125,10 @@ Priority: **MVP** · Covers: UI-053, AUTHN-039, AUTHN-040
   this). Nobody changes a password through trove. An administrator's correction of email or
   display name through `PATCH /api/v1/users/{username}` (R-API-031) lasts until the user's next
   login. SSH keys and linked accounts are P2 on the identity page and not shown.
+- The profile's three pages (Profile, Personal tokens, Sessions) have the shared page header and are the tab strip of links
+  under it; **Create token** and **End all other sessions** are the header's actions (Q-UI-307, UI-A-20). An empty token list
+  says what is missing: "No active tokens." while the revoked and expired ones are hidden, "No tokens yet." with them (the
+  administrator's filtered list keeps "No tokens match.").
 - Personal tokens: list with description, scope summary, created, expires and last used; tokens
   expiring within 7 days are marked, and a token with `admin: true` whose owner does not hold the administrator role now says that
   its administrator rights are inactive. Create dialog: description (required), expiry (presets and a
@@ -9976,7 +9987,8 @@ push an image, and an OCI remote carried a note that nothing is listed.
 | (c) The generic remote note ("Only what clients have fetched is listed here.") | The note of the other formats | One text | It leaves out the mirror pass, which fills the cache without a client |
 
 **Choice:** (a). The note reads "Only the tags this repository has cached are listed here: those clients have pulled and, in mirror mode, those a pass has fetched."
-The empty text reads "This repository has cached no images yet. Pull an image through it, or set up your client first." The version table keeps its
+The empty text reads "This repository has cached no images yet. Pull an image through it with your client.", with **Set up client**
+under it (fix wave 2 of T-21). The version table keeps its
 columns; the column of the findings is shown when the format is scanned, as for a local repository. No styling is added.
 
 **Rationale:** the screen should not call a fetch a push. The development agent would revisit it if the page gains a "checked" time from the entry's validation,
@@ -10611,7 +10623,8 @@ was filtered (UI-A-17, UI-A-20, UI-A-25).
 **Choice:** (a). **Rationale:** an empty list is a moment to act, so its action is next to the sentence. The development agent
 revisits an illustration if the owner wants the reference's.
 
-**Applied in the spec:** R-UI-020. Code: [empty-state.ts](../../web/src/app/shared/ui/empty-state.ts).
+**Applied in the spec:** R-UI-020, R-UI-052 (an empty repository with **Set up client**), R-UI-029 (the token list's empty text).
+Code: [empty-state.ts](../../web/src/app/shared/ui/empty-state.ts).
 
 ### Q-UI-310 · The kind of user is read from the roles in force, per project, and is no role of its own
 
@@ -10890,6 +10903,24 @@ about the project; whom to ask is the one fact of the About section a reader act
 walkthrough shows readers look for the project's members.
 
 **Applied in the spec:** R-UI-020, R-UI-006, R-UI-007, R-UI-052; replaces Q-UI-317's About section. Built in fix wave 2.
+
+### Q-UI-324 · The plain user gets the administrator guide as a closed section of the documentation
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the documentation's overview (R-UI-050) lists the user guide and the administrator guide one after the other for everyone;
+the plain user scrolls through the guide of running trove to reach nothing of theirs (UI-A-21).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) For a plain user (R-UI-067) the administrator guide is a closed disclosure at the end with its cards inside; power users and administrators keep both guides open (chosen) | Details on demand | The plain user's page is their guide; the other one is a click away, and its pages stay reachable by link | One more click for a curious reader |
+| (b) Hide the administrator guide from plain users | By kind | Shortest | A reader who is asked by an Owner to read a page finds it no more from the overview |
+| (c) As today | Unchanged | One page for all | The plain user's guide is half the page |
+
+**Choice:** (a). **Rationale:** the manual is the same for everyone, and what a plain user does not do is on demand. The
+development agent revisits it if power users without a system role also prefer the guide closed.
+
+**Applied in the spec:** R-UI-050. Built in fix wave 2.
 
 ### Q-API-246 · An operation that is allowed while the installation is read-only declares `x-trove-maintenance: allowed`
 

@@ -45,7 +45,8 @@ test('R-UI-029 a personal token is shown once, works, and stops working when it 
 
   await page.getByRole('row', { name: /browser journey/ }).getByRole('button', { name: 'Revoke' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Revoke' }).click();
-  await expect(page.getByText('No tokens match.')).toBeVisible();
+  // The list is not filtered: it says that no active token is left (UI-A-20).
+  await expect(page.getByText(/^No active tokens\./)).toBeVisible();
 
   // auth.revocation_bound is 2 s: a read after that is refused on every replica.
   await expect.poll(() => probe(value), { timeout: 10_000, intervals: [500] }).toBe(401);

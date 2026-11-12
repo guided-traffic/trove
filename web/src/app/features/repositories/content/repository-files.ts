@@ -61,6 +61,12 @@ const FILES_PAGE = 100;
       (more)="list.more()"
       (retry)="list.more()"
     >
+      @if (offerSetup() && !filter()) {
+        <!-- The action that fills an empty repository (Q-UI-309): the setup shows how to publish or upload with a client. -->
+        <a emptyAction class="btn btn-default" routerLink="/setup" [queryParams]="{ repository: repository() }" i18n="@@repo.content.tab.setup"
+          >Set up client</a
+        >
+      }
       @for (c of shown(); track c.path) {
         <tr>
           <th scope="row">
@@ -108,6 +114,8 @@ export class RepositoryFiles {
   readonly format = input.required<FormatDescriptor | undefined>();
   /** The folder shown; '' is the root. */
   readonly path = input<string>('');
+  /** Whether an empty repository offers Set up client: not for a disabled one, which no client can use. */
+  readonly offerSetup = input(true);
   readonly pathChange = output<string>();
 
   protected readonly list = new PagedResource<Child>(FILES_PAGE);
@@ -124,7 +132,7 @@ export class RepositoryFiles {
   });
 
   protected readonly caption = contentShapeOf('generic').itemsLabel;
-  protected readonly emptyText = $localize`:@@repo.content.files-empty:This repository holds no files yet.`;
+  protected readonly emptyText = $localize`:@@repo.content.files-empty2:This repository holds no files yet. Upload a file with your client.`;
   protected readonly emptyFiltered = $localize`:@@repo.content.files-empty-filtered:No file matches the filter.`;
   protected readonly copyUrlLabel = $localize`:@@repo.content.copy-url:Copy the download address`;
   protected readonly columns: readonly TableColumn[] = [

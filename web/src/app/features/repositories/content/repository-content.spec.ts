@@ -129,6 +129,29 @@ describe('Repository content page', () => {
     await expectAccessible(r.root);
   });
 
+  it('R-UI-052 an empty repository says how it is filled and offers Set up client; a disabled one offers nothing', async () => {
+    const empty = async (disabled: boolean) => {
+      const r = await renderScreen(RepositoryContent, {
+        inputs: { project: 'web', key: 'generic-local' },
+        setup: (get) => {
+          const catalog = get(RepositoriesApi) as FakeRepositoriesApi;
+          catalog.formatsResult = [GENERIC_FORMAT];
+          catalog.repositories = catalog.repositories.map((x) => (x.key === 'generic-local' ? { ...x, disabled } : x));
+          (get(FilesApi) as FakeFilesApi).children = () => async () => ({ items: [], nextCursor: null });
+        },
+      });
+      await settle(r.fixture);
+      return r;
+    };
+    const r = await empty(false);
+    const state = r.root.querySelector('trove-data-table trove-empty-state')!;
+    expect(text(state)).toContain('This repository holds no files yet. Upload a file with your client.');
+    expect(state.querySelector('a.btn')?.getAttribute('href')).toBe('/setup?repository=web%2Fgeneric-local');
+    await expectAccessible(r.root);
+    const off = await empty(true);
+    expect(off.root.querySelector('trove-data-table trove-empty-state a')).toBeNull();
+  });
+
   it('R-UI-052 a virtual repository names what it resolves from and a remote one says it lists what clients fetched', async () => {
     const virtual = await open({ key: 'npm-all', project: 'web', class: 'virtual', format: 'npm', virtual: { members: ['npm-local', 'npm-remote'] } });
     expect(text(virtual.root)).toContain('Resolves from');

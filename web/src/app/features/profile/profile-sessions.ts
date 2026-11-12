@@ -6,6 +6,7 @@ import { Notifier } from '../../core/notifier';
 import { Confirm } from '../../shared/confirm-dialog';
 import { asApiError } from '../../shared/paged-resource';
 import { ErrorNotice } from '../../shared/error-notice';
+import { PageHeader } from '../../shared/ui/page-header';
 import { ProfileNav } from './profile-nav';
 
 /**
@@ -15,16 +16,15 @@ import { ProfileNav } from './profile-nav';
  */
 @Component({
   selector: 'trove-profile-sessions',
-  imports: [DatePipe, ErrorNotice, ProfileNav],
+  imports: [DatePipe, ErrorNotice, PageHeader, ProfileNav],
   template: `
-    <header class="page-header">
-      <h1 tabindex="-1" i18n="@@profile.sessions.heading">Sessions</h1>
+    <trove-page-header [heading]="heading">
       @if (others() > 0) {
-        <button class="btn btn-confirm" type="button" (click)="endOthers()" i18n="@@profile.sessions.end-others">
+        <button actions class="btn btn-confirm" type="button" (click)="endOthers()" i18n="@@profile.sessions.end-others">
           End all other sessions
         </button>
       }
-    </header>
+    </trove-page-header>
     <trove-profile-nav />
 
     @if (error(); as e) {
@@ -77,6 +77,7 @@ import { ProfileNav } from './profile-nav';
   styleUrl: '../../shared/access/access.scss',
 })
 export class ProfileSessions {
+  protected readonly heading = $localize`:@@profile.sessions.heading:Sessions`;
   private readonly api = inject(SessionsApi);
   private readonly confirmer = inject(Confirm);
   private readonly notifier = inject(Notifier);

@@ -349,9 +349,9 @@ export class Browse {
   );
 
   protected readonly contentColumns: readonly TableColumn[] = [
-    { id: 'name', label: $localize`:@@browse.col.name:Name` },
-    { id: 'size', label: $localize`:@@browse.fact.size:Size`, numeric: true },
-    { id: 'modified', label: $localize`:@@browse.fact.modified:Last changed` },
+    { id: 'name', label: $localize`:@@browse.col.name:Name`, width: '12rem' },
+    { id: 'size', label: $localize`:@@browse.fact.size:Size`, numeric: true, width: '5rem' },
+    { id: 'modified', label: $localize`:@@browse.fact.modified:Last changed`, width: '7rem' },
   ];
 
   protected readonly classLabel = (cls: string | undefined): string => {
@@ -421,11 +421,20 @@ export class Browse {
   // --- tree ---------------------------------------------------------------------------------
 
   private rootOf(r: RepositorySummary): TreeNode {
-    return this.nodeFor(refOf(r), '', 'repository', refOf(r), {
+    return this.nodeFor(refOf(r), '', 'repository', this.nameInProject(refOf(r)), {
       cls: r.class,
       format: r.format,
       disabled: r.disabled,
     });
+  }
+
+  /**
+   * The name of a repository in the tree: its key inside its own project, which the screen is (UI-A-18); the qualified name
+   * only for one of another project.
+   */
+  private nameInProject(ref: string): string {
+    const { project, key } = splitRef(ref);
+    return project === this.project() ? key : ref;
   }
 
   private nodeFor(
@@ -470,7 +479,7 @@ export class Browse {
 
   /** The root node of a repository named by a deep link, even when the list has not shown it. */
   private rootNode(key: string): TreeNode {
-    const node = this.nodeFor(key, '', 'repository', key);
+    const node = this.nodeFor(key, '', 'repository', this.nameInProject(key));
     if (!this.roots().some((r) => r.id === node.id)) this.extraRoot.set(node);
     return node;
   }
@@ -535,7 +544,7 @@ export class Browse {
       node,
       keys.map((key, i) => {
         const r = known.get(key);
-        return this.nodeFor(key, '', 'member', key, {
+        return this.nodeFor(key, '', 'member', this.nameInProject(key), {
           via: node.repository,
           position: i + 1,
           cls: r?.class,

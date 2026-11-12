@@ -15,7 +15,7 @@ const SCREENS: readonly (readonly [url: string, heading: string])[] = [
   ['/projects', 'Projects'],
   ['/projects/web/packages', 'Packages'],
   ['/projects/web/browse', 'Browse'],
-  ['/projects/web/browse/npm-local/@team-a/ui/-/ui-1.0.0.tgz', 'File tree'],
+  ['/projects/web/browse/npm-local/@team-a/ui/-/ui-1.0.0.tgz', 'Browse'],
   ['/projects/web/repositories', 'Repositories'],
   ['/projects/web/repositories/new', 'New repository'],
   ['/projects/web/repositories/generic-local', 'generic-local'],

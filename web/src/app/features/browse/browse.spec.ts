@@ -415,7 +415,8 @@ describe('Browser panes', () => {
   it('R-UI-010 the sort menu offers key and class order; the class order lists virtual before local before remote', async () => {
     const { root, fixture, router } = await openWith({ sort: 'class' }, MIXED);
     const names = items(root).map(labelOf);
-    expect(names).toEqual(['web/npm-all', 'web/files', 'web/npm-local', 'web/npm-cache']);
+    // Inside its project a repository is named by its key (UI-A-18).
+    expect(names).toEqual(['npm-all', 'files', 'npm-local', 'npm-cache']);
     root.querySelector<HTMLButtonElement>('.sort-button')!.click();
     await settle(fixture);
     const entries = [...root.ownerDocument.querySelectorAll('[role="menuitemradio"]')];
@@ -427,8 +428,8 @@ describe('Browser panes', () => {
 
   it('R-UI-010 a virtual repository lists its members in resolution order labelled "resolves from"; a remote one is labelled cache', async () => {
     const { root, fixture } = await openWith({ sort: 'class' }, MIXED);
-    expect(text(items(root).find((i) => labelOf(i) === 'web/npm-cache')!)).toContain('cache');
-    const virtual = items(root).find((i) => labelOf(i) === 'web/npm-all')!;
+    expect(text(items(root).find((i) => labelOf(i) === 'npm-cache')!)).toContain('cache');
+    const virtual = items(root).find((i) => labelOf(i) === 'npm-all')!;
     virtual.focus();
     virtual.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
     (root.ownerDocument.activeElement ?? virtual).dispatchEvent(
@@ -436,7 +437,7 @@ describe('Browser panes', () => {
     );
     await settle(fixture);
     const members = items(root).filter((i) => i.getAttribute('aria-level') === '2');
-    expect(members.map(labelOf)).toEqual(['web/npm-local', 'web/npm-cache']);
+    expect(members.map(labelOf)).toEqual(['npm-local', 'npm-cache']);
     for (const m of members) expect(text(m)).toContain('resolves from');
   });
 

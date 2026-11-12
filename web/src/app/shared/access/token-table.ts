@@ -47,8 +47,7 @@ export function expiresSoon(token: Pick<Token, 'state' | 'expiresAt'>, now: numb
       [caption]="caption"
       [columns]="columns()"
       [empty]="tokens().length === 0"
-      i18n-emptyText="@@token-table.empty"
-      emptyText="No tokens match."
+      [emptyText]="emptyText()"
       [hasMore]="hasMore()"
       [loading]="loading()"
       (more)="more.emit()"
@@ -153,6 +152,8 @@ export function expiresSoon(token: Pick<Token, 'state' | 'expiresAt'>, now: numb
 })
 export class TokenTable {
   readonly tokens = input.required<readonly Token[]>();
+  /** What the empty list says; the default fits a filtered list (the administrator's token list). */
+  readonly emptyText = input($localize`:@@token-table.empty:No tokens match.`);
   readonly showOwner = input(false);
   readonly selectable = input(false);
   readonly canRotate = input(false);

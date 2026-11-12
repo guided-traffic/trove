@@ -603,7 +603,8 @@
     >
       @for (child of node.children(); track child.id) {
         <tr>
-          <th scope="row">
+          <!-- A long file name wraps in its column, so the other columns stay in the pane (UI-A-19). -->
+          <th scope="row" class="wrap-name">
             <a class="entry" [routerLink]="commandsOf(child)" [queryParams]="{ tab: null }" queryParamsHandling="merge">
               <span class="material-icons" aria-hidden="true">{{ iconOf(child) }}</span>
               <span class="entry-name" translate="no">{{ child.label }}</span>

@@ -102,7 +102,7 @@ export class RepositoryContent {
       case 'virtual':
         return $localize`:@@repo.content.sentence.virtual:Combines other repositories behind one address. It lists what they resolve to.`;
       default:
-        return $localize`:@@repo.content.sentence.local:Holds what you publish here.`;
+        return $localize`:@@repo.content.sentence.local2:Holds what is published to it.`;
     }
   });
   /** The members a virtual repository resolves from, in order; only the full document has them. */

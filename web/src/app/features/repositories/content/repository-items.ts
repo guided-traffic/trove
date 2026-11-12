@@ -51,6 +51,12 @@ export const FILTER_DEBOUNCE_MS = 250;
       (more)="list.more()"
       (retry)="list.more()"
     >
+      @if (offerSetup() && !q()) {
+        <!-- The action that fills an empty repository (Q-UI-309): the setup shows how to publish or upload with a client. -->
+        <a emptyAction class="btn btn-default" routerLink="/setup" [queryParams]="{ repository: repository() }" i18n="@@repo.content.tab.setup"
+          >Set up client</a
+        >
+      }
       @for (p of list.items(); track p.id) {
         <tr>
           <th scope="row" class="wrap-name">
@@ -111,6 +117,8 @@ export class RepositoryItems {
   /** The filter and the sort, from the URL of the page. */
   readonly q = input<string>('');
   readonly sortParam = input<PackageSort>('name');
+  /** Whether an empty repository offers Set up client: not for a disabled one, which no client can use. */
+  readonly offerSetup = input(true);
   readonly filterChange = output<string>();
   readonly sortParamChange = output<PackageSort>();
 

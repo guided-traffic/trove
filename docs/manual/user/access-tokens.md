@@ -25,8 +25,8 @@ Lists show a token by its description and its **hint**, the prefix plus the firs
 
 ## Create a token
 
-1. Open the user menu and choose **Profile and tokens**; the page **Personal tokens** opens.
-2. Choose **Create token**.
+1. Open the user menu and choose **Profile and tokens**; the page **Personal tokens** opens (the tabs **Profile**, **Personal tokens** and **Sessions** under its heading switch between the pages of your profile).
+2. Choose **Create token** at the top right.
 3. Fill in the form (below) and choose **Create token**.
 4. The panel **Your new token** shows the value. Choose **Copy** (or **Show** to read it), store it where your tool reads it, then choose **I have copied it**. Leaving the page also discards the value.
 

@@ -23,9 +23,10 @@ const loadBrowse = (): Promise<typeof import('./browse').Browse> =>
 
 export const BROWSE_ROUTES: Routes = [
   { path: '', title: $localize`:@@route.browse.title:Browse`, loadComponent: loadBrowse },
+  // One screen, one name (UI-A-18): a folder or a file is the same Browse screen with a selection.
   {
     matcher: browseMatcher,
-    title: $localize`:@@route.browse.tree.title:File tree`,
+    title: $localize`:@@route.browse.title:Browse`,
     loadComponent: loadBrowse,
   },
 ];

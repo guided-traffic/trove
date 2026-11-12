@@ -40,7 +40,7 @@
 
   <!-- The content alone: the client setup is the header's Set up client (Q-UI-321). -->
   @if (isGeneric()) {
-    <trove-repository-files [repository]="ref()" [format]="descriptor()" [path]="folder()" (pathChange)="setPath($event)" />
+    <trove-repository-files [repository]="ref()" [format]="descriptor()" [path]="folder()" [offerSetup]="!disabled()" (pathChange)="setPath($event)" />
   } @else {
     @if (r.class === 'remote') {
       @if (r.format === 'oci') {
@@ -59,6 +59,7 @@
       [scanned]="scanned()"
       [q]="filter()"
       [sortParam]="order()"
+      [offerSetup]="!disabled()"
       (filterChange)="setFilter($event)"
       (sortParamChange)="setSort($event)"
     />

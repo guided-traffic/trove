@@ -4,7 +4,7 @@ The file browser shows the repositories you may read as a tree of folders and fi
 
 ## The file browser
 
-Select **Browse** in the side bar of a project. The screen has two panes side by side: the tree of repositories and files on the left, and the details of what you select on the right. On a narrow screen one pane shows at a time; **Back to the tree** returns from the details.
+Select **Browse** in the side bar of a project. The tree names each repository of the project by its key. The screen has two panes side by side: the tree of repositories and files on the left, and the details of what you select on the right. On a narrow screen one pane shows at a time; **Back to the tree** returns from the details.
 
 ### The tree
 
