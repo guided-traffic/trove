@@ -28,3 +28,24 @@ By the owner's decisions of 2026-11-10 ([releasing.md](docs/developer/releasing.
 - An e2e set is cut by what it tests, not by feature: what a format does belongs to that format's set.
 
 The full gate returns with the first stable release.
+
+## Product: simple by default, details on demand
+
+By the owner's decisions of 2026-11-12 (T-21 in [promt.md](docs/projektplan/promt.md#owner-task-of-2026-11-12)). trove is for people who
+want to keep and fetch their artifacts, not for people who want to configure a repository manager. "Keep it simple, for every
+repository type, but allow detailed settings."
+
+- **The plain path first.** The standard flow of every repository, for every format and every class, gives a plain user a simple way
+  to manage their artifacts: only what that repository needs to work. Access is the members and the visibility level (private,
+  internal, public); nothing else about access belongs in the standard flow.
+- **Details on demand.** A setting that makes sense but that only an expert needs (include and exclude patterns, disabling,
+  hiding existence, administrator notes, mirror and protocol tuning) stays, in a detail view or behind an advanced-settings
+  disclosure. It is never a step of the creation flow or part of the main form.
+- **Remote repositories:** the connection can be tested before the repository is saved, where the upstream is entered.
+  The well-known public upstreams of the format are offered as one-click choices; for OCI (Docker) these are Docker Hub, Quay,
+  GitHub (ghcr.io) and GitLab.
+- **A default is a value in the field**, editable, not a hint beside an empty field.
+- **A field is as wide as its expected input.** A number of seconds needs no room for billions.
+- **A title names the thing:** "New Ansible repository", "New OCI repository", "New NuGet repository", not "New repository".
+- **Every UI change is rendered and looked at before it lands** (rule 11 of [promt.md](docs/projektplan/promt.md)): both schemes, wide and
+  narrow, realistic data. The renders are never committed.

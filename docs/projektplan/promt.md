@@ -537,6 +537,22 @@ and admins." A confirmed feature, not a parked idea; it runs beside T-18 and is 
     To decide in the spec: what each kind sees on the home page, the lists, the repository and package pages, and where the details go.
   - **Consistency.** One width, height, spacing and alignment per kind of element across screens. Row actions, empty states and page
     headers follow one pattern each. T-18's screens are rendered under the same rule before T-18 lands.
+  - **Creating and configuring a repository, simple by default** (owner, 2026-11-12, after the creation flow of a local repository
+    showed include and exclude patterns, "Disabled", "Require authentication" and "Hide existence" as the access step): the rules of
+    [CLAUDE.md](../../CLAUDE.md#product-simple-by-default-details-on-demand) apply to every format and class.
+    - The standard flow asks only what the repository needs to work. Access is the members and the visibility level of T-18.
+    - Every other setting stays, in a detail view or behind an advanced-settings disclosure.
+    - A remote repository's connection is tested where its upstream is entered, before the save. **Test connection** exists today
+      (`upstream-settings.ts`, `POST /api/v1/projects/{projectKey}/upstream-tests`), but only inside the step "Access, upstream, OCI (Docker)
+      and mirror settings".
+    - Well-known public upstreams are one-click choices: for OCI, Docker Hub, Quay, GitHub (ghcr.io) and GitLab; the other formats'
+      choices are decided in the spec.
+    - Defaults are values in their fields. A field's width fits its expected input. The title names the format ("New OCI repository").
+    - Defects seen in the owner's screenshots, to fix with it:
+      - a step label that lists four topics;
+      - a key field red with "does not match the pattern" before anything was typed;
+      - administrator notes in the standard flow.
+    - T-18 changes the same creation flow (the visibility level), so this part is planned on T-18's tree and built after T-18 lands.
 
 ## 11 · Run record
 
