@@ -143,6 +143,14 @@ vulnerabilities:
       ecosystems: [npm]
     kev:
       mode: "off"
+api:
+  rate_limits:
+    # make ui-renders opens three pages of one user at a time (UI_RENDERS_WORKERS): a full run reached 197 reads of one
+    # user in 4 s against the default read budget of 200 per 4 s (50 a second, burst 200), and an earlier run got 429s.
+    # One person in one browser stays far below the default; the renders are not one person.
+    read:
+      requests_per_second: 200
+      burst: 800
 YAML
 mv "$state/trove.yaml.tmp" "$state/trove.yaml"
 

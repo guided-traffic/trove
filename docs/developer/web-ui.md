@@ -133,6 +133,9 @@ through the dev server works only against a trove whose base URL is `https://loc
   `proxy.outbound.address_policy.allow_cidrs`), so that trove reaches the provider; a remote repository of this profile can
   therefore reach a service on this machine, which an installation's default egress policy refuses (R-REPO-038).
 - No advisory source reaches the network: KEV is off, and OSV reads only npm from the mirror repository `platform/advisory-mirror` (R-VULN-005), which the render seed fills with records of its own ([Renders of every screen](#renders-of-every-screen)); until then a sync run fails for the missing repository and the vulnerability screens stay empty.
+- The `read` class of the API's rate limits admits 800 requests per 4 s instead of 200 (`api.rate_limits.read`): `make
+  ui-renders` opens three pages of one user at a time, and a full run reached 197 reads of one user in 4 s, at the default's
+  edge. One person in one browser stays far below the default.
 - A new installation is empty: repositories and packages are created through the UI or the API, or by the seed of
   `make ui-renders`.
 - The volumes belong to the compose project `trove-ui-dev`, one per machine, while `.dev/ui-dev` (with the key ring) belongs
