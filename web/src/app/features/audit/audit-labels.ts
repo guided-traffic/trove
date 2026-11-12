@@ -1,3 +1,5 @@
+import { REGISTERED_AUDIT_ACTIONS } from './audit-actions.fixture';
+
 /** The translated label of an audit event name (R-UI-037); an unknown name is shown as it is. */
 export function auditActionLabel(action: string): string {
   switch (action) {
@@ -322,19 +324,28 @@ export function auditActionLabel(action: string): string {
   }
 }
 
-/** The event names the action filter suggests. */
-export const KNOWN_ACTIONS: readonly string[] = [
-  'artifact.*',
-  'auth.*',
-  'authz.*',
-  'endpoint.*',
-  'group.*',
-  'repository.*',
-  'serviceaccount.*',
-  'system.*',
-  'token.*',
-  'user.*',
-];
+/** One suggestion of the action filter: a prefix (`token.*`) without a name, or an event type with its name. */
+export interface ActionSuggestion {
+  readonly value: string;
+  readonly label: string | null;
+}
+
+/**
+ * What the action filter suggests (R-UI-037): every prefix of the registry's event types at every level (`ci.*`, `ci.issuer.*`),
+ * which the API matches as a prefix, then every type with its name. Both come from the audit registry (audit-actions.fixture.ts,
+ * written by a Go test from internal/audit), so a new event type is suggested without a change here.
+ */
+export function actionSuggestions(types: readonly string[] = REGISTERED_AUDIT_ACTIONS): readonly ActionSuggestion[] {
+  const prefixes = new Set<string>();
+  for (const type of types) {
+    const parts = type.split('.');
+    for (let i = 1; i < parts.length; i++) prefixes.add(`${parts.slice(0, i).join('.')}.*`);
+  }
+  return [
+    ...[...prefixes].sort().map((value) => ({ value, label: null })),
+    ...types.map((value) => ({ value, label: auditActionLabel(value) })),
+  ];
+}
 
 export function categoryLabel(category: string): string {
   switch (category) {

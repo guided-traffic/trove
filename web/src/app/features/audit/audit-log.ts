@@ -16,7 +16,7 @@ import { ErrorNotice } from '../../shared/error-notice';
 import { DataTable, TableColumn } from '../../shared/ui/data-table';
 import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filter-panel';
 import { PagedResource, asApiError, valueOf } from '../../shared/paged-resource';
-import { KNOWN_ACTIONS, auditActionLabel, categoryLabel, outcomeLabel } from './audit-labels';
+import { actionSuggestions, auditActionLabel, categoryLabel, outcomeLabel } from './audit-labels';
 import { PageHeader } from '../../shared/ui/page-header';
 
 /** The page size of the table (the server default and a good fit for one screen). */
@@ -73,7 +73,7 @@ export class AuditLog {
   protected readonly list = new PagedResource<AuditEvent>();
   protected readonly now = signal(Date.now());
   protected readonly categories = AUDIT_CATEGORIES;
-  protected readonly knownActions = KNOWN_ACTIONS;
+  protected readonly knownActions = actionSuggestions();
 
   // The form controls hold their text until "Apply" puts it into the URL.
   protected readonly draft = signal<Readonly<Record<string, string>>>({});

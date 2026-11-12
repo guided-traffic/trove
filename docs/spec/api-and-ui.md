@@ -4336,7 +4336,8 @@ Priority: **MVP** · Covers: OPS-023
   registry, in English and German, with the event name under it; an unknown name is shown as sent), target (actor and target wrap in their
   column and are never cut, UI-A-46), outcome,
   source address; filters time range (presets and custom), actor, action, category, project, repository,
-  outcome (filter panel); "Load more". The log is always newest first and has no sort control.
+  outcome (filter panel); "Load more". The log is always newest first and has no sort control. The action filter suggests every
+  prefix of the registry's event types at every level (`ci.*`, `ci.issuer.*`) and every type with its name, from the registry.
 - Detail panel with the full event and links to actor and target.
 - Times in the user's locale with a UTC toggle; export of the current filter as CSV or JSON Lines
   (`/api/v1/audit/events/export`).

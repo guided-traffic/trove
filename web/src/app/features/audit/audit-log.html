@@ -72,8 +72,8 @@
       (input)="setDraft('action', $any($event.target).value)"
     />
     <datalist id="a-actions">
-      @for (a of knownActions; track a) {
-        <option [value]="a"></option>
+      @for (a of knownActions; track a.value) {
+        <option [value]="a.value">{{ a.label }}</option>
       }
     </datalist>
   </trove-filter-category>
