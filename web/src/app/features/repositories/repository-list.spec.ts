@@ -45,8 +45,10 @@ describe('Repository list', () => {
     const kind = row.querySelector('td.kind-cell')!;
     expect(kind.querySelector('span[translate="no"]')?.textContent).toBe('generic');
     expect(kind.querySelector('.type-cell')?.textContent).toContain('Local');
-    expect(row.querySelector('td.labelled[data-label="Last activity"]')).toBeTruthy();
-    expect(root.querySelector('trove-data-table')?.classList.contains('stack-narrow')).toBe(true);
+    // No row has a last activity: the column is left out (a column of dashes says nothing); the format names no column.
+    expect([...root.querySelectorAll('thead th')].map((th) => th.textContent?.trim())).not.toContain('Last activity');
+    expect(kind.hasAttribute('data-label')).toBe(false);
+    expect(root.querySelector('trove-data-table')?.classList.contains('stack')).toBe(true);
     expect(row.querySelectorAll('td.actions button')).toHaveLength(1);
     row.querySelector<HTMLButtonElement>('button[aria-label="Actions for generic-local"]')!.click();
     await settle(fixture);

@@ -61,9 +61,9 @@ Every page inside the shell has this order:
 | Part | How |
 |---|---|
 | Breadcrumb | Set by the route; a page does not draw its own |
-| Header | `<header class="page-header">`: the `<h1 tabindex="-1">` on the left, with one muted sentence below it that says what the page is for |
-| Primary action | At the right end of the header, one `btn btn-confirm` (**Add member**, **Create token**). A second action of the page is a `btn btn-default` to its left |
-| Tabs | Directly under the header, `tab-nav`, the count of a list as a neutral `badge` in the tab |
+| Header | `<trove-page-header heading description>` ([page-header.ts](../../web/src/app/shared/ui/page-header.ts), [Q-UI-307](../spec/api-and-ui.md#q-ui-307--a-pages-own-actions-are-buttons-at-the-right-end-of-its-header-views-of-the-same-thing-are-tabs)): the `<h1 tabindex="-1">` names the object on its page (`[name]="true"` for a key or a package name) or the list's noun; one muted sentence under it; the facts that name the object projected with `meta`; its client address where it has one (`[addresses]`). Older pages still have `<header class="page-header">` |
+| Primary action | At the right end of the header (projected with `actions`), one `btn btn-confirm` (**Add member**, **Create token**). A second action of the page is a `btn btn-default` to its left; more go into a `more_vert` menu |
+| Tabs | Directly under the header, `tab-nav`, the count of a list as a neutral `badge` in the tab. Another view of the same object (its files, its vulnerabilities, its setup) is a tab, never a quiet link in the header |
 | Toolbar of a list | Under the tabs: the filter on the full width, then sort and direction |
 | Content | A table, a form or sections, as below |
 
@@ -91,11 +91,18 @@ what would need a second one belongs in the [manual](manual.md).
   (**Actions for user:bob**). A list that has one frequent action per row may show it as a quiet button instead. The repository
   list is the example of a thing with a description: the key, the description as the muted second line, the actions in the
   menu ([Q-UI-302](../spec/api-and-ui.md#q-ui-302--the-repository-list-names-a-repository-by-key-and-description-in-its-first-column-and-puts-the-rows-actions-in-a-menu)).
-- **On a narrow list the rows stack.** A list that opts in with `class="stack-narrow"` on `<trove-data-table>` shows each row
-  as a block below 48 rem of the list's width: the name and its menu, then each cell on a line, the address across the row; a
-  cell that needs its column's name has `class="labelled"` and `data-label`, an empty one `no-value`
+- **The list's budget is its columns' widths** ([Q-UI-308](../spec/api-and-ui.md#q-ui-308--every-list-takes-its-layout-from-the-data-table-a-column-budget-a-least-width-for-its-name-one-alignment-stacked-rows)). A column of `<trove-data-table>` declares its least width
+  (`width`, which must hold its header); the name column of a list takes 16 rem. A list with a client address marks that
+  column `fill`: it takes what the declared widths leave, up to its longest address (Q-UI-300).
+- **One alignment.** Every cell starts at the top of its row; a control in a cell (a button, a select, the address field) is
+  centred on the first line of text. A list does not set its own vertical alignment.
+- **On a narrow list the rows stack.** Below 48 rem of the list's width every data table shows each row as a block: the name and
+  its menu, then each cell on a line, named by its column (the table sets `data-label`; `stackLabel: false` where the value says
+  it), a cell without a value ("–") left out, the address across the row
   ([Q-UI-306](../spec/api-and-ui.md#q-ui-306--below-48-rem-of-its-width-the-repository-list-stacks-each-row-with-the-address-across-the-row)).
-  The repository list does; the other lists still scroll sideways at 390 px ([ui-audit.md](../projektplan/ui-audit.md)).
+  `[stack]="false"` keeps the table for a list that cannot be read as blocks.
+- **An empty list** is `<trove-empty-state text>` with the action that fills it as its content; the data table shows it with its
+  `emptyText` and the content marked `emptyAction` ([Q-UI-309](../spec/api-and-ui.md#q-ui-309--an-empty-list-or-region-is-a-sentence-and-the-action-that-fills-it-without-a-frame)).
 - **Names stay on one line**, except the key of the repository list, which wraps after a hyphen where it is longer than its
   column (`th.wrap-name`, [Q-UI-303](../spec/api-and-ui.md#q-ui-303--the-repository-lists-key-breaks-after-a-hyphen-where-it-is-longer-than-its-column)).
 - An inline control in a row (the role select) has no visible label and an `aria-label` that names the row. It shows the current
@@ -108,7 +115,7 @@ what would need a second one belongs in the [manual](manual.md).
 The reference's settings page is one column of fields, not a card of key and value. New settings pages follow it, and the
 existing ones are moved over ([What does not follow this page yet](#what-does-not-follow-this-page-yet)).
 
-- **One column**, at most 56 rem wide, on the page and without a card around it.
+- **One column**, at most `--trove-settings-measure` (56 rem) wide, on the page and without a card around it.
 - **The most used settings are open at the top**, without a section title: the name, the description, the avatar.
 - **Further groups are collapsible sections** (`<trove-settings-section>`), closed by default: a chevron on the left, the title at `--trove-heading-2` weight
   600, one muted sentence under it, a hairline between sections. The title names the group (**Permissions**, **Advanced**).

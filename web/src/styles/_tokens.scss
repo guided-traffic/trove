@@ -105,6 +105,9 @@
   --trove-breadcrumb-height: 2.5rem;
   --trove-panel-radius: var(--trove-radius-xl);
   --trove-panel-gap: 8px;
+  // The one column of a settings page and of an object's form (the style guide's Settings pages). A container query cannot
+  // read a property, so the two `@container content (max-width: 56rem)` of the audit log and the rule editor repeat the value.
+  --trove-settings-measure: 56rem;
   // A client address alone on its line fills the line up to this measure: 70 characters of the monospace face at
   // 0.875rem with the field's padding and the copy button (Q-UI-301). In a list the column sets the width (Q-UI-300).
   --trove-address-measure: 40rem;

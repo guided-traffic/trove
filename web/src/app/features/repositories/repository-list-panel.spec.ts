@@ -50,13 +50,12 @@ describe('Repository list filter panel (R-UI-020)', () => {
     expect(extras.queryParams).toEqual({ q: null, class: null, format: null, state: null, project: null });
   });
 
-  it('R-UI-020 the repository table has no sort control because the API takes no sort parameter, and explains three columns', async () => {
+  it('R-UI-020 the repository table has no sort control because the API takes no sort parameter, and explains the format and the address', async () => {
     const { root } = await open();
     expect(root.querySelectorAll('th button.th-sort')).toHaveLength(0);
     expect([...root.querySelectorAll('th button.th-help')].map((b) => b.getAttribute('aria-label'))).toEqual([
-      'About the column Format and class',
+      'About the column Format',
       'About the column Client address',
-      'About the column Last activity',
     ]);
   });
 

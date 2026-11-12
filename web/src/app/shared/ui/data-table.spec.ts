@@ -117,7 +117,7 @@ describe('Data table', () => {
     host.loading.set(false);
     host.rows.set([]);
     await settle();
-    expect(root.querySelector('.table-empty')?.textContent).toContain('No widget matches.');
+    expect(root.querySelector('trove-empty-state')?.textContent).toContain('No widget matches.');
     expect(root.querySelector('table')).toBeNull();
 
     host.error.set(new ApiError(503, { code: 'unavailable' }, 'rid-1'));
@@ -135,5 +135,46 @@ describe('Data table', () => {
     await settle();
     [...root.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Load more')!.click();
     expect(host.mores).toBe(1);
+  });
+
+  it('R-UI-020 R-UI-065 a list with a fill column gives it what the declared widths of the others leave, and the headers carry them', async () => {
+    @Component({
+      imports: [DataTable],
+      template: `
+        <trove-data-table caption="Things" [columns]="columns">
+          <tr>
+            <th scope="row">one</th>
+            <td>https://example.net/one/</td>
+            <td>–</td>
+            <td class="actions"><button type="button">x</button></td>
+          </tr>
+        </trove-data-table>
+      `,
+    })
+    class Budget {
+      readonly columns: readonly TableColumn[] = [
+        { id: 'name', label: 'Name', width: '16rem' },
+        { id: 'address', label: 'Address', fill: true, stackLabel: false },
+        { id: 'when', label: 'When', width: '7rem' },
+        { id: 'actions', label: 'Actions', hideLabel: true, width: '2rem' },
+      ];
+    }
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({ imports: [Budget] }).compileComponents();
+    const fixture = TestBed.createComponent(Budget);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    const table = root.querySelector<HTMLElement>('trove-data-table')!;
+    expect(table.style.getPropertyValue('--trove-list-others')).toBe('calc(16rem + 7rem + 2rem + 4 * 2 * var(--trove-space-4))');
+    expect(table.classList.contains('stack')).toBe(true);
+    const heads = [...root.querySelectorAll<HTMLElement>('thead th')];
+    expect(heads.map((h) => h.style.minInlineSize)).toEqual(['16rem', '', '7rem', '2rem']);
+    // Stacked, a cell names its column unless its column says not to; an empty value leaves its line out.
+    const cells = [...root.querySelectorAll<HTMLElement>('tbody td')];
+    expect(cells.map((c) => c.getAttribute('data-label'))).toEqual([null, 'When', null]);
+    expect(cells[1]!.hasAttribute('data-empty')).toBe(true);
+    expect(cells[0]!.hasAttribute('data-empty')).toBe(false);
   });
 });

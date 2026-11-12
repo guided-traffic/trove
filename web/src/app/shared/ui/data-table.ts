@@ -1,7 +1,8 @@
-import { Component, computed, input, output } from '@angular/core';
+import { Component, DestroyRef, ElementRef, afterRenderEffect, computed, inject, input, output } from '@angular/core';
 import { Tooltip } from './tooltip';
 import { ApiError } from '../../api/problem';
 import { ErrorNotice } from '../error-notice';
+import { EmptyState } from './empty-state';
 
 /** One column of a `<trove-data-table>`. The label is the translated header text. */
 export interface TableColumn {
@@ -15,6 +16,15 @@ export interface TableColumn {
   readonly numeric?: boolean;
   /** The header text stays for assistive technology only (checkbox and action columns). */
   readonly hideLabel?: boolean;
+  /**
+   * The column's least width (a CSS length), from the list's budget (Q-UI-308): the header cell carries it, and a list with a
+   * `fill` column gives that column what the others leave. It must hold the header's label.
+   */
+  readonly width?: string;
+  /** The column that takes the room the others leave, up to its own content: the client address (Q-UI-300). */
+  readonly fill?: boolean;
+  /** When the rows stack (below 48 rem), the cell shows its column's name before its value; false where the value says it. */
+  readonly stackLabel?: boolean;
 }
 
 export type SortDirection = 'asc' | 'desc';
@@ -40,7 +50,7 @@ let nextTableId = 1;
  */
 @Component({
   selector: 'trove-data-table',
-  imports: [Tooltip, ErrorNotice],
+  imports: [Tooltip, ErrorNotice, EmptyState],
   template: `
     @if (error(); as e) {
       <trove-error-notice [error]="e" (retry)="retry.emit()" />
@@ -50,7 +60,7 @@ let nextTableId = 1;
         <p class="table-status" role="status" i18n="@@table.loading">Loading.</p>
       }
     } @else if (empty()) {
-      <p class="table-empty">{{ emptyText() }}</p>
+      <trove-empty-state [text]="emptyText()"><ng-content select="[emptyAction]" /></trove-empty-state>
     } @else {
       <div class="table-frame">
         <div class="scroll table-scroll" tabindex="0" role="region" [attr.aria-labelledby]="captionId">
@@ -61,7 +71,7 @@ let nextTableId = 1;
             <thead>
               <tr>
                 @for (c of columns(); track c.id) {
-                  <th scope="col" [class.num]="c.numeric" [attr.aria-sort]="ariaSort(c)">
+                  <th scope="col" [class.num]="c.numeric" [attr.aria-sort]="ariaSort(c)" [style.min-inline-size]="c.width">
                     <span class="th-inner">
                       @if (c.sortable) {
                         <button type="button" class="th-sort" (click)="toggle(c)">
@@ -106,7 +116,11 @@ let nextTableId = 1;
       }
     }
   `,
-  host: { class: 'trove-data-table' },
+  host: {
+    class: 'trove-data-table',
+    '[class.stack]': 'stack()',
+    '[style.--trove-list-others]': 'others()',
+  },
 })
 export class DataTable {
   /** Accessible name of the table (rendered as a visually hidden caption). */
@@ -127,7 +141,57 @@ export class DataTable {
   readonly more = output<void>();
   readonly retry = output<void>();
 
+  /** Below 48 rem of its width the list shows each row as a block (Q-UI-306); a list whose rows cannot be read so turns it off. */
+  readonly stack = input(true);
+
   protected readonly captionId = `trove-table-${nextTableId++}`;
+
+  /** The room of every column but the `fill` one, with their padding: `td.address-cell` leaves it to them (Q-UI-308). */
+  protected readonly others = computed(() => {
+    const cols = this.columns();
+    if (!cols.some((c) => c.fill)) return null;
+    const rest = cols.filter((c) => !c.fill);
+    const widths = rest.map((c) => c.width ?? '0px').join(' + ');
+    return `calc(${widths} + ${rest.length + 1} * 2 * var(--trove-space-4))`;
+  });
+
+  constructor() {
+    // Each cell carries its column's name for the stacked rows, and an empty value ("–") is marked, so a stacked row leaves its
+    // line out. The rows are the screen's, projected: they are labelled after every change of the body.
+    const host = inject(ElementRef<HTMLElement>).nativeElement as HTMLElement;
+    let observer: MutationObserver | undefined;
+    let body: Element | null = null;
+    afterRenderEffect(() => {
+      const columns = this.columns();
+      // The body appears with the first answer and goes with an empty list or an error: look for it again then.
+      this.loaded();
+      this.empty();
+      this.error();
+      const current = host.querySelector('tbody');
+      const label = (): void => {
+        for (const row of Array.from(current?.rows ?? [])) {
+          Array.from(row.cells).forEach((cell, i) => {
+            const c = columns[i];
+            const text = cell.textContent?.trim() ?? '';
+            const named = c && cell.colSpan === 1 && cell.tagName === 'TD' && !c.hideLabel && c.stackLabel !== false;
+            if (named) cell.setAttribute('data-label', c.label);
+            else cell.removeAttribute('data-label');
+            cell.toggleAttribute('data-empty', cell.tagName === 'TD' && (text === '' || text === '–') && cell.children.length === 0);
+          });
+        }
+      };
+      label();
+      if (current !== body && typeof MutationObserver !== 'undefined') {
+        observer?.disconnect();
+        body = current;
+        if (current) {
+          observer = new MutationObserver(label);
+          observer.observe(current, { childList: true, subtree: true, characterData: true });
+        }
+      }
+    });
+    inject(DestroyRef).onDestroy(() => observer?.disconnect());
+  }
 
   protected readonly sortedId = computed(() => this.sort()?.column ?? null);
 

@@ -11,7 +11,7 @@
 }
 
 .settings {
-  max-inline-size: 56rem;
+  max-inline-size: var(--trove-settings-measure);
 }
 
 .row {

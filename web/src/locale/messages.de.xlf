@@ -16692,13 +16692,13 @@
         <target>Kein Repository passt zu den Filtern.</target>
       </segment>
     </unit>
-    <unit id="repo.col.format-class">
+    <unit id="repo.help.format-class">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:159</note>
+        <note category="location">src/app</note>
       </notes>
       <segment>
-        <source>Format and class</source>
-        <target>Format und Klasse</target>
+        <source>The format, and under it the class: local repositories hold what you upload, remote repositories fetch and cache from another registry, virtual repositories combine other repositories behind one address.</source>
+        <target>Das Format und darunter die Klasse: Lokale Repositories enthalten, was Sie hochladen; Remote-Repositories laden aus einer anderen Registry und halten eine Kopie vor; virtuelle Repositories fassen andere Repositories unter einer Adresse zusammen.</target>
       </segment>
     </unit>
     <unit id="repo.col.repository">
@@ -16708,15 +16708,6 @@
       <segment>
         <source>Repository</source>
         <target>Repository</target>
-      </segment>
-    </unit>
-    <unit id="repo.help.class">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:156</note>
-      </notes>
-      <segment>
-        <source>Local repositories hold what you upload, remote repositories fetch and cache from another registry, virtual repositories combine other repositories behind one address.</source>
-        <target>Lokale Repositories enthalten, was Sie hochladen; Remote-Repositories laden aus einer anderen Registry und halten eine Kopie vor; virtuelle Repositories fassen andere Repositories unter einer Adresse zusammen.</target>
       </segment>
     </unit>
     <unit id="repo.help.address">

@@ -34,7 +34,6 @@
     </div>
 
     <trove-data-table
-      class="stack-narrow"
       [caption]="tableCaption"
       [columns]="columns()"
       [loaded]="list.loaded()"
@@ -44,7 +43,6 @@
       [emptyText]="filtered() || projectKey() ? emptyFilteredText : emptyText"
       [hasMore]="list.hasMore()"
       [style.--trove-address-chars]="addressChars()"
-      [style.--trove-address-others]="addressOthers()"
       (more)="list.more()"
       (retry)="list.more()"
     >
@@ -69,7 +67,7 @@
             }
           </th>
           @if (!inProject()) {
-            <td class="labelled" [attr.data-label]="projectLabel">
+            <td>
               <a [routerLink]="['/projects', row.project]" translate="no">{{ row.project }}</a>
             </td>
           }
@@ -84,14 +82,16 @@
           <td class="address-cell">
             <trove-address-field [value]="address(row)" [label]="addressLabel(row)" [copyLabel]="copyLabel(row)" />
           </td>
-          <!-- The date only; the time is its title (Q-UI-305). Stacked, a row without activity leaves the line out. -->
-          <td class="labelled" [class.no-value]="!row.lastActivityAt" [attr.data-label]="activityLabel">
-            @if (row.lastActivityAt; as at) {
-              <time [attr.datetime]="at" [title]="at | date: 'medium'">{{ at | date: 'mediumDate' }}</time>
-            } @else {
-              –
-            }
-          </td>
+          <!-- The date only, the time is its title (Q-UI-305); for who maintains, and while a row has one (Q-UI-312). -->
+          @if (showActivity()) {
+            <td>
+              @if (row.lastActivityAt; as at) {
+                <time [attr.datetime]="at" [title]="at | date: 'medium'">{{ at | date: 'mediumDate' }}</time>
+              } @else {
+                –
+              }
+            </td>
+          }
           <td class="actions">
             <!-- The row's actions are a menu (ui-style-guide.md, Lists; Q-UI-302): four buttons pushed the list sideways. -->
             <button

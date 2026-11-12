@@ -39,7 +39,7 @@ const MAINTENANCE_MESSAGE_MAX = 500;
   styleUrl: '../../shared/access/access.scss',
   styles: `
     .settings {
-      max-inline-size: 56rem;
+      max-inline-size: var(--trove-settings-measure);
     }
     .source {
       margin-block-start: calc(-1 * var(--trove-space-2));

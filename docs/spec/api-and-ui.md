@@ -10491,6 +10491,10 @@ columns of their own. Every pixel they take is one the address does not get.
 
 **Choice:** (a). Whether the plain user sees the column at all is Q-UI-312, for the owner's review.
 
+**Revised in fix wave 1 (2026-11-12):** the header is **Format**, its help names the class under it (the longer header took
+the address's room); the last activity is shown to who may change the list's repositories (Q-UI-312) and only while a loaded
+row has one, so it is never a column of dashes.
+
 **Rationale:** both changes free room for the address without dropping a fact. The development agent revisits the header if the
 owner prefers **Type**.
 
@@ -10510,8 +10514,9 @@ address column was out of view and the description wrapped into a tall, narrow c
 | (b) The table scrolls sideways in its region | Today | Nothing to build | The address out of view |
 | (c) A separate list of cards for small screens | Two templates | Freedom of layout | Two templates of one list drift apart |
 
-**Choice:** (a), for the repository list now. The other lists still scroll sideways at 390 px (item UI-A-23 of the audit,
-[ui-audit.md](../projektplan/ui-audit.md)) and opt in when their columns are decided.
+**Choice:** (a), for the repository list first; since fix wave 1 for every list of the data table
+([Q-UI-308](#q-ui-308--every-list-takes-its-layout-from-the-data-table-a-column-budget-a-least-width-for-its-name-one-alignment-stacked-rows)),
+which names each cell by its column itself.
 
 **Rationale:** the stacked row is the shape the address needs at a narrow width, and a container query follows the list's own
 width, also beside the open filter panel. The development agent revisits the 48 rem if a list with fewer columns fits wider.
@@ -10540,6 +10545,49 @@ frequent actions.
 
 **Applied in the spec:** R-UI-067; the style guide's [Anatomy of a page](../developer/ui-style-guide.md#anatomy-of-a-page) already
 says it, the screens follow in the fix waves of the audit.
+
+### Q-UI-308 · Every list takes its layout from the data table: a column budget, a least width for its name, one alignment, stacked rows
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: fix wave 1 of T-21 (the coordinator, 2026-11-12) after the renders of Q-UI-300: in the repository list at 1440 px the
+first column was about 150 px, so the key `debian-internal-packages-for-bookworm-and-trixie` wrapped to four lines and the
+descriptions to three; the cells of one row sat at different heights (the name at the top of its tall cell, format and address
+centred); and the room of the other columns was a number the repository list set for itself (`--trove-address-others`). The other
+lists had none of it (systemic cause 2 of [ui-audit.md](../projektplan/ui-audit.md)).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The data table owns the layout: a column declares its least width (`TableColumn.width`, on the header cell), one column may be the `fill` column that takes what the others leave (the address, Q-UI-300), every cell is aligned to the top of its row with a control centred on the first line of text, and below 48 rem every list stacks its rows, each cell named by its column (`data-label`, set by the table) and an empty one left out (chosen) | One mechanism for ~30 lists | A list states its columns once; the budget is summed, not measured; one alignment everywhere; every list is readable on a phone | A cell's least width must hold its header, which the list's author checks on the renders |
+| (b) Each list keeps its own widths and stacking | As after Q-UI-306 | No shared change | The defects of the audit come back with every list |
+| (c) Middle alignment, as before | Cells centred | Familiar | A tall first cell leaves the rest of the row floating, the render's defect |
+
+**Choice:** (a). The repository list declares 16 rem for the repository, 7 rem for the project, 5.5 rem for the format (whose
+header is now **Format**, its help naming the class under it), 7.5 rem for the last activity and 2 rem for the menu; the address
+is the `fill` column. A list whose rows cannot be read as blocks sets `[stack]="false"`.
+
+**Rationale:** the defects were the same in every list, so the fix belongs to the one component every list uses. The development
+agent revisits top alignment if a list's controls are taller than one line of text.
+
+**Applied in the spec:** R-UI-020, R-UI-065; Q-UI-306 now holds for every list. Code: [data-table.ts](../../web/src/app/shared/ui/data-table.ts),
+[_list-screens.scss](../../web/src/styles/_list-screens.scss). Style guide: [Lists](../developer/ui-style-guide.md#lists).
+
+### Q-UI-309 · An empty list or region is a sentence and the action that fills it, without a frame
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the renders show three empty states (a dashed box, a framed box, a bare sentence) and "No tokens match." where nothing
+was filtered (UI-A-17, UI-A-20, UI-A-25).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `<trove-empty-state text>` with the action projected: a muted sentence over a hairline and, under it, the button or link that fills the list; the data table uses it for an empty list, with `emptyAction` content (chosen) | One look, one place for the action | The style guide's rule ("offers the action that fills it") in one component | Screens move to it one by one |
+| (b) The dashed box | Today's data table | Visible | A frame around nothing; no action |
+
+**Choice:** (a). **Rationale:** an empty list is a moment to act, so its action is next to the sentence. The development agent
+revisits an illustration if the owner wants the reference's.
+
+**Applied in the spec:** R-UI-020. Code: [empty-state.ts](../../web/src/app/shared/ui/empty-state.ts).
 
 ### Q-UI-310 · The kind of user is read from the roles in force, per project, and is no role of its own
 

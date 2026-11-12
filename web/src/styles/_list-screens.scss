@@ -33,13 +33,14 @@
 
 // The column of client addresses (Q-UI-300): one width for every field of the list, that of the list's longest address
 // (`--trove-address-chars`, set by the list) in the field's own face and size, with the field's padding, border and copy
-// button, at most what the list's other columns leave (`--trove-address-others`, set by the list), never under 16 rem.
+// button, at most what the list's other columns leave (`--trove-list-others`, which the data table sums from the columns'
+// widths, Q-UI-308), never under 16 rem.
 // The field fills the cell and shows the address from its start; a longer address scrolls inside its field.
 td.address-cell {
   // Resolved where it is used, so `ch` is the monospace face's at the field's size, and `cqi` the list's width.
   --trove-address-column: min(
     calc(var(--trove-address-chars, 40) * 1ch + 2 * var(--trove-space-3) + 2px + var(--trove-control-height)),
-    max(16rem, 100cqi - var(--trove-address-others, 34rem))
+    max(16rem, 100cqi - var(--trove-list-others, 34rem))
   );
 
   inline-size: var(--trove-address-column);
@@ -112,13 +113,23 @@ td.address-cell {
     border-spacing: 0;
     inline-size: 100%;
 
+    // One alignment for every list (Q-UI-308): every cell starts at the top of its row, and a control in a cell (32 px) is
+    // centred on the first line of text (16 px), so a row reads along one line whatever the height of its first cell.
     th,
     td {
       padding: var(--trove-space-4);
       text-align: start;
-      vertical-align: middle;
+      vertical-align: top;
       border-block-end: 1px solid var(--trove-border);
       line-height: 1rem;
+    }
+
+    tbody :is(th, td) > :is(.btn, trove-address-field, select, .select-input, .text-input, trove-copy-button, .row-actions) {
+      margin-block: calc((1rem - var(--trove-control-height)) / 2);
+    }
+
+    thead th {
+      vertical-align: middle;
     }
 
     thead th {
@@ -437,12 +448,12 @@ td.address-cell {
 
 // ---- Stacked rows ------------------------------------------------------------------------------
 
-// A list that opts in (`class="stack-narrow"` on `<trove-data-table>`) shows each row as a block below 48 rem of the list's
-// width (Q-UI-306): the name with its description and the row's menu on the first line, then each other cell on a line of
-// its own, the address field across the full width. The head stays for assistive technology only; a cell whose column
-// name is needed carries it in `data-label` (`.labelled`), and an empty one (`.no-value`) leaves its line out.
+// Every list (`<trove-data-table>`, unless `[stack]="false"`) shows each row as a block below 48 rem of the list's width
+// (Q-UI-306): the name with its description and the row's menu on the first line, then each other cell on a line of its own,
+// the address field across the full width. The head stays for assistive technology only; the data table gives every cell its
+// column's name in `data-label`, shown before the value, and marks an empty one (`data-empty`), which leaves its line out.
 @container (max-width: 48rem) {
-  .trove-data-table.stack-narrow {
+  .trove-data-table.stack {
     .table-scroll {
       max-block-size: none;
       overflow: visible;
@@ -483,6 +494,12 @@ td.address-cell {
       tbody tr > th[scope='row'] {
         grid-column: 1;
         grid-row: 1;
+
+        // A name wraps where it must when the row is a block: there is no column to grow.
+        a {
+          white-space: normal;
+          overflow-wrap: anywhere;
+        }
       }
 
       tbody tr > td.actions {
@@ -498,13 +515,21 @@ td.address-cell {
         }
       }
 
-      td.labelled::before {
+      td[data-label]::before {
         content: attr(data-label) ' ';
         color: var(--trove-text-muted);
       }
 
-      td.no-value {
+      td[data-empty] {
         display: none;
+      }
+
+      td.num {
+        text-align: start;
+      }
+
+      tbody :is(th, td) > :is(.btn, trove-address-field, select, .select-input, .text-input, trove-copy-button, .row-actions) {
+        margin-block: 0;
       }
 
       td.kind-cell {

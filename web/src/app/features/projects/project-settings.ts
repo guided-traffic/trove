@@ -138,7 +138,7 @@ import { projectRoleLabel } from './project-roles';
   styleUrl: '../../shared/access/access.scss',
   styles: `
     .settings {
-      max-inline-size: 56rem;
+      max-inline-size: var(--trove-settings-measure);
     }
     form {
       padding-block-end: var(--trove-space-6);

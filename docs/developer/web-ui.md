@@ -719,7 +719,13 @@ A dialog's test opens it through `TroveDialog` (or the screen's own action) and 
 
 [shared/ui/data-table.ts](../../web/src/app/shared/ui/data-table.ts), `<trove-data-table>`. It owns the frame; the rows stay in the screen.
 Its look is the reference's table (Q-UI-128, `_list-screens.scss`): no border around it, 16 px in every cell, the sticky
-head in the heading colour at weight 600 between two hairlines, a hairline under every row.
+head in the heading colour at weight 600 between two hairlines, a hairline under every row. It also owns the layout of every
+list (Q-UI-308): a column's `width` is its least width, carried by the header cell; a `fill` column (the client address) gets
+`--trove-list-others`, the sum of the other columns' widths and padding, which `td.address-cell` leaves them; every cell is
+aligned to the top with a control centred on the first line; below 48 rem of the list's width the rows stack (class `stack`,
+`[stack]="false"` to keep the table), and after every change of the body the table labels each cell with its column
+(`data-label`, unless `stackLabel: false`) and marks a cell without a value (`data-empty`). An empty list shows
+`<trove-empty-state>` with the content marked `emptyAction`.
 
 ```html
 <trove-data-table

@@ -150,27 +150,45 @@ export class RepositoryList {
   protected readonly applyLabel = $localize`:@@repo.filter.apply:Search`;
   /** No sort control: the repository list is ordered by key and the API takes no sort parameter. */
   protected readonly columns = computed<readonly TableColumn[]>(() =>
-    this.inProject() ? this.allColumns.filter((c) => c.id !== 'project') : this.allColumns,
+    this.allColumns.filter(
+      (c) => !(c.id === 'project' && this.inProject()) && !(c.id === 'activity' && !this.showActivity()),
+    ),
+  );
+  /**
+   * The last activity is a fact of maintenance: shown to who may change the list's repositories (Q-UI-312), and only while a
+   * loaded row has one, so that it is no column of dashes (Q-UI-305).
+   */
+  protected readonly showActivity = computed(
+    () =>
+      (this.inProject() ? this.session.canWriteRepositories(this.projectKey()) : this.canCreate()) &&
+      this.list.items().some((r) => !!r.lastActivityAt),
   );
   private readonly allColumns: readonly TableColumn[] = [
-    { id: 'key', label: $localize`:@@repo.col.repository:Repository` },
-    { id: 'project', label: $localize`:@@repo.col.project:Project` },
+    // The widths are the list's budget (Q-UI-308): the address takes the rest, so at 1440 px a project's list shows an address
+    // of 57 characters whole.
+    { id: 'key', label: $localize`:@@repo.col.repository:Repository`, width: '16rem' },
+    { id: 'project', label: $localize`:@@repo.col.project:Project`, width: '7rem' },
     {
       id: 'format',
-      label: $localize`:@@repo.col.format-class:Format and class`,
-      help: $localize`:@@repo.help.class:Local repositories hold what you upload, remote repositories fetch and cache from another registry, virtual repositories combine other repositories behind one address.`,
+      label: $localize`:@@repo.col.format:Format`,
+      help: $localize`:@@repo.help.format-class:The format, and under it the class: local repositories hold what you upload, remote repositories fetch and cache from another registry, virtual repositories combine other repositories behind one address.`,
+      width: '5.5rem',
+      stackLabel: false,
     },
     {
       id: 'address',
       label: $localize`:@@repo.col.address:Client address`,
       help: $localize`:@@repo.help.address:The address that package managers and download tools use for this repository.`,
+      fill: true,
+      stackLabel: false,
     },
     {
       id: 'activity',
       label: $localize`:@@repo.col.activity:Last activity`,
       help: $localize`:@@repo.help.activity:The last time a client read from or wrote to the repository. A dash means nothing has been recorded yet.`,
+      width: '7.5rem',
     },
-    { id: 'actions', label: $localize`:@@repo.col.actions:Actions`, hideLabel: true },
+    { id: 'actions', label: $localize`:@@repo.col.actions:Actions`, hideLabel: true, width: '2rem' },
   ];
 
   protected classIcon(c: RepositorySummary['class']): string {
@@ -183,9 +201,6 @@ export class RepositoryList {
     return $localize`:@@repo.copy-address-of:Copy client address of ${row.key}:key:`;
   }
   protected readonly deleteLabel = $localize`:@@repo.delete.progress:Repository deletion`;
-  /** The labels of the cells that name their column when the rows stack (Q-UI-306). */
-  protected readonly projectLabel = $localize`:@@repo.col.project:Project`;
-  protected readonly activityLabel = $localize`:@@repo.col.activity:Last activity`;
 
   protected address(row: RepositorySummary): string {
     // The server serves absolute URLs (public base URL plus path): shown and copied as they are.
@@ -194,12 +209,6 @@ export class RepositoryList {
 
   /** The length of the list's longest address: `.address-cell` sizes the column to it, so every field has one width. */
   protected readonly addressChars = computed(() => Math.max(0, ...this.list.items().map((r) => this.address(r).length)));
-
-  /**
-   * The room the other columns take, which the address column leaves them (Q-UI-300): the repository, format and class,
-   * last activity and the menu; in the admin area also the project. Measured on the renders of `make ui-renders`.
-   */
-  protected readonly addressOthers = computed(() => (this.inProject() ? '36rem' : '44rem'));
 
   protected actionsLabel(row: RepositorySummary): string {
     return $localize`:@@repo.actions-of:Actions for ${row.key}:key:`;

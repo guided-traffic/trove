@@ -33,7 +33,7 @@ import { groupOriginLabel } from './group-list';
   styleUrl: '../../shared/access/access.scss',
   styles: `
     .settings {
-      max-inline-size: 56rem;
+      max-inline-size: var(--trove-settings-measure);
     }
     form[novalidate] {
       padding-block-end: var(--trove-space-6);

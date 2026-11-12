@@ -16664,12 +16664,12 @@
         <source>No repository matches the filters.</source>
       </segment>
     </unit>
-    <unit id="repo.col.format-class">
+    <unit id="repo.help.format-class">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:159</note>
+        <note category="location">src/app</note>
       </notes>
       <segment>
-        <source>Format and class</source>
+        <source>The format, and under it the class: local repositories hold what you upload, remote repositories fetch and cache from another registry, virtual repositories combine other repositories behind one address.</source>
       </segment>
     </unit>
     <unit id="repo.col.repository">
@@ -16678,14 +16678,6 @@
       </notes>
       <segment>
         <source>Repository</source>
-      </segment>
-    </unit>
-    <unit id="repo.help.class">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:156</note>
-      </notes>
-      <segment>
-        <source>Local repositories hold what you upload, remote repositories fetch and cache from another registry, virtual repositories combine other repositories behind one address.</source>
       </segment>
     </unit>
     <unit id="repo.help.address">

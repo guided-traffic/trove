@@ -23,9 +23,9 @@ the fix waves of this list.
    its type. Decided in [Q-UI-307](../spec/api-and-ui.md#q-ui-307--a-pages-own-actions-are-buttons-at-the-right-end-of-its-header-views-of-the-same-thing-are-tabs); no shared component holds it yet.
 2. **Lists set their own columns, with no budget and no narrow layout.** The package list has nine columns, the repository page's
    package table, the project table, the browser's contents and the audit log each scroll sideways at 1440 px or cut their last
-   column; at 390 px every list but the repository list runs off the right edge
-   ([Q-UI-306](../spec/api-and-ui.md#q-ui-306--below-48-rem-of-its-width-the-repository-list-stacks-each-row-with-the-address-across-the-row)
-   gives lists a stacked row to opt into).
+   column. Since fix wave 1 the data table holds the mechanism
+   ([Q-UI-308](../spec/api-and-ui.md#q-ui-308--every-list-takes-its-layout-from-the-data-table-a-column-budget-a-least-width-for-its-name-one-alignment-stacked-rows)):
+   every list stacks its rows below 48 rem and aligns its cells one way; the lists still have to declare their budgets.
 3. **Every screen shows the administrator's data to every user.** No screen distinguishes the kinds of R-UI-067: the plain user
    gets read-only settings pages, capability names, maintenance facts and the administrator's warnings, and the start page
    offers no way to the common job.
@@ -33,7 +33,8 @@ the fix waves of this list.
    editors with a key-value list above them (repository settings) and cards of key-value pairs (dashboard, system status).
 5. **Shared pieces missing or bypassed.** Empty states come in three forms (a dashed box, a sentence, a table row) and one text
    ("No tokens match.") is used where nothing was filtered; tabs in three looks; a format spelled as its key, its display name
-   or with a product name in brackets; the settings measure `56rem` written as a literal in five components.
+   or with a product name in brackets. Since fix wave 1 there is one empty-state component and one page header (Q-UI-307,
+   Q-UI-309), which the screens still have to move to.
 
 ## Work list
 
@@ -70,7 +71,6 @@ Ranked: the plain user's main path first, then consistency across screens, then 
 | ID | Screen | Kind | Picture | What is wrong | Rule |
 |---|---|---|---|---|---|
 | UI-A-22 | Page headers | all | `power/policies-light-1440.png`, `power/repositories-light-1440.png`, `power/repository-settings-npm-remote-light-1440.png`, `admin/admin-user-light-1440.png` | Four forms of page action (systemic cause 1); detail pages put the type in the `<h1>` and the object in a subtitle ("User" / "sam", "Endpoint" / "default", "Repository settings" / "web-frontend/npm-internal") | Anatomy of a page, Q-UI-307 |
-| UI-A-23 | Every list but the repository list | all | `plain/packages-light-390.png`, `plain/home-light-390.png`, `admin/admin-users-light-390.png`, `admin/admin-audit-light-390.png` | At 390 px the table runs off the right edge | Q-UI-306 |
 | UI-A-24 | Format names | all | `plain/repositories-light-1440.png`, `plain/repository-empty-light-1440.png`, `plain/packages-light-1440.png` | A format is `npm` (its key) in the repository list without its icon, "Generic" in the repository page's badge, "OCI (Docker)" in the package list | Lists: a format is its icon and its name |
 | UI-A-25 | Empty states | all | `plain/profile-tokens-light-1440.png`, `power/policies-light-1440.png`, `admin/admin-bastions-dark-1440.png`, `admin/admin-endpoint-light-1440.png` | A dashed box, a box with a border, a bare sentence; "No tokens match." where nothing is filtered (also `admin/admin-tokens-light-1440.png`) | Lists: one empty state, with the action that fills it |
 | UI-A-26 | Tabs | all | `plain/profile-tokens-light-1440.png`, `plain/package-npm-light-1440.png`, `power/repository-settings-npm-remote-light-1440.png` | Pill links, the tab strip of links and the tab group; the strip wraps at 390 px on one screen | Controls: tabs |

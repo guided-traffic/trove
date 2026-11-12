@@ -90,7 +90,7 @@ export type IssuerTab = (typeof ISSUER_TABS)[number];
   styleUrl: '../../shared/access/access.scss',
   styles: `
     .settings {
-      max-inline-size: 56rem;
+      max-inline-size: var(--trove-settings-measure);
     }
   `,
 })
@@ -198,7 +198,7 @@ export class IssuerDetail {
   styleUrl: '../../shared/access/access.scss',
   styles: `
     .settings {
-      max-inline-size: 56rem;
+      max-inline-size: var(--trove-settings-measure);
     }
   `,
 })
