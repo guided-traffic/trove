@@ -98,11 +98,16 @@ Depending on the format, the content shows:
 
 | Format | What is listed | Open a row to see |
 |---|---|---|
-| **OCI (Docker)** | Images, each with its latest tag, the number of tags, and when it was last pushed. A remote repository lists the images it has cached: the tags clients have pulled through it and, in mirror mode, the tags a pass has fetched | The tags with digest, size and pushed time (fetched time in a remote repository, the time its cached copy of the tag was stored), and a copyable `docker pull` or `podman pull` command for the tag you choose, with this installation's address |
-| **npm, NuGet, Debian** | Packages, each with its latest version, the number of versions, open vulnerabilities where the format is scanned (npm and NuGet today) and downloads | The versions with size and published time, the open findings of each, and the install command for the version you choose |
+| **OCI (Docker)** | Images, each with its latest tag, the number of tags, the [grade](vulnerabilities.md#grades) of its latest tag, and when it was last pushed. A remote repository lists the images it has cached: the tags clients have pulled through it and, in mirror mode, the tags a pass has fetched | The tags with digest, size, pushed time (fetched time in a remote repository, the time its cached copy of the tag was stored) and grade, and a copyable `docker pull` or `podman pull` command for the tag you choose, with this installation's address |
+| **npm, NuGet, Debian** | Packages, each with its latest version, the number of versions, the [grade](vulnerabilities.md#grades) of its latest version where the format is scanned (npm and NuGet today) and downloads | The versions with size, published time and grade, and the install command for the version you choose |
 | **Generic** | The files of the repository, folder by folder | Selecting a folder opens it in place; selecting a file opens it in the file browser with all its details; the copy button copies its download address |
 
 Select a package or image name to open the [package page](packages.md) for details, the README and all versions. A virtual repository lists what it resolves through its members, which are named above the list. A remote repository lists what has been fetched through it, marked in a note.
+
+The **Vulnerabilities** column shows a shield with the grade and the count that decides it, for example **E · 13 Critical**; point at it to
+see every count. Select its heading to sort by grade: once ascending, from N/A and S to E, and again for the worst first. Sorting by
+grade loads up to 1,000 entries first; in a larger repository the list says that it sorted only those. The column is not shown when
+you are signed out, or when the installation does not scan.
 
 Debian packages are not scanned for vulnerabilities yet; the page says so and shows no vulnerability column for them.
 

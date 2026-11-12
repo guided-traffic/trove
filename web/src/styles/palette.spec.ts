@@ -131,6 +131,20 @@ const surfaces: Record<string, string | readonly [string, string]> = {
   'info badge': '--trove-badge-info-bg',
   search: ['--trove-search-bg', '--trove-nav-bg'],
   card: '--trove-card-bg',
+  // The grade shields and the severity bar (R-UI-090, R-UI-092, Q-UI-370): each fill a letter or a count sits on.
+  'grade S': '--trove-grade-s',
+  'grade A': '--trove-grade-a',
+  'grade B': '--trove-grade-b',
+  'grade C': '--trove-grade-c',
+  'grade D': '--trove-grade-d',
+  'grade E': '--trove-grade-e',
+  'grade N/A': '--trove-grade-na',
+  'critical segment': '--trove-sev-critical',
+  'high segment': '--trove-sev-high',
+  'medium segment': '--trove-sev-medium',
+  'low segment': '--trove-sev-low',
+  'unknown stripe': '--trove-sev-unknown',
+  'unknown light stripe': '--trove-sev-unknown-light',
 };
 
 function surface(name: string, scheme: Scheme): Rgba {
@@ -213,6 +227,20 @@ const textPairs: readonly (readonly [string, string])[] = [
   ['--trove-badge-warn-fg', 'warning badge'],
   ['--trove-badge-bad-fg', 'error badge'],
   ['--trove-badge-info-fg', 'info badge'],
+  // A grade's letter on its crest and a count on its segment (R-UI-090, R-UI-092).
+  ['--trove-grade-s-ink', 'grade S'],
+  ['--trove-grade-ink', 'grade A'],
+  ['--trove-grade-ink', 'grade B'],
+  ['--trove-grade-ink', 'grade C'],
+  ['--trove-grade-ink', 'grade D'],
+  ['--trove-grade-ink-light', 'grade E'],
+  ['--trove-grade-na-ink', 'grade N/A'],
+  ['--trove-sev-ink-light', 'critical segment'],
+  ['--trove-sev-ink-light', 'high segment'],
+  ['--trove-sev-ink', 'medium segment'],
+  ['--trove-sev-ink', 'low segment'],
+  ['--trove-on-surface', 'unknown stripe'],
+  ['--trove-on-surface', 'unknown light stripe'],
 ];
 
 // Marks: WCAG 1.4.11, 3:1 (focus ring, tab underline, checkbox, the navigation's bar and icon).
@@ -257,6 +285,9 @@ function failures(pairs: readonly (readonly [string, string])[], min: number): s
   return out;
 }
 
+/** The grades that are green on purpose: the good end of the scale (Q-UI-370). */
+const goodGrades = ['--trove-grade-s', '--trove-grade-a', '--trove-grade-b', '--trove-grade-s-ink'];
+
 describe('palette', () => {
   it('R-UI-044 the accent, the link and their neighbours read as text at 4.5:1 on every surface they sit on, in both schemes', () => {
     expect(failures(textPairs, 4.5)).toEqual([]);
@@ -285,8 +316,8 @@ describe('palette', () => {
       expect(isGreen(colour('--trove-status-ok', scheme)), `--trove-status-ok (${scheme})`).toBe(true);
       const green: string[] = [];
       for (const name of palette.keys()) {
-        // The positive status, as text or as its badge (Q-UI-128).
-        if (name === '--trove-status-ok' || name.startsWith('--trove-badge-ok-')) continue;
+        // The positive status, as text or as its badge (Q-UI-128), and the good grades S, A and B with S's letter (Q-UI-370).
+        if (name === '--trove-status-ok' || name.startsWith('--trove-badge-ok-') || goodGrades.includes(name)) continue;
         let c: Rgba;
         try {
           c = colour(name, scheme);
@@ -296,6 +327,31 @@ describe('palette', () => {
         if (isGreen(c)) green.push(name);
       }
       expect(green, scheme).toEqual([]);
+    }
+  });
+
+  it('R-UI-092 a severity without findings is faint, and its 0 keeps 4.5:1 on its faint fill in both schemes', () => {
+    const faint: string[] = [];
+    for (const scheme of ['light', 'dark'] as const) {
+      const page = colour('--trove-surface', scheme);
+      const ink = colour('--trove-on-surface', scheme);
+      for (const name of ['--trove-sev-critical', '--trove-sev-high', '--trove-sev-medium', '--trove-sev-low', '--trove-sev-unknown', '--trove-sev-unknown-light']) {
+        const c = colour(name, scheme);
+        const fill = over([c[0], c[1], c[2], 0.28], page);
+        const r = ratio(ink, fill);
+        if (r < 4.5) faint.push(`--trove-on-surface on ${name} at 28 % (${scheme}): ${r.toFixed(2)}:1`);
+      }
+    }
+    expect(faint).toEqual([]);
+  });
+
+  it('R-UI-002 Q-UI-370 the grades from C to E and N/A are not green: green stays a good sign', () => {
+    const isGreen = (c: Rgba) => {
+      const { hue, saturation } = hueOf(c);
+      return saturation > 0.15 && hue >= 75 && hue <= 165;
+    };
+    for (const scheme of ['light', 'dark'] as const) {
+      for (const name of ['--trove-grade-c', '--trove-grade-d', '--trove-grade-e', '--trove-grade-na']) expect(isGreen(colour(name, scheme)), name).toBe(false);
     }
   });
 

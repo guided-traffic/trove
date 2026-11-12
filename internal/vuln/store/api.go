@@ -425,51 +425,62 @@ func (a *API) Advisory(ctx context.Context, ecosystem, id string) (out Advisory,
 	return Advisory{Advisory: adv, CVSSScore: r.CvssScore, KnownExploitedAddedAt: r.KevAdded}, true, nil
 }
 
-// VersionCount is the number of open findings of one severity of one version.
-type VersionCount struct {
-	Version  string
-	Severity advisory.Severity
-	N        int64
+// NameVersion is one version of one package, by its stored name: what a grade is asked for (R-VULN-039).
+type NameVersion struct {
+	Name, Version string
 }
 
-// PackageCounts returns the open findings of one package in scope, per version and severity.
-func (a *API) PackageCounts(ctx context.Context, sc Scope, format, name string, f Filter) ([]VersionCount, error) {
-	var rows []q.VulnPackageCountsRow
+// split returns the parallel arrays of the grade statements.
+func split(pairs []NameVersion) (names, versions []string) {
+	names, versions = make([]string, len(pairs)), make([]string, len(pairs))
+	for i, p := range pairs {
+		names[i], versions[i] = p.Name, p.Version
+	}
+	return names, versions
+}
+
+// GradeCount is the number of open findings of one severity of one version in one repository.
+type GradeCount struct {
+	RepoID        int64
+	Name, Version string
+	Severity      advisory.Severity
+	N             int64
+}
+
+// GradeHolders returns the repositories that hold the versions and that the scope may read, narrowed by f's repositories: whose
+// grades make the grade of a version (R-VULN-038). The versions are of one format.
+func (a *API) GradeHolders(ctx context.Context, sc Scope, format string, pairs []NameVersion, f Filter) ([]Candidate, error) {
+	names, versions := split(pairs)
+	var rows []q.VulnGradeHoldersRow
 	err := a.db.Read(ctx, func(db q.DBTX) (err error) {
-		rows, err = q.New(db).VulnPackageCounts(ctx, q.VulnPackageCountsParams{
-			Whole: nid(sc.Whole), Rows: nn(sc.Rows), PackageRows: nn(sc.Packages), Format: format, Name: name,
-			HasRepos: f.HasRepos, Repos: nid(f.Repos),
+		rows, err = q.New(db).VulnGradeHolders(ctx, q.VulnGradeHoldersParams{
+			Names: names, Versions: versions, Format: format, HasRepos: f.HasRepos, Repos: nid(f.Repos),
+			Whole: nid(sc.Whole), Rows: nn(sc.Rows), PackageRows: nn(sc.Packages),
 		})
 		return err
 	})
-	out := make([]VersionCount, 0, len(rows))
+	out := make([]Candidate, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, VersionCount{Version: r.Version, Severity: advisory.Severity(r.Severity), N: r.N})
+		out = append(out, Candidate{RepoID: r.RepoID, Package: r.Name, Version: r.Version})
 	}
 	return out, err
 }
 
-// PackageCount is the number of open findings of one severity of one package.
-type PackageCount struct {
-	Format, Package string
-	Severity        advisory.Severity
-	N               int64
-}
-
-// PackageListCounts returns the open findings of the packages named in f (with f's repositories and formats) in scope, per format,
-// package and severity: the one statement behind the vulnerability counts of a page of the packages list (R-UI-052).
-func (a *API) PackageListCounts(ctx context.Context, sc Scope, f Filter) ([]PackageCount, error) {
-	var rows []q.VulnPackageListCountsRow
+// GradeCounts returns the open findings of the versions of one format in scope, per repository, version and severity, in one
+// statement however many versions (R-VULN-039). An image's versions are its tags: [API.ImageGradeCounts] counts them.
+func (a *API) GradeCounts(ctx context.Context, sc Scope, format string, pairs []NameVersion, f Filter) ([]GradeCount, error) {
+	names, versions := split(pairs)
+	var rows []q.VulnGradeCountsRow
 	err := a.db.Read(ctx, func(db q.DBTX) (err error) {
-		rows, err = q.New(db).VulnPackageListCounts(ctx, q.VulnPackageListCountsParams{
-			Whole: nid(sc.Whole), Rows: nn(sc.Rows), PackageRows: nn(sc.Packages), Packages: nn(f.Packages),
-			Formats: nn(f.Formats), HasRepos: f.HasRepos, Repos: nid(f.Repos),
+		rows, err = q.New(db).VulnGradeCounts(ctx, q.VulnGradeCountsParams{
+			Names: names, Versions: versions, Format: format, HasRepos: f.HasRepos, Repos: nid(f.Repos),
+			Whole: nid(sc.Whole), Rows: nn(sc.Rows), PackageRows: nn(sc.Packages),
 		})
 		return err
 	})
-	out := make([]PackageCount, 0, len(rows))
+	out := make([]GradeCount, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, PackageCount{Format: r.Format, Package: r.PackageName, Severity: advisory.Severity(r.Severity), N: r.N})
+		out = append(out, GradeCount{RepoID: r.RepoID, Name: r.PackageName, Version: r.Version, Severity: advisory.Severity(r.Severity), N: r.N})
 	}
 	return out, err
 }

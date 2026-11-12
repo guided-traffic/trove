@@ -91,6 +91,34 @@ No component library supplies a palette: every colour a style reads is a token o
 colours that Angular Material's generated palette used to provide are literal `light-dark()` pairs there, with the values
 the screens had.
 
+## Vulnerability grades
+
+The grade of a version (R-UI-090 to R-UI-093, [Q-UI-370](../spec/api-and-ui.md#q-ui-370--the-grades-take-cogpits-colours-and-s-a-and-b-are-the-greens-of-a-good-grade))
+takes the owner's cogpit scale, the same value in both schemes from S to E; N/A is the scheme's quiet grey. The crest's fill runs
+from 25 % lighter (`--trove-grade-highlight`) at the top to 25 % darker (`--trove-grade-shadow`) at the bottom; S has a gold rim.
+How to use the pieces is the style guide's [Vulnerability grade](ui-style-guide.md#vulnerability-grade).
+
+| Token | Light | Dark | Its letter or count | Contrast (computed by `palette.spec.ts`) |
+|---|---|---|---|---|
+| `--trove-grade-s` | `#1f5f55` | `#1f5f55` | `--trove-grade-s-ink` `#a8f0d4`, rim `--trove-grade-rim` `#d4b25a` | 5.7:1 |
+| `--trove-grade-a` | `#3e8e72` | `#3e8e72` | `--trove-grade-ink` `#0b1220` | 4.7:1 |
+| `--trove-grade-b` | `#8fd3b6` | `#8fd3b6` | `--trove-grade-ink` | 10.8:1 |
+| `--trove-grade-c` | `#e9ac4b` | `#e9ac4b` | `--trove-grade-ink` | 9.3:1 |
+| `--trove-grade-d` | `#c8691c` | `#c8691c` | `--trove-grade-ink` | 4.9:1 |
+| `--trove-grade-e` | `#c23b33` | `#c23b33` | `--trove-grade-ink-light` `#ffffff` | 5.3:1 |
+| `--trove-grade-na` | `#ececef` | `#3a383f` | `--trove-grade-na-ink` `#626168` / `#bfbfc3` | 5.2:1 and 6.3:1 |
+| `--trove-sev-critical` | `#7f1d1d` | `#7f1d1d` | `--trove-sev-ink-light` `#ffffff` | 10.0:1 |
+| `--trove-sev-high` | `#c9302a` | `#c9302a` | `--trove-sev-ink-light` | 5.3:1; cogpit's `#d9403a` is 4.4:1 with white, so it is one step deeper |
+| `--trove-sev-medium` | `#e8a33d` | `#e8a33d` | `--trove-sev-ink` `#1c1204` | 8.6:1 |
+| `--trove-sev-low` | `#f5d68e` | `#f5d68e` | `--trove-sev-ink` | 13.1:1 |
+| `--trove-sev-unknown`, `-unknown-light` | `#b9bdc4`, `#e0e3e6` | `#45505c`, `#26303c` | `--trove-on-surface`, on both stripes | 6.1:1 and 9.0:1 light, 7.0:1 and 11.3:1 dark |
+
+A severity without findings is its colour at 28 % over the surface, with its 0 in `--trove-on-surface` (at least 4.5:1, a test of
+its own). S, A and B are green on purpose: the good end of the scale is a positive status in Q-UI-96's sense, and the palette test
+admits these tokens (and S's mint letter) beside `--trove-status-ok`; C to E and N/A are never green. The bar does not take the
+trend's `--trove-chart-*` colours, and the trend keeps them: a chart's series are marks against the page (3:1), the bar's Low and
+Medium are not, because the bar carries its counts as text (Q-UI-376).
+
 ## The two-pane browser
 
 The file browser (`/projects/<key>/browse`, [Q-UI-98](../spec/api-and-ui.md#q-ui-98--the-file-browser-is-two-panes-with-a-toolbar-and-a-details-header))

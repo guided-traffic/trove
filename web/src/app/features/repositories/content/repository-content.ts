@@ -1,7 +1,6 @@
 import { CdkMenu, CdkMenuItem, CdkMenuTrigger } from '@angular/cdk/menu';
 import { Component, computed, effect, inject, input, resource, untracked } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { PackageSort } from '../../../api/packages-api';
 import {
   FormatDescriptor,
   RepositoriesApi,
@@ -22,10 +21,10 @@ import { clientAddress } from '../repository-model';
 import { classLabel } from '../repository-wizard';
 import { contentShapeOf } from './content-shape';
 import { RepositoryFiles } from './repository-files';
-import { RepositoryItems } from './repository-items';
+import { ItemSort, RepositoryItems } from './repository-items';
 import { FormatIconView } from '../../../shared/format-icon';
 
-const SORTS: readonly PackageSort[] = ['name', '-name', 'updatedAt', '-updatedAt'];
+const SORTS: readonly ItemSort[] = ['name', '-name', 'updatedAt', '-updatedAt', 'grade', '-grade'];
 
 /**
  * The content page of a repository, `/projects/<project>/repositories/<key>` (R-UI-052, Q-UI-216): what the repository holds, on
@@ -152,9 +151,9 @@ export class RepositoryContent {
   protected readonly detailsText = $localize`:@@repo.content.details-text2:Further addresses, and where this repository fetches from or what it resolves from.`;
 
   protected readonly filter = computed(() => this.q() ?? '');
-  protected readonly order = computed<PackageSort>(() => {
+  protected readonly order = computed<ItemSort>(() => {
     const s = this.sort();
-    return (SORTS as readonly string[]).includes(s ?? '') ? (s as PackageSort) : 'name';
+    return (SORTS as readonly string[]).includes(s ?? '') ? (s as ItemSort) : 'name';
   });
   protected readonly folder = computed(() => this.path() ?? '');
 
@@ -173,7 +172,7 @@ export class RepositoryContent {
     this.navigate({ q: q || null });
   }
 
-  protected setSort(sort: PackageSort): void {
+  protected setSort(sort: ItemSort): void {
     this.navigate({ sort: sort === 'name' ? null : sort });
   }
 

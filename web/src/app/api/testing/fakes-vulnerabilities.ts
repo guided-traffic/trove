@@ -13,6 +13,7 @@ import {
   VulnerabilityFinding,
   VulnerabilityFindingDetail,
   VulnerabilityFindingPatch,
+  VulnerabilityGrade,
   VulnerabilityPackageReport,
   VulnerabilitySetStatusRequest,
   VulnerabilitySetStatusResult,
@@ -521,4 +522,21 @@ export function severityCounts(over: Partial<VulnerabilitySeverityCounts> = {}):
 
 export function provideVulnerabilityFakes(): Provider[] {
   return [{ provide: VulnerabilitiesApi, useClass: FakeVulnerabilitiesApi }];
+}
+
+/** A version's grade as the API answers it (R-VULN-039): evaluated with the given open findings, or N/A not covered. */
+export function sampleGrade(
+  grade: VulnerabilityGrade['grade'],
+  open: Partial<VulnerabilitySeverityCounts> = {},
+  over: Partial<VulnerabilityGrade> = {},
+): VulnerabilityGrade {
+  return {
+    grade,
+    open: severityCounts(open),
+    eosl: false,
+    checkedAt: grade === 'N/A' ? null : '2026-11-12T12:31:51Z',
+    evaluation: grade === 'N/A' ? 'not_covered' : 'evaluated',
+    repository: 'web/npm-local',
+    ...over,
+  };
 }

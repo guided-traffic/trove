@@ -3397,6 +3397,39 @@ func (e VulnerabilityFindingEventChange) Valid() bool {
 	}
 }
 
+// Defines values for VulnerabilityGradeGrade.
+const (
+	GradeA  VulnerabilityGradeGrade = "A"
+	GradeB  VulnerabilityGradeGrade = "B"
+	GradeC  VulnerabilityGradeGrade = "C"
+	GradeD  VulnerabilityGradeGrade = "D"
+	GradeE  VulnerabilityGradeGrade = "E"
+	GradeNA VulnerabilityGradeGrade = "N/A"
+	GradeS  VulnerabilityGradeGrade = "S"
+)
+
+// Valid indicates whether the value is a known member of the VulnerabilityGradeGrade enum.
+func (e VulnerabilityGradeGrade) Valid() bool {
+	switch e {
+	case GradeA:
+		return true
+	case GradeB:
+		return true
+	case GradeC:
+		return true
+	case GradeD:
+		return true
+	case GradeE:
+		return true
+	case GradeNA:
+		return true
+	case GradeS:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for VulnerabilityImageStateState.
 const (
 	VulnerabilityImageStateStateFailed  VulnerabilityImageStateState = "failed"
@@ -7485,11 +7518,6 @@ type PackageSummary struct {
 	// Name The name as the format stores it; NuGet IDs in their original casing.
 	Name string `json:"name"`
 
-	// OpenVulnerabilities With `include=vulnerabilities` only, and only for a signed-in caller of an installation that scans (R-UI-052): the open
-	// findings of the entry's visible versions that the caller can read, in the repositories the list is filtered by, by
-	// severity. A package without one counts zero. Summed over the versions, so a finding present in two versions counts twice.
-	OpenVulnerabilities *VulnerabilitySeverityCounts `json:"openVulnerabilities,omitempty"`
-
 	// Repositories The keys of the repositories that hold a visible version.
 	Repositories []string `json:"repositories"`
 
@@ -7498,6 +7526,11 @@ type PackageSummary struct {
 
 	// VersionCount The number of visible versions.
 	VersionCount int64 `json:"versionCount"`
+
+	// VulnerabilityGrade With `include=vulnerabilities` only, and only for a signed-in caller of an installation that scans (R-VULN-039): the grade
+	// of `latestVersion` over the repositories the list is filtered by (every readable one without the filter), the worst of
+	// them (R-VULN-038).
+	VulnerabilityGrade *VulnerabilityGrade `json:"vulnerabilityGrade,omitempty"`
 }
 
 // PackageVersion defines model for PackageVersion.
@@ -9279,6 +9312,39 @@ type VulnerabilityFindingPatch struct {
 	Status *VulnerabilityStatus `json:"status,omitempty"`
 }
 
+// VulnerabilityGrade The grade of a version in a repository (R-VULN-038, R-VULN-039): S without an open finding,
+// A with only Low, None or Unknown (at most 10), B with Medium or more than 10 Low, None or Unknown, C with High, D with 1 to 5
+// Critical, E with more than 5 Critical; an image whose OS is at its end of life is C at best; N/A while the version is not
+// evaluated. Where it stands for several repositories it is the worst of their grades, N/A lowest. The words of the grade (its
+// text and rule) are the client's.
+type VulnerabilityGrade struct {
+	// CheckedAt An image: the oldest scan of its manifests in the repository. Every other format: when the advisory data it was evaluated against was synchronised. null for N/A.
+	CheckedAt *time.Time `json:"checkedAt"`
+
+	// Eosl An image whose OS is at its end of life; false for every other format.
+	Eosl bool `json:"eosl"`
+
+	// Evaluation The derived evaluation state of a stored version in a repository (R-VULN-001): `evaluated` (the advisory data is
+	// complete), `pending_data` (it was never imported completely), `internal` (public advisories do not apply to the name)
+	// or `not_covered` (scanning is off, the upstream is not recognised, or the format has no adapter). For an image also
+	// `pending_scan` (its manifests have not been scanned yet, so the absence of findings says nothing) and `scan_failed` (the scan of one of
+	// them did not finish; `images` names why).
+	Evaluation VulnerabilityEvaluation `json:"evaluation"`
+	Grade      VulnerabilityGradeGrade `json:"grade"`
+
+	// Open The open findings by severity of the repository whose grade it is; zero for N/A.
+	Open VulnerabilitySeverityCounts `json:"open"`
+
+	// Os An image's OS as the analyser names it (alpine 3.24.1), the different ones of several platforms joined with ", "; absent for every other format.
+	Os *string `json:"os,omitempty"`
+
+	// Repository The qualified name of the repository whose grade it is.
+	Repository string `json:"repository"`
+}
+
+// VulnerabilityGradeGrade defines model for VulnerabilityGrade.Grade.
+type VulnerabilityGradeGrade string
+
 // VulnerabilityImageComponent A package inside a container image that an advisory affects (R-VULN-012).
 type VulnerabilityImageComponent struct {
 	// Class os-pkgs for an operating-system package, lang-pkgs for a language package.
@@ -9325,8 +9391,13 @@ type VulnerabilityKind string
 type VulnerabilityPackageReport struct {
 	PackageId string `json:"packageId"`
 	Versions  []struct {
-		Open    VulnerabilitySeverityCounts `json:"open"`
-		Version string                      `json:"version"`
+		// Grade The grade of a version in a repository (R-VULN-038, R-VULN-039): S without an open finding,
+		// A with only Low, None or Unknown (at most 10), B with Medium or more than 10 Low, None or Unknown, C with High, D with 1 to 5
+		// Critical, E with more than 5 Critical; an image whose OS is at its end of life is C at best; N/A while the version is not
+		// evaluated. Where it stands for several repositories it is the worst of their grades, N/A lowest. The words of the grade (its
+		// text and rule) are the client's.
+		Grade   VulnerabilityGrade `json:"grade"`
+		Version string             `json:"version"`
 	} `json:"versions"`
 }
 
@@ -9516,6 +9587,13 @@ type VulnerabilityVersionReport struct {
 		// them did not finish; `images` names why).
 		Evaluation VulnerabilityEvaluation `json:"evaluation"`
 		Findings   []VulnerabilityFinding  `json:"findings"`
+
+		// Grade The grade of a version in a repository (R-VULN-038, R-VULN-039): S without an open finding,
+		// A with only Low, None or Unknown (at most 10), B with Medium or more than 10 Low, None or Unknown, C with High, D with 1 to 5
+		// Critical, E with more than 5 Critical; an image whose OS is at its end of life is C at best; N/A while the version is not
+		// evaluated. Where it stands for several repositories it is the worst of their grades, N/A lowest. The words of the grade (its
+		// text and rule) are the client's.
+		Grade VulnerabilityGrade `json:"grade"`
 
 		// Images For a version of the format oci, the manifests the version stands for, one per platform.
 		Images     *[]VulnerabilityImageState `json:"images,omitempty"`
@@ -10024,7 +10102,7 @@ type ListPackagesParams struct {
 	NamePrefix *string `form:"namePrefix,omitempty" json:"namePrefix,omitempty"`
 	Keyword    *string `form:"keyword,omitempty" json:"keyword,omitempty"`
 
-	// Include `vulnerabilities`: also answer the counts of open findings per entry (`openVulnerabilities`).
+	// Include `vulnerabilities`: also answer the grade of each entry's latest version (`vulnerabilityGrade`, R-VULN-039).
 	Include *[]ListPackagesParamsInclude `form:"include,omitempty" json:"include,omitempty"`
 
 	// CreatedFrom Inclusive lower bound of the creation time of the first visible version.

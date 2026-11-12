@@ -33,6 +33,7 @@ export type VulnerabilitySetStatusRequest = Schema<'VulnerabilitySetStatusReques
 export type VulnerabilitySetStatusResult = Schema<'VulnerabilitySetStatusResult'>;
 export type VulnerabilityVersionReport = Schema<'VulnerabilityVersionReport'>;
 export type VulnerabilityPackageReport = Schema<'VulnerabilityPackageReport'>;
+export type VulnerabilityGrade = Schema<'VulnerabilityGrade'>;
 
 export const SEVERITIES: readonly VulnerabilitySeverity[] = ['critical', 'high', 'medium', 'low', 'none', 'unknown'];
 export const STATUSES: readonly VulnerabilityStatus[] = ['needs_triage', 'confirmed', 'blocked', 'dismissed', 'resolved'];

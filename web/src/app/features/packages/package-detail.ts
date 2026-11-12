@@ -21,9 +21,10 @@ import { AnsibleContents } from './ansible-contents';
 import { AnsibleDocs } from './ansible-docs';
 import { AnsibleImportLog } from './ansible-import-log';
 // >>> M4b vulnerabilities
-import { VulnerabilitiesApi, VulnerabilityPackageReport, VulnerabilitySeverity, VulnerabilityVersionReport } from '../../api/vulnerabilities-api';
-import { blockedRepositories, highestOpen, openFindings, PackageVulnerabilities } from '../vulnerabilities/package-vulnerabilities';
-import { SeverityBadge } from '../vulnerabilities/vuln-parts';
+import { VulnerabilitiesApi, VulnerabilityGrade, VulnerabilityPackageReport, VulnerabilityVersionReport } from '../../api/vulnerabilities-api';
+import { GradeLabel } from '../../shared/vulnerability/grade';
+import { worstGrade } from '../../shared/vulnerability/grade-words';
+import { blockedRepositories, openCount, PackageVulnerabilities } from '../vulnerabilities/package-vulnerabilities';
 // <<< M4b vulnerabilities
 
 export type DetailTab =
@@ -192,7 +193,7 @@ function frameworkGroups(value: unknown): FrameworkGroup[] {
     AnsibleImportLog,
     // >>> M4b vulnerabilities
     PackageVulnerabilities,
-    SeverityBadge,
+    GradeLabel,
     // <<< M4b vulnerabilities
   ],
   templateUrl: './package-detail.html',
@@ -348,7 +349,7 @@ export class PackageDetail {
     },
   });
   protected readonly vulnerabilityReport = computed(() => valueOf(this.vulnerabilities) ?? null);
-  /** The open findings per version, for the badges of *All versions*. */
+  /** The grade of every version, for the column of *All versions* (R-UI-094). */
   protected readonly packageVulnerabilities = resource({
     params: () => valueOf(this.summary)?.id,
     loader: async ({ params }): Promise<VulnerabilityPackageReport | null> => {
@@ -359,18 +360,14 @@ export class PackageDetail {
       }
     },
   });
-  protected readonly worstByVersion = computed(() => {
-    const out = new Map<string, VulnerabilitySeverity>();
-    for (const v of valueOf(this.packageVulnerabilities)?.versions ?? []) {
-      const worst = highestOpen(v.open);
-      if (worst) out.set(v.version, worst);
-    }
-    return out;
-  });
-  protected readonly worstKnown = computed(() => valueOf(this.packageVulnerabilities) != null);
+  protected readonly gradeByVersion = computed(
+    () => new Map<string, VulnerabilityGrade>((valueOf(this.packageVulnerabilities)?.versions ?? []).map((v) => [v.version, v.grade])),
+  );
+  /** The selected version's grade, the worst of its repositories (R-VULN-038, Q-UI-375); null without a report. */
+  protected readonly versionGrade = computed(() => worstGrade((this.vulnerabilityReport()?.repositories ?? []).map((r) => r.grade)));
   protected readonly blockedIn = computed(() => blockedRepositories(this.vulnerabilityReport()));
   protected readonly vulnerabilitiesAvailable = computed(() => !this.vulnerabilities.isLoading() && this.vulnerabilityReport() !== null);
-  protected readonly openCount = computed(() => openFindings(this.vulnerabilityReport()).length);
+  protected readonly openCount = computed(() => openCount(this.vulnerabilityReport()));
   // <<< M4b vulnerabilities
 
   protected readonly loadFailure = computed(() => {
@@ -579,7 +576,7 @@ export class PackageDetail {
     { id: 'repositories', label: $localize`:@@pkg.ver.repositories:Repositories` },
     { id: 'downloads', label: $localize`:@@pkg.ver.downloads:Downloads`, numeric: true },
     // >>> M4b vulnerabilities
-    { id: 'vulnerabilities', label: $localize`:@@pkg.ver.vulnerabilities:Open vulnerabilities` },
+    { id: 'vulnerabilities', label: $localize`:@@pkg.ver.grade:Vulnerabilities` },
     // <<< M4b vulnerabilities
   ];
   protected readonly repositoryColumns: readonly TableColumn[] = [

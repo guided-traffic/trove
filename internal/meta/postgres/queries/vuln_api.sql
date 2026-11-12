@@ -341,36 +341,39 @@ SELECT rep.ecosystem, rep.canonical_id AS id, rep.kind, rep.summary, rep.details
                    FROM vuln_affected x WHERE x.ecosystem = rep.ecosystem AND x.advisory_id = rep.id), '[]'::jsonb)::text AS affected
   FROM rep;
 
--- name: VulnPackageCounts :many
--- The open findings of one package the caller can read, per version and severity; has_repos narrows them to the repositories in repos.
-SELECT f.version, f.severity, count(*)::bigint AS n
-  FROM vuln_finding f
+-- name: VulnGradeHolders :many
+-- The repositories that hold the given (name, version) pairs of one format and that the caller may read, narrowed by has_repos to
+-- the repositories in repos: whose grades decide the grade of a version (R-VULN-038, R-VULN-039). names and versions are parallel
+-- arrays, one pair per entry; the listing holds the cached tags of a remote OCI repository as well (R-OCI-036).
+SELECT p.repo_id, p.name, pv.version
+  FROM (SELECT unnest(sqlc.arg(names)::text[]) AS name, unnest(sqlc.arg(versions)::text[]) AS version) AS w
+  JOIN packages p ON p.name = w.name
+  JOIN repositories r ON r.id = p.repo_id
+  JOIN package_version_listing pv ON pv.package_id = p.id AND pv.version = w.version
+ WHERE pv.trashed_at IS NULL
+   AND r.format = sqlc.arg(format)::text
+   AND (NOT sqlc.arg(has_repos)::boolean OR p.repo_id = ANY(sqlc.arg(repos)::bigint[]))
+   AND (p.repo_id = ANY(sqlc.arg(whole)::bigint[])
+          OR concat_ws(chr(31), p.repo_id::text, p.name, pv.version) = ANY(sqlc.arg(rows)::text[])
+          OR concat_ws(chr(31), p.repo_id::text, p.name) = ANY(sqlc.arg(package_rows)::text[]))
+ ORDER BY p.repo_id, p.name, pv.version;
+
+-- name: VulnGradeCounts :many
+-- The open findings of the given (name, version) pairs of one format that the caller can read, per repository, version and severity:
+-- the counts behind the grades of a page of the packages list and of a package's versions (R-VULN-039), one statement however many
+-- pairs. has_repos narrows them to the repositories in repos.
+SELECT f.repo_id, f.package_name, f.version, f.severity, count(*)::bigint AS n
+  FROM (SELECT unnest(sqlc.arg(names)::text[]) AS name, unnest(sqlc.arg(versions)::text[]) AS version) AS w
+  JOIN vuln_finding f ON f.package_name = w.name AND f.version = w.version
   JOIN repositories r ON r.id = f.repo_id
  WHERE r.format = sqlc.arg(format)::text
-   AND f.package_name = sqlc.arg(name)::text
    AND f.status IN ('needs_triage', 'confirmed', 'blocked')
    AND (NOT sqlc.arg(has_repos)::boolean OR f.repo_id = ANY(sqlc.arg(repos)::bigint[]))
    AND (f.repo_id = ANY(sqlc.arg(whole)::bigint[])
           OR concat_ws(chr(31), f.repo_id::text, f.package_name, f.version) = ANY(sqlc.arg(rows)::text[])
           OR concat_ws(chr(31), f.repo_id::text, f.package_name) = ANY(sqlc.arg(package_rows)::text[]))
- GROUP BY f.version, f.severity
- ORDER BY f.version, f.severity;
-
--- name: VulnPackageListCounts :many
--- The open findings of the named packages the caller can read, per format, package and severity, for a page of the packages list
--- (R-UI-052): one statement however many packages the page holds. has_repos narrows them to the repositories in repos.
-SELECT r.format, f.package_name, f.severity, count(*)::bigint AS n
-  FROM vuln_finding f
-  JOIN repositories r ON r.id = f.repo_id
- WHERE f.package_name = ANY(sqlc.arg(packages)::text[])
-   AND (cardinality(sqlc.arg(formats)::text[]) = 0 OR r.format = ANY(sqlc.arg(formats)::text[]))
-   AND f.status IN ('needs_triage', 'confirmed', 'blocked')
-   AND (NOT sqlc.arg(has_repos)::boolean OR f.repo_id = ANY(sqlc.arg(repos)::bigint[]))
-   AND (f.repo_id = ANY(sqlc.arg(whole)::bigint[])
-          OR concat_ws(chr(31), f.repo_id::text, f.package_name, f.version) = ANY(sqlc.arg(rows)::text[])
-          OR concat_ws(chr(31), f.repo_id::text, f.package_name) = ANY(sqlc.arg(package_rows)::text[]))
- GROUP BY r.format, f.package_name, f.severity
- ORDER BY r.format, f.package_name, f.severity;
+ GROUP BY f.repo_id, f.package_name, f.version, f.severity
+ ORDER BY f.repo_id, f.package_name, f.version, f.severity;
 
 -- name: VulnSummaryCounts :many
 -- The open findings the caller can read, per severity and kind, with the share that needs triage and the share with a fix.

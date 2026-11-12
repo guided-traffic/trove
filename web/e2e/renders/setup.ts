@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Browser, chromium, expect, request } from '@playwright/test';
-import { Api, expectStatus, kinds, mainProject, seedContent, seedGrants, seedProjectsAndRepositories } from './seed';
+import { Api, expectStatus, kinds, mainProject, seedContent, seedGrants, seedProjectsAndRepositories, syncAdvisories } from './seed';
 import { authFile, edge, outDir, stateDir } from './paths';
 
 /**
@@ -27,6 +27,7 @@ export default async function setup(): Promise<void> {
     for (const kind of ['plain', 'power', 'admin'] as const) await signIn(browser, kind);
     await seedGrants(admin);
     await publishAsPowerUser(browser);
+    await syncAdvisories(admin);
     for (const kind of ['plain', 'power', 'admin'] as const) await openRecent(browser, kind);
   } finally {
     await browser.close();

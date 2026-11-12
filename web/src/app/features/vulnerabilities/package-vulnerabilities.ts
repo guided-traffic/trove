@@ -1,19 +1,19 @@
-import { DatePipe } from '@angular/common';
 import { Component, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import {
-  SEVERITIES,
-  VulnerabilityFinding,
-  VulnerabilityPackageReport,
-  VulnerabilitySeverity,
-  VulnerabilityVersionReport,
-} from '../../api/vulnerabilities-api';
-import { blockReasonLabel, evaluationLabel, isOpen } from './vuln-labels';
+import { VulnerabilityFinding, VulnerabilityVersionReport } from '../../api/vulnerabilities-api';
+import { GradeCard } from '../../shared/vulnerability/grade-card';
+import { blockReasonLabel } from './vuln-labels';
 import { FindingStatus, SeverityBadge } from './vuln-parts';
 
-/** The open findings of a version report, across the repositories (R-VULN-023: the count on the tab). */
-export function openFindings(report: VulnerabilityVersionReport | null): VulnerabilityFinding[] {
-  return (report?.repositories ?? []).flatMap((r) => r.findings).filter((f) => isOpen(f.status));
+/**
+ * The open findings of a version report for the tab's label (R-VULN-023), from the grades' counts of every repository: the
+ * listed findings stop at 1,000 per repository, the counts do not.
+ */
+export function openCount(report: VulnerabilityVersionReport | null): number {
+  return (report?.repositories ?? []).reduce(
+    (sum, r) => sum + r.grade.open.critical + r.grade.open.high + r.grade.open.medium + r.grade.open.low + r.grade.open.none + r.grade.open.unknown,
+    0,
+  );
 }
 
 /** The repositories a version report names as blocking the download (the header's "Blocked in …"). */
@@ -21,22 +21,17 @@ export function blockedRepositories(report: VulnerabilityVersionReport | null): 
   return (report?.repositories ?? []).filter((r) => r.blocked).map((r) => r.repository);
 }
 
-/** The highest severity with an open finding in the counts of one version, or null (the badge of "All versions"). */
-export function highestOpen(open: VulnerabilityPackageReport['versions'][number]['open'] | undefined): VulnerabilitySeverity | null {
-  if (!open) return null;
-  return SEVERITIES.find((s) => open[s] > 0) ?? null;
-}
-
 /**
- * The *Vulnerabilities* tab of the package page (R-VULN-023): per readable repository that holds the selected version its
- * evaluation state, a block with its reason (*malicious package*, or *blocked in triage* with the finding that blocks), and
- * the findings with severity, identifier, status and fixed versions, each linking to the finding. The report is the API's
+ * The *Vulnerabilities* tab of the package page (R-VULN-023): per readable repository that holds the selected version its grade
+ * card (R-UI-093: the grade, its rule, the counts as a bar, when it was checked; N/A with why it is not evaluated), a block with
+ * its reason (*malicious package*, or *blocked in triage* with the finding that blocks), and the findings with severity,
+ * identifier, status and fixed versions, each linking to the finding. The report is the API's
  * (`GET …/versions/{version}/vulnerabilities`); the page shows nothing it does not carry.
  */
 @Component({
   selector: 'trove-package-vulnerabilities',
   preserveWhitespaces: true,
-  imports: [DatePipe, RouterLink, FindingStatus, SeverityBadge],
+  imports: [RouterLink, FindingStatus, GradeCard, SeverityBadge],
   template: `
     @if (report(); as r) {
       @if (r.repositories.length === 0) {
@@ -45,16 +40,13 @@ export function highestOpen(open: VulnerabilityPackageReport['versions'][number]
       @for (repo of r.repositories; track repo.repository) {
         <section class="vuln-repo" [attr.aria-labelledby]="'vuln-repo-' + $index">
           <h2 [id]="'vuln-repo-' + $index" translate="no">{{ repo.repository }}</h2>
-          <p class="vuln-evaluation">
-            <span class="material-icons inline" aria-hidden="true">{{ repo.evaluation === 'evaluated' ? 'verified_user' : 'info' }}</span>
-            {{ evaluation(repo.evaluation) }}
-            @if (repo.evaluation === 'evaluated' && repo.syncedAt) {
-              <span class="secondary-inline">
-                <ng-container i18n="@@pkg.vuln.data-from">Advisory data from</ng-container>
-                <time [attr.datetime]="repo.syncedAt">{{ repo.syncedAt | date: 'medium' }}</time>
-              </span>
-            }
-          </p>
+          <trove-grade-card
+            class="vuln-grade"
+            [grade]="repo.grade"
+            [packageName]="packageName()"
+            [findingVersions]="findingVersions(repo, r.version)"
+            [image]="repo.images !== undefined"
+          />
           @if (repo.blocked) {
             <p class="banner-warning" role="note">
               <span class="material-icons inline warn" aria-hidden="true">block</span>
@@ -66,12 +58,6 @@ export function highestOpen(open: VulnerabilityPackageReport['versions'][number]
                   <a [routerLink]="['/projects', f.project, 'vulnerabilities', 'findings', f.id]" translate="no">{{ f.advisory }}</a>
                 }
               </span>
-            </p>
-          }
-          @if (repo.evaluation === 'evaluated' && repo.findings.length === 0) {
-            <p class="vuln-clean">
-              <span class="material-icons inline ok" aria-hidden="true">check_circle</span>
-              <ng-container i18n="@@pkg.vuln.clean">No known vulnerabilities.</ng-container>
             </p>
           }
           @if (repo.findings.length > 0) {
@@ -112,9 +98,15 @@ export function highestOpen(open: VulnerabilityPackageReport['versions'][number]
 export class PackageVulnerabilities {
   /** The report of the selected version, or null while it is not available. */
   readonly report = input<VulnerabilityVersionReport | null>(null);
+  /** The package's name, for the link of the grade card to the findings. */
+  readonly packageName = input('');
 
-  protected evaluation = evaluationLabel;
   protected reason = blockReasonLabel;
+
+  /** The versions the findings of the version name in a repository: the version, or an image's manifest digests (R-VULN-037). */
+  protected findingVersions(repo: VulnerabilityVersionReport['repositories'][number], version: string): readonly string[] {
+    return repo.images?.length ? repo.images.map((m) => m.digest) : [version];
+  }
 
   /** The findings that block the download: the ones whose own block is computed. */
   protected blocking(findings: readonly VulnerabilityFinding[]): VulnerabilityFinding[] {

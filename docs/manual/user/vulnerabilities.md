@@ -12,7 +12,7 @@ The report shows the findings of the repositories you may read, and only those. 
 
 Select **Vulnerabilities** in the side bar of a project. The report shows the findings of that project's repositories.
 
-**The counts.** The top of the screen counts the open findings by severity (**Critical**, **High**, **Medium**, **Low**, **Unknown**), then **Malicious**, **Needs triage** and **Blocked versions**. An open finding is one that needs triage, is confirmed, or is blocked. Each count is a link: it opens the list below with that filter applied. A line under the counts says how many of your repositories are scanned, hold only internal names, wait for advisory data or are not covered.
+**The severity bar and the counts.** The top of the screen shows the open findings by severity as a bar of five segments, **Critical**, **High**, **Medium**, **Low** (with the few rated **None**) and **Unknown** (hatched), each as wide as its share and with its count inside; a severity without findings is pale and shows 0. Then come the counts **Malicious**, **Needs triage** and **Blocked versions**. An open finding is one that needs triage, is confirmed, or is blocked. Each segment and each count is a link: it opens the list below with that filter applied. A line under the counts says how many of your repositories are scanned, hold only internal names, wait for advisory data or are not covered.
 
 **The banner.** A banner appears when the advisory data of an ecosystem is stale, has never been imported completely, or its synchronisation keeps failing. Until data has been imported, the versions of that ecosystem are not evaluated. If you may read the settings, the banner links to the advisory sources.
 
@@ -64,11 +64,38 @@ If someone else changed the finding while you had it open, the change is refused
 
 **Several findings at once.** With the permission, the list has a selection column. Select rows, or **Select all loaded findings**, then **Change status**. Choose the status, a reason for **Dismissed** and a comment. The dialog then reports one result per finding: **Changed**, **Unchanged**, or the reason a finding was refused, for example that a block needs a confirmed finding. The other findings are changed regardless.
 
+## Grades
+
+Lists and package pages show a version as a **grade**: a shield with a letter and the count that decides it, for example
+**E · 13 Critical**. The grade comes from the version's open findings; a dismissed or resolved finding does not count.
+
+| Grade | When | The rule under it |
+|---|---|---|
+| **S** | Checked, and no open finding of any severity (an image: and its operating system is still supported) | No known vulnerabilities |
+| **A** | Only Low or Unknown findings, at most 10 | Only Low or Unknown, at most 10 |
+| **B** | Medium findings and nothing worse, or more than 10 Low or Unknown | Medium found, no High or Critical; More than 10 Low or Unknown |
+| **C** | High findings and no Critical; also an image whose operating system has reached its end of life, however few findings it has | High found, no Critical; OS end of life: no more security updates, the scan may miss vulnerabilities |
+| **D** | 1 to 5 Critical findings | 1 to 5 Critical |
+| **E** | More than 5 Critical findings | More than 5 Critical |
+| **N/A** | Not checked: the advisory data has not arrived, the image waits for its scan or its scan failed, the repository is not covered, or the name is internal | Why it was not checked |
+
+A version held by several repositories you may read shows the worst of their grades. A package in a list shows the grade of its
+latest version: an older version you pin can be worse, so look at **All versions** before you keep an old one. If you are signed
+out, or the installation does not scan, no grades are shown at all.
+
 ## On the package page
 
-The **Vulnerabilities** tab of a package version lists, per repository you may read that holds the version, whether it was evaluated, whether its download is blocked and why, and its findings with severity, identifier, status and fixed versions. The tab label carries the number of open findings. **No known vulnerabilities.** means the version was evaluated and nothing matched; a repository with internal names only, or one still waiting for advisory data, says so instead.
+The header shows the grade of the selected version next to the version picker; select it to open the **Vulnerabilities** tab.
 
-**All versions** shows the highest open severity of each version as a word. The header of the page reads **Blocked in** and the repository when the selected version is blocked there.
+The **Vulnerabilities** tab of a package version shows, per repository you may read that holds the version, a card: the grade and
+its rule, the open findings as the severity bar, and a line of facts. For an image the facts are its operating system, **end of
+life** when it has reached it, and when it was scanned; for a package, the date of the advisory data it was checked against. The
+last fact, **Findings in** and the repository, opens the report with the findings of this version in that repository. Below the
+card come whether the download is blocked and why, and the findings with severity, identifier, status and fixed versions. The tab
+label carries the number of open findings.
+
+**All versions** shows the grade of each version. The header of the page reads **Blocked in** and the repository when the selected
+version is blocked there.
 
 ## Advisory sources
 

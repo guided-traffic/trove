@@ -252,17 +252,52 @@ func (s *Images) Manifests(ctx context.Context, repos []int64, name, tag string)
 	return out, err
 }
 
-// ImageTagCounts counts the open findings of an image name per tag and severity, over what the scope may read.
-func (a *API) ImageTagCounts(ctx context.Context, sc Scope, name string, f Filter) ([]VersionCount, error) {
-	var rows []q.VulnImageTagCountsRow
+// ImageGradeCounts counts the open findings of image tags per repository, tag and severity, over what the scope may read: a tag
+// counts the findings of its manifest and of every manifest its index names (R-VULN-037, R-VULN-039).
+func (a *API) ImageGradeCounts(ctx context.Context, sc Scope, pairs []NameVersion, f Filter) ([]GradeCount, error) {
+	names, tags := split(pairs)
+	var rows []q.VulnImageGradeCountsRow
 	err := a.db.Read(ctx, func(db q.DBTX) (err error) {
-		rows, err = q.New(db).VulnImageTagCounts(ctx, q.VulnImageTagCountsParams{Whole: nid(sc.Whole), Rows: nn(sc.Rows), PackageRows: nn(sc.Packages), Name: name, HasRepos: f.HasRepos, Repos: nid(f.Repos)})
+		rows, err = q.New(db).VulnImageGradeCounts(ctx, q.VulnImageGradeCountsParams{
+			Names: names, Tags: tags, HasRepos: f.HasRepos, Repos: nid(f.Repos), Whole: nid(sc.Whole), Rows: nn(sc.Rows), PackageRows: nn(sc.Packages),
+		})
 		return err
 	})
-	out := make([]VersionCount, 0, len(rows))
+	out := make([]GradeCount, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, VersionCount{Version: r.Version, Severity: advisory.Severity(r.Severity), N: r.N})
+		out = append(out, GradeCount{RepoID: r.RepoID, Name: r.Name, Version: r.Version, Severity: advisory.Severity(r.Severity), N: r.N})
 	}
+	return out, err
+}
+
+// TagManifest is a manifest a tag stands for in a repository, with how far it is scanned: the facts of a tag's grade.
+type TagManifest struct {
+	Name, Tag string
+	ImageManifest
+}
+
+// GradeScans lists what the tags stand for in the repositories, in one statement however many tags (R-VULN-038).
+func (s *Images) GradeScans(ctx context.Context, repos []int64, pairs []NameVersion) ([]TagManifest, error) {
+	names, tags := split(pairs)
+	var out []TagManifest
+	err := s.tx(ctx, func(qs *q.Queries) error {
+		rows, err := qs.VulnImageGradeScans(ctx, q.VulnImageGradeScansParams{Names: names, Tags: tags, Repos: nonNilInt(repos)})
+		if err != nil {
+			return err
+		}
+		out = make([]TagManifest, 0, len(rows))
+		for _, r := range rows {
+			m := TagManifest{Name: r.Name, Tag: r.Version, ImageManifest: ImageManifest{
+				RepoID: r.RepoID, Digest: r.Digest, Platform: r.Platform, State: r.State, OSFamily: r.OsFamily, OSName: r.OsName, EOSL: r.OsEosl,
+			}}
+			if r.ScannedUs > 0 {
+				at := microTime(r.ScannedUs)
+				m.ScannedAt = &at
+			}
+			out = append(out, m)
+		}
+		return nil
+	})
 	return out, err
 }
 

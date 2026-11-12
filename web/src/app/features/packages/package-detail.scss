@@ -10,6 +10,21 @@
   }
 }
 
+// The selected version's grade, a link to its Vulnerabilities tab (R-UI-094, Q-UI-375).
+.version-grade {
+  color: var(--trove-on-surface);
+  text-decoration: none;
+
+  &:hover {
+    color: var(--trove-link);
+  }
+
+  &:focus-visible {
+    outline: var(--trove-focus-ring);
+    outline-offset: 2px;
+  }
+}
+
 .pkg-details {
   display: block;
   margin-block-start: var(--trove-space-6);

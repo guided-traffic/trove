@@ -5,23 +5,33 @@ import { PackageSort, PackageSummary, PackagesApi } from '../../../api/packages-
 import { splitRef } from '../../../api/repositories-api';
 import { PagedResource } from '../../../shared/paged-resource';
 import { DataTable, TableColumn, TableSort } from '../../../shared/ui/data-table';
+import { GradeLabel } from '../../../shared/vulnerability/grade';
+import { gradeRank } from '../../../shared/vulnerability/grade-words';
 import { packageCommands } from '../../packages/package-links';
 import { ContentShape } from './content-shape';
 import { RepositoryItemVersions } from './repository-item-versions';
-import { VulnCounts } from './vuln-counts';
 
 /** How long a change of the filter waits before it asks the server. */
 export const FILTER_DEBOUNCE_MS = 250;
 
+/** The sorts of the list: the server's, and the grade, which the browser sorts (Q-UI-373). */
+export type ItemSort = PackageSort | 'grade' | '-grade';
+
+/** Sorting by grade loads the list in pages of this size, up to GRADE_SORT_MAX entries, and sorts them in the browser (Q-UI-373, H-980). */
+const GRADE_SORT_PAGE = 500;
+export const GRADE_SORT_MAX = 1000;
+
 /**
  * The items of a repository of a package format (R-UI-052): its images or packages, with a filter and paging on the server
  * (R-API-029; `repository` expands a virtual repository to its members, and a remote repository answers with what it has cached),
- * the latest version, the number of versions, the open findings of the items, and a row that opens the item's versions with
- * their install command. The filter and the sort live in the URL (R-UI-003), owned by the content page.
+ * the latest version, the number of versions, the grade of each item's latest version (R-UI-094), and a row that opens the item's
+ * versions with their install command. The filter and the sort live in the URL (R-UI-003), owned by the content page. The column of
+ * grades appears only when the answer carries them (Q-UI-377), and sorting by it loads the list up to 1,000 entries and sorts in the
+ * browser, worst last ascending and first descending (Q-UI-373).
  */
 @Component({
   selector: 'trove-repository-items',
-  imports: [DatePipe, DecimalPipe, RouterLink, DataTable, RepositoryItemVersions, VulnCounts],
+  imports: [DatePipe, DecimalPipe, RouterLink, DataTable, GradeLabel, RepositoryItemVersions],
   template: `
     <div class="toolbar">
       <div class="filter">
@@ -57,7 +67,7 @@ export const FILTER_DEBOUNCE_MS = 250;
           >Set up client</a
         >
       }
-      @for (p of list.items(); track p.id) {
+      @for (p of rows(); track p.id) {
         <tr>
           <th scope="row" class="wrap-name">
             <div class="name-cell">
@@ -81,8 +91,12 @@ export const FILTER_DEBOUNCE_MS = 250;
           </th>
           <td translate="no">{{ p.latestVersion }}</td>
           <td class="num">{{ p.versionCount | number }}</td>
-          @if (scanned()) {
-            <td><trove-vuln-counts [counts]="p.openVulnerabilities" /></td>
+          @if (graded()) {
+            <td>
+              @if (p.vulnerabilityGrade; as g) {
+                <trove-grade [grade]="g" />
+              }
+            </td>
           }
           <td>
             <time [attr.datetime]="p.updatedAt" [attr.title]="p.updatedAt | date: 'long'">{{ p.updatedAt | date: 'mediumDate' }}</time>
@@ -94,7 +108,7 @@ export const FILTER_DEBOUNCE_MS = 250;
             <div [id]="'versions-' + p.id" class="collapse-region" [class.open]="isOpen(p.id)">
               <div>
                 @if (opened().has(p.id)) {
-                  <trove-repository-item-versions [pkg]="p" [repository]="repository()" [shape]="shape()" [scanned]="scanned()" />
+                  <trove-repository-item-versions [pkg]="p" [repository]="repository()" [shape]="shape()" [scanned]="graded()" />
                 }
               </div>
             </div>
@@ -102,6 +116,11 @@ export const FILTER_DEBOUNCE_MS = 250;
         </tr>
       }
     </trove-data-table>
+    @if (gradeSorted() && list.hasMore()) {
+      <p class="content-note" i18n="@@repo.content.grade-sort-partial">
+        Sorted by grade among the first {{ list.items().length }} entries; the list holds more.
+      </p>
+    }
   `,
   styleUrl: './repository-content.scss',
 })
@@ -116,11 +135,11 @@ export class RepositoryItems {
   readonly scanned = input(false);
   /** The filter and the sort, from the URL of the page. */
   readonly q = input<string>('');
-  readonly sortParam = input<PackageSort>('name');
+  readonly sortParam = input<ItemSort>('name');
   /** Whether an empty repository offers Set up client: not for a disabled one, which no client can use. */
   readonly offerSetup = input(true);
   readonly filterChange = output<string>();
-  readonly sortParamChange = output<PackageSort>();
+  readonly sortParamChange = output<ItemSort>();
 
   protected readonly list = new PagedResource<PackageSummary>();
   /** The filter as typed; the URL follows after a short pause. */
@@ -136,6 +155,18 @@ export class RepositoryItems {
     return { column: raw.replace('-', ''), direction: raw.startsWith('-') ? 'desc' : 'asc' };
   });
   protected readonly caption = computed(() => this.shape().itemsLabel);
+  /** The answer carries grades: a signed-in caller of an installation that scans, for a format it scans (Q-VULN-158, Q-UI-377). */
+  protected readonly graded = computed(() => this.scanned() && this.list.items().some((p) => p.vulnerabilityGrade !== undefined));
+  protected readonly gradeSorted = computed(() => this.sortParam().replace('-', '') === 'grade');
+  /** The rows in the order asked: the server's, or by grade (R-VULN-038), then by name. */
+  protected readonly rows = computed<readonly PackageSummary[]>(() => {
+    const items = this.list.items();
+    if (!this.gradeSorted()) return items;
+    const sign = this.sortParam().startsWith('-') ? -1 : 1;
+    return [...items].sort(
+      (a, b) => sign * (gradeRank(a.vulnerabilityGrade) - gradeRank(b.vulnerabilityGrade)) || a.name.localeCompare(b.name),
+    );
+  });
   protected readonly columns = computed<readonly TableColumn[]>(() => {
     const s = this.shape();
     const columns: TableColumn[] = [
@@ -144,11 +175,12 @@ export class RepositoryItems {
       { id: 'latest', label: $localize`:@@repo.content.col.latest:Latest` },
       { id: 'versions', label: s.versionsLabel, numeric: true },
     ];
-    if (this.scanned()) {
+    if (this.graded()) {
       columns.push({
-        id: 'vulnerabilities',
+        id: 'grade',
         label: $localize`:@@repo.content.col.vulnerabilities:Vulnerabilities`,
-        help: $localize`:@@repo.content.help.vulnerabilities:The open findings of all versions in this repository, with the highest severity.`,
+        help: $localize`:@@repo.content.help.grade:The grade of the latest version in this repository, from S (no known vulnerabilities) to E (more than 5 Critical); N/A when it is not scanned.`,
+        sortable: true,
       });
     }
     columns.push(
@@ -164,21 +196,30 @@ export class RepositoryItems {
       const q = this.q();
       const sort = this.sortParam();
       const format = this.format();
+      // The format's catalog entry can arrive after the first request: a list asked before it knew that the format is scanned
+      // is asked again with the grades (R-UI-094).
+      const scanned = this.scanned();
       untracked(() => {
         this.draft.set(q);
         this.open.set(new Set());
         this.opened.set(new Set());
-        void this.list.start(
-          this.api.list({
-            repository: [repository],
-            format: [format],
-            q: q || undefined,
-            sort,
-            include: this.scanned() ? ['vulnerabilities'] : [],
-          }),
-        );
+        const byGrade = sort.replace('-', '') === 'grade';
+        const fetcher = this.api.list({
+          repository: [repository],
+          format: [format],
+          q: q || undefined,
+          sort: byGrade ? 'name' : (sort as PackageSort),
+          include: scanned ? ['vulnerabilities'] : [],
+        });
+        void (byGrade ? this.loadForGrade(fetcher) : this.list.start(fetcher));
       });
     });
+  }
+
+  /** The whole list up to GRADE_SORT_MAX entries, so that the browser sorts it by grade (Q-UI-373). */
+  private async loadForGrade(fetcher: ReturnType<PackagesApi['list']>): Promise<void> {
+    await this.list.start(fetcher, GRADE_SORT_PAGE);
+    while (this.list.hasMore() && !this.list.error() && this.list.items().length < GRADE_SORT_MAX) await this.list.more();
   }
 
   protected isOpen(id: string): boolean {
@@ -211,6 +252,6 @@ export class RepositoryItems {
   }
 
   protected changeSort(next: TableSort): void {
-    this.sortParamChange.emit(`${next.direction === 'desc' ? '-' : ''}${next.column}` as PackageSort);
+    this.sortParamChange.emit(`${next.direction === 'desc' ? '-' : ''}${next.column}` as ItemSort);
   }
 }

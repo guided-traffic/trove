@@ -77,6 +77,7 @@ before using a new term in a German text.
 | block (downloads), lift a block | sperren (Downloads sperren), Sperre aufheben |
 | known exploited (CISA list) | bekannt ausgenutzt |
 | resolved (finding) | behoben |
+| grade (of a version, S to E and N/A), severity bar, end of life (of an OS), scanned | Bewertung, Schweregrad-Balken, Support-Ende, geprüft |
 | advisory source, mirror repository | Advisory-Quelle, Spiegel-Repository |
 | security dashboard (admin area), advisory ID (CVE, GHSA) | Sicherheits-Dashboard, Advisory-Kennung |
 | mirror (mode of a remote repository), pull-through, pass (of a mirror) | Mirror, Pull-through, Durchlauf |

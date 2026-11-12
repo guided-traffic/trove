@@ -8873,9 +8873,10 @@ paths:
         the creation time of the first visible version. `sort` takes one field, a leading `-` sorts
         descending; the default is `name`. An anonymous caller sees what anonymous holds `read` on.
         The filter runs in SQL. A sort field or filter this document does not list answers
-        `400 malformed_request`. `include=vulnerabilities` adds `openVulnerabilities` to each entry, for a signed-in caller of an
-        installation that scans: the open findings the caller can read, of the visible versions in the repositories the filter names
-        (a virtual repository expanded to its members), counted by severity in one statement per page (R-UI-052).
+        `400 malformed_request`. `include=vulnerabilities` adds `vulnerabilityGrade` to each entry, for a signed-in caller of an
+        installation that scans: the grade of the entry's `latestVersion` over the repositories the filter names (a virtual repository
+        expanded to its members), from the open findings the caller can read, in a fixed number of statements per page (R-VULN-038,
+        R-VULN-039, R-UI-052).
       x-trove-permission:
         public: true
       parameters:
@@ -8919,7 +8920,7 @@ paths:
             type: string
         - name: include
           in: query
-          description: "`vulnerabilities`: also answer the counts of open findings per entry (`openVulnerabilities`)."
+          description: "`vulnerabilities`: also answer the grade of each entry's latest version (`vulnerabilityGrade`, R-VULN-039)."
           schema:
             type: array
             items:
@@ -16846,12 +16847,12 @@ components:
           type: integer
           format: int64
           description: The downloads of the visible versions, summed.
-        openVulnerabilities:
+        vulnerabilityGrade:
           description: |
-            With `include=vulnerabilities` only, and only for a signed-in caller of an installation that scans (R-UI-052): the open
-            findings of the entry's visible versions that the caller can read, in the repositories the list is filtered by, by
-            severity. A package without one counts zero. Summed over the versions, so a finding present in two versions counts twice.
-          $ref: "#/components/schemas/VulnerabilitySeverityCounts"
+            With `include=vulnerabilities` only, and only for a signed-in caller of an installation that scans (R-VULN-039): the grade
+            of `latestVersion` over the repositories the list is filtered by (every readable one without the filter), the worst of
+            them (R-VULN-038).
+          $ref: "#/components/schemas/VulnerabilityGrade"
     PackageList:
       type: object
       required: [items, nextCursor]
@@ -18856,6 +18857,32 @@ components:
         low: {type: integer, format: int64}
         none: {type: integer, format: int64}
         unknown: {type: integer, format: int64}
+    VulnerabilityGrade:
+      type: object
+      additionalProperties: false
+      required: [grade, open, eosl, checkedAt, evaluation, repository]
+      description: |
+        The grade of a version in a repository (R-VULN-038, R-VULN-039): S without an open finding,
+        A with only Low, None or Unknown (at most 10), B with Medium or more than 10 Low, None or Unknown, C with High, D with 1 to 5
+        Critical, E with more than 5 Critical; an image whose OS is at its end of life is C at best; N/A while the version is not
+        evaluated. Where it stands for several repositories it is the worst of their grades, N/A lowest. The words of the grade (its
+        text and rule) are the client's.
+      properties:
+        grade:
+          type: string
+          enum: [S, A, B, C, D, E, N/A]
+          x-enum-varnames: [GradeS, GradeA, GradeB, GradeC, GradeD, GradeE, GradeNA]
+        open:
+          description: The open findings by severity of the repository whose grade it is; zero for N/A.
+          $ref: "#/components/schemas/VulnerabilitySeverityCounts"
+        eosl: {type: boolean, description: "An image whose OS is at its end of life; false for every other format."}
+        os: {type: string, description: "An image's OS as the analyser names it (alpine 3.24.1), the different ones of several platforms joined with \", \"; absent for every other format."}
+        checkedAt:
+          type: [string, "null"]
+          format: date-time
+          description: "An image: the oldest scan of its manifests in the repository. Every other format: when the advisory data it was evaluated against was synchronised. null for N/A."
+        evaluation: {$ref: "#/components/schemas/VulnerabilityEvaluation"}
+        repository: {type: string, description: The qualified name of the repository whose grade it is.}
     VulnerabilitySummary:
       type: object
       additionalProperties: false
@@ -18979,10 +19006,11 @@ components:
           items:
             type: object
             additionalProperties: false
-            required: [repository, evaluation, blocked, blockReason, findings]
+            required: [repository, evaluation, blocked, blockReason, findings, grade]
             properties:
               repository: {type: string}
               evaluation: {$ref: "#/components/schemas/VulnerabilityEvaluation"}
+              grade: {$ref: "#/components/schemas/VulnerabilityGrade"}
               syncedAt: {type: [string, "null"], format: date-time, description: The data's `syncedAt` for an evaluated version.}
               blocked: {type: boolean}
               blockReason:
@@ -19007,10 +19035,10 @@ components:
           items:
             type: object
             additionalProperties: false
-            required: [version, open]
+            required: [version, grade]
             properties:
               version: {type: string}
-              open: {$ref: "#/components/schemas/VulnerabilitySeverityCounts"}
+              grade: {$ref: "#/components/schemas/VulnerabilityGrade"}
     VulnerabilityDataFacts:
       type: object
       additionalProperties: false

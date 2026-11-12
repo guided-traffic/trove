@@ -137,10 +137,11 @@ func includes(lq ListQuery, want string) bool {
 	return slices.Contains(splitValues(lq.Filter["include"]), want)
 }
 
-// addVulnerabilityCounts adds the open findings of each package of the page to its entry (R-UI-052), in one statement whatever the page
-// holds. It is an addition to a public list: a caller who is anonymous, or an installation without vulnerability scanning, gets the
-// list without counts, and counts that cannot be read leave the page without them rather than failing it.
-func (s *Server) addVulnerabilityCounts(r *http.Request, lq ListQuery, page []view.Package, out []gen.PackageSummary) {
+// addVulnerabilityGrades adds the grade of each package's latest version to its entry (R-VULN-039, R-UI-052), in a fixed number of
+// statements whatever the page holds. It is an addition to a public list: a caller who is anonymous, or an installation without
+// vulnerability scanning, gets the list without grades, and grades that cannot be read leave the page without them rather than
+// failing it (Q-VULN-158).
+func (s *Server) addVulnerabilityGrades(r *http.Request, lq ListQuery, page []view.Package, out []gen.PackageSummary) {
 	if len(page) == 0 || httpserver.PrincipalFrom(r.Context()).Anonymous {
 		return
 	}
@@ -158,21 +159,24 @@ func (s *Server) addVulnerabilityCounts(r *http.Request, lq ListQuery, page []vi
 	}
 	f := store.Filter{Repos: repos, HasRepos: hasRepos, Formats: splitValues(lq.Filter["format"]), Statuses: vuln.OpenStatuses()}
 	f.Packages = make([]string, 0, len(page))
+	entries := make([]report.LatestEntry, 0, len(page))
 	for _, p := range page {
 		f.Packages = append(f.Packages, p.Key)
+		entries = append(entries, report.LatestEntry{Format: p.Format, Name: p.Key, Version: p.LatestVersion})
 	}
 	sc, err := rep.Scope(ctx, sn, caller, f)
 	if err != nil {
 		return
 	}
-	counts, err := rep.PackageList(ctx, sc, f)
+	grades, err := rep.LatestGrades(ctx, sc, entries, f)
 	if err != nil {
 		return
 	}
 	for i, p := range page {
-		c := counts[report.PackageListKey(p.Format, p.Key)]
-		open := toSeverityCounts(c)
-		out[i].OpenVulnerabilities = &open
+		if g, ok := grades[report.PackageListKey(p.Format, p.Key)]; ok {
+			grade := toGrade(g)
+			out[i].VulnerabilityGrade = &grade
+		}
 	}
 }
 
@@ -268,7 +272,7 @@ func (s *Server) ListPackages(w http.ResponseWriter, r *http.Request, _ gen.List
 	}
 	page := MapPage(NewPage(lq, rows, order.Key), summaryOf)
 	if includes(lq, "vulnerabilities") {
-		s.addVulnerabilityCounts(r, lq, rows[:min(len(page.Items), len(rows))], page.Items)
+		s.addVulnerabilityGrades(r, lq, rows[:min(len(page.Items), len(rows))], page.Items)
 	}
 	WritePage(w, r, page)
 }

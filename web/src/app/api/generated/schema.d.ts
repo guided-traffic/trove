@@ -3048,9 +3048,10 @@ export interface paths {
          *     the creation time of the first visible version. `sort` takes one field, a leading `-` sorts
          *     descending; the default is `name`. An anonymous caller sees what anonymous holds `read` on.
          *     The filter runs in SQL. A sort field or filter this document does not list answers
-         *     `400 malformed_request`. `include=vulnerabilities` adds `openVulnerabilities` to each entry, for a signed-in caller of an
-         *     installation that scans: the open findings the caller can read, of the visible versions in the repositories the filter names
-         *     (a virtual repository expanded to its members), counted by severity in one statement per page (R-UI-052).
+         *     `400 malformed_request`. `include=vulnerabilities` adds `vulnerabilityGrade` to each entry, for a signed-in caller of an
+         *     installation that scans: the grade of the entry's `latestVersion` over the repositories the filter names (a virtual repository
+         *     expanded to its members), from the open findings the caller can read, in a fixed number of statements per page (R-VULN-038,
+         *     R-VULN-039, R-UI-052).
          */
         get: operations["listPackages"];
         put?: never;
@@ -7480,11 +7481,11 @@ export interface components {
              */
             downloadCount: number;
             /**
-             * @description With `include=vulnerabilities` only, and only for a signed-in caller of an installation that scans (R-UI-052): the open
-             *     findings of the entry's visible versions that the caller can read, in the repositories the list is filtered by, by
-             *     severity. A package without one counts zero. Summed over the versions, so a finding present in two versions counts twice.
+             * @description With `include=vulnerabilities` only, and only for a signed-in caller of an installation that scans (R-VULN-039): the grade
+             *     of `latestVersion` over the repositories the list is filtered by (every readable one without the filter), the worst of
+             *     them (R-VULN-038).
              */
-            openVulnerabilities?: components["schemas"]["VulnerabilitySeverityCounts"];
+            vulnerabilityGrade?: components["schemas"]["VulnerabilityGrade"];
         };
         PackageList: {
             items: components["schemas"]["PackageSummary"][];
@@ -8759,6 +8760,31 @@ export interface components {
             /** Format: int64 */
             unknown: number;
         };
+        /**
+         * @description The grade of a version in a repository (R-VULN-038, R-VULN-039): S without an open finding,
+         *     A with only Low, None or Unknown (at most 10), B with Medium or more than 10 Low, None or Unknown, C with High, D with 1 to 5
+         *     Critical, E with more than 5 Critical; an image whose OS is at its end of life is C at best; N/A while the version is not
+         *     evaluated. Where it stands for several repositories it is the worst of their grades, N/A lowest. The words of the grade (its
+         *     text and rule) are the client's.
+         */
+        VulnerabilityGrade: {
+            /** @enum {string} */
+            grade: "S" | "A" | "B" | "C" | "D" | "E" | "N/A";
+            /** @description The open findings by severity of the repository whose grade it is; zero for N/A. */
+            open: components["schemas"]["VulnerabilitySeverityCounts"];
+            /** @description An image whose OS is at its end of life; false for every other format. */
+            eosl: boolean;
+            /** @description An image's OS as the analyser names it (alpine 3.24.1), the different ones of several platforms joined with ", "; absent for every other format. */
+            os?: string;
+            /**
+             * Format: date-time
+             * @description An image: the oldest scan of its manifests in the repository. Every other format: when the advisory data it was evaluated against was synchronised. null for N/A.
+             */
+            checkedAt: string | null;
+            evaluation: components["schemas"]["VulnerabilityEvaluation"];
+            /** @description The qualified name of the repository whose grade it is. */
+            repository: string;
+        };
         /** @description The open findings the caller can read (R-VULN-021). */
         VulnerabilitySummary: {
             bySeverity: components["schemas"]["VulnerabilitySeverityCounts"];
@@ -8863,6 +8889,7 @@ export interface components {
             repositories: {
                 repository: string;
                 evaluation: components["schemas"]["VulnerabilityEvaluation"];
+                grade: components["schemas"]["VulnerabilityGrade"];
                 /**
                  * Format: date-time
                  * @description The data's `syncedAt` for an evaluated version.
@@ -8879,7 +8906,7 @@ export interface components {
             packageId: string;
             versions: {
                 version: string;
-                open: components["schemas"]["VulnerabilitySeverityCounts"];
+                grade: components["schemas"]["VulnerabilityGrade"];
             }[];
         };
         /**
@@ -16693,7 +16720,7 @@ export interface operations {
                 q?: string;
                 namePrefix?: string;
                 keyword?: string;
-                /** @description `vulnerabilities`: also answer the counts of open findings per entry (`openVulnerabilities`). */
+                /** @description `vulnerabilities`: also answer the grade of each entry's latest version (`vulnerabilityGrade`, R-VULN-039). */
                 include?: "vulnerabilities"[];
                 /** @description Inclusive lower bound of the creation time of the first visible version. */
                 createdFrom?: string;

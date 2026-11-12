@@ -131,6 +131,25 @@ paths, the responses and the schemas), with its `x-trove-permission` (R-VULN-019
 
 The generated interface is implemented by the `vulnerabilities*_api.go` files of [internal/api/v1](../../internal/api/v1) (they replaced the 503 stubs of Q-VULN-25); a replica that has not wired the scanning still answers 503 (`VulnServices` zero). The filters of the list are the document's query parameters, the sorts its `sort` enum; the permission narrowing in SQL is E's design.
 
+### The grade of a version (R-VULN-038, R-VULN-039)
+
+A version is shown as a grade, S to E or N/A, as the owner's cogpit grades an image. The server decides it and the UI words it
+([Q-VULN-157](../spec/vulnerability-scanning.md#q-vuln-157--the-server-grades-and-the-clients-phrase-the-grade)).
+
+| Where | What |
+|---|---|
+| [grade.go](../../internal/vuln/report/grade.go) | `GradeOf(counts, eosl, evaluated)`, the thresholds `GradeAMaxLow` (10) and `GradeDMaxCritical` (5), `Rank` (the order of R-VULN-038), `gradeIn` (a version in one repository: N/A unless `evaluated`; an image's end of life, OS and oldest scan from its manifests, a package's data `syncedAt`), `worst` (several repositories, Q-VULN-155), `grades` (the core: holders, counts, scans, the evaluation per repository and name) and `LatestGrades` (a page of the packages list, by `PackageListKey`) |
+| [versions.go](../../internal/vuln/report/versions.go) | `Version` sets `RepositoryVersion.Grade` per repository from `versionCounts` (the counts, not the listed findings, which stop at 1,000 per repository); `Package` answers `VersionGrades` through `grades` |
+| `queries/vuln_api.sql` | `VulnGradeHolders` (the readable repositories that hold `(name, version)` pairs, from `package_version_listing`, so a remote OCI tag counts) and `VulnGradeCounts` (open findings per repository, version and severity); both take the pairs as two parallel arrays and the scope predicate of the other statements |
+| `queries/vuln_image.sql` | `VulnImageGradeCounts` (a tag counts its manifest's and its index's children's findings) and `VulnImageGradeScans` (the manifests of many tags with state, OS and `os_eosl`); they replaced `VulnImageTagCounts`, as the two above replaced `VulnPackageCounts` and `VulnPackageListCounts` |
+| [vulnerabilities_views_api.go](../../internal/api/v1/vulnerabilities_views_api.go), [packages_api.go](../../internal/api/v1/packages_api.go) | `toGrade` maps `report.VersionGrade` to `VulnerabilityGrade`; `addVulnerabilityGrades` adds `vulnerabilityGrade` to a page of `GET /packages` with `include=vulnerabilities`, and leaves it out for an anonymous caller or on any failure |
+| [web/src/app/shared/vulnerability/](../../web/src/app/shared/vulnerability/) | The shield, `<trove-grade>`, the severity bar and the card ([ui-style-guide.md](ui-style-guide.md#vulnerability-grade)); `grade-words.ts` words and orders a grade |
+
+Tests: `TestR_VULN_038_*`, `TestR_VULN_039_*` in [grade_test.go](../../internal/vuln/report/grade_test.go) (every boundary, the order, an
+image's end of life and OS); `TestR_VULN_020_R_VULN_039_PackageViews` in `test/integration/vulnapi` (the three operations with a
+covered and a not-covered repository); `TestR_VULN_038_AnImageAtTheEndOfLifeOfItsOSGradesCAtBest` and the grade D of
+`TestR_VULN_034_*` in `test/integration/vulnimage`; the UI's `grade-words.spec.ts` and `grade-components.spec.ts`.
+
 ### Configuration, coordination, audit, metrics, errors
 
 | Where | What |

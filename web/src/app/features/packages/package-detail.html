@@ -31,6 +31,11 @@
           <span i18n="@@pkg.version.prereleases">Include pre-releases</span>
         </label>
       </span>
+      @if (versionGrade(); as g) {
+        <a class="version-grade" [routerLink]="[]" [queryParams]="{ tab: 'vulnerabilities' }" queryParamsHandling="merge">
+          <trove-grade [grade]="g" />
+        </a>
+      }
     </div>
     @if (unlisted()) {
       <p class="banner-warning" role="note">
@@ -310,7 +315,7 @@
                   @if (vulnerabilities.isLoading()) {
                     <p role="status" i18n="@@pkg.loading">Loading.</p>
                   } @else {
-                    <trove-package-vulnerabilities [report]="vulnerabilityReport()" />
+                    <trove-package-vulnerabilities [report]="vulnerabilityReport()" [packageName]="d.name" />
                   }
                 }
                 @case ('versions') {
@@ -336,10 +341,8 @@
                         <td translate="no" class="wrap">{{ v.repositories.join(', ') }}</td>
                         <td class="num">{{ v.downloadCount | number }}</td>
                         <td>
-                          @if (worstByVersion().get(v.version); as worst) {
-                            <trove-severity [severity]="worst" />
-                          } @else if (worstKnown()) {
-                            <span class="secondary-inline" i18n="@@pkg.ver.no-vulnerabilities">None</span>
+                          @if (gradeByVersion().get(v.version); as g) {
+                            <trove-grade [grade]="g" />
                           } @else {
                             <span class="secondary-inline">–</span>
                           }

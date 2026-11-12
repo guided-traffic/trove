@@ -68,9 +68,11 @@ type Options struct {
 	Now func() time.Time
 }
 
-// ImageReader is what the version view reads of the image scanning; *store.Images implements it.
+// ImageReader is what the version views and the grades read of the image scanning; *store.Images implements it.
 type ImageReader interface {
 	Manifests(ctx context.Context, repos []int64, name, tag string) ([]store.ImageManifest, error)
+	// GradeScans reads the manifests of many tags at once, for their grades (R-VULN-038).
+	GradeScans(ctx context.Context, repos []int64, pairs []store.NameVersion) ([]store.TagManifest, error)
 }
 
 // Service is the report.

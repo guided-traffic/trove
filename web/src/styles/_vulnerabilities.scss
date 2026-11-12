@@ -62,6 +62,11 @@
 
 // ---- Header counts -----------------------------------------------------------------------
 
+// The open findings by severity as the severity bar of R-UI-092, its segments the filter links (Q-UI-376).
+.vuln-bar {
+  margin-block: var(--trove-space-3);
+}
+
 .vuln-counts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
@@ -398,7 +403,7 @@ table.history {
   }
 }
 
-.vuln-evaluation,
-.vuln-clean {
-  margin-block: var(--trove-space-1) var(--trove-space-3);
+// The grade card of a repository's section on the package page (R-UI-093, R-VULN-023).
+.vuln-grade {
+  margin-block: var(--trove-space-2) var(--trove-space-4);
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/repository"
@@ -73,6 +74,8 @@ type RepositoryVersion struct {
 	Findings    []Finding
 	// Images are the manifests an image version stands for, one per platform, each with how far it has been scanned; nil for a package.
 	Images []ImageState
+	// Grade is the version's grade in the repository (R-VULN-038).
+	Grade VersionGrade
 }
 
 // imageFormat is the format whose versions are tags that stand for manifests (R-VULN-012).
@@ -184,6 +187,10 @@ func (s *Service) Version(ctx context.Context, sc Scope, format, name, version s
 		}
 	}
 	fs := s.findings(sc.snap, rows)
+	open, err := s.versionCounts(ctx, sc, format, name, version, repos)
+	if err != nil {
+		return nil, false, err
+	}
 	out := make([]RepositoryVersion, 0, len(repos))
 	for _, id := range repos {
 		r, _ := sc.snap.Repository(id)
@@ -208,9 +215,34 @@ func (s *Service) Version(ctx context.Context, sc Scope, format, name, version s
 		state := advisory.DataState{Complete: info.Complete || !covered}
 		b := vuln.Verdict(p, s.blockingRow(p, rv.Findings), state)
 		rv.Blocked, rv.BlockReason = b.Active(), b.Reason
+		rv.Grade = gradeIn(rv.Repository, rv.Evaluation, open[id], rv.Images, info.SyncedAt)
 		out = append(out, rv)
 	}
 	return out, true, nil
+}
+
+// versionCounts counts the open findings of the version per repository for its grade, from the counts and not from the listed
+// findings, which stop at 1,000 per repository: a tag of an image counts the findings of every manifest it stands for, a digest its own.
+func (s *Service) versionCounts(ctx context.Context, sc Scope, format, name, version string, repos []int64) (map[int64]Counts, error) {
+	pair := []store.NameVersion{{Name: name, Version: version}}
+	f := store.Filter{Repos: repos, HasRepos: true}
+	var counts []store.GradeCount
+	var err error
+	if format == imageFormat && !strings.HasPrefix(version, "sha256:") {
+		counts, err = s.st.ImageGradeCounts(ctx, sc.Scope, pair, f)
+	} else {
+		counts, err = s.st.GradeCounts(ctx, sc.Scope, format, pair, f)
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := map[int64]Counts{}
+	for _, c := range counts {
+		o := out[c.RepoID]
+		o.Add(c.Severity, c.N)
+		out[c.RepoID] = o
+	}
+	return out, nil
 }
 
 // blockingRow picks the finding the download's verdict names: a malicious block before a block set in triage, as the
@@ -256,72 +288,42 @@ func (c *Counts) Add(sev advisory.Severity, n int64) {
 // Total is the sum of the severities.
 func (c Counts) Total() int64 { return c.Critical + c.High + c.Medium + c.Low + c.None + c.Unknown }
 
-// VersionCounts is the open findings of one version.
-type VersionCounts struct {
+// VersionGrades is the grade of one version, the worst of the repositories that hold it.
+type VersionGrades struct {
 	Version string
-	Open    Counts
+	Grade   VersionGrade
 }
 
-// Package returns the versions of a package the caller can read with their open findings counted by severity; every readable
-// version is listed, one without a finding with zero counts. found is false when the caller can read no version of it.
-func (s *Service) Package(ctx context.Context, sc Scope, format, name string, f store.Filter) ([]VersionCounts, bool, error) {
+// Package returns the versions of a package the caller can read, each with its grade over the repositories of f that hold it
+// (R-VULN-039); every readable version is listed. found is false when the caller can read no version of it.
+func (s *Service) Package(ctx context.Context, sc Scope, format, name string, f store.Filter) ([]VersionGrades, bool, error) {
 	if len(sc.Holders) == 0 {
 		return nil, false, nil
 	}
-	var counts []store.VersionCount
-	var err error
-	if format == imageFormat {
-		counts, err = s.st.ImageTagCounts(ctx, sc.Scope, name, f)
-	} else {
-		counts, err = s.st.PackageCounts(ctx, sc.Scope, format, name, f)
+	var holders []store.Candidate
+	var order []string
+	seen := map[string]bool{}
+	for _, h := range sc.Holders {
+		if f.HasRepos && !slices.Contains(f.Repos, h.RepoID) {
+			continue
+		}
+		holders = append(holders, h)
+		if !seen[h.Version] {
+			seen[h.Version] = true
+			order = append(order, h.Version)
+		}
 	}
+	gs, err := s.grades(ctx, sc, format, holders, f)
 	if err != nil {
 		return nil, false, err
 	}
-	byVersion := map[string]*VersionCounts{}
-	var order []string
-	add := func(v string) *VersionCounts {
-		if c, ok := byVersion[v]; ok {
-			return c
-		}
-		c := &VersionCounts{Version: v}
-		byVersion[v] = c
-		order = append(order, v)
-		return c
-	}
-	for _, h := range sc.Holders {
-		if !f.HasRepos || slices.Contains(f.Repos, h.RepoID) {
-			add(h.Version)
-		}
-	}
-	for _, c := range counts {
-		add(c.Version).Open.Add(c.Severity, c.N)
-	}
 	sort.Strings(order)
-	out := make([]VersionCounts, 0, len(order))
+	out := make([]VersionGrades, 0, len(order))
 	for _, v := range order {
-		out = append(out, *byVersion[v])
+		out = append(out, VersionGrades{Version: v, Grade: gs[gradeKey{Name: name, Version: v}]})
 	}
 	return out, true, nil
 }
 
 // PackageListKey identifies one package of a page of the packages list.
 func PackageListKey(format, name string) string { return format + "\x1f" + name }
-
-// PackageList returns the open findings of the packages named in f.Packages over the findings the caller can read, narrowed by f's
-// repositories, counted by severity, by PackageListKey, for a page of the packages list (R-UI-052). A package without a finding the
-// caller can read has no entry: the caller reads that as zero.
-func (s *Service) PackageList(ctx context.Context, sc Scope, f store.Filter) (map[string]Counts, error) {
-	rows, err := s.st.PackageListCounts(ctx, sc.Scope, f)
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[string]Counts, len(rows))
-	for _, r := range rows {
-		key := PackageListKey(r.Format, r.Package)
-		c := out[key]
-		c.Add(r.Severity, r.N)
-		out[key] = c
-	}
-	return out, nil
-}

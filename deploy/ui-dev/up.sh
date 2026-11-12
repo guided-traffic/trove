@@ -134,9 +134,13 @@ proxy:
       allow_cidrs: ["127.0.0.0/8", "::1/128"]
 vulnerabilities:
   sources:
-    # The advisory sources default to the public archives; a UI session does not download them.
+    # The advisory sources default to the public archives; a UI session does not download them. The npm advisories come from
+    # the archive the render seed uploads into the mirror repository platform/advisory-mirror (web/e2e/renders/advisories.ts,
+    # R-VULN-005), so that the screens show every grade of R-VULN-038; until it exists, a sync run fails and says so.
     osv:
-      mode: "off"
+      mode: repository
+      repository: platform/advisory-mirror
+      ecosystems: [npm]
     kev:
       mode: "off"
 YAML

@@ -9,14 +9,14 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 620 of 848 spec requirements are implemented: a passing test names them and no
+**Status.** 620 of 855 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
 **Totals.** 2,239 catalog features on 60 pages: 788 specified (520 of them implemented), 1,451 open.
-848 spec requirements: 634 cover catalog features, 214 cover none (`trove-only`, [listed at the
+855 spec requirements: 634 cover catalog features, 221 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
 ## Pages
@@ -2969,7 +2969,7 @@ Requirements whose `Covers:` line says `trove-only`: trove's own design work tha
 catalog feature measures. They count toward the requirement total, not toward any share.
 
 <details>
-<summary>214 requirements</summary>
+<summary>221 requirements</summary>
 
 | Requirement | Title | Priority | Spec page |
 |---|---|---|---|
@@ -3015,6 +3015,11 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-UI-065 | One read-only address field with a joined copy button for every client address | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-066 | The screens that show a client address use the address field | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-067 | Three kinds of user: the plain user, the power user and the administrator | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-090 | The grade shield | P1 | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-091 | The grade's text and rule | P1 | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-092 | The severity bar | P1 | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-093 | The grade card | P1 | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-094 | Where the grade shows | P1 | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-ARCH-003 (implemented) | Go module and package layout | MVP | [architecture.md](../spec/architecture.md) |
 | R-ARCH-004 (implemented) | Angular workspace layout | MVP | [architecture.md](../spec/architecture.md) |
 | R-ARCH-007 (implemented) | One origin for UI and package content | MVP | [architecture.md](../spec/architecture.md) |
@@ -3179,6 +3184,8 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-STOR-046 | Storage work per role and across replicas | MVP | [storage.md](../spec/storage.md) |
 | R-STOR-047 (implemented) | Storage state in backups and restores | MVP | [storage.md](../spec/storage.md) |
 | R-VULN-014 (implemented) | History and retention | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
+| R-VULN-038 | The grade of a version | P1 | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
+| R-VULN-039 | The grade in the API | P1 | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
 | R-VULN-024 (implemented) | Metrics, audit events, alerts and status | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
 | R-VULN-026 (implemented) | Vulnerability data in backups and restores | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
 | R-VULN-027 | Across replicas, without Valkey and during a drain | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |

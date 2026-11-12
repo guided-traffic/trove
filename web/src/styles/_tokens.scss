@@ -160,7 +160,8 @@
   --trove-on-danger: light-dark(#ffffff, #18171d);
   // Status colours reinforce an icon and a text, never replace them (R-UI-044); the pairs keep
   // a contrast ratio of at least 4.5:1 on the surface of their scheme. Green is OK's alone: no
-  // other token is green, so green always means a positive status (Q-UI-96).
+  // other token is green, so green always means a positive status (Q-UI-96), except the good
+  // grades S, A and B of a version below (Q-UI-370).
   --trove-status-ok: light-dark(#2f7549, #52b87a);
   --trove-status-warn: light-dark(#995715, #d99530);
   --trove-status-bad: light-dark(#c02f12, #f6806d);
@@ -191,6 +192,37 @@
   --trove-chart-low: light-dark(#347da0, #5cb3d6);
   --trove-chart-none: light-dark(#5b6270, #9aa1ad);
   --trove-chart-unknown: light-dark(#8577e6, #a99cff);
+  // The grade of a version (R-UI-090, Q-UI-370): the owner's cogpit scale, the same in both schemes from S to E; S, A and B
+  // are the greens of a good grade, the only greens beside the positive status. A letter takes the dark ink, the light one on
+  // E, or S's mint; each keeps 4.5:1 on its fill. N/A is quiet: the scheme's grey, its letter in the muted tone. The crest's
+  // fill runs from the highlight to the shadow, 25 % each way (grade-shield.ts). palette.spec.ts holds the pairs.
+  --trove-grade-s: #1f5f55;
+  --trove-grade-a: #3e8e72;
+  --trove-grade-b: #8fd3b6;
+  --trove-grade-c: #e9ac4b;
+  --trove-grade-d: #c8691c;
+  --trove-grade-e: #c23b33;
+  --trove-grade-na: light-dark(#ececef, #3a383f);
+  --trove-grade-na-ink: light-dark(#626168, #bfbfc3);
+  --trove-grade-rim: #d4b25a;
+  --trove-grade-s-ink: #a8f0d4;
+  --trove-grade-ink: #0b1220;
+  --trove-grade-ink-light: #ffffff;
+  --trove-grade-highlight: #ffffff;
+  --trove-grade-shadow: #000000;
+  // The grade card is as wide as cogpit's drawer at most (R-UI-093).
+  --trove-grade-card-measure: 40rem;
+  // The severity bar (R-UI-092): cogpit's colours, High one step deeper than its #d9403a so that the white count keeps 4.5:1;
+  // Unknown is hatched in two greys of the scheme with the text colour on them; a severity without findings is its colour at
+  // 28 % over the surface with the text colour (severity-bar.ts).
+  --trove-sev-critical: #7f1d1d;
+  --trove-sev-high: #c9302a;
+  --trove-sev-medium: #e8a33d;
+  --trove-sev-low: #f5d68e;
+  --trove-sev-ink: #1c1204;
+  --trove-sev-ink-light: #ffffff;
+  --trove-sev-unknown: light-dark(#b9bdc4, #45505c);
+  --trove-sev-unknown-light: light-dark(#e0e3e6, #26303c);
   --trove-banner-bg: light-dark(#ecdcff, #5f00c0);
   --trove-banner-fg: light-dark(#5f00c0, #ecdcff);
 }

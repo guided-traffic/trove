@@ -1571,9 +1571,10 @@ remain as their owners define them.)
 - The `versions` list entries hold `version`, `prerelease`, `publishedAt`, `sizeBytes`, `repositories`
   (the qualified names `<projectKey>/<repoKey>` of the repositories the caller may read) and `downloadCount`; with `include=digest` also
   `digest`, the content digest the format's version metadata names (an OCI tag: `sha256:…` of its manifest, R-UI-052), absent for a format without one.
-  With `include=vulnerabilities`, `GET /api/v1/packages` adds `openVulnerabilities` to each entry for a signed-in caller of an installation
-  that scans: the open findings the caller can read, of the entry's visible versions in the repositories the filter names, by severity, in
-  one statement per page; a caller who is anonymous or a failure to read the counts leaves the member absent and the list is answered anyway. The details and the README answer carry a strong `ETag`
+  With `include=vulnerabilities`, `GET /api/v1/packages` adds `vulnerabilityGrade` to each entry for a signed-in caller of an installation
+  that scans: the grade of the entry's `latestVersion` over the repositories the filter names ([vulnerability-scanning.md](vulnerability-scanning.md)
+  R-VULN-038, R-VULN-039), in a fixed number of statements per page; a caller who is anonymous or a failure to read the grades leaves the
+  member absent and the list is answered anyway. The details and the README answer carry a strong `ETag`
   and honour `If-None-Match`; the README tag covers the README source, the renderer version and the hash of
   the image origin list.
 - The visibility filter is decided per repository by the decision point and passed into the statements that
@@ -3143,9 +3144,9 @@ Priority: **MVP** · Covers: UI-009, ART-049
   size of the tag and the platforms of an index, Q-UI-177); Files (files of the version with size, SHA-256 copy button,
   download); Repositories (each with "show in browser"); Owners (R-API-048, P1); Builds (P1).
 - From M4b ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-023): a Vulnerabilities
-  tab (`tab=vulnerabilities`) with the selected version's evaluation state, block and findings per
+  tab (`tab=vulnerabilities`) with the selected version's grade card (R-UI-093), evaluation state, block and findings per
   readable repository, its label carrying the count of open findings; in the "All versions" tab the
-  highest open severity of each version as a text badge; in the header "Blocked in <repository>"
+  grade of each version (R-UI-094); in the header the selected version's grade and "Blocked in <repository>"
   when the selected version is blocked in a repository the caller can read.
 - Layout (Q-UI-3): the header spans the full width. When the content area is at least 960 CSS px
   wide, two columns follow: the tabs on the left, the install panel (R-UI-009) on the right, which
@@ -3288,13 +3289,14 @@ Priority: **MVP** · Covers: trove-only
   **Change** (Q-UI-316); it is the page's one way to the setup (Q-UI-321).
 - A package format (npm, NuGet, OCI, Debian, every format with a view adapter) lists its items from `GET /api/v1/packages` with
   `repository=<qualified name>` and `format=<format>`, the filter `q` (query, server-side, name and description) and the sort `name`
-  or `updatedAt`, paged with "Load more". A column of open findings appears only for a format whose versions are matched against
-  advisories (`FormatDescriptor.vulnerabilityScanning`, a format with the vulnerability adapter, R-VULN-009, or the image scanning, R-VULN-033); for any other a muted
-  sentence says so (OCI and Debian today). The counts come from `include=vulnerabilities` in one statement per page, summed over the
-  versions of the item in this repository, and the versions list of an item is `…/versions?repository=…` with its
-  `…/vulnerabilities?repository=…` report, one request each per opened item.
+  or `updatedAt`, paged with "Load more". The column **Vulnerabilities** appears only for a format whose versions are matched against
+  advisories (`FormatDescriptor.vulnerabilityScanning`, a format with the vulnerability adapter, R-VULN-009, or the image scanning, R-VULN-033)
+  and only when the answer carries grades (Q-UI-377); for a format that is not scanned a muted sentence says so (Debian today). It shows
+  the grade of the item's latest version in this repository (`vulnerabilityGrade` from `include=vulnerabilities`, R-VULN-039, Q-VULN-154)
+  as `<trove-grade>` (R-UI-094) and sorts by grade (`sort=grade`, worst first as `-grade`, in the browser, Q-UI-373). The versions list
+  of an item is `…/versions?repository=…` with its `…/vulnerabilities?repository=…` report, one request each per opened item.
 - The row of an item opens in place (`collapse-region`) to its versions: for an image, the tags with digest (`include=digest`), size and
-  pushed time; for a package, its versions with size and published time; each with the open findings of the version in this repository.
+  pushed time; for a package, its versions with size and published time; each with the grade of the version in this repository.
   Above the versions, the install command of the version chosen in the list (default: the item's latest version) from the install
   snippet of R-API-030 for this repository and the client picked in the panel (`credentials=none`, so it never holds a token): `docker
   pull`/`podman pull` with this installation's real address for OCI, the install command of the format elsewhere. The item's name links
@@ -3326,7 +3328,7 @@ Acceptance criteria:
   `docker pull <host>/web/<oci-key>/<image>:<tag>` copy; Podman in the client picker switches it to `podman pull`.
 - `/projects/web/repositories/<oci-remote-key>`, after a pull through it, lists the pulled image with its tag, the digest and a **Fetched** time; before any pull it says
   that the repository has cached no images yet (R-OCI-036, Q-UI-217).
-- `/projects/web/repositories/<npm-key>` lists the packages with the highest open severity and the number of open findings, and the open version
+- `/projects/web/repositories/<npm-key>` lists the packages with the grade of their latest version, and the open version
   row shows `npm install <name>@<version>`; a reader without `repositories:read-config` sees no Settings action.
 - The Edit action of the repository list and the Settings action of the content page open `…/settings`, and leaving it with unsaved changes asks first.
 - A generic repository shows Files, a folder opens in place and a file links to its detail.
@@ -5232,6 +5234,129 @@ Acceptance criteria:
 - The plain user reaches a repository's client address from the start page in at most two steps and the client setup of that
   repository in at most three, without passing a settings page.
 - No main view of the plain user shows a capability name, a UUID or a settings page it cannot change.
+
+### R-UI-090 · The grade shield
+Priority: **P1** · Covers: trove-only
+
+The owner's task of 2026-11-12 (T-21): "Vulnerabilities shall be shown as we realised it in cogpit." A version's grade
+([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-038) is drawn as cogpit draws an image's: a crest with its letter.
+`<trove-grade-shield>` ([grade-shield.ts](../../web/src/app/shared/vulnerability/grade-shield.ts)) is the one drawing of it; no
+screen draws its own.
+
+- **The crest.** An inline SVG in a box of 100: two shallow arcs across the top that meet in a point at its middle, the sides
+  straight down to half the height, then curving to a point at the bottom (cogpit's geometry). Its fill runs from 25 % lighter at
+  the top to 25 % darker at the bottom of the grade's colour; S has a gold rim. N/A is flat and quiet.
+- **The letter** is SVG text in the sans face at weight 700, 54 % of the side, centred at 46 % of the height (the point takes room
+  below); "N/A" at 56 % of that size.
+- **Sizes.** 16 px in a list, a header and a tab; 32 px on the card.
+- **Colours** ([Q-UI-370](#q-ui-370--the-grades-take-cogpits-colours-and-s-a-and-b-are-the-greens-of-a-good-grade)): the tokens
+  `--trove-grade-s` to `--trove-grade-e`, `--trove-grade-na`, the rim `--trove-grade-rim` and the letters' inks
+  `--trove-grade-s-ink`, `--trove-grade-ink`, `--trove-grade-ink-on-dark`, `--trove-grade-na-ink`; S to E are the same in both
+  schemes, N/A is the scheme's quiet grey. The letter keeps 4.5:1 on its fill (`palette.spec.ts`).
+- **Never by colour alone.** The letter says the grade, and the grade's text stands beside the shield wherever it is shown; there
+  the shield is decorative (`aria-hidden`). Alone, it is `role="img"` named **Grade E**
+  ([Q-UI-371](#q-ui-371--the-shield-is-an-inline-svg-whose-letter-is-text-and-it-is-decorative-beside-its-text)).
+
+Acceptance criteria:
+
+- Unit: for each grade the SVG carries the letter as text and the grade's class; `size` sets 16 or 32 px; with a label it is an
+  image with that name, without one it is hidden from the accessibility tree; axe finds no serious violation.
+- The contrast of every letter on its fill and of N/A's crest and letter is held by `palette.spec.ts`.
+
+### R-UI-091 · The grade's text and rule
+Priority: **P1** · Covers: trove-only
+
+- **The text** is the grade and the count that decides it, as R-VULN-038 words it: "E · 13 Critical", "C · OS end of life",
+  "S · no known vulnerabilities", "N/A · not scanned"; the letter at weight 600. **The rule** is the sentence of R-VULN-038's
+  table; for S of an image "No known vulnerabilities, and the OS is supported", for N/A the evaluation state in words.
+- `<trove-grade>` ([grade.ts](../../web/src/app/shared/vulnerability/grade.ts)) is the shield of 16 px and the text on one line,
+  for a list cell, a header and a tab. Its tooltip (`[troveTooltip]`) names every count, "13 Critical · 160 High · 113 Medium ·
+  16 Low · 843 Unknown", and "OS end of life" when it is; the text stays the accessible name of the cell.
+- The words are the UI's, translated (`vuln.grade.*`); the grade is the server's (R-VULN-039). `gradeText`, `gradeRule` and
+  `gradeRank` ([grade-words.ts](../../web/src/app/shared/vulnerability/grade-words.ts)) derive them from the grade, its counts and
+  its end of life and never decide the grade again.
+
+Acceptance criteria:
+
+- A table test of the text, the rule and the rank over the boundaries of R-VULN-038 (0, 10 and 11 Low, 1, 5 and 6 Critical, the
+  end of life, N/A) and of the order E · 13 > E · 6 > D · 4 > D · 2 > C · 120 > S > N/A.
+- Unit: `<trove-grade>` shows the shield and the text, its tooltip names every count; axe finds no serious violation.
+
+### R-UI-092 · The severity bar
+Priority: **P1** · Covers: trove-only
+
+`<trove-severity-bar>` ([severity-bar.ts](../../web/src/app/shared/vulnerability/severity-bar.ts)) draws open findings by severity
+as cogpit draws an image's:
+
+- **Five segments** in one row, Critical, High, Medium, Low and Unknown, `none` counted in Low (Q-VULN-153); 22 px high, 4 px apart,
+  rounded by `--trove-radius-s`; each segment's count inside it, centred, at 12 px and weight 700, in tabular figures.
+- **Width by share** ([Q-UI-372](#q-ui-372--the-bars-segments-are-as-wide-as-their-share-with-room-for-their-number)): each
+  segment first gets the room of its number and its padding, then the rest of the row is shared by the segments' shares of all
+  findings, each share at least 7 %. A count is never cut and the row never scrolls sideways.
+- **Colours**: `--trove-sev-critical` (dark red), `--trove-sev-high` (red), `--trove-sev-medium` (orange), `--trove-sev-low`
+  (yellow), the count in `--trove-sev-ink-on-dark` on the first two and `--trove-sev-ink` on the next two; Unknown hatched in
+  diagonal stripes of `--trove-sev-unknown` and `--trove-sev-unknown-light`, its count in the text colour. A severity without
+  findings is drawn faint (its fill at 28 % over the surface), and its 0 stays readable in the text colour (4.5:1; the muted tone
+  would not be, `palette.spec.ts`).
+- **Name.** The bar is `role="img"` with the name "Open findings: 13 Critical, 160 High, 113 Medium, 16 Low, 843 Unknown"; the
+  numbers inside are hidden from the accessibility tree. With `[links]` (the report's header, R-UI-094) each segment is a link
+  that applies its severity filter, named by its count and severity ("13 Critical"), in a list named "Open findings".
+
+Acceptance criteria:
+
+- Unit: the five counts in order, None added to Low; a larger count gives a larger share and a zero count a faint segment that
+  still shows 0; the Unknown segment is hatched; the accessible name lists every count; with links each segment links to its
+  filter; axe finds no serious violation.
+- Rendered: the counts 13, 160, 113, 16 and 843 fit their segments at 1440 and 390 px in both schemes.
+
+### R-UI-093 · The grade card
+Priority: **P1** · Covers: trove-only
+
+`<trove-grade-card>` ([grade-card.ts](../../web/src/app/shared/vulnerability/grade-card.ts)) is a version's grade in one
+repository with its details, as cogpit's card:
+
+- The shield of 32 px on the left, centred on the card's lines; on the right, one below the other: the text (weight 600), the rule
+  (muted, 12 px), the severity bar of R-UI-092 and the line of facts (muted, 12 px). No frame: the card sits in its section.
+- **The line of facts**, its parts separated by " · ": for an image **OS** and its name, **end of life** in the warning colour
+  when it is, and **Scanned** with the age and the time ("Scanned 1h ago (Nov 12, 2026, 12:31:51 PM)"); for every other format
+  **Advisory data from** with the age and the time of the data it was checked against (Q-VULN-156); last, the link **Findings in
+  web-frontend/images**, which opens the project's vulnerability report filtered by the repository, the package and the version
+  (R-VULN-022) ([Q-UI-374](#q-ui-374--a-list-shows-the-shield-and-the-text-the-bar-and-the-facts-are-the-cards)).
+- **N/A** shows the shield, the text and the rule only: there are no counts to draw.
+
+Acceptance criteria:
+
+- Unit: an image's card with "OS alpine 3.24.1", the end of life and the scan time; a package's with the data's time; the link's
+  query names the repository, the package and the version; N/A has no bar and no line of facts; axe finds no serious violation.
+
+### R-UI-094 · Where the grade shows
+Priority: **P1** · Covers: trove-only
+
+Every screen that showed the highest severity of a version or a package shows its grade instead; the findings themselves keep
+their severity (R-VULN-022). The list shows the grade; the bar and the facts are on the card (R-UI-067: details on demand,
+[Q-UI-374](#q-ui-374--a-list-shows-the-shield-and-the-text-the-bar-and-the-facts-are-the-cards)).
+
+| Screen | Place | What |
+|---|---|---|
+| Repository content (R-UI-052) | The column **Vulnerabilities** of the items | `<trove-grade>` of the item's latest version (`vulnerabilityGrade`, R-VULN-039); the column sorts by grade ([Q-UI-373](#q-ui-373--the-list-sorts-by-grade-in-the-browser-over-the-whole-list-up-to-1000-entries)) |
+| Repository content, the opened row | The column **Vulnerabilities** of the versions | `<trove-grade>` of each version in this repository |
+| Package page (R-UI-007) | The header's facts | `<trove-grade>` of the selected version (the worst of its repositories), a link to the tab **Vulnerabilities** ([Q-UI-375](#q-ui-375--the-package-page-shows-the-versions-grade-in-its-header-and-a-card-per-repository-on-its-tab)) |
+| Package page, tab **Vulnerabilities** (R-VULN-023) | Each repository's section | `<trove-grade-card>` above the block banner and the findings |
+| Package page, tab **All versions** | The column **Vulnerabilities** | `<trove-grade>` of each version |
+| Vulnerability report (R-VULN-022), a project's and the admin area's security dashboard | The header | `<trove-severity-bar [links]>` of the open findings in scope in place of the five severity counts; the counts **Malicious**, **Needs triage** and **Blocked versions** stay ([Q-UI-376](#q-ui-376--the-reports-header-shows-the-severity-bar-whose-segments-are-its-filter-links)) |
+
+- A caller who gets no grades (signed out, an installation that does not scan, Q-VULN-158) sees no grade column, no card and no
+  header grade, not a column of dashes ([Q-UI-377](#q-ui-377--a-list-without-grades-has-no-grade-column)).
+
+Acceptance criteria:
+
+- Unit: the repository content list shows `<trove-grade>` for each row and sorts by grade, worst first, on its second click; the
+  opened row grades each version; the package page's header grade links to the tab, the tab shows one card per repository and
+  *All versions* a grade per version; the report's header shows the bar with five filter links; without grades no column.
+- Rendered (rule 11, `make ui-renders`): the repository content of `npm-internal`, `npm` and `images`, the package pages of the
+  npm package and the image with the tabs **Vulnerabilities** and **All versions**, and the vulnerability report of the project
+  and of the admin area, as plain user, power user and administrator, light and dark, at 1440, 1024 and 390 px; the seed holds
+  versions of the grades S, A, B, C, D, E and N/A.
 
 ## Deferred
 
@@ -9962,7 +10087,7 @@ Context: the repository screen of R-UI-020 was the settings, and the content a r
 **Choice:** (a). The sub-decisions the owner did not make, taken by the development agent and open to change at the walkthrough:
 
 - The client setup is a tab of the page, not a section below the list and not a dialog: it stays on the page without pushing the list down, and a token created in it dies with the tab (R-UI-043, R-UI-016).
-- The open findings of an item are summed over its versions in this repository: a finding present in two versions counts twice, as everywhere else findings are counted per version. The row's badge shows the highest open severity and the count.
+- The open findings of an item were summed over its versions in this repository, with the highest open severity and the count as the row's badge; since the owner's task of 2026-11-12 the row shows the grade of the item's latest version ([Q-VULN-154](vulnerability-scanning.md#q-vuln-154--a-package-is-graded-by-its-latest-version), R-UI-094).
 - Debian has no vulnerability adapter today, so its page has no column of findings and says so in one sentence; OCI images are scanned since R-VULN-033 (`vulnerabilityScanning` of the format catalog); the column appears the day an adapter exists, and the digest of a tag and the counts need no other change.
 - The digest of a version in the list comes from the format's existing `metadata.digest` behind `include=digest`, not from a new format contract member: only the OCI screens ask for it, so no adapter pays for it otherwise.
 - A remote OCI repository lists the tags its cache holds ([Q-OCI-215](formats/oci.md#q-oci-215--the-tags-of-a-remote-are-listed-from-its-cache-entries-by-a-database-view-not-from-version-rows)); the words that differ are Q-UI-217.
@@ -10929,6 +11054,122 @@ development agent revisits it if power users without a system role also prefer t
 
 **Applied in the spec:** R-UI-050. Built in fix wave 2.
 
+### Q-UI-370 · The grades take cogpit's colours, and S, A and B are the greens of a good grade
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the owner asked for the grades "as we realised it in cogpit"; cogpit's scale runs from a deep teal (S) through green
+(A), mint (B), amber (C) and orange (D) to red (E), the same in both of its themes, with a quiet grey for N/A. trove's rule is
+that green means a positive status only (Q-UI-96).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) cogpit's colours, as tokens with the same value in both schemes for S to E and a grey per scheme for N/A; S, A and B are allowed to be green (chosen) | The palette test admits the three grade tokens and their rim and ink beside the positive status | The grade looks as the owner knows it; S, A and B are the good end of the scale, so their green is a positive status in Q-UI-96's sense; the letter and the text carry the grade, never the colour alone | Three more greens in the palette |
+| (b) cogpit's scale without green: S to B in blue or grey | Q-UI-96 untouched | No exception | Not what the owner asked for; a blue S reads as a link or a selection |
+| (c) trove's status colours | Positive, warning, error | Fewer tokens | Three colours for seven grades; C and D look the same |
+
+**Choice:** (a). The bar takes cogpit's severity colours as well; its High is one step deeper than cogpit's (`#c9302a` for
+`#d9403a`) so that its white count keeps 4.5:1. **Rationale:** the owner's reference, inside the rule's intent: green still means
+"good". The development agent revisits (b) if the owner wants green kept for the status badge alone. **Applied in the spec:**
+R-UI-090, R-UI-092; [design-language.md](../developer/design-language.md), `palette.spec.ts`, `_tokens.scss`.
+
+### Q-UI-371 · The shield is an inline SVG whose letter is text, and it is decorative beside its text
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Inline SVG: the crest as a path, the letter as `<text>`, colours from the tokens (chosen) | One component draws every size | Sharp at 16 and 32 px and on any screen density; the scheme's tokens apply; the letter is text in the page's face | A gradient per shield needs its own ID |
+| (b) Seven image files | A picture per grade | Simple markup | Two schemes and two sizes mean 28 files, and a token change means new pictures |
+| (c) A Material icon (`shield`) with a letter over it | No new shape | One glyph | Not cogpit's crest; the letter does not sit on the icon's optical centre |
+
+**Choice:** (a). Beside its text the shield is `aria-hidden`, so a screen reader hears the grade once; alone it is an image named
+**Grade E**. **Rationale:** the owner's shape at every size from one source. The development agent records no revisit condition.
+**Applied in the spec:** R-UI-090.
+
+### Q-UI-372 · The bar's segments are as wide as their share, with room for their number
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) cogpit's layout: each segment its number's room first, the rest shared by the shares, each at least 7 % (chosen) | A flex item per segment, `flex: <share> 1 auto` | A count always fits; 843 Unknown is visibly the largest; the bar is as wide as its place | A segment of 1 among 1,000 is wider than its share |
+| (b) Strictly proportional | Width = share | Exact | 13 of 1,145 is 1 %: its number does not fit |
+| (c) Five equal segments | A table of five counts | Simple | Loses what the bar is for |
+
+**Choice:** (a). A severity without findings stays in the bar, faint, so that the five positions never move. **Rationale:** the
+owner's pick in cogpit's lab ("Anteilig"). The development agent records no revisit condition. **Applied in the spec:** R-UI-092.
+
+### Q-UI-373 · The list sorts by grade in the browser over the whole list, up to 1,000 entries
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the repository content list is paged by the server (R-API-029), whose sorts are `name` and `updatedAt`; a grade is not a
+column of the packages' table.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Sorting by grade loads the rest of the list, in pages of 500 up to 1,000 entries, and sorts in the browser by the rank of R-VULN-038, then by name (chosen) | `sort=-grade` in the URL; a note says when the list holds more | Correct for every repository up to 1,000 items, which is most; no API change | A large repository sorts its first 1,000 only (H-980) |
+| (b) A server sort `grade` | Exact at any size | One page at a time | The grade is computed per request from findings and scans (R-VULN-039); sorting by it needs every entry's grade first, which is (a) on the server, or a stored grade that every finding, triage and scan must keep current |
+| (c) Sort the loaded page only | No extra request | Cheap | Says "sorted" over 50 entries of a list of 3,000 |
+
+**Choice:** (a). **Rationale:** right where the lists are, honest where they are not. The development agent revisits (b) when a
+repository's list beyond 1,000 entries is sorted by grade in practice. **Applied in the spec:** R-UI-094, R-UI-052.
+
+### Q-UI-374 · A list shows the shield and the text; the bar and the facts are the card's
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A list cell is the shield of 16 px and "E · 13 Critical", with every count in its tooltip; the card on the package page has the bar, the facts and a link to the findings (chosen) | cogpit's list and drawer | The plain user reads one grade per row (R-UI-067); the details are one click away | The counts in a list need a hover |
+| (b) The bar in every row | Everything at once | No click | Five numbers per row in a list a plain user scans for one thing |
+| (c) The shield alone, as cogpit's Pods list | The quietest | Narrow | A letter without its count says less than the old column did |
+
+**Choice:** (a). The card's last fact is the link **Findings in** and the repository, to the report filtered by the repository,
+the package and the version: the scanned object cogpit links to is, in trove, that list. **Rationale:** simple by default,
+details on demand. The development agent records no revisit condition. **Applied in the spec:** R-UI-091, R-UI-093, R-UI-094.
+
+### Q-UI-375 · The package page shows the version's grade in its header and a card per repository on its tab
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The header's facts hold `<trove-grade>` of the selected version, a link to the tab; the tab holds one card per repository (chosen) | Seen at once, detailed on demand | A plain user sees whether the version is safe without opening a tab; the card's counts match the repository's findings below it | Two places |
+| (b) One card in the header | Everything on top | No tab needed | A card of 32 px with a bar pushes the install command down, which the plain user came for (Q-UI-315) |
+| (c) The tab only | One place | Quiet | The grade is hidden behind a tab |
+
+**Choice:** (a). **Rationale:** the install command stays first, and the grade is still in view. The development agent records no
+revisit condition. **Applied in the spec:** R-UI-094, R-VULN-023.
+
+### Q-UI-376 · The report's header shows the severity bar, whose segments are its filter links
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The five severity counts become the bar with a link per segment; Malicious, Needs triage and Blocked versions stay counts (chosen) | The report uses the same pieces as the package page | One picture of the severities everywhere; the links of R-VULN-022 stay | A thin segment is a small target (its count is its least width, at least 22 px high) |
+| (b) The bar above the counts | Both | Nothing removed | The same five numbers twice |
+| (c) A grade for the project | A shield for everything in scope | One letter | A grade is a version's (R-VULN-038): summed over every version of a project it says nothing a version could fix |
+
+**Choice:** (a). **Rationale:** the same pieces on every screen of vulnerabilities, and no grade where none is defined. The trend
+chart keeps its series colours, which are measured at 3:1 against the page (R-UI-044), which the bar's Low and Medium are not:
+the bar carries its counts as text. The development agent revisits the chart's colours with the owner. **Applied in the spec:**
+R-UI-094, R-VULN-022.
+
+### Q-UI-377 · A list without grades has no grade column
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The column **Vulnerabilities** appears when the format is scanned and the answer carries grades (chosen) | A signed-out reader or an installation without scanning sees the list without it | No column that stays empty (the style guide); no N/A where nothing is known (Q-VULN-158) | The column comes with the first page, not before it |
+| (b) A dash per row | The column always | Stable layout | A column of dashes says nothing |
+
+**Choice:** (a). **Rationale:** the style guide's rule that a column without data is left out. The development agent records no
+revisit condition. **Applied in the spec:** R-UI-094, R-UI-052.
+
 ### Q-API-246 · An operation that is allowed while the installation is read-only declares `x-trove-maintenance: allowed`
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -11418,3 +11659,11 @@ makes it real: an owner that narrows its terms (Debian, NuGet, the Linux Foundat
 that opens them (npm, Red Hat, Docker) while trove still shows the glyph. Hardening: read the pages of the table in Q-UI-225
 again when a format is added and before the first stable release, and record the day in the notice.
 
+
+### H-980 · Sorting by grade covers the first 1,000 entries of a list
+
+Component: the repository content list (R-UI-094, Q-UI-373). Subject: every reader who sorts a repository's items by grade. Live
+from the grades on. Sorting by grade loads the list up to 1,000 entries and sorts them in the browser, because the server has no
+sort by grade; a repository with more items sorts its first 1,000 by name and grade, and the worst item may be the 1,001st. The
+list says so under the table. What makes it real: a remote repository that caches more than 1,000 packages, and a reader who
+looks for its worst one. Hardening: a server sort over a stored grade (Q-UI-373 (b)).

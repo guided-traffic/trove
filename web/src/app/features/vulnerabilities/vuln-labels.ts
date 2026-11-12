@@ -1,7 +1,6 @@
 import {
   VulnerabilityBlockReason,
   VulnerabilityDismissalReason,
-  VulnerabilityEvaluation,
   VulnerabilityFinding,
   VulnerabilityKind,
   VulnerabilityResolvedReason,
@@ -112,19 +111,6 @@ export function resolvedLabel(r: VulnerabilityResolvedReason): string {
   }
 }
 
-export function evaluationLabel(e: VulnerabilityEvaluation): string {
-  switch (e) {
-    case 'evaluated':
-      return $localize`:@@vuln.evaluation.evaluated:Evaluated`;
-    case 'pending_data':
-      return $localize`:@@vuln.evaluation.pending:Waiting for advisory data`;
-    case 'internal':
-      return $localize`:@@vuln.evaluation.internal:Internal name, public advisories do not apply`;
-    default:
-      return $localize`:@@vuln.evaluation.not-covered:Not covered by scanning`;
-  }
-}
-
 /**
  * What the status column and the status text of a finding say: a version whose download is refused shows as
  * *Blocked* with the reason; otherwise the status. `blocked` is the API's computed value (R-VULN-015), so the
@@ -136,11 +122,6 @@ export function statusText(f: Pick<VulnerabilityFinding, 'status' | 'blocked' | 
     return `${statusLabel('blocked')}${reason}`;
   }
   return statusLabel(f.status);
-}
-
-/** True for the statuses of an open finding. */
-export function isOpen(status: VulnerabilityStatus): boolean {
-  return status === 'needs_triage' || status === 'confirmed' || status === 'blocked';
 }
 
 /** The class that tints a severity word: red for the two top levels, amber for medium, muted below. */

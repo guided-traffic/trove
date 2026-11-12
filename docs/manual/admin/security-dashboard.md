@@ -17,7 +17,7 @@ A holder of `content:metadata-read` without `vulnerabilities:triage` reads; the 
 
 ## What it shows
 
-**The counts and the banner** are those of the content report (**Critical** to **Unknown**, **Malicious**, **Needs triage**, **Blocked versions**; the banner for stale or never-imported advisory data), counted over every project you may read. Each count is a link that applies its filter and keeps the project you narrowed to.
+**The severity bar, the counts and the banner** are those of the content report (the bar of **Critical** to **Unknown**, then **Malicious**, **Needs triage**, **Blocked versions**; the banner for stale or never-imported advisory data), counted over every project you may read. Each segment of the bar and each count is a link that applies its filter and keeps the project you narrowed to.
 
 **The trend** is the chart of open findings per day by severity over 30, 90 or 365 days, with **Show as table**.
 

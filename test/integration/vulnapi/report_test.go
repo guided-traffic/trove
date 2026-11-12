@@ -272,8 +272,9 @@ func TestR_VULN_021_Summary(t *testing.T) {
 	}
 }
 
-// TestR_VULN_020_PackageViews: the per-version view with the evaluation state and the block, and the per-package counts.
-func TestR_VULN_020_PackageViews(t *testing.T) {
+// TestR_VULN_020_R_VULN_039_PackageViews: the per-version view with the evaluation state, the block and the grade per repository,
+// the grade of every version, and the grade of the latest version in the list.
+func TestR_VULN_020_R_VULN_039_PackageViews(t *testing.T) {
 	e := newEnv(t)
 	e.st.Exec(`INSERT INTO vuln_source_state (source, ecosystem, state, synced_at) VALUES ('osv', 'npm', 'complete', now())`)
 	for _, repo := range []string{"npm-local", "npm-mirror", "npm-off"} {
@@ -297,6 +298,7 @@ func TestR_VULN_020_PackageViews(t *testing.T) {
 			BlockReason            *string
 			SyncedAt               *string
 			Findings               []struct{ Advisory string }
+			Grade                  grade
 		}
 	}
 	_ = json.Unmarshal(a.Body, &v)
@@ -311,6 +313,12 @@ func TestR_VULN_020_PackageViews(t *testing.T) {
 	if mirror.Evaluation != "not_covered" || mirror.Blocked || len(mirror.Findings) != 0 {
 		t.Errorf("npm-mirror = %+v", mirror)
 	}
+	if g := local.Grade; g.Grade != "D" || g.Open.Critical != 1 || g.Evaluation != "evaluated" || g.Repository != "it/npm-local" || g.CheckedAt == nil || g.Eosl {
+		t.Errorf("the grade of 1.0.0 in npm-local (one malicious finding): %+v", g)
+	}
+	if g := mirror.Grade; g.Grade != "N/A" || g.Evaluation != "not_covered" || g.CheckedAt != nil {
+		t.Errorf("the grade of 1.0.0 in npm-mirror, which is not covered: %+v", g)
+	}
 	if off.Evaluation != "not_covered" || off.Blocked {
 		t.Errorf("npm-off = %+v", off)
 	}
@@ -319,35 +327,38 @@ func TestR_VULN_020_PackageViews(t *testing.T) {
 	var p struct {
 		Versions []struct {
 			Version string
-			Open    struct{ Critical, Low int64 }
+			Grade   grade
 		}
 	}
 	_ = json.Unmarshal(a.Body, &p)
-	if a.Status != 200 || len(p.Versions) != 2 || p.Versions[0].Open.Critical != 1 || p.Versions[1].Open.Low != 1 {
-		t.Errorf("package counts: %d %s", a.Status, a.Body)
+	// Every repository holds both versions: the grade is the worst of them, npm-local's (Q-VULN-155); the dismissed Low is not open.
+	if a.Status != 200 || len(p.Versions) != 2 || p.Versions[0].Grade.Grade != "D" || p.Versions[0].Grade.Open.Critical != 1 ||
+		p.Versions[1].Grade.Grade != "A" || p.Versions[1].Grade.Open.Low != 1 || p.Versions[1].Grade.Repository != "it/npm-local" {
+		t.Errorf("package grades: %d %s", a.Status, a.Body)
 	}
-	// The content page of a repository (R-UI-052): the counts of one repository, per package, in one request of the list, and per
-	// version with the repository's own findings.
+	// The content page of a repository (R-UI-052): the grade of each package's latest version in one request of the list.
 	list := e.get(e.r, "/api/v1/packages?repository=it/npm-local&format=npm&include=vulnerabilities", e.tokAlice)
 	var page struct {
 		Items []struct {
-			Name                string
-			OpenVulnerabilities *struct{ Critical, Low int64 } `json:"openVulnerabilities"`
+			Name               string
+			LatestVersion      string
+			VulnerabilityGrade *grade `json:"vulnerabilityGrade"`
 		}
 	}
 	if err := json.Unmarshal(list.Body, &page); err != nil || list.Status != 200 {
 		t.Fatalf("list: %d %s", list.Status, list.Body)
 	}
-	if len(page.Items) != 1 || page.Items[0].OpenVulnerabilities == nil || page.Items[0].OpenVulnerabilities.Critical != 1 || page.Items[0].OpenVulnerabilities.Low != 1 {
-		t.Errorf("the list counts the open findings of the repository (the dismissed one is not open): %s", list.Body)
+	if len(page.Items) != 1 || page.Items[0].LatestVersion != "2.0.0" || page.Items[0].VulnerabilityGrade == nil ||
+		page.Items[0].VulnerabilityGrade.Grade != "A" || page.Items[0].VulnerabilityGrade.Open.Low != 1 || page.Items[0].VulnerabilityGrade.Open.Critical != 0 {
+		t.Errorf("the list grades the latest version, 2.0.0, by its open findings (the dismissed one is not open): %s", list.Body)
 	}
-	if plain := e.get(e.r, "/api/v1/packages?repository=it/npm-local&format=npm", e.tokAlice); strings.Contains(string(plain.Body), "openVulnerabilities") {
-		t.Errorf("without include the list carries no counts: %s", plain.Body)
+	if plain := e.get(e.r, "/api/v1/packages?repository=it/npm-local&format=npm", e.tokAlice); strings.Contains(string(plain.Body), "vulnerabilityGrade") {
+		t.Errorf("without include the list carries no grade: %s", plain.Body)
 	}
 	a = e.get(e.r, "/api/v1/packages/"+id+"/vulnerabilities?repository=it/npm-mirror", e.tokAlice)
 	_ = json.Unmarshal(a.Body, &p)
-	if a.Status != 200 || len(p.Versions) != 2 || p.Versions[0].Open.Critical != 0 || p.Versions[1].Open.Low != 0 {
-		t.Errorf("the counts narrowed to a repository without findings: %d %s", a.Status, a.Body)
+	if a.Status != 200 || len(p.Versions) != 2 || p.Versions[0].Grade.Grade != "N/A" || p.Versions[1].Grade.Grade != "N/A" {
+		t.Errorf("the grades narrowed to a repository that is not covered: %d %s", a.Status, a.Body)
 	}
 	if a := e.get(e.r, "/api/v1/packages/"+id+"/versions/9.9.9/vulnerabilities", e.tokAlice); a.Status != 404 {
 		t.Errorf("a version nobody holds: %d", a.Status)
@@ -432,4 +443,15 @@ func TestR_VULN_010_ClaimedNameMatches(t *testing.T) {
 	if a := e.get(e.r, "/api/v1/vulnerabilities/claimed-name-matches", e.tokAlice); a.Status != 403 {
 		t.Errorf("without repositories:read-config: %d", a.Status)
 	}
+}
+
+// grade is the VulnerabilityGrade of the answers (R-VULN-039).
+type grade struct {
+	Grade      string
+	Open       struct{ Critical, High, Medium, Low, None, Unknown int64 }
+	Eosl       bool
+	Os         *string
+	CheckedAt  *string
+	Evaluation string
+	Repository string
 }

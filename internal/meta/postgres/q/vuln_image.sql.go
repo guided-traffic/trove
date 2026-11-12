@@ -341,6 +341,179 @@ func (q *Queries) VulnImageFindings(ctx context.Context, arg VulnImageFindingsPa
 	return items, nil
 }
 
+const vulnImageGradeCounts = `-- name: VulnImageGradeCounts :many
+WITH wanted AS (
+    SELECT unnest($6::text[]) AS name, unnest($7::text[]) AS tag
+), tagged AS (
+    SELECT p.repo_id, p.name, pv.version AS tag, i.blob_sha256 AS digest
+      FROM wanted w
+      JOIN packages p ON p.name = w.name
+      JOIN repositories r ON r.id = p.repo_id
+      JOIN package_versions pv ON pv.package_id = p.id AND pv.version = w.tag
+      JOIN items i ON i.id = pv.lead_item_id
+     WHERE r.format = 'oci' AND pv.trashed_at IS NULL
+    UNION ALL
+    SELECT t.repo_id, t.name, t.version AS tag, t.manifest_sha256 AS digest
+      FROM wanted w
+      JOIN oci_remote_tags t ON t.name = w.name AND t.version = w.tag
+), images AS (
+    SELECT repo_id, name, tag, digest FROM tagged
+    UNION
+    SELECT t.repo_id, t.name, t.tag, r.target
+      FROM tagged t JOIN oci_references r ON r.repo_id = t.repo_id AND r.name = t.name AND r.manifest = t.digest AND r.kind = 'manifest'
+)
+SELECT g.repo_id::bigint AS repo_id, g.name::text AS name, g.tag::text AS version, f.severity::text AS severity, count(DISTINCT f.id)::bigint AS n
+  FROM images g
+  JOIN vuln_finding f ON f.repo_id = g.repo_id AND f.ecosystem = 'OCI' AND f.package_name = g.name AND f.version = ('sha256:' || encode(g.digest, 'hex'))
+ WHERE f.status IN ('needs_triage', 'confirmed', 'blocked')
+   AND (NOT $1::boolean OR f.repo_id = ANY($2::bigint[]))
+   AND (f.repo_id = ANY($3::bigint[])
+          OR concat_ws(chr(31), f.repo_id::text, f.package_name, g.tag) = ANY($4::text[])
+          OR concat_ws(chr(31), f.repo_id::text, f.package_name) = ANY($5::text[]))
+ GROUP BY g.repo_id, g.name, g.tag, f.severity
+ ORDER BY g.repo_id, g.name, g.tag, f.severity
+`
+
+type VulnImageGradeCountsParams struct {
+	HasRepos    bool
+	Repos       []int64
+	Whole       []int64
+	Rows        []string
+	PackageRows []string
+	Names       []string
+	Tags        []string
+}
+
+type VulnImageGradeCountsRow struct {
+	RepoID   int64
+	Name     string
+	Version  string
+	Severity string
+	N        int64
+}
+
+// The open findings of the given (name, tag) pairs of images that the caller can read, per repository, tag and severity: a finding
+// counts for the tag whose manifest it names or whose index names that manifest (R-VULN-037), the counts behind the grades of R-VULN-039.
+// names and tags are parallel arrays.
+func (q *Queries) VulnImageGradeCounts(ctx context.Context, arg VulnImageGradeCountsParams) ([]VulnImageGradeCountsRow, error) {
+	rows, err := q.db.Query(ctx, vulnImageGradeCounts,
+		arg.HasRepos,
+		arg.Repos,
+		arg.Whole,
+		arg.Rows,
+		arg.PackageRows,
+		arg.Names,
+		arg.Tags,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []VulnImageGradeCountsRow{}
+	for rows.Next() {
+		var i VulnImageGradeCountsRow
+		if err := rows.Scan(
+			&i.RepoID,
+			&i.Name,
+			&i.Version,
+			&i.Severity,
+			&i.N,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const vulnImageGradeScans = `-- name: VulnImageGradeScans :many
+WITH wanted AS (
+    SELECT unnest($1::text[]) AS name, unnest($2::text[]) AS tag
+), tagged AS (
+    SELECT p.repo_id, p.name, pv.version AS tag, i.blob_sha256 AS digest, ''::text AS platform
+      FROM wanted w
+      JOIN packages p ON p.name = w.name
+      JOIN package_versions pv ON pv.package_id = p.id AND pv.version = w.tag
+      JOIN items i ON i.id = pv.lead_item_id
+     WHERE p.repo_id = ANY($3::bigint[]) AND pv.trashed_at IS NULL
+    UNION ALL
+    SELECT t.repo_id, t.name, t.version, t.manifest_sha256, ''::text
+      FROM wanted w
+      JOIN oci_remote_tags t ON t.name = w.name AND t.version = w.tag
+     WHERE t.repo_id = ANY($3::bigint[])
+), images AS (
+    SELECT repo_id, name, tag, digest, platform FROM tagged
+    UNION
+    SELECT t.repo_id, t.name, t.tag, r.target, COALESCE(r.platform, '')
+      FROM tagged t JOIN oci_references r ON r.repo_id = t.repo_id AND r.name = t.name AND r.manifest = t.digest AND r.kind = 'manifest'
+)
+SELECT g.repo_id::bigint AS repo_id, g.name::text AS name, g.tag::text AS version, ('sha256:' || encode(g.digest, 'hex'))::text AS digest,
+       g.platform::text AS platform, COALESCE(s.state, '')::text AS state,
+       COALESCE((extract(epoch FROM s.scanned_at) * 1000000)::bigint, 0)::bigint AS scanned_us,
+       COALESCE(s.os_family, '')::text AS os_family, COALESCE(s.os_name, '')::text AS os_name, COALESCE(s.os_eosl, false)::boolean AS os_eosl
+  FROM images g
+  LEFT JOIN vuln_image_scan s ON s.repo_id = g.repo_id AND s.name = g.name AND s.digest = g.digest
+ WHERE g.platform <> '' OR NOT EXISTS (
+         SELECT 1 FROM images c WHERE c.repo_id = g.repo_id AND c.name = g.name AND c.tag = g.tag AND c.platform <> '')
+ ORDER BY g.repo_id, g.name, g.tag, g.platform, g.digest
+`
+
+type VulnImageGradeScansParams struct {
+	Names []string
+	Tags  []string
+	Repos []int64
+}
+
+type VulnImageGradeScansRow struct {
+	RepoID    int64
+	Name      string
+	Version   string
+	Digest    string
+	Platform  string
+	State     string
+	ScannedUs int64
+	OsFamily  string
+	OsName    string
+	OsEosl    bool
+}
+
+// The manifests the given (name, tag) pairs stand for in the repositories (the tag's own and, for an index, the children it names), with
+// how far each is scanned, its OS and whether that OS is at its end of life: the scan facts of the grades of R-VULN-038. As
+// VulnImageManifests, for many tags at once; an index is left out once it has children.
+func (q *Queries) VulnImageGradeScans(ctx context.Context, arg VulnImageGradeScansParams) ([]VulnImageGradeScansRow, error) {
+	rows, err := q.db.Query(ctx, vulnImageGradeScans, arg.Names, arg.Tags, arg.Repos)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []VulnImageGradeScansRow{}
+	for rows.Next() {
+		var i VulnImageGradeScansRow
+		if err := rows.Scan(
+			&i.RepoID,
+			&i.Name,
+			&i.Version,
+			&i.Digest,
+			&i.Platform,
+			&i.State,
+			&i.ScannedUs,
+			&i.OsFamily,
+			&i.OsName,
+			&i.OsEosl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const vulnImageKnownExploited = `-- name: VulnImageKnownExploited :many
 SELECT cve_id::text AS cve_id FROM vuln_kev WHERE cve_id = ANY($1::text[])
 `
@@ -639,80 +812,6 @@ func (q *Queries) VulnImageSetComponents(ctx context.Context, arg VulnImageSetCo
 		arg.AdvisoryID,
 	)
 	return err
-}
-
-const vulnImageTagCounts = `-- name: VulnImageTagCounts :many
-WITH tagged AS (
-    SELECT p.repo_id, p.name, pv.version AS tag, i.blob_sha256 AS digest
-      FROM packages p
-      JOIN repositories r ON r.id = p.repo_id
-      JOIN package_versions pv ON pv.package_id = p.id
-      JOIN items i ON i.id = pv.lead_item_id
-     WHERE r.format = 'oci' AND p.name = $6::text AND pv.trashed_at IS NULL
-    UNION ALL
-    SELECT t.repo_id, t.name, t.version AS tag, t.manifest_sha256 AS digest
-      FROM oci_remote_tags t
-     WHERE t.name = $6::text
-), images AS (
-    SELECT repo_id, name, tag, digest FROM tagged
-    UNION
-    SELECT t.repo_id, t.name, t.tag, r.target
-      FROM tagged t JOIN oci_references r ON r.repo_id = t.repo_id AND r.name = t.name AND r.manifest = t.digest AND r.kind = 'manifest'
-)
-SELECT g.tag::text AS version, f.severity::text AS severity, count(DISTINCT f.id)::bigint AS n
-  FROM images g
-  JOIN vuln_finding f ON f.repo_id = g.repo_id AND f.ecosystem = 'OCI' AND f.package_name = g.name AND f.version = ('sha256:' || encode(g.digest, 'hex'))
- WHERE f.status IN ('needs_triage', 'confirmed', 'blocked')
-   AND (NOT $1::boolean OR f.repo_id = ANY($2::bigint[]))
-   AND (f.repo_id = ANY($3::bigint[])
-          OR concat_ws(chr(31), f.repo_id::text, f.package_name, g.tag) = ANY($4::text[])
-          OR concat_ws(chr(31), f.repo_id::text, f.package_name) = ANY($5::text[]))
- GROUP BY g.tag, f.severity
- ORDER BY g.tag, f.severity
-`
-
-type VulnImageTagCountsParams struct {
-	HasRepos    bool
-	Repos       []int64
-	Whole       []int64
-	Rows        []string
-	PackageRows []string
-	Name        string
-}
-
-type VulnImageTagCountsRow struct {
-	Version  string
-	Severity string
-	N        int64
-}
-
-// The open findings of an image name the caller can read, counted per tag and severity: a finding counts for the tag whose manifest it
-// names or whose index names that manifest (R-VULN-020).
-func (q *Queries) VulnImageTagCounts(ctx context.Context, arg VulnImageTagCountsParams) ([]VulnImageTagCountsRow, error) {
-	rows, err := q.db.Query(ctx, vulnImageTagCounts,
-		arg.HasRepos,
-		arg.Repos,
-		arg.Whole,
-		arg.Rows,
-		arg.PackageRows,
-		arg.Name,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []VulnImageTagCountsRow{}
-	for rows.Next() {
-		var i VulnImageTagCountsRow
-		if err := rows.Scan(&i.Version, &i.Severity, &i.N); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const vulnImageUpsertAdvisory = `-- name: VulnImageUpsertAdvisory :exec

@@ -256,7 +256,20 @@ type versionReport struct {
 			OsFamily      string `json:"osFamily"`
 			Packages      int    `json:"packages"`
 		} `json:"images"`
+		Grade imageGrade `json:"grade"`
 	} `json:"repositories"`
+}
+
+// imageGrade is the grade of a tag in the answers (R-VULN-039).
+type imageGrade struct {
+	Grade      string  `json:"grade"`
+	Eosl       bool    `json:"eosl"`
+	Os         *string `json:"os"`
+	CheckedAt  *string `json:"checkedAt"`
+	Evaluation string  `json:"evaluation"`
+	Open       struct {
+		Critical int64 `json:"critical"`
+	} `json:"open"`
 }
 
 func (f *flow) versionReport(name, tag string) versionReport {
@@ -314,10 +327,39 @@ func TestR_VULN_034_AnImageIsScannedAfterItsPushAndItsFindingsReachThePackageAPI
 		t.Fatalf("images: %+v", r.Repositories[0].Images)
 	}
 
-	// The counts per tag of GET /packages/{id}/vulnerabilities, which the repository page shows.
+	// R-VULN-038: one Critical grades D; the OS and the scan time come from the manifest's scan.
+	if g := r.Repositories[0].Grade; g.Grade != "D" || g.Open.Critical != 1 || g.Eosl || g.Os == nil || *g.Os != "alpine 3.19.1" || g.CheckedAt == nil {
+		t.Fatalf("grade: %+v", g)
+	}
+	// The grade per tag of GET /packages/{id}/vulnerabilities, which the repository page shows (R-VULN-039).
 	a := f.do("GET", "/api/v1/packages/"+view.ID("oci", "app")+"/vulnerabilities", nil)
-	if a.Status != http.StatusOK || !strings.Contains(string(a.Body), `"critical":1`) {
-		t.Fatalf("package counts: %d %s", a.Status, a.Body)
+	if a.Status != http.StatusOK || !strings.Contains(string(a.Body), `"critical":1`) || !strings.Contains(string(a.Body), `"grade":"D"`) {
+		t.Fatalf("package grades: %d %s", a.Status, a.Body)
+	}
+}
+
+// R-VULN-038: an image whose OS is at its end of life grades C at best, without a finding; the list grades the image by that tag.
+func TestR_VULN_038_AnImageAtTheEndOfLifeOfItsOSGradesCAtBest(t *testing.T) {
+	f := newFlow(t)
+	f.setReport(`{"SchemaVersion":2,"Metadata":{"OS":{"Family":"alpine","Name":"3.12.0","EOSL":true}},"Results":[]}`)
+	f.push("app", "1.0", newImage(t))
+	f.runScan()
+	r := f.waitEvaluation("app", "1.0", "evaluated")
+	if g := r.Repositories[0].Grade; g.Grade != "C" || !g.Eosl || g.Os == nil || *g.Os != "alpine 3.12.0" || g.Open.Critical != 0 {
+		t.Fatalf("grade: %+v", g)
+	}
+	a := f.do("GET", "/api/v1/packages?format=oci&include=vulnerabilities", nil)
+	var page struct {
+		Items []struct {
+			Name               string      `json:"name"`
+			VulnerabilityGrade *imageGrade `json:"vulnerabilityGrade"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(a.Body, &page); err != nil || a.Status != http.StatusOK {
+		t.Fatalf("list: %d %s", a.Status, a.Body)
+	}
+	if len(page.Items) != 1 || page.Items[0].VulnerabilityGrade == nil || page.Items[0].VulnerabilityGrade.Grade != "C" || !page.Items[0].VulnerabilityGrade.Eosl {
+		t.Fatalf("the list grades the image by its latest tag: %s", a.Body)
 	}
 }
 

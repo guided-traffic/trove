@@ -32,6 +32,18 @@ func toSeverityCounts(c report.Counts) gen.VulnerabilitySeverityCounts {
 	return gen.VulnerabilitySeverityCounts{Critical: c.Critical, High: c.High, Medium: c.Medium, Low: c.Low, None: c.None, Unknown: c.Unknown}
 }
 
+// toGrade is a version's grade in the answer (R-VULN-039).
+func toGrade(g report.VersionGrade) gen.VulnerabilityGrade {
+	out := gen.VulnerabilityGrade{
+		Grade: gen.VulnerabilityGradeGrade(g.Grade), Open: toSeverityCounts(g.Open), Eosl: g.EOSL, CheckedAt: g.CheckedAt,
+		Evaluation: gen.VulnerabilityEvaluation(g.Evaluation), Repository: g.Repository,
+	}
+	if g.OS != "" {
+		out.Os = &g.OS
+	}
+	return out
+}
+
 // GetVulnerabilitySummary implements GET /api/v1/vulnerabilities/summary (R-VULN-021): per request, over the findings the
 // caller can read, never cached across callers.
 func (s *Server) GetVulnerabilitySummary(w http.ResponseWriter, r *http.Request, _ gen.GetVulnerabilitySummaryParams) {
@@ -306,6 +318,7 @@ func (s *Server) GetPackageVersionVulnerabilities(w http.ResponseWriter, r *http
 		Blocked     bool                                 `json:"blocked"`
 		Evaluation  gen.VulnerabilityEvaluation          `json:"evaluation"`
 		Findings    []gen.VulnerabilityFinding           `json:"findings"`
+		Grade       gen.VulnerabilityGrade               `json:"grade"`
 		Images      *[]gen.VulnerabilityImageState       `json:"images,omitempty"`
 		Repository  string                               `json:"repository"`
 		SyncedAt    *time.Time                           `json:"syncedAt,omitempty"`
@@ -316,12 +329,13 @@ func (s *Server) GetPackageVersionVulnerabilities(w http.ResponseWriter, r *http
 			Blocked     bool                                 `json:"blocked"`
 			Evaluation  gen.VulnerabilityEvaluation          `json:"evaluation"`
 			Findings    []gen.VulnerabilityFinding           `json:"findings"`
+			Grade       gen.VulnerabilityGrade               `json:"grade"`
 			Images      *[]gen.VulnerabilityImageState       `json:"images,omitempty"`
 			Repository  string                               `json:"repository"`
 			SyncedAt    *time.Time                           `json:"syncedAt,omitempty"`
 		}{
 			Blocked: rv.Blocked, Evaluation: gen.VulnerabilityEvaluation(rv.Evaluation), Repository: rv.Repository, SyncedAt: rv.SyncedAt,
-			Findings: make([]gen.VulnerabilityFinding, 0, len(rv.Findings)),
+			Findings: make([]gen.VulnerabilityFinding, 0, len(rv.Findings)), Grade: toGrade(rv.Grade),
 		}
 		if rv.Blocked && rv.BlockReason != "" {
 			b := gen.VulnerabilityVersionBlockReason(rv.BlockReason)
@@ -391,7 +405,7 @@ func (s *Server) GetPackageVulnerabilities(w http.ResponseWriter, r *http.Reques
 	if err == nil {
 		sc, err = rep.PackageScope(ctx, sn, caller, format, name, "")
 	}
-	var versions []report.VersionCounts
+	var versions []report.VersionGrades
 	if err == nil {
 		f := store.Filter{}
 		if params.Repository != nil {
@@ -408,14 +422,14 @@ func (s *Server) GetPackageVulnerabilities(w http.ResponseWriter, r *http.Reques
 	}
 	out := gen.VulnerabilityPackageReport{PackageId: id}
 	out.Versions = make([]struct {
-		Open    gen.VulnerabilitySeverityCounts `json:"open"`
-		Version string                          `json:"version"`
+		Grade   gen.VulnerabilityGrade `json:"grade"`
+		Version string                 `json:"version"`
 	}, 0, len(versions))
 	for _, v := range versions {
 		out.Versions = append(out.Versions, struct {
-			Open    gen.VulnerabilitySeverityCounts `json:"open"`
-			Version string                          `json:"version"`
-		}{Open: toSeverityCounts(v.Open), Version: v.Version})
+			Grade   gen.VulnerabilityGrade `json:"grade"`
+			Version string                 `json:"version"`
+		}{Grade: toGrade(v.Grade), Version: v.Version})
 	}
 	writeJSON(w, r, http.StatusOK, out)
 }

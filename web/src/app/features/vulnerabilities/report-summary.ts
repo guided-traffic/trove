@@ -1,13 +1,13 @@
 import { DecimalPipe } from '@angular/common';
 import { Component, LOCALE_ID, computed, inject, input, resource } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { OPEN_STATUSES, VulnerabilitiesApi, VulnerabilitySeverity, VulnerabilitySourceState, VulnerabilitySummary } from '../../api/vulnerabilities-api';
+import { OPEN_STATUSES, VulnerabilitiesApi, VulnerabilitySourceState, VulnerabilitySummary } from '../../api/vulnerabilities-api';
 import { SessionStore } from '../../core/session-store';
 import { VULN_CONTEXT } from './vuln-context';
 import { ErrorNotice } from '../../shared/error-notice';
 import { asApiError, valueOf } from '../../shared/paged-resource';
+import { BAR_SEVERITIES, BarQueries, SeverityBar } from '../../shared/vulnerability/severity-bar';
 import { relativeTime } from '../packages/format-time';
-import { severityClass, severityIcon, severityLabel } from './vuln-labels';
 
 /** One count of the header: a link that applies its filter (R-VULN-022). */
 export interface SummaryCount {
@@ -26,17 +26,16 @@ export interface DataNotice {
   readonly text: string;
 }
 
-const SEVERITY_COUNTS: readonly VulnerabilitySeverity[] = ['critical', 'high', 'medium', 'low', 'unknown'];
-
 /**
- * The header of the report (R-VULN-022): the counts of the open findings as filter links, a banner when an ecosystem's
+ * The header of the report (R-VULN-022): the open findings by severity as the severity bar whose segments are filter links
+ * (R-UI-092, Q-UI-376), the counts of malicious findings, of findings to triage and of blocked versions as filter links, a banner when an ecosystem's
  * advisory data is stale, was never imported completely or its sync fails, and the coverage line. The counts are the
  * API's, narrowed to what the caller may read; the failing state needs the sources, which need `settings:read`, so a
  * caller without it sees stale and pending only.
  */
 @Component({
   selector: 'trove-vuln-summary',
-  imports: [DecimalPipe, RouterLink, ErrorNotice],
+  imports: [DecimalPipe, RouterLink, ErrorNotice, SeverityBar],
   template: `
     @if (failure(); as f) {
       <trove-error-notice [error]="f" (retry)="summary.reload()" />
@@ -52,8 +51,11 @@ const SEVERITY_COUNTS: readonly VulnerabilitySeverity[] = ['critical', 'high', '
         </span>
       </p>
     }
+    @if (summary.hasValue() && bySeverity(); as severities) {
+      <trove-severity-bar class="vuln-bar" [counts]="severities" [queries]="barQueries()" />
+    }
     @if (counts().length > 0) {
-      <ul class="vuln-counts" aria-label="Open findings" i18n-aria-label="@@vuln.counts.label">
+      <ul class="vuln-counts" aria-label="Open findings by state" i18n-aria-label="@@vuln.counts.state-label">
         @for (c of counts(); track c.id) {
           <li>
             <a class="vuln-count" [class]="c.cls" [routerLink]="[]" [queryParams]="c.query">
@@ -110,21 +112,24 @@ export class ReportSummary {
     return out;
   });
 
+  /** The open findings by severity, for the bar. */
+  protected readonly bySeverity = computed(() => valueOf(this.summary)?.bySeverity ?? null);
+
+  /** The filter of each segment of the bar: its severity among the open findings, Low with None (Q-VULN-153). */
+  protected readonly barQueries = computed<BarQueries>(() => {
+    const scope = this.scope();
+    const open = [...OPEN_STATUSES];
+    const out = {} as Record<(typeof BAR_SEVERITIES)[number], Record<string, readonly string[]>>;
+    for (const sev of BAR_SEVERITIES) out[sev] = { ...scope, severity: sev === 'low' ? ['low', 'none'] : [sev], status: open };
+    return out;
+  });
+
   protected readonly counts = computed<readonly SummaryCount[]>(() => {
     const s = valueOf(this.summary);
     if (!s) return [];
     const scope = this.scope();
     const open = [...OPEN_STATUSES];
-    const bySeverity = SEVERITY_COUNTS.map((sev): SummaryCount => ({
-      id: sev,
-      label: severityLabel(sev),
-      icon: severityIcon(sev),
-      cls: severityClass(sev),
-      count: s.bySeverity[sev],
-      query: { ...scope, severity: [sev], status: open },
-    }));
     return [
-      ...bySeverity,
       {
         id: 'malicious',
         label: $localize`:@@vuln.counts.malicious:Malicious`,

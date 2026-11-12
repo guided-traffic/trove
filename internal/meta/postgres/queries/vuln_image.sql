@@ -186,27 +186,31 @@ SELECT g.repo_id::bigint AS repo_id, ('sha256:' || encode(g.digest, 'hex'))::tex
  WHERE g.platform <> '' OR NOT EXISTS (SELECT 1 FROM images c WHERE c.repo_id = g.repo_id AND c.platform <> '')
  ORDER BY g.repo_id, g.platform, g.digest;
 
--- name: VulnImageTagCounts :many
--- The open findings of an image name the caller can read, counted per tag and severity: a finding counts for the tag whose manifest it
--- names or whose index names that manifest (R-VULN-020).
-WITH tagged AS (
+-- name: VulnImageGradeCounts :many
+-- The open findings of the given (name, tag) pairs of images that the caller can read, per repository, tag and severity: a finding
+-- counts for the tag whose manifest it names or whose index names that manifest (R-VULN-037), the counts behind the grades of R-VULN-039.
+-- names and tags are parallel arrays.
+WITH wanted AS (
+    SELECT unnest(sqlc.arg(names)::text[]) AS name, unnest(sqlc.arg(tags)::text[]) AS tag
+), tagged AS (
     SELECT p.repo_id, p.name, pv.version AS tag, i.blob_sha256 AS digest
-      FROM packages p
+      FROM wanted w
+      JOIN packages p ON p.name = w.name
       JOIN repositories r ON r.id = p.repo_id
-      JOIN package_versions pv ON pv.package_id = p.id
+      JOIN package_versions pv ON pv.package_id = p.id AND pv.version = w.tag
       JOIN items i ON i.id = pv.lead_item_id
-     WHERE r.format = 'oci' AND p.name = sqlc.arg(name)::text AND pv.trashed_at IS NULL
+     WHERE r.format = 'oci' AND pv.trashed_at IS NULL
     UNION ALL
     SELECT t.repo_id, t.name, t.version AS tag, t.manifest_sha256 AS digest
-      FROM oci_remote_tags t
-     WHERE t.name = sqlc.arg(name)::text
+      FROM wanted w
+      JOIN oci_remote_tags t ON t.name = w.name AND t.version = w.tag
 ), images AS (
     SELECT repo_id, name, tag, digest FROM tagged
     UNION
     SELECT t.repo_id, t.name, t.tag, r.target
       FROM tagged t JOIN oci_references r ON r.repo_id = t.repo_id AND r.name = t.name AND r.manifest = t.digest AND r.kind = 'manifest'
 )
-SELECT g.tag::text AS version, f.severity::text AS severity, count(DISTINCT f.id)::bigint AS n
+SELECT g.repo_id::bigint AS repo_id, g.name::text AS name, g.tag::text AS version, f.severity::text AS severity, count(DISTINCT f.id)::bigint AS n
   FROM images g
   JOIN vuln_finding f ON f.repo_id = g.repo_id AND f.ecosystem = 'OCI' AND f.package_name = g.name AND f.version = ('sha256:' || encode(g.digest, 'hex'))
  WHERE f.status IN ('needs_triage', 'confirmed', 'blocked')
@@ -214,8 +218,42 @@ SELECT g.tag::text AS version, f.severity::text AS severity, count(DISTINCT f.id
    AND (f.repo_id = ANY(sqlc.arg(whole)::bigint[])
           OR concat_ws(chr(31), f.repo_id::text, f.package_name, g.tag) = ANY(sqlc.arg(rows)::text[])
           OR concat_ws(chr(31), f.repo_id::text, f.package_name) = ANY(sqlc.arg(package_rows)::text[]))
- GROUP BY g.tag, f.severity
- ORDER BY g.tag, f.severity;
+ GROUP BY g.repo_id, g.name, g.tag, f.severity
+ ORDER BY g.repo_id, g.name, g.tag, f.severity;
+
+-- name: VulnImageGradeScans :many
+-- The manifests the given (name, tag) pairs stand for in the repositories (the tag's own and, for an index, the children it names), with
+-- how far each is scanned, its OS and whether that OS is at its end of life: the scan facts of the grades of R-VULN-038. As
+-- VulnImageManifests, for many tags at once; an index is left out once it has children.
+WITH wanted AS (
+    SELECT unnest(sqlc.arg(names)::text[]) AS name, unnest(sqlc.arg(tags)::text[]) AS tag
+), tagged AS (
+    SELECT p.repo_id, p.name, pv.version AS tag, i.blob_sha256 AS digest, ''::text AS platform
+      FROM wanted w
+      JOIN packages p ON p.name = w.name
+      JOIN package_versions pv ON pv.package_id = p.id AND pv.version = w.tag
+      JOIN items i ON i.id = pv.lead_item_id
+     WHERE p.repo_id = ANY(sqlc.arg(repos)::bigint[]) AND pv.trashed_at IS NULL
+    UNION ALL
+    SELECT t.repo_id, t.name, t.version, t.manifest_sha256, ''::text
+      FROM wanted w
+      JOIN oci_remote_tags t ON t.name = w.name AND t.version = w.tag
+     WHERE t.repo_id = ANY(sqlc.arg(repos)::bigint[])
+), images AS (
+    SELECT * FROM tagged
+    UNION
+    SELECT t.repo_id, t.name, t.tag, r.target, COALESCE(r.platform, '')
+      FROM tagged t JOIN oci_references r ON r.repo_id = t.repo_id AND r.name = t.name AND r.manifest = t.digest AND r.kind = 'manifest'
+)
+SELECT g.repo_id::bigint AS repo_id, g.name::text AS name, g.tag::text AS version, ('sha256:' || encode(g.digest, 'hex'))::text AS digest,
+       g.platform::text AS platform, COALESCE(s.state, '')::text AS state,
+       COALESCE((extract(epoch FROM s.scanned_at) * 1000000)::bigint, 0)::bigint AS scanned_us,
+       COALESCE(s.os_family, '')::text AS os_family, COALESCE(s.os_name, '')::text AS os_name, COALESCE(s.os_eosl, false)::boolean AS os_eosl
+  FROM images g
+  LEFT JOIN vuln_image_scan s ON s.repo_id = g.repo_id AND s.name = g.name AND s.digest = g.digest
+ WHERE g.platform <> '' OR NOT EXISTS (
+         SELECT 1 FROM images c WHERE c.repo_id = g.repo_id AND c.name = g.name AND c.tag = g.tag AND c.platform <> '')
+ ORDER BY g.repo_id, g.name, g.tag, g.platform, g.digest;
 
 -- name: VulnImageComponentsOf :many
 -- The packages inside the image that findings name, for the findings of an image in a page of the report (R-VULN-012).

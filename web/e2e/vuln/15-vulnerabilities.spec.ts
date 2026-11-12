@@ -23,7 +23,8 @@ interface Finding {
   readonly status: string;
 }
 
-const SEVERITY = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', unknown: 'Unknown', none: 'None' } as const;
+// The segments of the report's severity bar (R-UI-092): None is counted in Low (Q-VULN-153).
+const SEVERITY = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', unknown: 'Unknown', none: 'Low' } as const;
 
 /** Waits until the findings API shows `count` findings of the repository, which the commit hook of the publish wrote. */
 async function findingsOf(admin: APIRequestContext, repo: string, count: number): Promise<Finding[]> {
@@ -55,7 +56,8 @@ test('R-VULN-022 the Critical-style count filters the list, the sort and the fin
 
     await page.goto(`/ui/en/projects/${e2eProject}/vulnerabilities?repository=${qualified(repo)}`);
     await expect(page.getByRole('heading', { name: 'Vulnerabilities', level: 1 })).toBeVisible();
-    const counts = page.getByRole('list', { name: 'Open findings' });
+    // The severity bar, a list of filter links (R-UI-094, Q-UI-376); the counts of states are the list "Open findings by state".
+    const counts = page.getByRole('list', { name: 'Open findings', exact: true });
     const count = counts.getByRole('link', { name: new RegExp(`^1\\s*${label}`) });
     await expect(count).toBeVisible();
     for (const scheme of ['light', 'dark'] as const) {
@@ -162,7 +164,7 @@ test('R-VULN-022 three findings are confirmed at once, the CSV holds the rows of
     await test.step('at 390 CSS px the counts and the list are usable without scrolling the page sideways', async () => {
       await page.setViewportSize({ width: 390, height: 844 });
       await page.reload();
-      await expect(page.getByRole('list', { name: 'Open findings' })).toBeVisible();
+      await expect(page.getByRole('list', { name: 'Open findings', exact: true })).toBeVisible();
       await expect(rows.first()).toBeVisible();
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       expect(overflow, 'horizontal overflow of the page in CSS px').toBeLessThanOrEqual(0);
@@ -207,16 +209,21 @@ test('R-VULN-023 R-VULN-022 the package page shows the finding on the affected v
       const panel = page.locator('trove-package-vulnerabilities');
       await expect(panel.getByRole('heading', { name: repo })).toBeVisible();
       await expect(panel.getByRole('link', { name: finding!.advisory })).toBeVisible();
+      // R-UI-094: the repository's grade card, and the version's grade in the header.
+      await expect(panel.locator('trove-grade-card')).toBeVisible();
+      await expect(panel.locator('trove-grade-card')).not.toContainText('no known vulnerabilities');
+      await expect(page.locator('.pkg-header a.version-grade')).toBeVisible();
       await expectAccessible(page, 'the package page, Vulnerabilities tab');
       await page.goto(packagePage('1.0.1', 'vulnerabilities'));
-      await expect(page.locator('trove-package-vulnerabilities')).toContainText('No known vulnerabilities.');
+      await expect(page.locator('trove-package-vulnerabilities')).toContainText('S · no known vulnerabilities');
     });
 
-    await test.step('All versions shows a severity badge on 1.0.0 only', async () => {
+    await test.step('All versions shows the grade of each version, S on 1.0.1 only', async () => {
       await page.goto(packagePage('1.0.0', 'versions'));
       const row = (v: string) => page.getByRole('row', { name: new RegExp(`^${v.replace('.', '\\.')}`) });
-      await expect(row('1.0.0').locator('trove-severity')).toBeVisible();
-      await expect(row('1.0.1').locator('trove-severity')).toHaveCount(0);
+      await expect(row('1.0.0').locator('trove-grade')).toBeVisible();
+      await expect(row('1.0.0').locator('trove-grade')).not.toContainText('S ·');
+      await expect(row('1.0.1').locator('trove-grade')).toContainText('S · no known vulnerabilities');
     });
 
     await test.step('confirm the finding, then block downloads', async () => {
@@ -236,7 +243,7 @@ test('R-VULN-023 R-VULN-022 the package page shows the finding on the affected v
     await test.step('the row, the count, the package page and the download show the block', async () => {
       await page.goto(`/ui/en/projects/${e2eProject}/vulnerabilities?repository=${qualified(repo)}`);
       await expect(page.getByRole('row', { name: new RegExp(finding!.advisory) })).toContainText('Blocked (blocked in triage)');
-      await expect(page.getByRole('list', { name: 'Open findings' }).getByRole('link', { name: /^1\s*Blocked versions/ })).toBeVisible();
+      await expect(page.getByRole('list', { name: 'Open findings by state' }).getByRole('link', { name: /^1\s*Blocked versions/ })).toBeVisible();
       await page.goto(packagePage('1.0.0', 'vulnerabilities'));
       await expect(page.locator('.pkg-header .banner-warning')).toContainText(`Blocked in ${qualified(repo)}`);
       await expect(page.locator('trove-package-vulnerabilities .banner-warning')).toContainText('blocked in triage');
@@ -251,7 +258,7 @@ test('R-VULN-023 R-VULN-022 the package page shows the finding on the affected v
       await page.goto(packagePage('1.0.0', 'vulnerabilities'));
       await expect(page.locator('.pkg-header .banner-warning')).toHaveCount(0);
       await page.goto(`/ui/en/projects/${e2eProject}/vulnerabilities?repository=${qualified(repo)}`);
-      await expect(page.getByRole('list', { name: 'Open findings' }).getByRole('link', { name: /^0\s*Blocked versions/ })).toBeVisible();
+      await expect(page.getByRole('list', { name: 'Open findings by state' }).getByRole('link', { name: /^0\s*Blocked versions/ })).toBeVisible();
       expect((await admin.get(tarball)).status(), 'download after the block is lifted').toBe(200);
     });
   } finally {

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { APIRequestContext, APIResponse } from '@playwright/test';
+import { advisoryArchive, advisoryMirror, gradedPackage, vendorPackages } from './advisories';
 
 /**
  * The data of `make ui-renders` (docs/developer/web-ui.md#renders-of-every-screen): three projects, repositories of every
@@ -23,6 +24,8 @@ export interface RepoSeed {
   readonly members?: readonly string[];
   /** The upstream of a remote repository whose format has no well-known one. */
   readonly url?: string;
+  /** The member `vulnerabilities` of the repository document (R-VULN-002). */
+  readonly vulnerabilities?: { readonly matchPublicAdvisories: 'auto' | 'always' | 'never' };
 }
 
 export const projects = [
@@ -54,6 +57,15 @@ export const repositories: readonly RepoSeed[] = [
   },
   { project: mainProject, key: 'assets', format: 'generic', class: 'local', description: "Static files: fonts, icons and the design system's release archives." },
   { project: mainProject, key: 'images', format: 'oci', class: 'local' },
+  // Vendored public packages, matched against the seed's advisories so that every grade occurs (advisories.ts, R-VULN-038).
+  {
+    project: mainProject,
+    key: 'npm-vendor',
+    format: 'npm',
+    class: 'local',
+    description: 'Public packages the web team vendors, checked against public advisories.',
+    vulnerabilities: { matchPublicAdvisories: 'always' },
+  },
   // Empty: the empty states of a repository.
   { project: mainProject, key: 'scratch', format: 'generic', class: 'local' },
   { project: otherProject, key: 'base-images', format: 'oci', class: 'local', description: 'Hardened base images.' },
@@ -63,6 +75,8 @@ export const repositories: readonly RepoSeed[] = [
   { project: otherProject, key: 'debian', format: 'deb', class: 'remote', description: 'deb.debian.org, cached.' },
   { project: otherProject, key: 'apt', format: 'deb', class: 'virtual', members: [longDebKey] },
   { project: otherProject, key: 'nuget-internal', format: 'nuget', class: 'local', description: 'Shared .NET libraries.' },
+  // The advisory data of the profile, which reads it instead of the network (R-VULN-005, deploy/ui-dev/up.sh).
+  { project: advisoryMirror.project, key: advisoryMirror.key, format: 'generic', class: 'local', description: 'Advisory data for the offline sync.' },
   { project: otherProject, key: 'nuget-org', format: 'nuget', class: 'remote' },
   { project: otherProject, key: 'nuget', format: 'nuget', class: 'virtual', members: ['nuget-internal', 'nuget-org'] },
   { project: otherProject, key: 'collections', format: 'ansible', class: 'local', description: 'Ansible collections of the platform team.' },
@@ -178,6 +192,7 @@ export async function seedProjectsAndRepositories(admin: Api): Promise<void> {
     const body: Record<string, unknown> = { key: r.key, class: r.class, format: r.format };
     if (r.description) body['description'] = r.description;
     if (r.class === 'remote' && r.url) body['remote'] = { url: r.url };
+    if (r.vulnerabilities) body['vulnerabilities'] = r.vulnerabilities;
     if (r.class === 'virtual') {
       const target = r.members?.find((m) => repositories.find((x) => x.key === m)?.class === 'local');
       body['virtual'] = { members: r.members ?? [], deployTarget: target ?? null };
@@ -284,7 +299,7 @@ function npmPublishBody(edge: string, project: string, p: (typeof npmPackages)[n
  */
 export async function seedContent(ctx: APIRequestContext, edge: string, token: string): Promise<void> {
   const auth = { Authorization: `Bearer ${token}` };
-  for (const p of npmPackages) {
+  for (const p of [...npmPackages, ...vendorPackages]) {
     const url = `/api/npm/${mainProject}/${p.repo}/${p.name.replace('/', '%2f')}`;
     const res = await ctx.put(url, { data: npmPublishBody(edge, mainProject, p), headers: auth });
     await expectStatus(res, [200, 201, 409], `npm publish ${p.name}@${p.version}`);
@@ -297,6 +312,32 @@ export async function seedContent(ctx: APIRequestContext, edge: string, token: s
     await expectStatus(res, [200, 201], `upload ${f.repo}/${f.path}`);
   }
   for (const image of images) await pushImage(ctx, edge, token, image);
+  const archive = `/files/${advisoryMirror.project}/${advisoryMirror.key}/osv/npm/all.zip`;
+  const upload = await ctx.put(archive, { data: advisoryArchive(), headers: { ...auth, 'Content-Type': 'application/zip' } });
+  await expectStatus(upload, [200, 201], `upload the advisory archive to ${advisoryMirror.project}/${advisoryMirror.key}`);
+}
+
+/**
+ * Runs the sync of the OSV source as the break-glass account and waits until the evaluation has graded the package of grade E,
+ * so that the screens show the grades (R-VULN-038). An archive that is already imported is not imported again, and the grade is
+ * there already.
+ */
+export async function syncAdvisories(admin: Api): Promise<void> {
+  const run = await admin.post('/api/v1/system/tasks/vuln-sync-osv/run', {});
+  await expectStatus(run, [202, 409], 'run the advisory sync');
+  const list = await admin.get(`/api/v1/packages?repository=${mainProject}/npm-vendor&format=npm&q=${gradedPackage.name}`);
+  await expectStatus(list, [200], 'find the graded package');
+  const item = ((await list.json()) as { items: { id: string; name: string }[] }).items.find((p) => p.name === gradedPackage.name);
+  if (!item) throw new Error(`${gradedPackage.name} was not published`);
+  for (let i = 0; i < 180; i++) {
+    const res = await admin.get(`/api/v1/packages/${item.id}/versions/${gradedPackage.version}/vulnerabilities`);
+    if (res.ok()) {
+      const report = (await res.json()) as { repositories: { grade?: { grade: string } }[] };
+      if (report.repositories.some((r) => r.grade?.grade === 'E')) return;
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  throw new Error(`the advisory archive was not imported and evaluated within three minutes: ${gradedPackage.name} has no grade E`);
 }
 
 /** Pushes a small image (one layer, a config, a manifest per tag) through `/v2/` with a registry token (R-OCI-005). */

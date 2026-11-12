@@ -4,13 +4,13 @@ import { VulnerabilitiesApi } from '../../../api/vulnerabilities-api';
 import { FakeClientSetupApi, FakePackagesApi, ociFixture } from '../../../api/testing/fakes-packages';
 import { FakeRepositoriesApi, GENERIC_FORMAT, OCI_FORMAT, PACKAGE_FORMAT } from '../../../api/testing/fakes-catalog';
 import { FakeFilesApi } from '../../../api/testing/fakes-catalog';
-import { FakeVulnerabilitiesApi } from '../../../api/testing/fakes-vulnerabilities';
+import { FakeVulnerabilitiesApi, sampleGrade } from '../../../api/testing/fakes-vulnerabilities';
 import { FilesApi } from '../../../api/files-api';
 import { expectAccessible, renderScreen, settle, text } from '../../../testing/screen';
 import { RepositoryContent } from './repository-content';
 import { RepositoryItems } from './repository-items';
-
-const NONE = { critical: 0, high: 0, medium: 0, low: 0, none: 0, unknown: 0 };
+import { contentShapeOf } from './content-shape';
+import { Component, signal } from '@angular/core';
 
 interface RepoDoc {
   readonly key: string;
@@ -46,12 +46,16 @@ const NPM_REPO: RepoDoc = { key: 'npm-local', project: 'web', class: 'local', fo
 
 describe('Repository content page', () => {
   it('R-UI-052 an OCI repository lists its images, opens the tags with digest, size and pushed time, and shows the pull command of this installation', async () => {
-    const r = await open(OCI_REPO, ({ packages }) => ociFixture(packages));
+    const r = await open(OCI_REPO, ({ packages }) => {
+      ociFixture(packages);
+      packages.packages = packages.packages.map((p) => ({ ...p, vulnerabilityGrade: sampleGrade('C', {}, { eosl: true, os: 'alpine 3.12.0' }) }));
+    });
     expect(r.root.querySelector('h1')?.textContent).toContain('oci-local');
     expect(text(r.root)).toContain('Images of the web team');
     expect(text(r.root)).not.toContain('not scanned for vulnerabilities yet');
     expect(text(r.root)).toContain('Vulnerabilities');
     expect(r.root.querySelector('trove-data-table caption')?.textContent).toContain('Images');
+    expect(text(r.root.querySelector('tbody trove-grade .grade-text')!)).toBe('Grade C · OS end of life');
     const opener = r.root.querySelector<HTMLButtonElement>('.name-cell button[aria-expanded]')!;
     expect(opener.getAttribute('aria-expanded')).toBe('false');
     opener.click();
@@ -83,26 +87,71 @@ describe('Repository content page', () => {
     expect(setup.calls.every((c) => c.query.credentials === 'none')).toBe(true);
   });
 
-  it('R-UI-052 an npm repository shows the packages with their open findings and the install command of the version, with one request for the counts of the page', async () => {
+  it('R-UI-052 R-UI-094 an npm repository shows the packages with the grade of their latest version and the install command of the version, and grades each version of an opened row', async () => {
     const r = await open(NPM_REPO, ({ packages, vulnerabilities }) => {
       packages.packages = packages.packages.map((p) =>
-        p.name === '@team-a/ui' ? { ...p, repositories: ['web/npm-local'], openVulnerabilities: { ...NONE, high: 2 } } : { ...p, repositories: ['web/npm-local'] },
+        p.name === '@team-a/ui'
+          ? { ...p, repositories: ['web/npm-local'], vulnerabilityGrade: sampleGrade('C', { high: 2 }) }
+          : { ...p, repositories: ['web/npm-local'], vulnerabilityGrade: sampleGrade('S') },
       );
       vulnerabilities.packageReports.set('pkg_01JBQ6V7S3K9', {
         packageId: 'pkg_01JBQ6V7S3K9',
-        versions: [{ version: '1.4.0', open: { ...NONE, high: 2 } }],
+        versions: [{ version: '1.4.0', grade: sampleGrade('C', { high: 2 }) }],
       });
     });
     const packages = r.get(PackagesApi) as FakePackagesApi;
     expect(packages.listFilters.at(-1)).toMatchObject({ repository: ['web/npm-local'], format: ['npm'], include: ['vulnerabilities'] });
     const row = [...r.root.querySelectorAll('tbody tr')].find((tr) => tr.textContent?.includes('@team-a/ui'))!;
-    expect(row.textContent).toContain('High');
+    expect(text(row.querySelector('trove-grade .grade-text')!)).toBe('Grade C · 2 High');
     row.querySelector<HTMLButtonElement>('.name-cell button[aria-expanded]')!.click();
     await settle(r.fixture);
     const vulnerabilities = r.get(VulnerabilitiesApi) as FakeVulnerabilitiesApi;
     expect(vulnerabilities.calls).toEqual(expect.arrayContaining(['packageReport pkg_01JBQ6V7S3K9 in web/npm-local']));
+    expect(text(r.root.querySelector('trove-repository-item-versions trove-grade .grade-text')!)).toBe('Grade C · 2 High');
     expect((r.root.querySelector<HTMLInputElement>('trove-repository-item-versions trove-address-field input')?.value ?? r.root.querySelector('trove-repository-item-versions pre')?.textContent)).toBe('npm install @team-a/ui@1.4.0');
     await expectAccessible(r.root);
+  });
+
+  it('R-UI-094 Q-UI-373 the column of grades sorts the list by grade, worst first descending, after the name', async () => {
+    const r = await open(NPM_REPO, ({ packages }) => {
+      const grades = [sampleGrade('A', { low: 2 }), sampleGrade('E', { critical: 7 }), sampleGrade('N/A')];
+      packages.packages = packages.packages.map((p, i) => ({ ...p, repositories: ['web/npm-local'], vulnerabilityGrade: grades[i % grades.length] }));
+    }, undefined, { sort: '-grade' });
+    const packages = r.get(PackagesApi) as FakePackagesApi;
+    // The server sorts by name; the browser by grade (Q-UI-373).
+    expect(packages.listFilters.at(-1)).toMatchObject({ sort: 'name' });
+    const order = ['N/A', 'S', 'A', 'B', 'C', 'D', 'E'];
+    const shown = [...r.root.querySelectorAll('tbody > tr > td trove-grade .grade-letter')].map((e) => order.indexOf(e.textContent?.trim() ?? ''));
+    expect(shown.length).toBeGreaterThan(1);
+    expect(shown[0]).toBe(order.indexOf('E'));
+    expect(shown).toEqual([...shown].sort((a, b) => b - a));
+    const header = [...r.root.querySelectorAll('thead th')].find((th) => th.textContent?.includes('Vulnerabilities'))!;
+    expect(header.getAttribute('aria-sort')).toBe('descending');
+  });
+
+  it('R-UI-094 a list asked before the format was known to be scanned is asked again with the grades', async () => {
+    @Component({
+      imports: [RepositoryItems],
+      template: `<trove-repository-items repository="web/npm-local" format="npm" [shape]="shape" [scanned]="scanned()" />`,
+    })
+    class Host {
+      readonly shape = contentShapeOf('npm');
+      readonly scanned = signal(false);
+    }
+    const r = await renderScreen(Host, {});
+    const packages = r.get(PackagesApi) as FakePackagesApi;
+    expect(packages.listFilters.at(-1)).toMatchObject({ include: [] });
+    r.fixture.componentInstance.scanned.set(true);
+    await settle(r.fixture);
+    expect(packages.listFilters.at(-1)).toMatchObject({ include: ['vulnerabilities'] });
+  });
+
+  it('R-UI-094 Q-UI-377 a list without grades has no column of grades', async () => {
+    const r = await open(NPM_REPO, ({ packages }) => {
+      packages.packages = packages.packages.map((p) => ({ ...p, repositories: ['web/npm-local'] }));
+    });
+    expect([...r.root.querySelectorAll('thead th')].some((th) => th.textContent?.includes('Vulnerabilities'))).toBe(false);
+    expect(r.root.querySelector('tbody trove-grade')).toBeNull();
   });
 
   it('R-UI-052 a generic repository lists its files with a link to the file and a copyable address, and a folder opens in place', async () => {

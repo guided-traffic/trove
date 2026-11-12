@@ -1,5 +1,6 @@
 import { Page, expect } from '@playwright/test';
 import { Kind, emptyProject, group, longDebKey, longNpmKey, mainProject, npmPackage, ociPackage, otherProject, projectServiceAccount, serviceAccount } from './seed';
+import { gradedPackage } from './advisories';
 
 /**
  * Every screen of the app (web/src/app/app.routes.ts and the route files of the feature areas), with the parameters of the
@@ -101,6 +102,9 @@ export const screens: readonly Screen[] = [
   { id: 'repository-long-key', path: `${P}/repositories/${longNpmKey}`, kinds: all },
   { id: 'repository-generic', path: `${P}/repositories/assets`, kinds: all },
   { id: 'repository-oci', path: `${P}/repositories/images`, kinds: all },
+  // The grades of R-VULN-038: S to E in the vendored packages, N/A in the internal ones and the images (advisories.ts).
+  { id: 'repository-npm-vendor', path: `${P}/repositories/npm-vendor`, kinds: all },
+  { id: 'repository-npm-vendor-by-grade', path: `${P}/repositories/npm-vendor?sort=-grade`, kinds: ['plain'] },
   { id: 'repository-empty', path: `${P}/repositories/scratch`, kinds: all },
   { id: 'repository-oci-remote', path: `${O}/repositories/docker-hub-remote`, kinds: all },
   { id: 'repository-deb', path: `${O}/repositories/${longDebKey}`, kinds: all },
@@ -110,6 +114,8 @@ export const screens: readonly Screen[] = [
   { id: 'packages-other-project', path: `${O}/packages`, kinds: all },
   { id: 'package-npm', path: `${P}/packages/${npmPackage.format}/${npmPackage.name}`, kinds: all },
   { id: 'package-oci', path: `${P}/packages/${ociPackage.format}/${ociPackage.name}`, kinds: all },
+  { id: 'package-npm-graded', path: `${P}/packages/${gradedPackage.format}/${gradedPackage.name}`, kinds: all },
+  { id: 'package-npm-fixed', path: `${P}/packages/npm/xml-stream-parser?version=0.9.2`, kinds: ['plain'] },
   { id: 'browse', path: `${P}/browse`, kinds: all },
   { id: 'browse-folder', path: `${P}/browse/assets/releases/design-system/2.5.0`, kinds: all },
   { id: 'browse-file', path: `${P}/browse/assets/README.md`, kinds: all },
