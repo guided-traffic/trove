@@ -1,6 +1,6 @@
 import { HttpClient, HttpContext, HttpContextToken, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
+import { Observable, firstValueFrom, fromEvent, takeUntil } from 'rxjs';
 import { Page, PageFetcher } from './pagination';
 import { ApiResponse, GetBody, GetPath } from './types';
 
@@ -18,6 +18,11 @@ export interface ReadOptions {
   readonly ifNoneMatch?: string;
   /** The media type a text answer is asked for (`getText`); the default is `text/plain`. */
   readonly accept?: string;
+  /**
+   * Cancels the request: an abort before the answer unsubscribes from it, which cancels the HTTP request, and rejects with a
+   * `DOMException` named `AbortError`. The search field cancels the request of a text a newer text supersedes (R-UI-097).
+   */
+  readonly signal?: AbortSignal;
 }
 
 export interface CreateOptions {
@@ -32,6 +37,27 @@ export interface CreateOptions {
 /** A new `Idempotency-Key`: a UUID, as R-API-014 recommends. */
 export function newIdempotencyKey(): string {
   return crypto.randomUUID();
+}
+
+/** The rejection of a request its signal cancelled. */
+function aborted(): DOMException {
+  return new DOMException('The request was cancelled.', 'AbortError');
+}
+
+/**
+ * The first value of `source`, or the `AbortError` of `signal` when it aborts first; the abort unsubscribes from `source`, which
+ * cancels an HTTP request. `source` never emits `null` (an `HttpResponse`), so `null` stands for the abort.
+ */
+async function untilAborted<T extends object>(
+  source: Observable<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  if (signal.aborted) throw aborted();
+  const value = await firstValueFrom(source.pipe(takeUntil(fromEvent(signal, 'abort'))), {
+    defaultValue: null,
+  });
+  if (value === null) throw aborted();
+  return value;
 }
 
 function toParams(params: QueryParams | undefined): HttpParams {
@@ -68,7 +94,11 @@ export class ApiClient {
   getJson<T>(url: string, options: ReadOptions = {}): Promise<ApiResponse<T>> {
     const headers: Record<string, string> = {};
     if (options.ifNoneMatch) headers['If-None-Match'] = options.ifNoneMatch;
-    return this.send<T>('GET', url, undefined, { params: options.params, headers });
+    return this.send<T>('GET', url, undefined, {
+      params: options.params,
+      headers,
+      signal: options.signal,
+    });
   }
 
   /** A plain-text answer, such as a CI snippet (R-UI-035); a problem answer is still an `ApiError`. */
@@ -160,20 +190,22 @@ export class ApiClient {
       readonly headers?: Record<string, string>;
       readonly idempotencyKey?: string;
       readonly responseType?: 'json' | 'text';
+      readonly signal?: AbortSignal;
     },
   ): Promise<ApiResponse<T>> {
     let context = new HttpContext();
     if (extra.idempotencyKey) context = context.set(IDEMPOTENCY_KEY, extra.idempotencyKey);
-    const response = await firstValueFrom(
-      this.http.request<T>(method, url, {
-        body,
-        params: toParams(extra.params),
-        headers: extra.headers,
-        context,
-        observe: 'response',
-        responseType: (extra.responseType ?? 'json') as 'json',
-      }),
-    );
+    const request$ = this.http.request<T>(method, url, {
+      body,
+      params: toParams(extra.params),
+      headers: extra.headers,
+      context,
+      observe: 'response',
+      responseType: (extra.responseType ?? 'json') as 'json',
+    });
+    const response = extra.signal
+      ? await untilAborted(request$, extra.signal)
+      : await firstValueFrom(request$);
     return {
       body: response.body as T,
       status: response.status,

@@ -2731,6 +2731,27 @@ func (e RepositoryResolutionMembersDecision) Valid() bool {
 	}
 }
 
+// Defines values for RepositorySuggestionClass.
+const (
+	RepositorySuggestionClassLocal   RepositorySuggestionClass = "local"
+	RepositorySuggestionClassRemote  RepositorySuggestionClass = "remote"
+	RepositorySuggestionClassVirtual RepositorySuggestionClass = "virtual"
+)
+
+// Valid indicates whether the value is a known member of the RepositorySuggestionClass enum.
+func (e RepositorySuggestionClass) Valid() bool {
+	switch e {
+	case RepositorySuggestionClassLocal:
+		return true
+	case RepositorySuggestionClassRemote:
+		return true
+	case RepositorySuggestionClassVirtual:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RepositorySummaryClass.
 const (
 	RepositorySummaryClassLocal   RepositorySummaryClass = "local"
@@ -4252,6 +4273,33 @@ func (e ListRepositoriesParamsView) Valid() bool {
 	case ListRepositoriesParamsViewFull:
 		return true
 	case ListRepositoriesParamsViewSummary:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetSearchSuggestionsParamsKind.
+const (
+	GetSearchSuggestionsParamsKindGroup      GetSearchSuggestionsParamsKind = "group"
+	GetSearchSuggestionsParamsKindPackage    GetSearchSuggestionsParamsKind = "package"
+	GetSearchSuggestionsParamsKindProject    GetSearchSuggestionsParamsKind = "project"
+	GetSearchSuggestionsParamsKindRepository GetSearchSuggestionsParamsKind = "repository"
+	GetSearchSuggestionsParamsKindUser       GetSearchSuggestionsParamsKind = "user"
+)
+
+// Valid indicates whether the value is a known member of the GetSearchSuggestionsParamsKind enum.
+func (e GetSearchSuggestionsParamsKind) Valid() bool {
+	switch e {
+	case GetSearchSuggestionsParamsKindGroup:
+		return true
+	case GetSearchSuggestionsParamsKindPackage:
+		return true
+	case GetSearchSuggestionsParamsKindProject:
+		return true
+	case GetSearchSuggestionsParamsKindRepository:
+		return true
+	case GetSearchSuggestionsParamsKindUser:
 		return true
 	default:
 		return false
@@ -6478,6 +6526,20 @@ type GroupPatch struct {
 // GroupPatchSyncDetached Only `false` is accepted; it attaches a detached group to group synchronization again.
 type GroupPatchSyncDetached bool
 
+// GroupSuggestion defines model for GroupSuggestion.
+type GroupSuggestion struct {
+	Description string `json:"description"`
+	Name        string `json:"name"`
+}
+
+// GroupSuggestions defines model for GroupSuggestions.
+type GroupSuggestions struct {
+	Items []GroupSuggestion `json:"items"`
+
+	// More Another matching group was left out.
+	More bool `json:"more"`
+}
+
 // Guide defines model for Guide.
 type Guide struct {
 	Class  GuideClass `json:"class"`
@@ -7529,6 +7591,32 @@ type PackageReadme struct {
 // PackageReadmeContentType The type of the source; `html` is always sanitized HTML.
 type PackageReadmeContentType string
 
+// PackageSuggestion defines model for PackageSuggestion.
+type PackageSuggestion struct {
+	Format string `json:"format"`
+
+	// Id The identifier of `GET /api/v1/packages/{packageId}`.
+	Id string `json:"id"`
+
+	// Name The package's display name.
+	Name string `json:"name"`
+
+	// Project The key of the project of `repository` (Q-API-277).
+	Project string `json:"project"`
+
+	// Repository The key, within `project`, of the first repository by qualified name that holds the package and that the caller
+	// reads (R-API-062).
+	Repository string `json:"repository"`
+}
+
+// PackageSuggestions defines model for PackageSuggestions.
+type PackageSuggestions struct {
+	Items []PackageSuggestion `json:"items"`
+
+	// More A readable match of the kind was left out (R-API-061); never `true` because of an object the caller cannot read.
+	More bool `json:"more"`
+}
+
 // PackageSummary A package as the caller sees it (R-API-029): every member is computed from the versions the
 // caller may read. `latestVersion` is the highest visible stable version, or the highest visible
 // pre-release while no stable version is visible.
@@ -7846,6 +7934,8 @@ type PoolFacts struct {
 
 // Preferences The caller's UI preferences (R-API-021). `revision` is the ETag number.
 type Preferences struct {
+	// KeyboardShortcuts Turns the UI's single-key shortcuts on and off (`/` focuses the search field, R-UI-095); `true` by default
+	// (Q-API-280).
 	KeyboardShortcuts bool `json:"keyboardShortcuts"`
 
 	// Locale `en`, `de` or `null` (the browser decides).
@@ -8004,6 +8094,20 @@ type ProjectPrincipalList struct {
 // their roles, repositories, permission policies, service accounts and settings. The administration needs a session or a token
 // with `admin: true`.
 type ProjectRole string
+
+// ProjectSuggestion defines model for ProjectSuggestion.
+type ProjectSuggestion struct {
+	DisplayName string `json:"displayName"`
+	Key         string `json:"key"`
+}
+
+// ProjectSuggestions defines model for ProjectSuggestions.
+type ProjectSuggestions struct {
+	Items []ProjectSuggestion `json:"items"`
+
+	// More A readable match of the kind was left out (R-API-061); never `true` because of an object the caller cannot read.
+	More bool `json:"more"`
+}
 
 // ProjectVisibilityRequest defines model for ProjectVisibilityRequest.
 type ProjectVisibilityRequest struct {
@@ -8500,6 +8604,27 @@ type RepositoryResolutionMembersClass string
 // RepositoryResolutionMembersDecision defines model for RepositoryResolution.Members.Decision.
 type RepositoryResolutionMembersDecision string
 
+// RepositorySuggestion defines model for RepositorySuggestion.
+type RepositorySuggestion struct {
+	Class  RepositorySuggestionClass `json:"class"`
+	Format string                    `json:"format"`
+	Key    string                    `json:"key"`
+
+	// Project The key of the repository's project; the name is `<project>/<key>` (Q-API-277).
+	Project string `json:"project"`
+}
+
+// RepositorySuggestionClass defines model for RepositorySuggestion.Class.
+type RepositorySuggestionClass string
+
+// RepositorySuggestions defines model for RepositorySuggestions.
+type RepositorySuggestions struct {
+	Items []RepositorySuggestion `json:"items"`
+
+	// More A readable match of the kind was left out (R-API-061); never `true` because of an object the caller cannot read.
+	More bool `json:"more"`
+}
+
 // RepositorySummary defines model for RepositorySummary.
 type RepositorySummary struct {
 	// Addresses The client addresses: absolute URLs, the public base URL followed by the repository's path.
@@ -8634,6 +8759,16 @@ type ScopeSummary struct {
 	// Inherit The credential has no repository ceiling.
 	Inherit bool     `json:"inherit"`
 	System  []string `json:"system"`
+}
+
+// SearchSuggestions The suggestions of `getSearchSuggestions` (R-API-060, Q-API-271): one member per kind asked, absent for a kind not
+// asked.
+type SearchSuggestions struct {
+	Groups       *GroupSuggestions      `json:"groups,omitempty"`
+	Packages     *PackageSuggestions    `json:"packages,omitempty"`
+	Projects     *ProjectSuggestions    `json:"projects,omitempty"`
+	Repositories *RepositorySuggestions `json:"repositories,omitempty"`
+	Users        *UserSuggestions       `json:"users,omitempty"`
 }
 
 // SecretField A secret member of a document (R-REPO-033). A request sends `value`, which is sealed at once, or
@@ -9134,6 +9269,22 @@ type UserPatch struct {
 
 	// Identities Replaces the pending links; a linked identity stays.
 	Identities *[]PendingIdentity `json:"identities,omitempty"`
+}
+
+// UserSuggestion defines model for UserSuggestion.
+type UserSuggestion struct {
+	Disabled    bool               `json:"disabled"`
+	DisplayName *string            `json:"displayName"`
+	Id          openapi_types.UUID `json:"id"`
+	Username    string             `json:"username"`
+}
+
+// UserSuggestions defines model for UserSuggestions.
+type UserSuggestions struct {
+	Items []UserSuggestion `json:"items"`
+
+	// More Another matching user was left out.
+	More bool `json:"more"`
 }
 
 // ValkeyFacts Installation facts only; each replica's view is in the replica registry. No Sentinel address appears.
@@ -10861,9 +11012,15 @@ type ListRepositoriesParams struct {
 	Class *[]ListRepositoriesParamsClass `form:"class,omitempty" json:"class,omitempty"`
 
 	// Format Repeat the parameter, or separate values with commas.
-	Format *[]string                    `form:"format,omitempty" json:"format,omitempty"`
-	Q      *string                      `form:"q,omitempty" json:"q,omitempty"`
-	State  *ListRepositoriesParamsState `form:"state,omitempty" json:"state,omitempty"`
+	Format *[]string `form:"format,omitempty" json:"format,omitempty"`
+
+	// Q Case-insensitive substring of the key, of `<project>/<key>` or of the description.
+	Q *string `form:"q,omitempty" json:"q,omitempty"`
+
+	// Name Qualified names `<project>/<key>`, repeated or comma-separated, at most 50 (R-API-063); keeps the named repositories
+	// the caller may see, in the list's order. A malformed name, or more than 50, answers `400 malformed_request`.
+	Name  *[]string                    `form:"name,omitempty" json:"name,omitempty"`
+	State *ListRepositoriesParamsState `form:"state,omitempty" json:"state,omitempty"`
 
 	// Visibility Keeps the repositories whose artifacts level is one of these (R-API-057); repeat the parameter, or separate values with
 	// commas.
@@ -10902,6 +11059,23 @@ type ListRoleBindingsParams struct {
 	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
+
+// GetSearchSuggestionsParams defines parameters for GetSearchSuggestions.
+type GetSearchSuggestionsParams struct {
+	// Q The text. It is trimmed and must then hold 2 to 100 characters, else the answer is `400 malformed_request` with the
+	// pointer `q`; it is lower-cased and its terms are its parts between white space (R-API-062).
+	Q string `form:"q" json:"q"`
+
+	// Kind The kinds to suggest, repeated or comma-separated; `repository,package,project` when absent. An unknown kind answers
+	// `400 malformed_request`; `user` and `group` need `identities:read` (`403` otherwise).
+	Kind *[]GetSearchSuggestionsParamsKind `form:"kind,omitempty" json:"kind,omitempty"`
+
+	// Limit Suggestions per kind, 1 to 10; else `400 malformed_request`.
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// GetSearchSuggestionsParamsKind defines parameters for GetSearchSuggestions.
+type GetSearchSuggestionsParamsKind string
 
 // ListServiceAccountsParams defines parameters for ListServiceAccounts.
 type ListServiceAccountsParams struct {
@@ -12193,6 +12367,9 @@ type ServerInterface interface {
 	// ListRoles List the system roles
 	// (GET /api/v1/roles)
 	ListRoles(w http.ResponseWriter, r *http.Request)
+	// GetSearchSuggestions Suggest repositories, packages, projects, users and groups for a text
+	// (GET /api/v1/search/suggestions)
+	GetSearchSuggestions(w http.ResponseWriter, r *http.Request, params GetSearchSuggestionsParams)
 	// ListServiceAccounts List service accounts
 	// (GET /api/v1/service-accounts)
 	ListServiceAccounts(w http.ResponseWriter, r *http.Request, params ListServiceAccountsParams)
@@ -20356,6 +20533,19 @@ func (siw *ServerInterfaceWrapper) ListRepositories(w http.ResponseWriter, r *ht
 		return
 	}
 
+	// ------------- Optional query parameter "name" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "name", r.URL.Query(), &params.Name, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "name"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		}
+		return
+	}
+
 	// ------------- Optional query parameter "state" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
@@ -20592,6 +20782,65 @@ func (siw *ServerInterfaceWrapper) ListRoles(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListRoles(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSearchSuggestions operation middleware
+func (siw *ServerInterfaceWrapper) GetSearchSuggestions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetSearchSuggestionsParams
+
+	// ------------- Required query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "kind" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "kind", r.URL.Query(), &params.Kind, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "kind"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "kind", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSearchSuggestions(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -24041,6 +24290,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/ansible/imports", wrapper.ListAnsibleImportTasks)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/ansible/tombstones", wrapper.ListAnsibleTombstones)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/ansible/tombstones/{collection}/{version}", wrapper.ClearAnsibleTombstone)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/search/suggestions", wrapper.GetSearchSuggestions)
 
 	return m
 }

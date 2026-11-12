@@ -55,6 +55,9 @@ import { provideAnsibleFakes } from './fakes-ansible';
 // >>> T17 deb
 import { provideDebFakes } from './fakes-deb';
 // <<< T17 deb
+// >>> T-22 search
+import { provideSearchFakes } from './fakes-search';
+// <<< T-22 search
 
 /*
  * In-memory fakes of the typed service interfaces (R-UI-047 component tier). Screens of the later
@@ -149,7 +152,7 @@ export class FakePreferencesApi extends PreferencesApi {
   stored: Preferences = {
     locale: null,
     theme: null,
-    keyboardShortcuts: false,
+    keyboardShortcuts: true,
     revision: 1,
   };
 
@@ -434,5 +437,8 @@ export function provideFakeApis(): Provider[] {
     // >>> T17 deb
     ...provideDebFakes(),
     // <<< T17 deb
+    // >>> T-22 search
+    ...provideSearchFakes(),
+    // <<< T-22 search
   ];
 }

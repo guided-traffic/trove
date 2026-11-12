@@ -9,14 +9,14 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 620 of 855 spec requirements are implemented: a passing test names them and no
+**Status.** 620 of 865 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
 **Totals.** 2,239 catalog features on 60 pages: 788 specified (520 of them implemented), 1,451 open.
-855 spec requirements: 634 cover catalog features, 221 cover none (`trove-only`, [listed at the
+865 spec requirements: 634 cover catalog features, 231 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
 ## Pages
@@ -2969,7 +2969,7 @@ Requirements whose `Covers:` line says `trove-only`: trove's own design work tha
 catalog feature measures. They count toward the requirement total, not toward any share.
 
 <details>
-<summary>221 requirements</summary>
+<summary>231 requirements</summary>
 
 | Requirement | Title | Priority | Spec page |
 |---|---|---|---|
@@ -2989,6 +2989,11 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-API-056 | The installation's visibility settings | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-API-057 | The visibility of projects and repositories in the API | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-API-058 | Operations that serve wiki content | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-API-060 | One operation answers the suggestions of the search field | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-API-061 | A suggestion names only what the caller may read | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-API-062 | How a suggestion matches and is ranked | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-API-063 | The repository list answers named repositories | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-API-064 | The indexes and the bounds of the suggestions | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-API-048 | Package ownership surface | P1 | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-052 | Repository content page | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-049 (implemented) | Guides for every registry variant | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
@@ -3020,6 +3025,11 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-UI-092 | The severity bar | P1 | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-093 | The grade card | P1 | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-094 | Where the grade shows | P1 | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-095 | One search field in the top bar for every caller | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-096 | What the opened field offers before anything is typed | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-097 | Live suggestions while typing | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-098 | Enter opens the results page of the main area | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-099 | The search leads into the admin area only by an administrator's choice of a marked suggestion | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-ARCH-003 (implemented) | Go module and package layout | MVP | [architecture.md](../spec/architecture.md) |
 | R-ARCH-004 (implemented) | Angular workspace layout | MVP | [architecture.md](../spec/architecture.md) |
 | R-ARCH-007 (implemented) | One origin for UI and package content | MVP | [architecture.md](../spec/architecture.md) |

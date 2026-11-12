@@ -395,10 +395,11 @@ export class FakeRepositoriesApi extends RepositoriesApi {
       .filter((r) => !filters.format || r.format === filters.format)
       .filter((r) => filters.state !== 'inactive' || r.disabled === true)
       .filter((r) => !filters.project || r.project === filters.project)
+      .filter((r) => !filters.name?.length || filters.name.includes(refOf(r)))
       .filter(
         (r) =>
           !filters.q ||
-          r.key.includes(filters.q.toLowerCase()) ||
+          refOf(r).includes(filters.q.toLowerCase()) ||
           (r.description ?? '').toLowerCase().includes(filters.q.toLowerCase()),
       )
       .sort((a, b) => refOf(a).localeCompare(refOf(b)))

@@ -281,14 +281,25 @@ func (s *Server) Register(r *httpserver.Router) {
 // bindError renders a parameter binding failure of the generated wrapper. A
 // missing If-Match is not a malformed request but the 428 of R-API-012: the
 // document marks the header required on PUT and PATCH, and the wrapper checks
-// that before any handler runs.
+// that before any handler runs. A required parameter that is missing and one
+// that cannot be read name the parameter as the pointer of the 400, as a
+// handler's own check of a parameter does (R-API-060's `q`).
 func bindError(w http.ResponseWriter, r *http.Request, err error) {
 	var missing *gen.RequiredHeaderError
 	if errors.As(err, &missing) && missing.ParamName == "If-Match" {
 		httpserver.Problem(w, r, Precondition{}.Require())
 		return
 	}
-	httpserver.Problem(w, r, errs.E(errs.Invalid, errs.CodeInvalid, "A request parameter is malformed.", errs.WithCause(err)))
+	opts := []errs.Option{errs.WithCause(err)}
+	var required *gen.RequiredParamError
+	var format *gen.InvalidParamFormatError
+	switch {
+	case errors.As(err, &required):
+		opts = append(opts, errs.WithBadRequest(), errs.WithFields(errs.FieldError{Pointer: required.ParamName, Code: "required", Detail: "The parameter is required."}))
+	case errors.As(err, &format):
+		opts = append(opts, errs.WithBadRequest(), errs.WithFields(errs.FieldError{Pointer: format.ParamName, Code: "format", Detail: "The parameter cannot be read."}))
+	}
+	httpserver.Problem(w, r, errs.E(errs.Invalid, errs.CodeInvalid, "A request parameter is malformed.", opts...))
 }
 
 func writeJSON(w http.ResponseWriter, r *http.Request, status int, v any) {

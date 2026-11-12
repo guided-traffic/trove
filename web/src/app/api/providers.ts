@@ -43,6 +43,9 @@ import { AnsibleApi, HttpAnsibleApi } from './ansible-api';
 // >>> T17 deb
 import { DebApi, HttpDebApi } from './deb-api';
 // <<< T17 deb
+// >>> T-22 search
+import { HttpSearchApi, SearchApi } from './search-api';
+// <<< T-22 search
 
 /**
  * Binds every service interface of `api/` to its HTTP implementation. Specs and component tests
@@ -97,5 +100,8 @@ export function provideApiServices(): Provider[] {
     // >>> T17 deb
     { provide: DebApi, useClass: HttpDebApi },
     // <<< T17 deb
+    // >>> T-22 search
+    { provide: SearchApi, useClass: HttpSearchApi },
+    // <<< T-22 search
   ];
 }

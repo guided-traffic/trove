@@ -178,6 +178,13 @@ tags:
       repository.
   # <<< M4b vulnerabilities
   #
+  # >>> T-22 search
+  - name: search
+    description: |
+      The suggestions of the UI's search field (R-API-060 to R-API-064): the best matches of a text per kind, among what the
+      caller may read. The results page of the field reads the lists of repositories, packages and projects with `q`.
+  # <<< T-22 search
+  #
 security:
   - bearerAuth: []
 paths:
@@ -5701,8 +5708,9 @@ paths:
         every repository of a project it is a member of (Q-AUTHZ-208); a holder of `repositories:read-config` sees every
         repository, those being deleted included. `view=summary` (default) returns a short description of each; `view=full`
         returns the complete documents and needs `repositories:read-config` (`403` otherwise). `class` and `format` take the
-        values as spelled in documents, repeated or comma-separated; `q` matches the key and the description
-        case-insensitively; `state=inactive` keeps the disabled repositories. `project` selects the repositories of a
+        values as spelled in documents, repeated or comma-separated; `q` matches the key, `<project>/<key>` and the description
+        case-insensitively (Q-API-279); `name` keeps the named repositories (R-API-063): a name that does not exist and one the
+        caller may not see are both absent; `state=inactive` keeps the disabled repositories. `project` selects the repositories of a
         project, by its key (`404` is never answered: an unknown key selects none). A repository of a project the caller can
         neither see nor read is not listed. `visibility` keeps the repositories whose artifacts level is one of the listed levels
         (R-API-057). An anonymous caller sees what a `public` level admits, or gets `401` while nothing is `public`.
@@ -5730,8 +5738,21 @@ paths:
           explode: true
         - name: q
           in: query
+          description: Case-insensitive substring of the key, of `<project>/<key>` or of the description.
           schema:
             type: string
+        - name: name
+          in: query
+          description: |
+            Qualified names `<project>/<key>`, repeated or comma-separated, at most 50 (R-API-063); keeps the named repositories
+            the caller may see, in the list's order. A malformed name, or more than 50, answers `400 malformed_request`.
+          schema:
+            type: array
+            maxItems: 50
+            items:
+              type: string
+          style: form
+          explode: true
         - name: state
           in: query
           schema:
@@ -12688,6 +12709,93 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
   # <<< F0 ansible
+  # >>> T-22 search
+  /api/v1/search/suggestions:
+    get:
+      operationId: getSearchSuggestions
+      tags: [search]
+      summary: Suggest repositories, packages, projects, users and groups for a text
+      description: |
+        The suggestions of the UI's search field (R-API-060): in one request, the best `limit` matches of `q` for each kind of
+        `kind`, among what the caller may read (R-API-061), ranked by R-API-062. The answer holds one member per kind asked
+        and none for a kind not asked; each member's `more` is `true` when the kind left out a readable match it found. It is
+        no list of R-API-010: no `cursor`, no `nextCursor`, no `Link`; the results page reads `GET /api/v1/repositories`,
+        `GET /api/v1/packages` and `GET /api/v1/projects` with `q`.
+
+        Each kind follows the read rule of its list: a repository the caller may read, or that the request's endpoint exposes
+        to a holder of `repositories:read-config` or to an Owner of its project; a package with a live, served version the
+        caller may read (in a repository read in part, its document and the repository's patterns decide); a project the
+        caller is a member of, holds `projects:read` for, or whose level admits it. The suggestions are filtered before they
+        are cut, `hideExistence` changes nothing here, and a repository's or a package's project is named by its key only.
+        `kind` `user` or `group` needs `identities:read`: without it the answer is `403` before any lookup, the same for every
+        `q`. A caller without a credential gets `401` while no repository's artifacts are `public`. The request costs a fixed
+        number of statements (R-API-064) and is limited by the class `read`, or `anonymous` without a credential (R-API-016).
+      x-trove-permission:
+        public: true
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: |
+            The text. It is trimmed and must then hold 2 to 100 characters, else the answer is `400 malformed_request` with the
+            pointer `q`; it is lower-cased and its terms are its parts between white space (R-API-062).
+          schema:
+            type: string
+        - name: kind
+          in: query
+          description: |
+            The kinds to suggest, repeated or comma-separated; `repository,package,project` when absent. An unknown kind answers
+            `400 malformed_request`; `user` and `group` need `identities:read` (`403` otherwise).
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [repository, package, project, user, group]
+          style: form
+          explode: true
+        - name: limit
+          in: query
+          description: Suggestions per kind, 1 to 10; else `400 malformed_request`.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
+            default: 5
+      responses:
+        "200":
+          description: The suggestions of each kind asked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchSuggestions"
+              example:
+                repositories:
+                  items:
+                    - {project: web, key: npm-local, format: npm, class: local}
+                  more: false
+                packages:
+                  items:
+                    - {id: pkg_nzyg2acao5swel3vnewww2lu, format: npm, name: "@web/ui-kit", project: web, repository: npm-local}
+                  more: true
+                projects:
+                  items:
+                    - {key: web, displayName: Web platform}
+                  more: false
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  # <<< T-22 search
 components:
   securitySchemes:
     bearerAuth:
@@ -15759,10 +15867,13 @@ components:
           description: "`light`, `dark` or `null` (the system decides)."
         keyboardShortcuts:
           type: boolean
+          description: |
+            Turns the UI's single-key shortcuts on and off (`/` focuses the search field, R-UI-095); `true` by default
+            (Q-API-280).
         revision:
           type: integer
           minimum: 1
-      example: {locale: de, theme: null, keyboardShortcuts: false, revision: 2}
+      example: {locale: de, theme: null, keyboardShortcuts: true, revision: 2}
     PreferencesPatch:
       type: object
       description: "`null` resets a member to its default. `revision` is accepted and ignored."
@@ -20336,3 +20447,155 @@ components:
                   type: string
                   pattern: "^[0-9A-F]{40}$"
     # <<< T-17 deb
+    # >>> T-22 search
+    SearchSuggestions:
+      type: object
+      additionalProperties: false
+      description: |
+        The suggestions of `getSearchSuggestions` (R-API-060, Q-API-271): one member per kind asked, absent for a kind not
+        asked.
+      properties:
+        repositories:
+          $ref: "#/components/schemas/RepositorySuggestions"
+        packages:
+          $ref: "#/components/schemas/PackageSuggestions"
+        projects:
+          $ref: "#/components/schemas/ProjectSuggestions"
+        users:
+          $ref: "#/components/schemas/UserSuggestions"
+        groups:
+          $ref: "#/components/schemas/GroupSuggestions"
+    RepositorySuggestions:
+      type: object
+      additionalProperties: false
+      required: [items, more]
+      properties:
+        items:
+          type: array
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/RepositorySuggestion"
+        more:
+          type: boolean
+          description: A readable match of the kind was left out (R-API-061); never `true` because of an object the caller cannot read.
+    RepositorySuggestion:
+      type: object
+      additionalProperties: false
+      required: [project, key, format, class]
+      properties:
+        project:
+          type: string
+          description: The key of the repository's project; the name is `<project>/<key>` (Q-API-277).
+        key:
+          type: string
+        format:
+          type: string
+        class:
+          type: string
+          enum: [local, remote, virtual]
+    PackageSuggestions:
+      type: object
+      additionalProperties: false
+      required: [items, more]
+      properties:
+        items:
+          type: array
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/PackageSuggestion"
+        more:
+          type: boolean
+          description: A readable match of the kind was left out (R-API-061); never `true` because of an object the caller cannot read.
+    PackageSuggestion:
+      type: object
+      additionalProperties: false
+      required: [id, format, name, project, repository]
+      properties:
+        id:
+          type: string
+          description: The identifier of `GET /api/v1/packages/{packageId}`.
+        format:
+          type: string
+        name:
+          type: string
+          description: The package's display name.
+        project:
+          type: string
+          description: The key of the project of `repository` (Q-API-277).
+        repository:
+          type: string
+          description: |
+            The key, within `project`, of the first repository by qualified name that holds the package and that the caller
+            reads (R-API-062).
+    ProjectSuggestions:
+      type: object
+      additionalProperties: false
+      required: [items, more]
+      properties:
+        items:
+          type: array
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/ProjectSuggestion"
+        more:
+          type: boolean
+          description: A readable match of the kind was left out (R-API-061); never `true` because of an object the caller cannot read.
+    ProjectSuggestion:
+      type: object
+      additionalProperties: false
+      required: [key, displayName]
+      properties:
+        key:
+          type: string
+        displayName:
+          type: string
+    UserSuggestions:
+      type: object
+      additionalProperties: false
+      required: [items, more]
+      properties:
+        items:
+          type: array
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/UserSuggestion"
+        more:
+          type: boolean
+          description: Another matching user was left out.
+    UserSuggestion:
+      type: object
+      additionalProperties: false
+      required: [id, username, displayName, disabled]
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        displayName:
+          type: [string, "null"]
+        disabled:
+          type: boolean
+    GroupSuggestions:
+      type: object
+      additionalProperties: false
+      required: [items, more]
+      properties:
+        items:
+          type: array
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/GroupSuggestion"
+        more:
+          type: boolean
+          description: Another matching group was left out.
+    GroupSuggestion:
+      type: object
+      additionalProperties: false
+      required: [name, description]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+    # <<< T-22 search

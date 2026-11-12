@@ -45,6 +45,11 @@ export interface RepositoryFilters {
   readonly state?: string;
   /** A project key: the repositories assigned to that project (R-AUTHZ-026). */
   readonly project?: string;
+  /**
+   * Qualified names `<project>/<key>`, at most 50: the named repositories the caller may see, in the list's order; a name that
+   * does not exist and one the caller may not see are both absent (R-API-063).
+   */
+  readonly name?: readonly string[];
 }
 
 /** True when the answer is the narrower consumer view (the caller cannot read the configuration). */
@@ -133,14 +138,15 @@ export class HttpRepositoriesApi extends RepositoriesApi {
   }
 
   list(filters: RepositoryFilters): PageFetcher<RepositorySummary> {
-    const params: Record<string, string | undefined> = {
+    const params: QueryParams = {
       q: filters.q || undefined,
       class: filters.class || undefined,
       format: filters.format || undefined,
       state: filters.state || undefined,
       project: filters.project || undefined,
+      name: filters.name?.length ? filters.name.join(',') : undefined,
     };
-    return this.client.page<RepositorySummary>('/api/v1/repositories', params as QueryParams);
+    return this.client.page<RepositorySummary>('/api/v1/repositories', params);
   }
 
   listAll(): Promise<readonly RepositorySummary[]> {

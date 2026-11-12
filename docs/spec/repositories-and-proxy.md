@@ -637,13 +637,16 @@ Priority: **MVP** · Covers: REPO-007, REPO-057, REPO-058, API-060, API-061
 
 | | |
 |---|---|
-| Request | `GET /api/v1/repositories?class=&format=&q=&state=&project=&view=&limit=&cursor=` (every project); `GET /api/v1/projects/{projectKey}/repositories?class=&format=&q=&state=&view=&limit=&cursor=` (one project) |
+| Request | `GET /api/v1/repositories?class=&format=&q=&name=&state=&project=&view=&limit=&cursor=` (every project); `GET /api/v1/projects/{projectKey}/repositories?class=&format=&q=&state=&view=&limit=&cursor=` (one project) |
 | Success | 200, `{"items": [...], "nextCursor": "…"}` (paging per [api-and-ui.md](api-and-ui.md) R-API-010, Q-API-6) |
 | Errors | 400 invalid filter; 401 |
 | Permission | any caller, anonymous included; the result contains only repositories on which the caller holds `read` by a grant, a role or the repository's artifacts level ([R-AUTHZ-016](authorization.md), [R-AUTHZ-035](authorization.md)), every repository, those being deleted included, for a holder of `repositories:read-config` (Q-REPO-19), and every repository of its project for an Owner; `view=full` requires `repositories:read-config`, or on the project's list the role `owner`. The project's list answers 404 for a project the caller cannot see, exactly as for one that does not exist: a caller sees a project when it holds `projects:read` or `repositories:read-config`, is a member of it, or reads one of its repositories whatever the filters and the cursor ([authorization.md](authorization.md) R-AUTHZ-016) |
 
 - Filters: `class`, `format` and `visibility` take comma-separated lists (`visibility` matches the artifacts level,
-  [api-and-ui.md](api-and-ui.md) R-API-057); `q` matches key and description case-insensitively; `project` filters by project key; `state=inactive` returns disabled
+  [api-and-ui.md](api-and-ui.md) R-API-057); `q` matches the key, `<project>/<key>` and the description case-insensitively
+  ([Q-API-279](api-and-ui.md#q-api-279--the-repository-lists-q-matches-the-qualified-name)); `name` keeps the named
+  repositories, qualified names repeated or comma-separated, at most 50, on the instance-wide list only ([api-and-ui.md](api-and-ui.md)
+  R-API-063); `project` filters by project key; `state=inactive` returns disabled
   repositories, offline remote repositories and remote repositories whose circuit is open
   (R-REPO-029).
 - `view=summary` (default) returns per repository: key, project, class, format, description, client address,

@@ -512,7 +512,8 @@ Acceptance criteria:
 ### R-API-010 · Cursor pagination
 Priority: **MVP** · Covers: ADMAPI-003
 
-Every list endpoint is paginated by keyset (cursor) pagination; SCIM is the only exception.
+Every list endpoint is paginated by keyset (cursor) pagination; SCIM and the suggestions of R-API-060, which are no list, are
+the exceptions.
 
 - Parameters: `limit` (default 50, maximum 500) and `cursor`, with these names on every list
   endpoint of every page; there are no per-page variants such as `pageSize` and `pageToken`
@@ -1198,7 +1199,7 @@ Priority: **MVP** · Covers: trove-only
 | `/api/v1/formats`, `/api/v1/repositories` (the instance-wide list), `/api/v1/projects/{projectKey}/repositories…`, `/api/v1/projects/{projectKey}/upstream-tests` | Repositories | R-API-022 to R-API-024, R-API-030, R-API-053 | [repositories-and-proxy.md](repositories-and-proxy.md), [architecture.md](architecture.md) |
 | `/api/v1/projects/{projectKey}/repositories/{repoKey}/items`, `/children`, `/stats`, `/properties`, `/content/…`; `/files/{projectKey}/{repoKey}/…` | Items and files | R-API-025, R-API-026 | [storage.md](storage.md) |
 | `/api/v1/content/…`, `/api/v1/trash-can/…` | Copy, move, trash | R-API-027 | [storage.md](storage.md) |
-| `/api/v1/search/…` | Search | R-API-028 | this page; indexes in [storage.md](storage.md) |
+| `/api/v1/search/…` | Search: the suggestions of the search field (R-API-060 to R-API-064) and the items search (R-API-028) | R-API-028, R-API-060 to R-API-064 | this page; indexes in [storage.md](storage.md) |
 | `/api/v1/packages…` | Packages across repositories; from M4b also the sub-resources `…/{packageId}/vulnerabilities` and `…/{packageId}/versions/{version}/vulnerabilities` | R-API-029; [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-020 | this page; package metadata in [storage.md](storage.md) and format pages |
 | `/api/v1/vulnerabilities/…` | Vulnerability findings, triage, export, advisories, summary, trend, sources, claimed-name matches (from M4b) | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-013, R-VULN-020, R-VULN-021 | [vulnerability-scanning.md](vulnerability-scanning.md) |
 | `/api/v1/users`, `/api/v1/groups`, `/api/v1/service-accounts`, `/api/v1/projects/{projectKey}/service-accounts…`, `/api/v1/tokens` | Identities and tokens | R-API-031, R-API-032 | [identity-and-authentication.md](identity-and-authentication.md) |
@@ -1272,10 +1273,11 @@ list `ownerRightsExempt` of `TestR_API_021_EveryAuthenticatedWriteDeclaresItsTok
 Preferences are owned here:
 
 ```json
-{"locale": "de", "theme": null, "keyboardShortcuts": false, "revision": 2}
+{"locale": "de", "theme": null, "keyboardShortcuts": true, "revision": 2}
 ```
 
-`locale` is `en`, `de` or `null` (browser decides); `theme` is `light`, `dark` or `null` (system). The project is not a
+`keyboardShortcuts` turns the UI's single-key shortcuts on and off; on by default (R-UI-095,
+[Q-API-280](#q-api-280--keyboardshortcuts-is-true-by-default-and-the-migration-sets-it-on-every-stored-row)). `locale` is `en`, `de` or `null` (browser decides); `theme` is `light`, `dark` or `null` (system). The project is not a
 preference: it is the context of the screens ([Q-UI-129](#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects)),
 and a member `projectFilter` in a patch is refused as an unknown member. PATCH takes a merge patch with
 `If-Match`. `user_preferences.revision` is the `ETag` and is registered with
@@ -1289,7 +1291,7 @@ CREATE TABLE user_preferences (
   user_id            uuid PRIMARY KEY REFERENCES app_user (principal_id) ON DELETE CASCADE,  -- Q-API-15
   locale             text CHECK (locale IN ('en', 'de')),
   theme              text CHECK (theme IN ('light', 'dark')),
-  keyboard_shortcuts boolean NOT NULL DEFAULT false,
+  keyboard_shortcuts boolean NOT NULL DEFAULT true,  -- Q-API-280, migration 00077
   revision           bigint  NOT NULL DEFAULT 1,
   updated_at         timestamptz NOT NULL DEFAULT now()
 );
@@ -2017,6 +2019,167 @@ Acceptance criteria:
 - `getPackageVersionReadme` carries `x-trove-part: wiki`; a document with the extension on a `PUT` operation fails to load.
 - For a caller who reads the artifacts of `web/npm-public` and not its wiki, `GET …/readme` answers 404 with the body of a
   missing README.
+
+### R-API-060 · One operation answers the suggestions of the search field
+Priority: **MVP** · Covers: trove-only
+
+The owner's task T-22 (2026-11-12): one search field with live suggestions for every caller (R-UI-095 to R-UI-099).
+`GET /api/v1/search/suggestions` answers, in one request, the best matches of a text for each kind the field shows
+([Q-API-270](#q-api-270--one-operation-answers-the-suggestions-and-the-results-page-reads-the-three-lists)):
+
+| Parameter | Meaning |
+|---|---|
+| `q` | Required. The text, trimmed: 2 to 100 characters, else `400 malformed_request` with the pointer `q` |
+| `kind` | `repository`, `package`, `project`, `user`, `group`; repeated or comma-separated; default `repository,package,project`. An unknown kind answers `400 malformed_request` |
+| `limit` | Suggestions per kind, 1 to 10, default 5 |
+
+```json
+{
+  "repositories": {"items": [{"project": "web", "key": "npm-local", "format": "npm", "class": "local"}], "more": false},
+  "packages": {"items": [{"id": "pkg_nzyg2acao5swel3vnewww2lu", "format": "npm", "name": "@web/ui-kit", "project": "web", "repository": "npm-local"}], "more": true},
+  "projects": {"items": [{"key": "web", "displayName": "Web platform"}], "more": false}
+}
+```
+
+- One member per kind asked (`repositories`, `packages`, `projects`, `users`, `groups`), absent for a kind not asked; `items` in the
+  order of R-API-062, `more` by R-API-061. A user is `{"id", "username", "displayName", "disabled"}`, a group `{"name",
+  "description"}`; a package's `name` is its display name and `id` the identifier of `GET /api/v1/packages/{packageId}`
+  ([Q-API-271](#q-api-271--the-answer-holds-one-typed-member-per-kind-and-no-cursor)).
+- Not a list of R-API-010: no `cursor`, `nextCursor` or `Link`. The results page reads the lists (R-UI-098).
+- Permission: any caller (`x-trove-permission: public: true`), decided in the handler by R-API-061. Without a credential `401`
+  while no repository's artifacts are `public`, as the lists answer. `kind` `user` or `group` needs `identities:read`; without it
+  the answer is `403`, before any lookup and the same for every `q`
+  ([Q-API-272](#q-api-272--users-and-groups-need-identitiesread-checked-before-any-lookup)).
+- Rate limit: the class `read` with a credential, `anonymous` without (R-API-016); no class of its own
+  ([Q-API-281](#q-api-281--the-suggestions-use-the-read-and-anonymous-classes-and-q-is-2-to-100-characters)).
+- Freshness: the repositories are matched over the grant index of the request (R-AUTHZ-028), on which they are decided anyway, so a
+  repository created through another replica is suggested within the propagation bound of R-API-052; projects, packages, users and
+  groups are read from PostgreSQL. `Trove-Authz-Min-Epoch` (R-AUTHZ-032) applies as on every operation.
+- `Cache-Control: no-store` (R-API-017).
+
+Acceptance criteria:
+
+- `GET /api/v1/search/suggestions?q=n` and a `q` of 101 characters answer `400 malformed_request`; `kind=file` `400`; `limit=11`
+  `400`.
+- `GET /api/v1/search/suggestions?q=npm&kind=repository` answers only the member `repositories`.
+- The answer carries `RateLimit-Policy: "read";q=200;w=4` with the defaults.
+
+### R-API-061 · A suggestion names only what the caller may read
+Priority: **MVP** · Covers: trove-only
+
+The suggestions are a listing in the sense of [authorization.md](authorization.md) R-AUTHZ-016: they hold only what the caller may
+read, and nothing in the answer depends on an object it may not read. Per kind the rule is the one of that kind's list, on the same
+decision point and the same index of the request:
+
+| Kind | Suggested when | Decided by |
+|---|---|---|
+| repository | the caller may read it, by a grant, a role or its artifacts level (R-AUTHZ-035), or, holding `repositories:read-config`, the endpoint of the request exposes it; a repository being deleted is never in the index | `acc.Readable`, `acc.Exposed` for `repositories:read-config`, as `GET /api/v1/repositories` |
+| package | in a physical repository the caller reads whole (read shape `ReadAll`), one version is live and served; in one it reads in part (`ReadRows`), the caller may read the package's document and the repository's include and exclude patterns admit the name ([Q-API-275](#q-api-275--a-package-in-a-repository-read-in-part-is-decided-on-its-document)) | the read scope of `GET /api/v1/packages` (`authz.ReadScope`) |
+| project | the caller is a member, holds `projects:read`, or the project's level admits it (R-AUTHZ-035 rule 8) | the rule of `GET /api/v1/projects` |
+| user, group | the caller holds `identities:read` | the capability, checked before any lookup |
+
+- **Hidden existence holds.** `hideExistence` (R-AUTHZ-017) changes only the status of a refused read. A repository with
+  `hideExistence: false` that the caller cannot read is suggested no more than any other. A virtual repository is suggested by its own
+  gate (R-AUTHZ-009 rule 1); its members are not suggested through it.
+- **Levels, users and tokens.** The level `internal` admits an internal subject only (R-AUTHZ-030): a user flagged external, a
+  service account, a CI token and a request through a Bastion get what grants, roles and `public` give them. A token's scope narrows
+  what grants and `internal` give, not what `public` gives (R-AUTHZ-035 rule 3).
+- **A project is named by its key** in a repository's or a package's entry
+  ([Q-API-277](#q-api-277--an-entry-names-the-project-of-a-repository-or-a-package-by-its-key)). Its display name appears only in a
+  project entry, which the project rule admits.
+- **Filtered before it is cut** ([Q-API-276](#q-api-276--more-reports-only-readable-matches-the-answer-left-out)). Each kind is ranked
+  among the readable matches (R-API-062) and then cut at `limit`. `more` is `true` when the kind left out a readable match it found.
+  The work per request is bounded (R-API-064), so `more` may be `false` while the results page holds more; it is never `true` because
+  of an object the caller cannot read.
+- **The same for every text.** `400`, `401` and `403` do not depend on `q`.
+
+Acceptance criteria, each a test of the integration area `search` on the worked rows of R-AUTHZ-035 (project `web`, `public`;
+`npm-public` with artifacts `public` and wiki `internal`; `npm-internal`, both `internal`; `npm-private`, both `private`, with
+`hideExistence: false`; the virtual `npm-all`, `internal`, over the three; each local repository holds `@web/button`; Erin flagged
+external with `read` on `npm-private`; Frank internal without grants):
+
+- Without a credential, `q=npm` answers the repository `web/npm-public` alone and `@web/button` with `repository: npm-public`.
+- Frank: `npm-all`, `npm-internal` and `npm-public`, never `npm-private`. Erin: `npm-private` and `npm-public`, never `npm-internal`
+  or `npm-all`.
+- Frank with a token scoped to `mobile/*`: `npm-public` alone.
+- Frank's `kind=user` answers `403` for `q=fr` and for `q=zz`, with the same body.
+- Twenty packages `button-<n>` added to `npm-private` change neither Frank's answer to `q=button` nor its `more`.
+
+### R-API-062 · How a suggestion matches and is ranked
+Priority: **MVP** · Covers: trove-only
+
+`q` is trimmed and lower-cased (Unicode simple case folding); its **terms** are its parts between white space.
+
+| Kind | Matches when | Rank, best first | Then by |
+|---|---|---|---|
+| repository | every term is part of `<project>/<key>` | 0 the key or `<project>/<key>` equals `q`; 1 the key starts with `q`; 2 `<project>/<key>` starts with `q`; 3 any other | `<project>/<key>`, byte order |
+| project | every term is part of the key or of the display name | 0 the key equals `q`; 1 the key starts with `q`; 2 the display name or one of its words starts with `q`; 3 any other | key |
+| package | the name starts with `q`, or every **word** of `q` begins a word of the name; a word is a run of `a` to `z` and `0` to `9` ([Q-API-274](#q-api-274--package-names-a-whole-name-prefix-on-a-c-collation-b-tree-and-word-prefixes-on-a-gin-tsvector-without-pg_trgm)) | 0 the name equals `q`; 1 the name starts with `q`; 2 by words | the name, byte order; then the format |
+| user | every term is part of the username or of the display name | 0 the username equals `q`; 1 the username starts with `q`; 2 the display name or one of its words starts with `q`; 3 any other | username |
+| group | every term is part of the name | 0 equal; 1 starts with `q`; 3 any other | name |
+
+- A package matches on its stored name (`packages.name`, the format's normalized name) and shows its display name. A package held by
+  several repositories is one entry, placed in the first of them by qualified name that the caller reads.
+- Descriptions are not matched by the suggestions. The lists that the results page reads match them (R-UI-098), and they match
+  every suggestion of their kind: `GET /api/v1/repositories` matches `<project>/<key>` besides the key and the description
+  ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-012,
+  [Q-API-279](#q-api-279--the-repository-lists-q-matches-the-qualified-name)).
+
+Acceptance criteria:
+
+- `q=npm` orders the repositories `web/npm`, then `mobile/npm-local` and `web/npm-local`, then `web/my-npm`.
+- `q=@acme/ui` suggests `@acme/ui-kit` (rank 1) before `@acme/kit-ui` (rank 2, by words); `q=kit` suggests both; `q=it` neither.
+- `GET /api/v1/repositories?q=web/npm` lists `web/npm-local`.
+
+### R-API-063 · The repository list answers named repositories
+Priority: **MVP** · Covers: trove-only
+
+`GET /api/v1/repositories` takes `name`, a qualified name `<project>/<key>`, repeated or comma-separated, at most 50
+([Q-API-278](#q-api-278--the-repository-list-takes-name)). The answer holds the named repositories the caller may see, in the list's
+order, by the rules of [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-012. A name that does not exist and a name of a
+repository the caller may not see are both absent, so the answer tells them apart for nobody. A malformed name, or more than 50,
+answers `400 malformed_request`. The UI resolves the frequently visited repositories of R-UI-096 and the start page's **Recently
+opened** with one such request.
+
+Acceptance criteria:
+
+- `name=web/npm-public&name=web/npm-private&name=web/nope` as Frank of R-API-061 lists `web/npm-public` alone.
+- 51 names answer `400`.
+
+### R-API-064 · The indexes and the bounds of the suggestions
+Priority: **MVP** · Covers: trove-only
+
+Data model ([Q-API-274](#q-api-274--package-names-a-whole-name-prefix-on-a-c-collation-b-tree-and-word-prefixes-on-a-gin-tsvector-without-pg_trgm)),
+in migration `00077_search.sql`:
+
+```sql
+ALTER TABLE packages
+    ADD COLUMN name_words tsvector GENERATED ALWAYS AS
+        (to_tsvector('simple'::regconfig, regexp_replace(lower(name), '[^a-z0-9]+', ' ', 'g'))) STORED;
+CREATE INDEX packages_name_words ON packages USING gin (name_words);
+CREATE INDEX packages_name_lower ON packages ((lower(name) COLLATE "C"));
+```
+
+How each kind is read ([Q-API-273](#q-api-273--repositories-are-matched-over-the-requests-grant-index-and-projects-over-their-rows-without-an-index)):
+
+| Kind | Read | Index | Bound |
+|---|---|---|---|
+| repository | the repositories of the request's grant index, in memory; no statement | — | every active repository, 10,000 in the reference environment ([architecture.md](architecture.md) R-ARCH-027 P-15) |
+| project | one statement over `project`, as the project list | none | every project |
+| package | statement A: names that start with `q` (`lower(p.name) COLLATE "C" LIKE <escaped q>%`) in the repositories the caller reads whole or in part, ordered by the same expression, at most 200 rows; statement B, only when A found fewer than `limit + 1` packages: names whose words begin with the words of `q` (`p.name_words @@ to_tsquery('simple', 'w1:* & w2:*')`), without A's rows, at most 200 rows. Every row needs a live, served version: `EXISTS` over `package_version_listing` (`package_versions_live`), the withheld versions of the formats as `GET /api/v1/packages` | A: `packages_name_lower`; B: `packages_name_words` | 400 candidate rows, one served-version check each |
+| user, group | one statement each over `principal` with `app_user` or `user_group`, `kind` fixed, `strpos` on the lower-cased columns | none (`principal` is unique on `kind, name`) | every user or group |
+
+- The words of a tsquery are runs of `a` to `z` and `0` to `9` taken from `q`, so no operator of the tsquery syntax reaches the
+  database; `%`, `_` and `\` of `q` are escaped in the `LIKE` pattern.
+- A request costs a fixed number of statements, independent of the number of matches and of the rows read.
+- trove does not create `pg_trgm` (migration 00017), so an infix inside a word of a name (`it` in `ui-kit`) is not suggested; the
+  results page's `GET /api/v1/packages?q=` finds it.
+
+Acceptance criteria:
+
+- With `SET enable_seqscan = off`, `EXPLAIN` of statement A shows `packages_name_lower` and of statement B `packages_name_words`.
+- A request with the five kinds costs the same number of statements with 10 and with 10,000 matching packages (integration area
+  `querybudget`).
 
 
 ### R-API-031 · Users, groups and service accounts
@@ -2842,17 +3005,15 @@ Acceptance criteria:
 Priority: **MVP** · Covers: UI-001, UI-004
 
 - Top bar (slim, on one fill with the side bar, Q-UI-127, in the colours of the design language, Q-UI-88): the
-  mark and the product name, a repository search field in the middle, the **Admin** button (shown
+  mark and the product name, the search field of R-UI-095 in the middle (below 36 rem a search button,
+  [Q-UI-403](#q-ui-403--below-36-rem-a-search-button-opens-the-field-as-a-sheet)), the **Admin** button (shown
   to a caller who has the admin area; it leads into it and looks the same inside it), the **Documentation** link, the
-  theme button and the user menu. The search
-  field takes a text, and Enter opens the results page `/search?q=<text>` of the main area: the matching repositories of
-  `GET /api/v1/repositories?q=` with key and description, project, format and class as columns and a quiet button that copies
-  the client address (Q-UI-330), each key a link to the repository's page in its project, and a link to the start page's package search for the same text. A search never leads
-  into the admin area ([Q-UI-390](#q-ui-390--enter-in-the-top-bars-search-opens-a-results-page-of-the-main-area-no-search-leads-into-the-admin-area),
-  the owner's rule in [CLAUDE.md](../../CLAUDE.md#product-simple-by-default-details-on-demand)). The field is shown to every
-  signed-in user, because the list behind it answers every caller with the repositories it may read (R-REPO-012), and not below
-  36 rem of the window, where it has no room for a word (UI-A-48; suggestions, and the field for an anonymous visitor, are the
-  owner's task T-22). The **Documentation** link (R-UI-050) opens
+  theme button and the user menu. The search field is shown to every signed-in caller, and to an anonymous one while something
+  is `public` (R-UI-095); it offers suggestions before and while typing (R-UI-096, R-UI-097), and Enter without a picked
+  suggestion opens the results page `/search?q=<text>` of the main area (R-UI-098). A search never leads into the admin area
+  except by an instance administrator's choice of a suggestion marked **Admin area** (R-UI-099,
+  [Q-UI-390](#q-ui-390--enter-in-the-top-bars-search-opens-a-results-page-of-the-main-area-no-search-leads-into-the-admin-area),
+  the owner's rule in [CLAUDE.md](../../CLAUDE.md#product-simple-by-default-details-on-demand)). The **Documentation** link (R-UI-050) opens
   the manual page of the current screen, or the overview of the help area, which is titled "Documentation" like the link
   (owner, 2026-11-06; Q-UI-90). The theme button offers
   "Follow the system", "Light" and "Dark" as radio items (R-API-021); the user menu is a round 32 px avatar, the
@@ -2871,8 +3032,8 @@ Priority: **MVP** · Covers: UI-001, UI-004
   button. The robot sits on the surface fill of the theme, so it reads in both colour schemes
   ([Q-UI-168](#q-ui-168--the-robot-keeps-the-badge-the-letter-had-on-the-themes-surface-fill)). The avatar is shown in the
   top bar, on the profile and on the administrator's user screen (R-UI-051); other screens get one when the reference's
-  screen for them shows one and the owner asks for it. The global
-  search over packages and files (P1, R-UI-015) takes its place in the same bar when its API exists. The project is not
+  screen for them shows one and the owner asks for it. Files join the field's kinds when the items search of R-API-028
+  exists (R-UI-015). The project is not
   chosen in the top bar but by the address and the project's side bar
   ([Q-UI-129](#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects)). A configurable server name is P2 on
   [operations-and-observability.md](operations-and-observability.md).
@@ -2941,11 +3102,10 @@ Acceptance criteria:
 - On `/admin/users/alice` the trail reads "Admin area / Users / alice" and "Users" links to
   the list. On `/projects/web/repositories/npm-local` it reads "Projects / web / Repositories / npm-local", and no step
   links to a route that does not exist.
-- A signed-in user without any capability sees the search field in the top bar, and its results list only repositories the user
-  may read.
-- Typing `test` into the top bar's search field and pressing Enter opens `/search?q=test` in the main shell (no admin side bar,
-  no admin breadcrumb); its rows link to `/projects/<project>/repositories/<key>` and `/projects/<project>`, its package link to
-  `/projects?find=test`, and no link of the page leads into `/admin`.
+- Every signed-in user sees the search field (R-UI-095), and its results list only what the user may read.
+- Typing `test` into the top bar's search field and pressing Enter without a picked suggestion opens `/search?q=test` in the
+  main shell (no admin side bar, no admin breadcrumb); its rows link to `/projects/<project>/repositories/<key>` and
+  `/projects/<project>`, and no link of the page leads into `/admin` (R-UI-098).
 - The top bar shows a robot avatar for a signed-in user, the same image after a reload and for the same user on another
   replica or browser, and another image for another user; the image is a data URI, `alt=""` and hidden from assistive
   technology; while the shell renders, no request leaves the origin; the build fails if a script of the bundle names
@@ -2976,7 +3136,7 @@ selected tab and selected version live in query parameters.
 | `/projects/{project}/policies`, `/projects/{project}/policies/new`, `/projects/{project}/policies/{name}` | Permission policies of the project | R-UI-027 |
 | `/projects/{project}/service-accounts`, `/projects/{project}/service-accounts/{name}` | Service accounts of the project | R-UI-026 |
 | `/projects/{project}/ci`, `/projects/{project}/ci/test`, `/projects/{project}/ci/mappings/{mapping}` | CI identity of the project | R-UI-035, R-UI-036 |
-| `/search` (`?type=&q=&…`) | Search results (P1) | R-UI-015 |
+| `/search` (`?q=&kind=`) | Search results of the main area | R-UI-098 |
 | `/trash` | Trash can (P1) | R-UI-014 |
 | `/builds`, `/builds/{build}`, `/builds/{build}/{number}` | Builds (P1) | R-UI-040 |
 | `/setup` (`?repository=&client=`) | Client setup | R-UI-016 |
@@ -3500,21 +3660,18 @@ Acceptance criteria:
 ### R-UI-015 · Search
 Priority: **P1** · Covers: UI-019, UI-020, SRCH-048, SRCH-058
 
-- Header search: type selector (packages by default, files, builds when enabled) and a query field;
-  Enter opens `/search?type=…&q=…`.
-- Package suggestions from two characters on (`namePrefix`, five results, 250 ms debounce) as an
-  ARIA combobox with listbox; Escape closes it.
+- The header search is R-UI-095 to R-UI-099. What stays here is the file search: when R-API-028 is built, **Files** becomes a
+  kind of the field's filter, and Enter under it opens the file search form below.
 - File search form: name, path glob, checksum, property, repositories, date ranges, "not downloaded
   since"; each field maps to one parameter of R-API-028 and to the URL.
 - Results table: path, repository, size, modified; actions "show in browser", download, copy URL.
 - From the browser, a search starts scoped to the selected repository and folder (a removable scope
   chip).
-- Ctrl+K (Cmd+K on macOS) focuses the search. The single-key shortcut `/` works only when the user
-  turned keyboard shortcuts on (WCAG 2.1.4).
 
 Acceptance criteria:
 
-- Searching files by the SHA-256 of a known tarball lists it with a working "show in browser" link.
+- Searching files by the SHA-256 of a known tarball, under the field's kind **Files**, lists it with a working "show in
+  browser" link.
 - With shortcuts off, typing `/` in the page body does not move focus.
 
 ### R-UI-016 · Client setup dialog
@@ -4816,7 +4973,7 @@ specific criteria:
 | 1.4.10 Reflow | Usable at 320 CSS px; code blocks and wide tables scroll inside their own region |
 | 1.4.13 Content on hover or focus | Tooltips are dismissible and hoverable; no information exists only in a tooltip |
 | 2.1.1 Keyboard | Tree, member editor, reordering, file selection ("Choose files" button) and action menus work by keyboard |
-| 2.1.4 Character key shortcuts | Single-key shortcuts are off by default (R-UI-015) |
+| 2.1.4 Character key shortcuts | Single-key shortcuts (`/`, R-UI-095) are on by default and turned off in the profile (`keyboardShortcuts`, R-API-021); they never act while the focus is in a text field ([Q-UI-401](#q-ui-401--slash-focuses-the-field-and-is-on-by-default-the-preference-turns-it-off)) |
 | 2.2.1 Timing adjustable; 2.2.2 Pause | Session expiry warning (R-UI-002); auto-refresh can be paused (R-UI-038) |
 | 2.4.2 Page titled; 2.4.3 Focus order | Title per route; focus moves to the new `h1` on navigation and into dialogs on open, and returns to the trigger on close |
 | 2.4.11 Focus not obscured | `scroll-padding-top` keeps focused elements clear of the sticky header |
@@ -5421,6 +5578,192 @@ Acceptance criteria:
   npm package and the image with the tabs **Vulnerabilities** and **All versions**, and the vulnerability report of the project
   and of the admin area, as plain user, power user and administrator, light and dark, at 1440, 1024 and 390 px; the seed holds
   versions of the grades S, A, B, C, D, E and N/A.
+
+### R-UI-095 · One search field in the top bar for every caller
+Priority: **MVP** · Covers: trove-only
+
+The owner's task T-22 (2026-11-12): "A sensible search, with suggestions and everything." The top bar's field (R-UI-002) is the one
+search of the UI.
+
+- **Who gets it.** Every signed-in caller, whatever its roles, and an anonymous caller while the UI runs without a session, which it
+  does only while some repository's artifacts are `public` (`publicContent`, R-UI-004,
+  [Q-UI-400](#q-ui-400--every-signed-in-caller-gets-the-field-and-an-anonymous-one-while-something-is-public)).
+- **The field.** The placeholder "Search or go to…", with " (/)" while `/` is on; a `search` icon at its start; at its end the filter
+  button (`filter_list`, accessible name "Filter: <kind>"); while a kind is chosen, a chip with the kind's name and a remove button at
+  the field's start. The field fills the top bar's middle column up to 40 rem.
+- **The filter** ([Q-UI-402](#q-ui-402--the-filter-is-a-menu-button-at-the-fields-end-and-the-chosen-kind-a-chip-at-its-start)). A
+  menu of radio items: **All** (the default), **Repositories**, **Packages**, **Projects**, and for an instance administrator
+  (R-UI-099), after a divider, **Users** and **Groups**, each marked **Admin area**. Backspace in an empty field, or the chip's remove
+  button, returns to **All**. The kind lasts until the page is reloaded and is part of the results page's address (R-UI-098).
+- **Keyboard** ([Q-UI-401](#q-ui-401--slash-focuses-the-field-and-is-on-by-default-the-preference-turns-it-off)). `/` moves the
+  focus into the field while the preference `keyboardShortcuts` is on (R-API-021, on by default) and the focus is not in a text
+  field, a text area, a select or an editable element; the key is not typed. Ctrl+K, and ⌘K on macOS, does the same whatever the
+  preference. An anonymous caller has no preferences and gets Ctrl+K and ⌘K only.
+- **Below 36 rem** ([Q-UI-403](#q-ui-403--below-36-rem-a-search-button-opens-the-field-as-a-sheet)). The field gives way to an icon
+  button (`search`, accessible name "Search") among the top bar's actions. The button, `/` and Ctrl+K open the search as a sheet: a
+  panel over the top bar's full width, `role="dialog"` named "Search", with the field and the filter at its top, a **Close** button,
+  and the suggestions below it down to the bottom of the window. The focus stays in the sheet; **Close**, or Escape while no list is
+  open, closes it and returns the focus to the button.
+- The field asks the server for nothing before it has the focus (R-UI-096) and a text (R-UI-097).
+
+Acceptance criteria:
+
+- The plain user `sam` (`reader` of two projects, no system role) sees the field at 1440 px and the button at 390 px; an anonymous
+  visitor of an installation with one public repository sees them too; with nothing public, an anonymous visitor sees the sign-in
+  page and no field.
+- With `keyboardShortcuts` on, `/` typed on the page body focuses the field and is not typed into it; typed into another text field
+  it is typed there; with the preference off, `/` does nothing; Ctrl+K focuses the field either way.
+- At 390 px the button opens the sheet with the focus in its field; Escape closes it and the focus is on the button again.
+
+### R-UI-096 · What the opened field offers before anything is typed
+Priority: **MVP** · Covers: trove-only
+
+When the field gets the focus without a text, a list opens under it, in this order
+([Q-UI-404](#q-ui-404--the-empty-field-offers-the-references-parts-in-its-order-and-the-admin-pages-last)):
+
+1. **Places**: Projects (`/projects`), Guides (`/guides`), Profile (`/profile`), Personal tokens (`/profile/tokens`), each with its
+   side-bar icon; an anonymous caller gets Projects and Guides.
+2. **Frequently visited repositories**: up to five, each with its format's icon, the key, and "· <project key>" muted.
+3. **View all my projects** (`/projects`).
+4. **Frequently visited projects**: up to five, each with the project's letter mark (as the project switcher's), the display name,
+   and "· <key>" muted.
+5. For an instance administrator only (R-UI-099), after a divider: **Admin area**, with Dashboard, Repositories, Users, Groups and
+   Settings, each the admin side bar's entry (icon and label, R-UI-002) where the administrator may use it, and each marked
+   **Admin area**.
+
+Groups 2 to 4 are not shown to an anonymous caller.
+
+- **Where "frequently visited" is kept**
+  ([Q-UI-405](#q-ui-405--frequently-visited-is-kept-in-the-browser-per-principal-by-visits-and-recency)). In browser storage
+  (non-secret, R-UI-043), one key per signed-in principal ID, `trove.frequent.<principal ID>`: per repository its qualified name,
+  per project its key, each with the number of visits and the time of the last one, at most 20 per kind. A visit is the opening of a
+  repository's page or content page, or of a project's screen, and counts once per entry in 15 minutes. The order is the number of
+  visits, halved for every 14 days since the last visit, then the last visit. The same store, ordered by the last visit, is the start
+  page's **Recently opened** and the project switcher's recent list; it replaces `trove.recent-repositories` and
+  `trove.recent-projects.<name>`, which are removed when first read. A route under `/admin` is never recorded. With storage blocked,
+  groups 2 and 4 are left out.
+- **Only what the caller may still read**
+  ([Q-UI-406](#q-ui-406--a-stored-entry-is-shown-after-the-server-confirms-that-the-caller-still-reads-it)). The stored repositories
+  are shown after one `GET /api/v1/repositories?name=…` (R-API-063) has returned them, and only those it returned; the stored projects
+  when the project list the UI reads once (Q-UI-129) holds them. An entry that is not returned is left out and stays stored. The
+  request runs when the list first opens after sign-in, and again after the stored repositories or the caller's authorization epoch
+  changed.
+
+Acceptance criteria:
+
+- `sam`, who opened `web-frontend/npm-vendor` three times and `platform/collections` once, sees them in that order; after he loses
+  `read` on `platform`, `platform/collections` is not shown and its entry stays stored.
+- `ada` (system role `admin`) sees the **Admin area** group last, each entry marked; `sam` and the power user `priya` see no such
+  group.
+- A second user signed in in the same browser sees none of `sam`'s entries; with storage blocked the list holds Places and **View
+  all my projects** only.
+- Opening the empty list sends at most the one request of the repositories.
+
+### R-UI-097 · Live suggestions while typing
+Priority: **MVP** · Covers: trove-only
+
+- **When** ([Q-UI-408](#q-ui-408--one-request-per-settled-text-250-ms-after-the-last-key-an-anonymous-caller-waits-longer)). A
+  signed-in caller's text of two or more characters is sent 250 ms after the last key; an anonymous caller's of three or more after
+  500 ms, and at most four times in 4 s. One request per settled text, `GET /api/v1/search/suggestions` (R-API-060) with the kinds of
+  the filter; a request a newer text supersedes is cancelled; the answers of the last ten texts are reused for 30 s while the list is
+  open. Below the minimum the list shows R-UI-096.
+- **Groups and order** ([Q-UI-407](#q-ui-407--the-main-areas-groups-come-first-and-the-admin-areas-last-five-in-each)).
+  Repositories, Packages, Projects, Pages; then, for an instance administrator only and after a divider, Admin pages, Users and
+  Groups, each group heading and each entry marked **Admin area** (R-UI-099). Five per group, three for Pages and Admin pages; with a
+  kind chosen, that group alone with ten. A group without a match is left out. A group of the main area whose answer says `more` ends
+  with **All repositories for "<text>"** (packages, projects), which opens the results page on that tab (R-UI-098).
+- **An entry** shows: a repository the format's icon, the key and "· <project key>" muted; a package the format's icon, the name
+  and "· <project key> / <repository key>" muted; a project the letter mark, the display name and "· <key>" muted; a page its
+  side-bar icon and label; a user the avatar (R-UI-002), the display name or the username, "· <username>" muted and **Disabled**
+  where it is; a group the `group` icon and the name. Keys and names carry `translate="no"`.
+- **Where it leads**: a repository `/projects/<project>/repositories/<key>`; a package its page in the project of the answer's
+  repository (`/projects/<project>/packages/<format>/<name>`); a project `/projects/<key>`; a page its route; a user
+  `/admin/users/<username>`; a group `/admin/groups/<name>`.
+- **Pages** are matched in the browser, in the UI's language, by the project rule of R-API-062 over the labels of the Places of
+  R-UI-096 and of Client setup (`/setup`), Sessions (`/profile/sessions`) and Documentation (`/help`); **Admin pages** over the labels
+  of the admin side bar's entries the administrator may use.
+- **Highlighting** ([Q-UI-409](#q-ui-409--the-matched-text-is-bold-marked-by-the-client)). Every occurrence of each term of the text
+  in the shown name is bold (weight 600), case-insensitively; overlapping marks merge. Nothing else is coloured.
+- **States.** While a text's first answer is pending, the previous list stays with a quiet "Searching…" line. No match in any group:
+  "Nothing you may read matches "<text>". Press Enter to search everything." A `429`: "Too many searches. Suggestions return in
+  <n> s.", and no request is sent before its `Retry-After` has passed. Another error: "Suggestions are not available."; Enter still
+  works.
+- **Keyboard and ARIA** ([Q-UI-410](#q-ui-410--the-field-is-an-aria-combobox-with-a-grouped-listbox)), after the WAI-ARIA Authoring
+  Practices' combobox with a listbox popup: the field is `role="combobox"` with `aria-expanded`, `aria-controls`,
+  `aria-autocomplete="list"` and `aria-activedescendant`; the popup is a `listbox` named "Suggestions" whose groups are `role="group"`
+  named by their headings. The focus stays in the field. Down and Up move the active entry: Down from the field enters the list, Up
+  from the first entry returns to the text, nothing wraps. Enter opens the active entry; Escape closes the list and, with the list
+  closed, empties the field; Tab leaves the field and closes the list; Alt+Down opens the list without moving. After each answer a
+  polite live region says how many suggestions are shown, or that none matches.
+
+Acceptance criteria:
+
+- `sam` types `vend`: after 250 ms one request `GET /api/v1/search/suggestions?q=vend&kind=repository,package,project&limit=5`;
+  the list shows `npm-vendor · web-frontend` under Repositories with `vend` in bold.
+- `ven`, `vend` and `vendo` typed within 200 ms send one request, for `vendo`.
+- With the keyboard only: Down, Down, Enter opens the second entry; Escape closes the list and a second Escape empties the field.
+- A `429` with `Retry-After: 3` shows the notice, and no request is sent for 3 s.
+- axe reports no serious or critical violation with the list open, in both schemes.
+
+### R-UI-098 · Enter opens the results page of the main area
+Priority: **MVP** · Covers: trove-only
+
+Enter in the field with no active entry opens `/search?q=<text>&kind=<kind>`
+([Q-UI-411](#q-ui-411--enter-without-a-picked-suggestion-opens-search-whose-tabs-read-the-three-lists)), a page of the main area with
+the start side bar (R-UI-002); it never opens a route under `/admin` (R-UI-099).
+
+- **Header**: the `<h1>` **Search** and the description "What you may read that matches "<text>"." The top bar's field keeps the text
+  while the page is open; the page has no field of its own.
+- **Tabs**: **Repositories**, **Packages**, **Projects**, without counts. `kind` chooses the tab; without it, or with `user` or
+  `group`, the tab is the first group that had a suggestion when Enter was pressed, else **Repositories**. The tab is part of the
+  address.
+- **A tab is the list of its kind with `q`**, 25 rows at a time with **Load more** (R-API-010): Repositories, `GET
+  /api/v1/repositories?q=`, with the plain user's columns of the repository list (Q-UI-312: the key with the project key as its
+  second line, format and class, the client address in the address field of R-UI-065); Packages, `GET /api/v1/packages?q=`, with
+  the columns of Q-UI-314 and the project and repository of each; Projects, `GET /api/v1/projects?q=`, with the start page's columns
+  (Q-UI-311). A row leads to its object's page in the main area.
+- **Empty**: "Nothing you may read matches "<text>"." on the tab. A text of fewer than two characters shows "Type at least two
+  characters." and asks nothing.
+- The page has no users, groups or admin pages and no link into the admin area. It takes over the page of the stopgap that replaced
+  `/admin/repositories?q=` ([Q-UI-415](#q-ui-415--the-stopgaps-results-page-becomes-r-ui-098s)).
+
+Acceptance criteria:
+
+- As `ada` (system role `admin`), `test` and Enter open `/search?q=test`; the page holds no link whose path starts with `/admin`.
+- `/search?q=vend&kind=package` opened directly shows the Packages tab, and **Load more** after 25 rows.
+- As `sam`, the Repositories tab lists only what `sam` may read; a repository of `platform` with `hideExistence: false` on which
+  `sam` holds nothing is not listed.
+
+### R-UI-099 · The search leads into the admin area only by an administrator's choice of a marked suggestion
+Priority: **MVP** · Covers: trove-only
+
+The owner (2026-11-12, after typing "test" in the top bar and landing on the admin area's repository list with Enter): a search on
+the main page must never end in the admin area, unless live suggestions are shown, some of them are explicitly marked as pages of the
+admin area, and the user is an instance admin; then and only then may a search result lead there
+([CLAUDE.md](../../CLAUDE.md#product-simple-by-default-details-on-demand)).
+
+- **Instance administrator** ([Q-UI-412](#q-ui-412--an-instance-administrator-is-the-holder-of-the-system-role-admin)): a caller
+  whose `GET /api/v1/authz/me` lists the system role `admin` in `roles`, directly or through a group. The other system roles, which
+  open the admin area too (R-UI-067), get no admin suggestions and reach their screens through the Admin button.
+- **Admin suggestions** are the admin pages, users and groups of R-UI-096 and R-UI-097, shown only to an instance administrator.
+  Each shows the mark **Admin area**, the Admin button's icon `build` and the words, which are part of its accessible name ("Users,
+  Admin area"); so does each of their group headings. They come after every group of the main area, behind a divider.
+- **Only by an explicit choice**: a click on such a suggestion, or Enter while it is the active entry. Enter without an active
+  entry, the results page, the filter, the frequently visited entries and every other way out of the field open a route of the main
+  area. With the filter on Users or Groups, Enter without an active entry opens nothing and the live region says "Choose a user from
+  the list." ("a group") ([Q-UI-413](#q-ui-413--under-a-users-or-groups-filter-enter-without-an-active-entry-opens-nothing)).
+- **One gate.** The field opens every target through one function, which refuses a route under `/admin` unless the target is an
+  admin suggestion and the caller is an instance administrator at that moment.
+- The rule is navigation, not access control: what the admin area shows is decided by the API as before (R-UI-005).
+
+Acceptance criteria:
+
+- As `ada`: `users` shows **Users · Admin area** under Admin pages; Enter without an active entry opens `/search?q=users`; moving to
+  that entry and Enter opens `/admin/users`.
+- As the holder of `security-admin` alone: `users` shows no admin group, and Enter opens `/search?q=users`.
+- A unit test drives every way out of the field (Enter with and without an active entry of each kind, a click on each kind, the
+  **All … for** lines, the empty list's entries, the filter) as `ada`, `priya` and `sam` and asserts that only `ada`'s choice of a
+  marked entry reaches `/admin`.
 
 ## Deferred
 
@@ -10987,6 +11330,11 @@ suggestions); the start page's package search stays as it is until then. Revisit
 that list exists (`GET /api/v1/repositories` answers every caller with what it may read), and the top bar's field searches it for
 every signed-in user. Fix wave 2: each recently opened repository shows its
 first address only, and its **Set up client** opens `/setup?repository=` (Q-UI-320, Q-UI-321).
+Revisited by T-22 ([Q-UI-414](#q-ui-414--the-start-pages-package-search-goes-the-top-bars-field-is-the-one-search)): the start
+page's package search goes, the top bar's field is the one search; **Recently opened** reads the store of
+[Q-UI-405](#q-ui-405--frequently-visited-is-kept-in-the-browser-per-principal-by-visits-and-recency) with one request (R-API-063).
+The note that a repository search across projects needs a list readers may read was wrong: `GET /api/v1/repositories` is open to
+every caller and filters by read.
 
 ### Q-UI-312 · The repository list shows the plain user the repository, format, class and address; activity and maintenance actions are the power user's
 
@@ -11783,6 +12131,11 @@ typing (no `datalist`, no list of trove's): what a browser may offer is its own 
 leave out. The start page's package search takes its text from the address (`/projects?find=<text>`), so that the results page can
 hand the text over. **Rationale:** the owner's rule, with the least that makes Enter useful until T-22. The development agent revisits
 nothing: T-22 extends the page. **Applied in the spec:** R-UI-002; [search-results.ts](../../web/src/app/features/search/search-results.ts).
+Revisited by T-22 ([Q-UI-415](#q-ui-415--the-stopgaps-results-page-becomes-r-ui-098s)): the page becomes R-UI-098's, with
+`kind` and the tabs Repositories, Packages and Projects; the link to the start page's package search goes with that search
+([Q-UI-414](#q-ui-414--the-start-pages-package-search-goes-the-top-bars-field-is-the-one-search)); the field offers suggestions
+(R-UI-096, R-UI-097) and shows for an anonymous caller while something is `public`
+([Q-UI-400](#q-ui-400--every-signed-in-caller-gets-the-field-and-an-anonymous-one-while-something-is-public)).
 
 ### Q-UI-391 · A stacked list keeps its sort buttons in a row above its blocks
 
@@ -11942,6 +12295,423 @@ changes nothing and records nothing, and is still compared with `If-Match`.
 **Rationale:** the tag protects the one value the operation writes.
 
 **Applied in the spec:** R-API-056, R-AUTHZ-033 data model.
+
+### Q-UI-400 · Every signed-in caller gets the field, and an anonymous one while something is public
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every signed-in caller, and the anonymous UI (chosen) | The field wherever the shell runs | The owner asked for one search for every user; the anonymous UI exists only while `publicContent`, and the API answers what `public` admits | Anonymous typing spends the `anonymous` class of a client address (bounded by Q-UI-408) |
+| (b) Signed-in callers only | No anonymous search | No anonymous load | A visitor of public content finds it only through the project list |
+| (c) Only callers that can read something | A probe before the field shows | No empty answers | A request on every screen; an empty answer is a valid answer |
+
+**Choice:** (a). **Rationale:** the field is how a reader finds content, and the anonymous visitor of public content is a reader.
+The development agent revisits it if the field shows up in `trove_api_rate_limited_total{class="anonymous"}`.
+
+**Applied in the spec:** R-UI-095.
+
+### Q-UI-401 · Slash focuses the field and is on by default; the preference turns it off
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `/` on by default, off in the profile; Ctrl+K and ⌘K always; an anonymous caller Ctrl+K and ⌘K only (chosen) | The reference's key works at once | The owner asked for the reference's search; WCAG 2.1.4 is met by a way to turn the shortcut off, and the key never acts in a text field | A default that R-UI-044 had the other way |
+| (b) `/` only after the user turned shortcuts on (R-UI-015 as written) | Off by default | No surprise for a speech-input user | Hardly anyone finds the preference; the key the owner knows does nothing |
+| (c) `/` always | No switch | Simple | Fails WCAG 2.1.4 |
+
+**Choice:** (a). An anonymous caller has no preference to turn `/` off, so it gets the chorded keys only. **Rationale:** 2.1.4
+accepts a mechanism that turns a single-key shortcut off, and the preference exists already. The development agent revisits it if a
+speech-input or screen-reader user reports the key.
+
+**Applied in the spec:** R-UI-095, R-UI-044, R-API-021 (Q-API-280).
+
+### Q-UI-402 · The filter is a menu button at the field's end, and the chosen kind a chip at its start
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A `filter_list` button at the field's end with radio items; the chosen kind as a removable chip at the field's start (chosen) | The reference's filter icon at the right | The default **All** needs no click; the chip shows the scope where the text is | One more control in the field |
+| (b) A select before the field (R-UI-015's type selector) | Always visible | Explicit | Takes the room a 390 px bar does not have, for a choice rarely changed |
+| (c) A prefix in the text (`repo:npm`) | Typed | No control | Not discoverable; hard to translate |
+
+**Choice:** (a). **Rationale:** it is the reference's control, and it costs nothing while unused. The development agent revisits it
+if the owner's reference shows the filter otherwise.
+
+**Applied in the spec:** R-UI-095.
+
+### Q-UI-403 · Below 36 rem a search button opens the field as a sheet
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An icon button that opens a sheet over the top bar (chosen) | Search at every width | No room taken while unused | One more overlay |
+| (b) No search below 36 rem (UI-A-48 today) | Hidden | Nothing to build | No search on a phone |
+| (c) A second row under the top bar | Always shown | One tap less | 40 px of every narrow screen |
+
+**Choice:** (a). **Rationale:** the field is for every user, at every width. The development agent revisits it if the sheet hides
+something the search needs.
+
+**Applied in the spec:** R-UI-095, R-UI-002.
+
+### Q-UI-404 · The empty field offers the reference's parts in its order, and the admin pages last
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Places, frequently visited repositories, **View all my projects**, frequently visited projects; for an instance administrator an **Admin area** group last (chosen) | The reference's order with trove's objects: a repository where the reference has a project, a project where it has a group | Familiar; the user's own places first; the admin entries apart | Five groups in a small list |
+| (b) Only the frequently visited | Short | Less to read | No way to the places by keyboard |
+| (c) The admin area as one of the Places, as the reference lists it | Mixed | One group fewer | The plain group then holds an admin entry, which R-UI-099 keeps apart |
+
+**Choice:** (a). **Rationale:** the owner showed this list as his picture of the search. The development agent revisits the parts
+after the walkthrough shows what is used.
+
+**Applied in the spec:** R-UI-096.
+
+### Q-UI-405 · "Frequently visited" is kept in the browser, per principal, by visits and recency
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Browser storage per principal ID, ordered by visits halved every 14 days; one store for the recent lists too (chosen) | Per browser | Privacy: the server keeps no record of which repositories a person opens, and nothing to back up, restore or delete when a user leaves; no write per page view against the `write` class (10/s) and the database; no request to show it | A second device starts empty; whoever can read the browser profile reads the names (H-987) |
+| (b) A server table of visits per user | Across devices | Follows the user | A navigation history of every user on the server; a write per page view; filtered by read on every use anyway |
+| (c) The browser, by recency only (today's recent lists) | Last opened | Nothing new | "Frequently" means more than "last" |
+
+**Choice:** (a). The store replaces `trove.recent-repositories`, which is one key for every user of a browser, and
+`trove.recent-projects.<name>`. **Rationale:** the list is a convenience, and a convenience does not justify a record of what people
+open. As the owner's brief describes the reference, it keeps the list in the browser too (not checked against its current version).
+The development agent revisits it if the owner wants the list on every device.
+
+**Applied in the spec:** R-UI-096.
+
+### Q-UI-406 · A stored entry is shown after the server confirms that the caller still reads it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One `GET /api/v1/repositories?name=…` for the stored repositories; the stored projects checked against the project list the UI holds (chosen) | One request | A suggestion never names a repository the caller lost | The repositories group appears one round trip later |
+| (b) Shown as stored | No request | Instant | Names a repository the caller may no longer read; a click ends in 404 |
+| (c) One `GET` per entry (the start page today) | Five requests | Nothing new | Five times the budget |
+
+**Choice:** (a). **Rationale:** R-API-061's rule holds for every entry of the list, not only for the server's answers. The
+development agent revisits it if the round trip is visible in the renders.
+
+**Applied in the spec:** R-UI-096, R-API-063.
+
+### Q-UI-407 · The main area's groups come first and the admin area's last, five in each
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Repositories, Packages, Projects, Pages; then Admin pages, Users, Groups for an instance administrator; five each, three pages, ten under a kind (chosen) | Grouped by kind | The plain user's job is a repository or a package (R-UI-067); the admin kinds apart (R-UI-099) | Up to 25 entries for an administrator |
+| (b) One list ranked across kinds | Mixed | Short | Ranks of different kinds do not compare; the owner showed groups |
+| (c) Projects first, in the reference's order | Containers first | Like the reference | In trove a project is the container and rarely the target |
+
+**Choice:** (a). **Rationale:** the order follows what a reader looks for most. The development agent revisits it if the
+walkthrough shows projects are looked for more.
+
+**Applied in the spec:** R-UI-097.
+
+### Q-UI-408 · One request per settled text, 250 ms after the last key; an anonymous caller waits longer
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) 250 ms and two characters signed in; 500 ms, three characters and at most four requests per 4 s anonymous; superseded requests cancelled; a `429` waits for `Retry-After` (chosen) | One request per pause | Signed in at most 16 requests per 4 s, 8 % of the `read` class's 200; anonymous at most 4, 20 % of the `anonymous` class's 20 per client address | An anonymous caller sees suggestions later |
+| (b) 150 ms for everyone | Faster | Feels instant | Up to 27 requests per 4 s, more than the anonymous class admits |
+| (c) One request per kind | Three to five lists per text | No new operation | Three to five times the budget; answers that arrive apart |
+
+**Choice:** (a). **Rationale:** the field must never starve the screens of their budget, and the anonymous budget is shared by a
+client address. The development agent revisits the numbers if the field shows up in `trove_api_rate_limited_total`.
+
+**Applied in the spec:** R-UI-097.
+
+### Q-UI-409 · The matched text is bold, marked by the client
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The client bolds every occurrence of each term in the shown name (chosen) | Computed from the text sent | No contract member; one rule for every kind | A package found by word prefix shows the prefix bold, not a range the server chose |
+| (b) The server returns match ranges | Exact | The server's own rule | A member of the contract for presentation |
+| (c) No highlighting | Plain | Nothing to build | The reader does not see why an entry matched |
+
+**Choice:** (a). **Rationale:** the match rules are simple enough to show in the browser. The development agent revisits it if a
+match is shown that the server did not make.
+
+**Applied in the spec:** R-UI-097.
+
+### Q-UI-410 · The field is an ARIA combobox with a grouped listbox
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `@angular/aria`'s combobox with a listbox popup, groups as `role="group"` (chosen) | The library R-UI-044 names | Roles, active descendant and keys from the library | Its listbox has no group directive (types of 22.2.5): if it does not find options inside group elements, (b) is used |
+| (b) A combobox written on the CDK's `ActiveDescendantKeyManager` | Hand-made | Groups under full control | Keys and roles written and tested by trove |
+| (c) A menu | `role="menu"` | Simple | A menu has no text field; screen readers announce it as a menu of commands |
+
+**Choice:** (a), with (b) when a spec test shows that the arrow keys do not cross groups. **Rationale:** the APG's combobox is the
+pattern for a text field with suggestions. The development agent revisits it when `@angular/aria` gains groups.
+
+**Applied in the spec:** R-UI-097.
+
+### Q-UI-411 · Enter without a picked suggestion opens `/search`, whose tabs read the three lists
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `/search?q=&kind=` in the main area, tabs Repositories, Packages, Projects, each the list of its kind with `q` (chosen) | The lists page and decide reads already | The columns and the address field of the lists; no second paging contract | No counts on the tabs |
+| (b) A paged search operation for the results | One source | Ranked results | A second cursor over rows the lists already page |
+| (c) Enter opens the first suggestion | No page | Fast | Enter would choose for the user, and could choose an admin page |
+
+**Choice:** (a). **Rationale:** the page's job is everything that matches, and the lists are that. The development agent revisits
+the counts if the walkthrough asks for them.
+
+**Applied in the spec:** R-UI-098.
+
+### Q-UI-412 · An instance administrator is the holder of the system role `admin`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The role `admin`, directly or through a group (chosen) | The narrowest reading | The owner's words, "instance admin"; one role | A security administrator or an auditor reaches its few screens through the Admin button only |
+| (b) Any system role, each with its own pages (R-UI-067's administrator) | Wider | Every administrator finds its screens | Wider than the owner's words |
+| (c) Anyone with the admin area (any capability) | The Admin button's rule | Consistent with the button | Wider still |
+
+**Choice:** (a). **Rationale:** the owner said "then and only then"; the narrow reading is the one that cannot be wrong in the
+direction he warned about. The owner decides at the walkthrough (question 1 of the plan).
+
+**Applied in the spec:** R-UI-099.
+
+### Q-UI-413 · Under a Users or Groups filter, Enter without an active entry opens nothing
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Nothing opens; the live region says to choose (chosen) | Explicit only | R-UI-099 holds without an exception | Enter does nothing visible but the message |
+| (b) Enter opens the first user | Implicit | Fast | An implicit way into the admin area |
+| (c) Enter opens `/search` | Main area | Consistent | A page that has no users |
+
+**Choice:** (a). **Rationale:** the owner allows the admin area only by an explicit choice. The development agent revisits it if
+administrators ask for a user list in the main area.
+
+**Applied in the spec:** R-UI-099.
+
+### Q-UI-414 · The start page's package search goes; the top bar's field is the one search
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Remove it (chosen) | One field | One way to each job (the style guide's checklist) | The start page loses the section Q-UI-311 put first |
+| (b) Keep it beside the field | Two searches | Nothing removed | Two searches with different rules on one screen |
+| (c) The same component, large, on the start page | Two instances | Visible | Two copies of one field on one screen |
+
+**Choice:** (a). The start page keeps **Recently opened** and the projects. **Rationale:** the field is on every screen, the start
+page included. The development agent revisits it if plain users do not find the field.
+
+**Applied in the spec:** R-UI-098, Q-UI-311 (revisited).
+
+### Q-UI-415 · The stopgap's results page becomes R-UI-098's
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Extend what landed under Q-UI-390 to Q-UI-399 to R-UI-098 (chosen) | No throwaway | Builds on a tested page | Its decisions are read again |
+| (b) Rebuild from scratch | Clean | No inherited shape | Throws away a working page |
+
+**Choice:** (a). If the stopgap chose another route than `/search`, it moves there without an alias (no backward compatibility before
+the first stable release). **Rationale:** both pages answer the same Enter. The development agent revisits nothing here.
+
+**Applied in the spec:** R-UI-098; a revisit line in each of Q-UI-390 to Q-UI-399 that R-UI-098 changes.
+
+### Q-API-270 · One operation answers the suggestions, and the results page reads the three lists
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `GET /api/v1/search/suggestions` for the field; the lists with `q` for the results page (chosen) | One request per text | One request per settled text; one index snapshot for every kind; cheaper reads than the lists (no aggregation, no enumeration of candidate versions); the results page keeps the lists' paging, columns and filters | A kind's matching is stated twice; R-API-062 keeps the lists a superset |
+| (b) The lists alone, called in parallel per text | Nothing new | No contract change | Three to five requests per text; the package list aggregates every version and may decide up to 200,000 candidate versions per keystroke; no users or groups |
+| (c) One search operation for suggestions and paged results | One source | Ranked results pages | A second cursor (over rank and name) for rows the lists page already |
+
+**Choice:** (a). **Rationale:** the field's budget and the lists' paging are different jobs. The development agent revisits (c) if the
+results page needs a ranked order.
+
+**Applied in the spec:** R-API-060, R-UI-098.
+
+### Q-API-271 · The answer holds one typed member per kind and no cursor
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `repositories`, `packages`, `projects`, `users`, `groups`, each `{items, more}` (chosen) | Typed | A generated type per kind; the UI groups without sorting | Five schemas |
+| (b) One array of tagged items | Mixed | One schema | A union to discriminate in every client |
+| (c) The list envelope of R-API-010 per kind | Paged | Familiar | A cursor the field never follows |
+
+**Choice:** (a). **Rationale:** a group of the dropdown is a member of the answer. The development agent revisits it if a kind needs
+paging.
+
+**Applied in the spec:** R-API-060, R-API-010.
+
+### Q-API-272 · Users and groups need `identities:read`, checked before any lookup
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `403` without the capability, the same for every `q`; never in the default kinds (chosen) | Explicit | A client tells "none" from "not allowed"; no answer depends on a lookup the caller may not make (R-API-008) | The UI must not ask for them without the role |
+| (b) Every caller, as a member picker | Wide | Reuse | The owner made them admin suggestions; the project's principal picker has its own operation |
+| (c) Left out silently | Quiet | No `403` | An answer that differs by capability without saying so |
+
+**Choice:** (a). **Rationale:** users and groups are administration objects. The development agent revisits it if a non-admin
+screen needs them.
+
+**Applied in the spec:** R-API-060, R-API-061.
+
+### Q-API-273 · Repositories are matched over the request's grant index, and projects over their rows, without an index
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The grant index in memory for repositories; one read of `project` for projects (chosen) | No statement for repositories | The candidates and the decision share one index; every active repository is in it already | A repository created through another replica is suggested after the propagation bound (R-API-052), as it becomes readable anyway |
+| (b) SQL with `ILIKE` over `repositories` and `project` | A statement each | Fresh at once | A statement for rows the index holds; still decided on the index |
+| (c) The repository list's read and parse | As the list | Reuse | Parses every document on every keystroke |
+
+**Choice:** (a). **Rationale:** a repository the index does not know cannot be decided readable, so a read of the table adds nothing.
+The development agent revisits it if an installation holds far more than the 10,000 repositories of R-ARCH-027.
+
+**Applied in the spec:** R-API-060, R-API-064.
+
+### Q-API-274 · Package names: a whole-name prefix on a C-collation B-tree and word prefixes on a GIN tsvector, without pg_trgm
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `packages_name_lower` on `lower(name) COLLATE "C"` and `packages_name_words` on a generated `tsvector` (chosen) | Built-in indexes | No extension; `ui` finds `@acme/ui-kit`, `logging` finds `Microsoft.Extensions.Logging`; the B-tree also orders and stops at the limit | An infix inside a word is not suggested |
+| (b) A trigram GIN index (`pg_trgm`) | Any infix | Finds everything | The extension may be refused on a managed PostgreSQL (migration 00017) |
+| (c) The name prefix only | One B-tree | Smallest | Misses every scoped npm name and every dotted NuGet ID by its last part |
+
+**Choice:** (a). **Rationale:** it follows NuGet's search (Q-NUGET-12) and trove's rule against the extension. The development agent
+revisits (b) if trove ever requires `pg_trgm` for another reason.
+
+**Applied in the spec:** R-API-062, R-API-064.
+
+### Q-API-275 · A package in a repository read in part is decided on its document
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `ReadScope.MayRead(repo, name, "")` and the repository's patterns, once per candidate (chosen) | Package level | One decision per candidate; never more than the caller may read | A package whose document is readable and none of whose versions is gets suggested, and its page shows no version; one readable only through its versions is not suggested (the results page lists it) |
+| (b) Its versions, one by one, until one is readable (the list's rule) | Version level | The list's answer | Unbounded per candidate, or the enumeration of up to 200,000 versions on every keystroke |
+| (c) No suggestions from repositories read in part | Whole repositories only | Cheapest | A reader with a path-scoped grant never gets a package suggested |
+
+**Choice:** (a). **Rationale:** a suggestion is a name, and the document is what names a package. The development agent revisits (b)
+if path-scoped grants on versions turn out common.
+
+**Applied in the spec:** R-API-061.
+
+### Q-API-276 · `more` reports only readable matches the answer left out
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `true` when a readable match was left out (chosen) | Readable only | Never an oracle | May be `false` while the bounded read stopped before more |
+| (b) A count of every match | Total | Informative | Counts what the caller may not read |
+| (c) No `more` | Nothing | Simplest | The UI cannot offer **All … for** where it helps |
+
+**Choice:** (a). **Rationale:** R-AUTHZ-016 allows counts of readable items only. The development agent revisits nothing here.
+
+**Applied in the spec:** R-API-061.
+
+### Q-API-277 · An entry names the project of a repository or a package by its key
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The key only (chosen) | `web` | The key is part of the qualified name the caller reads | Less friendly than the display name |
+| (b) With the display name | `Web platform` | Friendlier | A caller who reads a repository by a grant may not read its project (R-AUTHZ-035 rule 8); the name would leak |
+
+**Choice:** (a). **Rationale:** a suggestion shows nothing its reader could not read on its own. The development agent revisits it if
+every reader of a repository becomes a reader of its project.
+
+**Applied in the spec:** R-API-061.
+
+### Q-API-278 · The repository list takes `name`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `name` repeated or comma-separated, at most 50, absent when not visible (chosen) | A filter | One request for the stored entries; the start page's five reads become one | A filter more |
+| (b) A `GET` per name | As today | Nothing new | Five requests per opening |
+| (c) A batch `POST` | A body | Many names | A `POST` for a read |
+
+**Choice:** (a). **Rationale:** a filter is how R-API-011 narrows a list. The development agent revisits the 50 if a store grows past
+20 per kind.
+
+**Applied in the spec:** R-API-063, R-REPO-012.
+
+### Q-API-279 · The repository list's `q` matches the qualified name
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `q` matches the key, `<project>/<key>` and the description (chosen) | Wider | Every repository suggestion for `web/npm` is on the results page | A breaking change of `q` (none before the first stable release) |
+| (b) As today | Key and description | Nothing changes | The results page misses suggestions |
+
+**Choice:** (a). **Rationale:** the results page must hold every suggestion of its kind. The development agent revisits nothing here.
+
+**Applied in the spec:** R-API-062, R-REPO-012.
+
+### Q-API-280 · `keyboardShortcuts` is true by default, and the migration sets it on every stored row
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Default `true`; existing rows set to `true` (chosen) | On everywhere | No single-key shortcut existed before T-22 (nothing in `web/src` read the preference but the profile), so a stored `false` turned nothing off and is no choice | A box someone unticked becomes ticked |
+| (b) Default `true` for new rows only | Partial | Keeps stored values | Everyone who ever saved a theme keeps `false` and finds `/` dead |
+| (c) Default `false` | As today | Nothing changes | The owner's key does nothing until found in the profile |
+
+**Choice:** (a). **Rationale:** a value that never had an effect carries no intent. The development agent revisits nothing here.
+
+**Applied in the spec:** R-API-021, R-UI-044.
+
+### Q-API-281 · The suggestions use the `read` and `anonymous` classes, and `q` is 2 to 100 characters
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The existing classes; `q` of 2 to 100 characters (chosen) | No new budget | The field keeps itself at 8 % of `read` (Q-UI-408); 100 is more than the longest qualified name (32 + 1 + 64) | — |
+| (b) A class `search` of its own | A second budget | Isolated | A second budget per principal that a client can spend in parallel |
+| (c) No length rule | Any text | Flexible | One character matches almost everything; very long texts cost without use |
+
+**Choice:** (a). **Rationale:** the classes exist to bound every read the same way. The development agent revisits (b) if searches
+starve the screens.
+
+**Applied in the spec:** R-API-060.
 
 ## What this does not cover
 

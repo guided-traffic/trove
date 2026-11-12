@@ -2048,8 +2048,9 @@ export interface paths {
          *     every repository of a project it is a member of (Q-AUTHZ-208); a holder of `repositories:read-config` sees every
          *     repository, those being deleted included. `view=summary` (default) returns a short description of each; `view=full`
          *     returns the complete documents and needs `repositories:read-config` (`403` otherwise). `class` and `format` take the
-         *     values as spelled in documents, repeated or comma-separated; `q` matches the key and the description
-         *     case-insensitively; `state=inactive` keeps the disabled repositories. `project` selects the repositories of a
+         *     values as spelled in documents, repeated or comma-separated; `q` matches the key, `<project>/<key>` and the description
+         *     case-insensitively (Q-API-279); `name` keeps the named repositories (R-API-063): a name that does not exist and one the
+         *     caller may not see are both absent; `state=inactive` keeps the disabled repositories. `project` selects the repositories of a
          *     project, by its key (`404` is never answered: an unknown key selects none). A repository of a project the caller can
          *     neither see nor read is not listed. `visibility` keeps the repositories whose artifacts level is one of the listed levels
          *     (R-API-057). An anonymous caller sees what a `public` level admits, or gets `401` while nothing is `public`.
@@ -4749,6 +4750,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/search/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Suggest repositories, packages, projects, users and groups for a text
+         * @description The suggestions of the UI's search field (R-API-060): in one request, the best `limit` matches of `q` for each kind of
+         *     `kind`, among what the caller may read (R-API-061), ranked by R-API-062. The answer holds one member per kind asked
+         *     and none for a kind not asked; each member's `more` is `true` when the kind left out a readable match it found. It is
+         *     no list of R-API-010: no `cursor`, no `nextCursor`, no `Link`; the results page reads `GET /api/v1/repositories`,
+         *     `GET /api/v1/packages` and `GET /api/v1/projects` with `q`.
+         *
+         *     Each kind follows the read rule of its list: a repository the caller may read, or that the request's endpoint exposes
+         *     to a holder of `repositories:read-config` or to an Owner of its project; a package with a live, served version the
+         *     caller may read (in a repository read in part, its document and the repository's patterns decide); a project the
+         *     caller is a member of, holds `projects:read` for, or whose level admits it. The suggestions are filtered before they
+         *     are cut, `hideExistence` changes nothing here, and a repository's or a package's project is named by its key only.
+         *     `kind` `user` or `group` needs `identities:read`: without it the answer is `403` before any lookup, the same for every
+         *     `q`. A caller without a credential gets `401` while no repository's artifacts are `public`. The request costs a fixed
+         *     number of statements (R-API-064) and is limited by the class `read`, or `anonymous` without a credential (R-API-016).
+         */
+        get: operations["getSearchSuggestions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -6786,7 +6820,7 @@ export interface components {
          * @example {
          *       "locale": "de",
          *       "theme": null,
-         *       "keyboardShortcuts": false,
+         *       "keyboardShortcuts": true,
          *       "revision": 2
          *     }
          */
@@ -6795,6 +6829,10 @@ export interface components {
             locale: string | null;
             /** @description `light`, `dark` or `null` (the system decides). */
             theme: string | null;
+            /**
+             * @description Turns the UI's single-key shortcuts on and off (`/` focuses the search field, R-UI-095); `true` by default
+             *     (Q-API-280).
+             */
             keyboardShortcuts: boolean;
             revision: number;
         };
@@ -9717,6 +9755,79 @@ export interface components {
                 reason?: string | null;
                 signedBy?: string[];
             }[];
+        };
+        /**
+         * @description The suggestions of `getSearchSuggestions` (R-API-060, Q-API-271): one member per kind asked, absent for a kind not
+         *     asked.
+         */
+        SearchSuggestions: {
+            repositories?: components["schemas"]["RepositorySuggestions"];
+            packages?: components["schemas"]["PackageSuggestions"];
+            projects?: components["schemas"]["ProjectSuggestions"];
+            users?: components["schemas"]["UserSuggestions"];
+            groups?: components["schemas"]["GroupSuggestions"];
+        };
+        RepositorySuggestions: {
+            items: components["schemas"]["RepositorySuggestion"][];
+            /** @description A readable match of the kind was left out (R-API-061); never `true` because of an object the caller cannot read. */
+            more: boolean;
+        };
+        RepositorySuggestion: {
+            /** @description The key of the repository's project; the name is `<project>/<key>` (Q-API-277). */
+            project: string;
+            key: string;
+            format: string;
+            /** @enum {string} */
+            class: "local" | "remote" | "virtual";
+        };
+        PackageSuggestions: {
+            items: components["schemas"]["PackageSuggestion"][];
+            /** @description A readable match of the kind was left out (R-API-061); never `true` because of an object the caller cannot read. */
+            more: boolean;
+        };
+        PackageSuggestion: {
+            /** @description The identifier of `GET /api/v1/packages/{packageId}`. */
+            id: string;
+            format: string;
+            /** @description The package's display name. */
+            name: string;
+            /** @description The key of the project of `repository` (Q-API-277). */
+            project: string;
+            /**
+             * @description The key, within `project`, of the first repository by qualified name that holds the package and that the caller
+             *     reads (R-API-062).
+             */
+            repository: string;
+        };
+        ProjectSuggestions: {
+            items: components["schemas"]["ProjectSuggestion"][];
+            /** @description A readable match of the kind was left out (R-API-061); never `true` because of an object the caller cannot read. */
+            more: boolean;
+        };
+        ProjectSuggestion: {
+            key: string;
+            displayName: string;
+        };
+        UserSuggestions: {
+            items: components["schemas"]["UserSuggestion"][];
+            /** @description Another matching user was left out. */
+            more: boolean;
+        };
+        UserSuggestion: {
+            /** Format: uuid */
+            id: string;
+            username: string;
+            displayName: string | null;
+            disabled: boolean;
+        };
+        GroupSuggestions: {
+            items: components["schemas"]["GroupSuggestion"][];
+            /** @description Another matching group was left out. */
+            more: boolean;
+        };
+        GroupSuggestion: {
+            name: string;
+            description: string;
         };
     };
     responses: {
@@ -14393,7 +14504,13 @@ export interface operations {
                 class?: ("local" | "remote" | "virtual")[];
                 /** @description Repeat the parameter, or separate values with commas. */
                 format?: string[];
+                /** @description Case-insensitive substring of the key, of `<project>/<key>` or of the description. */
                 q?: string;
+                /**
+                 * @description Qualified names `<project>/<key>`, repeated or comma-separated, at most 50 (R-API-063); keeps the named repositories
+                 *     the caller may see, in the list's order. A malformed name, or more than 50, answers `400 malformed_request`.
+                 */
+                name?: string[];
                 state?: "inactive";
                 /**
                  * @description Keeps the repositories whose artifacts level is one of these (R-API-057); repeat the parameter, or separate values with
@@ -20053,6 +20170,82 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getSearchSuggestions: {
+        parameters: {
+            query: {
+                /**
+                 * @description The text. It is trimmed and must then hold 2 to 100 characters, else the answer is `400 malformed_request` with the
+                 *     pointer `q`; it is lower-cased and its terms are its parts between white space (R-API-062).
+                 */
+                q: string;
+                /**
+                 * @description The kinds to suggest, repeated or comma-separated; `repository,package,project` when absent. An unknown kind answers
+                 *     `400 malformed_request`; `user` and `group` need `identities:read` (`403` otherwise).
+                 */
+                kind?: ("repository" | "package" | "project" | "user" | "group")[];
+                /** @description Suggestions per kind, 1 to 10; else `400 malformed_request`. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The suggestions of each kind asked. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "repositories": {
+                     *         "items": [
+                     *           {
+                     *             "project": "web",
+                     *             "key": "npm-local",
+                     *             "format": "npm",
+                     *             "class": "local"
+                     *           }
+                     *         ],
+                     *         "more": false
+                     *       },
+                     *       "packages": {
+                     *         "items": [
+                     *           {
+                     *             "id": "pkg_nzyg2acao5swel3vnewww2lu",
+                     *             "format": "npm",
+                     *             "name": "@web/ui-kit",
+                     *             "project": "web",
+                     *             "repository": "npm-local"
+                     *           }
+                     *         ],
+                     *         "more": true
+                     *       },
+                     *       "projects": {
+                     *         "items": [
+                     *           {
+                     *             "key": "web",
+                     *             "displayName": "Web platform"
+                     *           }
+                     *         ],
+                     *         "more": false
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["SearchSuggestions"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            412: components["responses"]["PreconditionFailed"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];
