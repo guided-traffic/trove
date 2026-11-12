@@ -21,7 +21,7 @@ var (
 	htmlTag      = regexp.MustCompile(`<[^>]+>`)
 	htmlAnchor   = regexp.MustCompile(`<a\s[^>]*?(?:id|name)="([^"]+)"`)
 	urlScheme    = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*:`)
-	skippedDirs  = map[string]bool{".git": true, ".out": true, "node_modules": true, "testdata": true}
+	skippedDirs  = map[string]bool{".git": true, ".out": true, ".dev": true, ".claude": true, "node_modules": true, "testdata": true}
 	emphasisMark = strings.NewReplacer("`", "", "*", "")
 )
 

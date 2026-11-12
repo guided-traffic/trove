@@ -604,6 +604,10 @@ func TestLinks(t *testing.T) {
 	write(t, root, "node_modules/x/README.md", "[skipped](nowhere.md)\n")
 	// .out holds what a build downloads or generates (the conformance suite's module cache, reports): not the repository's documents.
 	write(t, root, ".out/oci-conformance/mod/x/README.md", "[skipped](nowhere.md)\n")
+	// .claude holds other checkouts of the repository (worktrees) and .dev the local state of the development profiles: neither is
+	// a document of this checkout, and a half-written worktree must not fail the check of this one.
+	write(t, root, ".claude/worktrees/w/docs/x.md", "[skipped](nowhere.md)\n")
+	write(t, root, ".dev/ui-dev/x.md", "[skipped](nowhere.md)\n")
 
 	broken, checked, err := checkLinks(root)
 	if err != nil {
