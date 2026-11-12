@@ -89,7 +89,7 @@ async function* sortByDetection(page: Page): AsyncGenerator<string> {
 async function* advancedOpen(page: Page): AsyncGenerator<string> {
   yield '';
   await page.locator('main trove-disclosure').last().getByRole('button', { name: 'Advanced' }).click();
-  await expect(page.locator('main trove-disclosure').last().getByRole('button', { name: /^Delete / })).toBeVisible();
+  await expect(page.locator('main trove-disclosure').last().getByRole('button', { name: /^(Delete|Revoke all)/ }).first()).toBeVisible();
   yield 'advanced';
 }
 
@@ -163,6 +163,8 @@ export const screens: readonly Screen[] = [
   { id: 'help-user-page', path: '/ui/help/user/getting-started', kinds: all },
   { id: 'profile', path: '/ui/profile', kinds: all },
   { id: 'profile-tokens', path: '/ui/profile/tokens', kinds: all },
+  // The plain user holds a token (setup.ts): its revoke-all, last on the page behind Advanced.
+  { id: 'profile-tokens-advanced', path: '/ui/profile/tokens', kinds: ['plain'], walk: advancedOpen },
   { id: 'profile-sessions', path: '/ui/profile/sessions', kinds: all },
   { id: 'not-found', path: '/ui/no-such-page', kinds: all },
 
@@ -193,6 +195,7 @@ export const screens: readonly Screen[] = [
   { id: 'admin-repository-wizard', path: '/ui/admin/repositories/new', kinds: admins },
   { id: 'admin-users', path: '/ui/admin/users', kinds: admins, walk: filtersOpen },
   { id: 'admin-user', path: '/ui/admin/users/sam', kinds: admins },
+  { id: 'admin-user-advanced', path: '/ui/admin/users/sam', kinds: admins, walk: advancedOpen },
   { id: 'admin-groups', path: '/ui/admin/groups', kinds: admins, walk: filtersOpen },
   { id: 'admin-group', path: `/ui/admin/groups/${group}`, kinds: admins },
   { id: 'admin-service-accounts', path: '/ui/admin/service-accounts', kinds: admins, walk: filtersOpen },

@@ -197,7 +197,7 @@ running and stops only what it started: trove with the sign-in provider (`serve.
 
    | Kind | User | Grants |
    |---|---|---|
-   | `plain` | `sam` | `reader` of `web-frontend` and `platform`; no system role |
+   | `plain` | `sam` | `reader` of `web-frontend` and `platform`; no system role; holds one personal token `laptop`, so the token pages show a list and **Revoke all tokens** |
    | `power` | `priya` | `owner` of `web-frontend`, `developer` of `platform`; publishes the seed's packages |
    | `admin` | `ada` | the system role `admin`; member of no project |
    | `anonymous` | nobody | the sign-in and signed-out screens |

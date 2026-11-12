@@ -73,104 +73,84 @@
           }
         </trove-empty-state>
       } @else {
-        <div class="scroll" tabindex="0" role="region" aria-labelledby="rules-caption">
-          <table class="data" [style.--trove-address-chars]="addressChars(list)">
-            <caption id="rules-caption" class="visually-hidden" i18n="@@ep.rules.caption">
-              Exposure rules
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col" i18n="@@ep.col.name">Name</th>
-                <th scope="col" i18n="@@ep.rule.col.repository">Repository</th>
-                <th scope="col" i18n="@@ep.rule.col.patterns">Packages and paths</th>
-                <th scope="col" i18n="@@ep.rule.col.versions">Versions</th>
-                <th scope="col" i18n="@@ep.rule.col.prereleases">Pre-releases</th>
-                <th scope="col" i18n="@@ep.rule.col.enabled">Enabled</th>
-                <th scope="col" i18n="@@ep.rule.col.address">Client address</th>
-                <th scope="col" i18n="@@repo.col.actions">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (rule of list; track rule.name) {
-                <tr>
-                  <th scope="row">
-                    <a
-                      [routerLink]="['/admin/endpoints', endpoint(), 'rules', rule.name]"
-                      translate="no"
-                      >{{ rule.name }}</a
+        <!-- The administrator manages the rules (Q-UI-331): what each exposes, as columns, and whether it is on; the address of a
+             rule's repository on this endpoint is handed out with the row's copy button, whose name and tooltip carry it. -->
+        <trove-data-table [caption]="rulesCaption" [columns]="ruleColumns">
+          @for (rule of list; track rule.name) {
+            <tr>
+              <th scope="row" class="wrap-name">
+                <a [routerLink]="['/admin/endpoints', endpoint(), 'rules', rule.name]" translate="no">{{ rule.name }}</a>
+                @if (rule.description) {
+                  <span class="secondary">{{ rule.description }}</span>
+                }
+              </th>
+              <td class="wrap">
+                <a [routerLink]="repositoryLink(rule.repository)" translate="no">{{ rule.repository }}</a>
+              </td>
+              <td class="wrap" translate="no">{{ summary(rule) || '–' }}</td>
+              <td class="wrap narrow-drop" translate="no">{{ versions(rule) || '–' }}</td>
+              <td class="narrow-drop">
+                @if (rule.prereleases) {
+                  <ng-container i18n="@@ep.yes">yes</ng-container>
+                } @else {
+                  <ng-container i18n="@@ep.no">no</ng-container>
+                }
+              </td>
+              <td>
+                <label class="switch">
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    [checked]="rule.enabled"
+                    [disabled]="!canWrite() || e.inert || busy() === rule.name"
+                    [attr.aria-label]="toggleLabel(rule.name)"
+                    (change)="toggle(rule, $any($event.target))"
+                  />
+                  <span>
+                    @if (rule.enabled) {
+                      <ng-container i18n="@@ep.state.enabled">enabled</ng-container>
+                    } @else {
+                      <ng-container i18n="@@ep.state.disabled">disabled</ng-container>
+                    }
+                  </span>
+                </label>
+              </td>
+              <td class="actions">
+                @if (addressOf(rule); as a) {
+                  @if (a.served) {
+                    <trove-copy-button [value]="a.url" [label]="copyValueLabel(a.url)" [quiet]="true" />
+                  } @else {
+                    <span class="material-icons warn not-served" role="img" [attr.aria-label]="notServed" [troveTooltip]="notServed"
+                      >link_off</span
                     >
-                    @if (rule.description) {
-                      <div class="hint">{{ rule.description }}</div>
-                    }
-                  </th>
-                  <td>
-                    <a [routerLink]="repositoryLink(rule.repository)" translate="no">{{
-                      rule.repository
-                    }}</a>
-                  </td>
-                  <td translate="no">{{ summary(rule) || '–' }}</td>
-                  <td translate="no">{{ versions(rule) || '–' }}</td>
-                  <td>
-                    @if (rule.prereleases) {
-                      <ng-container i18n="@@ep.yes">yes</ng-container>
-                    } @else {
-                      <ng-container i18n="@@ep.no">no</ng-container>
-                    }
-                  </td>
-                  <td>
-                    <label class="switch">
-                      <input
-                        type="checkbox"
-                        role="switch"
-                        [checked]="rule.enabled"
-                        [disabled]="!canWrite() || e.inert || busy() === rule.name"
-                        [attr.aria-label]="toggleLabel(rule.name)"
-                        (change)="toggle(rule, $any($event.target))"
-                      />
-                      <span>
-                        @if (rule.enabled) {
-                          <ng-container i18n="@@ep.state.enabled">enabled</ng-container>
-                        } @else {
-                          <ng-container i18n="@@ep.state.disabled">disabled</ng-container>
-                        }
-                      </span>
-                    </label>
-                  </td>
-                  <td class="address-cell">
+                  }
+                }
+                <button class="btn btn-tertiary btn-icon" type="button" [attr.aria-label]="actionsLabel(rule.name)" [cdkMenuTriggerFor]="ruleMenu">
+                  <span class="material-icons" aria-hidden="true">more_vert</span>
+                </button>
+                <ng-template #ruleMenu>
+                  <div class="menu" cdkMenu>
+                    <a class="menu-item" cdkMenuItem [routerLink]="['/admin/endpoints', endpoint(), 'rules', rule.name]" i18n="@@repo.action.edit"
+                      >Edit</a
+                    >
                     @if (addressOf(rule); as a) {
-                      <trove-address-field [value]="a.url" />
-                      @if (!a.served) {
-                        <div class="hint" i18n="@@ep.address.not-served">
-                          This endpoint does not serve this address.
-                        </div>
-                      }
-                    } @else {
-                      –
-                    }
-                  </td>
-                  <td>
-                    <div class="row-actions">
-                      <a class="btn btn-tertiary"
-                        [routerLink]="['/admin/endpoints', endpoint(), 'rules', rule.name]"
-                        i18n="@@repo.action.edit"
-                        >Edit</a
-                      >
-                      @if (canWrite()) {
-                        <button class="btn btn-tertiary"
-                          type="button"
-                          (click)="remove(rule)"
-                          i18n="@@repo.action.delete"
+                      @if (a.served) {
+                        <button class="menu-item" cdkMenuItem type="button" (cdkMenuItemTriggered)="copyAddress(a.url)" i18n="@@repo.action.copy-address"
+                          >Copy client address</button
                         >
-                          Delete
-                        </button>
                       }
-                    </div>
-                  </td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
+                    }
+                    @if (canWrite()) {
+                      <button class="menu-item" cdkMenuItem type="button" (cdkMenuItemTriggered)="remove(rule)" i18n="@@repo.action.delete">
+                        Delete
+                      </button>
+                    }
+                  </div>
+                </ng-template>
+              </td>
+            </tr>
+          }
+        </trove-data-table>
       }
     } @else {
       <p role="status" i18n="@@repo.loading">Loading.</p>

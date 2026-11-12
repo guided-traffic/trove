@@ -121,6 +121,24 @@ describe('Personal tokens (R-UI-029)', () => {
     expect(await seriousViolations(root)).toEqual([]);
   });
 
+  it('R-UI-029 revoking all tokens is a danger button last on the page, in a closed section Advanced, and asks first', async () => {
+    const { fixture, root, get } = await renderScreen(ProfileTokens);
+    // Not in the toolbar above the list: a destructive bulk action comes last (ui-style-guide.md).
+    expect([...root.querySelectorAll('.toolbar button')].map((b) => b.textContent?.trim())).not.toContain('Revoke all tokens');
+    const advanced = [...root.querySelectorAll('trove-disclosure')].at(-1)!;
+    expect(text(advanced)).toContain('Advanced');
+    const revoke = [...advanced.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim() === 'Revoke all tokens')!;
+    expect(revoke.classList.contains('btn-danger')).toBe(true);
+    expect(text(advanced)).toContain('This cannot be undone.');
+    revoke.click();
+    await settle(fixture);
+    const confirm = overlay().querySelector('trove-confirm-dialog') as HTMLElement;
+    expect(confirm.textContent).toContain('Revoke all tokens?');
+    buttonByText(confirm, 'Revoke all').click();
+    await sleep(fixture, 300);
+    expect((get(TokensApi) as FakeTokensApi).calls).toContain('revokeAllOwn');
+  });
+
   it('R-EP-011 the personal token form offers only the endpoints that accept personal tokens', async () => {
     // The fake "customers" endpoint accepts service-account tokens only (Q-EP-10): a personal token bound
     // to it would work nowhere, and the server refuses it with 400 invalid_scope.

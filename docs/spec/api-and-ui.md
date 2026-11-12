@@ -4009,7 +4009,8 @@ Priority: **MVP** · Covers: UI-035, UI-036
   provider, read-only and labelled as such; status with "Disable" (choice to revoke tokens) and
   "Enable"; group memberships (identity-provider-sourced read-only with a badge, manual ones
   editable); system roles through role bindings (R-API-033) with the last-administrator guard; the
-  user's tokens (list, revoke all) and sessions (list, end all); "Explain permissions" (P1); "Audit"
+  user's tokens (list; **Revoke all tokens** a danger button in the page's section **Advanced**, last on the page) and sessions
+  (list, end all); "Explain permissions" (P1); "Audit"
   (audit log filtered on this actor). The break-glass account shows its lock state and "Unlock".
 - "Add user" pre-provisions a user linked to an identity-provider identity (R-API-031). No password
   fields exist.
@@ -5203,7 +5204,7 @@ Each screen shows its client addresses through `<trove-address-field>` (R-UI-065
 | Repository wizard (R-UI-021), review step | The line **Client address** | |
 | Client setup page (R-UI-016), Bastion banner | The Bastion's repository address | The sentence stays; the address is a field below it (Q-UI-272) |
 | Guides (R-UI-049), Bastion section | **Address of the repository on the Bastion** | As above |
-| Endpoint page, the address of an exposure rule | One field per rule | The existing **Copy client address** button becomes the field's; one width for the column (Q-UI-300) |
+| Endpoint page, the address of an exposure rule | No field: the row's copy button, whose name and tooltip carry the address ([Q-UI-331](#q-ui-331--an-endpoints-rules-are-the-shared-data-table-and-a-rules-client-address-is-the-rows-copy-button)) | The administrator manages the rules; the address is handed out with the button |
 
 Not in scope: the text of a guide (server-rendered HTML, where an address is prose in `<code>`), the snippets and commands of
 the setup page and the guides, a command of several lines (an install command of one line is a field, Q-UI-320), the
@@ -11324,6 +11325,33 @@ Q-UI-312, Q-UI-325, Q-UI-328. Code: [repository-list.html](../../web/src/app/fea
 [data-table.ts](../../web/src/app/shared/ui/data-table.ts), `td.address-cell`, `td.format-cell` and `td.class-cell` in
 [_list-screens.scss](../../web/src/styles/_list-screens.scss). Style guide:
 [Lists](../developer/ui-style-guide.md#lists), [Address field](../developer/ui-style-guide.md#address-field).
+
+### Q-UI-331 · An endpoint's rules are the shared data table, and a rule's client address is the row's copy button
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: B4's renders of 2026-11-12. The endpoint page's rule table was a table of its own with eight columns, among them an address
+field: with a single rule it scrolled 19 px sideways at 1440 px and 512 px at 390 px. The coordinator: move it to the shared data
+table, with a column budget and the stacked row. A rule list is the administrator's (R-UI-067): what each rule exposes and whether
+it is on; the address is handed to the consumers now and then.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The shared data table with the admin area's pattern of Q-UI-330: **Rule** (name and description; it takes what the others leave), **Repository**, **Packages and paths**, **Versions**, **Pre-releases**, **Enabled**, and the row's copy button (its name and tooltip the address) beside a menu with **Edit**, **Copy client address** and **Delete**; **Versions** and **Pre-releases** are `narrow` (chosen) | Seven columns, least widths 63 rem; below 64 rem 47 rem | Every property the administrator decides on is a column; the list fits 1440 px and stacks on a phone; the rows act like every other list's | The address is read in the tooltip, not in a field |
+| (b) The data table with the address field (`fill`) | The field as in a project's repository list | The address readable in the row | With six property columns the field's least width makes the list wider than 1440 px; the rule would get the least room |
+| (c) Fewer columns: packages, versions and pre-releases as one line of facts | Five columns | Room for the field | Three properties packed into one cell, which Q-UI-330 forbids |
+
+**Choice:** (a). Least widths: rule 9 rem, repository 9 (`web-frontend/assets` on one line), packages and paths 8, versions 6, pre-releases 6, enabled 6.5, the row's
+two buttons 4.5; with the padding 63 rem, so the list fits from 64 rem; below 64 rem versions and pre-releases give their room and
+the rest is 47 rem, so the list fits until it stacks. Where the endpoint does not serve the rule's address, a warning glyph named by
+that sentence stands in place of the copy button and the menu offers no copy.
+
+**Rationale:** the page is where an administrator decides what an endpoint exposes, so the rules' properties get the columns; the
+address is a value to hand out, and one click on the row's button copies it. The development agent revisits it if the walkthrough
+shows that administrators read the addresses on this page.
+
+**Applied in the spec:** [endpoints.md](endpoints.md) R-EP-017, R-UI-066. Code:
+[endpoint-detail.html](../../web/src/app/features/endpoints/endpoint-detail.html).
 
 ### Q-UI-370 · The grades take cogpit's colours, and S, A and B are the greens of a good grade
 

@@ -9218,15 +9218,6 @@
         <target>Dieser Endpunkt hat keine Freigaberegel.</target>
       </segment>
     </unit>
-    <unit id="ep.rules.caption">
-      <notes>
-        <note category="location">src/app/features/endpoints/endpoint-detail.html:91,92</note>
-      </notes>
-      <segment>
-        <source> Exposure rules </source>
-        <target>Freigaberegeln</target>
-      </segment>
-    </unit>
     <unit id="ep.col.name">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:95,96</note>
@@ -9235,6 +9226,42 @@
       <segment>
         <source>Name</source>
         <target>Name</target>
+      </segment>
+    </unit>
+    <unit id="ep.col.rule">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Rule</source>
+        <target>Regel</target>
+      </segment>
+    </unit>
+    <unit id="ep.rule.actions-of">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Actions for <ph id="0" equiv="name" disp="name"/></source>
+        <target>Aktionen für <ph id="0" equiv="name" disp="name"/></target>
+      </segment>
+    </unit>
+    <unit id="ep.rules.caption">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Exposure rules</source>
+        <target>Freigaberegeln</target>
+      </segment>
+    </unit>
+    <unit id="ep.address.not-served">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>This endpoint does not serve this address.</source>
+        <target>Dieser Endpunkt bietet diese Adresse nicht an.</target>
       </segment>
     </unit>
     <unit id="ep.rule.col.repository">
@@ -9280,15 +9307,6 @@
       <segment>
         <source>Enabled</source>
         <target>Aktiv</target>
-      </segment>
-    </unit>
-    <unit id="ep.rule.col.address">
-      <notes>
-        <note category="location">src/app/features/endpoints/endpoint-detail.html:101,102</note>
-      </notes>
-      <segment>
-        <source>Client address</source>
-        <target>Client-Adresse</target>
       </segment>
     </unit>
     <unit id="repo.col.actions">
@@ -9339,16 +9357,6 @@
       <segment>
         <source>disabled</source>
         <target>inaktiv</target>
-      </segment>
-    </unit>
-    <unit id="ep.address.not-served">
-      <notes>
-        <note category="location">src/app/features/endpoints/endpoint-detail.html:157,158</note>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:130,132</note>
-      </notes>
-      <segment>
-        <source> This endpoint does not serve this address. </source>
-        <target>Dieser Endpunkt bietet diese Adresse nicht an.</target>
       </segment>
     </unit>
     <unit id="repo.action.edit">
@@ -9447,6 +9455,15 @@
       <segment>
         <source>Enabled: <ph id="0" equiv="name" disp="name"/></source>
         <target>Aktiv: <ph id="0" equiv="name" disp="name"/></target>
+      </segment>
+    </unit>
+    <unit id="ep.editor.address">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Client address on this endpoint</source>
+        <target>Client-Adresse an diesem Endpunkt</target>
       </segment>
     </unit>
     <unit id="ep.copy-address">
@@ -9684,15 +9701,6 @@
       <segment>
         <source> The repository of a rule cannot be changed. Create a new rule for another repository. </source>
         <target>Das Repository einer Regel lässt sich nicht ändern. Legen Sie für ein anderes Repository eine neue Regel an.</target>
-      </segment>
-    </unit>
-    <unit id="ep.editor.address">
-      <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:124,125</note>
-      </notes>
-      <segment>
-        <source>Client address on this endpoint:</source>
-        <target>Client-Adresse an diesem Endpunkt:</target>
       </segment>
     </unit>
     <unit id="ep.field.description">
@@ -10037,15 +10045,6 @@
       <segment>
         <source>Updating the preview.</source>
         <target>Die Vorschau wird aktualisiert.</target>
-      </segment>
-    </unit>
-    <unit id="ep.preview.mode-all">
-      <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:500,502</note>
-      </notes>
-      <segment>
-        <source>Mode &quot;all&quot;: everything is exposed; rules have no effect.</source>
-        <target>Modus „all“: Alles ist freigegeben; Regeln haben keine Wirkung.</target>
       </segment>
     </unit>
     <unit id="ep.preview.exposed">
@@ -22777,15 +22776,6 @@
         <target>Widerrufene und abgelaufene Token anzeigen</target>
       </segment>
     </unit>
-    <unit id="tokens.revoke-all">
-      <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:92,94</note>
-      </notes>
-      <segment>
-        <source> Revoke all tokens </source>
-        <target>Alle Token widerrufen</target>
-      </segment>
-    </unit>
     <unit id="tokens.form-heading">
       <notes>
         <note category="location">src/app/features/tokens/token-manager.ts:103,104</note>
@@ -22865,6 +22855,42 @@
       <segment>
         <source>Revoke all tokens?</source>
         <target>Alle Token widerrufen?</target>
+      </segment>
+    </unit>
+    <unit id="tokens.revoke-all">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Revoke all tokens</source>
+        <target>Alle Token widerrufen</target>
+      </segment>
+    </unit>
+    <unit id="tokens.revoke-all-note">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Every token stops working at once, and the tools that use them are refused. This cannot be undone.</source>
+        <target>Jedes Token funktioniert sofort nicht mehr, und die Werkzeuge, die es nutzen, werden abgewiesen. Das kann nicht rückgängig gemacht werden.</target>
+      </segment>
+    </unit>
+    <unit id="tokens.advanced">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Advanced</source>
+        <target>Erweitert</target>
+      </segment>
+    </unit>
+    <unit id="tokens.advanced-hint">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Revoke every token at once.</source>
+        <target>Alle Token auf einmal widerrufen.</target>
       </segment>
     </unit>
     <unit id="tokens.revoke-all-text">
@@ -31191,6 +31217,24 @@
         <target>Nicht gehalten</target>
       </segment>
     </unit>
+    <unit id="sa.advanced-hint">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Disable or delete this account.</source>
+        <target>Dieses Konto deaktivieren oder löschen.</target>
+      </segment>
+    </unit>
+    <unit id="sa.advanced-hint-tokens">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Revoke all tokens, disable or delete this account.</source>
+        <target>Alle Token widerrufen, dieses Konto deaktivieren oder löschen.</target>
+      </segment>
+    </unit>
     <unit id="sa.advanced">
       <notes>
         <note category="location">src/app/features/service-accounts/service-account-detail.ts:113,114</note>
@@ -31198,15 +31242,6 @@
       <segment>
         <source>Advanced</source>
         <target>Erweitert</target>
-      </segment>
-    </unit>
-    <unit id="sa.advanced-hint">
-      <notes>
-        <note category="location">src/app/features/service-accounts/service-account-detail.ts:115,117</note>
-      </notes>
-      <segment>
-        <source>Disable or delete this account.</source>
-        <target>Dieses Konto deaktivieren oder löschen.</target>
       </segment>
     </unit>
     <unit id="sa.disable-note">
@@ -31481,6 +31516,24 @@
         <target>Offene Sitzungen dieses Benutzers.</target>
       </segment>
     </unit>
+    <unit id="user.advanced-hint">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Disable, unlock or delete this account.</source>
+        <target>Dieses Konto deaktivieren, entsperren oder löschen.</target>
+      </segment>
+    </unit>
+    <unit id="user.advanced-hint-tokens">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Revoke all tokens, disable, unlock or delete this account.</source>
+        <target>Alle Token widerrufen, dieses Konto deaktivieren, entsperren oder löschen.</target>
+      </segment>
+    </unit>
     <unit id="user.advanced">
       <notes>
         <note category="location">src/app/features/users/user-detail.html:206,207</note>
@@ -31488,15 +31541,6 @@
       <segment>
         <source>Advanced</source>
         <target>Erweitert</target>
-      </segment>
-    </unit>
-    <unit id="user.advanced-hint">
-      <notes>
-        <note category="location">src/app/features/users/user-detail.html:208,210</note>
-      </notes>
-      <segment>
-        <source>Disable, unlock or delete this account.</source>
-        <target>Dieses Konto deaktivieren, entsperren oder löschen.</target>
       </segment>
     </unit>
     <unit id="user.disable-note">

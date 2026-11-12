@@ -47,30 +47,44 @@ describe('Endpoint list', () => {
 });
 
 describe('Endpoint screen', () => {
-  it('R-EP-017 R-UI-066 shows the configuration read-only and the rule table with enable switch, repository, client address and actions', async () => {
+  it('R-EP-017 R-UI-066 shows the configuration read-only and the rule list with enable switch, repository, a copy button for the client address and a menu', async () => {
     const { root } = await renderScreen(EndpointDetail, { inputs: { endpoint: 'customers' } });
     const t = text(root);
     expect(t).toContain('this comes from the configuration file');
     expect(t).toContain('releases');
     expect(root.querySelector('input[role="switch"]')).toBeTruthy();
-    expect(t).toContain('This endpoint does not serve this address.');
-    expect(addressValues(root).length).toBeGreaterThan(0);
-    expect(root.querySelector('trove-address-field trove-copy-button button[aria-label="Copy client address"]')).toBeTruthy();
-    expect(root.querySelector('table th[scope="col"]')).toBeTruthy();
+    // An address this endpoint does not serve is a warning glyph named by its sentence; a served one a copy button (Q-UI-331).
+    expect(root.querySelector('[role="img"][aria-label="This endpoint does not serve this address."]')).toBeTruthy();
+    expect(addressValues(root)).toEqual([]);
+    expect(root.querySelector('button[aria-label="Actions for releases"]')).toBeTruthy();
     await expectAccessible(root);
+    // Where the endpoint serves the address, the row's copy button carries it in its name and tooltip.
+    const served = await renderScreen(EndpointDetail, {
+      inputs: { endpoint: 'customers' },
+      setup: (get) => {
+        const fake = get(EndpointsApi) as FakeEndpointsApi;
+        const customers = fake.endpoints.find((e) => e.name === 'customers')!;
+        fake.endpoints = fake.endpoints.map((e) =>
+          e === customers ? { ...e, configuration: { ...e.configuration!, surface: [...e.configuration!.surface, 'files'] } } : e,
+        );
+      },
+    });
+    const copy = served.root.querySelector<HTMLButtonElement>('td.actions trove-copy-button button')!;
+    expect(copy.getAttribute('aria-label')).toMatch(/^Copy client address https?:\/\/.*generic-local\/$/);
+    expect(copy.getAttribute('title')).toBe(copy.getAttribute('aria-label'));
+    expect(served.root.querySelector('[role="img"][aria-label="This endpoint does not serve this address."]')).toBeNull();
   });
 
-  it('R-UI-065 R-UI-066 the address fields of the rule table share one column, sized to its longest address', async () => {
+  it('Q-UI-331 the rule list is the shared data table: rule, repository, packages and paths, versions, pre-releases, enabled, the row actions; versions and pre-releases give way first; the rows stack', async () => {
     const { root } = await renderScreen(EndpointDetail, { inputs: { endpoint: 'customers' } });
-    const table = root.querySelector<HTMLElement>('table.data')!;
-    const longest = Math.max(...addressValues(root).map((a) => a.length));
-    expect(table.style.getPropertyValue('--trove-address-chars')).toBe(String(longest));
-    const fields = [...root.querySelectorAll('trove-address-field')];
-    expect(fields.length).toBeGreaterThan(0);
-    for (const field of fields) {
-      expect(field.closest('td')?.classList.contains('address-cell')).toBe(true);
-      expect(field.querySelector('input')!.style.inlineSize).toBe('');
-    }
+    const table = root.querySelector<HTMLElement>('trove-data-table')!;
+    expect(table.classList.contains('stack')).toBe(true);
+    const heads = [...table.querySelectorAll<HTMLElement>('thead th')];
+    expect(heads.map((h) => text(h))).toEqual(['Rule', 'Repository', 'Packages and paths', 'Versions', 'Pre-releases', 'Enabled', 'Actions']);
+    expect(heads.map((h) => h.classList.contains('narrow-drop'))).toEqual([false, false, false, true, true, false, false]);
+    const row = table.querySelector('tbody tr')!;
+    expect([...row.children].map((c) => c.classList.contains('narrow-drop'))).toEqual([false, false, false, true, true, false, false]);
+    expect(row.querySelector('th[scope="row"] a')?.getAttribute('href')).toBe('/admin/endpoints/customers/rules/releases');
   });
 
   it('Q-UI-223 the configuration is read-only fields in one column, not a key-value list', async () => {
@@ -127,7 +141,9 @@ describe('Endpoint screen', () => {
       inputs: { endpoint: 'customers' },
     });
     const fake = get(EndpointsApi) as FakeEndpointsApi;
-    button(root, 'Delete').click();
+    root.querySelector<HTMLButtonElement>('button[aria-label="Actions for releases"]')!.click();
+    await settle(fixture);
+    button(root.ownerDocument.body, 'Delete').click();
     await settle(fixture);
     button(root.ownerDocument.body, 'Delete rule').click();
     await settle(fixture);
@@ -390,10 +406,40 @@ describe('Exposure rule editor', () => {
     await expectAccessible(r.root);
   });
 
-  it('R-EP-017 an endpoint in mode "all" shows the banner on the editor too', async () => {
-    const r = await renderScreen(ExposureRuleEditor, { inputs: { endpoint: 'default' } });
-    expect(text(r.root)).toContain('mode "all"');
+  it('R-EP-017 an endpoint in mode "all" shows the banner on the editor too, once, and names the endpoint with a space', async () => {
+    const r = await renderScreen(ExposureRuleEditor, {
+      inputs: { endpoint: 'default' },
+      setup: (get) => {
+        // The stored rule's warnings and the preview's answer say it as well: the page says it once.
+        const fake = get(EndpointsApi) as FakeEndpointsApi;
+        fake.checkResult = { ...(fake.checkResult as object), mode: 'all', warnings: ['endpoint_not_in_rules_mode'] } as never;
+      },
+    });
+    const t = text(r.root);
+    expect(t).toContain('mode "all"');
+    expect(t.split('mode "all"').length - 1).toBe(1);
+    expect(r.root.querySelectorAll('.banner-warning')).toHaveLength(1);
+    expect(t).toContain('on endpoint default');
     await expectAccessible(r.root);
+  });
+
+  it('R-EP-017 an exposed package is said to be exposed once, with the rule that exposes it after a space', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const r = await create((endpoints) => {
+        endpoints.checkResult = { ...(endpoints.checkResult as object), packageExposed: true, reason: 'exposed', rule: 'releases' } as never;
+      });
+      type(r.root.querySelector<HTMLSelectElement>('#f-repository')!, 'web/generic-local');
+      await settle(r.fixture);
+      vi.advanceTimersByTime(PREVIEW_DEBOUNCE_MS);
+      await settle(r.fixture);
+      const t = text(r.root);
+      expect(t).toContain('The repository or package is exposed (releases)');
+      expect(t).not.toContain('exposed(');
+      expect(t).not.toContain('(exposed');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('R-EP-017 an unknown rule shows the not-found error and passes the accessibility check', async () => {

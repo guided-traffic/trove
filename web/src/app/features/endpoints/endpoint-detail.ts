@@ -1,3 +1,4 @@
+import { CdkMenu, CdkMenuItem, CdkMenuTrigger } from '@angular/cdk/menu';
 import { repositoryCommands } from '../../core/project-links';
 import { Component, computed, inject, input, resource, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
@@ -7,7 +8,9 @@ import { RepositoriesApi, refOf } from '../../api/repositories-api';
 import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
 import { Confirm } from '../../shared/confirm-dialog';
-import { AddressField } from '../../shared/address-field';
+import { CopyButton } from '../../shared/copy-button';
+import { DataTable, TableColumn } from '../../shared/ui/data-table';
+import { Tooltip } from '../../shared/ui/tooltip';
 import { ErrorNotice } from '../../shared/error-notice';
 import { TextField } from '../../shared/access/fields';
 import { Disclosure } from '../../shared/ui/disclosure';
@@ -19,12 +22,25 @@ import { EmptyState } from '../../shared/ui/empty-state';
 /**
  * One endpoint (R-EP-017): its configuration read-only and marked as coming from the
  * configuration file, a warning when the mode is `all` (the rules have no effect there), and the
- * rule table with an enable switch per row (a `PATCH` with the row's ETag), the client address of
- * each exposed repository on this endpoint, and delete.
+ * rule list in the shared data table (Q-UI-331): what each rule exposes as columns, an enable switch per row (a `PATCH` with the
+ * row's ETag), a copy button for the client address of the rule's repository on this endpoint, and a menu with edit and delete.
  */
 @Component({
   selector: 'trove-endpoint-detail',
-  imports: [EmptyState, PageHeader, RouterLink, AddressField, ErrorNotice, Disclosure, TextField],
+  imports: [
+    CdkMenu,
+    CdkMenuItem,
+    CdkMenuTrigger,
+    CopyButton,
+    DataTable,
+    EmptyState,
+    PageHeader,
+    RouterLink,
+    ErrorNotice,
+    Disclosure,
+    TextField,
+    Tooltip,
+  ],
   templateUrl: './endpoint-detail.html',
   styleUrl: './endpoint-detail.scss',
 })
@@ -76,9 +92,39 @@ export class EndpointDetail {
     return endpointAddress(configuration, format, rule.repository);
   }
 
-  /** The length of the longest address of the rules: `.address-cell` sizes the column to it (Q-UI-300). */
-  protected addressChars(list: readonly ExposureRule[]): number {
-    return Math.max(0, ...list.map((rule) => this.addressOf(rule)?.url.length ?? 0));
+  protected readonly rulesCaption = $localize`:@@ep.rules.caption:Exposure rules`;
+  /**
+   * Each width is the column's least (Q-UI-308); the rule takes what they leave. They sum to 63 rem; below 64 rem of the list
+   * the versions and the pre-releases give their room (`narrow`) and the rest fits 48 rem, where the rows stack (Q-UI-331).
+   */
+  protected readonly ruleColumns: readonly TableColumn[] = [
+    { id: 'name', label: $localize`:@@ep.col.rule:Rule`, width: '9rem', prefer: '9rem' },
+    { id: 'repository', label: $localize`:@@ep.rule.col.repository:Repository`, width: '9rem' },
+    { id: 'patterns', label: $localize`:@@ep.rule.col.patterns:Packages and paths`, width: '8rem' },
+    { id: 'versions', label: $localize`:@@ep.rule.col.versions:Versions`, width: '6rem', narrow: true },
+    { id: 'prereleases', label: $localize`:@@ep.rule.col.prereleases:Pre-releases`, width: '6rem', narrow: true },
+    { id: 'enabled', label: $localize`:@@ep.rule.col.enabled:Enabled`, width: '6.5rem', stackLabel: false },
+    { id: 'actions', label: $localize`:@@repo.col.actions:Actions`, hideLabel: true, width: '4.5rem' },
+  ];
+  protected readonly notServed = $localize`:@@ep.address.not-served:This endpoint does not serve this address.`;
+
+  /** The copy button's name and tooltip carry the address itself (Q-UI-330, Q-UI-331). */
+  protected copyValueLabel(address: string): string {
+    return $localize`:@@repo.copy-address-value:Copy client address ${address}:address:`;
+  }
+
+  protected actionsLabel(name: string): string {
+    return $localize`:@@ep.rule.actions-of:Actions for ${name}:name:`;
+  }
+
+  /** The menu's "Copy client address": the same as the row's copy button. */
+  protected async copyAddress(address: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(address);
+      this.notifier.status($localize`:@@copy.done:Copied to the clipboard.`);
+    } catch {
+      this.notifier.alert($localize`:@@copy.failed:The clipboard is not available. Select the text and copy it.`);
+    }
   }
 
   protected hostsText(c: { hosts: readonly string[]; wildcardHost?: string | null }): string {

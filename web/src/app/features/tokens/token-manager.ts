@@ -15,6 +15,7 @@ import { TokenDraft, TokenForm } from '../../shared/access/token-form';
 import { TokenSecret } from '../../shared/access/token-secret';
 import { TokenTable } from '../../shared/access/token-table';
 import { ErrorNotice } from '../../shared/error-notice';
+import { Disclosure } from '../../shared/ui/disclosure';
 
 /** Whose tokens the manager shows and what it may do with them. */
 export type TokenOwnerScope =
@@ -70,7 +71,9 @@ export class RotateDialog {
 
 /**
  * The tokens of one owner: list with state filter and paging, create where the caller may
- * (R-UI-029, R-UI-026), revoke one or all with confirmation, rotate. A created or rotated value is
+ * (R-UI-029, R-UI-026), revoke one or all with confirmation, rotate. Revoking all is destructive, so it is a danger button last,
+ * in a closed section **Advanced** (ui-style-guide.md, Settings pages): the manager's own at its end, or the page's own where the
+ * page has one (`revokeAllHere` false, `offersRevokeAll`, `revokeAllTokens`). A created or rotated value is
  * shown once through `<trove-token-secret>` and lives in this component's signal only (R-UI-043);
  * it is dropped when the panel is dismissed or the component is destroyed. Writes use the
  * idempotency key of the open form (R-UI-042); a retried creation that answers
@@ -78,7 +81,7 @@ export class RotateDialog {
  */
 @Component({
   selector: 'trove-token-manager',
-  imports: [Checkbox, ErrorNotice, TokenForm, TokenSecret, TokenTable],
+  imports: [Checkbox, Disclosure, ErrorNotice, TokenForm, TokenSecret, TokenTable],
   template: `
     <div class="toolbar">
       @if (createInToolbar() && offersCreate()) {
@@ -87,11 +90,6 @@ export class RotateDialog {
       <trove-checkbox [checked]="showAll()" (checkedChange)="setShowAll($event)">
         <ng-container i18n="@@tokens.show-all">Show revoked and expired tokens</ng-container>
       </trove-checkbox>
-      @if (canRevokeAll() && list.items().length > 0) {
-        <button class="btn btn-tertiary" type="button" (click)="revokeAllTokens()" i18n="@@tokens.revoke-all">
-          Revoke all tokens
-        </button>
-      }
     </div>
 
     @if (secret(); as s) {
@@ -141,6 +139,15 @@ export class RotateDialog {
     } @else if (list.loading()) {
       <p role="status" i18n="@@tokens.loading">Loading tokens.</p>
     }
+
+    @if (revokeAllHere() && offersRevokeAll()) {
+      <trove-disclosure i18n-heading="@@tokens.advanced" heading="Advanced" i18n-hint="@@tokens.advanced-hint" hint="Revoke every token at once.">
+        <p class="muted" i18n="@@tokens.revoke-all-note">Every token stops working at once, and the tools that use them are refused. This cannot be undone.</p>
+        <p>
+          <button class="btn btn-danger" type="button" (click)="revokeAllTokens()" i18n="@@tokens.revoke-all">Revoke all tokens</button>
+        </p>
+      </trove-disclosure>
+    }
   `,
   styleUrl: '../../shared/access/access.scss',
 })
@@ -150,6 +157,11 @@ export class TokenManager {
   readonly createInToolbar = input(true);
   /** For a service account: whether it holds the administrator role now (`ServiceAccount.isAdmin`, Q-AUTH-209). */
   readonly accountIsAdmin = input(false);
+  /**
+   * True: **Revoke all tokens** is in the manager's own closed section Advanced at its end (the profile). False: the page puts it
+   * into its own section Advanced, last on the page, with `offersRevokeAll` and `revokeAllTokens` (a user, a service account).
+   */
+  readonly revokeAllHere = input(true);
 
   private readonly api = inject(TokensApi);
   protected readonly session = inject(SessionStore);
@@ -231,6 +243,8 @@ export class TokenManager {
     );
   });
   protected readonly canRevokeAll = computed(() => this.canRevoke());
+  /** Whether **Revoke all tokens** is offered: the caller may, and the owner has a token in the list. */
+  readonly offersRevokeAll = computed(() => this.canRevokeAll() && this.list.items().length > 0);
 
   constructor() {
     inject(DestroyRef).onDestroy(() => this.secret.set(null));
@@ -322,7 +336,7 @@ export class TokenManager {
     });
   }
 
-  protected async revokeAllTokens(): Promise<void> {
+  async revokeAllTokens(): Promise<void> {
     const answer = await this.confirmer.ask({
       title: $localize`:@@tokens.revoke-all-title:Revoke all tokens?`,
       lines: [$localize`:@@tokens.revoke-all-text:Every token of this owner stops working at once. This cannot be undone.`],

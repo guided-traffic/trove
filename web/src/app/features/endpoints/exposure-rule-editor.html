@@ -8,10 +8,10 @@
   <trove-error-notice [error]="f" (retry)="loaded.reload()" />
 } @else {
   <p class="subject">
-    <span i18n="@@ep.editor.on">on endpoint</span> <strong translate="no">{{ endpoint() }}</strong>
+    <span i18n="@@ep.editor.on">on endpoint</span>&ngsp;<strong translate="no">{{ endpoint() }}</strong>
   </p>
 
-  @if (modeAll()) {
+  @if (modeAllNotice()) {
     <p class="banner-warning" role="note">
       <span class="material-icons inline warn" aria-hidden="true">warning</span>
       <span i18n="@@ep.banner.all-rule">
@@ -28,7 +28,7 @@
       >
     </p>
   }
-  @for (w of warnings(); track w) {
+  @for (w of ruleWarnings(); track w) {
     <p class="banner-warning" role="status">
       <span class="material-icons inline warn" aria-hidden="true">warning</span>
       <span>{{ w }}</span>
@@ -113,15 +113,13 @@
             <p class="field-error">{{ message(e) }}</p>
           }
           @if (address(); as a) {
-            <p class="hint">
-              <span i18n="@@ep.editor.address">Client address on this endpoint:</span>
-              <code translate="no">{{ a.url }}</code>
-              <trove-copy-button [value]="a.url" [label]="copyAddress" />
-            </p>
+            <!-- The shared address field (R-UI-065), under its own label: the words and the address ran together before. -->
+            <div class="endpoint-address">
+              <span class="field-label">{{ addressCaption }}</span>
+              <trove-address-field [value]="a.url" [label]="addressCaption" [copyLabel]="copyAddress" />
+            </div>
             @if (!a.served) {
-              <p class="hint" i18n="@@ep.address.not-served">
-                This endpoint does not serve this address.
-              </p>
+              <p class="hint" i18n="@@ep.address.not-served">This endpoint does not serve this address.</p>
             }
           }
         </div>
@@ -479,14 +477,6 @@
           <trove-error-notice [error]="f" />
         }
         @if (preview(); as p) {
-          @if (p.mode === 'all') {
-            <p class="banner-warning" role="note">
-              <span class="material-icons inline warn" aria-hidden="true">warning</span>
-              <span i18n="@@ep.preview.mode-all"
-                >Mode "all": everything is exposed; rules have no effect.</span
-              >
-            </p>
-          }
           <p>
             @if (p.packageExposed) {
               <span class="material-icons inline ok" aria-hidden="true">check_circle</span>
@@ -497,7 +487,7 @@
             }
             <span>{{ verdictText(p) }}</span>
           </p>
-          @for (w of p.warnings; track w) {
+          @for (w of previewWarnings(p); track w) {
             <p class="hint">{{ warningText(w) }}</p>
           }
           @if (p.paths.length > 0) {

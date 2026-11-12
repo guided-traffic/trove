@@ -24,7 +24,7 @@ import { SessionStore } from '../../core/session-store';
 import { ConflictResolver } from '../../shared/conflict-dialog';
 import { Confirm } from '../../shared/confirm-dialog';
 import { Disclosure } from '../../shared/ui/disclosure';
-import { CopyButton } from '../../shared/copy-button';
+import { AddressField } from '../../shared/address-field';
 import { DiffReview } from '../../shared/diff-dialog';
 import { ErrorNotice } from '../../shared/error-notice';
 import { ErrorSummary, SummaryItem, fieldMessage, problemsAt } from '../../shared/field-errors';
@@ -72,6 +72,9 @@ export function reasonText(reason: string): string {
   }
 }
 
+/** The warning code that says the endpoint is in mode "all": the page says it once, in its banner. */
+const MODE_ALL_WARNING = 'endpoint_not_in_rules_mode';
+
 function warningText(code: string): string {
   switch (code) {
     case 'path_patterns_on_package_format':
@@ -108,7 +111,7 @@ const FIELD_LABELS: readonly (readonly [prefix: string, label: () => string])[] 
  */
 @Component({
   selector: 'trove-exposure-rule-editor',
-  imports: [PageHeader, CopyButton, Disclosure, ErrorNotice, ErrorSummary],
+  imports: [PageHeader, AddressField, Disclosure, ErrorNotice, ErrorSummary],
   templateUrl: './exposure-rule-editor.html',
   styleUrl: './exposure-rule-editor.scss',
 })
@@ -154,7 +157,8 @@ export class ExposureRuleEditor implements HasUnsavedChanges {
   private etag = '';
   protected readonly saving = signal(false);
   protected readonly failure = signal<ApiError | null>(null);
-  protected readonly warnings = signal<readonly string[]>([]);
+  /** The warning codes the stored rule came with (`ExposureRule.warnings`). */
+  protected readonly storedWarnings = signal<readonly string[]>([]);
   protected readonly showErrors = signal(false);
   private saved = false;
 
@@ -259,9 +263,33 @@ export class ExposureRuleEditor implements HasUnsavedChanges {
 
   protected reasonText = reasonText;
 
+  /**
+   * What follows the verdict: the reason where the package is hidden and the rule that decided, in brackets after a space. An exposed
+   * package's reason is the verdict itself, so it is not said twice ("exposed (exposed)").
+   */
   protected verdictText(check: ExposureCheck): string {
-    const rule = check.rule ? `, ${check.rule}` : '';
-    return `(${reasonText(check.reason)}${rule})`;
+    const parts = [check.reason === 'exposed' ? '' : reasonText(check.reason), check.rule ?? ''].filter((p) => p !== '');
+    return parts.length > 0 ? ` (${parts.join(', ')})` : '';
+  }
+
+  /**
+   * The mode "all" is said once, at the top of the page (the banner of `modeAll`), whether the endpoint's configuration, the
+   * stored rule's warnings or the preview's answer says it; the rule's and the preview's lists leave it out.
+   */
+  protected readonly modeAllNotice = computed(
+    () =>
+      this.modeAll() ||
+      this.storedWarnings().includes(MODE_ALL_WARNING) ||
+      this.preview()?.mode === 'all' ||
+      (this.preview()?.warnings ?? []).includes(MODE_ALL_WARNING),
+  );
+  protected readonly ruleWarnings = computed(() =>
+    this.storedWarnings()
+      .filter((w) => w !== MODE_ALL_WARNING)
+      .map(warningText),
+  );
+  protected previewWarnings(check: ExposureCheck): readonly string[] {
+    return (check.warnings ?? []).filter((w) => w !== MODE_ALL_WARNING);
   }
 
   protected warningText = warningText;
@@ -288,7 +316,7 @@ export class ExposureRuleEditor implements HasUnsavedChanges {
     const form = ruleFormOf(rule);
     this.baseline.set(form);
     this.form.set(this.drafts.take<RuleForm>() ?? form);
-    this.warnings.set((rule.warnings ?? []).map(warningText));
+    this.storedWarnings.set(rule.warnings ?? []);
   }
 
   // --- preview ------------------------------------------------------------------------------
@@ -427,4 +455,5 @@ export class ExposureRuleEditor implements HasUnsavedChanges {
   }
 
   protected readonly copyAddress = $localize`:@@ep.copy-address:Copy client address`;
+  protected readonly addressCaption = $localize`:@@ep.editor.address:Client address on this endpoint`;
 }

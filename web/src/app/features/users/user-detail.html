@@ -156,7 +156,7 @@
   @if (session.has('tokens:read')) {
     <section class="tokens" aria-labelledby="user-tokens">
       <h2 id="user-tokens" i18n="@@user.tokens">Tokens</h2>
-      <trove-token-manager [scope]="scope()" />
+      <trove-token-manager [scope]="scope()" [revokeAllHere]="false" />
     </section>
   }
 
@@ -198,13 +198,18 @@
     }
   </trove-disclosure>
 
-  @if ((canWrite() && editable()) || (locked() && session.has('content:bypass'))) {
+  @if ((canWrite() && editable()) || (locked() && session.has('content:bypass')) || tokens()?.offersRevokeAll()) {
     <trove-disclosure
       i18n-heading="@@user.advanced"
       heading="Advanced"
-      i18n-hint="@@user.advanced-hint"
-      hint="Disable, unlock or delete this account."
+      [hint]="advancedHint()"
     >
+      @if (tokens()?.offersRevokeAll()) {
+        <p class="muted" i18n="@@tokens.revoke-all-note">Every token stops working at once, and the tools that use them are refused. This cannot be undone.</p>
+        <p>
+          <button class="btn btn-danger" type="button" (click)="tokens()?.revokeAllTokens()" i18n="@@tokens.revoke-all">Revoke all tokens</button>
+        </p>
+      }
       @if (canWrite() && editable()) {
         <p class="muted" i18n="@@user.disable-note">A disabled user can no longer sign in and their sessions end; you can also revoke their tokens.</p>
         <p>

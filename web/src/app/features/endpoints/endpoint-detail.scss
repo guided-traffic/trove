@@ -3,6 +3,7 @@
   font: var(--trove-type-title-medium);
 }
 
+// The state's word beside its switch, on the row's first line.
 .switch {
   display: inline-flex;
   align-items: center;
@@ -23,4 +24,16 @@
 .rules {
   padding-block-start: var(--trove-space-5);
   border-block-start: 1px solid var(--trove-border);
+}
+
+// An address this endpoint does not serve: a warning glyph where the copy button would be, its sentence the name and tooltip.
+.not-served {
+  display: inline-flex;
+  vertical-align: top;
+  margin-inline-end: var(--trove-space-2);
+  font-size: 1.25rem;
+}
+
+td.actions trove-copy-button {
+  margin-inline-end: var(--trove-space-1);
 }

@@ -27,6 +27,7 @@ export default async function setup(): Promise<void> {
     for (const kind of ['plain', 'power', 'admin'] as const) await signIn(browser, kind);
     await seedGrants(admin);
     await publishAsPowerUser(browser);
+    await plainUserToken(browser);
     await syncAdvisories(admin);
     for (const kind of ['plain', 'power', 'admin'] as const) await openRecent(browser, kind);
   } finally {
@@ -91,6 +92,25 @@ async function openRecent(browser: Browser, kind: keyof typeof kinds): Promise<v
       await expect(page.getByRole('heading', { level: 1, name: key })).toBeVisible({ timeout: 30_000 });
     }
     await context.storageState({ path: authFile(kind) });
+  } finally {
+    await context.close();
+  }
+}
+
+/**
+ * One personal token of the plain user, so that the token pages show a list and the closed section Advanced with **Revoke all
+ * tokens** (the profile's, the user's in the admin area). Made once: a second run finds it and leaves it.
+ */
+async function plainUserToken(browser: Browser): Promise<void> {
+  const context = await browser.newContext({ baseURL: edge, ignoreHTTPSErrors: true, storageState: authFile('plain') });
+  try {
+    const api = await Api.of(context.request, edge);
+    const listed = await api.get('/api/v1/tokens?owner=me&state=active');
+    await expectStatus(listed, [200], 'the plain user\'s tokens');
+    const items = ((await listed.json()) as { items: { description: string }[] }).items;
+    if (items.some((t) => t.description === 'laptop')) return;
+    const created = await api.post('/api/v1/tokens', { description: 'laptop', ttlSeconds: 30 * 86_400, selfRotatable: false });
+    await expectStatus(created, [201], 'create the plain user\'s token');
   } finally {
     await context.close();
   }

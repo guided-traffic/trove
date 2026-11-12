@@ -180,6 +180,17 @@ describe('User detail (R-UI-024)', () => {
     expect(calls).toContain('disableUser bob revokeTokens=true');
   });
 
+  it('R-UI-024 revoking all of a user\'s tokens is a danger button in the page\'s one section Advanced, not beside the token list', async () => {
+    const { root } = await renderScreen(UserDetail, { inputs: { username: 'alice' } });
+    const tokens = root.querySelector('section.tokens')!;
+    expect([...tokens.querySelectorAll('button')].map((b) => b.textContent?.trim())).not.toContain('Revoke all tokens');
+    expect(tokens.querySelector('trove-disclosure')).toBeNull();
+    const advanced = [...root.querySelectorAll('trove-disclosure')].filter((d) => text(d).includes('Advanced'));
+    expect(advanced).toHaveLength(1);
+    const revoke = [...advanced[0]!.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim() === 'Revoke all tokens')!;
+    expect(revoke.classList.contains('btn-danger')).toBe(true);
+  });
+
   it('R-UI-024 ends all sessions of a user after confirmation', async () => {
     const { fixture, root, get } = await renderScreen(UserDetail, { inputs: { username: 'alice' } });
     buttonByText(root, 'End all sessions').click();

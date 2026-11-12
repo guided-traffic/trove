@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { IdentityApi, ServiceAccount } from '../../api/identity-api';
 import { ApiError } from '../../api/problem';
@@ -96,35 +96,42 @@ import { PageHeader } from '../../shared/ui/page-header';
         <section class="tokens" aria-labelledby="sa-tokens">
           <h2 id="sa-tokens" i18n="@@sa.tokens">Tokens</h2>
           @if (canReadTokens()) {
-            <trove-token-manager [scope]="scope()" [accountIsAdmin]="a.isAdmin" />
+            <trove-token-manager [scope]="scope()" [accountIsAdmin]="a.isAdmin" [revokeAllHere]="false" />
           } @else {
             <p i18n="@@sa.tokens-denied">You need the permission to read tokens to manage the tokens of this account.</p>
           }
         </section>
 
-        @if (canWrite()) {
+        @if (canWrite() || tokens()?.offersRevokeAll()) {
           <trove-disclosure
             i18n-heading="@@sa.advanced"
             heading="Advanced"
-            i18n-hint="@@sa.advanced-hint"
-            hint="Disable or delete this account."
+            [hint]="advancedHint()"
           >
-            <p class="muted">
-              @if (a.status === 'active') {
-                <ng-container i18n="@@sa.disable-note">A disabled account can no longer authenticate; you can also revoke its tokens.</ng-container>
-              } @else {
-                <ng-container i18n="@@sa.enable-note">The account is disabled and cannot authenticate. Enabling it lets its tokens work again.</ng-container>
-              }
-            </p>
-            <p>
-              @if (a.status === 'active') {
-                <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="disable()" i18n="@@sa.disable">Disable</button>
-              } @else {
-                <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="enable()" i18n="@@sa.enable">Enable</button>
-              }
-            </p>
-            <p class="muted" i18n="@@sa.delete-note">Deleting the account removes it and its tokens. This cannot be undone.</p>
-            <button class="btn btn-danger" type="button" [disabled]="busy()" (click)="remove()" i18n="@@sa.delete">Delete</button>
+            @if (tokens()?.offersRevokeAll()) {
+              <p class="muted" i18n="@@tokens.revoke-all-note">Every token stops working at once, and the tools that use them are refused. This cannot be undone.</p>
+              <p>
+                <button class="btn btn-danger" type="button" (click)="tokens()?.revokeAllTokens()" i18n="@@tokens.revoke-all">Revoke all tokens</button>
+              </p>
+            }
+            @if (canWrite()) {
+              <p class="muted">
+                @if (a.status === 'active') {
+                  <ng-container i18n="@@sa.disable-note">A disabled account can no longer authenticate; you can also revoke its tokens.</ng-container>
+                } @else {
+                  <ng-container i18n="@@sa.enable-note">The account is disabled and cannot authenticate. Enabling it lets its tokens work again.</ng-container>
+                }
+              </p>
+              <p>
+                @if (a.status === 'active') {
+                  <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="disable()" i18n="@@sa.disable">Disable</button>
+                } @else {
+                  <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="enable()" i18n="@@sa.enable">Enable</button>
+                }
+              </p>
+              <p class="muted" i18n="@@sa.delete-note">Deleting the account removes it and its tokens. This cannot be undone.</p>
+              <button class="btn btn-danger" type="button" [disabled]="busy()" (click)="remove()" i18n="@@sa.delete">Delete</button>
+            }
           </trove-disclosure>
         }
       </div>
@@ -166,6 +173,14 @@ export class ServiceAccountDetail {
   private readonly notifier = inject(Notifier);
   private readonly router = inject(Router);
   protected readonly session = inject(SessionStore);
+  /** The token manager of the page: its **Revoke all tokens** sits in the page's section Advanced. */
+  protected readonly tokens = viewChild(TokenManager);
+  /** The hint of the section Advanced names **Revoke all tokens** while it is offered. */
+  protected readonly advancedHint = computed(() =>
+    this.tokens()?.offersRevokeAll()
+      ? $localize`:@@sa.advanced-hint-tokens:Revoke all tokens, disable or delete this account.`
+      : $localize`:@@sa.advanced-hint:Disable or delete this account.`,
+  );
 
   protected readonly account = signal<ServiceAccount | null>(null);
   /** The `ETag` the record was read with; every write sends it as `If-Match` (Q-API-42). */

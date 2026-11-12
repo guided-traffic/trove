@@ -102,7 +102,7 @@ The new token gets the lifetime of the old one, at most the current maximum. Onl
 
 ## Revoke a token
 
-Choose **Revoke** next to a token and confirm; **Revoke all tokens** revokes every token you hold. A revoked token stops working on every replica within seconds, and revoking cannot be undone. Tokens that were created with this token through the API are revoked with it.
+Choose **Revoke** next to a token and confirm; **Revoke all tokens**, the red button in the closed section **Advanced** at the end of the page, revokes every token you hold after you confirm. A revoked token stops working on every replica within seconds, and revoking cannot be undone. Tokens that were created with this token through the API are revoked with it.
 
 If a token leaked, revoke it at once. Anyone who has the value, signed in or not, can revoke it by sending `{"token": "<value>"}` to `POST /api/v1/tokens/revoke`; for a caller who is not an administrator the answer is `202` and does not say whether the token existed. An administrator can also revoke it by value on the **Tokens** screen.
 

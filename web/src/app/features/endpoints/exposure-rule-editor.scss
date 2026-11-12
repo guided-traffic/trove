@@ -75,3 +75,11 @@
 .delete-note {
   margin-block: 0 var(--trove-space-3);
 }
+
+// The rule's client address on this endpoint: a label and the shared field under it (R-UI-065).
+.endpoint-address {
+  display: flex;
+  flex-direction: column;
+  gap: var(--trove-space-1);
+  margin-block: var(--trove-space-2);
+}

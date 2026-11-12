@@ -1121,8 +1121,10 @@ Priority: **MVP** · Covers: trove-only
 
 - **Routes** ([api-and-ui.md](api-and-ui.md) R-UI-003): `/admin/endpoints` (the list: name, base URL,
   hosts, surface, exposure mode, rule count, pool; inert names flagged), `/admin/endpoints/{endpoint}`
-  (the configuration read-only, marked as coming from the configuration file, and the rule table:
-  name, repository, packages, version summary, pre-releases, enabled),
+  (the configuration read-only, marked as coming from the configuration file, and the rule list in the shared data table:
+  rule (name and description), repository, packages and paths, versions, pre-releases, enabled, and the row's copy button and
+  menu with edit and delete; versions and pre-releases give their room below 64 rem of the list, and the rows stack below 48 rem,
+  [Q-UI-331](api-and-ui.md#q-ui-331--an-endpoints-rules-are-the-shared-data-table-and-a-rules-client-address-is-the-rows-copy-button)),
   `/admin/endpoints/{endpoint}/rules/new` and `/admin/endpoints/{endpoint}/rules/{name}`.
 - **Rule editor.** One page like the policy editor ([api-and-ui.md](api-and-ui.md) R-UI-027, Q-UI-4):
   a repository picker of project and key (the rule stores the repository's qualified name), include and exclude lists with syntax help, the version range checked
@@ -1134,8 +1136,13 @@ Priority: **MVP** · Covers: trove-only
   preview panel fed by `check-exposure` (debounced 500 ms) shows, for a package typed into the
   tester, its exposed and hidden versions with their reasons. Saving shows a diff against the loaded
   revision and sends `PUT` with `If-Match`; recent authentication follows R-UI-042.
-- For each repository a rule exposes, the screen shows its client address on that endpoint
-  (`<base URL>/api/<format>/<projectKey>/<repoKey>/`, with a copy button) for handing to the consumers.
+- For each repository a rule exposes, the screen offers its client address on that endpoint
+  (`<base URL>/api/<format>/<projectKey>/<repoKey>/`) for handing to the consumers: the row's copy button, whose name and
+  tooltip carry the address, and **Copy client address** in the row's menu; where the endpoint's surface does not serve the
+  format's route family, a warning glyph named "This endpoint does not serve this address." stands in its place.
+- The rule editor says each warning once: the mode `all` in the banner at the top of the page, whether the endpoint's
+  configuration, the stored rule or the preview reports it; the preview's verdict names the rule that decided after a space and
+  the reason only where the package is hidden.
 - A banner warns when the endpoint's mode is `all`, because its rules have no effect there.
 - The navigation entry appears for holders of `endpoints:read` (R-UI-005). English and German
   (R-UI-045), accessibility as R-UI-044.

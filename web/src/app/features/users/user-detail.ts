@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { IdentityApi, User, UserGroupMembership, UserPatch } from '../../api/identity-api';
 import { ApiError } from '../../api/problem';
@@ -70,6 +70,14 @@ export class UserDetail {
   private readonly notifier = inject(Notifier);
   private readonly router = inject(Router);
   protected readonly session = inject(SessionStore);
+  /** The token manager of the page: its **Revoke all tokens** sits in the page's section Advanced. */
+  protected readonly tokens = viewChild(TokenManager);
+  /** The hint of the section Advanced names **Revoke all tokens** while it is offered. */
+  protected readonly advancedHint = computed(() =>
+    this.tokens()?.offersRevokeAll()
+      ? $localize`:@@user.advanced-hint-tokens:Revoke all tokens, disable, unlock or delete this account.`
+      : $localize`:@@user.advanced-hint:Disable, unlock or delete this account.`,
+  );
 
   protected readonly user = signal<User | null>(null);
   /** The `ETag` the record was read with; every write sends it as `If-Match` (Q-API-42). */
