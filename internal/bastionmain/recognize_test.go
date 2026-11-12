@@ -16,6 +16,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/bastion/iface"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/httpserver"
 )
 
 const (
@@ -155,6 +156,9 @@ func TestR_BAS_008_AValidTokenRecognizesTheRequest(t *testing.T) {
 		if rec != want {
 			t.Errorf("Recognition = %+v, want %+v", rec, want)
 		}
+		if !httpserver.BastionForward(seen.Context()) {
+			t.Error("a recognized forward is not marked: its subject would read by the level internal (Q-BAS-148)")
+		}
 		if got := seen.Header.Get("Authorization"); got != "Bearer caller-credential" {
 			t.Errorf("the caller's Authorization = %q", got)
 		}
@@ -177,6 +181,9 @@ func TestR_BAS_008_AValidTokenRecognizesTheRequest(t *testing.T) {
 		rec, _ := RecognitionFrom(seen.Context())
 		if !rec.Route || seen.Header.Get("Authorization") != "" {
 			t.Errorf("route %v, Authorization %q", rec.Route, seen.Header.Get("Authorization"))
+		}
+		if httpserver.BastionForward(seen.Context()) {
+			t.Error("an interface route is marked as a forward: it decides no caller")
 		}
 	})
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/bastion/iface"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/httpserver"
 )
 
 // RecognizeOptions configure [Recognize].
@@ -136,6 +137,12 @@ func Recognize(o RecognizeOptions) func(http.Handler) http.Handler {
 			// The stages behind this one get a request of their own: the credential that proved the
 			// Bastion is not in it, and the forwarded headers count with the Bastion's egress trusted.
 			ctx := WithRecognition(r.Context(), rec)
+			if !route {
+				// A recognized forward is never internal: the subject the decision point decides on carries ViaBastion, so the
+				// level internal does not read for it whoever its user is (R-BAS-010, Q-BAS-148). The interface routes decide no
+				// caller.
+				ctx = httpserver.WithBastionForward(ctx)
+			}
 			if o.Forwarded != nil {
 				ctx = o.Forwarded(r.WithContext(ctx))
 			}

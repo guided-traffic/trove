@@ -65,7 +65,8 @@ const maxReachDepth = 16
 //
 //   - A local or remote repository is full when the subject's read shape of its packages is [ReadAll] with
 //     the capability content:metadata-read left out (it never reads an artifact, Q-AUTHZ-172) and, for a
-//     remote repository, the populate check of R-AUTHZ-008 passes; it is none when the shape is [ReadNone]
+//     remote repository, the populate check of R-AUTHZ-008 passes, and the subject reads the repository's wiki (R-BAS-012); it is none
+//     when the shape is [ReadNone]
 //     or the endpoint does not expose the repository; partial otherwise. An endpoint with exposure rules or a
 //     token scope that narrows makes the shape [ReadRows], so the reach is partial at most.
 //   - A virtual repository is none when the read gate of R-AUTHZ-009 rule 1 refuses (this includes the
@@ -136,6 +137,12 @@ func (e *Engine) leafReach(c *reachCtx, r *repoInfo, addressed qname.Repo) Reach
 		return ReachNone
 	}
 	if e.readShape(c.art, sub, r, c.allEndpoint) != ReadAll {
+		return ReachPartial
+	}
+	// A full read includes the wiki: a document shared between callers of a full read never carries a README to a caller without it
+	// (R-BAS-012, Q-BAS-149). A subject that reads every artifact and not the wiki is partial.
+	wiki := Coordinate{Repository: r.Name, Kind: KindMetadata, Actions: []Action{Read}, Part: PartWiki, Addressed: addressed}
+	if e.evaluateWith(c.st.idx, sub, c.st, wiki).Outcome != Allow {
 		return ReachPartial
 	}
 	if r.Class == repository.Remote {

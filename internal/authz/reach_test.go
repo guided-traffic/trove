@@ -45,11 +45,11 @@ func reachFixture() *fixture {
 	f.bind(RoleAdmin, idOps).bind(RoleAuditor, idAuditorDirect)
 	// The levels (R-AUTHZ-033): npm-pub and the virtual repository over it are public, npm-int internal, and npm-vmix is public
 	// over both, so an anonymous subject reads through npm-vpub and not through npm-vmix (R-AUTHZ-009 rule 6).
-	f.repo("npm-pub", "local", "npm", "").repo("npm-int", "local", "npm", "")
+	f.repo("npm-pub", "local", "npm", "").repo("npm-int", "local", "npm", "").repo("npm-open", "local", "npm", "")
 	f.repo("npm-vpub", "virtual", "npm", `{"virtual":{"members":["npm-pub"]}}`)
 	f.repo("npm-vmix", "virtual", "npm", `{"virtual":{"members":["npm-pub","npm-int"]}}`)
 	f.levels("npm-pub", "public", "internal").levels("npm-vpub", "public", "public").levels("npm-vmix", "public", "public")
-	f.levels("npm-int", "internal", "internal")
+	f.levels("npm-int", "internal", "internal").levels("npm-open", "public", "public")
 	f.exposure(ruleDef{endpoint: "customers", name: "acme", repo: "npm-a", dims: ruleDims{
 		Packages: PatternLists{Include: []string{"@acme/*"}},
 	}})
@@ -104,7 +104,7 @@ func TestR_BAS_012_ShapeAgreesWithTheDecisionPoint(t *testing.T) {
 		"carol through a bastion":  viaBastion(carolSub),
 		"scoped carol":             tokenScop(carolSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-b"}, Actions: []string{"read"}}}}),
 	}
-	keys := []string{"npm-a", "npm-b", "npm-strict", "npmjs", "npm-frozen", "npm-v", "npm-v2", "npm-vb", "npm-empty", "npm-pub", "npm-int", "npm-vpub", "npm-vmix", "ghost"}
+	keys := []string{"npm-a", "npm-b", "npm-strict", "npmjs", "npm-frozen", "npm-v", "npm-v2", "npm-vb", "npm-empty", "npm-pub", "npm-open", "npm-int", "npm-vpub", "npm-vmix", "ghost"}
 	pkgs := []string{"@a/x", "@acme/sdk", "x", "plain"}
 	versions := []string{"", "1.0.0", "3.0.0-beta"}
 	paths := []string{"", "x/y", "plain/-/plain-1.0.0.tgz"}
@@ -201,7 +201,7 @@ func TestR_BAS_012_ShapeAgreesWithTheDecisionPoint(t *testing.T) {
 // TestR_BAS_012_Shapes pins the cases of the acceptance criteria and of the rules by name.
 func TestR_BAS_012_Shapes(t *testing.T) {
 	on := func(o *Options) { o.Ceiling = reachCeiling() }
-	keys := []string{"npm-a", "npm-strict", "npmjs", "npm-frozen", "npm-v", "npm-v2", "npm-empty", "npm-pub", "npm-int", "npm-vpub", "npm-vmix", "ghost"}
+	keys := []string{"npm-a", "npm-strict", "npmjs", "npm-frozen", "npm-v", "npm-v2", "npm-empty", "npm-pub", "npm-open", "npm-int", "npm-vpub", "npm-vmix", "ghost"}
 	reach := func(t *testing.T, mod func(*Options), sub Subject) map[qname.Repo]ReachResult {
 		t.Helper()
 		e := newTestEngine(t, reachFixture(), mod)
@@ -254,8 +254,11 @@ func TestR_BAS_012_Shapes(t *testing.T) {
 	})
 	t.Run("an anonymous subject reads what a public level opens, and is none with 401 elsewhere", func(t *testing.T) {
 		got := reach(t, on, anonSub)
-		want(t, got, "npm-pub", ReachFull, Allow)
-		want(t, got, "npm-vpub", ReachFull, Allow)
+		want(t, got, "npm-open", ReachFull, Allow)
+		// Public artifacts and an internal wiki: the artifacts are read in full, the wiki is not, so the shape is partial and a
+		// shared document lacks the wiki members (R-BAS-012, Q-BAS-149).
+		want(t, got, "npm-pub", ReachPartial, Allow)
+		want(t, got, "npm-vpub", ReachPartial, Allow)
 		for _, k := range []string{"npm-a", "npm-int", "npm-vmix", "npm-strict", "npm-frozen", "npm-v2", "npm-empty"} {
 			want(t, got, k, ReachNone, DenyUnauthenticated)
 		}
@@ -264,7 +267,9 @@ func TestR_BAS_012_Shapes(t *testing.T) {
 		want(t, reach(t, on, carolSub), "npm-int", ReachFull, Allow)
 		want(t, reach(t, on, external(carolSub)), "npm-int", ReachNone, DenyHidden)
 		want(t, reach(t, on, viaBastion(carolSub)), "npm-int", ReachNone, DenyHidden)
-		want(t, reach(t, on, external(carolSub)), "npm-pub", ReachFull, Allow)
+		want(t, reach(t, on, external(carolSub)), "npm-open", ReachFull, Allow)
+		want(t, reach(t, on, external(carolSub)), "npm-pub", ReachPartial, Allow)
+		want(t, reach(t, on, carolSub), "npm-pub", ReachFull, Allow) // internal wiki: an internal user reads it
 	})
 	t.Run("an unknown key is none with the refusal of a missing repository", func(t *testing.T) {
 		want(t, reach(t, on, botSub), "ghost", ReachNone, DenyHidden)

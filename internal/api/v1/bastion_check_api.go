@@ -66,7 +66,9 @@ func (s *Server) BastionCheck(w http.ResponseWriter, r *http.Request, _ gen.Bast
 		writeInterface(w, r, http.StatusOK, ans)
 		return
 	}
-	cctx := httpserver.WithPrincipal(ctx, p)
+	// The caller of a check is decided as a caller of a forward is: through a Bastion, so the level internal does not read for it
+	// (R-BAS-010, R-BAS-011, Q-BAS-148).
+	cctx := httpserver.WithBastionForward(httpserver.WithPrincipal(ctx, p))
 	names := make([]qname.Repo, len(req.Repositories))
 	for i, text := range req.Repositories {
 		names[i], _ = qname.ParseRepo(text) // checkRequest has validated the text

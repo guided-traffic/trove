@@ -69,6 +69,26 @@ func TestR_BAS_015_TheMappingTableOfTheFeed(t *testing.T) {
 		{"authz.policy.deleted", FeedEvent{Action: "authz.policy.deleted"}, []rawEntry{{kind: iface.FeedGrants}}},
 		{"authz.policy.updated", FeedEvent{Action: "authz.policy.updated"}, []rawEntry{{kind: iface.FeedGrants}}},
 		{"authz.settings.changed", FeedEvent{Action: "authz.settings.changed"}, []rawEntry{{kind: iface.FeedGrants}}},
+		{
+			"authz.settings.changed that lowered the artifacts level drops every answer and asks for the handshake",
+			FeedEvent{Action: "authz.settings.changed", Details: []byte(`{"before":{"visibility.artifacts":"public"},"after":{"visibility.artifacts":"internal"}}`)},
+			[]rawEntry{{kind: iface.FeedGrants}, {kind: iface.FeedSettings}},
+		},
+		{
+			"authz.settings.changed that only raised levels keeps the answers and asks for the handshake",
+			FeedEvent{Action: "authz.settings.changed", Details: []byte(`{"before":{"visibility.artifacts":"private","visibility.wiki":"private"},"after":{"visibility.artifacts":"public","visibility.wiki":"internal"}}`)},
+			[]rawEntry{{kind: iface.FeedSettings}},
+		},
+		{
+			"authz.settings.changed that raised the wiki only asks for nothing",
+			FeedEvent{Action: "authz.settings.changed", Details: []byte(`{"before":{"visibility.wiki":"private"},"after":{"visibility.wiki":"internal"}}`)},
+			nil,
+		},
+		{
+			"authz.settings.changed that raised a level and changed another setting drops every answer",
+			FeedEvent{Action: "authz.settings.changed", Details: []byte(`{"before":{"visibility.wiki":"private","cacheFillAction":"deploy"},"after":{"visibility.wiki":"internal","cacheFillAction":"read"}}`)},
+			[]rawEntry{{kind: iface.FeedGrants}},
+		},
 		{"ci.issuer.updated", FeedEvent{Action: audit.EventCIIssuerUpdated}, []rawEntry{{kind: iface.FeedGrants}}},
 		{"ci.issuer.disabled", FeedEvent{Action: audit.EventCIIssuerDisabled}, []rawEntry{{kind: iface.FeedGrants}}},
 		{"ci.issuer.deleted", FeedEvent{Action: audit.EventCIIssuerDeleted}, []rawEntry{{kind: iface.FeedGrants}}},

@@ -776,7 +776,7 @@ the content events below ([Q-BAS-29](#q-bas-29--the-feed-reads-the-journals-even
 | `user.disabled`, `user.deleted`, `serviceaccount.disabled`, `serviceaccount.deleted` | `{"kind": "principal", "principals": [<ID>]}` |
 | `group.members.changed`, `user.groups.synced` | `principal` with every removed member |
 | `authz.role.unbound` of a user or service account | `principal` with that principal |
-| `group.deleted`, `authz.role.unbound` of a group, `authz.policy.deleted`, `authz.policy.updated`, `authz.settings.changed`, the `ci.issuer.*` and `ci.mapping.*` disables, deletions and updates, `endpoint.exposure.deleted` and `.updated` of the default endpoint | `{"kind": "grants"}`: every permission answer of every caller; `authz.settings.changed` that changed `visibility.artifacts` yields `settings` as well |
+| `group.deleted`, `authz.role.unbound` of a group, `authz.policy.deleted`, `authz.policy.updated`, `authz.settings.changed`, the `ci.issuer.*` and `ci.mapping.*` disables, deletions and updates, `endpoint.exposure.deleted` and `.updated` of the default endpoint | `{"kind": "grants"}`: every permission answer of every caller; `authz.settings.changed` that changed `visibility.artifacts` yields `settings` as well; one whose changed members are levels only (`visibility.artifacts`, `visibility.wiki`) and none of them lower than before yields no `grants`: a raise opens reads and makes no kept answer wrong |
 | `settings.auth.changed` | `{"kind": "settings"}` |
 | `authz.project.visibility_changed` | `{"kind": "settings"}`, so the Bastion asks the handshake for `anonymousReads` again, and `grants` when the level was lowered ([authorization.md](authorization.md) R-AUTHZ-036) |
 | `user.external_changed` | `principal` with the user when the flag was set: a request through a Bastion never reads by `internal` (Q-BAS-148), so this only drops answers that a later change of that rule would make wrong |
@@ -5434,6 +5434,21 @@ that when nothing is public, and the per-repository answer comes from the check 
 condition.
 
 **Applied in the spec:** R-BAS-010, R-BAS-011, R-BAS-015, R-BAS-019.
+
+### Q-BAS-151 · The mark `ViaBastion` is set where the request is recognized and where the check decides its caller
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The recognition stage marks the context of a forward; the check handler marks the context it decides the caller in; the one conversion of the edge reads the mark into `Subject.ViaBastion` (chosen) | An interface route decides no caller and is not marked | No handler of a format knows about Bastions; the check cannot forget it | Two places set one mark |
+| (b) The decision point asks the recognition result | The subject carries no mark | One source | The decision point would depend on the Bastion's package |
+
+**Choice:** (a). A shape of a repository is `full` only when the subject also reads the repository's wiki.
+
+**Rationale:** Q-BAS-148 and Q-BAS-149 decide the rules; this records where they are enforced.
+
+**Applied in the spec:** R-BAS-010, R-BAS-011, R-BAS-012.
 
 ## What this does not cover
 

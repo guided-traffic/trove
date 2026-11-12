@@ -191,8 +191,9 @@ var mappers = sync.OnceValue(func() map[string]mapper {
 	// member loses reads on every repository of the project (R-AUTHZ-026): the event names a project or one repository, not the
 	// callers or the virtual repositories over it. A content entry drops only the URL answers of a repository, not its shape
 	// answers, so only grants is exact enough (Q-BAS-120, Q-AUTHZ-238).
+	t["authz.settings.changed"] = mapSettingsChanged
 	for _, a := range []string{
-		audit.EventGroupDeleted, "authz.policy.deleted", "authz.policy.updated", "authz.settings.changed",
+		audit.EventGroupDeleted, "authz.policy.deleted", "authz.policy.updated",
 		audit.EventCIIssuerUpdated, audit.EventCIIssuerDisabled, audit.EventCIIssuerDeleted,
 		audit.EventCIMappingUpdated, audit.EventCIMappingDisabled, audit.EventCIMappingDeleted,
 		eventRepositoryMoved, eventProjectMemberRemoved, eventProjectMemberChanged,
@@ -249,6 +250,33 @@ func mapExposure(_ FeedEvent, d *detailsDoc, defaultEndpoint string) []rawEntry 
 // holds.
 func mapSettings(FeedEvent, *detailsDoc, string) []rawEntry {
 	return []rawEntry{{kind: iface.FeedSettings}}
+}
+
+// mapSettingsChanged: an access setting of a repository changed. Every permission answer is dropped (grants), except when the
+// event only raised levels (every changed member is visibility.artifacts or visibility.wiki, and none lies lower than before): a
+// raise opens reads and makes no kept answer wrong. A change of visibility.artifacts also asks the Bastion for the handshake's
+// anonymousReads again (settings). A pair that does not read is read as a narrowing (R-AUTHZ-036, R-BAS-015).
+func mapSettingsChanged(_ FeedEvent, d *detailsDoc, _ string) []rawEntry {
+	var before, after map[string]json.RawMessage
+	if json.Unmarshal(d.Before, &before) != nil || json.Unmarshal(d.After, &after) != nil || len(after) == 0 {
+		return grantsEntry()
+	}
+	onlyRaises, artifacts := true, false
+	for k, raw := range after {
+		var a, b string
+		if json.Unmarshal(raw, &a) != nil || json.Unmarshal(before[k], &b) != nil || (k != "visibility.artifacts" && k != "visibility.wiki") || levelRank(a) < levelRank(b) {
+			onlyRaises = false
+		}
+		artifacts = artifacts || k == "visibility.artifacts"
+	}
+	var out []rawEntry
+	if !onlyRaises {
+		out = append(out, rawEntry{kind: iface.FeedGrants})
+	}
+	if artifacts {
+		out = append(out, rawEntry{kind: iface.FeedSettings})
+	}
+	return out
 }
 
 // mapVisibility: the Bastion asks the handshake for anonymousReads again, and drops what it kept when the level was lowered
