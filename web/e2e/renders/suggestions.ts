@@ -63,3 +63,22 @@ export async function routeTooMany(page: Page, seconds: number): Promise<void> {
     route.fulfill({ status: 429, headers: { 'Retry-After': String(seconds) }, json: { status: 429, code: 'rate_limited' } }),
   );
 }
+
+/**
+ * The repository list's `name` (R-API-063) answered from the list without it, for a server that does not take `name` yet: the
+ * stored repositories of the search's store are confirmed the same way, filtered to what the caller may read.
+ */
+export async function routeRepositoryNames(page: Page): Promise<void> {
+  await page.route(/\/api\/v1\/repositories\?(.*&)?name=/, async (route) => {
+    const url = new URL(route.request().url());
+    const names = url.searchParams.getAll('name').flatMap((n) => n.split(','));
+    const all = new URL(url);
+    all.searchParams.delete('name');
+    all.searchParams.set('limit', '500');
+    const response = await route.fetch({ url: all.toString() });
+    if (!response.ok()) return route.fulfill({ response });
+    const body = (await response.json()) as { items: { project: string; key: string }[] };
+    const byName = new Map(body.items.map((r) => [`${r.project}/${r.key}`, r]));
+    await route.fulfill({ json: { items: names.flatMap((n) => (byName.has(n) ? [byName.get(n)] : [])), nextCursor: null } });
+  });
+}

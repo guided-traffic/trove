@@ -53,17 +53,19 @@ describe('Frequently visited places (R-UI-096, Q-UI-405)', () => {
     expect(order).toEqual(['web-frontend/npm-vendor', 'web/tie', 'platform/collections', 'web/old']);
   });
 
-  it('R-UI-096 a visit counts once per entry in 15 minutes', async () => {
+  it('R-UI-096 a visit counts once per entry in 15 minutes, and every visit moves it up the recent list', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-11-12T10:00:00Z'));
     const store = await places();
     store.visitRepository('web', 'npm-local');
+    store.visitRepository('web', 'other');
     vi.setSystemTime(Date.now() + VISIT_WINDOW_MS - 1000);
     store.visitRepository('web', 'npm-local');
-    expect(store.frequentRepositories()[0]).toMatchObject({ id: 'web/npm-local', visits: 1 });
+    expect(store.frequentRepositories().find((v) => v.id === 'web/npm-local')).toMatchObject({ visits: 1 });
+    expect(store.recentRepositories().map((v) => v.id)).toEqual(['web/npm-local', 'web/other']);
     vi.setSystemTime(Date.now() + 2000);
     store.visitRepository('web', 'npm-local');
-    expect(store.frequentRepositories()[0]).toMatchObject({ id: 'web/npm-local', visits: 2 });
+    expect(store.frequentRepositories().find((v) => v.id === 'web/npm-local')).toMatchObject({ visits: 2 });
   });
 
   it('R-UI-096 at most 20 per kind are kept; the one just visited always stays', async () => {

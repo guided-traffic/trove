@@ -1,7 +1,7 @@
 import { Page, expect } from '@playwright/test';
 import { Kind, emptyProject, exposureRule, group, longDebKey, longNpmKey, mainProject, npmPackage, ociPackage, otherProject, projectServiceAccount, serviceAccount } from './seed';
 import { gradedPackage } from './advisories';
-import { routeSuggestions, routeTooMany } from './suggestions';
+import { routeRepositoryNames, routeSuggestions, routeTooMany } from './suggestions';
 
 /**
  * Every screen of the app (web/src/app/app.routes.ts and the route files of the feature areas), with the parameters of the
@@ -87,6 +87,9 @@ async function* sortByDetection(page: Page): AsyncGenerator<string> {
 }
 
 /** The suggestions' answer of a 429 and its seconds: the notice of R-UI-097 is a state of the field. */
+/** The start page confirms its stored repositories with `name` (R-API-063), which a server without it answers 400. */
+const names = [{ match: /^GET \/api\/v1\/repositories\?name=\S* answered 400$/, why: 'a server without the list\'s name parameter (R-API-063): Recently opened stays empty' }];
+
 const tooMany = [
   { match: /^GET \/api\/v1\/search\/suggestions\?\S* answered 429$/, why: 'the 429 notice is rendered on purpose' },
   { match: /^GET \/api\/v1\/auth\/whoami answered 401$/, why: 'an anonymous visitor has no session' },
@@ -138,6 +141,37 @@ async function* searchField(page: Page): AsyncGenerator<string> {
   yield 'search-limited';
 }
 
+/**
+ * The search's store of frequently visited places (R-UI-096): three repositories and two projects opened first, then the start
+ * page with **Recently opened** from the store, the field opened with its frequently visited groups, and the project switcher's
+ * recent list.
+ */
+async function* frequentPlaces(page: Page): AsyncGenerator<string> {
+  await routeSuggestions(page);
+  await routeRepositoryNames(page);
+  for (const path of [
+    `/ui/projects/${mainProject}/repositories/npm-vendor`,
+    `/ui/projects/${otherProject}/repositories/collections`,
+    `/ui/projects/${mainProject}/repositories/npm-internal`,
+  ]) {
+    await page.goto(path);
+    await expect(page.locator('main h1')).toBeVisible();
+  }
+  await page.goto('/ui/projects');
+  await expect(page.locator('main .recent')).toBeVisible();
+  yield '';
+  const narrow = (page.viewportSize()?.width ?? 1440) < 576;
+  if (narrow) await page.getByRole('button', { name: 'Search', exact: true }).click();
+  else await page.locator('#global-search').click();
+  await expect(page.locator('#search-suggestions').getByRole('group', { name: 'Frequently visited repositories' })).toBeVisible();
+  yield 'search-frequent';
+  await page.goto(`/ui/projects/${mainProject}/repositories`);
+  if (narrow) await page.getByRole('button', { name: 'Open navigation' }).click();
+  await page.locator('.switcher-button').click();
+  await expect(page.locator('#project-switcher-panel')).toBeVisible();
+  yield 'switcher';
+}
+
 /** The closed Advanced section at the end of a page, opened: where a page keeps its destructive action (the style guide). */
 async function* advancedOpen(page: Page): AsyncGenerator<string> {
   yield '';
@@ -179,10 +213,13 @@ export const screens: readonly Screen[] = [
   { id: 'logged-out', path: '/ui/logged-out', kinds: ['anonymous'] },
 
   // The start and the project's content (Q-UI-129): the plain user's main path.
-  { id: 'home', path: '/ui/', kinds: all },
-  { id: 'projects', path: '/ui/projects', kinds: all },
+  { id: 'home', path: '/ui/', kinds: all, expected: names },
+  { id: 'projects', path: '/ui/projects', kinds: all, expected: names },
   // The search field and its list on the start page; anonymous while the seed makes a project public (R-UI-095).
   { id: 'search-field', path: '/ui/projects', kinds: ['anonymous', ...all], walk: searchField, expected: tooMany },
+  // The start page and the project switcher read the search's store (R-UI-096); an anonymous visitor's start page (R-UI-095).
+  { id: 'start-recent', path: '/ui/projects', kinds: ['plain', 'power'], walk: frequentPlaces, expected: names },
+  { id: 'projects-anonymous', path: '/ui/projects', kinds: ['anonymous'], expected: tooMany },
   // The results page of the search (R-UI-098): every tab with matches, a text without a match, a tab opened by `kind`.
   { id: 'search-results', path: '/ui/search?q=web', kinds: ['plain', 'admin'] },
   { id: 'search-results-none', path: '/ui/search?q=zzqx', kinds: ['plain'] },

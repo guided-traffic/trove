@@ -1,7 +1,7 @@
 import { Router } from '@angular/router';
 import { addressValues, button, expectAccessible, openFilters, renderScreen, settle, type } from '../../testing/screen';
 import { RepositoryList } from './repository-list';
-import { RecentRepositories } from './recent-repositories';
+import { BrowserStorage } from '../../core/storage';
 
 async function open(inputs: Record<string, unknown> = {}) {
   const rendered = await renderScreen(RepositoryList, {
@@ -25,7 +25,11 @@ describe('Repository list filter panel (R-UI-020)', () => {
     const { fixture, root } = await renderScreen(RepositoryList, {
       setup: (get) => {
         vi.spyOn(get(Router), 'navigate').mockResolvedValue(true);
-        get(RecentRepositories).add('web/generic-local');
+        new BrowserStorage().set(
+          'local',
+          'trove.frequent.00000000-0000-0000-0000-000000000001',
+          JSON.stringify({ repositories: [{ id: 'web/generic-local', visits: 1, last: Date.now() }], projects: [] }),
+        );
       },
     });
     await openFilters(fixture, root);

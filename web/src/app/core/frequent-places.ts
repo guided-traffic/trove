@@ -16,8 +16,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export interface Visit {
   readonly id: string;
   readonly visits: number;
-  /** The time of the last counted visit, in ms since the epoch. */
+  /** The time of the last visit, in ms since the epoch: the recent lists' order. */
   readonly last: number;
+  /** The time of the last visit that counted; absent means `last`. */
+  readonly counted?: number;
 }
 
 interface Store {
@@ -105,8 +107,13 @@ export class FrequentPlaces {
     const current = this.read(storeKey);
     const entries = current[kind];
     const found = entries.find((v) => v.id === id);
-    if (found && now - found.last < VISIT_WINDOW_MS) return;
-    const next: Visit = found ? { id, visits: found.visits + 1, last: now } : { id, visits: 1, last: now };
+    // Within 15 minutes of the visit that counted, the visit moves the entry up the recent lists but does not count again.
+    const counts = !found || now - (found.counted ?? found.last) >= VISIT_WINDOW_MS;
+    const next: Visit = !found
+      ? { id, visits: 1, last: now, counted: now }
+      : counts
+        ? { id, visits: found.visits + 1, last: now, counted: now }
+        : { ...found, last: now };
     // The cap drops the entry that the frequency order puts last; the one just visited always stays.
     const others = byFrequency(
       entries.filter((v) => v.id !== id),

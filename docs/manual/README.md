@@ -12,17 +12,18 @@ Readers on GitHub can browse the same files here.
 ## User guide
 
 1. [Getting started](user/getting-started.md)
-2. [Repositories](user/repositories.md)
-3. [Packages](user/packages.md)
-4. [Vulnerabilities](user/vulnerabilities.md)
-5. [Browsing and transferring files](user/files.md)
-6. [Connecting a package client](user/client-setup.md)
-7. [Container images with Docker and Podman](user/container-images.md)
-8. [Debian packages with APT](user/apt-packages.md)
-9. [Ansible collections and roles with ansible-galaxy](user/ansible-collections.md)
-10. [Personal access tokens](user/access-tokens.md)
-11. [GitLab CI pipelines](user/gitlab-ci-pipelines.md)
-12. [Errors and troubleshooting](user/troubleshooting.md)
+2. [Search](user/search.md)
+3. [Repositories](user/repositories.md)
+4. [Packages](user/packages.md)
+5. [Vulnerabilities](user/vulnerabilities.md)
+6. [Browsing and transferring files](user/files.md)
+7. [Connecting a package client](user/client-setup.md)
+8. [Container images with Docker and Podman](user/container-images.md)
+9. [Debian packages with APT](user/apt-packages.md)
+10. [Ansible collections and roles with ansible-galaxy](user/ansible-collections.md)
+11. [Personal access tokens](user/access-tokens.md)
+12. [GitLab CI pipelines](user/gitlab-ci-pipelines.md)
+13. [Errors and troubleshooting](user/troubleshooting.md)
 
 ## Administrator guide
 

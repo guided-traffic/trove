@@ -4,10 +4,10 @@ import { NavigationCancel, NavigationEnd, NavigationError, Router, RoutesRecogni
 import { filter, map } from 'rxjs';
 import { collectAll } from '../api/pagination';
 import { Project, ProjectsApi } from '../api/projects-api';
+import { FrequentPlaces } from './frequent-places';
 import { SessionStore } from './session-store';
-import { BrowserStorage } from './storage';
 
-/** How many recently visited projects the switcher remembers. */
+/** How many recently visited projects the switcher shows. */
 export const RECENT_PROJECTS = 5;
 
 /** The project key of a URL below `/projects/<key>`, or null outside a project (Q-UI-129). */
@@ -24,19 +24,19 @@ export function projectKeyOf(url: string): string | null {
 /**
  * The project the screens are in (Q-UI-129): the key is the URL (`/projects/<key>/…`), the projects are the ones the
  * caller may see (`GET /api/v1/projects`: the memberships, every project for `projects:read`), and the recently visited
- * ones are a convenience of this browser, kept per signed-in principal (R-UI-043, R-UI-046). A key in the URL that names no
+ * ones are the search's store of frequently visited places, kept per signed-in principal in this browser (R-UI-096,
+ * `FrequentPlaces`). A key in the URL that names no
  * visible project is still the context: the screen under it reports what the API answers.
  */
 @Injectable({ providedIn: 'root' })
 export class ProjectContext {
   private readonly api = inject(ProjectsApi);
   private readonly session = inject(SessionStore);
-  private readonly storage = inject(BrowserStorage);
+  private readonly frequent = inject(FrequentPlaces);
   private readonly router = inject(Router);
 
   private readonly _projects = signal<readonly Project[]>([]);
   private readonly _loaded = signal(false);
-  private readonly _recent = signal<readonly string[]>([]);
   private pending: Promise<void> | null = null;
 
   /**
@@ -70,12 +70,12 @@ export class ProjectContext {
     return key === null ? null : (this._projects().find((p) => p.key === key) ?? null);
   });
   /** The keys of the recently visited projects, newest first. */
-  readonly recent = this._recent.asReadonly();
-
-  private readonly storageKey = computed(() => {
-    const name = this.session.whoami()?.principal?.name;
-    return name ? `trove.recent-projects.${name}` : null;
-  });
+  readonly recent = computed(() =>
+    this.frequent
+      .recentProjects()
+      .slice(0, RECENT_PROJECTS)
+      .map((v) => v.id),
+  );
 
   constructor() {
     effect(() => {
@@ -90,14 +90,11 @@ export class ProjectContext {
       });
     });
     effect(() => {
-      const storageKey = this.storageKey();
-      untracked(() => this._recent.set(storageKey ? this.stored(storageKey) : []));
-    });
-    effect(() => {
       const key = this.key();
-      // Reads the stored list first, so that the first visit after a reload does not overwrite it.
-      this.storageKey();
-      if (key !== null) untracked(() => this.visit(key));
+      // A visit of the signed-in principal: recorded again once the session has loaded, whose principal keys the store.
+      if (!this.session.authenticated()) return;
+      this.session.whoami();
+      if (key !== null) untracked(() => this.frequent.visitProject(key));
     });
   }
 
@@ -126,33 +123,8 @@ export class ProjectContext {
     }
   }
 
-  /** Remembers the project as the most recent one. */
-  visit(key: string): void {
-    const current = this._recent();
-    const next = [key, ...current.filter((k) => k !== key)].slice(0, RECENT_PROJECTS);
-    if (next.length === current.length && next.every((k, i) => k === current[i])) return;
-    this.keep(next);
-  }
-
   /** Forgets a project that no longer exists. */
   forget(key: string): void {
-    this.keep(this._recent().filter((k) => k !== key));
-  }
-
-  private keep(next: readonly string[]): void {
-    this._recent.set(next);
-    const storageKey = this.storageKey();
-    if (storageKey) this.storage.set('local', storageKey, JSON.stringify(next));
-  }
-
-  private stored(storageKey: string): readonly string[] {
-    try {
-      const parsed: unknown = JSON.parse(this.storage.get('local', storageKey) ?? 'null');
-      return Array.isArray(parsed)
-        ? parsed.filter((k): k is string => typeof k === 'string').slice(0, RECENT_PROJECTS)
-        : [];
-    } catch {
-      return [];
-    }
+    this.frequent.forgetProject(key);
   }
 }

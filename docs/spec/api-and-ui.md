@@ -4753,7 +4753,8 @@ Priority: **MVP** · Covers: trove-only
 - The project list (`/projects`, `/admin/projects`) and the project's header show the level's icon before the project's name,
   with the level's name as its accessible label and tooltip ([Q-UI-230](#q-ui-230--a-level-is-shown-as-an-icon-before-a-name-as-gitlab-shows-it)).
 - The start page lists the caller's projects first with the role, then the other projects it may read with no role; a filter
-  "Your projects" shows the first group alone (`membership=true`).
+  "Your projects" shows the first group alone (`membership=true`). An anonymous visitor has no role and no projects of its own: its
+  list is "Public projects", without the role column.
 
 Acceptance criteria:
 
@@ -5867,11 +5868,11 @@ Groups 2 to 4 are not shown to an anonymous caller.
   ([Q-UI-405](#q-ui-405--frequently-visited-is-kept-in-the-browser-per-principal-by-visits-and-recency)). In browser storage
   (non-secret, R-UI-043), one key per signed-in principal ID, `trove.frequent.<principal ID>`: per repository its qualified name,
   per project its key, each with the number of visits and the time of the last one, at most 20 per kind. A visit is the opening of a
-  repository's page or content page, or of a project's screen, and counts once per entry in 15 minutes. The order is the number of
-  visits, halved for every 14 days since the last visit, then the last visit. The same store, ordered by the last visit, is the start
-  page's **Recently opened** and the project switcher's recent list; it replaces `trove.recent-repositories` and
-  `trove.recent-projects.<name>`, which are removed when first read. A route under `/admin` is never recorded. With storage blocked,
-  groups 2 and 4 are left out.
+  repository's page or content page, or of a project's screen; it counts once per entry in 15 minutes, and every visit is the entry's
+  last one. The order is the number of visits, halved for every 14 days since the last visit, then the last visit. The same store,
+  ordered by the last visit, is the start page's **Recently opened** (read with the one request below) and the project switcher's
+  recent list; the two stores of before are no longer read (no migration before the first stable release). A route under `/admin` is
+  never recorded. With storage blocked, groups 2 and 4 are left out.
 - **Only what the caller may still read**
   ([Q-UI-406](#q-ui-406--a-stored-entry-is-shown-after-the-server-confirms-that-the-caller-still-reads-it)). The stored repositories
   are shown after one `GET /api/v1/repositories?name=…` (R-API-063) has returned them, and only those it returned; the stored projects

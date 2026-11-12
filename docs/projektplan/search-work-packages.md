@@ -70,7 +70,7 @@ over the request's grant index, without a statement.
 
 - [projects-home.ts](../../web/src/app/features/projects/projects-home.ts), **Find a package**: `GET /api/v1/packages?q=` from two
   characters, 300 ms after the last key, ten results, a list of links (no combobox).
-- **Recently opened** reads [recent-repositories.ts](../../web/src/app/features/repositories/recent-repositories.ts): one
+- **Recently opened** reads `recent-repositories.ts` (deleted by WP7): one
   `localStorage` key, `trove.recent-repositories`, for every user of the browser, 20 entries by recency. The start page reads each of
   the five it shows with its own `GET` of the repository (five requests per visit).
 - [project-context.ts](../../web/src/app/core/project-context.ts) keeps the recent projects per principal name

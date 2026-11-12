@@ -164,9 +164,10 @@ describe('The project is the context of the content (Q-UI-129)', () => {
     expect(root.querySelector('.switcher-name')?.textContent).toContain('Data');
   });
 
-  it('Q-UI-129 the recent projects are kept per signed-in principal in browser storage', async () => {
+  it('Q-UI-129 R-UI-096 the recent projects are kept per signed-in principal in the search\'s store', async () => {
     await render('/projects/web/packages', undefined, TWO);
-    expect(new BrowserStorage().get('local', 'trove.recent-projects.alice')).toBe('["web"]');
+    const stored = JSON.parse(new BrowserStorage().get('local', 'trove.frequent.00000000-0000-0000-0000-000000000001') ?? '{}');
+    expect(stored.projects.map((v: { id: string }) => v.id)).toEqual(['web']);
   });
 
   it('Q-UI-129 the breadcrumbs of a project screen read projects, the project, the section', async () => {

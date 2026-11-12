@@ -81,7 +81,7 @@ From left to right:
 
 ### The side bar
 
-Your work happens in projects. The start page finds a package across your projects (**Find a package**), shows the repositories you opened last with their client address and **Set up client**, and lists the projects you may see with your role in each; if you have exactly one, trove opens it for you. The side bar shows where you are:
+Your work happens in projects. The start page shows the repositories you opened last with their client address and **Set up client**, and lists the projects you may see with your role in each; if you have exactly one, trove opens it for you. To find a repository, a package or a project anywhere, use the search field in the top bar ([Search](search.md)). The side bar shows where you are:
 
 | Where | Entries | Who sees it |
 |---|---|---|

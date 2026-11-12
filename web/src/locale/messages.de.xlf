@@ -17660,42 +17660,6 @@
         <target>Neues Projekt</target>
       </segment>
     </unit>
-    <unit id="projects-home.find.heading">
-      <notes>
-        <note category="location">src/app/features/projects/projects-home.ts:54,55</note>
-      </notes>
-      <segment>
-        <source>Find a package</source>
-        <target>Ein Paket finden</target>
-      </segment>
-    </unit>
-    <unit id="projects-home.find.label">
-      <notes>
-        <note category="location">src/app/features/projects/projects-home.ts:55,57</note>
-      </notes>
-      <segment>
-        <source>Find a package</source>
-        <target>Ein Paket finden</target>
-      </segment>
-    </unit>
-    <unit id="projects-home.find.placeholder">
-      <notes>
-        <note category="location">src/app/features/projects/projects-home.ts:63,65</note>
-      </notes>
-      <segment>
-        <source>Name or description, for example ui-kit</source>
-        <target>Name oder Beschreibung, zum Beispiel ui-kit</target>
-      </segment>
-    </unit>
-    <unit id="projects-home.find.none">
-      <notes>
-        <note category="location">src/app/features/projects/projects-home.ts:69,71</note>
-      </notes>
-      <segment>
-        <source>No package you may read matches.</source>
-        <target>Kein Paket, das Sie lesen dürfen, passt.</target>
-      </segment>
-    </unit>
     <unit id="projects-home.recent">
       <notes>
         <note category="location">src/app/features/projects/projects-home.ts:87,89</note>
@@ -17735,6 +17699,24 @@
         <target>Ihre Projekte</target>
       </segment>
     </unit>
+    <unit id="projects-home.hint-anonymous">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>The projects with public content. Sign in to see your own.</source>
+        <target>Die Projekte mit öffentlichem Inhalt. Melden Sie sich an, um Ihre eigenen zu sehen.</target>
+      </segment>
+    </unit>
+    <unit id="projects-home.hint-recent">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Take up a repository you opened before, or open a project.</source>
+        <target>Greifen Sie ein zuvor geöffnetes Repository auf oder öffnen Sie ein Projekt.</target>
+      </segment>
+    </unit>
     <unit id="projects-home.heading">
       <notes>
         <note category="location">src/app/features/projects/projects-home.ts:211</note>
@@ -17742,15 +17724,6 @@
       <segment>
         <source>Projects</source>
         <target>Projekte</target>
-      </segment>
-    </unit>
-    <unit id="projects-home.hint-short">
-      <notes>
-        <note category="location">src/app/features/projects/projects-home.ts:212</note>
-      </notes>
-      <segment>
-        <source>Find a package, take up a repository you used before, or open a project.</source>
-        <target>Finden Sie ein Paket, nehmen Sie ein zuletzt genutztes Repository wieder auf oder öffnen Sie ein Projekt.</target>
       </segment>
     </unit>
     <unit id="projects-home.empty-filtered">
@@ -17769,6 +17742,15 @@
       <segment>
         <source>No project is public. Sign in to see your projects.</source>
         <target>Kein Projekt ist öffentlich. Melden Sie sich an, um Ihre Projekte zu sehen.</target>
+      </segment>
+    </unit>
+    <unit id="projects-home.caption-public">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Public projects</source>
+        <target>Öffentliche Projekte</target>
       </segment>
     </unit>
     <unit id="projects-home.empty">

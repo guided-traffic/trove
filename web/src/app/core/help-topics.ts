@@ -25,6 +25,7 @@ export const HELP_TOPICS: readonly (readonly [route: string, topic: HelpTopic])[
   ['/project/ci', { section: 'admin', page: 'gitlab-ci' }],
   // <<< M4 ci
   ['/projects', { section: 'admin', page: 'projects' }],
+  ['/search', { section: 'user', page: 'search' }],
   ['/guides', { section: 'user', page: 'client-setup' }],
   ['/setup', { section: 'user', page: 'client-setup' }],
   ['/profile/tokens', { section: 'user', page: 'access-tokens' }],

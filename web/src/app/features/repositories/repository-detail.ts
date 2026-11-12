@@ -51,7 +51,7 @@ import { DebUpstreamKeys } from './deb-upstream-keys';
 import { FormatSettings } from './format-settings';
 import { MirrorSettings, mirrorTarget } from './mirror-settings';
 import { MirrorStatusPanel } from './mirror-status';
-import { RecentRepositories } from './recent-repositories';
+import { FrequentPlaces } from '../../core/frequent-places';
 import { RepositoryFields } from './repository-fields';
 import { Disclosure } from '../../shared/ui/disclosure';
 import { RepositoryGuide } from './repository-guide';
@@ -116,7 +116,7 @@ export class RepositoryDetail implements HasUnsavedChanges {
   private readonly confirm = inject(Confirm);
   private readonly conflicts = inject(ConflictResolver);
   private readonly drafts = inject(DraftStore);
-  private readonly recent = inject(RecentRepositories);
+  private readonly frequent = inject(FrequentPlaces);
   private readonly serverAddress = inject(ServerAddress);
 
   /** The route parameters `:project` and `:key`, bound by the router: a repository is addressed inside its project. */
@@ -285,7 +285,7 @@ export class RepositoryDetail implements HasUnsavedChanges {
 
   /** Takes a freshly read representation as the new baseline; a saved draft is restored once. */
   private adopt(value: Versioned<Repository | RepositoryConsumerView>): void {
-    this.recent.add(this.ref());
+    this.frequent.visitRepository(this.project(), this.key());
     this.etag = value.etag;
     if (isConsumerView(value.value)) {
       this.consumer.set(value.value);

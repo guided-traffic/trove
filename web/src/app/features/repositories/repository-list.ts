@@ -28,7 +28,7 @@ import { DataTable, TableColumn } from '../../shared/ui/data-table';
 import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filter-panel';
 import { PagedResource, asApiError, valueOf } from '../../shared/paged-resource';
 import { FormatIconView } from '../../shared/format-icon';
-import { RecentRepositories } from './recent-repositories';
+import { FrequentPlaces } from '../../core/frequent-places';
 import { classLabel } from './repository-wizard';
 
 /**
@@ -71,7 +71,7 @@ export class RepositoryList {
   private readonly notifier = inject(Notifier);
   private readonly confirm = inject(Confirm);
   private readonly route = inject(ActivatedRoute);
-  private readonly recent = inject(RecentRepositories);
+  private readonly frequent = inject(FrequentPlaces);
 
   /** Query parameters, bound by the router's component input binding. */
   readonly q = input<string | undefined>();
@@ -362,6 +362,7 @@ export class RepositoryList {
   }
 
   protected visit(ref: string): void {
-    this.recent.add(ref);
+    const [project = '', key = ''] = ref.split('/');
+    this.frequent.visitRepository(project, key);
   }
 }

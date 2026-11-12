@@ -42,7 +42,7 @@ const maxSourceBytes = 1 << 20
 func contents() toc {
 	return toc{
 		{"user", "User guide", []string{
-			"getting-started", "repositories", "packages", "vulnerabilities", "files", "client-setup", "container-images", "apt-packages", "ansible-collections", "access-tokens", "gitlab-ci-pipelines",
+			"getting-started", "search", "repositories", "packages", "vulnerabilities", "files", "client-setup", "container-images", "apt-packages", "ansible-collections", "access-tokens", "gitlab-ci-pipelines",
 			"troubleshooting",
 		}},
 		{"admin", "Administrator guide", []string{

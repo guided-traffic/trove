@@ -17,7 +17,7 @@ import { asApiError, valueOf } from '../../../shared/paged-resource';
 import { PageHeader } from '../../../shared/ui/page-header';
 import { AddressField } from '../../../shared/address-field';
 import { Disclosure } from '../../../shared/ui/disclosure';
-import { RecentRepositories } from '../recent-repositories';
+import { FrequentPlaces } from '../../../core/frequent-places';
 import { clientAddress } from '../repository-model';
 import { classLabel } from '../repository-wizard';
 import { contentShapeOf } from './content-shape';
@@ -56,7 +56,7 @@ export class RepositoryContent {
   private readonly api = inject(RepositoriesApi);
   private readonly router = inject(Router);
   private readonly session = inject(SessionStore);
-  private readonly recent = inject(RecentRepositories);
+  private readonly frequent = inject(FrequentPlaces);
   private readonly serverAddress = inject(ServerAddress);
   private readonly baseUrl = resource({ loader: () => this.serverAddress.baseUrl() });
 
@@ -162,7 +162,8 @@ export class RepositoryContent {
   constructor() {
     effect(() => {
       const ref = this.ref();
-      untracked(() => this.recent.add(ref));
+      const [project = '', key = ''] = ref.split('/');
+      untracked(() => this.frequent.visitRepository(project, key));
     });
   }
 
