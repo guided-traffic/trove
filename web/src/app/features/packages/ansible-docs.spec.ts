@@ -354,7 +354,7 @@ describe('The Documentation tab of an Ansible collection', () => {
     it('R-UI-060 changing the version drops doc and q', async () => {
       const r = await open({ doc: 'module/check_host_reachable', q: 'host' });
       const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
-      const input = r.root.querySelector<HTMLInputElement>('input[list="pkg-versions"]')!;
+      const input = r.root.querySelector<HTMLSelectElement>('select.version-select')!;
       input.value = '1.0.0';
       input.dispatchEvent(new Event('change', { bubbles: true }));
       expect(navigate).toHaveBeenCalledWith([], { queryParams: { version: '1.0.0', doc: null, q: null }, queryParamsHandling: 'merge' });

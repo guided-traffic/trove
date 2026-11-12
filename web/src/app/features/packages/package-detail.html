@@ -13,30 +13,24 @@
   <section class="pkg-header" aria-label="Package facts" i18n-aria-label="@@pkg.facts">
     <div class="version-line">
       <span class="field-label" i18n="@@pkg.fact.version">Version</span>
-        <span class="version-picker">
-          <input
-            class="text-input"
-            type="text"
-            list="pkg-versions"
-            autocomplete="off"
-            spellcheck="false"
-            aria-label="Version"
-            i18n-aria-label="@@pkg.version.picker"
-            translate="no"
-            [value]="selected()"
-            (focus)="$any($event.target).select()"
-            (change)="chooseVersion($event)"
-          />
-          <datalist id="pkg-versions">
-            @for (v of options(); track v.version) {
-              <option [value]="v.version"></option>
-            }
-          </datalist>
-          <label class="check-row">
-            <input type="checkbox" [checked]="includePrereleases()" (change)="togglePrereleases($event)" />
-            <span i18n="@@pkg.version.prereleases">Include pre-releases</span>
-          </label>
-        </span>
+      <span class="version-picker">
+        <!-- A choice among the versions: a select, as it looks (UI-A-11, Q-UI-315). -->
+        <select
+          class="select-input version-select"
+          aria-label="Version"
+          i18n-aria-label="@@pkg.version.picker"
+          translate="no"
+          (change)="chooseVersion($event)"
+        >
+          @for (v of options(); track v.version) {
+            <option [value]="v.version" [selected]="v.version === selected()">{{ v.version }}</option>
+          }
+        </select>
+        <label class="check-row">
+          <input type="checkbox" [checked]="includePrereleases()" (change)="togglePrereleases($event)" />
+          <span i18n="@@pkg.version.prereleases">Include pre-releases</span>
+        </label>
+      </span>
     </div>
     @if (unlisted()) {
       <p class="banner-warning" role="note">
@@ -362,7 +356,7 @@
     </div>
   </div>
 
-  <trove-settings-section class="pkg-details" [heading]="detailsHeading" [description]="detailsText">
+  <trove-disclosure class="pkg-details" [heading]="detailsHeading" [hint]="detailsText">
     <dl class="facts">
       <dt i18n="@@pkg.fact.published">Published</dt>
       <dd>
@@ -381,6 +375,6 @@
         </ul>
       </dd>
     </dl>
-  </trove-settings-section>
+  </trove-disclosure>
 
 }

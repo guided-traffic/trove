@@ -26,8 +26,8 @@ async function set(r: Opened, inputs: Record<string, unknown>) {
   await settle(r.fixture);
 }
 
-const versionInput = (r: Opened) => r.root.querySelector<HTMLInputElement>('input[list="pkg-versions"]')!;
-const options = (r: Opened) => [...r.root.querySelectorAll<HTMLOptionElement>('#pkg-versions option')].map((o) => o.value);
+const versionInput = (r: Opened) => r.root.querySelector<HTMLSelectElement>('select.version-select')!;
+const options = (r: Opened) => [...r.root.querySelectorAll<HTMLOptionElement>('select.version-select option')].map((o) => o.value);
 const tabLabels = (r: Opened) => [...r.root.querySelectorAll('[role="tab"]')].map((t) => text(t));
 
 describe('Package details', () => {
@@ -191,9 +191,9 @@ describe('Package details', () => {
 
   it('R-UI-007 R-UI-009 the install panel is part of the page and shows the command of the selected version', async () => {
     const r = await open();
-    expect(r.root.querySelector('trove-install-panel pre')?.textContent).toBe('npm install @team-a/ui@1.4.0');
+    expect((r.root.querySelector<HTMLInputElement>('trove-install-panel trove-address-field input')?.value ?? r.root.querySelector('trove-install-panel pre')?.textContent)).toBe('npm install @team-a/ui@1.4.0');
     await set(r, { version: '1.3.0' });
-    expect(r.root.querySelector('trove-install-panel pre')?.textContent).toBe('npm install @team-a/ui@1.3.0');
+    expect((r.root.querySelector<HTMLInputElement>('trove-install-panel trove-address-field input')?.value ?? r.root.querySelector('trove-install-panel pre')?.textContent)).toBe('npm install @team-a/ui@1.3.0');
   });
 
   it('R-UI-007 the install panel comes before the tabs in the document, so on a narrow content area the command is not below the README', async () => {
@@ -520,7 +520,7 @@ describe('Package details', () => {
 
     it('R-ANS-025 the install panel shows the collection install command of the selected version, and no error notice', async () => {
       const r = await collection();
-      expect(r.root.querySelector('trove-install-panel pre')?.textContent).toBe('ansible-galaxy collection install acme.tools:1.2.0');
+      expect((r.root.querySelector<HTMLInputElement>('trove-install-panel trove-address-field input')?.value ?? r.root.querySelector('trove-install-panel pre')?.textContent)).toBe('ansible-galaxy collection install acme.tools:1.2.0');
       expect(r.root.querySelector('[role="alert"]')).toBeNull();
       expect(r.root.querySelector('trove-error-notice')).toBeNull();
     });

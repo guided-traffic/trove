@@ -3,7 +3,7 @@ import { ProjectContext } from '../../core/project-context';
 import { SessionStore } from '../../core/session-store';
 import { BrowserStorage } from '../../core/storage';
 
-/** "Recently viewed" holds this many packages (R-UI-006). */
+/** "Recently opened" holds this many packages (R-UI-006). */
 export const RECENT_PACKAGES_LIMIT = 10;
 /** At most this many saved views (R-UI-006). */
 export const SAVED_VIEWS_LIMIT = 8;
@@ -52,7 +52,7 @@ export class PackageMemory {
     return s.key === key && key !== null ? s.value : key !== null ? this.read(key) : EMPTY;
   });
 
-  /** False hides the "Recently viewed" and "Saved views" tabs. */
+  /** False hides the "Recently opened" and "Saved views" tabs. */
   readonly available = computed(() => this.usable && this.key() !== null);
   readonly recent = computed(() => this.current().recent);
   readonly views = computed(() => this.current().views);

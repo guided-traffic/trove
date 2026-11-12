@@ -2954,7 +2954,7 @@ selected tab and selected version live in query parameters.
 | `/projects/{project}/vulnerabilities` (`?repository=&severity=&status=&…`), `/projects/{project}/vulnerabilities/findings/{id}`, `/projects/{project}/vulnerabilities/advisories/{ecosystem}/{id}` | Vulnerability report of the project, finding, advisory (from M4b) | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-022 |
 | `/projects/{project}/browse/{repo}/{path…}` | File tree with selection | R-UI-010 |
 | `/projects/{project}/repositories`, `/projects/{project}/repositories/new` | Repositories of the project | R-UI-020, R-UI-021 |
-| `/projects/{project}/repositories/{key}` (`?tab=setup&q=&sort=&path=`) | Content of the repository | R-UI-052 |
+| `/projects/{project}/repositories/{key}` (`?q=&sort=&path=`) | Content of the repository | R-UI-052 |
 | `/projects/{project}/repositories/{key}/settings` | Settings of the repository | R-UI-020 |
 | `/projects/{project}/members`, `/projects/{project}/settings` | Members and roles, settings of the project | R-UI-041 |
 | `/projects/{project}/policies`, `/projects/{project}/policies/new`, `/projects/{project}/policies/{name}` | Permission policies of the project | R-UI-027 |
@@ -3107,7 +3107,7 @@ Priority: **MVP** · Covers: UI-008, ART-048
   Details). Sortable by the package and updated in the headers; the sort by first created stays the API's and a saved view's
   (`sort=createdAt`). Every sort is the server's (R-API-029).
 - Paging with an explicit "Load more" button; no infinite scroll.
-- Tabs: all packages; recently viewed (last 10 opened, browser storage keyed by user); saved views
+- Tabs: all packages; recently opened (last 10 opened, browser storage keyed by user, Q-UI-323); saved views
   (at most 8, browser storage; rename, delete, make default; a list opened without any query applies the
   default view once). Browser storage access is wrapped so that blocked storage only hides these tabs.
   The tab is the `tab` query parameter.
@@ -3130,9 +3130,9 @@ Priority: **MVP** · Covers: UI-009, ART-049
 - Header: name, format (its icon of Q-UI-225 and its name), selected version (default: the latest stable visible version; the latest
   pre-release when no stable one exists), published time, licenses, download count, the
   repositories that contain it.
-- Version selector: combobox with type-to-filter and an "include pre-releases" switch that follows
-  the format's version rules (npm SemVer pre-release tags, NuGet SemVer 2.0 pre-release labels). An
-  "All versions" tab lists versions with published time, size, repositories and downloads.
+- Version selector: a select of the versions, newest first (it looks like the choice it is, Q-UI-315), and an "include
+  pre-releases" switch that follows the format's version rules (npm SemVer pre-release tags, NuGet SemVer 2.0 pre-release
+  labels). An "All versions" tab lists versions with published time, size, repositories and downloads.
 - Tabs: README (default when the version has one for the caller, `hasReadme`; a version without one, or whose wiki the
   caller may not read, has no README tab and the README is not requested, R-UI-008, R-UI-057; for the format `ansible` the tabs **Documentation**, **Contents** and, on a local repository, **Import log** replace and extend it: [Q-UI-240](#q-ui-240--an-ansible-package-has-a-documentation-tab-and-a-contents-tab-the-readme-tab-is-its-first-page) to Q-UI-244, shown by `metadata.docs` of the version details); Metadata (format-specific: npm dist-tags and
   dependency kinds, NuGet target frameworks and dependency groups, authors, project URL as a text
@@ -3148,7 +3148,7 @@ Priority: **MVP** · Covers: UI-009, ART-049
   wide, two columns follow: the tabs on the left, the install panel (R-UI-009) on the right, which
   stays in view while the README scrolls (`position: sticky`). Narrower, one column: header,
   install panel, then the tabs, so the install command never sits below a long README.
-- Opening the page records it in "recently viewed".
+- Opening the page records it in "recently opened" (Q-UI-323).
 - Links taken from package metadata (npm `homepage`, `repository.url`, `bugs.url`; NuGet
   `projectUrl`, `licenseUrl`, the `repository` URL) MUST be rendered as links only when their
   scheme is `http` or `https`, with `rel="nofollow noopener noreferrer"`; any other value is shown
@@ -3250,9 +3250,11 @@ Priority: **MVP** · Covers: UI-010
   repository picker when the version exists in more than one repository (default: a virtual
   repository containing it, else the first local one).
 - The command comes from the install snippet of R-API-030 with package and version, requested with
-  `credentials=none` (the install command carries no credentials). A copy button copies it; a live
-  region announces "Copied". The client picker lists the clients of the format that the UI has
-  instructions for (Q-UI-70).
+  `credentials=none` (the install command carries no credentials). A command of one line is an address field of R-UI-065
+  with its joined copy button; a command of several lines is a code block with its copy button (Q-UI-320); either way a
+  live region announces "Copied". The client picker lists the clients of the format that the UI has instructions for
+  (Q-UI-70).
+- The panel's selects (client, repository) stack and share the panel's width (Q-UI-320).
 - npm and NuGet install commands carry no credentials; the panel links to client setup for
   configuring the client once.
 - Commands longer than three lines are collapsed with an expander.
@@ -3272,12 +3274,15 @@ Priority: **MVP** · Covers: trove-only
 `…/settings`. One shell serves every format; what differs per format is a small table of words and columns, not a screen per format
 ([content-shape.ts](../../web/src/app/features/repositories/content/content-shape.ts)).
 
-- Header: the key (the `h1`), one muted sentence (the repository's description, else what the class means), the format and the class as
-  badges, the upstream of a remote repository and the members of a virtual repository, each linked to its content page, as far as
-  the caller may read them (the consumer view of R-REPO-010 has neither), and to the right the quiet actions Browse files (not for
-  generic, whose content is its files) and Vulnerabilities (not for generic and virtual) and the action Settings for a caller who can
-  read the configuration (`repositories:read-config`, or the Owner of the project).
-- Tabs (query `tab`): the content (labelled Images, Packages or Files) and **Set up client**.
+- Header (the shared page header of R-UI-067): the key (the `h1`), one muted sentence (the repository's description, else what
+  the class means), the format and the class as badges (and **disabled** for a disabled repository), the repository's client
+  address as an address field (its first address; the others are in Details, Q-UI-320), and at the right the primary action
+  **Set up client** (not for a disabled repository), **Settings** for a caller who can read the configuration
+  (`repositories:read-config`, or the Owner of the project) and a `more_vert` menu with **Browse files** (not for generic, whose
+  content is its files) and **Vulnerabilities** (not for generic and virtual).
+- No tabs: the content (captioned Images, Packages or Files) follows the header. **Set up client** opens the client setup of
+  R-UI-016 for this repository (`/setup?repository=<project>/<key>`), which shows the format and the repository as one line with
+  **Change** (Q-UI-316); it is the page's one way to the setup (Q-UI-321).
 - A package format (npm, NuGet, OCI, Debian, every format with a view adapter) lists its items from `GET /api/v1/packages` with
   `repository=<qualified name>` and `format=<format>`, the filter `q` (query, server-side, name and description) and the sort `name`
   or `updatedAt`, paged with "Load more". A column of open findings appears only for a format whose versions are matched against
@@ -3299,10 +3304,13 @@ Priority: **MVP** · Covers: trove-only
   clients have fetched appears. An OCI remote lists the images and tags its cache holds, from the same list API as a local one
   (R-OCI-036, Q-OCI-215): the note says that only the cached tags appear (those clients pulled and those a mirror pass fetched), the
   column of the tag's time is **Fetched** and not Pushed, and an empty remote says that it has cached no images yet (Q-UI-217).
-- **Set up client** is the client setup of R-UI-016 for this one repository, on the page: the format and the repository are fixed by the page,
-  so the steps that choose them are left out and the client is chosen in the component (Q-UI-216); the token, paste and snippet behaviour is
-  R-UI-016's unchanged, because it is the same component. Hidden for a disabled repository.
-- Opening the page records it in the recently viewed repositories (R-UI-020).
+- **Details** at the end of the page, closed (the disclosure of Q-UI-322), when the repository has one of these: the raw file
+  address, labelled **Address for downloads by path (curl, wget)** (the API's `addresses` list the format's protocol address
+  first and the raw file address after it where the two differ, R-REPO-002; the UI labels by that order and names no path of
+  its own, R-ARCH-007), the upstream a remote repository caches (its URL), and the members a virtual repository resolves from,
+  each linked to its content page as far as the caller may read them (the consumer view of R-REPO-010 has neither).
+- Opening the page records it in the recently opened repositories of the browser (R-UI-020), which the start page shows
+  (Q-UI-311, Q-UI-323).
 
 Acceptance criteria:
 
@@ -3767,7 +3775,9 @@ Priority: **MVP** · Covers: UI-030, REPO-007
   the project in a column; the project's own list (`/projects/{project}/repositories`, Q-UI-129) is the same screen
   for one project, without the project column and the project filter. The list is ordered by key; the API takes
   no `sort` parameter yet, so the table has no sort control (sorting by creation arrives with the
-  API, and the creation time with the summary, Q-UI-18). "Recently viewed" (browser storage, 20).
+  API, and the creation time with the summary, Q-UI-18). "Recently opened" (browser storage, 20) above the admin area's list; a
+  project's list leaves it to the start page and says under its heading what the project is and, to a plain user, whom to ask
+  (Q-UI-323).
 - The key links to the repository's content page (R-UI-052); the Settings action opens `…/settings`.
 - Row actions, in the row's menu (Q-UI-302): settings, browse, client setup, reindex (P1), invalidate cache (remote and virtual),
   from M4b vulnerabilities (local and remote repositories of a format with the vulnerability
@@ -5098,9 +5108,9 @@ the list showed a field of a different width in every row and scrolled sideways.
   (R-UI-044).
 - **No address, no field.** An empty address renders nothing; the caller decides what stands in its place (a server without a
   configured base URL shows no address, R-REPO-002).
-- **Scope (Q-UI-272).** The field holds exactly one address: a URL, or a registry host with a path
-  (`trove.k8s-main.wds18.de/docker-hub-remote`). A command, a configuration file or a snippet of several lines is not an
-  address; it keeps the code block with its copy button.
+- **Scope (Q-UI-272, Q-UI-320).** The field holds one line to copy: an address (a URL, or a registry host with a path,
+  `trove.k8s-main.wds18.de/docker-hub-remote`) or a command of one line (the install command of a package). A configuration
+  file or a snippet of several lines keeps the code block with its copy button.
 
 Acceptance criteria:
 
@@ -5129,13 +5139,16 @@ Each screen shows its client addresses through `<trove-address-field>` (R-UI-065
 | Repository list (R-UI-020), `/projects/{project}/repositories` and `/admin/repositories` | The column **Client address**, one field per row | The first address of the repository; one width for the column, the list's longest address up to its share (Q-UI-300); the label names the row |
 | Repository page (R-UI-021), settings view | The fact **Client address** | The field fills the fact up to the measure (Q-UI-301) |
 | Repository page, consumer view | The fact **Client address**, one field per address of the repository, stacked | Stacked fields are one width (Q-UI-301) |
+| Repository content page (R-UI-052) | The header: the repository's first address; **Details**: each further address with its label | Q-UI-320 |
+| Start page (Q-UI-311), recently opened repositories | One field per repository: its first address | Q-UI-320 |
 | Repository wizard (R-UI-021), review step | The line **Client address** | |
 | Client setup page (R-UI-016), Bastion banner | The Bastion's repository address | The sentence stays; the address is a field below it (Q-UI-272) |
 | Guides (R-UI-049), Bastion section | **Address of the repository on the Bastion** | As above |
 | Endpoint page, the address of an exposure rule | One field per rule | The existing **Copy client address** button becomes the field's; one width for the column (Q-UI-300) |
 
 Not in scope: the text of a guide (server-rendered HTML, where an address is prose in `<code>`), the snippets and commands of
-the setup page and the guides, the install command of a package, the **Base URL** and **Hosts** columns and field of the
+the setup page and the guides, a command of several lines (an install command of one line is a field, Q-UI-320), the
+**Base URL** and **Hosts** columns and field of the
 endpoint (configuration of an endpoint, not an address given to a client), and digests and fingerprints (a hash is not an
 address).
 
@@ -5166,7 +5179,7 @@ the guides) the highest kind of the caller's memberships counts.
   layout for every kind. The decisions per screen are Q-UI-311 to Q-UI-316.
 - **Details behind one disclosure.** What only power users and administrators need (configuration facts, statistics, owners and
   claims, internal names) is not in the main view: it sits in one closed section **Details** at the end of the screen's main view,
-  the same component on every screen, which remembers per user and screen whether it was opened
+  the same quiet disclosure on every screen (Q-UI-322), which remembers per user and screen whether it was opened
   ([Q-UI-319](#q-ui-319--the-details-are-one-closed-section-per-screen-that-remembers-whether-the-user-opened-it)). Changes stay on
   the screen's **Settings**, which is offered only to who may change (R-UI-005).
 - **Nothing in the way.** The plain user is not offered a read-only copy of a settings page, a sidebar entry of an administration
@@ -10304,7 +10317,8 @@ Status: **Decided by the development agent** — selected from the options below
 **Rationale:** a field says "this is the thing to put into a configuration"; a code block says "run or save this". The
 development agent revisits (b) if the owner wants the one-line registry command as a field.
 
-**Applied in the spec:** R-UI-065, R-UI-066.
+**Applied in the spec:** R-UI-065, R-UI-066. **Replaced in part by [Q-UI-320](#q-ui-320--every-value-to-copy-of-one-line-is-a-field-with-its-joined-copy-button-a-page-shows-one-client-address-and-a-panels-selects-share-one-width)**
+(the coordinator, fix wave 2 of T-21): a command of one line is a field too; a command of several lines stays a code block.
 
 ### Q-UI-273 · The field is a native read-only input that selects its text on focus, beside the existing copy button
 
@@ -10631,7 +10645,9 @@ The development agent revisits the order of the three parts once the search exis
 confirms. Built in fix wave 1: the search finds packages (`GET /api/v1/packages?q=`, from two characters, 300 ms after the last key,
 ten results); the last five repositories opened in this browser show their address fields and **Set up client**; the projects are
 named by their display name with the key under it. A search for repositories across projects is not built: it needs a list the
-plain user may read across projects.
+plain user may read across projects. The top bar's search for the plain user is the owner's task T-22 (one search with
+suggestions); the start page's package search stays as it is until then. Fix wave 2: each recently opened repository shows its
+first address only, and its **Set up client** opens `/setup?repository=` (Q-UI-320, Q-UI-321).
 
 ### Q-UI-312 · The repository list shows the plain user the repository, format, class and address; activity and maintenance actions are the power user's
 
@@ -10667,7 +10683,8 @@ setup. The development agent revisits the facts' place if power users miss them 
 **Applied in the spec:** R-UI-067, R-UI-052, R-UI-066 (the consumer view's place of the address is the header). Built in fix wave 1:
 the header with the address fields, **Set up client** as the primary action, **Settings** for who may change, **Browse files**
 and **Vulnerabilities** in the header's menu, and the upstream or the members as a closed **Details** at the end of the page; the
-read-only settings view is still offered (UI-A-06).
+read-only settings view is still offered (UI-A-06). Fix wave 2: the header holds the first address alone and Details the others
+with their labels (Q-UI-320); the setup tab is gone (Q-UI-321); Details is the quiet disclosure (Q-UI-322).
 
 ### Q-UI-314 · The package list shows name, format, latest version and when it changed; counts and dates of creation are the package page's
 
@@ -10701,7 +10718,8 @@ repository.
 
 **Applied in the spec:** R-UI-067, R-UI-007. Built in fix wave 1 in part: the shared header, the version line, and the facts
 (published, licences, downloads, repositories) as a closed **Details** at the end; the Metadata and Repositories tabs stay tabs
-for now, and the owners and claims are not on the page yet.
+for now, and the owners and claims are not on the page yet. Fix wave 2: the version choice is a select; the install panel's
+selects share one width and its one-line command is a field (Q-UI-320); Details is the quiet disclosure (Q-UI-322).
 
 ### Q-UI-316 · The client setup starts from where the user came, and its advanced choices are closed
 
@@ -10741,7 +10759,9 @@ revisits it if readers look for colleagues there.
 **Applied in the spec:** R-UI-067, R-UI-041 (the read-only screens stay reachable by URL). Built in fix wave 1: the sidebar of a
 plain user (at most a reader, no system role) holds Repositories, Packages, Browse and Vulnerabilities; the project's
 repository list shows them a closed **About this project** with the description and the Owners by name; the list's row menu
-offers **Settings** only to who may read or change the configuration.
+offers **Settings** only to who may read or change the configuration. **Replaced in part by
+[Q-UI-323](#q-ui-323--a-projects-repository-list-says-in-one-muted-line-what-the-project-is-and-whom-to-ask-recently-opened-is-the-start-pages)**
+(fix wave 2): the closed section became one muted line under the list's heading.
 
 ### Q-UI-318 · The plain user's main views name no internal terms; a refusal says who can do it
 
@@ -10770,7 +10790,91 @@ Status: **Decided by the development agent** — selected from the options below
 **Choice:** (a). **Rationale:** one look for everyone, and the power user pays one click once. The development agent revisits (b) if
 power users report the click.
 
-**Applied in the spec:** R-UI-067. The style guide gets the component's entry with the first screen that uses it.
+**Applied in the spec:** R-UI-067. The component is the quiet disclosure of Q-UI-322 (fix wave 2); that it remembers whether the
+user opened it is not built yet: it opens closed on every visit.
+
+### Q-UI-320 · Every value to copy of one line is a field with its joined copy button; a page shows one client address, and a panel's selects share one width
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: fix wave 2 of T-21 (the coordinator, 2026-11-12) after the renders of fix wave 1: the repository page's header and the
+start page's recently opened repositories showed two address fields without a label (the client address and the address for
+downloads by path, `…/files/…`), and the user could not tell which one a client needs; the install panel showed its selects each
+as wide as its longest option, and its one-line command as a code block with a copy button beside it, a second look for "copy
+this" next to the address field.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An address and a command of one line are `<trove-address-field>` (the read-only input with its joined copy button); a command of several lines stays a code block with its copy button. The header of the repository page and the start page show the repository's first address only; the further ones are labelled fields in the repository page's Details. The selects of a panel stack and take the panel's width (chosen) | One look for one line to copy; one address where a client needs one | The plain user copies the one address its client takes; the second address says what it is for; the panel's controls line up | A long command scrolls inside its field instead of wrapping |
+| (b) Keep Q-UI-272: a command is a code block | Two looks | A command reads as something to run | Two copy patterns on one panel, which the owner's renders called out |
+| (c) Both addresses in the header, each with a label | Everything at the top | No click for the download address | The plain user chooses between two addresses at the first glance; the header grows by two lines |
+
+**Choice:** (a). **Rationale:** a user who copies a value should meet one control for it everywhere, and the screen that a plain user
+opens for its address should hold the one its client takes. The download address is for scripts that fetch by path, a detail.
+The development agent revisits the place of the download address if the walkthrough shows readers of generic repositories copy it
+first.
+
+**Applied in the spec:** R-UI-065 (scope), R-UI-066, R-UI-009, R-UI-052; replaces Q-UI-272 for commands of one line. Built in fix
+wave 2.
+
+### Q-UI-321 · A repository's client setup is reached one way: the header's Set up client opens the setup for the repository
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: after fix wave 1 the repository page offered the setup twice: the header's primary action **Set up client** and a tab
+**Set up client** beside the content, which the button selected.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The button opens the client setup page for the repository (`/setup?repository=<project>/<key>`, Q-UI-316); the page has no tabs (chosen) | One control, one page | The same way as the start page's and the list's **Set up client**; the setup page has its **Change** and its closed options; the content needs no tab strip | The user leaves the repository page (the browser's back returns) |
+| (b) Keep the tab; the button selects it | Two controls for one place | The setup stays beside the content | Two ways for one job; the tab hides the content |
+| (c) Keep the tab, drop the button | The tab is the way | One control | The page's main action is no longer in the header (Q-UI-307); the start page and the list still need the page |
+
+**Choice:** (a). **Rationale:** a job has one way to it, and the way should be the same from every screen that offers it. The
+development agent revisits it if users want the setup and the content side by side.
+
+**Applied in the spec:** R-UI-052 and the route table (no `tab` parameter). Built in fix wave 2; a disabled repository offers no
+**Set up client**, as its tab did not.
+
+### Q-UI-322 · A closed section of details is one quiet disclosure: a small heading with a chevron and one hint line
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: fix wave 1 built the repository page's and the package page's **Details** and the project list's **About this project**
+with `<trove-settings-section>`, the collapsible group of a settings page: its heading at `--trove-heading-2` and its bordered
+region made each look like a second title of the page below its content.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `<trove-disclosure heading hint [(expanded)]>`: the heading at the size of the text, weight 600, as a button with a chevron that turns when open; one muted hint line under it; the body below. A settings page keeps `<trove-settings-section>` for its groups (chosen) | Two components, one per job | Details stay quiet below the content; a settings page keeps the headings that structure it | Two collapsible components to keep apart |
+| (b) `<trove-settings-section>` everywhere, with a quiet variant | One component | One file | One component whose look depends on an input; a reader has to know which look means what |
+| (c) The native `<details>` and `<summary>` | No component | Nothing to build | The marker differs between browsers; the open state does not bind to a signal, which remembering it (Q-UI-319) needs |
+
+**Choice:** (a). **Rationale:** what is on demand should be quiet until asked for, and a settings page's groups are its content, not
+details. The development agent revisits (b) if the two components grow apart in behaviour.
+
+**Applied in the spec:** R-UI-067, Q-UI-319; the style guide's components table and its section on details. Built in fix wave 2 on
+the repository page and the package page.
+
+### Q-UI-323 · A project's repository list says in one muted line what the project is and whom to ask; recently opened is the start page's
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: after fix wave 1 a plain user's repository list of a project showed a section "Recently viewed" above the list and a closed
+**About this project** with the description and the Owners; the start page shows the same repositories as "Recently opened", the
+package list's tab says "Recently viewed" and the project switcher "Recently visited".
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The project's description is the one muted line under the heading; for a plain user it ends with "Ask {Owners} for access or a new repository."; the recently opened repositories are the start page's (and stay above the admin area's list); every list of what the user opened is called **Recently opened** (chosen) | The list first, the project in one line | Nothing above the list but its header; whom to ask is visible without a click; one name for one idea | The members are no longer one click away for a reader (they never could change them) |
+| (b) **About this project** below the list | The section moves | Room for more than the Owners | A closed section at the end of a long list for one sentence |
+| (c) As after fix wave 1 | Unchanged | Nothing to build | Two sections before the list, and three names for one idea |
+
+**Choice:** (a). **Rationale:** the plain user opens a project's list to find a repository, so the list comes right after one line
+about the project; whom to ask is the one fact of the About section a reader acts on. The development agent revisits (b) if the
+walkthrough shows readers look for the project's members.
+
+**Applied in the spec:** R-UI-020, R-UI-006, R-UI-007, R-UI-052; replaces Q-UI-317's About section. Built in fix wave 2.
 
 ### Q-API-246 · An operation that is allowed while the installation is read-only declares `x-trove-maintenance: allowed`
 

@@ -577,7 +577,9 @@ Priority: **MVP** · Covers: REPO-055, REPO-056, API-057, API-058
 - Secret fields are never returned: an inline secret reads as `{"set": true}`, a reference reads back
   as the `secretRef` it is (a file name or variable name is not secret).
 - The consumer view contains `key`, `project`, `class`, `format`, `description`, `layout` and the client
-  addresses, as [R-AUTHZ-016](authorization.md) defines it. It omits upstream settings, notes, pins,
+  addresses, as [R-AUTHZ-016](authorization.md) defines it: `addresses` holds the format's protocol address first and the
+  raw file address (`/files/<projectKey>/<repoKey>/`) after it, once, so a generic repository has one; the UI labels them by
+  this order ([api-and-ui.md](api-and-ui.md) R-UI-052). It omits upstream settings, notes, pins,
   claims and members: an internal registry host or another team's repository key is information
   too.
 

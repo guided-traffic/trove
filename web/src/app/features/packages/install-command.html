@@ -18,10 +18,15 @@
   } @else if (answer.isLoading()) {
     <p role="status" i18n="@@pkg.install.loading">Loading the command.</p>
   } @else if (command()) {
-    <div class="command">
-      <pre class="code-block folding" translate="no" tabindex="0" [style.--lines]="shownLines()">{{ command() }}</pre>
-      <trove-copy-button [value]="command()" [label]="copyLabel" />
-    </div>
+    @if (oneLine()) {
+      <!-- A one-line command is one copyable value, as an address is: the field with its joined copy button (Q-UI-320). -->
+      <trove-address-field class="command-field" [value]="command()" [label]="commandLabel" [copyLabel]="copyLabel" />
+    } @else {
+      <div class="command">
+        <pre class="code-block folding" translate="no" tabindex="0" [style.--lines]="shownLines()">{{ command() }}</pre>
+        <trove-copy-button [value]="command()" [label]="copyLabel" />
+      </div>
+    }
     @if (collapsible()) {
       <button
         type="button"

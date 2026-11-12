@@ -63,9 +63,10 @@ Every page inside the shell has this order:
 | Breadcrumb | Set by the route; a page does not draw its own |
 | Header | `<trove-page-header heading description>` ([page-header.ts](../../web/src/app/shared/ui/page-header.ts), [Q-UI-307](../spec/api-and-ui.md#q-ui-307--a-pages-own-actions-are-buttons-at-the-right-end-of-its-header-views-of-the-same-thing-are-tabs)): the `<h1 tabindex="-1">` names the object on its page (`[name]="true"` for a key or a package name) or the list's noun; one muted sentence under it; the facts that name the object projected with `meta`; its client address where it has one (`[addresses]`). Older pages still have `<header class="page-header">` |
 | Primary action | At the right end of the header (projected with `actions`), one `btn btn-confirm` (**Add member**, **Create token**). A second action of the page is a `btn btn-default` to its left; more go into a `more_vert` menu |
-| Tabs | Directly under the header, `tab-nav`, the count of a list as a neutral `badge` in the tab. Another view of the same object (its files, its vulnerabilities, its setup) is a tab, never a quiet link in the header |
+| Tabs | Directly under the header, `tab-nav`, the count of a list as a neutral `badge` in the tab. Another view of the same object (its files, its vulnerabilities) is a tab or an entry of the header's menu, never a quiet link in the header. A job has one way to it: the client setup is the header's **Set up client**, which opens the setup page for the object, not also a tab ([Q-UI-321](../spec/api-and-ui.md#q-ui-321--a-repositorys-client-setup-is-reached-one-way-the-headers-set-up-client-opens-the-setup-for-the-repository)) |
 | Toolbar of a list | Under the tabs: the filter on the full width, then sort and direction |
 | Content | A table, a form or sections, as below |
+| Details | What only a power user or an administrator needs, last, in one closed `<trove-disclosure>` **Details** (see [Opening and closing](#opening-and-closing)) |
 
 One `<h1>` per page. Page titles are nouns (**Members**, **Settings**), in sentence case. The description is one sentence;
 what would need a second one belongs in the [manual](manual.md).
@@ -135,7 +136,8 @@ existing ones are moved over ([What does not follow this page yet](#what-does-no
 | Element | How |
 |---|---|
 | A region that stays in the page | `<div class="collapse-region" [class.open]="open()"><div>…</div></div>`; the second element is required |
-| A collapsible section of a page | `<trove-settings-section heading description>` ([settings-section.ts](../../web/src/app/shared/ui/settings-section.ts)) |
+| A collapsible group of a settings page | `<trove-settings-section heading description>` ([settings-section.ts](../../web/src/app/shared/ui/settings-section.ts)): the title at `--trove-heading-2`, because the groups are the page |
+| The details of a content page | `<trove-disclosure heading hint>` ([disclosure.ts](../../web/src/app/shared/ui/disclosure.ts), [Q-UI-322](../spec/api-and-ui.md#q-ui-322--a-closed-section-of-details-is-one-quiet-disclosure-a-small-heading-with-a-chevron-and-one-hint-line)): the heading at the text's size, weight 600, a chevron before it, one muted hint line, closed at first; `[(expanded)]` binds its state. Never a settings section below a list or a README |
 | Something added and removed with `@if` | A wrapper with `class="collapse-animated" animate.enter="collapse-in" animate.leave="collapse-out"` around one child |
 | A side panel, a drop-down panel, the sidebar | `panel-in`, `panel-out`; `dropdown-in`, `dropdown-out`; `sidebar-in`, `sidebar-out` |
 | A native `<details>` | Nothing: it animates by itself where the browser can |
@@ -150,6 +152,9 @@ The button has `aria-expanded` and `aria-controls`. A closed region is `visibili
 - Help text is one muted line under the field. An error replaces nothing: it appears below the field, in the error colour, tied
   to it by `aria-describedby`, and the field has `aria-invalid`.
 - Field width follows the content: a name half the column, a description the whole column.
+- The selects of a panel (the install panel's client and repository) stack and take the panel's width, so they line up whatever
+  their options say ([Q-UI-320](../spec/api-and-ui.md#q-ui-320--every-value-to-copy-of-one-line-is-a-field-with-its-joined-copy-button-a-page-shows-one-client-address-and-a-panels-selects-share-one-width)).
+- A choice among the values of a list (the version of a package) is a select, so it looks like the choice it is.
 - A choice among three or fewer exclusive things, where the reader should see them all, is a radio group, each option with a
   muted sentence under its label. Four or more is a select. A disabled option stays visible, muted, and says why.
 - Only valid combinations can be chosen: a control that can reach a state that means nothing is the wrong control
@@ -174,7 +179,9 @@ long or repeated form is a page. Open it with `TroveDialog`: focus, Escape and t
 ## Address field
 
 `<trove-address-field>` (`web/src/app/shared/address-field.ts`, [R-UI-065](../spec/api-and-ui.md#r-ui-065--one-read-only-address-field-with-a-joined-copy-button-for-every-client-address)) shows
-one client address the way the reference shows **Clone with SSH**: a read-only input group.
+one line to copy the way the reference shows **Clone with SSH**: a read-only input group. It is the one pattern for a value to
+copy of one line, an address or a command
+([Q-UI-320](../spec/api-and-ui.md#q-ui-320--every-value-to-copy-of-one-line-is-a-field-with-its-joined-copy-button-a-page-shows-one-client-address-and-a-panels-selects-share-one-width)).
 
 ```html
 <trove-address-field [value]="address" label="Client address" copyLabel="Copy client address" />
@@ -186,14 +193,19 @@ one client address the way the reference shows **Clone with SSH**: a read-only i
 | `label` | The accessible name of the field; in a list it names the row (**Client address of npm-internal**) |
 | `copyLabel` | The accessible name and title of the copy button (**Copy client address of npm-internal**) |
 
-In a list the cell is `<td class="address-cell">`, and the list sets on the table or the data table the length of its longest
-address, `[style.--trove-address-chars]="addressChars()"`, and the room its other columns need, `[style.--trove-address-others]`
-([repository-list.html](../../web/src/app/features/repositories/repository-list.html) is the worked example).
+In a list the cell is `<td class="address-cell">` of the column marked `fill`; the list sets on the data table the length of its
+longest address, `[style.--trove-address-chars]="addressChars()"`, and the data table sums the room of the other columns from
+their `width`s into `--trove-list-others` ([repository-list.html](../../web/src/app/features/repositories/repository-list.html)
+is the worked example).
 
 - **When.** The address a client puts into its configuration: a repository's base URL or registry host with a path, a Bastion's
-  repository address, an exposure rule's address. A command, a configuration file or a snippet of several lines is not an
-  address and keeps the code block with its copy button ([Q-UI-272](../spec/api-and-ui.md#q-ui-272--an-address-field-holds-one-address-multi-line-snippets-stay-code-blocks-and-the-bastion-address-becomes-a-field)).
+  repository address, an exposure rule's address; and a command of one line (the install command of a package, labelled
+  **Install command**). A configuration file or a snippet of several lines keeps the code block with its copy button
+  ([Q-UI-272](../spec/api-and-ui.md#q-ui-272--an-address-field-holds-one-address-multi-line-snippets-stay-code-blocks-and-the-bastion-address-becomes-a-field), Q-UI-320).
   A hash (digest, fingerprint) is not an address either: `<code>` with its short form and the full text as `title`.
+- **One address in the header.** A page header and a line of the start page show the object's client address, the first of its
+  addresses. Its further addresses are in **Details**, each with a visible label that says what it is for (**Address for downloads
+  by path (curl, wget)**); two fields without a label make the user guess (Q-UI-320).
 - **Measures.** Height `--trove-control-height` (32 px); text `--trove-font-mono` at 0.875rem; padding `--trove-space-1`
   `--trove-space-3`; border 1 px `--trove-control-border` (hover `--trove-control-border-hover`, focus the ring of the other
   controls); fill `--trove-control-bg`, not the grey of `.text-input[readonly]`
@@ -202,7 +214,7 @@ address, `[style.--trove-address-chars]="addressChars()"`, and the room its othe
   with the input's, inner corners square, outer corners `--trove-control-radius`.
 - **Width: one per place, never per address.** The field fills its line and never takes its address's width.
   - In a list every field has one width: the column `td.address-cell` is as wide as the list's longest address in the field's
-    face, at most the list's width minus `--trove-address-others` (the room of the other columns) and at least 16 rem; that
+    face, at most the list's width minus `--trove-list-others` (the room of the other columns) and at least 16 rem; that
     width is also the column's least, so the other columns give way first. The field fills the cell and shows the address from
     its start, never its tail. At 1440 px a project's repository list shows an address of 57 characters whole
     ([Q-UI-300](../spec/api-and-ui.md#q-ui-300--in-a-list-every-address-field-has-one-width-the-lists-longest-address-up-to-what-the-other-columns-leave)).
@@ -241,7 +253,8 @@ Before a screen is committed:
 - [ ] Compared side by side with the reference's screen for the same job, in a real browser, not only in a unit test.
 - [ ] Seen in the dark and the light scheme, and at a narrow window.
 - [ ] Only shared controls, classes of `_controls.scss` and `--trove-*` tokens; no colour literal.
-- [ ] One `<h1>`, one primary action per view.
+- [ ] One `<h1>`, one primary action per view, one way to each job (no button and tab for the same thing).
+- [ ] Every value to copy of one line is an address field; a page shows one client address, further ones labelled in Details.
 - [ ] Every control named; the keyboard reaches everything; a spec of the screen calls `seriousViolations` and it passes.
 - [ ] Every string has an `i18n` ID and a German translation.
 - [ ] The spec names the decision, and the manual describes the screen where it did.

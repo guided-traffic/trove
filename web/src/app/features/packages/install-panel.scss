@@ -10,9 +10,10 @@
   }
 }
 
+// The selects of a panel are one width: the panel's (Q-UI-320).
 .pickers {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--trove-space-3);
   margin-block-end: var(--trove-space-3);
 }
@@ -22,6 +23,14 @@
   flex-direction: column;
   gap: var(--trove-space-1);
   min-inline-size: 0;
+
+  .select-input {
+    inline-size: 100%;
+  }
+}
+
+.command-field {
+  max-inline-size: none;
 }
 
 .command {

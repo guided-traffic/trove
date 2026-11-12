@@ -89,14 +89,11 @@ const RECENT_SHOWN = 5;
                 <a [routerLink]="['/projects', r.project, 'repositories', r.key]" translate="no">{{ r.key }}</a>
                 <span class="muted" translate="no">{{ r.project }}</span>
               </div>
-              @for (a of r.addresses; track a) {
+              <!-- The client address only (Q-UI-320); a further address is on the repository's page. -->
+              @if (r.addresses[0]; as a) {
                 <trove-address-field [value]="a" [label]="addressLabel(r.key)" [copyLabel]="copyLabel(r.key)" />
               }
-              <a
-                class="btn btn-default"
-                [routerLink]="['/projects', r.project, 'repositories', r.key]"
-                [queryParams]="{ tab: 'setup' }"
-                i18n="@@repo.content.tab.setup"
+              <a class="btn btn-default" routerLink="/setup" [queryParams]="{ repository: r.ref }" i18n="@@repo.content.tab.setup"
                 >Set up client</a
               >
             </li>

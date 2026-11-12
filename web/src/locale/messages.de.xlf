@@ -11367,8 +11367,8 @@
         <note category="location">src/app/features/packages/package-list.html:22,24</note>
       </notes>
       <segment>
-        <source>Recently viewed</source>
-        <target>Zuletzt angesehen</target>
+        <source>Recently opened</source>
+        <target>Zuletzt geöffnet</target>
       </segment>
     </unit>
     <unit id="pkg.views.saved">
@@ -14588,8 +14588,8 @@
         <note category="location">src/app/features/projects/project-switcher.ts:55,56</note>
       </notes>
       <segment>
-        <source>Recently visited</source>
-        <target>Zuletzt besucht</target>
+        <source>Recently opened</source>
+        <target>Zuletzt geöffnet</target>
       </segment>
     </unit>
     <unit id="switcher.all">
@@ -16490,15 +16490,6 @@
         <target>Repositories</target>
       </segment>
     </unit>
-    <unit id="repo.recent">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-list.html:16,18</note>
-      </notes>
-      <segment>
-        <source>Recently viewed</source>
-        <target>Zuletzt angesehen</target>
-      </segment>
-    </unit>
     <unit id="repo.badge.deleting">
       <notes>
         <note category="location">src/app/features/repositories/repository-list.html:61,63</note>
@@ -16600,15 +16591,6 @@
       <segment>
         <source>Details</source>
         <target>Details</target>
-      </segment>
-    </unit>
-    <unit id="repo.content.details-text">
-      <notes>
-        <note category="location">src/app</note>
-      </notes>
-      <segment>
-        <source>Where this repository fetches from, or what it resolves from.</source>
-        <target>Woher dieses Repository lädt oder woraus es auflöst.</target>
       </segment>
     </unit>
     <unit id="pkg.col.package">
@@ -16737,31 +16719,49 @@
         <target>Ändern</target>
       </segment>
     </unit>
-    <unit id="repo.about.heading">
+    <unit id="pkg.install.command">
       <notes>
         <note category="location">src/app</note>
       </notes>
       <segment>
-        <source>About this project</source>
-        <target>Über dieses Projekt</target>
+        <source>Install command</source>
+        <target>Installationsbefehl</target>
       </segment>
     </unit>
-    <unit id="repo.about.text">
+    <unit id="repo.content.copy-files-address">
       <notes>
         <note category="location">src/app</note>
       </notes>
       <segment>
-        <source>What the project is for and whom to ask.</source>
-        <target>Wofür das Projekt da ist und wen Sie fragen.</target>
+        <source>Copy address for downloads by path</source>
+        <target>Adresse für Downloads über den Pfad kopieren</target>
       </segment>
     </unit>
-    <unit id="repo.about.owners">
+    <unit id="repo.content.details-text2">
       <notes>
         <note category="location">src/app</note>
       </notes>
       <segment>
-        <source>Owners, whom to ask for access or a new repository:</source>
-        <target>Owner, die Sie um Zugriff oder ein neues Repository bitten:</target>
+        <source>Further addresses, and where this repository fetches from or what it resolves from.</source>
+        <target>Weitere Adressen und woher dieses Repository lädt oder woraus es auflöst.</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.files-address">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Address for downloads by path (curl, wget)</source>
+        <target>Adresse für Downloads über den Pfad (curl, wget)</target>
+      </segment>
+    </unit>
+    <unit id="repo.list.ask">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Ask <ph id="0" equiv="owners" disp="owners.join(&apos;, &apos;)"/> for access or a new repository.</source>
+        <target>Fragen Sie <ph id="0" equiv="owners" disp="owners.join(&apos;, &apos;)"/> nach Zugriff oder einem neuen Repository.</target>
       </segment>
     </unit>
     <unit id="repo.col.repository">
@@ -29911,15 +29911,6 @@
       <segment>
         <source>This package type is not scanned for vulnerabilities yet.</source>
         <target>Dieser Pakettyp wird noch nicht auf Schwachstellen geprüft.</target>
-      </segment>
-    </unit>
-    <unit id="repo.content.setup-disabled">
-      <notes>
-        <note category="location">src/app/features/repositories/content/repository-content.html:73,75</note>
-      </notes>
-      <segment>
-        <source>This repository is disabled, so clients cannot use it.</source>
-        <target>Dieses Repository ist deaktiviert, Clients können es daher nicht verwenden.</target>
       </segment>
     </unit>
     <unit id="repo.content.sentence.remote">

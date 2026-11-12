@@ -52,7 +52,7 @@ const SHOWN = 20;
           (input)="query.set($any($event.target).value)"
         />
         @if (recent().length > 0 && query().trim() === '') {
-          <p class="switcher-heading" i18n="@@switcher.recent">Recently visited</p>
+          <p class="switcher-heading" i18n="@@switcher.recent">Recently opened</p>
           <ul class="switcher-list">
             @for (p of recent(); track p.key) {
               <li>

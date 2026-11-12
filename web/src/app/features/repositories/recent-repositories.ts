@@ -3,7 +3,7 @@ import { BrowserStorage } from '../../core/storage';
 
 const STORAGE_KEY = 'trove.recent-repositories';
 
-/** "Recently viewed" holds this many repositories (R-UI-020). */
+/** "Recently opened" holds this many repositories (R-UI-020). */
 export const RECENT_LIMIT = 20;
 
 /**

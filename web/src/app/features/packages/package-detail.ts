@@ -1,7 +1,7 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
 import { PageHeader } from '../../shared/ui/page-header';
-import { SettingsSection } from '../../shared/ui/settings-section';
+import { Disclosure } from '../../shared/ui/disclosure';
 import { TabGroup, TabPage } from '../../shared/ui/tabs';
 import { Router, RouterLink } from '@angular/router';
 import { PackageDocTree, PackageVersionDocs, PackageVersionSummary, PackagesApi } from '../../api/packages-api';
@@ -179,7 +179,7 @@ function frameworkGroups(value: unknown): FrameworkGroup[] {
     DecimalPipe,
     TabGroup, TabPage,
     PageHeader,
-    SettingsSection,
+    Disclosure,
     RouterLink,
     CopyButton,
     DataTable,
@@ -610,7 +610,7 @@ export class PackageDetail {
   };
 
   constructor() {
-    // Opening the page records it in "recently viewed" (R-UI-007).
+    // Opening the page records it in "recently opened" (R-UI-007).
     effect(() => {
       const s = valueOf(this.summary);
       if (s) untracked(() => this.memory.addRecent({ format: s.format, name: s.name }));
@@ -629,7 +629,7 @@ export class PackageDetail {
   }
 
   protected chooseVersion(event: Event): void {
-    const value = (event.target as HTMLInputElement).value.trim();
+    const value = (event.target as HTMLSelectElement).value.trim();
     if (this.all().some((v) => v.version === value)) void this.navigate({ version: value, doc: null, q: null });
   }
 

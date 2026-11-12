@@ -128,7 +128,7 @@ describe('The project is the context of the content (Q-UI-129)', () => {
     await settleApp(fixture);
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
     const panel = root.querySelector('#project-switcher-panel')!;
-    expect(panel.textContent).toContain('Recently visited');
+    expect(panel.textContent).toContain('Recently opened');
     expect([...panel.querySelectorAll('a.switcher-item')].map((a) => a.getAttribute('href'))).toEqual([
       '/projects/data',
       '/projects/data',

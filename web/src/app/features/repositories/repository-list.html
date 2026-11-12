@@ -1,19 +1,20 @@
-<header class="page-header">
-  <h1 tabindex="-1" i18n="@@repo.list.heading">Repositories</h1>
+<!-- The header names the list; inside a project its one muted line is the project's description and, for a plain user, whom
+     to ask (Q-UI-317, UI-A-15). The repositories opened last are the start page's, in the admin area this list's. -->
+<trove-page-header [heading]="heading" [description]="headerLine()">
   @if (inProject() && canCreateHere()) {
-    <a class="btn btn-confirm" [routerLink]="['/projects', projectKey(), 'repositories', 'new']" i18n="@@repo.list.create"
+    <a actions class="btn btn-confirm" [routerLink]="['/projects', projectKey(), 'repositories', 'new']" i18n="@@repo.list.create"
       >Create repository</a
     >
   } @else if (!inProject() && canCreate()) {
-    <a class="btn btn-confirm" routerLink="/admin/repositories/new" i18n="@@repo.list.create"
+    <a actions class="btn btn-confirm" routerLink="/admin/repositories/new" i18n="@@repo.list.create"
       >Create repository</a
     >
   }
-</header>
+</trove-page-header>
 
-@if (recentKeys().length > 0 && !filtered()) {
+@if (!inProject() && recentKeys().length > 0 && !filtered()) {
   <section aria-labelledby="recent-heading" class="recent">
-    <h2 id="recent-heading" i18n="@@repo.recent">Recently viewed</h2>
+    <h2 id="recent-heading" i18n="@@projects-home.recent">Recently opened</h2>
     <ul>
       @for (key of recentKeys(); track key) {
         <li>
@@ -22,21 +23,6 @@
       }
     </ul>
   </section>
-}
-
-@if (about(); as a) {
-  <!-- A plain user's way to the project's facts and to whom to ask (Q-UI-317): closed, above the list. -->
-  <trove-settings-section class="about" [heading]="aboutHeading" [description]="aboutText">
-    @if (a.description) {
-      <p>{{ a.description }}</p>
-    }
-    @if (a.owners.length > 0) {
-      <p>
-        <ng-container i18n="@@repo.about.owners">Owners, whom to ask for access or a new repository:</ng-container>&ngsp;
-        <span translate="no">{{ a.owners.join(', ') }}</span>
-      </p>
-    }
-  </trove-settings-section>
 }
 
 @if (deleteFailure(); as f) {

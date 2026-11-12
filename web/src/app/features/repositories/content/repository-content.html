@@ -1,7 +1,7 @@
 @if (failure(); as f) {
   <trove-error-notice [error]="f" (retry)="loaded.reload()" />
 } @else if (repository(); as r) {
-  <trove-page-header [heading]="r.key" [name]="true" [description]="sentence()" [addresses]="addresses()">
+  <trove-page-header [heading]="r.key" [name]="true" [description]="sentence()" [addresses]="headerAddresses()">
     <div meta class="facts">
       <span class="badge" translate="no">{{ formatName() }}</span>
       <span class="badge">
@@ -13,7 +13,10 @@
       }
     </div>
     <ng-container actions>
-      <a class="btn btn-confirm" [routerLink]="[]" [queryParams]="{ tab: 'setup' }" queryParamsHandling="merge" i18n="@@repo.content.tab.setup">Set up client</a>
+      <!-- A disabled repository refuses its clients, so there is nothing to set up; its badge says why. -->
+      @if (!disabled()) {
+        <a class="btn btn-confirm" routerLink="/setup" [queryParams]="{ repository: ref() }" i18n="@@repo.content.tab.setup">Set up client</a>
+      }
       @if (canConfigure()) {
         <a class="btn btn-default" [routerLink]="settingsLink()" i18n="@@repo.content.settings">Settings</a>
       }
@@ -35,50 +38,41 @@
     </ng-container>
   </trove-page-header>
 
-  <trove-tab-group [selectedIndex]="tabIndex()" (selectedIndexChange)="selectTab($event)">
-    <trove-tab [label]="shape().itemsLabel">
-      <ng-template troveTabContent>
-        @if (isGeneric()) {
-          <trove-repository-files [repository]="ref()" [format]="descriptor()" [path]="folder()" (pathChange)="setPath($event)" />
-        } @else {
-          @if (r.class === 'remote') {
-            @if (r.format === 'oci') {
-              <p class="content-note" i18n="@@repo.content.oci-remote-note">Only the tags this repository has cached are listed here: those clients have pulled and, in mirror mode, those a pass has fetched.</p>
-            } @else {
-              <p class="content-note" i18n="@@repo.content.remote-note">Only what clients have fetched is listed here.</p>
-            }
-          }
-          @if (!scanned()) {
-            <p class="content-note">{{ shape().notScannedText }}</p>
-          }
-          <trove-repository-items
-            [repository]="ref()"
-            [format]="r.format"
-            [shape]="shape()"
-            [scanned]="scanned()"
-            [q]="filter()"
-            [sortParam]="order()"
-            (filterChange)="setFilter($event)"
-            (sortParamChange)="setSort($event)"
-          />
-        }
-      </ng-template>
-    </trove-tab>
-    <trove-tab [label]="setupTabLabel">
-      <ng-template troveTabContent>
-        @if (disabled()) {
-          <p class="content-note" i18n="@@repo.content.setup-disabled">This repository is disabled, so clients cannot use it.</p>
-        } @else {
-          <div class="setup-tab">
-            <trove-client-setup [embedded]="true" [repository]="ref()" [format]="r.format" [known]="summary()" />
-          </div>
-        }
-      </ng-template>
-    </trove-tab>
-  </trove-tab-group>
+  <!-- The content alone: the client setup is the header's Set up client (Q-UI-321). -->
+  @if (isGeneric()) {
+    <trove-repository-files [repository]="ref()" [format]="descriptor()" [path]="folder()" (pathChange)="setPath($event)" />
+  } @else {
+    @if (r.class === 'remote') {
+      @if (r.format === 'oci') {
+        <p class="content-note" i18n="@@repo.content.oci-remote-note">Only the tags this repository has cached are listed here: those clients have pulled and, in mirror mode, those a pass has fetched.</p>
+      } @else {
+        <p class="content-note" i18n="@@repo.content.remote-note">Only what clients have fetched is listed here.</p>
+      }
+    }
+    @if (!scanned()) {
+      <p class="content-note">{{ shape().notScannedText }}</p>
+    }
+    <trove-repository-items
+      [repository]="ref()"
+      [format]="r.format"
+      [shape]="shape()"
+      [scanned]="scanned()"
+      [q]="filter()"
+      [sortParam]="order()"
+      (filterChange)="setFilter($event)"
+      (sortParamChange)="setSort($event)"
+    />
+  }
 
-  @if (upstream() || members().length > 0) {
-    <trove-settings-section class="details" [heading]="detailsHeading" [description]="detailsText">
+
+  @if (upstream() || members().length > 0 || otherAddresses().length > 0) {
+    <trove-disclosure class="details" [heading]="detailsHeading" [hint]="detailsText">
+      @for (a of otherAddresses(); track a.value) {
+        <p class="other-address">
+          <span class="field-label">{{ a.label }}</span>
+          <trove-address-field [value]="a.value" [label]="a.label" [copyLabel]="a.copyLabel" />
+        </p>
+      }
       @if (upstream(); as u) {
         <p class="resolves">
           <ng-container i18n="@@repo.content.upstream">Caches</ng-container>&ngsp;<code translate="no">{{ u }}</code>
@@ -92,6 +86,6 @@
           }
         </p>
       }
-    </trove-settings-section>
+    </trove-disclosure>
   }
 }

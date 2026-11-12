@@ -7,7 +7,6 @@ import {
   RepositoriesApi,
   Repository,
   RepositoryConsumerView,
-  RepositorySummary,
   isConsumerView,
   repoRef,
 } from '../../../api/repositories-api';
@@ -16,9 +15,8 @@ import { SessionStore } from '../../../core/session-store';
 import { ErrorNotice } from '../../../shared/error-notice';
 import { asApiError, valueOf } from '../../../shared/paged-resource';
 import { PageHeader } from '../../../shared/ui/page-header';
-import { SettingsSection } from '../../../shared/ui/settings-section';
-import { TabContent, TabGroup, TabPage } from '../../../shared/ui/tabs';
-import { ClientSetupPage } from '../../setup/client-setup';
+import { AddressField } from '../../../shared/address-field';
+import { Disclosure } from '../../../shared/ui/disclosure';
 import { RecentRepositories } from '../recent-repositories';
 import { clientAddress } from '../repository-model';
 import { classLabel } from '../repository-wizard';
@@ -44,12 +42,9 @@ const SORTS: readonly PackageSort[] = ['name', '-name', 'updatedAt', '-updatedAt
     CdkMenuTrigger,
     RouterLink,
     ErrorNotice,
+    AddressField,
+    Disclosure,
     PageHeader,
-    SettingsSection,
-    TabContent,
-    TabGroup,
-    TabPage,
-    ClientSetupPage,
     RepositoryFiles,
     RepositoryItems,
   ],
@@ -68,7 +63,6 @@ export class RepositoryContent {
   readonly project = input.required<string>();
   readonly key = input.required<string>();
   /** Query parameters (R-UI-003): the open tab, the filter, the sort and the folder of a generic repository. */
-  readonly tab = input<string | undefined>();
   readonly q = input<string | undefined>();
   readonly sort = input<string | undefined>();
   readonly path = input<string | undefined>();
@@ -125,21 +119,6 @@ export class RepositoryContent {
     const r = this.repository();
     return r !== undefined && !isConsumerView(r) && (r.disabled ?? false);
   });
-  /** The repository in the shape the client setup needs; it is shown only for one that is enabled. */
-  protected readonly summary = computed<RepositorySummary | undefined>(() => {
-    const r = this.repository();
-    if (!r) return undefined;
-    return {
-      key: r.key,
-      class: r.class,
-      format: r.format,
-      description: r.description ?? '',
-      addresses: isConsumerView(r) ? r.addresses : [],
-      disabled: this.disabled(),
-      lastActivityAt: null,
-      project: this.project(),
-    };
-  });
 
   /**
    * The client addresses of the header (Q-UI-313): the consumer view carries them; the full document does not, so the address is
@@ -152,18 +131,31 @@ export class RepositoryContent {
     const a = clientAddress(valueOf(this.baseUrl), this.descriptor(), this.ref());
     return a ? [a] : [];
   });
+  /**
+   * The header shows the client address, the first of the repository's addresses (R-UI-066). The API lists the address of
+   * the format's protocol first and the raw file address after it, once, where the two differ (R-REPO-002, `ConsumerView` of
+   * internal/repository/document.go), so a further address is the one for downloads by path; Details shows it with that
+   * label, so that no field stands without a name (Q-UI-320).
+   */
+  protected readonly headerAddresses = computed(() => this.addresses().slice(0, 1));
+  protected readonly otherAddresses = computed(() =>
+    this.addresses()
+      .slice(1)
+      .map((value) => {
+        const label = $localize`:@@repo.content.files-address:Address for downloads by path (curl, wget)`;
+        return { value, label, copyLabel: $localize`:@@repo.content.copy-files-address:Copy address for downloads by path` };
+      }),
+  );
   protected readonly actionsLabel = $localize`:@@repo.content.more:More actions`;
   protected readonly detailsHeading = $localize`:@@repo.content.details:Details`;
-  protected readonly detailsText = $localize`:@@repo.content.details-text:Where this repository fetches from, or what it resolves from.`;
+  protected readonly detailsText = $localize`:@@repo.content.details-text2:Further addresses, and where this repository fetches from or what it resolves from.`;
 
-  protected readonly tabIndex = computed(() => (this.tab() === 'setup' ? 1 : 0));
   protected readonly filter = computed(() => this.q() ?? '');
   protected readonly order = computed<PackageSort>(() => {
     const s = this.sort();
     return (SORTS as readonly string[]).includes(s ?? '') ? (s as PackageSort) : 'name';
   });
   protected readonly folder = computed(() => this.path() ?? '');
-  protected readonly setupTabLabel = $localize`:@@repo.content.tab.setup:Set up client`;
 
   constructor() {
     effect(() => {
@@ -174,10 +166,6 @@ export class RepositoryContent {
 
   protected settingsLink(): string[] {
     return ['/projects', this.project(), 'repositories', this.key(), 'settings'];
-  }
-
-  protected selectTab(index: number): void {
-    this.navigate({ tab: index === 1 ? 'setup' : null });
   }
 
   protected setFilter(q: string): void {

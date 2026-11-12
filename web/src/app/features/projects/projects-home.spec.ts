@@ -22,7 +22,7 @@ describe('Start page', () => {
     expect(text(root.querySelector('.recent')!)).toContain('generic-local');
     expect(addressValues(root).some((a) => a.includes('web/generic-local'))).toBe(true);
     const setup = [...root.querySelectorAll('.recent a.btn')].find((a) => text(a) === 'Set up client');
-    expect(setup?.getAttribute('href')).toContain('tab=setup');
+    expect(setup?.getAttribute('href')).toBe('/setup?repository=web%2Fgeneric-local');
   });
 
   it('R-UI-067 the package search asks the server from two characters on, after the typing stops', async () => {

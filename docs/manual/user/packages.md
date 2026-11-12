@@ -43,11 +43,11 @@ Select the heading **Package** or **Updated** to sort by it; select it again to 
 
 Filters, sort and the open tab are part of the page address, so you can bookmark a filtered list or send it to a colleague. The colleague sees the packages that they may read.
 
-## Recently viewed and saved views
+## Recently opened and saved views
 
 When you are signed in, two more tabs appear next to **All packages**:
 
-- **Recently viewed** lists the last 10 packages you opened.
+- **Recently opened** lists the last 10 packages you opened.
 - **Saved views** keeps up to 8 combinations of filters and sort. To save one, set the filters and the sort, open **Saved views**, enter a **Name of the view** and select **Save the current filters and sort**. Each saved view can be opened, renamed with **Rename**, removed with **Delete**, and made the default with **Make default**: the list then opens with that view whenever you open **Packages** without filters. **Remove default** undoes that.
 
 Both are kept in this browser only, separately for each user. They are not available where the browser blocks site storage, and they do not follow you to another browser.
@@ -60,10 +60,10 @@ Select a package name to open its page. The page shows the name, the format and 
 
 The page opens with the latest stable version you may see, or the latest pre-release when there is no stable version.
 
-1. In **Version**, type a version or pick one from the suggestions.
-2. Tick **Include pre-releases** to have pre-releases suggested as well.
+1. In **Version**, choose a version from the list, newest first.
+2. Tick **Include pre-releases** to have pre-releases listed as well.
 
-The chosen version is part of the page address, so a link can point at one version. The facts below the picker belong to that version:
+The chosen version is part of the page address, so a link can point at one version. **Details**, at the end of the page and closed until you open it, holds the facts of that version:
 
 | Fact | Meaning |
 |---|---|
@@ -98,7 +98,7 @@ The panel **Install** sits beside the tabs on a wide screen and above them on a 
 
 1. Under **Client**, choose npm, pnpm, Yarn Berry (2 and later) or Yarn Classic (1.x).
 2. Under **Repository**, choose the repository to install from. The picker appears only when several repositories hold the version; trove preselects a virtual repository, otherwise a local one.
-3. Select **Copy install command**. A command longer than three lines is collapsed; **Show the whole command** expands it and **Show less** collapses it again.
+3. Select **Copy install command** beside the **Install command**. A command of several lines is shown as a block; one longer than three lines is collapsed, **Show the whole command** expands it and **Show less** collapses it again.
 
 The command assumes that your package manager is already configured for the repository; it never contains a token. **Set up your client for this repository** opens the client setup for the chosen repository and client, where you configure that once; see [Connecting a package client](client-setup.md).
 

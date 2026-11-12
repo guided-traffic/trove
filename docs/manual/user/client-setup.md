@@ -11,7 +11,7 @@ trove gives you the configuration for your installation in four places. All of t
 | **Client setup** | User menu › **Client setup**, or **Set up your client for this repository** on a package page | Configuration snippets in the tabs **Configure**, **Install** and **Publish**, with a choice of credentials |
 | **Guides** | **Artifacts › Guides** | The full guide of a client: what the repository class is, configuring, signing in, installing, publishing, dist-tags or unlisting, security audit, lockfiles, troubleshooting |
 | **How to use** | A tab on the settings of a repository (a section, if you may use the repository but not see its configuration) | The guide of that one repository, with a choice of client and links **Open the client setup** and **Open in the guides** |
-| **Set up client** | A tab on the content page of a repository | The client setup for that one repository, without leaving its page; see [Repositories](repositories.md#the-content-of-a-repository) |
+| **Set up client** | The first button at the top of a repository's page, or beside a repository you opened recently on the start page | The client setup for that one repository, with its format and the repository already chosen; see [Repositories](repositories.md#the-content-of-a-repository) |
 | **Install** panel | On the page of a package | The install command of the selected version for the client and repository you choose |
 
 The two main places differ like this:

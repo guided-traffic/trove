@@ -10460,7 +10460,7 @@
         <note category="location">src/app/features/packages/package-list.html:22,24</note>
       </notes>
       <segment>
-        <source>Recently viewed</source>
+        <source>Recently opened</source>
       </segment>
     </unit>
     <unit id="pkg.views.saved">
@@ -13521,7 +13521,7 @@
         <note category="location">src/app/features/projects/project-switcher.ts:55,56</note>
       </notes>
       <segment>
-        <source>Recently visited</source>
+        <source>Recently opened</source>
       </segment>
     </unit>
     <unit id="switcher.all">
@@ -13837,14 +13837,6 @@
       </notes>
       <segment>
         <source>Only what clients have fetched is listed here.</source>
-      </segment>
-    </unit>
-    <unit id="repo.content.setup-disabled">
-      <notes>
-        <note category="location">src/app/features/repositories/content/repository-content.html:77,79</note>
-      </notes>
-      <segment>
-        <source>This repository is disabled, so clients cannot use it.</source>
       </segment>
     </unit>
     <unit id="repo.content.sentence.remote">
@@ -16476,14 +16468,6 @@
         <source>Repositories</source>
       </segment>
     </unit>
-    <unit id="repo.recent">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-list.html:16,18</note>
-      </notes>
-      <segment>
-        <source>Recently viewed</source>
-      </segment>
-    </unit>
     <unit id="repo.badge.deleting">
       <notes>
         <note category="location">src/app/features/repositories/repository-list.html:61,63</note>
@@ -16582,14 +16566,6 @@
       </notes>
       <segment>
         <source>Details</source>
-      </segment>
-    </unit>
-    <unit id="repo.content.details-text">
-      <notes>
-        <note category="location">src/app</note>
-      </notes>
-      <segment>
-        <source>Where this repository fetches from, or what it resolves from.</source>
       </segment>
     </unit>
     <unit id="pkg.col.package">
@@ -16704,28 +16680,44 @@
         <source>Change</source>
       </segment>
     </unit>
-    <unit id="repo.about.heading">
+    <unit id="pkg.install.command">
       <notes>
         <note category="location">src/app</note>
       </notes>
       <segment>
-        <source>About this project</source>
+        <source>Install command</source>
       </segment>
     </unit>
-    <unit id="repo.about.text">
+    <unit id="repo.content.copy-files-address">
       <notes>
         <note category="location">src/app</note>
       </notes>
       <segment>
-        <source>What the project is for and whom to ask.</source>
+        <source>Copy address for downloads by path</source>
       </segment>
     </unit>
-    <unit id="repo.about.owners">
+    <unit id="repo.content.details-text2">
       <notes>
         <note category="location">src/app</note>
       </notes>
       <segment>
-        <source>Owners, whom to ask for access or a new repository:</source>
+        <source>Further addresses, and where this repository fetches from or what it resolves from.</source>
+      </segment>
+    </unit>
+    <unit id="repo.content.files-address">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Address for downloads by path (curl, wget)</source>
+      </segment>
+    </unit>
+    <unit id="repo.list.ask">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Ask <ph id="0" equiv="owners" disp="owners.join(&apos;, &apos;)"/> for access or a new repository.</source>
       </segment>
     </unit>
     <unit id="repo.col.repository">

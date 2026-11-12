@@ -51,7 +51,7 @@ describe('Repository content page', () => {
     expect(text(r.root)).toContain('Images of the web team');
     expect(text(r.root)).not.toContain('not scanned for vulnerabilities yet');
     expect(text(r.root)).toContain('Vulnerabilities');
-    expect(r.root.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain('Images');
+    expect(r.root.querySelector('trove-data-table caption')?.textContent).toContain('Images');
     const opener = r.root.querySelector<HTMLButtonElement>('.name-cell button[aria-expanded]')!;
     expect(opener.getAttribute('aria-expanded')).toBe('false');
     opener.click();
@@ -61,7 +61,7 @@ describe('Repository content page', () => {
     const rows = [...r.root.querySelectorAll('trove-repository-item-versions tbody tr')];
     expect(rows[0]?.textContent).toContain('1.2.0');
     expect(rows[0]?.textContent).toContain('sha256:');
-    expect(r.root.querySelector('trove-repository-item-versions pre')?.textContent).toMatch(/^docker pull \S*web\/oci-local\/team\/app:1\.2\.0$/);
+    expect((r.root.querySelector<HTMLInputElement>('trove-repository-item-versions trove-address-field input')?.value ?? r.root.querySelector('trove-repository-item-versions pre')?.textContent)).toMatch(/^docker pull \S*web\/oci-local\/team\/app:1\.2\.0$/);
     await expectAccessible(r.root);
   });
 
@@ -101,7 +101,7 @@ describe('Repository content page', () => {
     await settle(r.fixture);
     const vulnerabilities = r.get(VulnerabilitiesApi) as FakeVulnerabilitiesApi;
     expect(vulnerabilities.calls).toEqual(expect.arrayContaining(['packageReport pkg_01JBQ6V7S3K9 in web/npm-local']));
-    expect(r.root.querySelector('trove-repository-item-versions pre')?.textContent).toBe('npm install @team-a/ui@1.4.0');
+    expect((r.root.querySelector<HTMLInputElement>('trove-repository-item-versions trove-address-field input')?.value ?? r.root.querySelector('trove-repository-item-versions pre')?.textContent)).toBe('npm install @team-a/ui@1.4.0');
     await expectAccessible(r.root);
   });
 
@@ -122,7 +122,7 @@ describe('Repository content page', () => {
       },
     });
     await settle(r.fixture);
-    expect(r.root.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain('Files');
+    expect(r.root.querySelector('trove-data-table caption')?.textContent).toContain('Files');
     expect(text(r.root)).toContain('app.tar.gz');
     expect(r.root.querySelector<HTMLAnchorElement>('tbody a[href$="/browse/generic-local/app.tar.gz"]')).not.toBeNull();
     expect(generic.format).toBe('generic');
@@ -167,14 +167,38 @@ describe('Repository content page', () => {
     expect(text(r.root)).toContain('This repository has cached no images yet. Pull an image through it');
   });
 
-  it('R-UI-052 the client setup of the repository is on the page, for this repository, without choosing the format or the repository', async () => {
-    const r = await open(NPM_REPO, undefined, undefined, { tab: 'setup' });
-    await settle(r.fixture);
-    expect(r.root.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain('Set up client');
-    expect(text(r.root)).not.toContain('Package type');
-    const setup = r.get(ClientSetupApi) as FakeClientSetupApi;
-    expect(setup.calls.at(-1)?.repository).toBe('web/npm-local');
-    expect(r.root.querySelector('pre')?.textContent).toContain('npm');
+  it('R-UI-052 the page has no setup tab: its Set up client opens the setup for this repository', async () => {
+    const r = await open(NPM_REPO);
+    // One way to the setup (Q-UI-321): the header's primary action, no tab beside the content.
+    expect([...r.root.querySelectorAll('[role="tab"]')].map((t) => text(t))).not.toContain('Set up client');
+    const setup = r.root.querySelector('.page-header-actions a.btn-confirm');
+    expect(setup?.getAttribute('href')).toBe('/setup?repository=web%2Fnpm-local');
+    await expectAccessible(r.root);
+  });
+
+  it('R-UI-052 the header shows the client address alone; Details names the address for downloads by path', async () => {
+    const npm = 'https://trove.example.net/api/npm/web/npm-local/';
+    const files = 'https://trove.example.net/files/web/npm-local/';
+    const r = await open(NPM_REPO, ({ catalog }) => {
+      // The consumer view of a reader: the protocol address first, the raw file address after it (R-REPO-010).
+      catalog.get = async () => ({
+        value: { key: 'npm-local', class: 'local', format: 'npm', description: 'Internal packages', layout: 'npm', addresses: [npm, files] },
+        etag: '"1"',
+      });
+    });
+    const header = [...r.root.querySelectorAll<HTMLInputElement>('trove-page-header trove-address-field input')].map((i) => i.value);
+    expect(header).toEqual([npm]);
+    const details = r.root.querySelector('trove-disclosure')!;
+    expect(details.querySelector<HTMLInputElement>('trove-address-field input')?.value).toBe(files);
+    expect(text(details)).toContain('Address for downloads by path (curl, wget)');
+    expect(details.querySelector('trove-address-field button')?.getAttribute('aria-label')).toBe('Copy address for downloads by path');
+    await expectAccessible(r.root);
+  });
+
+  it('R-UI-052 a disabled repository offers no Set up client and says that it is disabled', async () => {
+    const r = await open({ ...NPM_REPO, disabled: true });
+    expect(r.root.querySelector('.page-header-actions a.btn-confirm')).toBeNull();
+    expect(text(r.root.querySelector('trove-page-header')!)).toContain('disabled');
     await expectAccessible(r.root);
   });
 
@@ -192,7 +216,7 @@ describe('Repository content page', () => {
     expect(field?.value).toContain('web/npm-local/');
     const primary = r.root.querySelector('.page-header-actions a.btn-confirm');
     expect(primary?.textContent?.trim()).toBe('Set up client');
-    expect(primary?.getAttribute('href')).toContain('tab=setup');
+    expect(primary?.getAttribute('href')).toBe('/setup?repository=web%2Fnpm-local');
     // The other views are in the header's menu, not loose links beside the tabs.
     expect(r.root.querySelector('.page-header-actions button[aria-label="More actions"]')).toBeTruthy();
     await expectAccessible(r.root);

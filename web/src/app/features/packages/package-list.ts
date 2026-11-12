@@ -46,7 +46,7 @@ interface Chip {
  * column header, "Load more" is the table's. Filters, sort and tab live in the query parameters
  * (R-UI-003) and every change restarts the cursor walk, because a cursor is bound to its filters and
  * sort (R-API-010). Filtering and sorting happen on the server (R-API-029); the screen sorts and
- * filters nothing itself. "Recently viewed" and "Saved views" are browser-storage features and
+ * filters nothing itself. "Recently opened" and "Saved views" are browser-storage features and
  * disappear where storage is blocked.
  */
 @Component({

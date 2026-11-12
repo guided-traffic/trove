@@ -297,4 +297,14 @@ func TestConsumerView(t *testing.T) {
 			t.Fatal("WithoutAdminNotes must clear the copy only")
 		}
 	})
+	t.Run("R-REPO-010 the protocol address comes first and the raw file address after it, which the UI labels by order", func(t *testing.T) {
+		d, _, err := decodeValidate(t, `{"key":"npm-local","class":"local","format":"generic"}`, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		v := d.ConsumerView("/api/npm/{project}/{key}/", qname.Repo{Project: "it", Key: "npm-local"})
+		if got := strings.Join(v.Addresses, " "); got != "/api/npm/it/npm-local/ /files/it/npm-local/" {
+			t.Fatalf("addresses = %s", got)
+		}
+	})
 }

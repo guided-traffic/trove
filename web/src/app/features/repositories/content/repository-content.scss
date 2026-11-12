@@ -20,10 +20,6 @@
   color: var(--trove-text-muted);
 }
 
-.setup-tab {
-  padding-block-start: var(--trove-space-4);
-}
-
 .toolbar {
   display: flex;
   gap: var(--trove-space-2);
@@ -107,4 +103,12 @@
 tr.expansion td {
   padding: 0;
   border-block-end: 0;
+}
+
+// A further address in Details, with its name above it (Q-UI-320).
+.other-address {
+  display: flex;
+  flex-direction: column;
+  gap: var(--trove-space-1);
+  margin: 0 0 var(--trove-space-3);
 }

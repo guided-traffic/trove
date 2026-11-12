@@ -53,7 +53,7 @@ Your client reaches a repository at an address built from the installation's add
 | Debian (APT) | `https://trove.example.com/api/deb/<project>/<key>/`, with a suite in the source line | `https://trove.example.com/files/<project>/<key>/` (download and delete; uploads go to `upload/<file>` of the APT address) |
 | Ansible Galaxy | `https://trove.example.com/api/ansible/<project>/<key>/`, the `url` of a server in `ansible.cfg` | none: collections are published with `ansible-galaxy collection publish` |
 
-The **Set up client** tab of a repository shows these addresses for your installation, so you do not have to build them yourself. A repository that an administrator moves to another project changes its address: the old address answers `404`, and your client configuration needs the new one.
+The page of a repository shows its address for your package manager under its title, with a copy button, and the others under **Details**; **Set up client** shows them in the configuration of your client, so you do not have to build them yourself. A repository that an administrator moves to another project changes its address: the old address answers `404`, and your client configuration needs the new one.
 
 ## Formats in this version
 
@@ -86,12 +86,13 @@ Permissions can be narrower than a whole repository: a permission may cover only
 
 Open a project and you land on its **Repositories**. Select a repository to see what it holds, on the level you think in: images and tags, packages and versions, or files. You get there from the project's **Repositories**, from **Admin area › Repositories** (every project, each row naming its project), and with **Find a repository** in the top bar if you may read repository configuration.
 
-The page is titled with the repository's key and says what the repository is. The tabs are:
+The page is titled with the repository's key and says what the repository is. Under the title is its **Client address**, the address your package manager needs, with **Copy client address**. At the top right:
 
-- **Images**, **Packages** or **Files**, depending on the format, with a filter.
-- **Set up client**, which shows how to connect this repository to your package manager, with a choice of client and of how to handle the token, on the page itself.
+- **Set up client** opens the client setup for this repository, with its format and the repository already chosen: you pick your client and how to handle the token. A disabled repository has none, because clients cannot use it.
+- **Settings** opens the repository's settings, if you may read them.
+- **More actions** holds **Browse files**, which opens the same repository in the file tree, and **Vulnerabilities**.
 
-**Settings**, at the top, opens the repository's settings, if you may read them. **Browse files** opens the same repository in the file tree.
+Below them the page lists the **Images**, **Packages** or **Files** of the repository, depending on the format, with a filter. **Details**, at the end and closed until you open it, holds the repository's other addresses, each named (**Address for downloads by path (curl, wget)**), the upstream a remote repository caches, and the members a virtual repository resolves from.
 
 Depending on the format, the content shows:
 

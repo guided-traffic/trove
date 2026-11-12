@@ -18,7 +18,7 @@ import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
 import { ProjectContext } from '../../core/project-context';
 import { Confirm } from '../../shared/confirm-dialog';
-import { SettingsSection } from '../../shared/ui/settings-section';
+import { PageHeader } from '../../shared/ui/page-header';
 import { AddressField } from '../../shared/address-field';
 import { ErrorNotice } from '../../shared/error-notice';
 import { JobProgress } from '../../shared/job-progress';
@@ -52,7 +52,7 @@ import { classLabel } from './repository-wizard';
     FilterPanel,
     FilterToggle,
     JobProgress,
-    SettingsSection,
+    PageHeader,
   ],
   templateUrl: './repository-list.html',
   styleUrl: './repository-list.scss',
@@ -105,20 +105,22 @@ export class RepositoryList {
     return this.session.has('repositories:read-config') || this.session.canWriteRepositories(row.project);
   }
   private readonly projects = inject(ProjectContext);
+  protected readonly heading = $localize`:@@repo.list.heading:Repositories`;
   /**
-   * The About section of a project's list for its plain user (Q-UI-317): the description and the Owners by name, since the
-   * sidebar has no members or settings for them.
+   * The one muted line under the heading in a project (Q-UI-317): its description, and for its plain user (at most a reader, no
+   * system role) whom to ask, since their sidebar has no members or settings.
    */
-  protected readonly about = computed(() => {
+  protected readonly headerLine = computed(() => {
     const key = this.inProject() ? this.projectKey() : null;
-    if (!key || this.session.isAdministrator() || (this.session.projectRole(key) ?? 'reader') !== 'reader') return null;
+    if (!key) return '';
     const p = this.projects.projects().find((x) => x.key === key);
-    if (!p) return null;
-    const owners = (p.owners ?? []).map((o) => o.replace(/^(user|group):/, ''));
-    return { description: p.description ?? '', owners };
+    const description = p?.description ?? '';
+    const plain = !this.session.isAdministrator() && (this.session.projectRole(key) ?? 'reader') === 'reader';
+    const owners = (p?.owners ?? []).map((o) => o.replace(/^(user|group):/, ''));
+    if (!plain || owners.length === 0) return description;
+    const ask = $localize`:@@repo.list.ask:Ask ${owners.join(', ')}:owners: for access or a new repository.`;
+    return description ? `${description} ${ask}` : ask;
   });
-  protected readonly aboutHeading = $localize`:@@repo.about.heading:About this project`;
-  protected readonly aboutText = $localize`:@@repo.about.text:What the project is for and whom to ask.`;
   protected readonly refOf = refOf;
   protected readonly formatOptions = computed(() =>
     (valueOf(this.formats) ?? []).map((f) => f.name),
@@ -131,7 +133,7 @@ export class RepositoryList {
   protected readonly activeCount = computed(
     () => [this.q(), this.class(), this.format(), this.state(), this.filterProject()].filter((v) => !!v).length,
   );
-  /** The recently viewed repositories; a project's list shows the ones of that project. */
+  /** The recently opened repositories, shown by the admin area's list (a project's list leaves them to the start page, Q-UI-323). */
   protected readonly recentKeys = computed(() => {
     const project = this.inProject() ? this.projectKey() : null;
     return this.recent.keys().filter((k) => project === null || k.startsWith(`${project}/`));

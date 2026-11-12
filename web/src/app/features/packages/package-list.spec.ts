@@ -277,12 +277,12 @@ describe('Packages list', () => {
     it('R-UI-006 offers three views of the list: all, recently viewed and saved views', async () => {
       const r = await open();
       const links = [...r.root.querySelectorAll('.view-tabs a')];
-      expect(links.map((a) => text(a))).toEqual(['All packages', 'Recently viewed', 'Saved views']);
+      expect(links.map((a) => text(a))).toEqual(['All packages', 'Recently opened', 'Saved views']);
       expect(links[0]?.getAttribute('aria-current')).toBe('page');
       await expectAccessible(r.root);
     });
 
-    it('R-UI-006 "Recently viewed" lists the packages opened, newest first, as links', async () => {
+    it('R-UI-006 "Recently opened" lists the packages opened, newest first, as links', async () => {
       const r = await open({ tab: 'recent' });
       expect(text(r.root)).toContain('You have not opened a package yet.');
       const memory = (await import('./package-memory')).PackageMemory;
@@ -301,7 +301,7 @@ describe('Packages list', () => {
       const types = [...r.root.querySelectorAll('.plain-list .type-cell')];
       expect(types[0]?.querySelector('img')?.getAttribute('src')).toBe('formats/nuget/nuget.svg');
       expect(types.map((t) => spokenText(t))).toEqual(['NuGet', 'npm', 'npm']);
-      expect(r.root.querySelector('.view-tabs a[aria-current="page"]')?.textContent).toContain('Recently viewed');
+      expect(r.root.querySelector('.view-tabs a[aria-current="page"]')?.textContent).toContain('Recently opened');
       await expectAccessible(r.root);
     });
 
