@@ -10660,7 +10660,10 @@ of the repository's class, several screens long.
 **Choice:** (a). **Rationale:** the repository page is where the list's key leads, so its first lines are the address and the
 setup. The development agent revisits the facts' place if power users miss them in the header.
 
-**Applied in the spec:** R-UI-067, R-UI-052, R-UI-066 (the consumer view's place of the address is the header).
+**Applied in the spec:** R-UI-067, R-UI-052, R-UI-066 (the consumer view's place of the address is the header). Built in fix wave 1:
+the header with the address fields, **Set up client** as the primary action, **Settings** for who may change, **Browse files**
+and **Vulnerabilities** in the header's menu, and the upstream or the members as a closed **Details** at the end of the page; the
+read-only settings view is still offered (UI-A-06).
 
 ### Q-UI-314 · The package list shows name, format, latest version and when it changed; counts and dates of creation are the package page's
 

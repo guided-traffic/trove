@@ -16701,6 +16701,33 @@
         <target>Das Format und darunter die Klasse: Lokale Repositories enthalten, was Sie hochladen; Remote-Repositories laden aus einer anderen Registry und halten eine Kopie vor; virtuelle Repositories fassen andere Repositories unter einer Adresse zusammen.</target>
       </segment>
     </unit>
+    <unit id="repo.content.more">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>More actions</source>
+        <target>Weitere Aktionen</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.details">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Details</source>
+        <target>Details</target>
+      </segment>
+    </unit>
+    <unit id="repo.content.details-text">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Where this repository fetches from, or what it resolves from.</source>
+        <target>Woher dieses Repository lädt oder woraus es auflöst.</target>
+      </segment>
+    </unit>
     <unit id="repo.col.repository">
       <notes>
         <note category="location">src/app/features/repositories/repository-list.ts:155</note>

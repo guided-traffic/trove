@@ -16672,6 +16672,30 @@
         <source>The format, and under it the class: local repositories hold what you upload, remote repositories fetch and cache from another registry, virtual repositories combine other repositories behind one address.</source>
       </segment>
     </unit>
+    <unit id="repo.content.more">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>More actions</source>
+      </segment>
+    </unit>
+    <unit id="repo.content.details">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Details</source>
+      </segment>
+    </unit>
+    <unit id="repo.content.details-text">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Where this repository fetches from, or what it resolves from.</source>
+      </segment>
+    </unit>
     <unit id="repo.col.repository">
       <notes>
         <note category="location">src/app/features/repositories/repository-list.ts:155</note>

@@ -484,6 +484,12 @@ td.address-cell {
         border-block-end: 1px solid var(--trove-border);
       }
 
+      // A row that only carries an expansion of the row above (one cell across the table) adds no block of its own.
+      tbody tr:has(> td[colspan]:only-child) {
+        padding-block: 0;
+        border-block-end-width: 0;
+      }
+
       tbody tr > * {
         display: block;
         grid-column: 1 / -1;

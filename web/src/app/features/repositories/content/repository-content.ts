@@ -1,3 +1,4 @@
+import { CdkMenu, CdkMenuItem, CdkMenuTrigger } from '@angular/cdk/menu';
 import { Component, computed, effect, inject, input, resource, untracked } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { PackageSort } from '../../../api/packages-api';
@@ -10,12 +11,16 @@ import {
   isConsumerView,
   repoRef,
 } from '../../../api/repositories-api';
+import { ServerAddress } from '../../../core/server-address';
 import { SessionStore } from '../../../core/session-store';
 import { ErrorNotice } from '../../../shared/error-notice';
 import { asApiError, valueOf } from '../../../shared/paged-resource';
+import { PageHeader } from '../../../shared/ui/page-header';
+import { SettingsSection } from '../../../shared/ui/settings-section';
 import { TabContent, TabGroup, TabPage } from '../../../shared/ui/tabs';
 import { ClientSetupPage } from '../../setup/client-setup';
 import { RecentRepositories } from '../recent-repositories';
+import { clientAddress } from '../repository-model';
 import { classLabel } from '../repository-wizard';
 import { contentShapeOf } from './content-shape';
 import { RepositoryFiles } from './repository-files';
@@ -28,11 +33,26 @@ const SORTS: readonly PackageSort[] = ['name', '-name', 'updatedAt', '-updatedAt
  * the logical level, in one shell for every format. A package format lists its images or packages and opens their versions in the
  * row; a generic repository lists its files. A virtual repository shows what it resolves, a remote one what it has cached. The
  * second tab is the client setup of this repository (R-UI-016), on the page. The repository's settings are a separate route
- * (`…/settings`).
+ * (`…/settings`). The header (Q-UI-307, Q-UI-313) shows the client address and offers **Set up client**; the other views of
+ * the repository are in its menu, and where it fetches from or resolves from is its Details.
  */
 @Component({
   selector: 'trove-repository-content',
-  imports: [RouterLink, ErrorNotice, TabContent, TabGroup, TabPage, ClientSetupPage, RepositoryFiles, RepositoryItems],
+  imports: [
+    CdkMenu,
+    CdkMenuItem,
+    CdkMenuTrigger,
+    RouterLink,
+    ErrorNotice,
+    PageHeader,
+    SettingsSection,
+    TabContent,
+    TabGroup,
+    TabPage,
+    ClientSetupPage,
+    RepositoryFiles,
+    RepositoryItems,
+  ],
   templateUrl: './repository-content.html',
   styleUrl: './repository-content.scss',
 })
@@ -41,6 +61,8 @@ export class RepositoryContent {
   private readonly router = inject(Router);
   private readonly session = inject(SessionStore);
   private readonly recent = inject(RecentRepositories);
+  private readonly serverAddress = inject(ServerAddress);
+  private readonly baseUrl = resource({ loader: () => this.serverAddress.baseUrl() });
 
   /** Route parameters, bound by the router's component input binding. */
   readonly project = input.required<string>();
@@ -118,6 +140,21 @@ export class RepositoryContent {
       project: this.project(),
     };
   });
+
+  /**
+   * The client addresses of the header (Q-UI-313): the consumer view carries them; the full document does not, so the address is
+   * built from the server's base URL and the format, as the settings page does.
+   */
+  protected readonly addresses = computed<readonly string[]>(() => {
+    const r = this.repository();
+    if (!r) return [];
+    if (isConsumerView(r)) return r.addresses;
+    const a = clientAddress(valueOf(this.baseUrl), this.descriptor(), this.ref());
+    return a ? [a] : [];
+  });
+  protected readonly actionsLabel = $localize`:@@repo.content.more:More actions`;
+  protected readonly detailsHeading = $localize`:@@repo.content.details:Details`;
+  protected readonly detailsText = $localize`:@@repo.content.details-text:Where this repository fetches from, or what it resolves from.`;
 
   protected readonly tabIndex = computed(() => (this.tab() === 'setup' ? 1 : 0));
   protected readonly filter = computed(() => this.q() ?? '');

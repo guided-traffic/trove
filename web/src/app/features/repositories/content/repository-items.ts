@@ -53,7 +53,7 @@ export const FILTER_DEBOUNCE_MS = 250;
     >
       @for (p of list.items(); track p.id) {
         <tr>
-          <th scope="row">
+          <th scope="row" class="wrap-name">
             <div class="name-cell">
               <button
                 type="button"
@@ -79,7 +79,7 @@ export const FILTER_DEBOUNCE_MS = 250;
             <td><trove-vuln-counts [counts]="p.openVulnerabilities" /></td>
           }
           <td>
-            <time [attr.datetime]="p.updatedAt" [attr.title]="p.updatedAt | date: 'long'">{{ p.updatedAt | date: 'medium' }}</time>
+            <time [attr.datetime]="p.updatedAt" [attr.title]="p.updatedAt | date: 'long'">{{ p.updatedAt | date: 'mediumDate' }}</time>
           </td>
           <td class="num">{{ p.downloadCount | number }}</td>
         </tr>
@@ -131,7 +131,8 @@ export class RepositoryItems {
   protected readonly columns = computed<readonly TableColumn[]>(() => {
     const s = this.shape();
     const columns: TableColumn[] = [
-      { id: 'name', label: s.itemLabel, sortable: true },
+      // The name takes 16 rem and wraps after a hyphen beyond (Q-UI-303, Q-UI-308); the date is the day, its time the title.
+      { id: 'name', label: s.itemLabel, sortable: true, width: '16rem' },
       { id: 'latest', label: $localize`:@@repo.content.col.latest:Latest` },
       { id: 'versions', label: s.versionsLabel, numeric: true },
     ];

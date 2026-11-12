@@ -52,7 +52,7 @@ describe('Repository content page', () => {
     expect(text(r.root)).not.toContain('not scanned for vulnerabilities yet');
     expect(text(r.root)).toContain('Vulnerabilities');
     expect(r.root.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain('Images');
-    const opener = r.root.querySelector<HTMLButtonElement>('button[aria-expanded]')!;
+    const opener = r.root.querySelector<HTMLButtonElement>('.name-cell button[aria-expanded]')!;
     expect(opener.getAttribute('aria-expanded')).toBe('false');
     opener.click();
     await settle(r.fixture);
@@ -67,7 +67,7 @@ describe('Repository content page', () => {
 
   it('R-UI-052 the pull command follows the tag chosen in the list and switches between docker and podman', async () => {
     const r = await open(OCI_REPO, ({ packages }) => ociFixture(packages));
-    r.root.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click();
+    r.root.querySelector<HTMLButtonElement>('.name-cell button[aria-expanded]')!.click();
     await settle(r.fixture);
     const setup = r.get(ClientSetupApi) as FakeClientSetupApi;
     const rows = [...r.root.querySelectorAll('trove-repository-item-versions tbody tr')];
@@ -97,7 +97,7 @@ describe('Repository content page', () => {
     expect(packages.listFilters.at(-1)).toMatchObject({ repository: ['web/npm-local'], format: ['npm'], include: ['vulnerabilities'] });
     const row = [...r.root.querySelectorAll('tbody tr')].find((tr) => tr.textContent?.includes('@team-a/ui'))!;
     expect(row.textContent).toContain('High');
-    row.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click();
+    row.querySelector<HTMLButtonElement>('.name-cell button[aria-expanded]')!.click();
     await settle(r.fixture);
     const vulnerabilities = r.get(VulnerabilitiesApi) as FakeVulnerabilitiesApi;
     expect(vulnerabilities.calls).toEqual(expect.arrayContaining(['packageReport pkg_01JBQ6V7S3K9 in web/npm-local']));
@@ -148,7 +148,7 @@ describe('Repository content page', () => {
     expect(body).toContain('Only the tags this repository has cached are listed here');
     const packages = r.get(PackagesApi) as FakePackagesApi;
     expect(packages.listFilters.at(-1)).toMatchObject({ repository: ['web/oci-cache'], format: ['oci'] });
-    const opener = r.root.querySelector<HTMLButtonElement>('button[aria-expanded]')!;
+    const opener = r.root.querySelector<HTMLButtonElement>('.name-cell button[aria-expanded]')!;
     opener.click();
     await settle(r.fixture);
     const headers = [...r.root.querySelectorAll('trove-repository-item-versions th')].map((th) => th.textContent?.trim());
@@ -180,10 +180,22 @@ describe('Repository content page', () => {
 
   it('R-UI-052 the Settings action is offered to who can read the configuration, and leads to the settings route', async () => {
     const owner = await open(NPM_REPO);
-    const settings = [...owner.root.querySelectorAll('.header-actions a')].find((a) => a.textContent?.trim() === 'Settings');
+    const settings = [...owner.root.querySelectorAll('.page-header-actions a')].find((a) => a.textContent?.trim() === 'Settings');
     expect(settings?.getAttribute('href')).toBe('/projects/web/repositories/npm-local/settings');
     const reader = await open(NPM_REPO, undefined, []);
-    expect([...reader.root.querySelectorAll('.header-actions a')].map((a) => a.textContent?.trim())).not.toContain('Settings');
+    expect([...reader.root.querySelectorAll('.page-header-actions a')].map((a) => a.textContent?.trim())).not.toContain('Settings');
+  });
+
+  it('R-UI-066 R-UI-067 the header shows the client address and offers Set up client as its primary action', async () => {
+    const r = await open(NPM_REPO);
+    const field = r.root.querySelector<HTMLInputElement>('trove-page-header trove-address-field input');
+    expect(field?.value).toContain('web/npm-local/');
+    const primary = r.root.querySelector('.page-header-actions a.btn-confirm');
+    expect(primary?.textContent?.trim()).toBe('Set up client');
+    expect(primary?.getAttribute('href')).toContain('tab=setup');
+    // The other views are in the header's menu, not loose links beside the tabs.
+    expect(r.root.querySelector('.page-header-actions button[aria-label="More actions"]')).toBeTruthy();
+    await expectAccessible(r.root);
   });
 
   it('R-UI-052 the filter of the list is sent to the server and lives in the URL', async () => {
