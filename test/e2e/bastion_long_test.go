@@ -7,7 +7,6 @@ package e2e
 // random names.
 
 import (
-	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -129,15 +128,8 @@ func TestBastionLong_R_BAS_049_AnonymousMissFlood(t *testing.T) {
 	env := basFx(t)
 	site := env.bkt
 	const openRepo = "bas-npm-open"
-	env.adm.do(http.MethodPost, reposRoute, map[string]any{"key": openRepo, "class": "local", "format": "npm"}).want(t, "create "+openRepo, 201, 409)
-	ensurePolicy(t, env.adm, "e2e-bas-anonymous", []string{openRepo}, [2]any{"anonymous", []string{"read"}})
-	setAnonymous := func(on bool) {
-		g := env.adm.get("/api/v1/settings/auth").want(t, "read the authentication settings", 200)
-		env.adm.do(http.MethodPatch, "/api/v1/settings/auth", map[string]any{"anonymousAccess": on}, "If-Match", g.Header.Get("ETag"),
-			"Content-Type", "application/merge-patch+json").want(t, "set anonymousAccess", 200)
-	}
-	setAnonymous(true)
-	t.Cleanup(func() { setAnonymous(false) })
+	createPublicRepo(t, env.adm, map[string]any{"key": openRepo, "class": "local", "format": "npm"})
+	t.Cleanup(func() { deleteRepository(t, env.adm, openRepo) })
 	known := "bas" + env.run + "-anon-known"
 	ensurePolicy(t, env.adm, basPubSA+"-open", []string{openRepo}, [2]any{"sa:" + basPubSA, []string{"read", "deploy"}})
 	time.Sleep(6 * time.Second) // the grant reaches every replica of the main installation within the revocation bound

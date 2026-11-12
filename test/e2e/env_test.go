@@ -90,6 +90,7 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 	stopForwards()
 	basTeardown()
+	visibilityTeardown()
 	mirrorTeardown()
 	restoreProfile()
 	stop()

@@ -70,9 +70,9 @@ func buildNuGetFixture(t testing.TB) (*nugetFixture, error) {
 	b := make([]byte, 3)
 	_, _ = rand.Read(b)
 	fx := &nugetFixture{adm: adm, run: hex.EncodeToString(b)}
+	createSuitePublicRepo(t, adm, map[string]any{"key": nugetOpenKey, "class": "local", "format": "nuget"})
 	for _, body := range []map[string]any{
 		{"key": nugetAuthKey, "class": "local", "format": "nuget"},
-		{"key": nugetOpenKey, "class": "local", "format": "nuget"},
 		{"key": nugetHardKey, "class": "local", "format": "nuget", "nuget": map[string]any{"deleteMode": "delete"}},
 		{"key": nugetCustKey, "class": "local", "format": "nuget"},
 	} {
@@ -86,7 +86,6 @@ func buildNuGetFixture(t testing.TB) (*nugetFixture, error) {
 	}
 	ensureSA(t, adm, nugetPubSA)
 	ensurePolicy(t, adm, nugetPubSA, []string{nugetAuthKey, nugetOpenKey, nugetHardKey, nugetCustKey}, [2]any{"sa:" + nugetPubSA, []string{"read", "deploy", "delete"}})
-	ensurePolicy(t, adm, nugetPubSA+"-anonymous", []string{nugetOpenKey}, [2]any{"anonymous", []string{"read"}})
 	fx.token = freshSAToken(t, adm, nugetPubSA, 4*3600, map[string]any{"inherit": true}).Token
 	return fx, nil
 }
@@ -101,26 +100,12 @@ func nugetFeed(t testing.TB, host, key string) string {
 // version that exists (and a tombstone never meets a push).
 func (fx *nugetFixture) pkgID(group string) string { return "E2e.Nuget" + fx.run + "." + group }
 
-// withAnonymousRead turns the runtime switch anonymousAccess on (R-AUTH-040) for the test and puts the previous value
-// back at its end. The repository nuget-e2e-open grants `read` to anonymous; nothing else of the installation does, and
-// the other repositories of this suite force authentication.
+// withAnonymousRead waits until every packages replica lets an anonymous client read the feed nuget-e2e-open (R-AUTHZ-033). The
+// repository has public artifacts in a public project (createPublicRepo); the other repositories of this suite keep the private
+// default and challenge. The levels reach every replica within the bound of R-AUTHZ-028.
 func (fx *nugetFixture) withAnonymousRead(t *testing.T) {
 	t.Helper()
-	cur := fx.adm.get("/api/v1/settings/auth").want(t, "read the authentication settings", 200)
-	var s struct {
-		AnonymousAccess bool `json:"anonymousAccess"`
-	}
-	cur.JSON(t, &s)
-	if s.AnonymousAccess {
-		return
-	}
-	set := func(on bool) reply {
-		g := fx.adm.get("/api/v1/settings/auth").want(t, "read the authentication settings", 200)
-		return fx.adm.do(http.MethodPatch, "/api/v1/settings/auth", map[string]any{"anonymousAccess": on}, "If-Match", g.Header.Get("ETag"), "Content-Type", "application/merge-patch+json")
-	}
-	set(true).want(t, "anonymous access on", 200)
-	t.Cleanup(func() { set(false).want(t, "anonymous access off", 200) })
-	// the switch is in force on every replica within the revocation bound: wait until all three answer the anonymous read
+	// wait until all three replicas answer the anonymous read
 	feed := nugetAddr(nugetOpenKey) + "/v3/index.json"
 	seen := map[string]bool{}
 	waitFor(t, "anonymous read of the open feed on every packages replica", time.Minute, time.Second, func() bool {
@@ -268,7 +253,18 @@ func (fx *nugetFixture) nugetPackSymbols(t testing.TB, pod int, id, version, des
 
 func (fx *nugetFixture) pack(t testing.TB, pod int, id, version, description string, symbols bool) packed {
 	t.Helper()
-	key := fmt.Sprintf("%s|%s|%s|%t", id, version, description, symbols)
+	return fx.packWith(t, pod, id, version, description, symbols, false)
+}
+
+// nugetPackReadme is nugetPack with a README the package names in its nuspec (R-NUGET-024): the wiki content of the package.
+func (fx *nugetFixture) nugetPackReadme(t testing.TB, id, version, description string) []byte {
+	t.Helper()
+	return fx.packWith(t, 0, id, version, description, false, true).nupkg
+}
+
+func (fx *nugetFixture) packWith(t testing.TB, pod int, id, version, description string, symbols, readme bool) packed {
+	t.Helper()
+	key := fmt.Sprintf("%s|%s|%s|%t|%t", id, version, description, symbols, readme)
 	packMu.Lock()
 	if b, ok := packCache[key]; ok {
 		packMu.Unlock()
@@ -281,6 +277,14 @@ func (fx *nugetFixture) pack(t testing.TB, pod int, id, version, description str
 	if symbols {
 		extra = "\n    <IncludeSymbols>true</IncludeSymbols>\n    <SymbolPackageFormat>snupkg</SymbolPackageFormat>\n    <DebugType>portable</DebugType>"
 	}
+	if readme {
+		extra += "\n    <PackageReadmeFile>readme.md</PackageReadmeFile>"
+		c.write("readme.md", []byte("# "+id+"\n\nThe README of a trove end-to-end package.\n"))
+	}
+	itemGroup := ""
+	if readme {
+		itemGroup = `<ItemGroup><None Include="readme.md" Pack="true" PackagePath="\" /></ItemGroup>`
+	}
 	c.write("pack.csproj", []byte(`<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -289,7 +293,7 @@ func (fx *nugetFixture) pack(t testing.TB, pod int, id, version, description str
     <Authors>trove end-to-end</Authors>
     <Description>`+xmlText(description)+`</Description>
     <NuGetAudit>false</NuGetAudit>`+extra+`
-  </PropertyGroup>
+  </PropertyGroup>`+itemGroup+`
 </Project>
 `))
 	c.write("Marker.cs", []byte(`namespace E2e { public static class Marker { public const string Id = "`+id+`"; } }`))

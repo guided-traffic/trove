@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/auth/token"
+	"github.com/guided-traffic/trove/internal/bastion/iface"
 )
 
 // The periods of deploy/dev/bastion-chart-common.yaml.
@@ -43,8 +44,8 @@ func TestBastion_R_BAS_049_Setup(t *testing.T) {
 			if !live[c.Replica] {
 				continue // the last contact of a replica that is gone (the main installation keeps it)
 			}
-			if c.InterfaceVersion != 1 || c.BaseURL != s.baseURL(t) {
-				t.Errorf("%s: replica %s reported interface %d and base URL %q, want 1 and %q", s.reg, c.Replica, c.InterfaceVersion, c.BaseURL, s.baseURL(t))
+			if c.InterfaceVersion != iface.InterfaceVersion || c.BaseURL != s.baseURL(t) {
+				t.Errorf("%s: replica %s reported interface %d and base URL %q, want %d and %q", s.reg, c.Replica, c.InterfaceVersion, c.BaseURL, iface.InterfaceVersion, s.baseURL(t))
 			}
 		}
 		for _, p := range basReadyPods(t, s) {

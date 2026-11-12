@@ -147,8 +147,8 @@ case "$set_name" in
   full) run='^Test(E03|E04|E06|E07|E12|E13|E14|E15|E16|E1_|E99)'; export TROVE_E2E_OIDCSTUB=1 TROVE_E2E_NPMSTUB=1 ;;
   failover) run='^Test(E13|E1_08)' ;;
   # the journeys include 13-ci, which registers the issuer double and exchanges an ID token (docs/developer/e2e.md#the-ci-tests), and 14-mirror, which types the address of the npm test upstream into the wizard (TROVE_E2E_NPMSTUB_HOST)
-  access-long) run='^TestE1_(01|11|13)'; export TROVE_E2E_OIDCSTUB=1 TROVE_E2E_NPMSTUB=1 ;;
-  access) run='^TestE1_'; export TROVE_E2E_OIDCSTUB=1 TROVE_E2E_NPMSTUB=1 ;;
+  access-long) run='^Test(E1_(01|11|13)|ExternalUser_)'; export TROVE_E2E_OIDCSTUB=1 TROVE_E2E_NPMSTUB=1 ;;
+  access) run='^Test(E1_|ExternalUser_)'; export TROVE_E2E_OIDCSTUB=1 TROVE_E2E_NPMSTUB=1 ;;
   drain) run='^TestE14' ;;
   # The drain per role runs the npm load of npm-ha beside its own (Q-HA-94): the client pods and the test upstream of the npm sets.
   drain-roles) run='^TestDrainRoles$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
@@ -158,7 +158,7 @@ case "$set_name" in
   # The npm acceptance matrix and the criteria E2.1 to E2.12 (test/e2e/npm_*_test.go), and the npm mirror of R-REPO-059 (TestNPMMirror..., a pool of two
   # processes that claim the queue `mirror` beside the scatter profile, added by the tests, Q-REPO-306): the counting test upstream,
   # three client pods (one per packages replica), the scatter profile. CI runs it as the job e2e-npm on every change.
-  npm) run='^TestNPM(Clients|Matrix|Replicas|Collapse|Upstream|Endpoint|Project|Mirror)'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
+  npm) run='^TestNPM(Clients|Matrix|Replicas|Collapse|Upstream|Endpoint|Project|Mirror|Visibility|ExternalUser)'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
   # The additions of the run that closes the phase: the matrix again with Valkey stopped, the read-only subset against
   # the public registry. Started by the workflow only when it is dispatched with closing=true (Q-NPM-46).
   npm-closing) run='^TestNPMClosing'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NPM_CLOSING=1 ;;

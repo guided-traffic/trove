@@ -65,15 +65,11 @@ func TestDebLocal(t *testing.T) {
 	})
 }
 
-// TestDebAnonymous is the anonymous read: the repository grants read to anonymous, the clients carry no credential file, and
+// TestDebAnonymous is the anonymous read: the repository has public artifacts (R-AUTHZ-033), the clients carry no credential file, and
 // apt-get update and install work on every image.
 func TestDebAnonymous(t *testing.T) {
 	fx := debFx(t)
 	repo := fx.localRepo(t, "open", nil)
-	// a policy with an entry for anonymous names its repositories by key, never by pattern (it would expose repositories created later)
-	policy := debPublisher + "-anonymous-" + fx.run
-	ensurePolicy(t, fx.adm, policy, []string{repo}, [2]any{"anonymous", []string{"read"}})
-	t.Cleanup(func() { fx.adm.do(http.MethodDelete, "/api/v1/permission-policies/"+policy, nil) })
 	fx.withAnonymousRead(t, repo)
 	p := newDebPackage(t, fx.name("anon"), "1.0")
 	fx.awaitPublished(t, repo, debSuite, fx.upload(t, repo, p, debSuite))
@@ -91,24 +87,11 @@ func TestDebAnonymous(t *testing.T) {
 	}
 }
 
-// withAnonymousRead turns the runtime switch anonymousAccess on (R-AUTH-040) for the test and puts the previous value back at its end.
-// The policy of the test grants `read` on its repository to anonymous; nothing else of the installation does.
+// withAnonymousRead waits until every packages replica lets an anonymous client read the repositories (R-AUTHZ-033). The repositories
+// are public (localRepo with the purpose "open"); nothing else of the installation is.
 func (fx *debFixture) withAnonymousRead(t *testing.T, keys ...string) {
 	t.Helper()
-	cur := fx.adm.get("/api/v1/settings/auth").want(t, "read the authentication settings", 200)
-	var s struct {
-		AnonymousAccess bool `json:"anonymousAccess"`
-	}
-	cur.JSON(t, &s)
-	if !s.AnonymousAccess {
-		set := func(on bool) reply {
-			g := fx.adm.get("/api/v1/settings/auth").want(t, "read the authentication settings", 200)
-			return fx.adm.do(http.MethodPatch, "/api/v1/settings/auth", map[string]any{"anonymousAccess": on}, "If-Match", g.Header.Get("ETag"), "Content-Type", "application/merge-patch+json")
-		}
-		set(true).want(t, "anonymous access on", 200)
-		t.Cleanup(func() { set(false).want(t, "anonymous access off", 200) })
-	}
-	// in force on every replica within the revocation bound: wait until every packages replica lets an anonymous client read
+	// wait until every packages replica lets an anonymous client read
 	seen := map[string]bool{}
 	waitFor(t, "anonymous read of "+strings.Join(keys, ", ")+" on every packages replica", time.Minute, time.Second, func() bool {
 		clear(seen)

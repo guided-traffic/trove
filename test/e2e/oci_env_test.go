@@ -73,9 +73,9 @@ func buildOCIFixture(t testing.TB) (*ociFixture, error) {
 	b := make([]byte, 3)
 	_, _ = rand.Read(b)
 	fx := &ociFixture{adm: adm, run: hex.EncodeToString(b)}
+	createSuitePublicRepo(t, adm, map[string]any{"key": ociOpenKey, "class": "local", "format": "oci"})
 	for _, body := range []map[string]any{
 		{"key": ociLocalKey, "class": "local", "format": "oci"},
-		{"key": ociOpenKey, "class": "local", "format": "oci"},
 	} {
 		r, err := adm.send(http.MethodPost, reposRoute, body)
 		if err != nil {
@@ -87,7 +87,6 @@ func buildOCIFixture(t testing.TB) (*ociFixture, error) {
 	}
 	ensureSA(t, adm, ociPublisher)
 	ensurePolicy(t, adm, ociPublisher, []string{ociLocalKey, ociOpenKey}, [2]any{"sa:" + ociPublisher, []string{"read", "deploy", "delete"}})
-	ensurePolicy(t, adm, ociPublisher+"-anonymous", []string{ociOpenKey}, [2]any{"anonymous", []string{"read"}})
 	fx.token = freshSAToken(t, adm, ociPublisher, 4*3600, map[string]any{"inherit": true}).Token
 	return fx, nil
 }
@@ -126,27 +125,14 @@ func (fx *ociFixture) digestOf(t testing.TB, repo, name, tag string) string {
 	return d
 }
 
-// withAnonymousRead turns the runtime switch anonymousAccess on (R-AUTH-040) for the test and puts the previous value back at its end.
-// The repository oci-e2e-open grants `read` to anonymous; nothing else of the installation does.
+// withAnonymousRead waits until every packages replica lets an anonymous client read the repositories (R-AUTHZ-033): oci-e2e-open has
+// public artifacts in a public project; a test that reads another repository anonymously makes it public first (createPublicRepo).
 func (fx *ociFixture) withAnonymousRead(t *testing.T, keys ...string) {
 	t.Helper()
-	cur := fx.adm.get("/api/v1/settings/auth").want(t, "read the authentication settings", 200)
-	var s struct {
-		AnonymousAccess bool `json:"anonymousAccess"`
-	}
-	cur.JSON(t, &s)
-	if !s.AnonymousAccess {
-		set := func(on bool) reply {
-			g := fx.adm.get("/api/v1/settings/auth").want(t, "read the authentication settings", 200)
-			return fx.adm.do(http.MethodPatch, "/api/v1/settings/auth", map[string]any{"anonymousAccess": on}, "If-Match", g.Header.Get("ETag"), "Content-Type", "application/merge-patch+json")
-		}
-		set(true).want(t, "anonymous access on", 200)
-		t.Cleanup(func() { set(false).want(t, "anonymous access off", 200) })
-	}
 	if len(keys) == 0 {
 		keys = []string{ociOpenKey}
 	}
-	// in force on every replica within the revocation bound: wait until every packages replica lets an anonymous client read
+	// wait until every packages replica lets an anonymous client read
 	seen := map[string]bool{}
 	waitFor(t, "anonymous read of "+strings.Join(keys, ", ")+" on every packages replica", time.Minute, time.Second, func() bool {
 		clear(seen)

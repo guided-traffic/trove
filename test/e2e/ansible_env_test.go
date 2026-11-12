@@ -73,7 +73,8 @@ func ansibleRepoURL(t testing.TB, key string) string {
 	return "https://" + ansibleEdge(t) + ansibleRepoPath(key) + "/"
 }
 
-// localRepo creates a local Ansible repository for one test; authentication is required unless the purpose starts with "open".
+// localRepo creates a local Ansible repository for one test; it is private, so authentication is required; a test that needs other levels
+// sets them with setRepoLevels.
 func (fx *ansibleFixture) localRepo(t testing.TB, purpose string) string {
 	t.Helper()
 	key := fmt.Sprintf("ansible-%s-%s", purpose, fx.run)

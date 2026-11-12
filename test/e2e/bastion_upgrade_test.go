@@ -4,7 +4,7 @@ package e2e
 
 // The interface mismatch (R-BAS-028, R-BAS-049): the main installation is upgraded to a build with InterfaceVersion + 1.
 // There is no build seam for the version: it is a constant. The build here is the release binary compiled with go build
-// -overlay, which replaces internal/bastion/iface/version.go by a copy that says 2 (nothing in the tree changes), put into
+// -overlay, which replaces internal/bastion/iface/version.go by a copy that says InterfaceVersion + 1 (nothing in the tree changes), put into
 // the release image as the tag guidedtraffic/trove:iface (Q-BAS-111).
 
 import (
@@ -17,6 +17,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/bastion/iface"
 )
 
 const basIfaceTag = "iface"
@@ -29,23 +31,23 @@ func buildIfaceImage(t testing.TB) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const from = "const InterfaceVersion = 1"
+	from := fmt.Sprintf("const InterfaceVersion = %d", iface.InterfaceVersion)
 	if !strings.Contains(string(src), from) {
 		t.Fatalf("internal/bastion/iface/version.go no longer holds %q: adapt the overlay of the mismatch scenario", from)
 	}
 	tmp := t.TempDir()
 	version := filepath.Join(tmp, "version.go")
-	if err := os.WriteFile(version, []byte(strings.Replace(string(src), from, "const InterfaceVersion = 2", 1)), 0o644); err != nil {
+	if err := os.WriteFile(version, []byte(strings.Replace(string(src), from, fmt.Sprintf("const InterfaceVersion = %d", iface.InterfaceVersion+1), 1)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	// the embedded OpenAPI document names the interface version of the operations and the main installation refuses to start when it
-	// differs from the constant (internal/api/v1/document.go), so the copy that is embedded says 2 as well
+	// differs from the constant (internal/api/v1/document.go), so the copy that is embedded says the next version as well
 	doc, err := os.ReadFile(filepath.Join(cfg.repo, "internal/api/v1/openapi.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	docPath := filepath.Join(tmp, "openapi.yaml")
-	if err := os.WriteFile(docPath, []byte(strings.ReplaceAll(string(doc), "x-trove-bastion-interface: 1", "x-trove-bastion-interface: 2")), 0o644); err != nil {
+	if err := os.WriteFile(docPath, []byte(strings.ReplaceAll(string(doc), fmt.Sprintf("x-trove-bastion-interface: %d", iface.InterfaceVersion), fmt.Sprintf("x-trove-bastion-interface: %d", iface.InterfaceVersion+1))), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	overlay, _ := json.Marshal(map[string]any{"Replace": map[string]string{
@@ -166,7 +168,7 @@ func TestBastion_R_BAS_049_InterfaceMismatch(t *testing.T) {
 	// the moment both replicas report the mismatch, the answers the loop obtained a moment ago are the ones the grace period extends
 	waitFor(t, "both replicas to report the interface mismatch", 6*time.Minute, time.Second, func() bool {
 		m, v := basMismatch(t, site)
-		return allEqual(m, 1) && allEqual(v, 2)
+		return allEqual(m, 1) && allEqual(v, float64(iface.InterfaceVersion+1))
 	})
 	mismatchAt := time.Now()
 	close(stopLoop)
@@ -198,17 +200,17 @@ func TestBastion_R_BAS_049_InterfaceMismatch(t *testing.T) {
 	waitServingSettled(t)
 	waitFor(t, "the mismatch to be steady on both replicas", 2*time.Minute, time.Second, func() bool {
 		m, v := basMismatch(t, site)
-		return allEqual(m, 1) && allEqual(v, 2)
+		return allEqual(m, 1) && allEqual(v, float64(iface.InterfaceVersion+1))
 	})
 	seen = time.Now()
 	t.Run("the gauge of TroveBastionInterfaceMismatch stays 1 for its `for` of one minute", func(t *testing.T) {
 		for time.Since(seen) < 65*time.Second {
 			m, v := basMismatch(t, site)
-			if !allEqual(m, 1) || !allEqual(v, 2) {
+			if !allEqual(m, 1) || !allEqual(v, float64(iface.InterfaceVersion+1)) {
 				t.Fatalf("trove_bastion_interface_mismatch %v, main version %v after %s", m, v, time.Since(seen).Round(time.Second))
 			}
 			for _, p := range basReadyPods(t, site) {
-				if basMetrics(t, p.Name)[`trove_bastion_interface_version{side="bastion"}`] != 1 {
+				if basMetrics(t, p.Name)[`trove_bastion_interface_version{side="bastion"}`] != float64(iface.InterfaceVersion) {
 					t.Fatalf("%s: the Bastion's own version is not 1", p.Name)
 				}
 			}
@@ -228,7 +230,7 @@ func TestBastion_R_BAS_049_InterfaceMismatch(t *testing.T) {
 	}
 	waitFor(t, "the mismatch to clear after the Bastion's upgrade", 2*time.Minute, time.Second, func() bool {
 		m, v := basMismatch(t, site)
-		return len(m) == 2 && allEqual(m, 0) && allEqual(v, 2) && allEqual(basReachable(t, site), 1)
+		return len(m) == 2 && allEqual(m, 0) && allEqual(v, float64(iface.InterfaceVersion+1)) && allEqual(basReachable(t, site), 1)
 	})
 	site.get(t, env.full.Token, npmDocPath(cold)).want(t, "a cold package after the Bastion's upgrade", 200)
 	fmt.Fprintln(os.Stderr, "e2e: interface mismatch cleared after the Bastion's upgrade")

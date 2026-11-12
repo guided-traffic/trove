@@ -451,7 +451,7 @@ func TestAnsibleDocsVirtual(t *testing.T) {
 	remote := fx.remoteRepo(t, "dremote", nil)
 	virtual := "ansible-dvirtual-" + fx.run
 	fx.createRepo(t, virtual, map[string]any{
-		"key": virtual, "class": "virtual", "format": "ansible", "requireAuthentication": true,
+		"key": virtual, "class": "virtual", "format": "ansible",
 		"virtual": map[string]any{"members": []string{local, remote}, "deployTarget": local},
 	})
 	env := tokenEnvVar + "=" + fx.token
