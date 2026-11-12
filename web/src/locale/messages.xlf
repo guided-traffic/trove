@@ -2441,6 +2441,62 @@
         <source>User changed</source>
       </segment>
     </unit>
+    <unit id="audit.action.vulnerability.advisory.kind_changed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:113</note>
+      </notes>
+      <segment>
+        <source>Advisory kind changed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.vulnerability.claimed_name_match">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:115</note>
+      </notes>
+      <segment>
+        <source>Advisory matches a claimed package name</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.vulnerability.download_blocked">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:117</note>
+      </notes>
+      <segment>
+        <source>Download blocked by a finding</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.vulnerability.finding.reopened">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:119</note>
+      </notes>
+      <segment>
+        <source>Finding reopened</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.vulnerability.finding.status_changed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:121</note>
+      </notes>
+      <segment>
+        <source>Finding status changed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.vulnerability.source.failed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:123</note>
+      </notes>
+      <segment>
+        <source>Advisory sync failed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.vulnerability.source.imported">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:125</note>
+      </notes>
+      <segment>
+        <source>Advisory data imported</source>
+      </segment>
+    </unit>
     <unit id="audit.category.auth">
       <notes>
         <note category="location">src/app/features/audit/audit-labels.ts:134</note>
@@ -25464,7 +25520,7 @@
         <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:200</note>
       </notes>
       <segment>
-        <source>Last synchronised</source>
+        <source>Last sync</source>
       </segment>
     </unit>
     <unit id="vuln.sources.col-failures">
@@ -25472,7 +25528,7 @@
         <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:201</note>
       </notes>
       <segment>
-        <source>Failed runs in a row</source>
+        <source>Failures</source>
       </segment>
     </unit>
     <unit id="vuln.sources.help-failures">
@@ -25512,7 +25568,7 @@
         <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:204</note>
       </notes>
       <segment>
-        <source>Unevaluable ranges</source>
+        <source>Unevaluable</source>
       </segment>
     </unit>
     <unit id="vuln.sources.help-unevaluable">

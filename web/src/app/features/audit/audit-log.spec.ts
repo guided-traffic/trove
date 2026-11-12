@@ -42,6 +42,21 @@ describe('Audit log', () => {
     expect(text(root)).toContain('future.thing.happened');
   });
 
+  it('R-UI-037 R-VULN-024 every vulnerability action has a plain name, also the import of advisory data', async () => {
+    const actions = [
+      ['vulnerability.source.imported', 'Advisory data imported'],
+      ['vulnerability.source.failed', 'Advisory sync failed'],
+      ['vulnerability.finding.status_changed', 'Finding status changed'],
+      ['vulnerability.finding.reopened', 'Finding reopened'],
+      ['vulnerability.download_blocked', 'Download blocked by a finding'],
+      ['vulnerability.claimed_name_match', 'Advisory matches a claimed package name'],
+      ['vulnerability.advisory.kind_changed', 'Advisory kind changed'],
+    ] as const;
+    const { root } = await open({}, (audit) => (audit.eventList = actions.map(([action], i) => sampleEvent({ id: `vuln-${i}`, action }))));
+    const t = text(root);
+    for (const [, label] of actions) expect(t).toContain(label);
+  });
+
   it('R-UI-037 the filters from the URL reach the API with the time range resolved against the clock', async () => {
     const { audit } = await open({
       range: '7d',

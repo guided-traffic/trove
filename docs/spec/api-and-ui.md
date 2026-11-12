@@ -11464,6 +11464,24 @@ columns are their headers' with the sort arrow, or a name that does not break.
 agent revisits the width if the walkthrough shows identifiers longer than 10 rem, which a column grows to on its own.
 **Applied in the spec:** R-VULN-022 (List); [vulnerability-report.ts](../../web/src/app/features/vulnerabilities/vulnerability-report.ts).
 
+### Q-UI-393 · The advisory sources' headers are as short as their cells; their help says the rest
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: at 1440 px the table of `/admin/advisory-sources` scrolled 37 px sideways in its region (B3's renders of fix wave 4). Its
+nine headers do not wrap (Q-UI-308), and three were longer than any value under them: **Last synchronised**, **Failed runs in a
+row** and **Unevaluable ranges**, the last two with a help button beside them.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) **Last sync**, **Failures**, **Unevaluable**; the help of **Failures** and **Unevaluable** keeps the full meaning (chosen) | The budget of Q-UI-308 and Q-UI-380: a header as short as its cells | The table fits at 1440 px with room to spare (measured: no sideways scroll at 1440 px, the rows stacked at 390 px); nothing is dropped | The full meaning of two headers is one click away |
+| (b) Let the headers wrap | Two-line headers | Nothing renamed | A rule of every list broken for one table |
+| (c) **Unevaluable** gives way below 64 rem (`narrow`) | One column fewer where it is narrow | Nothing renamed | Does not help at 1440 px, where the list is 70 rem |
+
+**Choice:** (a). **Rationale:** the shared budget already asks for headers as short as their cells. The development agent revisits
+the names if the walkthrough finds them unclear. **Applied in the spec:** R-VULN-022 (Sources);
+[vulnerability-sources.ts](../../web/src/app/features/vulnerabilities/vulnerability-sources.ts).
+
 ### Q-API-246 · An operation that is allowed while the installation is read-only declares `x-trove-maintenance: allowed`
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.

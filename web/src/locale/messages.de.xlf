@@ -2462,6 +2462,69 @@
         <target>Benutzer geändert</target>
       </segment>
     </unit>
+    <unit id="audit.action.vulnerability.advisory.kind_changed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:113</note>
+      </notes>
+      <segment>
+        <source>Advisory kind changed</source>
+        <target>Art eines Advisorys geändert</target>
+      </segment>
+    </unit>
+    <unit id="audit.action.vulnerability.claimed_name_match">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:115</note>
+      </notes>
+      <segment>
+        <source>Advisory matches a claimed package name</source>
+        <target>Advisory trifft einen beanspruchten Paketnamen</target>
+      </segment>
+    </unit>
+    <unit id="audit.action.vulnerability.download_blocked">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:117</note>
+      </notes>
+      <segment>
+        <source>Download blocked by a finding</source>
+        <target>Download durch einen Befund gesperrt</target>
+      </segment>
+    </unit>
+    <unit id="audit.action.vulnerability.finding.reopened">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:119</note>
+      </notes>
+      <segment>
+        <source>Finding reopened</source>
+        <target>Befund wieder geöffnet</target>
+      </segment>
+    </unit>
+    <unit id="audit.action.vulnerability.finding.status_changed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:121</note>
+      </notes>
+      <segment>
+        <source>Finding status changed</source>
+        <target>Status eines Befunds geändert</target>
+      </segment>
+    </unit>
+    <unit id="audit.action.vulnerability.source.failed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:123</note>
+      </notes>
+      <segment>
+        <source>Advisory sync failed</source>
+        <target>Advisory-Abgleich fehlgeschlagen</target>
+      </segment>
+    </unit>
+    <unit id="audit.action.vulnerability.source.imported">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:125</note>
+      </notes>
+      <segment>
+        <source>Advisory data imported</source>
+        <target>Advisory-Daten importiert</target>
+      </segment>
+    </unit>
     <unit id="audit.category.auth">
       <notes>
         <note category="location">src/app/features/audit/audit-labels.ts:134</note>
@@ -24978,8 +25041,8 @@
         <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:192</note>
       </notes>
       <segment>
-        <source>Last synchronised</source>
-        <target>Zuletzt synchronisiert</target>
+        <source>Last sync</source>
+        <target>Letzter Abgleich</target>
       </segment>
     </unit>
     <unit id="vuln.sources.col-failures">
@@ -24987,8 +25050,8 @@
         <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:193</note>
       </notes>
       <segment>
-        <source>Failed runs in a row</source>
-        <target>Fehlgeschlagene Läufe in Folge</target>
+        <source>Failures</source>
+        <target>Fehlschläge</target>
       </segment>
     </unit>
     <unit id="vuln.sources.help-failures">
@@ -25032,8 +25095,8 @@
         <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:196</note>
       </notes>
       <segment>
-        <source>Unevaluable ranges</source>
-        <target>Nicht auswertbare Bereiche</target>
+        <source>Unevaluable</source>
+        <target>Nicht auswertbar</target>
       </segment>
     </unit>
     <unit id="vuln.sources.help-unevaluable">

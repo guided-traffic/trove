@@ -109,6 +109,20 @@ export function auditActionLabel(action: string): string {
       return $localize`:@@audit.action.user.renamed:User renamed`;
     case 'user.updated':
       return $localize`:@@audit.action.user.updated:User changed`;
+    case 'vulnerability.advisory.kind_changed':
+      return $localize`:@@audit.action.vulnerability.advisory.kind_changed:Advisory kind changed`;
+    case 'vulnerability.claimed_name_match':
+      return $localize`:@@audit.action.vulnerability.claimed_name_match:Advisory matches a claimed package name`;
+    case 'vulnerability.download_blocked':
+      return $localize`:@@audit.action.vulnerability.download_blocked:Download blocked by a finding`;
+    case 'vulnerability.finding.reopened':
+      return $localize`:@@audit.action.vulnerability.finding.reopened:Finding reopened`;
+    case 'vulnerability.finding.status_changed':
+      return $localize`:@@audit.action.vulnerability.finding.status_changed:Finding status changed`;
+    case 'vulnerability.source.failed':
+      return $localize`:@@audit.action.vulnerability.source.failed:Advisory sync failed`;
+    case 'vulnerability.source.imported':
+      return $localize`:@@audit.action.vulnerability.source.imported:Advisory data imported`;
     default:
       return action;
   }
