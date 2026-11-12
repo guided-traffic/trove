@@ -84,6 +84,15 @@ type Scope struct {
 	// rowRepos are the repositories that have any of rows, sorted.
 	rowRepos        []int64
 	virtualReadable map[int64]bool
+	// wiki is the wiki question of the caller's read scope (authz.ReadScope.MayReadWiki); nil answers no.
+	wiki func(repo qname.Repo, pkg, version string) bool
+}
+
+// MayReadWiki reports whether the caller may read the wiki of a package version in a repository (R-AUTHZ-034, R-API-058): the
+// question of a management answer that carries wiki content. It asks nothing of the audit: the caller reads the version and asked
+// about a part of it.
+func (sc Scope) MayReadWiki(repo qname.Repo, pkg, version string) bool {
+	return sc.wiki != nil && sc.wiki(repo, pkg, version)
 }
 
 // Repos returns the physical repositories the scope has any row of, sorted.
@@ -146,7 +155,7 @@ type ScopeRequest struct {
 // repositories the caller may read; they decide which of them a version is shown
 // in.
 func (s *Service) Scope(ctx context.Context, rs authz.ReadScope, topo Topology, virtualReadable []int64, r ScopeRequest) (Scope, error) {
-	sc := Scope{topo: topo, virtualReadable: map[int64]bool{}}
+	sc := Scope{topo: topo, virtualReadable: map[int64]bool{}, wiki: rs.MayReadWiki}
 	for _, v := range virtualReadable {
 		sc.virtualReadable[v] = true
 	}
@@ -803,12 +812,23 @@ func (s *Service) Version(ctx context.Context, sc Scope, format, name, version s
 		return VersionDetail{}, false, err
 	}
 	if data, ok := got[pri.VersionID]; ok {
-		d.HasReadme = data.HasReadme
+		// The README and the members of the metadata that are wiki content go to a caller who may read the wiki of the repository
+		// the version was read from; the artifacts level alone does not give them (R-AUTHZ-034, R-API-058).
+		wiki := sc.MayReadWiki(sc.topo.Name(pri.RepoID), name, version)
+		d.HasReadme = data.HasReadme && wiki
 		if data.Licenses != nil {
 			d.Licenses = data.Licenses
 		}
 		if data.Metadata != nil {
 			d.Metadata = data.Metadata
+			if !wiki && len(data.WikiMetadata) > 0 {
+				d.Metadata = make(map[string]any, len(data.Metadata))
+				for k, v := range data.Metadata {
+					if !slices.Contains(data.WikiMetadata, k) {
+						d.Metadata[k] = v
+					}
+				}
+			}
 		}
 	}
 	if z, ok := a.(Sizer); ok {
@@ -847,6 +867,9 @@ func (s *Service) ReadmeOf(ctx context.Context, sc Scope, format, name, version 
 		return Readme{}, false, err
 	}
 	pri := g.primary()
+	if !sc.MayReadWiki(sc.topo.Name(pri.RepoID), name, version) {
+		return Readme{}, false, nil // a README the caller may not read is one that is not there (R-API-058)
+	}
 	got, err := a.Describe(ctx, []Version{{ID: pri.VersionID, Format: format, Repo: sc.topo.Name(pri.RepoID).String(), Package: pri.Name, Version: version}},
 		FieldDetails|FieldReadme, func(string) bool { return false })
 	if err != nil {

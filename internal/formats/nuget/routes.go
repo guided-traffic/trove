@@ -15,6 +15,7 @@ const (
 	routeNupkg             = "nuget.flatcontainer.nupkg"
 	routeNuspec            = "nuget.flatcontainer.nuspec"
 	routeEmbedded          = "nuget.flatcontainer.embedded"
+	routeReadme            = "nuget.flatcontainer.readme"
 	routeRegistrationIndex = "nuget.registration.index"
 	routeRegistrationPage  = "nuget.registration.page"
 	routeRegistrationLeaf  = "nuget.registration.leaf"
@@ -47,6 +48,8 @@ func (f *Format) buildRoutes() []formats.Route {
 		deploy = formats.ActionDeploy
 		del    = formats.ActionDelete
 	)
+	// wiki declares a route that serves wiki content only (R-AUTHZ-034).
+	wiki := func(r formats.Route) formats.Route { r.Wiki = true; return r }
 	route := func(name, method, tmpl string, kind formats.RouteKind, action formats.Action,
 		match func(string) (formats.Params, bool), examples []string, h formats.HandlerFunc,
 	) formats.Route {
@@ -84,8 +87,12 @@ func (f *Format) buildRoutes() []formats.Route {
 			flatFile(hasSuffixFold(nupkgSuffix)), []string{leaf + pkg + "." + ver + ".nupkg", "v3/flatcontainer/ACME.Widgets/1.2.3.0/acme.widgets.1.2.3.nupkg"}, f.handleNupkg),
 		route(routeNuspec, http.MethodGet, "/v3/flatcontainer/{id}/{version}/{id}.nuspec", formats.Download, read,
 			flatFile(hasSuffixFold(nuspecSuffix)), []string{leaf + pkg + ".nuspec"}, f.handleNuspec),
-		route(routeEmbedded, http.MethodGet, "/v3/flatcontainer/{id}/{version}/{icon|license|readme}", formats.Download, read,
-			flatFile(isEmbedded), []string{leaf + "icon", leaf + "readme", leaf + "license"}, f.handleEmbedded),
+		route(routeEmbedded, http.MethodGet, "/v3/flatcontainer/{id}/{version}/{icon|license}", formats.Download, read,
+			flatFile(isEmbeddedArtifact), []string{leaf + "icon", leaf + "license"}, f.handleEmbedded),
+		// The README is wiki content (R-NUGET-024, R-AUTHZ-034): a caller who may read the package and not the wiki of the repository
+		// is refused before the handler runs.
+		wiki(route(routeReadme, http.MethodGet, "/v3/flatcontainer/{id}/{version}/readme", formats.Metadata, read,
+			flatFile(isReadme), []string{leaf + "readme"}, f.handleEmbedded)),
 
 		// The registrations, in the three hives (R-NUGET-009).
 		route(routeRegistrationIndex, http.MethodGet, "/v3/{hive}/{id}/index.json", formats.Metadata, read,

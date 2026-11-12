@@ -55,6 +55,11 @@ type fullSource struct {
 	status string
 	// rev is the synthetic _rev of a merged document.
 	rev string
+	// wikiFp and wikiOf are the answer of the wiki check for the README (R-AUTHZ-034, Q-NPM-87): the fingerprint joins the variant
+	// of a full document, so the key and the validator tell the callers apart, and wikiOf says whether the member that supplied the
+	// README ("" for a document that is not merged) may be read. A source without wikiOf leaves the README out.
+	wikiFp string
+	wikiOf func(supplier string) bool
 }
 
 // serveFull answers a request for a form of the document of a package from its full
@@ -74,6 +79,9 @@ func (f *Format) serveFull(ctx context.Context, rq *formats.Request, w http.Resp
 	}
 	if src.form == formVersion {
 		variant += "/" + src.ref
+	}
+	if src.form == formFull {
+		variant += "#wiki=" + src.wikiFp // the README is wiki content: the answer is part of the key and of the validator
 	}
 	settings := fmt.Sprintf("%d/%t/%s", rq.Repo.Version, rep.cfg.AbbreviatedTime, src.content)
 	inputs := document.Inputs{
@@ -121,6 +129,10 @@ func (f *Format) serveFull(ctx context.Context, rq *formats.Request, w http.Resp
 		p, err := f.exposedDocument(ctx, rq, n, full, prefix, src.rev)
 		if err != nil {
 			return err
+		}
+		supplier := takeReadmeMember(p)
+		if src.wikiOf == nil || !src.wikiOf(supplier) {
+			dropReadme(p)
 		}
 		var body []byte
 		switch src.form {
@@ -226,6 +238,8 @@ func (f *Format) remoteSource(ctx context.Context, rq *formats.Request, n name.N
 		src.kind, src.servingKey = "cache", rq.Repo.Name
 		src.servingKey.Key += "~cache"
 	}
+	readable := wikiReadableOf(ctx, rq, n)
+	src.wikiFp, src.wikiOf = wikiBit(readable), func(string) bool { return readable }
 	return src, nil
 }
 

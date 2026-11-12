@@ -59,6 +59,14 @@ gets the refusal of a read on a route that serves only wiki content and document
 shown. One coordinate part decides it, asked through four named forms that the format kit and a document test hold every format and
 operation to (R-AUTHZ-034, R-API-058, R-ARCH-010 check 15).
 
+The README is wiki content of every format that has one. npm's full document leaves `readme` and `readmeFilename` out for a caller who
+may not read the wiki of the repository that supplies the version `latest` points to; the validator and the rendition key carry the
+answer, and on a virtual repository the merge names the supplying member, so a cached merged document never carries a README to
+a caller without it ([npm.md](npm.md)). The NuGet README has a route of its own, declared as a wiki route, so the dispatcher refuses
+a caller without the wiki before the handler runs. The package API drops `hasReadme`, the wiki members of the metadata and the README
+operation's answer for such a caller, per repository that holds the version, and the Ansible documentation operations skip a repository
+whose wiki the caller may not read (R-ANS-037). The shape of a repository for a Bastion is `full` only when the wiki is read as well.
+
 ## How a change reaches every replica
 
 | Change | Path | Bound |

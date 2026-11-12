@@ -70,6 +70,10 @@ func (f *Format) buildRoutes() []formats.Route {
 		route(routeRoleArchive, http.MethodGet, "v1/roles/archives/{id}/{file}", formats.Download, read, []formats.Class{remote, virtual}, matchRoleArchive,
 			"v1/roles/archives/16/v1.0.0.tar.gz"),
 	}
+	for i := range all {
+		// The documentation of a version is the wiki of the repository (R-ANS-037, R-AUTHZ-034): the dispatcher refuses a caller who may not read it.
+		all[i].Wiki = all[i].Name == routeDocs
+	}
 	return f.forClasses(all)
 }
 

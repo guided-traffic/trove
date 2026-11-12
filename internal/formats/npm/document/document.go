@@ -56,6 +56,9 @@ type Options struct {
 	Rev string
 	// AbbreviatedTime adds the time map to abbreviated documents (npm.abbreviated_time).
 	AbbreviatedTime bool
+	// OmitReadme leaves readme and readmeFilename out of the full document: the README is wiki content, and the caller may not
+	// read the wiki of the repository (R-AUTHZ-034, Q-NPM-87).
+	OmitReadme bool
 }
 
 // The top-level fields of the full document that come from the version latest points
@@ -126,6 +129,9 @@ func FullDocument(p *rows.LocalPackage, o Options) ([]byte, error) {
 		if latest.readmeFile != "" {
 			file = latest.readmeFile
 		}
+	}
+	if o.OmitReadme {
+		return w.bytes(), nil
 	}
 	if readme != "" {
 		w.str("readme", readme)

@@ -28,7 +28,7 @@ The backend and the screens are built; the end-to-end rows and the browser journ
 | The job `ansible-docs-fill` | [jobs.go](../../internal/formatdata/ansible/jobs.go), [docs_job.go](../../internal/formatdata/ansible/docs_job.go), wired in [wire_ansible.go](../../internal/app/wire_ansible.go) | built |
 | The setting `ansible.fetchDocumentation` | [settings.schema.json](../../internal/formats/ansible/settings.schema.json), `AnsibleSettings` in [api/openapi.yaml](../../api/openapi.yaml) | built |
 | The three operations, `metadata.docs`, the filters of `listAnsibleImportTasks` | [api/v1/ansible_docs.go](../../internal/api/v1/ansible_docs.go), [ansible_tasks.go](../../internal/api/v1/ansible_tasks.go) | built |
-| The wiki seam | [wikigate.go](../../internal/formats/ansible/wikigate.go) and `docsWiki` in [ansible_docs.go](../../internal/api/v1/ansible_docs.go) | stand-ins: the repository read decision, until task T-18 |
+| The wiki seam | [wikigate.go](../../internal/formats/ansible/wikigate.go) (`Host.WikiReadable`) and `Scope.MayReadWiki` in [ansible_docs.go](../../internal/api/v1/ansible_docs.go) | built: the wiki check of R-AUTHZ-034, since task T-18 |
 | Metrics | [docs_metrics.go](../../internal/formats/ansible/docs_metrics.go) | the route and the fills of the request path; see H-903 |
 | The counting stub | [test/ansiblestub](../../test/ansiblestub) (`docs-blob/`, the modes `docs`, `docs_foreign_href`) | built |
 | The Documentation, Contents and Import log tabs, the Dependencies links | [web-ui.md](web-ui.md#the-ansible-documentation-screens) | built against the generated types and the fakes; not yet seen in a browser, the browser journey of the set `ansible` is not written yet |
@@ -46,13 +46,16 @@ The backend and the screens are built; the end-to-end rows and the browser journ
 ## The wiki seam
 
 Who may read a repository's artifacts may not be who may read its documentation (R-ANS-037). The format asks one function,
-`wikiReadable(ctx, rq, target) bool` in [wikigate.go](../../internal/formats/ansible/wikigate.go), which has the signature of task T-18's
-`Host.WikiReadable`; a handler that gets false answers as an absent resource. Today the function calls the package variable `wikiCheck`,
-the repository read decision of the request's subject; when T-18 lands the wiki check of R-AUTHZ-034, only that variable changes. The
-other sites of the switch: `Route.Wiki` on `routeDocs` in routes.go, the marker `x-trove-part: wiki` of the three operations in
-[api/openapi.yaml](../../api/openapi.yaml) (set, read into `Operation.Part` by [document.go](../../internal/api/v1/document.go)), and
-`ViewData.WikiMetadata = []string{"docs"}` when the version details announce the documentation. `registerWikiSurface` lists the surfaces
-that serve documentation, and `TestR_ANS_037_EverySurfaceAsksTheWikiGate` walks the list.
+`wikiReadable(ctx, rq, target) bool` in [wikigate.go](../../internal/formats/ansible/wikigate.go), which calls `rq.Host.WikiReadable`, the
+question form of the wiki check of R-AUTHZ-034; a handler that gets false answers as an absent resource. The route `ansible.version.docs`
+is declared `Wiki` in [routes.go](../../internal/formats/ansible/routes.go), so the dispatcher refuses a caller who may not read the wiki
+before the handler runs; the handlers ask again for the repository they read from, which for a virtual repository is a member. The three
+management operations carry the marker `x-trove-part: wiki` in [api/openapi.yaml](../../api/openapi.yaml) (read into `Operation.Part` by
+[document.go](../../internal/api/v1/document.go)) and decide each candidate repository with `Scope.MayReadWiki` in
+[ansible_docs.go](../../internal/api/v1/ansible_docs.go), the caller's `authz.ReadScope.MayReadWiki`; the announcement `metadata.docs` of
+the version details goes through the same function, so it is absent for a caller who may not read the wiki. `registerWikiSurface` lists
+the surfaces that serve documentation, `TestR_ANS_037_EverySurfaceAsksTheWikiGate` walks the list, and check 15 of the format kit serves
+every content case again for a caller who reads the artifacts and not the wiki.
 
 ## The Markup capability
 

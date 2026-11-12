@@ -74,6 +74,7 @@ func (f *Format) Descriptor() formats.Descriptor {
 		Facts: catalog.Facts{
 			ID:               ID,
 			DisplayName:      "NuGet",
+			Wiki:             true, // the README is wiki content (R-NUGET-024, R-AUTHZ-034)
 			Classes:          []formats.Class{formats.Local, formats.Remote, formats.Virtual},
 			Layout:           Layout,
 			ProtocolBasePath: "/api/nuget/{project}/{key}/",

@@ -2,7 +2,7 @@
 
 Status: built in the backend (owner task T-19; requirements [R-ANS-033 to R-ANS-046](../spec/formats/ansible.md), work packages in
 [galaxy-docs-work-packages.md](../projektplan/galaxy-docs-work-packages.md)). The screens are not part of this page's mechanism yet; the wiki check is
-the repository read decision until task T-18 replaces it (`wikigate.go`, `docsWiki`).
+the one of R-AUTHZ-034 (`Host.WikiReadable`, `authz.ReadScope.MayReadWiki`; see [visibility.md](visibility.md)).
 
 This page describes what the text of a collection's documentation can make trove do and show, and who may read it. Two parties write that text and
 neither is trusted: a **publisher** (the plugin sources, the README and the `docs/` files of an archive, read at publish) and an **upstream Galaxy** (the

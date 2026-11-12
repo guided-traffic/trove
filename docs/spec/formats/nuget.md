@@ -5519,6 +5519,22 @@ on a public feed with an internal wiki turns out to bother users, which needs th
 
 **Applied in the spec:** R-NUGET-012, R-NUGET-024, Security notes; [authorization.md](../authorization.md) R-AUTHZ-034.
 
+### Q-NUGET-123 · The README has a route of its own, a Metadata route declared `Wiki`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `nuget.flatcontainer.readme` is its own route; `icon` and `license` stay with `nuget.flatcontainer.embedded` (chosen) | The flag `Wiki` is per route, so the README can be refused before its handler runs | The dispatcher's coarse check answers the 404 or the 401 of R-NUGET-024 whatever the handler does; the kit's check 15 judges the route | The README is a Metadata route and not a Download route like the icon |
+| (b) One route for the three files, the handler asks the wiki check for `readme` | One route | No new name | A handler is the only guard, which is what check 15 exists to avoid |
+
+**Choice:** (a). The canonical path `.embedded/readme` classifies as metadata. The handler is still the P1 stub (R-NUGET-024) and
+answers 501 to a caller who may read the wiki.
+
+**Rationale:** Q-NUGET-122 decided that the README route is a wiki route; the route table is where that is declared.
+
+**Applied in the spec:** R-NUGET-024.
+
 ## What this does not cover
 
 ### H-35 · Cached NuGet packages are not checked against an upstream digest

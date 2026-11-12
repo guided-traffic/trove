@@ -172,6 +172,9 @@ func conformance(f *Format) formattest.Fixture {
 	const notBuilt = http.StatusNotImplemented
 	feed := func(p string) string { return "v3/" + p }
 	return formattest.Fixture{
+		// The README is the text of a file inside the stored nupkg that the view's port reads; the kit's cases seed no nupkg, so this is
+		// the text such a README would carry. What the format owes check 15 is the route of the README declared Wiki (routes.go).
+		WikiSamples: []string{"# Acme.Widgets readme"},
 		Host: func() formattest.HostOptions {
 			return formattest.HostOptions{
 				Data: newDocStore(),
@@ -209,7 +212,8 @@ func conformance(f *Format) formattest.Fixture {
 			{Name: "version list", Path: feed("flatcontainer/acme.widgets/index.json"), Seed: seedWidgets},
 			{Name: "package", Path: feed("flatcontainer/acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg"), Seed: seedWidgets},
 			{Name: "nuspec", Path: feed("flatcontainer/acme.widgets/1.2.3/acme.widgets.nuspec"), Seed: seedWidgets},
-			{Name: "embedded file", Path: feed("flatcontainer/acme.widgets/1.2.3/readme"), Status: notBuilt},
+			{Name: "embedded icon", Path: feed("flatcontainer/acme.widgets/1.2.3/icon"), Status: notBuilt},
+			{Name: "embedded readme", Path: feed("flatcontainer/acme.widgets/1.2.3/readme"), Status: notBuilt},
 			{Name: "registration index", Path: feed("registration-semver2/acme.widgets/index.json"), Seed: seedWidgets},
 			{Name: "registration page", Path: feed("registration-gz/acme.widgets/page/1.0.0/2.0.0.json"), Seed: seedWidgets},
 			{Name: "registration leaf", Path: feed("registration/acme.widgets/1.2.3.json"), Seed: seedWidgets},
@@ -226,7 +230,8 @@ func conformance(f *Format) formattest.Fixture {
 		// built (M6); check 7 checks the headers of what a route serves, and refuses an entry once a
 		// case serves the route.
 		NoContent: map[string]string{
-			"nuget.flatcontainer.embedded": "the embedded icon, license and readme are P1 (R-NUGET-024) and answer 501 until built",
+			"nuget.flatcontainer.embedded": "the embedded icon and license are P1 (R-NUGET-024) and answer 501 until built",
+			"nuget.flatcontainer.readme":   "the embedded readme is P1 (R-NUGET-024) and answers 501 until built; its route is declared Wiki",
 			"nuget.autocomplete":           "autocomplete is P1 (R-NUGET-011) and answers 501 until built",
 			"nuget.symbols":                "the symbol server is P1 (R-NUGET-021) and answers 501 until built; the symbol push is served (R-NUGET-020)",
 		},

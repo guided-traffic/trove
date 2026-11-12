@@ -203,10 +203,21 @@ func Do(parts []Part, o Options) (*Result, error) {
 				w.raw(k, v)
 			}
 		}
+		// The README is wiki content, decided on the member that supplies it (R-AUTHZ-034, Q-NPM-87). The response takes this
+		// member out of the document before it is served, and never shows it.
+		if _, ok := lw.p.Top["readme"]; ok {
+			w.str(ReadmeMemberKey, lw.Member)
+		} else if _, ok := lw.p.Top["readmeFilename"]; ok {
+			w.str(ReadmeMemberKey, lw.Member)
+		}
 	}
 	res.Doc = w.bytes()
 	return &res, nil
 }
+
+// ReadmeMemberKey is the private member of a merged document that names the member the README comes from. It is part of the
+// merged bytes the virtual engine caches and is removed from every response.
+const ReadmeMemberKey = "_troveReadmeMember"
 
 // topLevel are the members that come from the member the version latest points to
 // (R-NPM-030 item 4); readmeFilename belongs to the readme.

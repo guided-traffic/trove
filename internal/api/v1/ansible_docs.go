@@ -29,13 +29,6 @@ import (
 // of the documentation of a package version. Each is declared wiki content in the document (x-trove-part: wiki, [Operation.Part]) and
 // reads rows only, never an upstream.
 
-// docsWiki is the API-side form of the wiki check (R-ANS-037): whether the caller may read the wiki part of the repository for the version.
-// The packages the operation reads are those of the caller's read scope, so today whoever may read the repository may read its
-// documentation. Task T-18 replaces this one function by its check (authz.ReadScope.MayReadWiki); a test replaces it with a denying fake.
-//
-// replaced by the wiki check of R-AUTHZ-034
-var docsWiki = func(context.Context, qname.Repo, string, string) bool { return true }
-
 // The bounds of the operations (R-ANS-036).
 const (
 	maxDocDepth      = 12
@@ -97,7 +90,8 @@ func (s *Server) resolveDocs(r *http.Request, id gen.PackageId, version gen.Pack
 	var first *repository.Repository
 	for i := range cands {
 		c := &cands[i]
-		if !docsWiki(ctx, c.Name, name, version) {
+		// The wiki of the repository the documentation would come from (R-ANS-037, R-API-058): the caller's read scope decides, without an audit event.
+		if !sc.MayReadWiki(c.Name, name, version) {
 			continue
 		}
 		state, err := st.DocState(ctx, c.NumericID(), name, version)

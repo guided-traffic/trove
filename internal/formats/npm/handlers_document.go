@@ -153,9 +153,17 @@ func (f *Format) serveRendering(ctx context.Context, rq *formats.Request, w http
 	if err != nil {
 		return err
 	}
+	full := rd.variant == string(document.Full)
 	cv, err := f.callerVersions(ctx, rq, n, row, &rd)
 	if err != nil {
 		return err
+	}
+	// The README of the full document is wiki content (R-AUTHZ-034, Q-NPM-87): the answer for this caller is part of the key and of
+	// the validator, so a rendition with the README never reaches a caller without it.
+	wiki := true
+	if full {
+		wiki = wikiReadableOf(ctx, rq, n)
+		rd.variant += "#wiki=" + wikiBit(wiki)
 	}
 	repo := rq.RepoRef()
 	links := rq.Host.Links(rq)
@@ -230,7 +238,9 @@ func (f *Format) serveRendering(ctx context.Context, rq *formats.Request, w http
 		// another revision is served and not kept.
 		keep := cv.view == nil || p.RevSeq == int64(cv.rev)
 		key.RevSeq, etag = formats.RevSeq(p.RevSeq), inputs(p.RevSeq).ETag()
-		body, err := rd.render(&p, f.optionsOf(rq, rep, n, links, &p))
+		opts := f.optionsOf(rq, rep, n, links, &p)
+		opts.OmitReadme = !wiki
+		body, err := rd.render(&p, opts)
 		if err != nil {
 			return errs.E(errs.Internal, errs.CodeInternal, "", errs.WithCause(err))
 		}

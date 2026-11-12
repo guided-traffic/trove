@@ -65,8 +65,11 @@ type Data struct {
 	Licenses    []string
 	HasReadme   bool
 	Metadata    map[string]any
-	Readme      string
-	ReadmeFile  string
+	// WikiMetadata names the members of Metadata that are wiki content (R-AUTHZ-034): the service drops them, and HasReadme,
+	// for a caller who may not read the wiki of the repository the version was read from (R-API-058).
+	WikiMetadata []string
+	Readme       string
+	ReadmeFile   string
 }
 
 // Find is a search the adapter answers: one of Text and Keyword is set.

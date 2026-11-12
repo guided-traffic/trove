@@ -229,6 +229,9 @@ func classifyVersionFile(info formats.PathInfo, ver string, rest []string) forma
 		for _, name := range embeddedFiles() {
 			if rest[1] == name {
 				info.Kind, info.Version = formats.Content, ver
+				if name == "readme" {
+					info.Kind = formats.PathMetadata // the README is wiki content, served by a Metadata route (R-NUGET-024)
+				}
 			}
 		}
 	}
@@ -248,7 +251,7 @@ func CanonicalPath(route string, p formats.Params) (string, bool) {
 		return NupkgPath(p["id"], p["version"]), true
 	case routeNuspec:
 		return NuspecPath(p["id"], p["version"]), true
-	case routeEmbedded:
+	case routeEmbedded, routeReadme:
 		return p["id"] + "/" + p["version"] + "/" + canonEmbedded + "/" + p["file"], true
 	case routeRegistrationIndex, routeRegistrationPage, routeRegistrationLeaf:
 		return p["id"] + "/" + canonRegistration + "/" + indexFile, true

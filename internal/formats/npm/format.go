@@ -63,6 +63,7 @@ func (f *Format) Descriptor() formats.Descriptor {
 		Facts: catalog.Facts{
 			ID:               ID,
 			DisplayName:      "npm",
+			Wiki:             true, // the README is wiki content (R-AUTHZ-034, R-NPM-010)
 			Classes:          []formats.Class{formats.Local, formats.Remote, formats.Virtual},
 			Layout:           Layout,
 			ProtocolBasePath: "/api/npm/{project}/{key}/",

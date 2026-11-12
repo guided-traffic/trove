@@ -29,7 +29,9 @@ func (f *Format) virtualSource(ctx context.Context, rq *formats.Request, n name.
 		return fullSource{}, err
 	}
 	bytes := m.Bytes
+	wikiFp, wikiOf := membersWiki(ctx, rq, n)
 	return fullSource{
+		wikiFp: wikiFp, wikiOf: wikiOf,
 		form: fm, ref: ref, kind: "virtual", servingKey: rq.Repo.Name, repoID: rq.RepoRef().ID,
 		content: hex.EncodeToString(m.MergeFingerprint[:]), status: m.CacheStatus,
 		bytes: func(context.Context) ([]byte, error) { return bytes, nil },

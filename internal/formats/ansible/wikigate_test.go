@@ -10,57 +10,48 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/formattest"
 )
 
-// withWikiCheck replaces the wiki check for one test.
-func withWikiCheck(t *testing.T, c wikiReader) {
-	t.Helper()
-	old := wikiCheck
-	wikiCheck = c
-	t.Cleanup(func() { wikiCheck = old })
-}
-
-// TestR_ANS_037_EverySurfaceAsksTheWikiGate: every surface of the registry is a route of the table, and wikiReadable returns the answer of
-// the check, asked once with the target given. The management operations of internal/api/v1 are walked by their own test in that
-// package; the handlers of the routes join this walk when they land.
+// TestR_ANS_037_EverySurfaceAsksTheWikiGate: every surface of the registry is a route of the table, that route is declared Wiki, and
+// wikiReadable returns the answer of the Host: false for a caller who reads the artifacts and not the wiki, true for one who reads both.
+// The management operations of internal/api/v1 are walked by their own test in that package.
 func TestR_ANS_037_EverySurfaceAsksTheWikiGate(t *testing.T) {
-	var asked int
-	var seen formats.Target
-	withWikiCheck(t, func(_ context.Context, _ *formats.Request, tg formats.Target) bool { asked++; seen = tg; return false })
-
-	h := formattest.NewHost(allClasses(), hostOptions())
 	surfaces := registeredWikiSurfaces()
 	if len(surfaces) == 0 {
 		t.Fatal("no wiki surface is registered")
 	}
-	for _, name := range surfaces {
-		var route *formats.Route
-		for _, r := range allClasses().Routes() {
-			if r.Name == name {
-				route = &r
-				break
+	for _, denied := range []bool{true, false} {
+		opts := hostOptions()
+		opts.WikiDenied = denied
+		h := formattest.NewHost(allClasses(), opts)
+		for _, name := range surfaces {
+			var route *formats.Route
+			for _, r := range allClasses().Routes() {
+				if r.Name == name {
+					route = &r
+					break
+				}
 			}
-		}
-		if route == nil {
-			t.Errorf("the wiki surface %q is no route of the table", name)
-			continue
-		}
-		rq, err := h.NewRequest(context.Background(), http.MethodGet, route.Examples[0], nil)
-		if err != nil {
-			t.Errorf("%s: %v", name, err)
-			continue
-		}
-		before := asked
-		if wikiReadable(context.Background(), rq, formats.Target{Package: "acme.tools"}) {
-			t.Errorf("%s: wikiReadable said yes where the check said no", name)
-		}
-		if asked != before+1 || seen.Package != "acme.tools" {
-			t.Errorf("%s: the check was asked %d times with %+v, want once for acme.tools", name, asked-before, seen)
+			if route == nil {
+				t.Errorf("the wiki surface %q is no route of the table", name)
+				continue
+			}
+			if !route.Wiki {
+				t.Errorf("%s: a wiki surface is declared Wiki, so the dispatcher refuses a caller who may not read the wiki before the handler runs", name)
+			}
+			rq, err := h.NewRequest(context.Background(), http.MethodGet, route.Examples[0], nil)
+			if err != nil {
+				t.Errorf("%s: %v", name, err)
+				continue
+			}
+			if got := wikiReadable(context.Background(), rq, formats.Target{Package: "acme.tools"}); got == denied {
+				t.Errorf("%s: wikiReadable = %v for a host whose wiki is denied = %v", name, got, denied)
+			}
 		}
 	}
 }
 
-// TestR_ANS_037_TheStandInFollowsTheRepositoryReadDecision: until Host.WikiReadable exists, whoever may read the target may read its
-// documentation, and the decision is asked as a read.
-func TestR_ANS_037_TheStandInFollowsTheRepositoryReadDecision(t *testing.T) {
+// TestR_ANS_037_TheGateAsksTheTargetAsAWikiRead: the Host is asked about the target with the package the surface names, and a
+// repository the caller may not read has no readable wiki.
+func TestR_ANS_037_TheGateAsksTheTargetAsAWikiRead(t *testing.T) {
 	deny := errs.E(errs.Forbidden, errs.CodeForbidden, "no")
 	var seen formats.Target
 	opts := hostOptions()

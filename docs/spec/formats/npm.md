@@ -5137,6 +5137,23 @@ is what a package without a README looks like (Q-AUTHZ-271). The development age
 
 **Applied in the spec:** R-NPM-010; [authorization.md](../authorization.md) R-AUTHZ-034.
 
+### Q-NPM-88 · The README of a virtual repository is decided on the member that supplied it, and the key carries the answer for every member
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The merge names the member that supplied `readme` in a private member of the merged bytes; the response takes it out and asks the wiki check for that member; the validator and the rendition key carry the answer for every member of the virtual repository (chosen) | The merged document stays one shared entry of the merged-metadata cache | A caller without the wiki of the supplying member never gets the README; no document is shared between callers whose answers differ; the key is computed without a rendering | Callers with different wiki rights to unrelated members get different renditions |
+| (b) The key carries only the answer for the addressed repository | One bit | Simpler key | The virtual repository's own wiki level says nothing about the member that supplied the README |
+| (c) No README through a virtual repository | The member is never asked | Nothing to decide | A virtual repository over local members loses the README `npm view` shows |
+
+**Choice:** (a). The private member is `_troveReadmeMember` of `merge.ReadmeMemberKey`; it is removed from every response and from the
+tag, version and abbreviated documents it never reaches. A local or remote repository asks for itself.
+
+**Rationale:** Q-NPM-87 says the answer is the supplying member's; the supplier is known only to the merge.
+
+**Applied in the spec:** R-NPM-010, R-NPM-013.
+
 ## What this does not cover
 
 

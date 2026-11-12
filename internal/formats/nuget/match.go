@@ -81,7 +81,14 @@ func hasSuffixFold(suffix string) func(string) bool {
 	return func(file string) bool { _, ok := cutSuffixFold(file, suffix); return ok }
 }
 
-func isEmbedded(file string) bool { return slices.Contains(embeddedFiles(), strings.ToLower(file)) }
+// isEmbeddedArtifact matches the embedded files that are artifacts metadata: the icon and the license. The README is wiki content and
+// has a route of its own.
+func isEmbeddedArtifact(file string) bool {
+	return slices.Contains([]string{"icon", "license"}, strings.ToLower(file))
+}
+
+// isReadme matches the embedded README (R-NUGET-024).
+func isReadme(file string) bool { return strings.EqualFold(file, "readme") }
 
 // matchRegistrationIndex matches "v3/{hive}/{id}/index.json" in any of the three hives.
 func matchRegistrationIndex(escaped string) (formats.Params, bool) {

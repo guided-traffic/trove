@@ -52,7 +52,7 @@ func TestR_NUGET_001_MatchResolvesEveryRoute(t *testing.T) {
 			formats.Params{"id": "acme.widgets", "version": "1.2.3", "file": "nuspec"},
 		},
 		{
-			"embedded readme", http.MethodGet, "v3/flatcontainer/acme.widgets/1.2.3/README", routeEmbedded,
+			"embedded readme", http.MethodGet, "v3/flatcontainer/acme.widgets/1.2.3/README", routeReadme,
 			formats.Params{"id": "acme.widgets", "version": "1.2.3", "file": "readme"},
 		},
 		{

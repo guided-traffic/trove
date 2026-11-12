@@ -46,7 +46,11 @@ func publishDoc(t testing.TB, name, version, tag string) []byte {
 func tgzFor(t testing.TB, name, version string) []byte {
 	t.Helper()
 	pj, _ := json.Marshal(map[string]string{"name": name, "version": version})
-	return tgz(t, map[string]string{"package/package.json": string(pj), "package/index.js": "module.exports = 1\n"})
+	return tgz(t, map[string]string{
+		"package/package.json": string(pj), "package/index.js": "module.exports = 1\n",
+		// The README is wiki content: check 15 looks for this text in what a caller who may not read the wiki gets.
+		"package/README.md": "readme of " + name + " " + version + "\n",
+	})
 }
 
 // conformance is the fixture of the npm format for the kit (R-ARCH-010). Every check
@@ -96,6 +100,7 @@ func conformance(t *testing.T) formattest.Fixture {
 		}
 	}
 	return formattest.Fixture{
+		WikiSamples: []string{"readme of lodash 4.17.20", "readme of lodash 4.17.21"},
 		Host: func() formattest.HostOptions {
 			twin = npmtest.New()
 			return formattest.HostOptions{

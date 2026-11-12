@@ -154,7 +154,7 @@ func (b viewBridge) Describe(ctx context.Context, vs []view.Version, want view.F
 	for id, d := range got {
 		out[int64(id)] = view.Data{
 			Description: d.Description, Keywords: d.Keywords, Licenses: d.Licenses, HasReadme: d.HasReadme,
-			Metadata: d.Metadata, Readme: d.Readme, ReadmeFile: d.ReadmeFile,
+			Metadata: d.Metadata, WikiMetadata: d.WikiMetadata, Readme: d.Readme, ReadmeFile: d.ReadmeFile,
 		}
 	}
 	return out, nil

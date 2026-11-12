@@ -102,8 +102,10 @@ func (f *Format) Descriptor() formats.Descriptor {
 	metadataTTL, notFoundTTL := 600, 300
 	return formats.Descriptor{
 		Facts: catalog.Facts{
-			ID:               ID,
-			DisplayName:      "Ansible Galaxy",
+			ID:          ID,
+			DisplayName: "Ansible Galaxy",
+			// The documentation of a collection is the wiki of the repository (R-ANS-037, R-AUTHZ-034).
+			Wiki:             true,
 			Classes:          f.Classes(),
 			Layout:           Layout,
 			ProtocolBasePath: "/api/ansible/{project}/{key}/",
