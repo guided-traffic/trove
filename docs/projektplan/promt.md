@@ -492,16 +492,30 @@ by `version: "*"`. Red pipelines are worked on even though they no longer hold a
   - every collapsible section is the quiet disclosure;
   - the policy editor's patterns sit behind "Limit to package names or paths";
   - a German sign-in returns to the German UI.
-- T-21 fix wave 4 is on main (587da115): one Settings group in the admin area (Q-UI-326); the filter panel beside a list only where the
-  list keeps 71 rem, else above it (Q-UI-327); format and class under the key in the project's list (Q-UI-328); no list scrolls sideways
-  with the panel open, the scrollbar's 15 px included. Open, from its renders:
-  - below 91 rem the open panel sits above the Filters button that opened it, and its category boxes are twice their content's height
-    (being fixed);
-  - members at 390 px scrolls 100 px sideways (a header cell of `table.members`), login at 390 px 74 px (the ground of
-    `trove-logo-preview`) (being fixed);
-  - the renders' browse-file screen shows the dev server's "Cannot GET" for `/ui/…/README.md`: a path with a file extension gets no
-    single-page fallback in the dev server, so the file view is never rendered;
-  - the admin advisory sources table scrolls 31 px sideways at 1440 px.
+- T-21 fix wave 4 is on main (587da115):
+  - one Settings group in the admin area (Q-UI-326);
+  - the filter panel beside a list only where the list keeps 71 rem, else between its button and the list (Q-UI-327, e609b22a);
+  - no list scrolls sideways with the panel open, the scrollbar's 15 px included;
+  - members and the sign-in page fit 390 px;
+  - the dev server serves the file view;
+  - Recently opened is left to the start page (Q-UI-329).
+- The owner, 2026-11-12, on the admin repository list: "a huge field for copying a path that may not even be needed gets all the
+  room, and every other important property squeezes itself into the artifact's row". The development agent had approved that render.
+  Q-UI-330 (ff354135) gives each list its columns from its user's job:
+  - the admin list has Project, Format, Class and Last activity as columns, and the address as a copy action;
+  - the project list keeps the address field, with Format and Class as columns again (Q-UI-328 reversed).
+
+  Open: in the project list the address is capped at 46 characters even where the Repository column has room; this is being changed
+  so that the address takes the rest up to the longest address.
+- The audit log names all 158 event types, generated from the registry, with a test that fails on a missing name (e5e4ca9d).
+  Advisory sources disable the runs of a source that is off, and say why (Q-UI-394). Open:
+  - the audit action filter's suggestions are a hand-made prefix list;
+  - `class="muted"` styles nothing (being fixed);
+  - the audit log scrolls 148 px sideways at 1280 px (the Source address column).
+- `image (host architecture, no push)` was red in Test and Release 43254986257 (78bb2250): `npm ci` in the Containerfile's web stage
+  ended with "Cannot find native binding" (npm's optional-dependency issue). The push changed neither package.json nor the lockfile,
+  and the job was green at 539021fa. Re-run 1 was green, and v0.52.0 was released from it. The cause is not verified: a failed download
+  of a platform package of an optional dependency is the suspect.
 - `e2e (vuln)` was red at 539021fa: a stacked list clipped its head to 1 px, so the Detected sort button could not be clicked at 1280 px
   beside the filter panel. Fixed in a136b033 (Q-UI-391, Q-UI-392); the render screen `vulnerabilities-filtered` now clicks it at every width.
 - `integration (shard a)` was red at 539021fa: TestQ_CI_47 failed at a replica's stop with "control pool (1 connection held)", as
