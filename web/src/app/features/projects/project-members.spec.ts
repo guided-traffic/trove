@@ -3,7 +3,7 @@ import { ProjectsApi } from '../../api/projects-api';
 import { SessionApi } from '../../api/session-api';
 import { FakeSessionApi } from '../../api/testing/fakes';
 import { FakeProjectsApi } from '../../api/testing/fakes-projects';
-import { buttonByText, renderScreen, settle, sleep, text, type, typeInto } from '../../testing/screen';
+import { buttonByText, expectAccessible, inProject, renderScreen, settle, sleep, text, type, typeInto } from '../../testing/screen';
 import { ProjectMembersPage } from './project-members-page';
 
 const overlay = (): HTMLElement => document.querySelector('.cdk-overlay-container') as HTMLElement;
@@ -139,5 +139,16 @@ describe('Project members (R-UI-041, Q-AUTHZ-207, Q-AUTHZ-217)', () => {
     expect(members.querySelector('select')).toBeNull();
     expect(members.querySelector('button[aria-label^="Actions for"]')).toBeNull();
     expect(root.textContent).not.toContain('Add member');
+  });
+
+  it('R-UI-041 a Reader is told whom to ask, the Owners by name, and no permission name', async () => {
+    const { root } = await renderScreen(
+      ProjectMembersPage,
+      inProject({ capabilities: [], setup: asMember('reader') }, '/projects/web/members'),
+    );
+    // Q-UI-318: a person to ask, not `projects:write`.
+    expect(text(root)).toContain('Read only. Ask web-leads, an Owner of web, to change this.');
+    expect(text(root)).not.toContain('projects:write');
+    await expectAccessible(root);
   });
 });

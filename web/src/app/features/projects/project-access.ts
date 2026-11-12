@@ -1,4 +1,5 @@
-import { Component, input } from '@angular/core';
+import { Component, inject, input } from '@angular/core';
+import { ProjectContext } from '../../core/project-context';
 import { SessionStore } from '../../core/session-store';
 import { Needs } from '../../shared/access/needs';
 
@@ -14,19 +15,21 @@ export function createState(session: SessionStore, project: string, capability: 
 }
 
 /**
- * The reason behind a disabled create action: the missing capability. Renders nothing for an enabled action. Give
- * `id` to the control's `aria-describedby`.
+ * The reason behind a disabled action of a project screen: whom to ask, the Owners of the project of the URL by name
+ * (Q-UI-318); the missing capability where the screen is not a project's. Renders nothing for an enabled action. Give `id` to
+ * the control's `aria-describedby`.
  */
 @Component({
   selector: 'trove-project-needs',
   imports: [Needs],
   template: `
     @if (state() === 'denied') {
-      <trove-needs [capability]="capability()" />
+      <trove-needs [capability]="capability()" [project]="context.key()" />
     }
   `,
 })
 export class ProjectNeeds {
   readonly state = input.required<CreateState>();
   readonly capability = input.required<string>();
+  protected readonly context = inject(ProjectContext);
 }

@@ -524,7 +524,7 @@ and one row per child, whose row header is the platform (`linux/amd64`, `unknown
 | `/projects/:project/packages/{format}/{name…}` | [package-detail](../../web/src/app/features/packages/package-detail.ts) | `PackagesApi` | `packageMatcher` in [packages.routes.ts](../../web/src/app/features/packages/packages.routes.ts); `lookup`, then the versions (all pages, newest first by version), then the selected version; `?version=`, `?tab=`, `?prerelease=true`; the shared page header, the version line (a select of the versions and the pre-release switch), **Details** (`<trove-disclosure>`: published, licences, downloads, repositories) at the end, tabs README (only with `hasReadme`), Metadata, Files, Repositories, All versions; install panel above the tabs and, from 60 rem of content width, in a sticky right column |
 | (inside the package page) | [install-panel](../../web/src/app/features/packages/install-panel.ts) | `ClientSetupApi` | Client and repository pickers, stacked in the panel's width; the install snippet with `credentials=none`; a command of one line is `<trove-address-field>` (**Install command**), one of several lines a code block with its copy button, collapsed above three lines; link to `/setup` |
 | (inside the package page) | [package-readme](../../web/src/app/features/packages/package-readme.ts) | none | Binds the server's sanitized HTML; finishes it (below), including a `.readme-table` container per table that scrolls sideways (Q-UI-97) |
-| `/setup` | [client-setup](../../web/src/app/features/setup/client-setup.ts) | `ClientSetupApi`, `RepositoriesApi`, `TokensApi`, `SessionStore` | Steps package type, client, repository, credentials; tabs Configure, Install, Publish; `?format=&client=&repository=` |
+| `/setup` | [client-setup](../../web/src/app/features/setup/client-setup.ts) | `ClientSetupApi`, `RepositoriesApi`, `TokensApi`, `SessionStore` | The shared page header with **Read the guide**; opened for a repository the caller may read (`?repository=`) the format and the repository are one line with **Change** (`focused`) and the client is the one choice, else steps package type, client, repository; the credential as one line (`.credential-line`) and `<trove-disclosure class="more-options">` with the credential choices and **Install from** (Q-UI-316); tabs Configure, Install and, for who may publish (`offerPublish`), Publish; `?format=&client=&repository=&bastion=` |
 
 Files by purpose: [clients.ts](../../web/src/app/features/setup/clients.ts) (the clients per format and the explanation by snippet `id`),
 [token-shape.ts](../../web/src/app/features/setup/token-shape.ts) (prefix, length, alphabet and CRC-32 of a pasted token),
@@ -853,7 +853,9 @@ Conventions these screens follow:
   reveal toggle and a copy button, and dropped when the panel is dismissed or the component is destroyed. "Revoke by value" clears its field whatever the answer was.
 - **Lost token value.** A retried create that answers 409 `token_already_issued` carries the `tokenId`; `TokenManager` revokes it and creates again with a new key (R-UI-042).
 - **Permission-driven rendering.** Entries show with `identities:read`, `policies:read` and so on; controls that need a write capability are disabled with `<trove-needs>` next to them
-  (list pages) or absent with the same note at the top (detail pages). The API decides in any case.
+  (list pages) or absent with the same note at the top (detail pages). On a project's screen `<trove-needs [project]>` (through
+  `<trove-project-needs>`, which takes the project of the URL) names the project's Owners instead of the capability (Q-UI-318).
+  The API decides in any case.
 - **Tests.** Component specs use `renderScreen` from [testing/screen.ts](../../web/src/app/testing/screen.ts) against the fakes; each screen's spec runs axe on its states
   (loaded, error, read-only, open dialog), including the one-time token display and the policy editor with validation errors.
 <!-- <<< M1 ui-b -->

@@ -81,11 +81,11 @@ From left to right:
 
 ### The side bar
 
-Your work happens in projects. The start page lists the projects you may see with your role in each; if you have exactly one, trove opens it for you. The side bar shows where you are:
+Your work happens in projects. The start page finds a package across your projects (**Find a package**), shows the repositories you opened last with their client address and **Set up client**, and lists the projects you may see with your role in each; if you have exactly one, trove opens it for you. The side bar shows where you are:
 
 | Where | Entries | Who sees it |
 |---|---|---|
-| A project (`/projects/<key>/…`) | The **project switcher** on top, then **Packages**, **Browse**, **Repositories**, **Vulnerabilities**, **Access** (**Members**, and for owners and holders of the permission **Permission policies**, **Service accounts**, **CI identity**) and **Settings** | Everyone who sees the project, anonymous readers included |
+| A project (`/projects/<key>/…`) | The **project switcher** on top, then **Repositories**, **Packages**, **Browse**, **Vulnerabilities**; for who is more than a reader of the project or holds an administrative role also **Access** (**Members**, and for owners and holders of the permission **Permission policies**, **Service accounts**, **CI identity**) and **Settings** | Everyone who sees the project, anonymous readers included. A reader finds whom to ask under the heading of the project's **Repositories**, and a screen it may read but not change says the same: "Read only. Ask priya, an Owner of web, to change this." |
 | Everywhere else | **Projects** and **Guides** | Everyone |
 | **Admin area** | Projects, repositories, endpoints, Bastions, identity, access and system screens | Only people who hold an administrative permission, and only the entries they may use. **Admin** in the top bar leads there, **trove** leads back |
 

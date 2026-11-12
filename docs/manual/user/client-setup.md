@@ -48,15 +48,19 @@ The trailing slash belongs to the address of npm, Debian, Ansible Galaxy and gen
 
 ## Use the Client setup page
 
+Opened from a repository (its **Set up client**, or a repository you opened recently on the start page) or from a package, the page has chosen the package type and the repository: it shows **For the repository** with the repository and **Change**, and asks only for the client. **Change** shows all the steps below.
+
 1. Under **Package type**, choose the format.
 2. Under **Client**, choose your client: **npm**, **pnpm**, **Yarn Berry (2 and later)** or **Yarn Classic (1.x)** for npm, **.NET CLI (dotnet)**, **NuGet CLI (nuget.exe)** or **Visual Studio** for NuGet, **Docker CLI (with Buildx)** or **Podman** for OCI (Docker), **APT (apt, apt-get)** for Debian (APT), **curl** for generic repositories.
 3. Under **Repository**, choose one of the repositories you can read. Virtual repositories come first and are marked **recommended**; each entry says **Read only**, **Publishing goes to its default deployment target**, **You can publish** or **You cannot publish**.
-4. Under **Credentials**, choose how the snippets sign in (next section). Without a session this step only says that the snippets contain no authentication.
-5. Copy the snippets from the tabs **Configure**, **Install** and **Publish** with **Copy snippet**, or save a configuration file with **Download**.
+4. Below the choices one line says how the snippets sign in: by default they read your token from the variable `TROVE_TOKEN`, and **Create a token to put into the variable** opens your personal tokens. **More options** holds the other ways (next section) and, where a Bastion can be chosen, **Install from**. Without a session the line says that the snippets contain no authentication.
+5. Copy the snippets from the tabs **Configure**, **Install** and, if you may publish, **Publish** with **Copy snippet**, or save a configuration file with **Download**.
 
-The **Publish** tab shows how to publish through the repository you chose, once for your client: `npm publish --registry <address>`, `pnpm publish --registry <address>`, `yarn publish --registry <address>` for Yarn Classic, `npmPublishRegistry: "<address>"` in `.yarnrc.yml` for Yarn Berry, `dotnet nuget push` and `nuget push` with the service index of the repository as the source and the token as the API key for NuGet (Visual Studio has no push), `docker push`, `docker buildx build --push` and `podman push` of an image tagged with the repository's address for OCI, or the `curl --upload-file` of a `.deb` to `upload/<file>?distribution=<suite>` for Debian. The address is the one of the repository you chose; for a virtual repository the publish reaches its default deployment target. The tab has no snippet when you cannot publish: for a remote repository, for a virtual repository without a default deployment target, and when you do not hold the deploy permission on the target. The hint of step 3 tells you which case it is; the guide's section **Publish a package** has the rest of the commands.
+The **Publish** tab shows how to publish through the repository you chose, once for your client: `npm publish --registry <address>`, `pnpm publish --registry <address>`, `yarn publish --registry <address>` for Yarn Classic, `npmPublishRegistry: "<address>"` in `.yarnrc.yml` for Yarn Berry, `dotnet nuget push` and `nuget push` with the service index of the repository as the source and the token as the API key for NuGet (Visual Studio has no push), `docker push`, `docker buildx build --push` and `podman push` of an image tagged with the repository's address for OCI, or the `curl --upload-file` of a `.deb` to `upload/<file>?distribution=<suite>` for Debian. The address is the one of the repository you chose; for a virtual repository the publish reaches its default deployment target. There is no **Publish** tab when you cannot publish: for a remote repository, for a Bastion, and when you do not hold the deploy permission on the target. For a virtual repository without a default deployment target, people who may change the repository see the tab with the reason and a link to its members. The hint of step 3 tells you which case it is; the guide's section **Publish a package** has the rest of the commands.
 
 ### Credentials
+
+The options are under **More options**, closed until you open it.
 
 | Option | What the snippets contain | Notes |
 |---|---|---|
@@ -222,9 +226,9 @@ Downloading needs read, uploading to a free path deploy, replacing a file with o
 
 An administrator may run a Bastion for you: a read-only cache of this installation at its own address, for clients outside the network ([The trove Bastion](../admin/bastion.md) explains what it is). You sign in to it with the same personal, service-account or CI token, and you install the same packages from the same repositories, named by the same project and repository keys; only the address differs.
 
-When an administrator has registered a Bastion and it has reported its address, the Client setup page and the Guides area offer it under **Install from**, next to **This installation**. Choose it and the snippets use the Bastion's address, for example `https://packages.example.com/api/npm/web/npm-all/`. Without that permission the choice is not shown; an administrator can send you a link to the Client setup page that already names the Bastion.
+When an administrator has registered a Bastion and it has reported its address, the Client setup page (under **More options**) and the Guides area offer it under **Install from**, next to **This installation**. Choose it and the snippets use the Bastion's address, for example `https://packages.example.com/api/npm/web/npm-all/`. Without that permission the choice is not shown; an administrator can send you a link to the Client setup page that already names the Bastion.
 
-- **Read only.** The **Publish** tab says that you cannot publish through a Bastion. Publish, change dist-tags and unpublish on this installation.
+- **Read only.** The page has no **Publish** tab for a Bastion, and its banner says why. Publish, change dist-tags and unpublish on this installation.
 - **npm** gets one more line in the configure snippet, `replace-registry-host=always`. It makes npm fetch every package from the address in `registry=`, also when a lockfile written against another host names that host, so one lockfile works through this installation and through the Bastion.
 - **The Guides area** shows the address and the configure and install snippets for the Bastion; the full guide describes this installation, so choose **This installation** to read it.
 - **A Bastion answers `409` on the page** (`bastion_base_url_unknown`) while it has not reported an address yet or the address is not listed in `server.additional_base_urls` of this installation; tell your administrator.

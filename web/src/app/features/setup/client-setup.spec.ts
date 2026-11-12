@@ -62,6 +62,8 @@ async function choose(r: Opened, name: string, value: string) {
   await settle(r.fixture);
 }
 
+const tabLabels = (r: Opened) => [...r.root.querySelectorAll<HTMLElement>('[role="tab"]')].map((t) => text(t));
+
 async function tab(r: Opened, label: string) {
   [...r.root.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => text(t) === label)!.click();
   await settle(r.fixture);
@@ -128,6 +130,10 @@ describe('Client setup', () => {
     // The format and the repository are chosen by the link (Q-UI-316): one line, with Change.
     expect(text(r.root.querySelector('.chosen')!)).toContain('web/npm-local');
     expect(r.root.querySelector('input[name="repository"]')).toBeNull();
+    // The client is the one choice, a group named Client without a step number (the journeys find it by that name).
+    const group = radio(r, 'client', 'pnpm').closest('fieldset')!;
+    expect(text(group.querySelector('legend')!)).toBe('Client');
+    expect(r.root.querySelectorAll('.step-no').length).toBe(0);
     expect(radio(r, 'client', 'pnpm').checked).toBe(true);
     expect(r.setup.calls.at(-1)).toMatchObject({ repository: 'web/npm-local', query: { client: 'pnpm' } });
     [...r.root.querySelectorAll<HTMLButtonElement>('.chosen button')].find((b) => text(b) === 'Change')!.click();
@@ -430,7 +436,7 @@ describe('Client setup', () => {
     await expectAccessible(r.root);
   });
 
-  it('R-UI-016 a virtual repository without a default deployment target shows an explanation instead of the publish snippets, and links the members for those who may read the configuration', async () => {
+  it('R-UI-016 a virtual repository without a default deployment target shows who can change it the reason instead of the publish snippets, and links the members', async () => {
     const r = await open({ repository: 'web/npm-readonly' });
     await tab(r, 'Publish');
     expect(text(r.root)).toContain('no default deployment target');
@@ -438,15 +444,32 @@ describe('Client setup', () => {
     const link = [...r.root.querySelectorAll('a')].find((a) => text(a).includes('see its members'));
     expect(link?.getAttribute('href')).toBe('/projects/web/repositories/npm-readonly/settings');
 
+    // Who can neither publish nor change the repository gets no Publish tab (Q-UI-316).
     const plain = await open({ repository: 'web/npm-readonly' }, { capabilities: [] });
-    await tab(plain, 'Publish');
-    expect([...plain.root.querySelectorAll('a')].some((a) => text(a).includes('see its members'))).toBe(false);
+    expect(tabLabels(plain)).toEqual(['Configure', 'Install']);
   });
 
-  it('R-UI-016 a repository the user cannot publish to says so on the Publish tab', async () => {
+  it('R-UI-016 a repository the user cannot publish to has no Publish tab', async () => {
     const r = await open({ repository: 'web/npm-remote' });
-    await tab(r, 'Publish');
-    expect(text(r.root)).toContain('You cannot publish to this repository');
+    expect(tabLabels(r)).toEqual(['Configure', 'Install']);
+    expect(text(r.root)).not.toContain('You cannot publish');
+  });
+
+  it('R-UI-016 the credential is one line with Create a token beside it; the other ways are More options, closed until opened', async () => {
+    const r = await open({ repository: 'web/npm-local' });
+    expect(text(r.root.querySelector('.credential-line')!)).toContain('The snippets read your token from the variable TROVE_TOKEN.');
+    const more = r.root.querySelector('trove-disclosure.more-options')!;
+    const toggle = more.querySelector<HTMLButtonElement>('button[aria-expanded]')!;
+    expect(text(toggle)).toContain('More options');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(more.querySelector('.collapse-region')?.classList).not.toContain('open');
+    expect(more.querySelector('input[name="credentials"][value="create"]')).toBeTruthy();
+    toggle.click();
+    await settle(r.fixture);
+    await choose(r, 'credentials', 'paste');
+    expect(text(r.root.querySelector('.credential-line')!)).toContain('The snippets hold the token you pasted.');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    await expectAccessible(r.root);
   });
 
   it('R-UI-016 only readable repositories of the chosen format are offered; a user who reads none gets an empty state', async () => {
@@ -526,10 +549,9 @@ describe('Client setup', () => {
       await expectAccessible(vs.root);
     });
 
-    it('R-UI-018 a remote NuGet repository cannot be published to', async () => {
+    it('R-UI-018 a remote NuGet repository cannot be published to: no Publish tab', async () => {
       const r = await open({ repository: 'web/nuget-remote', client: 'dotnet' });
-      await tab(r, 'Publish');
-      expect(text(r.root)).toContain('You cannot publish to this repository');
+      expect(tabLabels(r)).toEqual(['Configure', 'Install']);
     });
   });
 

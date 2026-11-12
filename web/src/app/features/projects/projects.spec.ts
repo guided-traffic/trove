@@ -230,7 +230,7 @@ describe('Project settings (R-UI-041, Q-UI-129)', () => {
     expect(await seriousViolations(root)).toEqual([]);
   });
 
-  it('R-UI-041 the auditor reads the project and the edit action says what is missing', async () => {
+  it('R-UI-041 the auditor reads the project and the edit action says whom to ask', async () => {
     const { root } = await renderScreen(ProjectSettings, {
       inputs: { project: 'web' },
       capabilities: ['projects:read'],
@@ -238,7 +238,9 @@ describe('Project settings (R-UI-041, Q-UI-129)', () => {
         (g(SessionApi) as FakeSessionApi).meResult = { roles: ['auditor'], capabilities: ['projects:read'] };
       },
     });
-    expect(text(root)).toContain('Read only: changing this needs the permission projects:write');
+    // A project's screen names its Owners, not the capability (Q-UI-318).
+    expect(text(root)).toMatch(/Read only\. (Ask .+, an Owner of web, to change this|An Owner of web can change this)\./);
+    expect(text(root)).not.toContain('projects:write');
     expect(root.textContent).not.toContain('Save changes');
     expect(root.querySelector<HTMLInputElement>('input[name="displayName"]')!.readOnly).toBe(true);
   });

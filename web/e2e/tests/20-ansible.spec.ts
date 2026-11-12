@@ -31,7 +31,7 @@ test('R-ANS-025 R-UI-049 the guide of a local repository shows its sections, and
   await test.step('the setup page offers ansible-galaxy and renders the server without a token', async () => {
     await page.goto(`/ui/en/setup?repository=${qualified(localKey)}`);
     await expect(page.getByRole('heading', { name: 'Client setup', level: 1 })).toBeVisible();
-    const clientStep = page.getByRole('group', { name: /^1\s*Client$/ });
+    const clientStep = page.getByRole('group', { name: 'Client', exact: true });
     await expect(clientStep.getByRole('radio', { name: 'Ansible Galaxy (ansible-galaxy)', exact: true })).toBeChecked();
     const configure = page.getByRole('tabpanel', { name: 'Configure' });
     const cfg = configure.locator('.snippet pre').first();

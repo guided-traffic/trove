@@ -193,9 +193,10 @@ test('E2.8 R-UI-006 R-UI-008 R-UI-016 the published version in the list, its san
   await test.step('the client setup page shows the configure snippet of every matrix client verbatim', async () => {
     await page.getByRole('link', { name: 'Set up your client for this repository' }).click();
     await expect(page.getByRole('heading', { name: 'Client setup', level: 1 })).toBeVisible();
-    await expect(page.getByRole('radio', { name: 'Reference an environment variable' })).toBeChecked();
+    // The credential is one line, the environment variable by default (Q-UI-316).
+    await expect(page.locator('.credential-line')).toContainText('The snippets read your token from the variable TROVE_TOKEN.');
     const port = new URL(baseURL ?? '').port;
-    const clientStep = page.getByRole('group', { name: /^1\s*Client$/ });
+    const clientStep = page.getByRole('group', { name: 'Client', exact: true });
     for (const client of clients) {
       await clientStep.getByRole('radio', { name: client.label, exact: true }).check();
       const expected = matrixSnippet(client.id, port);

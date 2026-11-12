@@ -63,7 +63,8 @@ test('E2.13 R-UI-049 the guide of a virtual repository, and its configure snippe
   await test.step('the client setup page shows the same configure snippet', async () => {
     await page.getByRole('link', { name: 'Open the client setup' }).click();
     await expect(page.getByRole('heading', { name: 'Client setup', level: 1 })).toBeVisible();
-    await expect(page.getByRole('radio', { name: 'Reference an environment variable' })).toBeChecked();
+    // The credential is one line, the environment variable by default (Q-UI-316).
+    await expect(page.locator('.credential-line')).toContainText('The snippets read your token from the variable TROVE_TOKEN.');
     const setup = page.getByRole('tabpanel', { name: 'Configure' }).locator('.snippet pre');
     await expect.poll(() => setup.first().textContent()).toBe(guideSnippet);
   });

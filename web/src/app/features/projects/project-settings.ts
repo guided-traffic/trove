@@ -67,7 +67,7 @@ import { projectRoleLabel } from './project-roles';
           @if (canEdit()) {
             <button class="btn btn-confirm" type="submit" [disabled]="busy() || !dirty()" i18n="@@project.save-changes">Save changes</button>
           } @else {
-            <trove-needs capability="projects:write" />
+            <trove-needs capability="projects:write" [project]="p.key" />
           }
         </form>
 

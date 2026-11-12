@@ -23,6 +23,8 @@ import { SessionStore } from '../../core/session-store';
 import { AddressField } from '../../shared/address-field';
 import { CopyButton } from '../../shared/copy-button';
 import { ErrorNotice } from '../../shared/error-notice';
+import { Disclosure } from '../../shared/ui/disclosure';
+import { PageHeader } from '../../shared/ui/page-header';
 import { asApiError, valueOf } from '../../shared/paged-resource';
 import { reportedBastions } from './bastion-targets';
 import { clientsOf, FORMAT_CLIENTS, snippetExplanation } from './clients';
@@ -40,10 +42,10 @@ export function fillToken(content: string, token: string | null): string {
 }
 
 /**
- * The client setup page (R-UI-016, R-UI-017): format, client, repository, credentials, then the
- * snippets of the server (R-API-030) in the tabs Configure, Install and Publish. The choices of the
- * first three steps live in the query parameters, so a link from a repository or a package opens the
- * page prepared.
+ * The client setup page (R-UI-016, R-UI-017): format, client and repository, the credential in one line with the other ways
+ * and the place to install from as More options (Q-UI-316), then the snippets of the server (R-API-030) in the tabs Configure,
+ * Install and, for who may publish, Publish. The choices live in the query parameters, so a link from a repository or a package
+ * opens the page for that repository, with the format and the repository as one line.
  *
  * Secrets (R-UI-043): the server never fills a token. The browser replaces `{{token}}` in this
  * component only. A created or pasted token lives in a component signal, is never put into a
@@ -52,7 +54,7 @@ export function fillToken(content: string, token: string | null): string {
  */
 @Component({
   selector: 'trove-client-setup',
-  imports: [TabGroup, TabPage, NgTemplateOutlet, RouterLink, CopyButton, AddressField, ErrorNotice],
+  imports: [TabGroup, TabPage, NgTemplateOutlet, RouterLink, CopyButton, AddressField, ErrorNotice, PageHeader, Disclosure],
   templateUrl: './client-setup.html',
   styleUrl: './client-setup.scss',
 })
@@ -72,20 +74,16 @@ export class ClientSetupPage {
   readonly repository = input<string | undefined>();
   /** A Bastion registration to render the snippets for (R-BAS-007); a link from the Bastions screen or the guide sets it. */
   readonly bastion = input<string | undefined>();
-  /**
-   * The setup of one given repository, shown inside that repository's content page (R-UI-052): the repository and its format are
-   * fixed by the host, so the steps that choose them are left out and the client is chosen in the component, not in the URL. `known`
-   * is the repository the host already loaded, so nothing is read twice.
-   */
-  readonly embedded = input(false);
-  readonly known = input<RepositorySummary | undefined>();
+
+  protected readonly heading = $localize`:@@setup.heading:Client setup`;
+  protected readonly description = $localize`:@@setup.description:The configuration and the commands that point your package manager at a repository; nothing changes on the server.`;
+  protected readonly moreHeading = $localize`:@@setup.more:More options`;
+  /** Whether More options is open; a choice inside it keeps it open while the page lives. */
+  protected readonly moreOpen = signal(false);
 
   protected readonly formats = resource({ loader: () => this.repositories.formats() });
-  /** The repositories of the steps; empty for an embedded setup, whose repository the host gives. */
-  protected readonly allRepositories = resource({
-    params: () => (this.embedded() ? undefined : true),
-    loader: () => this.repositories.listAll(),
-  });
+  /** The repositories the caller may read: the choices of the repository step, and the one a link names. */
+  protected readonly allRepositories = resource({ loader: () => this.repositories.listAll() });
 
   protected readonly anonymous = computed(() => this.session.state() === 'anonymous');
   protected readonly mode = signal<CredentialMode>('env');
@@ -103,10 +101,7 @@ export class ClientSetupPage {
   protected readonly formatOptions = computed(() =>
     (valueOf(this.formats) ?? []).filter((f) => f.name in FORMAT_CLIENTS),
   );
-  protected readonly repositoryOptionsAll = computed(() => {
-    const known = this.known();
-    return known ? [known] : (valueOf(this.allRepositories) ?? []);
-  });
+  protected readonly repositoryOptionsAll = computed(() => valueOf(this.allRepositories) ?? []);
   protected readonly activeFormat = computed<string | null>(() => {
     const names = this.formatOptions().map((f) => f.name);
     const given = this.format();
@@ -116,11 +111,9 @@ export class ClientSetupPage {
     return names[0] ?? null;
   });
   protected readonly clients = computed(() => clientsOf(this.activeFormat() ?? ''));
-  /** The client chosen inside an embedded setup, which keeps out of the host's URL. */
-  private readonly chosenClient = signal<string | null>(null);
   protected readonly activeClient = computed<string | null>(() => {
     const ids = this.clients().map((c) => c.id);
-    const given = this.chosenClient() ?? this.client();
+    const given = this.client();
     return given && ids.includes(given) ? given : (ids[0] ?? null);
   });
   protected readonly repositoryOptions = computed<readonly RepositorySummary[]>(() =>
@@ -149,21 +142,25 @@ export class ClientSetupPage {
   protected readonly activeBastion = computed<string | null>(() => this.bastion()?.trim() || null);
   /** The target step is shown when there is a Bastion to choose or one is chosen. */
   protected readonly showTarget = computed(() => this.bastionOptions().length > 0 || this.activeBastion() !== null);
+  /** More options says what it holds: the other ways to give the token, and the place to install from where there is one. */
+  protected readonly moreHint = computed(() =>
+    this.anonymous()
+      ? $localize`:@@setup.more.hint-anonymous:Where to install from.`
+      : this.showTarget()
+        ? $localize`:@@setup.more.hint-target:Another way to give the token, and where to install from.`
+        : $localize`:@@setup.more.hint:Another way to give the token.`,
+  );
   /**
-   * The setup is opened for one repository: embedded in its page, or by a link that names a repository the caller may read. Then
-   * the format and the repository are not asked again (Q-UI-316); **Change** shows the choices.
+   * The setup is opened for one repository by a link that names a repository the caller may read. Then the format and the
+   * repository are not asked again (Q-UI-316); **Change** shows the choices.
    */
   private readonly fixed = signal(true);
   protected readonly focused = computed(
-    () => this.embedded() || (this.fixed() && !!this.repository() && this.activeRepository() === this.repository()),
+    () => this.fixed() && !!this.repository() && this.activeRepository() === this.repository(),
   );
   protected unfix(): void {
     this.fixed.set(false);
   }
-  /** The steps are numbered in sequence; a setup for one repository has neither the format nor the repository step. */
-  protected readonly clientStep = computed(() => (this.focused() ? 1 : 2));
-  protected readonly targetStep = computed(() => (this.focused() ? 2 : 4));
-  protected readonly credentialsStep = computed(() => (this.showTarget() ? this.targetStep() + 1 : this.targetStep()));
 
   protected readonly credentials = computed<'none' | 'env' | 'placeholder'>(() =>
     this.anonymous() ? 'none' : this.mode() === 'env' ? 'env' : 'placeholder',
@@ -213,6 +210,14 @@ export class ClientSetupPage {
     () => this.repositoryOptions().find((r) => refOf(r) === this.activeRepository())?.class === 'virtual',
   );
   protected readonly canReadConfig = computed(() => this.session.has('repositories:read-config'));
+  /**
+   * The Publish tab is for who may publish: the answer holds publish snippets only for a repository the caller may deploy to
+   * (R-API-030). A virtual repository without a deployment target keeps the tab, with the reason, for who can read its
+   * configuration and so change it (Q-UI-316). A Bastion is read only, which its banner says.
+   */
+  protected readonly offerPublish = computed(
+    () => this.byTab().publish.length > 0 || (this.isVirtual() && this.canReadConfig() && this.activeBastion() === null),
+  );
   protected readonly explanation = snippetExplanation;
   protected readonly placeholder = TOKEN_PLACEHOLDER;
   protected readonly copyLabel = $localize`:@@setup.copy:Copy snippet`;
@@ -274,10 +279,6 @@ export class ClientSetupPage {
     repository?: string | null;
     bastion?: string | null;
   }): void {
-    if (this.embedded()) {
-      if (change.client !== undefined) this.chosenClient.set(change.client);
-      return;
-    }
     void this.router.navigate([], { queryParams: change, queryParamsHandling: 'merge', replaceUrl: true });
   }
 

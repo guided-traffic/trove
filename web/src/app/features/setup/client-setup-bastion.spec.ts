@@ -47,9 +47,13 @@ describe('Client setup for a Bastion (R-BAS-007, R-API-030)', () => {
     expect(offered).toEqual(['', 'partners']);
     expect(target(r.root, 'target', '')?.checked).toBe(true);
     expect(r.setup.calls.at(-1)?.query.bastion).toBeUndefined();
-    expect(text(r.root)).toContain('Install from');
-    // Opened for one repository, the format and repository steps are not asked (Q-UI-316): client, target, credentials.
-    expect([...r.root.querySelectorAll('.step-no')].map((n) => n.textContent?.trim())).toEqual(['1', '2', '3']);
+    // The place to install from is one of More options, closed until opened (Q-UI-316).
+    const more = r.root.querySelector('trove-disclosure.more-options')!;
+    expect(text(more)).toContain('Install from');
+    expect(text(more)).toContain('where to install from');
+    expect(more.querySelector('input[name="target"]')).toBeTruthy();
+    // Opened for one repository, the format and repository steps are not asked: no numbered steps at all.
+    expect(r.root.querySelectorAll('.step-no').length).toBe(0);
     await expectAccessible(r.root);
   });
 
@@ -64,10 +68,9 @@ describe('Client setup for a Bastion (R-BAS-007, R-API-030)', () => {
     expect(text(r.root)).toContain('makes npm fetch every package from this address');
     expect(text(r.root)).toContain('These snippets point at the Bastion');
     expect(addressValues(r.root)).toEqual(['https://packages.example.com/api/npm/web/npm-all/']);
-    const publish = [...r.root.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => text(t) === 'Publish')!;
-    publish.click();
-    await settle(r.fixture);
-    expect(text(r.root)).toContain('A Bastion is read only: you cannot publish through it');
+    // A Bastion is read only: no Publish tab, and the banner says why.
+    expect([...r.root.querySelectorAll<HTMLElement>('[role="tab"]')].map((t) => text(t))).not.toContain('Publish');
+    expect(text(r.root)).toContain('A Bastion is read only, so there are no publish snippets.');
     await expectAccessible(r.root);
   });
 
@@ -89,7 +92,7 @@ describe('Client setup for a Bastion (R-BAS-007, R-API-030)', () => {
   it('R-BAS-007 a caller without endpoints:read gets no choice, and a Bastion named in the query still works', async () => {
     const plain = await openSetup({ repository: 'web/npm-all', client: 'npm' }, ['repositories:read-config']);
     expect(plain.root.querySelector('input[name="target"]')).toBeNull();
-    expect([...plain.root.querySelectorAll('.step-no')].map((n) => n.textContent?.trim())).toEqual(['1', '2']);
+    expect(text(plain.root.querySelector('trove-disclosure.more-options')!)).not.toContain('where to install from');
     const linked = await openSetup({ repository: 'web/npm-all', client: 'npm', bastion: 'partners' }, ['repositories:read-config']);
     expect(target(linked.root, 'target', 'partners')?.checked).toBe(true);
     expect(linked.setup.calls.at(-1)?.query.bastion).toBe('partners');

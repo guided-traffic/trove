@@ -3080,6 +3080,9 @@ Priority: **MVP** · Covers: UI-005
   for 60 seconds, dropped on any 403 and on sign-out).
 - Primary actions on a screen that the caller lacks are shown disabled with the reason ("Needs
   deploy on npm-local"); menu entries the caller lacks are hidden. Lists show what the API returns.
+- On a screen of a project the reason names whom to ask, the project's Owners by name ("Read only. Ask priya, an Owner of
+  web-frontend, to change this."), and no capability (Q-UI-318); the administrator's screens name the capability ("Read only:
+  changing this needs the permission `settings:write`").
 - Self-lockout guards are shown before the API refuses them: the last administrator binding cannot
   be removed, a user cannot disable themselves, the last Owner of a project cannot be removed or demoted except by an
   administrator (R-UI-041).
@@ -3495,14 +3498,18 @@ Priority: **MVP** · Covers: UI-021, UI-022, UI-023
 - Route `/setup` (`?format=&client=&repository=`, so a link opens the page prepared), reachable from the
   user menu, a repository row, a repository node in the browser, the package details (the install panel
   links to it with the repository and client chosen there) and empty states.
-- One page with progressive steps:
+- The shared page header (**Client setup**, one sentence, **Read the guide** as its action). Opened by a link that names a
+  repository the caller may read, the page does not ask the format and the repository again: they are one line with
+  **Change**, and the client is its one choice (Q-UI-316). Otherwise one page with progressive steps:
   1. format (generic, npm and NuGet in the MVP; further formats appear as they ship, from
      `GET /api/v1/formats`, in its order, the first preselected);
   2. client (curl; npm, pnpm, Yarn Berry, Yarn classic; .NET CLI, NuGet CLI, Visual Studio,
      `nuget.config`; Docker CLI with Buildx, Podman);
   3. repository: readable repositories of that format, each named with its project (`web/npm-all`), virtual
-     repositories marked as recommended, publish availability shown per repository;
-  4. credentials, one of:
+     repositories marked as recommended, publish availability shown per repository.
+- The credential is one line under the choices: by default "The snippets read your token from the variable TROVE_TOKEN."
+  with **Create a token to put into the variable**. The ways to give it, and the place to install from where a Bastion can be
+  chosen (R-BAS-007), are a closed **More options** (the disclosure of Q-UI-322). The credentials, one of:
      - **Reference an environment variable** (default): snippets reference `TROVE_TOKEN`
        (R-API-030 `credentials=env`); no secret appears on screen; a link leads to creating a token.
      - **Create a token for this setup**: creates a personal token (R-API-032) described as "Client
@@ -3516,16 +3523,18 @@ Priority: **MVP** · Covers: UI-021, UI-022, UI-023
        allowed. The value stays in the browser; the UI checks its prefix, its length, its alphabet
        and its CRC32 checksum (INV-8, R-AUTH-022) locally, says which check failed, writes only a value
        that passes into the snippets, and never sends it to the server.
-  5. tabs Configure, Install, Publish with the snippets; each snippet shows its target file name
-     and has a copy button; whole configuration files (`.npmrc`, `nuget.config`) can be downloaded.
-     For npm, the Publish tab also holds the GitLab CI snippet in its two labelled variants
-     (R-UI-017).
-- Anonymous viewers of anonymously readable repositories skip the credentials step and get snippets
+- Tabs Configure, Install and Publish with the snippets; each snippet shows its target file name
+  and has a copy button; whole configuration files (`.npmrc`, `nuget.config`) can be downloaded.
+  For npm, the Publish tab also holds the GitLab CI snippet in its two labelled variants
+  (R-UI-017). The Publish tab is offered to who may publish (the answer holds publish snippets only for a caller with
+  `deploy` on the target, R-API-030); a caller who may not has no Publish tab (Q-UI-316), and a Bastion's banner says that
+  it is read only.
+- Anonymous viewers of anonymously readable repositories get no credential choice and snippets
   without authentication lines.
 - The browser replaces `{{token}}` in the component only; the composed text is never stored in a
   service, browser storage or the URL and is discarded when the route is left (R-UI-043).
-- A virtual repository without a default deployment target shows, instead of the publish tab, an
-  explanation and a link to its local members.
+- A virtual repository without a default deployment target shows, on the Publish tab of a caller who can read its
+  configuration and so change it, an explanation and a link to its local members.
 - The page links to the guide of R-UI-049 for the chosen format, client and repository, and the guide links back
   (Q-UI-84).
 
@@ -10738,8 +10747,11 @@ and three credential choices.
 one click away. The development agent revisits it if users open the setup from the menu more often than from a repository.
 
 **Applied in the spec:** R-UI-067, R-UI-016. Built in fix wave 1 in part: a link that names a repository the caller may read opens
-the setup for it, with the format and the repository as one line and **Change**; the closed **More options** for the other
-credential choices and the publish snippets is not built yet.
+the setup for it, with the format and the repository as one line and **Change**. Fix wave 2: the credential is one line with
+**Create a token to put into the variable**; the three ways to give it and the place to install from are the closed **More
+options**; the client of a setup for one repository is its one choice, without a number. The publish snippets stay a tab,
+offered only to who may publish: for the power user publishing is a main job, not an option, and the plain user gets no tab
+that says "You cannot publish".
 
 ### Q-UI-317 · The plain user's project sidebar holds the content; the project's members and settings move into its About section
 
@@ -10775,7 +10787,10 @@ Status: **Decided by the development agent** — selected from the options below
 **Choice:** (a). **Rationale:** the plain user can act on a person, not on a permission name. The development agent records no
 revisit condition.
 
-**Applied in the spec:** R-UI-067, R-UI-005 (the reason of a disabled action names a role where one grants it).
+**Applied in the spec:** R-UI-067, R-UI-005 (the reason of a disabled action names a role where one grants it). Built in fix
+wave 2: on a project's screens (members, settings, policies, service accounts, CI mappings) the reason is "Read only. Ask
+priya, an Owner of web-frontend, to change this." (`<trove-needs [project]>`); the administrator's screens keep the
+capability.
 
 ### Q-UI-319 · The details are one closed section per screen that remembers whether the user opened it
 

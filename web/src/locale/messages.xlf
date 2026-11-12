@@ -19144,28 +19144,84 @@
         <source>General settings</source>
       </segment>
     </unit>
+    <unit id="setup.description">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>The configuration and the commands that point your package manager at a repository; nothing changes on the server.</source>
+      </segment>
+    </unit>
+    <unit id="setup.guide">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Read the guide</source>
+      </segment>
+    </unit>
+    <unit id="setup.more">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>More options</source>
+      </segment>
+    </unit>
+    <unit id="setup.more.hint">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Another way to give the token.</source>
+      </segment>
+    </unit>
+    <unit id="setup.more.hint-target">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Another way to give the token, and where to install from.</source>
+      </segment>
+    </unit>
+    <unit id="setup.more.hint-anonymous">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Where to install from.</source>
+      </segment>
+    </unit>
+    <unit id="setup.cred.line-env">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>The snippets read your token from the variable TROVE_TOKEN.</source>
+      </segment>
+    </unit>
+    <unit id="setup.cred.line-create">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>The snippets hold a token created for this setup.</source>
+      </segment>
+    </unit>
+    <unit id="setup.cred.line-paste">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>The snippets hold the token you pasted.</source>
+      </segment>
+    </unit>
     <unit id="setup.heading">
       <notes>
         <note category="location">src/app/features/setup/client-setup.html:3,5</note>
       </notes>
       <segment>
         <source>Client setup</source>
-      </segment>
-    </unit>
-    <unit id="setup.intro">
-      <notes>
-        <note category="location">src/app/features/setup/client-setup.html:6,10</note>
-      </notes>
-      <segment>
-        <source> Choose your package manager and a repository. You get the configuration and the commands that point the client at trove. Nothing is changed on the server. </source>
-      </segment>
-    </unit>
-    <unit id="setup.guide-link">
-      <notes>
-        <note category="location">src/app/features/setup/client-setup.html:15,19</note>
-      </notes>
-      <segment>
-        <source>Read the guide: what the repository is, publishing, lockfiles and troubleshooting</source>
       </segment>
     </unit>
     <unit id="setup.step.format">
@@ -19482,14 +19538,6 @@
         <source>Publish</source>
       </segment>
     </unit>
-    <unit id="setup.publish.bastion">
-      <notes>
-        <note category="location">src/app/features/setup/client-setup.html:320,322</note>
-      </notes>
-      <segment>
-        <source> A Bastion is read only: you cannot publish through it. Choose this installation as the place to install from, and the publish snippets appear. </source>
-      </segment>
-    </unit>
     <unit id="setup.publish.no-target">
       <notes>
         <note category="location">src/app/features/setup/client-setup.html:324,326</note>
@@ -19504,14 +19552,6 @@
       </notes>
       <segment>
         <source>Open the repository to see its members</source>
-      </segment>
-    </unit>
-    <unit id="setup.publish.denied">
-      <notes>
-        <note category="location">src/app/features/setup/client-setup.html:334,336</note>
-      </notes>
-      <segment>
-        <source> You cannot publish to this repository: it is read only, or you do not hold the deploy permission on it. </source>
       </segment>
     </unit>
     <unit id="setup.target-file">
@@ -25691,6 +25731,22 @@
       </notes>
       <segment>
         <source>The run is queued. Reload the page to see its result.</source>
+      </segment>
+    </unit>
+    <unit id="needs.ask-owner">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Read only. An Owner of <ph id="0" equiv="project" disp="key"/> can change this.</source>
+      </segment>
+    </unit>
+    <unit id="needs.ask-owners">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Read only. Ask <ph id="0" equiv="owners" disp="owners"/>, an Owner of <ph id="1" equiv="project" disp="key"/>, to change this.</source>
       </segment>
     </unit>
     <unit id="needs.text">
