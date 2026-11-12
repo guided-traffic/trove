@@ -90,7 +90,7 @@ Hard rules, also for every subagent (put them into every subagent prompt):
 1. `git status` must be clean; then `git pull --rebase origin main`.
 2. During the alpha (rule 10) a run works on two fronts at once: the first open task of
    [section 10](#10--owner-tasks-of-2026-11-07-the-next-registries), cut into work packages with an agent and a branch each, and
-   every open finding of section 8 with an agent each. Open there now: the owner task of 2026-11-11 **T-18 (visibility levels)** and, beside it, the owner task of 2026-11-12 **T-21 (a UI that looks right)**; both come before the next unit of item 3, and **T-22 (a search with suggestions)** follows them. The open items of BETA.md phase 7 are
+   every open finding of section 8 with an agent each. Open there now: the owner task of 2026-11-12 **T-21 (a UI that looks right)**, with its part T-21b (creating and configuring a repository), and **T-22 (a search with suggestions)**; both come before the next unit of item 3. T-18 is built (run of 2026-11-12). The open items of BETA.md phase 7 are
    findings of the same kind. Outside the alpha: open [BETA.md](BETA.md), table
    **Where we are**; the current phase is the first row whose status is not 🟢, and a row at 🟡 is resumed (step 2, item 4).
 3. If every row of BETA.md is 🟢, open [FULL.md](FULL.md) and take the first unit that is not 🟢,
@@ -527,6 +527,17 @@ by `version: "*"`. Red pipelines are worked on even though they no longer hold a
 - T-21 vulnerability grades are on main (e4183c73, R-VULN-038 and 039, R-UI-090 to 094). Open:
   - for the owner, not blocking: should the report's trend chart and the bar share one palette?
   - the paging of a version's findings, the report table's sideways scroll and the wording of the facts line are being fixed.
+- T-18 (visibility levels) is on main (run of 2026-11-12): private, internal and public for the installation's default, a project and
+  a repository's artifacts and wiki; the external user flag; README and documentation as wiki content of npm, NuGet and Ansible;
+  the Bastion never reads by the internal level. The e2e sets npm, ansible, oci and deb ran green on kind, as did the four
+  `21-visibility` journeys and the external-user test; journeys 19 and 21 and the T-18 screens were rendered and looked at. Open:
+  - `TestBastion_R_BAS_049_RoutingByPath` failed on the long-lived kind cluster (72 revalidations answered 304, 0 cache hits, no
+    journal trigger in the 15 s window); CI's fresh cluster decides whether T-18 or the cluster causes it;
+  - `13-ci` and `16-backups` were red on the long-lived cluster: 13-ci was the picker race (fixed in the product by Q-UI-334);
+    16-backups shows `?state=failed` with both filters on Any and no runs;
+  - the NuGet README route is still the P1 stub (R-NUGET-024): it answers 501 behind the wiki gate;
+  - the repository settings' Access tab still shows include and exclude patterns, Disabled and Hide existence beside the visibility:
+    T-21b rebuilds that page (repository-setup-work-packages.md).
 - TestR_DEB_023 failed twice on CI (Test and Release 43022311289 and 43229158954, shard c). The test waited for the first index
   that lists a name, not for the whole scope; fixed in f2cc9a2d.
 - UI development profile: the volumes of `deploy/ui-dev` are shared by the whole machine, but the key ring in `.dev/ui-dev` belongs to
@@ -534,7 +545,6 @@ by `version: "*"`. Red pipelines are worked on even though they no longer hold a
   workaround.
 - `repository-detail` is the only settings page not yet in the one-column form of the [style guide](../developer/ui-style-guide.md#settings-pages) (Q-UI-222): what its tabs become needs the owner's reference at the walkthrough.
 - H-836: a holder of `tokens:read` alone sees which token owners are administrators; only a custom role is affected, because the three system roles with `tokens:read` also hold `identities:read`.
-- The committed `messages.xlf` and `messages.de.xlf` carry stale location notes, so `extract-i18n` rewrites about 17,000 lines of them.
 - A disk watcher in the jobs, so that a lost runner can be read, was proposed and not built.
 - The coverage badge and the evidence record stand still until the first stable release (Q-ARCH-457).
 - Ansible Galaxy, open gaps on [formats/ansible.md](../spec/formats/ansible.md) and its security pages: H-861 (digest conflicts counted per merge), H-863 (a role lookup is not merged across members), H-868 (one name with versions in a local and a remote member is not run with the real clients), H-851 (the core's archive bounds), H-842 (the hub exchange is tested against the stub realm only). The base64 body of a publish is held to the system upload limit before `ansible.max_archive_bytes` sees the decoded bytes (Q-ANS-53), not tested.
@@ -593,28 +603,9 @@ evidence in [apt-work-packages.md](apt-work-packages.md#24--closing)) are done. 
 
 Set by the owner on 2026-11-11 (T-18 and T-19 after reading the galaxy_ng screens of his collections; T-20, the client addresses in full, is built: R-UI-065). All are confirmed features, not parked ideas, and
 the next run takes them in this order, each planned by a planning agent (spec and a work-package plan) before anything is built.
-T-18 is planned in [visibility-work-packages.md](visibility-work-packages.md) (R-AUTHZ-033 to 035, ADR-192). T-19 is built (run of 2026-11-11,
+T-18 is built (run of 2026-11-12, [visibility-work-packages.md](visibility-work-packages.md), R-AUTHZ-033 to 035, ADR-192). T-19 is built (run of 2026-11-11,
 [galaxy-docs-work-packages.md](galaxy-docs-work-packages.md), R-ANS-033 to 046): the set `ansible` ran green on kind with the real clients and both browser journeys.
 
-- **T-18 · Visibility levels.** Private, internal and public, as in the owner's GitLab:
-  - **private**: only members, that is principals that hold a grant on it;
-  - **internal**: seen automatically by every signed-in user except users flagged **external** (owner, 2026-11-11); trove therefore gets a
-    user flag "external" as GitLab has it, set by an administrator, and an external user sees only what it is a member of or what is public;
-    decide whether the technical accounts of external parties of a project (phase 5a) and the Bastion's partners count as external;
-  - **public**: readable without authentication.
-
-  A default per installation (the general settings), a setting per project and a setting per repository; on a repository the **wiki** part
-  is set separately from the artifacts, for example "the artifacts of this repository are public, its wiki is internal". What exists and must
-  be read first: the built-in principals `anonymous` (R-AUTHZ-003) and `authenticated` (R-AUTHZ-030), the runtime switch `anonymousAccess` and
-  its ceiling `auth.anonymous.allowed` (R-AUTH-037), policies, path-scoped grants and the decision point with `ReadScope`. trove is pre-alpha
-  (CLAUDE.md): one mechanism, not a second one beside the anonymous switch; replacing it is allowed. To decide in the spec: inheritance and
-  whether a repository may be more open than its project (GitLab: no); what "wiki" is per format (the package pages' READMEs, a README inside
-  a protocol document such as npm's packument, the collection documentation of T-19) and what a client gets when the artifacts are visible and
-  the wiki is not (an absent field, 404, a redacted document) on the protocol routes, in the API and in the UI; how visibility composes with
-  path-scoped grants, the Bastion, exposure rules, endpoints and search; the settings pages (one-column form), the OpenAPI operations, the
-  audit events, the schema, and the caches a change must reach (the authz snapshot, the claims index) within the existing bound. Security
-  pages change (who can read what), with their gaps. e2e with real clients: "public artifacts, internal wiki" (an anonymous `npm install` works,
-  an anonymous request for the documentation gets what was decided), and an external user who sees nothing internal.
 ### Owner task of 2026-11-12
 
 Set by the owner on 2026-11-12, after the repository list showed an address field of a different width in every row: "Our UI still
