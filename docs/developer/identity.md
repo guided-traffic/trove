@@ -101,7 +101,8 @@ request ─► chain stage 6 ─► app.authenticate ─► auth.Stage.Authentic
   `rate_limited` (429 with `Retry-After`) when the address is throttled, 503 when PostgreSQL does not answer.
 - The challenge is `Bearer realm="trove"` (plus `error="invalid_token"` after a rejected token) under `/api/v1/`,
   `Basic realm="trove"` for a package client on `/files/` and `/api/<format>/`, and `Bearer realm="trove"` everywhere else
-  and for a browser (Q-AUTH-173).
+  and for a browser (Q-AUTH-173). The decision point's 401 to a caller without a credential takes the same challenge where it is
+  written: `httpserver.PackageChallenge`, in `Problem` and in the format dispatcher (Q-AUTH-235).
 - The session cookie is accepted on `/api/v1/` for every method, on `/files/` for GET, HEAD, PUT and DELETE, on
   `/api/<format>/` for GET and HEAD, and ignored elsewhere and on `/api/v1/auth/login-options`, so an ended session's cookie
   cannot keep the sign-in screen from loading (Q-AUTH-177).

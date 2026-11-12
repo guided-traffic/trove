@@ -554,9 +554,10 @@ func catalog(t *testing.T, p *proto) {
 	if strings.Join(seen, ",") != project+"/"+repoLocal+"/team/a,"+project+"/"+repoLocal+"/team/b" {
 		t.Fatalf("the scoped catalog, followed to its end: %v", seen)
 	}
-	// Anonymous with no anonymous grant gets nothing from the token service's catalog scope.
-	if a := p.do(call{rep: 0, method: "GET", path: "/v2/_catalog"}); a.Status != 401 {
-		t.Fatalf("anonymous catalog: %d", a.Status)
+	// A caller without a credential reads what a public level admits and nothing else (R-AUTHZ-003, R-AUTHZ-033): no repository of
+	// the installation is public, so its catalog is the empty list R-OCI-017 names, and no name of a repository leaks.
+	if anon, a := list(cred{}, ""); len(anon) != 0 || strings.Contains(string(a.Body), repoLocal) || strings.Contains(string(a.Body), repoSecret) {
+		t.Fatalf("the catalog without a credential: %v %s", anon, a.Body)
 	}
 }
 

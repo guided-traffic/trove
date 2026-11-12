@@ -294,14 +294,18 @@ func TestR_CI_013_AJobInstallsThroughItsPolicyAndPublishesItsOwnPackage(t *testi
 	})
 }
 
-// R-AUTHZ-002: group everyone is auto-join and reads npm-loose, and authenticated reads it as well; a CI token whose
-// mapping lists no group and that no policy covering npm-loose names gets 404 there.
-func TestR_AUTHZ_002_ACITokenIsNeitherAuthenticatedNorInAnAutoJoinGroup(t *testing.T) {
+// R-AUTHZ-002: group everyone is auto-join and reads npm-loose, and the artifacts of npm-loose are internal, so every internal user
+// reads it as well (R-AUTHZ-030, R-AUTHZ-033; the principal authenticated is gone, ADR-192); a CI token whose mapping lists no group
+// and that no policy covering npm-loose names gets 404 there, because it is never internal and never in an auto-join group.
+func TestR_AUTHZ_002_ACITokenIsNeitherInternalNorInAnAutoJoinGroup(t *testing.T) {
 	e := newCIEnv(t, false, "acme-release")
 	m := e.maps["acme-release"]
 	everyone := e.text(`INSERT INTO principal (id, kind, name) VALUES (gen_random_uuid(), 'group', 'everyone') RETURNING id::text`)
 	e.exec(`INSERT INTO user_group (principal_id, origin, auto_join) VALUES ($1::uuid, 'admin', true)`, everyone)
-	e.policy("everyone-reads", []string{"read"}, []string{"npm-loose"}, nil, everyone, e.text(`SELECT id::text FROM principal WHERE kind = 'authenticated'`))
+	e.policy("everyone-reads", []string{"read"}, []string{"npm-loose"}, nil, everyone)
+	// A repository is never more open than its project: the project first. The replica below starts with these levels in its index.
+	e.exec(`UPDATE project SET visibility = 'internal' WHERE id = (SELECT project_id FROM repositories WHERE key = 'npm-loose')`)
+	e.exec(`UPDATE repositories SET visibility_artifacts = 'internal' WHERE key = 'npm-loose'`)
 	reader := e.stack.User("reader")
 	readerTok := e.stack.Token(reader, scope.Default())
 	a := e.web("web-a")

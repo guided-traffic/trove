@@ -83,6 +83,9 @@ func (probe) WriteError(w http.ResponseWriter, r *http.Request, err error) {
 		if len(e.Allow) > 0 {
 			w.Header().Set("Allow", strings.Join(e.Allow, ","))
 		}
+		if e.Challenge != "" { // passed on as it comes, as npm and formats.Base do
+			w.Header().Set("WWW-Authenticate", e.Challenge)
+		}
 	}
 	w.Header().Set("X-Probe-Error", code)
 	w.WriteHeader(status)
@@ -422,6 +425,35 @@ func TestR_ARCH_023_TheChainsRefusalsOnAPrefixAreTheFormatsShape(t *testing.T) {
 				t.Errorf("%s: not a problem body: %s", path, rec.Body)
 			}
 		}
+	}
+	if len(r.reached) != 0 {
+		t.Fatalf("a refused request reached %v", r.reached)
+	}
+}
+
+// TestR_AUTH_002_ARefusalOfTheDecisionPointCarriesTheChallengeOfThePackageRoute: the decision point refuses a caller without a
+// credential with the generic Bearer challenge; a format that passes the error's challenge on answers a package client with Basic,
+// which it answers with its configured credentials, and a browser with Bearer (Q-AUTH-235).
+func TestR_AUTH_002_ARefusalOfTheDecisionPointCarriesTheChallengeOfThePackageRoute(t *testing.T) {
+	r := newRig(t)
+	r.decider.decision = authz.Decision{Outcome: authz.DenyUnauthenticated, Reason: authz.ReasonUnauthenticated}
+	for _, c := range []struct {
+		name, fetch, want string
+	}{
+		{"a package client", "", `Basic realm="trove"`},
+		{"a browser", "navigate", "Bearer"},
+	} {
+		t.Run("R-AUTH-002 "+c.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/api/probe/it/local/left-pad", nil)
+			if c.fetch != "" {
+				req.Header.Set("Sec-Fetch-Mode", c.fetch)
+			}
+			rec := httptest.NewRecorder()
+			httpserver.Chain{Router: r.router}.Handler().ServeHTTP(rec, req)
+			if rec.Code != http.StatusUnauthorized || rec.Header().Get("WWW-Authenticate") != c.want {
+				t.Fatalf("%d, WWW-Authenticate %q, want 401 with %q", rec.Code, rec.Header().Get("WWW-Authenticate"), c.want)
+			}
+		})
 	}
 	if len(r.reached) != 0 {
 		t.Fatalf("a refused request reached %v", r.reached)

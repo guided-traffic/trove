@@ -29,7 +29,7 @@ func TestR_AUTH_002_ARefusedReadOnAPackageRouteCarriesTheBasicChallenge(t *testi
 			for k, v := range c.header {
 				r.Header.Set(k, v)
 			}
-			e, ok := errs.As(packageChallenge(r, generic))
+			e, ok := errs.As(PackageChallenge(r, generic))
 			if !ok || e.Challenge != c.want {
 				t.Errorf("challenge = %q, want %q", e.Challenge, c.want)
 			}
@@ -38,11 +38,11 @@ func TestR_AUTH_002_ARefusedReadOnAPackageRouteCarriesTheBasicChallenge(t *testi
 	t.Run("R-AUTH-002 another error is left as it is", func(t *testing.T) {
 		own := errs.E(errs.Unauthenticated, errs.CodeInvalidToken, "x", errs.WithChallenge(`Bearer realm="trove", error="invalid_token"`))
 		r := httptest.NewRequest("GET", "/api/npm/web/npm-all/lodash", nil)
-		if e, _ := errs.As(packageChallenge(r, own)); e.Challenge != `Bearer realm="trove", error="invalid_token"` {
+		if e, _ := errs.As(PackageChallenge(r, own)); e.Challenge != `Bearer realm="trove", error="invalid_token"` {
 			t.Errorf("challenge = %q", e.Challenge)
 		}
 		forbidden := errs.E(errs.Forbidden, errs.CodeForbidden, "x")
-		if e, _ := errs.As(packageChallenge(r, forbidden)); e == nil || e.Kind != errs.Forbidden || e.Challenge != "" {
+		if e, _ := errs.As(PackageChallenge(r, forbidden)); e == nil || e.Kind != errs.Forbidden || e.Challenge != "" {
 			t.Errorf("a 403 was rewritten: %+v", e)
 		}
 	})

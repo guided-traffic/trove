@@ -5949,6 +5949,11 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Choice:** (a). The default endpoint admits a request without a credential (R-EP-010, R-AUTH-037), so the decision point refuses a read of a
 repository that is not `public` as often as the stage refused a request with no credential before; the table of R-AUTH-002 holds for both.
+`Problem` hands a path with an error shape to the format's writer before it reads the challenge, and the format dispatcher writes its own
+refusals through that writer directly; so the dispatcher keeps every format it serves behind `httpserver.PackageChallenge` as well
+(`challenged` in [errors.go](../../internal/api/dispatch/errors.go)). Without it a format that passes the error's challenge on (npm,
+Debian, a format on `formats.Base`) answered `Bearer`, and a client that sends its credentials only after a Basic challenge never sent
+them (integration area `apikey`, 2026-11-12).
 
 **Rationale:** the challenge belongs to the route, not to the reason of the refusal. The development agent records no revisit condition.
 

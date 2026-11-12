@@ -78,7 +78,7 @@ type catalogRepo struct {
 
 // ServeHTTP answers a page of the catalog. A registry token needs registry:catalog:* (the enforcement point checked it); the
 // names are the ones the caller's trove token may read, decided per name on one index of the decision point. A caller that
-// may read nothing, the anonymous one without an anonymous grant among them, gets an empty list (R-OCI-017).
+// may read nothing, the anonymous one while no repository's artifacts are public among them, gets an empty list (R-OCI-017).
 func (h *Catalog) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(route.APIVersionHeader, route.APIVersion)
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {

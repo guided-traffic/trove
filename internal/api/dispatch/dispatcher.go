@@ -102,7 +102,7 @@ func New(o Options) (*Dispatcher, error) {
 			continue
 		}
 		id := string(f.Descriptor().ID)
-		d.formats[id] = f
+		d.formats[id] = challenged{f}
 		d.keyed[id] = slices.ContainsFunc(routes, func(r formats.Route) bool { return r.APIKey })
 		d.tokened[id] = slices.ContainsFunc(routes, func(r formats.Route) bool { return r.TokenScheme })
 	}

@@ -717,8 +717,9 @@ Priority: **P1** · Covers: PKG-DOCKER-003, PKG-DOCKER-022
 
 Acceptance criteria:
 
-- A caller with `read` on `web/docker-local` only gets `web/docker-local/app` and no name of `web/team-local`; anonymous with no
-  anonymous grant gets an empty list.
+- A caller with `read` on `web/docker-local` only gets `web/docker-local/app` and no name of `web/team-local`; a caller without a
+  credential gets 200 and an empty list while no repository's artifacts are `public` ([authorization.md](../authorization.md)
+  R-AUTHZ-033).
 - A token whose scope grants `read` on `web/docker-local` for the packages `team/*` lists `web/docker-local/team/app` and no other
   name; with `n=1` the answer carries a `Link` whose `last` is that name, and following it ends without a `Link`.
 

@@ -137,14 +137,16 @@ func Problem(w http.ResponseWriter, r *http.Request, err error) {
 		sh(w, r, err)
 		return
 	}
-	errs.Write(w, r, packageChallenge(r, err), RequestID(r.Context()), Logger(r.Context()))
+	errs.Write(w, r, PackageChallenge(r, err), RequestID(r.Context()), Logger(r.Context()))
 }
 
-// packageChallenge gives the 401 that the decision point answers to a caller without a credential the challenge of the route's
-// family (R-AUTH-002, Q-AUTH-173): Basic on the package and raw-file routes, which package clients answer with their configured
-// credentials, and Bearer everywhere else and for a browser. The decision point does not know the route; the default endpoint admits
-// a request without a credential (R-EP-010), so a refused read on a package route reaches here as often as the stage's own 401 did.
-func packageChallenge(r *http.Request, err error) error {
+// PackageChallenge gives the 401 that the decision point answers to a caller without a credential the challenge of the route's
+// family (R-AUTH-002, Q-AUTH-173, Q-AUTH-235): Basic on the package and raw-file routes, which package clients answer with their
+// configured credentials, and Bearer everywhere else and for a browser. The decision point does not know the route; the default
+// endpoint admits a request without a credential (R-EP-010), so a refused read on a package route reaches here as often as the
+// stage's own 401 did. Problem applies it to a path without an error shape; the format dispatcher applies it to every error a
+// format renders, the chain's refusals that reach the format's shape included.
+func PackageChallenge(r *http.Request, err error) error {
 	e, ok := errs.As(err)
 	if !ok || e.Kind != errs.Unauthenticated || e.Challenge != "Bearer" {
 		return err

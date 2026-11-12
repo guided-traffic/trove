@@ -152,7 +152,9 @@ cache view is the same address with `~cache` on the key only. The metrics label 
 Every error of steps 1 to 8 is rendered by the format's `WriteError`. The chain's own refusals (401, 421, 429, 503) on the prefix are rendered by
 it too: [errors.go](../../internal/api/dispatch/errors.go) registers it with `Router.HandleErrorShape`, and `httpserver.Problem` consults the table by path
 prefix ([router.go](../../internal/httpserver/router.go), [context.go](../../internal/httpserver/context.go)). A format's `WriteError` therefore must not call
-`httpserver.Problem`.
+`httpserver.Problem`. The dispatcher keeps each format behind `challenged`, which hands `WriteError` the error after `httpserver.PackageChallenge`: the
+decision point's 401 to a caller without a credential carries the generic `Bearer`, and a format that passes the error's challenge on sends
+`Basic realm="trove"` to a package client and `Bearer` to a browser all the same (Q-AUTH-235).
 
 The handler decides on the concrete package or path with `Host.Authorize(ctx, rq, Target{...})`: the host completes the coordinate (repository, class, format, the
 request kind of the route), decides on `rq.Index`, then applies the repository's include and exclude patterns to the package name or the path (404 for a read,
