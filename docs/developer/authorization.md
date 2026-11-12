@@ -499,7 +499,7 @@ context for it (Q-AUTHZ-71).
 alone: the repository list and read of a holder of `repositories:read-config` use it through `visibleKeys`, since that caller
 needs no read grant but is bound by the ceiling (R-EP-014).
 
-A request without a credential is the anonymous subject; until the decision reads the levels (work package 1a) it is refused with 401 everywhere. `Engine.Holds` (interface `authz.Prober`; `v1.Holds` for an `Access`) answers "does the caller hold this permission?" without
+A request without a credential is the anonymous subject: it reads what a `public` level admits and is refused with 401 elsewhere. `Engine.Holds` (interface `authz.Prober`; `v1.Holds` for an `Access`) answers "does the caller hold this permission?" without
 recording `authz.denied`: the rate limit's administrator exemption and the handlers that pick between two answers use it
 (`authz.ContentBypass`, `authz.SettingsRead`, ...); `Require` is for an operation that is refused.
 
@@ -562,7 +562,15 @@ The mechanism is specified in R-AUTHZ-030 and R-AUTHZ-033 to R-AUTHZ-036 and bui
 | The question form of a wiki read: `Decider.WikiReadableOn`, `ReadScope.MayReadWiki`; a wiki coordinate asks `read` only (`ReasonWiki`) | [decide.go](../../internal/authz/decide.go), [visible.go](../../internal/authz/visible.go) |
 | A policy entry, a role binding, a membership or an owner record that names `anonymous` or `authenticated` | `Ref.IsLevelPrincipal`, `principal.LevelPrincipalNotAllowed` (422 `principal_not_allowed`); the database refuses the row (`AI009`, [00075_principal_builtins.sql](../../internal/meta/postgres/migrations/00075_principal_builtins.sql)) |
 
-Until the decision reads the levels (work package 1a), `Allowed` refuses the anonymous subject first and the level adds nothing.
+`allowedAction` asks `leveledBy` right after `content:bypass` and `content:metadata-read` and before the grants: `public` reads for every
+subject without a scope or caps (`levelAdmits`), `internal` for `Subject.Internal()` within the token scope; the decision then has the reason
+`allow.visibility` and the source `visibility:<level>` (`strongerReason`: a role beats a grant beats a level). A wiki coordinate uses the wiki
+level, and a wiki read refused where the artifacts read is allowed has the reason `deny.wiki`. The anonymous subject goes through the same
+steps: it holds no grant, so only a level reads for it, and through a virtual repository only when the repository and every member,
+recursively, are `public` (`Index.publicThroughout`, rule 6). `readShape` follows: a level that reads every package gives `ReadAll`
+(`public` also under a narrowing scope), an internal one under a narrowing scope `ReadRows`;
+`TestR_AUTHZ_035_AReadShapeAllNeverMeetsARefusedRead` and `TestR_BAS_012_ShapeAgreesWithTheDecisionPoint` hold the shape to the decision;
+`TestR_AUTHZ_035_WorkedRows` are the eight rows of the spec.
 
 ## How to
 

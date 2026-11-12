@@ -6,9 +6,8 @@ steps. Built: the schema with the rules of the container in the database ([00073
 [00074_external_users.sql](../../internal/meta/postgres/migrations/00074_external_users.sql),
 [00075_principal_builtins.sql](../../internal/meta/postgres/migrations/00075_principal_builtins.sql)), the contracts
 ([visibility.go](../../internal/authz/visibility.go): `Level`, `Part`, `Subject.Internal`), the levels in the grant index, and the removal of
-the anonymous switch, the principal `authenticated` and `requireAuthentication`. Until the decision point reads the levels, a request
-without a credential is refused with 401 everywhere and no level opens anything; the table below describes the mechanism as specified. The
-change that builds each remaining part names its code here.
+the anonymous switch, the principal `authenticated` and `requireAuthentication`. The decision point reads the levels (`leveledBy` in [decide.go](../../internal/authz/decide.go), the shapes in
+[visible.go](../../internal/authz/visible.go)). The change that builds each remaining part names its code here.
 
 This page answers one question: besides the members of a project and the principals a grant names, who reads a repository's
 artifacts and its wiki, who decides that, and what keeps the answer from being wider than intended. The decision point, the grant

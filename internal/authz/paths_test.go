@@ -2,12 +2,9 @@ package authz
 
 import (
 	"context"
-	"errors"
 	"slices"
 	"strings"
 	"testing"
-
-	"github.com/guided-traffic/trove/internal/errs"
 )
 
 func TestPathsAllowed(t *testing.T) {
@@ -59,11 +56,15 @@ func TestPathsAllowed(t *testing.T) {
 		}
 	})
 
-	t.Run("R-AUTHZ-016 an anonymous subject is answered 401 while anonymous access is off", func(t *testing.T) {
-		_, err := e.PathsAllowed(ctx, Subject{Anonymous: true}, Coordinate{Repository: qr("generic-local")}, Read, paths, nil)
-		var ee *errs.Error
-		if !errors.As(err, &ee) || ee.Kind != errs.Unauthenticated {
-			t.Fatalf("err = %v", err)
+	t.Run("R-AUTHZ-016 an anonymous subject holds no path of a repository no public level opens", func(t *testing.T) {
+		got, err := e.PathsAllowed(ctx, Subject{Anonymous: true}, Coordinate{Repository: qr("generic-local")}, Read, paths, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, ok := range got {
+			if ok {
+				t.Errorf("path %d is held by the anonymous subject", i)
+			}
 		}
 	})
 }

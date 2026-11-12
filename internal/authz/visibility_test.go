@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/guided-traffic/trove/internal/auth/principal"
+	"github.com/guided-traffic/trove/internal/auth/scope"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // TestR_AUTHZ_033_TheLevelOrder: the levels are ordered from the most restrictive, spelled as the API and the database spell
@@ -124,5 +126,166 @@ func TestR_AUTHZ_033_TheIndexHoldsTheLevels(t *testing.T) {
 	f2 := newFixture().repo("npm-a", "local", "npm", "").levels("npm-a", "internal", "internal")
 	if newTestEngine(t, f2, nil).Index().PublicContent() {
 		t.Error("PublicContent is true while no artifacts are public")
+	}
+}
+
+// levelWorld is the fixture of the worked rows of R-AUTHZ-035: project it, npm-public (artifacts public, wiki internal), npm-internal
+// (both internal), npm-private (both private) and the virtual npm-all (internal) over the three. Erin is external with read on npm-private,
+// Frank internal without grants, and the service account holds nothing.
+func levelWorld(t *testing.T) (*Engine, map[string]Subject) {
+	t.Helper()
+	f := newFixture().
+		repo("npm-public", "local", "npm", "").repo("npm-internal", "local", "npm", "").repo("npm-private", "local", "npm", "").
+		repo("npm-all", "virtual", "npm", `{"virtual":{"members":["npm-public","npm-internal","npm-private"]}}`)
+	f.levels("npm-public", "public", "internal").levels("npm-internal", "internal", "internal").levels("npm-all", "internal", "internal")
+	f.policy(policyDef{name: "erin-reads", selectors: []string{"npm-private"}, entries: map[string][]string{"user-erin": {"read"}}})
+	erin := external(userSub("user-erin", "erin"))
+	frank := userSub("user-frank", "frank")
+	mobile := scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"mobile/*"}, Actions: []string{"read"}}}}
+	return newTestEngine(t, f, nil), map[string]Subject{
+		"anonymous": anonSub, "erin": erin, "frank": frank, "scoped frank": tokenScop(frank, mobile),
+		"partner": {Kind: principal.KindServiceAccount, ID: "sa-partner", Name: "web/partner"},
+	}
+}
+
+// TestR_AUTHZ_035_WorkedRows: the eight rows of the table of R-AUTHZ-035, in project web in the spec and project it here.
+func TestR_AUTHZ_035_WorkedRows(t *testing.T) {
+	e, who := levelWorld(t)
+	for _, c := range []struct {
+		name    string
+		sub     string
+		repo    string
+		want    Outcome
+		reason  string
+		sources []string
+	}{
+		{"1 anonymous reads npm-public", "anonymous", "npm-public", Allow, ReasonAllowVisibility, []string{"visibility:public"}},
+		{"2 anonymous through npm-all is refused at the gate", "anonymous", "npm-all", DenyUnauthenticated, ReasonUnauthenticated, nil},
+		{"3 Frank through npm-all passes the gate by internal", "frank", "npm-all", Allow, ReasonAllowVisibility, []string{"visibility:internal"}},
+		{"4 Erin reads npm-private by her grant", "erin", "npm-private", Allow, ReasonAllowGrant, []string{"erin-reads"}},
+		{"5 Erin, external, does not read npm-internal", "erin", "npm-internal", DenyHidden, ReasonNoGrant, nil},
+		{"6 the service account reads the public npm-public", "partner", "npm-public", Allow, ReasonAllowVisibility, nil},
+		{"7 a scope that refuses the repository refuses internal", "scoped frank", "npm-internal", DenyHidden, ReasonNoGrant, nil},
+		{"8 a scope is not consulted for public", "scoped frank", "npm-public", Allow, ReasonAllowVisibility, nil},
+	} {
+		t.Run("R-AUTHZ-035 row "+c.name, func(t *testing.T) {
+			d := e.Decide(t.Context(), who[c.sub], read(c.repo, "@web/button", ""))
+			if d.Outcome != c.want || d.Reason != c.reason || (c.sources != nil && !equalStrings(d.Sources, c.sources)) {
+				t.Fatalf("decision %+v, want outcome %d reason %q sources %v", d, c.want, c.reason, c.sources)
+			}
+		})
+	}
+	t.Run("R-AUTHZ-035 row 3 through npm-all Frank reads public and internal members and the private one is skipped", func(t *testing.T) {
+		idx, err := e.Begin(t.Context(), who["frank"])
+		if err != nil {
+			t.Fatal(err)
+		}
+		for member, want := range map[string]bool{"npm-public": true, "npm-internal": true, "npm-private": false} {
+			if got, _ := e.MemberUsableOn(t.Context(), idx, who["frank"], qr(member), read("npm-all", "@web/button", "")); got != want {
+				t.Errorf("%s usable: %v, want %v", member, got, want)
+			}
+		}
+	})
+	t.Run("R-AUTHZ-035 a level never gives a write, a role or a capability", func(t *testing.T) {
+		for _, a := range []Action{Annotate, Deploy, Overwrite, Delete, Manage} {
+			if d := e.Decide(t.Context(), who["frank"], write("npm-public", "x", "", a)); d.Allowed() {
+				t.Errorf("%s allowed by a level: %+v", a, d)
+			}
+			if d := e.Decide(t.Context(), who["anonymous"], write("npm-public", "x", "", a)); d.Outcome != DenyUnauthenticated {
+				t.Errorf("anonymous %s: %+v", a, d)
+			}
+		}
+		idx, _ := e.Begin(t.Context(), who["frank"])
+		if e.HoldsOn(idx, who["frank"], string(SettingsRead)) {
+			t.Error("a level gave a capability")
+		}
+	})
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// TestR_AUTHZ_034_TheWikiHasALevelOfItsOwn: npm-public has public artifacts and an internal wiki, so the anonymous subject reads the
+// artifacts and not the wiki, and an internal user reads both (R-AUTHZ-034 acceptance, R-AUTHZ-035 rule 9).
+func TestR_AUTHZ_034_TheWikiHasALevelOfItsOwn(t *testing.T) {
+	e, who := levelWorld(t)
+	idx, err := e.Begin(t.Context(), who["frank"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	wiki := func(c Coordinate) Coordinate { c.Part = PartWiki; return c }
+	c := read("npm-public", "@web/button", "")
+	if d := e.DecideOn(t.Context(), idx, who["anonymous"], wiki(c)); d.Outcome != DenyUnauthenticated || d.Reason != ReasonWiki {
+		t.Errorf("anonymous wiki: %+v, want 401 deny.wiki", d)
+	}
+	if d := e.DecideOn(t.Context(), idx, who["anonymous"], c); d.Outcome != Allow {
+		t.Errorf("anonymous artifacts: %+v", d)
+	}
+	if d := e.DecideOn(t.Context(), idx, who["frank"], wiki(c)); d.Outcome != Allow || d.Reason != ReasonAllowVisibility {
+		t.Errorf("Frank wiki: %+v", d)
+	}
+	for sub, want := range map[string]bool{"anonymous": false, "frank": true, "erin": false, "partner": false, "scoped frank": false} {
+		if got := e.WikiReadableOn(idx, who[sub], c); got != want {
+			t.Errorf("WikiReadableOn(%s) = %v, want %v", sub, got, want)
+		}
+	}
+	rs, err := e.ReadScopeOn(t.Context(), idx, who["anonymous"], qname.Repo{}, []qname.Repo{qr("npm-public")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rs.MayRead(qr("npm-public"), "@web/button", "") || rs.MayReadWiki(qr("npm-public"), "@web/button", "") {
+		t.Error("the read scope of the anonymous subject reads the artifacts and not the wiki")
+	}
+}
+
+// TestR_AUTHZ_035_AReadShapeAllNeverMeetsARefusedRead: with every level on every repository, for every kind of subject, a repository the
+// shape calls ReadAll is read by the decision for every package, and a ReadNone one by none (R-AUTHZ-035 rule 7).
+func TestR_AUTHZ_035_AReadShapeAllNeverMeetsARefusedRead(t *testing.T) {
+	levels := []string{"private", "internal", "public"}
+	subjects := map[string]Subject{
+		"anonymous": anonSub, "internal": aliceSub, "external": external(aliceSub), "bastion": viaBastion(aliceSub), "bot": botSub,
+		"scoped":     tokenScop(aliceSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/other"}, Actions: []string{"read"}}}}),
+		"inheriting": tokenScop(aliceSub, scope.Scope{Inherit: true}), "ci": ciSub,
+	}
+	for _, a := range levels {
+		for _, w := range levels {
+			if w > a {
+				continue
+			}
+			f := newFixture().repo("r", "local", "npm", "").levels("r", a, w)
+			e := newTestEngine(t, f, nil)
+			for name, sub := range subjects {
+				idx, err := e.Begin(t.Context(), sub, qr("r"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				rs, err := e.ReadScopeOn(t.Context(), idx, sub, qname.Repo{}, []qname.Repo{qr("r")})
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, pkg := range []string{"x", "@a/y"} {
+					d := e.DecideOn(t.Context(), idx, sub, Coordinate{Repository: qr("r"), Package: pkg, Kind: KindMetadata, Actions: []Action{Read}})
+					switch rs.Shape(qr("r")) {
+					case ReadAll:
+						if !d.Allowed() {
+							t.Errorf("%s on %s/%s: ReadAll and the read of %s is %+v", name, a, w, pkg, d)
+						}
+					case ReadNone:
+						if d.Allowed() {
+							t.Errorf("%s on %s/%s: ReadNone and the read of %s is allowed", name, a, w, pkg)
+						}
+					}
+				}
+			}
+		}
 	}
 }

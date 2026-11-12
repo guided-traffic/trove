@@ -38,9 +38,6 @@ func (e *Engine) PathsAllowed(ctx context.Context, sub Subject, base Coordinate,
 // request decides on.
 func (e *Engine) PathsAllowedOn(_ context.Context, idx *Index, sub Subject, base Coordinate, a Action, paths []string, classify Classifier) ([]bool, error) {
 	out := make([]bool, len(paths))
-	if sub.Anonymous {
-		return out, Unauthenticated()
-	}
 	base.Actions, base.Package, base.Version = []Action{a}, "", ""
 	if base.Kind == "" {
 		base.Kind = KindMetadata

@@ -13,6 +13,7 @@ import (
 //
 //	npm-a, npm-b      local
 //	npm-strict        local
+//	npm-pub, npm-int  local, public and internal levels; npm-vpub and npm-vmix virtual over them
 //	npmjs             remote, fills on read
 //	npm-frozen        remote, fills on deploy
 //	npm-v             virtual over npm-a and npmjs
@@ -22,7 +23,7 @@ import (
 //
 // Subjects: bot reads everything and deploys into the frozen mirror; devs (alice) read npm-a, npmjs and
 // npm-v, and npm-b for @a/* only; bob holds a path-only grant on npm-a; carol holds nothing; anonymous reads
-// nothing until a level admits it; the auditor holds content:metadata-read and no grant; ops holds the admin role.
+// only what a public level admits; the auditor holds content:metadata-read and no grant; ops holds the admin role.
 func reachFixture() *fixture {
 	f := newFixture().
 		repo("npm-a", "local", "npm", "").
@@ -42,6 +43,13 @@ func reachFixture() *fixture {
 	f.policy(policyDef{name: "devs-b", selectors: []string{"npm-b"}, pkgInc: []string{"@a/*"}, entries: map[string][]string{idDevs: {"read"}}})
 	f.policy(policyDef{name: "bob-path", selectors: []string{"npm-a"}, pathInc: []string{"x/**"}, entries: map[string][]string{idBob: {"read"}}})
 	f.bind(RoleAdmin, idOps).bind(RoleAuditor, idAuditorDirect)
+	// The levels (R-AUTHZ-033): npm-pub and the virtual repository over it are public, npm-int internal, and npm-vmix is public
+	// over both, so an anonymous subject reads through npm-vpub and not through npm-vmix (R-AUTHZ-009 rule 6).
+	f.repo("npm-pub", "local", "npm", "").repo("npm-int", "local", "npm", "")
+	f.repo("npm-vpub", "virtual", "npm", `{"virtual":{"members":["npm-pub"]}}`)
+	f.repo("npm-vmix", "virtual", "npm", `{"virtual":{"members":["npm-pub","npm-int"]}}`)
+	f.levels("npm-pub", "public", "internal").levels("npm-vpub", "public", "public").levels("npm-vmix", "public", "public")
+	f.levels("npm-int", "internal", "internal")
 	f.exposure(ruleDef{endpoint: "customers", name: "acme", repo: "npm-a", dims: ruleDims{
 		Packages: PatternLists{Include: []string{"@acme/*"}},
 	}})
@@ -91,8 +99,12 @@ func TestR_BAS_012_ShapeAgreesWithTheDecisionPoint(t *testing.T) {
 		"scoped bot through npm-v": tokenScop(botSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-v"}, Actions: []string{"read"}}}}),
 		"inheriting bot":           tokenScop(botSub, scope.Scope{Inherit: true}),
 		"session bot":              session(botSub),
+		"external carol":           external(carolSub),
+		"external alice":           external(aliceSub),
+		"carol through a bastion":  viaBastion(carolSub),
+		"scoped carol":             tokenScop(carolSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-b"}, Actions: []string{"read"}}}}),
 	}
-	keys := []string{"npm-a", "npm-b", "npm-strict", "npmjs", "npm-frozen", "npm-v", "npm-v2", "npm-vb", "npm-empty", "ghost"}
+	keys := []string{"npm-a", "npm-b", "npm-strict", "npmjs", "npm-frozen", "npm-v", "npm-v2", "npm-vb", "npm-empty", "npm-pub", "npm-int", "npm-vpub", "npm-vmix", "ghost"}
 	pkgs := []string{"@a/x", "@acme/sdk", "x", "plain"}
 	versions := []string{"", "1.0.0", "3.0.0-beta"}
 	paths := []string{"", "x/y", "plain/-/plain-1.0.0.tgz"}
@@ -189,7 +201,7 @@ func TestR_BAS_012_ShapeAgreesWithTheDecisionPoint(t *testing.T) {
 // TestR_BAS_012_Shapes pins the cases of the acceptance criteria and of the rules by name.
 func TestR_BAS_012_Shapes(t *testing.T) {
 	on := func(o *Options) { o.Ceiling = reachCeiling() }
-	keys := []string{"npm-a", "npm-strict", "npmjs", "npm-frozen", "npm-v", "npm-v2", "npm-empty", "ghost"}
+	keys := []string{"npm-a", "npm-strict", "npmjs", "npm-frozen", "npm-v", "npm-v2", "npm-empty", "npm-pub", "npm-int", "npm-vpub", "npm-vmix", "ghost"}
 	reach := func(t *testing.T, mod func(*Options), sub Subject) map[qname.Repo]ReachResult {
 		t.Helper()
 		e := newTestEngine(t, reachFixture(), mod)
@@ -240,11 +252,19 @@ func TestR_BAS_012_Shapes(t *testing.T) {
 		got = reach(t, on, onEP(botSub, "default"))
 		want(t, got, "npm-a", ReachFull, Allow)
 	})
-	t.Run("an anonymous subject is none until a level admits it, with 401", func(t *testing.T) {
+	t.Run("an anonymous subject reads what a public level opens, and is none with 401 elsewhere", func(t *testing.T) {
 		got := reach(t, on, anonSub)
-		for _, k := range keys {
+		want(t, got, "npm-pub", ReachFull, Allow)
+		want(t, got, "npm-vpub", ReachFull, Allow)
+		for _, k := range []string{"npm-a", "npm-int", "npm-vmix", "npm-strict", "npm-frozen", "npm-v2", "npm-empty"} {
 			want(t, got, k, ReachNone, DenyUnauthenticated)
 		}
+	})
+	t.Run("an internal user reads an internal repository, an external one and one through a Bastion do not", func(t *testing.T) {
+		want(t, reach(t, on, carolSub), "npm-int", ReachFull, Allow)
+		want(t, reach(t, on, external(carolSub)), "npm-int", ReachNone, DenyHidden)
+		want(t, reach(t, on, viaBastion(carolSub)), "npm-int", ReachNone, DenyHidden)
+		want(t, reach(t, on, external(carolSub)), "npm-pub", ReachFull, Allow)
 	})
 	t.Run("an unknown key is none with the refusal of a missing repository", func(t *testing.T) {
 		want(t, reach(t, on, botSub), "ghost", ReachNone, DenyHidden)
@@ -266,3 +286,6 @@ func TestR_BAS_012_Shapes(t *testing.T) {
 		want(t, reach(t, on, sub), "npm-a", ReachPartial, Allow)
 	})
 }
+
+func external(s Subject) Subject   { s.External = true; return s }
+func viaBastion(s Subject) Subject { s.ViaBastion = true; return s }

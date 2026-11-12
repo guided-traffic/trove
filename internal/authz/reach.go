@@ -107,7 +107,7 @@ func (e *Engine) reachNone(c *reachCtx, key qname.Repo) ReachResult {
 func (e *Engine) reachOf(c *reachCtx, key qname.Repo) ReachResult {
 	idx, sub := c.st.idx, c.st.sub
 	r := idx.repo(key)
-	if r == nil || sub.Anonymous {
+	if r == nil {
 		return e.reachNone(c, key)
 	}
 	if r.Class == repository.Virtual {

@@ -136,9 +136,6 @@ func (s *readScope) VersionsByPath(key qname.Repo) bool {
 }
 
 func (s *readScope) MayRead(repo qname.Repo, pkg, version string) bool {
-	if s.sub.Anonymous {
-		return false
-	}
 	if !s.idx.addressedReaches(s.addressed, repo) {
 		return false
 	}
@@ -159,7 +156,7 @@ func (s *readScope) MayRead(repo qname.Repo, pkg, version string) bool {
 
 // MayReadWiki implements [ReadScope]: MayRead on the coordinate with the part wiki.
 func (s *readScope) MayReadWiki(repo qname.Repo, pkg, version string) bool {
-	if s.sub.Anonymous || !s.idx.addressedReaches(s.addressed, repo) {
+	if !s.idx.addressedReaches(s.addressed, repo) {
 		return false
 	}
 	c := Coordinate{Repository: repo, Package: pkg, Version: version, Kind: KindMetadata, Actions: s.read, Addressed: s.addressed, Part: PartWiki}
@@ -172,9 +169,6 @@ func (e *Engine) ReadScopeOn(_ context.Context, idx *Index, sub Subject, address
 	rs := &readScope{
 		e: e, idx: idx, sub: sub, addressed: addressed, shapes: make(map[qname.Repo]ReadShape, len(keys)), read: []Action{Read},
 		versionFree: allEndpoint, byPath: make(map[qname.Repo]bool, len(keys)), allEndpoint: allEndpoint,
-	}
-	if sub.Anonymous {
-		return rs, nil
 	}
 	st := e.newEvalState(idx, sub)
 	rs.st = st
@@ -230,6 +224,18 @@ func (e *Engine) readShape(st *evalState, sub Subject, r *repoInfo, allEndpoint 
 		return ReadNone
 	}
 	scoped := sub.Scope != nil && !sub.Scope.Inherit
+	// A level reads every package of the repository (R-AUTHZ-035 rule 4, rule 7): public for every subject and without a scope,
+	// internal for an internal subject within a scope that does not narrow.
+	levelAll, levelAny := false, false
+	switch {
+	case r.artifacts == LevelPublic:
+		levelAll, levelAny = true, true
+	case r.artifacts == LevelInternal && sub.Internal():
+		levelAll, levelAny = !scoped, true
+	}
+	if levelAll && allEndpoint {
+		return ReadAll
+	}
 	if st.bypass || st.metadata {
 		// content:metadata-read (Q-AUTHZ-172) lists every package like content:bypass;
 		// a row it may not read (a token scope, an exposure rule) is decided by MayRead
@@ -258,6 +264,7 @@ func (e *Engine) readShape(st *evalState, sub Subject, r *repoInfo, allEndpoint 
 		// A project role reads every package of every repository of its project (R-AUTHZ-026).
 		any, unrestricted = true, true
 	}
+	any = any || levelAny
 	switch {
 	case !any:
 		return ReadNone

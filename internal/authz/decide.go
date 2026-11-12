@@ -343,6 +343,9 @@ func (e *Engine) allowedAction(st *evalState, a Action, r *repoInfo, c Coordinat
 		return true, ReasonAllowRole, []string{"role:admin"}
 	}
 	repoLevel := c.Package == "" && c.Path == ""
+	if lv, ok := leveledBy(st, a, r, c); ok && e.levelAdmits(st, lv, r, repoLevel, c) {
+		return true, ReasonAllowVisibility, []string{"visibility:" + lv.String()}
+	}
 	if st.metadata && a == Read && metadataKind(c.Kind) &&
 		(e.scopeAdmits(st.sub.Scope, a, r, repoLevel, c.Package, c.Path) || e.scopeAdmitsThrough(st, a, r, repoLevel, c)) {
 		// content:metadata-read (Q-AUTHZ-172): read on the metadata of every
@@ -364,6 +367,51 @@ func (e *Engine) allowedAction(st *evalState, a Action, r *repoInfo, c Coordinat
 		return false, ReasonScope, nil
 	}
 	return true, ReasonAllowGrant, by
+}
+
+// leveledBy reports the level that reads the part of the coordinate for the subject (R-AUTHZ-035): public for every subject,
+// internal for an internal one; ok is false when no level reads, and for an action but read, which a level never gives.
+func leveledBy(st *evalState, a Action, r *repoInfo, c Coordinate) (Level, bool) {
+	if a != Read {
+		return LevelPrivate, false
+	}
+	lv := r.artifacts
+	if c.Part == PartWiki {
+		lv = r.wiki
+	}
+	switch {
+	case lv == LevelPublic:
+		return LevelPublic, true
+	case lv == LevelInternal && st.sub.Internal():
+		return LevelInternal, true
+	}
+	return LevelPrivate, false
+}
+
+// levelAdmits applies the ceilings of a read by a level (R-AUTHZ-035 rule 3): a read by public needs no credential, so neither the
+// token scope nor the caps of a CI token narrow it; a read by internal is narrowed by the token scope like a grant.
+func (e *Engine) levelAdmits(st *evalState, lv Level, r *repoInfo, repoLevel bool, c Coordinate) bool {
+	if lv == LevelPublic {
+		return true
+	}
+	return e.scopeAdmits(st.sub.Scope, Read, r, repoLevel, c.Package, c.Path) || e.scopeAdmitsThrough(st, Read, r, repoLevel, c)
+}
+
+// publicThroughout reports whether the repository and every member below it, recursively, have public artifacts (R-AUTHZ-009 rule 6).
+func (idx *Index) publicThroughout(r *repoInfo, depth int) bool {
+	if depth > 16 || r.artifacts != LevelPublic {
+		return false
+	}
+	for _, key := range r.members {
+		m := idx.repo(key)
+		if m == nil {
+			continue
+		}
+		if m.artifacts != LevelPublic || (m.Class == repository.Virtual && !idx.publicThroughout(m, depth+1)) {
+			return false
+		}
+	}
+	return true
 }
 
 // scopeAdmitsThrough is the one extension of the token scope that names a virtual
@@ -429,10 +477,6 @@ func (e *Engine) evaluateWith(idx *Index, sub Subject, st *evalState, c Coordina
 	deny := func(o Outcome, reason string, missing Action) Decision {
 		return Decision{Outcome: o, Reason: reason, Missing: missing, Target: targetOf(c), Epoch: epoch}
 	}
-	if sub.Anonymous {
-		// No visibility level admits a request without a credential yet (WP1a, R-AUTHZ-003).
-		return deny(DenyUnauthenticated, ReasonUnauthenticated, "")
-	}
 	actions := c.Actions
 	if len(actions) == 0 {
 		actions = []Action{Read}
@@ -451,12 +495,21 @@ func (e *Engine) evaluateWith(idx *Index, sub Subject, st *evalState, c Coordina
 		// lookup keeps the answer identical to a repository the caller may not see.
 		return e.refusal(sub, c, nil, ReasonNoGrant, first, epoch)
 	}
+	if sub.Anonymous && r.Class == repository.Virtual && !idx.publicThroughout(r, 0) {
+		// R-AUTHZ-009 rule 6: the anonymous subject reads through a virtual repository only when it and every member, recursively,
+		// have public artifacts.
+		if r.artifacts != LevelPublic {
+			return deny(DenyUnauthenticated, ReasonUnauthenticated, Read)
+		}
+		return deny(DenyUnauthenticated, ReasonAnonymousPartialVirtual, Read)
+	}
 	if st == nil {
 		st = e.newEvalState(idx, sub)
 	}
 
 	target := r
 	var sources []string
+	gateWhy := ""
 	if r.Class == repository.Virtual {
 		// The gate carries the request kind, so content:metadata-read opens it for
 		// metadata and search and never for an artifact (Q-AUTHZ-172).
@@ -468,6 +521,7 @@ func (e *Engine) evaluateWith(idx *Index, sub Subject, st *evalState, c Coordina
 			return e.refusal(sub, c, r, reason, Read, epoch)
 		}
 		sources = append(sources, by...)
+		gateWhy = reason
 		if c.Kind == KindWrite && writesContent(actions) {
 			// Writes are decided on the deploy target; the gate applies as well
 			// (R-AUTHZ-009 rule 5). manage on the virtual repository itself
@@ -479,7 +533,7 @@ func (e *Engine) evaluateWith(idx *Index, sub Subject, st *evalState, c Coordina
 		}
 	}
 
-	reason := ReasonAllowGrant
+	reason := ""
 	for _, a := range actions {
 		if target == r && r.Class == repository.Virtual && a == Read {
 			// The gate above was this very check: content is decided on the
@@ -489,14 +543,44 @@ func (e *Engine) evaluateWith(idx *Index, sub Subject, st *evalState, c Coordina
 		}
 		ok, why, by := e.allowedAction(st, a, target, c)
 		if !ok {
+			if c.Part == PartWiki && why == ReasonNoGrant || c.Part == PartWiki && why == ReasonScope {
+				// The artifacts read may be allowed where the wiki read is not (R-AUTHZ-034): that refusal has its own reason.
+				ac := c
+				ac.Part = PartArtifacts
+				if e.evaluateWith(idx, sub, st, ac).Outcome == Allow {
+					why = ReasonWiki
+				}
+			}
 			return e.refusal(sub, c, target, why, a, epoch)
 		}
-		if why == ReasonAllowRole {
-			reason = ReasonAllowRole
-		}
+		reason = strongerReason(reason, why)
 		sources = append(sources, by...)
 	}
+	reason = strongerReason(reason, gateWhy)
+	if reason == "" {
+		reason = ReasonAllowGrant
+	}
 	return Decision{Outcome: Allow, Reason: reason, Epoch: epoch, Target: targetOf(c), Sources: dedupStrings(sources)}
+}
+
+// strongerReason combines the reasons of the actions and of the gate of one allowed decision: a role first, then a grant, and a
+// level only when nothing else allowed it (R-AUTHZ-029, R-AUTHZ-035 rule 9). The empty reason is none yet.
+func strongerReason(cur, why string) string {
+	rank := func(r string) int {
+		switch r {
+		case ReasonAllowRole:
+			return 3
+		case ReasonAllowGrant:
+			return 2
+		case ReasonAllowVisibility:
+			return 1
+		}
+		return 0
+	}
+	if rank(why) > rank(cur) {
+		return why
+	}
+	return cur
 }
 
 // ceilingRefuses applies the endpoint's exposure (R-EP-013) to every action of
@@ -554,6 +638,9 @@ func (e *Engine) refusal(sub Subject, c Coordinate, r *repoInfo, reason string, 
 		d.Outcome = DenyHidden
 	case sub.Anonymous:
 		d.Outcome = DenyUnauthenticated
+		if reason == ReasonNoGrant || reason == ReasonScope || reason == ReasonVirtualGate {
+			d.Reason = ReasonUnauthenticated // no credential and no level that reads: the challenge of R-AUTH-002
+		}
 	case readType(c) && missing == Read:
 		d.Outcome = DenyHidden
 		if r != nil && !e.hides(r) {
@@ -609,9 +696,6 @@ func (e *Engine) Readable(ctx context.Context, sub Subject, keys []qname.Repo) (
 // (the subject's endpoint) a repository without an enabled rule is left out as
 // well (R-EP-014). An anonymous subject reads nothing.
 func (e *Engine) ReadableOn(_ context.Context, idx *Index, sub Subject, keys []qname.Repo) ([]qname.Repo, error) {
-	if sub.Anonymous {
-		return nil, nil
-	}
 	out := make([]qname.Repo, 0, len(keys))
 	// One state for every key, as a read scope builds it (readScope.MayRead): it is immutable, so each
 	// answer is the one evaluate gives, and a key more costs one decision, not one derivation of the subject.
