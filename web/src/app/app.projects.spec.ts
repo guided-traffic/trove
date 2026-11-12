@@ -111,7 +111,8 @@ describe('The project is the context of the content (Q-UI-129)', () => {
 
   it('Q-UI-129 a reader sees the project without the screens that need the Owner role or a capability', async () => {
     const { root } = await render('/projects/web/packages', READER);
-    expect(navLabels(root)).toEqual(['Repositories', 'Packages', 'Browse', 'Vulnerabilities', 'Access', 'Members', 'Settings']);
+    // A plain user gets the content alone; members and settings are the About section of the list (Q-UI-317).
+    expect(navLabels(root)).toEqual(['Repositories', 'Packages', 'Browse', 'Vulnerabilities']);
   });
 
   it('Q-UI-129 the switcher is a disclosure: it lists the recent projects and the matches, narrows by typing and closes with Escape', async () => {

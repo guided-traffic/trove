@@ -106,7 +106,7 @@ describe('Client setup', () => {
     expect([...first.root.querySelectorAll<HTMLInputElement>('input[name="client"]')].map((i) => i.value)).toEqual(['curl']);
 
     const r = await open({ repository: 'web/generic-local' }, { setup: withGeneric });
-    expect(radio(r, 'format', 'generic').checked).toBe(true);
+    expect(r.root.querySelector('.chosen')?.textContent).toContain('web/generic-local');
     expect(r.setup.calls.at(-1)).toMatchObject({ repository: 'web/generic-local', query: { client: 'curl', credentials: 'env' } });
     const [configure] = snippets(r);
     expect(configure).toContain('trove_curl() {');
@@ -123,11 +123,16 @@ describe('Client setup', () => {
     expect(snippets(r)[0]).toContain('header = "Authorization: Bearer {{token}}"');
   });
 
-  it('R-UI-016 a link from a repository opens the page prepared: the repository and client come from the query', async () => {
+  it('R-UI-016 a link from a repository opens the page prepared: the repository and client come from the query, and are not asked again', async () => {
     const r = await open({ repository: 'web/npm-local', client: 'pnpm' });
-    expect(radio(r, 'repository', 'web/npm-local').checked).toBe(true);
+    // The format and the repository are chosen by the link (Q-UI-316): one line, with Change.
+    expect(text(r.root.querySelector('.chosen')!)).toContain('web/npm-local');
+    expect(r.root.querySelector('input[name="repository"]')).toBeNull();
     expect(radio(r, 'client', 'pnpm').checked).toBe(true);
     expect(r.setup.calls.at(-1)).toMatchObject({ repository: 'web/npm-local', query: { client: 'pnpm' } });
+    [...r.root.querySelectorAll<HTMLButtonElement>('.chosen button')].find((b) => text(b) === 'Change')!.click();
+    await settle(r.fixture);
+    expect(radio(r, 'repository', 'web/npm-local').checked).toBe(true);
   });
 
   it('R-UI-016 nothing is requested before a repository is chosen', async () => {

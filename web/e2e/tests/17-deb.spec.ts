@@ -154,7 +154,7 @@ test('R-DEB-029 the client setup page offers APT and renders the source with the
 
   await page.goto(`/ui/en/setup?repository=${qualified(localKey)}`);
   await expect(page.getByRole('heading', { name: 'Client setup', level: 1 })).toBeVisible();
-  const clientStep = page.getByRole('group', { name: /^2\s*Client$/ });
+  const clientStep = page.getByRole('group', { name: /^1\s*Client$/ });
   await expect(clientStep.getByRole('radio', { name: 'APT (apt, apt-get)', exact: true })).toBeChecked();
   const configure = page.getByRole('tabpanel', { name: 'Configure' });
   const source = configure.locator('.snippet pre').first();

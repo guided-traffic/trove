@@ -20,8 +20,16 @@
   <trove-error-notice [error]="f" (retry)="answer.reload()" />
 }
 
+@if (focused() && !embedded()) {
+  <!-- Opened for one repository (UI-A-13, Q-UI-316): its format and the repository are chosen; Change shows the choices. -->
+  <p class="chosen">
+    <ng-container i18n="@@setup.chosen">For the repository</ng-container>&ngsp;<strong translate="no">{{ activeRepository() }}</strong>
+    <button type="button" class="btn btn-tertiary" (click)="unfix()" i18n="@@setup.change">Change</button>
+  </p>
+}
+
 <ol class="steps">
-  @if (!embedded()) {
+  @if (!focused()) {
   <li>
     <fieldset>
       <legend><span class="step-no">1</span> <span i18n="@@setup.step.format">Package type</span></legend>
@@ -66,7 +74,7 @@
     </fieldset>
   </li>
 
-  @if (!embedded()) {
+  @if (!focused()) {
   <li>
     <fieldset>
       <legend><span class="step-no">3</span> <span i18n="@@setup.step.repository">Repository</span></legend>

@@ -16688,6 +16688,46 @@
         <source>Project</source>
       </segment>
     </unit>
+    <unit id="setup.chosen">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>For the repository</source>
+      </segment>
+    </unit>
+    <unit id="setup.change">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Change</source>
+      </segment>
+    </unit>
+    <unit id="repo.about.heading">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>About this project</source>
+      </segment>
+    </unit>
+    <unit id="repo.about.text">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>What the project is for and whom to ask.</source>
+      </segment>
+    </unit>
+    <unit id="repo.about.owners">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Owners, whom to ask for access or a new repository:</source>
+      </segment>
+    </unit>
     <unit id="repo.col.repository">
       <notes>
         <note category="location">src/app/features/repositories/repository-list.ts:155</note>

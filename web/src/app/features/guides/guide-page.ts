@@ -46,9 +46,12 @@ export class GuidePage {
   protected readonly formatOptions = computed<readonly FormatDescriptor[]>(() =>
     (valueOf(this.formats) ?? []).filter((f) => f.clients.length > 0),
   );
+  /** The format asked for, else the format of the repository the link names (UI-A-08), else the first. */
   protected readonly activeFormat = computed<FormatDescriptor | null>(() => {
     const options = this.formatOptions();
-    return options.find((f) => f.name === this.format()) ?? options[0] ?? null;
+    const given =
+      this.format() ?? (valueOf(this.allRepositories) ?? []).find((r) => refOf(r) === this.repository())?.format;
+    return options.find((f) => f.name === given) ?? options[0] ?? null;
   });
   protected readonly clients = computed(() => this.activeFormat()?.clients ?? []);
   protected readonly activeClient = computed<string | null>(() => {

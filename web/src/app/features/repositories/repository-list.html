@@ -24,6 +24,21 @@
   </section>
 }
 
+@if (about(); as a) {
+  <!-- A plain user's way to the project's facts and to whom to ask (Q-UI-317): closed, above the list. -->
+  <trove-settings-section class="about" [heading]="aboutHeading" [description]="aboutText">
+    @if (a.description) {
+      <p>{{ a.description }}</p>
+    }
+    @if (a.owners.length > 0) {
+      <p>
+        <ng-container i18n="@@repo.about.owners">Owners, whom to ask for access or a new repository:</ng-container>&ngsp;
+        <span translate="no">{{ a.owners.join(', ') }}</span>
+      </p>
+    }
+  </trove-settings-section>
+}
+
 @if (deleteFailure(); as f) {
   <trove-error-notice [error]="f" />
 }
@@ -104,12 +119,15 @@
             </button>
             <ng-template #rowMenu>
               <div class="menu" cdkMenu>
-                <a class="menu-item" cdkMenuItem
-                  [routerLink]="['/projects', row.project, 'repositories', row.key, 'settings']"
-                  (click)="visit(refOf(row))"
-                  i18n="@@repo.action.settings"
-                  >Settings</a
-                >
+                <!-- Settings for who may read or change them; a reader is offered no read-only settings (UI-A-06, Q-UI-313). -->
+                @if (canConfigureRow(row)) {
+                  <a class="menu-item" cdkMenuItem
+                    [routerLink]="['/projects', row.project, 'repositories', row.key, 'settings']"
+                    (click)="visit(refOf(row))"
+                    i18n="@@repo.action.settings"
+                    >Settings</a
+                  >
+                }
                 <a class="menu-item" cdkMenuItem [routerLink]="['/projects', row.project, 'browse', row.key]" i18n="@@repo.action.browse"
                   >Browse</a
                 >

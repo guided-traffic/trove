@@ -58,6 +58,15 @@ describe('Repository list', () => {
     );
   });
 
+  it('R-UI-020 R-UI-067 a reader is offered no Settings in a row: there is nothing to read or change for them there', async () => {
+    const { root, fixture } = await renderScreen(RepositoryList, { capabilities: [] });
+    root.querySelector<HTMLButtonElement>('button[aria-label="Actions for generic-local"]')!.click();
+    await settle(fixture);
+    const items = [...root.ownerDocument.body.querySelectorAll('.menu [role="menuitem"]')].map((i) => i.textContent?.trim());
+    expect(items).toContain('Browse');
+    expect(items).not.toContain('Settings');
+  });
+
   it('R-UI-020 the filters reach the API and restart the walk (class and format)', async () => {
     const { root, get } = await renderScreen(RepositoryList, {
       inputs: { class: 'local', format: 'generic', state: 'inactive' },

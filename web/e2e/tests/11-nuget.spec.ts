@@ -46,12 +46,9 @@ test('R-UI-018 R-UI-019 the NuGet clients, their snippets with the index.json UR
   await test.step('the client setup page offers NuGet with its three clients', async () => {
     await page.goto(`/ui/en/setup?repository=${qualified(virtualKey)}`);
     await expect(page.getByRole('heading', { name: 'Client setup', level: 1 })).toBeVisible();
-    await expect(
-      page
-        .getByRole('group', { name: /Package type/ })
-        .getByRole('radio', { name: 'NuGet', exact: true }),
-    ).toBeChecked();
-    const clientStep = page.getByRole('group', { name: /^2\s*Client$/ });
+    // Opened for one repository, the setup does not ask its format and repository again (Q-UI-316): the client is step 1.
+    await expect(page.locator('.chosen')).toContainText(qualified(virtualKey));
+    const clientStep = page.getByRole('group', { name: /^1\s*Client$/ });
     for (const label of ['.NET CLI (dotnet)', 'NuGet CLI (nuget.exe)', 'Visual Studio']) {
       await expect(clientStep.getByRole('radio', { name: label, exact: true })).toBeVisible();
     }

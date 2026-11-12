@@ -16,7 +16,9 @@ import { JobReference, RepositoriesApi, RepositorySummary, refOf } from '../../a
 import { ApiError } from '../../api/problem';
 import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
+import { ProjectContext } from '../../core/project-context';
 import { Confirm } from '../../shared/confirm-dialog';
+import { SettingsSection } from '../../shared/ui/settings-section';
 import { AddressField } from '../../shared/address-field';
 import { ErrorNotice } from '../../shared/error-notice';
 import { JobProgress } from '../../shared/job-progress';
@@ -50,6 +52,7 @@ import { classLabel } from './repository-wizard';
     FilterPanel,
     FilterToggle,
     JobProgress,
+    SettingsSection,
   ],
   templateUrl: './repository-list.html',
   styleUrl: './repository-list.scss',
@@ -97,6 +100,25 @@ export class RepositoryList {
   protected canDeleteRow(row: RepositorySummary): boolean {
     return this.session.canWriteRepositories(row.project);
   }
+  /** The settings are offered to who may read or change the configuration (UI-A-06). */
+  protected canConfigureRow(row: RepositorySummary): boolean {
+    return this.session.has('repositories:read-config') || this.session.canWriteRepositories(row.project);
+  }
+  private readonly projects = inject(ProjectContext);
+  /**
+   * The About section of a project's list for its plain user (Q-UI-317): the description and the Owners by name, since the
+   * sidebar has no members or settings for them.
+   */
+  protected readonly about = computed(() => {
+    const key = this.inProject() ? this.projectKey() : null;
+    if (!key || this.session.isAdministrator() || (this.session.projectRole(key) ?? 'reader') !== 'reader') return null;
+    const p = this.projects.projects().find((x) => x.key === key);
+    if (!p) return null;
+    const owners = (p.owners ?? []).map((o) => o.replace(/^(user|group):/, ''));
+    return { description: p.description ?? '', owners };
+  });
+  protected readonly aboutHeading = $localize`:@@repo.about.heading:About this project`;
+  protected readonly aboutText = $localize`:@@repo.about.text:What the project is for and whom to ask.`;
   protected readonly refOf = refOf;
   protected readonly formatOptions = computed(() =>
     (valueOf(this.formats) ?? []).map((f) => f.name),

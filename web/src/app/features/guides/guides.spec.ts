@@ -78,6 +78,13 @@ describe('Guides', () => {
     expect(link?.getAttribute('href')).toBe('/setup?format=npm&client=yarn&repository=web%2Fnpm-remote');
   });
 
+  it('R-UI-049 a repository in the query without a format opens the guide of that repository, not the first format', async () => {
+    // GENERIC_FORMAT is the first format of the catalog; the repository is an npm one.
+    const r = await open({ repository: 'web/npm-remote' });
+    expect(radio(r, 'guide-format', 'npm')?.checked).toBe(true);
+    expect(r.guides.calls.at(-1)).toMatchObject({ repository: 'web/npm-remote' });
+  });
+
   it('R-UI-049 a class in the query opens the guide of that class', async () => {
     const r = await open({ format: 'npm', class: 'remote', client: 'pnpm' });
     expect(r.guides.calls.at(-1)).toEqual({ format: 'npm', cls: 'remote', client: 'pnpm' });

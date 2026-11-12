@@ -10719,7 +10719,9 @@ and three credential choices.
 **Choice:** (a). **Rationale:** a user who comes from a repository has chosen it, so the page shows the result and keeps the choices
 one click away. The development agent revisits it if users open the setup from the menu more often than from a repository.
 
-**Applied in the spec:** R-UI-067, R-UI-016.
+**Applied in the spec:** R-UI-067, R-UI-016. Built in fix wave 1 in part: a link that names a repository the caller may read opens
+the setup for it, with the format and the repository as one line and **Change**; the closed **More options** for the other
+credential choices and the publish snippets is not built yet.
 
 ### Q-UI-317 · The plain user's project sidebar holds the content; the project's members and settings move into its About section
 
@@ -10736,7 +10738,10 @@ Context: R-UI-041 gives every member the project's members and settings read-onl
 **Choice:** (a). **Rationale:** a reader needs to know whom to ask, not a members screen it cannot change. The development agent
 revisits it if readers look for colleagues there.
 
-**Applied in the spec:** R-UI-067, R-UI-041 (the read-only screens stay reachable by URL).
+**Applied in the spec:** R-UI-067, R-UI-041 (the read-only screens stay reachable by URL). Built in fix wave 1: the sidebar of a
+plain user (at most a reader, no system role) holds Repositories, Packages, Browse and Vulnerabilities; the project's
+repository list shows them a closed **About this project** with the description and the Owners by name; the list's row menu
+offers **Settings** only to who may read or change the configuration.
 
 ### Q-UI-318 · The plain user's main views name no internal terms; a refusal says who can do it
 

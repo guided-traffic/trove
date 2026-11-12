@@ -137,3 +137,11 @@
   flex-direction: column;
   align-items: flex-start;
 }
+
+// The repository the setup is for, with Change (Q-UI-316).
+.chosen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--trove-space-2);
+}

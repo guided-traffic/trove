@@ -48,7 +48,8 @@ describe('Client setup for a Bastion (R-BAS-007, R-API-030)', () => {
     expect(target(r.root, 'target', '')?.checked).toBe(true);
     expect(r.setup.calls.at(-1)?.query.bastion).toBeUndefined();
     expect(text(r.root)).toContain('Install from');
-    expect(r.root.querySelectorAll('.step-no')[4]?.textContent?.trim()).toBe('5');
+    // Opened for one repository, the format and repository steps are not asked (Q-UI-316): client, target, credentials.
+    expect([...r.root.querySelectorAll('.step-no')].map((n) => n.textContent?.trim())).toEqual(['1', '2', '3']);
     await expectAccessible(r.root);
   });
 
@@ -88,7 +89,7 @@ describe('Client setup for a Bastion (R-BAS-007, R-API-030)', () => {
   it('R-BAS-007 a caller without endpoints:read gets no choice, and a Bastion named in the query still works', async () => {
     const plain = await openSetup({ repository: 'web/npm-all', client: 'npm' }, ['repositories:read-config']);
     expect(plain.root.querySelector('input[name="target"]')).toBeNull();
-    expect(plain.root.querySelectorAll('.step-no')[3]?.textContent?.trim()).toBe('4');
+    expect([...plain.root.querySelectorAll('.step-no')].map((n) => n.textContent?.trim())).toEqual(['1', '2']);
     const linked = await openSetup({ repository: 'web/npm-all', client: 'npm', bastion: 'partners' }, ['repositories:read-config']);
     expect(target(linked.root, 'target', 'partners')?.checked).toBe(true);
     expect(linked.setup.calls.at(-1)?.query.bastion).toBe('partners');

@@ -149,9 +149,20 @@ export class ClientSetupPage {
   protected readonly activeBastion = computed<string | null>(() => this.bastion()?.trim() || null);
   /** The target step is shown when there is a Bastion to choose or one is chosen. */
   protected readonly showTarget = computed(() => this.bastionOptions().length > 0 || this.activeBastion() !== null);
-  /** The steps are numbered in sequence; an embedded setup has neither the format nor the repository step. */
-  protected readonly clientStep = computed(() => (this.embedded() ? 1 : 2));
-  protected readonly targetStep = computed(() => (this.embedded() ? 2 : 4));
+  /**
+   * The setup is opened for one repository: embedded in its page, or by a link that names a repository the caller may read. Then
+   * the format and the repository are not asked again (Q-UI-316); **Change** shows the choices.
+   */
+  private readonly fixed = signal(true);
+  protected readonly focused = computed(
+    () => this.embedded() || (this.fixed() && !!this.repository() && this.activeRepository() === this.repository()),
+  );
+  protected unfix(): void {
+    this.fixed.set(false);
+  }
+  /** The steps are numbered in sequence; a setup for one repository has neither the format nor the repository step. */
+  protected readonly clientStep = computed(() => (this.focused() ? 1 : 2));
+  protected readonly targetStep = computed(() => (this.focused() ? 2 : 4));
   protected readonly credentialsStep = computed(() => (this.showTarget() ? this.targetStep() + 1 : this.targetStep()));
 
   protected readonly credentials = computed<'none' | 'env' | 'placeholder'>(() =>
