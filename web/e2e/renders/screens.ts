@@ -1,7 +1,7 @@
 import { Page, expect } from '@playwright/test';
 import { Kind, emptyProject, exposureRule, group, longDebKey, longNpmKey, mainProject, npmPackage, ociPackage, otherProject, projectServiceAccount, serviceAccount } from './seed';
 import { gradedPackage } from './advisories';
-import { routeRepositoryNames, routeSuggestions, routeTooMany } from './suggestions';
+import { routeTooMany } from './suggestions';
 
 /**
  * Every screen of the app (web/src/app/app.routes.ts and the route files of the feature areas), with the parameters of the
@@ -87,9 +87,6 @@ async function* sortByDetection(page: Page): AsyncGenerator<string> {
 }
 
 /** The suggestions' answer of a 429 and its seconds: the notice of R-UI-097 is a state of the field. */
-/** The start page confirms its stored repositories with `name` (R-API-063), which a server without it answers 400. */
-const names = [{ match: /^GET \/api\/v1\/repositories\?name=\S* answered 400$/, why: 'a server without the list\'s name parameter (R-API-063): Recently opened stays empty' }];
-
 const tooMany = [
   { match: /^GET \/api\/v1\/search\/suggestions\?\S* answered 429$/, why: 'the 429 notice is rendered on purpose' },
   { match: /^GET \/api\/v1\/auth\/whoami answered 401$/, why: 'an anonymous visitor has no session' },
@@ -99,10 +96,11 @@ const tooMany = [
  * The search field of the top bar and its list (R-UI-095 to R-UI-097): the bar as it opens; the list opened empty; typing `web`
  * (every group of the main area); the start of the seed's longest key; a text with no match; `us` where the caller is an instance
  * administrator (Admin pages, Users); the filter menu and the chip **Packages**; the 429 notice. Below 36 rem the button opens the
- * sheet, and the sheet with suggestions is the state. The suggestions are the seed's (`routeSuggestions`).
+ * sheet, and the sheet with suggestions is the state. The suggestions are the server's (R-API-060); only the 429 is routed.
  */
 async function* searchField(page: Page): AsyncGenerator<string> {
-  await routeSuggestions(page);
+  // The 429 of the previous width's last state stays on the page: the server answers again.
+  await page.unroute('**/api/v1/search/suggestions?**');
   yield '';
   const narrow = (page.viewportSize()?.width ?? 1440) < 576;
   const field = page.locator('#global-search');
@@ -113,10 +111,13 @@ async function* searchField(page: Page): AsyncGenerator<string> {
   await expect(list).toBeVisible();
   const admin = (await heading('Admin area').count()) > 0;
   yield 'search-empty';
-  await field.fill('web');
+  // An anonymous visitor reads the public repository collections of the platform project only.
+  const anonymous = (await page.getByRole('link', { name: 'Sign in' }).count()) > 0;
+  await field.fill(anonymous ? 'coll' : 'web');
   await expect(heading('Repositories')).toBeVisible();
   yield 'search-typing';
-  if (narrow) return;
+  // The other states are a signed-in user's; an anonymous visitor's list differs only in what it may read.
+  if (narrow || anonymous) return;
   await field.fill(longNpmKey.slice(0, 24));
   await expect(list.locator('[role=option]').first()).toContainText('release-candidates');
   yield 'search-long';
@@ -147,8 +148,6 @@ async function* searchField(page: Page): AsyncGenerator<string> {
  * recent list.
  */
 async function* frequentPlaces(page: Page): AsyncGenerator<string> {
-  await routeSuggestions(page);
-  await routeRepositoryNames(page);
   for (const path of [
     `/ui/projects/${mainProject}/repositories/npm-vendor`,
     `/ui/projects/${otherProject}/repositories/collections`,
@@ -315,17 +314,17 @@ export const screens: readonly Screen[] = [
   { id: 'logged-out', path: '/ui/logged-out', kinds: ['anonymous'] },
 
   // The start and the project's content (Q-UI-129): the plain user's main path.
-  { id: 'home', path: '/ui/', kinds: all, expected: names },
-  { id: 'projects', path: '/ui/projects', kinds: all, expected: names },
+  { id: 'home', path: '/ui/', kinds: all },
+  { id: 'projects', path: '/ui/projects', kinds: all },
   // The search field and its list on the start page; anonymous while the seed makes a project public (R-UI-095).
   { id: 'search-field', path: '/ui/projects', kinds: ['anonymous', ...all], walk: searchField, expected: tooMany },
   // The start page and the project switcher read the search's store (R-UI-096); an anonymous visitor's start page (R-UI-095).
-  { id: 'start-recent', path: '/ui/projects', kinds: ['plain', 'power'], walk: frequentPlaces, expected: names },
+  { id: 'start-recent', path: '/ui/projects', kinds: ['plain', 'power'], walk: frequentPlaces },
   { id: 'projects-anonymous', path: '/ui/projects', kinds: ['anonymous'], expected: tooMany },
   // The results page of the search (R-UI-098): every tab with matches, a text without a match, a tab opened by `kind`.
-  { id: 'search-results', path: '/ui/search?q=web', kinds: ['plain', 'admin'] },
+  { id: 'search-results', path: '/ui/search?q=web', kinds: all },
   { id: 'search-results-none', path: '/ui/search?q=zzqx', kinds: ['plain'] },
-  { id: 'search-results-kind-package', path: '/ui/search?q=acme&kind=package', kinds: ['plain', 'admin'] },
+  { id: 'search-results-kind-package', path: '/ui/search?q=acme&kind=package', kinds: all },
   { id: 'repositories', path: `${P}/repositories`, kinds: all, walk: filtersOpen },
   { id: 'repositories-long-keys', path: `${O}/repositories`, kinds: all, walk: filtersOpen },
   { id: 'repositories-empty-project', path: `/ui/projects/${emptyProject}/repositories`, kinds: admins },

@@ -90,6 +90,15 @@ describe('The search field (R-UI-095)', () => {
     expect(items).toEqual(['All', 'Repositories', 'Packages', 'Projects']);
   });
 
+  it('R-UI-095 R-UI-098 the results page keeps its text in the field; its kind is the tab, not the filter, so no chip shows', async () => {
+    const { root, fixture } = await render('sam');
+    await TestBed.inject(Router).navigateByUrl('/search?q=web&kind=package');
+    await settle(fixture);
+    expect(input(root).value).toBe('web');
+    expect(root.querySelector('.search-chip')).toBeNull();
+    expect(root.querySelector('.search-filter')!.getAttribute('aria-label')).toBe('Filter: All');
+  });
+
   it('R-UI-095 an anonymous visitor of public content gets the field without the slash hint', async () => {
     const { root } = await render('anonymous');
     expect(input(root).placeholder).toBe('Search or go to…');

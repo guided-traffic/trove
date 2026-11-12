@@ -1286,7 +1286,8 @@ of a marked suggestion.
 - **The keys.** `App.shortcut` (a `document:keydown` host listener): Ctrl+K and ⌘K always; `/` while `SearchField.slashOn()` (a
   signed-in caller whose `PreferencesStore.keyboardShortcuts()` is on) and the focus is not in a text field, a text area, a select or
   an editable element.
-- **Renders.** The walk `searchField` of [screens.ts](../../web/e2e/renders/screens.ts) answers the suggestions from the seed
-  ([suggestions.ts](../../web/e2e/renders/suggestions.ts), `page.route`), so the pictures show the list's look with the seed's keys;
-  the server's matching has its own tests.
+- **Renders.** The walk `searchField` of [screens.ts](../../web/e2e/renders/screens.ts) types against the seed's server; only the
+  `429` notice is routed ([suggestions.ts](../../web/e2e/renders/suggestions.ts), `page.route`).
+- **The filter and the results page.** The results page's `kind` chooses its tab; it does not set the field's filter. The chip
+  shows only a kind the user picked in the filter menu, which Enter then carries to the page as its `kind`.
 

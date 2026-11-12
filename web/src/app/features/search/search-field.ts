@@ -279,16 +279,13 @@ export class SearchField {
   );
 
   constructor() {
-    // The results page keeps its text and kind in the field, also when it is opened from a link or reloaded (R-UI-098).
+    // The results page keeps its text in the field, also when it is opened from a link or reloaded (R-UI-098). Its `kind` is the
+    // tab, not the filter: the chip shows only a kind the user picked in the filter menu (R-UI-095).
     effect(() => {
       const url = this.url();
       if (url !== '/search' && !url.startsWith('/search?')) return;
-      const params = new URLSearchParams(url.slice('/search'.length));
-      const kind = params.get('kind');
-      untracked(() => {
-        this.text.set(params.get('q') ?? '');
-        if (kind === 'repository' || kind === 'package' || kind === 'project') this.filter.set(kind);
-      });
+      const q = new URLSearchParams(url.slice('/search'.length)).get('q') ?? '';
+      untracked(() => this.text.set(q));
     });
     // The stored repositories are confirmed by one request when the empty list is open (Q-UI-406).
     effect(() => {
