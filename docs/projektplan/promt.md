@@ -492,9 +492,24 @@ by `version: "*"`. Red pipelines are worked on even though they no longer hold a
   - every collapsible section is the quiet disclosure;
   - the policy editor's patterns sit behind "Limit to package names or paths";
   - a German sign-in returns to the German UI.
-- The policy editor scrolls the page 39 px sideways at 390 px, as before the fix waves (47 px then). Nothing visible is cut; the
-  likely cause is the contents of the closed sections or the closed preview. Not located.
-- The admin sidebar has both **Settings** and **General settings**: two entries for settings confuse the administrator.
+- T-21 fix wave 4 is on main (587da115): one Settings group in the admin area (Q-UI-326); the filter panel beside a list only where the
+  list keeps 71 rem, else above it (Q-UI-327); format and class under the key in the project's list (Q-UI-328); no list scrolls sideways
+  with the panel open, the scrollbar's 15 px included. Open, from its renders:
+  - below 91 rem the open panel sits above the Filters button that opened it, and its category boxes are twice their content's height
+    (being fixed);
+  - members at 390 px scrolls 100 px sideways (a header cell of `table.members`), login at 390 px 74 px (the ground of
+    `trove-logo-preview`) (being fixed);
+  - the renders' browse-file screen shows the dev server's "Cannot GET" for `/ui/…/README.md`: a path with a file extension gets no
+    single-page fallback in the dev server, so the file view is never rendered;
+  - the admin advisory sources table scrolls 31 px sideways at 1440 px.
+- `e2e (vuln)` was red at 539021fa: a stacked list clipped its head to 1 px, so the Detected sort button could not be clicked at 1280 px
+  beside the filter panel. Fixed in a136b033 (Q-UI-391, Q-UI-392); the render screen `vulnerabilities-filtered` now clicks it at every width.
+- `integration (shard a)` was red at 539021fa: TestQ_CI_47 failed at a replica's stop with "control pool (1 connection held)", as
+  TestR_DEB_015 on 2026-11-11. One cause found and fixed in 781f09ab: a readiness probe held the control connection through the close
+  (TestR_HA_011 reproduces it). One later run in the ci area showed the message once more, cause not known; since 2797e3ff the close
+  error names the borrower and how long it held the connection, so the next occurrence names it.
+- Many existing web specs carry decision IDs in their test names (`app.projects.spec.ts`, `app.routes.spec.ts`, `app.spec.ts`), where
+  the convention is requirement IDs.
 - T-21 vulnerability grades are on main (e4183c73, R-VULN-038 and 039, R-UI-090 to 094). Open:
   - for the owner, not blocking: should the report's trend chart and the bar share one palette?
   - the paging of a version's findings, the report table's sideways scroll and the wording of the facts line are being fixed.
@@ -654,8 +669,8 @@ later." It is a confirmed direction, not a parked idea, and it is built after T-
 
 - **T-22 · One search with suggestions.**
   - **The field.** One search field in the top bar for every user who is signed in, not only for those who may list every repository.
-    Today the field **Find a repository** shows only for `canSearch()` ([app.html](../../web/src/app/app.html)). The field has a
-    filter control that narrows the search to one kind.
+    Since the stopgap of 2026-11-12 (Q-UI-390) the field shows for every signed-in user and Enter opens `/search?q=` in the main
+    area ([app.ts](../../web/src/app/app.ts)). The field gets a filter control that narrows the search to one kind.
   - **Before anything is typed**, the opened field already offers, as the reference does:
     - **Places:** the start page, the guides, the profile and its settings, and for an administrator the administration;
     - **frequently visited repositories:** the format's icon, the key, and the project and path in muted text;
@@ -670,8 +685,8 @@ later." It is a confirmed direction, not a parked idea, and it is built after T-
     - whether the start page's package search becomes this same field.
   - **Never into the admin area** (owner, 2026-11-12, after typing "test" in the top bar and landing on the admin area's repository
     list with Enter): a search from the main area ends in the main area. Only a live suggestion that is marked as a page of the admin
-    area, and shown only to an instance administrator, may lead there. Until T-22 is built, Enter in today's field opens a results page
-    of the main area instead of `/admin/repositories?q=` ([app.ts](../../web/src/app/app.ts) `submitSearch`).
+    area, and shown only to an instance administrator, may lead there. Done as a stopgap in 5a584881: Enter opens `/search?q=` in the
+    main area, for every signed-in user (Q-UI-390).
   - **Order changed** (development agent, 2026-11-12): T-22 is planned now, because the owner pointed at the search twice on one day.
     It is built as soon as T-18 has landed, since its results must respect T-18's visibility levels.
   - Planned in [search-work-packages.md](search-work-packages.md) (R-API-060 to 064, R-UI-095 to 099, Q-API-270 to 281, Q-UI-400 to 415,
