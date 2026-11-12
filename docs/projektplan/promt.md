@@ -435,6 +435,27 @@ by `version: "*"`. Red pipelines are worked on even though they no longer hold a
   At the walkthrough: the logos in the running app, light and dark, in Firefox and Safari (only Chrome on a static page was looked at).
 - T-19, the documentation of Ansible collections, is built for local, remote and virtual repositories (the set `ansible`, 87 tests, green on kind on 2026-11-11). Open: its four wiki seam sites still ask the repository read until T-18's check replaces them (T-18 WP1d), so a wiki-denied member of a virtual repository has no proof yet; gaps H-900 to H-903 ([ansible-documentation.md](../security/ansible-documentation.md)); the job `e2e (ansible)` ran it green on CI with Node.js and Playwright (Test and Release 43044075096, 87 tests, the five `TestAnsibleDocs*` included).
 - T-20's address field (R-UI-065): the browser check in `web/e2e/tests/02-repository-and-files.spec.ts` passed on kind in `e2e (access-long)` of Test and Release 43007020170; at the walkthrough: Q-UI-274 gives the field the editable control's fill instead of the read-only grey, not compared with GitLab's clone field in a browser.
+- T-21 (2026-11-12): what is done, all of it on main:
+  - `make ui-renders` renders every screen and the creation flow as the plain user, the power user and the administrator: light and
+    dark, three widths, a contact sheet. The renders are never committed.
+  - In the repository lists every address field has one width and shows the address from its start, and the lists stack below
+    48 rem (Q-UI-300 to 306 replace Q-UI-270 and 271).
+  - The three kinds of user are specified: R-UI-067, Q-UI-310 to 319.
+  - The audit of every screen, 49 lines, is [ui-audit.md](ui-audit.md); the fix waves follow it.
+  - Open, seen in the renders by the development agent:
+    - at 1440 px the key column of the repository list is narrow, so a long key wraps to four lines;
+    - the cells of one row are aligned to different heights;
+    - Last activity is a column of dashes.
+  - The creation and the settings of a repository are planned on T-18's tree: UI-A-31 to 40, the owner's rules in
+    [CLAUDE.md](../../CLAUDE.md#product-simple-by-default-details-on-demand).
+- UI-A-41: the project owner's service-accounts page calls `GET /api/v1/service-accounts?project=`, which needs `identities:read`. It
+  gets 403 and shows "You do not have the permission" (R-UI-041).
+- UI-A-45: System status reports a single replica of role `all` as "api/packages/worker live 0".
+- UI-A-49 (UI development profile): a sign-in returns to `/ui/en/`, which the dev server does not serve ("Page not found"). The
+  login builds `return_to` from the locale instead of the base href.
+- UI development profile: the volumes of `deploy/ui-dev` are shared by the whole machine, but the key ring in `.dev/ui-dev` belongs to
+  each checkout, so a second checkout writes a new key into the same database. [web-ui.md](../developer/web-ui.md) describes the
+  workaround.
 - `repository-detail` is the only settings page not yet in the one-column form of the [style guide](../developer/ui-style-guide.md#settings-pages) (Q-UI-222): what its tabs become needs the owner's reference at the walkthrough.
 - H-836: a holder of `tokens:read` alone sees which token owners are administrators; only a custom role is affected, because the three system roles with `tokens:read` also hold `identities:read`.
 - The committed `messages.xlf` and `messages.de.xlf` carry stale location notes, so `extract-i18n` rewrites about 17,000 lines of them.
