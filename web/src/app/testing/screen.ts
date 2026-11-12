@@ -218,3 +218,30 @@ export function holdPages<A extends object>(api: A, method: keyof A): () => void
   };
   return () => release();
 }
+
+/** The headings of the closed sections (`<trove-disclosure>`) of a page, in order, without their "Unsaved changes" note. */
+export function sectionHeadings(root: ParentNode): string[] {
+  return [...root.querySelectorAll<HTMLElement>('trove-disclosure .toggle')].map((b) =>
+    text(b).replace(/^chevron_right\s*/, '').replace(/\s*Unsaved changes$/, ''),
+  );
+}
+
+/** Opens the closed section whose heading contains `label`; one that is open already stays open. */
+export async function openSection(fixture: ComponentFixture<unknown>, root: ParentNode, label: string): Promise<void> {
+  const toggle = [...root.querySelectorAll<HTMLButtonElement>('trove-disclosure .toggle')].find((b) => text(b).includes(label));
+  if (!toggle) throw new Error(`no section "${label}"`);
+  if (toggle.getAttribute('aria-expanded') !== 'true') toggle.click();
+  await settle(fixture);
+}
+
+/**
+ * A **Save changes** button of a settings page with a save per section (R-UI-087): the one whose hidden suffix names `section`,
+ * else the first that is enabled, which is the one of the section that holds the change, else the first of the page.
+ */
+export function saveButton(root: ParentNode, section?: string): HTMLButtonElement {
+  const saves = [...root.querySelectorAll<HTMLButtonElement>('button')].filter((b) => /^\s*Save changes/.test(b.textContent ?? ''));
+  const named = section ? saves.find((b) => (b.textContent ?? '').includes(`(${section})`)) : undefined;
+  const found = named ?? saves.find((b) => !b.disabled) ?? saves[0];
+  if (!found) throw new Error('no Save changes button');
+  return found;
+}

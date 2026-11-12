@@ -4160,7 +4160,7 @@
         <note category="location">src/app/features/endpoints/endpoint-detail.html:15,16</note>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:156,160</note>
         <note category="location">src/app/features/repositories/repository-create.html:234,236</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:18,20</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:45,46</note>
         <note category="location">src/app/features/repositories/repository-format-chooser.ts:40,42</note>
       </notes>
       <segment>
@@ -4964,8 +4964,8 @@
         <note category="location">src/app/features/browse/browse.html:111</note>
         <note category="location">src/app/features/browse/browse.html:433,434</note>
         <note category="location">src/app/features/browse/browse.ts:194</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:35,36</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:69,70</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:53,54</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:335,336</note>
         <note category="location">src/app/features/repositories/repository-list.html:55</note>
         <note category="location">src/app/features/repositories/repository-list.html:60</note>
         <note category="location">src/app/features/repositories/repository-list.ts:207</note>
@@ -4982,8 +4982,8 @@
         <note category="location">src/app/features/browse/browse.html:135</note>
         <note category="location">src/app/features/browse/browse.html:440,441</note>
         <note category="location">src/app/features/browse/browse.ts:202</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:37,38</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:75,76</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:55,56</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:337,338</note>
         <note category="location">src/app/features/repositories/repository-list.html:68</note>
         <note category="location">src/app/features/repositories/repository-list.html:73</note>
         <note category="location">src/app/features/repositories/repository-list.ts:204</note>
@@ -5203,7 +5203,7 @@
     <unit id="repo.deleting">
       <notes>
         <note category="location">src/app/features/browse/browse.html:369,370</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:364,365</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:435,436</note>
         <note category="location">src/app/features/repositories/repository-list.html:215,216</note>
       </notes>
       <segment>
@@ -5286,7 +5286,7 @@
     <unit id="repo.field.description">
       <notes>
         <note category="location">src/app/features/browse/browse.html:442,443</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:39,40</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:57,58</note>
       </notes>
       <segment>
         <source>Description</source>
@@ -10388,7 +10388,7 @@
     <unit id="repo.edit.reset">
       <notes>
         <note category="location">src/app/features/endpoints/exposure-rule-editor.html:413,414</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:322,323</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:36,39</note>
       </notes>
       <segment>
         <source> Discard changes </source>
@@ -10398,7 +10398,6 @@
     <unit id="repo.edit.unsaved">
       <notes>
         <note category="location">src/app/features/endpoints/exposure-rule-editor.html:418,420</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:326,328</note>
       </notes>
       <segment>
         <source>You have unsaved changes.</source>
@@ -17938,7 +17937,7 @@
     <unit id="repo.action.vulnerabilities">
       <notes>
         <note category="location">src/app/features/repositories/content/repository-content.html:36,39</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:9,12</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:13,17</note>
         <note category="location">src/app/features/repositories/repository-list.html:202,205</note>
       </notes>
       <segment>
@@ -19297,6 +19296,8 @@
       <notes>
         <note category="location">src/app/features/repositories/mirror-settings.ts:33</note>
         <note category="location">src/app/features/repositories/repository-create.html:188,189</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:164</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:304</note>
       </notes>
       <segment>
         <source>Mirror</source>
@@ -20393,8 +20394,8 @@
         <note category="location">src/app/features/repositories/repositories.routes.ts:68</note>
       </notes>
       <segment>
-        <source>Repository settings</source>
-        <target>Repository-Einstellungen</target>
+        <source>Settings</source>
+        <target>Einstellungen</target>
       </segment>
     </unit>
     <unit id="repo.class.local.help">
@@ -20467,6 +20468,7 @@
         <note category="location">src/app/features/repositories/repository-create.html:72,74</note>
         <note category="location">src/app/features/repositories/repository-create.ts:352</note>
         <note category="location">src/app/features/repositories/repository-create.ts:566</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:93,94</note>
       </notes>
       <segment>
         <source>Key</source>
@@ -20504,7 +20506,9 @@
       <notes>
         <note category="location">src/app/features/repositories/repository-create.html:99,101</note>
         <note category="location">src/app/features/repositories/repository-create.ts:568</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:119,121</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:98,100</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:300</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:325</note>
       </notes>
       <segment>
         <source>Description (optional)</source>
@@ -20542,6 +20546,7 @@
       <notes>
         <note category="location">src/app/features/repositories/repository-create.html:145,146</note>
         <note category="location">src/app/features/repositories/repository-create.ts:578</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:147,148</note>
       </notes>
       <segment>
         <source>Members</source>
@@ -20597,6 +20602,9 @@
       <notes>
         <note category="location">src/app/features/repositories/repository-create.html:178,179</note>
         <note category="location">src/app/features/repositories/repository-create.ts:570</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:250,251</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:310</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:327</note>
       </notes>
       <segment>
         <source>Administrator notes</source>
@@ -20615,6 +20623,8 @@
     <unit id="repo.group.access">
       <notes>
         <note category="location">src/app/features/repositories/repository-create.html:184,185</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:235,236</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:308</note>
       </notes>
       <segment>
         <source>Access details</source>
@@ -20780,6 +20790,7 @@
     <unit id="repo.field.include">
       <notes>
         <note category="location">src/app/features/repositories/repository-create.ts:572</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:329</note>
         <note category="location">src/app/features/repositories/repository-fields.ts:44,46</note>
       </notes>
       <segment>
@@ -20790,6 +20801,7 @@
     <unit id="repo.field.exclude">
       <notes>
         <note category="location">src/app/features/repositories/repository-create.ts:574</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:331</note>
         <note category="location">src/app/features/repositories/repository-fields.ts:61,63</note>
       </notes>
       <segment>
@@ -20800,6 +20812,7 @@
     <unit id="repo.field.hide">
       <notes>
         <note category="location">src/app/features/repositories/repository-create.ts:576</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:333</note>
         <note category="location">src/app/features/repositories/repository-fields.ts:104,106</note>
       </notes>
       <segment>
@@ -20826,36 +20839,27 @@
         <target>Geben Sie die Adresse der Registry an, etwa https://registry.example.com/.</target>
       </segment>
     </unit>
-    <unit id="repo.detail.heading">
+    <unit id="repo.settings.heading">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:2,3</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:1,2</note>
       </notes>
       <segment>
-        <source>Repository settings</source>
-        <target>Repository-Einstellungen</target>
+        <source>Settings</source>
+        <target>Einstellungen</target>
       </segment>
     </unit>
-    <unit id="repo.detail.back">
+    <unit id="repo.settings.disabled-badge">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:3,4</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:8,11</note>
       </notes>
       <segment>
-        <source>All repositories</source>
-        <target>Alle Repositories</target>
-      </segment>
-    </unit>
-    <unit id="repo.detail.content">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:4,5</note>
-      </notes>
-      <segment>
-        <source>Content</source>
-        <target>Inhalt</target>
+        <source>Disabled</source>
+        <target>Deaktiviert</target>
       </segment>
     </unit>
     <unit id="repo.action.browse">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:5,6</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:11,12</note>
         <note category="location">src/app/features/repositories/repository-list.html:197,199</note>
       </notes>
       <segment>
@@ -20863,9 +20867,19 @@
         <target>Durchsuchen</target>
       </segment>
     </unit>
+    <unit id="repo.settings.save">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:30,31</note>
+        <note category="location">src/app/features/repositories/virtual-members.html:44,45</note>
+      </notes>
+      <segment>
+        <source>Save changes</source>
+        <target>Änderungen speichern</target>
+      </segment>
+    </unit>
     <unit id="repo.detail.consumer">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:31,34</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:50,52</note>
       </notes>
       <segment>
         <source> You may use this repository but not read or change its configuration. </source>
@@ -20874,8 +20888,8 @@
     </unit>
     <unit id="repo.col.address">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:41,43</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:80,82</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:59,61</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:346,347</note>
         <note category="location">src/app/features/repositories/repository-list.ts:215</note>
       </notes>
       <segment>
@@ -20885,35 +20899,197 @@
     </unit>
     <unit id="repo.tab.guide">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:50,51</note>
-        <note category="location">src/app/features/repositories/repository-detail.ts:659</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:68,69</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:317,318</note>
       </notes>
       <segment>
         <source>How to use</source>
         <target>Verwendung</target>
       </segment>
     </unit>
-    <unit id="repo.detail.project">
+    <unit id="repo.detail.deleting">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:72,73</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:79,82</note>
       </notes>
       <segment>
-        <source>Project</source>
-        <target>Projekt</target>
+        <source>This repository is being deleted. It cannot be changed.</source>
+        <target>Dieses Repository wird gelöscht. Es lässt sich nicht mehr ändern.</target>
+      </segment>
+    </unit>
+    <unit id="repo.settings.key-help">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:95,97</note>
+      </notes>
+      <segment>
+        <source>Part of the repository&apos;s address. It cannot be changed.</source>
+        <target>Teil der Adresse des Repositorys. Er kann nicht geändert werden.</target>
+      </segment>
+    </unit>
+    <unit id="repo.settings.mirror-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:165,166</note>
+      </notes>
+      <segment>
+        <source>Whether background passes store what the upstream offers, and within which bounds.</source>
+        <target>Ob Hintergrund-Durchläufe speichern, was der Upstream anbietet, und in welchen Grenzen.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.status.unsaved">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:178,180</note>
+      </notes>
+      <segment>
+        <source>The status appears once the repository is saved in mode mirror.</source>
+        <target>Der Status erscheint, sobald das Repository im Modus Mirror gespeichert ist.</target>
+      </segment>
+    </unit>
+    <unit id="repo.settings.format-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:211,212</note>
+      </notes>
+      <segment>
+        <source>What the format does differently in this repository. The defaults suit most repositories.</source>
+        <target>Was das Format in diesem Repository anders macht. Die Voreinstellungen passen zu den meisten Repositorys.</target>
+      </segment>
+    </unit>
+    <unit id="repo.settings.access-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:237,239</note>
+      </notes>
+      <segment>
+        <source>Which paths the repository admits, and what callers without access learn about it.</source>
+        <target>Welche Pfade das Repository zulässt und was Aufrufer ohne Zugriff davon erfahren.</target>
+      </segment>
+    </unit>
+    <unit id="repo.settings.notes-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:252,254</note>
+      </notes>
+      <segment>
+        <source>Notes for the people who configure the repository.</source>
+        <target>Notizen für die Personen, die das Repository konfigurieren.</target>
+      </segment>
+    </unit>
+    <unit id="repo.tab.deb-keys">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:265,266</note>
+      </notes>
+      <segment>
+        <source>Signing keys</source>
+        <target>Signaturschlüssel</target>
+      </segment>
+    </unit>
+    <unit id="repo.settings.deb-keys-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:267,268</note>
+      </notes>
+      <segment>
+        <source>The keys that sign the repository&apos;s indexes.</source>
+        <target>Die Schlüssel, die die Indizes des Repositorys signieren.</target>
+      </segment>
+    </unit>
+    <unit id="repo.settings.deb-index">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:277</note>
+      </notes>
+      <segment>
+        <source>Indexes</source>
+        <target>Indizes</target>
+      </segment>
+    </unit>
+    <unit id="repo.settings.deb-index-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:278,279</note>
+      </notes>
+      <segment>
+        <source>The state of each suite&apos;s indexes, and a rebuild.</source>
+        <target>Der Stand der Indizes jeder Suite und ein Neuaufbau.</target>
+      </segment>
+    </unit>
+    <unit id="repo.tab.ansible-imports">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:290,291</note>
+      </notes>
+      <segment>
+        <source>Import tasks</source>
+        <target>Import-Aufgaben</target>
+      </segment>
+    </unit>
+    <unit id="repo.settings.imports-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:292,293</note>
+      </notes>
+      <segment>
+        <source>The imports of published collections and their logs.</source>
+        <target>Die Importe veröffentlichter Collections und ihre Protokolle.</target>
+      </segment>
+    </unit>
+    <unit id="repo.tab.ansible-tombstones">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:303,304</note>
+      </notes>
+      <segment>
+        <source>Tombstones</source>
+        <target>Grabsteine</target>
+      </segment>
+    </unit>
+    <unit id="repo.settings.tombstones-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:305,306</note>
+      </notes>
+      <segment>
+        <source>Deleted collection versions whose names stay taken.</source>
+        <target>Gelöschte Collection-Versionen, deren Namen belegt bleiben.</target>
+      </segment>
+    </unit>
+    <unit id="repo.settings.guide-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:319,320</note>
+      </notes>
+      <segment>
+        <source>How a client is set up for this repository.</source>
+        <target>Wie ein Client für dieses Repository eingerichtet wird.</target>
+      </segment>
+    </unit>
+    <unit id="repo.settings.details">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:331</note>
+      </notes>
+      <segment>
+        <source>Details</source>
+        <target>Details</target>
+      </segment>
+    </unit>
+    <unit id="repo.settings.details-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:332,335</note>
+      </notes>
+      <segment>
+        <source>The class, the format, the address and the dates of the repository.</source>
+        <target>Klasse, Format, Adresse und Zeitpunkte des Repositorys.</target>
       </segment>
     </unit>
     <unit id="repo.detail.layout">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:77,78</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:339,340</note>
       </notes>
       <segment>
         <source>Layout</source>
         <target>Layout</target>
       </segment>
     </unit>
+    <unit id="repo.detail.project">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:342,343</note>
+      </notes>
+      <segment>
+        <source>Project</source>
+        <target>Projekt</target>
+      </segment>
+    </unit>
     <unit id="repo.detail.created">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:86,88</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:350,351</note>
       </notes>
       <segment>
         <source>Created</source>
@@ -20922,7 +21098,7 @@
     </unit>
     <unit id="repo.detail.updated">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:92,94</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:354,355</note>
       </notes>
       <segment>
         <source>Last changed</source>
@@ -20931,7 +21107,7 @@
     </unit>
     <unit id="repo.col.activity">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:98,100</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:358,359</note>
         <note category="location">src/app/features/repositories/repository-list.ts:222</note>
       </notes>
       <segment>
@@ -20939,27 +21115,27 @@
         <target>Letzte Aktivität</target>
       </segment>
     </unit>
-    <unit id="repo.detail.deleting">
+    <unit id="repo.tab.api">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:109,114</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:367</note>
       </notes>
       <segment>
-        <source>This repository is being deleted. It cannot be changed.</source>
-        <target>Dieses Repository wird gelöscht. Es lässt sich nicht mehr ändern.</target>
+        <source>API</source>
+        <target>API</target>
       </segment>
     </unit>
-    <unit id="mirror.status.unsaved">
+    <unit id="repo.settings.api-hint">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:224,225</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:368,370</note>
       </notes>
       <segment>
-        <source> The status appears once the repository is saved in mode mirror. </source>
-        <target>Der Status erscheint, sobald das Repository im Modus Mirror gespeichert ist.</target>
+        <source>The stored document, and each unsaved change as the request that saves it.</source>
+        <target>Das gespeicherte Dokument und jede ungespeicherte Änderung als die Anfrage, die sie speichert.</target>
       </segment>
     </unit>
     <unit id="repo.detail.api.document">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:292,293</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:370,371</note>
       </notes>
       <segment>
         <source>Stored document</source>
@@ -20968,7 +21144,7 @@
     </unit>
     <unit id="repo.detail.api.patch">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:294,296</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:372,373</note>
       </notes>
       <segment>
         <source>Your change as a request</source>
@@ -20977,25 +21153,90 @@
     </unit>
     <unit id="repo.detail.api.nochange">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:299,301</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:377,379</note>
       </notes>
       <segment>
-        <source> Change a setting to see the request that saves it. </source>
+        <source>Change a setting to see the request that saves it.</source>
         <target>Ändern Sie eine Einstellung, um die Anfrage zu sehen, die sie speichert.</target>
       </segment>
     </unit>
-    <unit id="repo.edit.save">
+    <unit id="repo.detail.advanced">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:314,315</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:386,387</note>
       </notes>
       <segment>
-        <source> Save changes </source>
-        <target>Änderungen speichern</target>
+        <source>Advanced</source>
+        <target>Erweitert</target>
+      </segment>
+    </unit>
+    <unit id="repo.settings.advanced-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:388,390</note>
+      </notes>
+      <segment>
+        <source>Disable, move or delete this repository.</source>
+        <target>Dieses Repository deaktivieren, verschieben oder löschen.</target>
+      </segment>
+    </unit>
+    <unit id="repo.enable.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:395,396</note>
+      </notes>
+      <segment>
+        <source>Enable repository</source>
+        <target>Repository aktivieren</target>
+      </segment>
+    </unit>
+    <unit id="repo.enable.hint">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:396,397</note>
+      </notes>
+      <segment>
+        <source>The repository is disabled: it serves nothing and takes no publish.</source>
+        <target>Das Repository ist deaktiviert: Es liefert nichts aus und nimmt keine Veröffentlichung an.</target>
+      </segment>
+    </unit>
+    <unit id="repo.enable.confirm">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:397,399</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:654</note>
+      </notes>
+      <segment>
+        <source>Enable repository</source>
+        <target>Repository aktivieren</target>
+      </segment>
+    </unit>
+    <unit id="repo.disable.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:399,400</note>
+      </notes>
+      <segment>
+        <source>Disable repository</source>
+        <target>Repository deaktivieren</target>
+      </segment>
+    </unit>
+    <unit id="repo.disable.hint">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:400,401</note>
+      </notes>
+      <segment>
+        <source>Clients can no longer download from it or publish to it; its content stays.</source>
+        <target>Clients können nicht mehr daraus herunterladen oder darin veröffentlichen; sein Inhalt bleibt.</target>
+      </segment>
+    </unit>
+    <unit id="repo.disable.confirm">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:401,403</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:649</note>
+      </notes>
+      <segment>
+        <source>Disable repository</source>
+        <target>Repository deaktivieren</target>
       </segment>
     </unit>
     <unit id="repo.move.heading">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:332,333</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:406,407</note>
       </notes>
       <segment>
         <source>Move to another project</source>
@@ -21004,7 +21245,7 @@
     </unit>
     <unit id="repo.move.hint">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:334,335</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:408,409</note>
       </notes>
       <segment>
         <source> The repository keeps its key and its content; its address changes. You must be Owner of the target project too. </source>
@@ -21013,7 +21254,7 @@
     </unit>
     <unit id="repo.move.target">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:339,340</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:413,414</note>
       </notes>
       <segment>
         <source>Target project</source>
@@ -21022,34 +21263,25 @@
     </unit>
     <unit id="repo.move.action">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:345,346</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:419,420</note>
       </notes>
       <segment>
         <source> Move repository </source>
         <target> Repository verschieben </target>
       </segment>
     </unit>
-    <unit id="repo.detail.advanced">
+    <unit id="repo.delete.heading">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:354,355</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:425,426</note>
       </notes>
       <segment>
-        <source>Advanced</source>
-        <target>Erweitert</target>
-      </segment>
-    </unit>
-    <unit id="repo.detail.advanced-hint">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:356,358</note>
-      </notes>
-      <segment>
-        <source>Delete this repository.</source>
-        <target>Dieses Repository löschen.</target>
+        <source>Delete repository</source>
+        <target>Repository löschen</target>
       </segment>
     </unit>
     <unit id="repo.detail.delete-note">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:358,359</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:426,427</note>
       </notes>
       <segment>
         <source>Deleting the repository removes it and everything in it for good. It runs as a job, and the key stays taken until it has finished.</source>
@@ -21058,16 +21290,55 @@
     </unit>
     <unit id="repo.detail.delete">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:359,360</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:427,429</note>
       </notes>
       <segment>
         <source>Delete repository</source>
         <target>Repository löschen</target>
       </segment>
     </unit>
+    <unit id="repo.settings.unsaved">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:223</note>
+      </notes>
+      <segment>
+        <source>Unsaved changes</source>
+        <target>Ungespeicherte Änderungen</target>
+      </segment>
+    </unit>
+    <unit id="upstream.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:302</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:72</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:88,89</note>
+      </notes>
+      <segment>
+        <source>Upstream</source>
+        <target>Upstream</target>
+      </segment>
+    </unit>
+    <unit id="repo.settings.format-heading">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:315</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="format" disp="this.formatLabel()"/> settings</source>
+        <target><ph id="0" equiv="format" disp="this.formatLabel()"/>-Einstellungen</target>
+      </segment>
+    </unit>
+    <unit id="repo.edit.saved">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:406</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:432</note>
+      </notes>
+      <segment>
+        <source>Repository saved.</source>
+        <target>Repository gespeichert.</target>
+      </segment>
+    </unit>
     <unit id="repo.visibility.saved">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:343</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:494</note>
       </notes>
       <segment>
         <source>Visibility saved.</source>
@@ -21076,26 +21347,16 @@
     </unit>
     <unit id="repo.members.saved">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:398</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:549</note>
       </notes>
       <segment>
         <source>Members saved.</source>
         <target>Mitglieder gespeichert.</target>
       </segment>
     </unit>
-    <unit id="repo.edit.saved">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:430</note>
-        <note category="location">src/app/features/repositories/repository-detail.ts:539</note>
-      </notes>
-      <segment>
-        <source>Repository saved.</source>
-        <target>Repository gespeichert.</target>
-      </segment>
-    </unit>
     <unit id="mirror.paused-notice">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:457</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:578</note>
       </notes>
       <segment>
         <source>Mirror paused.</source>
@@ -21104,16 +21365,70 @@
     </unit>
     <unit id="mirror.resumed-notice">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:458</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:578</note>
       </notes>
       <segment>
         <source>Mirror resumed.</source>
         <target>Mirror fortgesetzt.</target>
       </segment>
     </unit>
+    <unit id="repo.disable.title">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:645</note>
+      </notes>
+      <segment>
+        <source>Disable repository <ph id="0" equiv="key" disp="this.ref()"/>?</source>
+        <target>Repository <ph id="0" equiv="key" disp="this.ref()"/> deaktivieren?</target>
+      </segment>
+    </unit>
+    <unit id="repo.disable.text">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:647</note>
+      </notes>
+      <segment>
+        <source>Clients can no longer download from it or publish to it, and virtual repositories skip it, until it is enabled again. Its content stays.</source>
+        <target>Clients können nicht mehr daraus herunterladen oder darin veröffentlichen, und virtuelle Repositorys überspringen es, bis es wieder aktiviert wird. Sein Inhalt bleibt.</target>
+      </segment>
+    </unit>
+    <unit id="repo.enable.title">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:652</note>
+      </notes>
+      <segment>
+        <source>Enable repository <ph id="0" equiv="key" disp="this.ref()"/>?</source>
+        <target>Repository <ph id="0" equiv="key" disp="this.ref()"/> aktivieren?</target>
+      </segment>
+    </unit>
+    <unit id="repo.enable.text">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:653</note>
+      </notes>
+      <segment>
+        <source>Clients can download from it and publish to it again.</source>
+        <target>Clients können wieder daraus herunterladen und darin veröffentlichen.</target>
+      </segment>
+    </unit>
+    <unit id="repo.disable.done">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:687</note>
+      </notes>
+      <segment>
+        <source>Repository <ph id="0" equiv="key" disp="this.ref()"/> disabled.</source>
+        <target>Repository <ph id="0" equiv="key" disp="this.ref()"/> deaktiviert.</target>
+      </segment>
+    </unit>
+    <unit id="repo.enable.done">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:688</note>
+      </notes>
+      <segment>
+        <source>Repository <ph id="0" equiv="key" disp="this.ref()"/> enabled.</source>
+        <target>Repository <ph id="0" equiv="key" disp="this.ref()"/> aktiviert.</target>
+      </segment>
+    </unit>
     <unit id="repo.delete.title">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:564</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:694</note>
         <note category="location">src/app/features/repositories/repository-list.ts:299</note>
       </notes>
       <segment>
@@ -21123,7 +21438,7 @@
     </unit>
     <unit id="repo.delete.text">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:566</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:696</note>
         <note category="location">src/app/features/repositories/repository-list.ts:301</note>
       </notes>
       <segment>
@@ -21133,7 +21448,7 @@
     </unit>
     <unit id="repo.delete.confirm">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:568</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:698</note>
         <note category="location">src/app/features/repositories/repository-list.ts:303</note>
       </notes>
       <segment>
@@ -21143,7 +21458,7 @@
     </unit>
     <unit id="repo.move.choose">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:592</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:722</note>
       </notes>
       <segment>
         <source>Choose a project</source>
@@ -21152,7 +21467,7 @@
     </unit>
     <unit id="repo.move.title">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:609</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:737</note>
       </notes>
       <segment>
         <source>Move repository <ph id="0" equiv="key" disp="this.ref()"/> to project <ph id="1" equiv="project" disp="target"/>?</source>
@@ -21161,7 +21476,7 @@
     </unit>
     <unit id="repo.move.text">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:611</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:739</note>
       </notes>
       <segment>
         <source>The repository gets a new address; clients must switch to it. Policies, pins, virtual memberships and CI mappings that name it in this project stop applying, and the move is refused while any of them exists.</source>
@@ -21170,7 +21485,7 @@
     </unit>
     <unit id="repo.move.confirm">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:613</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:741</note>
       </notes>
       <segment>
         <source>Move repository</source>
@@ -21179,7 +21494,7 @@
     </unit>
     <unit id="repo.move.done">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:620</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:748</note>
       </notes>
       <segment>
         <source>Repository moved to project <ph id="0" equiv="project" disp="target"/>.</source>
@@ -21188,7 +21503,7 @@
     </unit>
     <unit id="repo.delete.failed">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:634</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:762</note>
         <note category="location">src/app/features/repositories/repository-list.ts:346</note>
       </notes>
       <segment>
@@ -21198,7 +21513,7 @@
     </unit>
     <unit id="repo.delete.done">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:639</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:767</note>
         <note category="location">src/app/features/repositories/repository-list.ts:336</note>
       </notes>
       <segment>
@@ -21208,111 +21523,12 @@
     </unit>
     <unit id="repo.delete.progress">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:644</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:772</note>
         <note category="location">src/app/features/repositories/repository-list.ts:257</note>
       </notes>
       <segment>
         <source>Repository deletion</source>
         <target>Löschen des Repositorys</target>
-      </segment>
-    </unit>
-    <unit id="repo.tab.general">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:645</note>
-      </notes>
-      <segment>
-        <source>General</source>
-        <target>Allgemein</target>
-      </segment>
-    </unit>
-    <unit id="repo.tab.access">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:646</note>
-      </notes>
-      <segment>
-        <source>Access</source>
-        <target>Zugriff</target>
-      </segment>
-    </unit>
-    <unit id="repo.tab.members">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:647</note>
-      </notes>
-      <segment>
-        <source>Members</source>
-        <target>Mitglieder</target>
-      </segment>
-    </unit>
-    <unit id="repo.tab.format">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:650</note>
-      </notes>
-      <segment>
-        <source><ph id="0" equiv="format" disp="this.format()?.displayName ?? this.member().name"/> settings</source>
-        <target><ph id="0" equiv="format" disp="this.format()?.displayName ?? this.member().name"/>-Einstellungen</target>
-      </segment>
-    </unit>
-    <unit id="repo.tab.upstream">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:652</note>
-      </notes>
-      <segment>
-        <source>Upstream</source>
-        <target>Upstream</target>
-      </segment>
-    </unit>
-    <unit id="repo.tab.mirror">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:653</note>
-      </notes>
-      <segment>
-        <source>Mirror</source>
-        <target>Mirror</target>
-      </segment>
-    </unit>
-    <unit id="repo.tab.ansible-imports">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:654</note>
-      </notes>
-      <segment>
-        <source>Import tasks</source>
-        <target>Import-Aufgaben</target>
-      </segment>
-    </unit>
-    <unit id="repo.tab.ansible-tombstones">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:655</note>
-      </notes>
-      <segment>
-        <source>Tombstones</source>
-        <target>Grabsteine</target>
-      </segment>
-    </unit>
-    <unit id="repo.tab.deb-keys">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:656</note>
-      </notes>
-      <segment>
-        <source>Signing keys</source>
-        <target>Signaturschlüssel</target>
-      </segment>
-    </unit>
-    <unit id="repo.tab.deb-index">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:657</note>
-      </notes>
-      <segment>
-        <source>Index</source>
-        <target>Index</target>
-      </segment>
-    </unit>
-    <unit id="repo.tab.api">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:658</note>
-      </notes>
-      <segment>
-        <source>API</source>
-        <target>API</target>
       </segment>
     </unit>
     <unit id="repo.field.notes-text">
@@ -21842,16 +22058,6 @@
         <target>Offline</target>
       </segment>
     </unit>
-    <unit id="upstream.heading">
-      <notes>
-        <note category="location">src/app/features/repositories/upstream-settings.ts:72</note>
-        <note category="location">src/app/features/repositories/upstream-settings.ts:88,89</note>
-      </notes>
-      <segment>
-        <source>Upstream</source>
-        <target>Upstream</target>
-      </segment>
-    </unit>
     <unit id="upstream.intro.registry">
       <notes>
         <note category="location">src/app/features/repositories/upstream-settings.ts:89,91</note>
@@ -22291,15 +22497,6 @@
       <segment>
         <source> Publishing to the virtual repository stores the package in this local member. Without one the repository is read-only. </source>
         <target>Das Veröffentlichen im virtuellen Repository speichert das Paket in diesem lokalen Mitglied. Ohne Ziel ist das Repository schreibgeschützt.</target>
-      </segment>
-    </unit>
-    <unit id="repo.settings.save">
-      <notes>
-        <note category="location">src/app/features/repositories/virtual-members.html:44,45</note>
-      </notes>
-      <segment>
-        <source>Save changes</source>
-        <target>Änderungen speichern</target>
       </segment>
     </unit>
     <unit id="virtual.save-suffix">

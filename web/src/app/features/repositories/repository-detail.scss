@@ -1,14 +1,47 @@
+// One column of at most the settings measure (R-UI-087, the style guide's settings pages).
+.settings {
+  max-inline-size: var(--trove-settings-measure);
+}
+
 .subject {
-  margin-block: 0 var(--trove-space-3);
-  font: var(--trove-type-title-medium);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--trove-space-2);
+  margin: var(--trove-space-1) 0 0;
 }
 
-.tabs {
-  margin-block: var(--trove-space-4);
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--trove-space-1);
+  margin-block-end: var(--trove-space-4);
+
+  .hint {
+    margin: 0;
+  }
 }
 
-.tab {
-  padding-block: var(--trove-space-4);
+.top {
+  padding-block-end: var(--trove-space-5);
+}
+
+.open-section {
+  padding-block: var(--trove-space-4) var(--trove-space-5);
+  border-block-start: 1px solid var(--trove-border);
+
+  h2 {
+    margin: 0 0 var(--trove-space-2);
+    font: var(--trove-type-title-small);
+  }
+}
+
+// A fieldset that only disables what it holds for a caller who may not change the repository.
+.plain {
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
 .actions {
@@ -16,14 +49,31 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--trove-space-3);
+  margin-block-start: var(--trove-space-3);
 }
 
-.advanced {
-  margin-block-start: var(--trove-space-6);
+.details h3 {
+  margin: var(--trove-space-3) 0 var(--trove-space-2);
+  font-size: var(--trove-text-size);
+  font-weight: 600;
 }
 
-.delete-note {
-  margin-block: 0 var(--trove-space-3);
+.details h4 {
+  margin: var(--trove-space-3) 0 var(--trove-space-1);
+  font-size: var(--trove-text-size);
+  font-weight: 400;
+}
+
+.advanced-action {
+  padding-block-end: var(--trove-space-4);
+
+  h3 {
+    margin-block-start: 0;
+  }
+
+  .hint {
+    margin-block: 0 var(--trove-space-3);
+  }
 }
 
 .deleting {

@@ -65,7 +65,7 @@ export const PROJECT_REPOSITORIES_ROUTES: Routes = [
       },
       {
         path: 'settings',
-        title: $localize`:@@route.repositories.settings.title:Repository settings`,
+        title: $localize`:@@route.repositories.settings.title:Settings`,
         loadComponent: () => import('./repository-detail').then((m) => m.RepositoryDetail),
         canDeactivate: [unsavedChangesGuard],
       },

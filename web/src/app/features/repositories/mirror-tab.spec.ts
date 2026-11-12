@@ -8,7 +8,7 @@ import {
   PACKAGE_FORMAT,
   sampleMirrorStatus,
 } from '../../api/testing/fakes-catalog';
-import { button, expectAccessible, renderScreen, settle, text, type } from '../../testing/screen';
+import { button, expectAccessible, openSection, renderScreen, saveButton, settle, text, type } from '../../testing/screen';
 import { RepositoryDetail } from './repository-detail';
 import { MIRROR_DEFAULTS } from './repository-model';
 
@@ -56,11 +56,7 @@ async function open(
       }
     },
   });
-  const tab = [...r.root.querySelectorAll<HTMLElement>('[role="tab"]')].find(
-    (t) => t.textContent?.trim() === 'Mirror',
-  );
-  tab?.click();
-  await settle(r.fixture);
+  await openSection(r.fixture, r.root, 'Mirror');
   return { r, fake: r.get(RepositoriesApi) as FakeRepositoriesApi };
 }
 
@@ -68,12 +64,12 @@ const stateOf = (root: HTMLElement) =>
   root.querySelector('[data-testid="mirror-state"]')?.getAttribute('data-state');
 const control = (root: ParentNode, id: string) => root.querySelector<HTMLInputElement>(`#${id}`)!;
 
-describe('The Mirror tab of the edit form: status, pause, resume, run (R-UI-021, R-REPO-056, Q-UI-104, Q-UI-105)', () => {
+describe('The section Mirror of the settings page: status, pause, resume, run (R-UI-021, R-REPO-056, Q-UI-104, Q-UI-105)', () => {
   it('R-UI-021 Q-UI-119 a remote stored in mode mirror shows the status above the settings', async () => {
     const { r, fake } = await open();
     expect(fake.mirrorStatusCalls).toBe(1);
     expect(stateOf(r.root)).toBe('scheduled');
-    const tab = r.root.querySelector('.tab')!;
+    const tab = [...r.root.querySelectorAll('trove-disclosure')].find((d) => d.querySelector('trove-mirror-settings'))!;
     const status = tab.querySelector('trove-mirror-status')!;
     const settings = tab.querySelector('trove-mirror-settings')!;
     expect(status.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -104,11 +100,9 @@ describe('The Mirror tab of the edit form: status, pause, resume, run (R-UI-021,
     });
     const fake = r.get(RepositoriesApi) as FakeRepositoriesApi;
     expect(fake.mirrorStatusCalls).toBe(0);
-    const tabs = [...r.root.querySelectorAll<HTMLElement>('[role="tab"]')];
-    tabs.find((t) => t.textContent?.trim() === 'Mirror')!.click();
-    await settle(r.fixture);
+    await openSection(r.fixture, r.root, 'Mirror');
     expect(fake.mirrorStatusCalls).toBe(1);
-    tabs.find((t) => t.textContent?.trim() === 'General')!.click();
+    button(r.root, /Mirror/).click();
     await settle(r.fixture);
     expect(r.root.querySelector('trove-mirror-status')).toBeNull();
   });
@@ -173,7 +167,7 @@ describe('The Mirror tab of the edit form: status, pause, resume, run (R-UI-021,
       await settle(r.fixture);
       expect(control(r.root, 'f-remote-mirror-intervalSeconds').value).toBe('7200');
       expect(r.fixture.componentInstance.hasUnsavedChanges()).toBe(true);
-      button(r.root, 'Save changes').click();
+      saveButton(r.root).click();
       await settle(r.fixture);
       expect(fake.patches[1]).toMatchObject({
         patch: { remote: { mirror: { intervalSeconds: 7200 } } },

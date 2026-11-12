@@ -1,35 +1,53 @@
-<header class="page-header">
-  <h1 tabindex="-1" i18n="@@repo.detail.heading">Repository settings</h1>
-  <a class="btn btn-tertiary" [routerLink]="['/projects', project(), 'repositories']" i18n="@@repo.detail.back">All repositories</a>
-  <a class="btn btn-tertiary" [routerLink]="['/projects', project(), 'repositories', key()]" i18n="@@repo.detail.content">Content</a>
-  <a class="btn btn-tertiary" [routerLink]="['/projects', project(), 'browse', key()]" i18n="@@repo.action.browse">Browse</a>
-  <!-- >>> M4b vulnerabilities -->
-  @if (stored(); as repo) {
-    @if (repo.format !== 'generic' && repo.class !== 'virtual') {
-      <a class="btn btn-tertiary" [routerLink]="['/projects', project(), 'vulnerabilities']" [queryParams]="{ repository: ref() }" i18n="@@repo.action.vulnerabilities">Vulnerabilities</a>
+<trove-page-header i18n-heading="@@repo.settings.heading" heading="Settings">
+  <p meta class="subject" translate="no">
+    @if (artifactsLevel(); as level) {
+      <trove-visibility-icon [level]="level" />
     }
+    <strong>{{ ref() }}</strong>
+    @if (stored()?.disabled) {
+      <span class="badge" translate="yes" i18n="@@repo.settings.disabled-badge">Disabled</span>
+    }
+  </p>
+  <a actions class="btn btn-default" [routerLink]="['/projects', project(), 'browse', key()]" i18n="@@repo.action.browse">Browse</a>
+  @if (vulnerabilitiesShown()) {
+    <a actions class="btn btn-default" [routerLink]="['/projects', project(), 'vulnerabilities']" [queryParams]="{ repository: ref() }" i18n="@@repo.action.vulnerabilities">Vulnerabilities</a>
   }
-  <!-- <<< M4b vulnerabilities -->
-</header>
+</trove-page-header>
+
+<ng-template #problems let-section>
+  @if (summaryOf(section).length > 0) {
+    <trove-error-summary [items]="summaryOf(section)" />
+  }
+  @if (noticeOf(section); as f) {
+    <trove-error-notice [error]="f" />
+  }
+</ng-template>
+
+<ng-template #save let-section let-suffix="suffix">
+  @if (canChange()) {
+    <div class="actions">
+      <button class="btn btn-confirm" type="submit" [disabled]="!dirty(section) || saving() !== null">
+        <ng-container i18n="@@repo.settings.save">Save changes</ng-container>
+        @if (suffix) {
+          <span class="visually-hidden"> ({{ suffix }})</span>
+        }
+      </button>
+      @if (dirty(section)) {
+        <button class="btn btn-tertiary" type="button" (click)="discard(section)" i18n="@@repo.edit.reset">Discard changes</button>
+      }
+    </div>
+  }
+</ng-template>
 
 @if (loadFailure(); as f) {
   <trove-error-notice [error]="f" (retry)="loaded.reload()" />
 } @else if (loaded.isLoading() && !stored() && !consumer()) {
   <p role="status" i18n="@@repo.loading">Loading.</p>
-} @else {
-  <p class="subject" translate="no">
-    @if (artifactsLevel(); as level) {
-      <trove-visibility-icon [level]="level" />
-    }
-    <strong>{{ ref() }}</strong>
-  </p>
-
-  @if (consumer(); as c) {
+} @else if (consumer(); as c) {
+  <div class="settings">
     <p class="banner-warning" role="note">
       <span class="material-icons inline" aria-hidden="true">info</span>
-      <span i18n="@@repo.detail.consumer">
-        You may use this repository but not read or change its configuration.
-      </span>
+      <span i18n="@@repo.detail.consumer"> You may use this repository but not read or change its configuration. </span>
     </p>
     <dl class="facts">
       <dt i18n="@@repo.col.class">Class</dt>
@@ -51,324 +69,373 @@
         <trove-repository-guide [key]="ref()" [format]="c.format" [clients]="clientsOf(c.format)" />
       </section>
     }
-  } @else if (stored(); as repo) {
-    <trove-error-summary [items]="summary()" />
-    @if (failure(); as f) {
-      @if (f.fieldErrors.size === 0) {
-        <trove-error-notice [error]="f" />
+  </div>
+} @else if (stored(); as repo) {
+  @if (form(); as current) {
+    <div class="settings">
+      @if (repo.lifecycle === 'deleting') {
+        <p class="banner-warning" role="status">
+          <span class="material-icons inline warn" aria-hidden="true">hourglass_empty</span>
+          <span i18n="@@repo.detail.deleting">This repository is being deleted. It cannot be changed.</span>
+        </p>
       }
-    }
-    @for (w of warnings(); track w) {
-      <p class="banner-warning" role="status">
-        <span class="material-icons inline warn" aria-hidden="true">warning</span>
-        <span>{{ w }}</span>
-      </p>
-    }
+      @for (w of warnings(); track w) {
+        <p class="banner-warning" role="status">
+          <span class="material-icons inline warn" aria-hidden="true">warning</span>
+          <span>{{ w }}</span>
+        </p>
+      }
 
-    <dl class="facts">
-      <dt i18n="@@repo.col.class">Class</dt>
-      <dd>{{ classText(repo.class) }}</dd>
-      @if (repo.project; as projectKey) {
-        <dt i18n="@@repo.detail.project">Project</dt>
-        <dd><a [routerLink]="['/projects', projectKey]" translate="no">{{ projectKey }}</a></dd>
-      }
-      <dt i18n="@@repo.col.format">Format</dt>
-      <dd translate="no">{{ repo.format }}</dd>
-      <dt i18n="@@repo.detail.layout">Layout</dt>
-      <dd translate="no">{{ repo.layout }}</dd>
-      @if (address()) {
-        <dt i18n="@@repo.col.address">Client address</dt>
-        <dd>
-          <trove-address-field [value]="address()" />
-        </dd>
-      }
-      @if (repo.createdAt; as at) {
-        <dt i18n="@@repo.detail.created">Created</dt>
-        <dd>
-          <time [attr.datetime]="at">{{ at | date: 'medium' }}</time>
-        </dd>
-      }
-      @if (repo.updatedAt; as at) {
-        <dt i18n="@@repo.detail.updated">Last changed</dt>
-        <dd>
-          <time [attr.datetime]="at">{{ at | date: 'medium' }}</time>
-        </dd>
-      }
-      @if (repo.lastActivityAt; as at) {
-        <dt i18n="@@repo.col.activity">Last activity</dt>
-        <dd>
-          <time [attr.datetime]="at">{{ at | date: 'medium' }}</time>
-        </dd>
-      }
-    </dl>
+      <!-- The most used settings, open at the top without a title (the style guide's settings pages). -->
+      <form class="top" (submit)="saveSection('general', $event)" novalidate>
+        <ng-container *ngTemplateOutlet="problems; context: { $implicit: 'general' }" />
+        <div class="field">
+          <label class="field-label" for="f-key" i18n="@@repo.field.key">Key</label>
+          <input id="f-key" class="text-input field-w-name" translate="no" readonly [value]="repo.key" aria-describedby="d-key" />
+          <p id="d-key" class="hint" i18n="@@repo.settings.key-help">Part of the repository's address. It cannot be changed.</p>
+        </div>
+        <div class="field">
+          <label class="field-label" for="f-description" i18n="@@repo.field.description-optional">Description (optional)</label>
+          <textarea
+            id="f-description"
+            class="area-input field-w-full"
+            rows="2"
+            maxlength="2000"
+            [readonly]="!canChange()"
+            [value]="current.description"
+            [attr.aria-invalid]="errorsOf('general').has('/description') ? 'true' : null"
+            (input)="setDescription($any($event.target).value)"
+          ></textarea>
+        </div>
+        <ng-container *ngTemplateOutlet="save; context: { $implicit: 'general', suffix: '' }" />
+      </form>
 
-    @if (repo.lifecycle === 'deleting') {
-      <p class="banner-warning" role="status">
-        <span class="material-icons inline warn" aria-hidden="true">hourglass_empty</span>
-        <span i18n="@@repo.detail.deleting"
-          >This repository is being deleted. It cannot be changed.</span
-        >
-      </p>
-    }
+      @if (repo.visibility; as levels) {
+        <div class="open-section">
+          <trove-repository-visibility
+            [stored]="levels"
+            [projectLevel]="projectLevel.value() ?? null"
+            [hasWiki]="format()?.wiki ?? false"
+            [canWrite]="canChange()"
+            [saving]="visibilitySaving()"
+            [failure]="visibilityFailure()"
+            [warnings]="visibilityWarnings()"
+            (save)="saveVisibility($event)"
+          />
+        </div>
+      }
 
-    @if (form(); as current) {
-      <trove-tab-group class="tabs">
-        <trove-tab [label]="tabGeneral">
-          <div class="tab">
-            <div class="field">
-              <label class="field-label" for="f-description" i18n="@@repo.field.description-optional">Description (optional)</label>
-              <textarea
-                id="f-description"
-                class="area-input field-w-full"
-                rows="2"
-                maxlength="2000"
-                [value]="current.description"
-                [attr.aria-invalid]="fieldErrors().has('/description') ? 'true' : null"
-                (input)="setForm({ ...current, description: $any($event.target).value })"
-              ></textarea>
-            </div>
-            <trove-repository-fields
-              section="notes"
+      @if (upstreamSection() && format(); as upstreamFormat) {
+        <form class="open-section" (submit)="saveSection('upstream', $event)" novalidate>
+          <fieldset class="plain" [disabled]="!canChange()">
+            <trove-upstream-settings
+              [project]="project()"
               [form]="current"
               (formChange)="setForm($event)"
-              [fieldErrors]="fieldErrors()"
+              [format]="upstreamFormat"
+              [fieldErrors]="errorsOf('upstream')"
+              [edit]="true"
             />
-          </div>
-        </trove-tab>
-        @if (repo.class === 'virtual') {
-          <trove-tab [label]="tabMembers">
-            <div class="tab">
-              <trove-virtual-members
-                [repo]="repo"
-                [canWrite]="canWrite() && repo.lifecycle !== 'deleting'"
-                [saving]="membersSaving()"
-                [failure]="membersFailure()"
-                (save)="saveMembers($event)"
-                (reload)="loaded.reload()"
-              />
-            </div>
-          </trove-tab>
-        }
-        <trove-tab [label]="tabAccess">
-          <div class="tab">
-            @if (repo.visibility; as levels) {
-              <trove-repository-visibility
-                [stored]="levels"
-                [projectLevel]="projectLevel.value() ?? null"
-                [hasWiki]="format()?.wiki ?? false"
-                [canWrite]="canWrite() && repo.lifecycle !== 'deleting'"
-                [saving]="visibilitySaving()"
-                [failure]="visibilityFailure()"
-                [warnings]="visibilityWarnings()"
-                (save)="saveVisibility($event)"
-              />
-            }
-            <trove-repository-fields
-              section="paths"
-              [form]="current"
-              (formChange)="setForm($event)"
-              [fieldErrors]="fieldErrors()"
-            />
-            <trove-repository-fields
-              section="access"
-              [form]="current"
-              (formChange)="setForm($event)"
-              [fieldErrors]="fieldErrors()"
-            />
-          </div>
-        </trove-tab>
-        @if (upstreamSection() && format(); as upstreamFormat) {
-          <trove-tab [label]="tabUpstream">
-            <div class="tab">
-              <trove-upstream-settings
-                [project]="project()"
-                [form]="current"
-                (formChange)="setForm($event)"
-                [format]="upstreamFormat"
-                [fieldErrors]="fieldErrors()"
-                [edit]="true"
-              />
-            </div>
-          </trove-tab>
-        }
-        @if (settingNodes().length > 0) {
-          <trove-tab [label]="tabFormat()">
-            <div class="tab">
-              <trove-format-settings
-                [nodes]="settingNodes()"
-                [pointer]="memberPointer()"
-                [value]="current.formatMember"
-                (valueChange)="setFormatMember($event)"
-                [fieldErrors]="fieldErrors()"
-              />
-              @if (debUpstreamFingerprints().length > 0) {
-                <trove-deb-upstream-keys [fingerprints]="debUpstreamFingerprints()" />
-              }
-            </div>
-          </trove-tab>
-        }
+          </fieldset>
+          <ng-container *ngTemplateOutlet="problems; context: { $implicit: 'upstream' }" />
+          <ng-container *ngTemplateOutlet="save; context: { $implicit: 'upstream', suffix: sectionLabel('upstream') }" />
+        </form>
+      }
+
+      @if (repo.class === 'virtual') {
+        <section class="open-section" aria-labelledby="repo-members">
+          <h2 id="repo-members" i18n="@@repo.create.members">Members</h2>
+          <trove-virtual-members
+            [repo]="repo"
+            [canWrite]="canChange()"
+            [saving]="membersSaving()"
+            [failure]="membersFailure()"
+            (save)="saveMembers($event)"
+            (reload)="loaded.reload()"
+          />
+        </section>
+      }
+
+      <div class="details">
         @if (mirrorSection() && format(); as mirrorFormat) {
-          <trove-tab [label]="tabMirror">
-            <ng-template troveTabContent>
-              <div class="tab">
-                @if (mirrorStatusShown()) {
-                  <trove-mirror-status
-                    [key]="ref()"
-                    [canChange]="canWrite() && repo.lifecycle !== 'deleting'"
-                    [busy]="pausing()"
-                    [refresh]="mirrorRefresh()"
-                    (setPaused)="setMirrorPaused($event)"
-                  />
-                } @else if (current.remoteMode === 'mirror') {
-                  <p class="hint" role="note" i18n="@@mirror.status.unsaved">
-                    The status appears once the repository is saved in mode mirror.
-                  </p>
-                }
+          <trove-disclosure
+            i18n-heading="@@mirror.heading"
+            heading="Mirror"
+            i18n-hint="@@repo.settings.mirror-hint"
+            hint="Whether background passes store what the upstream offers, and within which bounds."
+            [note]="unsaved('mirror')"
+            [(expanded)]="mirrorOpen"
+          >
+            @if (mirrorOpen() && mirrorStatusShown()) {
+              <trove-mirror-status
+                [key]="ref()"
+                [canChange]="canChange()"
+                [busy]="pausing()"
+                [refresh]="mirrorRefresh()"
+                (setPaused)="setMirrorPaused($event)"
+              />
+            } @else if (current.remoteMode === 'mirror' && !mirrorStatusShown()) {
+              <p class="hint" role="note" i18n="@@mirror.status.unsaved">The status appears once the repository is saved in mode mirror.</p>
+            }
+            <form (submit)="saveSection('mirror', $event)" novalidate>
+              <fieldset class="plain" [disabled]="!canWrite() || repo.lifecycle === 'deleting'">
                 <trove-mirror-settings
                   [form]="current"
                   (formChange)="setForm($event)"
                   [format]="mirrorFormat"
                   [upstreamUrl]="current.upstream.url"
                   [restricted]="mirrorRestricted()"
-                  [fieldErrors]="fieldErrors()"
+                  [fieldErrors]="errorsOf('mirror')"
                 />
+                @if (current.remoteMode === 'mirror' && formatMirrorNodes().length > 0) {
+                  <trove-format-settings
+                    part="mirror"
+                    [nodes]="settingNodes()"
+                    [pointer]="memberPointer()"
+                    [value]="current.formatMember"
+                    (valueChange)="setFormatMember($event)"
+                    [fieldErrors]="errorsOf('mirror')"
+                  />
+                }
+              </fieldset>
+              <ng-container *ngTemplateOutlet="problems; context: { $implicit: 'mirror' }" />
+              <ng-container *ngTemplateOutlet="save; context: { $implicit: 'mirror', suffix: sectionLabel('mirror') }" />
+            </form>
+          </trove-disclosure>
+        }
+
+        @if (formatNodes().length > 0) {
+          <trove-disclosure
+            [heading]="formatHeading()"
+            i18n-hint="@@repo.settings.format-hint"
+            hint="What the format does differently in this repository. The defaults suit most repositories."
+            [note]="unsaved('format')"
+          >
+            <form (submit)="saveSection('format', $event)" novalidate>
+              <fieldset class="plain" [disabled]="!canChange()">
                 <trove-format-settings
-                  part="mirror"
                   [nodes]="settingNodes()"
                   [pointer]="memberPointer()"
                   [value]="current.formatMember"
                   (valueChange)="setFormatMember($event)"
-                  [fieldErrors]="fieldErrors()"
+                  [fieldErrors]="errorsOf('format')"
                 />
-              </div>
-            </ng-template>
-          </trove-tab>
+              </fieldset>
+              @if (debUpstreamFingerprints().length > 0) {
+                <trove-deb-upstream-keys [fingerprints]="debUpstreamFingerprints()" />
+              }
+              <ng-container *ngTemplateOutlet="problems; context: { $implicit: 'format' }" />
+              <ng-container *ngTemplateOutlet="save; context: { $implicit: 'format', suffix: formatHeading() }" />
+            </form>
+          </trove-disclosure>
         }
+
+        <trove-disclosure
+          i18n-heading="@@repo.group.access"
+          heading="Access details"
+          i18n-hint="@@repo.settings.access-hint"
+          hint="Which paths the repository admits, and what callers without access learn about it."
+          [note]="unsaved('access')"
+        >
+          <form (submit)="saveSection('access', $event)" novalidate>
+            <trove-repository-fields section="paths" [form]="current" (formChange)="setForm($event)" [readonly]="!canChange()" [fieldErrors]="errorsOf('access')" />
+            <trove-repository-fields section="access" [form]="current" (formChange)="setForm($event)" [readonly]="!canChange()" [fieldErrors]="errorsOf('access')" />
+            <ng-container *ngTemplateOutlet="problems; context: { $implicit: 'access' }" />
+            <ng-container *ngTemplateOutlet="save; context: { $implicit: 'access', suffix: sectionLabel('access') }" />
+          </form>
+        </trove-disclosure>
+
+        <trove-disclosure
+          i18n-heading="@@repo.field.notes"
+          heading="Administrator notes"
+          i18n-hint="@@repo.settings.notes-hint"
+          hint="Notes for the people who configure the repository."
+          [note]="unsaved('notes')"
+        >
+          <form (submit)="saveSection('notes', $event)" novalidate>
+            <trove-repository-fields section="notes" [form]="current" (formChange)="setForm($event)" [readonly]="!canChange()" [fieldErrors]="errorsOf('notes')" />
+            <ng-container *ngTemplateOutlet="problems; context: { $implicit: 'notes' }" />
+            <ng-container *ngTemplateOutlet="save; context: { $implicit: 'notes', suffix: sectionLabel('notes') }" />
+          </form>
+        </trove-disclosure>
+
+        @if (debSection()) {
+          <trove-disclosure
+            i18n-heading="@@repo.tab.deb-keys"
+            heading="Signing keys"
+            i18n-hint="@@repo.settings.deb-keys-hint"
+            hint="The keys that sign the repository's indexes."
+            (expandedChange)="open('deb-keys', $event)"
+          >
+            @if (isOpened('deb-keys')) {
+              <trove-deb-signing-keys [key]="ref()" [canManage]="canChange()" />
+            }
+          </trove-disclosure>
+          <trove-disclosure
+            i18n-heading="@@repo.settings.deb-index"
+            heading="Indexes"
+            i18n-hint="@@repo.settings.deb-index-hint"
+            hint="The state of each suite's indexes, and a rebuild."
+            (expandedChange)="open('deb-index', $event)"
+          >
+            @if (isOpened('deb-index')) {
+              <trove-deb-index-state [key]="ref()" [canManage]="canChange()" />
+            }
+          </trove-disclosure>
+        }
+
         @if (ansibleImportsSection()) {
-          <trove-tab [label]="tabAnsibleImports">
-            <ng-template troveTabContent>
-              <div class="tab">
-                <trove-ansible-import-tasks [key]="ref()" />
-              </div>
-            </ng-template>
-          </trove-tab>
+          <trove-disclosure
+            i18n-heading="@@repo.tab.ansible-imports"
+            heading="Import tasks"
+            i18n-hint="@@repo.settings.imports-hint"
+            hint="The imports of published collections and their logs."
+            (expandedChange)="open('ansible-imports', $event)"
+          >
+            @if (isOpened('ansible-imports')) {
+              <trove-ansible-import-tasks [key]="ref()" />
+            }
+          </trove-disclosure>
         }
         @if (ansibleTombstonesSection()) {
-          <trove-tab [label]="tabAnsibleTombstones">
-            <ng-template troveTabContent>
-              <div class="tab">
-                <trove-ansible-tombstones [key]="ref()" [canManage]="canWrite() && repo.lifecycle !== 'deleting'" />
-              </div>
-            </ng-template>
-          </trove-tab>
-        }
-        @if (debSection()) {
-          <trove-tab [label]="tabDebKeys">
-            <ng-template troveTabContent>
-              <div class="tab">
-                <trove-deb-signing-keys [key]="ref()" [canManage]="canWrite() && repo.lifecycle !== 'deleting'" />
-              </div>
-            </ng-template>
-          </trove-tab>
-          <trove-tab [label]="tabDebIndex">
-            <ng-template troveTabContent>
-              <div class="tab">
-                <trove-deb-index-state [key]="ref()" [canManage]="canWrite() && repo.lifecycle !== 'deleting'" />
-              </div>
-            </ng-template>
-          </trove-tab>
-        }
-        @if (clientsOf(repo.format).length > 0) {
-          <trove-tab [label]="tabGuide">
-            <ng-template troveTabContent>
-              <div class="tab">
-                <trove-repository-guide [key]="ref()" [format]="repo.format" [clients]="clientsOf(repo.format)" />
-              </div>
-            </ng-template>
-          </trove-tab>
-        }
-        <trove-tab [label]="tabApi">
-          <div class="tab">
-            <h2 i18n="@@repo.detail.api.document">Stored document</h2>
-            <pre class="code-block" translate="no" tabindex="0">{{ documentJson() }}</pre>
-            <h2 i18n="@@repo.detail.api.patch">Your change as a request</h2>
-            @if (dirty()) {
-              <pre class="code-block" translate="no" tabindex="0">{{ curl() }}</pre>
-            } @else {
-              <p class="hint" i18n="@@repo.detail.api.nochange">
-                Change a setting to see the request that saves it.
-              </p>
+          <trove-disclosure
+            i18n-heading="@@repo.tab.ansible-tombstones"
+            heading="Tombstones"
+            i18n-hint="@@repo.settings.tombstones-hint"
+            hint="Deleted collection versions whose names stay taken."
+            (expandedChange)="open('ansible-tombstones', $event)"
+          >
+            @if (isOpened('ansible-tombstones')) {
+              <trove-ansible-tombstones [key]="ref()" [canManage]="canChange()" />
             }
-          </div>
-        </trove-tab>
-      </trove-tab-group>
-
-      @if (canWrite() && repo.lifecycle !== 'deleting') {
-        <div class="actions">
-          <button class="btn btn-confirm"
-            type="button"
-            [disabled]="!dirty() || saving()"
-            (click)="save()"
-            i18n="@@repo.edit.save"
-          >
-            Save changes
-          </button>
-          <button class="btn btn-tertiary"
-            type="button"
-            [disabled]="!dirty() || saving()"
-            (click)="reset()"
-            i18n="@@repo.edit.reset"
-          >
-            Discard changes
-          </button>
-          @if (dirty()) {
-            <span class="hint" role="status" i18n="@@repo.edit.unsaved"
-              >You have unsaved changes.</span
-            >
-          }
-        </div>
-        @if (canMove() && moveOptions().length > 1) {
-          <section class="move" aria-labelledby="repo-move">
-            <h2 id="repo-move" i18n="@@repo.move.heading">Move to another project</h2>
-            <p class="hint" i18n="@@repo.move.hint">
-              The repository keeps its key and its content; its address changes. You must be Owner of the target project too.
-            </p>
-            <div class="field-action-row">
-              <trove-select-field
-                i18n-label="@@repo.move.target"
-                label="Target project"
-                name="moveTarget"
-                [options]="moveOptions()"
-                [(value)]="moveTarget"
-              />
-              <button class="btn btn-default" type="button" [disabled]="!moveTarget() || moving()" (click)="move()" i18n="@@repo.move.action">
-                Move repository
-              </button>
-            </div>
-          </section>
+          </trove-disclosure>
         }
-        <!-- The destructive action comes last, behind its own closed section (the style guide's settings rule). -->
+
+        @if (clientsOf(repo.format).length > 0) {
+          <trove-disclosure
+            i18n-heading="@@repo.tab.guide"
+            heading="How to use"
+            i18n-hint="@@repo.settings.guide-hint"
+            hint="How a client is set up for this repository."
+            (expandedChange)="open('guide', $event)"
+          >
+            @if (isOpened('guide')) {
+              <trove-repository-guide [key]="ref()" [format]="repo.format" [clients]="clientsOf(repo.format)" />
+            }
+          </trove-disclosure>
+        }
+
         <trove-disclosure
-          class="advanced"
-          i18n-heading="@@repo.detail.advanced"
-          heading="Advanced"
-          i18n-hint="@@repo.detail.advanced-hint"
-          hint="Delete this repository."
+          i18n-heading="@@repo.settings.details"
+          heading="Details"
+          i18n-hint="@@repo.settings.details-hint"
+          hint="The class, the format, the address and the dates of the repository."
         >
-          <p class="hint delete-note" i18n="@@repo.detail.delete-note">Deleting the repository removes it and everything in it for good. It runs as a job, and the key stays taken until it has finished.</p>
-          <button class="btn btn-danger" type="button" (click)="remove()" i18n="@@repo.detail.delete">Delete repository</button>
+          <dl class="facts">
+            <dt i18n="@@repo.col.class">Class</dt>
+            <dd>{{ classText(repo.class) }}</dd>
+            <dt i18n="@@repo.col.format">Format</dt>
+            <dd translate="no">{{ formatLabel() }}</dd>
+            <dt i18n="@@repo.detail.layout">Layout</dt>
+            <dd translate="no">{{ repo.layout }}</dd>
+            @if (repo.project; as projectKey) {
+              <dt i18n="@@repo.detail.project">Project</dt>
+              <dd><a [routerLink]="['/projects', projectKey]" translate="no">{{ projectKey }}</a></dd>
+            }
+            @if (address()) {
+              <dt i18n="@@repo.col.address">Client address</dt>
+              <dd><trove-address-field [value]="address()" /></dd>
+            }
+            @if (repo.createdAt; as at) {
+              <dt i18n="@@repo.detail.created">Created</dt>
+              <dd><time [attr.datetime]="at">{{ at | date: 'medium' }}</time></dd>
+            }
+            @if (repo.updatedAt; as at) {
+              <dt i18n="@@repo.detail.updated">Last changed</dt>
+              <dd><time [attr.datetime]="at">{{ at | date: 'medium' }}</time></dd>
+            }
+            @if (repo.lastActivityAt; as at) {
+              <dt i18n="@@repo.col.activity">Last activity</dt>
+              <dd><time [attr.datetime]="at">{{ at | date: 'medium' }}</time></dd>
+            }
+          </dl>
         </trove-disclosure>
-      }
+
+        <trove-disclosure
+          i18n-heading="@@repo.tab.api"
+          heading="API"
+          i18n-hint="@@repo.settings.api-hint"
+          hint="The stored document, and each unsaved change as the request that saves it."
+        >
+          <h3 i18n="@@repo.detail.api.document">Stored document</h3>
+          <pre class="code-block" translate="no" tabindex="0">{{ documentJson() }}</pre>
+          <h3 i18n="@@repo.detail.api.patch">Your change as a request</h3>
+          @for (r of requests(); track r.section) {
+            <h4>{{ r.label }}</h4>
+            <pre class="code-block" translate="no" tabindex="0">{{ r.curl }}</pre>
+          } @empty {
+            <p class="hint" i18n="@@repo.detail.api.nochange">Change a setting to see the request that saves it.</p>
+          }
+        </trove-disclosure>
+
+        @if (canChange()) {
+          <!-- What acts on the running repository comes last, behind its own closed section (Q-UI-352). -->
+          <trove-disclosure
+            class="advanced"
+            i18n-heading="@@repo.detail.advanced"
+            heading="Advanced"
+            i18n-hint="@@repo.settings.advanced-hint"
+            hint="Disable, move or delete this repository."
+          >
+            @if (advancedFailure(); as f) {
+              <trove-error-notice [error]="f" />
+            }
+            <section class="advanced-action" aria-labelledby="repo-disable">
+              @if (repo.disabled) {
+                <h3 id="repo-disable" i18n="@@repo.enable.heading">Enable repository</h3>
+                <p class="hint" i18n="@@repo.enable.hint">The repository is disabled: it serves nothing and takes no publish.</p>
+                <button class="btn btn-default" type="button" [disabled]="advancedBusy()" (click)="toggleDisabled()" i18n="@@repo.enable.confirm">Enable repository</button>
+              } @else {
+                <h3 id="repo-disable" i18n="@@repo.disable.heading">Disable repository</h3>
+                <p class="hint" i18n="@@repo.disable.hint">Clients can no longer download from it or publish to it; its content stays.</p>
+                <button class="btn btn-default" type="button" [disabled]="advancedBusy()" (click)="toggleDisabled()" i18n="@@repo.disable.confirm">Disable repository</button>
+              }
+            </section>
+            @if (canMove() && moveOptions().length > 1) {
+              <section class="advanced-action" aria-labelledby="repo-move">
+                <h3 id="repo-move" i18n="@@repo.move.heading">Move to another project</h3>
+                <p class="hint" i18n="@@repo.move.hint">
+                  The repository keeps its key and its content; its address changes. You must be Owner of the target project too.
+                </p>
+                <div class="field-action-row">
+                  <trove-select-field
+                    i18n-label="@@repo.move.target"
+                    label="Target project"
+                    name="moveTarget"
+                    [options]="moveOptions()"
+                    [(value)]="moveTarget"
+                  />
+                  <button class="btn btn-default" type="button" [disabled]="!moveTarget() || moving()" (click)="move()" i18n="@@repo.move.action">
+                    Move repository
+                  </button>
+                </div>
+              </section>
+            }
+            <section class="advanced-action" aria-labelledby="repo-delete">
+              <h3 id="repo-delete" i18n="@@repo.delete.heading">Delete repository</h3>
+              <p class="hint delete-note" i18n="@@repo.detail.delete-note">Deleting the repository removes it and everything in it for good. It runs as a job, and the key stays taken until it has finished.</p>
+              <button class="btn btn-danger" type="button" (click)="remove()" i18n="@@repo.detail.delete">Delete repository</button>
+            </section>
+          </trove-disclosure>
+        }
+      </div>
+
       @if (deletion(); as job) {
         <div class="deleting">
           <span i18n="@@repo.deleting">Deleting</span>
-          <trove-job-progress
-            [jobId]="job.id"
-            [label]="deleteLabel"
-            (finished)="jobEnded($event.state)"
-          />
+          <trove-job-progress [jobId]="job.id" [label]="deleteLabel" (finished)="jobEnded($event.state)" />
         </div>
       }
-    }
+    </div>
   }
 }

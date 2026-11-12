@@ -13,16 +13,13 @@ import { AnsibleApi } from '../../api/ansible-api';
 import { FakeAnsibleApi } from '../../api/testing/fakes-ansible';
 import { DebApi } from '../../api/deb-api';
 import { FakeDebApi } from '../../api/testing/fakes-deb';
-import { addressValues, button, expectAccessible, renderScreen, settle, text, type } from '../../testing/screen';
+import { addressValues, button, expectAccessible, openSection, renderScreen, saveButton, sectionHeadings, settle, text, type } from '../../testing/screen';
 import { RepositoryDetail } from './repository-detail';
 
+/** Opens the section of the settings page that holds what a tab held; the standard sections are open already (R-UI-087). */
 async function openTab(r: Awaited<ReturnType<typeof open>>, label: string) {
-  const tab = [...r.root.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) =>
-    t.textContent?.includes(label),
-  );
-  if (!tab) throw new Error(`no tab ${label}`);
-  tab.click();
-  await settle(r.fixture);
+  if (['General', 'Upstream', 'Members'].includes(label)) return;
+  await openSection(r.fixture, r.root, label);
 }
 
 function withNpmLocal(npm?: Record<string, unknown>) {
@@ -51,7 +48,7 @@ describe('Repository edit form', () => {
     const r = await open();
     const t = text(r.root);
     expect(t).toContain('generic-local');
-    expect(r.root.querySelector('input#f-key')).toBeNull();
+    expect(r.root.querySelector<HTMLInputElement>('input#f-key')?.readOnly).toBe(true);
     expect(r.root.querySelector<HTMLTextAreaElement>('#f-description')?.value).toBe(
       'Installers and build outputs',
     );
@@ -61,7 +58,7 @@ describe('Repository edit form', () => {
   it('R-UI-020 deleting the repository is a danger button last on its settings, behind Advanced, and asks for the key first', async () => {
     const { root, fixture, get } = await open();
     const fake = get(RepositoriesApi) as FakeRepositoriesApi;
-    const save = button(root, 'Save changes');
+    const save = saveButton(root);
     expect(save.parentElement!.textContent).not.toContain('Delete');
     const advanced = [...root.querySelectorAll('trove-disclosure')].at(-1)!;
     expect(text(advanced.querySelector('.heading span:not(.material-icons)')!)).toBe('Advanced');
@@ -81,12 +78,12 @@ describe('Repository edit form', () => {
   it('R-UI-021 saving sends a merge patch of the changed members only, with the loaded ETag', async () => {
     const r = await open();
     const fake = r.get(RepositoriesApi) as FakeRepositoriesApi;
-    expect(button(r.root, 'Save changes').disabled).toBe(true);
+    expect(saveButton(r.root).disabled).toBe(true);
 
     type(r.root.querySelector<HTMLTextAreaElement>('#f-description')!, 'Changed');
     await settle(r.fixture);
     expect(r.fixture.componentInstance.hasUnsavedChanges()).toBe(true);
-    button(r.root, 'Save changes').click();
+    saveButton(r.root).click();
     await settle(r.fixture);
 
     expect(fake.patches).toHaveLength(1);
@@ -111,7 +108,7 @@ describe('Repository edit form', () => {
     const fake = r.get(RepositoriesApi) as FakeRepositoriesApi;
     type(r.root.querySelector<HTMLTextAreaElement>('#f-description')!, 'Mine');
     await settle(r.fixture);
-    button(r.root, 'Save changes').click();
+    saveButton(r.root).click();
     await settle(r.fixture);
 
     const body = r.root.ownerDocument.body;
@@ -138,7 +135,7 @@ describe('Repository edit form', () => {
     };
     type(r.root.querySelector<HTMLTextAreaElement>('#f-description')!, 'Once');
     await settle(r.fixture);
-    button(r.root, 'Save changes').click();
+    saveButton(r.root).click();
     await settle(r.fixture);
     expect(r.root.ownerDocument.body.querySelector('[role="dialog"]')).toBeNull();
     expect(r.fixture.componentInstance.hasUnsavedChanges()).toBe(false);
@@ -159,7 +156,7 @@ describe('Repository edit form', () => {
     });
     type(r.root.querySelector<HTMLTextAreaElement>('#f-description')!, 'x');
     await settle(r.fixture);
-    button(r.root, 'Save changes').click();
+    saveButton(r.root).click();
     await settle(r.fixture);
     expect(r.root.querySelector('[role="alert"]')?.textContent).toContain(
       'Some entries are not valid',
@@ -175,13 +172,13 @@ describe('Repository edit form', () => {
     const guard = r.root.querySelector<HTMLInputElement>('#f-npm-latestGuard')!;
     expect(guard.checked).toBe(true);
     expect(r.root.querySelector('#f-npm-latestStrategy')).toBeNull();
-    expect(button(r.root, 'Save changes').disabled).toBe(true);
+    expect(saveButton(r.root).disabled).toBe(true);
     await expectAccessible(r.root);
 
     guard.checked = false;
     guard.dispatchEvent(new Event('change', { bubbles: true }));
     await settle(r.fixture);
-    button(r.root, 'Save changes').click();
+    saveButton(r.root).click();
     await settle(r.fixture);
     expect(fake.patches.at(-1)?.patch).toEqual({ npm: { latestGuard: false } });
     expect(fake.repositories.find((x) => x.key === 'npm-local')?.npm).toEqual({
@@ -199,7 +196,7 @@ describe('Repository edit form', () => {
     guard.checked = true;
     guard.dispatchEvent(new Event('change', { bubbles: true }));
     await settle(r.fixture);
-    button(r.root, 'Save changes').click();
+    saveButton(r.root).click();
     await settle(r.fixture);
     expect(fake.patches.at(-1)?.patch).toEqual({ npm: null });
 
@@ -207,13 +204,12 @@ describe('Repository edit form', () => {
     expect(stored.fixture.componentInstance.hasUnsavedChanges()).toBe(false);
   });
 
-  it('R-UI-021 a repository of a format without settings has no format tab', async () => {
+  it('R-UI-021 a repository of a format without settings has no section of format settings', async () => {
     const r = await open((fake) => (fake.formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT]));
-    const tabs = [...r.root.querySelectorAll('[role="tab"]')].map((t) => text(t));
-    expect(tabs).toEqual(['General', 'Access', 'How to use', 'API']);
+    expect(sectionHeadings(r.root)).toEqual(['Access details', 'Administrator notes', 'How to use', 'Details', 'API', 'Advanced']);
   });
 
-  it('R-UI-049 R-GENERIC-016 the How to use tab of a generic repository shows the guide for curl', async () => {
+  it('R-UI-049 R-GENERIC-016 the section How to use of a generic repository shows the guide for curl', async () => {
     const r = await open((fake) => (fake.formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT]));
     await openTab(r, 'How to use');
     const guides = r.get(GuidesApi) as FakeGuidesApi;
@@ -238,10 +234,9 @@ describe('Repository edit form', () => {
     await expectAccessible(r.root);
   });
 
-  it('R-UI-049 a repository of a format with clients has a How to use tab with its guide for the chosen client', async () => {
+  it('R-UI-049 a repository of a format with clients has a section How to use with its guide for the chosen client', async () => {
     const r = await open(withNpmLocal(), 'npm-local');
-    const tabs = [...r.root.querySelectorAll('[role="tab"]')].map((t) => text(t));
-    expect(tabs).toEqual(['General', 'Access', 'npm settings', 'How to use', 'API']);
+    expect(sectionHeadings(r.root)).toEqual(['npm settings', 'Access details', 'Administrator notes', 'How to use', 'Details', 'API', 'Advanced']);
     const guides = r.get(GuidesApi) as FakeGuidesApi;
     expect(guides.calls).toEqual([]);
     await openTab(r, 'How to use');
@@ -282,10 +277,7 @@ describe('Repository edit form', () => {
     expect(addressValues(r.root)).toEqual(['https://trove.example.net/files/web/generic-local/']);
     type(r.root.querySelector<HTMLTextAreaElement>('#f-description')!, 'Api');
     await settle(r.fixture);
-    const tab = [...r.root.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) =>
-      t.textContent?.includes('API'),
-    )!;
-    tab.click();
+    await openSection(r.fixture, r.root, 'API');
     await settle(r.fixture);
     expect(text(r.root)).toContain(
       "curl -X PATCH 'https://trove.example.net/api/v1/projects/web/repositories/generic-local'",
@@ -306,14 +298,11 @@ describe('Repository edit form', () => {
     expect(r.root.querySelector('trove-address-field')).toBeNull();
   });
 
-  it('R-UI-021 the API tab shows the stored document and the request that saves the change', async () => {
+  it('R-UI-021 the section API shows the stored document and the request that saves the change', async () => {
     const r = await open();
     type(r.root.querySelector<HTMLTextAreaElement>('#f-description')!, 'Api');
     await settle(r.fixture);
-    const tab = [...r.root.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) =>
-      t.textContent?.includes('API'),
-    )!;
-    tab.click();
+    await openSection(r.fixture, r.root, 'API');
     await settle(r.fixture);
     expect(text(r.root)).toContain('curl -X PATCH');
     expect(text(r.root)).toContain('If-Match: "1"');
@@ -338,11 +327,11 @@ describe('Repository edit form', () => {
         setup: (get) => withDeb(cls, deb)(get(RepositoriesApi) as FakeRepositoriesApi),
       });
     const tabNames = (r: Awaited<ReturnType<typeof openDeb>>) =>
-      [...r.root.querySelectorAll('[role="tab"]')].map((t) => text(t));
+      sectionHeadings(r.root);
 
-    it('R-DEB-030 R-UI-021 a local repository has the tabs for its format settings, signing keys, index state and the APT guide', async () => {
+    it('R-DEB-030 R-UI-021 a local repository has the sections of its format settings, signing keys, indexes and the APT guide', async () => {
       const r = await openDeb('local');
-      expect(tabNames(r)).toEqual(['General', 'Access', 'Debian (APT) settings', 'Signing keys', 'Index', 'How to use', 'API']);
+      expect(tabNames(r)).toEqual(['Debian (APT) settings', 'Access details', 'Administrator notes', 'Signing keys', 'Indexes', 'How to use', 'Details', 'API', 'Advanced']);
       await openTab(r, 'Signing keys');
       expect(text(r.root)).toContain('3F2A 0000');
       const api = r.get(DebApi) as FakeDebApi;
@@ -391,11 +380,15 @@ describe('Repository edit form', () => {
       });
       await openTab(r, 'Mirror');
       const fake = r.get(RepositoriesApi) as FakeRepositoriesApi;
+      const mirror = r.root.querySelector<HTMLInputElement>('input[name="remote-mode"][value="mirror"]')!;
+      mirror.checked = true;
+      mirror.dispatchEvent(new Event('change', { bubbles: true }));
+      await settle(r.fixture);
       type(r.root.querySelector<HTMLTextAreaElement>('#f-deb-mirror-suites')!, 'stable');
       await settle(r.fixture);
-      button(r.root, 'Save changes').click();
+      saveButton(r.root, 'Mirror').click();
       await settle(r.fixture);
-      expect(fake.patches[0]?.patch).toEqual({ deb: { mirror: { suites: ['stable'] } } });
+      expect(fake.patches[0]?.patch).toEqual({ remote: { mode: 'mirror' }, deb: { mirror: { suites: ['stable'] } } });
     });
   });
 
@@ -418,7 +411,7 @@ describe('Repository edit form', () => {
         setup: (get) => withAnsible(cls, ansible)(get(RepositoriesApi) as FakeRepositoriesApi),
       });
     const tabNames = (r: Awaited<ReturnType<typeof openAnsible>>) =>
-      [...r.root.querySelectorAll('[role="tab"]')].map((t) => text(t));
+      sectionHeadings(r.root);
 
     it('R-ANS-026 a local repository has the tabs for its import tasks, its tombstones and the ansible-galaxy guide, loaded when opened', async () => {
       const r = await openAnsible('local');

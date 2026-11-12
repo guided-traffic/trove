@@ -76,6 +76,8 @@ export interface FormatMemberOf {
   readonly mirror?: boolean;
   /** Set when the form edits the upstream settings; the defaults say which values are not written. */
   readonly upstream?: UpstreamDefaults;
+  /** The format's schema has a `mirror` object for the class, which the section Mirror saves (R-UI-087). */
+  readonly formatMirror?: boolean;
 }
 
 /** Defaults of R-REPO-004. */

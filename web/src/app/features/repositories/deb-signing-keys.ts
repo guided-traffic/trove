@@ -71,7 +71,7 @@ export function keyErrorText(error: ApiError): string | null {
   imports: [DatePipe, CopyButton, DataTable, ErrorNotice],
   template: `
     <section class="keys" aria-labelledby="deb-keys-heading">
-      <h2 id="deb-keys-heading" i18n="@@deb.keys.heading">Signing keys</h2>
+      <h2 id="deb-keys-heading" class="visually-hidden" i18n="@@deb.keys.heading">Signing keys</h2>
       <p class="hint" i18n="@@deb.keys.intro">
         Every index of this repository is signed. Clients trust the key through the key file the setup snippet installs. To change the
         key without breaking clients, create a next key, let the clients replace their key file while both keys sign, then promote the

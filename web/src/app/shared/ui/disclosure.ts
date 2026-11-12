@@ -15,6 +15,9 @@ let nextDisclosureId = 1;
         <button class="toggle" type="button" [attr.aria-expanded]="expanded()" [attr.aria-controls]="bodyId" (click)="expanded.set(!expanded())">
           <span class="material-icons chevron" aria-hidden="true">chevron_right</span>
           <span>{{ heading() }}</span>
+          @if (note()) {
+            <span class="note">{{ note() }}</span>
+          }
         </button>
       </h2>
       @if (hint()) {
@@ -57,6 +60,12 @@ let nextDisclosureId = 1;
       font-size: 1.25rem;
       transition: transform var(--trove-motion-duration) var(--trove-motion-easing);
     }
+    .note {
+      margin-inline-start: var(--trove-space-2);
+      color: var(--trove-text-muted);
+      font-size: var(--trove-text-muted-size);
+      font-weight: 400;
+    }
     .toggle[aria-expanded='true'] .chevron {
       transform: rotate(90deg);
     }
@@ -76,6 +85,8 @@ export class Disclosure {
   readonly heading = input.required<string>();
   /** One muted line under the heading that says what is inside. */
   readonly hint = input('');
+  /** A short state after the heading, such as "Unsaved changes" of a closed section that holds one (R-UI-087). */
+  readonly note = input('');
   readonly expanded = model(false);
 
   protected readonly bodyId = `trove-disclosure-${nextDisclosureId++}`;

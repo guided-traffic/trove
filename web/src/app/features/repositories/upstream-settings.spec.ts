@@ -14,7 +14,9 @@ import {
 import {
   button,
   expectAccessible,
+  openSection,
   renderScreen,
+  saveButton,
   settle,
   storedText,
   text,
@@ -643,16 +645,12 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-UI-082
           fake.repositories.push(repo);
         },
       });
-      [...r.root.querySelectorAll<HTMLElement>('[role="tab"]')]
-        .find((t) => t.textContent?.trim() === 'Upstream')
-        ?.click();
-      await settle(r.fixture);
       return { r, fake: r.get(RepositoriesApi) as FakeRepositoriesApi };
     }
     const control = (root: ParentNode, id: string) => root.querySelector<HTMLInputElement>(`#${id}`)!;
     const doc = (fake: FakeRepositoriesApi) => fake.repositories.find((x) => x.key === 'npm-remote') as Repository;
 
-    it('R-UI-021 F-54 a remote has an Upstream tab with the stored values; a local one has none', async () => {
+    it('R-UI-021 F-54 a remote has an open section Upstream with the stored values; a local one has none', async () => {
       const { r } = await open();
       expect(control(r.root, 'f-remote-url').value).toBe('https://npm.internal.example/');
       expect(control(r.root, 'f-remote-authMode').value).toBe('basic');
@@ -671,7 +669,7 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-UI-082
           fake.repositories.push({ key: 'npm-local', project: 'web', class: 'local', format: 'npm' });
         },
       });
-      expect([...local.root.querySelectorAll('[role="tab"]')].map((t) => t.textContent?.trim())).not.toContain('Upstream');
+      expect(local.root.querySelector('trove-upstream-settings')).toBeNull();
     });
 
     it('R-REPO-033 the stored password is never read into the field: it is empty, the page says one is stored, and no value of it exists anywhere', async () => {
@@ -688,7 +686,7 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-UI-082
       const { r, fake } = await open();
       type(control(r.root, 'f-remote-url'), 'https://npm.other.example/');
       await settle(r.fixture);
-      button(r.root, 'Save changes').click();
+      saveButton(r.root).click();
       await settle(r.fixture);
       expect(fake.patches[0]?.patch).toEqual({ remote: { url: 'https://npm.other.example/' } });
       expect(doc(fake).remote?.password).toEqual({ set: true });
@@ -698,18 +696,14 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-UI-082
       const { r, fake } = await open();
       type(control(r.root, 'f-remote-password'), SECRET);
       await settle(r.fixture);
-      const api = [...r.root.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent?.trim() === 'API')!;
-      api.click();
-      await settle(r.fixture);
+      await openSection(r.fixture, r.root, 'API');
       expect(r.root.textContent).not.toContain(SECRET);
       expect(r.root.textContent).toContain('<the password>');
-      button(r.root, 'Save changes').click();
+      saveButton(r.root).click();
       await settle(r.fixture);
       expect(fake.patches[0]?.patch).toEqual({ remote: { password: { value: SECRET } } });
       expect(doc(fake).remote?.password).toEqual({ set: true });
       expect(r.fixture.componentInstance.hasUnsavedChanges()).toBe(false);
-      [...r.root.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent?.trim() === 'Upstream')!.click();
-      await settle(r.fixture);
       expect(control(r.root, 'f-remote-password').value).toBe('');
       expect(storedText()).not.toContain(SECRET);
     });
@@ -720,7 +714,7 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-UI-082
       box.checked = true;
       box.dispatchEvent(new Event('change', { bubbles: true }));
       await settle(r.fixture);
-      button(r.root, 'Save changes').click();
+      saveButton(r.root).click();
       await settle(r.fixture);
       expect(fake.patches[0]?.patch).toEqual({ remote: { password: null } });
       expect(doc(fake).remote?.password).toBeUndefined();
@@ -733,7 +727,7 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-UI-082
       offline.checked = true;
       offline.dispatchEvent(new Event('change', { bubbles: true }));
       await settle(r.fixture);
-      button(r.root, 'Save changes').click();
+      saveButton(r.root).click();
       await settle(r.fixture);
       expect(fake.patches[0]?.patch).toEqual({
         remote: { cache: { metadataTtlSeconds: null }, availability: { mode: 'offline' } },
@@ -771,7 +765,7 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-UI-082
       };
       type(control(r.root, 'f-remote-url'), 'nope');
       await settle(r.fixture);
-      button(r.root, 'Save changes').click();
+      saveButton(r.root).click();
       await settle(r.fixture);
       expect(control(r.root, 'f-remote-url').getAttribute('aria-invalid')).toBe('true');
       r.root.querySelector<HTMLButtonElement>('[role="alert"] button')!.click();
@@ -781,19 +775,15 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-UI-082
     it('R-UI-021 Q-UI-122 on the edit form the mirror notice follows the URL typed, not only the stored one', async () => {
       const repo = stored({ url: 'https://registry.npmjs.org/', authMode: 'none', mode: 'pullThrough' });
       const { r } = await open(repo);
-      [...r.root.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent?.trim() === 'Mirror')!.click();
-      await settle(r.fixture);
+      await openSection(r.fixture, r.root, 'Mirror');
       const radio = r.root.querySelector<HTMLInputElement>('input[name="remote-mode"][value="mirror"]')!;
       radio.checked = true;
       radio.dispatchEvent(new Event('change', { bubbles: true }));
       await settle(r.fixture);
       expect(text(r.root.querySelector('#mirror-unbounded')!)).toContain('needs a bound');
-      [...r.root.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent?.trim() === 'Upstream')!.click();
-      await settle(r.fixture);
       type(control(r.root, 'f-remote-url'), 'https://npm.internal.example/');
       await settle(r.fixture);
-      [...r.root.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent?.trim() === 'Mirror')!.click();
-      await settle(r.fixture);
+      await openSection(r.fixture, r.root, 'Mirror');
       expect(text(r.root.querySelector('#mirror-unbounded')!)).toContain('It is saved with a warning');
     });
   });

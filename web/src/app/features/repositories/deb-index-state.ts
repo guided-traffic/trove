@@ -67,7 +67,7 @@ export function behindBy(suite: DebSuiteState): number {
   imports: [DatePipe, RouterLink, DataTable, ErrorNotice],
   template: `
     <section class="index" aria-labelledby="deb-index-heading">
-      <h2 id="deb-index-heading" i18n="@@deb.index.heading">Index state</h2>
+      <h2 id="deb-index-heading" class="visually-hidden" i18n="@@deb.index.heading">Index state</h2>
       <p class="hint" i18n="@@deb.index.intro">
         The indexes of each suite are built from the stored packages a moment after a change. A client that must see an upload at once
         waits for the change number the upload answered with.

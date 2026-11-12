@@ -20,7 +20,7 @@ const SCREENS: readonly (readonly [url: string, heading: string, h1?: string])[]
   ['/projects/web/repositories', 'Repositories'],
   ['/projects/web/repositories/new', 'New repository'],
   ['/projects/web/repositories/generic-local', 'generic-local'],
-  ['/projects/web/repositories/npm-local/settings', 'Repository settings'],
+  ['/projects/web/repositories/npm-local/settings', 'Settings'],
   ['/projects/web/members', 'Members'],
   ['/projects/web/settings', 'Settings'],
   ['/projects/web/policies', 'Permission policies'],

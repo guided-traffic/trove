@@ -10,7 +10,7 @@ import {
   NUGET_FORMAT,
   PACKAGE_FORMAT,
 } from '../../api/testing/fakes-catalog';
-import { button, expectAccessible, renderScreen, settle, text, type } from '../../testing/screen';
+import { button, expectAccessible, renderScreen, saveButton, settle, text, type } from '../../testing/screen';
 import {
   boundsMirror,
   mirrorPointerLabel,
@@ -337,9 +337,7 @@ describe('Mirror settings of a remote repository', () => {
           }
         },
       });
-      const tab = [...r.root.querySelectorAll<HTMLElement>('[role="tab"]')].find(
-        (t) => t.textContent?.trim() === 'Mirror',
-      );
+      const tab = [...r.root.querySelectorAll<HTMLButtonElement>('trove-disclosure .toggle')].find((t) => text(t).endsWith('Mirror'));
       tab?.click();
       await settle(r.fixture);
       return { r, tab, fake: r.get(RepositoriesApi) as FakeRepositoriesApi };
@@ -357,7 +355,7 @@ describe('Mirror settings of a remote repository', () => {
 
     it('R-REPO-050 R-UI-021 the stored document read and not touched is not a change (members at their defaults are not written)', async () => {
       const { r } = await open(stored('pullThrough'));
-      expect(button(r.root, 'Save changes').disabled).toBe(true);
+      expect(saveButton(r.root).disabled).toBe(true);
       expect(r.fixture.componentInstance.hasUnsavedChanges()).toBe(false);
     });
 
@@ -368,7 +366,7 @@ describe('Mirror settings of a remote repository', () => {
       await settle(r.fixture);
       type(control(r.root, 'f-remote-mirror-concurrency'), '4');
       await settle(r.fixture);
-      button(r.root, 'Save changes').click();
+      saveButton(r.root).click();
       await settle(r.fixture);
 
       expect(fake.patches[0]?.patch).toEqual({
@@ -384,7 +382,7 @@ describe('Mirror settings of a remote repository', () => {
       expect(control(r.root, 'f-remote-mirror-intervalSeconds').value).toBe('7200');
       type(control(r.root, 'f-remote-mirror-intervalSeconds'), '');
       await settle(r.fixture);
-      button(r.root, 'Save changes').click();
+      saveButton(r.root).click();
       await settle(r.fixture);
       expect(fake.patches[0]?.patch).toEqual({ remote: { mirror: { intervalSeconds: null } } });
     });
@@ -404,13 +402,13 @@ describe('Mirror settings of a remote repository', () => {
       paused.checked = true;
       paused.dispatchEvent(new Event('change', { bubbles: true }));
       await settle(r.fixture);
-      button(r.root, 'Save changes').click();
+      saveButton(r.root).click();
       await settle(r.fixture);
       expect(fake.patches[0]?.patch).toEqual({ remote: { mirror: { paused: true } } });
 
       button(section as HTMLElement, 'Turn off').click();
       await settle(r.fixture);
-      button(r.root, 'Save changes').click();
+      saveButton(r.root).click();
       await settle(r.fixture);
       expect(fake.patches[1]?.patch).toEqual({ remote: { mode: 'pullThrough' } });
     });
@@ -429,7 +427,7 @@ describe('Mirror settings of a remote repository', () => {
       };
       type(control(r.root, 'f-remote-mirror-concurrency'), '100');
       await settle(r.fixture);
-      button(r.root, 'Save changes').click();
+      saveButton(r.root).click();
       await settle(r.fixture);
       expect(control(r.root, 'f-remote-mirror-concurrency').getAttribute('aria-invalid')).toBe('true');
       const summary = r.root.querySelector<HTMLButtonElement>('[role="alert"] button')!;

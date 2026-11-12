@@ -18,7 +18,7 @@ import { DataTable, TableColumn } from '../../shared/ui/data-table';
   imports: [DatePipe, DataTable, ErrorNotice],
   template: `
     <section class="tombstones" aria-labelledby="ansible-tombstones-heading">
-      <h2 id="ansible-tombstones-heading" i18n="@@ansible.tombstones.heading">Tombstones</h2>
+      <h2 id="ansible-tombstones-heading" class="visually-hidden" i18n="@@ansible.tombstones.heading">Tombstones</h2>
       <p class="hint" i18n="@@ansible.tombstones.intro">
         A deleted version leaves a tombstone, and its number cannot be published again. Clear the tombstone to allow a new publish of that
         version number with other bytes.

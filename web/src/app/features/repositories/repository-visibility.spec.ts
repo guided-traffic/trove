@@ -50,9 +50,6 @@ async function openAccess(options: {
       }
     },
   });
-  const tab = [...r.root.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent?.includes('Access'))!;
-  tab.click();
-  await settle(r.fixture);
   const group = (label: string) =>
     [...r.root.querySelectorAll<HTMLFieldSetElement>('trove-repository-visibility fieldset')].find(
       (f) => f.querySelector('legend')?.textContent?.trim() === label,

@@ -134,6 +134,19 @@ async function* advancedOpen(page: Page): AsyncGenerator<string> {
   yield 'advanced';
 }
 
+/**
+ * A repository's settings page (R-UI-087) as it opens, with the standard sections open and the details closed, then with every
+ * closed section opened, Advanced last; a caller who sees the reduced view has none to open.
+ */
+async function* allSections(page: Page): AsyncGenerator<string> {
+  yield '';
+  const closed = page.locator('main trove-disclosure .toggle[aria-expanded="false"]');
+  if ((await closed.count()) === 0) return;
+  while ((await closed.count()) > 0) await closed.first().click();
+  await expect(page.locator('main trove-disclosure .collapse-region:not(.open)')).toHaveCount(0);
+  yield 'sections';
+}
+
 /** The closed Visibility section of a settings page, opened: where the level of the installation or of a project is chosen (R-UI-053, R-UI-054). */
 async function* visibilityOpen(page: Page): AsyncGenerator<string> {
   yield '';
@@ -357,12 +370,13 @@ export const screens: readonly Screen[] = [
   { id: 'not-found', path: '/ui/no-such-page', kinds: all },
 
   // What an Owner of the project maintains, and the settings a reader is offered in the list.
-  { id: 'repository-settings-npm-local', path: `${P}/repositories/npm-internal/settings`, kinds: all },
-  { id: 'repository-settings-npm-remote', path: `${P}/repositories/npmjs/settings`, kinds: owners },
-  { id: 'repository-settings-npm-virtual', path: `${P}/repositories/npm/settings`, kinds: owners },
-  { id: 'repository-settings-generic', path: `${P}/repositories/assets/settings`, kinds: owners },
+  // The settings page of each class, standard sections open and every detail opened in a second picture (R-UI-087).
+  { id: 'repository-settings-npm-local', path: `${P}/repositories/npm-internal/settings`, kinds: all, walk: allSections },
+  { id: 'repository-settings-npm-remote', path: `${P}/repositories/npmjs/settings`, kinds: all, walk: allSections },
+  { id: 'repository-settings-npm-virtual', path: `${P}/repositories/npm/settings`, kinds: all, walk: allSections },
+  { id: 'repository-settings-generic', path: `${P}/repositories/assets/settings`, kinds: owners, walk: allSections },
   { id: 'repository-settings-generic-advanced', path: `${P}/repositories/assets/settings`, kinds: admins, walk: advancedOpen },
-  { id: 'repository-settings-oci', path: `${P}/repositories/images/settings`, kinds: owners },
+  { id: 'repository-settings-oci', path: `${P}/repositories/images/settings`, kinds: all, walk: allSections },
   { id: 'repository-new', path: `${P}/repositories/new`, kinds: owners, walk: chooser },
   { id: 'policies', path: `${P}/policies`, kinds: owners },
   { id: 'policy-new', path: `${P}/policies/new`, kinds: owners },
@@ -374,10 +388,13 @@ export const screens: readonly Screen[] = [
   { id: 'project-settings', path: `${P}/settings`, kinds: owners, walk: visibilityOpen },
 
   // The administrator's area (Q-UI-127).
-  { id: 'repository-settings-oci-remote', path: `${O}/repositories/docker-hub-remote/settings`, kinds: admins },
-  { id: 'repository-settings-deb', path: `${O}/repositories/${longDebKey}/settings`, kinds: admins },
-  { id: 'repository-settings-nuget-remote', path: `${O}/repositories/nuget-org/settings`, kinds: admins },
-  { id: 'repository-settings-ansible', path: `${O}/repositories/collections/settings`, kinds: admins },
+  { id: 'repository-settings-oci-remote', path: `${O}/repositories/docker-hub-remote/settings`, kinds: all, walk: allSections },
+  { id: 'repository-settings-oci-virtual', path: `${O}/repositories/containers/settings`, kinds: admins, walk: allSections },
+  { id: 'repository-settings-deb', path: `${O}/repositories/${longDebKey}/settings`, kinds: admins, walk: allSections },
+  { id: 'repository-settings-nuget-remote', path: `${O}/repositories/nuget-org/settings`, kinds: admins, walk: allSections },
+  { id: 'repository-settings-ansible', path: `${O}/repositories/collections/settings`, kinds: all, walk: allSections },
+  { id: 'repository-settings-ansible-remote', path: `${O}/repositories/galaxy/settings`, kinds: admins, walk: allSections },
+  { id: 'repository-settings-ansible-virtual', path: `${O}/repositories/ansible/settings`, kinds: admins, walk: allSections },
   { id: 'help-admin-page', path: '/ui/help/admin/repositories', kinds: admins },
   { id: 'admin-dashboard', path: '/ui/admin/dashboard', kinds: admins },
   { id: 'admin-projects', path: '/ui/admin/projects', kinds: admins, walk: filtersOpen },

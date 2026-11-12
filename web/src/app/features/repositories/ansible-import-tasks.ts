@@ -21,7 +21,7 @@ export function importStateText(state: AnsibleImportTask['state']): string {
   imports: [DatePipe, DataTable],
   template: `
     <section class="imports" aria-labelledby="ansible-imports-heading">
-      <h2 id="ansible-imports-heading" i18n="@@ansible.imports.heading">Import tasks</h2>
+      <h2 id="ansible-imports-heading" class="visually-hidden" i18n="@@ansible.imports.heading">Import tasks</h2>
       <p class="hint" i18n="@@ansible.imports.intro">
         Every publish that got as far as reading the archive has a task. It is already final when ansible-galaxy first asks, and it is kept
         for a limited time; the published version stays.

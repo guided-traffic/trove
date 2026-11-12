@@ -5662,6 +5662,10 @@ The settings page follows the style guide's settings pages: one column of at mos
 - Each section's **Save changes** sends only its members as a merge patch with `If-Match`; a `412` opens the conflict dialog of
   R-UI-042 for that section; the other sections keep their unsaved edits.
 - A closed section that holds an unsaved change says "Unsaved changes" after its title; leaving the page with one asks first.
+- The open sections (Visibility, Upstream, Members) have a heading and no toggle. A closed section whose content is read from
+  the server (Signing keys, Indexes, Import tasks, Tombstones, How to use) reads it when it is first opened; the mirror's status is
+  read only while the section Mirror is open. The page's header names the repository with the icon of its level, and a disabled
+  repository with the badge **Disabled**.
 - A caller who may not change the repository sees the fields read-only and no save; the reduced view of a caller without
   `repositories:read-config` is unchanged.
 
