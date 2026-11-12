@@ -153,7 +153,12 @@ test('R-UI-035 R-UI-036 R-CI-019 an administrator registers the issuer, creates 
     await page.getByRole('button', { name: 'JSON', exact: true }).click();
     await page.getByLabel('Condition as JSON').fill(JSON.stringify(match, null, 2));
     await expect(page.getByText('Reads as:')).toBeVisible();
-    await page.getByLabel('Add a policy').selectOption(policy);
+    // The policy field is held while the policies load, then suggests them (Q-UI-334).
+    const addPolicy = page.getByRole('combobox', { name: 'Add a policy' });
+    await expect(addPolicy).toBeEnabled();
+    await addPolicy.fill(policy);
+    await addPolicy.press('Enter');
+    await expect(page.getByRole('list', { name: 'Policies' }).getByText(policy)).toBeVisible();
     await page.getByRole('button', { name: 'Add inline grant' }).click();
     const grant = page.getByRole('group', { name: /Inline grant 1|grant 1/i }).first();
     await grant.getByLabel('Repositories').fill(qualified(npmRepo));

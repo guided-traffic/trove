@@ -83,20 +83,25 @@
           >
           <select
             id="f-repository"
-            class="select-input"
-            [disabled]="!creating()"
+            class="select-input field-w-name"
+            [disabled]="!creating() || repos.isLoading()"
+            [attr.aria-busy]="repos.isLoading() ? 'true' : null"
             [attr.aria-invalid]="
               invalid('/repository') ?? (showErrors() && !form().repository ? 'true' : null)
             "
             (change)="set({ repository: $any($event.target).value })"
           >
-            <option value="" [selected]="!form().repository" i18n="@@ep.field.repository.choose">
-              Choose a repository
-            </option>
-            @for (r of valueOf(repos) ?? []; track refOf(r)) {
-              <option [value]="refOf(r)" [selected]="form().repository === refOf(r)" translate="no">
-                {{ refOf(r) }} ({{ r.format }})
+            @if (repos.isLoading()) {
+              <option value="" selected i18n="@@ep.field.repository.loading">Loading repositories…</option>
+            } @else {
+              <option value="" [selected]="!form().repository" i18n="@@ep.field.repository.choose">
+                Choose a repository
               </option>
+              @for (r of valueOf(repos) ?? []; track refOf(r)) {
+                <option [value]="refOf(r)" [selected]="form().repository === refOf(r)" translate="no">
+                  {{ refOf(r) }} ({{ r.format }})
+                </option>
+              }
             }
             @if (form().repository && !repository()) {
               <option [value]="form().repository" selected translate="no">

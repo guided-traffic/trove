@@ -5890,6 +5890,24 @@
         <target> Prüfen Sie, welche Zuordnung ein Job treffen würde. Das ist ein Testlauf: Es wird kein Token ausgestellt und nichts protokolliert. Zum Server werden nur die Claims gesendet, nie ein Token.</target>
       </segment>
     </unit>
+    <unit id="ci.test.issuers-loading">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Loading issuers…</source>
+        <target>Aussteller werden geladen …</target>
+      </segment>
+    </unit>
+    <unit id="ci.test.issuer-choose">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Choose an issuer</source>
+        <target>Aussteller wählen</target>
+      </segment>
+    </unit>
     <unit id="ci.test.issuer">
       <notes>
         <note category="location">src/app/features/ci/claim-tester.ts:58</note>
@@ -8043,6 +8061,24 @@
         <target>Allgemein</target>
       </segment>
     </unit>
+    <unit id="ci.editor.issuers-loading">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Loading issuers…</source>
+        <target>Aussteller werden geladen …</target>
+      </segment>
+    </unit>
+    <unit id="ci.editor.issuer-choose">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Choose an issuer</source>
+        <target>Aussteller wählen</target>
+      </segment>
+    </unit>
     <unit id="ci.editor.issuer">
       <notes>
         <note category="location">src/app/features/ci/mapping-editor.html:47,48</note>
@@ -8232,6 +8268,15 @@
         <target>Richtlinien</target>
       </segment>
     </unit>
+    <unit id="ci.editor.policies-loading">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Loading policies…</source>
+        <target>Richtlinien werden geladen …</target>
+      </segment>
+    </unit>
     <unit id="ci.editor.policies-add">
       <notes>
         <note category="location">src/app/features/ci/mapping-editor.html:156,157</note>
@@ -8257,6 +8302,15 @@
       <segment>
         <source>Groups</source>
         <target>Gruppen</target>
+      </segment>
+    </unit>
+    <unit id="ci.editor.groups-loading">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Loading groups…</source>
+        <target>Gruppen werden geladen …</target>
       </segment>
     </unit>
     <unit id="ci.editor.groups-add">
@@ -9683,6 +9737,15 @@
       <segment>
         <source>Repository</source>
         <target>Repository</target>
+      </segment>
+    </unit>
+    <unit id="ep.field.repository.loading">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Loading repositories…</source>
+        <target>Repositories werden geladen …</target>
       </segment>
     </unit>
     <unit id="ep.field.repository.choose">
@@ -18088,6 +18151,15 @@
       <segment>
         <source>Presents several repositories under one address.</source>
         <target>Fasst mehrere Repositories unter einer Adresse zusammen.</target>
+      </segment>
+    </unit>
+    <unit id="repo.wizard.project-loading">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Loading projects…</source>
+        <target>Projekte werden geladen …</target>
       </segment>
     </unit>
     <unit id="repo.wizard.project-choose">

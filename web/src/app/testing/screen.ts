@@ -25,6 +25,8 @@ export interface RenderOptions {
   readonly providers?: readonly Provider[];
   /** Runs after the providers exist and before the component is created; may be asynchronous. */
   readonly setup?: (get: <A>(token: abstract new (...args: never[]) => A) => A) => unknown;
+  /** Returns without waiting for the screen to settle: a list held by `holdCalls` keeps it loading, which `whenStable` would wait out. */
+  readonly loading?: true;
 }
 
 /** One turn of the event loop: every promise continuation queued so far has run when it returns. */
@@ -86,7 +88,13 @@ export async function renderScreen<T>(
   for (const [name, value] of Object.entries(options.inputs ?? {})) {
     fixture.componentRef.setInput(name, value);
   }
-  await settle(fixture);
+  if (options.loading) {
+    fixture.detectChanges();
+    await turn();
+    fixture.detectChanges();
+  } else {
+    await settle(fixture);
+  }
   return { fixture, root: fixture.nativeElement as HTMLElement, get };
 }
 
@@ -183,4 +191,30 @@ export const browserStorage = new BrowserStorage();
 /** Every key and value of both storage areas as one string, to prove that a secret is not in it. */
 export function storedText(): string {
   return JSON.stringify([...browserStorage.entries('local'), ...browserStorage.entries('session')]);
+}
+
+type AnyFn = (...args: unknown[]) => unknown;
+
+/** Holds the answers of a fake's method that returns a promise until the returned function is called: the screen while a list loads. */
+export function holdCalls<A extends object>(api: A, method: keyof A): () => void {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const original = (api[method] as AnyFn).bind(api);
+  (api as Record<keyof A, unknown>)[method] = async (...args: unknown[]) => {
+    await gate;
+    return original(...args);
+  };
+  return () => release();
+}
+
+/** Holds every page of a fake's paged list (the method returns a page fetcher) until the returned function is called. */
+export function holdPages<A extends object>(api: A, method: keyof A): () => void {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const original = (api[method] as AnyFn).bind(api);
+  (api as Record<keyof A, unknown>)[method] = (...args: unknown[]) => async (cursor: string | null, limit: number) => {
+    await gate;
+    return (original(...args) as (c: string | null, l: number) => Promise<unknown>)(cursor, limit);
+  };
+  return () => release();
 }

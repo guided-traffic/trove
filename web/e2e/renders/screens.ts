@@ -181,6 +181,8 @@ export const screens: readonly Screen[] = [
   { id: 'project-service-accounts', path: `${P}/service-accounts`, kinds: owners },
   { id: 'project-service-account', path: `${P}/service-accounts/${projectServiceAccount}`, kinds: owners },
   { id: 'project-ci', path: `${P}/ci`, kinds: owners },
+  // A project's mapping editor without an issuer in the address: the issuer select and the policy picker (Q-UI-334).
+  { id: 'project-ci-mapping-new', path: `${P}/ci/mappings/new`, kinds: owners },
   { id: 'project-settings', path: `${P}/settings`, kinds: owners },
 
   // The administrator's area (Q-UI-127).

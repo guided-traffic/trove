@@ -4288,8 +4288,9 @@ Priority: **MVP** · Covers: UI-049, CIOIDC-024
   `ref_protected = true`), grants summary and maximum token lifetime.
 - Mapping editor: conditions with suggestions of GitLab claim names (`project_path`,
   `namespace_path`, `ref`, `ref_type`, `ref_protected`, `environment`, `pipeline_source`,
-  `user_login`, …); grants; options; "Test with claims" opens the claim tester prefilled. Warnings
-  returned on save are shown.
+  `user_login`, …); grants, where the policies and the groups are each a text field that suggests the names as they are typed,
+  held and saying so while the list loads ([Q-UI-334](#q-ui-334--a-picker-is-one-control-from-the-start-held-while-its-list-loads-and-a-field-is-as-wide-as-its-kind-of-input));
+  options; "Test with claims" opens the claim tester prefilled. Warnings returned on save are shown.
 - Per mapping, "CI snippet" shows the text of `GET /api/v1/ci/issuers/{issuer}/snippets/gitlab-ci`
   (for a project's mapping `GET /api/v1/projects/{projectKey}/ci/issuers/{issuer}/snippets/gitlab-ci`, which an Owner of the
   project may read) for the chosen format (npm or NuGet) with a copy button. This covers the GitLab counterpart of
@@ -11407,6 +11408,44 @@ the open state of **Preferences** if the walkthrough shows that users rather see
 [user-detail.html](../../web/src/app/features/users/user-detail.html),
 [service-account-detail.ts](../../web/src/app/features/service-accounts/service-account-detail.ts),
 [profile.html](../../web/src/app/features/profile/profile.html).
+
+### Q-UI-334 · A picker is one control from the start, held while its list loads, and a field is as wide as its kind of input
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the coordinator's look at the CI mapping editor (2026-11-12): **Add a policy** was a text field until the editor had read
+the whole policy list (paged, 100 per page) and then turned into a select; a user who started typing lost the field. The project's
+issuer select showed its first issuer while the form held none, so a project with one issuer could not be saved without choosing
+it again. And on `plain/profile-dark-1440.png` the **Language** and **Theme** selects of Preferences differed in width, each as wide
+as its longest option; every select of the app did the same.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The policy and group pickers are one text field with suggestions (`datalist`) and **Add** from the start, disabled and saying "Loading policies…" while the list loads; a select that loads its options (issuer, project, repository) is the same select, disabled, its one option saying so (chosen) | One control, one type in every state | A long list stays usable by typing; the suggestions are the platform's; a list that cannot be read leaves the same field for typed names, as before | A suggestion list is less visible than a select's open list |
+| (b) A select from the start, disabled while loading | One type, the list in full view | Every policy is one click away | Hundreds of policies in one select; a failed read leaves no way to name one |
+| (c) A custom ARIA combobox with a listbox | Full control of the suggestions | Styled suggestions | A widget to build and test for a field the platform already offers; the version field and the claim names use `datalist` too |
+
+For the widths:
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The five widths of the T-21b plan (`field-w-number`, `-duration`, `-bytes`, `-name`, `-full`, tokens `--trove-field-width-*`), every select and picker `name` unless its place fills a line (chosen) | One set for the app, by kind of input | The selects of a column line up; the repository forms of T-21b take the same set, so there are never two | A select with long options (the mapping editor's **Pipelines from other projects**) shows the start of its choice in a closed state |
+| (b) Small, medium, large by content length | Three sizes for selects alone | Fits each select closer | A second set of widths next to the plan's, which the plan forbids |
+| (c) Every select the width of its column | No classes | Lines up | A two-word choice across the whole page |
+
+**Choice:** (a) and (a). **Rationale:** a control that changes its kind under the user's hands is the finding; the loading state is
+the cheapest honest state. The widths are the plan's because consistency across screens is the point and T-21b's repository forms
+use the same names. The development agent revisits a select whose closed text the renders show to lose its meaning: it becomes
+`full`, not a sixth width.
+
+**Applied in the spec:** R-UI-035; ui-style-guide.md (Forms). Code:
+[name-picker.ts](../../web/src/app/features/ci/name-picker.ts),
+[mapping-editor.ts](../../web/src/app/features/ci/mapping-editor.ts),
+[claim-tester.ts](../../web/src/app/features/ci/claim-tester.ts),
+[fields.ts](../../web/src/app/shared/access/fields.ts),
+[repository-wizard.html](../../web/src/app/features/repositories/repository-wizard.html),
+[exposure-rule-editor.html](../../web/src/app/features/endpoints/exposure-rule-editor.html),
+[_controls.scss](../../web/src/styles/_controls.scss).
 
 ### Q-UI-370 · The grades take cogpit's colours, and S, A and B are the greens of a good grade
 

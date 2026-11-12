@@ -5499,6 +5499,22 @@
         <source> Check which mapping a job would match. This is a dry run: it issues no token and records nothing. Only the claims are sent to the server, never a token. </source>
       </segment>
     </unit>
+    <unit id="ci.test.issuers-loading">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Loading issuers…</source>
+      </segment>
+    </unit>
+    <unit id="ci.test.issuer-choose">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Choose an issuer</source>
+      </segment>
+    </unit>
     <unit id="ci.test.issuer">
       <notes>
         <note category="location">src/app/features/ci/claim-tester.ts:58</note>
@@ -7416,6 +7432,22 @@
         <source>General</source>
       </segment>
     </unit>
+    <unit id="ci.editor.issuers-loading">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Loading issuers…</source>
+      </segment>
+    </unit>
+    <unit id="ci.editor.issuer-choose">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Choose an issuer</source>
+      </segment>
+    </unit>
     <unit id="ci.editor.issuer">
       <notes>
         <note category="location">src/app/features/ci/mapping-editor.html:47,48</note>
@@ -7584,6 +7616,14 @@
         <source>Policies</source>
       </segment>
     </unit>
+    <unit id="ci.editor.policies-loading">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Loading policies…</source>
+      </segment>
+    </unit>
     <unit id="ci.editor.policies-add">
       <notes>
         <note category="location">src/app/features/ci/mapping-editor.html:156,157</note>
@@ -7606,6 +7646,14 @@
       </notes>
       <segment>
         <source>Groups</source>
+      </segment>
+    </unit>
+    <unit id="ci.editor.groups-loading">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Loading groups…</source>
       </segment>
     </unit>
     <unit id="ci.editor.groups-add">
@@ -8878,6 +8926,14 @@
       </notes>
       <segment>
         <source>Repository</source>
+      </segment>
+    </unit>
+    <unit id="ep.field.repository.loading">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Loading repositories…</source>
       </segment>
     </unit>
     <unit id="ep.field.repository.choose">
@@ -17825,6 +17881,14 @@
       </notes>
       <segment>
         <source>Presents several repositories under one address.</source>
+      </segment>
+    </unit>
+    <unit id="repo.wizard.project-loading">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Loading projects…</source>
       </segment>
     </unit>
     <unit id="repo.wizard.project-choose">

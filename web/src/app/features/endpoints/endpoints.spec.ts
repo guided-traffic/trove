@@ -9,7 +9,7 @@ import {
   PACKAGE_FORMAT,
   sampleRule,
 } from '../../api/testing/fakes-catalog';
-import { addressValues, button, expectAccessible, renderScreen, settle, text, type } from '../../testing/screen';
+import { addressValues, button, expectAccessible, holdCalls, renderScreen, settle, text, type } from '../../testing/screen';
 import { EndpointDetail } from './endpoint-detail';
 import { EndpointList } from './endpoint-list';
 import { ExposureRuleEditor, PREVIEW_DEBOUNCE_MS } from './exposure-rule-editor';
@@ -161,9 +161,10 @@ describe('Endpoint screen', () => {
 });
 
 describe('Exposure rule editor', () => {
-  async function create(setup?: (endpoints: FakeEndpointsApi, repos: FakeRepositoriesApi) => void) {
+  async function create(setup?: (endpoints: FakeEndpointsApi, repos: FakeRepositoriesApi) => void, loading?: true) {
     const rendered = await renderScreen(ExposureRuleEditor, {
       inputs: { endpoint: 'customers' },
+      ...(loading ? { loading } : {}),
       setup: (get) => {
         vi.spyOn(get(Router), 'navigate').mockResolvedValue(true);
         setup?.(get(EndpointsApi) as FakeEndpointsApi, get(RepositoriesApi) as FakeRepositoriesApi);
@@ -368,6 +369,23 @@ describe('Exposure rule editor', () => {
     await settle(r.fixture);
     expect(r.endpoints.ruleStore[0]?.description).toBe('Mine');
     expect(r.endpoints.replaced.at(-1)?.etag).toBe('"2"');
+  });
+
+  it('R-EP-017 Q-UI-334 the repository select is held and says so while the repositories load, then offers them', async () => {
+    let release!: () => void;
+    const r = await create((_, repos) => (release = holdCalls(repos, 'listAll')), true);
+    const select = r.root.querySelector<HTMLSelectElement>('#f-repository')!;
+    expect(select.disabled).toBe(true);
+    expect(select.getAttribute('aria-busy')).toBe('true');
+    expect([...select.options].map((o) => text(o))).toEqual(['Loading repositories…']);
+    expect(select.classList).toContain('field-w-name');
+    release();
+    await settle(r.fixture);
+    expect(r.root.querySelector('#f-repository')).toBe(select);
+    expect(select.disabled).toBe(false);
+    expect(select.getAttribute('aria-busy')).toBeNull();
+    expect(text(select.options[0]!)).toBe('Choose a repository');
+    expect(select.options.length).toBeGreaterThan(1);
   });
 
   it('R-EP-017 name and repository of a stored rule cannot be edited', async () => {

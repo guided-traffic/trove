@@ -57,7 +57,7 @@ function valueFor(previous: unknown, text: string): unknown {
     </p>
 
     @if (project() && !issuer()) {
-      <trove-select-field i18n-label="@@ci.test.issuer" label="Issuer" name="issuer" [options]="issuerOptions()" [value]="issuerChoice()" (valueChange)="issuerChoice.set($event)" />
+      <trove-select-field i18n-label="@@ci.test.issuer" label="Issuer" name="issuer" [options]="issuerOptions()" [loading]="issuersLoading() ? loadingIssuers : null" [value]="issuerChoice()" (valueChange)="issuerChoice.set($event)" />
     }
     @if (loadError(); as e) {
       <trove-error-notice [error]="e" />
@@ -347,6 +347,9 @@ export class ClaimTester {
   protected readonly issuerChoice = signal('');
   protected readonly issuerName = computed(() => this.issuer() || this.issuerChoice());
   protected readonly issuerOptions = signal<readonly SelectOption[]>([]);
+  /** The issuer select is held while the project's issuers load (Q-UI-334). */
+  protected readonly issuersLoading = signal(true);
+  protected readonly loadingIssuers = $localize`:@@ci.test.issuers-loading:Loading issuers…`;
   private choices: readonly CiIssuerChoice[] = [];
   private issuerUrl = '';
   private audience = '';
@@ -402,8 +405,15 @@ export class ClaimTester {
     const project = this.project();
     try {
       if (project) {
-        this.choices = await this.api.projectIssuers(project);
-        this.issuerOptions.set([{ value: '', label: '' }, ...this.choices.map((c) => ({ value: c.name, label: c.name }))]);
+        try {
+          this.choices = await this.api.projectIssuers(project);
+        } finally {
+          this.issuersLoading.set(false);
+        }
+        this.issuerOptions.set([
+          { value: '', label: $localize`:@@ci.test.issuer-choose:Choose an issuer` },
+          ...this.choices.map((c) => ({ value: c.name, label: c.name })),
+        ]);
         const chosen = this.choices.find((c) => c.name === this.issuerName());
         this.issuerUrl = chosen?.issuer ?? '';
         this.audience = document.location.origin;

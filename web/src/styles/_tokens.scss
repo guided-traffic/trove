@@ -140,6 +140,12 @@
   --trove-motion-easing: cubic-bezier(0.4, 0, 0.2, 1);
 
   --trove-control-height: 32px;
+  // The style guide's field widths (Forms; Q-UI-334), at 14 px Inter: a count of up to six digits, a period in seconds of up to
+  // eight, a byte count of up to nineteen, and a name, a key, a host or a choice: half the form column.
+  --trove-field-width-number: 6rem;
+  --trove-field-width-duration: 8rem;
+  --trove-field-width-bytes: 13rem;
+  --trove-field-width-name: 28rem;
   --trove-control-radius: var(--trove-radius-m);
   --trove-control-bg: light-dark(#ffffff, rgb(5 5 6 / 40%));
   --trove-control-fg: light-dark(#3a383f, #ececef);

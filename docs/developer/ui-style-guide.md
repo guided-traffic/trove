@@ -177,7 +177,24 @@ The button has `aria-expanded` and `aria-controls`. A closed region is `visibili
   or a click on its submit or confirm button). `<trove-text-field>` and `<trove-select-field>` hold this rule
   (`revealRule` in [fields.ts](../../web/src/app/shared/access/fields.ts)), so a form passes its errors in and keeps no state of
   its own; a field outside a form shows its error at once. An error says in words what to type, never the pattern (UI-A-42).
-- Field width follows the content: a name half the column, a description the whole column.
+- A field is as wide as its kind of input, by one of five widths, so the fields of one column line up whatever their content says
+  ([Q-UI-334](../spec/api-and-ui.md#q-ui-334--a-picker-is-one-control-from-the-start-held-while-its-list-loads-and-a-field-is-as-wide-as-its-kind-of-input)).
+  The tokens are in [_tokens.scss](../../web/src/styles/_tokens.scss), the classes in [_controls.scss](../../web/src/styles/_controls.scss);
+  `<trove-select-field>` takes `width` (`name` unless its place fills a line):
+
+  | Class | Token | Width | For |
+  |---|---|---|---|
+  | `field-w-number` | `--trove-field-width-number` | 6 rem | a count of up to six digits |
+  | `field-w-duration` | `--trove-field-width-duration` | 8 rem | a period in seconds, up to eight digits |
+  | `field-w-bytes` | `--trove-field-width-bytes` | 13 rem | a byte count, up to nineteen digits |
+  | `field-w-name` | `--trove-field-width-name` | 28 rem, half the column | a key, a name, a host, every select and every picker |
+  | `field-w-full` | — | the column | a URL, a description, a list, a key block |
+
+  A field is never wider than its column; a narrower column shrinks it. A filter panel's fields take the panel's width.
+- A control that offers a list read from the server is the same control from the start. While the list loads it is disabled,
+  `aria-busy`, and says so ("Loading policies…" as a select's one option or a field's placeholder); it never starts as one kind of
+  control and turns into another. A list that can be long (policies, groups) is a text field with suggestions (`datalist`) and
+  **Add**; a short one (a project's issuers) is a select that starts at "Choose …", never at its first entry.
 - The selects of a panel (the install panel's client and repository) stack and take the panel's width, so they line up whatever
   their options say ([Q-UI-320](../spec/api-and-ui.md#q-ui-320--every-value-to-copy-of-one-line-is-a-field-with-its-joined-copy-button-a-page-shows-one-client-address-and-a-panels-selects-share-one-width)).
 - A choice among the values of a list (the version of a package) is a select, so it looks like the choice it is.

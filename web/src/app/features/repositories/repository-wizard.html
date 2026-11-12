@@ -137,6 +137,7 @@
             label="Project"
             name="project"
             [options]="projectOptions()"
+            [loading]="projects.isLoading() ? loadingProjects : null"
             [(value)]="chosenProject"
           />
         }

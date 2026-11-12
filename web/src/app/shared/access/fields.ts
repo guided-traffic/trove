@@ -143,28 +143,43 @@ export class TextField {
   });
 }
 
+/** The style guide's five field widths (Forms; Q-UI-334), each a class `field-w-<width>` of `_controls.scss`. */
+export type FieldWidth = 'number' | 'duration' | 'bytes' | 'name' | 'full';
+
 export interface SelectOption {
   readonly value: string;
   readonly label: string;
 }
 
-/** A native `<select>` in a form field: the platform widget is keyboard-operable and announced correctly. */
+/**
+ * A native `<select>` in a form field: the platform widget is keyboard-operable and announced correctly. It takes the style
+ * guide's field width of a choice (`name`, half the column) unless its place fills a line (`full`), so the selects of one form
+ * column line up whatever their options say (Q-UI-334). While its options load (`loading`), it is the same select, held, its one option saying so.
+ */
 @Component({
   selector: 'trove-select-field',
+  host: { '[class.full]': "width() === 'full'" },
   template: `
     <div class="field">
       <label class="field-label" [for]="id">{{ label() }}</label>
       <select
         class="select-input"
+        [class]="'field-w-' + width()"
         [id]="id"
         [name]="name()"
+        [disabled]="loading() !== null"
+        [attr.aria-busy]="loading() !== null ? 'true' : null"
         [attr.aria-invalid]="shownError() ? 'true' : null"
         [attr.aria-describedby]="shownError() ? id + '-error' : null"
         (change)="value.set($any($event.target).value)"
         (blur)="rule.touched()"
       >
-        @for (o of options(); track o.value) {
-          <option [value]="o.value" [selected]="o.value === value()">{{ o.label }}</option>
+        @if (loading(); as text) {
+          <option value="" selected>{{ text }}</option>
+        } @else {
+          @for (o of options(); track o.value) {
+            <option [value]="o.value" [selected]="o.value === value()">{{ o.label }}</option>
+          }
         }
       </select>
     </div>
@@ -175,6 +190,10 @@ export interface SelectOption {
   styles: `
     :host {
       display: inline-block;
+      max-inline-size: 100%;
+    }
+    :host(.full) {
+      display: block;
     }
     .field {
       display: flex;
@@ -198,6 +217,10 @@ export class SelectField {
   readonly value = model('');
   readonly name = input('');
   readonly error = input<string | null>(null);
+  /** The field width (Q-UI-334): a choice is `name`; `full` where the select fills its line. */
+  readonly width = input<Extract<FieldWidth, 'name' | 'full'>>('name');
+  /** What the select says while its options load, such as "Loading projects…"; null once they are there. */
+  readonly loading = input<string | null>(null);
 
   protected readonly id = `trove-select-${nextFieldId++}`;
   protected readonly rule = revealRule();

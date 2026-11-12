@@ -429,6 +429,11 @@ td.class-cell .material-icons {
     inline-size: 100%;
   }
 
+  // A select of the panel takes the panel's width (Q-UI-334).
+  trove-select-field {
+    display: block;
+  }
+
   .field {
     display: flex;
     flex-direction: column;

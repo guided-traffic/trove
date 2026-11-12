@@ -2,6 +2,8 @@ import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { describe, expect, it, vi } from 'vitest';
 import { CiApi } from '../../api/ci-api';
+import { PolicyApi } from '../../api/authz-api';
+import { IdentityApi } from '../../api/identity-api';
 import { ApiError } from '../../api/problem';
 import { SessionApi } from '../../api/session-api';
 import { FakeSessionApi } from '../../api/testing/fakes';
@@ -9,7 +11,7 @@ import { FakeCiApi, sampleIssuance, sampleMapping } from '../../api/testing/fake
 import { Notifier } from '../../core/notifier';
 import { RepositoriesApi } from '../../api/repositories-api';
 import { FakeRepositoriesApi } from '../../api/testing/fakes-catalog';
-import { storedText, buttonByText, expectAccessible, renderScreen, settle, sleep, text, type, typeInto } from '../../testing/screen';
+import { storedText, buttonByText, expectAccessible, holdCalls, holdPages, renderScreen, settle, sleep, text, type, typeInto } from '../../testing/screen';
 import { ClaimTester } from './claim-tester';
 import { MappingEditor } from './mapping-editor';
 import { ProjectCi } from './project-ci';
@@ -27,7 +29,17 @@ const token = (claims: unknown): string => `${b64url({ alg: 'RS256', typ: 'JWT' 
 const valueArea = (root: HTMLElement): HTMLTextAreaElement => root.querySelector('textarea[id$="-value"]') as HTMLTextAreaElement;
 const checkbox = (root: HTMLElement, label: string): HTMLInputElement =>
   [...root.querySelectorAll('trove-checkbox')].find((c) => text(c).startsWith(label))!.querySelector('input') as HTMLInputElement;
-const select = (root: HTMLElement, i = 0): HTMLSelectElement => root.querySelectorAll('trove-ci-name-picker select')[i] as HTMLSelectElement;
+const picker = (root: HTMLElement, i = 0): HTMLElement => root.querySelectorAll('trove-ci-name-picker')[i] as HTMLElement;
+const pickerField = (root: HTMLElement, i = 0): HTMLInputElement => picker(root, i).querySelector('input') as HTMLInputElement;
+const suggestions = (root: HTMLElement, i = 0): string[] =>
+  [...picker(root, i).querySelectorAll('datalist option')].map((o) => (o as HTMLOptionElement).value);
+const chips = (root: HTMLElement, i = 0): string[] => [...picker(root, i).querySelectorAll('.chip span[translate]')].map((c) => text(c));
+/** Takes a name from the picker's suggestions: the browser fills the field and reports a change. */
+function pick(root: HTMLElement, name: string, i = 0): void {
+  const field = pickerField(root, i);
+  type(field, name);
+  field.dispatchEvent(new Event('change', { bubbles: true }));
+}
 
 /** A caller without any capability that is Owner of `web` (Q-AUTHZ-207, Q-CI-26). */
 function projectAdmin() {
@@ -45,7 +57,7 @@ function projectAdmin() {
 async function fillMinimalNewMapping(root: HTMLElement, fixture: Parameters<typeof settle>[0], write: boolean): Promise<void> {
   typeInto(root, 'Name', 'team-b-release');
   type(valueArea(root), '4711');
-  type(select(root), 'team-web-publish');
+  pick(root, 'team-web-publish');
   await settle(fixture);
   if (write) {
     buttonByText(root, 'Add inline grant').click();
@@ -87,6 +99,70 @@ describe('The mapping editor (R-UI-035, R-CI-009 to R-CI-013)', () => {
     expect(stored.priority).toBe(110);
     expect(stored.grants.policies).toEqual(['team-web-publish']);
     expect(navigate).toHaveBeenCalledWith(['/admin/ci', 'gitlab-com', 'mappings', 'team-b-release'], expect.objectContaining({ replaceUrl: true }));
+  });
+
+  it('R-UI-035 Q-UI-334 the policy and group pickers are one text field from the start: held and saying so while their lists load, then suggesting the names', async () => {
+    let releasePolicies!: () => void;
+    let releaseGroups!: () => void;
+    const { root, fixture } = await renderScreen(MappingEditor, {
+      inputs: { issuer: 'gitlab-com' },
+      setup: (g) => {
+        releasePolicies = holdPages(g(PolicyApi), 'list');
+        releaseGroups = holdPages(g(IdentityApi), 'groups');
+      },
+    });
+    const policies = pickerField(root, 0);
+    const groups = pickerField(root, 1);
+    expect(root.querySelectorAll('trove-ci-name-picker select')).toHaveLength(0);
+    expect(policies.disabled).toBe(true);
+    expect(policies.getAttribute('aria-busy')).toBe('true');
+    expect(policies.placeholder).toBe('Loading policies…');
+    expect(groups.placeholder).toBe('Loading groups…');
+
+    releasePolicies();
+    await settle(fixture);
+    expect(pickerField(root, 0)).toBe(policies);
+    expect(policies.disabled).toBe(false);
+    expect(policies.getAttribute('aria-busy')).toBeNull();
+    expect(policies.placeholder).toBe('Add a policy');
+    expect(policies.getAttribute('list')).toBe(picker(root, 0).querySelector('datalist')!.id);
+    expect(suggestions(root, 0)).toEqual(['team-web-publish']);
+    expect(groups.disabled).toBe(true);
+    releaseGroups();
+    await settle(fixture);
+    expect(pickerField(root, 1)).toBe(groups);
+    expect(groups.disabled).toBe(false);
+
+    pick(root, 'team-web-publish');
+    await settle(fixture);
+    expect(chips(root)).toEqual(['team-web-publish']);
+    expect(policies.value).toBe('');
+    expect(suggestions(root)).toEqual([]);
+
+    type(policies, 'not-yet-listed');
+    policies.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle(fixture);
+    expect(chips(root)).toEqual(['team-web-publish']);
+    policies.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await settle(fixture);
+    expect(chips(root)).toEqual(['team-web-publish', 'not-yet-listed']);
+  });
+
+  it('R-UI-035 Q-UI-334 a policy list that cannot be read leaves the same field for typed names', async () => {
+    const { root, fixture } = await renderScreen(MappingEditor, {
+      inputs: { issuer: 'gitlab-com' },
+      setup: (g) => {
+        (g(PolicyApi) as unknown as { list: () => () => Promise<never> }).list = () => () => Promise.reject(new ApiError(503, null, null));
+      },
+    });
+    const field = pickerField(root);
+    expect(field.disabled).toBe(false);
+    expect(suggestions(root)).toEqual([]);
+    type(field, 'team-web-publish');
+    await settle(fixture);
+    buttonByText(picker(root), 'Add').click();
+    await settle(fixture);
+    expect(chips(root)).toEqual(['team-web-publish']);
   });
 
   it('R-CI-011 a grant that writes without ref_protected = true shows the rule before the save and one click adds the condition', async () => {
@@ -333,8 +409,29 @@ describe('The mapping editor of a project (Q-CI-26, R-CI-019)', () => {
     expect(text(root)).toContain('Unique within the project web and cannot be changed later.');
     expect(text(root)).toContain('Only the permission policies of this project can be named. Groups are global');
     expect(text(root)).not.toContain('Add a group');
-    const policies = [...select(root).options].map((o) => o.value);
-    expect(policies).toContain('');
+    expect(pickerField(root).disabled).toBe(false);
+    expect(suggestions(root)).not.toContain('team-web-publish');
+  });
+
+  it('Q-CI-26 Q-UI-334 without an issuer in the address, the issuer select is held while the issuers load and then starts at "Choose an issuer"', async () => {
+    let release!: () => void;
+    const { root, fixture } = await renderScreen(MappingEditor, {
+      inputs: { project: 'web' },
+      capabilities: [],
+      setup: (g) => {
+        projectAdmin()(g);
+        release = holdCalls(g(CiApi), 'projectIssuers');
+      },
+    });
+    const select = root.querySelector('select[name="issuer"]') as HTMLSelectElement;
+    expect(select.disabled).toBe(true);
+    expect([...select.options].map((o) => text(o))).toEqual(['Loading issuers…']);
+    release();
+    await settle(fixture);
+    expect(root.querySelector('select[name="issuer"]')).toBe(select);
+    expect(select.disabled).toBe(false);
+    expect(text(select.options[0]!)).toBe('Choose an issuer');
+    expect(select.value).toBe('');
   });
 
   it('Q-CI-26 saves through the project route, never sends groups, and keeps the project repositories as the quick choices', async () => {
@@ -589,6 +686,27 @@ describe('The claim tester (R-UI-036, R-CI-019)', () => {
     await sleep(fixture, 100);
     expect(text(root)).toContain('The mapping you came from');
     expect(text(root)).toContain('Matched: team-a-release');
+  });
+
+  it('R-UI-036 Q-UI-334 a project\'s tester holds the issuer select while the issuers load, then asks for a choice', async () => {
+    let release!: () => void;
+    const { root, fixture } = await renderScreen(ClaimTester, {
+      inputs: { project: 'web' },
+      capabilities: [],
+      setup: (g) => {
+        projectAdmin()(g);
+        release = holdCalls(g(CiApi), 'projectIssuers');
+      },
+    });
+    const select = root.querySelector('trove-select-field select') as HTMLSelectElement;
+    expect(select.disabled).toBe(true);
+    expect([...select.options].map((o) => text(o))).toEqual(['Loading issuers…']);
+    release();
+    await settle(fixture);
+    expect(root.querySelector('trove-select-field select')).toBe(select);
+    expect(select.disabled).toBe(false);
+    expect(text(select.options[0]!)).toBe('Choose an issuer');
+    expect(select.value).toBe('');
   });
 
   it('R-UI-036 a project\'s tester asks for an issuer and evaluates over the project tier only', async () => {

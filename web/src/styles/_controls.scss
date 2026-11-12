@@ -287,6 +287,35 @@ span.bad:has(> .material-icons) {
   }
 }
 
+// The style guide's five field widths (Forms; Q-UI-334): a field takes the one of its kind of input, so the fields of one column
+// line up whatever their content says. A width is fixed and never wider than its column; a narrower column shrinks it.
+.field-w-number,
+.field-w-duration,
+.field-w-bytes,
+.field-w-name {
+  max-inline-size: 100%;
+}
+
+.field-w-number {
+  inline-size: var(--trove-field-width-number);
+}
+
+.field-w-duration {
+  inline-size: var(--trove-field-width-duration);
+}
+
+.field-w-bytes {
+  inline-size: var(--trove-field-width-bytes);
+}
+
+.field-w-name {
+  inline-size: var(--trove-field-width-name);
+}
+
+.field-w-full {
+  inline-size: 100%;
+}
+
 .text-input[aria-invalid='true'],
 .select-input[aria-invalid='true'],
 .area-input[aria-invalid='true'] {
@@ -330,6 +359,8 @@ input[type='radio'] {
 
 .collapse-region {
   display: grid;
+  // One column as wide as the region, never as wide as its widest field: a field width shrinks to the line (Q-UI-334).
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 0fr;
   visibility: hidden;
   transition:

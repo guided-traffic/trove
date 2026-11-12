@@ -95,6 +95,7 @@ export class MappingEditor implements HasUnsavedChanges {
   protected readonly issuerName = computed(() => this.issuer() || this.issuerChoice());
   protected readonly isNew = computed(() => this.mapping() === undefined);
   protected readonly issuerNames = signal<readonly SelectOption[]>([]);
+  protected readonly issuersLoading = signal(true);
 
   protected readonly form = signal<MappingForm>(emptyMappingForm(10));
   protected readonly loaded = signal<Versioned<CiMapping> | null>(null);
@@ -106,6 +107,12 @@ export class MappingEditor implements HasUnsavedChanges {
 
   protected readonly policyOptions = signal<readonly string[] | null>(null);
   protected readonly groupOptions = signal<readonly string[] | null>(null);
+  /** The pickers are the same control while their lists load, held and saying so (Q-UI-334). */
+  protected readonly policiesLoading = signal(true);
+  protected readonly groupsLoading = signal(true);
+  protected readonly loadingPolicies = $localize`:@@ci.editor.policies-loading:Loading policies…`;
+  protected readonly loadingGroups = $localize`:@@ci.editor.groups-loading:Loading groups…`;
+  protected readonly loadingIssuers = $localize`:@@ci.editor.issuers-loading:Loading issuers…`;
   protected readonly projectRepositories = signal<readonly string[]>([]);
   /** A project's mapping names bare keys, a system mapping `<project>/<key>` (R-AUTHZ-004). */
   protected readonly repositoriesHint = computed(() =>
@@ -285,41 +292,61 @@ export class MappingEditor implements HasUnsavedChanges {
     this.notifier.status($localize`:@@ci.editor.draft-restored:Your entries were restored. Save the mapping again.`);
   }
 
-  /** The choices the editor offers: policies, groups, the project's repositories and the issuer's kind of audience. Failures leave a plain text entry. */
+  /**
+   * The choices the editor offers: policies, groups, the project's repositories and the issuer's kind of audience, read side by
+   * side. A list's picker is held while it loads; a failure leaves typed names.
+   */
   private async loadContext(): Promise<void> {
     const project = this.project();
-    try {
-      const list = await collectAll(this.policiesApi.list({ project: project ?? undefined, sort: 'name' }));
-      this.policyOptions.set(list.map((p) => p.name));
-    } catch {
-      this.policyOptions.set(null);
-    }
-    if (project) {
+    this.policiesLoading.set(true);
+    this.groupsLoading.set(true);
+    this.issuersLoading.set(true);
+    const policies = async (): Promise<void> => {
       try {
-        this.projectRepositories.set((await this.repositoriesApi.list({ project })(null, 500)).items.map((r) => r.key));
+        const list = await collectAll(this.policiesApi.list({ project: project ?? undefined, sort: 'name' }));
+        this.policyOptions.set(list.map((p) => p.name));
+      } catch {
+        this.policyOptions.set(null);
+      }
+      this.policiesLoading.set(false);
+    };
+    const repositories = async (): Promise<void> => {
+      try {
+        this.projectRepositories.set((await this.repositoriesApi.list({ project: project! })(null, 500)).items.map((r) => r.key));
       } catch {
         this.projectRepositories.set([]);
       }
+    };
+    const issuers = async (): Promise<void> => {
       try {
-        const issuers = await this.api.projectIssuers(project);
-        this.issuerNames.set(issuers.map((i) => ({ value: i.name, label: i.name })));
-        this.publicIssuer.set(issuers.find((i) => i.name === this.issuerName())?.publicIssuer ?? false);
+        const list = await this.api.projectIssuers(project!);
+        this.issuerNames.set([
+          { value: '', label: $localize`:@@ci.editor.issuer-choose:Choose an issuer` },
+          ...list.map((i) => ({ value: i.name, label: i.name })),
+        ]);
+        this.publicIssuer.set(list.find((i) => i.name === this.issuerName())?.publicIssuer ?? false);
       } catch {
         this.issuerNames.set([]);
       }
-    } else {
+      this.issuersLoading.set(false);
+    };
+    const groups = async (): Promise<void> => {
       try {
         const names = await collectAll(this.identityApi.groups({}));
         this.groupOptions.set(names.map((g) => g.name));
       } catch {
         this.groupOptions.set(null);
       }
+      this.groupsLoading.set(false);
+    };
+    const audience = async (): Promise<void> => {
       try {
         this.publicIssuer.set((await this.api.getIssuer(this.issuer() ?? '')).value.publicIssuer);
       } catch {
         this.publicIssuer.set(false);
       }
-    }
+    };
+    await Promise.all(project ? [policies(), repositories(), issuers()] : [policies(), groups(), audience()]);
   }
 
   protected chooseIssuer(name: string): void {

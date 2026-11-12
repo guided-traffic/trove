@@ -3,10 +3,12 @@ import { Component, computed, input, model, signal } from '@angular/core';
 let nextPickerId = 1;
 
 /**
- * A list of names the user builds one entry at a time (the policies and groups of a mapping, R-UI-035):
- * the chosen names as removable chips, and below them either a choice among `options` or, without
- * options, a text field with "Add". A name that is not among the options can still be typed where
- * `options` is null, because the server is the one that knows whether it exists (`unknown_policy`).
+ * A list of names the user builds one entry at a time (the policies and groups of a mapping, R-UI-035): the chosen names as
+ * removable chips, and below them one control from the start, whatever the list's state (Q-UI-334): a text field that suggests
+ * the `options` as the user types (a combobox through the platform's `datalist`, so a long list stays usable) and **Add**.
+ * While the options load, the field is held and says so; a name picked from the suggestions is added at once. A name that is
+ * not among the options can still be typed, because the server is the one that knows whether it exists (`unknown_policy`);
+ * where the options could not be read (`options` null) that is the only way.
  */
 @Component({
   selector: 'trove-ci-name-picker',
@@ -32,28 +34,27 @@ let nextPickerId = 1;
       }
       @if (!readonly()) {
         <div class="add">
-          @if (options(); as list) {
-            <label class="visually-hidden" [for]="id + '-select'">{{ addLabel() }}</label>
-            <select class="field" [id]="id + '-select'" (change)="choose($any($event.target))">
-              <option value="" selected>{{ addLabel() }}</option>
-              @for (o of available(); track o) {
-                <option [value]="o">{{ o }}</option>
-              }
-            </select>
-          } @else {
-            <label class="visually-hidden" [for]="id + '-text'">{{ addLabel() }}</label>
-            <input
-              class="field"
-              [id]="id + '-text'"
-              autocomplete="off"
-              spellcheck="false"
-              [placeholder]="addLabel()"
-              [value]="typed()"
-              (input)="typed.set($any($event.target).value)"
-              (keydown.enter)="$event.preventDefault(); addTyped()"
-            />
-            <button class="btn btn-default" type="button" [disabled]="typed().trim() === ''" (click)="addTyped()" i18n="@@ci.picker.add">Add</button>
-          }
+          <label class="visually-hidden" [for]="id + '-input'">{{ addLabel() }}</label>
+          <input
+            #field
+            class="text-input field-w-name"
+            [id]="id + '-input'"
+            autocomplete="off"
+            spellcheck="false"
+            [attr.list]="id + '-options'"
+            [disabled]="loading() !== null"
+            [attr.aria-busy]="loading() !== null ? 'true' : null"
+            [placeholder]="loading() ?? addLabel()"
+            (input)="typed.set(field.value)"
+            (change)="pickedFromList(field)"
+            (keydown.enter)="$event.preventDefault(); add(field)"
+          />
+          <datalist [id]="id + '-options'">
+            @for (o of available(); track o) {
+              <option [value]="o"></option>
+            }
+          </datalist>
+          <button class="btn btn-default" type="button" [attr.aria-describedby]="id + '-label'" [disabled]="loading() !== null || typed().trim() === ''" (click)="add(field)" i18n="@@ci.picker.add">Add</button>
         </div>
       }
       @if (error(); as text) {
@@ -104,18 +105,13 @@ let nextPickerId = 1;
     }
     .add {
       display: flex;
-      flex-wrap: wrap;
       gap: var(--trove-space-2);
       align-items: center;
     }
-    .field {
-      padding: var(--trove-space-2);
-      border: 1px solid var(--trove-border-strong);
-      border-radius: var(--trove-radius-s);
-      background: var(--trove-surface-raised);
-      color: var(--trove-on-surface);
-      font: inherit;
-      min-inline-size: 14rem;
+    /* The field keeps its width and gives way on a narrow line, so **Add** stays beside it. */
+    .add .text-input {
+      flex: 0 1 var(--trove-field-width-name);
+      min-inline-size: 0;
     }
     .field-error {
       margin: 0;
@@ -133,10 +129,12 @@ let nextPickerId = 1;
 })
 export class NamePicker {
   readonly label = input.required<string>();
-  /** The text of the empty choice, such as "Add a policy". */
+  /** The field's name and its placeholder, such as "Add a policy". */
   readonly addLabel = input.required<string>();
-  /** The names to choose from; null accepts typed names. */
+  /** The names to suggest; null where they could not be read: then a typed name is the way. */
   readonly options = input<readonly string[] | null>(null);
+  /** What the field says while the options load, such as "Loading policies…": it is held until then. Null once they are read. */
+  readonly loading = input<string | null>(null);
   readonly value = model<readonly string[]>([]);
   readonly readonly = input(false);
   readonly error = input<string | null>(null);
@@ -153,15 +151,16 @@ export class NamePicker {
     this.value.set(this.value().filter((v) => v !== name));
   }
 
-  protected choose(select: HTMLSelectElement): void {
-    const chosen = select.value;
-    select.value = '';
-    if (chosen && !this.value().includes(chosen)) this.value.set([...this.value(), chosen]);
+  /** A name taken from the suggestions is added at once; a typed one waits for **Add** or Enter. */
+  protected pickedFromList(field: HTMLInputElement): void {
+    if ((this.options() ?? []).includes(field.value.trim())) this.add(field);
   }
 
-  protected addTyped(): void {
-    const name = this.typed().trim();
+  /** Adds the field's name and empties the field. */
+  protected add(field: HTMLInputElement): void {
+    const name = field.value.trim();
     if (name && !this.value().includes(name)) this.value.set([...this.value(), name]);
+    field.value = '';
     this.typed.set('');
   }
 }

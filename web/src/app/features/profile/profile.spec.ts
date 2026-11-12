@@ -68,6 +68,12 @@ describe('Profile (R-UI-029)', () => {
     expect(root.querySelector<HTMLInputElement>('input[name="username"]')?.readOnly).toBe(true);
   });
 
+  it('Q-UI-334 the Language and Theme selects of Preferences take one field width, whatever their options say', async () => {
+    const { root } = await renderScreen(Profile);
+    const widths = [...root.querySelectorAll('trove-select-field select')].map((s) => [...s.classList].filter((c) => c.startsWith('field-w-')));
+    expect(widths).toEqual([['field-w-name'], ['field-w-name']]);
+  });
+
   it('R-AUTH-008 a missing group claim is a status notice that names the provider and the reason', async () => {
     const { root } = await renderScreen(Profile, {
       setup: (get) =>

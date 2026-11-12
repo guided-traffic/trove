@@ -174,6 +174,7 @@ export class RepositoryWizard implements HasUnsavedChanges {
       }
     },
   });
+  protected readonly loadingProjects = $localize`:@@repo.wizard.project-loading:Loading projects…`;
   protected readonly projectOptions = computed<readonly SelectOption[]>(() => [
     { value: '', label: $localize`:@@repo.wizard.project-choose:Choose a project` },
     ...(valueOf(this.projects) ?? []).map((k) => ({ value: k, label: k })),
