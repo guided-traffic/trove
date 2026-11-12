@@ -538,6 +538,23 @@ by `version: "*"`. Red pipelines are worked on even though they no longer hold a
   - the NuGet README route is still the P1 stub (R-NUGET-024): it answers 501 behind the wiki gate;
   - the repository settings' Access tab still shows include and exclude patterns, Disabled and Hide existence beside the visibility:
     T-21b rebuilds that page (repository-setup-work-packages.md).
+- The landing of T-18 turned four CI legs red (Test and Release 43279576487, 43282191873, 43290893480). Their causes:
+  - `make cyclo`: two T-18 functions were over 33. They are split, without a change of behaviour (2a3a40af).
+  - Lint: a misspelling in a test (628caa9a).
+  - `e2e (nuget)`, a product defect: the challenge of a request without a credential had moved behind the rate limits, so every
+    first attempt of a NuGet client was charged to `package_anonymous` (burst 100 per address). Fixed in d5e4cec5 (Q-API-290) and
+    proven on kind.
+  - `integration (apikey)`, a product defect: a package route answered a request without a credential with a Bearer challenge
+    instead of Basic. Fixed in 849512dc.
+  - `integration (ci, oci)`: the tests still stated the behaviour from before T-18 and now state the T-18 decisions.
+  - `e2e (access-long)`: two journeys looked for a project by its key, where the start page names it by its display name. A third
+    exposed a Tokens section that folded itself shut when its last token was revoked. Both fixed in 1883de9b.
+  - Unit tests: a test fake of the shadowing check had a data race (67c008aa).
+- Open for the owner: three cold NuGet restores that share one token exceed `package_read` (burst 1,000 per 5 s). Locally 108 of
+  1,158 requests were refused within 4 s, and the clients' retries recovered. Should the budget for package reads be higher?
+- `messages.xlf` has drifted from `npm run extract-i18n`: 687 location notes and the unit order differ. No gate checks it.
+- No integration test checks the 401 challenge of Debian or of the `formats.Base` formats without a credential, and no real apt
+  client was run against it.
 - TestR_DEB_023 failed twice on CI (Test and Release 43022311289 and 43229158954, shard c). The test waited for the first index
   that lists a name, not for the whole scope; fixed in f2cc9a2d.
 - UI development profile: the volumes of `deploy/ui-dev` are shared by the whole machine, but the key ring in `.dev/ui-dev` belongs to
