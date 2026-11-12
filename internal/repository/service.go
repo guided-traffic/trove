@@ -389,77 +389,26 @@ func (s *Service) update(ctx context.Context, c Caller, name qname.Repo, pre Pre
 		if err != nil {
 			return err
 		}
-		// The project is locked FOR SHARE before the repository, as a create does and as the lowering of a project's level orders
-		// its locks: a repository is never written above a level that is being lowered (R-AUTHZ-033 rule 3).
-		shares, err := qs.RepositoryProjectShare(ctx, name.Project)
+		row, projectLevel, err := lockForUpdate(ctx, qs, name, pre)
 		if err != nil {
 			return err
-		}
-		rows, err := qs.LockRepositoryByName(ctx, q.LockRepositoryByNameParams{Project: name.Project, Key: name.Key})
-		if err != nil {
-			return err
-		}
-		if len(rows) == 0 || len(shares) == 0 {
-			return notFound(name)
-		}
-		row := rows[0]
-		projectLevel := shares[0].Visibility
-		if Lifecycle(row.Lifecycle) == Deleting {
-			return errs.E(errs.Conflict, errs.CodeConflict, "the repository is being deleted")
-		}
-		if !pre.Any && pre.Version != row.ConfigVersion {
-			return stale(row.ConfigVersion)
 		}
 		cur, curRel, err := s.document(ctx, qs, row, name.Project)
 		if err != nil {
 			return fmt.Errorf("repository: stored document of %q: %w", name, err)
 		}
 		before, _ := toRepository(row, name.Project, s.cat)
-		nd, err := build(cur)
+		nd, v, rel, err := s.updatedDocument(ctx, qs, c, row.ID, name.Project, projectLevel, &cur, build)
 		if err != nil {
-			return err
-		}
-		nd, v := s.checkUpdate(cur, nd)
-		levels, err := s.resolveLevels(ctx, qs, v, c, projectLevel, &cur.Visibility, &nd)
-		if err != nil {
-			return err
-		}
-		nd.Visibility = levels
-		restrictedRemote(v, c, &cur, &nd)
-		if err := restrictedVulnerabilities(c, &cur, &nd); err != nil {
-			return err
-		}
-		// >>> M2 virtual
-		rel, err := s.resolveVirtual(ctx, qs, v, name.Project, &nd)
-		if err != nil {
-			return err
-		}
-		// <<< M2 virtual
-		if err := s.checkDebKeysKept(ctx, qs, v, row.ID, &cur, &nd); err != nil {
-			return err
-		}
-		if err := v.err(); err != nil {
 			return err
 		}
 		newCfg, err := nd.marshalConfig()
 		if err != nil {
 			return err
 		}
-		// What changed is read from the complete documents, the rows of a virtual
-		// repository included; the stored configuration lacks them.
-		newFull, err := nd.marshalFull()
+		changes, err := updateChanges(&cur, &nd)
 		if err != nil {
 			return err
-		}
-		oldFull, err := cur.marshalFull()
-		if err != nil {
-			return err
-		}
-		changes := changedMembers(oldFull, newFull)
-		changes = withSecretChange(changes, nd)
-		if levels != cur.Visibility {
-			changes = append(changes, "visibility")
-			sort.Strings(changes)
 		}
 		if len(changes) == 0 {
 			out, err = s.stored(ctx, qs, row, name.Project, v.warnings) // nothing to write: same version, no event
@@ -467,7 +416,7 @@ func (s *Service) update(ctx context.Context, c Caller, name qname.Repo, pre Pre
 		}
 		updated, err := qs.UpdateRepositoryConfig(ctx, q.UpdateRepositoryConfigParams{
 			ID: row.ID, Version: row.ConfigVersion, Config: string(newCfg), Actor: c.principalID(),
-			VisibilityArtifacts: levels.Artifacts, VisibilityWiki: levels.Wiki,
+			VisibilityArtifacts: nd.Visibility.Artifacts, VisibilityWiki: nd.Visibility.Wiki,
 		})
 		if err != nil {
 			return err
@@ -514,6 +463,89 @@ func (s *Service) update(ctx context.Context, c Caller, name qname.Repo, pre Pre
 		return Stored{}, err
 	}
 	return out, nil
+}
+
+// lockForUpdate locks the repository an update writes and returns its row and its project's level. The project is locked FOR
+// SHARE before the repository, as a create does and as the lowering of a project's level orders its locks: a repository is never
+// written above a level that is being lowered (R-AUTHZ-033 rule 3, Q-AUTHZ-282). A repository being deleted answers 409, and a
+// version precondition that does not hold answers stale.
+func lockForUpdate(ctx context.Context, qs *q.Queries, name qname.Repo, pre Precondition) (q.Repository, string, error) {
+	shares, err := qs.RepositoryProjectShare(ctx, name.Project)
+	if err != nil {
+		return q.Repository{}, "", err
+	}
+	rows, err := qs.LockRepositoryByName(ctx, q.LockRepositoryByNameParams{Project: name.Project, Key: name.Key})
+	if err != nil {
+		return q.Repository{}, "", err
+	}
+	if len(rows) == 0 || len(shares) == 0 {
+		return q.Repository{}, "", notFound(name)
+	}
+	row := rows[0]
+	if Lifecycle(row.Lifecycle) == Deleting {
+		return q.Repository{}, "", errs.E(errs.Conflict, errs.CodeConflict, "the repository is being deleted")
+	}
+	if !pre.Any && pre.Version != row.ConfigVersion {
+		return q.Repository{}, "", stale(row.ConfigVersion)
+	}
+	return row, shares[0].Visibility, nil
+}
+
+// updatedDocument builds the document an update stores from the stored one, cur, and checks it: the identity stays as stored,
+// the levels are resolved against the project's level (R-AUTHZ-033), the rules of a restricted caller hold, and the rows of a
+// virtual repository are resolved. It returns the document, the validation with its warnings and those rows, nil for another
+// class; a document that does not validate answers the validation's error.
+func (s *Service) updatedDocument(ctx context.Context, qs *q.Queries, c Caller, id int64, project, projectLevel string, cur *Document,
+	build func(cur Document) (Document, error),
+) (Document, *validation, *virtualRel, error) {
+	nd, err := build(*cur)
+	if err != nil {
+		return Document{}, nil, nil, err
+	}
+	nd, v := s.checkUpdate(*cur, nd)
+	levels, err := s.resolveLevels(ctx, qs, v, c, projectLevel, &cur.Visibility, &nd)
+	if err != nil {
+		return Document{}, nil, nil, err
+	}
+	nd.Visibility = levels
+	restrictedRemote(v, c, cur, &nd)
+	if err := restrictedVulnerabilities(c, cur, &nd); err != nil {
+		return Document{}, nil, nil, err
+	}
+	// >>> M2 virtual
+	rel, err := s.resolveVirtual(ctx, qs, v, project, &nd)
+	if err != nil {
+		return Document{}, nil, nil, err
+	}
+	// <<< M2 virtual
+	if err := s.checkDebKeysKept(ctx, qs, v, id, cur, &nd); err != nil {
+		return Document{}, nil, nil, err
+	}
+	if err := v.err(); err != nil {
+		return Document{}, nil, nil, err
+	}
+	return nd, v, rel, nil
+}
+
+// updateChanges lists the members an update changes, sorted. What changed is read from the complete documents, the rows of a
+// virtual repository included, since the stored configuration lacks them; a new secret value counts as a change of remote,
+// and new levels as a change of visibility, which are columns of the row.
+func updateChanges(cur, nd *Document) ([]string, error) {
+	newFull, err := nd.marshalFull()
+	if err != nil {
+		return nil, err
+	}
+	oldFull, err := cur.marshalFull()
+	if err != nil {
+		return nil, err
+	}
+	changes := changedMembers(oldFull, newFull)
+	changes = withSecretChange(changes, *nd)
+	if nd.Visibility != cur.Visibility {
+		changes = append(changes, "visibility")
+		sort.Strings(changes)
+	}
+	return changes, nil
 }
 
 // checkUpdate puts the stored identity back into the new document, collecting

@@ -583,24 +583,22 @@ func writeSetting(class string, doc map[string]json.RawMessage, key, value strin
 	return true
 }
 
-func replaySettings(ctx context.Context, qs *q.Queries, env journal.Env, tx meta.Tx, o journal.Object) (journal.Result, error) {
-	var e struct {
-		RepositoryID string                     `json:"repositoryId"`
-		Before       map[string]json.RawMessage `json:"before"`
-		After        map[string]json.RawMessage `json:"after"`
-	}
-	if !o.Into(&e) || len(e.After) == 0 || e.Before == nil {
-		return o.Malformed("repositoryId, before or after is missing"), nil
-	}
-	id, perr := strconv.ParseInt(e.RepositoryID, 10, 64)
-	if perr != nil {
-		return o.Malformed("repositoryId is not an ID"), nil //nolint:nilerr // an unreadable ID in an untrusted entry is a skipped entry, not a failed replay
-	}
-	before, after := repoSettings{}, repoSettings{}
+// settingsEntry is the journal entry of authz.settings.changed: the repository by its ID and its access settings before and after
+// the change, flat, as the repository document names them (R-AUTHZ-036).
+type settingsEntry struct {
+	RepositoryID string                     `json:"repositoryId"`
+	Before       map[string]json.RawMessage `json:"before"`
+	After        map[string]json.RawMessage `json:"after"`
+}
+
+// values renders the journaled settings as the strings the order uses. ok is false when an after-value is no plain value; a
+// before-value that is none is left out.
+func (e settingsEntry) values() (before, after repoSettings, ok bool) {
+	before, after = repoSettings{}, repoSettings{}
 	for k, v := range e.After {
 		s, ok := settingString(v)
 		if !ok {
-			return o.Malformed("a setting has no plain value"), nil
+			return nil, nil, false
 		}
 		after[k] = s
 	}
@@ -608,6 +606,122 @@ func replaySettings(ctx context.Context, qs *q.Queries, env journal.Env, tx meta
 		if s, ok := settingString(v); ok {
 			before[k] = s
 		}
+	}
+	return before, after, true
+}
+
+// dropInapplicable removes the settings that do not apply to a repository of the class, a cacheFillAction of a repository that is
+// not remote and a packageOwnership of one that is not local: they are not compared or written.
+func dropInapplicable(class string, before, after repoSettings) {
+	for k := range after {
+		if k == "cacheFillAction" && class != "remote" || k == "packageOwnership" && class != "local" {
+			delete(after, k)
+			delete(before, k)
+		}
+	}
+}
+
+// settingsInEffect reports whether every journaled setting already holds its after-value.
+func settingsInEffect(current, after repoSettings) bool {
+	for k, v := range after {
+		if current[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
+// settingsWrite writes the journaled settings of one repository under its row lock: the members of its configuration document and
+// its level columns, followed by the change notifications.
+type settingsWrite struct {
+	qs      *q.Queries
+	env     journal.Env
+	tx      meta.Tx
+	entry   settingsEntry
+	id      int64
+	class   string
+	subject string
+	doc     map[string]json.RawMessage
+	after   repoSettings
+}
+
+// save writes the value apply gives for each journaled setting, where "" leaves the setting as it is: the configuration document,
+// then the levels, then the change of the repository's configuration and of the authorization state.
+func (w *settingsWrite) save(ctx context.Context, apply func(key string) string) error {
+	levels := q.JournalRepositorySetLevelsParams{ID: w.id}
+	for k := range w.after {
+		v := apply(k)
+		switch {
+		case v == "":
+		case k == settingArtifactsLevel:
+			levels.Artifacts = v
+		case k == settingWikiLevel:
+			levels.Wiki = v
+		default:
+			writeSetting(w.class, w.doc, k, v)
+		}
+	}
+	raw, err := json.Marshal(w.doc)
+	if err != nil {
+		return err
+	}
+	ver, err := w.qs.JournalRepositorySetConfig(ctx, q.JournalRepositorySetConfigParams{ID: w.id, Config: string(raw)})
+	if err != nil || len(ver) == 0 {
+		return err
+	}
+	if levels.Artifacts != "" || levels.Wiki != "" {
+		if ver, err = w.qs.JournalRepositorySetLevels(ctx, levels); err != nil || len(ver) == 0 {
+			return err
+		}
+	}
+	if err := w.env.Notify(w.tx, cluster.AreaRepoConfig, 1, map[string]any{"id": w.entry.RepositoryID, "key": w.subject, "op": "updated", "version": ver[0]}); err != nil {
+		return err
+	}
+	return w.env.Notify(w.tx, cluster.AreaAuthz, payloadVersion, changePayload{Type: "repository", ID: w.entry.RepositoryID})
+}
+
+// apply writes the journaled after-values.
+func (w *settingsWrite) apply(ctx context.Context) error {
+	return w.save(ctx, func(k string) string { return w.after[k] })
+}
+
+// suspend takes every journaled setting to its most restrictive value. A setting without an order has no most restrictive value to
+// take: it is left as it is and named in the output, and the others are suspended. The entry is never skipped on that account
+// (audit finding L1, Q-AUTHZ-237).
+func (w *settingsWrite) suspend(ctx context.Context) (json.RawMessage, error) {
+	var unordered []string
+	for k := range w.after {
+		if accessOrder(k) == nil {
+			unordered = append(unordered, k)
+		}
+	}
+	slices.Sort(unordered)
+	detail, err := json.Marshal(map[string]any{"repository": w.subject, "after": w.entry.After, "unordered": unordered})
+	if err != nil {
+		return nil, err
+	}
+	return detail, w.save(ctx, func(k string) string {
+		if order := accessOrder(k); order != nil {
+			return order[0]
+		}
+		return ""
+	})
+}
+
+// replaySettings replays authz.settings.changed (R-AUTHZ-036) by the update rule of R-HA-054 (journal.ApplyUpdate), with
+// settingsOrder as the comparator.
+func replaySettings(ctx context.Context, qs *q.Queries, env journal.Env, tx meta.Tx, o journal.Object) (journal.Result, error) {
+	var e settingsEntry
+	if !o.Into(&e) || len(e.After) == 0 || e.Before == nil {
+		return o.Malformed("repositoryId, before or after is missing"), nil
+	}
+	id, perr := strconv.ParseInt(e.RepositoryID, 10, 64)
+	if perr != nil {
+		return o.Malformed("repositoryId is not an ID"), nil //nolint:nilerr // an unreadable ID in an untrusted entry is a skipped entry, not a failed replay
+	}
+	before, after, ok := e.values()
+	if !ok {
+		return o.Malformed("a setting has no plain value"), nil
 	}
 	rows, err := qs.JournalRepositoryLock(ctx, id)
 	if err != nil {
@@ -624,78 +738,17 @@ func replaySettings(ctx context.Context, qs *q.Queries, env journal.Env, tx meta
 	}
 	current := readSettings(repo.Class, doc)
 	current[settingArtifactsLevel], current[settingWikiLevel] = repo.VisibilityArtifacts, repo.VisibilityWiki
-	// A setting that does not apply to the repository's class is not compared or written.
-	for k := range after {
-		if k == "cacheFillAction" && repo.Class != "remote" || k == "packageOwnership" && repo.Class != "local" {
-			delete(after, k)
-			delete(before, k)
-		}
-	}
+	dropInapplicable(repo.Class, before, after)
 	if len(after) == 0 {
 		return o.Result(journal.SubjectUnknown, subject), nil
 	}
-	same := true
-	for k, v := range after {
-		same = same && current[k] == v
-	}
-	if same {
+	if settingsInEffect(current, after) {
 		return o.Result(journal.AlreadyInEffect, subject), nil
 	}
-	save := func(apply func(key string) string) error {
-		levels := q.JournalRepositorySetLevelsParams{ID: id}
-		for k := range after {
-			v := apply(k)
-			switch {
-			case v == "":
-			case k == settingArtifactsLevel:
-				levels.Artifacts = v
-			case k == settingWikiLevel:
-				levels.Wiki = v
-			default:
-				writeSetting(repo.Class, doc, k, v)
-			}
-		}
-		raw, err := json.Marshal(doc)
-		if err != nil {
-			return err
-		}
-		ver, err := qs.JournalRepositorySetConfig(ctx, q.JournalRepositorySetConfigParams{ID: id, Config: string(raw)})
-		if err != nil || len(ver) == 0 {
-			return err
-		}
-		if levels.Artifacts != "" || levels.Wiki != "" {
-			if ver, err = qs.JournalRepositorySetLevels(ctx, levels); err != nil || len(ver) == 0 {
-				return err
-			}
-		}
-		if err := env.Notify(tx, cluster.AreaRepoConfig, 1, map[string]any{"id": e.RepositoryID, "key": subject, "op": "updated", "version": ver[0]}); err != nil {
-			return err
-		}
-		return env.Notify(tx, cluster.AreaAuthz, payloadVersion, changePayload{Type: "repository", ID: e.RepositoryID})
-	}
+	w := &settingsWrite{qs: qs, env: env, tx: tx, entry: e, id: id, class: repo.Class, subject: subject, doc: doc, after: after}
 	act := journal.UpdateActions{
-		Apply: func() error { return save(func(k string) string { return after[k] }) },
-		Suspend: func() (json.RawMessage, error) {
-			// A setting without an order has no most restrictive value to take: it is left as it is and named in the output,
-			// and the others are suspended. The entry is never skipped on that account (audit finding L1, Q-AUTHZ-237).
-			var unordered []string
-			for k := range after {
-				if accessOrder(k) == nil {
-					unordered = append(unordered, k)
-				}
-			}
-			slices.Sort(unordered)
-			detail, err := json.Marshal(map[string]any{"repository": subject, "after": e.After, "unordered": unordered})
-			if err != nil {
-				return nil, err
-			}
-			return detail, save(func(k string) string {
-				if order := accessOrder(k); order != nil {
-					return order[0]
-				}
-				return ""
-			})
-		},
+		Apply:   func() error { return w.apply(ctx) },
+		Suspend: func() (json.RawMessage, error) { return w.suspend(ctx) },
 	}
 	out, detail, err := journal.ApplyUpdate[repoSettings](settingsOrder{}, current, before, after, act)
 	r := o.Result(out, subject)
