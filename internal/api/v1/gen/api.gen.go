@@ -6011,7 +6011,7 @@ type DebPackageAnswer struct {
 // repository, so the next build reflects it. The repository document reads back the read-only `upstreamKeyFingerprints` of a
 // remote's keys beside it.
 type DebSettings struct {
-	// Architectures Local and virtual. Architectures every suite's indexes are built for; a local repository adds the architectures of its stored files. `all` is not listed.
+	// Architectures Local and virtual. Architectures every suite's indexes are built for; a local repository adds the architectures of its stored files. `all` is not listed, since the files of that architecture are listed under every architecture of the suite.
 	Architectures *[]string `json:"architectures,omitempty"`
 
 	// Components Virtual. Components merged.
@@ -6424,7 +6424,10 @@ type FormatDescriptor struct {
 	// SettingsSchema The JSON Schema 2020-12 of the format's settings member of a repository document (the member named
 	// after the format, R-REPO-004), which the create form renders and the service validates a document
 	// against (R-ARCH-008). Its properties may carry `x-trove-classes`, the classes the setting applies to;
-	// a setting of another class answers `not_applicable`. `null` for a format without settings.
+	// a setting of another class answers `not_applicable`. A property with an `enum` carries `x-trove-enum-titles`,
+	// the label the form shows for each value (R-UI-088). A `title` and a `description` are the texts the form shows,
+	// in plain words; the member schemas of this document (`NpmSettings`, …) describe each setting for the API
+	// reader. `null` for a format without settings.
 	SettingsSchema *map[string]interface{} `json:"settingsSchema"`
 
 	// UpstreamPresets The well-known public registries of the format's ecosystem, in the format's order (R-REPO-062): the one-click choices of a
@@ -7223,13 +7226,13 @@ type NpmSettings struct {
 	// DistTagStrategy Virtual repositories (R-NPM-031). How the other dist-tags are merged.
 	DistTagStrategy *NpmSettingsDistTagStrategy `json:"distTagStrategy,omitempty"`
 
-	// LatestGuard Local repositories (R-NPM-016). A publish under `latest` does not move `latest` backwards or onto a pre-release in front of a release.
+	// LatestGuard Local repositories (R-NPM-016). A publish under `latest` does not move `latest` backwards or onto a pre-release in front of a release; the version is stored and `latest` stays.
 	LatestGuard *bool `json:"latestGuard,omitempty"`
 
 	// LatestStrategy Virtual repositories (R-NPM-031). How `latest` is merged.
 	LatestStrategy *NpmSettingsLatestStrategy `json:"latestStrategy,omitempty"`
 
-	// ServeRemovedVersions Remote repositories (R-NPM-026). Serve the cached tarball of a version the upstream no longer lists.
+	// ServeRemovedVersions Remote repositories (R-NPM-026). Serve the cached tarball of a version the upstream no longer lists, and keep its package served when the upstream drops it; the package documents never list such a version (Q-NPM-35).
 	ServeRemovedVersions *bool `json:"serveRemovedVersions,omitempty"`
 }
 

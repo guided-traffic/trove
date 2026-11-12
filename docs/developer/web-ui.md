@@ -207,7 +207,7 @@ running and stops only what it started: trove with the sign-in provider (`serve.
    each with the kinds of user that reach it. For each width the screen is loaded, then every tab of it (`role=tab` inside
    `main`) is opened in turn; each view is taken light and dark (`prefers-color-scheme`, which the app follows while no theme is
    stored, the theme button's "Follow the system"). The window grows by what the content panel and its scroll regions hide, so
-   a picture shows the whole length. A flow is a screen with a `walk`: the creation form is walked for OCI, npm and Ansible,
+   a picture shows the whole length. A flow is a screen with a `walk`: the creation form is walked for OCI, npm, Ansible, NuGet and Debian,
    local, remote and virtual, as the power user in a project and as the administrator in the admin area: as it opens, with two
    members for a virtual repository, with Advanced settings open, and with the key's error (`new-<format>-<class>-…`); the format
    chooser as it opens and with a search that leaves no tile (`repository-new-…`); nothing is created. Every list
@@ -404,11 +404,11 @@ offers controls ([Q-UI-78](../spec/api-and-ui.md#q-ui-78--the-repository-setting
 
 | Schema | Control |
 |---|---|
-| `type: object` with `properties` | a fieldset, legend = `title` or the member name, the description below it, its members inside; left out when no member applies to the class |
+| `type: object` with `properties` | a group (`role="group"`) under a heading of `title` or the member name, the description below it, its members inside, without a frame ([Q-UI-78](../spec/api-and-ui.md#q-ui-78--the-repository-settings-form-renders-the-subset-of-json-schema-the-formats-use), amended). The heading is one level below the one the part stands under, `headingLevel` of the component: 3 on the settings page, 4 in the creation form, one more per enclosing object; it has the type of the page's other group headings (`:host-context(.advanced-settings)` in the creation form). Left out when no member applies to the class |
 | `type: boolean` | a checkbox showing the value in effect (stored, else `default`); "Default: on" or "Default: off" |
-| `enum` (any type) | a select of the values as written; the default is selected while the member is absent; "Not set" as a first option when there is no default |
+| `enum` (any type) | a select of the values, each shown by its label in `x-trove-enum-titles` (else as written); the default is selected while the member is absent; **Automatic** as a first option when there is no default |
 | `type: string` | a text field, empty while absent; `format: uri` makes it a URL field; `maxLength` above 1 KiB makes it a textarea (a pasted key block). Durations and byte sizes (`30s`, `10MiB`) are strings with a pattern: the field takes the text, the server checks the pattern |
-| `type: array` of `type: string` items ([Q-UI-200](../spec/api-and-ui.md#q-ui-200--an-array-of-strings-in-a-settings-schema-is-a-list-control-a-long-string-an-area)) | a textarea, one entry per line, empty while absent ("Default: a, b" below it); when the items are an `enum`, a fieldset with a checkbox per option. An empty list leaves the member out, so the default applies |
+| `type: array` of `type: string` items ([Q-UI-200](../spec/api-and-ui.md#q-ui-200--an-array-of-strings-in-a-settings-schema-is-a-list-control-a-long-string-an-area)) | a textarea, one entry per line, empty while absent ("Default: a, b" below it); when the items are an `enum`, a checkbox per option under the setting's label, without a frame, each by its label in the items' `x-trove-enum-titles` (else the option). An empty list leaves the member out, so the default applies |
 | `type: integer` or `number` | a text field with a numeric keyboard; a number is sent when the text is one as JSON writes it, otherwise the text, which the server refuses at the field |
 | `type: [<type>, "null"]` | the control of `<type>`; an empty field leaves the member out, so the default (which may be `null`) applies |
 | `x-trove-classes` | at every level, a member whose list lacks the repository's class is not rendered (the server checks it at the top level and answers `not_applicable`) |
@@ -420,9 +420,13 @@ offers controls ([Q-UI-78](../spec/api-and-ui.md#q-ui-78--the-repository-setting
 - *A default is not written* ([Q-UI-80](../spec/api-and-ui.md#q-ui-80--a-setting-equal-to-its-default-is-not-written)). `settingsOf` leaves out a setting equal to its default, an
   object left empty by that, and the member when nothing is left; a `required` member and a member the schema does not know stay. Both sides of the
   edit form's merge patch are pruned the same way, so a stored explicit default is no change, and a value set back to its default sends `null`.
-- *Texts* ([Q-UI-79](../spec/api-and-ui.md#q-ui-79--the-labels-and-descriptions-of-the-settings-form-are-the-schemas)). Labels and descriptions are the schema's, in English;
-  only the texts the form adds are translated (`repo.format.*`). A label is the member's `title`, which every member of every format's schema has
-  (`TestR_UI_088_EverySettingOfAFormatHasATitleAndPlainTexts` in `internal/formats`, which also refuses a requirement or decision ID in a title or a description); the key is shown only for a member without one.
+- *Texts* ([Q-UI-79](../spec/api-and-ui.md#q-ui-79--the-labels-and-descriptions-of-the-settings-form-are-the-schemas), amended; [R-UI-088](../spec/api-and-ui.md#r-ui-088--a-title-and-a-heading-name-one-thing)). Labels, descriptions and value labels are the schema's, in English
+  (`lang="en"`); only the texts the form adds are translated (`repo.format.*`). A label is the member's `title`, which every member of every format's schema has;
+  the key is shown only for a member without one. A description says in one or two sentences of plain words what the setting does and when to change it;
+  the specification's wording (status and error codes, configuration keys, edge cases) is in the format's spec page and the OpenAPI member.
+  `TestR_UI_088_EverySettingOfAFormatHasATitleAndPlainTexts` in `internal/formats` refuses a requirement or decision ID, an HTTP status, a dotted
+  configuration key, an error code, a camelCase member name or `null` in a title, a description or a value label, a description of more than two
+  sentences, and an `enum` value without a label.
 - *Defaults as values* ([R-UI-084](../spec/api-and-ui.md#r-ui-084--a-default-is-the-value-of-its-field)). A text, a number and a list show the member's
   value or the schema's `default` (`text`, `listText`); a field the user empties shows the default again once left (`showDefaultAgain`) and the member
   stays unwritten. A choice without a static default offers **Automatic** first. No "Default: …" line remains.
@@ -435,7 +439,7 @@ offers controls ([Q-UI-78](../spec/api-and-ui.md#q-ui-78--the-repository-setting
   to the section (`f-npm`); the error summary focuses the same element.
 - *Tests.* [settings-schema.spec.ts](../../web/src/app/features/repositories/settings-schema.spec.ts) and
   [format-settings.spec.ts](../../web/src/app/features/repositories/format-settings.spec.ts) run against `RICH_SETTINGS_SCHEMA` of
-  [fakes-catalog.ts](../../web/src/app/api/testing/fakes-catalog.ts) (npm's members plus a nested object of the remote class with an enum, a nullable URL,
+  [fakes-catalog.ts](../../web/src/app/api/testing/fakes-catalog.ts) (npm's members plus a nested object of the remote class with an enum of one labelled and one bare value, a nullable URL,
   durations, an integer and an array); the creation form's and the settings page's specs against `NPM_SETTINGS_SCHEMA`, a copy of npm's schema. The browser journey
   `08-packages.spec.ts` creates and edits an npm repository with it ([e2e.md](e2e.md#browser-journeys)).
 

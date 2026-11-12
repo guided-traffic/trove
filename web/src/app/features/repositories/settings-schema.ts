@@ -20,6 +20,8 @@ export interface SettingSchema {
   readonly required?: readonly string[];
   /** The repository classes a member applies to; absent means every class. */
   readonly 'x-trove-classes'?: readonly string[];
+  /** The label of each value of `enum`, keyed by the value as text (R-UI-088); a value without one is shown as it is written. */
+  readonly 'x-trove-enum-titles'?: Readonly<Record<string, string>>;
 }
 
 interface NodeBase {
@@ -43,6 +45,8 @@ export type SettingNode =
   | (NodeBase & {
       readonly kind: 'choice';
       readonly options: readonly unknown[];
+      /** What the select shows for each of `options`: its label, else the value as written. */
+      readonly labels: readonly string[];
       readonly fallback: unknown;
     })
   | (NodeBase & {
@@ -62,6 +66,8 @@ export type SettingNode =
   | (NodeBase & {
       readonly kind: 'list';
       readonly options: readonly string[] | null;
+      /** What each checkbox of `options` says: the items' label of the option, else the option. */
+      readonly labels: readonly string[] | null;
       readonly fallback: unknown;
     })
   | (NodeBase & {
@@ -133,6 +139,20 @@ function appliesTo(s: SettingSchema, cls: string): boolean {
   return !Array.isArray(classes) || classes.includes(cls);
 }
 
+/** A value as the form writes it: a string as it is, anything else as JSON. */
+export function shownValue(value: unknown): string {
+  return typeof value === 'string' ? value : JSON.stringify(value);
+}
+
+/** The label of each of `options` (`x-trove-enum-titles`, keyed by the value as text), else the value as written. */
+function labelsOf(s: SettingSchema, options: readonly unknown[]): readonly string[] {
+  const titles = isObject(s['x-trove-enum-titles']) ? s['x-trove-enum-titles'] : {};
+  return options.map((o) => {
+    const title = titles[shownValue(o)];
+    return typeof title === 'string' && title !== '' ? title : shownValue(o);
+  });
+}
+
 function node(
   name: string,
   s: SettingSchema,
@@ -149,7 +169,9 @@ function node(
     description: typeof s.description === 'string' && s.description !== '' ? s.description : null,
   };
   const fallback = s.default;
-  if (Array.isArray(s.enum)) return { ...base, kind: 'choice', options: s.enum, fallback };
+  if (Array.isArray(s.enum)) {
+    return { ...base, kind: 'choice', options: s.enum, labels: labelsOf(s, s.enum), fallback };
+  }
   switch (typeOf(s)) {
     case 'object': {
       if (!isObject(s.properties)) return { ...base, kind: 'other' };
@@ -177,7 +199,7 @@ function node(
       const options = Array.isArray(items.enum) && items.enum.every((o) => typeof o === 'string')
         ? (items.enum as readonly string[])
         : null;
-      return { ...base, kind: 'list', options, fallback };
+      return { ...base, kind: 'list', options, labels: options ? labelsOf(items, options) : null, fallback };
     }
     case 'integer':
     case 'number':

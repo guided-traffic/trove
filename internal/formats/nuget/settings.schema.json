@@ -8,24 +8,26 @@
   "properties": {
     "deleteMode": {
       "title": "Delete mode",
-      "description": "What the protocol DELETE of a package does: unlist keeps the version in the flat container and downloadable, delete removes it and writes its tombstone. A delete through the management API, the UI or /files/ is always a hard delete.",
+      "description": "What dotnet nuget delete and nuget delete do in this repository: Unlist hides the version from search and keeps it downloadable, Delete for good removes it. A delete in trove's own pages or API always removes the version.",
       "type": "string",
       "enum": ["unlist", "delete"],
+      "x-trove-enum-titles": { "unlist": "Unlist", "delete": "Delete for good" },
       "default": "unlist",
       "x-trove-classes": ["local"]
     },
     "forwardSearch": {
       "title": "Forward search",
-      "description": "Forward the search and autocomplete requests of this remote to the upstream's search resource. false answers from the packages the remote has cached.",
+      "description": "Pass searches on to the upstream, so that clients also find packages nobody has fetched through trove yet. Turn it off to search only what this repository has cached and to keep search terms inside your network.",
       "type": "boolean",
       "default": true,
       "x-trove-classes": ["remote"]
     },
     "vulnerabilityInfo": {
       "title": "Vulnerability information",
-      "description": "The vulnerability information of the service index: local lists VulnerabilityInfo/6.7.0 and serves trove's own NuGet advisory data while that data is complete (every class; answers like off while vulnerabilities.enabled is false); off lists nothing. Left out, the mode is local while vulnerabilities.enabled is true and the OSV source is not off, else off. The pass-through of the upstream's information, upstream, is not offered yet and is refused.",
+      "description": "Whether NuGet clients warn about known vulnerabilities of packages from this repository, using trove's advisory data. Automatic gives the warnings while vulnerability scanning is on.",
       "type": "string",
-      "enum": ["local", "off"]
+      "enum": ["local", "off"],
+      "x-trove-enum-titles": { "local": "From trove's advisory data", "off": "Off" }
     }
   }
 }

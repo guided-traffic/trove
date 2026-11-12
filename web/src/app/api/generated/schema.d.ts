@@ -7081,7 +7081,10 @@ export interface components {
              * @description The JSON Schema 2020-12 of the format's settings member of a repository document (the member named
              *     after the format, R-REPO-004), which the create form renders and the service validates a document
              *     against (R-ARCH-008). Its properties may carry `x-trove-classes`, the classes the setting applies to;
-             *     a setting of another class answers `not_applicable`. `null` for a format without settings.
+             *     a setting of another class answers `not_applicable`. A property with an `enum` carries `x-trove-enum-titles`,
+             *     the label the form shows for each value (R-UI-088). A `title` and a `description` are the texts the form shows,
+             *     in plain words; the member schemas of this document (`NpmSettings`, …) describe each setting for the API
+             *     reader. `null` for a format without settings.
              */
             settingsSchema: {
                 [key: string]: unknown;
@@ -7314,12 +7317,12 @@ export interface components {
          */
         NpmSettings: {
             /**
-             * @description Local repositories (R-NPM-016). A publish under `latest` does not move `latest` backwards or onto a pre-release in front of a release.
+             * @description Local repositories (R-NPM-016). A publish under `latest` does not move `latest` backwards or onto a pre-release in front of a release; the version is stored and `latest` stays.
              * @default true
              */
             latestGuard: boolean;
             /**
-             * @description Remote repositories (R-NPM-026). Serve the cached tarball of a version the upstream no longer lists.
+             * @description Remote repositories (R-NPM-026). Serve the cached tarball of a version the upstream no longer lists, and keep its package served when the upstream drops it; the package documents never list such a version (Q-NPM-35).
              * @default false
              */
             serveRemovedVersions: boolean;
@@ -9660,7 +9663,7 @@ export interface components {
          */
         DebSettings: {
             /**
-             * @description Local and virtual. Architectures every suite's indexes are built for; a local repository adds the architectures of its stored files. `all` is not listed.
+             * @description Local and virtual. Architectures every suite's indexes are built for; a local repository adds the architectures of its stored files. `all` is not listed, since the files of that architecture are listed under every architecture of the suite.
              * @default [
              *       "amd64",
              *       "arm64"

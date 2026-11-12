@@ -5687,12 +5687,26 @@ Priority: **MVP** · Covers: UI-031
 - A format setting's label is the `title` of its member in the format's settings schema (Q-UI-79), which every member of every
   format's schema has ("Tags to mirror", not `tags`). A title or a description of a schema is read by users and names no
   requirement or decision ID.
+- A format setting's description says what the setting does for the user and when to change it, in one or two sentences of plain
+  words: no HTTP status, no error code, no configuration key or member name, no `null`, and a limit in words ("1 to 300 seconds,
+  written like 30s"). The wording of the specification stays with the format's page of the specification and the member's
+  description in the OpenAPI document (Q-UI-79).
+- Each value of a setting's `enum` has a label of its own in the member's `x-trove-enum-titles`, which the select shows
+  ("Delete for good", not `delete`); a choice without a static default still offers **Automatic** first (R-UI-084), and the
+  description says what Automatic does.
+- An object of a schema is a group under its own heading, in the type of the page's other group headings and without a frame
+  (Q-UI-78): npm's **Security audit** reads like **Paths** in the creation form's Advanced settings.
 
 Acceptance criteria:
 
 - No heading of the form or of the settings page holds "and" between two topics.
 - Every member of every format's settings schema has a `title`, and no title or description of the five schemas holds an `R-…`
   or `Q-…` ID.
+- No title, description or value label of the five schemas holds an HTTP status, a dotted configuration key, an error code, a
+  member name in camelCase or `null`, no description has more than two sentences, and every value of a member's `enum` has a
+  label (`TestR_UI_088_EverySettingOfAFormatHasATitleAndPlainTexts`).
+- The creation form of an npm remote shows **Security audit** as a heading in Advanced settings, with no frame around its fields,
+  and its **Mode** offers Automatic, "From trove's advisory data", "Forward to an advisory service" and "Off".
 
 ### R-UI-090 · The grade shield
 Priority: **P1** · Covers: trove-only
@@ -7285,6 +7299,13 @@ Context: R-UI-021 and R-ARCH-004 render a format's settings from the schema `GET
 
 **Applied in the spec:** R-UI-021 (where the settings appear, an acceptance criterion); the "Settings forms" row of Q-UI-18 is superseded for the format member.
 
+**Amended 2026-11-12 (the owner's look at npm's Advanced settings):** the fieldset of an object drew a framed box inside Advanced
+settings, where every other group stands under a heading, so **Security audit** looked like another kind of thing than **Paths**.
+An object is now a group (`role="group"`, named by its heading) under a heading one level below the one the part stands under
+(`headingLevel` of `<trove-format-settings>`: 3 on the settings page, 4 in the creation form, one more for each object it lies in),
+in the type of the page's other group headings and without a frame; the checkboxes of a list of enum values stand under the
+setting's label like any other field, also without a frame. Code: [format-settings.ts](../../web/src/app/features/repositories/format-settings.ts).
+
 ### Q-UI-79 · The labels and descriptions of the settings form are the schema's
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -7302,6 +7323,28 @@ Context: every UI text is translatable (R-UI-045), while a schema's descriptions
 **Rationale:** The settings are configuration identifiers that an administrator meets again in the API and in the format's documentation; the description explains them in the language the API speaks. The development agent revisits this when the owner wants German descriptions or a format writes its schema for end users: (c) would then keep the text with the format. Walkthrough note: whether the descriptions should lose their requirement IDs is the format's choice (its schema), not the form's.
 
 **Applied in the spec:** none; R-UI-045 already keeps API texts English.
+
+**Amended 2026-11-12 (the owner's task: the format settings in plain language):** the revisit condition above was met: the
+form shows the schemas to people who want to keep and fetch their artifacts, and their descriptions read like the specification
+(npm's audit mode named status codes, error codes and configuration keys; a timeout named `server.shutdown_timeout`). The texts stay
+the schema's and English, as chosen; what changes is what they say and where the specification's wording lives.
+
+| Question | Option | For | Against |
+|---|---|---|---|
+| Where does the specification's wording go? | (a) The format's page of the specification and the member's description in the OpenAPI document, which already carry it (chosen) | One place for the developer's facts, each next to the requirement it belongs to; the schema holds only what the form shows | The schema served by `GET /api/v1/formats` no longer explains the edge cases; its reader looks them up in the OpenAPI document |
+| | (b) `$comment` in the schema, beside the plain `description` | The schema stays self-contained | A third copy of each fact next to the spec and the OpenAPI document, which drifts |
+| How does an enum value get a label? | (a) `x-trove-enum-titles` next to `enum`: an object from each value, as text, to its label (chosen) | `enum` stays as it is, so the server's validation and the comparison with the OpenAPI member (`TestR_ARCH_008_…`) are untouched; a value without a label is shown as written | An extension keyword the JSON Schema standard does not define, like `x-trove-classes` |
+| | (b) `oneOf` of `const` with a `title` each, the standard's idiom | Standard JSON Schema | Every enum rewritten as a composition, which the renderer of Q-UI-78 shows as "set it through the API", and the OpenAPI comparison reads `enum` |
+| | (c) A table of labels per format in the UI | Labels translated with the UI | Code per field (R-ARCH-004); a new value without a UI change is shown bare |
+
+**Choice:** (a) and (a). A description says what the setting does and when to change it in one or two sentences, with no HTTP
+status, error code, configuration key, member name or `null`, and limits in words; each value of a member's `enum` has a label
+(R-UI-088, checked by `TestR_UI_088_EverySettingOfAFormatHasATitleAndPlainTexts`). A value label is an English text of the schema
+like the title and is shown with `lang="en"`. **Rationale:** the facts the edge cases need are already written in the format's
+page of the specification and in the OpenAPI member, so the plain text costs no fact. The development agent revisits this when the
+owner wants the descriptions in German (option (c) of the first table, localized schemas) or a reader of the API asks for the
+edge cases in the served schema. **Applied in the spec:** R-UI-088; [architecture.md](architecture.md) R-ARCH-008 names
+`x-trove-enum-titles`; `settingsSchema` of `GET /api/v1/formats` in the OpenAPI document.
 
 ### Q-UI-80 · A setting equal to its default is not written
 

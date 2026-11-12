@@ -56,6 +56,7 @@ describe('Settings schema model', () => {
       ['retries', 'number', 'f-npm-audit-retries', 'Retries'],
       ['hosts', 'other', 'f-npm-audit-hosts', 'hosts'],
     ]);
+    expect(audit.children[0]).toMatchObject({ options: ['forward', 'disabled'], labels: ['Forward to an advisory service', 'disabled'] });
     expect(audit.children[1]).toMatchObject({
       url: true,
       fallback: null,

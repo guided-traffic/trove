@@ -27,7 +27,7 @@ const el = <T extends Element>(root: Element, selector: string): T => {
 };
 
 describe('Format settings rendered from the schema', () => {
-  it('R-UI-021 R-ARCH-004 R-UI-084 a nested object is a fieldset; booleans, enums, strings and integers get native controls with the schema default as their value and the description; the form passes axe', async () => {
+  it('R-UI-021 R-ARCH-004 R-UI-084 R-UI-088 a nested object is a group under its own heading, without a frame; booleans, enums by their labels, strings and integers get native controls with the schema default as their value and the description; the form passes axe', async () => {
     const r = await render('remote');
     const root = r.root;
 
@@ -40,13 +40,19 @@ describe('Format settings rendered from the schema', () => {
     expect(root.querySelector('#f-npm-serveRemovedVersions-v')).toBeNull();
     expect(root.querySelector('#f-npm-latestGuard')).toBeNull();
 
-    const group = el<HTMLFieldSetElement>(root, 'fieldset#f-npm-audit');
-    expect(el(group, 'legend').textContent).toContain('audit');
+    expect(root.querySelector('fieldset')).toBeNull();
+    const group = el<HTMLElement>(root, '#f-npm-audit');
+    expect(group.getAttribute('role')).toBe('group');
+    const heading = el<HTMLHeadingElement>(group, 'h3#f-npm-audit-h');
+    expect(heading.textContent?.trim()).toBe('audit');
+    expect(group.getAttribute('aria-labelledby')).toBe('f-npm-audit-h');
+    expect(getComputedStyle(group).borderTopStyle).toBe('none');
     expect(el(group, '#f-npm-audit-d').getAttribute('lang')).toBe('en');
 
+    // A value with a label shows the label, one without it shows the value as written.
     const mode = el<HTMLSelectElement>(root, '#f-npm-audit-mode');
-    expect([...mode.options].map((o) => o.textContent?.trim())).toEqual(['forward', 'disabled']);
-    expect(mode.options[mode.selectedIndex]?.textContent?.trim()).toBe('forward');
+    expect([...mode.options].map((o) => o.textContent?.trim())).toEqual(['Forward to an advisory service', 'disabled']);
+    expect(mode.options[mode.selectedIndex]?.textContent?.trim()).toBe('Forward to an advisory service');
 
     expect(el<HTMLInputElement>(root, '#f-npm-audit-providerURL').type).toBe('url');
     expect(root.querySelector('#f-npm-audit-providerURL-v')).toBeNull();
@@ -119,6 +125,44 @@ describe('Format settings rendered from the schema', () => {
     expect(tier.selectedIndex).toBe(0);
   });
 
+  it('R-UI-088 a group under a heading of the creation form takes the next level, a group inside it the one below, and the options of a list their labels', async () => {
+    const r = await renderScreen(FormatSettings, {
+      inputs: {
+        nodes: settingNodes(
+          {
+            type: 'object',
+            properties: {
+              audit: {
+                type: 'object',
+                title: 'Security audit',
+                properties: {
+                  mode: { type: 'string', enum: ['local'] },
+                  limits: { type: 'object', title: 'Limits', properties: { size: { type: 'string' } } },
+                },
+              },
+              compression: {
+                type: 'array',
+                title: 'Compression',
+                items: { type: 'string', enum: ['xz', 'zst'], 'x-trove-enum-titles': { xz: 'xz, smaller to download' } },
+              },
+            },
+          } as SettingSchema,
+          'local',
+          'npm',
+        ),
+        pointer: '/npm',
+        value: {},
+        headingLevel: 4,
+      },
+    });
+    expect(el(r.root, 'h4#f-npm-audit-h').textContent?.trim()).toBe('Security audit');
+    expect(el(r.root, 'h5#f-npm-audit-limits-h').textContent?.trim()).toBe('Limits');
+    const list = el<HTMLFieldSetElement>(r.root, 'fieldset#f-npm-compression');
+    expect(getComputedStyle(list).borderTopStyle).toBe('none');
+    expect([...list.querySelectorAll('label.check-row')].map((l) => text(l))).toEqual(['xz, smaller to download', 'zst']);
+    await expectAccessible(r.root);
+  });
+
   it('R-UI-021 R-UI-044 server field errors appear at their control, at the nearest group for an unknown member, and at the section for the member as a whole', async () => {
     const r = await render(
       'remote',
@@ -161,8 +205,8 @@ describe('Format settings rendered from the schema', () => {
 
     const local = await render('local');
     const mode = el<HTMLSelectElement>(local.root, '#f-nuget-deleteMode');
-    expect([...mode.options].map((o) => o.textContent?.trim())).toEqual(['unlist', 'delete']);
-    expect(mode.options[mode.selectedIndex]?.textContent?.trim()).toBe('unlist');
+    expect([...mode.options].map((o) => o.textContent?.trim())).toEqual(['Unlist', 'Delete for good']);
+    expect(mode.options[mode.selectedIndex]?.textContent?.trim()).toBe('Unlist');
     expect(local.root.querySelector('#f-nuget-forwardSearch')).toBeNull();
     type(mode, '1');
     await settle(local.fixture);

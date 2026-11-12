@@ -8,7 +8,7 @@
   "properties": {
     "authUrl": {
       "title": "Token endpoint URL",
-      "description": "Remote repositories of a Galaxy-compatible hub behind single sign-on. The https URL (http only for a loopback address, which the service checks) of the token endpoint of the hub's identity realm, where the offline token stored in the repository's credential is exchanged for a short-lived access token. The repository needs authMode bearer, and the endpoint's host is the upstream's or an extraHosts entry with sendCredentials. Left out, the upstream is called with the credential as it is (a static token).",
+      "description": "For a hub behind single sign-on: where trove exchanges the stored offline token for a short-lived access token, with Authentication set to Bearer token. Leave it empty if the upstream accepts the token as it is.",
       "type": "string",
       "pattern": "^https?://",
       "maxLength": 2048,
@@ -16,7 +16,7 @@
     },
     "clientId": {
       "title": "Client ID",
-      "description": "Remote repositories with authUrl. The client id the exchange presents to the realm.",
+      "description": "The client ID trove presents when it exchanges the token. Change it only if the hub's sign-on expects another one.",
       "type": "string",
       "default": "cloud-services",
       "pattern": "^[A-Za-z0-9._-]{1,128}$",
@@ -24,7 +24,7 @@
     },
     "fetchDocumentation": {
       "title": "Fetch documentation",
-      "description": "Remote repositories. Fetch the docs-blob document of a version from the upstream, by the job that follows the version document and by a client's request for the route, and keep the documentation it holds. With false the route answers 404 and no rows are written; a client that wants the document goes to the upstream.",
+      "description": "Fetch the documentation of each version from the upstream and keep it, so that the package page shows its documentation and contents. Turn it off to make no such requests.",
       "type": "boolean",
       "default": true,
       "x-trove-classes": ["remote"]

@@ -303,16 +303,15 @@ const refused = [
   { match: /^GET \/api\/v1\/projects\/[^/]+\/repositories\/renders-[a-z-]+ answered 404$/, why: 'the key check: 404 is a free key' },
 ];
 
-/** The states of the creation form the class walks do not reach (R-UI-086, R-UI-081), and a remote Debian form. */
+/** The states of the creation form the class walks do not reach (R-UI-086, R-UI-081). */
 const createStates: Screen[] = [
   { id: 'new-npm-errors', path: `/ui/projects/${mainProject}/repositories/new/npm`, kinds: ['power'], walk: createErrors, expected: refused },
   { id: 'admin-new-npm-errors', path: '/ui/admin/repositories/new/npm', kinds: ['admin'], walk: createErrors, expected: refused },
   { id: 'new-npm-eight-members', path: `/ui/projects/${mainProject}/repositories/new/npm`, kinds: ['power'], walk: eightMembers },
-  { id: 'new-deb-remote', path: `/ui/projects/${mainProject}/repositories/new/deb`, kinds: ['power'], walk: createForm('Remote') },
-  { id: 'admin-new-deb-remote', path: '/ui/admin/repositories/new/deb', kinds: ['admin'], walk: createForm('Remote') },
 ];
 
-const createForms: Screen[] = (['oci', 'npm', 'ansible'] as const).flatMap((name) =>
+/** The creation form of every format with settings of its own, in every class: its Advanced settings show them (R-UI-088). */
+const createForms: Screen[] = (['oci', 'npm', 'ansible', 'nuget', 'deb'] as const).flatMap((name) =>
   (['Local', 'Remote', 'Virtual'] as const).flatMap((cls): Screen[] => {
     const id = `new-${name}-${cls.toLowerCase()}`;
     return [
@@ -528,7 +527,7 @@ export const screens: readonly Screen[] = [
   { id: 'admin-endpoint-rule-new', path: '/ui/admin/endpoints/default/rules/new', kinds: admins },
   { id: 'admin-endpoint-rule', path: `/ui/admin/endpoints/default/rules/${exposureRule}`, kinds: admins, walk: advancedOpen },
 
-  // The creation form of three formats in every class (the owner's rules of 2026-11-12, CLAUDE.md).
+  // The creation form of every format with settings in every class (the owner's rules of 2026-11-12, CLAUDE.md).
   ...createForms,
   ...createStates,
   // The upstream of a remote where it is entered: the presets, the credentials, Test connection, the details (R-UI-082).

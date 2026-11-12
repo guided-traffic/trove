@@ -7,6 +7,7 @@ import {
   SettingNode,
   controlIdOf,
   numberOrText,
+  shownValue,
   targetOf,
   valueAt,
   withValue,
@@ -19,10 +20,6 @@ function entriesOf(text: string): string[] {
     .split('\n')
     .map((l) => l.trim())
     .filter((l) => l.length > 0);
-}
-
-function shown(value: unknown): string {
-  return typeof value === 'string' ? value : JSON.stringify(value);
 }
 
 /** The part of a format's settings a group shows: its own settings, or the members of its `mirror` object (Q-UI-344). */
@@ -42,9 +39,10 @@ export function formatPartNodes(nodes: readonly SettingNode[], part: FormatPart)
 /**
  * The settings of a format, rendered from its settings schema (R-ARCH-004, R-UI-021, Q-UI-78): the
  * member named after the format, edited in place. Every member of the schema that applies to the
- * class gets a native control by its type; an object is a fieldset of its members. Labels and
- * descriptions are the schema's (API texts, English, Q-UI-79). An empty field, and a value equal to
- * the default, leave the setting to the format's default when the document is written (Q-UI-80).
+ * class gets a native control by its type; an object is a group of its members under a heading of
+ * `headingLevel`, without a frame. Labels, descriptions and the labels of an enum's values are the
+ * schema's (English, Q-UI-79, R-UI-088). An empty field, and a value equal to the default, leave the
+ * setting to the format's default when the document is written (Q-UI-80).
  */
 @Component({
   selector: 'trove-format-settings',
@@ -62,16 +60,28 @@ export function formatPartNodes(nodes: readonly SettingNode[], part: FormatPart)
         @for (n of asNodes(items); track n.pointer) {
           @switch (n.kind) {
             @case ('group') {
-              <fieldset
+              <div
                 class="settings-group"
+                role="group"
                 [id]="n.id"
                 tabindex="-1"
+                [attr.aria-labelledby]="n.id + '-h'"
                 [attr.aria-describedby]="describedBy(n)"
               >
-                <legend translate="no" lang="en">{{ n.label }}</legend>
+                @switch (levelOf(n)) {
+                  @case (3) {
+                    <h3 class="group-heading" [id]="n.id + '-h'" translate="no" lang="en">{{ n.label }}</h3>
+                  }
+                  @case (4) {
+                    <h4 class="group-heading" [id]="n.id + '-h'" translate="no" lang="en">{{ n.label }}</h4>
+                  }
+                  @default {
+                    <h5 class="group-heading" [id]="n.id + '-h'" translate="no" lang="en">{{ n.label }}</h5>
+                  }
+                }
                 <ng-container *ngTemplateOutlet="notes; context: { $implicit: n }" />
                 <ng-container *ngTemplateOutlet="list; context: { $implicit: group(n).children }" />
-              </fieldset>
+              </div>
             }
             @case ('boolean') {
               <div class="field">
@@ -104,9 +114,9 @@ export function formatPartNodes(nodes: readonly SettingNode[], part: FormatPart)
                   @if (choice(n).fallback === undefined) {
                     <option value="" [selected]="selected(n) < 0" i18n="@@repo.format.automatic">Automatic</option>
                   }
-                  @for (o of choice(n).options; track $index) {
-                    <option [value]="$index" [selected]="$index === selected(n)" translate="no">
-                      {{ show(o) }}
+                  @for (label of choice(n).labels; track $index) {
+                    <option [value]="$index" [selected]="$index === selected(n)" translate="no" lang="en">
+                      {{ label }}
                     </option>
                   }
                 </select>
@@ -116,9 +126,9 @@ export function formatPartNodes(nodes: readonly SettingNode[], part: FormatPart)
             @case ('list') {
               <div class="field">
                 @if (listNode(n).options; as options) {
-                  <fieldset class="settings-group" [id]="n.id" tabindex="-1" [attr.aria-describedby]="describedBy(n)">
-                    <legend translate="no" lang="en">{{ n.label }}</legend>
-                    @for (o of options; track o) {
+                  <fieldset class="check-list" [id]="n.id" tabindex="-1" [attr.aria-describedby]="describedBy(n)">
+                    <legend class="field-label" translate="no" lang="en">{{ n.label }}</legend>
+                    @for (o of options; track o; let i = $index) {
                       <label class="check-row">
                         <input
                           type="checkbox"
@@ -126,7 +136,7 @@ export function formatPartNodes(nodes: readonly SettingNode[], part: FormatPart)
                           [checked]="entries(n).includes(o)"
                           (change)="toggle(n, o, $any($event.target).checked)"
                         />
-                        <span translate="no">{{ o }}</span>
+                        <span translate="no" lang="en">{{ listNode(n).labels?.[i] ?? o }}</span>
                       </label>
                     }
                     <ng-container *ngTemplateOutlet="notes; context: { $implicit: n }" />
@@ -217,19 +227,43 @@ export function formatPartNodes(nodes: readonly SettingNode[], part: FormatPart)
     </ng-template>
   `,
   styles: `
+    // A group is a heading over its fields, as every other group of the page, without a frame (R-UI-088).
     .settings-group {
-      margin: 0;
-      padding: var(--trove-space-3) var(--trove-space-4);
-      border: 1px solid var(--trove-border);
-      border-radius: var(--trove-radius-l);
+      min-inline-size: 0;
 
-      legend {
-        padding-inline: var(--trove-space-1);
-        font-weight: 600;
+      > .hint {
+        margin-block: var(--trove-space-1) 0;
       }
 
       .form-grid {
         margin-block: var(--trove-space-3) 0;
+      }
+    }
+
+    // On the settings page a group heading is the size of the section's headings (repository-detail.scss, .details h3).
+    .group-heading {
+      margin: 0;
+      font-size: var(--trove-text-size);
+      font-weight: 600;
+    }
+
+    // In Advanced settings of the creation form it is the type of the form's other group headings (repository-create.scss).
+    :host-context(.advanced-settings) .group-heading {
+      margin-block-start: var(--trove-space-1);
+      font: var(--trove-type-title-medium);
+      font-weight: var(--trove-heading-weight);
+    }
+
+    // The options of a list are checkboxes under the setting's label, as any other field.
+    .check-list {
+      min-inline-size: 0;
+      margin: 0;
+      padding: 0;
+      border: 0;
+
+      legend {
+        padding: 0;
+        margin-block-end: var(--trove-space-1);
       }
     }
   `,
@@ -248,6 +282,11 @@ export class FormatSettings {
    * members, so that a mirror is one topic in the Mirror group.
    */
   readonly part = input<FormatPart>('settings');
+  /**
+   * The level of the heading of a group the part shows (an object of the schema): one below the heading the part stands under,
+   * 3 under a section of the settings page (an `h2`), 4 under a group of the creation form's Advanced settings (an `h3`).
+   */
+  readonly headingLevel = input<3 | 4>(3);
 
   protected readonly shownNodes = computed(() => formatPartNodes(this.nodes(), this.part()));
   protected readonly sectionId = computed(() =>
@@ -296,6 +335,12 @@ export class FormatSettings {
 
   protected group(n: SettingNode): Of<'group'> {
     return n as Of<'group'>;
+  }
+
+  /** The heading level of a group: `headingLevel` for one the part shows directly, one more for each object it lies in. */
+  protected levelOf(n: SettingNode): number {
+    const depth = n.path.length - (this.part() === 'mirror' ? 2 : 1);
+    return this.headingLevel() + depth;
   }
 
   protected choice(n: SettingNode): Of<'choice'> {
@@ -361,7 +406,7 @@ export class FormatSettings {
     return n.kind === 'text' && n.url;
   }
 
-  protected show = shown;
+  protected show = shownValue;
 
   protected current(n: SettingNode): unknown {
     return valueAt(this.value(), n.path);
@@ -385,7 +430,7 @@ export class FormatSettings {
   /** The value in the field: the one set, else the schema default (R-UI-084); a derived default has none and stays empty. */
   protected text(n: SettingNode): string {
     const v = this.effective(n);
-    return v === undefined || v === null ? '' : shown(v);
+    return v === undefined || v === null ? '' : shownValue(v);
   }
 
   /** A field the user emptied shows its default again when it is left (R-UI-084); the setting stays unwritten. */

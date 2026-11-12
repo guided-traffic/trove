@@ -7425,7 +7425,8 @@ import the format contract (edge). The management API refused a member named aft
 (it is a direct requirement now, one version). The schema is compiled at `Register`, which panics on a schema that does not compile, whose root is no object, or whose root does not set
 `additionalProperties: false` (a misspelt setting would be dropped silently, R-REPO-008). A property may carry `x-trove-classes`, the classes it applies to: the service reports a setting of another
 class as `not_applicable`, the way R-REPO-004 treats the class sections. A violation is a field error at `/<format>/<json pointer>`, `invalid_value`; the list answers 422 `validation_failed`.
-`GET /api/v1/formats` serves the schema as `settingsSchema` (null for a format without settings).
+`GET /api/v1/formats` serves the schema as `settingsSchema` (null for a format without settings). A property with an `enum` carries `x-trove-enum-titles`, the label of each value
+that the settings form shows; validation ignores it ([api-and-ui.md](api-and-ui.md) R-UI-088, Q-UI-79).
 
 **Rationale:** the leaf already holds what the model and the decision point must agree on, and a schema is data. The development agent would revisit it for a setting whose validity depends on
 another repository (a list of repositories that must exist): a hook of the format (roadmap M3, remote configuration) would then run after the schema.

@@ -3705,7 +3705,7 @@
         <note category="location">src/app/features/browse/browse.html:623,626</note>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:15,16</note>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:156,160</note>
-        <note category="location">src/app/features/repositories/repository-create.html:235,237</note>
+        <note category="location">src/app/features/repositories/repository-create.html:237,239</note>
         <note category="location">src/app/features/repositories/repository-detail.html:45,46</note>
         <note category="location">src/app/features/repositories/repository-format-chooser.ts:40,42</note>
       </notes>
@@ -17012,7 +17012,7 @@
     </unit>
     <unit id="repo.format.automatic">
       <notes>
-        <note category="location">src/app/features/repositories/format-settings.ts:105,107</note>
+        <note category="location">src/app/features/repositories/format-settings.ts:115,117</note>
       </notes>
       <segment>
         <source>Automatic</source>
@@ -17020,7 +17020,7 @@
     </unit>
     <unit id="repo.format.list">
       <notes>
-        <note category="location">src/app/features/repositories/format-settings.ts:148,149</note>
+        <note category="location">src/app/features/repositories/format-settings.ts:158,159</note>
       </notes>
       <segment>
         <source>One entry per line.</source>
@@ -17028,7 +17028,7 @@
     </unit>
     <unit id="repo.format.other">
       <notes>
-        <note category="location">src/app/features/repositories/format-settings.ts:160,161</note>
+        <note category="location">src/app/features/repositories/format-settings.ts:170,171</note>
       </notes>
       <segment>
         <source> This setting cannot be changed here. Set it through the API. </source>
@@ -17116,7 +17116,7 @@
     </unit>
     <unit id="virtual.selected-empty">
       <notes>
-        <note category="location">src/app/features/repositories/member-picker.ts:176</note>
+        <note category="location">src/app/features/repositories/member-picker.ts:180</note>
       </notes>
       <segment>
         <source>The repository has no member. Every request for a package answers not found.</source>
@@ -17124,7 +17124,7 @@
     </unit>
     <unit id="virtual.class.local">
       <notes>
-        <note category="location">src/app/features/repositories/member-picker.ts:227</note>
+        <note category="location">src/app/features/repositories/member-picker.ts:231</note>
         <note category="location">src/app/features/repositories/virtual-members.ts:147</note>
       </notes>
       <segment>
@@ -17133,7 +17133,7 @@
     </unit>
     <unit id="virtual.class.remote">
       <notes>
-        <note category="location">src/app/features/repositories/member-picker.ts:229</note>
+        <note category="location">src/app/features/repositories/member-picker.ts:233</note>
         <note category="location">src/app/features/repositories/virtual-members.ts:149</note>
       </notes>
       <segment>
@@ -17142,7 +17142,7 @@
     </unit>
     <unit id="virtual.announce.added">
       <notes>
-        <note category="location">src/app/features/repositories/member-picker.ts:251</note>
+        <note category="location">src/app/features/repositories/member-picker.ts:255</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="key" disp="last"/> added at position <ph id="1" equiv="position" disp="total"/> of <ph id="2" equiv="total" disp="total"/></source>
@@ -17150,7 +17150,7 @@
     </unit>
     <unit id="virtual.announce.added-many">
       <notes>
-        <note category="location">src/app/features/repositories/member-picker.ts:252</note>
+        <note category="location">src/app/features/repositories/member-picker.ts:256</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="count" disp="keys.length"/> repositories added, <ph id="1" equiv="total" disp="total"/> members in all</source>
@@ -17158,7 +17158,7 @@
     </unit>
     <unit id="virtual.announce.removed">
       <notes>
-        <note category="location">src/app/features/repositories/member-picker.ts:264</note>
+        <note category="location">src/app/features/repositories/member-picker.ts:268</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="key" disp="key"/> removed, <ph id="1" equiv="total" disp="this.members().length"/> members left</source>
@@ -17166,7 +17166,7 @@
     </unit>
     <unit id="virtual.announce.moved">
       <notes>
-        <note category="location">src/app/features/repositories/member-picker.ts:290</note>
+        <note category="location">src/app/features/repositories/member-picker.ts:294</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="key" disp="key!"/> moved to position <ph id="1" equiv="position" disp="position"/> of <ph id="2" equiv="total" disp="total"/></source>
@@ -18377,7 +18377,7 @@
     </unit>
     <unit id="repo.format.heading-plain">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.html:210,211</note>
+        <note category="location">src/app/features/repositories/repository-create.html:211,212</note>
       </notes>
       <segment>
         <source><pc id="0" equivStart="START_TAG_SPAN" equivEnd="CLOSE_TAG_SPAN" type="other" dispStart="&lt;span translate=&quot;no&quot;&gt;" dispEnd="&lt;/span&gt;"><ph id="1" equiv="INTERPOLATION" disp="{{ formatLabel() }}"/></pc> settings</source>
@@ -18385,7 +18385,7 @@
     </unit>
     <unit id="repo.review.api">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.html:222,223</note>
+        <note category="location">src/app/features/repositories/repository-create.html:224,225</note>
       </notes>
       <segment>
         <source>Show as API request</source>
@@ -18393,7 +18393,7 @@
     </unit>
     <unit id="repo.review.api.json">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.html:223,224</note>
+        <note category="location">src/app/features/repositories/repository-create.html:225,226</note>
       </notes>
       <segment>
         <source>Request body</source>
@@ -18401,7 +18401,7 @@
     </unit>
     <unit id="repo.review.api.curl">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.html:225,226</note>
+        <note category="location">src/app/features/repositories/repository-create.html:227,228</note>
       </notes>
       <segment>
         <source>The same request with curl</source>
@@ -18409,7 +18409,7 @@
     </unit>
     <unit id="repo.wizard.create">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.html:230,231</note>
+        <note category="location">src/app/features/repositories/repository-create.html:232,233</note>
       </notes>
       <segment>
         <source>Create repository</source>
@@ -18417,7 +18417,7 @@
     </unit>
     <unit id="repo.wizard.cancel">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.html:231,234</note>
+        <note category="location">src/app/features/repositories/repository-create.html:233,236</note>
       </notes>
       <segment>
         <source>Cancel</source>

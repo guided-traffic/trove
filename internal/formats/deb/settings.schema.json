@@ -8,7 +8,7 @@
   "properties": {
     "architectures": {
       "title": "Architectures",
-      "description": "Architectures every suite's indexes are built for; a local repository adds the architectures of its stored files. 'all' is not listed: the files of that architecture are listed under every architecture of the suite.",
+      "description": "The architectures apt clients can install from, such as amd64 and arm64; in a local repository an upload of another architecture adds it. Architecture-independent packages appear under each one, so the architecture all is not listed here.",
       "type": "array",
       "minItems": 1,
       "maxItems": 32,
@@ -19,7 +19,7 @@
     },
     "compression": {
       "title": "Compression",
-      "description": "Index variants built besides gzip, which is always built.",
+      "description": "Package indexes are always offered gzip-compressed; choose xz to offer smaller xz-compressed ones as well.",
       "type": "array",
       "maxItems": 1,
       "uniqueItems": true,
@@ -29,7 +29,7 @@
     },
     "origin": {
       "title": "Origin",
-      "description": "The Origin field of every Release.",
+      "description": "The origin apt reports for this repository, which pinning rules can match. Up to 64 characters, no colon.",
       "type": "string",
       "default": "trove",
       "x-trove-classes": ["local", "virtual"],
@@ -37,14 +37,14 @@
     },
     "label": {
       "title": "Label",
-      "description": "The Label field of every Release; the repository key while the document does not set it.",
+      "description": "The label apt reports for this repository, which pinning rules can match. Left empty, it is the repository's key.",
       "type": "string",
       "x-trove-classes": ["local", "virtual"],
       "pattern": "^[ -9;-~]{1,64}$"
     },
     "suites": {
       "title": "Suites",
-      "description": "Suites a virtual repository serves besides those of its local members.",
+      "description": "Further suites to serve from the remote members, such as bookworm-backports. The suites of the local members are always served.",
       "type": "array",
       "maxItems": 32,
       "uniqueItems": true,
@@ -54,7 +54,7 @@
     },
     "components": {
       "title": "Components",
-      "description": "Components a virtual repository merges.",
+      "description": "The components to serve, such as main and contrib, merged from all members.",
       "type": "array",
       "minItems": 1,
       "maxItems": 32,
@@ -65,7 +65,7 @@
     },
     "upstreamKeys": {
       "title": "Upstream keys",
-      "description": "ASCII-armored OpenPGP public keys of the upstream (one block of 1 to 32 certificates, at most 256 KiB): a remote verifies the signatures of its upstream's release documents against them. Null leaves the remote unverified; a mirror and a member of a virtual repository need them.",
+      "description": "The upstream's public signing keys, pasted as one armored OpenPGP block of up to 32 keys. With them trove checks every release before storing it; a mirror and a member of a virtual repository need them.",
       "type": ["string", "null"],
       "default": null,
       "x-trove-classes": ["remote"],
@@ -73,14 +73,14 @@
     },
     "mirror": {
       "title": "Mirror",
-      "description": "What a mirror of an APT archive keeps. Present in both modes of a remote repository and effective in mode mirror.",
+      "description": "What a mirror of the APT archive keeps.",
       "type": "object",
       "additionalProperties": false,
       "x-trove-classes": ["remote"],
       "properties": {
         "suites": {
           "title": "Suites",
-          "description": "Suites (below dists/) to mirror; required in mode mirror.",
+          "description": "The suites to mirror, such as bookworm and bookworm-updates. A mirror needs at least one.",
           "type": "array",
           "maxItems": 32,
           "uniqueItems": true,
@@ -89,7 +89,7 @@
         },
         "components": {
           "title": "Components",
-          "description": "Components whose indexes and package files are kept.",
+          "description": "The components to keep, such as main, contrib or non-free-firmware.",
           "type": "array",
           "minItems": 1,
           "maxItems": 32,
@@ -99,7 +99,7 @@
         },
         "architectures": {
           "title": "Architectures",
-          "description": "Architectures whose Packages indexes and package files are kept; 'all' is always kept and not listed.",
+          "description": "The architectures whose packages are kept, such as amd64. Architecture-independent packages are always kept, so the architecture all is not listed here.",
           "type": "array",
           "minItems": 1,
           "maxItems": 16,
@@ -109,7 +109,7 @@
         },
         "translations": {
           "title": "Translations",
-          "description": "Languages of i18n/Translation-<language> kept.",
+          "description": "The languages of the package descriptions to keep, such as en or de.",
           "type": "array",
           "maxItems": 16,
           "uniqueItems": true,
@@ -118,7 +118,7 @@
         },
         "sources": {
           "title": "Source packages",
-          "description": "Whether Sources indexes and source package files are kept.",
+          "description": "Also keep the source packages.",
           "type": "boolean",
           "default": false
         }

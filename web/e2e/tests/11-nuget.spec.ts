@@ -135,8 +135,8 @@ test('R-UI-021 R-ARCH-004 R-UI-083 the NuGet settings in Advanced settings and o
     await page.getByRole('button', { name: 'Advanced settings' }).click();
     await expect(page.getByRole('heading', { name: 'NuGet settings', level: 3 })).toBeVisible();
     await expect(page.getByRole('checkbox', { name: 'Forward search' })).toHaveCount(0);
-    await expect(mode.locator('option:checked')).toHaveText('unlist'); // the options carry their index as value (format-settings.ts)
-    await mode.selectOption('delete');
+    await expect(mode.locator('option:checked')).toHaveText('Unlist'); // the options carry their index as value and the schema's label as text (format-settings.ts)
+    await mode.selectOption({ label: 'Delete for good' });
     for (const scheme of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme: scheme });
       await expectAccessible(page, `creation form, NuGet settings (${scheme})`);
@@ -149,9 +149,9 @@ test('R-UI-021 R-ARCH-004 R-UI-083 the NuGet settings in Advanced settings and o
   await test.step('the settings page reads it back and setting the default back removes it from the document', async () => {
     await page.goto(`/ui/en/projects/${e2eProject}/repositories/${wizardKey}/settings`);
     await page.getByRole('button', { name: 'NuGet settings', exact: true }).click();
-    await expect(mode.locator('option:checked')).toHaveText('delete');
+    await expect(mode.locator('option:checked')).toHaveText('Delete for good');
     await expectAccessible(page, 'repository settings, NuGet settings');
-    await mode.selectOption('unlist');
+    await mode.selectOption({ label: 'Unlist' });
     await page.getByRole('button', { name: 'Save changes (NuGet settings)' }).click();
     await expect(page.getByText('Repository saved.')).toBeVisible();
     await expect.poll(nugetMember).toBeUndefined();

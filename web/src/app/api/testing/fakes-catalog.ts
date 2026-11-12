@@ -159,29 +159,40 @@ export const NPM_SETTINGS_SCHEMA = {
   additionalProperties: false,
   properties: {
     latestGuard: {
+      title: 'Guard the latest tag',
       description:
-        'A publish under latest does not move latest backwards or onto a pre-release in front of a release.',
+        'A publish of a version below latest, or of a pre-release while latest is a release, is stored without moving latest. Turn it off if every publish under latest should move it.',
       type: 'boolean',
       default: true,
       'x-trove-classes': ['local'],
     },
     serveRemovedVersions: {
-      description: 'Serve the cached tarball of a version the upstream no longer lists.',
+      title: 'Serve removed versions',
+      description:
+        'Keep serving cached versions and packages that the upstream has removed, to exact downloads such as from a lockfile; they are no longer listed. Leave it off so that what the upstream took down, often malware, stops being served.',
       type: 'boolean',
       default: false,
       'x-trove-classes': ['remote'],
     },
     latestStrategy: {
-      description: 'How a virtual repository merges latest.',
+      title: 'Latest tag strategy',
+      description: 'Which latest tag this virtual repository offers when the latest tags of its members differ.',
       type: 'string',
       enum: ['highest-member-latest', 'newest-published'],
+      'x-trove-enum-titles': { 'highest-member-latest': 'Highest version', 'newest-published': 'Most recently published' },
       default: 'highest-member-latest',
       'x-trove-classes': ['virtual'],
     },
     distTagStrategy: {
-      description: 'How a virtual repository merges the other dist-tags.',
+      title: 'Dist-tag strategy',
+      description: 'Which value the other dist-tags, such as next or beta, take when the values of the members differ.',
       type: 'string',
       enum: ['member-order', 'highest-semver', 'newest-published'],
+      'x-trove-enum-titles': {
+        'member-order': 'First member in order',
+        'highest-semver': 'Highest version',
+        'newest-published': 'Most recently published',
+      },
       default: 'member-order',
       'x-trove-classes': ['virtual'],
     },
@@ -204,7 +215,8 @@ export const RICH_SETTINGS_SCHEMA = {
       additionalProperties: false,
       'x-trove-classes': ['remote'],
       properties: {
-        mode: { type: 'string', enum: ['forward', 'disabled'], default: 'forward' },
+        // One value with a label and one without, which the select shows as it is written.
+        mode: { type: 'string', enum: ['forward', 'disabled'], 'x-trove-enum-titles': { forward: 'Forward to an advisory service' }, default: 'forward' },
         providerURL: { type: ['string', 'null'], format: 'uri', default: null },
         timeout: { type: 'string', default: '30s', description: 'A duration such as 30s.' },
         maxBodySize: { type: 'string', default: '10MiB' },
@@ -249,15 +261,19 @@ export const NUGET_SETTINGS_SCHEMA = {
   additionalProperties: false,
   properties: {
     deleteMode: {
+      title: 'Delete mode',
       description:
-        'What the protocol DELETE of a package does: unlist keeps the version in the flat container and downloadable, delete removes it and writes its tombstone.',
+        "What dotnet nuget delete and nuget delete do in this repository: Unlist hides the version from search and keeps it downloadable, Delete for good removes it. A delete in trove's own pages or API always removes the version.",
       type: 'string',
       enum: ['unlist', 'delete'],
+      'x-trove-enum-titles': { unlist: 'Unlist', delete: 'Delete for good' },
       default: 'unlist',
       'x-trove-classes': ['local'],
     },
     forwardSearch: {
-      description: "Forward the search and autocomplete requests of this remote to the upstream's search resource.",
+      title: 'Forward search',
+      description:
+        'Pass searches on to the upstream, so that clients also find packages nobody has fetched through trove yet. Turn it off to search only what this repository has cached and to keep search terms inside your network.',
       type: 'boolean',
       default: true,
       'x-trove-classes': ['remote'],
@@ -314,7 +330,7 @@ export const DEB_SETTINGS_SCHEMA = {
   additionalProperties: false,
   properties: {
     architectures: {
-      description: "Architectures every suite's indexes are built for.",
+      description: 'The architectures apt clients can install from, such as amd64 and arm64; in a local repository an upload of another architecture adds it.',
       type: 'array',
       minItems: 1,
       uniqueItems: true,
@@ -323,7 +339,7 @@ export const DEB_SETTINGS_SCHEMA = {
       items: { type: 'string' },
     },
     compression: {
-      description: 'Index variants built besides gzip, which is always built.',
+      description: 'Package indexes are always offered gzip-compressed; choose xz to offer smaller xz-compressed ones as well.',
       type: 'array',
       maxItems: 1,
       uniqueItems: true,
@@ -331,28 +347,28 @@ export const DEB_SETTINGS_SCHEMA = {
       'x-trove-classes': ['local', 'virtual'],
       items: { type: 'string', enum: ['xz'] },
     },
-    origin: { description: 'The Origin field of every Release.', type: 'string', default: 'trove', 'x-trove-classes': ['local', 'virtual'] },
-    label: { description: 'The Label field of every Release.', type: 'string', 'x-trove-classes': ['local', 'virtual'] },
-    suites: { description: 'Suites a virtual repository serves.', type: 'array', default: [], 'x-trove-classes': ['virtual'], items: { type: 'string' } },
-    components: { description: 'Components a virtual repository merges.', type: 'array', default: ['main'], 'x-trove-classes': ['virtual'], items: { type: 'string' } },
+    origin: { description: 'The origin apt reports for this repository, which pinning rules can match.', type: 'string', default: 'trove', 'x-trove-classes': ['local', 'virtual'] },
+    label: { description: "The label apt reports for this repository, which pinning rules can match. Left empty, it is the repository's key.", type: 'string', 'x-trove-classes': ['local', 'virtual'] },
+    suites: { description: 'Further suites to serve from the remote members, such as bookworm-backports.', type: 'array', default: [], 'x-trove-classes': ['virtual'], items: { type: 'string' } },
+    components: { description: 'The components to serve, such as main and contrib, merged from all members.', type: 'array', default: ['main'], 'x-trove-classes': ['virtual'], items: { type: 'string' } },
     upstreamKeys: {
-      description: 'ASCII-armored OpenPGP public keys of the upstream.',
+      description: "The upstream's public signing keys, pasted as one armored OpenPGP block of up to 32 keys.",
       type: ['string', 'null'],
       default: null,
       'x-trove-classes': ['remote'],
       maxLength: 262144,
     },
     mirror: {
-      description: 'What a mirror of an APT archive keeps.',
+      description: 'What a mirror of the APT archive keeps.',
       type: 'object',
       additionalProperties: false,
       'x-trove-classes': ['remote'],
       properties: {
-        suites: { description: 'Suites to mirror; required in mode mirror.', type: 'array', default: [], items: { type: 'string' } },
-        components: { description: 'Components whose indexes and package files are kept.', type: 'array', default: ['main'], items: { type: 'string' } },
-        architectures: { description: 'Architectures kept.', type: 'array', default: ['amd64'], items: { type: 'string' } },
-        translations: { description: 'Languages of i18n/Translation-<language> kept.', type: 'array', default: ['en'], items: { type: 'string' } },
-        sources: { description: 'Whether Sources indexes and source package files are kept.', type: 'boolean', default: false },
+        suites: { description: 'The suites to mirror, such as bookworm and bookworm-updates. A mirror needs at least one.', type: 'array', default: [], items: { type: 'string' } },
+        components: { description: 'The components to keep, such as main, contrib or non-free-firmware.', type: 'array', default: ['main'], items: { type: 'string' } },
+        architectures: { description: 'The architectures whose packages are kept, such as amd64.', type: 'array', default: ['amd64'], items: { type: 'string' } },
+        translations: { description: 'The languages of the package descriptions to keep, such as en or de.', type: 'array', default: ['en'], items: { type: 'string' } },
+        sources: { description: 'Also keep the source packages.', type: 'boolean', default: false },
       },
     },
   },
@@ -377,14 +393,14 @@ export const ANSIBLE_SETTINGS_SCHEMA = {
   additionalProperties: false,
   properties: {
     authUrl: {
-      description: "Remote repositories of a Galaxy-compatible hub behind single sign-on. The https URL of the token endpoint of the hub's identity realm.",
+      description: 'For a hub behind single sign-on: where trove exchanges the stored offline token for a short-lived access token.',
       type: 'string',
       pattern: '^https://',
       maxLength: 2048,
       'x-trove-classes': ['remote'],
     },
     clientId: {
-      description: 'Remote repositories with authUrl. The client id the exchange presents to the realm.',
+      description: 'The client ID trove presents when it exchanges the token.',
       type: 'string',
       default: 'cloud-services',
       pattern: '^[A-Za-z0-9._-]{1,128}$',
