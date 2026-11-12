@@ -206,6 +206,8 @@ function createForm(cls: 'Local' | 'Remote' | 'Virtual'): Screen['walk'] {
  */
 async function* createErrors(page: Page): AsyncGenerator<string> {
   await chooseProject(page);
+  // The project's suggested key arrives first; a key typed before it would be typed into it.
+  await expect(page.locator('#f-key')).not.toHaveValue('');
   await page.locator('#f-key').fill('npm-internal');
   await expect(page.locator('#e-key')).toHaveText('A repository with this key already exists in the project.');
   yield 'key-taken';
