@@ -18,19 +18,17 @@ export type HideExistence = 'inherit' | 'true' | 'false';
 export type RemoteMode = 'pullThrough' | 'mirror';
 
 /**
- * The defaults of `remote.mirror` (R-REPO-050, `MirrorSettings` of the API). The form writes a member
- * only where it differs from these (Q-UI-80); a `null` default means "no value".
+ * The defaults of `remote.mirror` as the server resolves them (R-REPO-050, R-REPO-063): the `remote.mirror` of the document of
+ * `getRepositoryDefaults`. The client keeps no copy of them; null while they are not known.
  */
-export const MIRROR_DEFAULTS: Readonly<Record<string, unknown>> = {
-  paused: false,
-  intervalSeconds: 3600,
-  fullPassIntervalSeconds: 604800,
-  discovery: 'auto',
-  concurrency: 4,
-  maxVersionsPerPackage: 0,
-  includePrereleases: true,
-  maxBytes: null,
-};
+export type MirrorDefaults = Readonly<Record<string, unknown>> | null;
+
+/** The `remote.mirror` of a document of `getRepositoryDefaults` (R-REPO-063), or null when it has none. */
+export function mirrorDefaultsOf(document: Readonly<Record<string, unknown>> | null | undefined): MirrorDefaults {
+  const remote = document?.['remote'];
+  const mirror = typeof remote === 'object' && remote !== null ? (remote as Record<string, unknown>)['mirror'] : undefined;
+  return typeof mirror === 'object' && mirror !== null && !Array.isArray(mirror) ? (mirror as Record<string, unknown>) : null;
+}
 
 /** The request as shown on screen: a typed password is replaced, never displayed (R-UI-043). */
 export function maskSecrets<T>(value: T): T {
@@ -78,6 +76,8 @@ export interface FormatMemberOf {
   readonly upstream?: UpstreamDefaults;
   /** The format's schema has a `mirror` object for the class, which the section Mirror saves (R-UI-087). */
   readonly formatMirror?: boolean;
+  /** The server's defaults of `remote.mirror` (R-REPO-063), which the form leaves unwritten. */
+  readonly mirrorDefaults?: MirrorDefaults;
 }
 
 /** Defaults of R-REPO-004. */
@@ -136,13 +136,16 @@ function upstreamFormOf(repo: Repository): UpstreamForm {
   };
 }
 
-/** The members of `remote.mirror` that differ from their defaults. */
-export function mirrorOf(form: RepositoryForm): JsonObject {
+/**
+ * The members of `remote.mirror` the form writes: those set and different from the server's default (Q-UI-80). While the defaults
+ * are not known every set member is written, which stores the same values.
+ */
+export function mirrorOf(form: RepositoryForm, defaults: MirrorDefaults = null): JsonObject {
   const out: JsonObject = {};
-  for (const [name, fallback] of Object.entries(MIRROR_DEFAULTS)) {
-    const value = form.mirror[name];
+  for (const [name, value] of Object.entries(form.mirror)) {
     if (value === undefined || value === null) continue;
-    if (JSON.stringify(value) !== JSON.stringify(fallback)) out[name] = value;
+    if (defaults && JSON.stringify(value) === JSON.stringify(defaults[name] ?? null)) continue;
+    out[name] = value;
   }
   return out;
 }
@@ -156,6 +159,8 @@ export function sameMirror(form: RepositoryForm): boolean {
 export interface RemoteParts {
   readonly mirror?: boolean;
   readonly upstream?: UpstreamDefaults;
+  /** The server's defaults of `remote.mirror`, which the form leaves unwritten. */
+  readonly mirrorDefaults?: MirrorDefaults;
 }
 
 /** The `remote` member the form writes, or undefined when a create has nothing to write. */
@@ -168,10 +173,10 @@ export function remoteOf(
   if (parts.mirror ?? true) {
     if (write === 'structural') {
       out['mode'] = form.remoteMode;
-      out['mirror'] = mirrorOf(form);
+      out['mirror'] = mirrorOf(form, parts.mirrorDefaults ?? null);
     } else if (form.remoteMode === 'mirror') {
       out['mode'] = 'mirror';
-      const mirror = mirrorOf(form);
+      const mirror = mirrorOf(form, parts.mirrorDefaults ?? null);
       if (Object.keys(mirror).length > 0) out['mirror'] = mirror;
     }
   }
@@ -192,6 +197,7 @@ export function settingsOf(form: RepositoryForm, format?: FormatMemberOf): Recor
   const remote = format?.remote
     ? remoteOf(form, format.remote, {
         mirror: format.mirror ?? true,
+        mirrorDefaults: format.mirrorDefaults ?? null,
         ...(format.upstream ? { upstream: format.upstream } : {}),
       })
     : undefined;
@@ -227,7 +233,11 @@ export function createBodyOf(
 ): Repository {
   const member = pruneDefaults(format.schema, form.formatMember);
   const remote = format.remote
-    ? remoteOf(form, 'sparse', { mirror: format.mirror ?? true, ...(format.upstream ? { upstream: format.upstream } : {}) })
+    ? remoteOf(form, 'sparse', {
+        mirror: format.mirror ?? true,
+        mirrorDefaults: format.mirrorDefaults ?? null,
+        ...(format.upstream ? { upstream: format.upstream } : {}),
+      })
     : undefined;
   const includes = lines(form.includePatterns);
   const excludes = lines(form.excludePatterns);

@@ -5666,6 +5666,9 @@ The settings page follows the style guide's settings pages: one column of at mos
   the server (Signing keys, Indexes, Import tasks, Tombstones, How to use) reads it when it is first opened; the mirror's status is
   read only while the section Mirror is open. The page's header names the repository with the icon of its level, and a disabled
   repository with the badge **Disabled**.
+- The section Mirror shows an unset member of `remote.mirror` with the default of `getRepositoryDefaults` (R-REPO-063) for the
+  repository's project and format, and a save leaves a member equal to it unwritten; the client keeps no copy of these defaults.
+  A caller the server refuses them to sees the stored members only.
 - A caller who may not change the repository sees the fields read-only and no save; the reduced view of a caller without
   `repositories:read-config` is unchanged.
 

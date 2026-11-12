@@ -46,7 +46,16 @@ import { FrequentPlaces } from '../../core/frequent-places';
 import { classLabel } from './repository-class';
 import { RepositoryFields } from './repository-fields';
 import { RepositoryGuide } from './repository-guide';
-import { FormatMemberOf, RepositoryForm, apiAddress, clientAddress, curlOf, formOf, maskSecrets } from './repository-model';
+import {
+  FormatMemberOf,
+  RepositoryForm,
+  apiAddress,
+  clientAddress,
+  curlOf,
+  formOf,
+  maskSecrets,
+  mirrorDefaultsOf,
+} from './repository-model';
 import { RepositoryVisibilityBlock } from './repository-visibility';
 import { SETTINGS_SECTIONS, SettingsSection, rebaseForm, sectionMembers, sectionPatch, withSection } from './settings-sections';
 import { SettingSchema, errorTarget, settingNodes } from './settings-schema';
@@ -163,6 +172,24 @@ export class RepositoryDetail implements HasUnsavedChanges {
   protected readonly pausing = signal(false);
   /** An Owner without the capability keeps what is stored, pauses and turns the mirror off (Q-REPO-142). */
   protected readonly mirrorRestricted = computed(() => !this.session.has('repositories:write-config'));
+  /**
+   * The server's defaults of `remote.mirror` (R-REPO-063), read for a remote with a mirror: the values of the fields that are not set
+   * and what a save leaves unwritten. A caller the server refuses them to changes nothing and gets none.
+   */
+  private readonly mirrorDefaultsResource = resource({
+    params: () => {
+      const repo = this.stored();
+      return this.mirrorSection() && repo ? { project: this.project(), format: repo.format } : undefined;
+    },
+    loader: async ({ params }) => {
+      try {
+        return mirrorDefaultsOf((await this.api.defaults(params.project, params.format, 'remote')).repository as Record<string, unknown>);
+      } catch {
+        return null;
+      }
+    },
+  });
+  protected readonly mirrorDefaults = computed(() => valueOf(this.mirrorDefaultsResource) ?? null);
   /** The signing keys and the indexes: a local or virtual Debian repository (R-DEB-014, R-DEB-015). */
   protected readonly debSection = computed(() => {
     const repo = this.stored();
@@ -196,6 +223,7 @@ export class RepositoryDetail implements HasUnsavedChanges {
     name: this.stored()?.format ?? '',
     schema: this.format()?.settingsSchema as SettingSchema | null | undefined,
     formatMirror: this.formatMirrorNodes().length > 0,
+    mirrorDefaults: this.mirrorDefaults(),
     ...(this.upstreamSection()
       ? { remote: 'structural' as const, mirror: this.mirrorSection(), upstream: upstreamDefaultsOf(this.format()) }
       : {}),

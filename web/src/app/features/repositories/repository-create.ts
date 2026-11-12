@@ -40,6 +40,7 @@ import {
   curlOf,
   keyShapeValid,
   maskSecrets,
+  mirrorDefaultsOf,
 } from './repository-model';
 import { SettingSchema, errorTarget, settingNodes } from './settings-schema';
 import { initialUpstream, upstreamDefaultsOf } from './upstream-model';
@@ -235,6 +236,8 @@ export class RepositoryCreate implements HasUnsavedChanges {
   protected readonly defaultDocument = computed<Readonly<Record<string, unknown>> | null>(
     () => (valueOf(this.defaults)?.repository as Readonly<Record<string, unknown>> | undefined) ?? null,
   );
+  /** The server's defaults of `remote.mirror` (R-REPO-063): the values of the Mirror group's fields. */
+  protected readonly mirrorDefaults = computed(() => mirrorDefaultsOf(this.defaultDocument()));
   private readonly remoteDefaults = computed(() => {
     const r = this.defaultDocument()?.['remote'];
     return typeof r === 'object' && r !== null ? (r as Readonly<Record<string, unknown>>) : null;
@@ -307,7 +310,14 @@ export class RepositoryCreate implements HasUnsavedChanges {
     return {
       name: f.name,
       schema: f.settingsSchema as SettingSchema | null | undefined,
-      ...(this.cls() === 'remote' ? { remote: 'sparse' as const, mirror: this.mirrorGroup(), upstream: upstreamDefaultsOf(f, this.remoteDefaults()) } : {}),
+      ...(this.cls() === 'remote'
+        ? {
+            remote: 'sparse' as const,
+            mirror: this.mirrorGroup(),
+            mirrorDefaults: this.mirrorDefaults(),
+            upstream: upstreamDefaultsOf(f, this.remoteDefaults()),
+          }
+        : {}),
     };
   });
   protected readonly memberPointer = computed(() => `/${this.descriptor()?.name ?? ''}`);

@@ -185,6 +185,7 @@
                   [format]="mirrorFormat"
                   [upstreamUrl]="current.upstream.url"
                   [restricted]="mirrorRestricted()"
+                  [defaults]="mirrorDefaults()"
                   [fieldErrors]="errorsOf('mirror')"
                 />
                 @if (current.remoteMode === 'mirror' && formatMirrorNodes().length > 0) {

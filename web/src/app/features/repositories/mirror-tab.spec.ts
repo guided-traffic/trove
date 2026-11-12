@@ -7,10 +7,14 @@ import {
   GENERIC_FORMAT,
   PACKAGE_FORMAT,
   sampleMirrorStatus,
+  sampleRepositoryDefaults,
 } from '../../api/testing/fakes-catalog';
 import { button, expectAccessible, openSection, renderScreen, saveButton, settle, text, type } from '../../testing/screen';
 import { RepositoryDetail } from './repository-detail';
-import { MIRROR_DEFAULTS } from './repository-model';
+import { mirrorDefaultsOf } from './repository-model';
+
+/** The defaults of `remote.mirror` as the server resolves them, from the fake's answer of `getRepositoryDefaults` (R-REPO-063). */
+const SERVER_MIRROR = mirrorDefaultsOf(sampleRepositoryDefaults(PACKAGE_FORMAT, 'remote').repository as Record<string, unknown>)!;
 
 const NPM: FormatDescriptor = {
   ...PACKAGE_FORMAT,
@@ -26,7 +30,7 @@ const stored = (mode: 'pullThrough' | 'mirror', mirror: Record<string, unknown> 
     remote: {
       url: 'https://registry.npmjs.org/',
       mode,
-      mirror: { ...MIRROR_DEFAULTS, ...mirror },
+      mirror: { ...SERVER_MIRROR, ...mirror },
     },
   }) as unknown as Repository;
 

@@ -462,10 +462,10 @@ The browser journey [17-deb.spec.ts](../../web/e2e/tests/17-deb.spec.ts) walks t
 
 [mirror-settings.ts](../../web/src/app/features/repositories/mirror-settings.ts) (`trove-mirror-settings`) renders `remote.mode` and the members of `remote.mirror`
 for a remote repository of a format whose descriptor has `mirror: true` (R-UI-021, R-REPO-050; [Q-UI-117](../spec/api-and-ui.md#q-ui-117--the-mirror-section-where-it-sits-what-it-writes-who-may-change-it)).
-The creation form shows it as the group **Mirror** of **Advanced settings**, with the format's `mirror` member below it in mode mirror; the settings page in its section **Mirror**, which also holds the status panel ([below](#the-mirror-status-panel)). The caller gives the heading. A member shows its value or its default (`shown`), and an emptied one shows the default again once left.
+The creation form shows it as the group **Mirror** of **Advanced settings**, with the format's `mirror` member below it in mode mirror; the settings page in its section **Mirror**, which also holds the status panel ([below](#the-mirror-status-panel)). The caller gives the heading. A member shows its value or its default (`shown`), and an emptied one shows the default again once left. The defaults are the server's: the `remote.mirror` of `getRepositoryDefaults` (R-REPO-063, `mirrorDefaultsOf`), which the creation form reads for its class and the settings page for a remote with a mirror; the client keeps no copy, and while they are not known the fields of unset members are empty and every set member is written.
 
 - *The form holds* `remoteMode` and `mirror` (the members that were set) in `RepositoryForm`. `FormatMemberOf.remote` says how `settingsOf` writes them:
-  `sparse` for a create (nothing in mode `pullThrough`; in mode `mirror` the mode and the members that differ from `MIRROR_DEFAULTS`) and `structural` for
+  `sparse` for a create (nothing in mode `pullThrough`; in mode `mirror` the mode and the members that differ from the server's defaults) and `structural` for
   the edit form (the mode and the mirror object are always present on both sides of the merge patch, so a patch carries only the changed members, clears a member set
   back to its default with `null` and never touches the rest of `remote`).
 - *Who.* `restricted` is `!SessionStore.has('repositories:write-config')`: an Owner of a project without the capability sees every member disabled except **Paused**, cannot choose

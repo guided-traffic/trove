@@ -4,14 +4,24 @@ import { FieldWidth } from '../../shared/access/fields';
 import { FormatDescriptor } from '../../api/repositories-api';
 import { fieldMessage, problemsAt } from '../../shared/field-errors';
 import { JsonObject } from '../../shared/merge-patch';
-import { MIRROR_DEFAULTS, RemoteMode, RepositoryForm, lines } from './repository-model';
+import { MirrorDefaults, RemoteMode, RepositoryForm, lines } from './repository-model';
 import { defaultPreset, normalizedUrl } from './upstream-model';
 import { controlIdOf, numberOrText } from './settings-schema';
 
 /** The id of the section; a server error at a pointer the section does not render lands here. */
 export const MIRROR_SECTION_ID = 'f-remote-mirror';
 
-const KNOWN_MEMBERS = Object.keys(MIRROR_DEFAULTS);
+/** The members of `remote.mirror` the section has a control for (R-REPO-050). */
+const KNOWN_MEMBERS = [
+  'paused',
+  'intervalSeconds',
+  'fullPassIntervalSeconds',
+  'discovery',
+  'concurrency',
+  'maxVersionsPerPackage',
+  'includePrereleases',
+  'maxBytes',
+];
 
 /**
  * The control a field error of the mirror section belongs to (`/remote/mode`,
@@ -331,6 +341,8 @@ export class MirrorSettings {
   readonly upstreamUrl = input<string | null>(null);
   /** A project Owner: read-only except Pause and Turn off (Q-REPO-142). */
   readonly restricted = input(false);
+  /** The server's defaults of `remote.mirror` (R-REPO-063): the values of the fields that are not set. */
+  readonly defaults = input<MirrorDefaults>(null);
   /** Server field problems by pointer (`ApiError.fieldErrors`). */
   readonly fieldErrors = input<ReadonlyMap<string, FieldProblem>>(new Map());
 
@@ -338,12 +350,18 @@ export class MirrorSettings {
   protected readonly discoveries = ['auto', 'feed', 'listing', 'names'] as const;
 
   protected readonly mode = computed<RemoteMode>(() => this.form().remoteMode);
-  protected readonly paused = computed(() => this.form().mirror['paused'] === true);
-  protected readonly prereleases = computed(() => this.form().mirror['includePrereleases'] !== false);
+  protected readonly paused = computed(() => this.valueOf('paused') === true);
+  protected readonly prereleases = computed(() => this.valueOf('includePrereleases') !== false);
   protected readonly discovery = computed(() => {
-    const v = this.form().mirror['discovery'];
+    const v = this.valueOf('discovery');
     return typeof v === 'string' ? v : 'auto';
   });
+
+  /** A member as it is set, else as the server's default has it. */
+  private valueOf(name: string): unknown {
+    const set = this.form().mirror[name];
+    return set === undefined || set === null ? this.defaults()?.[name] : set;
+  }
 
   /** The numeric members with their texts, built where `$localize` is available. */
   protected readonly numbers = computed<readonly NumberMember[]>(() => {
@@ -417,10 +435,12 @@ export class MirrorSettings {
     return fieldMessage(problem);
   }
 
-  /** The value in the field: the one set, else the member's default (R-UI-084); `maxBytes` has none and stays empty. */
+  /**
+   * The value in the field: the one set, else the server's default (R-UI-084, R-REPO-063); `maxBytes` has none and stays empty, and
+   * so does every member while the defaults are not known.
+   */
   protected shown(name: string): string {
-    const set = this.form().mirror[name];
-    const v = set === undefined || set === null ? MIRROR_DEFAULTS[name] : set;
+    const v = this.valueOf(name);
     return v === undefined || v === null ? '' : String(v);
   }
 

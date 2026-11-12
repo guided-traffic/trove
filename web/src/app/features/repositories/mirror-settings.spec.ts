@@ -9,6 +9,7 @@ import {
   GENERIC_FORMAT,
   NUGET_FORMAT,
   PACKAGE_FORMAT,
+  sampleRepositoryDefaults,
 } from '../../api/testing/fakes-catalog';
 import { button, expectAccessible, renderScreen, saveButton, settle, text, type } from '../../testing/screen';
 import {
@@ -16,7 +17,11 @@ import {
   mirrorPointerLabel,
   mirrorTarget,
 } from './mirror-settings';
-import { MIRROR_DEFAULTS, EMPTY_FORM, mirrorOf, remoteOf, settingsOf } from './repository-model';
+import { EMPTY_FORM, mirrorDefaultsOf, mirrorOf, remoteOf, settingsOf } from './repository-model';
+
+/** The defaults of `remote.mirror` as the server resolves them, from the fake's answer of `getRepositoryDefaults` (R-REPO-063). */
+const SERVER_MIRROR = mirrorDefaultsOf(sampleRepositoryDefaults(PACKAGE_FORMAT, 'remote').repository as Record<string, unknown>)!;
+
 import { RepositoryCreate } from './repository-create';
 import { RepositoryDetail } from './repository-detail';
 
@@ -88,33 +93,26 @@ describe('Mirror settings of a remote repository', () => {
       }
     });
 
-    it('R-REPO-050 R-UI-021 a member is written only where it differs from its default, and a create in mode pullThrough writes no remote member at all', () => {
+    it('R-REPO-050 R-REPO-063 R-UI-084 a member is written only where it differs from the server default, and a create in mode pullThrough writes no remote member at all', () => {
       const form = {
         ...EMPTY_FORM,
         mirror: { intervalSeconds: 3600, concurrency: 8, includePrereleases: true, maxBytes: null, paused: false },
       };
-      expect(mirrorOf(form)).toEqual({ concurrency: 8 });
-      expect(remoteOf(form, 'sparse')).toBeUndefined();
-      expect(remoteOf({ ...form, remoteMode: 'mirror' }, 'sparse')).toEqual({
+      const parts = { mirrorDefaults: SERVER_MIRROR };
+      expect(mirrorOf(form, SERVER_MIRROR)).toEqual({ concurrency: 8 });
+      expect(remoteOf(form, 'sparse', parts)).toBeUndefined();
+      expect(remoteOf({ ...form, remoteMode: 'mirror' }, 'sparse', parts)).toEqual({
         mode: 'mirror',
         mirror: { concurrency: 8 },
       });
-      expect(remoteOf({ ...EMPTY_FORM, remoteMode: 'mirror' }, 'sparse')).toEqual({ mode: 'mirror' });
+      expect(remoteOf({ ...EMPTY_FORM, remoteMode: 'mirror' }, 'sparse', parts)).toEqual({ mode: 'mirror' });
       // The edit form always writes the structure, so a merge patch never replaces the whole remote section.
-      expect(remoteOf(EMPTY_FORM, 'structural')).toEqual({ mode: 'pullThrough', mirror: {} });
+      expect(remoteOf(EMPTY_FORM, 'structural', parts)).toEqual({ mode: 'pullThrough', mirror: {} });
       expect(settingsOf(EMPTY_FORM, { name: 'npm', schema: null })['remote']).toBeUndefined();
-      expect(Object.keys(MIRROR_DEFAULTS).sort()).toEqual(
-        [
-          'concurrency',
-          'discovery',
-          'fullPassIntervalSeconds',
-          'includePrereleases',
-          'intervalSeconds',
-          'maxBytes',
-          'maxVersionsPerPackage',
-          'paused',
-        ].sort(),
-      );
+      // The client keeps no copy of the defaults: while they are not known, every member that is set is written.
+      expect(mirrorOf(form)).toEqual({ intervalSeconds: 3600, concurrency: 8, includePrereleases: true, paused: false });
+      expect(mirrorDefaultsOf({ remote: { mirror: { concurrency: 4 } } })).toEqual({ concurrency: 4 });
+      expect(mirrorDefaultsOf({ remote: {} })).toBeNull();
     });
 
     it('R-UI-044 server pointers of the section map to their control and label', () => {
@@ -313,7 +311,7 @@ describe('Mirror settings of a remote repository', () => {
         remote: {
           url: 'https://registry.npmjs.org/',
           mode,
-          mirror: { ...MIRROR_DEFAULTS, ...mirror },
+          mirror: { ...SERVER_MIRROR, ...mirror },
         },
       }) as unknown as Repository;
 

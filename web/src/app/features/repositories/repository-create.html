@@ -191,6 +191,7 @@
           [format]="fmt"
           [upstreamUrl]="form().upstream.url"
           [restricted]="mirrorRestricted()"
+          [defaults]="mirrorDefaults()"
           [fieldErrors]="fieldErrors()"
         />
         @if (form().remoteMode === 'mirror' && formatMirrorNodes().length > 0) {
