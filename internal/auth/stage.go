@@ -386,6 +386,9 @@ func (s *Stage) accept(r *http.Request, ep EndpointRules, info token.Info, cred 
 	if err != nil {
 		return Result{}, err
 	}
+	if info.Owner.External, err = s.external(r.Context(), info.Owner.ID); err != nil {
+		return Result{}, err
+	}
 	sc := info.Scope
 	if s.o.Uses != nil {
 		s.o.Uses.NoteUse(info.ID, sourceOf(r, s.clientAddr(r)).ClientAddr)
@@ -482,6 +485,23 @@ func (s *Stage) groups(ctx context.Context, id string) ([]principal.GroupRef, er
 	return g, nil
 }
 
+// external is the user's external flag as the principal cache holds it (R-AUTH-044), read with the status and the groups of
+// the same entry, so a change reaches the next request of a session or a personal access token within auth.revocation_bound
+// (R-AUTH-023). A principal the cache does not know is not external; the kinds that carry no flag read false.
+func (s *Stage) external(ctx context.Context, id string) (bool, error) {
+	p, err := s.o.Principals.ByID(ctx, id)
+	switch {
+	case err == nil:
+		return p.External, nil
+	case errors.Is(err, principal.ErrNotFound):
+		return false, nil
+	}
+	if _, ok := errs.As(err); ok {
+		return false, err
+	}
+	return false, errs.E(errs.Unavailable, errs.CodeDatabaseUnavailable, "The principal cannot be resolved right now.", errs.WithCause(err))
+}
+
 func (s *Stage) bySession(r *http.Request, path, cookie string) (Result, error) {
 	ctx := r.Context()
 	info, err := s.o.Sessions.Validate(ctx, cookie)
@@ -502,6 +522,9 @@ func (s *Stage) bySession(r *http.Request, path, cookie string) (Result, error) 
 	}
 	groups, err := s.groups(ctx, info.Principal.ID)
 	if err != nil {
+		return Result{}, err
+	}
+	if info.Principal.External, err = s.external(ctx, info.Principal.ID); err != nil {
 		return Result{}, err
 	}
 	s.o.Metrics.Attempt(string(MethodSession), "success", "")

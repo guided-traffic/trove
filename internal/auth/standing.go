@@ -61,7 +61,7 @@ func (s *JobStanding) Standing(ctx context.Context, j authz.JobSubject) (authz.S
 	if err != nil {
 		return authz.Standing{}, unavailable(err)
 	}
-	out := authz.Standing{Kind: p.Kind, Name: p.Name, Groups: groups}
+	out := authz.Standing{Kind: p.Kind, Name: p.Name, Groups: groups, External: p.External}
 	switch {
 	case j.TokenID != "":
 		sc, ci, err := s.token(ctx, j)

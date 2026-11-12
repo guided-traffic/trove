@@ -49,8 +49,11 @@ type Standing struct {
 	Kind   principal.Kind
 	Name   string
 	Groups []principal.GroupRef
-	Scope  *scope.Scope
-	CI     *claims.Frozen
+	// External is the user's external flag as the principal cache holds it now (R-AUTH-044): a flag set after the request was
+	// queued narrows the job as it narrows a request.
+	External bool
+	Scope    *scope.Scope
+	CI       *claims.Frozen
 }
 
 // Subject is the subject a batch of the job decides on: the identity, credential and endpoint the job carries, with the kind, the
@@ -62,7 +65,7 @@ func (j JobSubject) Subject(now Standing) Subject {
 		kind, name = now.Kind, now.Name
 	}
 	s := Subject{
-		Anonymous: j.Anonymous, Kind: kind, ID: j.ID, Name: name,
+		Anonymous: j.Anonymous, Kind: kind, ID: j.ID, Name: name, External: now.External,
 		Groups: slices.Clone(now.Groups), Scope: now.Scope, CI: now.CI,
 		TokenID: j.TokenID, SessionID: j.SessionID, AuthMethod: j.AuthMethod,
 		Endpoint: j.Endpoint, CacheFill: j.CacheFill,

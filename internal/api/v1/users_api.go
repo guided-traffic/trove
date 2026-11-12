@@ -23,7 +23,7 @@ func toUser(u principal.User) gen.User {
 		Origin: gen.UserOrigin(u.Origin), Status: gen.UserStatus(u.Status), DisabledReason: optString(u.DisabledReason),
 		IsAdmin: u.IsAdmin, AdminVia: orEmptyStrings(u.AdminVia), Identities: []gen.UserIdentity{}, Groups: []gen.UserGroupMembership{},
 		LockedUntil: optTime(u.LockedUntil), LastLoginAt: optTime(u.LastLoginAt), CreatedAt: utc(u.CreatedAt),
-		AvatarUrl: avatarURL(u.AvatarSHA256),
+		AvatarUrl: avatarURL(u.AvatarSHA256), External: u.External,
 	}
 	for _, i := range u.Identities {
 		out.Identities = append(out.Identities, gen.UserIdentity{Provider: i.Provider, Linked: i.Linked})
@@ -56,11 +56,11 @@ func (s *Server) ListUsers(w http.ResponseWriter, r *http.Request, _ gen.ListUse
 		return
 	}
 	lq, err := ParseList(r, ListSpec{
-		Filters: []string{"q", "status", "origin", "group", "admin"}, Sorts: []string{"username"}, DefaultSort: "username",
+		Filters: []string{"q", "status", "origin", "group", "admin", "external"}, Sorts: []string{"username"}, DefaultSort: "username",
 	}, s.o.API.Config)
 	if err == nil {
 		err = firstErr(ascending(lq), oneOf("status", lq.First("status"), "active", "disabled", "locked"),
-			oneOf("origin", lq.First("origin"), "jit", "admin", "scim", "system"), oneOf("admin", lq.First("admin"), "true", "false"))
+			oneOf("origin", lq.First("origin"), "jit", "admin", "scim", "system"), oneOf("admin", lq.First("admin"), "true", "false"), oneOf("external", lq.First("external"), "true", "false"))
 	}
 	var after string
 	if err == nil {
@@ -71,7 +71,7 @@ func (s *Server) ListUsers(w http.ResponseWriter, r *http.Request, _ gen.ListUse
 		return
 	}
 	rows, err := s.o.Auth.Manager.ListUsers(r.Context(), principal.UserFilter{
-		Query: lq.First("q"), Status: lq.First("status"), Origin: lq.First("origin"), Group: lq.First("group"), Admin: lq.First("admin"),
+		Query: lq.First("q"), Status: lq.First("status"), Origin: lq.First("origin"), Group: lq.First("group"), Admin: lq.First("admin"), External: lq.First("external"),
 		After: after, Limit: lq.FetchLimit(),
 	})
 	if err != nil {
@@ -133,7 +133,7 @@ func (s *Server) CreateUser(w http.ResponseWriter, r *http.Request, _ gen.Create
 	c := s.caller(r)
 	err = s.idem.Do(w, r, body, IdempotentOp{Run: func(ctx context.Context, tx meta.Tx) (Outcome, error) {
 		u, err := s.o.Auth.Manager.CreateUserTx(ctx, tx, c, principal.NewUser{
-			Name: in.Username, Email: derefString(in.Email), DisplayName: derefString(in.DisplayName), Identities: pending,
+			Name: in.Username, Email: derefString(in.Email), DisplayName: derefString(in.DisplayName), Identities: pending, External: in.External,
 		})
 		if err != nil {
 			return Outcome{}, identityErr(err)
@@ -206,6 +206,7 @@ type userPatchBody struct {
 	Email       json.RawMessage `json:"email"`
 	DisplayName json.RawMessage `json:"displayName"`
 	Identities  json.RawMessage `json:"identities"`
+	External    json.RawMessage `json:"external"`
 
 	ID                json.RawMessage `json:"id"`
 	Username          json.RawMessage `json:"username"`
@@ -243,6 +244,7 @@ func (s *Server) UpdateUser(w http.ResponseWriter, r *http.Request, username str
 			func() (e error) { p.Email, e = patchString(in.Email, "/email"); return },
 			func() (e error) { p.DisplayName, e = patchString(in.DisplayName, "/displayName"); return },
 			func() (e error) { p.Identities, e = s.patchIdentities(in.Identities); return },
+			func() (e error) { p.External, e = patchBool(in.External, "/external"); return },
 			func() error { return immutableString(in.Username, "/username", username) },
 		)
 	}
@@ -250,6 +252,8 @@ func (s *Server) UpdateUser(w http.ResponseWriter, r *http.Request, username str
 		httpserver.Problem(w, r, err)
 		return
 	}
+	// A change of the flag asks for a recent authentication (R-AUTH-044); the manager calls this when the value would change.
+	p.ExternalGate = func(context.Context) error { return s.requireRecentAuth(r) }
 	u, err := s.o.Auth.Manager.UpdateUser(r.Context(), s.caller(r), username, p)
 	if err != nil {
 		failIdentity(w, r, err)

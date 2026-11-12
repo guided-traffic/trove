@@ -158,6 +158,8 @@ type User struct {
 	// AvatarSHA256 is the lower-case hex SHA-256 of the user's avatar image
 	// (R-API-055), empty for a user without one.
 	AvatarSHA256 string
+	// External is the external flag (R-AUTH-044): the user reads only what it is a member of, what a grant names and what is public.
+	External bool
 }
 
 func (m *Manager) record(ctx context.Context, tx meta.Tx, ev audit.Event) error {
@@ -188,6 +190,9 @@ type NewUser struct {
 	// Origin is admin (default), scim or system.
 	Origin     string
 	Identities []PendingIdentity
+	// External is the external flag of the new user (R-AUTH-044); nil takes the installation's newUsersExternal as it stands in the
+	// creating transaction.
+	External *bool
 }
 
 // CreateUser creates a user with origin admin and pending identity links
@@ -250,6 +255,7 @@ func (m *Manager) createUser(ctx context.Context, tx meta.Tx, c Caller, in NewUs
 	}
 	if err := qs.IdentityInsertUser(ctx, q.IdentityInsertUserParams{
 		ID: id, Email: in.Email, EmailVerified: in.EmailVerified, DisplayName: in.DisplayName, Origin: origin,
+		ExternalSet: in.External != nil, External: in.External != nil && *in.External,
 	}); err != nil {
 		return User{}, err
 	}
@@ -331,6 +337,7 @@ func (m *Manager) GetUserByID(ctx context.Context, id string) (User, error) {
 		r := rows[0]
 		u = userFrom(r.ID, r.Name, r.Status, r.Email, r.EmailVerified, r.DisplayName, r.Origin, r.IsBreakGlass, r.DisabledReason,
 			r.ScimExternalID, r.LastLoginAt.Time, r.CreatedAt.Time, r.Revision, r.GroupClaimMissing)
+		u.External = r.External
 		return finishUser(ctx, qs, &u)
 	})
 	if errors.Is(err, ErrNotFound) {
@@ -366,6 +373,7 @@ func loadUser(ctx context.Context, qs *q.Queries, name string) (User, error) {
 	r := rows[0]
 	u := userFrom(r.ID, r.Name, r.Status, r.Email, r.EmailVerified, r.DisplayName, r.Origin, r.IsBreakGlass, r.DisabledReason,
 		r.ScimExternalID, r.LastLoginAt.Time, r.CreatedAt.Time, r.Revision, r.GroupClaimMissing)
+	u.External = r.External
 	err = finishUser(ctx, qs, &u)
 	return u, err
 }
@@ -458,6 +466,8 @@ type UserFilter struct {
 	Status string
 	Origin string
 	Group  string
+	// External is "true" or "false" to keep the users that are external or are not (R-AUTH-044).
+	External string
 	// Admin is "true" or "false" to keep the users that hold the role admin or do
 	// not.
 	Admin string
@@ -474,7 +484,7 @@ func (m *Manager) ListUsers(ctx context.Context, f UserFilter) ([]User, error) {
 	err := m.db.Read(ctx, func(db q.DBTX) error {
 		qs := q.New(db)
 		rows, err := qs.IdentityListUsers(ctx, q.IdentityListUsersParams{
-			After: f.After, Query: f.Query, Status: f.Status, Origin: f.Origin, GroupName: f.Group, Admin: f.Admin, MaxRows: int32(clampLimit(f.Limit)), //nolint:gosec // bounded
+			After: f.After, Query: f.Query, Status: f.Status, Origin: f.Origin, GroupName: f.Group, ExternalFilter: f.External, Admin: f.Admin, MaxRows: int32(clampLimit(f.Limit)), //nolint:gosec // bounded
 		})
 		if err != nil {
 			return err
@@ -483,6 +493,7 @@ func (m *Manager) ListUsers(ctx context.Context, f UserFilter) ([]User, error) {
 		for _, r := range rows {
 			u := userFrom(r.ID, r.Name, r.Status, r.Email, r.EmailVerified, r.DisplayName, r.Origin, r.IsBreakGlass, r.DisabledReason,
 				r.ScimExternalID, r.LastLoginAt.Time, r.CreatedAt.Time, r.Revision, "")
+			u.External = r.External
 			if err := fillUser(ctx, qs, &u); err != nil {
 				return err
 			}
@@ -534,6 +545,12 @@ type UserPatch struct {
 	// Identities, when non-nil, replaces the pending links (a linked identity
 	// stays).
 	Identities *[]PendingIdentity
+	// External, when non-nil, sets the external flag (R-AUTH-044). A value the user has changes nothing; the break-glass account is
+	// never external (409 break_glass_immutable).
+	External *bool
+	// ExternalGate is called, in the transaction, when the flag would change; it returns the refusal that asks for a recent
+	// authentication (R-API-007). Nil asks nothing.
+	ExternalGate func(context.Context) error
 	// Expected is the revision the caller loaded (If-Match) or errs.AnyRevision
 	// for the deliberate blind write; the zero value matches no revision
 	// (R-API-012).
@@ -589,6 +606,15 @@ func (m *Manager) UpdateUser(ctx context.Context, c Caller, name string, p UserP
 			removed = append(removed, gone...)
 			fields = append(fields, "identities")
 		}
+		if p.External != nil {
+			changed, err := m.setExternal(ctx, tx, qs, c, p, id, name)
+			if err != nil {
+				return err
+			}
+			if changed && len(fields) == 0 {
+				return nil // the flag has its own event
+			}
+		}
 		if len(fields) == 0 {
 			return nil
 		}
@@ -603,6 +629,43 @@ func (m *Manager) UpdateUser(ctx context.Context, c Caller, name string, p UserP
 		return User{}, DBErr("principal.UpdateUser", err)
 	}
 	return m.GetUser(ctx, name)
+}
+
+// setExternal sets the external flag of the user (R-AUTH-044) and records user.external_changed, journaled with the user by ID and
+// the value before and after. It reports whether the value changed. The principal cache of every replica drops the user within
+// auth.revocation_bound through the change area auth.
+func (m *Manager) setExternal(ctx context.Context, tx meta.Tx, qs *q.Queries, c Caller, p UserPatch, id, name string) (bool, error) {
+	cur, err := qs.IdentityPrincipalByID(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	if len(cur) != 1 {
+		return false, NotFound("The user")
+	}
+	if cur[0].IsBreakGlass {
+		return false, errs.E(errs.Conflict, errs.CodeBreakGlassImmutable, "The break-glass account is never external.")
+	}
+	before := cur[0].External
+	if before == *p.External {
+		return false, nil
+	}
+	if p.ExternalGate != nil {
+		if err := p.ExternalGate(ctx); err != nil {
+			return false, err
+		}
+	}
+	if _, err := qs.IdentitySetUserExternal(ctx, q.IdentitySetUserExternalParams{ID: id, External: *p.External}); err != nil {
+		return false, err
+	}
+	if err := NotifyPrincipals(m.notify, tx, ChangePrincipal, id); err != nil {
+		return false, err
+	}
+	return true, m.record(ctx, tx, audit.Event{
+		Type: audit.EventUserExternalChanged, Outcome: audit.Success, Actor: c.Actor, Source: c.Source,
+		Subject: audit.Subject{Kind: "user", ID: id, Name: name},
+		Details: details(map[string]any{"source": sourceOf(c), "before": before, "after": *p.External}),
+		Journal: details(map[string]any{"principalId": id, "name": name, "before": before, "after": *p.External}),
+	})
 }
 
 // DisableOptions are the options of the disable operations.

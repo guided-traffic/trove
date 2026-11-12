@@ -5921,6 +5921,23 @@ left. The development agent records no revisit condition.
 
 **Applied in the spec:** R-AUTH-016, R-AUTH-037.
 
+### Q-AUTH-234 · The external flag is created with the user's row, moves the user's ETag, and asks its gate only when it changes
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The insert of the user reads `newUsersExternal` in its own statement when the creator names no value; a change moves `principal.revision`; the recent-authentication gate is called when the value would change (chosen) | One statement for the admin API, the first OIDC login and SCIM; the user's ETag reflects the flag | No path can create a user without the default; a body obtained by `GET` and sent back does not ask again | The trigger of the revision lists one more column |
+| (b) The creators read the setting and pass the value | Each path decides | No SQL logic | A new creation path that forgets it creates an internal user under `newUsersExternal: true` |
+
+**Choice:** (a), migrations `00074_external_users.sql`. A change records `user.external_changed` with the user by ID and the value before and
+after (journaled), notifies the change area `auth`, and the stage reads the flag with the status and the groups from the principal cache
+for every request of a session or a token; a job that continues a request reads it again with the groups.
+
+**Rationale:** R-AUTH-044 says the default is the setting as it stood when the user was created, whatever created it.
+
+**Applied in the spec:** R-AUTH-044, R-AUTH-040.
+
 ## What this does not cover
 
 ### H-836 · `tokens:read` shows which owners are administrators

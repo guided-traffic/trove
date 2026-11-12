@@ -54,16 +54,20 @@ DELETE FROM principal WHERE id = sqlc.arg(id)::text::uuid RETURNING id::text AS 
 -- Users ----------------------------------------------------------------------
 
 -- name: IdentityInsertUser :exec
-INSERT INTO app_user (principal_id, email, email_verified, display_name, origin, last_login_at, last_interactive_auth_at)
+-- external_set: the creator names the flag (POST /users with the member); otherwise the new user takes the installation's
+-- newUsersExternal as it stands in this transaction (R-AUTH-044, Q-AUTH-231).
+INSERT INTO app_user (principal_id, email, email_verified, display_name, origin, last_login_at, last_interactive_auth_at, external)
 VALUES (sqlc.arg(id)::text::uuid, NULLIF(sqlc.arg(email)::text, ''), sqlc.arg(email_verified)::boolean,
         NULLIF(sqlc.arg(display_name)::text, ''), sqlc.arg(origin)::text,
-        CASE WHEN sqlc.arg(logged_in)::boolean THEN now() END, CASE WHEN sqlc.arg(logged_in)::boolean THEN now() END);
+        CASE WHEN sqlc.arg(logged_in)::boolean THEN now() END, CASE WHEN sqlc.arg(logged_in)::boolean THEN now() END,
+        CASE WHEN sqlc.arg(external_set)::boolean THEN sqlc.arg(external)::boolean
+             ELSE coalesce((SELECT s.new_users_external FROM auth_settings s WHERE s.singleton), false) END);
 
 -- name: IdentityGetUser :many
 SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision,
        coalesce(u.email, '')::text AS email, u.email_verified, coalesce(u.display_name, '')::text AS display_name,
        u.origin, u.is_break_glass, coalesce(u.disabled_reason, '')::text AS disabled_reason,
-       u.last_login_at, coalesce(u.scim_external_id, '')::text AS scim_external_id,
+       u.last_login_at, coalesce(u.scim_external_id, '')::text AS scim_external_id, u.external,
        coalesce((SELECT i.last_claims -> 'groupClaimMissing' FROM user_identity i
                   WHERE i.user_id = u.principal_id AND i.last_claims ? 'groupClaimMissing'
                   ORDER BY i.id DESC LIMIT 1), 'null'::jsonb)::text AS group_claim_missing
@@ -74,7 +78,7 @@ SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision,
 SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision,
        coalesce(u.email, '')::text AS email, u.email_verified, coalesce(u.display_name, '')::text AS display_name,
        u.origin, u.is_break_glass, coalesce(u.disabled_reason, '')::text AS disabled_reason,
-       u.last_login_at, coalesce(u.scim_external_id, '')::text AS scim_external_id,
+       u.last_login_at, coalesce(u.scim_external_id, '')::text AS scim_external_id, u.external,
        coalesce((SELECT i.last_claims -> 'groupClaimMissing' FROM user_identity i
                   WHERE i.user_id = u.principal_id AND i.last_claims ? 'groupClaimMissing'
                   ORDER BY i.id DESC LIMIT 1), 'null'::jsonb)::text AS group_claim_missing
@@ -84,15 +88,16 @@ SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision,
 -- name: IdentityListUsers :many
 -- Keyset order by name. status is active, disabled, locked (the break-glass account
 -- while its lockout is in force, R-AUTH-038) or ''; origin and group are '' for any;
--- admin is 'true', 'false' or '' (the user holds the role admin directly or through
+-- external_filter is 'true', 'false' or ''; admin is 'true', 'false' or '' (the user holds the role admin directly or through
 -- a group, or is the break-glass account).
 SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision,
        coalesce(u.email, '')::text AS email, u.email_verified, coalesce(u.display_name, '')::text AS display_name,
        u.origin, u.is_break_glass, coalesce(u.disabled_reason, '')::text AS disabled_reason,
-       u.last_login_at, coalesce(u.scim_external_id, '')::text AS scim_external_id, 'null'::text AS group_claim_missing
+       u.last_login_at, coalesce(u.scim_external_id, '')::text AS scim_external_id, u.external, 'null'::text AS group_claim_missing
   FROM principal p JOIN app_user u ON u.principal_id = p.id
  WHERE p.kind = 'user'
    AND p.name > sqlc.arg(after)::text
+   AND (sqlc.arg(external_filter)::text = '' OR u.external = (sqlc.arg(external_filter)::text = 'true'))
    AND (sqlc.arg(query)::text = '' OR p.name ILIKE '%' || sqlc.arg(query)::text || '%' OR u.email ILIKE '%' || sqlc.arg(query)::text || '%')
    AND (sqlc.arg(status)::text = ''
         OR (sqlc.arg(status)::text = 'locked' AND u.is_break_glass

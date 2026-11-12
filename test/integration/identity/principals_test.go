@@ -716,12 +716,18 @@ func TestR_AUTHZ_002_PrincipalStoreLookups(t *testing.T) {
 	t.Run("R-AUTH-037 the built-in principals cannot be changed or deleted", func(t *testing.T) {
 		for _, sql := range []string{
 			`DELETE FROM principal WHERE kind = 'anonymous'`,
-			`UPDATE principal SET status = 'disabled' WHERE kind = 'authenticated'`,
+			`UPDATE principal SET status = 'disabled' WHERE kind = 'anonymous'`,
 			`UPDATE principal SET name = 'x' WHERE kind = 'anonymous'`,
+			// The principal authenticated is gone: a level replaces it (R-AUTHZ-033, 00075_principal_builtins).
+			`INSERT INTO principal (id, kind, name) VALUES (gen_random_uuid(), 'authenticated', 'authenticated')`,
 		} {
 			if _, err := e.admin.Exec(ctx, sql); err == nil {
 				t.Errorf("%s was allowed", sql)
 			}
+		}
+		var n int
+		if err := e.admin.QueryRow(ctx, `SELECT count(*) FROM principal WHERE kind = 'authenticated' OR name = 'authenticated'`).Scan(&n); err != nil || n != 0 {
+			t.Errorf("%d rows for authenticated: %v", n, err)
 		}
 	})
 	t.Run("only positive results are cached and a change evicts them", func(t *testing.T) {

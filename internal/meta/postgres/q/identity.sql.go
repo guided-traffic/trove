@@ -614,7 +614,7 @@ const identityGetUser = `-- name: IdentityGetUser :many
 SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision,
        coalesce(u.email, '')::text AS email, u.email_verified, coalesce(u.display_name, '')::text AS display_name,
        u.origin, u.is_break_glass, coalesce(u.disabled_reason, '')::text AS disabled_reason,
-       u.last_login_at, coalesce(u.scim_external_id, '')::text AS scim_external_id,
+       u.last_login_at, coalesce(u.scim_external_id, '')::text AS scim_external_id, u.external,
        coalesce((SELECT i.last_claims -> 'groupClaimMissing' FROM user_identity i
                   WHERE i.user_id = u.principal_id AND i.last_claims ? 'groupClaimMissing'
                   ORDER BY i.id DESC LIMIT 1), 'null'::jsonb)::text AS group_claim_missing
@@ -636,6 +636,7 @@ type IdentityGetUserRow struct {
 	DisabledReason    string
 	LastLoginAt       pgtype.Timestamptz
 	ScimExternalID    string
+	External          bool
 	GroupClaimMissing string
 }
 
@@ -662,6 +663,7 @@ func (q *Queries) IdentityGetUser(ctx context.Context, name string) ([]IdentityG
 			&i.DisabledReason,
 			&i.LastLoginAt,
 			&i.ScimExternalID,
+			&i.External,
 			&i.GroupClaimMissing,
 		); err != nil {
 			return nil, err
@@ -678,7 +680,7 @@ const identityGetUserByID = `-- name: IdentityGetUserByID :many
 SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision,
        coalesce(u.email, '')::text AS email, u.email_verified, coalesce(u.display_name, '')::text AS display_name,
        u.origin, u.is_break_glass, coalesce(u.disabled_reason, '')::text AS disabled_reason,
-       u.last_login_at, coalesce(u.scim_external_id, '')::text AS scim_external_id,
+       u.last_login_at, coalesce(u.scim_external_id, '')::text AS scim_external_id, u.external,
        coalesce((SELECT i.last_claims -> 'groupClaimMissing' FROM user_identity i
                   WHERE i.user_id = u.principal_id AND i.last_claims ? 'groupClaimMissing'
                   ORDER BY i.id DESC LIMIT 1), 'null'::jsonb)::text AS group_claim_missing
@@ -700,6 +702,7 @@ type IdentityGetUserByIDRow struct {
 	DisabledReason    string
 	LastLoginAt       pgtype.Timestamptz
 	ScimExternalID    string
+	External          bool
 	GroupClaimMissing string
 }
 
@@ -726,6 +729,7 @@ func (q *Queries) IdentityGetUserByID(ctx context.Context, id string) ([]Identit
 			&i.DisabledReason,
 			&i.LastLoginAt,
 			&i.ScimExternalID,
+			&i.External,
 			&i.GroupClaimMissing,
 		); err != nil {
 			return nil, err
@@ -1205,10 +1209,12 @@ func (q *Queries) IdentityInsertToken(ctx context.Context, arg IdentityInsertTok
 
 const identityInsertUser = `-- name: IdentityInsertUser :exec
 
-INSERT INTO app_user (principal_id, email, email_verified, display_name, origin, last_login_at, last_interactive_auth_at)
+INSERT INTO app_user (principal_id, email, email_verified, display_name, origin, last_login_at, last_interactive_auth_at, external)
 VALUES ($1::text::uuid, NULLIF($2::text, ''), $3::boolean,
         NULLIF($4::text, ''), $5::text,
-        CASE WHEN $6::boolean THEN now() END, CASE WHEN $6::boolean THEN now() END)
+        CASE WHEN $6::boolean THEN now() END, CASE WHEN $6::boolean THEN now() END,
+        CASE WHEN $7::boolean THEN $8::boolean
+             ELSE coalesce((SELECT s.new_users_external FROM auth_settings s WHERE s.singleton), false) END)
 `
 
 type IdentityInsertUserParams struct {
@@ -1218,9 +1224,13 @@ type IdentityInsertUserParams struct {
 	DisplayName   string
 	Origin        string
 	LoggedIn      bool
+	ExternalSet   bool
+	External      bool
 }
 
 // Users ----------------------------------------------------------------------
+// external_set: the creator names the flag (POST /users with the member); otherwise the new user takes the installation's
+// newUsersExternal as it stands in this transaction (R-AUTH-044, Q-AUTH-231).
 func (q *Queries) IdentityInsertUser(ctx context.Context, arg IdentityInsertUserParams) error {
 	_, err := q.db.Exec(ctx, identityInsertUser,
 		arg.ID,
@@ -1229,6 +1239,8 @@ func (q *Queries) IdentityInsertUser(ctx context.Context, arg IdentityInsertUser
 		arg.DisplayName,
 		arg.Origin,
 		arg.LoggedIn,
+		arg.ExternalSet,
+		arg.External,
 	)
 	return err
 }
@@ -1586,37 +1598,39 @@ const identityListUsers = `-- name: IdentityListUsers :many
 SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision,
        coalesce(u.email, '')::text AS email, u.email_verified, coalesce(u.display_name, '')::text AS display_name,
        u.origin, u.is_break_glass, coalesce(u.disabled_reason, '')::text AS disabled_reason,
-       u.last_login_at, coalesce(u.scim_external_id, '')::text AS scim_external_id, 'null'::text AS group_claim_missing
+       u.last_login_at, coalesce(u.scim_external_id, '')::text AS scim_external_id, u.external, 'null'::text AS group_claim_missing
   FROM principal p JOIN app_user u ON u.principal_id = p.id
  WHERE p.kind = 'user'
    AND p.name > $1::text
-   AND ($2::text = '' OR p.name ILIKE '%' || $2::text || '%' OR u.email ILIKE '%' || $2::text || '%')
-   AND ($3::text = ''
-        OR ($3::text = 'locked' AND u.is_break_glass
+   AND ($2::text = '' OR u.external = ($2::text = 'true'))
+   AND ($3::text = '' OR p.name ILIKE '%' || $3::text || '%' OR u.email ILIKE '%' || $3::text || '%')
+   AND ($4::text = ''
+        OR ($4::text = 'locked' AND u.is_break_glass
             AND EXISTS (SELECT 1 FROM auth_lockout l WHERE l.account_key = 'break-glass' AND l.locked_until > now()))
-        OR ($3::text <> 'locked' AND p.status = $3::text))
-   AND ($4::text = '' OR u.origin = $4::text)
-   AND ($5::text = '' OR EXISTS (
+        OR ($4::text <> 'locked' AND p.status = $4::text))
+   AND ($5::text = '' OR u.origin = $5::text)
+   AND ($6::text = '' OR EXISTS (
           SELECT 1 FROM group_membership m JOIN principal g ON g.id = m.group_id
-           WHERE m.member_id = p.id AND g.name = $5::text))
-   AND ($6::text = '' OR ($6::text = 'true') = (
+           WHERE m.member_id = p.id AND g.name = $6::text))
+   AND ($7::text = '' OR ($7::text = 'true') = (
           u.is_break_glass OR EXISTS (
             SELECT 1 FROM authz_role_binding b
              WHERE b.role = 'admin'
                AND (b.principal_id = p.id
                     OR b.principal_id IN (SELECT m.group_id FROM group_membership m WHERE m.member_id = p.id)))))
  ORDER BY p.name
- LIMIT $7::int
+ LIMIT $8::int
 `
 
 type IdentityListUsersParams struct {
-	After     string
-	Query     string
-	Status    string
-	Origin    string
-	GroupName string
-	Admin     string
-	MaxRows   int32
+	After          string
+	ExternalFilter string
+	Query          string
+	Status         string
+	Origin         string
+	GroupName      string
+	Admin          string
+	MaxRows        int32
 }
 
 type IdentityListUsersRow struct {
@@ -1633,16 +1647,18 @@ type IdentityListUsersRow struct {
 	DisabledReason    string
 	LastLoginAt       pgtype.Timestamptz
 	ScimExternalID    string
+	External          bool
 	GroupClaimMissing string
 }
 
 // Keyset order by name. status is active, disabled, locked (the break-glass account
 // while its lockout is in force, R-AUTH-038) or ”; origin and group are ” for any;
-// admin is 'true', 'false' or ” (the user holds the role admin directly or through
+// external_filter is 'true', 'false' or ”; admin is 'true', 'false' or ” (the user holds the role admin directly or through
 // a group, or is the break-glass account).
 func (q *Queries) IdentityListUsers(ctx context.Context, arg IdentityListUsersParams) ([]IdentityListUsersRow, error) {
 	rows, err := q.db.Query(ctx, identityListUsers,
 		arg.After,
+		arg.ExternalFilter,
 		arg.Query,
 		arg.Status,
 		arg.Origin,
@@ -1671,6 +1687,7 @@ func (q *Queries) IdentityListUsers(ctx context.Context, arg IdentityListUsersPa
 			&i.DisabledReason,
 			&i.LastLoginAt,
 			&i.ScimExternalID,
+			&i.External,
 			&i.GroupClaimMissing,
 		); err != nil {
 			return nil, err
