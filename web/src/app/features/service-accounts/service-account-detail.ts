@@ -93,14 +93,20 @@ import { PageHeader } from '../../shared/ui/page-header';
           <trove-principal-roles [principal]="a.principal" />
         }
 
-        <section class="tokens" aria-labelledby="sa-tokens">
-          <h2 id="sa-tokens" i18n="@@sa.tokens">Tokens</h2>
+        <!-- A quiet section like its siblings, open while the account holds a token (Q-UI-333). -->
+        <trove-disclosure
+          i18n-heading="@@sa.tokens"
+          heading="Tokens"
+          i18n-hint="@@sa.tokens-hint"
+          hint="The tokens of this account: create, rotate and revoke them."
+          [expanded]="tokens()?.hasTokens() ?? false"
+        >
           @if (canReadTokens()) {
             <trove-token-manager [scope]="scope()" [accountIsAdmin]="a.isAdmin" [revokeAllHere]="false" />
           } @else {
             <p i18n="@@sa.tokens-denied">You need the permission to read tokens to manage the tokens of this account.</p>
           }
-        </section>
+        </trove-disclosure>
 
         @if (canWrite() || tokens()?.offersRevokeAll()) {
           <trove-disclosure
@@ -149,10 +155,6 @@ import { PageHeader } from '../../shared/ui/page-header';
       display: grid;
       grid-template-columns: minmax(0, 5fr) minmax(0, 4fr);
       gap: var(--trove-space-6);
-    }
-    .tokens {
-      padding-block: var(--trove-space-5);
-      border-block-start: 1px solid var(--trove-border);
     }
     @media (max-width: 40rem) {
       .row {

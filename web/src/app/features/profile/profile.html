@@ -5,102 +5,114 @@
   <trove-error-notice [error]="e" (retry)="load()" />
 }
 
+<!-- One column like the user's page in the admin area: who you are as read-only fields at the top, then quiet sections
+     (Q-UI-333); the preferences are open, being what a user changes here. -->
 @if (user(); as u) {
   <trove-profile-avatar [seed]="u.id" />
 
-  <section class="card" aria-labelledby="profile-identity">
-    <h2 id="profile-identity" i18n="@@profile.identity">Identity</h2>
-    <dl class="facts">
-      <dt i18n="@@profile.username">User name</dt>
-      <dd translate="no">{{ u.username }}</dd>
-      <dt i18n="@@profile.display-name">Display name</dt>
-      <dd>{{ u.displayName ?? '' }}</dd>
-      <dt i18n="@@profile.email">Email</dt>
-      <dd>{{ u.email ?? '' }}</dd>
-      <dt i18n="@@profile.last-login">Last sign-in</dt>
-      <dd>{{ u.lastLoginAt | date: 'medium' }}</dd>
-    </dl>
+  <div class="settings">
+    <div class="row">
+      <trove-text-field i18n-label="@@profile.username" label="User name" name="username" [value]="u.username" [readonly]="true" />
+      <trove-text-field i18n-label="@@profile.display-name" label="Display name" name="displayName" [value]="u.displayName ?? ''" [readonly]="true" />
+    </div>
+    <div class="row">
+      <trove-text-field i18n-label="@@profile.email" label="Email" name="email" [value]="u.email ?? ''" [readonly]="true" />
+      <trove-text-field i18n-label="@@profile.last-login" label="Last sign-in" name="lastLogin" [value]="(u.lastLoginAt | date: 'medium') ?? ''" [readonly]="true" />
+    </div>
     <p class="muted" i18n="@@profile.identity-note">
       Your name and email come from the identity provider and are replaced at every sign-in.
     </p>
-  </section>
-
-  <section class="card" aria-labelledby="profile-groups">
-    <h2 id="profile-groups" i18n="@@profile.groups">Groups</h2>
-    @if (u.groupClaimMissing; as missing) {
-      <p role="status" class="warn">
-        <span class="material-icons" aria-hidden="true">warning</span>
-        @switch (missing.reason) {
-          @case ('absent') {
-            <ng-container i18n="@@profile.claim.absent">
-              Your last sign-in through {{ missing.provider }} carried no group claim, so the groups synchronized from it may be missing. Ask an administrator to check the group mapping of that identity provider.
-            </ng-container>
-          }
-          @case ('wrong_type') {
-            <ng-container i18n="@@profile.claim.wrong-type">
-              Your last sign-in through {{ missing.provider }} carried a group claim of the wrong type, so the groups synchronized from it may be missing. Ask an administrator to check the group mapping of that identity provider.
-            </ng-container>
-          }
-          @default {
-            <ng-container i18n="@@profile.claim.overage">
-              Your last sign-in through {{ missing.provider }} carried too many groups to fit in the token, so the groups synchronized from it may be missing. Ask an administrator to check the group mapping of that identity provider.
-            </ng-container>
-          }
-        }
-      </p>
-    }
-    @if (u.groups.length === 0) {
-      <p i18n="@@profile.no-groups">You are not a member of any group.</p>
-    } @else {
-      <table class="data">
-        <caption class="visually-hidden" i18n="@@profile.groups-caption">Your groups and where each membership comes from</caption>
-        <thead>
-          <tr>
-            <th scope="col" i18n="@@profile.group">Group</th>
-            <th scope="col" i18n="@@profile.source">Source</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (g of u.groups; track g.name + g.source) {
-            <tr>
-              <th scope="row" translate="no">{{ g.name }}</th>
-              <td translate="no">{{ g.source }}</td>
-            </tr>
-          }
-        </tbody>
-      </table>
-    }
-  </section>
-
-  <section class="card" aria-labelledby="profile-roles">
-    <h2 id="profile-roles" i18n="@@profile.roles">System roles</h2>
-    @if (roles().length === 0) {
-      <p i18n="@@profile.no-roles">You hold no system role.</p>
-    } @else {
-      <ul>
-        @for (r of roles(); track r) {
-          <li translate="no">{{ r }}</li>
-        }
-      </ul>
-    }
-  </section>
+  </div>
 }
 
-<section class="card" aria-labelledby="profile-prefs">
-  <h2 id="profile-prefs" i18n="@@profile.preferences">Preferences</h2>
-  @if (prefError(); as e) {
-    <trove-error-notice [error]="e" (retry)="load()" />
+<div class="settings">
+  <trove-disclosure
+    i18n-heading="@@profile.preferences"
+    heading="Preferences"
+    i18n-hint="@@profile.preferences-hint"
+    hint="Language, theme and keyboard shortcuts, kept with your account."
+    [expanded]="true"
+  >
+    @if (prefError(); as e) {
+      <trove-error-notice [error]="e" (retry)="load()" />
+    }
+    @if (prefsLoaded()) {
+      <form class="form-grid" (submit)="savePreferences($event)">
+        <trove-select-field i18n-label="@@profile.pref.locale" label="Language" name="locale" [options]="localeOptions" [(value)]="locale" />
+        <trove-select-field i18n-label="@@profile.pref.theme" label="Theme" name="theme" [options]="themeOptions" [(value)]="theme" />
+        <trove-checkbox [checked]="shortcuts()" (checkedChange)="shortcuts.set($event)">
+          <ng-container i18n="@@profile.pref.shortcuts">Keyboard shortcuts with a single key</ng-container>
+        </trove-checkbox>
+        <div class="row-actions">
+          <button class="btn btn-confirm" type="submit" [disabled]="saving()" i18n="@@profile.pref.save">Save preferences</button>
+        </div>
+      </form>
+    }
+  </trove-disclosure>
+
+  @if (user(); as u) {
+    <!-- Open when the last sign-in carried no usable group claim, so the notice is seen. -->
+    <trove-disclosure
+      i18n-heading="@@profile.groups"
+      heading="Groups"
+      i18n-hint="@@profile.groups-hint"
+      hint="Your group memberships and where each comes from."
+      [expanded]="!!u.groupClaimMissing"
+    >
+      @if (u.groupClaimMissing; as missing) {
+        <p role="status" class="warn">
+          <span class="material-icons" aria-hidden="true">warning</span>
+          @switch (missing.reason) {
+            @case ('absent') {
+              <ng-container i18n="@@profile.claim.absent">
+                Your last sign-in through {{ missing.provider }} carried no group claim, so the groups synchronized from it may be missing. Ask an administrator to check the group mapping of that identity provider.
+              </ng-container>
+            }
+            @case ('wrong_type') {
+              <ng-container i18n="@@profile.claim.wrong-type">
+                Your last sign-in through {{ missing.provider }} carried a group claim of the wrong type, so the groups synchronized from it may be missing. Ask an administrator to check the group mapping of that identity provider.
+              </ng-container>
+            }
+            @default {
+              <ng-container i18n="@@profile.claim.overage">
+                Your last sign-in through {{ missing.provider }} carried too many groups to fit in the token, so the groups synchronized from it may be missing. Ask an administrator to check the group mapping of that identity provider.
+              </ng-container>
+            }
+          }
+        </p>
+      }
+      @if (u.groups.length === 0) {
+        <p i18n="@@profile.no-groups">You are not a member of any group.</p>
+      } @else {
+        <table class="data">
+          <caption class="visually-hidden" i18n="@@profile.groups-caption">Your groups and where each membership comes from</caption>
+          <thead>
+            <tr>
+              <th scope="col" i18n="@@profile.group">Group</th>
+              <th scope="col" i18n="@@profile.source">Source</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (g of u.groups; track g.name + g.source) {
+              <tr>
+                <th scope="row" translate="no">{{ g.name }}</th>
+                <td translate="no">{{ g.source }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </trove-disclosure>
+    <trove-disclosure i18n-heading="@@profile.roles" heading="System roles" i18n-hint="@@profile.roles-hint" hint="The system roles you hold.">
+      @if (roles().length === 0) {
+        <p i18n="@@profile.no-roles">You hold no system role.</p>
+      } @else {
+        <ul>
+          @for (r of roles(); track r) {
+            <li translate="no">{{ r }}</li>
+          }
+        </ul>
+      }
+    </trove-disclosure>
   }
-  @if (prefsLoaded()) {
-    <form class="form-grid" (submit)="savePreferences($event)">
-      <trove-select-field i18n-label="@@profile.pref.locale" label="Language" name="locale" [options]="localeOptions" [(value)]="locale" />
-      <trove-select-field i18n-label="@@profile.pref.theme" label="Theme" name="theme" [options]="themeOptions" [(value)]="theme" />
-      <trove-checkbox [checked]="shortcuts()" (checkedChange)="shortcuts.set($event)">
-        <ng-container i18n="@@profile.pref.shortcuts">Keyboard shortcuts with a single key</ng-container>
-      </trove-checkbox>
-      <div class="row-actions">
-        <button class="btn btn-confirm" type="submit" [disabled]="saving()" i18n="@@profile.pref.save">Save preferences</button>
-      </div>
-    </form>
-  }
-</section>
+</div>

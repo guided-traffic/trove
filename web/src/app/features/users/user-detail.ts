@@ -48,10 +48,6 @@ import { PageHeader } from '../../shared/ui/page-header';
     .ids {
       margin-block-start: var(--trove-space-5);
     }
-    .tokens {
-      padding-block: var(--trove-space-5);
-      border-block-start: 1px solid var(--trove-border);
-    }
     @media (max-width: 40rem) {
       .row {
         grid-template-columns: minmax(0, 1fr);

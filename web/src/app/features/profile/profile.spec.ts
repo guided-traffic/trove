@@ -42,14 +42,30 @@ describe('Profile (R-UI-029)', () => {
   it('R-UI-029 shows identity, groups with source and roles; it has no password, unlock or editable email', async () => {
     const { root } = await renderScreen(Profile);
     const t = text(root);
-    expect(t).toContain('Alice Example');
+    expect(root.querySelector<HTMLInputElement>('input[name="displayName"]')?.value).toBe('Alice Example');
     expect(t).toContain('team-web');
     expect(t).toContain('oidc:corp');
     expect(t).toContain('admin');
     expect(root.querySelector('input[type="password"]')).toBeNull();
     expect(t).not.toContain('Unlock');
-    expect(root.querySelector('input[name="email"]')).toBeNull();
+    // The email is a read-only field: it comes from the identity provider (Q-UI-333).
+    expect(root.querySelector<HTMLInputElement>('input[name="email"]')?.readOnly).toBe(true);
     expect(await seriousViolations(root)).toEqual([]);
+  });
+
+  it('Q-UI-333 the profile is one column: identity as read-only fields, then quiet sections, Preferences open and Groups open only with a claim notice', async () => {
+    const { root } = await renderScreen(Profile);
+    expect(root.querySelector('section.card, dl.facts')).toBeNull();
+    const sections = [...root.querySelectorAll('trove-disclosure')].map((d) => ({
+      heading: d.querySelector('.heading')?.textContent?.replace('chevron_right', '').trim(),
+      open: d.querySelector('.toggle')?.getAttribute('aria-expanded'),
+    }));
+    expect(sections).toEqual([
+      { heading: 'Preferences', open: 'true' },
+      { heading: 'Groups', open: 'false' },
+      { heading: 'System roles', open: 'false' },
+    ]);
+    expect(root.querySelector<HTMLInputElement>('input[name="username"]')?.readOnly).toBe(true);
   });
 
   it('R-AUTH-008 a missing group claim is a status notice that names the provider and the reason', async () => {

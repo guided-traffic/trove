@@ -108,7 +108,7 @@ To change the colours, select **Theme** in the top bar and choose **Follow the s
 
 Until you upload a picture, trove shows a generated robot for you, the same one on every device. To use your own picture:
 
-1. Open the user menu and select **Profile and tokens**; the page **Profile** opens with the card **Public avatar**.
+1. Open the user menu and select **Profile and tokens**; the page **Profile** opens with **Public avatar** at its top.
 2. Select **Choose file…** and pick a PNG, JPEG or WebP image of at most 1 MiB, at least 32 by 32 pixels, that is not animated.
 
 trove checks the file in your browser first and says what is wrong when it refuses it. It then stores the picture cut to a centred square and scaled to 256 by 256 pixels, so choose an image whose centre shows what you want; nothing else of the file is kept, no position data included. The new avatar shows in the top bar at once. **Remove avatar** brings the generated robot back. An administrator can also remove an avatar that should not be shown; you can then upload another.

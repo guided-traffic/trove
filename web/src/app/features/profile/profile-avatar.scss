@@ -1,3 +1,13 @@
+// The avatar opens the profile: no card, a heading at a field label's size (Q-UI-333).
+.avatar-section {
+  max-inline-size: var(--trove-settings-measure);
+  margin-block-end: var(--trove-space-5);
+
+  h2 {
+    margin-block: 0 var(--trove-space-2);
+  }
+}
+
 .avatar-row {
   display: flex;
   align-items: flex-start;

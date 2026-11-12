@@ -130,6 +130,13 @@ describe('Service accounts (R-UI-026)', () => {
     expect(root.textContent).toContain('Rotate');
   });
 
+  it('R-UI-026 Q-UI-333 the tokens are a quiet section like the page\'s other sections, with the token list inside', async () => {
+    const { root } = await renderScreen(ServiceAccountDetail, { inputs: { name: 'ci-bot' } });
+    expect(root.querySelector('section.tokens, h2#sa-tokens')).toBeNull();
+    const tokens = [...root.querySelectorAll('trove-disclosure')].find((d) => d.querySelector('.heading')?.textContent?.includes('Tokens'))!;
+    expect(tokens.querySelector('trove-token-manager')).toBeTruthy();
+  });
+
   it('R-EP-011 the token form binds a token to the endpoints chosen, and leaves it unbound otherwise', async () => {
     const { fixture, root, get } = await renderScreen(ServiceAccountDetail, { inputs: { name: 'ci-bot' } });
     buttonByText(root, 'Create token').click();

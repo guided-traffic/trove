@@ -14102,15 +14102,6 @@
         <target>Profil</target>
       </segment>
     </unit>
-    <unit id="profile.identity">
-      <notes>
-        <note category="location">src/app/features/profile/profile.html:12,14</note>
-      </notes>
-      <segment>
-        <source>Identity</source>
-        <target>Identität</target>
-      </segment>
-    </unit>
     <unit id="profile.username">
       <notes>
         <note category="location">src/app/features/profile/profile.html:14,15</note>
@@ -14154,6 +14145,24 @@
       <segment>
         <source> Your name and email come from the identity provider and are replaced at every sign-in. </source>
         <target>Ihr Name und Ihre E-Mail-Adresse stammen vom Identitätsanbieter und werden bei jeder Anmeldung ersetzt.</target>
+      </segment>
+    </unit>
+    <unit id="profile.preferences-hint">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Language, theme and keyboard shortcuts, kept with your account.</source>
+        <target>Sprache, Design und Tastenkürzel, gespeichert mit Ihrem Konto.</target>
+      </segment>
+    </unit>
+    <unit id="profile.groups-hint">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Your group memberships and where each comes from.</source>
+        <target>Ihre Gruppenmitgliedschaften und woher jede stammt.</target>
       </segment>
     </unit>
     <unit id="profile.groups">
@@ -14226,6 +14235,15 @@
       <segment>
         <source>Source</source>
         <target>Quelle</target>
+      </segment>
+    </unit>
+    <unit id="profile.roles-hint">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>The system roles you hold.</source>
+        <target>Die Systemrollen, die Sie innehaben.</target>
       </segment>
     </unit>
     <unit id="profile.roles">
@@ -18854,6 +18872,15 @@
         <target>Löschen</target>
       </segment>
     </unit>
+    <unit id="sa.tokens-hint">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>The tokens of this account: create, rotate and revoke them.</source>
+        <target>Die Token dieses Kontos: erstellen, rotieren und widerrufen.</target>
+      </segment>
+    </unit>
     <unit id="sa.tokens">
       <notes>
         <note category="location">src/app/features/service-accounts/service-account-detail.ts:92,93</note>
@@ -23386,6 +23413,15 @@
       <segment>
         <source>Add</source>
         <target>Hinzufügen</target>
+      </segment>
+    </unit>
+    <unit id="user.tokens-hint">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>The personal tokens of this user.</source>
+        <target>Die persönlichen Token dieses Benutzers.</target>
       </segment>
     </unit>
     <unit id="user.tokens">

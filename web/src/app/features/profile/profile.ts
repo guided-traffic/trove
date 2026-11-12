@@ -8,7 +8,8 @@ import { ApiError } from '../../api/problem';
 import { Notifier } from '../../core/notifier';
 import { PreferencesStore } from '../../core/preferences-store';
 import { SessionStore } from '../../core/session-store';
-import { SelectField, SelectOption } from '../../shared/access/fields';
+import { SelectField, SelectOption, TextField } from '../../shared/access/fields';
+import { Disclosure } from '../../shared/ui/disclosure';
 import { asApiError } from '../../shared/paged-resource';
 import { ConflictResolver } from '../../shared/conflict-dialog';
 import { ErrorNotice } from '../../shared/error-notice';
@@ -17,8 +18,8 @@ import { ProfileAvatar } from './profile-avatar';
 import { ProfileNav } from './profile-nav';
 
 /**
- * Profile (R-UI-029, R-AUTH-017): identity as the identity provider delivered it (read only),
- * groups with their source, the system roles of the caller and the preferences of R-API-021.
+ * Profile (R-UI-029, R-AUTH-017): identity as the identity provider delivered it (read-only fields), then the quiet sections
+ * of the page (Q-UI-333): the preferences of R-API-021 (open), the groups with their source and the system roles of the caller.
  * There is no password, no unlock and no editable email or display name: users have no password
  * in trove and both attributes are replaced at every login. A missing group claim is a notice,
  * not a dialog (R-AUTH-008). Preferences are saved with `If-Match`; a 412 opens the conflict
@@ -26,9 +27,24 @@ import { ProfileNav } from './profile-nav';
  */
 @Component({
   selector: 'trove-profile',
-  imports: [DatePipe, Checkbox, ErrorNotice, PageHeader, ProfileAvatar, ProfileNav, SelectField],
+  imports: [DatePipe, Checkbox, Disclosure, ErrorNotice, PageHeader, ProfileAvatar, ProfileNav, SelectField, TextField],
   templateUrl: './profile.html',
   styleUrl: '../../shared/access/access.scss',
+  styles: `
+    .settings {
+      max-inline-size: var(--trove-settings-measure);
+    }
+    .row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: var(--trove-space-6);
+    }
+    @media (max-width: 40rem) {
+      .row {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+  `,
 })
 export class Profile {
   protected readonly heading = $localize`:@@profile.heading:Profile`;

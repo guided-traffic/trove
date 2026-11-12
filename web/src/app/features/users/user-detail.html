@@ -153,11 +153,17 @@
     <trove-principal-roles [principal]="'user:' + u.username" />
   }
 
+  <!-- A quiet section like its siblings, open while the user holds a token (Q-UI-333). -->
   @if (session.has('tokens:read')) {
-    <section class="tokens" aria-labelledby="user-tokens">
-      <h2 id="user-tokens" i18n="@@user.tokens">Tokens</h2>
+    <trove-disclosure
+      i18n-heading="@@user.tokens"
+      heading="Tokens"
+      i18n-hint="@@user.tokens-hint"
+      hint="The personal tokens of this user."
+      [expanded]="tokens()?.hasTokens() ?? false"
+    >
       <trove-token-manager [scope]="scope()" [revokeAllHere]="false" />
-    </section>
+    </trove-disclosure>
   }
 
   <trove-disclosure i18n-heading="@@user.sessions" heading="Sessions" i18n-hint="@@user.sessions-hint" hint="Open sessions of this user.">

@@ -1,5 +1,6 @@
-<section class="card" aria-labelledby="profile-avatar">
-  <h2 id="profile-avatar" i18n="@@avatar.heading">Public avatar</h2>
+<!-- Open at the top of the profile without a card, its heading at a field label's size (ui-style-guide.md, Settings pages; Q-UI-333). -->
+<section class="avatar-section" aria-labelledby="profile-avatar">
+  <h2 id="profile-avatar" class="field-label" i18n="@@avatar.heading">Public avatar</h2>
   <div class="avatar-row">
     <trove-avatar class="avatar-preview" aria-hidden="true" [seed]="seed()" [imageUrl]="url()" />
     <div class="avatar-controls">

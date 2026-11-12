@@ -4009,8 +4009,8 @@ Priority: **MVP** · Covers: UI-035, UI-036
   provider, read-only and labelled as such; status with "Disable" (choice to revoke tokens) and
   "Enable"; group memberships (identity-provider-sourced read-only with a badge, manual ones
   editable); system roles through role bindings (R-API-033) with the last-administrator guard; the
-  user's tokens (list; **Revoke all tokens** a danger button in the page's section **Advanced**, last on the page) and sessions
-  (list, end all); "Explain permissions" (P1); "Audit"
+  user's tokens (a quiet section **Tokens** like the page's others, open while the user holds a token, [Q-UI-333](#q-ui-333--a-pages-sections-are-quiet-disclosures-tokens-too-open-while-there-is-a-token-the-profile-follows); **Revoke all
+  tokens** a danger button in the page's section **Advanced**, last on the page) and sessions (list, end all); "Explain permissions" (P1); "Audit"
   (audit log filtered on this actor). The break-glass account shows its lock state and "Unlock".
 - "Add user" pre-provisions a user linked to an identity-provider identity (R-API-031). No password
   fields exist.
@@ -4051,8 +4051,10 @@ Priority: **MVP** · Covers: trove-only
   area is the instance-wide list with a project column; a project's screen (R-UI-041) lists the project's accounts.
   A name is unique within its project, or among the accounts of no project, and is shown as `sa:<projectKey>/<name>`
   or `sa:<name>` ([Q-AUTHZ-209](authorization.md#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones)).
-- Tokens tab: issue (scope and expiry as in R-UI-029, one-time display, recent authentication), list,
-  revoke one or all. The server lets the administrator role, and for a project's account the project's Owners, issue
+- Tokens, a quiet section of the page open while the account holds a token
+  ([Q-UI-333](#q-ui-333--a-pages-sections-are-quiet-disclosures-tokens-too-open-while-there-is-a-token-the-profile-follows)):
+  issue (scope and expiry as in R-UI-029, one-time display, recent authentication), list, revoke one, and revoke all in the
+  page's section **Advanced**. The server lets the administrator role, and for a project's account the project's Owners, issue
   and rotate the tokens of a service account ([identity-and-authentication.md](identity-and-authentication.md)
   R-AUTH-027, R-AUTH-030, [authorization.md](authorization.md) R-AUTHZ-026); the tab offers **Create token** and
   **Rotate** to those callers only (`authz/me` `roles` and `projects`), not to a holder of `identities:write` alone,
@@ -4136,8 +4138,9 @@ Acceptance criteria:
 ### R-UI-029 · Profile, personal tokens and sessions
 Priority: **MVP** · Covers: UI-053, AUTHN-039, AUTHN-040
 
-- Profile (`GET /api/v1/users/me`): identity (read-only, from the identity provider), groups with
-  source, system roles, preferences (language, theme, keyboard shortcuts; R-API-021).
+- Profile (`GET /api/v1/users/me`): one column ([Q-UI-333](#q-ui-333--a-pages-sections-are-quiet-disclosures-tokens-too-open-while-there-is-a-token-the-profile-follows)): the avatar, the identity as read-only fields (from the identity
+  provider), then the quiet sections **Preferences** (language, theme, keyboard shortcuts; R-API-021; open), **Groups** with
+  source (open while the group claim notice stands) and **System roles**.
 - Missing group claim (R-AUTH-008 in [identity-and-authentication.md](identity-and-authentication.md)):
   while the record carries `groupClaimMissing` (`{"provider", "reason"}`), a notice next to the
   groups names the provider and the reason (`absent`, `wrong_type` or `overage`). It says that the
@@ -11381,6 +11384,29 @@ explain it and can wait for a wider window. The development agent revisits it if
 or scan the token administration by creation.
 
 **Applied in the spec:** R-UI-029, R-UI-030. Code: [token-table.ts](../../web/src/app/shared/access/token-table.ts).
+
+### Q-UI-333 · A page's sections are quiet disclosures, Tokens too, open while there is a token; the profile follows
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the coordinator's look at `admin/admin-user-advanced-advanced-light-1440.png` (2026-11-12): on an administrator's user page
+**Tokens** was a large heading over an always-open list, while every other section (Details, Identities, Groups, System roles,
+Sessions, Advanced) was a quiet disclosure; a service account's page had the same. The profile was a stack of cards with large
+headings and a key-value list, a third pattern.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) **Tokens** is a quiet disclosure like its siblings, open while the owner holds a token; the profile becomes one column: the avatar without a card, the identity as read-only fields, then the quiet sections **Preferences** (open), **Groups** (open while the group claim notice stands) and **System roles** (chosen) | One section style on every page of a person or an account | The pages read alike; a list that has entries is open, an empty one says so in one closed line | The tokens of a user are one click away when there are none |
+| (b) The always-open lists of a page under one heading style | Large headings for lists, disclosures for the rest | Lists always in view | Two section styles on one page, which is the finding |
+
+**Choice:** (a). **Rationale:** the settings rule of the style guide (one column, quiet sections) is the app's one pattern for the
+page of one thing; a section with entries opens by itself, so nothing the reader came for is hidden. The development agent revisits
+the open state of **Preferences** if the walkthrough shows that users rather see their groups first.
+
+**Applied in the spec:** R-UI-024, R-UI-029; R-UI-026 (the service account page). Code:
+[user-detail.html](../../web/src/app/features/users/user-detail.html),
+[service-account-detail.ts](../../web/src/app/features/service-accounts/service-account-detail.ts),
+[profile.html](../../web/src/app/features/profile/profile.html).
 
 ### Q-UI-370 · The grades take cogpit's colours, and S, A and B are the greens of a good grade
 

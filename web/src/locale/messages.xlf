@@ -13028,14 +13028,6 @@
         <source>Profile</source>
       </segment>
     </unit>
-    <unit id="profile.identity">
-      <notes>
-        <note category="location">src/app/features/profile/profile.html:14,16</note>
-      </notes>
-      <segment>
-        <source>Identity</source>
-      </segment>
-    </unit>
     <unit id="profile.username">
       <notes>
         <note category="location">src/app/features/profile/profile.html:16,17</note>
@@ -13074,6 +13066,22 @@
       </notes>
       <segment>
         <source> Your name and email come from the identity provider and are replaced at every sign-in. </source>
+      </segment>
+    </unit>
+    <unit id="profile.preferences-hint">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Language, theme and keyboard shortcuts, kept with your account.</source>
+      </segment>
+    </unit>
+    <unit id="profile.groups-hint">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Your group memberships and where each comes from.</source>
       </segment>
     </unit>
     <unit id="profile.groups">
@@ -13138,6 +13146,14 @@
       </notes>
       <segment>
         <source>Source</source>
+      </segment>
+    </unit>
+    <unit id="profile.roles-hint">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>The system roles you hold.</source>
       </segment>
     </unit>
     <unit id="profile.roles">
@@ -18939,6 +18955,14 @@
         <source>Delete</source>
       </segment>
     </unit>
+    <unit id="sa.tokens-hint">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>The tokens of this account: create, rotate and revoke them.</source>
+      </segment>
+    </unit>
     <unit id="sa.tokens">
       <notes>
         <note category="location">src/app/features/service-accounts/service-account-detail.ts:92,93</note>
@@ -24011,6 +24035,14 @@
       </notes>
       <segment>
         <source>Add</source>
+      </segment>
+    </unit>
+    <unit id="user.tokens-hint">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>The personal tokens of this user.</source>
       </segment>
     </unit>
     <unit id="user.tokens">

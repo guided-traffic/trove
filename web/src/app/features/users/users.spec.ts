@@ -182,13 +182,22 @@ describe('User detail (R-UI-024)', () => {
 
   it('R-UI-024 revoking all of a user\'s tokens is a danger button in the page\'s one section Advanced, not beside the token list', async () => {
     const { root } = await renderScreen(UserDetail, { inputs: { username: 'alice' } });
-    const tokens = root.querySelector('section.tokens')!;
+    const heading = (d: Element): string => d.querySelector('.heading')?.textContent?.replace('chevron_right', '').trim() ?? '';
+    const tokens = [...root.querySelectorAll('trove-disclosure')].find((d) => heading(d) === 'Tokens')!;
     expect([...tokens.querySelectorAll('button')].map((b) => b.textContent?.trim())).not.toContain('Revoke all tokens');
-    expect(tokens.querySelector('trove-disclosure')).toBeNull();
-    const advanced = [...root.querySelectorAll('trove-disclosure')].filter((d) => text(d).includes('Advanced'));
+    const advanced = [...root.querySelectorAll('trove-disclosure')].filter((d) => heading(d) === 'Advanced');
     expect(advanced).toHaveLength(1);
     const revoke = [...advanced[0]!.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim() === 'Revoke all tokens')!;
     expect(revoke.classList.contains('btn-danger')).toBe(true);
+  });
+
+  it('R-UI-024 Q-UI-333 the tokens are a quiet section like the page\'s other sections, open while the user holds a token', async () => {
+    const { root, fixture } = await renderScreen(UserDetail, { inputs: { username: 'alice' } });
+    await settle(fixture);
+    expect(root.querySelector('section.tokens, h2#user-tokens')).toBeNull();
+    const tokens = [...root.querySelectorAll('trove-disclosure')].find((d) => d.querySelector('.heading')?.textContent?.includes('Tokens'))!;
+    expect(tokens.querySelector('trove-token-table')).toBeTruthy();
+    expect(tokens.querySelector('.toggle')?.getAttribute('aria-expanded')).toBe('true');
   });
 
   it('R-UI-024 ends all sessions of a user after confirmation', async () => {

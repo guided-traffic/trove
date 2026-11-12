@@ -243,6 +243,8 @@ export class TokenManager {
     );
   });
   protected readonly canRevokeAll = computed(() => this.canRevoke());
+  /** Whether the list holds a token: a page opens its section Tokens then (Q-UI-333). */
+  readonly hasTokens = computed(() => this.list.items().length > 0);
   /** Whether **Revoke all tokens** is offered: the caller may, and the owner has a token in the list. */
   readonly offersRevokeAll = computed(() => this.canRevokeAll() && this.list.items().length > 0);
 
