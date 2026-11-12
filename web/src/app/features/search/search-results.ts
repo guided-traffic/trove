@@ -14,7 +14,7 @@ import { VisibilityIcon, levelName } from '../../shared/ui/visibility-level';
 import { relativeTime } from '../packages/format-time';
 import { packageCommands } from '../packages/package-links';
 import { projectRoleLabel } from '../projects/project-roles';
-import { classLabel } from '../repositories/repository-wizard';
+import { classLabel } from '../repositories/repository-class';
 
 /** The tabs of the page, in their order (R-UI-098). */
 export const RESULT_KINDS = ['repository', 'package', 'project'] as const;

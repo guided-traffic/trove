@@ -30,7 +30,7 @@ import {
   upstreamTestBody,
 } from './upstream-model';
 import { RepositoryDetail } from './repository-detail';
-import { RepositoryWizard } from './repository-wizard';
+import { RepositoryCreate } from './repository-create';
 import { UpstreamSettings, upstreamPointerLabel, upstreamTarget } from './upstream-settings';
 
 const NPM: FormatDescriptor = {
@@ -177,38 +177,27 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-UI-082
     });
   });
 
-  describe('in the wizard', () => {
-    type Wizard = Awaited<ReturnType<typeof renderScreen<RepositoryWizard>>>;
+  describe('in the creation form', () => {
+    type Form = Awaited<ReturnType<typeof renderScreen<RepositoryCreate>>>;
     const control = (root: ParentNode, id: string) => root.querySelector<HTMLInputElement>(`#${id}`)!;
-    const tile = (r: Wizard, name: string) =>
-      [...r.root.querySelectorAll<HTMLElement>('[role="option"]')].find(
-        (t) => t.querySelector('.tile-name')?.textContent?.trim() === name,
-      )!;
 
-    async function remoteStep(formats: readonly FormatDescriptor[], format: string): Promise<Wizard> {
-      const r = await renderScreen(RepositoryWizard, {
-        inputs: { project: 'web' },
+    /** The creation form of `format` with the class Remote and the key `upstream-cache` (R-UI-080). */
+    async function remoteStep(formats: readonly FormatDescriptor[], format: string): Promise<Form> {
+      const r = await renderScreen(RepositoryCreate, {
+        inputs: { project: 'web', format },
         setup: (get) => {
           (get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = formats;
         },
       });
       vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
-      tile(r, format).click();
-      await settle(r.fixture);
-      button(r.root, 'Next').click();
-      await settle(r.fixture);
       r.root.querySelector<HTMLInputElement>('input[name="class"][value="remote"]')!.click();
       await settle(r.fixture);
-      button(r.root, 'Next').click();
-      await settle(r.fixture);
       type(control(r.root, 'f-key'), 'upstream-cache');
-      await settle(r.fixture);
-      button(r.root, 'Next').click();
       await settle(r.fixture);
       return r;
     }
 
-    it('R-UI-021 F-54 the remote step shows the upstream settings with the preset URL and the defaults of the format; nothing is written while they stay', async () => {
+    it('R-UI-021 F-54 the form of a remote shows the upstream settings with the preset URL and the defaults of the format; nothing is written while they stay', async () => {
       const r = await remoteStep([GENERIC_FORMAT, NPM], 'npm');
       const fake = r.get(RepositoriesApi) as FakeRepositoriesApi;
       expect(r.root.querySelector('trove-upstream-settings')).not.toBeNull();
@@ -221,11 +210,7 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-UI-082
       expect(r.root.querySelector('trove-upstream-settings')!.textContent).not.toContain('Default:');
       // Offline is not offered at creation (R-UI-083).
       expect(r.root.querySelector('#f-remote-availability-mode')).toBeNull();
-      expect(text(r.root.querySelector('nav')!)).toContain('4. Access, upstream, npm and mirror settings');
 
-      button(r.root, 'Next').click();
-      await settle(r.fixture);
-      expect(text(r.root)).toContain('https://registry.npmjs.org/');
       button(r.root, 'Create repository').click();
       await settle(r.fixture);
       expect((fake.repositories.find((x) => x.key === 'upstream-cache') as Repository).remote).toBeUndefined();
@@ -244,9 +229,7 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-UI-082
       await settle(r.fixture);
       expect(control(r.root, 'f-remote-password').type).toBe('password');
 
-      button(r.root, 'Next').click();
-      await settle(r.fixture);
-      // The review and the request shown on screen name the member, never the secret.
+      // The request shown on screen names the member, never the secret.
       expect(r.root.textContent).not.toContain(SECRET);
       expect(r.root.textContent).toContain('<the password>');
       expect(storedText()).not.toContain(SECRET);
@@ -350,14 +333,12 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-UI-082
     });
 
     it('R-UI-021 a format without a well-known upstream starts with an empty URL and says it is required', async () => {
-      const r = await remoteStep([GENERIC_FORMAT, PRIVATE_ONLY], 'NuGet');
+      const r = await remoteStep([GENERIC_FORMAT, PRIVATE_ONLY], 'nuget');
       expect(control(r.root, 'f-remote-url').value).toBe('');
       expect(text(r.root.querySelector('#d-remote-url')!)).toContain('no well-known upstream');
       type(control(r.root, 'f-remote-url'), 'https://feed.example.org/v3/index.json');
       await settle(r.fixture);
       const fake = r.get(RepositoriesApi) as FakeRepositoriesApi;
-      button(r.root, 'Next').click();
-      await settle(r.fixture);
       button(r.root, 'Create repository').click();
       await settle(r.fixture);
       expect((fake.repositories.find((x) => x.key === 'upstream-cache') as Repository).remote).toEqual({
@@ -366,10 +347,9 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-UI-082
     });
 
     it('R-UI-021 a remote of a format that cannot mirror has the upstream settings and no Mirror section', async () => {
-      const r = await remoteStep([GENERIC_FORMAT, NUGET], 'NuGet');
+      const r = await remoteStep([GENERIC_FORMAT, NUGET], 'nuget');
       expect(r.root.querySelector('trove-upstream-settings')).not.toBeNull();
       expect(r.root.querySelector('trove-mirror-settings')).toBeNull();
-      expect(text(r.root.querySelector('nav')!)).toContain('Access, upstream and NuGet settings');
     });
 
     it('R-UI-021 Q-UI-122 the mirror bound notice follows the URL entered: the well-known upstream is refused, another one is saved with a warning', async () => {
@@ -389,12 +369,10 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-UI-082
       expect(text(r.root.querySelector('#mirror-unbounded')!)).toContain('needs a bound');
     });
 
-    it('R-UI-021 a server error at the upstream URL appears at its field and in the summary, and the wizard stays on that step', async () => {
+    it('R-UI-021 a server error at the upstream URL appears at its field and in the summary', async () => {
       const r = await remoteStep([GENERIC_FORMAT, NPM], 'npm');
       const fake = r.get(RepositoriesApi) as FakeRepositoriesApi;
       type(control(r.root, 'f-remote-url'), 'ftp://x');
-      await settle(r.fixture);
-      button(r.root, 'Next').click();
       await settle(r.fixture);
       fake.create = async () => {
         throw new ApiError(
@@ -412,23 +390,15 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-UI-082
       expect(document.activeElement).toBe(control(r.root, 'f-remote-url'));
     });
 
-    it('R-UI-021 choosing another format starts the upstream settings afresh with the new preset', async () => {
-      const r = await remoteStep([GENERIC_FORMAT, NPM, NUGET], 'npm');
+    it('R-UI-080 another class starts the upstream settings afresh with the preset', async () => {
+      const r = await remoteStep([GENERIC_FORMAT, NPM], 'npm');
       type(control(r.root, 'f-remote-url'), 'https://other.example/');
       await settle(r.fixture);
-      r.root.querySelector<HTMLButtonElement>('.step-link')!.click();
-      await settle(r.fixture);
-      tile(r, 'NuGet').click();
-      await settle(r.fixture);
-      button(r.root, 'Next').click();
+      r.root.querySelector<HTMLInputElement>('input[name="class"][value="local"]')!.click();
       await settle(r.fixture);
       r.root.querySelector<HTMLInputElement>('input[name="class"][value="remote"]')!.click();
       await settle(r.fixture);
-      button(r.root, 'Next').click();
-      await settle(r.fixture);
-      button(r.root, 'Next').click();
-      await settle(r.fixture);
-      expect(control(r.root, 'f-remote-url').value).toBe('https://api.nuget.org/v3/index.json');
+      expect(control(r.root, 'f-remote-url').value).toBe('https://registry.npmjs.org/');
     });
   });
 

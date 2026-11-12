@@ -1,5 +1,4 @@
-import { Listbox, Option } from '@angular/aria/listbox';
-import { Component, computed, inject, input, linkedSignal, output, resource, signal } from '@angular/core';
+import { Component, computed, inject, input, linkedSignal, output, resource, signal, viewChild } from '@angular/core';
 import { ApiError } from '../../api/problem';
 import {
   Repository,
@@ -11,6 +10,7 @@ import { SelectField, SelectOption, TextField } from '../../shared/access/fields
 import { ErrorNotice } from '../../shared/error-notice';
 import { fieldErrorAt } from '../../shared/field-errors';
 import { asApiError } from '../../shared/paged-resource';
+import { MemberPicker } from './member-picker';
 
 /** What the editor asks its screen to store: the ordered member keys and the default deployment target (`null`: none). */
 export interface MemberChange {
@@ -51,20 +51,17 @@ export function decisionText(decision: string): string {
 }
 
 /**
- * The member editor of a virtual repository (R-UI-022, Q-UI-210): two listboxes of `@angular/aria`, the repositories that can be
- * added and the members in resolution order, with the buttons Add, Remove, Move up, Move down and Move to top (a pointer or the
- * keyboard, no drag needed: WCAG 2.5.7; Alt with the arrow keys or Home does the same on the member list). Every change is
- * announced in a live region ("npm-remote moved to position 2 of 3"). The default deployment target is chosen among the members that
- * are local. A server refusal (422 with a pointer such as `/virtual/members/1`) is shown on the member it names. The effective
- * resolution order is the saved list, and a sample path is explained member by member by `GET …/resolution`.
+ * The member editor of a virtual repository (R-UI-022, Q-UI-210): the member picker (`trove-member-picker`, the two listboxes and
+ * their buttons, shared with the creation form), the default deployment target among the members that are local, and a save of its
+ * own. A server refusal (422 with a pointer such as `/virtual/members/1`) is shown on the member it names. The effective resolution
+ * order is the saved list, and a sample path is explained member by member by `GET …/resolution`.
  *
  * Only the repositories of the virtual repository's own project and format that are no virtual repository and not the repository itself
  * are offered (R-REPO-017, Q-REPO-212); virtual members arrive with R-REPO-018.
  */
 @Component({
   selector: 'trove-virtual-members',
-  imports: [ErrorNotice, Listbox, Option, SelectField, TextField],
-  host: { '(keydown)': 'onMemberKey($event)' },
+  imports: [ErrorNotice, MemberPicker, SelectField, TextField],
   templateUrl: './virtual-members.html',
   styleUrl: './virtual-members.scss',
 })
@@ -82,38 +79,30 @@ export class VirtualMembers {
   /** The stored document changed meanwhile (412): the screen reads it again. */
   readonly reload = output<void>();
 
+  private readonly picker = viewChild(MemberPicker);
+
   private readonly storedMembers = computed<readonly string[]>(() => this.repo().virtual?.members ?? []);
   private readonly storedTarget = computed<string | null>(() => this.repo().virtual?.deployTarget ?? null);
 
   protected readonly members = linkedSignal<readonly string[]>(() => this.storedMembers());
   protected readonly deployTarget = linkedSignal<string | null>(() => this.storedTarget());
 
-  /** The listbox values: the options that are selected, one list each. */
-  protected readonly pickedAvailable = signal<string[]>([]);
-  protected readonly pickedMember = signal<string[]>([]);
-  /** The text of the live region. */
-  protected readonly announcement = signal('');
-
   protected readonly candidates = resource({ loader: () => this.api.listAll() });
 
-  private readonly byKey = computed(() => {
-    const map = new Map<string, RepositorySummary>();
-    for (const s of this.candidates.value() ?? []) {
-      if (s.project === (this.repo().project ?? '')) map.set(s.key, s);
-    }
-    return map;
+  /** The repositories that may be members: same project and format, local or remote, not this one, not being deleted. */
+  protected readonly pool = computed<readonly RepositorySummary[]>(() => {
+    const r = this.repo();
+    return (this.candidates.value() ?? []).filter(
+      (s) =>
+        s.project === (r.project ?? '') &&
+        s.format === r.format &&
+        s.class !== 'virtual' &&
+        s.key !== r.key &&
+        s.lifecycle !== 'deleting',
+    );
   });
 
-  /** The repositories that may be added: same project and format, local or remote, not this one, not a member yet, not being deleted. */
-  protected readonly available = computed<readonly RepositorySummary[]>(() => {
-    const r = this.repo();
-    const taken = new Set(this.members());
-    return [...this.byKey().values()]
-      .filter(
-        (s) => s.format === r.format && s.class !== 'virtual' && s.key !== r.key && !taken.has(s.key) && s.lifecycle !== 'deleting',
-      )
-      .sort((a, b) => a.key.localeCompare(b.key));
-  });
+  private readonly classes = computed(() => new Map(this.pool().map((s) => [s.key, s.class] as const)));
 
   protected readonly dirty = computed(
     () =>
@@ -128,13 +117,6 @@ export class VirtualMembers {
       .filter((k) => this.classOf(k) === 'local')
       .map((k) => ({ value: k, label: k })),
   ]);
-
-  protected readonly selectedIndex = computed(() => {
-    const picked = this.pickedMember()[0];
-    return picked === undefined ? -1 : this.members().indexOf(picked);
-  });
-  protected readonly canMoveUp = computed(() => this.canWrite() && this.selectedIndex() > 0);
-  protected readonly canMoveDown = computed(() => this.canWrite() && this.selectedIndex() >= 0 && this.selectedIndex() < this.members().length - 1);
 
   /** A refusal of the server that does not belong to a member or the target. */
   protected readonly generalFailure = computed(() => {
@@ -155,7 +137,7 @@ export class VirtualMembers {
   protected readonly explainError = signal<ApiError | null>(null);
 
   protected classOf(key: string): 'local' | 'remote' | 'unknown' {
-    const c = this.byKey().get(key)?.class;
+    const c = this.classes().get(key);
     return c === 'local' || c === 'remote' ? c : 'unknown';
   }
 
@@ -169,81 +151,21 @@ export class VirtualMembers {
   }
 
   /** The error text of the member at `index`: a cycle or any other refusal the server pointed at it. */
-  protected memberError(index: number): string | null {
-    return fieldErrorAt(this.failure(), `/virtual/members/${index}`);
+  protected readonly memberErrorAt = (index: number): string | null =>
+    fieldErrorAt(this.failure(), `/virtual/members/${index}`);
+
+  /** What a removal adds to its announcement: the deployment target it clears. */
+  protected readonly removalNote = (key: string): string =>
+    this.deployTarget() === key
+      ? $localize`:@@virtual.announce.target-cleared:The default deployment target is now none.`
+      : '';
+
+  protected onRemoved(key: string): void {
+    if (this.deployTarget() === key) this.deployTarget.set(null);
   }
 
   protected targetError(): string | null {
     return fieldErrorAt(this.failure(), '/virtual/deployTarget');
-  }
-
-  protected add(): void {
-    const keys = this.available()
-      .map((s) => s.key)
-      .filter((k) => this.pickedAvailable().includes(k));
-    if (!this.canWrite() || keys.length === 0) return;
-    this.members.update((m) => [...m, ...keys]);
-    this.pickedAvailable.set([]);
-    const last = keys[keys.length - 1]!;
-    this.pickedMember.set([last]);
-    const total = this.members().length;
-    this.announcement.set(
-      keys.length === 1
-        ? $localize`:@@virtual.announce.added:${last}:key: added at position ${total}:position: of ${total}:total:`
-        : $localize`:@@virtual.announce.added-many:${keys.length}:count: repositories added, ${total}:total: members in all`,
-    );
-  }
-
-  protected remove(): void {
-    const at = this.selectedIndex();
-    if (!this.canWrite() || at < 0) return;
-    const key = this.members()[at]!;
-    this.members.update((m) => m.filter((k) => k !== key));
-    this.pickedMember.set([]);
-    let text = $localize`:@@virtual.announce.removed:${key}:key: removed, ${this.members().length}:total: members left`;
-    if (this.deployTarget() === key) {
-      this.deployTarget.set(null);
-      text += ' ' + $localize`:@@virtual.announce.target-cleared:The default deployment target is now none.`;
-    }
-    this.announcement.set(text);
-  }
-
-  protected moveUp(): void {
-    this.moveTo(this.selectedIndex() - 1);
-  }
-
-  protected moveDown(): void {
-    this.moveTo(this.selectedIndex() + 1);
-  }
-
-  protected moveToTop(): void {
-    this.moveTo(0);
-  }
-
-  private moveTo(target: number): void {
-    const from = this.selectedIndex();
-    if (!this.canWrite() || from < 0 || target < 0 || target >= this.members().length || target === from) return;
-    const next = [...this.members()];
-    const [key] = next.splice(from, 1);
-    next.splice(target, 0, key!);
-    this.members.set(next);
-    const position = target + 1;
-    const total = next.length;
-    this.announcement.set($localize`:@@virtual.announce.moved:${key!}:key: moved to position ${position}:position: of ${total}:total:`);
-  }
-
-  /** Alt with ArrowUp, ArrowDown or Home on the member list does what the buttons do. */
-  protected onMemberKey(event: KeyboardEvent): void {
-    if (!event.altKey || !(event.target as Element | null)?.closest('[data-testid="vm-members"]')) return;
-    const actions: Record<string, () => void> = {
-      ArrowUp: () => this.moveUp(),
-      ArrowDown: () => this.moveDown(),
-      Home: () => this.moveToTop(),
-    };
-    const action = actions[event.key];
-    if (!action) return;
-    event.preventDefault();
-    action();
   }
 
   protected setTarget(value: string): void {
@@ -259,8 +181,7 @@ export class VirtualMembers {
   protected discard(): void {
     this.members.set(this.storedMembers());
     this.deployTarget.set(this.storedTarget());
-    this.pickedMember.set([]);
-    this.announcement.set($localize`:@@virtual.announce.discarded:Changes discarded.`);
+    this.picker()?.announce($localize`:@@virtual.announce.discarded:Changes discarded.`);
   }
 
   protected async explain(event: Event): Promise<void> {

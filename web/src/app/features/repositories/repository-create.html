@@ -1,0 +1,235 @@
+@if (unknownFormat(); as name) {
+  <trove-repository-format-chooser [project]="project()" [unknownFormat]="name" />
+} @else if (loadFailure(); as f) {
+  <trove-page-header i18n-heading="@@repo.new.heading" heading="New repository" />
+  <trove-error-notice [error]="f" (retry)="formats.reload()" />
+} @else if (descriptor(); as fmt) {
+  <trove-page-header [heading]="heading()" [description]="projectLine()">
+    <a actions class="btn btn-default" [routerLink]="chooserLink()" [queryParams]="chooserQuery()" i18n="@@repo.create.change-format"
+      >Change format</a
+    >
+  </trove-page-header>
+
+  <form class="create" (submit)="create($event)" novalidate>
+    <trove-error-summary [items]="summary()" (reveal)="reveal($event)" />
+    @if (failure(); as f) {
+      @if (f.fieldErrors.size === 0) {
+        <trove-error-notice [error]="f" />
+      }
+    }
+
+    @if (!inProject()) {
+      <div class="field">
+        <label class="field-label" for="f-project" i18n="@@repo.create.project">Project</label>
+        <select
+          id="f-project"
+          class="select-input field-w-name"
+          [disabled]="projects.isLoading()"
+          [attr.aria-busy]="projects.isLoading() ? 'true' : null"
+          [attr.aria-invalid]="projectError() ? 'true' : null"
+          [attr.aria-describedby]="projectError() ? 'e-project' : null"
+          (change)="setProject($any($event.target).value)"
+        >
+          @if (projects.isLoading()) {
+            <option value="" selected>{{ loadingProjects }}</option>
+          } @else {
+            @for (o of projectOptions(); track o.value) {
+              <option [value]="o.value" [selected]="o.value === chosenProject()" translate="no">{{ o.label }}</option>
+            }
+          }
+        </select>
+        @if (projectError(); as text) {
+          <p class="field-error" id="e-project">{{ text }}</p>
+        }
+      </div>
+    }
+
+    <fieldset class="choices">
+      <legend class="field-label" i18n="@@repo.create.class">Class</legend>
+      @for (c of classes; track c) {
+        <label class="choice" [class.unavailable]="!supports(c)">
+          <input
+            type="radio"
+            name="class"
+            [value]="c"
+            [checked]="cls() === c"
+            [disabled]="!supports(c)"
+            [attr.aria-describedby]="'class-help-' + c + (supports(c) ? '' : ' class-reason-' + c)"
+            (change)="chooseClass(c)"
+          />
+          <span class="choice-text">
+            <span class="choice-title">{{ classText(c) }}</span>
+            <span class="muted" [id]="'class-help-' + c">{{ classHelpText(c) }}</span>
+            @if (!supports(c)) {
+              <span class="muted" [id]="'class-reason-' + c">{{ unsupportedReason(c) }}</span>
+            }
+          </span>
+        </label>
+      }
+    </fieldset>
+
+    <div class="field">
+      <label class="field-label" for="f-key" i18n="@@repo.field.key">Key</label>
+      <input
+        id="f-key"
+        class="text-input field-w-name"
+        autocomplete="off"
+        spellcheck="false"
+        translate="no"
+        [value]="form().key"
+        [attr.aria-invalid]="keyError() ? 'true' : null"
+        [attr.aria-describedby]="keyError() ? 'd-key e-key' : 'd-key'"
+        (input)="setKey($any($event.target).value)"
+        (blur)="keyTouched.set(true)"
+      />
+      <p id="d-key" class="hint" i18n="@@repo.field.key.help">Part of the repository's address. It cannot be changed later.</p>
+      @if (keyError(); as text) {
+        <p class="field-error" id="e-key">{{ text }}</p>
+      }
+      <p class="visually-hidden" role="status">
+        @if (keyCheck() === 'checking') {
+          <ng-container i18n="@@repo.key.checking">Checking the key.</ng-container>
+        } @else if (keyCheck() === 'free') {
+          <ng-container i18n="@@repo.key.free">The key is available.</ng-container>
+        }
+      </p>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="f-description" i18n="@@repo.field.description-optional">Description (optional)</label>
+      <textarea
+        id="f-description"
+        class="area-input field-w-full"
+        rows="2"
+        maxlength="2000"
+        [value]="form().description"
+        [attr.aria-invalid]="descriptionError() ? 'true' : null"
+        [attr.aria-describedby]="descriptionError() ? 'd-description e-description' : 'd-description'"
+        (input)="setDescription($any($event.target).value)"
+      ></textarea>
+      <p id="d-description" class="hint" i18n="@@repo.field.description.hint">Shown to everyone who can read the repository.</p>
+      @if (descriptionError(); as text) {
+        <p class="field-error" id="e-description">{{ text }}</p>
+      }
+    </div>
+
+    @if (artifacts(); as level) {
+      <trove-visibility-level
+        i18n-label="@@repo.create.visibility"
+        label="Visibility"
+        subject="artifacts"
+        [value]="level"
+        (valueChange)="setArtifacts($event)"
+        [reasons]="levelReasons()"
+      />
+      @if (fmt.wiki) {
+        <p class="hint wiki-note" i18n="@@repo.create.wiki">The wiki starts at the same level; its own level is in the repository's settings.</p>
+      }
+    }
+
+    @if (cls() === 'remote') {
+      <div class="group">
+        <trove-upstream-settings
+          [(form)]="form"
+          [format]="fmt"
+          [project]="chosenProject()"
+          [fieldErrors]="fieldErrors()"
+          [defaults]="defaultDocument()"
+          [submitted]="submitted()"
+        />
+      </div>
+    }
+
+    @if (cls() === 'virtual') {
+      <section class="group" aria-labelledby="g-members">
+        <h2 id="g-members" i18n="@@repo.create.members">Members</h2>
+        <p class="hint" i18n="@@repo.create.members-hint">
+          The repositories this one serves from, asked in this order. Only local and remote repositories of this project and format are offered.
+        </p>
+        <trove-member-picker
+          [pool]="pool()"
+          [(members)]="members"
+          [emptyText]="membersEmpty"
+          (added)="presetTarget()"
+          (removed)="onMemberRemoved($event)"
+        />
+        <div class="field target">
+          <label class="field-label" for="f-deployTarget" i18n="@@repo.create.target">Deployment target</label>
+          <select id="f-deployTarget" class="select-input field-w-name" aria-describedby="d-deployTarget" (change)="setTarget($any($event.target).value)">
+            @for (o of targetOptions(); track o.value) {
+              <option [value]="o.value" [selected]="o.value === (deployTarget() ?? '')" translate="no">{{ o.label }}</option>
+            }
+          </select>
+          <p id="d-deployTarget" class="hint" i18n="@@repo.create.target-hint">
+            A publish through this repository's address is stored in this local member. None makes the repository read-only.
+          </p>
+        </div>
+      </section>
+    }
+
+    <trove-disclosure
+      class="advanced-settings"
+      i18n-heading="@@repo.create.advanced"
+      heading="Advanced settings"
+      i18n-hint="@@repo.create.advanced-hint"
+      hint="Notes, paths and the settings of the format. The defaults suit most repositories."
+      [(expanded)]="advancedOpen"
+    >
+      <h3 i18n="@@repo.field.notes">Administrator notes</h3>
+      <trove-repository-fields section="notes" [(form)]="form" [fieldErrors]="fieldErrors()" />
+
+      <h3 i18n="@@repo.group.paths">Paths</h3>
+      <trove-repository-fields section="paths" [(form)]="form" [fieldErrors]="fieldErrors()" />
+
+      <h3 i18n="@@repo.group.access">Access details</h3>
+      <trove-repository-fields section="access" [(form)]="form" [fieldErrors]="fieldErrors()" />
+
+      @if (mirrorGroup()) {
+        <h3 i18n="@@mirror.heading">Mirror</h3>
+        <trove-mirror-settings
+          [(form)]="form"
+          [format]="fmt"
+          [upstreamUrl]="form().upstream.url"
+          [restricted]="mirrorRestricted()"
+          [fieldErrors]="fieldErrors()"
+        />
+        @if (form().remoteMode === 'mirror' && formatMirrorNodes().length > 0) {
+          <trove-format-settings
+            part="mirror"
+            [nodes]="nodes()"
+            [pointer]="memberPointer()"
+            [value]="form().formatMember"
+            (valueChange)="setFormatMember($event)"
+            [fieldErrors]="fieldErrors()"
+          />
+        }
+      }
+
+      @if (formatNodes().length > 0) {
+        <h3 i18n="@@repo.format.heading-plain"><span translate="no">{{ formatLabel() }}</span> settings</h3>
+        <trove-format-settings
+          [nodes]="nodes()"
+          [pointer]="memberPointer()"
+          [value]="form().formatMember"
+          (valueChange)="setFormatMember($event)"
+          [fieldErrors]="fieldErrors()"
+        />
+      }
+    </trove-disclosure>
+
+    <details class="api-request">
+      <summary i18n="@@repo.review.api">Show as API request</summary>
+      <h3 i18n="@@repo.review.api.json">Request body</h3>
+      <pre class="code-block" translate="no" tabindex="0">{{ requestJson() }}</pre>
+      <h3 i18n="@@repo.review.api.curl">The same request with curl</h3>
+      <pre class="code-block" translate="no" tabindex="0">{{ curl() }}</pre>
+    </details>
+
+    <div class="actions">
+      <button class="btn btn-confirm" type="submit" [disabled]="creating()" i18n="@@repo.wizard.create">Create repository</button>
+      <a class="btn btn-tertiary" [routerLink]="cancelLink()" i18n="@@repo.wizard.cancel">Cancel</a>
+    </div>
+  </form>
+} @else {
+  <p role="status" i18n="@@repo.loading">Loading.</p>
+}

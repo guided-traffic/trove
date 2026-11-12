@@ -23,51 +23,6 @@ export interface Screen {
 }
 
 /**
- * The repository wizard (R-UI-021) for one format and class, as far as its review: every step as it opens, and the basic
- * settings once more before the key is typed. Nothing is created. A step whose **Next** stays disabled ends the walk there.
- */
-function wizard(format: string, cls: 'Local' | 'Remote' | 'Virtual'): Screen['walk'] {
-  return async function* (page) {
-    const step = async (): Promise<string> => {
-      const text = (await page.locator('[aria-current="step"]').allTextContents())[0] ?? 'step';
-      return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48);
-    };
-    // Next once it is enabled, then until the step has changed; false where it stays disabled.
-    const next = async (): Promise<boolean> => {
-      const button = page.getByRole('button', { name: 'Next', exact: true });
-      if ((await button.count()) === 0) return false;
-      const ready = await expect(button)
-        .toBeEnabled({ timeout: 5_000 })
-        .then(() => true)
-        .catch(() => false);
-      if (!ready) return false;
-      const before = await step();
-      await button.click();
-      await expect.poll(step, { timeout: 10_000 }).not.toBe(before);
-      return true;
-    };
-    yield await step();
-    await page.getByRole('option', { name: format, exact: true }).click();
-    if (!(await next())) return;
-    yield await step();
-    await page.getByRole('radio', { name: new RegExp(`^${cls}`) }).check();
-    if (!(await next())) return;
-    yield `${await step()}-untouched`;
-    const project = page.getByLabel('Project', { exact: true });
-    if ((await project.count()) > 0) await project.selectOption(mainProject);
-    await page.locator('#f-key').fill(`renders-${format.toLowerCase().replace(/[^a-z]+/g, '')}-${cls.toLowerCase()}`);
-    await page.locator('#f-key').blur();
-    yield await step();
-    for (let i = 0; i < 6; i++) {
-      if (!(await next())) return;
-      const name = await step();
-      yield name;
-      if (name.includes('review')) return;
-    }
-  };
-}
-
-/**
  * A list as it opens, then with its filter panel open: beside the panel the list has some 300 px less, and that width is the
  * one its columns and addresses have to fit (the owner's screen of 2026-11-12, a repository list at 1860 px).
  */
@@ -187,15 +142,64 @@ async function* visibilityOpen(page: Page): AsyncGenerator<string> {
   yield 'visibility';
 }
 
-/** The wizard asks whether the typed key is taken; a 404 means it is free. */
-const keyFree = [{ match: /^GET \/api\/v1\/projects\/[^/]+\/repositories\/renders-[a-z-]+ answered 404$/, why: 'the key check: 404 is a free key' }];
+/**
+ * In the admin area the form starts without a project: choose the seed's, once the select offers it (R-UI-080). The select is held
+ * while the projects load, so a choice is made only after the option is there.
+ */
+async function chooseProject(page: Page): Promise<void> {
+  const project = page.locator('#f-project');
+  if ((await project.count()) === 0) return;
+  await expect(project.locator(`option[value="${mainProject}"]`)).toHaveCount(1);
+  await project.selectOption(mainProject);
+  await expect(project).toHaveValue(mainProject);
+}
 
-const wizards: Screen[] = (['OCI (Docker)', 'npm', 'Ansible Galaxy'] as const).flatMap((format) =>
+/**
+ * The creation form of one format and class (R-UI-080 to R-UI-088): as it opens with the class chosen, a virtual repository with
+ * two members, Advanced settings open, and the key's error after a wrong key was typed and left. Nothing is created.
+ */
+function createForm(cls: 'Local' | 'Remote' | 'Virtual'): Screen['walk'] {
+  return async function* (page) {
+    await expect(page.locator('main h1')).toContainText(/^New .+ repository$/);
+    await chooseProject(page);
+    if (cls !== 'Local') await page.getByRole('radio', { name: new RegExp(`^${cls}`) }).check();
+    await expect(page.locator('#f-key')).not.toHaveValue('');
+    yield 'opened';
+    if (cls === 'Virtual') {
+      const available = page.locator('[data-testid="vm-available"] [role="option"]');
+      const members = page.locator('[data-testid="vm-members"] [role="option"]');
+      for (let i = 0; i < 2 && (await available.count()) > 0; i++) {
+        await available.first().click();
+        await page.getByRole('button', { name: 'Add', exact: true }).click();
+        // The added repository leaves the list of the available ones before the next is picked.
+        await expect(members).toHaveCount(i + 1);
+      }
+      yield 'members';
+    }
+    await page.getByRole('button', { name: 'Advanced settings' }).click();
+    await expect(page.locator('.advanced-settings .collapse-region.open')).toHaveCount(1);
+    yield 'advanced';
+    await page.locator('#f-key').fill('A');
+    await page.locator('#f-key').blur();
+    await expect(page.locator('#e-key')).toBeVisible();
+    yield 'key-error';
+  };
+}
+
+/** The format chooser (R-UI-080): the tiles as they open, then a search that leaves none. */
+async function* chooser(page: Page): AsyncGenerator<string> {
+  yield '';
+  await page.locator('#f-format-search').fill('zzz');
+  await expect(page.locator('a.tile')).toHaveCount(0);
+  yield 'no-match';
+}
+
+const createForms: Screen[] = (['oci', 'npm', 'ansible'] as const).flatMap((name) =>
   (['Local', 'Remote', 'Virtual'] as const).flatMap((cls): Screen[] => {
-    const id = `wizard-${format.split(' ')[0]!.toLowerCase()}-${cls.toLowerCase()}`;
+    const id = `new-${name}-${cls.toLowerCase()}`;
     return [
-      { id, path: `/ui/projects/${mainProject}/repositories/new`, kinds: ['power'], walk: wizard(format, cls), expected: keyFree },
-      { id: `admin-${id}`, path: '/ui/admin/repositories/new', kinds: ['admin'], walk: wizard(format, cls), expected: keyFree },
+      { id, path: `/ui/projects/${mainProject}/repositories/new/${name}`, kinds: ['power'], walk: createForm(cls) },
+      { id: `admin-${id}`, path: `/ui/admin/repositories/new/${name}`, kinds: ['admin'], walk: createForm(cls) },
     ];
   }),
 );
@@ -221,31 +225,10 @@ function testAnswer(over: Record<string, unknown>): Record<string, unknown> {
  * with credentials and the line that names their hosts, a typed URL, the four kinds of test result (answered by the route, so
  * no registry is contacted), and Upstream details open with two further hosts, one of 64 characters. Nothing is created.
  */
-function upstreamWalk(format: string, preset: string | null, full: boolean): Screen['walk'] {
+function upstreamWalk(preset: string | null, full: boolean): Screen['walk'] {
   return async function* (page) {
-    const next = async (): Promise<void> => {
-      const button = page.getByRole('button', { name: 'Next', exact: true });
-      await expect(button).toBeEnabled();
-      const before = await page.locator('[aria-current="step"]').allTextContents();
-      await button.click();
-      await expect.poll(() => page.locator('[aria-current="step"]').allTextContents()).not.toEqual(before);
-    };
-    await page.getByRole('option', { name: format, exact: true }).click();
-    await next();
+    await chooseProject(page);
     await page.getByRole('radio', { name: /^Remote/ }).check();
-    await next();
-    const project = page.getByLabel('Project', { exact: true });
-    if ((await project.count()) > 0) {
-      // The select is held while the projects load; choose once it offers the project, and again until it shows it.
-      await expect(project.locator(`option[value="${mainProject}"]`)).toHaveCount(1);
-      await expect(async () => {
-        await project.selectOption(mainProject);
-        await expect(project).toHaveValue(mainProject, { timeout: 1_000 });
-      }).toPass();
-    }
-    await page.locator('#f-key').fill(`renders-${format.toLowerCase().replace(/[^a-z]+/g, '')}-upstream`);
-    await page.locator('#f-key').blur();
-    await next();
     const upstream = page.locator('trove-upstream-settings');
     await expect(upstream).toBeVisible();
     yield 'presets';
@@ -296,10 +279,10 @@ function upstreamWalk(format: string, preset: string | null, full: boolean): Scr
 }
 
 const upstreams: Screen[] = [
-  { id: 'upstream-oci', path: `/ui/projects/${mainProject}/repositories/new`, kinds: ['power'], walk: upstreamWalk('OCI (Docker)', 'GitLab', true), expected: keyFree },
-  { id: 'upstream-npm', path: `/ui/projects/${mainProject}/repositories/new`, kinds: ['power'], walk: upstreamWalk('npm', null, false), expected: keyFree },
-  { id: 'upstream-deb', path: `/ui/projects/${mainProject}/repositories/new`, kinds: ['power'], walk: upstreamWalk('Debian (APT)', null, false), expected: keyFree },
-  { id: 'admin-upstream-oci', path: '/ui/admin/repositories/new', kinds: ['admin'], walk: upstreamWalk('OCI (Docker)', 'GitLab', true), expected: keyFree },
+  { id: 'upstream-oci', path: `/ui/projects/${mainProject}/repositories/new/oci`, kinds: ['power'], walk: upstreamWalk('GitLab', true) },
+  { id: 'upstream-npm', path: `/ui/projects/${mainProject}/repositories/new/npm`, kinds: ['power'], walk: upstreamWalk(null, false) },
+  { id: 'upstream-deb', path: `/ui/projects/${mainProject}/repositories/new/deb`, kinds: ['power'], walk: upstreamWalk(null, false) },
+  { id: 'admin-upstream-oci', path: '/ui/admin/repositories/new/oci', kinds: ['admin'], walk: upstreamWalk('GitLab', true) },
 ];
 
 const all: readonly Kind[] = ['plain', 'power', 'admin'];
@@ -380,7 +363,7 @@ export const screens: readonly Screen[] = [
   { id: 'repository-settings-generic', path: `${P}/repositories/assets/settings`, kinds: owners },
   { id: 'repository-settings-generic-advanced', path: `${P}/repositories/assets/settings`, kinds: admins, walk: advancedOpen },
   { id: 'repository-settings-oci', path: `${P}/repositories/images/settings`, kinds: owners },
-  { id: 'repository-wizard', path: `${P}/repositories/new`, kinds: owners },
+  { id: 'repository-new', path: `${P}/repositories/new`, kinds: owners, walk: chooser },
   { id: 'policies', path: `${P}/policies`, kinds: owners },
   { id: 'policy-new', path: `${P}/policies/new`, kinds: owners },
   { id: 'project-service-accounts', path: `${P}/service-accounts`, kinds: owners },
@@ -399,7 +382,7 @@ export const screens: readonly Screen[] = [
   { id: 'admin-dashboard', path: '/ui/admin/dashboard', kinds: admins },
   { id: 'admin-projects', path: '/ui/admin/projects', kinds: admins, walk: filtersOpen },
   { id: 'admin-repositories', path: '/ui/admin/repositories', kinds: admins, walk: filtersOpen },
-  { id: 'admin-repository-wizard', path: '/ui/admin/repositories/new', kinds: admins },
+  { id: 'admin-repository-new', path: '/ui/admin/repositories/new', kinds: admins, walk: chooser },
   { id: 'admin-users', path: '/ui/admin/users', kinds: admins, walk: filtersOpen },
   { id: 'admin-user', path: '/ui/admin/users/sam', kinds: admins },
   // The break-glass account: no Advanced action, so the page asks the token list whether it offers Revoke all.
@@ -423,8 +406,8 @@ export const screens: readonly Screen[] = [
   { id: 'admin-endpoint-rule-new', path: '/ui/admin/endpoints/default/rules/new', kinds: admins },
   { id: 'admin-endpoint-rule', path: `/ui/admin/endpoints/default/rules/${exposureRule}`, kinds: admins, walk: advancedOpen },
 
-  // The creation flow, step by step, for three formats and every class (the owner's rules of 2026-11-12, CLAUDE.md).
-  ...wizards,
+  // The creation form of three formats in every class (the owner's rules of 2026-11-12, CLAUDE.md).
+  ...createForms,
   // The upstream of a remote where it is entered: the presets, the credentials, Test connection, the details (R-UI-082).
   ...upstreams,
   { id: 'admin-security', path: '/ui/admin/security', kinds: admins },

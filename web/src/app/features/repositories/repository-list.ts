@@ -29,7 +29,7 @@ import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filte
 import { PagedResource, asApiError, valueOf } from '../../shared/paged-resource';
 import { FormatIconView } from '../../shared/format-icon';
 import { FrequentPlaces } from '../../core/frequent-places';
-import { classLabel } from './repository-wizard';
+import { classLabel } from './repository-class';
 
 /**
  * The repository list (R-UI-020), its columns from the job of its kind of user (Q-UI-330). Inside a project, the plain user's:

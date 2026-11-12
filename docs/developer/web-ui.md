@@ -10,7 +10,7 @@ The shell (skip link, top bar with the mark, the search field of R-UI-095, the A
 pinned from 1024 CSS px with folding groups, collapsible, and a drawer below, the content panel with the breadcrumb bar, banner area, notice regions, router outlet; see
 [Shell, design tokens and the list components](#shell-design-tokens-and-the-list-components)), the HTTP layer, the session handling and every
 cross-cutting UI mechanism are in place, so the screens are content. Built: sign-in, signed out, the system status
-screen with its jobs screen, the repository list, wizard and edit form with the format settings rendered from the format's schema (see
+screen with its jobs screen, the repository list, the format chooser, the creation form and the settings page with the format settings rendered from the format's schema (see
 [The repository settings form](#the-repository-settings-form-rendered-from-the-formats-schema)), the file tree, the endpoint screens with the exposure rule editor and
 the audit log (see [Screens of the catalog area](#screens-of-the-catalog-area)), and the package screens: the list, the details with the install panel and the README, and the client setup page (see [Package screens and client setup](#package-screens-and-client-setup)), and the guides area with the How to use tab of the repository screen (see [Guides](#guides)), the help area with the manual (see [manual.md](manual.md)), the Bastions screen (see [The Bastions screen](#the-bastions-screen)), and the vulnerability screens with the package page's tab (see [The vulnerability screens](#the-vulnerability-screens)); the other routed M1 screens are placeholders with their final
 path and title until their work package replaces them. Requirements: [R-UI-002 to R-UI-005](../spec/api-and-ui.md),
@@ -207,9 +207,10 @@ running and stops only what it started: trove with the sign-in provider (`serve.
    each with the kinds of user that reach it. For each width the screen is loaded, then every tab of it (`role=tab` inside
    `main`) is opened in turn; each view is taken light and dark (`prefers-color-scheme`, which the app follows while no theme is
    stored, the theme button's "Follow the system"). The window grows by what the content panel and its scroll regions hide, so
-   a picture shows the whole length. A flow is a screen with a `walk`: the repository wizard is walked for OCI, npm and Ansible,
-   local, remote and virtual, as the power user in a project and as the administrator in the admin area, with a picture of every
-   step and of the basic settings before the key is typed (`wizard-<format>-<class>-<step>-…`); nothing is created. Every list
+   a picture shows the whole length. A flow is a screen with a `walk`: the creation form is walked for OCI, npm and Ansible,
+   local, remote and virtual, as the power user in a project and as the administrator in the admin area: as it opens, with two
+   members for a virtual repository, with Advanced settings open, and with the key's error (`new-<format>-<class>-…`); the format
+   chooser as it opens and with a search that leaves no tile (`repository-new-…`); nothing is created. Every list
    with a filter panel is taken as it opens and with the panel open (`<screen>-filters-…`, the walk `filtersOpen`). The
    scrollbars are shown, as on a desktop with a mouse (below 600 px they take no room, as on a phone), and before the window
    grows each picture's scroll regions are measured
@@ -366,8 +367,9 @@ deleted, the retention and the queued blobs, and `503` while the object store is
 
 | Route | Component | Services | Notes |
 |---|---|---|---|
-| `/admin/repositories`, `/projects/:project/repositories` | [repository-list](../../web/src/app/features/repositories/repository-list.ts) | `RepositoriesApi`, `JobsApi` (progress) | Data table (no sort control: the API takes no `sort`), in the admin area project, format and class as the line under the key (`.admin-kind`; no Project and no Format column, so that a 57-character address shows whole at 1280 px, Q-UI-325), the format with its icon and display name (`formatLabel`); filter panel with `q`, `project`, `class`, `format`, `state`, applied into the query; every row links to `/projects/<project>/repositories/<key>` and records the visit in the search's store (`FrequentPlaces`); inside a project (the route carries `:project`) the list is that project's, without the Project column and the project filter, and "Create repository" opens the project's wizard; the Settings action of a row goes to the repository's `…/settings`; cursor "Load more"; delete with typed key and job progress; "Recently opened" (browser storage) above the admin area's list only; inside a project the header's one muted line is the project's description and, for a plain user, whom to ask (`headerLine`, [Q-UI-323](../spec/api-and-ui.md#q-ui-323--a-projects-repository-list-says-in-one-muted-line-what-the-project-is-and-whom-to-ask-recently-opened-is-the-start-pages)) |
-| `/admin/repositories/new` (`?project=`), `/projects/:project/repositories/new` | [repository-wizard](../../web/src/app/features/repositories/repository-wizard.ts) | `RepositoriesApi` | Five steps, the format first ([Q-UI-112](../spec/api-and-ui.md#q-ui-112--the-repository-wizard-asks-for-the-format-first)): a searchable grid of format tiles (a single-choice `@angular/aria` listbox, [Q-UI-114](../spec/api-and-ui.md#q-ui-114--the-format-tiles-are-a-listbox-of-angulararia-the-icon-is-the-one-of-the-package-list)), then the class (a class the format lacks is shown disabled with the reason, [Q-UI-113](../spec/api-and-ui.md#q-ui-113--a-class-the-chosen-format-does-not-implement-is-shown-disabled-with-the-reason)); formats and classes only from `GET /api/v1/formats`; a Project select in the basic step of the admin wizard (the project of the link, every project for a holder of `projects:read`, else the projects the caller owns; `POST /api/v1/projects/{project}/repositories`), the project given as text inside a project and a live key check within the chosen project; the format's settings, and for a remote repository the [Upstream](#the-upstream-section-of-a-remote-repository) and the Mirror section, in the fourth step ("Access and npm settings", "Access, upstream and npm settings", ...) and in the review; `Idempotency-Key` from the moment the wizard opens; field errors mapped by pointer |
+| `/admin/repositories`, `/projects/:project/repositories` | [repository-list](../../web/src/app/features/repositories/repository-list.ts) | `RepositoriesApi`, `JobsApi` (progress) | Data table (no sort control: the API takes no `sort`), in the admin area project, format and class as the line under the key (`.admin-kind`; no Project and no Format column, so that a 57-character address shows whole at 1280 px, Q-UI-325), the format with its icon and display name (`formatLabel`); filter panel with `q`, `project`, `class`, `format`, `state`, applied into the query; every row links to `/projects/<project>/repositories/<key>` and records the visit in the search's store (`FrequentPlaces`); inside a project (the route carries `:project`) the list is that project's, without the Project column and the project filter, and "Create repository" opens the project's format chooser; the Settings action of a row goes to the repository's `…/settings`; cursor "Load more"; delete with typed key and job progress; "Recently opened" (browser storage) above the admin area's list only; inside a project the header's one muted line is the project's description and, for a plain user, whom to ask (`headerLine`, [Q-UI-323](../spec/api-and-ui.md#q-ui-323--a-projects-repository-list-says-in-one-muted-line-what-the-project-is-and-whom-to-ask-recently-opened-is-the-start-pages)) |
+| `/admin/repositories/new` (`?project=`), `/projects/:project/repositories/new` | [repository-format-chooser](../../web/src/app/features/repositories/repository-format-chooser.ts) | `RepositoriesApi` | The format chooser ([R-UI-080](../spec/api-and-ui.md#r-ui-080--a-new-repository-the-format-first-then-one-form-that-names-it), Q-UI-340): the installed formats of `GET /api/v1/formats` as tiles, each a link to `new/<format>` (the admin area carries `?project=` on), under **Search by package type**; Enter opens the one format left; no Next |
+| `/admin/repositories/new/:format` (`?project=`), `/projects/:project/repositories/new/:format` | [repository-create](../../web/src/app/features/repositories/repository-create.ts) | `RepositoriesApi`, `ProjectsApi` | One form titled after the format (`newRepositoryTitle` titles the route, Q-UI-353): the project (a select in the admin area, the user's choice wins over a late input, `projectChoice`), **Class** (a radio group preset to local), **Key** from `suggestedKey` and **Visibility** from `getRepositoryDefaults` (R-REPO-063; both left to the server when the defaults cannot be read), **Description**, the class's own group (the [Upstream](#the-upstream-section-of-a-remote-repository) section, or the member picker and the deployment target), one closed **Advanced settings** (notes, paths, access details, the Mirror group with the format's `mirror` member, the format's settings), **Show as API request**; `createBodyOf` writes only what differs from a default; an unknown format shows the chooser with a notice; errors after a field was left or Create pressed, with a summary that opens Advanced settings; `Idempotency-Key` from the moment the form opens |
 | `/projects/:project/repositories/:key` | [repository-content](../../web/src/app/features/repositories/content/repository-content.ts) | `RepositoriesApi`, `PackagesApi`, `VulnerabilitiesApi`, `FilesApi`, `ClientSetupApi` | The content of a repository (R-UI-052): the shared page header (key, description, format, class, the first client address; **Set up client** opens `/setup?repository=`, [Q-UI-321](../spec/api-and-ui.md#q-ui-321--a-repositorys-client-setup-is-reached-one-way-the-headers-set-up-client-opens-the-setup-for-the-repository)), then the content without tabs, captioned Images, Packages or Files. A package format lists through `<trove-repository-items>` (`GET /packages` with `repository`, `format`, `q`, `sort`, `include=vulnerabilities`; the column of grades, `<trove-grade>` of `vulnerabilityGrade`, appears when the answer carries grades, and `sort=grade`/`-grade` loads up to 1,000 entries and sorts in the browser, Q-UI-373; a row opens `<trove-repository-item-versions>` in a `collapse-region`: tags or versions from `…/versions?repository=…`, for OCI with `include=digest`, the grade of each from `…/vulnerabilities?repository=…`, and the install command of the chosen version from `<trove-install-command>`, a one-line command as `<trove-address-field>`); generic lists `<trove-repository-files>` (`GET …/children`, folders open in place through the query `path`); the words and columns per format, and for an OCI remote the words of a cache (Fetched, Q-UI-217), are [content-shape.ts](../../web/src/app/features/repositories/content/content-shape.ts). **Details** (`<trove-disclosure>`) holds the further addresses with their labels (`otherAddresses`), the upstream and the members |
 | `/projects/:project/repositories/:key/settings` | [repository-detail](../../web/src/app/features/repositories/repository-detail.ts) | `RepositoriesApi`, `GuidesApi` | Tabs General, Access, Upstream (a remote), the format's settings ("npm settings", only when its schema has a member for the class), Signing keys and Index (a local or virtual Debian repository, rendered when opened, [The Debian screens](#the-debian-screens)), Mirror (a remote of a format that can mirror, with the [status panel](#the-mirror-status-panel) when it is stored in mode mirror, rendered when opened), How to use (only for a format with clients, rendered when opened), API; merge patch with `If-Match`; 412 conflict dialog; consumer view without a form, with the guide below its facts; delete; move to another project (R-REPO-060: a select of the target projects and a confirmation, `POST …/move`, then the screen of the new address, in the new project) |
 | `/projects/:project/browse`, `/projects/:project/browse/{key}/{path…}` | [browse](../../web/src/app/features/browse/browse.ts) | `RepositoriesApi`, `FilesApi`, `SessionStore.check` | Two bordered panes of full height ([Q-UI-98](../spec/api-and-ui.md#q-ui-98--the-file-browser-is-two-panes-with-a-toolbar-and-a-details-header), [_browse.scss](../../web/src/styles/_browse.scss)): a tree pane (filter field that sets `q` 250 ms after the last keystroke, the shared filter panel for `class` and `format` inside the pane with chips, a sort menu, a count) with the `@angular/aria` tree and lazy pages, a virtual repository's members from `virtual.members` as `member` nodes (`tree-node.ts`, id `<virtual>><member>`; the members are bare keys of the virtual repository's own project and are qualified with it). `browseMatcher` takes the first segment as the repository key and the rest as the path (the project is the parent route), so the `repo` the screen speaks of is `<project>/<key>` (a computed of the `project` and `key` inputs); the tree lists the repositories of the project (`project=`), each node labelled by its key inside the project (`nameInProject`), and a member of a virtual repository in another project links into that project (`commandsOfRepo`); the route is titled **Browse** with and without a selection; a details pane with a breadcrumb, the action toolbar `#browse-actions`, and tabs by kind (repository: General, API; folder: Contents, General, API; file: General, Statistics, API). The folder table is the shared data table over the children of the selected node, so the tree and the table share one load. A node keeps the promise of its load in flight (`TreeNode.pending`): a second request for the same folder, such as the reveal of a deep link past the first page while "Load more" runs, awaits it instead of looping (`findChild`). A node read again takes the new size, time and class (`nodeFor` with `refresh`), a node whose kind changed is replaced, and the `nodes` map drops the children that left a folder with their subtrees (`setChildren`, `forget`) Upload and New folder need `deploy`, a local repository and a format whose `protocolBasePath` is a files address; upload and folder dialogs, delete (204 or job) |
@@ -389,7 +391,7 @@ Q-UI-78 to Q-UI-81 (the format settings).
 R-UI-021 and R-ARCH-004: the member of the repository document named after the format (`npm`) is edited in a form rendered from the
 format's settings schema, `settingsSchema` of `GET /api/v1/formats` (Q-ARCH-229; npm's is
 [settings.schema.json](../../internal/formats/npm/settings.schema.json)). Nothing in the UI names a setting: a format adds, changes or removes one
-by editing its schema, and the wizard and the edit form follow. The server validates the member against the whole schema; the form only
+by editing its schema, and the creation form and the settings page follow. The server validates the member against the whole schema; the form only
 offers controls ([Q-UI-78](../spec/api-and-ui.md#q-ui-78--the-repository-settings-form-renders-the-subset-of-json-schema-the-formats-use)).
 
 | File | Responsibility |
@@ -419,17 +421,22 @@ offers controls ([Q-UI-78](../spec/api-and-ui.md#q-ui-78--the-repository-setting
   object left empty by that, and the member when nothing is left; a `required` member and a member the schema does not know stay. Both sides of the
   edit form's merge patch are pruned the same way, so a stored explicit default is no change, and a value set back to its default sends `null`.
 - *Texts* ([Q-UI-79](../spec/api-and-ui.md#q-ui-79--the-labels-and-descriptions-of-the-settings-form-are-the-schemas)). Labels and descriptions are the schema's, in English;
-  only the texts the form adds are translated (`repo.format.*`).
-- *Where it is* ([Q-UI-81](../spec/api-and-ui.md#q-ui-81--the-format-settings-are-a-section-of-the-class-specific-step-and-a-tab-of-the-edit-form)). The fourth wizard step and a
-  tab of the edit form, only when `settingNodes` is not empty. Choosing another class or format in the wizard empties the member
-  (`resetDependent` in [repository-wizard.ts](../../web/src/app/features/repositories/repository-wizard.ts)).
+  only the texts the form adds are translated (`repo.format.*`). A label is the member's `title`, which every member of every format's schema has
+  (`TestR_UI_088_EverySettingOfAFormatHasATitle` in `internal/formats`); the key is shown only for a member without one.
+- *Defaults as values* ([R-UI-084](../spec/api-and-ui.md#r-ui-084--a-default-is-the-value-of-its-field)). A text, a number and a list show the member's
+  value or the schema's `default` (`text`, `listText`); a field the user empties shows the default again once left (`showDefaultAgain`) and the member
+  stays unwritten. A choice without a static default offers **Automatic** first. No "Default: …" line remains.
+- *Where it is* ([Q-UI-344](../spec/api-and-ui.md#q-ui-344--where-the-details-go)). The group **<Display name> settings** of the creation form's
+  **Advanced settings** and a closed section of the settings page, only when the part has members. `part` splits the member: `settings` is every member
+  but the format's `mirror` object, `mirror` that object's members, which the Mirror group shows (`formatPartNodes`). Another class in the creation form
+  empties the member (`chooseClass` in [repository-create.ts](../../web/src/app/features/repositories/repository-create.ts)).
 - *Field errors.* The control id is the pointer with every run of other characters than letters, digits and `_` turned into `-`, prefixed with `f`
   (`/npm/audit/timeout` is `f-npm-audit-timeout`). An error goes to the deepest rendered member its pointer names, else to the enclosing object, else
   to the section (`f-npm`); the error summary focuses the same element.
 - *Tests.* [settings-schema.spec.ts](../../web/src/app/features/repositories/settings-schema.spec.ts) and
   [format-settings.spec.ts](../../web/src/app/features/repositories/format-settings.spec.ts) run against `RICH_SETTINGS_SCHEMA` of
   [fakes-catalog.ts](../../web/src/app/api/testing/fakes-catalog.ts) (npm's members plus a nested object of the remote class with an enum, a nullable URL,
-  durations, an integer and an array); the wizard and edit specs against `NPM_SETTINGS_SCHEMA`, a copy of npm's schema. The browser journey
+  durations, an integer and an array); the creation form's and the settings page's specs against `NPM_SETTINGS_SCHEMA`, a copy of npm's schema. The browser journey
   `08-packages.spec.ts` creates and edits an npm repository with it ([e2e.md](e2e.md#browser-journeys)).
 
 ### The Debian screens
@@ -449,13 +456,13 @@ Shared code that names the format: `FORMAT_CLIENTS.deb` (the client `apt`) and t
 `upstreamKeyFingerprints` rides in the form's format member but is equal on both sides of the merge patch, so a save never writes it.
 
 *Tests.* [deb-signing-keys.spec.ts](../../web/src/app/features/repositories/deb-signing-keys.spec.ts), [deb-index-state.spec.ts](../../web/src/app/features/repositories/deb-index-state.spec.ts), the Debian blocks of `format-settings.spec.ts`, `settings-schema.spec.ts`, `repository-detail.spec.ts` and `package-detail.spec.ts` (`debFixture`, `DEB_SETTINGS_SCHEMA`).
-The browser journey [17-deb.spec.ts](../../web/e2e/tests/17-deb.spec.ts) walks the key rotation, the index tab, the wizard and the setup page; it was written against the generated client and the documented shape of the index state and has not been run (the index endpoint was being built in parallel and the cluster was in use).
+The browser journey [17-deb.spec.ts](../../web/e2e/tests/17-deb.spec.ts) walks the key rotation, the index tab, the creation form and the setup page; it was written against the generated client and the documented shape of the index state and has not been run (the index endpoint was being built in parallel and the cluster was in use).
 
 ### The Mirror section of a remote repository
 
 [mirror-settings.ts](../../web/src/app/features/repositories/mirror-settings.ts) (`trove-mirror-settings`) renders `remote.mode` and the members of `remote.mirror`
 for a remote repository of a format whose descriptor has `mirror: true` (R-UI-021, R-REPO-050; [Q-UI-117](../spec/api-and-ui.md#q-ui-117--the-mirror-section-where-it-sits-what-it-writes-who-may-change-it)).
-The wizard shows it in the class-specific step, the edit form on a tab **Mirror**, which also holds the status panel ([below](#the-mirror-status-panel)).
+The creation form shows it as the group **Mirror** of **Advanced settings**, with the format's `mirror` member below it in mode mirror; the settings page in its section **Mirror**, which also holds the status panel ([below](#the-mirror-status-panel)). The caller gives the heading. A member shows its value or its default (`shown`), and an emptied one shows the default again once left.
 
 - *The form holds* `remoteMode` and `mirror` (the members that were set) in `RepositoryForm`. `FormatMemberOf.remote` says how `settingsOf` writes them:
   `sparse` for a create (nothing in mode `pullThrough`; in mode `mirror` the mode and the members that differ from `MIRROR_DEFAULTS`) and `structural` for
@@ -469,7 +476,7 @@ The wizard shows it in the class-specific step, the edit form on a tab **Mirror*
   [upstream-model.ts](../../web/src/app/features/repositories/upstream-model.ts)) while it is empty.
 - *Field errors.* `/remote/mode` is `f-remote-mode`, `/remote/mirror/<member>` is `f-remote-mirror-<member>`, anything else under `/remote` the section (`f-remote-mirror`);
   `mirrorTarget` and `mirrorPointerLabel` serve the error summaries of both screens.
-- *Tests.* [mirror-settings.spec.ts](../../web/src/app/features/repositories/mirror-settings.spec.ts) (the rules, the wizard, the edit form, axe).
+- *Tests.* [mirror-settings.spec.ts](../../web/src/app/features/repositories/mirror-settings.spec.ts) (the rules, the creation form, the edit form, axe).
 
 ### The Upstream section of a remote repository
 
@@ -503,8 +510,8 @@ order:
   `structural` (the settings page) names the URL as entered, `extraHosts` always, and `cache` and `availability` as objects even when empty, so the merge patch
   clears a member inside them with `null` and never nulls an object that holds members the form does not edit. `remoteOf(form, write, {mirror, upstream})` merges
   it with the mirror part; `FormatMemberOf` carries `remote` (`sparse` or `structural`), `mirror` and `upstream`.
-- *The wizard's start.* `resetDependent` gives a new remote `initialUpstream(format)` (the default preset's URL) when the class or the format changes; a draft
-  restored after a sign-in is merged over `EMPTY_FORM`.
+- *The creation form's start.* `chooseClass` gives a new remote `initialUpstream(format)` (the default preset's URL), and the form passes the document of
+  `getRepositoryDefaults` as `defaults` and `submitted` once Create was pressed; a draft restored after a sign-in is merged over `EMPTY_FORM`.
 - *The password.* `UpstreamForm.password` is what was typed; `passwordStored` (`none`, `sealed`, `reference`) is read from `password: {set: true}` or `{secretRef}`; `clearPassword` writes `null`.
   `maskSecrets` replaces `password.value` in the request shown on the review and on the **API** tab; both screens blank the password in what they hand to `DraftStore.keep`
   (R-UI-043). `FakeRepositoriesApi` seals a given value into `{set: true}` the way the server does.
@@ -518,7 +525,7 @@ order:
   `f-remote-availability-mode`, any other member under `/remote` that is not the mode or the mirror the section (`f-remote-upstream`); `upstreamTarget` and
   `upstreamPointerLabel` are consulted before the mirror's.
 - *Tests.* [upstream-settings.spec.ts](../../web/src/app/features/repositories/upstream-settings.spec.ts) (the rules, the section alone with each preset list,
-  the credential line, Allow, the details, the periods and the widths, the wizard, the edit form, axe) and the journey `14-mirror.spec.ts`
+  the credential line, Allow, the details, the periods and the widths, the creation form, the edit form, axe) and the journey `14-mirror.spec.ts`
   ([e2e.md](e2e.md#browser-journeys)); the renders `upstream-oci`, `upstream-npm`, `upstream-deb` and `admin-upstream-oci` of
   [screens.ts](../../web/e2e/renders/screens.ts) walk the section's states with the test answers routed in the browser.
 
@@ -844,7 +851,7 @@ Every address the UI shows or copies as a client address, and the `curl` text of
 URL**, never from `location` (Q-UI-69, Q-UI-75). [ServerAddress](../../web/src/app/core/server-address.ts) answers `baseUrl()` from the `baseUrl` member of
 `GET /api/v1/formats` (`RepositoriesApi.baseUrl()`), which every caller that may use the UI can read: no permission, no readable repository and no second
 request is needed. The server fills it from the configured base URL of the endpoint the page was served from, and never from a `Host` header;
-`null` means that none is configured, and the screen shows no address (the review step of the repository wizard an en dash) instead of a wrong one. A
+`null` means that none is configured, and the screen shows no address (the creation form's request a placeholder) instead of a wrong one. A
 `null` or a failed read is not remembered.
 
 `clientAddress(baseUrl, format, key)` and `apiAddress(baseUrl, path)` in [repository-model.ts](../../web/src/app/features/repositories/repository-model.ts)
@@ -951,7 +958,7 @@ How the pieces fit:
   `projectRole(key)`, `isOwnerOf(key)`, `canWritePolicies(project)` and `canWriteRepositories(project)` (the capability, or the Owner role of the project). The project sidebar lists policies, service accounts and CI
   identity for the capability or the Owner role; the admin sidebar lists **Projects** for `projects:read` and every other entry only with its capability. `/admin` itself runs `adminHomeGuard` ([auth-guard.ts](../../web/src/app/core/auth-guard.ts)).
   The API still decides every call (R-UI-005). There are no switches (`managePolicies`, `manageRepositories` are gone): what an Owner may do is fixed by the role.
-- **One component for the project's screen and the admin's list.** The repository list and wizard, and the policy and service account lists, serve both: the screen reads whether the route carries `:project`
+- **One component for the project's screen and the admin's list.** The repository list, the format chooser and the creation form, and the policy and service account lists, serve both: the screen reads whether the route carries `:project`
   (`ActivatedRoute.snapshot.paramMap`) and, outside a project, keeps the Project column and the project filter. The repository detail and list use
   `canWriteRepositories(repository.project)`; the policy editor takes `/:project/:name` below the project (name unique within the project, `project` in every body
   including validate and replace, the repositories of the project as bare-key selector buttons, `PrincipalPicker` over `GET /projects/{key}/principals`); the service account create dialog
@@ -973,7 +980,7 @@ How the pieces fit:
 - **Whitespace.** Angular drops whitespace-only text nodes: a label in an `ng-container` followed by an element on the next line needs `&ngsp;` or the words run together on screen.
 - **Tests.** [projects.spec.ts](../../web/src/app/features/projects/projects.spec.ts) (list, dialog, settings, the project's lists), [project-dialog.spec.ts](../../web/src/app/features/projects/project-dialog.spec.ts) (keys, validation),
   [project-members.spec.ts](../../web/src/app/features/projects/project-members.spec.ts) (add, change, remove, last Owner), [policy-scope.spec.ts](../../web/src/app/features/permissions/policy-scope.spec.ts),
-  [project-screens.spec.ts](../../web/src/app/features/projects/project-screens.spec.ts) (policy editor, service account, wizard, session helpers, messages),
+  [project-screens.spec.ts](../../web/src/app/features/projects/project-screens.spec.ts) (policy editor, service account, the creation form's project, session helpers, messages),
   [app.projects.spec.ts](../../web/src/app/app.projects.spec.ts) (start page, project sidebar, switcher, admin lists), [app.routes.spec.ts](../../web/src/app/app.routes.spec.ts) (the route map and the old routes that are gone),
   [breadcrumbs.spec.ts](../../web/src/app/core/breadcrumbs.spec.ts). The browser journey is
   [12-projects.spec.ts](../../web/e2e/tests/12-projects.spec.ts) ([e2e.md](e2e.md#browser-journeys)); the journeys create their data in the project `e2e` that `global-setup.ts` creates
@@ -1175,8 +1182,7 @@ user who sees the project; what a caller may read is narrowed by the API, so a c
   formats with tags in the descriptor.
 - The tree does not label the members of a virtual repository ("resolves from") or the cache of a remote one: the generic format has neither class (npm has both). Copy, move, properties and the trash can are P1.
 - The repository settings forms cover the generic members and the format member rendered from the format's schema
-  ([above](#the-repository-settings-form-rendered-from-the-formats-schema)). The wizard and the edit form have fields for the upstream of a remote repository (the URL, the authentication, the two cache periods, the offline switch, "Test connection"; the extra hosts, the limits, the integrity members and the source network are set through the API), and none for the members of a virtual repository; the
-  member editor and the other format panels arrive with those formats. A schema construct outside the rendered subset is shown, not edited.
+  ([above](#the-repository-settings-form-rendered-from-the-formats-schema)). The creation form and the settings page have fields for the upstream of a remote repository (the presets, the URL, the authentication, the further hosts, the two cache periods, the offline switch on the settings page, "Test connection"; the limits, the integrity members and the source network are set through the API) and for the members and the deployment target of a virtual repository. A schema construct outside the rendered subset is shown, not edited.
 - The session expiry warning of R-UI-002 (WCAG 2.2.1) is not built: it needs the session deadlines in an answer the UI can read (`whoami` shows `type: session` without an
   expiry; the timeouts are in `settings/auth`, which needs `settings:read`). The `reauthentication_required` dialog leads to `/login?...&reauth=1`; the identity, token,
   settings and policy editors and the catalog editors keep and restore their non-secret drafts (see above).
@@ -1188,7 +1194,7 @@ user who sees the project; what a caller may read is narrowed by the API, so a c
 - npm 11 prints `allow-scripts` warnings for the install scripts of `esbuild`, `lmdb`,
   `msgpackr-extract` and `@parcel/watcher`. Build, test and lint pass without running them; if a
   later npm turns the warning into an error, approve the scripts in the workspace configuration.
-- Packages and client setup: the NuGet clients (.NET CLI, NuGet CLI, Visual Studio, `nuget.config`) wait for the NuGet format; the Owners and Builds tabs of the package page (P1), the native-exchange GitLab variant (R-NPM-022, P1) and the Playwright journey with a real `npm install` (R-UI-016) are not built. The version combobox is a native input with a `datalist`, not an ARIA combobox. The wizard of a caller who holds neither `settings:read` nor any readable repository shows no client address (Q-UI-69).
+- Packages and client setup: the NuGet clients (.NET CLI, NuGet CLI, Visual Studio, `nuget.config`) wait for the NuGet format; the Owners and Builds tabs of the package page (P1), the native-exchange GitLab variant (R-NPM-022, P1) and the Playwright journey with a real `npm install` (R-UI-016) are not built. The version combobox is a native input with a `datalist`, not an ARIA combobox.
 
 ## NuGet in the UI
 
@@ -1202,7 +1208,7 @@ R-UI-007, R-UI-018 and R-UI-019 need no NuGet screen (Q-UI-93 to Q-UI-95). What 
 | [fakes-catalog.ts](../../web/src/app/api/testing/fakes-catalog.ts) | `NUGET_SETTINGS_SCHEMA`, a copy of [settings.schema.json](../../internal/formats/nuget/settings.schema.json), and `NUGET_FORMAT` |
 | [11-nuget.spec.ts](../../web/e2e/tests/11-nuget.spec.ts) | The browser journey ([e2e.md](e2e.md#browser-journeys)) |
 
-The settings form, the wizard step and the edit tab render the NuGet schema without NuGet code (`format-settings.spec.ts` shows `deleteMode` on a local repository and `forwardSearch` on a remote one).
+The settings form of the creation form and of the settings page render the NuGet schema without NuGet code (`format-settings.spec.ts` shows `deleteMode` on a local repository and `forwardSearch` on a remote one).
 
 ## The member editor, the general settings and the banner
 
@@ -1223,7 +1229,7 @@ Specs: [virtual-members.spec.ts](../../web/src/app/features/repositories/virtual
 | [api/visibility-api.ts](../../web/src/app/api/visibility-api.ts) | `VisibilityApi`: `GET`, `PATCH /api/v1/settings/visibility` with `If-Match`; `ProjectsApi.setVisibility` is `PUT /api/v1/projects/{key}/visibility`; fakes `FakeVisibilityApi` and `FakeProjectsApi` in [fakes-projects.ts](../../web/src/app/api/testing/fakes-projects.ts) |
 | [general-settings.ts](../../web/src/app/features/settings/general-settings.ts) | The section Visibility: the default level, `Public` disabled while `publicAvailable` is false, what is public now with links, read-only for a caller without `security-settings:write` |
 | [project-settings.ts](../../web/src/app/features/projects/project-settings.ts), [project-dialog.ts](../../web/src/app/features/projects/project-dialog.ts) | The section Visibility of a project with its own save (an administrator only); lowering lists the repositories above the new level from the project's repository list and asks through `Confirm` (`items`), the answer's `lowered` is counted in the message; the create dialog presets the group to the default |
-| [repository-visibility.ts](../../web/src/app/features/repositories/repository-visibility.ts) | The block Visibility of a repository's Access tab: Artifacts and, for a format with `wiki: true`, Wiki; options above the project or the artifacts disabled with the reason; the wiki follows the artifacts down; the patch names the changed parts only and the levels are not part of `RepositoryForm`, so other unsaved edits stay; the wizard's basic step holds the artifacts group, preset to the lower of the default and the project's level |
+| [repository-visibility.ts](../../web/src/app/features/repositories/repository-visibility.ts) | The block Visibility of a repository's Access tab: Artifacts and, for a format with `wiki: true`, Wiki; options above the project or the artifacts disabled with the reason; the wiki follows the artifacts down; the patch names the changed parts only and the levels are not part of `RepositoryForm`, so other unsaved edits stay; the creation form holds the artifacts group with `VisibilityLevelControl`, preset to the `visibility` of `getRepositoryDefaults` and left out when the defaults cannot be read |
 | [user-detail.ts](../../web/src/app/features/users/user-detail.ts), [user-list.ts](../../web/src/app/features/users/user-list.ts), [user-create-dialog.ts](../../web/src/app/features/users/user-create-dialog.ts) | The checkbox External user with its own save, the badge and the filter, the create dialog preset to `newUsersExternal` |
 | [projects-home.ts](../../web/src/app/features/projects/projects-home.ts), [core/project-context.ts](../../web/src/app/core/project-context.ts) | The start page lists the memberships first, then the other projects the level admits, with the filter "Your projects" (`membership=true`); the context also loads for the anonymous subject |
 

@@ -547,6 +547,8 @@ export class UpstreamSettings {
   readonly defaults = input<Readonly<Record<string, unknown>> | null>(null);
   /** The settings page of a stored repository: Offline is offered (R-UI-082, R-UI-083). */
   readonly edit = input(false);
+  /** The form was sent: a missing URL shows its error whether or not the field was left (R-UI-086). */
+  readonly submitted = input(false);
 
   protected readonly sectionId = UPSTREAM_SECTION_ID;
   protected readonly hostsId = controlIdOf('/remote/extraHosts');
@@ -579,7 +581,7 @@ export class UpstreamSettings {
 
   /** A format without presets needs the URL: once the field was left empty, it says what to type (R-UI-086). */
   protected readonly urlError = computed(
-    () => this.urlLeft() && this.presets().length === 0 && this.upstream().url.trim() === '',
+    () => (this.urlLeft() || this.submitted()) && this.presets().length === 0 && this.upstream().url.trim() === '',
   );
 
   /** "The credential is sent to registry.gitlab.com and gitlab.com." (R-UI-082) */

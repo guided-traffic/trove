@@ -1,10 +1,28 @@
 import { Routes } from '@angular/router';
 import { unsavedChangesGuard } from '../../shared/unsaved-guard';
+import { newRepositoryTitle } from './repository-create';
 
 /**
- * R-UI-020 (list), R-UI-021 (wizard). The admin area's list of every repository, each row naming its project, and the
- * wizard with a project to choose. A repository's own screen lives in its project (`PROJECT_REPOSITORIES_ROUTES`,
- * R-REPO-002, Q-UI-129).
+ * The format chooser and the creation form of a format below `new` (R-UI-080): the trail reads "New repository" and then the
+ * form's own title, "New OCI (Docker) repository".
+ */
+const NEW_REPOSITORY_ROUTES: Routes = [
+  {
+    path: '',
+    loadComponent: () => import('./repository-format-chooser').then((m) => m.RepositoryFormatChooser),
+  },
+  {
+    path: ':format',
+    title: newRepositoryTitle,
+    loadComponent: () => import('./repository-create').then((m) => m.RepositoryCreate),
+    canDeactivate: [unsavedChangesGuard],
+  },
+];
+
+/**
+ * R-UI-020 (list), R-UI-080 (a new repository). The admin area's list of every repository, each row naming its project, the format
+ * chooser and the creation form of a format, with a project to choose. A repository's own screen lives in its project
+ * (`PROJECT_REPOSITORIES_ROUTES`, R-REPO-002, Q-UI-129).
  */
 export const REPOSITORIES_ROUTES: Routes = [
   {
@@ -15,14 +33,13 @@ export const REPOSITORIES_ROUTES: Routes = [
   {
     path: 'new',
     title: $localize`:@@route.repositories.new.title:New repository`,
-    loadComponent: () => import('./repository-wizard').then((m) => m.RepositoryWizard),
-    canDeactivate: [unsavedChangesGuard],
+    children: NEW_REPOSITORY_ROUTES,
   },
 ];
 
 /**
- * The repositories of one project, mounted at `/projects/:project/repositories` (Q-UI-129): the list, the wizard with the
- * project given, a repository's content (R-UI-052) and its settings. `new` precedes `:key`.
+ * The repositories of one project, mounted at `/projects/:project/repositories` (Q-UI-129): the list, the format chooser and the
+ * creation form with the project given, a repository's content (R-UI-052) and its settings (R-UI-087). `new` precedes `:key`.
  */
 export const PROJECT_REPOSITORIES_ROUTES: Routes = [
   {
@@ -33,8 +50,7 @@ export const PROJECT_REPOSITORIES_ROUTES: Routes = [
   {
     path: 'new',
     title: $localize`:@@route.repositories.new.title:New repository`,
-    loadComponent: () => import('./repository-wizard').then((m) => m.RepositoryWizard),
-    canDeactivate: [unsavedChangesGuard],
+    children: NEW_REPOSITORY_ROUTES,
   },
   {
     path: ':key',

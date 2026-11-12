@@ -20,7 +20,7 @@ on its button, add a class input, not a second implementation.
 | [repository-list.html](../../web/src/app/features/repositories/repository-list.html) line 75 to 78 | `<code class="ellipsis">` and `trove-copy-button`; label `copyLabel` = **Copy client address** | field with `label` and `copyLabel` naming the row (`repo.copy-address` with the key); the cell `white-space: nowrap`; drop `CopyButton` from `repository-list.ts` imports if unused |
 | [repository-detail.html](../../web/src/app/features/repositories/repository-detail.html) line 38 to 42 (consumer view) | one `<code>` per address, no copy button | one field per address |
 | the same, line 76 to 81 (settings view) | `<code>` and `trove-copy-button` | field |
-| [repository-wizard.html](../../web/src/app/features/repositories/repository-wizard.html) line 250 | `<dd><address or –></dd>` | field where an address exists, the dash otherwise |
+| `repository-wizard.html` line 250 | `<dd><address or –></dd>` | field where an address exists, the dash otherwise |
 | [client-setup.html](../../web/src/app/features/setup/client-setup.html) line 288 | `<code>{{ s.registryUrl }}</code>` in the banner sentence | the sentence without the code, the field below it |
 | [guide-page.html](../../web/src/app/features/guides/guide-page.html) line 120 | `<code>{{ bastionSetup.value().registryUrl }}</code>` in a paragraph | the label as text, the field below |
 | [endpoint-detail.html](../../web/src/app/features/endpoints/endpoint-detail.html) line 140 to 143 | `<code>` and `trove-copy-button` with `copyAddress` | field |
@@ -44,7 +44,7 @@ Existing specs that **break** (they read an address as text content or by `code`
 | [repository-list-panel.spec.ts](../../web/src/app/features/repositories/repository-list-panel.spec.ts) | 63 to 74 | reads `tbody tr code` text and its `title` | read the input's `value`; the button query stays |
 | [repository-list.spec.ts](../../web/src/app/features/repositories/repository-list.spec.ts) | 17 | looks for the label **Copy client address** exactly | the label now names the row: match the new text |
 | [repository-detail.spec.ts](../../web/src/app/features/repositories/repository-detail.spec.ts) | 262, 276 to 288 | `text(r.root)` contains the address; the absence test checks `generic-local/` is not in the text | read the field's value (and `querySelector('trove-address-field')` null for the absence) |
-| [repository-wizard.spec.ts](../../web/src/app/features/repositories/repository-wizard.spec.ts) | 308, 315 to 330 | `text(r.root)` contains the address | read the field's value; Q-UI-75 case likewise |
+| `repository-wizard.spec.ts` | 308, 315 to 330 | `text(r.root)` contains the address | read the field's value; Q-UI-75 case likewise |
 | [endpoints.spec.ts](../../web/src/app/features/endpoints/endpoints.spec.ts) | to check: any assertion on a rule's address text | same | read the value |
 | [client-setup.spec.ts](../../web/src/app/features/setup/client-setup.spec.ts), [guides.spec.ts](../../web/src/app/features/guides/guides.spec.ts) | to check: the Bastion address tests | same | read the value |
 

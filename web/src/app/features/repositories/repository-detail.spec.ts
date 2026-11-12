@@ -389,7 +389,7 @@ describe('Repository edit form', () => {
         upstreamKeys: 'BLOCK',
         upstreamKeyFingerprints: ['AAAA000000000000000000000000000000001111'],
       });
-      await openTab(r, 'Debian (APT)');
+      await openTab(r, 'Mirror');
       const fake = r.get(RepositoriesApi) as FakeRepositoriesApi;
       type(r.root.querySelector<HTMLTextAreaElement>('#f-deb-mirror-suites')!, 'stable');
       await settle(r.fixture);

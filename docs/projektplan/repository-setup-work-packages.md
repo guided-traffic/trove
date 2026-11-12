@@ -44,8 +44,8 @@ work, or the plain user really decides it), **details** (sensible, for experts),
 
 ### 1.1 The flow and the defects the owner saw
 
-Today's wizard ([repository-wizard.ts](../../web/src/app/features/repositories/repository-wizard.ts),
-[.html](../../web/src/app/features/repositories/repository-wizard.html)) has five steps: Format (a tile listbox and Next), Class,
+Today's wizard (`repository-wizard.ts`,
+`.html`) has five steps: Format (a tile listbox and Next), Class,
 Basic settings, a class-specific step, Review.
 
 | # | What is wrong | Cause in the code |

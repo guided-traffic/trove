@@ -25,6 +25,20 @@ function shown(value: unknown): string {
   return typeof value === 'string' ? value : JSON.stringify(value);
 }
 
+/** The part of a format's settings a group shows: its own settings, or the members of its `mirror` object (Q-UI-344). */
+export type FormatPart = 'settings' | 'mirror';
+
+function isMirrorNode(n: SettingNode): boolean {
+  return n.path.length === 1 && n.path[0] === 'mirror';
+}
+
+/** The nodes of `part`: every node but the `mirror` object, or that object's members (empty when the format has none). */
+export function formatPartNodes(nodes: readonly SettingNode[], part: FormatPart): readonly SettingNode[] {
+  if (part === 'settings') return nodes.filter((n) => !isMirrorNode(n));
+  const mirror = nodes.find(isMirrorNode);
+  return mirror?.kind === 'group' ? mirror.children : [];
+}
+
 /**
  * The settings of a format, rendered from its settings schema (R-ARCH-004, R-UI-021, Q-UI-78): the
  * member named after the format, edited in place. Every member of the schema that applies to the
@@ -37,14 +51,10 @@ function shown(value: unknown): string {
   imports: [NgTemplateOutlet],
   template: `
     <div class="format-settings" [id]="sectionId()" tabindex="-1">
-      <p class="hint" i18n="@@repo.format.intro">
-        Only the settings that apply to this class of repository are shown. A setting left at its
-        default is not written into the repository.
-      </p>
       @for (e of errors(sectionId()); track $index) {
         <p class="field-error">{{ message(e) }}</p>
       }
-      <ng-container *ngTemplateOutlet="list; context: { $implicit: nodes() }" />
+      <ng-container *ngTemplateOutlet="list; context: { $implicit: shownNodes() }" />
     </div>
 
     <ng-template #list let-items>
@@ -92,9 +102,7 @@ function shown(value: unknown): string {
                   (change)="choose(n, $any($event.target).value)"
                 >
                   @if (choice(n).fallback === undefined) {
-                    <option value="" [selected]="selected(n) < 0" i18n="@@repo.format.unset">
-                      Not set
-                    </option>
+                    <option value="" [selected]="selected(n) < 0" i18n="@@repo.format.automatic">Automatic</option>
                   }
                   @for (o of choice(n).options; track $index) {
                     <option [value]="$index" [selected]="$index === selected(n)" translate="no">
@@ -126,7 +134,7 @@ function shown(value: unknown): string {
                 } @else {
                   <label class="field-label" [for]="n.id" translate="no" lang="en">{{ n.label }}</label>
                   <textarea
-                    class="area-input"
+                    class="area-input field-w-full"
                     [id]="n.id"
                     rows="3"
                     autocomplete="off"
@@ -135,6 +143,7 @@ function shown(value: unknown): string {
                     [attr.aria-invalid]="invalid(n)"
                     [attr.aria-describedby]="listDescribedBy(n)"
                     (input)="typeList(n, $any($event.target).value)"
+                    (blur)="showDefaultAgain(n, $event)"
                   ></textarea>
                   <p class="hint" [id]="n.id + '-l'" i18n="@@repo.format.list">One entry per line.</p>
                   <ng-container *ngTemplateOutlet="notes; context: { $implicit: n }" />
@@ -162,7 +171,7 @@ function shown(value: unknown): string {
                 }}</label>
                 @if (isMultiline(n)) {
                   <textarea
-                    class="area-input"
+                    class="area-input field-w-full"
                     [id]="n.id"
                     rows="8"
                     autocomplete="off"
@@ -171,6 +180,7 @@ function shown(value: unknown): string {
                     [attr.aria-invalid]="invalid(n)"
                     [attr.aria-describedby]="describedBy(n)"
                     (input)="type(n, $any($event.target).value)"
+                    (blur)="showDefaultAgain(n, $event)"
                   ></textarea>
                 } @else {
                   <input
@@ -185,6 +195,7 @@ function shown(value: unknown): string {
                     [attr.aria-invalid]="invalid(n)"
                     [attr.aria-describedby]="describedBy(n)"
                     (input)="type(n, $any($event.target).value)"
+                    (blur)="showDefaultAgain(n, $event)"
                   />
                 }
                 <ng-container *ngTemplateOutlet="notes; context: { $implicit: n }" />
@@ -199,19 +210,6 @@ function shown(value: unknown): string {
       @let n = asNode(item);
       @if (n.description) {
         <p class="hint" [id]="n.id + '-d'" lang="en">{{ n.description }}</p>
-      }
-      @switch (fallbackKind(n)) {
-        @case ('on') {
-          <p class="hint" [id]="n.id + '-v'" i18n="@@repo.format.default-on">Default: on</p>
-        }
-        @case ('off') {
-          <p class="hint" [id]="n.id + '-v'" i18n="@@repo.format.default-off">Default: off</p>
-        }
-        @case ('value') {
-          <p class="hint" [id]="n.id + '-v'" i18n="@@repo.format.default">
-            Default: <code translate="no">{{ fallbackText(n) }}</code>
-          </p>
-        }
       }
       @for (e of errors(n.id); track $index) {
         <p class="field-error" [id]="n.id + '-e'">{{ message(e) }}</p>
@@ -245,8 +243,16 @@ export class FormatSettings {
   readonly value = model.required<JsonObject>();
   /** Server field problems by pointer (`ApiError.fieldErrors`). */
   readonly fieldErrors = input<ReadonlyMap<string, FieldProblem>>(new Map());
+  /**
+   * Which members it shows (R-UI-083, Q-UI-344): `settings` every member but the format's `mirror` object, `mirror` that object's
+   * members, so that a mirror is one topic in the Mirror group.
+   */
+  readonly part = input<FormatPart>('settings');
 
-  protected readonly sectionId = computed(() => controlIdOf(this.pointer()));
+  protected readonly shownNodes = computed(() => formatPartNodes(this.nodes(), this.part()));
+  protected readonly sectionId = computed(() =>
+    controlIdOf(this.part() === 'mirror' ? `${this.pointer()}/mirror` : this.pointer()),
+  );
 
   /** The field problems of the member by the id of the control that shows them. */
   private readonly problems = computed(() => {
@@ -254,7 +260,7 @@ export class FormatSettings {
     const byId = new Map<string, FieldProblem[]>();
     for (const [pointer, problem] of this.fieldErrors()) {
       if (pointer !== prefix && !pointer.startsWith(`${prefix}/`)) continue;
-      const id = targetOf(this.nodes(), pointer, this.sectionId());
+      const id = targetOf(this.shownNodes(), pointer, this.sectionId());
       byId.set(id, [...(byId.get(id) ?? []), problem]);
     }
     return byId;
@@ -273,11 +279,9 @@ export class FormatSettings {
   }
 
   protected describedBy(n: SettingNode): string | null {
-    const ids = [
-      n.description ? `${n.id}-d` : null,
-      this.fallbackKind(n) ? `${n.id}-v` : null,
-      this.errors(n.id).length > 0 ? `${n.id}-e` : null,
-    ].filter((id) => id !== null);
+    const ids = [n.description ? `${n.id}-d` : null, this.errors(n.id).length > 0 ? `${n.id}-e` : null].filter(
+      (id) => id !== null,
+    );
     return ids.length > 0 ? ids.join(' ') : null;
   }
 
@@ -324,12 +328,13 @@ export class FormatSettings {
     return Array.isArray(v) ? v.filter((e): e is string => typeof e === 'string') : [];
   }
 
+  /** The list as text: what is set, else the schema default (R-UI-084), and a blank line being typed stays. */
   protected listText(n: SettingNode): string {
     const current = this.current(n);
     const set = Array.isArray(current) ? current.map(String) : [];
     const draft = this.drafts.get(n.id);
     if (draft !== undefined && JSON.stringify(entriesOf(draft)) === JSON.stringify(set)) return draft;
-    return set.join('\n');
+    return current === undefined ? this.entries(n).join('\n') : set.join('\n');
   }
 
   protected listDescribedBy(n: SettingNode): string {
@@ -377,21 +382,18 @@ export class FormatSettings {
     return this.choice(n).options.findIndex((o) => JSON.stringify(o) === JSON.stringify(v));
   }
 
+  /** The value in the field: the one set, else the schema default (R-UI-084); a derived default has none and stays empty. */
   protected text(n: SettingNode): string {
-    const v = this.current(n);
+    const v = this.effective(n);
     return v === undefined || v === null ? '' : shown(v);
   }
 
-  protected fallbackKind(n: SettingNode): 'on' | 'off' | 'value' | null {
-    if (!('fallback' in n) || n.fallback === undefined || n.fallback === null) return null;
-    if (n.kind === 'list' && Array.isArray(n.fallback) && n.fallback.length === 0) return null;
-    if (n.kind === 'boolean') return n.fallback ? 'on' : 'off';
-    return 'value';
-  }
-
-  protected fallbackText(n: SettingNode): string {
-    if (n.kind === 'list' && Array.isArray(n.fallback)) return n.fallback.join(', ');
-    return 'fallback' in n ? shown(n.fallback) : '';
+  /** A field the user emptied shows its default again when it is left (R-UI-084); the setting stays unwritten. */
+  protected showDefaultAgain(n: SettingNode, event: Event): void {
+    const field = event.target as HTMLInputElement | HTMLTextAreaElement;
+    if (this.current(n) !== undefined || field.value.trim() !== '') return;
+    this.drafts.delete(n.id);
+    field.value = n.kind === 'list' ? this.listText(n) : this.text(n);
   }
 
   protected set(n: SettingNode, value: unknown): void {

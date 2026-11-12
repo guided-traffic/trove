@@ -67,6 +67,12 @@ describe('Breadcrumbs', () => {
     expect(trail.map((c) => c.label)).toEqual(['Admin area', 'Repositories', 'New repository']);
   });
 
+  it('R-UI-002 R-UI-080 the creation form of a format adds its resolved title after the chooser', async () => {
+    const trail = await trailAt('/admin/repositories/new/generic');
+    expect(trail.map((c) => c.label)).toEqual(['Admin area', 'Repositories', 'New repository', 'New Generic repository']);
+    expect(trail[2]?.link).toBe('//admin/repositories/new');
+  });
+
   it('R-UI-002 a multi-segment route skips the fixed word and keeps the parameters', async () => {
     expect((await trailAt('/admin/endpoints/customers/rules/docs')).map((c) => c.label)).toEqual([
       'Admin area',

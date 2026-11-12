@@ -7,12 +7,14 @@
   "additionalProperties": false,
   "properties": {
     "mirror": {
+      "title": "Mirror",
       "description": "What a mirror of a registry keeps (R-OCI-026, Q-OCI-16): the tags, the tags never kept and the platforms of the indexes. Present in both modes of a remote repository and effective in mode mirror.",
       "type": "object",
       "additionalProperties": false,
       "x-trove-classes": ["remote"],
       "properties": {
         "tags": {
+          "title": "Tags to mirror",
           "description": "Tag patterns ('*' and '?') a tag must match to be mirrored; a pattern without a wildcard names a tag that is always kept.",
           "type": "array",
           "minItems": 1,
@@ -22,6 +24,7 @@
           "items": { "type": "string", "pattern": "^[a-zA-Z0-9_.*?-]{1,128}$" }
         },
         "excludeTags": {
+          "title": "Tags never mirrored",
           "description": "Tag patterns that are never mirrored.",
           "type": "array",
           "maxItems": 64,
@@ -30,6 +33,7 @@
           "items": { "type": "string", "pattern": "^[a-zA-Z0-9_.*?-]{1,128}$" }
         },
         "platforms": {
+          "title": "Platforms",
           "description": "Platforms ('os/arch' or 'os/arch/variant') of an index whose manifests are mirrored; empty is every platform.",
           "type": "array",
           "maxItems": 32,

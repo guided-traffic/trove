@@ -115,8 +115,20 @@
       <trove-tab-group class="tabs">
         <trove-tab [label]="tabGeneral">
           <div class="tab">
+            <div class="field">
+              <label class="field-label" for="f-description" i18n="@@repo.field.description-optional">Description (optional)</label>
+              <textarea
+                id="f-description"
+                class="area-input field-w-full"
+                rows="2"
+                maxlength="2000"
+                [value]="current.description"
+                [attr.aria-invalid]="fieldErrors().has('/description') ? 'true' : null"
+                (input)="setForm({ ...current, description: $any($event.target).value })"
+              ></textarea>
+            </div>
             <trove-repository-fields
-              section="basic"
+              section="notes"
               [form]="current"
               (formChange)="setForm($event)"
               [fieldErrors]="fieldErrors()"
@@ -151,6 +163,12 @@
                 (save)="saveVisibility($event)"
               />
             }
+            <trove-repository-fields
+              section="paths"
+              [form]="current"
+              (formChange)="setForm($event)"
+              [fieldErrors]="fieldErrors()"
+            />
             <trove-repository-fields
               section="access"
               [form]="current"
@@ -212,6 +230,14 @@
                   [format]="mirrorFormat"
                   [upstreamUrl]="current.upstream.url"
                   [restricted]="mirrorRestricted()"
+                  [fieldErrors]="fieldErrors()"
+                />
+                <trove-format-settings
+                  part="mirror"
+                  [nodes]="settingNodes()"
+                  [pointer]="memberPointer()"
+                  [value]="current.formatMember"
+                  (valueChange)="setFormatMember($event)"
                   [fieldErrors]="fieldErrors()"
                 />
               </div>

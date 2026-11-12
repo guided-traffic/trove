@@ -77,9 +77,9 @@ interface NumberMember {
 
 /**
  * The **Mirror** section of a remote repository of a format with `mirror: true` (R-UI-021,
- * R-REPO-050, Q-UI-104): the mode and the members of `remote.mirror`, in the wizard's class-specific
- * step and on the edit form. The members show in mode `mirror` only. A member left empty, or equal
- * to its default, is not written (Q-UI-80). A project Owner (`restricted`) sees the section
+ * R-REPO-050, Q-UI-104): the mode and the members of `remote.mirror`, in the creation form's Advanced settings
+ * and in the settings page's section Mirror, which give it its heading. The members show in mode `mirror` only, each with its
+ * default as its value (R-UI-084). A member equal to its default is not written (Q-UI-80). A project Owner (`restricted`) sees the section
  * read-only except **Pause** and **Turn off** (Q-REPO-142). Server field errors (`/remote/mode`,
  * `/remote/mirror/...`) appear at their controls.
  */
@@ -87,8 +87,7 @@ interface NumberMember {
   selector: 'trove-mirror-settings',
   imports: [],
   template: `
-    <section class="mirror" [id]="sectionId" tabindex="-1" aria-labelledby="mirror-heading">
-      <h2 id="mirror-heading" i18n="@@mirror.heading">Mirror</h2>
+    <div class="mirror" [id]="sectionId" tabindex="-1">
       <p class="hint" i18n="@@mirror.intro">
         A remote repository fetches and stores what clients ask for. In mode mirror it also stores,
         in background passes, what the upstream offers within the include patterns and bounds below.
@@ -217,6 +216,7 @@ interface NumberMember {
                 [attr.aria-invalid]="invalid(n.name)"
                 [attr.aria-describedby]="'d-' + idOf(n.name)"
                 (input)="setNumber(n.name, $any($event.target).value)"
+                (blur)="showDefaultAgain(n.name, $event)"
               />
               <p class="hint" [id]="'d-' + idOf(n.name)">{{ n.hint }}</p>
               @for (e of problems('/remote/mirror/' + n.name); track $index) {
@@ -231,7 +231,7 @@ interface NumberMember {
             >
             <select
               id="f-remote-mirror-discovery"
-              class="select-input"
+              class="select-input field-w-name"
               [disabled]="restricted()"
               [attr.aria-invalid]="invalid('discovery')"
               aria-describedby="d-mirror-discovery"
@@ -243,7 +243,7 @@ interface NumberMember {
             </select>
             <p id="d-mirror-discovery" class="hint" i18n="@@mirror.discovery.hint">
               How a pass finds the names of the upstream. Automatic tries the feed, then the
-              listing, then the names list. Default: automatic.
+              listing, then the names list.
             </p>
             @for (e of problems('/remote/mirror/discovery'); track $index) {
               <p class="field-error">{{ message(e) }}</p>
@@ -264,7 +264,7 @@ interface NumberMember {
               <span i18n="@@mirror.prereleases">Include prerelease versions</span>
             </label>
             <p id="d-mirror-prereleases" class="hint" i18n="@@mirror.prereleases.hint">
-              Whether a pass stores prerelease versions. Default: on.
+              Whether a pass stores prerelease versions.
             </p>
             @for (e of problems('/remote/mirror/includePrereleases'); track $index) {
               <p class="field-error">{{ message(e) }}</p>
@@ -272,11 +272,11 @@ interface NumberMember {
           </div>
         </div>
       }
-    </section>
+    </div>
   `,
   styles: `
     .mirror {
-      margin-block-start: var(--trove-space-6);
+      margin: 0;
     }
     .mode {
       display: flex;
@@ -353,25 +353,25 @@ export class MirrorSettings {
         name: 'intervalSeconds',
         width: 'duration',
         label: labels['intervalSeconds']!,
-        hint: $localize`:@@mirror.interval.hint:From the start of one pass to the start of the next. 300 to 604800. Default: 3600.`,
+        hint: $localize`:@@mirror.interval.hint:From the start of one pass to the start of the next. 300 to 604800.`,
       },
       {
         name: 'fullPassIntervalSeconds',
         width: 'duration',
         label: labels['fullPassIntervalSeconds']!,
-        hint: $localize`:@@mirror.full-interval.hint:Age of the last full pass after which the next pass is full. 0 means only when an incremental pass cannot run; otherwise 86400 to 7776000. Default: 604800.`,
+        hint: $localize`:@@mirror.full-interval.hint:Age of the last full pass after which the next pass is full. 0 means only when an incremental pass cannot run; otherwise 86400 to 7776000.`,
       },
       {
         name: 'concurrency',
         width: 'number',
         label: labels['concurrency']!,
-        hint: $localize`:@@mirror.concurrency.hint:The most background fetches one pass runs at once. 1 to 64. Default: 4.`,
+        hint: $localize`:@@mirror.concurrency.hint:The most background fetches one pass runs at once. 1 to 64.`,
       },
       {
         name: 'maxVersionsPerPackage',
         width: 'number',
         label: labels['maxVersionsPerPackage']!,
-        hint: $localize`:@@mirror.max-versions.hint:The newest versions of a package that a pass stores. 0 means all. 0 to 10000. Default: 0.`,
+        hint: $localize`:@@mirror.max-versions.hint:The newest versions of a package that a pass stores. 0 means all. 0 to 10000.`,
       },
       {
         name: 'maxBytes',
@@ -417,8 +417,10 @@ export class MirrorSettings {
     return fieldMessage(problem);
   }
 
+  /** The value in the field: the one set, else the member's default (R-UI-084); `maxBytes` has none and stays empty. */
   protected shown(name: string): string {
-    const v = this.form().mirror[name];
+    const set = this.form().mirror[name];
+    const v = set === undefined || set === null ? MIRROR_DEFAULTS[name] : set;
     return v === undefined || v === null ? '' : String(v);
   }
 
@@ -450,5 +452,11 @@ export class MirrorSettings {
 
   protected setNumber(name: string, text: string): void {
     this.set(name, numberOrText(text));
+  }
+
+  /** A field the user emptied shows its default again when it is left (R-UI-084); the member stays unwritten. */
+  protected showDefaultAgain(name: string, event: Event): void {
+    const field = event.target as HTMLInputElement;
+    if (field.value.trim() === '') field.value = this.shown(name);
   }
 }

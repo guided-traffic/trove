@@ -27,7 +27,7 @@ const el = <T extends Element>(root: Element, selector: string): T => {
 };
 
 describe('Format settings rendered from the schema', () => {
-  it('R-UI-021 R-ARCH-004 a nested object is a fieldset; booleans, enums, strings and integers get native controls with the schema default and description; the form passes axe', async () => {
+  it('R-UI-021 R-ARCH-004 R-UI-084 a nested object is a fieldset; booleans, enums, strings and integers get native controls with the schema default as their value and the description; the form passes axe', async () => {
     const r = await render('remote');
     const root = r.root;
 
@@ -37,7 +37,7 @@ describe('Format settings rendered from the schema', () => {
     expect(el(root, 'label[for="f-npm-serveRemovedVersions"]').textContent).toContain(
       'serveRemovedVersions',
     );
-    expect(el(root, '#f-npm-serveRemovedVersions-v').textContent).toContain('Default: off');
+    expect(root.querySelector('#f-npm-serveRemovedVersions-v')).toBeNull();
     expect(root.querySelector('#f-npm-latestGuard')).toBeNull();
 
     const group = el<HTMLFieldSetElement>(root, 'fieldset#f-npm-audit');
@@ -51,11 +51,11 @@ describe('Format settings rendered from the schema', () => {
     expect(el<HTMLInputElement>(root, '#f-npm-audit-providerURL').type).toBe('url');
     expect(root.querySelector('#f-npm-audit-providerURL-v')).toBeNull();
     const timeout = el<HTMLInputElement>(root, '#f-npm-audit-timeout');
-    expect(timeout.value).toBe('');
+    expect(timeout.value).toBe('30s');
     expect(timeout.getAttribute('aria-describedby')).toBe(
-      'f-npm-audit-timeout-d f-npm-audit-timeout-v',
+      'f-npm-audit-timeout-d',
     );
-    expect(text(el(root, '#f-npm-audit-timeout-v'))).toBe('Default: 30s');
+    expect(text(root)).not.toContain('Default:');
     expect(el(root, 'label[for="f-npm-audit-retries"]').textContent).toContain('Retries');
     expect(el<HTMLInputElement>(root, '#f-npm-audit-retries').getAttribute('inputmode')).toBe(
       'numeric',
@@ -91,7 +91,7 @@ describe('Format settings rendered from the schema', () => {
     });
   });
 
-  it('R-UI-021 a stored value is shown, and an enum without a default offers "Not set"', async () => {
+  it('R-UI-021 R-UI-084 a stored value is shown, and an enum without a default offers Automatic first', async () => {
     const r = await render('remote', {
       serveRemovedVersions: true,
       audit: { timeout: '1m', hosts: ['a'] },
@@ -115,7 +115,7 @@ describe('Format settings rendered from the schema', () => {
       },
     });
     const tier = el<HTMLSelectElement>(bare.root, '#f-npm-tier');
-    expect([...tier.options].map((o) => o.textContent?.trim())).toEqual(['Not set', 'a', 'b']);
+    expect([...tier.options].map((o) => o.textContent?.trim())).toEqual(['Automatic', 'a', 'b']);
     expect(tier.selectedIndex).toBe(0);
   });
 
@@ -173,7 +173,7 @@ describe('Format settings rendered from the schema', () => {
     const forward = el<HTMLInputElement>(remote.root, '#f-nuget-forwardSearch');
     expect(forward.type).toBe('checkbox');
     expect(forward.checked).toBe(true);
-    expect(text(el(remote.root, '#f-nuget-forwardSearch-v'))).toContain('Default: on');
+    expect(remote.root.querySelector('#f-nuget-forwardSearch-v')).toBeNull();
     expect(remote.root.querySelector('#f-nuget-deleteMode')).toBeNull();
     await expectAccessible(remote.root);
 
@@ -192,17 +192,17 @@ describe('Format settings rendered from the schema', () => {
         },
       });
 
-    it('R-DEB-008 a local repository edits architectures one per line with the default shown, compression as a checkbox, origin and label', async () => {
+    it('R-DEB-008 R-UI-084 a local repository edits architectures one per line with the default as its value, compression as a checkbox, origin and label', async () => {
       const r = await render('local');
       const arch = el<HTMLTextAreaElement>(r.root, '#f-deb-architectures');
-      expect(arch.value).toBe('');
-      expect(text(el(r.root, '#f-deb-architectures-v'))).toBe('Default: amd64, arm64');
+      expect(arch.value).toBe('amd64\narm64');
+      expect(r.root.querySelector('#f-deb-architectures-v')).toBeNull();
       expect(text(el(r.root, '#f-deb-architectures-l'))).toBe('One entry per line.');
       const xz = el<HTMLInputElement>(r.root, '#f-deb-compression-xz');
       expect(xz.type).toBe('checkbox');
       expect(xz.checked).toBe(false);
       expect(r.root.querySelector('#f-deb-compression-v')).toBeNull();
-      expect(el<HTMLInputElement>(r.root, '#f-deb-origin').value).toBe('');
+      expect(el<HTMLInputElement>(r.root, '#f-deb-origin').value).toBe('trove');
       expect(r.root.querySelector('#f-deb-suites')).toBeNull();
       expect(r.root.querySelector('#f-deb-upstreamKeys')).toBeNull();
 
@@ -231,34 +231,47 @@ describe('Format settings rendered from the schema', () => {
       const r = await render('virtual', { suites: ['stable', 'testing'], components: ['main', 'contrib'] });
       expect(el<HTMLTextAreaElement>(r.root, '#f-deb-suites').value).toBe('stable\ntesting');
       expect(el<HTMLTextAreaElement>(r.root, '#f-deb-components').value).toBe('main\ncontrib');
-      expect(text(el(r.root, '#f-deb-components-v'))).toBe('Default: main');
+      expect(r.root.querySelector('#f-deb-components-v')).toBeNull();
       expect(r.root.querySelector('#f-deb-suites-v')).toBeNull();
     });
 
-    it('R-DEB-020 R-DEB-024 a remote repository edits the upstream keys in an area and the mirror settings in a fieldset, and a server refusal appears at the member', async () => {
+    it('R-DEB-020 R-DEB-024 R-UI-083 a remote repository edits the upstream keys in an area; its mirror object is the mirror part, with server refusals at the member', async () => {
       const keys = new Map<string, FieldProblem>([
         ['/deb/mirror/suites', { pointer: '/deb/mirror/suites', code: 'deb_mirror_suites_required', detail: 'a mirror needs suites' }],
         ['/deb/upstreamKeys', { pointer: '/deb/upstreamKeys', code: 'invalid_value', detail: 'no certificate' }],
       ]);
-      const r = await render('remote', { upstreamKeys: 'BLOCK', mirror: { suites: ['stable'], sources: true } }, keys);
+      const value = { upstreamKeys: 'BLOCK', mirror: { suites: ['stable'], sources: true } };
+      const r = await render('remote', value, keys);
       const area = el<HTMLTextAreaElement>(r.root, '#f-deb-upstreamKeys');
       expect(area.tagName).toBe('TEXTAREA');
       expect(area.value).toBe('BLOCK');
       expect(area.getAttribute('aria-invalid')).toBe('true');
-      const mirror = el<HTMLFieldSetElement>(r.root, 'fieldset#f-deb-mirror');
-      expect(el<HTMLTextAreaElement>(mirror, '#f-deb-mirror-suites').value).toBe('stable');
-      expect(el<HTMLTextAreaElement>(mirror, '#f-deb-mirror-suites').getAttribute('aria-invalid')).toBe('true');
-      expect(text(el(mirror, '#f-deb-mirror-architectures-v'))).toBe('Default: amd64');
-      expect(el<HTMLInputElement>(mirror, '#f-deb-mirror-sources').checked).toBe(true);
+      expect(r.root.querySelector('#f-deb-mirror-suites')).toBeNull();
       expect(r.root.querySelector('#f-deb-architectures')).toBeNull();
+      await expectAccessible(r.root);
 
-      type(el<HTMLTextAreaElement>(mirror, '#f-deb-mirror-suites'), 'stable\ntesting');
-      await settle(r.fixture);
-      expect(r.fixture.componentInstance.value()).toEqual({
+      const m = await renderScreen(FormatSettings, {
+        inputs: {
+          nodes: settingNodes(DEB_SETTINGS_SCHEMA as SettingSchema, 'remote', 'deb'),
+          pointer: '/deb',
+          value,
+          fieldErrors: keys,
+          part: 'mirror',
+        },
+      });
+      expect(m.root.querySelector('#f-deb-upstreamKeys')).toBeNull();
+      expect(el<HTMLTextAreaElement>(m.root, '#f-deb-mirror-suites').value).toBe('stable');
+      expect(el<HTMLTextAreaElement>(m.root, '#f-deb-mirror-suites').getAttribute('aria-invalid')).toBe('true');
+      expect(el<HTMLTextAreaElement>(m.root, '#f-deb-mirror-architectures').value).toBe('amd64');
+      expect(el<HTMLInputElement>(m.root, '#f-deb-mirror-sources').checked).toBe(true);
+
+      type(el<HTMLTextAreaElement>(m.root, '#f-deb-mirror-suites'), 'stable\ntesting');
+      await settle(m.fixture);
+      expect(m.fixture.componentInstance.value()).toEqual({
         upstreamKeys: 'BLOCK',
         mirror: { suites: ['stable', 'testing'], sources: true },
       });
-      await expectAccessible(r.root);
+      await expectAccessible(m.root);
     });
   });
 });

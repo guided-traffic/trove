@@ -7,6 +7,7 @@
   "additionalProperties": false,
   "properties": {
     "deleteMode": {
+      "title": "Delete mode",
       "description": "What the protocol DELETE of a package does (R-NUGET-007, Q-NUGET-1): unlist keeps the version in the flat container and downloadable, delete removes it and writes its tombstone. A delete through the management API, the UI or /files/ is always a hard delete.",
       "type": "string",
       "enum": ["unlist", "delete"],
@@ -14,12 +15,14 @@
       "x-trove-classes": ["local"]
     },
     "forwardSearch": {
+      "title": "Forward search",
       "description": "Forward the search and autocomplete requests of this remote to the upstream's search resource (R-NUGET-016, Q-NUGET-4). false answers from the packages the remote has cached.",
       "type": "boolean",
       "default": true,
       "x-trove-classes": ["remote"]
     },
     "vulnerabilityInfo": {
+      "title": "Vulnerability information",
       "description": "The vulnerability information of the service index (R-VULN-018): local lists VulnerabilityInfo/6.7.0 and serves trove's own NuGet advisory data while that data is complete (every class; answers like off while vulnerabilities.enabled is false); off lists nothing. Left out, the mode is local while vulnerabilities.enabled is true and the OSV source is not off, else off. The pass-through of the upstream's information, upstream, is refused until R-NUGET-023 is built.",
       "type": "string",
       "enum": ["local", "off"]

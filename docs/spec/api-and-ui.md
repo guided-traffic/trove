@@ -4788,7 +4788,7 @@ Acceptance criteria:
   Public icon, and an anonymous visitor's package page of a package in it has no README tab (R-UI-057).
 - In an Internal project the option Public of both groups is disabled with the reason.
 
-Built as Q-UI-231, Q-UI-236, Q-UI-237: [repository-visibility.ts](../../web/src/app/features/repositories/repository-visibility.ts), [repository-wizard.ts](../../web/src/app/features/repositories/repository-wizard.ts); test [repository-visibility.spec.ts](../../web/src/app/features/repositories/repository-visibility.spec.ts).
+Built as Q-UI-231, Q-UI-236, Q-UI-237: [repository-visibility.ts](../../web/src/app/features/repositories/repository-visibility.ts), [repository-create.ts](../../web/src/app/features/repositories/repository-create.ts) (the creation form since R-UI-080); test [repository-visibility.spec.ts](../../web/src/app/features/repositories/repository-visibility.spec.ts).
 
 ### R-UI-056 · The external flag on the user page
 Priority: **MVP** · Covers: trove-only
@@ -5486,7 +5486,8 @@ Priority: **MVP** · Covers: UI-031
   back to the chooser. In this order: the project (admin area only; inside a project it is given and shown as text), **Class**,
   **Key**, **Description (optional)**, **Visibility**, the class's own group (**Upstream** for remote, **Members** for virtual),
   the closed section **Advanced settings** (R-UI-083), the disclosure **Show as API request**, then **Create repository** and
-  **Cancel**. One column of at most 56 rem.
+  **Cancel**. One column of at most 56 rem. In the admin area the project is a select, held while the projects load; a project
+  the user chose stays chosen whatever the address binds later.
 - **Class** is a radio group of the three classes, each with its sentence; a class the format does not implement is disabled with
   its reason (Q-UI-113). Preset: local. Another class keeps the project, an edited key, the description and the visibility, and
   starts its own group and the Advanced settings from the defaults of that class (R-REPO-063, [Q-UI-341](#q-ui-341--the-class-is-a-radio-group-of-the-form-preset-to-local)).
@@ -5514,6 +5515,8 @@ Priority: **MVP** · Covers: UI-031, UI-032
   the ordered members with Add, Remove, Move up, Move down and Move to top, and **Deployment target**, a select of **None** and the
   local members, set to the first local member when the first one is added (Q-UI-347).
 - Nothing else is in the main form: no administrator notes, no patterns, no switches, no format settings ([Q-UI-343](#q-ui-343--the-standard-flow-holds-what-a-repository-needs-to-work-and-no-format-setting)).
+- When `getRepositoryDefaults` cannot be read (a refusal, or a server that does not answer it), the key starts empty and the
+  **Visibility** group is left out: the create sends no `visibility`, and the server applies its default (R-REPO-004).
 
 Acceptance criteria:
 
@@ -5557,7 +5560,7 @@ Acceptance criteria:
 ### R-UI-083 · Details on demand
 Priority: **MVP** · Covers: UI-031
 
-- The form's section **Advanced settings** (`<trove-settings-section>`, closed) has the sentence "Notes, paths and the settings of
+- The form's section **Advanced settings** (`<trove-disclosure>`, closed) has the sentence "Notes, paths and the settings of
   the format. The defaults suit most repositories." and these groups, each under its own heading, where they apply:
   **Administrator notes**; **Paths** (include and exclude patterns, the pattern syntax); **Access details** (Hide existence);
   **Mirror** (a remote of a format with `mirror`: the mode, and in mode mirror the members of `remote.mirror` and the format's own
@@ -5674,10 +5677,13 @@ Priority: **MVP** · Covers: UI-031
 - The form's title names the format (R-UI-080). Every section and group heading names one topic; no heading lists several.
 - A label is the setting in sentence case, its unit included ("Metadata cache period in seconds"); a help text is one line. The
   key's help: "Part of the repository's address. It cannot be changed later."
+- A format setting's label is the `title` of its member in the format's settings schema (Q-UI-79), which every member of every
+  format's schema has ("Tags to mirror", not `tags`).
 
 Acceptance criteria:
 
 - No heading of the form or of the settings page holds "and" between two topics.
+- Every member of every format's settings schema has a `title`.
 
 ### R-UI-090 · The grade shield
 Priority: **P1** · Covers: trove-only
@@ -10907,8 +10913,8 @@ and Q-UI-201. Documented in [ui-style-guide.md](../developer/ui-style-guide.md),
 and [web-ui.md](../developer/web-ui.md). Code: [format-icon.ts](../../web/src/app/shared/format-icon.ts),
 [web/public/formats/](../../web/public/formats/NOTICE.txt). Tests: the `Q-UI-225` cases in
 [format-icon.spec.ts](../../web/src/app/shared/format-icon.spec.ts), [package-list.spec.ts](../../web/src/app/features/packages/package-list.spec.ts),
-[package-detail.spec.ts](../../web/src/app/features/packages/package-detail.spec.ts) and
-[repository-wizard.spec.ts](../../web/src/app/features/repositories/repository-wizard.spec.ts).
+[package-detail.spec.ts](../../web/src/app/features/packages/package-detail.spec.ts), and the tiles' test of
+[repository-format-chooser.spec.ts](../../web/src/app/features/repositories/repository-format-chooser.spec.ts) (the chooser since R-UI-080).
 
 ### Q-UI-226 · A logo is an image of the owner's file, and the dark scheme shows the owner's light variant or a plate
 
@@ -12139,7 +12145,7 @@ use the same names. The development agent revisits a select whose closed text th
 [mapping-editor.ts](../../web/src/app/features/ci/mapping-editor.ts),
 [claim-tester.ts](../../web/src/app/features/ci/claim-tester.ts),
 [fields.ts](../../web/src/app/shared/access/fields.ts),
-[repository-wizard.html](../../web/src/app/features/repositories/repository-wizard.html),
+[repository-create.html](../../web/src/app/features/repositories/repository-create.html) (the creation form since R-UI-080),
 [exposure-rule-editor.html](../../web/src/app/features/endpoints/exposure-rule-editor.html),
 [_controls.scss](../../web/src/styles/_controls.scss).
 

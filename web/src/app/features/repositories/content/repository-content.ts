@@ -19,7 +19,7 @@ import { AddressField } from '../../../shared/address-field';
 import { Disclosure } from '../../../shared/ui/disclosure';
 import { FrequentPlaces } from '../../../core/frequent-places';
 import { clientAddress } from '../repository-model';
-import { classLabel } from '../repository-wizard';
+import { classLabel } from '../repository-class';
 import { contentShapeOf } from './content-shape';
 import { RepositoryFiles } from './repository-files';
 import { ItemSort, RepositoryItems } from './repository-items';

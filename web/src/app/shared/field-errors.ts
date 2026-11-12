@@ -1,4 +1,4 @@
-import { Component, input } from '@angular/core';
+import { Component, ElementRef, Injector, afterNextRender, inject, input, output } from '@angular/core';
 import { ApiError, FieldProblem } from '../api/problem';
 import { describeProblem } from '../core/http/problem-messages';
 
@@ -41,7 +41,7 @@ export function problemsAt(
   selector: 'trove-error-summary',
   template: `
     @if (items().length > 0) {
-      <div class="summary" role="alert">
+      <div class="summary" role="alert" tabindex="-1">
         <h2 class="title" i18n="@@field-errors.title">Some entries are not valid</h2>
         <ul>
           @for (item of items(); track item.targetId + item.message) {
@@ -84,8 +84,25 @@ export function problemsAt(
 })
 export class ErrorSummary {
   readonly items = input.required<readonly SummaryItem[]>();
+  /**
+   * A link of the summary was chosen: the screen opens the closed region that holds `id` (R-UI-083), and the field is focused once
+   * the region is open.
+   */
+  readonly reveal = output<string>();
+
+  private readonly host = inject(ElementRef<HTMLElement>);
+  private readonly injector = inject(Injector);
+
+  /** Moves the focus to the summary, after a submit that it reports (R-UI-086). */
+  focusSummary(): void {
+    afterNextRender(() => (this.host.nativeElement as HTMLElement).querySelector<HTMLElement>('.summary')?.focus(), {
+      injector: this.injector,
+    });
+  }
 
   protected focus(id: string): void {
+    this.reveal.emit(id);
     document.getElementById(id)?.focus();
+    afterNextRender(() => document.getElementById(id)?.focus(), { injector: this.injector });
   }
 }

@@ -23,7 +23,8 @@ export interface CrumbSpec {
  * configuration and never maintained by screens:
  *
  * - `data.crumbs` of a route adds the named steps of an area ("Administration"), with or without a link;
- * - a route with a string `title` adds a step with that title;
+ * - a route with a string `title` adds a step with that title, and a route whose title a resolver gives one step with the
+ *   resolved title (the creation form of a format);
  * - a parameter segment (`:key`) adds a step with the parameter's value, so a detail screen reads
  *   "Repositories > my-repo";
  * - the file tree's matcher route adds one step per path segment;
@@ -90,6 +91,9 @@ export function collect(root: ActivatedRouteSnapshot): Crumb[] {
     } else if (config && config.path === undefined && config.matcher) {
       // The file tree: the first segment is the repository, the rest is the path inside it.
       own.forEach((segment, i) => add({ label: segment, commands: [...before, ...own.slice(0, i + 1)], literal: true }));
+    } else if (config && typeof config.title === 'function' && config.path !== undefined && route.title) {
+      // A title a resolver gives (the creation form's "New OCI (Docker) repository"): one step that names the page.
+      add({ label: route.title, commands: [...before, ...own], literal: false });
     } else if (config && title && config.path !== undefined) {
       const pieces = config.path.split('/');
       pieces.forEach((piece, i) => {

@@ -138,20 +138,20 @@ describe('Virtual repository member editor (R-UI-022)', () => {
     expect([...select.options].map((o) => o.value)).toEqual(['', 'npm-local']);
     type(select, 'npm-local');
     await settle(fixture);
-    button(root, 'Save members').click();
+    button(root, /Save changes/).click();
     await settle(fixture);
     expect(saves()).toEqual([{ members: ['npm-local', 'npm-remote'], deployTarget: 'npm-local' }]);
   });
 
   it('R-UI-022 a user adds two members, reorders them and saves: the change carries that order', async () => {
     const { fixture, root, saves } = await render({ members: [] });
-    expect(button(root, 'Save members').disabled).toBe(true);
+    expect(button(root, /Save changes/).disabled).toBe(true);
     await click(fixture, option(root, 'vm-available', 'npm-remote'));
     await click(fixture, button(root, 'Add'));
     await click(fixture, option(root, 'vm-available', 'npm-team'));
     await click(fixture, button(root, 'Add'));
     await click(fixture, button(root, 'Move to top'));
-    button(root, 'Save members').click();
+    button(root, /Save changes/).click();
     await settle(fixture);
     expect(saves()).toEqual([{ members: ['npm-team', 'npm-remote'], deployTarget: null }]);
   });
@@ -162,7 +162,7 @@ describe('Virtual repository member editor (R-UI-022)', () => {
     await click(fixture, button(root, 'Add'));
     await click(fixture, button(root, 'Discard changes'));
     expect(keys(root, 'vm-members')).toEqual(['npm-local']);
-    expect(button(root, 'Save members').disabled).toBe(true);
+    expect(button(root, /Save changes/).disabled).toBe(true);
   });
 
   it('R-UI-022 a cycle or any refusal the server points at a member is shown on that member', async () => {
@@ -188,7 +188,7 @@ describe('Virtual repository member editor (R-UI-022)', () => {
 
   it('R-UI-022 without the right to change the configuration the lists are shown and nothing can be changed or saved', async () => {
     const { root } = await render({ canWrite: false });
-    expect([...root.querySelectorAll('button')].map((b) => text(b))).not.toContain('Save members');
+    expect([...root.querySelectorAll('button')].map((b) => text(b))).not.toContain('Save changes (members)');
     expect(button(root, 'Add').disabled).toBe(true);
   });
 

@@ -3,14 +3,13 @@ import { Router } from '@angular/router';
 import { ApiError } from '../../api/problem';
 import { ProjectsApi } from '../../api/projects-api';
 import { RepositoriesApi } from '../../api/repositories-api';
-import { VisibilityApi } from '../../api/visibility-api';
 import { SessionApi } from '../../api/session-api';
 import { FakeSessionApi } from '../../api/testing/fakes';
-import { FakeRepositoriesApi, GENERIC_FORMAT, PACKAGE_FORMAT } from '../../api/testing/fakes-catalog';
-import { FakeProjectsApi, FakeVisibilityApi, sampleProject } from '../../api/testing/fakes-projects';
+import { FakeRepositoriesApi, GENERIC_FORMAT, PACKAGE_FORMAT, sampleRepositoryDefaults } from '../../api/testing/fakes-catalog';
+import { FakeProjectsApi, sampleProject } from '../../api/testing/fakes-projects';
 import { button, expectAccessible, renderScreen, settle, text, type } from '../../testing/screen';
 import { RepositoryDetail } from './repository-detail';
-import { RepositoryWizard } from './repository-wizard';
+import { RepositoryCreate } from './repository-create';
 
 type Level = 'private' | 'internal' | 'public';
 
@@ -147,87 +146,79 @@ describe('The visibility block of a repository (R-UI-055)', () => {
   });
 });
 
-describe('The visibility of a repository in the creation wizard (R-UI-055)', () => {
-  async function toBasicStep(project: Level, defaultLevel: Level) {
-    const r = await renderScreen(RepositoryWizard, {
-      inputs: { project: 'web' },
+describe('The visibility of a repository in the creation form (R-UI-055, R-UI-081, R-REPO-063)', () => {
+  /** The form of a local npm repository whose defaults (R-REPO-063) answer `artifacts` as the visibility, or fail. */
+  async function openForm(project: Level, artifacts: Level | 'unavailable', capabilities?: readonly string[]) {
+    const r = await renderScreen(RepositoryCreate, {
+      inputs: { project: 'web', format: 'npm' },
+      ...(capabilities ? { capabilities } : {}),
       setup: (get) => {
         (get(ProjectsApi) as FakeProjectsApi).projects = [sampleProject({ visibility: project })];
-        (get(VisibilityApi) as FakeVisibilityApi).stored.settings.defaultLevel = defaultLevel;
-        (get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT];
+        const fake = get(RepositoriesApi) as FakeRepositoriesApi;
+        fake.formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT];
+        if (artifacts === 'unavailable') {
+          fake.defaultsError = new ApiError(503, { code: 'unavailable' }, 'req-1');
+        } else {
+          fake.defaultsFor = (_p, format, cls) => {
+            const d = sampleRepositoryDefaults(PACKAGE_FORMAT, cls);
+            return { ...d, repository: { ...d.repository, format, visibility: { artifacts, wiki: artifacts } } };
+          };
+        }
+        if (capabilities?.length === 0) {
+          (get(SessionApi) as FakeSessionApi).meResult = {
+            roles: [],
+            capabilities: [],
+            principals: ['user:alice'],
+            projects: [{ key: 'web', role: 'owner' }],
+          };
+        }
       },
     });
-    const click = async (el: HTMLElement) => {
-      el.click();
+    const radios = () => [...r.root.querySelectorAll<HTMLInputElement>('trove-visibility-level input[type="radio"]')];
+    const create = async () => {
+      button(r.root, 'Create repository').click();
       await settle(r.fixture);
     };
-    await click([...r.root.querySelectorAll<HTMLElement>('[role="option"]')].find((t) => t.textContent?.includes('npm'))!);
-    await click(button(r.root, 'Next'));
-    await click(r.root.querySelector<HTMLInputElement>('input[name="class"][value="local"]')!);
-    await click(button(r.root, 'Next'));
-    type(r.root.querySelector<HTMLInputElement>('#f-key')!, 'new-repo');
-    await settle(r.fixture);
-    const radios = () => [...r.root.querySelectorAll<HTMLInputElement>('trove-visibility-level input[type="radio"]')];
-    return { ...r, click, radios };
+    return { ...r, radios, create };
   }
 
-  it('R-UI-055 the artifacts group is preset to the lower of the installation default and the project level', async () => {
-    const a = await toBasicStep('public', 'internal');
+  it('R-UI-081 R-REPO-063 the artifacts group is preset to the visibility of the defaults, and a level above the project is disabled', async () => {
+    const a = await openForm('public', 'internal');
     expect(a.radios().map((x) => x.checked)).toEqual([false, true, false]);
-    const b = await toBasicStep('private', 'public');
+    const b = await openForm('private', 'private');
     expect(b.radios().map((x) => x.checked)).toEqual([true, false, false]);
     expect(b.radios().map((x) => x.disabled)).toEqual([false, true, true]);
+    await expectAccessible(b.root);
   });
 
-  it('R-UI-055 the review shows the level and the create sends artifacts and wiki at it', async () => {
-    const r = await toBasicStep('public', 'internal');
+  it('R-UI-055 R-UI-084 a create that keeps the preset leaves visibility out; another level is sent for artifacts and wiki', async () => {
     navigateSpy();
+    const kept = await openForm('public', 'internal');
+    await kept.create();
+    const fake = kept.get(RepositoriesApi) as FakeRepositoriesApi;
+    expect(fake.repositories.find((x) => x.key === 'npm-local')?.visibility).toBeUndefined();
+
+    const r = await openForm('public', 'internal');
     r.radios()[2]!.click();
     await settle(r.fixture);
-    await r.click(button(r.root, 'Next'));
-    await r.click(button(r.root, 'Next'));
-    expect(text(r.root.querySelector('dl')!)).toContain('Public');
-    await r.click(button(r.root, 'Create repository'));
-    const fake = r.get(RepositoriesApi) as FakeRepositoriesApi;
-    expect(fake.repositories.find((x) => x.key === 'new-repo')?.visibility).toEqual({ artifacts: 'public', wiki: 'public' });
+    await r.create();
+    const other = r.get(RepositoriesApi) as FakeRepositoriesApi;
+    expect(other.repositories.find((x) => x.key === 'npm-local')?.visibility).toEqual({ artifacts: 'public', wiki: 'public' });
   });
-});
 
-describe('The wizard for an Owner who cannot read the installation default (R-UI-055, R-REPO-004)', () => {
-  it('R-UI-055 names the default instead of claiming Private and leaves visibility out of the create', async () => {
+  it('R-REPO-063 an Owner without settings:read gets the visibility of the defaults, not Private', async () => {
+    const r = await openForm('internal', 'internal', []);
+    expect(r.radios().map((x) => x.checked)).toEqual([false, true, false]);
+  });
+
+  it('R-UI-081 without the defaults the field is left out and the server applies its default', async () => {
     navigateSpy();
-    const r = await renderScreen(RepositoryWizard, {
-      inputs: { project: 'web' },
-      capabilities: [],
-      setup: (get) => {
-        (get(SessionApi) as FakeSessionApi).meResult = {
-          roles: [],
-          capabilities: [],
-          principals: ['user:alice'],
-          projects: [{ key: 'web', role: 'owner' }],
-        };
-        (get(ProjectsApi) as FakeProjectsApi).projects = [sampleProject({ visibility: 'public' })];
-        (get(VisibilityApi) as FakeVisibilityApi).failure = new ApiError(403, { code: 'forbidden' }, 'req-1');
-        (get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT];
-      },
-    });
-    const click = async (el: HTMLElement) => {
-      el.click();
-      await settle(r.fixture);
-    };
-    await click([...r.root.querySelectorAll<HTMLElement>('[role="option"]')].find((t) => t.textContent?.includes('npm'))!);
-    await click(button(r.root, 'Next'));
-    await click(r.root.querySelector<HTMLInputElement>('input[name="class"][value="local"]')!);
-    await click(button(r.root, 'Next'));
+    const r = await openForm('public', 'unavailable');
+    expect(r.root.querySelector('trove-visibility-level')).toBeNull();
+    expect(r.root.querySelector<HTMLInputElement>('#f-key')!.value).toBe('');
     type(r.root.querySelector<HTMLInputElement>('#f-key')!, 'owner-repo');
     await settle(r.fixture);
-    const radios = [...r.root.querySelectorAll<HTMLInputElement>('trove-visibility-level input[type="radio"]')];
-    expect(radios.map((x) => x.checked)).toEqual([false, false, false]);
-    expect(text(r.root)).toContain('the repository takes the default of the installation and of its project');
-    await click(button(r.root, 'Next'));
-    await click(button(r.root, 'Next'));
-    expect(text(r.root.querySelector('dl')!)).toContain('Default of the installation and of the project');
-    await click(button(r.root, 'Create repository'));
+    await r.create();
     const fake = r.get(RepositoriesApi) as FakeRepositoriesApi;
     expect(fake.repositories.find((x) => x.key === 'owner-repo')?.visibility).toBeUndefined();
   });

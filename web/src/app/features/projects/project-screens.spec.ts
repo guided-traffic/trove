@@ -16,7 +16,7 @@ import { SessionStore } from '../../core/session-store';
 import { seriousViolations } from '../../testing/axe';
 import { button, buttonByText, renderScreen, settle, sleep, text, type, typeInto } from '../../testing/screen';
 import { PREVIEW_DEBOUNCE_MS, PolicyEditor } from '../permissions/policy-editor';
-import { RepositoryWizard } from '../repositories/repository-wizard';
+import { RepositoryCreate } from '../repositories/repository-create';
 import { ServiceAccountDetail } from '../service-accounts/service-account-detail';
 
 type Get = <A>(token: abstract new (...args: never[]) => A) => A;
@@ -203,36 +203,18 @@ describe('A project service account (R-UI-041, Q-AUTHZ-175, Q-AUTHZ-177)', () =>
     expect(text(root)).toContain('Service account of project data');
   });
 });
-
-describe('The repository wizard in a project (R-REPO-001, R-AUTHZ-026)', () => {
+describe('The creation form of a repository and its project (R-REPO-001, R-AUTHZ-026)', () => {
   it('R-REPO-001 starts on the project of the link, and creates the repository inside it', async () => {
-    const { fixture, root, get } = await renderScreen(RepositoryWizard, {
-      inputs: { project: 'web' },
+    const { fixture, root, get } = await renderScreen(RepositoryCreate, {
+      inputs: { project: 'web', format: 'npm' },
       capabilities: [],
       setup: (g) => {
         projectOwner()(g);
         (g(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [PACKAGE_FORMAT];
       },
     });
-    const radio = (kind: string, value: string): void => {
-      const el = root.querySelector<HTMLInputElement>(`input[name="${kind}"][value="${value}"]`)!;
-      el.checked = true;
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-    };
-    root.querySelector<HTMLElement>('[role="option"]')!.click();
-    await settle(fixture);
-    button(root, 'Next').click();
-    await settle(fixture);
-    radio('class', 'local');
-    await settle(fixture);
-    button(root, 'Next').click();
-    await settle(fixture);
-    expect(root.querySelector<HTMLSelectElement>('select[name="project"]')!.value).toBe('web');
+    expect(root.querySelector<HTMLSelectElement>('#f-project')!.value).toBe('web');
     type(root.querySelector<HTMLInputElement>('#f-key')!, 'libs');
-    await settle(fixture);
-    button(root, 'Next').click();
-    await settle(fixture);
-    button(root, 'Next').click();
     await settle(fixture);
     button(root, /Create repository/).click();
     await sleep(fixture, 100);
@@ -241,30 +223,24 @@ describe('The repository wizard in a project (R-REPO-001, R-AUTHZ-026)', () => {
     expect(api.repositories.find((r) => r.key === 'libs')?.project).toBe('web');
   });
 
-  it('R-REPO-001 the wizard without a project asks for one and does not go on without', async () => {
-    const { fixture, root } = await renderScreen(RepositoryWizard, { setup: (g) => ((g(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [PACKAGE_FORMAT]) });
-    root.querySelector<HTMLElement>('[role="option"]')!.click();
-    await settle(fixture);
-    button(root, 'Next').click();
-    await settle(fixture);
-    const el = root.querySelector<HTMLInputElement>('input[name="class"][value="local"]')!;
-    el.checked = true;
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-    await settle(fixture);
-    button(root, 'Next').click();
-    await settle(fixture);
-    expect(root.querySelector<HTMLSelectElement>('select[name="project"]')!.value).toBe('');
+  it('R-REPO-001 R-UI-086 the admin area form without a project asks for one and sends nothing without', async () => {
+    const { fixture, root, get } = await renderScreen(RepositoryCreate, {
+      inputs: { format: 'npm' },
+      setup: (g) => ((g(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [PACKAGE_FORMAT]),
+    });
+    expect(root.querySelector<HTMLSelectElement>('#f-project')!.value).toBe('');
     type(root.querySelector<HTMLInputElement>('#f-key')!, 'libs');
     await settle(fixture);
-    button(root, 'Next').click();
+    button(root, /Create repository/).click();
     await settle(fixture);
-    expect(root.querySelector('#f-key')).not.toBeNull();
+    expect(text(root.querySelector('[role="alert"]')!)).toContain('Choose a project.');
+    expect((get(RepositoriesApi) as FakeRepositoriesApi).createKeys).toEqual([]);
   });
 });
 
 describe('Session helpers and messages of the project screens (R-UI-041, R-UI-042)', () => {
   it('R-UI-041 projectRole, canWritePolicies and canWriteRepositories follow authz/me and the capabilities', async () => {
-    const { get } = await renderScreen(RepositoryWizard, { capabilities: [], setup: projectOwner() });
+    const { get } = await renderScreen(RepositoryCreate, { capabilities: [], setup: projectOwner() });
     const session = get(SessionStore);
     // An Owner administers the project inside it; the admin area is for the holders of capabilities (Q-UI-129).
     expect(session.hasAdminArea()).toBe(false);
@@ -279,14 +255,14 @@ describe('Session helpers and messages of the project screens (R-UI-041, R-UI-04
   });
 
   it('R-UI-041 a Maintainer reads and does not administer', async () => {
-    const { get } = await renderScreen(RepositoryWizard, { capabilities: [], setup: projectOwner('maintainer') });
+    const { get } = await renderScreen(RepositoryCreate, { capabilities: [], setup: projectOwner('maintainer') });
     const session = get(SessionStore);
     expect(session.hasAdminArea()).toBe(false);
     expect(session.canWriteRepositories('web')).toBe(false);
   });
 
   it('R-UI-041 the capabilities decide for any project', async () => {
-    const { get } = await renderScreen(RepositoryWizard, { capabilities: ['policies:write', 'repositories:write-config'] });
+    const { get } = await renderScreen(RepositoryCreate, { capabilities: ['policies:write', 'repositories:write-config'] });
     const session = get(SessionStore);
     expect(session.canWritePolicies('data')).toBe(true);
     expect(session.canWritePolicies(null)).toBe(true);
@@ -325,7 +301,7 @@ describe('Session helpers and messages of the project screens (R-UI-041, R-UI-04
 
   it('Q-AUTHZ-217 the fake models a project: the key pattern, an existing key and the last Owner', async () => {
     TestBed.resetTestingModule();
-    const { get } = await renderScreen(RepositoryWizard);
+    const { get } = await renderScreen(RepositoryCreate);
     const api = get(ProjectsApi) as FakeProjectsApi;
     await expect(api.create({ key: 'web', displayName: 'x', description: '' }, 'k')).rejects.toMatchObject({ code: 'already_exists' });
     await expect(api.removeMember('web', 'group:web-leads')).rejects.toMatchObject({ code: 'last_owner' });

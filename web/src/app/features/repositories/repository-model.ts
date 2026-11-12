@@ -4,8 +4,13 @@ import { JsonObject } from '../../shared/merge-patch';
 import { SettingSchema, pruneDefaults } from './settings-schema';
 import { EMPTY_UPSTREAM, RemoteWrite, UpstreamDefaults, UpstreamForm, upstreamOf } from './upstream-model';
 
-/** The key pattern of R-REPO-002 (INV-5), checked live in the wizard; the server decides. */
+/** The key pattern of R-REPO-002 (INV-5), checked in the creation form; the server decides. */
 export const KEY_PATTERN = /^(?=.{2,64}$)[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$/;
+
+/** Whether a key has the shape of R-REPO-002: the pattern, no `..`, no trailing dot. */
+export function keyShapeValid(key: string): boolean {
+  return KEY_PATTERN.test(key) && !key.includes('..') && !key.endsWith('.');
+}
 
 export type HideExistence = 'inherit' | 'true' | 'false';
 
@@ -200,20 +205,53 @@ export function settingsOf(form: RepositoryForm, format?: FormatMemberOf): Recor
   };
 }
 
-/** The document a create sends; the project is named by the path of the request (R-REPO-001). */
-export function documentOf(
+/** The members and the deployment target a virtual repository is created with (R-UI-081). */
+export interface VirtualMembersOf {
+  readonly members: readonly string[];
+  readonly deployTarget: string | null;
+}
+
+/**
+ * The document a create sends (R-UI-081, R-UI-084, Q-UI-80): the identity, and of every other member only what differs from the
+ * default a create without it would store, so the server applies the rest. The project is named by the path of the request
+ * (R-REPO-001); a new repository is never created disabled (R-UI-083). `visibility` is written only when the user chose a level
+ * other than the defaults' (R-REPO-063).
+ */
+export function createBodyOf(
   cls: Repository['class'],
   format: FormatMemberOf,
   form: RepositoryForm,
-  visibility?: RepositoryVisibility,
+  extras: { readonly visibility?: RepositoryVisibility; readonly virtual?: VirtualMembersOf } = {},
 ): Repository {
+  const member = pruneDefaults(format.schema, form.formatMember);
+  const remote = format.remote
+    ? remoteOf(form, 'sparse', { mirror: format.mirror ?? true, ...(format.upstream ? { upstream: format.upstream } : {}) })
+    : undefined;
+  const includes = lines(form.includePatterns);
+  const excludes = lines(form.excludePatterns);
+  const virtual = extras.virtual;
+  const withMembers = virtual !== undefined && (virtual.members.length > 0 || virtual.deployTarget !== null);
   return {
     key: form.key,
     class: cls,
     format: format.name,
-    ...settingsOf(form, format),
-    ...(visibility ? { visibility } : {}),
-  };
+    ...(form.description.trim() !== '' ? { description: form.description } : {}),
+    ...(form.adminNotes.trim() !== '' ? { adminNotes: form.adminNotes } : {}),
+    ...(includes.length > 0 ? { includePatterns: includes } : {}),
+    ...(excludes.length > 0 ? { excludePatterns: excludes } : {}),
+    ...(form.hideExistence !== 'inherit' ? { hideExistence: form.hideExistence } : {}),
+    ...(Object.keys(member).length > 0 ? { [format.name]: member } : {}),
+    ...(remote ? { remote } : {}),
+    ...(withMembers
+      ? {
+          virtual: {
+            members: [...virtual.members],
+            ...(virtual.deployTarget !== null ? { deployTarget: virtual.deployTarget } : {}),
+          },
+        }
+      : {}),
+    ...(extras.visibility ? { visibility: extras.visibility } : {}),
+  } as Repository;
 }
 
 /**
