@@ -159,17 +159,17 @@
     </unit>
     <unit id="shell.menu.setup">
       <notes>
-        <note category="location">src/app/app.html:92,94</note>
+        <note category="location">src/app/app.html:91,92</note>
         <note category="location">src/app/features/search/search-model.ts:98</note>
       </notes>
       <segment>
-        <source> Client setup </source>
+        <source>Client setup</source>
         <target>Client-Einrichtung</target>
       </segment>
     </unit>
     <unit id="shell.menu.guides">
       <notes>
-        <note category="location">src/app/app.html:95,97</note>
+        <note category="location">src/app/app.html:93,95</note>
       </notes>
       <segment>
         <source> Guides </source>
@@ -178,7 +178,7 @@
     </unit>
     <unit id="shell.menu.language">
       <notes>
-        <note category="location">src/app/app.html:99,100</note>
+        <note category="location">src/app/app.html:97,98</note>
       </notes>
       <segment>
         <source>Language</source>
@@ -187,7 +187,7 @@
     </unit>
     <unit id="shell.menu.sign-out">
       <notes>
-        <note category="location">src/app/app.html:104,107</note>
+        <note category="location">src/app/app.html:102,105</note>
       </notes>
       <segment>
         <source> Sign out </source>
@@ -196,7 +196,7 @@
     </unit>
     <unit id="shell.close-nav">
       <notes>
-        <note category="location">src/app/app.html:144,147</note>
+        <note category="location">src/app/app.html:142,145</note>
       </notes>
       <segment>
         <source>Close navigation</source>
@@ -205,7 +205,7 @@
     </unit>
     <unit id="shell.nav">
       <notes>
-        <note category="location">src/app/app.html:162,163</note>
+        <note category="location">src/app/app.html:160,161</note>
       </notes>
       <segment>
         <source>Main navigation</source>
@@ -214,7 +214,7 @@
     </unit>
     <unit id="shell.collapse">
       <notes>
-        <note category="location">src/app/app.html:219,221</note>
+        <note category="location">src/app/app.html:217,219</note>
       </notes>
       <segment>
         <source>Collapse sidebar</source>
@@ -223,7 +223,7 @@
     </unit>
     <unit id="shell.breadcrumbs">
       <notes>
-        <note category="location">src/app/app.html:230,232</note>
+        <note category="location">src/app/app.html:228,230</note>
       </notes>
       <segment>
         <source>Breadcrumb</source>
@@ -4159,7 +4159,7 @@
         <note category="location">src/app/features/browse/browse.html:623,626</note>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:15,16</note>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:156,160</note>
-        <note category="location">src/app/features/repositories/repository-create.html:234,236</note>
+        <note category="location">src/app/features/repositories/repository-create.html:235,237</note>
         <note category="location">src/app/features/repositories/repository-detail.html:45,46</note>
         <note category="location">src/app/features/repositories/repository-format-chooser.ts:40,42</note>
       </notes>
@@ -4965,7 +4965,7 @@
         <note category="location">src/app/features/browse/browse.html:433,434</note>
         <note category="location">src/app/features/browse/browse.ts:194</note>
         <note category="location">src/app/features/repositories/repository-detail.html:53,54</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:335,336</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:336,337</note>
         <note category="location">src/app/features/repositories/repository-list.html:55</note>
         <note category="location">src/app/features/repositories/repository-list.html:60</note>
         <note category="location">src/app/features/repositories/repository-list.ts:207</note>
@@ -4983,7 +4983,7 @@
         <note category="location">src/app/features/browse/browse.html:440,441</note>
         <note category="location">src/app/features/browse/browse.ts:202</note>
         <note category="location">src/app/features/repositories/repository-detail.html:55,56</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:337,338</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:338,339</note>
         <note category="location">src/app/features/repositories/repository-list.html:68</note>
         <note category="location">src/app/features/repositories/repository-list.html:73</note>
         <note category="location">src/app/features/repositories/repository-list.ts:204</note>
@@ -5203,7 +5203,7 @@
     <unit id="repo.deleting">
       <notes>
         <note category="location">src/app/features/browse/browse.html:369,370</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:435,436</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:436,437</note>
         <note category="location">src/app/features/repositories/repository-list.html:215,216</note>
       </notes>
       <segment>
@@ -9642,7 +9642,7 @@
     <unit id="ep.yes">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:94,95</note>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:584,585</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:582,583</note>
       </notes>
       <segment>
         <source>yes</source>
@@ -9652,7 +9652,7 @@
     <unit id="ep.no">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:96,97</note>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:587,588</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:585,586</note>
       </notes>
       <segment>
         <source>no</source>
@@ -10387,17 +10387,17 @@
     </unit>
     <unit id="repo.edit.reset">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:413,414</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:412,414</note>
         <note category="location">src/app/features/repositories/repository-detail.html:36,39</note>
       </notes>
       <segment>
-        <source> Discard changes </source>
+        <source>Discard changes</source>
         <target>Änderungen verwerfen</target>
       </segment>
     </unit>
     <unit id="repo.edit.unsaved">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:418,420</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:416,418</note>
       </notes>
       <segment>
         <source>You have unsaved changes.</source>
@@ -10406,7 +10406,7 @@
     </unit>
     <unit id="ep.preview.heading">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:426,427</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:424,425</note>
       </notes>
       <segment>
         <source>Preview</source>
@@ -10415,7 +10415,7 @@
     </unit>
     <unit id="ep.preview.hint">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:428,430</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:426,428</note>
       </notes>
       <segment>
         <source> Shows what this endpoint would expose with the rule as you have it now, saved or not. </source>
@@ -10424,7 +10424,7 @@
     </unit>
     <unit id="ep.preview.choose">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:431,433</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:429,431</note>
       </notes>
       <segment>
         <source>Choose a repository to see the preview.</source>
@@ -10433,7 +10433,7 @@
     </unit>
     <unit id="ep.preview.package">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:436,438</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:434,436</note>
       </notes>
       <segment>
         <source>Package to test</source>
@@ -10442,7 +10442,7 @@
     </unit>
     <unit id="ep.preview.versions">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:449,451</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:447,449</note>
       </notes>
       <segment>
         <source>Versions to test (one per line, empty for the stored ones)</source>
@@ -10451,7 +10451,7 @@
     </unit>
     <unit id="ep.preview.paths">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:463,465</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:461,463</note>
       </notes>
       <segment>
         <source>Paths to test (one per line)</source>
@@ -10460,7 +10460,7 @@
     </unit>
     <unit id="ep.preview.updating">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:478,481</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:476,479</note>
       </notes>
       <segment>
         <source>Updating the preview.</source>
@@ -10469,7 +10469,7 @@
     </unit>
     <unit id="ep.preview.exposed">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:488,490</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:486,488</note>
       </notes>
       <segment>
         <source>The repository or package is exposed</source>
@@ -10478,7 +10478,7 @@
     </unit>
     <unit id="ep.preview.hidden">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:491,493</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:489,491</note>
       </notes>
       <segment>
         <source>The repository or package is hidden</source>
@@ -10487,7 +10487,7 @@
     </unit>
     <unit id="ep.preview.paths.caption">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:501,502</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:499,500</note>
       </notes>
       <segment>
         <source> Verdict per path </source>
@@ -10496,7 +10496,7 @@
     </unit>
     <unit id="ep.preview.col.path">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:505,506</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:503,504</note>
       </notes>
       <segment>
         <source>Path</source>
@@ -10505,8 +10505,8 @@
     </unit>
     <unit id="ep.preview.col.verdict">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:506,507</note>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:538,539</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:504,505</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:536,537</note>
       </notes>
       <segment>
         <source>Verdict</source>
@@ -10515,8 +10515,8 @@
     </unit>
     <unit id="ep.preview.col.rule">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:507,509</note>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:539,541</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:505,507</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:537,539</note>
       </notes>
       <segment>
         <source>Rule</source>
@@ -10525,7 +10525,7 @@
     </unit>
     <unit id="ep.preview.versions.caption">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:533,535</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:531,533</note>
       </notes>
       <segment>
         <source> Verdict per version </source>
@@ -10534,8 +10534,8 @@
     </unit>
     <unit id="ep.preview.col.version">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:537,538</note>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:570,571</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:535,536</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:568,569</note>
       </notes>
       <segment>
         <source>Version</source>
@@ -10544,7 +10544,7 @@
     </unit>
     <unit id="ep.preview.tags.caption">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:565,566</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:563,564</note>
       </notes>
       <segment>
         <source> Visibility per tag </source>
@@ -10553,7 +10553,7 @@
     </unit>
     <unit id="ep.preview.col.tag">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:570</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:568</note>
       </notes>
       <segment>
         <source>Tag</source>
@@ -10562,7 +10562,7 @@
     </unit>
     <unit id="ep.preview.col.visible">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:571,573</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:569,571</note>
       </notes>
       <segment>
         <source>Visible</source>
@@ -10571,7 +10571,7 @@
     </unit>
     <unit id="ep.rule.advanced">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:605,606</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:603,604</note>
       </notes>
       <segment>
         <source>Advanced</source>
@@ -10580,7 +10580,7 @@
     </unit>
     <unit id="ep.rule.advanced-hint">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:607,609</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:605,607</note>
       </notes>
       <segment>
         <source>Delete this rule.</source>
@@ -10589,7 +10589,7 @@
     </unit>
     <unit id="ep.rule.delete-note">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:609,610</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:607,608</note>
       </notes>
       <segment>
         <source>Deleting the rule makes content that only this rule exposes unavailable on this endpoint.</source>
@@ -10598,7 +10598,7 @@
     </unit>
     <unit id="ep.editor.delete">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:610,611</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:608,609</note>
       </notes>
       <segment>
         <source>Delete rule</source>
@@ -19284,8 +19284,8 @@
     </unit>
     <unit id="mirror.field.mode">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:30</note>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:109,110</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:40</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:119,120</note>
       </notes>
       <segment>
         <source>Mode</source>
@@ -19294,10 +19294,10 @@
     </unit>
     <unit id="mirror.heading">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:33</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:43</note>
         <note category="location">src/app/features/repositories/repository-create.html:188,189</note>
         <note category="location">src/app/features/repositories/repository-detail.html:164</note>
-        <note category="location">src/app/features/repositories/repository-detail.ts:304</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:332</note>
       </notes>
       <segment>
         <source>Mirror</source>
@@ -19306,8 +19306,8 @@
     </unit>
     <unit id="mirror.paused">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:38</note>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:193,194</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:48</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:203,204</note>
       </notes>
       <segment>
         <source>Paused</source>
@@ -19316,7 +19316,7 @@
     </unit>
     <unit id="mirror.interval">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:39</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:49</note>
       </notes>
       <segment>
         <source>Pass interval in seconds</source>
@@ -19325,7 +19325,7 @@
     </unit>
     <unit id="mirror.full-interval">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:40</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:50</note>
       </notes>
       <segment>
         <source>Full pass interval in seconds</source>
@@ -19334,8 +19334,8 @@
     </unit>
     <unit id="mirror.discovery">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:41</note>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:230,232</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:51</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:240,242</note>
       </notes>
       <segment>
         <source>Discovery</source>
@@ -19344,7 +19344,7 @@
     </unit>
     <unit id="mirror.concurrency">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:42</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:52</note>
       </notes>
       <segment>
         <source>Concurrent fetches</source>
@@ -19353,7 +19353,7 @@
     </unit>
     <unit id="mirror.max-versions">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:43</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:53</note>
       </notes>
       <segment>
         <source>Versions per package</source>
@@ -19362,8 +19362,8 @@
     </unit>
     <unit id="mirror.prereleases">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:44</note>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:264,266</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:54</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:274,276</note>
       </notes>
       <segment>
         <source>Include prerelease versions</source>
@@ -19372,7 +19372,7 @@
     </unit>
     <unit id="mirror.max-bytes">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:45</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:55</note>
       </notes>
       <segment>
         <source>Storage limit in bytes</source>
@@ -19381,7 +19381,7 @@
     </unit>
     <unit id="mirror.intro">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:92,95</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:102,105</note>
       </notes>
       <segment>
         <source> A remote repository fetches and stores what clients ask for. In mode mirror it also stores, in background passes, what the upstream offers within the include patterns and bounds below. </source>
@@ -19390,7 +19390,7 @@
     </unit>
     <unit id="mirror.restricted">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:102,104</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:112,114</note>
       </notes>
       <segment>
         <source>Only an administrator of the installation can switch a remote repository to mirror or change these settings. You can pause a mirror and turn it off.</source>
@@ -19399,7 +19399,7 @@
     </unit>
     <unit id="mirror.mode.pull-through">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:122,123</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:132,133</note>
       </notes>
       <segment>
         <source>Pull-through</source>
@@ -19408,7 +19408,7 @@
     </unit>
     <unit id="mirror.mode.pull-through.hint">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:124,127</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:134,137</note>
       </notes>
       <segment>
         <source>Fetches and stores what clients ask for. This is the default.</source>
@@ -19417,7 +19417,7 @@
     </unit>
     <unit id="mirror.mode.mirror">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:136,137</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:146,147</note>
       </notes>
       <segment>
         <source>Mirror</source>
@@ -19426,7 +19426,7 @@
     </unit>
     <unit id="mirror.mode.mirror.hint">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:138,141</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:148,151</note>
       </notes>
       <segment>
         <source>Also stores, in background passes, every package of the upstream that the include patterns and bounds admit.</source>
@@ -19435,7 +19435,7 @@
     </unit>
     <unit id="mirror.turn-off">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:153,154</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:163,164</note>
       </notes>
       <segment>
         <source>Turn off</source>
@@ -19444,7 +19444,7 @@
     </unit>
     <unit id="mirror.turn-off.hint">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:156,159</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:166,169</note>
       </notes>
       <segment>
         <source>Back to pull-through. A running pass stops before its next package; stored content stays.</source>
@@ -19453,7 +19453,7 @@
     </unit>
     <unit id="mirror.unbounded.refused">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:167,169</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:177,179</note>
       </notes>
       <segment>
         <source>A mirror of a well-known public registry needs a bound. Give include patterns that each start with a literal part (such as <pc id="0" equivStart="START_TAG_CODE" equivEnd="CLOSE_TAG_CODE" type="other" dispStart="&lt;code translate=&quot;no&quot;&gt;" dispEnd="&lt;/code&gt;">@types/*</pc>), or a storage limit. Without either the server refuses to save it.</source>
@@ -19462,7 +19462,7 @@
     </unit>
     <unit id="mirror.unbounded.warned">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:176,179</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:186,189</note>
       </notes>
       <segment>
         <source>The mirror has neither include patterns that start with a literal part nor a storage limit: it stores everything the upstream offers. It is saved with a warning.</source>
@@ -19471,7 +19471,7 @@
     </unit>
     <unit id="mirror.paused.hint">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:196,198</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:206,208</note>
       </notes>
       <segment>
         <source> No pass starts, and a running pass stops before its next package. </source>
@@ -19480,7 +19480,7 @@
     </unit>
     <unit id="mirror.discovery.hint">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:245,247</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:255,257</note>
       </notes>
       <segment>
         <source> How a pass finds the names of the upstream. Automatic tries the feed, then the listing, then the names list. </source>
@@ -19489,7 +19489,7 @@
     </unit>
     <unit id="mirror.prereleases.hint">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:267,269</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:277,279</note>
       </notes>
       <segment>
         <source> Whether a pass stores prerelease versions. </source>
@@ -19498,7 +19498,7 @@
     </unit>
     <unit id="mirror.interval.hint">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:356</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:374</note>
       </notes>
       <segment>
         <source>From the start of one pass to the start of the next. 300 to 604800.</source>
@@ -19507,7 +19507,7 @@
     </unit>
     <unit id="mirror.full-interval.hint">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:362</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:380</note>
       </notes>
       <segment>
         <source>Age of the last full pass after which the next pass is full. 0 means only when an incremental pass cannot run; otherwise 86400 to 7776000.</source>
@@ -19516,7 +19516,7 @@
     </unit>
     <unit id="mirror.concurrency.hint">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:368</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:386</note>
       </notes>
       <segment>
         <source>The most background fetches one pass runs at once. 1 to 64.</source>
@@ -19525,7 +19525,7 @@
     </unit>
     <unit id="mirror.max-versions.hint">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:374</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:392</note>
       </notes>
       <segment>
         <source>The newest versions of a package that a pass stores. 0 means all. 0 to 10000.</source>
@@ -19534,7 +19534,7 @@
     </unit>
     <unit id="mirror.max-bytes.hint">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:380</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:398</note>
       </notes>
       <segment>
         <source>Bytes of stored content beyond which a pass adds nothing. At least 1048576. Empty means no limit of its own.</source>
@@ -19543,7 +19543,7 @@
     </unit>
     <unit id="mirror.discovery.feed">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:430</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:450</note>
         <note category="location">src/app/features/repositories/mirror-status.ts:128</note>
       </notes>
       <segment>
@@ -19553,7 +19553,7 @@
     </unit>
     <unit id="mirror.discovery.listing">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:432</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:452</note>
         <note category="location">src/app/features/repositories/mirror-status.ts:130</note>
       </notes>
       <segment>
@@ -19563,7 +19563,7 @@
     </unit>
     <unit id="mirror.discovery.names">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:434</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:454</note>
         <note category="location">src/app/features/repositories/mirror-status.ts:132</note>
       </notes>
       <segment>
@@ -19573,7 +19573,7 @@
     </unit>
     <unit id="mirror.discovery.auto">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:436</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:456</note>
       </notes>
       <segment>
         <source>Automatic</source>
@@ -20373,7 +20373,7 @@
       <notes>
         <note category="location">src/app/features/repositories/repositories.routes.ts:35</note>
         <note category="location">src/app/features/repositories/repositories.routes.ts:52</note>
-        <note category="location">src/app/features/repositories/repository-create.ts:62</note>
+        <note category="location">src/app/features/repositories/repository-create.ts:63</note>
       </notes>
       <segment>
         <source>New repository</source>
@@ -20447,7 +20447,7 @@
     <unit id="repo.create.project">
       <notes>
         <note category="location">src/app/features/repositories/repository-create.html:23,25</note>
-        <note category="location">src/app/features/repositories/repository-create.ts:349</note>
+        <note category="location">src/app/features/repositories/repository-create.ts:359</note>
       </notes>
       <segment>
         <source>Project</source>
@@ -20466,8 +20466,8 @@
     <unit id="repo.field.key">
       <notes>
         <note category="location">src/app/features/repositories/repository-create.html:72,74</note>
-        <note category="location">src/app/features/repositories/repository-create.ts:352</note>
-        <note category="location">src/app/features/repositories/repository-create.ts:566</note>
+        <note category="location">src/app/features/repositories/repository-create.ts:362</note>
+        <note category="location">src/app/features/repositories/repository-create.ts:576</note>
         <note category="location">src/app/features/repositories/repository-detail.html:93,94</note>
       </notes>
       <segment>
@@ -20505,10 +20505,10 @@
     <unit id="repo.field.description-optional">
       <notes>
         <note category="location">src/app/features/repositories/repository-create.html:99,101</note>
-        <note category="location">src/app/features/repositories/repository-create.ts:568</note>
+        <note category="location">src/app/features/repositories/repository-create.ts:578</note>
         <note category="location">src/app/features/repositories/repository-detail.html:98,100</note>
-        <note category="location">src/app/features/repositories/repository-detail.ts:300</note>
-        <note category="location">src/app/features/repositories/repository-detail.ts:325</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:328</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:353</note>
       </notes>
       <segment>
         <source>Description (optional)</source>
@@ -20545,7 +20545,7 @@
     <unit id="repo.create.members">
       <notes>
         <note category="location">src/app/features/repositories/repository-create.html:145,146</note>
-        <note category="location">src/app/features/repositories/repository-create.ts:578</note>
+        <note category="location">src/app/features/repositories/repository-create.ts:588</note>
         <note category="location">src/app/features/repositories/repository-detail.html:147,148</note>
       </notes>
       <segment>
@@ -20601,10 +20601,10 @@
     <unit id="repo.field.notes">
       <notes>
         <note category="location">src/app/features/repositories/repository-create.html:178,179</note>
-        <note category="location">src/app/features/repositories/repository-create.ts:570</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:250,251</note>
-        <note category="location">src/app/features/repositories/repository-detail.ts:310</note>
-        <note category="location">src/app/features/repositories/repository-detail.ts:327</note>
+        <note category="location">src/app/features/repositories/repository-create.ts:580</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:251,252</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:338</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:355</note>
       </notes>
       <segment>
         <source>Administrator notes</source>
@@ -20623,8 +20623,8 @@
     <unit id="repo.group.access">
       <notes>
         <note category="location">src/app/features/repositories/repository-create.html:184,185</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:235,236</note>
-        <note category="location">src/app/features/repositories/repository-detail.ts:308</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:236,237</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:336</note>
       </notes>
       <segment>
         <source>Access details</source>
@@ -20633,7 +20633,7 @@
     </unit>
     <unit id="repo.format.heading-plain">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.html:209,210</note>
+        <note category="location">src/app/features/repositories/repository-create.html:210,211</note>
       </notes>
       <segment>
         <source><pc id="0" equivStart="START_TAG_SPAN" equivEnd="CLOSE_TAG_SPAN" type="other" dispStart="&lt;span translate=&quot;no&quot;&gt;" dispEnd="&lt;/span&gt;"><ph id="1" equiv="INTERPOLATION" disp="{{ formatLabel() }}"/></pc> settings</source>
@@ -20642,7 +20642,7 @@
     </unit>
     <unit id="repo.review.api">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.html:221,222</note>
+        <note category="location">src/app/features/repositories/repository-create.html:222,223</note>
       </notes>
       <segment>
         <source>Show as API request</source>
@@ -20651,7 +20651,7 @@
     </unit>
     <unit id="repo.review.api.json">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.html:222,223</note>
+        <note category="location">src/app/features/repositories/repository-create.html:223,224</note>
       </notes>
       <segment>
         <source>Request body</source>
@@ -20660,7 +20660,7 @@
     </unit>
     <unit id="repo.review.api.curl">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.html:224,225</note>
+        <note category="location">src/app/features/repositories/repository-create.html:225,226</note>
       </notes>
       <segment>
         <source>The same request with curl</source>
@@ -20669,7 +20669,7 @@
     </unit>
     <unit id="repo.wizard.create">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.html:229,230</note>
+        <note category="location">src/app/features/repositories/repository-create.html:230,231</note>
       </notes>
       <segment>
         <source>Create repository</source>
@@ -20678,7 +20678,7 @@
     </unit>
     <unit id="repo.wizard.cancel">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.html:230,233</note>
+        <note category="location">src/app/features/repositories/repository-create.html:231,234</note>
       </notes>
       <segment>
         <source>Cancel</source>
@@ -20687,7 +20687,7 @@
     </unit>
     <unit id="repo.create.heading">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.ts:67</note>
+        <note category="location">src/app/features/repositories/repository-create.ts:68</note>
       </notes>
       <segment>
         <source>New <ph id="0" equiv="format" disp="format.displayName ?? format.name"/> repository</source>
@@ -20696,7 +20696,7 @@
     </unit>
     <unit id="repo.create.in-project">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.ts:158</note>
+        <note category="location">src/app/features/repositories/repository-create.ts:159</note>
       </notes>
       <segment>
         <source>In the project <ph id="0" equiv="project" disp="this.chosenProject()"/>.</source>
@@ -20705,7 +20705,7 @@
     </unit>
     <unit id="repo.create.project-loading">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.ts:199</note>
+        <note category="location">src/app/features/repositories/repository-create.ts:200</note>
       </notes>
       <segment>
         <source>Loading projects…</source>
@@ -20714,7 +20714,7 @@
     </unit>
     <unit id="repo.create.project-choose">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.ts:201</note>
+        <note category="location">src/app/features/repositories/repository-create.ts:202</note>
       </notes>
       <segment>
         <source>Choose a project</source>
@@ -20723,7 +20723,7 @@
     </unit>
     <unit id="virtual.target.none">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.ts:294</note>
+        <note category="location">src/app/features/repositories/repository-create.ts:297</note>
         <note category="location">src/app/features/repositories/virtual-members.ts:115</note>
       </notes>
       <segment>
@@ -20733,7 +20733,7 @@
     </unit>
     <unit id="repo.create.members-empty">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.ts:299</note>
+        <note category="location">src/app/features/repositories/repository-create.ts:302</note>
       </notes>
       <segment>
         <source>No member yet. Add the repositories this one serves from.</source>
@@ -20742,7 +20742,7 @@
     </unit>
     <unit id="repo.key.taken">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.ts:332</note>
+        <note category="location">src/app/features/repositories/repository-create.ts:342</note>
       </notes>
       <segment>
         <source>A repository with this key already exists in the project.</source>
@@ -20751,7 +20751,7 @@
     </unit>
     <unit id="repo.create.project-missing">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.ts:336</note>
+        <note category="location">src/app/features/repositories/repository-create.ts:346</note>
       </notes>
       <segment>
         <source>Choose a project.</source>
@@ -20760,7 +20760,7 @@
     </unit>
     <unit id="upstream.url">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.ts:355</note>
+        <note category="location">src/app/features/repositories/repository-create.ts:365</note>
         <note category="location">src/app/features/repositories/upstream-settings.ts:60</note>
         <note category="location">src/app/features/repositories/upstream-settings.ts:112,114</note>
       </notes>
@@ -20771,7 +20771,7 @@
     </unit>
     <unit id="repo.class.unsupported">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.ts:451</note>
+        <note category="location">src/app/features/repositories/repository-create.ts:461</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="format" disp="this.formatLabel()"/> does not implement the class <ph id="1" equiv="class" disp="classLabel(cls)"/>.</source>
@@ -20780,7 +20780,7 @@
     </unit>
     <unit id="repo.wizard.created">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.ts:538</note>
+        <note category="location">src/app/features/repositories/repository-create.ts:548</note>
       </notes>
       <segment>
         <source>Repository <ph id="0" equiv="key" disp="created.value.key"/> created.</source>
@@ -20789,8 +20789,8 @@
     </unit>
     <unit id="repo.field.include">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.ts:572</note>
-        <note category="location">src/app/features/repositories/repository-detail.ts:329</note>
+        <note category="location">src/app/features/repositories/repository-create.ts:582</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:357</note>
         <note category="location">src/app/features/repositories/repository-fields.ts:44,46</note>
       </notes>
       <segment>
@@ -20800,8 +20800,8 @@
     </unit>
     <unit id="repo.field.exclude">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.ts:574</note>
-        <note category="location">src/app/features/repositories/repository-detail.ts:331</note>
+        <note category="location">src/app/features/repositories/repository-create.ts:584</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:359</note>
         <note category="location">src/app/features/repositories/repository-fields.ts:61,63</note>
       </notes>
       <segment>
@@ -20811,8 +20811,8 @@
     </unit>
     <unit id="repo.field.hide">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.ts:576</note>
-        <note category="location">src/app/features/repositories/repository-detail.ts:333</note>
+        <note category="location">src/app/features/repositories/repository-create.ts:586</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:361</note>
         <note category="location">src/app/features/repositories/repository-fields.ts:104,106</note>
       </notes>
       <segment>
@@ -20822,7 +20822,7 @@
     </unit>
     <unit id="repo.key.shape">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.ts:645</note>
+        <note category="location">src/app/features/repositories/repository-create.ts:655</note>
       </notes>
       <segment>
         <source>Use 2 to 64 lower-case letters and digits, with ., _, __ or - between them.</source>
@@ -20831,7 +20831,7 @@
     </unit>
     <unit id="upstream.url.required">
       <notes>
-        <note category="location">src/app/features/repositories/repository-create.ts:650</note>
+        <note category="location">src/app/features/repositories/repository-create.ts:660</note>
         <note category="location">src/app/features/repositories/upstream-settings.ts:136,138</note>
       </notes>
       <segment>
@@ -20889,7 +20889,7 @@
     <unit id="repo.col.address">
       <notes>
         <note category="location">src/app/features/repositories/repository-detail.html:59,61</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:346,347</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:347,348</note>
         <note category="location">src/app/features/repositories/repository-list.ts:215</note>
       </notes>
       <segment>
@@ -20900,7 +20900,7 @@
     <unit id="repo.tab.guide">
       <notes>
         <note category="location">src/app/features/repositories/repository-detail.html:68,69</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:317,318</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:318,319</note>
       </notes>
       <segment>
         <source>How to use</source>
@@ -20945,7 +20945,7 @@
     </unit>
     <unit id="repo.settings.format-hint">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:211,212</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:212,213</note>
       </notes>
       <segment>
         <source>What the format does differently in this repository. The defaults suit most repositories.</source>
@@ -20954,7 +20954,7 @@
     </unit>
     <unit id="repo.settings.access-hint">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:237,239</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:238,240</note>
       </notes>
       <segment>
         <source>Which paths the repository admits, and what callers without access learn about it.</source>
@@ -20963,7 +20963,7 @@
     </unit>
     <unit id="repo.settings.notes-hint">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:252,254</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:253,255</note>
       </notes>
       <segment>
         <source>Notes for the people who configure the repository.</source>
@@ -20972,7 +20972,7 @@
     </unit>
     <unit id="repo.tab.deb-keys">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:265,266</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:266,267</note>
       </notes>
       <segment>
         <source>Signing keys</source>
@@ -20981,7 +20981,7 @@
     </unit>
     <unit id="repo.settings.deb-keys-hint">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:267,268</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:268,269</note>
       </notes>
       <segment>
         <source>The keys that sign the repository&apos;s indexes.</source>
@@ -20990,7 +20990,7 @@
     </unit>
     <unit id="repo.settings.deb-index">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:277</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:278</note>
       </notes>
       <segment>
         <source>Indexes</source>
@@ -20999,7 +20999,7 @@
     </unit>
     <unit id="repo.settings.deb-index-hint">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:278,279</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:279,280</note>
       </notes>
       <segment>
         <source>The state of each suite&apos;s indexes, and a rebuild.</source>
@@ -21008,7 +21008,7 @@
     </unit>
     <unit id="repo.tab.ansible-imports">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:290,291</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:291,292</note>
       </notes>
       <segment>
         <source>Import tasks</source>
@@ -21017,7 +21017,7 @@
     </unit>
     <unit id="repo.settings.imports-hint">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:292,293</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:293,294</note>
       </notes>
       <segment>
         <source>The imports of published collections and their logs.</source>
@@ -21026,7 +21026,7 @@
     </unit>
     <unit id="repo.tab.ansible-tombstones">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:303,304</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:304,305</note>
       </notes>
       <segment>
         <source>Tombstones</source>
@@ -21035,7 +21035,7 @@
     </unit>
     <unit id="repo.settings.tombstones-hint">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:305,306</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:306,307</note>
       </notes>
       <segment>
         <source>Deleted collection versions whose names stay taken.</source>
@@ -21044,7 +21044,7 @@
     </unit>
     <unit id="repo.settings.guide-hint">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:319,320</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:320,321</note>
       </notes>
       <segment>
         <source>How a client is set up for this repository.</source>
@@ -21053,7 +21053,7 @@
     </unit>
     <unit id="repo.settings.details">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:331</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:332</note>
       </notes>
       <segment>
         <source>Details</source>
@@ -21062,7 +21062,7 @@
     </unit>
     <unit id="repo.settings.details-hint">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:332,335</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:333,336</note>
       </notes>
       <segment>
         <source>The class, the format, the address and the dates of the repository.</source>
@@ -21071,7 +21071,7 @@
     </unit>
     <unit id="repo.detail.layout">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:339,340</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:340,341</note>
       </notes>
       <segment>
         <source>Layout</source>
@@ -21080,7 +21080,7 @@
     </unit>
     <unit id="repo.detail.project">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:342,343</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:343,344</note>
       </notes>
       <segment>
         <source>Project</source>
@@ -21089,7 +21089,7 @@
     </unit>
     <unit id="repo.detail.created">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:350,351</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:351,352</note>
       </notes>
       <segment>
         <source>Created</source>
@@ -21098,7 +21098,7 @@
     </unit>
     <unit id="repo.detail.updated">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:354,355</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:355,356</note>
       </notes>
       <segment>
         <source>Last changed</source>
@@ -21107,7 +21107,7 @@
     </unit>
     <unit id="repo.col.activity">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:358,359</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:359,360</note>
         <note category="location">src/app/features/repositories/repository-list.ts:222</note>
       </notes>
       <segment>
@@ -21117,7 +21117,7 @@
     </unit>
     <unit id="repo.tab.api">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:367</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:368</note>
       </notes>
       <segment>
         <source>API</source>
@@ -21126,7 +21126,7 @@
     </unit>
     <unit id="repo.settings.api-hint">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:368,370</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:369,371</note>
       </notes>
       <segment>
         <source>The stored document, and each unsaved change as the request that saves it.</source>
@@ -21135,7 +21135,7 @@
     </unit>
     <unit id="repo.detail.api.document">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:370,371</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:371,372</note>
       </notes>
       <segment>
         <source>Stored document</source>
@@ -21144,7 +21144,7 @@
     </unit>
     <unit id="repo.detail.api.patch">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:372,373</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:373,374</note>
       </notes>
       <segment>
         <source>Your change as a request</source>
@@ -21153,7 +21153,7 @@
     </unit>
     <unit id="repo.detail.api.nochange">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:377,379</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:378,380</note>
       </notes>
       <segment>
         <source>Change a setting to see the request that saves it.</source>
@@ -21162,7 +21162,7 @@
     </unit>
     <unit id="repo.detail.advanced">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:386,387</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:387,388</note>
       </notes>
       <segment>
         <source>Advanced</source>
@@ -21171,7 +21171,7 @@
     </unit>
     <unit id="repo.settings.advanced-hint">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:388,390</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:389,391</note>
       </notes>
       <segment>
         <source>Disable, move or delete this repository.</source>
@@ -21180,7 +21180,7 @@
     </unit>
     <unit id="repo.enable.heading">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:395,396</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:396,397</note>
       </notes>
       <segment>
         <source>Enable repository</source>
@@ -21189,7 +21189,7 @@
     </unit>
     <unit id="repo.enable.hint">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:396,397</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:397,398</note>
       </notes>
       <segment>
         <source>The repository is disabled: it serves nothing and takes no publish.</source>
@@ -21198,8 +21198,8 @@
     </unit>
     <unit id="repo.enable.confirm">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:397,399</note>
-        <note category="location">src/app/features/repositories/repository-detail.ts:654</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:398,400</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:682</note>
       </notes>
       <segment>
         <source>Enable repository</source>
@@ -21208,7 +21208,7 @@
     </unit>
     <unit id="repo.disable.heading">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:399,400</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:400,401</note>
       </notes>
       <segment>
         <source>Disable repository</source>
@@ -21217,7 +21217,7 @@
     </unit>
     <unit id="repo.disable.hint">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:400,401</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:401,402</note>
       </notes>
       <segment>
         <source>Clients can no longer download from it or publish to it; its content stays.</source>
@@ -21226,8 +21226,8 @@
     </unit>
     <unit id="repo.disable.confirm">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:401,403</note>
-        <note category="location">src/app/features/repositories/repository-detail.ts:649</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:402,404</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:677</note>
       </notes>
       <segment>
         <source>Disable repository</source>
@@ -21236,7 +21236,7 @@
     </unit>
     <unit id="repo.move.heading">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:406,407</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:407,408</note>
       </notes>
       <segment>
         <source>Move to another project</source>
@@ -21245,7 +21245,7 @@
     </unit>
     <unit id="repo.move.hint">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:408,409</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:409,410</note>
       </notes>
       <segment>
         <source> The repository keeps its key and its content; its address changes. You must be Owner of the target project too. </source>
@@ -21254,7 +21254,7 @@
     </unit>
     <unit id="repo.move.target">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:413,414</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:414,415</note>
       </notes>
       <segment>
         <source>Target project</source>
@@ -21263,7 +21263,7 @@
     </unit>
     <unit id="repo.move.action">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:419,420</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:420,421</note>
       </notes>
       <segment>
         <source> Move repository </source>
@@ -21272,7 +21272,7 @@
     </unit>
     <unit id="repo.delete.heading">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:425,426</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:426,427</note>
       </notes>
       <segment>
         <source>Delete repository</source>
@@ -21281,7 +21281,7 @@
     </unit>
     <unit id="repo.detail.delete-note">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:426,427</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:427,428</note>
       </notes>
       <segment>
         <source>Deleting the repository removes it and everything in it for good. It runs as a job, and the key stays taken until it has finished.</source>
@@ -21290,7 +21290,7 @@
     </unit>
     <unit id="repo.detail.delete">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:427,429</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:428,430</note>
       </notes>
       <segment>
         <source>Delete repository</source>
@@ -21299,7 +21299,7 @@
     </unit>
     <unit id="repo.settings.unsaved">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:223</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:251</note>
       </notes>
       <segment>
         <source>Unsaved changes</source>
@@ -21308,7 +21308,7 @@
     </unit>
     <unit id="upstream.heading">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:302</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:330</note>
         <note category="location">src/app/features/repositories/upstream-settings.ts:72</note>
         <note category="location">src/app/features/repositories/upstream-settings.ts:88,89</note>
       </notes>
@@ -21319,7 +21319,7 @@
     </unit>
     <unit id="repo.settings.format-heading">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:315</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:343</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="format" disp="this.formatLabel()"/> settings</source>
@@ -21328,8 +21328,8 @@
     </unit>
     <unit id="repo.edit.saved">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:406</note>
-        <note category="location">src/app/features/repositories/repository-detail.ts:432</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:434</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:460</note>
       </notes>
       <segment>
         <source>Repository saved.</source>
@@ -21338,7 +21338,7 @@
     </unit>
     <unit id="repo.visibility.saved">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:494</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:522</note>
       </notes>
       <segment>
         <source>Visibility saved.</source>
@@ -21347,7 +21347,7 @@
     </unit>
     <unit id="repo.members.saved">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:549</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:577</note>
       </notes>
       <segment>
         <source>Members saved.</source>
@@ -21356,7 +21356,7 @@
     </unit>
     <unit id="mirror.paused-notice">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:578</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:606</note>
       </notes>
       <segment>
         <source>Mirror paused.</source>
@@ -21365,7 +21365,7 @@
     </unit>
     <unit id="mirror.resumed-notice">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:578</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:606</note>
       </notes>
       <segment>
         <source>Mirror resumed.</source>
@@ -21374,7 +21374,7 @@
     </unit>
     <unit id="repo.disable.title">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:645</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:673</note>
       </notes>
       <segment>
         <source>Disable repository <ph id="0" equiv="key" disp="this.ref()"/>?</source>
@@ -21383,7 +21383,7 @@
     </unit>
     <unit id="repo.disable.text">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:647</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:675</note>
       </notes>
       <segment>
         <source>Clients can no longer download from it or publish to it, and virtual repositories skip it, until it is enabled again. Its content stays.</source>
@@ -21392,7 +21392,7 @@
     </unit>
     <unit id="repo.enable.title">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:652</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:680</note>
       </notes>
       <segment>
         <source>Enable repository <ph id="0" equiv="key" disp="this.ref()"/>?</source>
@@ -21401,7 +21401,7 @@
     </unit>
     <unit id="repo.enable.text">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:653</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:681</note>
       </notes>
       <segment>
         <source>Clients can download from it and publish to it again.</source>
@@ -21410,7 +21410,7 @@
     </unit>
     <unit id="repo.disable.done">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:687</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:715</note>
       </notes>
       <segment>
         <source>Repository <ph id="0" equiv="key" disp="this.ref()"/> disabled.</source>
@@ -21419,7 +21419,7 @@
     </unit>
     <unit id="repo.enable.done">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:688</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:716</note>
       </notes>
       <segment>
         <source>Repository <ph id="0" equiv="key" disp="this.ref()"/> enabled.</source>
@@ -21428,7 +21428,7 @@
     </unit>
     <unit id="repo.delete.title">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:694</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:722</note>
         <note category="location">src/app/features/repositories/repository-list.ts:299</note>
       </notes>
       <segment>
@@ -21438,7 +21438,7 @@
     </unit>
     <unit id="repo.delete.text">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:696</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:724</note>
         <note category="location">src/app/features/repositories/repository-list.ts:301</note>
       </notes>
       <segment>
@@ -21448,7 +21448,7 @@
     </unit>
     <unit id="repo.delete.confirm">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:698</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:726</note>
         <note category="location">src/app/features/repositories/repository-list.ts:303</note>
       </notes>
       <segment>
@@ -21458,7 +21458,7 @@
     </unit>
     <unit id="repo.move.choose">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:722</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:750</note>
       </notes>
       <segment>
         <source>Choose a project</source>
@@ -21467,7 +21467,7 @@
     </unit>
     <unit id="repo.move.title">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:737</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:765</note>
       </notes>
       <segment>
         <source>Move repository <ph id="0" equiv="key" disp="this.ref()"/> to project <ph id="1" equiv="project" disp="target"/>?</source>
@@ -21476,7 +21476,7 @@
     </unit>
     <unit id="repo.move.text">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:739</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:767</note>
       </notes>
       <segment>
         <source>The repository gets a new address; clients must switch to it. Policies, pins, virtual memberships and CI mappings that name it in this project stop applying, and the move is refused while any of them exists.</source>
@@ -21485,7 +21485,7 @@
     </unit>
     <unit id="repo.move.confirm">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:741</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:769</note>
       </notes>
       <segment>
         <source>Move repository</source>
@@ -21494,7 +21494,7 @@
     </unit>
     <unit id="repo.move.done">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:748</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:776</note>
       </notes>
       <segment>
         <source>Repository moved to project <ph id="0" equiv="project" disp="target"/>.</source>
@@ -21503,7 +21503,7 @@
     </unit>
     <unit id="repo.delete.failed">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:762</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:790</note>
         <note category="location">src/app/features/repositories/repository-list.ts:346</note>
       </notes>
       <segment>
@@ -21513,7 +21513,7 @@
     </unit>
     <unit id="repo.delete.done">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:767</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:795</note>
         <note category="location">src/app/features/repositories/repository-list.ts:336</note>
       </notes>
       <segment>
@@ -21523,7 +21523,7 @@
     </unit>
     <unit id="repo.delete.progress">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:772</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:800</note>
         <note category="location">src/app/features/repositories/repository-list.ts:257</note>
       </notes>
       <segment>
@@ -22998,10 +22998,10 @@
     <unit id="search.label">
       <notes>
         <note category="location">src/app/features/search/search-field.html:13,15</note>
-        <note category="location">src/app/features/search/search-field.html:159</note>
-        <note category="location">src/app/features/search/search-field.html:161</note>
-        <note category="location">src/app/features/search/search-field.html:173,174</note>
-        <note category="location">src/app/features/search/search-field.html:184</note>
+        <note category="location">src/app/features/search/search-field.html:167</note>
+        <note category="location">src/app/features/search/search-field.html:169</note>
+        <note category="location">src/app/features/search/search-field.html:181,182</note>
+        <note category="location">src/app/features/search/search-field.html:192</note>
       </notes>
       <segment>
         <source>Search</source>
@@ -23017,36 +23017,36 @@
         <target>Vorschläge</target>
       </segment>
     </unit>
-    <unit id="search.user-disabled">
-      <notes>
-        <note category="location">src/app/features/search/search-field.html:114,116</note>
-      </notes>
-      <segment>
-        <source>Disabled</source>
-        <target>Deaktiviert</target>
-      </segment>
-    </unit>
-    <unit id="search.admin-mark">
-      <notes>
-        <note category="location">src/app/features/search/search-field.html:126,128</note>
-      </notes>
-      <segment>
-        <source>Admin area</source>
-        <target>Adminbereich</target>
-      </segment>
-    </unit>
     <unit id="search.close">
       <notes>
-        <note category="location">src/app/features/search/search-field.html:178,180</note>
+        <note category="location">src/app/features/search/search-field.html:186,188</note>
       </notes>
       <segment>
         <source>Close</source>
         <target>Schließen</target>
       </segment>
     </unit>
+    <unit id="search.admin-mark">
+      <notes>
+        <note category="location">src/app/features/search/search-field.ts:129</note>
+      </notes>
+      <segment>
+        <source>Admin area</source>
+        <target>Adminbereich</target>
+      </segment>
+    </unit>
+    <unit id="search.user-disabled">
+      <notes>
+        <note category="location">src/app/features/search/search-field.ts:130</note>
+      </notes>
+      <segment>
+        <source>Disabled</source>
+        <target>Deaktiviert</target>
+      </segment>
+    </unit>
     <unit id="search.placeholder-slash">
       <notes>
-        <note category="location">src/app/features/search/search-field.ts:135</note>
+        <note category="location">src/app/features/search/search-field.ts:137</note>
       </notes>
       <segment>
         <source>Search or go to… (/)</source>
@@ -23055,7 +23055,7 @@
     </unit>
     <unit id="search.placeholder">
       <notes>
-        <note category="location">src/app/features/search/search-field.ts:136</note>
+        <note category="location">src/app/features/search/search-field.ts:138</note>
       </notes>
       <segment>
         <source>Search or go to…</source>
@@ -23064,7 +23064,7 @@
     </unit>
     <unit id="search.filter.all">
       <notes>
-        <note category="location">src/app/features/search/search-field.ts:148</note>
+        <note category="location">src/app/features/search/search-field.ts:150</note>
       </notes>
       <segment>
         <source>All</source>
@@ -23073,7 +23073,7 @@
     </unit>
     <unit id="search.filter.button">
       <notes>
-        <note category="location">src/app/features/search/search-field.ts:165</note>
+        <note category="location">src/app/features/search/search-field.ts:167</note>
       </notes>
       <segment>
         <source>Filter: <ph id="0" equiv="kind" disp="this.filterLabel()"/></source>
@@ -23082,7 +23082,7 @@
     </unit>
     <unit id="search.filter.remove">
       <notes>
-        <note category="location">src/app/features/search/search-field.ts:166</note>
+        <note category="location">src/app/features/search/search-field.ts:168</note>
       </notes>
       <segment>
         <source>Remove the filter <ph id="0" equiv="kind" disp="this.filterLabel()"/></source>
@@ -23091,7 +23091,7 @@
     </unit>
     <unit id="search.all-projects">
       <notes>
-        <note category="location">src/app/features/search/search-field.ts:206</note>
+        <note category="location">src/app/features/search/search-field.ts:208</note>
       </notes>
       <segment>
         <source>View all my projects</source>
@@ -23100,8 +23100,8 @@
     </unit>
     <unit id="search.limited">
       <notes>
-        <note category="location">src/app/features/search/search-field.ts:261</note>
-        <note category="location">src/app/features/search/search-field.ts:482</note>
+        <note category="location">src/app/features/search/search-field.ts:263</note>
+        <note category="location">src/app/features/search/search-field.ts:500</note>
       </notes>
       <segment>
         <source>Too many searches. Suggestions return in <ph id="0" equiv="seconds" disp="f.seconds"/> s.</source>
@@ -23110,8 +23110,8 @@
     </unit>
     <unit id="search.error">
       <notes>
-        <note category="location">src/app/features/search/search-field.ts:262</note>
-        <note category="location">src/app/features/search/search-field.ts:486</note>
+        <note category="location">src/app/features/search/search-field.ts:264</note>
+        <note category="location">src/app/features/search/search-field.ts:504</note>
       </notes>
       <segment>
         <source>Suggestions are not available.</source>
@@ -23120,7 +23120,7 @@
     </unit>
     <unit id="search.searching">
       <notes>
-        <note category="location">src/app/features/search/search-field.ts:263</note>
+        <note category="location">src/app/features/search/search-field.ts:265</note>
       </notes>
       <segment>
         <source>Searching…</source>
@@ -23129,7 +23129,7 @@
     </unit>
     <unit id="search.no-match">
       <notes>
-        <note category="location">src/app/features/search/search-field.ts:266</note>
+        <note category="location">src/app/features/search/search-field.ts:268</note>
       </notes>
       <segment>
         <source>Nothing you may read matches “<ph id="0" equiv="text" disp="this.term()"/>”. Press Enter to search everything.</source>
@@ -23138,7 +23138,7 @@
     </unit>
     <unit id="search.announce-none">
       <notes>
-        <note category="location">src/app/features/search/search-field.ts:502</note>
+        <note category="location">src/app/features/search/search-field.ts:520</note>
       </notes>
       <segment>
         <source>No suggestions.</source>
@@ -23147,7 +23147,7 @@
     </unit>
     <unit id="search.announce-one">
       <notes>
-        <note category="location">src/app/features/search/search-field.ts:504</note>
+        <note category="location">src/app/features/search/search-field.ts:522</note>
       </notes>
       <segment>
         <source>1 suggestion.</source>
@@ -23156,7 +23156,7 @@
     </unit>
     <unit id="search.announce-many">
       <notes>
-        <note category="location">src/app/features/search/search-field.ts:505</note>
+        <note category="location">src/app/features/search/search-field.ts:523</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="count" disp="count"/> suggestions.</source>
@@ -23165,7 +23165,7 @@
     </unit>
     <unit id="search.choose-user">
       <notes>
-        <note category="location">src/app/features/search/search-field.ts:541</note>
+        <note category="location">src/app/features/search/search-field.ts:559</note>
       </notes>
       <segment>
         <source>Choose a user from the list.</source>
@@ -23174,7 +23174,7 @@
     </unit>
     <unit id="search.choose-group">
       <notes>
-        <note category="location">src/app/features/search/search-field.ts:542</note>
+        <note category="location">src/app/features/search/search-field.ts:560</note>
       </notes>
       <segment>
         <source>Choose a group from the list.</source>

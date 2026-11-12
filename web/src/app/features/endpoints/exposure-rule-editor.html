@@ -409,9 +409,7 @@
               [disabled]="!dirty() || saving()"
               (click)="reset()"
               i18n="@@repo.edit.reset"
-            >
-              Discard changes
-            </button>
+            >Discard changes</button>
           }
           @if (dirty()) {
             <span class="hint" role="status" i18n="@@repo.edit.unsaved"
