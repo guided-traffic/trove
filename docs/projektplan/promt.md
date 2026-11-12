@@ -442,10 +442,28 @@ by `version: "*"`. Red pipelines are worked on even though they no longer hold a
     48 rem (Q-UI-300 to 306 replace Q-UI-270 and 271).
   - The three kinds of user are specified: R-UI-067, Q-UI-310 to 319.
   - The audit of every screen, 49 lines, is [ui-audit.md](ui-audit.md); the fix waves follow it.
-  - Open, seen in the renders by the development agent:
-    - at 1440 px the key column of the repository list is narrow, so a long key wraps to four lines;
-    - the cells of one row are aligned to different heights;
-    - Last activity is a column of dashes.
+  - Fix wave 1 is on main, five commits from 50c485fc to 175ade9e:
+    - every list has a column budget, one alignment and a stacked row below 48 rem;
+    - a shared page header and a shared empty state;
+    - the repository page shows its address and Set up client at the top;
+    - the package list has four columns, and the package page shows the install panel and the README first;
+    - the start page has a package search and the recently opened repositories;
+    - a reader sees no administration.
+  - Four browser journeys were changed with the wave and not run on kind before the push: 11 (nuget), 12 (projects), 17 (deb) and
+    20 (ansible). The e2e legs of the push run them.
+  - Open, seen in the renders of wave 1 by the development agent:
+    - two address fields of one repository (the client's and the files') stand unlabelled on the start page and in the
+      repository page's header;
+    - the install panel's two selects differ in width, and its command's copy button is not joined to the field the way the
+      address field's is;
+    - a disclosure ("About this project", "Details") is styled as a large heading with a chevron;
+    - a reader's repository list puts "Recently viewed" (the start page says "Recently opened") and "About this project" above the
+      list;
+    - the repository page offers Set up client both as the header's button and as a tab;
+    - the package page's version choice looks like a text field.
+- A repository search for readers across projects needs an API that readers can read; until then the start page searches packages
+  only (Q-UI-311).
+- A Details section does not remember whether it was open (Q-UI-319).
   - The creation and the settings of a repository are planned on T-18's tree: UI-A-31 to 40, the owner's rules in
     [CLAUDE.md](../../CLAUDE.md#product-simple-by-default-details-on-demand).
 - UI-A-41: the project owner's service-accounts page calls `GET /api/v1/service-accounts?project=`, which needs `identities:read`. It
