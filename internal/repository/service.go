@@ -820,6 +820,8 @@ type ListFilter struct {
 	Project string
 	// Visibility keeps the repositories whose artifacts level is one of these (R-API-057); empty keeps every level.
 	Visibility []string
+	// Names keeps the named repositories (R-API-063); empty keeps every one.
+	Names []qname.Repo
 	// IncludeDeleting adds repositories being deleted, for holders of
 	// repositories:read-config.
 	IncludeDeleting bool
@@ -883,12 +885,14 @@ func (s *Service) List(ctx context.Context, f ListFilter) (ListResult, error) {
 		if len(f.Visibility) > 0 && !slices.Contains(f.Visibility, row.VisibilityArtifacts) {
 			continue
 		}
+		if len(f.Names) > 0 && !slices.Contains(f.Names, qname.Repo{Project: project, Key: row.Key}) {
+			continue
+		}
 		st, err := s.storedRel(row, project, rels[row.ID], nil)
 		if err != nil {
 			return ListResult{}, err
 		}
-		if needle != "" && !strings.Contains(strings.ToLower(row.Key), needle) &&
-			!strings.Contains(strings.ToLower(st.Document.Description), needle) {
+		if !queryMatches(needle, project, row.Key, st.Document.Description) {
 			continue
 		}
 		if f.State == "inactive" && !st.Repository.Disabled {
@@ -901,6 +905,13 @@ func (s *Service) List(ctx context.Context, f ListFilter) (ListResult, error) {
 		res.Items = append(res.Items, st)
 	}
 	return res, nil
+}
+
+// queryMatches is the filter q of the list (R-REPO-012, Q-API-279): a case-insensitive substring of <project>/<key>, which
+// holds the key, or of the description. needle is lower-cased; "" matches every repository.
+func queryMatches(needle, project, key, description string) bool {
+	return needle == "" || strings.Contains(strings.ToLower(project+"/"+key), needle) ||
+		strings.Contains(strings.ToLower(description), needle)
 }
 
 // afterRepo reports whether the repository (project, key) sorts after the cursor, byte by byte as the

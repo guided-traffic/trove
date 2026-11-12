@@ -450,9 +450,34 @@ func mirrorFact(reg *catalog.Registry, format string) bool {
 	return ok && e.Mirror
 }
 
-// repositoryListSpec declares what the list accepts.
-func repositoryListSpec() ListSpec {
-	return ListSpec{Filters: []string{"class", "format", "q", "state", "project", "view", "visibility"}}
+// repositoryListSpec declares what the list accepts; the instance-wide list takes `name` besides (R-API-063).
+func repositoryListSpec(instanceWide bool) ListSpec {
+	filters := []string{"class", "format", "q", "state", "project", "view", "visibility"}
+	if instanceWide {
+		filters = append(filters, "name")
+	}
+	return ListSpec{Filters: filters}
+}
+
+// maxListNames bounds the names one request of the repository list may name (R-API-063, Q-API-278).
+const maxListNames = 50
+
+// repositoryNames reads the filter `name` of the list: qualified names, repeated or comma-separated, at most maxListNames. A
+// malformed name answers 400 malformed_request, as does a longer list.
+func repositoryNames(lq ListQuery) ([]qname.Repo, error) {
+	texts := splitValues(lq.Filter["name"])
+	if len(texts) > maxListNames {
+		return nil, badParam("name", "names more than "+strconv.Itoa(maxListNames)+" repositories")
+	}
+	out := make([]qname.Repo, 0, len(texts))
+	for _, t := range texts {
+		n, err := qname.ParseRepo(t)
+		if err != nil {
+			return nil, badParam("name", "has the value "+strconv.Quote(t)+", which is no name <project>/<key>")
+		}
+		out = append(out, n)
+	}
+	return out, nil
 }
 
 // splitValues flattens repeated and comma-separated values of a filter.
@@ -491,12 +516,15 @@ func (s *Server) listRepositories(w http.ResponseWriter, r *http.Request, projec
 		httpserver.Problem(w, r, err)
 		return
 	}
-	lq, err := ParseList(r, repositoryListSpec(), s.o.API.Config)
+	lq, err := ParseList(r, repositoryListSpec(project == ""), s.o.API.Config)
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
 	}
 	f, view, err := repositoryFilter(lq)
+	if err == nil {
+		f.Names, err = repositoryNames(lq)
+	}
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return

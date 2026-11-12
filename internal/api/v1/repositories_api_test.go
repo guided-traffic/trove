@@ -11,6 +11,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -115,7 +116,7 @@ func TestRepositoryListFilters(t *testing.T) {
 	t.Run("R-REPO-012 an unknown class, state or view is 400", func(t *testing.T) {
 		for _, q := range []string{"class=cobol", "state=active", "view=wide"} {
 			r := httptest.NewRequest("GET", "/api/v1/repositories?"+q, nil)
-			lq, err := ParseList(r, repositoryListSpec(), apiConfigForTest())
+			lq, err := ParseList(r, repositoryListSpec(true), apiConfigForTest())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -124,9 +125,39 @@ func TestRepositoryListFilters(t *testing.T) {
 			}
 		}
 	})
+	t.Run("R-API-063 name takes up to 50 qualified names, repeated or comma-separated", func(t *testing.T) {
+		names := func(q string) ([]qname.Repo, error) {
+			lq, err := ParseList(httptest.NewRequest("GET", "/api/v1/repositories?"+q, nil), repositoryListSpec(true), apiConfigForTest())
+			if err != nil {
+				t.Fatal(err)
+			}
+			return repositoryNames(lq)
+		}
+		got, err := names("name=web/npm-public,web/npm-private&name=web/nope")
+		if err != nil || len(got) != 3 || got[2] != (qname.Repo{Project: "web", Key: "nope"}) {
+			t.Fatalf("%v %v", got, err)
+		}
+		fifty := strings.TrimSuffix(strings.Repeat("web/npm,", 50), ",")
+		if _, err := names("name=" + fifty); err != nil {
+			t.Fatalf("50 names: %v", err)
+		}
+		for _, q := range []string{"name=" + fifty + ",web/one-more", "name=npm-public", "name=web/", "name=Web/NPM"} {
+			if _, err := names(q); err == nil {
+				t.Errorf("%.40s was accepted", q)
+			} else if e, ok := errs.As(err); !ok || e.Status() != 400 || e.Code != errs.CodeInvalid {
+				t.Errorf("%.40s: %v", q, err)
+			}
+		}
+	})
+	t.Run("R-API-063 the list of one project does not take name", func(t *testing.T) {
+		r := httptest.NewRequest("GET", "/api/v1/projects/web/repositories?name=web/npm", nil)
+		if _, err := ParseList(r, repositoryListSpec(false), apiConfigForTest()); err == nil {
+			t.Error("name was accepted")
+		}
+	})
 	t.Run("R-API-010 a sort parameter is not known to the list", func(t *testing.T) {
 		r := httptest.NewRequest("GET", "/api/v1/repositories?sort=-key", nil)
-		if _, err := ParseList(r, repositoryListSpec(), apiConfigForTest()); err == nil {
+		if _, err := ParseList(r, repositoryListSpec(true), apiConfigForTest()); err == nil {
 			t.Error("sort was accepted")
 		}
 	})
