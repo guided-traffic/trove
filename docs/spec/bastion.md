@@ -5441,7 +5441,7 @@ Status: **Decided by the development agent** — selected from the options below
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) The recognition stage marks the context of a forward; the check handler marks the context it decides the caller in; the one conversion of the edge reads the mark into `Subject.ViaBastion` (chosen) | An interface route decides no caller and is not marked | No handler of a format knows about Bastions; the check cannot forget it | Two places set one mark |
+| (a) The recognition result in the context marks a forward; the check handler marks the context it decides the caller in; the one conversion of the edge reads both into `Subject.ViaBastion` (chosen) | An interface route decides no caller and is not marked | No handler of a format knows about Bastions; the check cannot forget it | Two places set one mark |
 | (b) The decision point asks the recognition result | The subject carries no mark | One source | The decision point would depend on the Bastion's package |
 
 **Choice:** (a). A shape of a repository is `full` only when the subject also reads the repository's wiki.

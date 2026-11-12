@@ -160,8 +160,9 @@ func layerTable() []layerRule {
 		{"internal/virtual", layerDomain},
 		{"internal/formatdata", layerDomain},
 		{"internal/authz", layerDomain},
-		{"internal/project", layerDomain}, // projects, the unit of delegated administration (R-AUTHZ-026)
-		{"internal/ci", layerDomain},      // the GitLab CI OIDC federation (R-CI-001 to R-CI-030)
+		{"internal/project", layerDomain},    // projects, the unit of delegated administration (R-AUTHZ-026)
+		{"internal/visibility", layerDomain}, // the installation's default visibility level and the rules of levels the project and repository services share (R-AUTHZ-033, R-API-056)
+		{"internal/ci", layerDomain},         // the GitLab CI OIDC federation (R-CI-001 to R-CI-030)
 		// The vulnerability scanning (R-VULN-001 to R-VULN-029): the shared domain types and ports at the root, and the
 		// store, sync, evaluate, triage and report packages below it (the pure parts are leaves above).
 		{"internal/vuln", layerDomain},

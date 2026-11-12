@@ -410,6 +410,7 @@ flowchart LR
 | repository | `internal/repository` | Repository model and snapshot, request classification, caller-independent routing of virtual repositories (members, claims, pin rules) | [repositories-and-proxy.md](repositories-and-proxy.md) |
 | proxy | `internal/proxy`, `internal/proxy/{upstream,invalidation}` | Remote fetch engine, per-remote upstream clients, cache invalidation | [repositories-and-proxy.md](repositories-and-proxy.md) |
 | virtual | `internal/virtual` | Per-caller resolution of virtual repositories, merged-metadata cache, shadowing check (Q-ARCH-192) | [repositories-and-proxy.md](repositories-and-proxy.md) |
+| visibility | `internal/visibility` | The installation's default visibility level (`visibility_settings`) and the rules of levels that the project and repository services share: the order, the validation, the refusal of `public` while the default endpoint admits no request without a credential | [authorization.md](authorization.md) R-AUTHZ-033, [api-and-ui.md](api-and-ui.md) R-API-056 |
 | formatdata | `internal/formatdata/<id>` | Implementations of the store ports that formats declare for their own tables (Q-ARCH-193) | [formats/npm.md](formats/npm.md) |
 | blob | `internal/blob`, `internal/blob/s3` | Spool, digests, content-addressed objects | [storage.md](storage.md) |
 | meta | `internal/meta`, `internal/meta/postgres` | Transactions, generated queries, embedded migrations | [storage.md](storage.md) (schema of items and packages), R-ARCH-016, R-ARCH-019, R-ARCH-026 |
