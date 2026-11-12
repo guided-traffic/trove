@@ -5948,8 +5948,10 @@ the start side bar (R-UI-002); it never opens a route under `/admin` (R-UI-099).
   `group`, the tab is the first group that had a suggestion when Enter was pressed, else **Repositories**. The tab is part of the
   address.
 - **A tab is the list of its kind with `q`**, 25 rows at a time with **Load more** (R-API-010): Repositories, `GET
-  /api/v1/repositories?q=`, with the plain user's columns of the repository list (Q-UI-312: the key with the project key as its
-  second line, format and class, the client address in the address field of R-UI-065); Packages, `GET /api/v1/packages?q=`, with
+  /api/v1/repositories?q=`, in the admin area's pattern of
+  [Q-UI-330](#q-ui-330--a-list-takes-its-columns-from-the-job-of-its-kind-of-user-the-important-properties-are-columns-and-the-address-takes-no-more-than-its-share)
+  (the key with its description, the project, format and class as columns, the client address a quiet copy button and no address
+  field: who searches opens the repository); Packages, `GET /api/v1/packages?q=`, with
   the columns of Q-UI-314 and the project and repository of each; Projects, `GET /api/v1/projects?q=`, with the start page's columns
   (Q-UI-311). A row leads to its object's page in the main area.
 - **Empty**: "Nothing you may read matches "<text>"." on the tab. A text of fewer than two characters shows "Type at least two

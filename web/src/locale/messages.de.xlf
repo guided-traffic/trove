@@ -268,6 +268,42 @@
         <target>Projekte</target>
       </segment>
     </unit>
+    <unit id="search.results.heading">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Search</source>
+        <target>Suche</target>
+      </segment>
+    </unit>
+    <unit id="search.results.description">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>What you may read that matches “<ph id="0" equiv="text" disp="this.term()"/>”.</source>
+        <target>Was Sie lesen dürfen und zu „<ph id="0" equiv="text" disp="this.term()"/>“ passt.</target>
+      </segment>
+    </unit>
+    <unit id="search.results.too-short">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Type at least two characters.</source>
+        <target>Geben Sie mindestens zwei Zeichen ein.</target>
+      </segment>
+    </unit>
+    <unit id="search.results.none">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Nothing you may read matches “<ph id="0" equiv="text" disp="this.term()"/>”.</source>
+        <target>Nichts, was Sie lesen dürfen, passt zu „<ph id="0" equiv="text" disp="this.term()"/>“.</target>
+      </segment>
+    </unit>
     <unit id="search.label">
       <notes>
         <note category="location">src/app</note>
@@ -599,17 +635,6 @@
       <segment>
         <source>All projects for “<ph id="0" equiv="text" disp="q"/>”</source>
         <target>Alle Projekte zu „<ph id="0" equiv="text" disp="q"/>“</target>
-      </segment>
-    </unit>
-    <unit id="search.heading">
-      <notes>
-        <note category="location">src/app/app.routes.ts:57</note>
-        <note category="location">src/app/app.routes.ts:58</note>
-        <note category="location">src/app/features/search/search-results.ts:88</note>
-      </notes>
-      <segment>
-        <source>Search results</source>
-        <target>Suchergebnisse</target>
       </segment>
     </unit>
     <unit id="nav.guides">
@@ -23182,51 +23207,6 @@
       <segment>
         <source>Role unbound.</source>
         <target>Rollenzuweisung aufgehoben.</target>
-      </segment>
-    </unit>
-    <unit id="search.packages">
-      <notes>
-        <note category="location">src/app/features/search/search-results.ts:28,30</note>
-      </notes>
-      <segment>
-        <source>Find packages matching “<ph id="0" equiv="INTERPOLATION" disp="{{ term() }}"/>”</source>
-        <target>Pakete zu „<ph id="0" equiv="INTERPOLATION" disp="{{ term() }}"/>“ suchen</target>
-      </segment>
-    </unit>
-    <unit id="search.caption">
-      <notes>
-        <note category="location">src/app/features/search/search-results.ts:89</note>
-      </notes>
-      <segment>
-        <source>Repositories</source>
-        <target>Repositories</target>
-      </segment>
-    </unit>
-    <unit id="search.no-term">
-      <notes>
-        <note category="location">src/app/features/search/search-results.ts:90</note>
-      </notes>
-      <segment>
-        <source>Type a word into the search field to find a repository.</source>
-        <target>Geben Sie ein Wort in das Suchfeld ein, um ein Repository zu finden.</target>
-      </segment>
-    </unit>
-    <unit id="search.description">
-      <notes>
-        <note category="location">src/app/features/search/search-results.ts:92</note>
-      </notes>
-      <segment>
-        <source>Repositories whose key or description matches “<ph id="0" equiv="term" disp="this.term()"/>”.</source>
-        <target>Repositories, deren Schlüssel oder Beschreibung zu „<ph id="0" equiv="term" disp="this.term()"/>“ passt.</target>
-      </segment>
-    </unit>
-    <unit id="search.none">
-      <notes>
-        <note category="location">src/app/features/search/search-results.ts:94</note>
-      </notes>
-      <segment>
-        <source>No repository matches “<ph id="0" equiv="term" disp="this.term()"/>”.</source>
-        <target>Kein Repository passt zu „<ph id="0" equiv="term" disp="this.term()"/>“.</target>
       </segment>
     </unit>
     <unit id="sa.heading">

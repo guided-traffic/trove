@@ -183,6 +183,10 @@ export const screens: readonly Screen[] = [
   { id: 'projects', path: '/ui/projects', kinds: all },
   // The search field and its list on the start page; anonymous while the seed makes a project public (R-UI-095).
   { id: 'search-field', path: '/ui/projects', kinds: ['anonymous', ...all], walk: searchField, expected: tooMany },
+  // The results page of the search (R-UI-098): every tab with matches, a text without a match, a tab opened by `kind`.
+  { id: 'search-results', path: '/ui/search?q=web', kinds: ['plain', 'admin'] },
+  { id: 'search-results-none', path: '/ui/search?q=zzqx', kinds: ['plain'] },
+  { id: 'search-results-kind-package', path: '/ui/search?q=acme&kind=package', kinds: ['plain', 'admin'] },
   { id: 'repositories', path: `${P}/repositories`, kinds: all, walk: filtersOpen },
   { id: 'repositories-long-keys', path: `${O}/repositories`, kinds: all, walk: filtersOpen },
   { id: 'repositories-empty-project', path: `/ui/projects/${emptyProject}/repositories`, kinds: admins },
