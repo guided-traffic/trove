@@ -13,6 +13,8 @@ const suffix = unique('v').replace(/[^a-z0-9]/g, '').slice(0, 10);
 const publicProject = `vis-pub-${suffix}`;
 const internalProject = `vis-int-${suffix}`;
 const defaultProject = `vis-def-${suffix}`;
+// The start page names a project by its display name, with the key under it (Q-UI-311): its link is found by that name.
+const displayName = (key: string): string => `Journey ${key}`;
 const publicRepo = 'npm-public';
 const wikiRepo = 'npm-wiki';
 const pkgName = `vis-readme-${suffix}`;
@@ -23,7 +25,7 @@ const merge = { 'Content-Type': 'application/merge-patch+json', 'If-Match': '*' 
 
 test.beforeAll(async ({ admin }) => {
   const project = async (key: string, visibility: string) => {
-    const created = await admin.post('/api/v1/projects', { data: { key, displayName: `Journey ${key}`, description: '', visibility } });
+    const created = await admin.post('/api/v1/projects', { data: { key, displayName: displayName(key), description: '', visibility } });
     expect(created.status(), await created.text()).toBe(201);
   };
   await project(publicProject, 'public');
@@ -164,8 +166,8 @@ test('R-UI-057 an anonymous visitor finds the public project and a package witho
   });
 
   await visitor.goto('/ui/en/projects');
-  await expect(visitor.getByRole('link', { name: publicProject, exact: true })).toBeVisible();
-  await expect(visitor.getByRole('link', { name: internalProject, exact: true })).toHaveCount(0);
+  await expect(visitor.getByRole('link', { name: displayName(publicProject), exact: true })).toBeVisible();
+  await expect(visitor.getByRole('link', { name: displayName(internalProject), exact: true })).toHaveCount(0);
   await expect(visitor.getByRole('link', { name: 'Sign in' })).toBeVisible();
   await expectAccessible(visitor, 'start page of an anonymous visitor');
 
@@ -185,7 +187,7 @@ test('R-UI-056 R-AUTHZ-030 an external user finds the public project on the star
   await signInWithKeycloak(bob, 'bob', bobPassword);
   // an internal user finds the internal project without being a member of it
   await bob.goto('/ui/en/projects');
-  await expect(bob.getByRole('link', { name: internalProject, exact: true })).toBeVisible();
+  await expect(bob.getByRole('link', { name: displayName(internalProject), exact: true })).toBeVisible();
 
   const flagged = await admin.patch('/api/v1/users/bob', { data: { external: true }, headers: merge });
   expect(flagged.ok(), await flagged.text()).toBeTruthy();
@@ -193,10 +195,10 @@ test('R-UI-056 R-AUTHZ-030 an external user finds the public project on the star
   await expect
     .poll(async () => {
       await bob.goto('/ui/en/projects');
-      return bob.getByRole('link', { name: internalProject, exact: true }).count();
+      return bob.getByRole('link', { name: displayName(internalProject), exact: true }).count();
     }, { message: 'the external flag takes effect within the revocation bound' })
     .toBe(0);
-  await expect(bob.getByRole('link', { name: publicProject, exact: true })).toBeVisible();
+  await expect(bob.getByRole('link', { name: displayName(publicProject), exact: true })).toBeVisible();
   await expectAccessible(bob, 'start page of an external user');
   await context.close();
 });

@@ -243,8 +243,14 @@ export class TokenManager {
     );
   });
   protected readonly canRevokeAll = computed(() => this.canRevoke());
-  /** Whether the list holds a token: a page opens its section Tokens then (Q-UI-333). */
-  readonly hasTokens = computed(() => this.list.items().length > 0);
+  private readonly held = signal(false);
+  /**
+   * Whether a page opens its section Tokens (Q-UI-333): the list has held a token since the owner's tokens were first read. It
+   * does not turn false again for the same owner, so revoking the last token, or a reload for the revoked and expired ones,
+   * leaves the section open with its empty line instead of folding it away under the reader. A page binds it one way, so a
+   * reader who closes the section keeps it closed. Set by effects only: a page reads it before `scope` is bound.
+   */
+  readonly heldTokens = this.held.asReadonly();
   /**
    * Whether **Revoke all tokens** is offered: the owner has a token in the list, and the caller may. The page reads it in its own
    * template, which can run before `scope` is bound (the section Advanced of a user without other actions, such as the
@@ -258,6 +264,14 @@ export class TokenManager {
       this.owner();
       this.showAll();
       untracked(() => void this.reload());
+    });
+    // Another owner on the same page starts closed again; its own tokens open the section.
+    effect(() => {
+      this.owner();
+      this.held.set(false);
+    });
+    effect(() => {
+      if (this.list.items().length > 0) this.held.set(true);
     });
     // A draft kept across re-authentication (R-UI-042) reopens the form.
     effect(() => {

@@ -218,6 +218,34 @@ describe('User detail (R-UI-024)', () => {
     expect(tokens.querySelector('.toggle')?.getAttribute('aria-expanded')).toBe('true');
   });
 
+  it('R-UI-024 Q-UI-333 revoking the user\'s last token leaves the section Tokens open with its empty line', async () => {
+    const { root, fixture } = await renderScreen(UserDetail, { inputs: { username: 'alice' } });
+    await settle(fixture);
+    const tokens = [...root.querySelectorAll('trove-disclosure')].find((d) => d.querySelector('.heading')?.textContent?.includes('Tokens'))!;
+    const toggle = tokens.querySelector('.toggle')!;
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    buttonByText(tokens, 'Revoke').click();
+    await settle(fixture);
+    buttonByText(overlay().querySelector('trove-confirm-dialog') as HTMLElement, 'Revoke').click();
+    await sleep(fixture, 300);
+    expect(text(tokens)).toContain('No active tokens.');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('R-UI-024 Q-UI-333 another user on the same page starts with the section Tokens closed when he holds none', async () => {
+    const { root, fixture } = await renderScreen(UserDetail, { inputs: { username: 'alice' } });
+    await settle(fixture);
+    const expanded = (): string | null | undefined =>
+      [...root.querySelectorAll('trove-disclosure')]
+        .find((d) => d.querySelector('.heading')?.textContent?.includes('Tokens'))
+        ?.querySelector('.toggle')
+        ?.getAttribute('aria-expanded');
+    expect(expanded()).toBe('true');
+    fixture.componentRef.setInput('username', 'bob');
+    await settle(fixture);
+    expect(expanded()).toBe('false');
+  });
+
   it('R-UI-024 ends all sessions of a user after confirmation', async () => {
     const { fixture, root, get } = await renderScreen(UserDetail, { inputs: { username: 'alice' } });
     buttonByText(root, 'End all sessions').click();

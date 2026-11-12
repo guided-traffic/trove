@@ -160,6 +160,10 @@ test('R-UI-041 an administrator creates a project; a member of its Owner group a
     await expect(bob).toHaveURL(new RegExp(`/projects/${key}/service-accounts/${accountName}$`));
     await expect(bob.getByText('Service account of project')).toBeVisible();
 
+    // The section Tokens of an account without a token is closed; the Owner opens it (Q-UI-333).
+    const tokens = bob.getByRole('button', { name: 'Tokens', exact: true });
+    await expect(tokens).toHaveAttribute('aria-expanded', 'false');
+    await tokens.click();
     await bob.getByRole('button', { name: 'Create token' }).click();
     const form = bob.locator('trove-token-form');
     // An Owner's token always expires: no "never", and the cap is said.
@@ -177,10 +181,11 @@ test('R-UI-041 an administrator creates a project; a member of its Owner group a
     await expect(bob.getByRole('row', { name: /browser journey/ })).toBeVisible();
     await expectAccessible(bob, 'project service account with a token');
 
-    // The Owner revokes it again.
+    // The Owner revokes it again; the section stays open with its empty line.
     await bob.getByRole('row', { name: /browser journey/ }).getByRole('button', { name: 'Revoke' }).click();
     await bob.getByRole('dialog').getByRole('button', { name: 'Revoke' }).click();
     await expect(bob.getByText(/^No active tokens\./)).toBeVisible();
+    await expect(tokens).toHaveAttribute('aria-expanded', 'true');
   });
 
   await test.step('the administrator sees the project with what bob created, and the admin lists name the project', async () => {

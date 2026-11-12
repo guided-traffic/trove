@@ -93,13 +93,13 @@ import { PageHeader } from '../../shared/ui/page-header';
           <trove-principal-roles [principal]="a.principal" />
         }
 
-        <!-- A quiet section like its siblings, open while the account holds a token (Q-UI-333). -->
+        <!-- A quiet section like its siblings, opened when the account holds a token and never closed by itself (Q-UI-333). -->
         <trove-disclosure
           i18n-heading="@@sa.tokens"
           heading="Tokens"
           i18n-hint="@@sa.tokens-hint"
           hint="The tokens of this account: create, rotate and revoke them."
-          [expanded]="tokens()?.hasTokens() ?? false"
+          [expanded]="tokens()?.heldTokens() ?? false"
         >
           @if (canReadTokens()) {
             <trove-token-manager [scope]="scope()" [accountIsAdmin]="a.isAdmin" [revokeAllHere]="false" />

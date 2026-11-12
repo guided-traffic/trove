@@ -137,6 +137,29 @@ describe('Service accounts (R-UI-026)', () => {
     expect(tokens.querySelector('trove-token-manager')).toBeTruthy();
   });
 
+  it('R-UI-026 Q-UI-333 the section Tokens of an account without one is closed; opened, it stays open after its new token is revoked', async () => {
+    const { fixture, root } = await renderScreen(ServiceAccountDetail, { inputs: { name: 'ci-bot' } });
+    await settle(fixture);
+    const tokens = [...root.querySelectorAll('trove-disclosure')].find((d) => d.querySelector('.heading')?.textContent?.includes('Tokens'))!;
+    const toggle = tokens.querySelector<HTMLButtonElement>('.toggle')!;
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    toggle.click();
+    await settle(fixture);
+    buttonByText(tokens, 'Create token').click();
+    await settle(fixture);
+    typeInto(tokens.querySelector('trove-token-form')!, 'Description', 'browser journey');
+    buttonByText(tokens.querySelector('trove-token-form')!, 'Create token').click();
+    await settle(fixture);
+    buttonByText(tokens, 'I have copied it').click();
+    await settle(fixture);
+    buttonByText(tokens, 'Revoke').click();
+    await settle(fixture);
+    buttonByText(overlay().querySelector('trove-confirm-dialog') as HTMLElement, 'Revoke').click();
+    await sleep(fixture, 300);
+    expect(text(tokens)).toContain('No active tokens.');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('R-EP-011 the token form binds a token to the endpoints chosen, and leaves it unbound otherwise', async () => {
     const { fixture, root, get } = await renderScreen(ServiceAccountDetail, { inputs: { name: 'ci-bot' } });
     buttonByText(root, 'Create token').click();

@@ -4165,7 +4165,7 @@ Priority: **MVP** · Covers: UI-035, UI-036
   provider, read-only and labelled as such; status with "Disable" (choice to revoke tokens) and
   "Enable"; group memberships (identity-provider-sourced read-only with a badge, manual ones
   editable); system roles through role bindings (R-API-033) with the last-administrator guard; the
-  user's tokens (a quiet section **Tokens** like the page's others, open while the user holds a token, [Q-UI-333](#q-ui-333--a-pages-sections-are-quiet-disclosures-tokens-too-open-while-there-is-a-token-the-profile-follows); **Revoke all
+  user's tokens (a quiet section **Tokens** like the page's others, opened when the user holds a token and never closed by itself, [Q-UI-333](#q-ui-333--a-pages-sections-are-quiet-disclosures-tokens-too-open-while-there-is-a-token-the-profile-follows); **Revoke all
   tokens** a danger button in the page's section **Advanced**, last on the page) and sessions (list, end all); "Explain permissions" (P1); "Audit"
   (audit log filtered on this actor). The break-glass account shows its lock state and "Unlock".
 - "Add user" pre-provisions a user linked to an identity-provider identity (R-API-031). No password
@@ -4207,7 +4207,7 @@ Priority: **MVP** · Covers: trove-only
   area is the instance-wide list with a project column; a project's screen (R-UI-041) lists the project's accounts.
   A name is unique within its project, or among the accounts of no project, and is shown as `sa:<projectKey>/<name>`
   or `sa:<name>` ([Q-AUTHZ-209](authorization.md#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones)).
-- Tokens, a quiet section of the page open while the account holds a token
+- Tokens, a quiet section of the page opened when the account holds a token and never closed by itself
   ([Q-UI-333](#q-ui-333--a-pages-sections-are-quiet-disclosures-tokens-too-open-while-there-is-a-token-the-profile-follows)):
   issue (scope and expiry as in R-UI-029, one-time display, recent authentication), list, revoke one, and revoke all in the
   page's section **Advanced**. The server lets the administrator role, and for a project's account the project's Owners, issue
@@ -12067,6 +12067,12 @@ the open state of **Preferences** if the walkthrough shows that users rather see
 [user-detail.html](../../web/src/app/features/users/user-detail.html),
 [service-account-detail.ts](../../web/src/app/features/service-accounts/service-account-detail.ts),
 [profile.html](../../web/src/app/features/profile/profile.html).
+
+**Amended 2026-11-12 (a finding of the browser journey R-UI-041):** "open while the owner holds a token" was built as a binding of
+the section's state to the list, so revoking the last token folded the section away under the reader, with its line "No active
+tokens.", and a reload for the revoked and expired tokens closed and reopened it. The page opens the section when the list has held
+a token since the owner's tokens were first read ([token-manager.ts](../../web/src/app/features/tokens/token-manager.ts)
+`heldTokens`) and never closes it itself; the reader's own toggle stays, and another owner on the same page starts closed again.
 
 ### Q-UI-334 · A picker is one control from the start, held while its list loads, and a field is as wide as its kind of input
 
