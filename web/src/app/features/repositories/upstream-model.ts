@@ -8,6 +8,12 @@ import { JsonObject } from '../../shared/merge-patch';
 
 export type UpstreamAuthMode = 'none' | 'basic' | 'bearer';
 
+/** One entry of `remote.extraHosts` (R-REPO-024): a host pattern and whether the repository's credential is sent to it. */
+export interface UpstreamHost {
+  readonly pattern: string;
+  readonly sendCredentials: boolean;
+}
+
 /**
  * How the form writes the `remote` member (R-UI-021): `sparse` for a create (only what differs from the defaults, and nothing
  * in mode `pullThrough`), `structural` for the edit form (the mode and the mirror object are always present, so a merge patch
@@ -23,6 +29,11 @@ export type RemoteWrite = 'sparse' | 'structural';
 export interface UpstreamForm {
   /** The upstream URL; empty means the format's default preset. */
   readonly url: string;
+  /**
+   * The further hosts (`remote.extraHosts`) once edited; null follows the URL: the hosts of the preset whose URL it is, none for
+   * any other (R-REPO-062, R-UI-082). A stored repository's list is its own and is never null.
+   */
+  readonly extraHosts: readonly UpstreamHost[] | null;
   readonly authMode: UpstreamAuthMode;
   readonly username: string;
   /** What the user typed; sent as `{"value": ...}` and never read back (R-REPO-033). */
@@ -40,6 +51,7 @@ export interface UpstreamForm {
 
 export const EMPTY_UPSTREAM: UpstreamForm = {
   url: '',
+  extraHosts: null,
   authMode: 'none',
   username: '',
   password: '',
@@ -55,6 +67,8 @@ export interface UpstreamDefaults {
   readonly url: string | null;
   readonly metadataTtlSeconds: number | null;
   readonly notFoundTtlSeconds: number | null;
+  /** The format's presets, whose hosts a create of a preset's URL stores without being told (R-REPO-062). */
+  readonly presets: readonly UpstreamPreset[];
 }
 
 /** The format's default upstream preset (R-REPO-062), or null for a format without presets. */
@@ -62,12 +76,69 @@ export function defaultPreset(format: FormatDescriptor | null | undefined): Upst
   return format?.upstreamPresets.find((p) => p.default) ?? null;
 }
 
-export function upstreamDefaultsOf(format: FormatDescriptor | null | undefined): UpstreamDefaults {
+/**
+ * The defaults of a format's remote: the default preset's URL and the format's cache periods. `remote` is the `remote` member
+ * of `getRepositoryDefaults` (R-REPO-063) when the form has it: the server's resolved periods win over the descriptor's.
+ */
+export function upstreamDefaultsOf(
+  format: FormatDescriptor | null | undefined,
+  remote?: Readonly<Record<string, unknown>> | null,
+): UpstreamDefaults {
+  const cache = (remote?.['cache'] ?? null) as { metadataTtlSeconds?: number; notFoundTtlSeconds?: number } | null;
   return {
     url: defaultPreset(format)?.url ?? null,
-    metadataTtlSeconds: format?.defaultMetadataTtlSeconds ?? null,
-    notFoundTtlSeconds: format?.defaultNotFoundTtlSeconds ?? null,
+    metadataTtlSeconds: cache?.metadataTtlSeconds ?? format?.defaultMetadataTtlSeconds ?? null,
+    notFoundTtlSeconds: cache?.notFoundTtlSeconds ?? format?.defaultNotFoundTtlSeconds ?? null,
+    presets: format?.upstreamPresets ?? [],
   };
+}
+
+/** The preset whose URL is url, compared as the server stores URLs; null for any other URL (R-REPO-062). */
+export function presetOf(presets: readonly UpstreamPreset[], url: string | null): UpstreamPreset | null {
+  if (url === null || url.trim() === '') return null;
+  const n = normalizedUrl(url.trim());
+  return presets.find((p) => normalizedUrl(p.url) === n) ?? null;
+}
+
+/** The hosts the server stores for url when a create names no extraHosts: its preset's, else none (Q-REPO-322). */
+export function hostsOfUrl(defaults: UpstreamDefaults, url: string | null): readonly UpstreamHost[] {
+  return (presetOf(defaults.presets, url)?.extraHosts ?? []).map((h) => ({
+    pattern: h.pattern,
+    sendCredentials: h.sendCredentials,
+  }));
+}
+
+/** The further hosts the form shows and a test or an edit sends: the edited list, else the hosts that follow the URL. */
+export function shownHosts(form: UpstreamForm, defaults: UpstreamDefaults): readonly UpstreamHost[] {
+  return form.extraHosts ?? hostsOfUrl(defaults, effectiveUrl(form, defaults));
+}
+
+/** The hosts that receive the credential: the upstream's host and every further host with sendCredentials (R-REPO-033). */
+export function credentialHosts(form: UpstreamForm, defaults: UpstreamDefaults): readonly string[] {
+  const out: string[] = [];
+  const url = effectiveUrl(form, defaults);
+  if (url) {
+    try {
+      out.push(new URL(url).hostname);
+    } catch {
+      // not a URL yet: the server names the problem
+    }
+  }
+  for (const h of shownHosts(form, defaults)) {
+    if (h.sendCredentials && h.pattern.trim() !== '' && !out.includes(h.pattern.trim())) out.push(h.pattern.trim());
+  }
+  return out;
+}
+
+function sameHosts(a: readonly UpstreamHost[], b: readonly UpstreamHost[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((h, i) => h.pattern.trim().toLowerCase() === b[i]!.pattern.trim().toLowerCase() && h.sendCredentials === b[i]!.sendCredentials)
+  );
+}
+
+function hostsJson(hosts: readonly UpstreamHost[]): JsonObject[] {
+  return hosts.map((h) => ({ pattern: h.pattern.trim().toLowerCase(), sendCredentials: h.sendCredentials }));
 }
 
 /** The upstream a new remote repository of the format starts with: its default preset's URL, nothing else. */
@@ -114,6 +185,12 @@ export function upstreamOf(
     (write === 'structural' || defaults.url === null || normalizedUrl(url) !== normalizedUrl(defaults.url))
   ) {
     out['url'] = url;
+  }
+  // A create names the further hosts only where they differ from what the server stores for the URL without them (R-UI-082,
+  // Q-REPO-322); the settings page names them always, so that its patch keeps the list as shown.
+  const hosts = shownHosts(form, defaults);
+  if (write === 'structural' || !sameHosts(hosts, hostsOfUrl(defaults, effectiveUrl(form, defaults)))) {
+    out['extraHosts'] = hostsJson(hosts);
   }
   if (form.authMode !== 'none') {
     out['authMode'] = form.authMode;

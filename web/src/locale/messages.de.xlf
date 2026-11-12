@@ -19678,11 +19678,11 @@
     </unit>
     <unit id="mirror.unbounded.refused">
       <notes>
-        <note category="location">src/app/features/repositories/mirror-settings.ts:170,172</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:168,170</note>
       </notes>
       <segment>
-        <source>A mirror of the format&apos;s well-known upstream needs a bound. Give include patterns that each start with a literal part (such as <pc id="0" equivStart="START_TAG_CODE" equivEnd="CLOSE_TAG_CODE" type="other" dispStart="&lt;code translate=&quot;no&quot;&gt;" dispEnd="&lt;/code&gt;">@types/*</pc>), or a storage limit. Without either the server refuses to save it.</source>
-        <target>Ein Mirror des bekannten Upstreams des Formats braucht eine Grenze. Geben Sie Include-Muster an, die jeweils mit einem festen Teil beginnen (etwa <pc id="0" equivStart="START_TAG_CODE" equivEnd="CLOSE_TAG_CODE" type="other" dispStart="&lt;code translate=&quot;no&quot;&gt;" dispEnd="&lt;/code&gt;">@types/*</pc>), oder eine Speichergrenze. Ohne eines von beiden lehnt der Server das Speichern ab.</target>
+        <source>A mirror of a well-known public registry needs a bound. Give include patterns that each start with a literal part (such as <pc id="0" equivStart="START_TAG_CODE" equivEnd="CLOSE_TAG_CODE" type="other" dispStart="&lt;code translate=&quot;no&quot;&gt;" dispEnd="&lt;/code&gt;">@types/*</pc>), or a storage limit. Without either the server refuses to save it.</source>
+        <target>Ein Mirror einer bekannten öffentlichen Registry braucht eine Grenze. Geben Sie Include-Muster an, die jeweils mit einem festen Teil beginnen (etwa <pc id="0" equivStart="START_TAG_CODE" equivEnd="CLOSE_TAG_CODE" type="other" dispStart="&lt;code translate=&quot;no&quot;&gt;" dispEnd="&lt;/code&gt;">@types/*</pc>), oder eine Speichergrenze. Ohne eines von beiden lehnt der Server das Speichern ab.</target>
       </segment>
     </unit>
     <unit id="mirror.unbounded.warned">
@@ -22161,6 +22161,16 @@
         <target>Passwort oder Token</target>
       </segment>
     </unit>
+    <unit id="upstream.hosts">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:64</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:311,312</note>
+      </notes>
+      <segment>
+        <source>Further hosts</source>
+        <target>Weitere Hosts</target>
+      </segment>
+    </unit>
     <unit id="upstream.metadata-ttl">
       <notes>
         <note category="location">src/app/features/repositories/upstream-settings.ts:55</note>
@@ -22191,31 +22201,31 @@
         <target>Offline</target>
       </segment>
     </unit>
-    <unit id="upstream.intro">
+    <unit id="upstream.intro.registry">
       <notes>
-        <note category="location">src/app/features/repositories/upstream-settings.ts:78,82</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:89,91</note>
       </notes>
       <segment>
-        <source> The registry this repository fetches from. Credentials go to this host only and are never shown again once saved. </source>
-        <target>Die Registry, aus der dieses Repository abruft. Zugangsdaten gehen nur an diesen Host und werden nach dem Speichern nie wieder angezeigt.</target>
+        <source>The registry this repository fetches from.</source>
+        <target>Die Registry, aus der dieses Repository abruft.</target>
       </segment>
     </unit>
-    <unit id="upstream.url.hint-preset">
+    <unit id="upstream.presets">
       <notes>
-        <note category="location">src/app/features/repositories/upstream-settings.ts:99</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:94,95</note>
       </notes>
       <segment>
-        <source>The format&apos;s well-known upstream is</source>
-        <target>Der bekannte Upstream des Formats ist</target>
+        <source>Well-known registries</source>
+        <target>Bekannte Registries</target>
       </segment>
     </unit>
-    <unit id="upstream.url.hint-empty">
+    <unit id="upstream.url.hint-presets">
       <notes>
-        <note category="location">src/app/features/repositories/upstream-settings.ts:99,101</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:128,130</note>
       </notes>
       <segment>
-        <source>Empty means that upstream.</source>
-        <target>Leer bedeutet dieser Upstream.</target>
+        <source>Choose a well-known registry or enter the address of another.</source>
+        <target>Wählen Sie eine bekannte Registry oder geben Sie die Adresse einer anderen an.</target>
       </segment>
     </unit>
     <unit id="upstream.url.hint-required">
@@ -22227,13 +22237,13 @@
         <target>Dieses Format hat keinen bekannten Upstream: Geben Sie die Adresse der Registry an.</target>
       </segment>
     </unit>
-    <unit id="upstream.url.use-preset">
+    <unit id="upstream.url.required">
       <notes>
-        <note category="location">src/app/features/repositories/upstream-settings.ts:108,110</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:136,138</note>
       </notes>
       <segment>
-        <source>Use the well-known upstream</source>
-        <target>Bekannten Upstream verwenden</target>
+        <source>Enter the address of the registry, such as https://registry.example.com/.</source>
+        <target>Geben Sie die Adresse der Registry an, etwa https://registry.example.com/.</target>
       </segment>
     </unit>
     <unit id="upstream.password.stored">
@@ -22308,6 +22318,24 @@
         <target>Die Verbindung wird getestet.</target>
       </segment>
     </unit>
+    <unit id="upstream.test.foreign">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:256,258</note>
+      </notes>
+      <segment>
+        <source> The registry asks for a login at <pc id="0" equivStart="START_TAG_CODE" equivEnd="CLOSE_TAG_CODE" type="other" dispStart="&lt;code translate=&quot;no&quot;&gt;" dispEnd="&lt;/code&gt;"><ph id="1" equiv="INTERPOLATION" disp="{{ host }}"/></pc>, which this repository may not reach. Allow it as a further host if it is the registry&apos;s own token service. </source>
+        <target> Die Registry verlangt eine Anmeldung bei <pc id="0" equivStart="START_TAG_CODE" equivEnd="CLOSE_TAG_CODE" type="other" dispStart="&lt;code translate=&quot;no&quot;&gt;" dispEnd="&lt;/code&gt;"><ph id="1" equiv="INTERPOLATION" disp="{{ host }}"/></pc>, den dieses Repository nicht erreichen darf. Erlauben Sie ihn als weiteren Host, wenn er der eigene Token-Dienst der Registry ist. </target>
+      </segment>
+    </unit>
+    <unit id="upstream.test.allow">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:260</note>
+      </notes>
+      <segment>
+        <source>Allow</source>
+        <target>Erlauben</target>
+      </segment>
+    </unit>
     <unit id="upstream.test.status">
       <notes>
         <note category="location">src/app/features/repositories/upstream-settings.ts:293,294</note>
@@ -22324,6 +22352,15 @@
       <segment>
         <source>Credentials</source>
         <target>Zugangsdaten</target>
+      </segment>
+    </unit>
+    <unit id="upstream.test.token-service">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:274,276</note>
+      </notes>
+      <segment>
+        <source>Token service</source>
+        <target>Token-Dienst</target>
       </segment>
     </unit>
     <unit id="upstream.test.duration">
@@ -22362,6 +22399,87 @@
         <target>Grund</target>
       </segment>
     </unit>
+    <unit id="upstream.details">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:305,306</note>
+      </notes>
+      <segment>
+        <source>Upstream details</source>
+        <target>Upstream-Details</target>
+      </segment>
+    </unit>
+    <unit id="upstream.hosts.hint">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:313,314</note>
+      </notes>
+      <segment>
+        <source> Hosts the upstream&apos;s documents and its token service may lead to. Only a host that receives the credential gets it. </source>
+        <target>Hosts, auf die die Dokumente des Upstreams und sein Token-Dienst verweisen dürfen. Nur ein Host, der die Zugangsdaten erhält, bekommt sie.</target>
+      </segment>
+    </unit>
+    <unit id="upstream.hosts.pattern">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:317,319</note>
+      </notes>
+      <segment>
+        <source>Host pattern</source>
+        <target>Host-Muster</target>
+      </segment>
+    </unit>
+    <unit id="upstream.hosts.send">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:336,337</note>
+      </notes>
+      <segment>
+        <source>Receives the credential</source>
+        <target>Erhält die Zugangsdaten</target>
+      </segment>
+    </unit>
+    <unit id="upstream.hosts.remove">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:339</note>
+      </notes>
+      <segment>
+        <source>Remove</source>
+        <target>Entfernen</target>
+      </segment>
+    </unit>
+    <unit id="upstream.hosts.none">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:346,348</note>
+      </notes>
+      <segment>
+        <source>No further host.</source>
+        <target>Kein weiterer Host.</target>
+      </segment>
+    </unit>
+    <unit id="upstream.hosts.add">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:350,351</note>
+      </notes>
+      <segment>
+        <source>Add host</source>
+        <target>Host hinzufügen</target>
+      </segment>
+    </unit>
+    <unit id="upstream.metadata-ttl.hint-value">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:376,378</note>
+      </notes>
+      <segment>
+        <source> How long fetched metadata is served without asking the upstream again. </source>
+        <target>Wie lange abgerufene Metadaten ausgeliefert werden, ohne den Upstream erneut zu fragen.</target>
+      </segment>
+    </unit>
+    <unit id="upstream.notfound-ttl.hint-value">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:401,403</note>
+      </notes>
+      <segment>
+        <source> How long a &quot;not found&quot; answer of the upstream is remembered. </source>
+        <target>Wie lange sich trove eine Antwort &quot;nicht gefunden&quot; des Upstreams merkt.</target>
+      </segment>
+    </unit>
     <unit id="upstream.test.accepted">
       <notes>
         <note category="location">src/app/features/repositories/upstream-settings.ts:348</note>
@@ -22380,6 +22498,15 @@
         <target>abgelehnt</target>
       </segment>
     </unit>
+    <unit id="upstream.credential-hosts">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:552</note>
+      </notes>
+      <segment>
+        <source>The credential is sent to <ph id="0" equiv="hosts" disp="list"/>.</source>
+        <target>Die Zugangsdaten gehen an <ph id="0" equiv="hosts" disp="list"/>.</target>
+      </segment>
+    </unit>
     <unit id="upstream.test.unreachable">
       <notes>
         <note category="location">src/app/features/repositories/upstream-settings.ts:372</note>
@@ -22389,6 +22516,15 @@
         <target>Der Upstream war nicht erreichbar.</target>
       </segment>
     </unit>
+    <unit id="upstream.test.token-foreign">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:568</note>
+      </notes>
+      <segment>
+        <source>The upstream answered, and its login is on a host this repository may not reach.</source>
+        <target>Der Upstream hat geantwortet, und seine Anmeldung liegt auf einem Host, den dieses Repository nicht erreichen darf.</target>
+      </segment>
+    </unit>
     <unit id="upstream.test.denied">
       <notes>
         <note category="location">src/app/features/repositories/upstream-settings.ts:374</note>
@@ -22396,6 +22532,15 @@
       <segment>
         <source>The upstream answered and refused the credentials.</source>
         <target>Der Upstream hat geantwortet und die Zugangsdaten abgelehnt.</target>
+      </segment>
+    </unit>
+    <unit id="upstream.test.ok-credentials">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:572</note>
+      </notes>
+      <segment>
+        <source>The upstream answered and accepted the credentials.</source>
+        <target>Der Upstream hat geantwortet und die Zugangsdaten akzeptiert.</target>
       </segment>
     </unit>
     <unit id="upstream.test.ok">
@@ -22416,40 +22561,31 @@
         <target>Der Upstream hat mit einem Fehler geantwortet.</target>
       </segment>
     </unit>
-    <unit id="upstream.metadata-ttl.hint-none">
+    <unit id="upstream.test.token-not-allowed">
       <notes>
-        <note category="location">src/app/features/repositories/upstream-settings.ts:384</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:605</note>
       </notes>
       <segment>
-        <source>How long fetched metadata is served without asking the upstream again. Empty: the format&apos;s default.</source>
-        <target>Wie lange abgerufene Metadaten ausgeliefert werden, ohne den Upstream erneut zu fragen. Leer: die Voreinstellung des Formats.</target>
+        <source>not allowed for this repository</source>
+        <target>für dieses Repository nicht erlaubt</target>
       </segment>
     </unit>
-    <unit id="upstream.metadata-ttl.hint">
+    <unit id="upstream.test.token-credential">
       <notes>
-        <note category="location">src/app/features/repositories/upstream-settings.ts:385</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:607</note>
       </notes>
       <segment>
-        <source>How long fetched metadata is served without asking the upstream again. Default: <ph id="0" equiv="seconds" disp="d"/>.</source>
-        <target>Wie lange abgerufene Metadaten ausgeliefert werden, ohne den Upstream erneut zu fragen. Voreinstellung: <ph id="0" equiv="seconds" disp="d"/>.</target>
+        <source>allowed, receives the credential</source>
+        <target>erlaubt, erhält die Zugangsdaten</target>
       </segment>
     </unit>
-    <unit id="upstream.notfound-ttl.hint-none">
+    <unit id="upstream.test.token-no-credential">
       <notes>
-        <note category="location">src/app/features/repositories/upstream-settings.ts:390</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:608</note>
       </notes>
       <segment>
-        <source>How long &quot;not found&quot; answers are remembered. Empty: the format&apos;s default.</source>
-        <target>Wie lange „nicht gefunden“-Antworten gemerkt werden. Leer: die Voreinstellung des Formats.</target>
-      </segment>
-    </unit>
-    <unit id="upstream.notfound-ttl.hint">
-      <notes>
-        <note category="location">src/app/features/repositories/upstream-settings.ts:391</note>
-      </notes>
-      <segment>
-        <source>How long &quot;not found&quot; answers are remembered. Default: <ph id="0" equiv="seconds" disp="d"/>.</source>
-        <target>Wie lange „nicht gefunden“-Antworten gemerkt werden. Voreinstellung: <ph id="0" equiv="seconds" disp="d"/>.</target>
+        <source>allowed, receives no credential</source>
+        <target>erlaubt, erhält keine Zugangsdaten</target>
       </segment>
     </unit>
     <unit id="upstream.auth.basic">

@@ -3,9 +3,11 @@ import { Router } from '@angular/router';
 import { ApiError } from '../../api/problem';
 import { FormatDescriptor, RepositoriesApi, Repository } from '../../api/repositories-api';
 import {
+  DEB_FORMAT,
   FakeRepositoriesApi,
   GENERIC_FORMAT,
   NUGET_FORMAT,
+  OCI_FORMAT,
   PACKAGE_FORMAT,
   sampleUpstreamTestResult,
 } from '../../api/testing/fakes-catalog';
@@ -29,7 +31,7 @@ import {
 } from './upstream-model';
 import { RepositoryDetail } from './repository-detail';
 import { RepositoryWizard } from './repository-wizard';
-import { upstreamPointerLabel, upstreamTarget } from './upstream-settings';
+import { UpstreamSettings, upstreamPointerLabel, upstreamTarget } from './upstream-settings';
 
 const NPM: FormatDescriptor = {
   ...PACKAGE_FORMAT,
@@ -55,7 +57,7 @@ const SECRET = 'correct-horse-battery-staple';
 const defaults = upstreamDefaultsOf(NPM);
 const up = (over: Partial<UpstreamForm>): UpstreamForm => ({ ...initialUpstream(NPM), ...over });
 
-describe('The upstream settings of a remote repository (F-54, R-UI-021, R-REPO-024, R-REPO-033)', () => {
+describe('The upstream settings of a remote repository (F-54, R-UI-021, R-UI-082, R-REPO-024, R-REPO-033)', () => {
   describe('the pure rules', () => {
     it('R-UI-021 a new remote starts with the format preset and writes nothing of the upstream', () => {
       expect(initialUpstream(NPM).url).toBe('https://registry.npmjs.org/');
@@ -76,6 +78,7 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-REPO-0
       // The edit form always names the stored URL, so the patch does not depend on how a removed URL reads.
       expect(upstreamOf(up({}), defaults, 'structural')).toEqual({
         url: 'https://registry.npmjs.org/',
+        extraHosts: [],
         cache: {},
         availability: {},
       });
@@ -125,6 +128,7 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-REPO-0
       } as unknown as Repository;
       expect(formOf(repo).upstream).toEqual({
         url: 'https://npm.internal.example/',
+        extraHosts: [],
         authMode: 'basic',
         username: 'ci',
         password: '',
@@ -141,11 +145,11 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-REPO-0
     it('R-REPO-024 the test body carries the format and the URL the repository would use', () => {
       expect(upstreamTestBody(EMPTY_UPSTREAM, NPM)).toEqual({
         format: 'npm',
-        remote: { url: 'https://registry.npmjs.org/' },
+        remote: { url: 'https://registry.npmjs.org/', extraHosts: [] },
       });
       expect(upstreamTestBody(up({ url: 'https://npm.internal.example/', authMode: 'bearer', password: SECRET }), NPM)).toEqual({
         format: 'npm',
-        remote: { url: 'https://npm.internal.example/', authMode: 'bearer', password: { value: SECRET } },
+        remote: { url: 'https://npm.internal.example/', extraHosts: [], authMode: 'bearer', password: { value: SECRET } },
       });
       // A stored password cannot be part of an unsaved test.
       expect(upstreamTestBody(up({ authMode: 'bearer', passwordStored: 'sealed', clearPassword: true }), NPM).remote).not.toHaveProperty('password');
@@ -163,7 +167,8 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-REPO-0
       expect(upstreamTarget('/remote/password/value')).toBe('f-remote-password');
       expect(upstreamTarget('/remote/cache/metadataTtlSeconds')).toBe('f-remote-cache-metadataTtlSeconds');
       expect(upstreamTarget('/remote/availability/mode')).toBe('f-remote-availability-mode');
-      expect(upstreamTarget('/remote/extraHosts/0/pattern')).toBe('f-remote-upstream');
+      expect(upstreamTarget('/remote/extraHosts/0/pattern')).toBe('f-remote-extraHosts');
+      expect(upstreamTarget('/remote/limits/maxConcurrentFetches')).toBe('f-remote-upstream');
       expect(upstreamTarget('/remote/mode')).toBeNull();
       expect(upstreamTarget('/remote/mirror/concurrency')).toBeNull();
       expect(upstreamTarget('/key')).toBeNull();
@@ -175,12 +180,6 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-REPO-0
   describe('in the wizard', () => {
     type Wizard = Awaited<ReturnType<typeof renderScreen<RepositoryWizard>>>;
     const control = (root: ParentNode, id: string) => root.querySelector<HTMLInputElement>(`#${id}`)!;
-    const check = async (r: Wizard, id: string, on = true) => {
-      const box = control(r.root, id);
-      box.checked = on;
-      box.dispatchEvent(new Event('change', { bubbles: true }));
-      await settle(r.fixture);
-    };
     const tile = (r: Wizard, name: string) =>
       [...r.root.querySelectorAll<HTMLElement>('[role="option"]')].find(
         (t) => t.querySelector('.tile-name')?.textContent?.trim() === name,
@@ -214,13 +213,14 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-REPO-0
       const fake = r.get(RepositoriesApi) as FakeRepositoriesApi;
       expect(r.root.querySelector('trove-upstream-settings')).not.toBeNull();
       expect(control(r.root, 'f-remote-url').value).toBe('https://registry.npmjs.org/');
-      expect(text(r.root.querySelector('#d-remote-url')!)).toContain('well-known upstream');
+      expect(text(r.root.querySelector('#d-remote-url')!)).toContain('well-known registry');
       expect(control(r.root, 'f-remote-authMode').value).toBe('none');
       expect(r.root.querySelector('#f-remote-password')).toBeNull();
-      expect(control(r.root, 'f-remote-cache-metadataTtlSeconds').value).toBe('');
-      expect(text(r.root.querySelector('#d-remote-metadata-ttl')!)).toContain('Default: 7200');
-      expect(text(r.root.querySelector('#d-remote-notfound-ttl')!)).toContain('Default: 1800');
-      expect(control(r.root, 'f-remote-availability-mode').checked).toBe(false);
+      expect(control(r.root, 'f-remote-cache-metadataTtlSeconds').value).toBe('7200');
+      expect(control(r.root, 'f-remote-cache-notFoundTtlSeconds').value).toBe('1800');
+      expect(r.root.querySelector('trove-upstream-settings')!.textContent).not.toContain('Default:');
+      // Offline is not offered at creation (R-UI-083).
+      expect(r.root.querySelector('#f-remote-availability-mode')).toBeNull();
       expect(text(r.root.querySelector('nav')!)).toContain('4. Access, upstream, npm and mirror settings');
 
       button(r.root, 'Next').click();
@@ -231,7 +231,7 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-REPO-0
       expect((fake.repositories.find((x) => x.key === 'upstream-cache') as Repository).remote).toBeUndefined();
     });
 
-    it('R-UI-021 F-54 a non-default upstream with credentials, periods and the offline switch is written as only what differs; the password is sealed and never shown', async () => {
+    it('R-UI-021 F-54 a non-default upstream with credentials and periods is written as only what differs; the password is sealed and never shown', async () => {
       const r = await remoteStep([GENERIC_FORMAT, NPM], 'npm');
       const fake = r.get(RepositoriesApi) as FakeRepositoriesApi;
       type(control(r.root, 'f-remote-url'), 'https://npm.internal.example/registry/');
@@ -241,7 +241,7 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-REPO-0
       type(control(r.root, 'f-remote-password'), SECRET);
       type(control(r.root, 'f-remote-cache-metadataTtlSeconds'), '60');
       type(control(r.root, 'f-remote-cache-notFoundTtlSeconds'), '1800');
-      await check(r, 'f-remote-availability-mode');
+      await settle(r.fixture);
       expect(control(r.root, 'f-remote-password').type).toBe('password');
 
       button(r.root, 'Next').click();
@@ -260,7 +260,6 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-REPO-0
         username: 'ci-bot',
         password: { set: true },
         cache: { metadataTtlSeconds: 60 },
-        availability: { mode: 'offline' },
       });
     });
 
@@ -290,11 +289,11 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-REPO-0
       expect(fake.upstreamTests).toEqual([
         {
           format: 'npm',
-          remote: { url: 'https://npm.internal.example/', authMode: 'bearer', password: { value: SECRET } },
+          remote: { url: 'https://npm.internal.example/', extraHosts: [], authMode: 'bearer', password: { value: SECRET } },
         },
       ]);
       const result = r.root.querySelector('[data-testid="upstream-test-result"]')!;
-      expect(text(result)).toContain('The upstream answered.');
+      expect(text(result)).toContain('The upstream answered and accepted the credentials.');
       expect(result.className).toContain('ok');
       const verdict = facts(r.root.querySelector('.test-result')!);
       expect(verdict['HTTP status']).toBe('200');
@@ -430,6 +429,218 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-REPO-0
       button(r.root, 'Next').click();
       await settle(r.fixture);
       expect(control(r.root, 'f-remote-url').value).toBe('https://api.nuget.org/v3/index.json');
+    });
+  });
+
+  describe('the section alone (R-UI-082)', () => {
+    type Section = Awaited<ReturnType<typeof renderScreen<UpstreamSettings>>>;
+    const control = (root: ParentNode, id: string) => root.querySelector<HTMLInputElement>(`#${id}`)!;
+    const presetButtons = (root: ParentNode) => [...root.querySelectorAll<HTMLButtonElement>('.presets button')];
+    const pressed = (root: ParentNode) => presetButtons(root).filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => text(b));
+
+    async function section(format: FormatDescriptor, options: { edit?: boolean; setup?: (fake: FakeRepositoriesApi) => void } = {}): Promise<Section> {
+      return renderScreen(UpstreamSettings, {
+        inputs: {
+          form: { ...EMPTY_FORM, upstream: initialUpstream(format) },
+          format,
+          project: 'web',
+          ...(options.edit ? { edit: true } : {}),
+        },
+        setup: (get) => options.setup?.(get(RepositoriesApi) as FakeRepositoriesApi),
+      });
+    }
+    const upstreamOfSection = (r: Section) => r.fixture.componentInstance.form().upstream;
+    const created = (r: Section, format: FormatDescriptor) => upstreamOf(upstreamOfSection(r), upstreamDefaultsOf(format), 'sparse');
+    const hostRows = (root: ParentNode) =>
+      [...root.querySelectorAll('.host-row')].map((row) => ({
+        pattern: row.querySelector<HTMLInputElement>('input[type="text"]')!.value,
+        send: row.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked,
+      }));
+
+    it('R-UI-082 an OCI remote offers Docker Hub, Quay, GitHub (ghcr.io) and GitLab; Docker Hub is pressed and its URL is the value', async () => {
+      const r = await section(OCI_FORMAT);
+      expect(presetButtons(r.root).map((b) => text(b))).toEqual(['Docker Hub', 'Quay', 'GitHub (ghcr.io)', 'GitLab']);
+      expect(presetButtons(r.root).every((b) => b.getAttribute('translate') === 'no')).toBe(true);
+      expect(pressed(r.root)).toEqual(['Docker Hub']);
+      expect(control(r.root, 'f-remote-url').value).toBe('https://registry-1.docker.io/');
+      expect(r.root.querySelector('[role="group"][aria-labelledby="upstream-presets-label"]')).not.toBeNull();
+      expect(created(r, OCI_FORMAT)).toEqual({});
+      await expectAccessible(r.root);
+    });
+
+    it('R-UI-082 pressing GitLab sets its URL and shows gitlab.com receiving the credential; the create names the URL only', async () => {
+      const r = await section(OCI_FORMAT);
+      presetButtons(r.root).find((b) => text(b) === 'GitLab')!.click();
+      await settle(r.fixture);
+      expect(control(r.root, 'f-remote-url').value).toBe('https://registry.gitlab.com/');
+      expect(pressed(r.root)).toEqual(['GitLab']);
+      expect(hostRows(r.root)).toEqual([{ pattern: 'gitlab.com', send: true }]);
+      // The server stores the preset's hosts for its URL (R-REPO-062): the create need not name them.
+      expect(created(r, OCI_FORMAT)).toEqual({ url: 'https://registry.gitlab.com/' });
+    });
+
+    it('R-UI-082 a typed URL presses no button; one that normalizes to a preset presses it', async () => {
+      const r = await section(OCI_FORMAT);
+      type(control(r.root, 'f-remote-url'), 'https://registry.example.com/');
+      await settle(r.fixture);
+      expect(pressed(r.root)).toEqual([]);
+      expect(hostRows(r.root)).toEqual([]);
+      type(control(r.root, 'f-remote-url'), 'HTTPS://Quay.io:443');
+      await settle(r.fixture);
+      expect(pressed(r.root)).toEqual(['Quay']);
+    });
+
+    it('R-UI-082 Debian offers its five archives, npm its one, a format without presets none and an empty, required URL', async () => {
+      let r = await section(DEB_FORMAT);
+      expect(presetButtons(r.root).map((b) => text(b))).toEqual([
+        'Debian',
+        'Debian security updates',
+        'Ubuntu',
+        'Ubuntu security updates',
+        'Ubuntu ports',
+      ]);
+      r = await section(NPM);
+      expect(presetButtons(r.root).map((b) => text(b))).toEqual(['npm public registry']);
+      expect(pressed(r.root)).toEqual(['npm public registry']);
+      r = await section(PRIVATE_ONLY);
+      expect(r.root.querySelector('.presets')).toBeNull();
+      expect(control(r.root, 'f-remote-url').value).toBe('');
+      expect(r.root.querySelector('.field-error')).toBeNull();
+      control(r.root, 'f-remote-url').dispatchEvent(new Event('blur'));
+      await settle(r.fixture);
+      expect(text(r.root.querySelector('.field-error')!)).toContain('Enter the address of the registry');
+    });
+
+    it('R-UI-082 under the password a line names every host the credential goes to', async () => {
+      const r = await section(OCI_FORMAT);
+      presetButtons(r.root).find((b) => text(b) === 'GitLab')!.click();
+      await settle(r.fixture);
+      expect(r.root.querySelector('#d-remote-credential-hosts')).toBeNull();
+      type(control(r.root, 'f-remote-authMode'), 'basic');
+      await settle(r.fixture);
+      expect(text(r.root.querySelector('#d-remote-credential-hosts')!)).toBe('The credential is sent to registry.gitlab.com and gitlab.com.');
+      expect(control(r.root, 'f-remote-password').getAttribute('aria-describedby')).toContain('d-remote-credential-hosts');
+    });
+
+    it('R-UI-082 Q-UI-346 a token service on a host the repository may not reach is named, and Allow adds it and tests again', async () => {
+      const r = await section(OCI_FORMAT, {
+        setup: (fake) => {
+          fake.upstreamTestResult = sampleUpstreamTestResult({
+            httpStatus: 401,
+            authenticated: null,
+            tokenService: { host: 'gitlab.example.com', allowed: false, receivesCredential: false },
+            error: { code: 'foreign_host_denied', message: 'The token service is on gitlab.example.com.' },
+          });
+        },
+      });
+      const fake = r.get(RepositoriesApi) as FakeRepositoriesApi;
+      type(control(r.root, 'f-remote-url'), 'https://registry.example.com/');
+      type(control(r.root, 'f-remote-authMode'), 'basic');
+      await settle(r.fixture);
+      type(control(r.root, 'f-remote-username'), 'ci');
+      type(control(r.root, 'f-remote-password'), SECRET);
+      await settle(r.fixture);
+      button(r.root, 'Test connection').click();
+      await settle(r.fixture);
+      const result = r.root.querySelector('[data-testid="upstream-test-result"]')!;
+      expect(text(result)).toContain('its login is on a host this repository may not reach');
+      expect(text(r.root.querySelector('.allow')!)).toContain('gitlab.example.com');
+      expect(facts(r.root.querySelector('.test-result')!)['Token service']).toBe('gitlab.example.com, not allowed for this repository');
+      await expectAccessible(r.root);
+
+      fake.upstreamTestResult = sampleUpstreamTestResult({
+        httpStatus: 401,
+        authenticated: true,
+        tokenService: { host: 'gitlab.example.com', allowed: true, receivesCredential: true },
+      });
+      r.root.querySelector<HTMLButtonElement>('[data-testid="upstream-allow-host"]')!.click();
+      await settle(r.fixture);
+      expect(fake.upstreamTests).toHaveLength(2);
+      expect(fake.upstreamTests[1]!.remote['extraHosts']).toEqual([{ pattern: 'gitlab.example.com', sendCredentials: true }]);
+      expect(hostRows(r.root)).toEqual([{ pattern: 'gitlab.example.com', send: true }]);
+      expect(text(r.root.querySelector('[data-testid="upstream-test-result"]')!)).toContain('accepted the credentials');
+      // The create names the list, which differs from what the server stores for that URL.
+      expect(created(r, OCI_FORMAT)['extraHosts']).toEqual([{ pattern: 'gitlab.example.com', sendCredentials: true }]);
+    });
+
+    it('R-UI-082 R-UI-083 Upstream details is closed at first and holds the further hosts and the periods; Offline only on the settings page', async () => {
+      const r = await section(OCI_FORMAT);
+      const toggle = r.root.querySelector<HTMLButtonElement>('.details-toggle')!;
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      expect(r.root.querySelector('#upstream-details')!.classList).not.toContain('open');
+      expect(r.root.querySelector('#upstream-details #f-remote-cache-metadataTtlSeconds')).not.toBeNull();
+      expect(r.root.querySelector('#f-remote-availability-mode')).toBeNull();
+      toggle.click();
+      await settle(r.fixture);
+      expect(toggle.getAttribute('aria-expanded')).toBe('true');
+      expect(hostRows(r.root)).toEqual([{ pattern: 'auth.docker.io', send: true }]);
+      button(r.root, 'Add host').click();
+      await settle(r.fixture);
+      const rows = r.root.querySelectorAll<HTMLInputElement>('.host-row input[type="text"]');
+      type(rows[1]!, 'cdn.example.com');
+      await settle(r.fixture);
+      expect(created(r, OCI_FORMAT)['extraHosts']).toEqual([
+        { pattern: 'auth.docker.io', sendCredentials: true },
+        { pattern: 'cdn.example.com', sendCredentials: false },
+      ]);
+      await expectAccessible(r.root);
+
+      const page = await section(OCI_FORMAT, { edit: true });
+      expect(page.root.querySelector('#upstream-details #f-remote-availability-mode')).not.toBeNull();
+    });
+
+    it('R-UI-083 a server error at a further host opens Upstream details and sits at the host', async () => {
+      const r = await section(OCI_FORMAT);
+      r.fixture.componentRef.setInput(
+        'fieldErrors',
+        new Map([['/remote/extraHosts/0/pattern', { pointer: '/remote/extraHosts/0/pattern', code: 'invalid_pattern', detail: 'a host name' }]]),
+      );
+      await settle(r.fixture);
+      expect(r.root.querySelector('.details-toggle')!.getAttribute('aria-expanded')).toBe('true');
+      expect(control(r.root, 'f-remote-extraHosts-0').getAttribute('aria-invalid')).toBe('true');
+    });
+
+    it('R-UI-084 the periods show the defaults as values; an emptied one shows its default again once left; untouched defaults write nothing', async () => {
+      const r = await section(NPM);
+      const ttl = control(r.root, 'f-remote-cache-metadataTtlSeconds');
+      expect(ttl.value).toBe('7200');
+      expect(control(r.root, 'f-remote-cache-notFoundTtlSeconds').value).toBe('1800');
+      type(ttl, '');
+      await settle(r.fixture);
+      expect(ttl.value).toBe('');
+      ttl.dispatchEvent(new Event('blur'));
+      await settle(r.fixture);
+      expect(ttl.value).toBe('7200');
+      expect(created(r, NPM)).toEqual({});
+      type(ttl, '600');
+      await settle(r.fixture);
+      expect(created(r, NPM)).toEqual({ cache: { metadataTtlSeconds: 600 } });
+    });
+
+    it('R-UI-084 the periods of getRepositoryDefaults win over the descriptor', async () => {
+      const r = await renderScreen(UpstreamSettings, {
+        inputs: {
+          form: { ...EMPTY_FORM, upstream: initialUpstream(NPM) },
+          format: NPM,
+          project: 'web',
+          defaults: { remote: { cache: { metadataTtlSeconds: 900, notFoundTtlSeconds: 60 } } },
+        },
+      });
+      expect(control(r.root, 'f-remote-cache-metadataTtlSeconds').value).toBe('900');
+      expect(control(r.root, 'f-remote-cache-notFoundTtlSeconds').value).toBe('60');
+    });
+
+    it('R-UI-085 each field takes the width of its kind of input', async () => {
+      const r = await section(OCI_FORMAT, { edit: true });
+      type(control(r.root, 'f-remote-authMode'), 'basic');
+      await settle(r.fixture);
+      expect(control(r.root, 'f-remote-url').classList).toContain('field-w-full');
+      expect(control(r.root, 'f-remote-authMode').classList).toContain('field-w-name');
+      expect(control(r.root, 'f-remote-username').classList).toContain('field-w-name');
+      expect(control(r.root, 'f-remote-password').classList).toContain('field-w-name');
+      expect(control(r.root, 'f-remote-extraHosts-0').classList).toContain('field-w-name');
+      expect(control(r.root, 'f-remote-cache-metadataTtlSeconds').classList).toContain('field-w-duration');
+      expect(control(r.root, 'f-remote-cache-notFoundTtlSeconds').classList).toContain('field-w-duration');
     });
   });
 
@@ -569,6 +780,7 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-REPO-0
           format: 'npm',
           remote: {
             url: 'https://npm.internal.example/',
+            extraHosts: [],
             authMode: 'basic',
             username: 'ci-bot',
             cache: { metadataTtlSeconds: 60 },

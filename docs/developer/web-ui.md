@@ -475,29 +475,52 @@ The wizard shows it in the class-specific step, the edit form on a tab **Mirror*
 
 [upstream-settings.ts](../../web/src/app/features/repositories/upstream-settings.ts) (`trove-upstream-settings`) edits `form.upstream` (`UpstreamForm` of
 [upstream-model.ts](../../web/src/app/features/repositories/upstream-model.ts), which holds the upstream's form state, its defaults and what a create, an edit
-and Test connection send; `repository-model.ts` builds the whole document from it) of every remote repository: the URL, the authentication, a write-only password, the two
-cache periods, the offline switch and **Test connection** (F-54, R-UI-021, R-REPO-024, R-REPO-033; Q-UI-122 to Q-UI-124). The wizard shows it in the class-specific step above the format's settings
-and the Mirror section; the edit form on a tab **Upstream**.
+and Test connection send; `repository-model.ts` builds the whole document from it) of every remote repository (R-UI-082, R-UI-084, R-UI-085, R-REPO-024,
+R-REPO-033, R-REPO-062, R-REPO-064; Q-UI-122 to Q-UI-124, Q-UI-345, Q-UI-346). Inputs: `form` (a model), `format`, `project`, `fieldErrors`, `defaults` (the
+`repository` document of `getRepositoryDefaults`, whose remote's periods win over the descriptor's) and `edit` (the settings page: Offline is offered). In this
+order:
 
-- *What is written.* `upstreamOf(form, defaults, write)` returns only what differs from the defaults of `upstreamDefaultsOf(format)` (the default preset's `url` of
-  `upstreamPresets`, `defaultMetadataTtlSeconds`, `defaultNotFoundTtlSeconds`); `remoteOf(form, write, {mirror, upstream})` merges it with the mirror part. `FormatMemberOf` carries `remote` (`sparse` or `structural`), `mirror` (the
-  format has the mirror section; default true) and `upstream` (the defaults, present when the form edits the upstream). `structural` writes the URL as entered and `cache` and `availability` as
-  objects even when empty, so the merge patch clears a member inside them with `null` and never nulls an object that holds members the form does not edit.
-- *The wizard's start.* `resetDependent` gives a new remote `initialUpstream(format)` (the preset URL) when the class or the format changes; a draft restored after a sign-in is merged over `EMPTY_FORM`.
+- *Well-known registries.* A `btn btn-default` per entry of the format's `upstreamPresets`, the display name with `translate="no"`, `aria-pressed` while the
+  URL the repository would use (`effectiveUrl`) equals the preset's as the server normalizes it (`normalizedUrl`); a click sets the URL. No group for a format
+  without presets, whose URL starts empty and says what to type once it was left empty (`urlError`).
+- *URL, authentication, credentials.* The URL is `field-w-full`, the authentication select, the username and the password `field-w-name`. Under the password
+  `credentialLine` names every host the credential goes to (`credentialHosts`: the URL's host and the further hosts with `sendCredentials`), joined with
+  `Intl.ListFormat` of `LOCALE_ID`. An emptied URL of a format with presets shows the default preset's again once left (`leaveUrl`, R-UI-084).
+- *Test connection.* `RepositoriesApi.testUpstream` posts `upstreamTestBody(form.upstream, format)`: the format and the section with the URL the repository would
+  use and the further hosts as shown, without a stored password. The result is a verdict sentence plus the facts of `UpstreamTestResult`, the token service
+  among them; any change of the form clears it. A result `foreign_host_denied` with a `tokenService` that is not allowed shows the host and **Allow <host>**
+  (`allow`): the host becomes a further host, receiving the credential unless the authentication is none, and the test runs again.
+- *Upstream details.* A `btn-tertiary` toggle with `aria-expanded` and `aria-controls` over a `collapse-region`, closed at first and opened by the user or by a
+  field error under `/remote/extraHosts`, `/remote/cache` or `/remote/availability` (`detailsOpen`, R-UI-083). It holds **Further hosts** (a row per host: the
+  pattern `field-w-name`, **Receives the credential**, **Remove**; **Add host**), the two cache periods (`field-w-duration`) and, with `edit`, **Offline**.
+- *Further hosts.* `UpstreamForm.extraHosts` is null while the list follows the URL (`hostsOfUrl`: the hosts of the preset whose URL it is, none for any other
+  URL, as the server stores them, Q-REPO-322); the first edit of a row makes it the form's own list (`shownHosts`). A stored repository's list is its own
+  (`formOf`).
+- *Periods as values.* A period shows its value or the default (`shown`); an emptied field holds `''`, which is written as the default, and shows the default
+  again once left (`leavePeriod`).
+- *What is written.* `upstreamOf(form, defaults, write)` returns only what differs from the defaults of `upstreamDefaultsOf(format, remote)` (the default preset's
+  `url`, the periods, the presets): `sparse` (a create) names `extraHosts` only when the shown list differs from what the server stores for the URL without them;
+  `structural` (the settings page) names the URL as entered, `extraHosts` always, and `cache` and `availability` as objects even when empty, so the merge patch
+  clears a member inside them with `null` and never nulls an object that holds members the form does not edit. `remoteOf(form, write, {mirror, upstream})` merges
+  it with the mirror part; `FormatMemberOf` carries `remote` (`sparse` or `structural`), `mirror` and `upstream`.
+- *The wizard's start.* `resetDependent` gives a new remote `initialUpstream(format)` (the default preset's URL) when the class or the format changes; a draft
+  restored after a sign-in is merged over `EMPTY_FORM`.
 - *The password.* `UpstreamForm.password` is what was typed; `passwordStored` (`none`, `sealed`, `reference`) is read from `password: {set: true}` or `{secretRef}`; `clearPassword` writes `null`.
   `maskSecrets` replaces `password.value` in the request shown on the review and on the **API** tab; both screens blank the password in what they hand to `DraftStore.keep`
   (R-UI-043). `FakeRepositoriesApi` seals a given value into `{set: true}` the way the server does.
-- *Test connection.* `RepositoriesApi.testUpstream` posts `upstreamTestBody(form.upstream, format)`: the format and the section with the URL the repository would use, without a stored password. The
-  result is a verdict sentence plus the facts of `UpstreamTestResult`; any change of the form clears it.
 - *Presets and defaults.* A format's well-known registries are `upstreamPresets` of its descriptor (R-REPO-062); `defaultPreset(format)` is the one an
   empty URL means. `RepositoriesApi.defaults(project, format, cls)` reads `getRepositoryDefaults` (R-REPO-063), the document a bare create would
   store and a free key, for the values of a creation form. The fake formats of [fakes-catalog.ts](../../web/src/app/api/testing/fakes-catalog.ts)
   carry the presets of their real formats (`NPM_PRESETS`, `OCI_PRESETS`, `DEB_PRESETS`, ...), and `FakeRepositoriesApi.defaults` answers
   `sampleRepositoryDefaults(format, cls, takenKeys)` unless a test sets `defaultsFor`.
-- *Field errors.* `/remote/url` is `f-remote-url`, `/remote/password/...` is `f-remote-password`, the cache periods `f-remote-cache-<member>`, `/remote/availability/mode` `f-remote-availability-mode`, any
-  other member under `/remote` that is not the mode or the mirror the section (`f-remote-upstream`); `upstreamTarget` and `upstreamPointerLabel` are consulted before the mirror's.
-- *Tests.* [upstream-settings.spec.ts](../../web/src/app/features/repositories/upstream-settings.spec.ts) (the rules, the wizard, the edit form, axe) and the journey `14-mirror.spec.ts`
-  ([e2e.md](e2e.md#browser-journeys)).
+- *Field errors.* `/remote/url` is `f-remote-url`, `/remote/password/...` is `f-remote-password`, `/remote/extraHosts/...` the further hosts
+  (`f-remote-extraHosts`, a row `f-remote-extraHosts-<i>`), the cache periods `f-remote-cache-<member>`, `/remote/availability/mode`
+  `f-remote-availability-mode`, any other member under `/remote` that is not the mode or the mirror the section (`f-remote-upstream`); `upstreamTarget` and
+  `upstreamPointerLabel` are consulted before the mirror's.
+- *Tests.* [upstream-settings.spec.ts](../../web/src/app/features/repositories/upstream-settings.spec.ts) (the rules, the section alone with each preset list,
+  the credential line, Allow, the details, the periods and the widths, the wizard, the edit form, axe) and the journey `14-mirror.spec.ts`
+  ([e2e.md](e2e.md#browser-journeys)); the renders `upstream-oci`, `upstream-npm`, `upstream-deb` and `admin-upstream-oci` of
+  [screens.ts](../../web/e2e/renders/screens.ts) walk the section's states with the test answers routed in the browser.
 
 ### The Mirror status panel
 

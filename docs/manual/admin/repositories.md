@@ -91,23 +91,40 @@ The settings of a format are drawn from the schema the format publishes, so the 
 
 ## The upstream of a remote repository
 
-A remote repository has an **Upstream** section in the access settings step of the wizard (the fourth step, below the access settings) and a tab **Upstream** on its page. It sets where the repository fetches from:
+A remote repository has an **Upstream** section in the access settings step of the wizard (the fourth step, below the access settings) and a tab **Upstream** on its page. It sets where the repository fetches from, in this order:
+
+- **Well-known registries**: one button per public registry of the format. The button whose address is in **Upstream URL** is pressed; pressing another one sets its address. A typed address of another registry presses none.
+
+  | Format | Buttons, the first one the default |
+  |---|---|
+  | OCI | **Docker Hub** (`https://registry-1.docker.io/`), **Quay** (`https://quay.io/`), **GitHub (ghcr.io)** (`https://ghcr.io/`), **GitLab** (`https://registry.gitlab.com/`) |
+  | npm | **npm public registry** (`https://registry.npmjs.org/`) |
+  | NuGet | **nuget.org** (`https://api.nuget.org/v3/index.json`) |
+  | Debian | **Debian** (`https://deb.debian.org/debian/`), **Debian security updates**, **Ubuntu**, **Ubuntu security updates**, **Ubuntu ports** (arm64 and the other ports of Ubuntu) |
+  | Ansible | **Ansible Galaxy** (`https://galaxy.ansible.com/api/`) |
+
+- **Upstream URL**, **Authentication**, **Username** and **Password or token**, described in the table below. Under the password one line names every host the credential is sent to: the registry's host and each further host that receives it ("The credential is sent to registry.gitlab.com and gitlab.com.").
+- **Test connection**, described below.
+- **Upstream details**, closed at first: the further hosts, the two cache periods and, on the repository's page, **Offline**.
 
 | UI label | Document key | Default | Meaning |
 |---|---|---|---|
-| **Upstream URL** | `remote.url` | the format's well-known upstream (`https://registry.npmjs.org/` for npm, `https://api.nuget.org/v3/index.json` for NuGet, `https://registry-1.docker.io/` for OCI, `https://deb.debian.org/debian/` for Debian) | The wizard starts with it filled in; an empty field means it. A format without a well-known upstream needs an address. `http` or `https`, no user information |
+| **Upstream URL** | `remote.url` | the address of the format's first button | The field starts with it; emptied and left, it shows it again. A format without buttons (generic) needs an address, and the field says so once you leave it empty. `http` or `https`, no user information |
 | **Authentication** | `remote.authMode` | **None** | **None**, **Username and password** (`basic`) or **Bearer token** (`bearer`) |
 | **Username** | `remote.username` | empty | With **Username and password** only |
 | **Password or token** | `remote.password` | none | Write-only, see below |
-| **Metadata cache period in seconds** | `remote.cache.metadataTtlSeconds` | the format's (npm `7200`, NuGet `300`, OCI `300`, Debian `600`), shown in the hint | How long fetched metadata is served without asking the upstream again; empty is the default |
-| **Negative cache period in seconds** | `remote.cache.notFoundTtlSeconds` | the format's (npm and NuGet `1800`, OCI and Debian `300`), shown in the hint | How long an upstream "not found" is remembered; empty is the default |
-| **Offline** | `remote.availability.mode` | off (`online`) | The upstream is not contacted; clients get what is already stored |
+| **Further hosts** | `remote.extraHosts` | the hosts of the pressed registry (Docker Hub: `auth.docker.io`, GitLab: `gitlab.com`, both receiving the credential; nuget.org: `*.nuget.org`; Ansible Galaxy: `github.com` and `codeload.github.com`), none for another address | Hosts that the upstream's documents and its token service may lead to, each with **Receives the credential**; **Add host** and **Remove** change the list. The list follows the pressed registry until you change it |
+| **Metadata cache period in seconds** | `remote.cache.metadataTtlSeconds` | the format's, shown in the field (npm `7200`, NuGet `300`, OCI `300`, Debian `600`) | How long fetched metadata is served without asking the upstream again; emptied and left, the field shows the default again |
+| **Negative cache period in seconds** | `remote.cache.notFoundTtlSeconds` | the format's, shown in the field (npm and NuGet `1800`, OCI and Debian `300`) | How long an upstream "not found" is remembered |
+| **Offline** | `remote.availability.mode` | off (`online`) | On the repository's page only: the upstream is not contacted; clients get what is already stored |
 
-A member left empty or at its default is not written. The other members of `remote` (extra hosts, limits, integrity, the source network, the remaining cache members) are not in the form; the [API](#npm-remote-the-upstream) sets them, and a save from the form leaves them as they are.
+A member at its default is not written: a new repository of a pressed registry stores that registry's further hosts without the form sending them, because the server takes the hosts of a well-known registry for its address. The other members of `remote` (limits, integrity, the source network, the remaining cache members) are not in the form; the [API](#npm-remote-the-upstream) sets them, and a save from the form leaves them as they are.
 
 **The password is write-only.** It is sealed when you save and never shown again, anywhere: the field is empty when you open the page, a read of the repository shows `{"set": true}`, and the request that **Show as API request** and the **API** tab display carries `<the password>` in its place. When one is stored, the page says so; leave the field empty to keep it, type one to replace it, or tick **Remove the stored password**. A reference to a secret file or variable that was set through the API shows as such and stays until you type a password. The password is not kept in the browser's storage either: a sign-in that interrupts the form restores everything but the password.
 
-**Test connection** sends the section as it stands in the form, saved or not, to `POST /api/v1/projects/<projectKey>/upstream-tests` and shows the answer under the button, in words: **The upstream answered.**, **The upstream answered and refused the credentials.**, **The upstream answered with an error.** or **The upstream could not be reached.**, then the HTTP status, whether the credentials were **accepted** or **refused**, the duration, the certificate (subject and expiry) and, when the upstream could not be reached, the reason with its code (`dns_error`, `tls_untrusted`, `egress_denied`, `offline`, ...). The result goes when you change a setting. The test uses a password you typed; it does not use the stored one, and the page says so. With **Offline** on the answer is `offline`, because the upstream is not contacted. The permission is the one of saving the repository.
+**Test connection** sends the section as it stands in the form, saved or not, to `POST /api/v1/projects/<projectKey>/upstream-tests` and shows the answer under the button, in words: **The upstream answered.**, **The upstream answered and accepted the credentials.**, **The upstream answered and refused the credentials.**, **The upstream answered, and its login is on a host this repository may not reach.**, **The upstream answered with an error.** or **The upstream could not be reached.**, then the HTTP status, whether the credentials were **accepted** or **refused**, the token service, the duration, the certificate (subject and expiry) and the reason with its code (`dns_error`, `tls_untrusted`, `egress_denied`, `foreign_host_denied`, `offline`, ...). The result goes when you change a setting. The test uses a password you typed; it does not use the stored one, and the page says so. With **Offline** on the answer is `offline`, because the upstream is not contacted. The permission is the one of saving the repository.
+
+For a container registry the test logs in as a client does: the registry answers with a challenge that names its token service, and with **Username and password** the test asks that token service once, so a wrong password shows as **refused** before you save. When the token service is on a host the repository does not list (a self-managed GitLab hands out its tokens on its own host), the test says so, does not ask it, and offers **Allow** with the host's name: it adds the host to **Further hosts**, receiving the credential when the repository has one, and tests again. Allow a host only when it is the registry's own token service.
 
 ## Mirror
 
@@ -126,7 +143,7 @@ A remote repository of a format whose upstream trove can list (npm, NuGet, OCI a
 | **Include prerelease versions** | `remote.mirror.includePrereleases` | on | |
 | **Storage limit in bytes** | `remote.mirror.maxBytes` | empty (no limit of its own) | at least 1048576 |
 
-A member left empty or at its default is not written. Under the mode, a notice says when the mirror has no bound; it follows the **Upstream URL** you entered: for the format's well-known upstream (`https://registry.npmjs.org/` for npm, which an empty URL also means) the server refuses to save the mirror unless the include patterns each start with a literal part (such as `@types/*`; not `*`, `**` or `@*/*`) or a storage limit is set; for any other upstream it saves the mirror with a warning. The server decides, and its answer appears at the mode or at the member it names.
+A member left empty or at its default is not written. Under the mode, a notice says when the mirror has no bound; it follows the **Upstream URL** you entered: for the address of one of the format's well-known registries (the buttons above the URL, such as `https://registry.npmjs.org/` for npm or `https://quay.io/` for OCI) the server refuses to save the mirror unless the include patterns each start with a literal part (such as `@types/*`; not `*`, `**` or `@*/*`) or a storage limit is set; for any other upstream it saves the mirror with a warning. The server decides, and its answer appears at the mode or at the member it names.
 
 Only a holder of `repositories:write-config` sets the mode and the members. An Owner of the repository's project without that capability can switch **Paused** and turn the mode back to pull-through, and cannot turn a remote repository into a mirror or change its settings (`mirror_restricted`). A format that cannot list its upstream answers `not_applicable` at the mode for a save with **Mirror**.
 
@@ -161,7 +178,7 @@ With `repositories:write-config`, or with `manage` on the repository (the roles 
 
 ## Settings that are set through the API
 
-The UI edits the shared settings, the format settings, the [upstream](#the-upstream-of-a-remote-repository) and the [mirror](#mirror) of a remote repository. The other members of a remote repository (extra hosts, limits, integrity, the source network), the members of a virtual one, package ownership and namespace claims are set through the management API. The **API** tab of a repository shows the **Stored document** and, after a change in the form, **Your change as a request**.
+The UI edits the shared settings, the format settings, the [upstream](#the-upstream-of-a-remote-repository) and the [mirror](#mirror) of a remote repository. The other members of a remote repository (limits, integrity, the source network), the members of a virtual one, package ownership and namespace claims are set through the management API. The **API** tab of a repository shows the **Stored document** and, after a change in the form, **Your change as a request**.
 
 Read the repository to get its `ETag`, then send a merge patch with `If-Match`:
 

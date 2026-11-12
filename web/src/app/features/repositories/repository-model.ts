@@ -117,6 +117,7 @@ function upstreamFormOf(repo: Repository): UpstreamForm {
   const password = r.password as { set?: boolean; secretRef?: unknown } | null | undefined;
   return {
     url: r.url ?? '',
+    extraHosts: (r.extraHosts ?? []).map((h) => ({ pattern: h.pattern, sendCredentials: h.sendCredentials ?? false })),
     authMode: r.authMode ?? 'none',
     username: r.username ?? '',
     password: '',

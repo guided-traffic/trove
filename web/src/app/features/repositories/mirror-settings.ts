@@ -165,7 +165,7 @@ interface NumberMember {
           <p class="banner-warning" role="note" id="mirror-unbounded">
             <span class="material-icons inline warn" aria-hidden="true">warning</span>
             <span i18n="@@mirror.unbounded.refused"
-              >A mirror of the format's well-known upstream needs a bound. Give include patterns
+              >A mirror of a well-known public registry needs a bound. Give include patterns
               that each start with a literal part (such as <code translate="no">&#64;types/*</code>),
               or a storage limit. Without either the server refuses to save it.</span
             >

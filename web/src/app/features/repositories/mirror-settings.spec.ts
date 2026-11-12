@@ -227,7 +227,7 @@ describe('Mirror settings of a remote repository', () => {
       const r = await remoteStep([NPM], 'npm');
       await chooseMirror(r);
       const note = () => r.root.querySelector('#mirror-unbounded')?.textContent?.replace(/\s+/g, ' ');
-      expect(note()).toContain("A mirror of the format's well-known upstream needs a bound.");
+      expect(note()).toContain('A mirror of a well-known public registry needs a bound.');
       expect(note()).toContain('the server refuses to save it');
       await expectAccessible(r.root);
 

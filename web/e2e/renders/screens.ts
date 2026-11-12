@@ -201,6 +201,108 @@ const wizards: Screen[] = (['OCI (Docker)', 'npm', 'Ansible Galaxy'] as const).f
   }),
 );
 
+/** An answer of the upstream test, as the server gives it (R-REPO-024, R-REPO-064), for a state of the upstream section. */
+function testAnswer(over: Record<string, unknown>): Record<string, unknown> {
+  return {
+    reachable: true,
+    httpStatus: 401,
+    authenticated: null,
+    durationMs: 212,
+    tls: { peerSubject: 'CN=registry.example.com', notAfter: '2027-03-01T00:00:00Z' },
+    outboundProxy: null,
+    sourceAddress: null,
+    tokenService: null,
+    error: null,
+    ...over,
+  };
+}
+
+/**
+ * The upstream section of a new remote repository (R-UI-082) for one format: the presets as it opens, then, where `full`, a preset
+ * with credentials and the line that names their hosts, a typed URL, the four kinds of test result (answered by the route, so
+ * no registry is contacted), and Upstream details open with two further hosts, one of 64 characters. Nothing is created.
+ */
+function upstreamWalk(format: string, preset: string | null, full: boolean): Screen['walk'] {
+  return async function* (page) {
+    const next = async (): Promise<void> => {
+      const button = page.getByRole('button', { name: 'Next', exact: true });
+      await expect(button).toBeEnabled();
+      const before = await page.locator('[aria-current="step"]').allTextContents();
+      await button.click();
+      await expect.poll(() => page.locator('[aria-current="step"]').allTextContents()).not.toEqual(before);
+    };
+    await page.getByRole('option', { name: format, exact: true }).click();
+    await next();
+    await page.getByRole('radio', { name: /^Remote/ }).check();
+    await next();
+    const project = page.getByLabel('Project', { exact: true });
+    if ((await project.count()) > 0) {
+      // The select is held while the projects load; choose once it offers the project, and again until it shows it.
+      await expect(project.locator(`option[value="${mainProject}"]`)).toHaveCount(1);
+      await expect(async () => {
+        await project.selectOption(mainProject);
+        await expect(project).toHaveValue(mainProject, { timeout: 1_000 });
+      }).toPass();
+    }
+    await page.locator('#f-key').fill(`renders-${format.toLowerCase().replace(/[^a-z]+/g, '')}-upstream`);
+    await page.locator('#f-key').blur();
+    await next();
+    const upstream = page.locator('trove-upstream-settings');
+    await expect(upstream).toBeVisible();
+    yield 'presets';
+    if (full && preset) {
+      await upstream.getByRole('button', { name: preset, exact: true }).click();
+      await page.locator('#f-remote-authMode').selectOption('basic');
+      await page.locator('#f-remote-username').fill('ci-robot');
+      await page.locator('#f-remote-password').fill('a-password-of-the-renders');
+      yield 'preset-credentials';
+      const answers: [string, Record<string, unknown>][] = [
+        ['test-accepted', testAnswer({ authenticated: true, tokenService: { host: 'gitlab.com', allowed: true, receivesCredential: true } })],
+        ['test-refused', testAnswer({ authenticated: false, tokenService: { host: 'gitlab.com', allowed: true, receivesCredential: true } })],
+        [
+          'test-unreachable',
+          testAnswer({ reachable: false, httpStatus: null, tls: null, error: { code: 'dns_error', message: 'The name registry.gitlab.com does not resolve.' } }),
+        ],
+        [
+          'test-token-foreign',
+          testAnswer({
+            tokenService: { host: 'gitlab.example-company.com', allowed: false, receivesCredential: false },
+            error: {
+              code: 'foreign_host_denied',
+              message: "The registry's token service is on gitlab.example-company.com, which is neither the upstream nor one of the repository's further hosts; trove did not ask it.",
+            },
+          }),
+        ],
+      ];
+      for (const [state, body] of answers) {
+        await page.route('**/upstream-tests', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) }));
+        await upstream.getByRole('button', { name: 'Test connection' }).click();
+        await expect(upstream.locator('[data-testid="upstream-test-result"]')).toBeVisible();
+        yield state;
+        await page.unroute('**/upstream-tests');
+      }
+      await page.locator('#f-remote-url').fill('https://registry.example-company.com/team/');
+      yield 'typed-url';
+    }
+    await upstream.getByRole('button', { name: 'Upstream details' }).click();
+    const rows = upstream.locator('.host-row input[type="text"]');
+    const n = (await rows.count()) + 2;
+    await upstream.getByRole('button', { name: 'Add host' }).click();
+    await upstream.getByRole('button', { name: 'Add host' }).click();
+    await expect(rows).toHaveCount(n);
+    await rows.nth(n - 2).fill('cdn.registry.example-company.com');
+    await rows.nth(n - 1).fill('a-very-long-host-name-of-a-token-service.eu-central.example-co.com');
+    yield 'details';
+  };
+}
+
+const upstreams: Screen[] = [
+  { id: 'upstream-oci', path: `/ui/projects/${mainProject}/repositories/new`, kinds: ['power'], walk: upstreamWalk('OCI (Docker)', 'GitLab', true), expected: keyFree },
+  { id: 'upstream-npm', path: `/ui/projects/${mainProject}/repositories/new`, kinds: ['power'], walk: upstreamWalk('npm', null, false), expected: keyFree },
+  { id: 'upstream-deb', path: `/ui/projects/${mainProject}/repositories/new`, kinds: ['power'], walk: upstreamWalk('Debian (APT)', null, false), expected: keyFree },
+  { id: 'admin-upstream-oci', path: '/ui/admin/repositories/new', kinds: ['admin'], walk: upstreamWalk('OCI (Docker)', 'GitLab', true), expected: keyFree },
+];
+
 const all: readonly Kind[] = ['plain', 'power', 'admin'];
 const owners: readonly Kind[] = ['power', 'admin'];
 const admins: readonly Kind[] = ['admin'];
@@ -324,6 +426,8 @@ export const screens: readonly Screen[] = [
 
   // The creation flow, step by step, for three formats and every class (the owner's rules of 2026-11-12, CLAUDE.md).
   ...wizards,
+  // The upstream of a remote where it is entered: the presets, the credentials, Test connection, the details (R-UI-082).
+  ...upstreams,
   { id: 'admin-security', path: '/ui/admin/security', kinds: admins },
   { id: 'admin-audit', path: '/ui/admin/audit', kinds: admins, walk: filtersOpen },
   { id: 'admin-advisory-sources', path: '/ui/admin/advisory-sources', kinds: admins },

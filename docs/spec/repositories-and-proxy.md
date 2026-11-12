@@ -1907,8 +1907,16 @@ each from a workstation, by the planning agent and again before the presets were
 with `401` and the token services above (ghcr.io's challenge also names a default `scope`); the npm registry's `-/ping`, the NuGet
 service index and Galaxy's `/api/` answer 200; `dists/trixie/InRelease`, `debian-security/dists/trixie-security/InRelease`,
 `dists/noble/InRelease` of Ubuntu's archive and ports and `dists/noble-security/InRelease` of its security archive, over `https`,
-answer 200. Not verified: a pull or install through a
-trove remote of each new preset; the builder does one each by hand and records it (CI is not assumed to reach these hosts).
+answer 200.
+
+By hand on 2026-11-12, through a trove remote of each new preset created from its URL alone, on the UI development profile of a
+workstation with internet access: a pull of an image by the registry protocol (the challenge, an anonymous token, the index, a
+platform manifest and one layer) through Quay (`prometheus/busybox:latest`), ghcr.io (`linuxcontainers/alpine:latest`) and GitLab
+(`gitlab-org/gitlab-runner/gitlab-runner-helper:x86_64-latest`), the GitLab remote storing `gitlab.com` as its credential host; and
+`apt-get update` in a Debian 13 container through Debian security updates (`trixie-security`), Ubuntu (`noble`), Ubuntu security
+updates (`noble-security`) and Ubuntu ports (`noble`, arm64), with `apt-get download hello` from Ubuntu. Not verified: a pull by the
+Docker CLI (the profile listens on the workstation's loopback, which Docker Desktop's daemon does not reach), a credential at any of
+the new presets, and any of it in CI, which is not assumed to reach these hosts.
 
 Acceptance criteria:
 
