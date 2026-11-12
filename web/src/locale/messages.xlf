@@ -90,23 +90,6 @@
         <source>Open navigation</source>
       </segment>
     </unit>
-    <unit id="shell.search.label">
-      <notes>
-        <note category="location">src/app/app.html:35,36</note>
-        <note category="location">src/app/app.html:39,41</note>
-      </notes>
-      <segment>
-        <source>Find a repository</source>
-      </segment>
-    </unit>
-    <unit id="shell.search.placeholder">
-      <notes>
-        <note category="location">src/app/app.html:48,50</note>
-      </notes>
-      <segment>
-        <source>Find a repository</source>
-      </segment>
-    </unit>
     <unit id="shell.admin">
       <notes>
         <note category="location">src/app/app.html:62,64</note>
@@ -254,6 +237,302 @@
       </notes>
       <segment>
         <source>Projects</source>
+      </segment>
+    </unit>
+    <unit id="search.label">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Search</source>
+      </segment>
+    </unit>
+    <unit id="search.suggestions">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Suggestions</source>
+      </segment>
+    </unit>
+    <unit id="search.user-disabled">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Disabled</source>
+      </segment>
+    </unit>
+    <unit id="search.admin-mark">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Admin area</source>
+      </segment>
+    </unit>
+    <unit id="search.close">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Close</source>
+      </segment>
+    </unit>
+    <unit id="search.placeholder-slash">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Search or go to… (/)</source>
+      </segment>
+    </unit>
+    <unit id="search.placeholder">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Search or go to…</source>
+      </segment>
+    </unit>
+    <unit id="search.filter.all">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>All</source>
+      </segment>
+    </unit>
+    <unit id="search.filter.button">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Filter: <ph id="0" equiv="kind" disp="this.filterLabel()"/></source>
+      </segment>
+    </unit>
+    <unit id="search.filter.remove">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Remove the filter <ph id="0" equiv="kind" disp="this.filterLabel()"/></source>
+      </segment>
+    </unit>
+    <unit id="search.all-projects">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>View all my projects</source>
+      </segment>
+    </unit>
+    <unit id="search.limited">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Too many searches. Suggestions return in <ph id="0" equiv="seconds" disp="f.seconds"/> s.</source>
+      </segment>
+    </unit>
+    <unit id="search.error">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Suggestions are not available.</source>
+      </segment>
+    </unit>
+    <unit id="search.searching">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Searching…</source>
+      </segment>
+    </unit>
+    <unit id="search.no-match">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Nothing you may read matches “<ph id="0" equiv="text" disp="this.term()"/>”. Press Enter to search everything.</source>
+      </segment>
+    </unit>
+    <unit id="search.announce-none">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>No suggestions.</source>
+      </segment>
+    </unit>
+    <unit id="search.announce-one">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>1 suggestion.</source>
+      </segment>
+    </unit>
+    <unit id="search.announce-many">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="count" disp="count"/> suggestions.</source>
+      </segment>
+    </unit>
+    <unit id="search.choose-user">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Choose a user from the list.</source>
+      </segment>
+    </unit>
+    <unit id="search.choose-group">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Choose a group from the list.</source>
+      </segment>
+    </unit>
+    <unit id="search.place.profile">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Profile</source>
+      </segment>
+    </unit>
+    <unit id="search.place.tokens">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Personal tokens</source>
+      </segment>
+    </unit>
+    <unit id="search.place.sessions">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Sessions</source>
+      </segment>
+    </unit>
+    <unit id="search.group.places">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Places</source>
+      </segment>
+    </unit>
+    <unit id="search.group.frequent-repositories">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Frequently visited repositories</source>
+      </segment>
+    </unit>
+    <unit id="search.group.frequent-projects">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Frequently visited projects</source>
+      </segment>
+    </unit>
+    <unit id="search.group.admin-area">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Admin area</source>
+      </segment>
+    </unit>
+    <unit id="search.group.repositories">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Repositories</source>
+      </segment>
+    </unit>
+    <unit id="search.group.packages">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Packages</source>
+      </segment>
+    </unit>
+    <unit id="search.group.projects">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Projects</source>
+      </segment>
+    </unit>
+    <unit id="search.group.pages">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Pages</source>
+      </segment>
+    </unit>
+    <unit id="search.group.admin-pages">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Admin pages</source>
+      </segment>
+    </unit>
+    <unit id="search.group.users">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Users</source>
+      </segment>
+    </unit>
+    <unit id="search.group.groups">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Groups</source>
+      </segment>
+    </unit>
+    <unit id="search.more.repositories">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>All repositories for “<ph id="0" equiv="text" disp="q"/>”</source>
+      </segment>
+    </unit>
+    <unit id="search.more.packages">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>All packages for “<ph id="0" equiv="text" disp="q"/>”</source>
+      </segment>
+    </unit>
+    <unit id="search.more.projects">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>All projects for “<ph id="0" equiv="text" disp="q"/>”</source>
       </segment>
     </unit>
     <unit id="search.heading">
@@ -14112,7 +14391,7 @@
         <note category="location">src/app/features/profile/profile.html:44,45</note>
       </notes>
       <segment>
-        <source>Keyboard shortcuts with a single key</source>
+        <source>Keyboard shortcuts with a single key, such as / for the search</source>
       </segment>
     </unit>
     <unit id="profile.pref.save">

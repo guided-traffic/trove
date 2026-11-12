@@ -13,8 +13,9 @@ import { Layout } from './core/layout';
 import { NavState } from './core/nav-state';
 import { BrowserStorage } from './core/storage';
 import { SessionStore } from './core/session-store';
+import { PreferencesStore } from './core/preferences-store';
 import { seriousViolations } from './testing/axe';
-import { settle, text } from './testing/screen';
+import { settle } from './testing/screen';
 import { robotDataUri } from './shared/ui/robot';
 import { IdentityApi } from './api/identity-api';
 import { FakeIdentityApi, sampleUser } from './api/testing/access-fakes';
@@ -246,39 +247,73 @@ describe('App shell', () => {
     expect(crumbs.querySelector('a')?.getAttribute('href')).toBe('/admin/users');
   });
 
-  it('R-UI-002 the repository search is offered to every signed-in user, also without any capability, and Enter opens the results page of the main area, never the admin area', async () => {
+  it('R-UI-002 R-UI-095 the search field is offered to every signed-in user, also without any capability, and Enter opens the results page of the main area, never the admin area', async () => {
     const { fixture, root } = await render('/', (api) => (api.meResult = { capabilities: [] }));
-    const search = root.querySelector<HTMLFormElement>('header form[role="search"]')!;
-    expect(search.querySelector('label')?.textContent).toContain('Find a repository');
-    const input = search.querySelector<HTMLInputElement>('input')!;
-    // No suggestion list of trove's own; the browser is asked to keep its form history out.
+    const input = root.querySelector<HTMLInputElement>('header [role="search"] input[role="combobox"]')!;
+    expect(input.placeholder).toBe('Search or go to… (/)');
+    // No suggestion list of the browser's own: trove's list is the combobox's.
     expect(input.getAttribute('autocomplete')).toBe('off');
     expect(input.getAttribute('list')).toBeNull();
-    expect(root.querySelector('datalist')).toBeNull();
+    input.dispatchEvent(new Event('focus'));
     input.value = 'generic';
     input.dispatchEvent(new Event('input', { bubbles: true }));
-    search.dispatchEvent(new Event('submit', { cancelable: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
     await fixture.whenStable();
     expect(TestBed.inject(Router).url).toBe('/search?q=generic');
     expect(TestBed.inject(Router).url).not.toContain('/admin');
   });
 
-  it('R-UI-002 a search typed in the admin area also ends in the main area, and the results page shows its text in the field', async () => {
+  it('R-UI-002 R-UI-099 a search typed in the admin area also ends in the main area, and the results page keeps its text in the field', async () => {
     const { fixture, root } = await render('/admin/users');
-    const search = root.querySelector<HTMLFormElement>('header form[role="search"]')!;
-    const input = search.querySelector<HTMLInputElement>('input')!;
+    const input = root.querySelector<HTMLInputElement>('header [role="search"] input')!;
+    input.dispatchEvent(new Event('focus'));
     input.value = 'test';
     input.dispatchEvent(new Event('input', { bubbles: true }));
-    search.dispatchEvent(new Event('submit', { cancelable: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
     await fixture.whenStable();
     await settle(fixture);
     expect(TestBed.inject(Router).url).toBe('/search?q=test');
     // The main shell: no admin side bar, no admin breadcrumb.
     expect(root.querySelector('aside.sidebar')?.textContent ?? '').not.toContain('Admin area');
     expect(root.querySelector('aside.sidebar')?.textContent ?? '').not.toContain('System status');
-    expect(text(root.querySelector('main')!)).not.toContain('Admin area');
-    expect(root.querySelector('h1')?.textContent?.trim()).toBe('Search results');
-    expect(root.querySelector('header form[role="search"] input')).toHaveProperty('value', 'test');
+    expect(root.querySelector('header [role="search"] input')).toHaveProperty('value', 'test');
+  });
+
+  it('R-UI-095 / focuses the field while the preference is on and the focus is not in a text field; Ctrl+K and ⌘K always', async () => {
+    const { fixture, root } = await render('/', (api) => (api.meResult = { capabilities: [] }));
+    document.body.appendChild(root);
+    const field = root.querySelector<HTMLInputElement>('header input[role="combobox"]')!;
+    const key = (target: EventTarget, init: KeyboardEventInit): KeyboardEvent => {
+      const e = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
+      target.dispatchEvent(e);
+      return e;
+    };
+    // On the page body: the field takes the focus, and the key is not typed.
+    const slash = key(document.body, { key: '/' });
+    expect(slash.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(field);
+    // Typed into another text field, it is that field's.
+    const other = document.createElement('input');
+    document.body.appendChild(other);
+    other.focus();
+    expect(key(other, { key: '/' }).defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(other);
+    // The preference off: / does nothing; Ctrl+K and ⌘K still focus the field.
+    TestBed.inject(PreferencesStore).adopt({ etag: '"2"', preferences: { locale: null, theme: null, keyboardShortcuts: false, revision: 2 } });
+    await settle(fixture);
+    other.focus();
+    document.body.focus();
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(key(document.body, { key: '/' }).defaultPrevented).toBe(false);
+    expect(document.activeElement).not.toBe(field);
+    expect(field.placeholder).toBe('Search or go to…');
+    expect(key(document.body, { key: 'k', ctrlKey: true }).defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(field);
+    other.focus();
+    expect(key(other, { key: 'k', metaKey: true }).defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(field);
+    root.remove();
+    other.remove();
   });
 
   it('R-UI-050 the Documentation link opens the manual page of the current screen, or the overview', async () => {

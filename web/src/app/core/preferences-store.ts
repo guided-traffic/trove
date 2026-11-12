@@ -31,16 +31,23 @@ export class PreferencesStore {
   readonly locale: UiLocale = inject(LOCALE_ID).startsWith('de') ? 'de' : 'en';
 
   private readonly _theme = signal<UiTheme | null>(null);
+  private readonly _keyboardShortcuts = signal(true);
   private loaded: LoadedPreferences | null = null;
 
   /** The explicit theme choice, or null when the browser setting decides. */
   readonly theme = this._theme.asReadonly();
+  /**
+   * Whether single-key shortcuts such as `/` for the search are on (R-API-021, Q-UI-401): on by default, until the stored
+   * preferences say otherwise.
+   */
+  readonly keyboardShortcuts = this._keyboardShortcuts.asReadonly();
 
   /** Reads the stored preferences once per sign-in and applies the theme. */
   async load(): Promise<void> {
     try {
       this.loaded = await this.api.load();
       this.applyTheme(asTheme(this.loaded.preferences.theme));
+      this._keyboardShortcuts.set(this.loaded.preferences.keyboardShortcuts);
     } catch {
       // Preferences are a convenience; defaults apply when they cannot be read (service
       // accounts and CI tokens get 403, R-API-021).
@@ -57,6 +64,7 @@ export class PreferencesStore {
   adopt(saved: LoadedPreferences): void {
     this.loaded = saved;
     this.applyTheme(asTheme(saved.preferences.theme));
+    this._keyboardShortcuts.set(saved.preferences.keyboardShortcuts);
     const stored = saved.preferences.locale;
     if ((stored === 'en' || stored === 'de') && stored !== this.locale) {
       this.navigation.assign(`/ui/${stored}${this.router.url}`);

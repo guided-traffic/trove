@@ -1,6 +1,7 @@
 import { Page, expect } from '@playwright/test';
 import { Kind, emptyProject, exposureRule, group, longDebKey, longNpmKey, mainProject, npmPackage, ociPackage, otherProject, projectServiceAccount, serviceAccount } from './seed';
 import { gradedPackage } from './advisories';
+import { routeSuggestions, routeTooMany } from './suggestions';
 
 /**
  * Every screen of the app (web/src/app/app.routes.ts and the route files of the feature areas), with the parameters of the
@@ -85,6 +86,58 @@ async function* sortByDetection(page: Page): AsyncGenerator<string> {
   yield 'sorted';
 }
 
+/** The suggestions' answer of a 429 and its seconds: the notice of R-UI-097 is a state of the field. */
+const tooMany = [
+  { match: /^GET \/api\/v1\/search\/suggestions\?\S* answered 429$/, why: 'the 429 notice is rendered on purpose' },
+  { match: /^GET \/api\/v1\/auth\/whoami answered 401$/, why: 'an anonymous visitor has no session' },
+];
+
+/**
+ * The search field of the top bar and its list (R-UI-095 to R-UI-097): the bar as it opens; the list opened empty; typing `web`
+ * (every group of the main area); the start of the seed's longest key; a text with no match; `us` where the caller is an instance
+ * administrator (Admin pages, Users); the filter menu and the chip **Packages**; the 429 notice. Below 36 rem the button opens the
+ * sheet, and the sheet with suggestions is the state. The suggestions are the seed's (`routeSuggestions`).
+ */
+async function* searchField(page: Page): AsyncGenerator<string> {
+  await routeSuggestions(page);
+  yield '';
+  const narrow = (page.viewportSize()?.width ?? 1440) < 576;
+  const field = page.locator('#global-search');
+  const list = page.locator('#search-suggestions');
+  const heading = (name: string | RegExp) => list.getByRole('group', { name, exact: typeof name === 'string' });
+  if (narrow) await page.getByRole('button', { name: 'Search', exact: true }).click();
+  else await field.click();
+  await expect(list).toBeVisible();
+  const admin = (await heading('Admin area').count()) > 0;
+  yield 'search-empty';
+  await field.fill('web');
+  await expect(heading('Repositories')).toBeVisible();
+  yield 'search-typing';
+  if (narrow) return;
+  await field.fill(longNpmKey.slice(0, 24));
+  await expect(list.locator('[role=option]').first()).toContainText('release-candidates');
+  yield 'search-long';
+  await field.fill('zzqx');
+  await expect(page.locator('.search-status')).toContainText('Nothing you may read matches');
+  yield 'search-none';
+  if (admin) {
+    await field.fill('us');
+    await expect(heading(/^Admin pages/)).toBeVisible();
+    yield 'search-admin';
+  }
+  await page.locator('.search-filter').click();
+  await expect(page.locator('.search-filter-menu')).toBeVisible();
+  yield 'search-filter-menu';
+  await page.getByRole('menuitemradio', { name: 'Packages' }).click();
+  await field.fill('acme');
+  await expect(heading('Packages')).toBeVisible();
+  yield 'search-chip';
+  await routeTooMany(page, 30);
+  await field.fill('acme-ui');
+  await expect(page.locator('.search-status')).toContainText('Too many searches');
+  yield 'search-limited';
+}
+
 /** The closed Advanced section at the end of a page, opened: where a page keeps its destructive action (the style guide). */
 async function* advancedOpen(page: Page): AsyncGenerator<string> {
   yield '';
@@ -128,6 +181,8 @@ export const screens: readonly Screen[] = [
   // The start and the project's content (Q-UI-129): the plain user's main path.
   { id: 'home', path: '/ui/', kinds: all },
   { id: 'projects', path: '/ui/projects', kinds: all },
+  // The search field and its list on the start page; anonymous while the seed makes a project public (R-UI-095).
+  { id: 'search-field', path: '/ui/projects', kinds: ['anonymous', ...all], walk: searchField, expected: tooMany },
   { id: 'repositories', path: `${P}/repositories`, kinds: all, walk: filtersOpen },
   { id: 'repositories-long-keys', path: `${O}/repositories`, kinds: all, walk: filtersOpen },
   { id: 'repositories-empty-project', path: `/ui/projects/${emptyProject}/repositories`, kinds: admins },

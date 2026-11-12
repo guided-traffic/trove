@@ -7,6 +7,9 @@ import { ApiResponse, GetBody, GetPath } from './types';
 /** Carries the `Idempotency-Key` of a request from the client to the interceptor (R-API-014). */
 export const IDEMPOTENCY_KEY = new HttpContextToken<string | null>(() => null);
 
+/** Keeps a request out of the one automatic retry of R-UI-042: its caller answers a failure itself (`ReadOptions.noRetry`). */
+export const NO_AUTO_RETRY = new HttpContextToken<boolean>(() => false);
+
 /** Query parameter values; arrays repeat the parameter (R-API-011), undefined is omitted. */
 export type QueryParams = Readonly<
   Record<string, string | number | boolean | readonly string[] | undefined>
@@ -23,6 +26,11 @@ export interface ReadOptions {
    * `DOMException` named `AbortError`. The search field cancels the request of a text a newer text supersedes (R-UI-097).
    */
   readonly signal?: AbortSignal;
+  /**
+   * The answer comes back as it is, without the one automatic retry of R-UI-042: the search field shows a 429's notice at once
+   * and sends nothing before its `Retry-After` has passed (R-UI-097).
+   */
+  readonly noRetry?: boolean;
 }
 
 export interface CreateOptions {
@@ -98,6 +106,7 @@ export class ApiClient {
       params: options.params,
       headers,
       signal: options.signal,
+      noRetry: options.noRetry,
     });
   }
 
@@ -191,10 +200,12 @@ export class ApiClient {
       readonly idempotencyKey?: string;
       readonly responseType?: 'json' | 'text';
       readonly signal?: AbortSignal;
+      readonly noRetry?: boolean;
     },
   ): Promise<ApiResponse<T>> {
     let context = new HttpContext();
     if (extra.idempotencyKey) context = context.set(IDEMPOTENCY_KEY, extra.idempotencyKey);
+    if (extra.noRetry) context = context.set(NO_AUTO_RETRY, true);
     const request$ = this.http.request<T>(method, url, {
       body,
       params: toParams(extra.params),

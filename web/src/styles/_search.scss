@@ -1,0 +1,308 @@
+// The search field of the top bar and its list (R-UI-095 to R-UI-097): the field with its chip and filter on the top bar's fill,
+// the list under it on the menu surface, grouped with quiet headings, the admin groups apart behind a line and marked, and below
+// 36 rem a sheet over the top bar's width (Q-UI-403). Global and scoped to the element, as the shell's styles are.
+
+trove-search-field {
+  display: block;
+  position: relative;
+  min-inline-size: 0;
+
+  &.narrow {
+    justify-self: end;
+  }
+
+  .search {
+    position: relative;
+  }
+
+  .search-box {
+    display: flex;
+    align-items: center;
+    gap: var(--trove-space-1);
+    box-sizing: border-box;
+    inline-size: 100%;
+    block-size: var(--trove-control-height);
+    padding-inline: var(--trove-space-2) var(--trove-space-1);
+    border: 1px solid var(--trove-search-border);
+    border-radius: var(--trove-search-radius);
+    background: var(--trove-search-bg);
+    color: var(--trove-search-fg);
+
+    &:focus-within {
+      outline: 2px solid var(--trove-nav-accent);
+      outline-offset: 2px;
+    }
+  }
+
+  .search-icon {
+    flex: none;
+    font-size: 1rem;
+    color: var(--trove-search-muted);
+  }
+
+  input {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    block-size: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: 0.875rem;
+
+    &:focus,
+    &:focus-visible {
+      outline: none;
+    }
+
+    &::placeholder {
+      color: var(--trove-search-muted);
+      opacity: 1;
+    }
+  }
+
+  // The chosen kind (Q-UI-402): a chip at the field's start with its remove button.
+  .search-chip {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--trove-space-1);
+    padding-inline: var(--trove-space-2) 0;
+    border-radius: var(--trove-radius-full);
+    background: var(--trove-control-disabled-bg);
+    color: var(--trove-control-fg);
+    font-size: 0.75rem;
+    line-height: 1.5rem;
+    white-space: nowrap;
+  }
+
+  .search-chip-remove,
+  .search-filter {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: var(--trove-radius-s);
+    background: none;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .search-chip-remove {
+    inline-size: 1.5rem;
+    block-size: 1.5rem;
+
+    .material-icons {
+      font-size: 0.875rem;
+    }
+  }
+
+  .search-filter {
+    flex: none;
+    inline-size: 1.75rem;
+    block-size: 1.75rem;
+    color: var(--trove-search-muted);
+
+    &:hover {
+      background: var(--trove-nav-hover);
+    }
+
+    .material-icons {
+      font-size: 1.125rem;
+    }
+  }
+
+  // The list: on the menu surface, as wide as the field and at least 24 rem, below it.
+  .search-popup {
+    position: absolute;
+    inset-block-start: calc(100% + var(--trove-space-1));
+    inset-inline: 0;
+    z-index: 900;
+    box-sizing: border-box;
+    min-inline-size: min(24rem, 100vw - 2 * var(--trove-space-2));
+    max-block-size: min(70vh, 36rem);
+    overflow-y: auto;
+    padding: var(--trove-space-1);
+    border: 1px solid var(--trove-menu-border);
+    border-radius: var(--trove-radius-m);
+    background: var(--trove-menu-bg);
+    color: var(--trove-control-fg);
+    box-shadow: var(--trove-elevation-2);
+    font-size: 0.875rem;
+  }
+
+  .search-status {
+    margin: 0;
+    padding: var(--trove-space-2) var(--trove-space-3);
+    color: var(--trove-text-muted);
+  }
+
+  .search-group + .search-group,
+  .search-group + .search-option,
+  .search-option + .search-group {
+    margin-block-start: var(--trove-space-1);
+  }
+
+  // The admin area's groups come last, apart behind a line (R-UI-099).
+  .search-group.admin-start {
+    margin-block-start: var(--trove-space-2);
+    padding-block-start: var(--trove-space-2);
+    border-block-start: 1px solid var(--trove-menu-border);
+  }
+
+  .search-group-heading {
+    display: flex;
+    align-items: center;
+    gap: var(--trove-space-2);
+    padding: var(--trove-space-2) var(--trove-space-3) var(--trove-space-1);
+    color: var(--trove-text-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .search-option {
+    display: flex;
+    align-items: center;
+    gap: var(--trove-space-3);
+    min-block-size: 2rem;
+    padding: var(--trove-space-1) var(--trove-space-3);
+    border-radius: var(--trove-radius-s);
+    cursor: pointer;
+
+    &:hover {
+      background: var(--trove-menu-hover);
+    }
+
+    // The active entry: the menu's hover fill and the focus ring, since the focus itself stays in the field.
+    &.active {
+      background: var(--trove-menu-hover);
+      outline: var(--trove-focus-ring);
+      outline-offset: -2px;
+    }
+
+    b {
+      font-weight: 600;
+    }
+  }
+
+  .search-option-icon {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 1.25rem;
+    font-size: 1.125rem;
+    color: var(--trove-text-muted);
+
+    .material-icons {
+      font-size: 1.125rem;
+    }
+  }
+
+  // A project's letter mark, as the project switcher's, at the entry's size.
+  .search-letter {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 1.25rem;
+    block-size: 1.25rem;
+    border-radius: var(--trove-radius-s);
+    background: var(--trove-accent-fill);
+    color: var(--trove-on-accent);
+    font-size: 0.6875rem;
+    font-weight: 600;
+  }
+
+  .search-avatar {
+    inline-size: 1.25rem;
+    block-size: 1.25rem;
+    border-radius: 50%;
+    overflow: hidden;
+  }
+
+  // A long key is cut with an ellipsis inside its entry, never past the list's edge (3.5 of the plan).
+  .search-option-text {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .search-option-secondary {
+    color: var(--trove-text-muted);
+  }
+
+  .search-admin-mark {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--trove-space-1);
+    color: var(--trove-text-muted);
+    font-size: 0.75rem;
+    font-weight: 400;
+
+    .material-icons {
+      font-size: 0.875rem;
+    }
+  }
+
+  // Below 36 rem (Q-UI-403): a panel over the top bar's full width, the suggestions down to the window's bottom.
+  .search-sheet {
+    position: fixed;
+    inset: 0;
+    z-index: 950;
+    box-sizing: border-box;
+    padding: var(--trove-space-2);
+    background: var(--trove-nav-bg);
+    color: var(--trove-nav-fg);
+    box-shadow: var(--trove-elevation-2);
+  }
+
+  .search-sheet-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--trove-space-2);
+    position: relative;
+
+    .search-sheet-close {
+      grid-row: 1;
+      grid-column: 2;
+      color: var(--trove-nav-fg);
+    }
+
+    .search-popup {
+      position: static;
+      grid-row: 2;
+      grid-column: 1 / -1;
+      min-inline-size: 0;
+      max-block-size: calc(100dvh - var(--trove-topbar-height) - 2 * var(--trove-space-2));
+    }
+  }
+}
+
+.search-filter-menu .search-admin-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--trove-space-1);
+  margin-inline-start: auto;
+  color: var(--trove-text-muted);
+  font-size: 0.75rem;
+
+  .material-icons {
+    font-size: 0.875rem;
+  }
+}
+
+// The top bar's focus ring belongs to the field's box (`:focus-within`), not to the bare input inside it.
+trove-root .topbar trove-search-field input:focus-visible {
+  outline: none;
+}
+
+// Every item of the filter menu keeps the check's room, so the labels line up whether checked or not.
+.search-filter-menu .menu-item > .material-icons:first-child {
+  inline-size: 1.125rem;
+}

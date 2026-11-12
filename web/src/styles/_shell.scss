@@ -24,7 +24,7 @@ trove-root {
   .topbar {
     flex: none;
     display: grid;
-    grid-template-columns: minmax(max-content, 1fr) minmax(0, 32rem) minmax(max-content, 1fr);
+    grid-template-columns: minmax(max-content, 1fr) minmax(0, 40rem) minmax(max-content, 1fr);
     align-items: center;
     gap: var(--trove-space-3);
     block-size: var(--trove-topbar-height);
@@ -83,47 +83,7 @@ trove-root {
     block-size: 1.5rem;
   }
 
-  .search {
-    display: flex;
-    align-items: center;
-    position: relative;
-    inline-size: 100%;
-
-    .search-icon {
-      position: absolute;
-      inset-inline-start: var(--trove-space-2);
-      z-index: 1;
-      font-size: 1rem;
-      color: var(--trove-search-muted);
-      pointer-events: none;
-    }
-
-    input {
-      box-sizing: border-box;
-      inline-size: 100%;
-      block-size: var(--trove-control-height);
-      padding: 0 var(--trove-space-3) 0 2rem;
-      border: 1px solid var(--trove-search-border);
-      border-radius: var(--trove-search-radius);
-      background: var(--trove-search-bg);
-      color: var(--trove-search-fg);
-      font: inherit;
-      font-size: 0.875rem;
-
-      &::placeholder {
-        color: var(--trove-search-muted);
-        opacity: 1;
-      }
-    }
-  }
-
-  // Below 36 rem the repository search has no room for a word: it is not shown, rather than an empty pill (UI-A-48). The
-  // admin area's repository list finds a repository there; one search for every reader is the owner's task T-22.
-  @media (max-width: 35.99rem) {
-    .search {
-      visibility: hidden;
-    }
-  }
+  // The search field and its list are _search.scss's (R-UI-095); below 36 rem the field is a button (Q-UI-403).
 
   // The labels of the Admin button and the documentation link give way to their icons on a narrow top bar; they stay
   // the links' accessible names.

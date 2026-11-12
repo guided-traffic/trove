@@ -1,0 +1,189 @@
+<!-- The field with its chip and filter, and the list under it (R-UI-095 to R-UI-097); shown inline or inside the sheet. -->
+<ng-template #fieldTpl>
+  <div class="search-box">
+    <span class="material-icons search-icon" aria-hidden="true">search</span>
+    @if (filter() !== 'all') {
+      <span class="search-chip">
+        <span>{{ filterLabel() }}</span>
+        <button type="button" class="search-chip-remove" [attr.aria-label]="removeFilterLabel()" (click)="setFilter('all')">
+          <span class="material-icons" aria-hidden="true">close</span>
+        </button>
+      </span>
+    }
+    <label class="visually-hidden" for="global-search" i18n="@@search.label">Search</label>
+    <input
+      #field
+      id="global-search"
+      type="text"
+      role="combobox"
+      autocomplete="off"
+      spellcheck="false"
+      aria-autocomplete="list"
+      [attr.aria-expanded]="open()"
+      [attr.aria-controls]="listId"
+      [attr.aria-activedescendant]="activeId()"
+      [placeholder]="placeholder()"
+      [value]="text()"
+      (focus)="onFocus()"
+      (blur)="onBlur()"
+      (input)="onInput($any($event.target).value)"
+      (keydown)="onKeydown($event)"
+    />
+    <button
+      type="button"
+      class="search-filter"
+      [cdkMenuTriggerFor]="filterMenu"
+      [attr.aria-label]="filterButtonLabel()"
+      [attr.title]="filterButtonLabel()"
+    >
+      <span class="material-icons" aria-hidden="true">filter_list</span>
+    </button>
+  </div>
+  @if (open()) {
+    <!-- The pointer keeps the focus in the field (mousedown), so a click reaches its entry. -->
+    <div class="search-popup" animate.enter="dropdown-in" (mousedown)="$event.preventDefault()">
+      @if (status(); as s) {
+        <p class="search-status">{{ s }}</p>
+      }
+      <div role="listbox" class="search-list" [id]="listId" i18n-aria-label="@@search.suggestions" aria-label="Suggestions">
+        @for (g of indexed(); track g.group.id) {
+          @if (g.group.heading) {
+            <div
+              role="group"
+              class="search-group"
+              [class.admin-start]="g.first"
+              [attr.aria-labelledby]="'search-heading-' + g.group.id"
+            >
+              <div class="search-group-heading" [id]="'search-heading-' + g.group.id">
+                <span>{{ g.group.heading }}</span>
+                @if (g.group.area === 'admin' && g.group.id !== 'admin-area') {
+                  <span class="visually-hidden">,&ngsp;</span>
+                  <ng-container *ngTemplateOutlet="adminMark" />
+                }
+              </div>
+              @for (r of g.rows; track r.entry.id) {
+                <ng-container *ngTemplateOutlet="option; context: { $implicit: r.entry, index: r.index }" />
+              }
+            </div>
+          } @else {
+            @for (r of g.rows; track r.entry.id) {
+              <ng-container *ngTemplateOutlet="option; context: { $implicit: r.entry, index: r.index }" />
+            }
+          }
+        }
+      </div>
+    </div>
+  }
+</ng-template>
+
+<!-- An option is never focused (the focus stays in the field, `aria-activedescendant` names it); tabindex -1 and Enter only keep
+     it operable should a tool focus it. -->
+<ng-template #option let-e let-index="index">
+  <div
+    role="option"
+    class="search-option"
+    [id]="optionId(index)"
+    [class.active]="active() === index"
+    [attr.aria-selected]="active() === index"
+    tabindex="-1"
+    (click)="pick(e)"
+    (keydown.enter)="pick(e)"
+    (mousemove)="hover(index)"
+  >
+    <span class="search-option-icon" aria-hidden="true">
+      @if (e.format) {
+        <trove-format-icon [format]="e.format" />
+      } @else if (e.letter) {
+        <span class="search-letter" translate="no">{{ e.letter }}</span>
+      } @else if (e.avatar) {
+        <trove-avatar class="search-avatar" [seed]="e.avatar" />
+      } @else {
+        <span class="material-icons">{{ e.icon }}</span>
+      }
+    </span>
+    <span class="search-option-text">
+      <span class="search-option-label" [attr.translate]="e.literal ? 'no' : null"
+        >@for (s of segments(e); track $index) {@if (s.match) {<b>{{ s.text }}</b>} @else {{{ s.text }}}}</span
+      >
+      @if (e.secondary) {
+        <span class="search-option-secondary" translate="no">&ngsp;· {{ e.secondary }}</span>
+      }
+    </span>
+    @if (e.disabled) {
+      <span class="visually-hidden">,&ngsp;</span>
+      <span class="badge" i18n="@@search.user-disabled">Disabled</span>
+    }
+    @if (e.area === 'admin') {
+      <span class="visually-hidden">,&ngsp;</span>
+      <ng-container *ngTemplateOutlet="adminMark" />
+    }
+  </div>
+</ng-template>
+
+<!-- The mark of every admin suggestion and of its group (R-UI-099): the Admin button's icon and the words. -->
+<ng-template #adminMark>
+  <span class="search-admin-mark"
+    ><span class="material-icons" aria-hidden="true">build</span><span i18n="@@search.admin-mark">Admin area</span></span
+  >
+</ng-template>
+
+<ng-template #filterMenu>
+  <div class="menu search-filter-menu" cdkMenu>
+    @for (f of filters().main; track f.value) {
+      <button type="button" class="menu-item" cdkMenuItemRadio [cdkMenuItemChecked]="filter() === f.value" (cdkMenuItemTriggered)="setFilter(f.value)">
+        <span class="material-icons" aria-hidden="true">{{ filter() === f.value ? 'check' : '' }}</span>
+        <span>{{ f.label }}</span>
+      </button>
+    }
+    @if (filters().admin.length > 0) {
+      <div class="menu-divider" role="separator"></div>
+      @for (f of filters().admin; track f.value) {
+        <button type="button" class="menu-item" cdkMenuItemRadio [cdkMenuItemChecked]="filter() === f.value" (cdkMenuItemTriggered)="setFilter(f.value)">
+          <span class="material-icons" aria-hidden="true">{{ filter() === f.value ? 'check' : '' }}</span>
+          <span>{{ f.label }}</span>
+          <span class="visually-hidden">,&ngsp;</span>
+          <ng-container *ngTemplateOutlet="adminMark" />
+        </button>
+      }
+    }
+  </div>
+</ng-template>
+
+@if (layout.narrow()) {
+  <button
+    #sheetButton
+    type="button"
+    class="btn btn-icon topbar-icon search-sheet-button"
+    i18n-aria-label="@@search.label"
+    aria-label="Search"
+    i18n-title="@@search.label"
+    title="Search"
+    [attr.aria-expanded]="sheetOpen()"
+    (click)="openSheet()"
+  >
+    <span class="material-icons" aria-hidden="true">search</span>
+  </button>
+  @if (sheetOpen()) {
+    <div
+      class="search-sheet"
+      role="dialog"
+      aria-modal="true"
+      i18n-aria-label="@@search.label"
+      aria-label="Search"
+      cdkTrapFocus
+      animate.enter="dropdown-in"
+    >
+      <div class="search-sheet-head" role="search">
+        <ng-container *ngTemplateOutlet="fieldTpl" />
+        <button type="button" class="btn btn-tertiary search-sheet-close" (click)="closeSheet()" i18n="@@search.close">Close</button>
+      </div>
+    </div>
+  }
+} @else {
+  <div class="search" role="search" i18n-aria-label="@@search.label" aria-label="Search">
+    <ng-container *ngTemplateOutlet="fieldTpl" />
+  </div>
+}
+
+<!-- How many suggestions are shown, or what to do (R-UI-097); always present, so that a change is announced. -->
+<div class="visually-hidden" aria-live="polite">{{ announcement() }}</div>

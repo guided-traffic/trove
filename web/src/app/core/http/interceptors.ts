@@ -8,7 +8,7 @@ import {
 } from '@angular/common/http';
 import { Injector, inject } from '@angular/core';
 import { Observable, catchError, of, switchMap, tap, throwError, timer } from 'rxjs';
-import { IDEMPOTENCY_KEY } from '../../api/client';
+import { IDEMPOTENCY_KEY, NO_AUTO_RETRY } from '../../api/client';
 import { ApiError, isProblem, Problem } from '../../api/problem';
 import { AuthzEpoch } from '../authz-epoch';
 import { SessionStore } from '../session-store';
@@ -130,7 +130,7 @@ function retryDelaySeconds(
  * header after `authz_epoch_unknown`. Any other unsafe request is never repeated.
  */
 export const resilienceInterceptor: HttpInterceptorFn = (req, next) => {
-  if (!isApiUrl(req.url)) return next(req);
+  if (!isApiUrl(req.url) || req.context.get(NO_AUTO_RETRY)) return next(req);
   const epoch = inject(AuthzEpoch);
   const state = req.context.get(RETRY_STATE);
   const run = (): Observable<HttpEvent<unknown>> =>

@@ -40,6 +40,15 @@ import { TroveMark } from './shared/brand/trove-mark';
 import { TroveAvatar } from './shared/ui/avatar';
 import { AvatarStore } from './core/avatar-store';
 import { ProjectSwitcher } from './features/projects/project-switcher';
+import { SearchField } from './features/search/search-field';
+
+/** Whether a key typed at `target` is text: a text field, a text area, a select or an editable element. */
+function isTextTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;
+  if (!(target instanceof HTMLInputElement)) return false;
+  return !['checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'color', 'file', 'image'].includes(target.type);
+}
 
 /** Whether a route on the path to the active screen carries `data: { bare: true }`. */
 function isBare(route: ActivatedRouteSnapshot | null): boolean {
@@ -50,7 +59,7 @@ function isBare(route: ActivatedRouteSnapshot | null): boolean {
 }
 
 /**
- * Root component (R-UI-002, Q-UI-68, Q-UI-127, Q-UI-129): skip link, the top bar (mark, repository search,
+ * Root component (R-UI-002, Q-UI-68, Q-UI-127, Q-UI-129): skip link, the top bar (mark, the search of R-UI-095,
  * Admin button, help, theme, user menu), the sidebar of the current area (the start, a project with its
  * switcher, or the admin area behind the Admin button) with folding groups, collapsible where it is pinned and a drawer
  * below, and the content panel with the breadcrumb trail, banner area and router outlet. A screen whose route carries `data: { bare: true }`
@@ -71,12 +80,14 @@ function isBare(route: ActivatedRouteSnapshot | null): boolean {
     TroveMark,
     TroveAvatar,
     ProjectSwitcher,
+    SearchField,
     Banner,
     ErrorNotice,
     Notices,
   ],
-  // Escape closes the drawer (the key bubbles up from the focus trapped in it); the pinned sidebar stays.
-  host: { '(keydown.escape)': 'closeDrawer()' },
+  // Escape closes the drawer (the key bubbles up from the focus trapped in it); the pinned sidebar stays. `/`, Ctrl+K and ⌘K
+  // focus the search (R-UI-095).
+  host: { '(keydown.escape)': 'closeDrawer()', '(document:keydown)': 'shortcut($event)' },
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })
@@ -91,6 +102,7 @@ export class App {
   private readonly router = inject(Router);
   private readonly dialog = inject(TroveDialog);
   private readonly main = viewChild.required<ElementRef<HTMLElement>>('main');
+  private readonly search = viewChild(SearchField);
 
   /**
    * Whether the active screen stands alone (route data `bare`), read when a navigation ends or fails;
@@ -121,13 +133,6 @@ export class App {
   protected readonly sidebarOpen = computed(() =>
     this.layout.pinned() ? !this.navState.collapsed() : this.drawerOpen(),
   );
-  /** The text of the repository search; Enter opens the results page of the main area with it (Q-UI-390). */
-  protected readonly searchText = signal('');
-  /**
-   * Every signed-in user searches: the repository list behind it (`q` matches key and description) answers every caller with the
-   * repositories it may read (R-REPO-012). An anonymous visitor gets the search with T-22.
-   */
-  protected readonly canSearch = computed(() => this.session.authenticated());
   private readonly url = toSignal(
     this.router.events.pipe(
       filter((e): e is NavigationEnd => e instanceof NavigationEnd),
@@ -154,14 +159,6 @@ export class App {
     // Leaving the drawer's width closes it, so it does not reappear open when the window narrows again.
     effect(() => {
       if (this.layout.pinned()) untracked(() => this.drawerOpen.set(false));
-    });
-    // The results page shows its text in the field, also when it is opened from a link or reloaded (Q-UI-390).
-    effect(() => {
-      const url = this.url();
-      if (url === '/search' || url.startsWith('/search?')) {
-        const q = new URLSearchParams(url.slice('/search'.length)).get('q') ?? '';
-        untracked(() => this.searchText.set(q));
-      }
     });
     // Load the preferences (theme) once a session exists.
     effect(() => {
@@ -227,13 +224,17 @@ export class App {
   }
 
   /**
-   * Enter in the top bar's search opens the results page of the main area (Q-UI-390): a search from the main area ends in the main
-   * area, never in the admin area (the owner's rule, CLAUDE.md). T-22 replaces it with one search with suggestions.
+   * The search's keys (R-UI-095, Q-UI-401): Ctrl+K and ⌘K always; `/` while the field's preference allows it and the focus is not
+   * where the key is text (a text field, a text area, a select or an editable element). The key is not typed into the field.
    */
-  protected submitSearch(event: Event): void {
+  protected shortcut(event: KeyboardEvent): void {
+    const search = this.search();
+    if (!search || event.defaultPrevented || event.altKey) return;
+    const chord = (event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'k';
+    const slash = event.key === '/' && !event.ctrlKey && !event.metaKey && search.slashOn() && !isTextTarget(event.target);
+    if (!chord && !slash) return;
     event.preventDefault();
-    const q = this.searchText().trim();
-    void this.router.navigate(['/search'], { queryParams: { q: q || null } });
+    search.focus();
   }
 
   protected setTheme(theme: UiTheme | null): void {

@@ -59,6 +59,11 @@ export class SessionStore {
   readonly projects = computed<readonly Membership[]>(() => this._me()?.projects ?? []);
   /** The admin area is shown: any capability. A project's Owner manages the project inside it (Q-UI-129). */
   readonly hasAdminArea = computed(() => this.isAdministrator());
+  /**
+   * An instance administrator: the holder of the system role `admin`, directly or through a group (Q-UI-412). Only it is offered
+   * the search's admin suggestions (R-UI-099); the other system roles reach their screens through the Admin button.
+   */
+  readonly isInstanceAdmin = computed(() => (this._me()?.roles ?? []).includes('admin'));
 
   constructor() {
     this.channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(CHANNEL);

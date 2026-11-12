@@ -209,6 +209,17 @@ describe('HTTP layer', () => {
     expect(err.retryAfterSeconds).toBe(7);
   });
 
+  it('R-UI-097 a GET with noRetry surfaces its 429 at once, with Retry-After, and is not sent again', async () => {
+    const { client, http } = setup();
+    const g = client.getJson('/api/v1/search/suggestions', { params: { q: 'web' }, noRetry: true }).catch((e: unknown) => e);
+    http.expectOne((r) => r.url === '/api/v1/search/suggestions').flush({ code: 'rate_limited' }, { status: 429, statusText: 'Too Many', headers: { 'Retry-After': '3' } });
+    const err = (await g) as ApiError;
+    expect(err.status).toBe(429);
+    expect(err.retryAfterSeconds).toBe(3);
+    await tick();
+    http.expectNone((r) => r.url === '/api/v1/search/suggestions');
+  });
+
   it('R-UI-004 a 401 during use ends the session; a 401 of whoami does not', async () => {
     const { client, http, session } = setup();
     await session.load();

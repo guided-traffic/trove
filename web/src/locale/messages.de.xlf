@@ -101,25 +101,6 @@
         <target>Navigation öffnen</target>
       </segment>
     </unit>
-    <unit id="shell.search.label">
-      <notes>
-        <note category="location">src/app/app.html:35,36</note>
-        <note category="location">src/app/app.html:39,41</note>
-      </notes>
-      <segment>
-        <source>Find a repository</source>
-        <target>Repository suchen</target>
-      </segment>
-    </unit>
-    <unit id="shell.search.placeholder">
-      <notes>
-        <note category="location">src/app/app.html:48,50</note>
-      </notes>
-      <segment>
-        <source>Find a repository</source>
-        <target>Repository suchen</target>
-      </segment>
-    </unit>
     <unit id="shell.admin">
       <notes>
         <note category="location">src/app/app.html:62,64</note>
@@ -285,6 +266,339 @@
       <segment>
         <source>Projects</source>
         <target>Projekte</target>
+      </segment>
+    </unit>
+    <unit id="search.label">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Search</source>
+        <target>Suche</target>
+      </segment>
+    </unit>
+    <unit id="search.suggestions">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Suggestions</source>
+        <target>Vorschläge</target>
+      </segment>
+    </unit>
+    <unit id="search.user-disabled">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Disabled</source>
+        <target>Deaktiviert</target>
+      </segment>
+    </unit>
+    <unit id="search.admin-mark">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Admin area</source>
+        <target>Adminbereich</target>
+      </segment>
+    </unit>
+    <unit id="search.close">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Close</source>
+        <target>Schließen</target>
+      </segment>
+    </unit>
+    <unit id="search.placeholder-slash">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Search or go to… (/)</source>
+        <target>Suchen oder springen … (/)</target>
+      </segment>
+    </unit>
+    <unit id="search.placeholder">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Search or go to…</source>
+        <target>Suchen oder springen …</target>
+      </segment>
+    </unit>
+    <unit id="search.filter.all">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>All</source>
+        <target>Alle</target>
+      </segment>
+    </unit>
+    <unit id="search.filter.button">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Filter: <ph id="0" equiv="kind" disp="this.filterLabel()"/></source>
+        <target>Filter: <ph id="0" equiv="kind" disp="this.filterLabel()"/></target>
+      </segment>
+    </unit>
+    <unit id="search.filter.remove">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Remove the filter <ph id="0" equiv="kind" disp="this.filterLabel()"/></source>
+        <target>Filter <ph id="0" equiv="kind" disp="this.filterLabel()"/> entfernen</target>
+      </segment>
+    </unit>
+    <unit id="search.all-projects">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>View all my projects</source>
+        <target>Alle meine Projekte anzeigen</target>
+      </segment>
+    </unit>
+    <unit id="search.limited">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Too many searches. Suggestions return in <ph id="0" equiv="seconds" disp="f.seconds"/> s.</source>
+        <target>Zu viele Suchen. Vorschläge kommen in <ph id="0" equiv="seconds" disp="f.seconds"/> s wieder.</target>
+      </segment>
+    </unit>
+    <unit id="search.error">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Suggestions are not available.</source>
+        <target>Vorschläge sind nicht verfügbar.</target>
+      </segment>
+    </unit>
+    <unit id="search.searching">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Searching…</source>
+        <target>Suche läuft …</target>
+      </segment>
+    </unit>
+    <unit id="search.no-match">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Nothing you may read matches “<ph id="0" equiv="text" disp="this.term()"/>”. Press Enter to search everything.</source>
+        <target>Nichts, was Sie lesen dürfen, passt zu „<ph id="0" equiv="text" disp="this.term()"/>“. Mit der Eingabetaste durchsuchen Sie alles.</target>
+      </segment>
+    </unit>
+    <unit id="search.announce-none">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>No suggestions.</source>
+        <target>Keine Vorschläge.</target>
+      </segment>
+    </unit>
+    <unit id="search.announce-one">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>1 suggestion.</source>
+        <target>1 Vorschlag.</target>
+      </segment>
+    </unit>
+    <unit id="search.announce-many">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="count" disp="count"/> suggestions.</source>
+        <target><ph id="0" equiv="count" disp="count"/> Vorschläge.</target>
+      </segment>
+    </unit>
+    <unit id="search.choose-user">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Choose a user from the list.</source>
+        <target>Wählen Sie einen Benutzer aus der Liste.</target>
+      </segment>
+    </unit>
+    <unit id="search.choose-group">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Choose a group from the list.</source>
+        <target>Wählen Sie eine Gruppe aus der Liste.</target>
+      </segment>
+    </unit>
+    <unit id="search.place.profile">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Profile</source>
+        <target>Profil</target>
+      </segment>
+    </unit>
+    <unit id="search.place.tokens">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Personal tokens</source>
+        <target>Persönliche Token</target>
+      </segment>
+    </unit>
+    <unit id="search.place.sessions">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Sessions</source>
+        <target>Sitzungen</target>
+      </segment>
+    </unit>
+    <unit id="search.group.places">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Places</source>
+        <target>Orte</target>
+      </segment>
+    </unit>
+    <unit id="search.group.frequent-repositories">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Frequently visited repositories</source>
+        <target>Häufig besuchte Repositories</target>
+      </segment>
+    </unit>
+    <unit id="search.group.frequent-projects">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Frequently visited projects</source>
+        <target>Häufig besuchte Projekte</target>
+      </segment>
+    </unit>
+    <unit id="search.group.admin-area">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Admin area</source>
+        <target>Adminbereich</target>
+      </segment>
+    </unit>
+    <unit id="search.group.repositories">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Repositories</source>
+        <target>Repositories</target>
+      </segment>
+    </unit>
+    <unit id="search.group.packages">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Packages</source>
+        <target>Pakete</target>
+      </segment>
+    </unit>
+    <unit id="search.group.projects">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Projects</source>
+        <target>Projekte</target>
+      </segment>
+    </unit>
+    <unit id="search.group.pages">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Pages</source>
+        <target>Seiten</target>
+      </segment>
+    </unit>
+    <unit id="search.group.admin-pages">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Admin pages</source>
+        <target>Adminseiten</target>
+      </segment>
+    </unit>
+    <unit id="search.group.users">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Users</source>
+        <target>Benutzer</target>
+      </segment>
+    </unit>
+    <unit id="search.group.groups">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Groups</source>
+        <target>Gruppen</target>
+      </segment>
+    </unit>
+    <unit id="search.more.repositories">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>All repositories for “<ph id="0" equiv="text" disp="q"/>”</source>
+        <target>Alle Repositories zu „<ph id="0" equiv="text" disp="q"/>“</target>
+      </segment>
+    </unit>
+    <unit id="search.more.packages">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>All packages for “<ph id="0" equiv="text" disp="q"/>”</source>
+        <target>Alle Pakete zu „<ph id="0" equiv="text" disp="q"/>“</target>
+      </segment>
+    </unit>
+    <unit id="search.more.projects">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>All projects for “<ph id="0" equiv="text" disp="q"/>”</source>
+        <target>Alle Projekte zu „<ph id="0" equiv="text" disp="q"/>“</target>
       </segment>
     </unit>
     <unit id="search.heading">
@@ -15844,8 +16158,8 @@
         <note category="location">src/app/features/profile/profile.html:44,45</note>
       </notes>
       <segment>
-        <source>Keyboard shortcuts with a single key</source>
-        <target>Tastenkürzel mit einer einzelnen Taste</target>
+        <source>Keyboard shortcuts with a single key, such as / for the search</source>
+        <target>Tastenkürzel mit einer einzelnen Taste, etwa / für die Suche</target>
       </segment>
     </unit>
     <unit id="profile.pref.save">

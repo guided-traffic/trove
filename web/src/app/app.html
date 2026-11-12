@@ -27,29 +27,9 @@
       </a>
     </div>
 
-    @if (canSearch()) {
-      <form
-        class="search"
-        role="search"
-        i18n-aria-label="@@shell.search.label"
-        aria-label="Find a repository"
-        (submit)="submitSearch($event)"
-      >
-        <label class="visually-hidden" for="global-search" i18n="@@shell.search.label"
-          >Find a repository</label
-        >
-        <span class="material-icons search-icon" aria-hidden="true">search</span>
-        <input
-          id="global-search"
-          type="search"
-          autocomplete="off"
-          spellcheck="false"
-          i18n-placeholder="@@shell.search.placeholder"
-          placeholder="Find a repository"
-          [value]="searchText()"
-          (input)="searchText.set($any($event.target).value)"
-        />
-      </form>
+    <!-- The one search, for every signed-in caller and the anonymous UI (R-UI-095); a button below 36 rem. -->
+    @if (showNav()) {
+      <trove-search-field />
     } @else {
       <span></span>
     }

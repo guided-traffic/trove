@@ -12948,6 +12948,11 @@ Status: **Decided by the development agent** — selected from the options below
 **Choice:** (a), with (b) when a spec test shows that the arrow keys do not cross groups. **Rationale:** the APG's combobox is the
 pattern for a text field with suggestions. The development agent revisits it when `@angular/aria` gains groups.
 
+**Revisited by the development agent (T-22, WP5):** (b). The library's combobox (22.2.5, `_combobox-chunk.mjs`) relays Up on the
+first option to the listbox instead of returning to the text, and its Escape only closes the list, never empties the field: two keys
+R-UI-097 names. The field keeps the APG's roles and attributes and moves the active option itself; `search-field.spec.ts` tests the
+keys, Down across a group boundary included.
+
 **Applied in the spec:** R-UI-097.
 
 ### Q-UI-411 · Enter without a picked suggestion opens `/search`, whose tabs read the three lists

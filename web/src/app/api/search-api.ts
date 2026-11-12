@@ -46,6 +46,8 @@ export class HttpSearchApi extends SearchApi {
         limit: request.limit,
       },
       signal: request.signal,
+      // The field shows a 429's notice itself and waits for Retry-After (R-UI-097): no automatic retry.
+      noRetry: true,
     });
     return response.body;
   }
