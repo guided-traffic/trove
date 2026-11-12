@@ -129,7 +129,8 @@ test('R-UI-041 an administrator creates a project; a member of its Owner group a
 
     await nav.getByRole('link', { name: 'Permission policies', exact: true }).click();
     await expect(bob.getByRole('heading', { name: 'Permission policies', level: 1 })).toBeVisible();
-    await bob.getByRole('link', { name: 'Create policy' }).click();
+    // The header's action; the empty list offers the same action under its sentence once it has loaded (Q-UI-309).
+    await bob.locator('trove-page-header').getByRole('link', { name: 'Create policy' }).click();
     await expect(bob.getByRole('heading', { name: 'New permission policy', level: 1 })).toBeVisible();
     await expect(bob.getByText('Project policy of')).toBeVisible();
     const name = bob.getByLabel('Name', { exact: true }).first();

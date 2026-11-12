@@ -126,6 +126,8 @@ export class SearchField {
   private confirming: string | null = null;
 
   protected readonly heading = headings();
+  protected readonly adminText = $localize`:@@search.admin-mark:Admin area`;
+  protected readonly disabledText = $localize`:@@search.user-disabled:Disabled`;
   protected readonly anonymous = computed(() => !this.session.authenticated());
   protected readonly instanceAdmin = this.session.isInstanceAdmin;
   /** `/` is on for a signed-in caller whose preference allows it (Q-UI-401). */
@@ -308,6 +310,25 @@ export class SearchField {
       return;
     }
     this.field()?.nativeElement.focus();
+  }
+
+  /**
+   * The spoken name of an entry, one text: the name, "· <where>", ", Disabled" and ", Admin area" where they apply
+   * ("Users, Admin area", R-UI-099). Written out, because hidden words in their own span get a space before their comma in a
+   * browser's name.
+   */
+  protected optionName(entry: SearchEntry): string {
+    let name = entry.label;
+    if (entry.secondary) name += ` · ${entry.secondary}`;
+    if (entry.disabled) name += `, ${this.disabledText}`;
+    if (entry.area === 'admin') name += `, ${this.adminText}`;
+    return name;
+  }
+
+  /** The spoken name of a group: its heading, and ", Admin area" for a group of the admin area that its heading does not name. */
+  protected groupName(group: SearchGroup): string {
+    const heading = group.heading ?? '';
+    return group.area === 'admin' && group.id !== 'admin-area' ? `${heading}, ${this.adminText}` : heading;
   }
 
   protected optionId(index: number): string {

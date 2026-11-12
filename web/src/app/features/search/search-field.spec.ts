@@ -64,7 +64,7 @@ function press(root: HTMLElement, key: string, init: KeyboardEventInit = {}): Ke
 }
 const options = (root: ParentNode): HTMLElement[] => [...root.querySelectorAll<HTMLElement>('[role="option"]')];
 const groupNames = (root: HTMLElement): string[] =>
-  [...root.querySelectorAll('[role="listbox"] [role="group"]')].map((g) => spokenText(document.getElementById(g.getAttribute('aria-labelledby')!)!));
+  [...root.querySelectorAll('[role="listbox"] [role="group"]')].map((g) => spokenText(g));
 /** What a screen reader says for each entry or item. */
 const said = (items: readonly Element[]): string[] => items.map((i) => spokenText(i));
 const status = (root: HTMLElement): string => text(root.querySelector('.search-status') ?? document.createElement('p'));

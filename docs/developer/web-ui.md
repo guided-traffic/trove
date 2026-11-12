@@ -1276,6 +1276,11 @@ of a marked suggestion.
   without an active entry (`/search?q=&kind=`, with the first group's kind as navigation state) go through it. Under the Users or
   Groups filter, Enter without an active entry opens nothing and the live region says to choose. `search-gate.spec.ts` drives every
   way out as `ada`, `priya`, `sam` and a holder of `security-admin`.
+- **Spoken names.** An entry's and a group's names are written out as `aria-label` (`optionName`, `groupName`: "Users, Admin
+  area", "users-bot · users-bot, Disabled, Admin area"); the visible mark and badge are `aria-hidden`. Hidden words in a span of
+  their own made Chrome say "Users , Admin area": a visually hidden span is positioned, so the browser's name puts a space
+  around it, which axe's name in the component tests does not. Journey 23 reads the names in Chrome. A project's letter mark is
+  drawn by the stylesheet (`data-letter`, `::before`), so no visible letter is missing from the entry's name.
 - **No automatic retry.** The suggestions are read with `ReadOptions.noRetry` ([client.ts](../../web/src/app/api/client.ts),
   `NO_AUTO_RETRY`), so a `429` reaches the field at once instead of after the one retry of R-UI-042.
 - **The keys.** `App.shortcut` (a `document:keydown` host listener): Ctrl+K and ⌘K always; `/` while `SearchField.slashOn()` (a

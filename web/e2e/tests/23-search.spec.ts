@@ -13,9 +13,10 @@ import { bobPassword, expect, expectAccessible, repositories, repositoryApi, sig
 // suggestions (R-API-061, R-API-062) and the repository list's `name` (R-API-063) to pass, and has not been run on a cluster yet.
 
 const project = unique('ui-srch').replace(/[^a-z0-9-]/g, '').slice(0, 24);
-const repoKey = unique('srch-vendor');
-const part = repoKey.slice(0, 9);
-const pkgName = unique('srch-kit');
+// The repository and the package share the part the reader types: one is found by its key, the other by the start of its name.
+const part = unique('srch');
+const repoKey = `${part}-vendor`;
+const pkgName = `${part}-kit`;
 const version = '1.0.0';
 
 /** One ustar entry: a 512-byte header and the content padded to the block size. */

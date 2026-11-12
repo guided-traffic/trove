@@ -52,12 +52,12 @@
               role="group"
               class="search-group"
               [class.admin-start]="g.first"
-              [attr.aria-labelledby]="'search-heading-' + g.group.id"
+              [attr.aria-label]="groupName(g.group)"
             >
-              <div class="search-group-heading" [id]="'search-heading-' + g.group.id">
+              <!-- The group's name says the heading and its mark; the heading is what the eye reads. -->
+              <div class="search-group-heading" aria-hidden="true">
                 <span>{{ g.group.heading }}</span>
                 @if (g.group.area === 'admin' && g.group.id !== 'admin-area') {
-                  <span class="visually-hidden">,&ngsp;</span>
                   <ng-container *ngTemplateOutlet="adminMark" />
                 }
               </div>
@@ -85,6 +85,7 @@
     [id]="optionId(index)"
     [class.active]="active() === index"
     [attr.aria-selected]="active() === index"
+    [attr.aria-label]="optionName(e)"
     tabindex="-1"
     (click)="pick(e)"
     (keydown.enter)="pick(e)"
@@ -94,7 +95,9 @@
       @if (e.format) {
         <trove-format-icon [format]="e.format" />
       } @else if (e.letter) {
-        <span class="search-letter" translate="no">{{ e.letter }}</span>
+        <!-- Drawn by the stylesheet: a letter in the text would be visible text missing from the entry's name (axe
+             label-content-name-mismatch). -->
+        <span class="search-letter" [attr.data-letter]="e.letter"></span>
       } @else if (e.avatar) {
         <trove-avatar class="search-avatar" [seed]="e.avatar" />
       } @else {
@@ -110,20 +113,19 @@
       }
     </span>
     @if (e.disabled) {
-      <span class="visually-hidden">,&ngsp;</span>
-      <span class="badge" i18n="@@search.user-disabled">Disabled</span>
+      <span class="badge" aria-hidden="true">{{ disabledText }}</span>
     }
     @if (e.area === 'admin') {
-      <span class="visually-hidden">,&ngsp;</span>
       <ng-container *ngTemplateOutlet="adminMark" />
     }
   </div>
 </ng-template>
 
-<!-- The mark of every admin suggestion and of its group (R-UI-099): the Admin button's icon and the words. -->
+<!-- The mark of every admin suggestion and of its group (R-UI-099): the Admin button's icon and the words. The words are spoken
+     as part of the name ("Users, Admin area"); the mark itself is what the eye reads. -->
 <ng-template #adminMark>
-  <span class="search-admin-mark"
-    ><span class="material-icons" aria-hidden="true">build</span><span i18n="@@search.admin-mark">Admin area</span></span
+  <span class="search-admin-mark" aria-hidden="true"
+    ><span class="material-icons">build</span><span>{{ adminText }}</span></span
   >
 </ng-template>
 
@@ -138,10 +140,16 @@
     @if (filters().admin.length > 0) {
       <div class="menu-divider" role="separator"></div>
       @for (f of filters().admin; track f.value) {
-        <button type="button" class="menu-item" cdkMenuItemRadio [cdkMenuItemChecked]="filter() === f.value" (cdkMenuItemTriggered)="setFilter(f.value)">
+        <button
+          type="button"
+          class="menu-item"
+          cdkMenuItemRadio
+          [cdkMenuItemChecked]="filter() === f.value"
+          [attr.aria-label]="f.label + ', ' + adminText"
+          (cdkMenuItemTriggered)="setFilter(f.value)"
+        >
           <span class="material-icons" aria-hidden="true">{{ filter() === f.value ? 'check' : '' }}</span>
           <span>{{ f.label }}</span>
-          <span class="visually-hidden">,&ngsp;</span>
           <ng-container *ngTemplateOutlet="adminMark" />
         </button>
       }

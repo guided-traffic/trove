@@ -213,6 +213,10 @@ trove-search-field {
     color: var(--trove-on-accent);
     font-size: 0.6875rem;
     font-weight: 600;
+
+    &::before {
+      content: attr(data-letter);
+    }
   }
 
   .search-avatar {
