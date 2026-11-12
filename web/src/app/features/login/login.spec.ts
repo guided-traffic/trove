@@ -43,20 +43,50 @@ describe('Sign-in screen', () => {
     expect(root.querySelector('input[type="password"]')).toBeNull();
   });
 
-  it('R-UI-004 a click navigates to the provider start URL with return_to under /ui/{locale}/', async () => {
-    const { root, assign } = await open('/login?returnTo=%2Fadmin%2Fusers');
-    (root.querySelector('main button') as HTMLButtonElement).click();
-    expect(assign).toHaveBeenCalledTimes(1);
-    const target = new URL(assign.mock.calls[0]?.[0] ?? '', 'https://trove.test');
-    expect(target.pathname).toBe('/auth/oidc/corp/start');
-    expect(target.searchParams.get('return_to')).toBe('/ui/en/admin/users');
+  /** The `<base href>` the build writes: `/ui/en/` per locale, `/ui/` on the development server. */
+  function withBase(href: string): () => void {
+    const base = document.createElement('base');
+    base.href = href;
+    document.head.prepend(base);
+    return () => base.remove();
+  }
+
+  it('R-UI-004 a click navigates to the provider start URL with return_to under the base href of the build, /ui/{locale}/', async () => {
+    const done = withBase('/ui/en/');
+    try {
+      const { root, assign } = await open('/login?returnTo=%2Fadmin%2Fusers');
+      (root.querySelector('main button') as HTMLButtonElement).click();
+      expect(assign).toHaveBeenCalledTimes(1);
+      const target = new URL(assign.mock.calls[0]?.[0] ?? '', 'https://trove.test');
+      expect(target.pathname).toBe('/auth/oidc/corp/start');
+      expect(target.searchParams.get('return_to')).toBe('/ui/en/admin/users');
+    } finally {
+      done();
+    }
+  });
+
+  it('R-UI-004 on the development server, whose base is /ui/, return_to is under /ui/ and not under a locale it does not serve', async () => {
+    const done = withBase('/ui/');
+    try {
+      const { root, assign } = await open('/login?returnTo=%2Fadmin%2Fusers');
+      (root.querySelector('main button') as HTMLButtonElement).click();
+      const target = new URL(assign.mock.calls[0]?.[0] ?? '', 'https://trove.test');
+      expect(target.searchParams.get('return_to')).toBe('/ui/admin/users');
+    } finally {
+      done();
+    }
   });
 
   it('R-UI-004 a foreign returnTo is replaced by the start page', async () => {
-    const { root, assign } = await open('/login?returnTo=https%3A%2F%2Fevil.test%2F');
-    (root.querySelector('main button') as HTMLButtonElement).click();
-    const target = new URL(assign.mock.calls[0]?.[0] ?? '', 'https://trove.test');
-    expect(target.searchParams.get('return_to')).toBe('/ui/en/');
+    const done = withBase('/ui/en/');
+    try {
+      const { root, assign } = await open('/login?returnTo=https%3A%2F%2Fevil.test%2F');
+      (root.querySelector('main button') as HTMLButtonElement).click();
+      const target = new URL(assign.mock.calls[0]?.[0] ?? '', 'https://trove.test');
+      expect(target.searchParams.get('return_to')).toBe('/ui/en/');
+    } finally {
+      done();
+    }
   });
 
   it('R-UI-004 Q-UI-125 autoRedirect navigates at once, unless ?auto_sign_in=false waives it and shows the break-glass form', async () => {

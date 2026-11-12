@@ -117,6 +117,14 @@ trove-root {
     }
   }
 
+  // Below 36 rem the repository search has no room for a word: it is not shown, rather than an empty pill (UI-A-48). The
+  // admin area's repository list finds a repository there; one search for every reader is the owner's task T-22.
+  @media (max-width: 35.99rem) {
+    .search {
+      visibility: hidden;
+    }
+  }
+
   // The labels of the Admin button and the documentation link give way to their icons on a narrow top bar; they stay
   // the links' accessible names.
   @media (max-width: 47.99rem) {

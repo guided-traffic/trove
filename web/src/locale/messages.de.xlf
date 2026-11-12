@@ -17550,15 +17550,6 @@
         <target>Systemrollen sind fest vorgegeben. Eine Rolle wird einem Benutzer, einer Gruppe oder einem Servicekonto zugewiesen und gewährt die mit ihr aufgeführten Fähigkeiten.</target>
       </segment>
     </unit>
-    <unit id="roles.capabilities">
-      <notes>
-        <note category="location">src/app/features/roles/role-bindings.html:21,22</note>
-      </notes>
-      <segment>
-        <source>Capabilities:</source>
-        <target>Fähigkeiten:</target>
-      </segment>
-    </unit>
     <unit id="roles.no-holders">
       <notes>
         <note category="location">src/app/features/roles/role-bindings.html:26,28</note>
@@ -18703,6 +18694,24 @@
       <segment>
         <source>User</source>
         <target>Benutzer</target>
+      </segment>
+    </unit>
+    <unit id="roles.capabilities-heading">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Capabilities</source>
+        <target>Fähigkeiten</target>
+      </segment>
+    </unit>
+    <unit id="policy.name-invalid">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Use lower-case letters, digits, dots, hyphens and underscores, starting with a letter or digit, at most 128 characters.</source>
+        <target>Verwenden Sie Kleinbuchstaben, Ziffern, Punkte, Bindestriche und Unterstriche, beginnend mit einem Buchstaben oder einer Ziffer, höchstens 128 Zeichen.</target>
       </segment>
     </unit>
     <unit id="setup.heading">

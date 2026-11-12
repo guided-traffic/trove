@@ -29,6 +29,22 @@ import { PageHeader } from '../../shared/ui/page-header';
   imports: [PageHeader, DatePipe, ErrorNotice, Needs, TextField],
   templateUrl: './role-bindings.html',
   styleUrl: '../../shared/access/access.scss',
+  styles: `
+    /* A role's capabilities as a list in columns, one capability a line (UI-A-47). */
+    .caps-heading {
+      margin: var(--trove-space-2) 0 var(--trove-space-1);
+      font-size: var(--trove-text-size);
+      font-weight: 600;
+    }
+    .caps {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+      gap: var(--trove-space-1) var(--trove-space-4);
+      margin: 0 0 var(--trove-space-3);
+      padding: 0;
+      list-style: none;
+    }
+  `,
 })
 export class RoleBindings {
   private readonly api = inject(RolesApi);

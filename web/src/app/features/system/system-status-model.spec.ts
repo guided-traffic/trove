@@ -48,6 +48,16 @@ describe('system status model', () => {
     expect(roleGroups(sampleInfo(), [web('a', 'n1')]).map((g) => g.role)).toEqual(['api', 'packages', 'worker']);
   });
 
+  it('R-UI-038 a live replica of the role all serves every role: no empty group of api, packages or worker, no warning', () => {
+    const all = sampleReplica({ name: 'dev', instanceUid: 'dev', node: 'n1', roles: ['all'] });
+    const groups = roleGroups(sampleInfo(), [all]);
+    expect(groups.map((g) => g.role)).toEqual(['all']);
+    expect(groups.flatMap((g) => g.warnings)).toEqual([]);
+    // A lost one serves nothing: the main roles are back with their warnings.
+    const lost = roleGroups(sampleInfo(), [{ ...all, lost: true }]);
+    expect(lost.map((g) => g.role)).toEqual(['api', 'packages', 'worker', 'all']);
+  });
+
   it('R-UI-038 Q-UI-107 a replica lands in the group of its own role', () => {
     const groups = roleGroups(sampleInfo(), [web('a', 'n1'), packages('p', 'n2'), worker('w', 'n3')]);
     expect(groups.map((g) => [g.role, g.replicas.map((r) => r.name)])).toEqual([

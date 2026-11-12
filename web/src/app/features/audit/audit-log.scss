@@ -62,3 +62,14 @@
 tr.current {
   background: var(--trove-accent-container);
 }
+
+// The actor and the target are read: they wrap in their column, a long one at any character, and are never cut (UI-A-46).
+td.read-text {
+  min-inline-size: 5rem;
+  overflow-wrap: anywhere;
+
+  // A target is often a path with a digest: it gets the room for a path on one or two lines.
+  &.target {
+    min-inline-size: 12rem;
+  }
+}

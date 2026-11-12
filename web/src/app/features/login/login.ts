@@ -1,3 +1,4 @@
+import { DOCUMENT } from '@angular/common';
 import { Component, computed, effect, inject, input, isDevMode, resource, signal, untracked } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -6,7 +7,6 @@ import { LoginApi } from '../../api/login-api';
 import { ApiError } from '../../api/problem';
 import { BrowserNavigation, safeReturnTo } from '../../core/browser-navigation';
 import { describeProblem } from '../../core/http/problem-messages';
-import { PreferencesStore } from '../../core/preferences-store';
 import { SessionStore } from '../../core/session-store';
 import { Banner } from '../../shared/banner';
 import { ErrorNotice } from '../../shared/error-notice';
@@ -186,7 +186,7 @@ export class Login {
   private readonly navigation = inject(BrowserNavigation);
   private readonly session = inject(SessionStore);
   private readonly router = inject(Router);
-  private readonly preferences = inject(PreferencesStore);
+  private readonly document = inject(DOCUMENT);
 
   /** Query parameters, bound by the router's component input binding. */
   readonly returnTo = input<string | undefined>();
@@ -234,10 +234,15 @@ export class Login {
     return e instanceof ApiError ? e : new ApiError(0, null, null);
   }
 
-  /** The provider's start URL with `return_to` as a path under `/ui/{locale}/` (R-AUTH-009). */
+  /**
+   * The provider's start URL with `return_to` as the route under the application's own base href (R-AUTH-009): `/ui/en/` in a
+   * build per locale, `/ui/` on the development server, which serves no locale folder (UI-A-49). Without a `<base>` element
+   * the application's base `/ui/` is taken.
+   */
   protected start(startUrl: string): void {
+    const base = (this.document.querySelector('base')?.getAttribute('href') || '/ui/').replace(/\/+$/, '');
     const target = new URLSearchParams({
-      return_to: `/ui/${this.preferences.locale}${safeReturnTo(this.returnTo())}`,
+      return_to: `${base}${safeReturnTo(this.returnTo())}`,
     });
     if (this.reauth() === '1') target.set('purpose', 'reauth');
     this.redirecting.set(true);

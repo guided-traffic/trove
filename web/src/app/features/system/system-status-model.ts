@@ -84,10 +84,17 @@ function health(members: readonly Replica[], counts?: Counts): GroupHealth {
  * decided per sub-group, and a role is drain-safe when each of its sub-groups is. The group of `worker` warns while no
  * replica is live, the group of `packages` likewise, and a pool whose replicas are all lost warns by its name: the
  * registry does not say which queues a pool claims.
+ *
+ * A live replica of the development role `all` serves every role (R-HA-001): while one is, a main role without a replica of
+ * its own is left out with its warnings, so a single `all` replica is not reported as "api live 0" (UI-A-45).
  */
 export function roleGroups(info: SystemInfo, replicas: readonly Replica[]): RoleGroup[] {
   const present = new Set(replicas.map(roleOf));
-  const roles: string[] = [...MAIN_ROLES, ...OPTIONAL_ROLES.filter((r) => present.has(r))];
+  const allServes = replicas.some((r) => roleOf(r) === 'all' && !r.lost);
+  const roles: string[] = [
+    ...MAIN_ROLES.filter((r) => !allServes || present.has(r)),
+    ...OPTIONAL_ROLES.filter((r) => present.has(r)),
+  ];
   // A role this screen does not know (the role value is open) is shown after the known ones, not hidden.
   const known = new Set<string>([...MAIN_ROLES, ...OPTIONAL_ROLES]);
   for (const r of [...present].sort()) if (r && !known.has(r)) roles.push(r);

@@ -34,9 +34,11 @@ h2 {
   }
 }
 
+// The cards share the row; with fewer cards than columns they grow into it (auto-fit), so one component's card is no third of
+// an empty row (UI-A-44).
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
   gap: var(--trove-space-4);
 }
 

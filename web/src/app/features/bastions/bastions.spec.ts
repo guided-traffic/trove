@@ -13,7 +13,7 @@ import { Navigation } from '../../core/navigation';
 import { SessionStore } from '../../core/session-store';
 import { seriousViolations } from '../../testing/axe';
 import { DraftStore } from '../../shared/drafts';
-import { browserStorage, buttonByText, renderScreen, settle, sleep, storedText, text, type, typeInto } from '../../testing/screen';
+import { browserStorage, buttonByText, renderScreen, settle, sleep, storedText, text, type, typeAndLeave, typeInto } from '../../testing/screen';
 import { BASTION_TOKEN_WARN_DAYS, tokenExpiry } from './bastion-card';
 import { BastionList } from './bastion-list';
 
@@ -91,7 +91,7 @@ describe('Bastions screen (R-BAS-007)', () => {
     buttonByText(root, 'New Bastion').click();
     await settle(fixture);
     const dialog = overlay().querySelector('trove-bastion-create-dialog') as HTMLElement;
-    typeInto(dialog, 'Name', 'Partners');
+    typeAndLeave(dialog, 'Name', 'Partners');
     await settle(fixture);
     expect(text(dialog)).toContain('must start with a lower-case letter');
     typeInto(dialog, 'Name', 'newcomer');

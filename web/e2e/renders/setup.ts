@@ -64,10 +64,8 @@ async function signIn(browser: Browser, kind: keyof typeof kinds): Promise<void>
     await page.goto('/ui/login');
     await page.getByRole('button', { name: /UI development users/ }).click();
     await page.getByRole('button', { name: new RegExp(`\\(${kinds[kind]}\\)`) }).click();
-    // The login returns to /ui/en/, which the dev server does not serve (it serves one locale at /ui/): the session is
-    // set by then, so the start page is opened by hand.
+    // The login returns under the dev server's base href, /ui/ (UI-A-49): the start page opens signed in.
     await page.waitForURL((url) => url.origin === edge && url.pathname.startsWith('/ui/'));
-    await page.goto('/ui/');
     await expect(page.getByRole('button', { name: /User menu/ })).toBeVisible({ timeout: 30_000 });
     const api = await Api.of(context.request, edge);
     const prefs = await api.get('/api/v1/users/me/preferences');

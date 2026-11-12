@@ -15,10 +15,13 @@
   @for (r of roles(); track r.name) {
     <section class="card" [attr.aria-labelledby]="'role-' + r.name">
       <h2 [id]="'role-' + r.name" translate="no">{{ r.name }}</h2>
-      <p>
-        <span i18n="@@roles.capabilities">Capabilities:</span>
-        <code translate="no">{{ r.capabilities.join(', ') }}</code>
-      </p>
+      <!-- The capabilities are a list, one item each, not a run-on line (UI-A-47). -->
+      <h3 class="caps-heading" [id]="'caps-' + r.name" i18n="@@roles.capabilities-heading">Capabilities</h3>
+      <ul class="caps" [attr.aria-labelledby]="'caps-' + r.name">
+        @for (c of r.capabilities; track c) {
+          <li><code translate="no">{{ c }}</code></li>
+        }
+      </ul>
 
       @if (holders(r.name).length === 0) {
         <p i18n="@@roles.no-holders">Nobody holds this role.</p>

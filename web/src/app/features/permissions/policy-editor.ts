@@ -363,10 +363,17 @@ export class PolicyEditor {
   protected problems(prefix: string): readonly string[] {
     return this.serverProblems()
       .filter((p) => p.pointer === prefix || p.pointer.startsWith(prefix + '/'))
-      .map((p) => describeAccessProblem(p.code) ?? p.detail ?? p.code);
+      .map((p) => this.problemText(p));
   }
 
+  /**
+   * A problem in words: never the server's pattern (UI-A-42). The name's rule is said in plain words; another problem is the
+   * shared sentence of its code, else the server's detail.
+   */
   protected problemText(p: PolicyProblem): string {
+    if (p.pointer === '/name' && p.code === 'invalid_name') {
+      return $localize`:@@policy.name-invalid:Use lower-case letters, digits, dots, hyphens and underscores, starting with a letter or digit, at most 128 characters.`;
+    }
     return describeAccessProblem(p.code) ?? p.detail ?? p.code;
   }
 

@@ -44,7 +44,7 @@
           <td>
             <time [attr.datetime]="e.occurredAt">{{ e.occurredAt | date: 'medium' : timeZone() }}</time>
           </td>
-          <td translate="no"><span class="ellipsis" [attr.title]="actorName(e)">{{ actorName(e) }}</span></td>
+          <td translate="no" class="wrap read-text actor">{{ actorName(e) }}</td>
           <th scope="row">
             <button
               type="button"
@@ -56,7 +56,8 @@
             </button>
             <span class="secondary" translate="no">{{ e.action }}</span>
           </th>
-          <td translate="no"><span class="ellipsis" [attr.title]="targetText(e)">{{ targetText(e) }}</span></td>
+          <!-- A target is read: it wraps in its column, never cut (UI-A-46). -->
+          <td translate="no" class="wrap read-text target">{{ targetText(e) }}</td>
           <td>
             @if (projectOf(e); as project) {
               <a [routerLink]="['/projects', project]" translate="no">{{ project }}</a>

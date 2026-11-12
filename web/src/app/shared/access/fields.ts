@@ -1,6 +1,41 @@
-import { Component, computed, input, model } from '@angular/core';
+import { Component, DestroyRef, ElementRef, Signal, afterNextRender, computed, inject, input, model, signal } from '@angular/core';
 
 let nextFieldId = 1;
+
+/**
+ * When a field may show its error (the owner's rule of 2026-11-12, CLAUDE.md, and the style guide's Forms): once the user has
+ * touched and left it, or once a submit of its form was attempted (the form's `submit`, or a click on its submit or confirm
+ * button, so a form saved by a button's click is covered too). An error that is there before, from a live check or a preview of
+ * an untouched field, waits. A field outside any form shows its error at once: there is no submit to wait for. Every
+ * `<trove-text-field>` and `<trove-select-field>` uses it, so every form follows the rule without its own state.
+ */
+function revealRule(): { readonly touched: () => void; readonly reveal: Signal<boolean> } {
+  const host = inject(ElementRef<HTMLElement>).nativeElement as HTMLElement;
+  const touched = signal(false);
+  const attempted = signal(false);
+  const outside = signal(false);
+  let release = (): void => undefined;
+  afterNextRender(() => {
+    const form = host.closest('form');
+    if (!form) {
+      outside.set(true);
+      return;
+    }
+    const onSubmit = (): void => attempted.set(true);
+    const onClick = (e: Event): void => {
+      const target = e.target as Element | null;
+      if (target?.closest('button[type="submit"], button.btn-confirm, input[type="submit"]')) attempted.set(true);
+    };
+    form.addEventListener('submit', onSubmit, true);
+    form.addEventListener('click', onClick, true);
+    release = () => {
+      form.removeEventListener('submit', onSubmit, true);
+      form.removeEventListener('click', onClick, true);
+    };
+  });
+  inject(DestroyRef).onDestroy(() => release());
+  return { touched: () => touched.set(true), reveal: computed(() => touched() || attempted() || outside()) };
+}
 
 /**
  * A labelled text input with its error text below (R-UI-044: field errors as text next to the
@@ -22,9 +57,10 @@ let nextFieldId = 1;
           [value]="value()"
           [readonly]="readonly()"
           [required]="required()"
-          [attr.aria-invalid]="error() ? 'true' : null"
+          [attr.aria-invalid]="shownError() ? 'true' : null"
           [attr.aria-describedby]="describedBy()"
           (input)="value.set($any($event.target).value)"
+          (blur)="rule.touched()"
         ></textarea>
       } @else {
         <input
@@ -37,16 +73,17 @@ let nextFieldId = 1;
           [required]="required()"
           [attr.autocomplete]="autocomplete()"
           [attr.spellcheck]="secret() || type() === 'password' ? 'false' : null"
-          [attr.aria-invalid]="error() ? 'true' : null"
+          [attr.aria-invalid]="shownError() ? 'true' : null"
           [attr.aria-describedby]="describedBy()"
           (input)="value.set($any($event.target).value)"
+          (blur)="rule.touched()"
         />
       }
       @if (hint()) {
         <p class="hint" [id]="id + '-hint'">{{ hint() }}</p>
       }
     </div>
-    @if (error(); as text) {
+    @if (shownError(); as text) {
       <p class="field-error" [id]="id + '-error'">{{ text }}</p>
     }
   `,
@@ -95,10 +132,13 @@ export class TextField {
   readonly autocomplete = input<string | null>('off');
 
   protected readonly id = `trove-field-${nextFieldId++}`;
+  protected readonly rule = revealRule();
+  /** The error once the field was touched or its form submitted (`revealRule`). */
+  protected readonly shownError = computed(() => (this.rule.reveal() ? this.error() : null));
   protected readonly describedBy = computed(() => {
     const ids: string[] = [];
     if (this.hint()) ids.push(`${this.id}-hint`);
-    if (this.error()) ids.push(`${this.id}-error`);
+    if (this.shownError()) ids.push(`${this.id}-error`);
     return ids.length > 0 ? ids.join(' ') : null;
   });
 }
@@ -118,16 +158,17 @@ export interface SelectOption {
         class="select-input"
         [id]="id"
         [name]="name()"
-        [attr.aria-invalid]="error() ? 'true' : null"
-        [attr.aria-describedby]="error() ? id + '-error' : null"
+        [attr.aria-invalid]="shownError() ? 'true' : null"
+        [attr.aria-describedby]="shownError() ? id + '-error' : null"
         (change)="value.set($any($event.target).value)"
+        (blur)="rule.touched()"
       >
         @for (o of options(); track o.value) {
           <option [value]="o.value" [selected]="o.value === value()">{{ o.label }}</option>
         }
       </select>
     </div>
-    @if (error(); as text) {
+    @if (shownError(); as text) {
       <p class="field-error" [id]="id + '-error'">{{ text }}</p>
     }
   `,
@@ -159,4 +200,7 @@ export class SelectField {
   readonly error = input<string | null>(null);
 
   protected readonly id = `trove-select-${nextFieldId++}`;
+  protected readonly rule = revealRule();
+  /** The error once the field was touched or its form submitted (`revealRule`). */
+  protected readonly shownError = computed(() => (this.rule.reveal() ? this.error() : null));
 }

@@ -1,7 +1,7 @@
 import { PolicyApi } from '../../api/authz-api';
 import { FakePolicyApi, problem } from '../../api/testing/access-fakes';
 import { Notifier } from '../../core/notifier';
-import { buttonByText, renderScreen, settle, text, typeInto, sleep } from '../../testing/screen';
+import { buttonByText, renderScreen, settle, text, typeAndLeave, typeInto, sleep } from '../../testing/screen';
 import { seriousViolations } from '../../testing/axe';
 import { PREVIEW_DEBOUNCE_MS, PolicyEditor } from './policy-editor';
 import { PolicyList } from './policy-list';
@@ -53,6 +53,31 @@ describe('Policy editor (R-UI-027)', () => {
     expect(text(root.querySelector('.covered')!)).toBe('npm-internal');
   });
 
+  it('R-UI-027 R-UI-044 the name shows no error before it is touched, then its rule in words, never the pattern', async () => {
+    const { fixture, root } = await renderScreen(PolicyEditor, {
+      setup: (api) => {
+        (api(PolicyApi) as FakePolicyApi).validation = () => ({
+          valid: false,
+          errors: [{ pointer: '/name', code: 'invalid_name', detail: 'The name matches ^[a-z0-9][a-z0-9._-]{0,127}$.' }],
+          warnings: [],
+          covers: [],
+        });
+      },
+    });
+    await afterDebounce();
+    await settle(fixture);
+    const nameField = () => [...root.querySelectorAll('trove-text-field')].find((f) => text(f).startsWith('Name'))!;
+    // An empty field the user has not touched is never red (UI-A-42).
+    expect(nameField().querySelector('.field-error')).toBeNull();
+    expect(nameField().querySelector('input')?.getAttribute('aria-invalid')).toBeNull();
+    typeAndLeave(root, 'Name', 'Team X');
+    await afterDebounce();
+    await settle(fixture);
+    const error = text(nameField().querySelector('.field-error')!);
+    expect(error).toContain('lower-case letters, digits');
+    expect(text(root)).not.toContain('^[a-z0-9]');
+  });
+
   it('R-UI-027 shows validation problems next to the field and refuses to save before the API does', async () => {
     const { fixture, root, get } = await renderScreen(PolicyEditor, {
       setup: (api) => {
@@ -67,7 +92,7 @@ describe('Policy editor (R-UI-027)', () => {
     buttonByText(root, 'Add principal').click();
     await settle(fixture);
     typeInto(root, 'Name', 'team-x');
-    typeInto(root, 'Principal', 'group:nope');
+    typeAndLeave(root, 'Principal', 'group:nope');
     await afterDebounce();
     await settle(fixture);
     expect(text(root.querySelector('fieldset.entry .field-error')!)).toContain('A principal does not exist');

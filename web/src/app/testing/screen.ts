@@ -167,6 +167,16 @@ export function typeInto(root: ParentNode, label: string, value: string): void {
   type(input, value);
 }
 
+/**
+ * Types into the field labelled `label` and leaves it, as a user does before a field may show its error (an error only after the
+ * field was touched or its form submitted, the shared field's `revealRule`).
+ */
+export function typeAndLeave(root: ParentNode, label: string, value: string): void {
+  typeInto(root, label, value);
+  const labelEl = [...root.querySelectorAll<HTMLLabelElement>('label')].find((l) => text(l).startsWith(label));
+  labelEl?.control?.dispatchEvent(new FocusEvent('blur'));
+}
+
 /** Browser storage through the one wrapper that may touch it (R-UI-046). */
 export const browserStorage = new BrowserStorage();
 

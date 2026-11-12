@@ -127,8 +127,8 @@ through the dev server works only against a trove whose base URL is `https://loc
 - Break-glass sessions last 8 h idle and 24 h absolute instead of 15 min and 1 h, so the session-expiry dialogs
   do not appear during a normal working session. The only OpenID provider is the profile's own, which asks for no
   password; the sign-in screen offers it beside the local form (`auth.login_page.auto_redirect: false`).
-- A sign-in through the provider returns to `/ui/en/`, which the dev server does not serve (it builds one locale at `/ui/`):
-  the page says "Page not found" with the session already set, and **Back to the start page** continues.
+- A sign-in through the provider returns under the page's own base href, `/ui/` on the dev server, which builds one locale
+  there (UI-A-49).
 - The outbound clients trust the profile's CA and may reach the loopback addresses (`proxy.outbound.tls.ca_files`,
   `proxy.outbound.address_policy.allow_cidrs`), so that trove reaches the provider; a remote repository of this profile can
   therefore reach a service on this machine, which an installation's default egress policy refuses (R-REPO-038).
@@ -655,7 +655,8 @@ feeds the two live regions of `<trove-notices>`: `status` is polite, `alert` is 
 `reauthRequired` flags. `signOut()` posts `/auth/logout`, goes to the returned `redirectTo` or `/logged-out`, and tells other tabs over a
 `BroadcastChannel`. `authGuard` loads the session and sends an unauthenticated caller to `/login?returnTo=<route>` unless
 `login-options` allows anonymous access. `safeReturnTo` keeps only server-relative paths. The sign-in screen builds
-`return_to=/ui/<locale><route>` (R-AUTH-009) and appends `purpose=reauth` for a re-authentication.
+`return_to=<base href><route>` from the page's `<base href>` (R-AUTH-009): `/ui/en/…` in a build per locale, `/ui/…` on the dev
+server (UI-A-49); it appends `purpose=reauth` for a re-authentication.
 `has(capability)` asks for a capability; `hasRole(role)` asks for a system role of `authz/me` and is for the operations the server checks as a role, not as a capability (creating and rotating the token of a service account needs the administrator role). A control follows what the handler checks (R-UI-005): never a capability that merely sounds related.
 
 **Secrets** never enter these services (R-UI-043): token values live in component signals only. `core/storage.ts` is for non-secret
@@ -996,7 +997,7 @@ R-BAS-007 against the operations of R-BAS-004; decisions [Q-BAS-95](../spec/bast
 |---|---|---|---|
 | `/admin/bastions` | [bastion-list](../../web/src/app/features/bastions/bastion-list.ts) | `BastionsApi`, `SessionStore` | Header with **New Bastion** (`endpoints:write`, with the reason when missing); one page, no paging (at most `bastions.max_registrations` registrations); the list is read again after every change and the cards stay on screen meanwhile, so a card keeps the token it shows once |
 | (one per registration) | [bastion-card](../../web/src/app/features/bastions/bastion-card.ts) | `BastionsApi`, `Confirm`, `SessionStore` | Status, description, creation; **Issue token**, **Disable** or **Enable**, **Delete** (`endpoints:write`); the table of the last contact per replica (replica, time, client address, release, interface version, reported base URL); the table of the tokens (hint, creation, expiry with the mark, last use, **Revoke** with `endpoints:write` or `tokens:revoke`) |
-| (dialogs) | [bastion-dialogs](../../web/src/app/features/bastions/bastion-dialogs.ts) | `BastionsApi`, `DraftStore` | `BastionCreateDialog` (the name rule shown while typing, an idempotency key for the life of the dialog); `BastionTokenDialog` (description and a lifetime in days, empty for the default; the lost-answer retry of R-UI-042; on `401 reauthentication_required` - issuing a token needs a recent sign-in, R-API-007 - the entries are kept as a `BastionTokenDraft` of the route, never the token) |
+| (dialogs) | [bastion-dialogs](../../web/src/app/features/bastions/bastion-dialogs.ts) | `BastionsApi`, `DraftStore` | `BastionCreateDialog` (the name rule shown once the field was left or a creation attempted, an idempotency key for the life of the dialog); `BastionTokenDialog` (description and a lifetime in days, empty for the default; the lost-answer retry of R-UI-042; on `401 reauthentication_required` - issuing a token needs a recent sign-in, R-API-007 - the entries are kept as a `BastionTokenDraft` of the route, never the token) |
 
 - *A re-authentication keeps the entries.* The list takes the draft of its route once (`DraftStore.take`) and hands it to the cards; the card of
   the draft's registration reopens the token dialog with it, once, and says so (R-UI-042), as the token screens do.

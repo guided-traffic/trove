@@ -2846,7 +2846,8 @@ Priority: **MVP** · Covers: UI-001, UI-004
   to a caller who has the admin area; it leads into it and looks the same inside it), the **Documentation** link, the
   theme button and the user menu. The search
   field takes a text and opens the repository list (R-UI-020) filtered by it; it is shown only to a caller who
-  holds `repositories:read-config`, because that list is the API behind it. The **Documentation** link (R-UI-050) opens
+  holds `repositories:read-config`, because that list is the API behind it, and not below 36 rem of the window, where it
+  has no room for a word (UI-A-48; one search for every reader is the owner's task T-22). The **Documentation** link (R-UI-050) opens
   the manual page of the current screen, or the overview of the help area, which is titled "Documentation" like the link
   (owner, 2026-11-06; Q-UI-90). The theme button offers
   "Follow the system", "Light" and "Dark" as radio items (R-API-021); the user menu is a round 32 px avatar, the
@@ -3020,7 +3021,8 @@ The flow and its security properties are owned by
   `publicContent` is false navigates to `/login?returnTo=<current route>`; while it is true
   (from `login-options`), the application runs anonymously with a "Sign in" button (R-UI-057).
 - `/login` renders only from `GET /api/v1/auth/login-options`: one button per provider, each
-  navigating (full page) to the provider's `startUrl` with `return_to` set to the UI route. With
+  navigating (full page) to the provider's `startUrl` with `return_to` set to the UI route under the page's own base href
+  (`/ui/en/…` in a build per locale, `/ui/…` on the development server, UI-A-49). With
   `autoRedirect` set, the page navigates at once unless the URL carries `?auto_sign_in=false`. The
   break-glass form appears when `localLogin` is true or the URL carries `?auto_sign_in=false`, and
   posts to the local login endpoint of the owning page. The screen stands alone, without the shell,
@@ -4308,7 +4310,8 @@ Acceptance criteria:
 ### R-UI-037 · Audit log
 Priority: **MVP** · Covers: OPS-023
 
-- Table from `GET /api/v1/audit/events`: time, actor, action (translated label), target, outcome,
+- Table from `GET /api/v1/audit/events`: time, actor, action (translated label), target (actor and target wrap in their
+  column and are never cut, UI-A-46), outcome,
   source address; filters time range (presets and custom), actor, action, category, project, repository,
   outcome (filter panel); "Load more". The log is always newest first and has no sort control.
 - Detail panel with the full event and links to actor and target.
@@ -4356,7 +4359,8 @@ INV-12 makes roles, drains and Valkey MVP and INV-19 the backup job (Q-UI-7).
 - **Replicas by role** (Q-UI-7, Q-UI-107). One group per role in the order `api`, `packages`, `worker`, taken from the replica's `roles`
   (Q-ARCH-341); a group `web` while a replica of that role is live, during the
   upgrade across the cut ([ha-and-helm.md](ha-and-helm.md) R-HA-064); a replica with roles
-  `["all"]` of the development role forms a group `all`; within a group, one sub-group per pool of R-HA-062 and per
+  `["all"]` of the development role forms a group `all`, and while one is live it serves every role (R-HA-001), so a group
+  `api`, `packages` or `worker` without a replica of its own is left out with its warnings (UI-A-45); within a group, one sub-group per pool of R-HA-062 and per
   endpoint pool, each with its own counts and drain safety,
   headed with the role's `live`, `ready` and `degraded` counts from `replicas.roles` of
   `/system/info`, each listing its replicas with name, node, version, state (`starting`, `ready`,
@@ -5221,7 +5225,9 @@ the guides) the highest kind of the caller's memberships counts.
   class; access in it is the members and the visibility level (R-UI-055); every other setting (patterns, disabling, hiding
   existence, administrator notes, mirror and protocol tuning) is in a detail view or behind an advanced-settings section, never a
   step; a remote's connection is tested where its upstream is entered; a default is a field's value, a field is as wide as its
-  input, a title names the format, and a field shows an error only after it was touched or on submit. The creation flow and the
+  input, a title names the format, and a field shows an error only after it was touched or on submit, in words and never as a
+  pattern (the shared text and select fields hold the rule for every form: an error waits until the field was left once or a
+  submit of its form was attempted, UI-A-42). The creation flow and the
   repository settings are planned on T-18's tree (T-21, "Creating and configuring a repository") and are not decided on this page;
   their defects are in the audit.
 

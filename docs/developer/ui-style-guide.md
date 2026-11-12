@@ -153,6 +153,10 @@ The button has `aria-expanded` and `aria-controls`. A closed region is `visibili
 - An optional field says **(optional)** in its label. Required fields are not marked, because they are the normal case.
 - Help text is one muted line under the field. An error replaces nothing: it appears below the field, in the error colour, tied
   to it by `aria-describedby`, and the field has `aria-invalid`.
+- An error appears only after the field was touched and left, or after a submit of its form was attempted (the form's `submit`,
+  or a click on its submit or confirm button). `<trove-text-field>` and `<trove-select-field>` hold this rule
+  (`revealRule` in [fields.ts](../../web/src/app/shared/access/fields.ts)), so a form passes its errors in and keeps no state of
+  its own; a field outside a form shows its error at once. An error says in words what to type, never the pattern (UI-A-42).
 - Field width follows the content: a name half the column, a description the whole column.
 - The selects of a panel (the install panel's client and repository) stack and take the panel's width, so they line up whatever
   their options say ([Q-UI-320](../spec/api-and-ui.md#q-ui-320--every-value-to-copy-of-one-line-is-a-field-with-its-joined-copy-button-a-page-shows-one-client-address-and-a-panels-selects-share-one-width)).
