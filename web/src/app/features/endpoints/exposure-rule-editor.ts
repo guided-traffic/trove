@@ -23,6 +23,7 @@ import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
 import { ConflictResolver } from '../../shared/conflict-dialog';
 import { Confirm } from '../../shared/confirm-dialog';
+import { Disclosure } from '../../shared/ui/disclosure';
 import { CopyButton } from '../../shared/copy-button';
 import { DiffReview } from '../../shared/diff-dialog';
 import { ErrorNotice } from '../../shared/error-notice';
@@ -107,7 +108,7 @@ const FIELD_LABELS: readonly (readonly [prefix: string, label: () => string])[] 
  */
 @Component({
   selector: 'trove-exposure-rule-editor',
-  imports: [PageHeader, CopyButton, ErrorNotice, ErrorSummary],
+  imports: [PageHeader, CopyButton, Disclosure, ErrorNotice, ErrorSummary],
   templateUrl: './exposure-rule-editor.html',
   styleUrl: './exposure-rule-editor.scss',
 })

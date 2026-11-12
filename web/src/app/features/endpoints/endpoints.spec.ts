@@ -165,6 +165,25 @@ describe('Exposure rule editor', () => {
     return { ...rendered, endpoints: rendered.get(EndpointsApi) as FakeEndpointsApi };
   }
 
+  it('R-EP-017 deleting a rule is a danger button last on its page, behind Advanced, and asks first', async () => {
+    const r = await edit();
+    const advanced = [...r.root.querySelectorAll('trove-disclosure')].at(-1)!;
+    expect(text(advanced.querySelector('.heading span:not(.material-icons)')!)).toBe('Advanced');
+    // Last: after the form and after the preview.
+    expect(r.root.querySelector('section.preview')!.compareDocumentPosition(advanced) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(r.root.querySelector('form')!.contains(advanced)).toBe(false);
+    const remove = button(advanced, 'Delete rule');
+    expect(remove.classList).toContain('btn-danger');
+    expect(r.root.querySelector('.danger')).toBeNull();
+    remove.click();
+    await settle(r.fixture);
+    const dialog = r.root.ownerDocument.body.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(text(dialog)).toContain('Delete rule releases?');
+    button(dialog, 'Delete rule').click();
+    await settle(r.fixture);
+    expect(r.endpoints.deleted).toEqual(['releases']);
+  });
+
   it('R-EP-017 creating the rule through the editor stores the document the API takes, with the Idempotency-Key of the page', async () => {
     const r = await create();
     type(r.root.querySelector<HTMLInputElement>('#f-name')!, 'acme-releases');

@@ -232,11 +232,23 @@ export async function seedGrants(admin: Api): Promise<void> {
     [201, 409],
     `service account ${mainProject}/${projectServiceAccount}`,
   );
+  // A paused exposure rule, so that the rule editor renders a rule that exists, with its Advanced section; paused, it exposes and
+  // hides nothing on the default endpoint.
+  await expectStatus(
+    await admin.post(
+      '/api/v1/endpoints/default/exposure-rules',
+      { name: exposureRule, description: 'Released files for customers.', repository: `${mainProject}/assets`, enabled: false },
+      { 'Idempotency-Key': `renders-${exposureRule}` },
+    ),
+    [201, 409],
+    `exposure rule ${exposureRule}`,
+  );
 }
 
 export const group = 'web-team';
 export const serviceAccount = 'backup-reader';
 export const projectServiceAccount = 'release-pipeline';
+export const exposureRule = 'customer-releases';
 
 /** One ustar entry: a 512-byte header and the content padded to the block size. */
 function tarEntry(name: string, content: Buffer): Buffer {

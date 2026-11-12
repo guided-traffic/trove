@@ -9942,11 +9942,38 @@
     </unit>
     <unit id="ep.editor.delete">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:430,431</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:615,616</note>
       </notes>
       <segment>
-        <source> Delete this rule </source>
-        <target>Diese Regel löschen</target>
+        <source>Delete rule</source>
+        <target>Regel löschen</target>
+      </segment>
+    </unit>
+    <unit id="ep.rule.advanced">
+      <notes>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:610,611</note>
+      </notes>
+      <segment>
+        <source>Advanced</source>
+        <target>Erweitert</target>
+      </segment>
+    </unit>
+    <unit id="ep.rule.advanced-hint">
+      <notes>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:612,614</note>
+      </notes>
+      <segment>
+        <source>Delete this rule.</source>
+        <target>Diese Regel löschen.</target>
+      </segment>
+    </unit>
+    <unit id="ep.rule.delete-note">
+      <notes>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:614,615</note>
+      </notes>
+      <segment>
+        <source>Deleting the rule makes content that only this rule exposes unavailable on this endpoint.</source>
+        <target>Beim Löschen der Regel sind Inhalte, die nur diese Regel freigibt, an diesem Endpunkt nicht mehr abrufbar.</target>
       </segment>
     </unit>
     <unit id="ep.preview.heading">
@@ -16897,6 +16924,42 @@
       <notes>
         <note category="location">src/app/features/repositories/repository-detail.ts:423</note>
         <note category="location">src/app/features/repositories/repository-list.ts:212</note>
+      </notes>
+      <segment>
+        <source>Delete repository</source>
+        <target>Repository löschen</target>
+      </segment>
+    </unit>
+    <unit id="repo.detail.advanced">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:310,311</note>
+      </notes>
+      <segment>
+        <source>Advanced</source>
+        <target>Erweitert</target>
+      </segment>
+    </unit>
+    <unit id="repo.detail.advanced-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:312,314</note>
+      </notes>
+      <segment>
+        <source>Delete this repository.</source>
+        <target>Dieses Repository löschen.</target>
+      </segment>
+    </unit>
+    <unit id="repo.detail.delete-note">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:314,315</note>
+      </notes>
+      <segment>
+        <source>Deleting the repository removes it and everything in it for good. It runs as a job, and the key stays taken until it has finished.</source>
+        <target>Beim Löschen werden das Repository und alles darin endgültig entfernt. Es läuft als Job, und der Schlüssel bleibt belegt, bis es fertig ist.</target>
+      </segment>
+    </unit>
+    <unit id="repo.detail.delete">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:315,316</note>
       </notes>
       <segment>
         <source>Delete repository</source>

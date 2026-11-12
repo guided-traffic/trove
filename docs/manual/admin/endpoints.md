@@ -149,7 +149,7 @@ Changing rules needs `endpoints:write` (roles `admin` and `security-admin`) and 
 4. Watch the **Preview** on the right (see below).
 5. Select **Create rule**, or **Review and save** for an existing rule, which shows the difference to the stored rule before saving. If someone else changed the rule meanwhile, trove shows both versions and lets you reload or overwrite.
 
-To remove a rule, use **Delete** in the table or **Delete this rule** in the editor; content that only this rule exposes stops being retrievable on the endpoint. To pause a rule, turn its **Enabled** switch off.
+To remove a rule, use **Delete** in the table, or **Delete rule** under **Advanced** at the end of the editor; content that only this rule exposes stops being retrievable on the endpoint. To pause a rule, turn its **Enabled** switch off.
 
 ### Check what an endpoint exposes
 

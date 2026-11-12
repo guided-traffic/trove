@@ -417,13 +417,6 @@
           }
         </div>
       }
-      @if (!creating() && canWrite()) {
-        <p class="danger">
-          <button class="btn btn-tertiary" type="button" (click)="remove()" i18n="@@ep.editor.delete">
-            Delete this rule
-          </button>
-        </p>
-      }
     </form>
 
     <section class="preview" aria-labelledby="preview-heading">
@@ -608,4 +601,18 @@
       }
     </section>
   </div>
+
+  <!-- The destructive action comes last, after the preview, behind its own closed section (the style guide's settings rule). -->
+  @if (!creating() && canWrite()) {
+    <trove-disclosure
+      class="advanced"
+      i18n-heading="@@ep.rule.advanced"
+      heading="Advanced"
+      i18n-hint="@@ep.rule.advanced-hint"
+      hint="Delete this rule."
+    >
+      <p class="hint delete-note" i18n="@@ep.rule.delete-note">Deleting the rule makes content that only this rule exposes unavailable on this endpoint.</p>
+      <button class="btn btn-danger" type="button" (click)="remove()" i18n="@@ep.editor.delete">Delete rule</button>
+    </trove-disclosure>
+  }
 }

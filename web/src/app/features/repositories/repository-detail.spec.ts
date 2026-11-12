@@ -58,6 +58,26 @@ describe('Repository edit form', () => {
     await expectAccessible(r.root);
   });
 
+  it('R-UI-020 deleting the repository is a danger button last on its settings, behind Advanced, and asks for the key first', async () => {
+    const { root, fixture, get } = await open();
+    const fake = get(RepositoriesApi) as FakeRepositoriesApi;
+    const save = button(root, 'Save changes');
+    expect(save.parentElement!.textContent).not.toContain('Delete');
+    const advanced = [...root.querySelectorAll('trove-disclosure')].at(-1)!;
+    expect(text(advanced.querySelector('.heading span:not(.material-icons)')!)).toBe('Advanced');
+    expect(save.compareDocumentPosition(advanced) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const remove = button(advanced, 'Delete repository');
+    expect(remove.classList).toContain('btn-danger');
+    remove.click();
+    await settle(fixture);
+    const dialog = root.ownerDocument.body.querySelector<HTMLElement>('[role="dialog"]')!;
+    type(dialog.querySelector<HTMLInputElement>('#confirm-name')!, 'generic-local');
+    await settle(fixture);
+    button(dialog, 'Delete repository').click();
+    await settle(fixture);
+    expect(fake.deleteCalls.map((c) => c.key)).toEqual(['web/generic-local']);
+  });
+
   it('R-UI-021 saving sends a merge patch of the changed members only, with the loaded ETag', async () => {
     const r = await open();
     const fake = r.get(RepositoriesApi) as FakeRepositoriesApi;

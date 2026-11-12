@@ -51,6 +51,7 @@ import { MirrorSettings, mirrorTarget } from './mirror-settings';
 import { MirrorStatusPanel } from './mirror-status';
 import { RecentRepositories } from './recent-repositories';
 import { RepositoryFields } from './repository-fields';
+import { Disclosure } from '../../shared/ui/disclosure';
 import { RepositoryGuide } from './repository-guide';
 import {
   FormatMemberOf,
@@ -81,6 +82,7 @@ import { UpstreamSettings, upstreamTarget } from './upstream-settings';
     TabContent, TabGroup, TabPage,
     RouterLink,
     AddressField,
+    Disclosure,
     ErrorNotice,
     ErrorSummary,
     JobProgress,

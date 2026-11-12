@@ -284,10 +284,6 @@
               >You have unsaved changes.</span
             >
           }
-          <span class="spacer"></span>
-          <button class="btn btn-tertiary" type="button" (click)="remove()" i18n="@@repo.action.delete">
-            Delete
-          </button>
         </div>
         @if (canMove() && moveOptions().length > 1) {
           <section class="move" aria-labelledby="repo-move">
@@ -307,6 +303,17 @@
             </button>
           </section>
         }
+        <!-- The destructive action comes last, behind its own closed section (the style guide's settings rule). -->
+        <trove-disclosure
+          class="advanced"
+          i18n-heading="@@repo.detail.advanced"
+          heading="Advanced"
+          i18n-hint="@@repo.detail.advanced-hint"
+          hint="Delete this repository."
+        >
+          <p class="hint delete-note" i18n="@@repo.detail.delete-note">Deleting the repository removes it and everything in it for good. It runs as a job, and the key stays taken until it has finished.</p>
+          <button class="btn btn-danger" type="button" (click)="remove()" i18n="@@repo.detail.delete">Delete repository</button>
+        </trove-disclosure>
       }
       @if (deletion(); as job) {
         <div class="deleting">

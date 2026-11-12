@@ -1,5 +1,5 @@
 import { Page, expect } from '@playwright/test';
-import { Kind, emptyProject, group, longDebKey, longNpmKey, mainProject, npmPackage, ociPackage, otherProject, projectServiceAccount, serviceAccount } from './seed';
+import { Kind, emptyProject, exposureRule, group, longDebKey, longNpmKey, mainProject, npmPackage, ociPackage, otherProject, projectServiceAccount, serviceAccount } from './seed';
 import { gradedPackage } from './advisories';
 
 /**
@@ -85,6 +85,14 @@ async function* sortByDetection(page: Page): AsyncGenerator<string> {
   yield 'sorted';
 }
 
+/** The closed Advanced section at the end of a page, opened: where a page keeps its destructive action (the style guide). */
+async function* advancedOpen(page: Page): AsyncGenerator<string> {
+  yield '';
+  await page.locator('main trove-disclosure').last().getByRole('button', { name: 'Advanced' }).click();
+  await expect(page.locator('main trove-disclosure').last().getByRole('button', { name: /^Delete / })).toBeVisible();
+  yield 'advanced';
+}
+
 /** The wizard asks whether the typed key is taken; a 404 means it is free. */
 const keyFree = [{ match: /^GET \/api\/v1\/projects\/[^/]+\/repositories\/renders-[a-z-]+ answered 404$/, why: 'the key check: 404 is a free key' }];
 
@@ -163,6 +171,7 @@ export const screens: readonly Screen[] = [
   { id: 'repository-settings-npm-remote', path: `${P}/repositories/npmjs/settings`, kinds: owners },
   { id: 'repository-settings-npm-virtual', path: `${P}/repositories/npm/settings`, kinds: owners },
   { id: 'repository-settings-generic', path: `${P}/repositories/assets/settings`, kinds: owners },
+  { id: 'repository-settings-generic-advanced', path: `${P}/repositories/assets/settings`, kinds: admins, walk: advancedOpen },
   { id: 'repository-settings-oci', path: `${P}/repositories/images/settings`, kinds: owners },
   { id: 'repository-wizard', path: `${P}/repositories/new`, kinds: owners },
   { id: 'policies', path: `${P}/policies`, kinds: owners },
@@ -200,6 +209,7 @@ export const screens: readonly Screen[] = [
   // The endpoint every installation has (R-EP-001).
   { id: 'admin-endpoint', path: '/ui/admin/endpoints/default', kinds: admins },
   { id: 'admin-endpoint-rule-new', path: '/ui/admin/endpoints/default/rules/new', kinds: admins },
+  { id: 'admin-endpoint-rule', path: `/ui/admin/endpoints/default/rules/${exposureRule}`, kinds: admins, walk: advancedOpen },
 
   // The creation flow, step by step, for three formats and every class (the owner's rules of 2026-11-12, CLAUDE.md).
   ...wizards,

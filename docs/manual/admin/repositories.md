@@ -289,7 +289,7 @@ Saving sends only your changes with the version you loaded. If someone saved in 
 
 ## Delete a repository
 
-1. Select **Delete** in the list or on the repository's page.
+1. Select **Delete** in the row's menu of the list, or open **Advanced** at the end of the repository's settings and select **Delete repository**.
 2. Confirm **Delete repository** by typing the key.
 3. If the repository is a member, deployment target or pin-rule member of a virtual repository, the deletion is refused with **Other repositories still include this one.** In the list, tick **Also remove it from the virtual repositories that include it** to detach it in the same step.
 
