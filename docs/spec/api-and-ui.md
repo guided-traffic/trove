@@ -852,7 +852,7 @@ sends every request without its configured credentials first and repeats it with
 the first attempt is charged to no class. A request the class does not charge carries none of its fields.
 The stage reads the index the replica has installed. A repository the index does not hold is charged,
 because its request asks PostgreSQL whether the repository was just created before it is decided
-(R-ARCH-011 step 2); so are a path that names no repository and a replica without an index ([Q-API-282](#q-api-282--package_anonymous-does-not-charge-a-request-the-decision-point-challenges)).
+(R-ARCH-011 step 2); so are a path that names no repository and a replica without an index ([Q-API-290](#q-api-290--package_anonymous-does-not-charge-a-request-the-decision-point-challenges)).
 
 - **Limiter.** Each class is a limiter of R-ARCH-034 ([architecture.md](architecture.md)) with
   scope `cluster`: a sliding-window counter in Valkey with the window `W = burst ÷ rate`, which
@@ -13563,7 +13563,7 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied in the spec:** R-ANS-036, R-ANS-037, R-UI-060.
 
-### Q-API-282 · `package_anonymous` does not charge a request the decision point challenges
+### Q-API-290 · `package_anonymous` does not charge a request the decision point challenges
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 

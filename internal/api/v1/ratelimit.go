@@ -29,7 +29,7 @@ import (
 // fetches a thousand tarballs does not use up the budget of the same token's
 // management API, and a flood of package requests cannot starve it. package_anonymous leaves out a request on a known
 // repository whose artifacts are not public, which the decision point answers with the challenge (RateLimitOptions.Challenged,
-// Q-API-282).
+// Q-API-290).
 //
 // The stage is the chain's stage 7 (R-ARCH-005): it runs after authentication,
 // so the principal is known. The class an endpoint applies on top of these is
@@ -60,7 +60,7 @@ type RateLimitOptions struct {
 	Registry prometheus.Registerer
 	// Challenged reports a package request without a credential that the decision point answers with the challenge whatever
 	// its route, at no more cost than a decision in memory: [ChallengedByLevels]. The class package_anonymous does not charge
-	// such a request (Q-API-282). Nil charges every package request without a credential.
+	// such a request (Q-API-290). Nil charges every package request without a credential.
 	Challenged func(r *http.Request) bool
 }
 
@@ -139,7 +139,7 @@ func NewRateLimit(o RateLimitOptions) (func(http.Handler) http.Handler, error) {
 			name, bucket := classify(r)
 			if name == LimiterPackageAnonymous && o.Challenged != nil && o.Challenged(r) {
 				// The decision point answers it with the challenge; a client with credentials repeats it with them, and the
-				// repetition is charged to its principal (Q-API-282).
+				// repetition is charged to its principal (Q-API-290).
 				next.ServeHTTP(w, r)
 				return
 			}

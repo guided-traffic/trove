@@ -1176,7 +1176,7 @@ NuGet contributes:
   10.0.403 (NuGet 7.9.0) of the acceptance suite was measured not to: each flat container request of a restore drew a 401 before
   its 200. Those first attempts are charged to no rate-limit class, so only the repetitions with the token count, against the
   token's `package_read` ([api-and-ui.md](../api-and-ui.md) R-API-016,
-  [Q-API-282](../api-and-ui.md#q-api-282--package_anonymous-does-not-charge-a-request-the-decision-point-challenges)).
+  [Q-API-290](../api-and-ui.md#q-api-290--package_anonymous-does-not-charge-a-request-the-decision-point-challenges)).
 
 Configuration (common repository member, shown for context; [repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-004):
 
