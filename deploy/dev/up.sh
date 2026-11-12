@@ -143,11 +143,16 @@ task_pki() {
   kn wait --for=condition=Ready certificate/trove-dev-ca certificate/trove-tls certificate/trove-edge-tls certificate/trove-s3-tls --timeout=3m
 }
 
+# The operator caches every Secret and ConfigMap of the cluster. Its chart's limit of 128 MiB was too small on a long-lived dev
+# cluster on an arm64 host, where its amd64-only image runs under emulation: it was OOM-killed at every start for 42 hours (467
+# restarts) and made its Secrets only in the seconds it ran (F-127).
 task_secrets() {
   helm --kube-context "$CTX" upgrade --install internal-secrets-operator \
     "$(chart_tgz https://guided-traffic.github.io/internal-secrets-operator internal-secrets-operator "$DEV_ISO_CHART_VERSION")" \
     -n internal-secrets-operator-system --create-namespace \
-    --set image.tag="${DEV_ISO_IMAGE#*:}" --wait --timeout 5m
+    --set image.tag="${DEV_ISO_IMAGE#*:}" \
+    --set resources.limits.memory=512Mi --set resources.requests.memory=128Mi \
+    --wait --timeout 5m
   kn apply -f "$DEV_DIR/secrets.yaml"
   wait_secret_fields 120 trove-valkey-auth:password trove-s3:secret-access-key trove-encryption-keys:dev.key trove-break-glass:password
 }

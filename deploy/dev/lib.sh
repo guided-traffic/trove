@@ -21,6 +21,11 @@ set -a
 . "$REPO_ROOT/tools/versions.env"
 set +a
 
+# Every helm upgrade of the profile keeps two revisions of its release, not helm's ten: each revision is a Secret of up to a
+# megabyte, and the internal-secrets-operator caches every Secret of the cluster (after a few dozen runs of dev-up, 78 release
+# Secrets of 23 MB in all OOM-killed it at its start, F-127).
+export HELM_MAX_HISTORY="${HELM_MAX_HISTORY:-2}"
+
 log() { printf '%s %s\n' "$(date +%H:%M:%S)" "$*" >&2; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
