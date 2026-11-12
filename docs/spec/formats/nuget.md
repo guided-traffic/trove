@@ -81,7 +81,8 @@ and are never mixed: the *protocol path* a client requests below `/api/nuget/<pr
 Endpoint layout. All protocol resources of one repository MUST live below `<feed>/`, so that
 NuGet 6.7 and later, which pre-authenticate only URLs in or below the directory of an
 authenticated URL, send credentials without a 401 round trip per resource
-([implementation guide](https://learn.microsoft.com/en-us/nuget/api/implementation-guide)).
+([implementation guide](https://learn.microsoft.com/en-us/nuget/api/implementation-guide)). The .NET SDK 10.0.403 of the
+acceptance suite draws that round trip all the same (R-NUGET-012).
 
 | Resource | Path | Methods | Local | Remote | Virtual | Requirement |
 |---|---|---|---|---|---|---|
@@ -1171,7 +1172,11 @@ NuGet contributes:
 - **Virtual repositories.** An anonymous request through a virtual repository is challenged unless
   the artifacts of the virtual repository and of every member are `public` (R-AUTHZ-009 rule 6).
 - The service index is subject to the same rules, which makes a client authenticate on its first
-  request; NuGet 6.7 and later then pre-authenticate every resource below `<feed>/` (R-NUGET-001).
+  request. NuGet 6.7 and later are meant to pre-authenticate every resource below `<feed>/` then (R-NUGET-001); the .NET SDK
+  10.0.403 (NuGet 7.9.0) of the acceptance suite was measured not to: each flat container request of a restore drew a 401 before
+  its 200. Those first attempts are charged to no rate-limit class, so only the repetitions with the token count, against the
+  token's `package_read` ([api-and-ui.md](../api-and-ui.md) R-API-016,
+  [Q-API-282](../api-and-ui.md#q-api-282--package_anonymous-does-not-charge-a-request-the-decision-point-challenges)).
 
 Configuration (common repository member, shown for context; [repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-004):
 

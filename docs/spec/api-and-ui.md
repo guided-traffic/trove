@@ -836,12 +836,23 @@ requirement adds the general classes for `/api/v1/`, `/files/` and the package p
 | `anonymous` | Requests without credentials | Client address (R-ARCH-006, R-OPS-005) | `api_anonymous` |
 | `package_read` | Safe methods on `/api/<format>/` | Principal | `api_package_read` |
 | `package_write` | Unsafe methods on `/api/<format>/` | Principal | `api_package_write` |
-| `package_anonymous` | Requests without credentials on `/api/<format>/` | Client address | `api_package_anonymous` |
+| `package_anonymous` | Requests without credentials on `/api/<format>/`, except those the decision point challenges (below) | Client address | `api_package_anonymous` |
 
 The package classes have buckets of their own, so a lockfile install does not use up the budget
 of the same token's management API and a flood on a package protocol cannot starve it; the
 default endpoint, which has no endpoint class, is limited by them as well (Q-API-169). A refused
 package request has the error shape of the format (R-ARCH-023).
+
+`package_anonymous` does not charge a request that the decision point is certain to answer with the
+challenge: one whose address names a repository the grant index holds with artifacts that are not
+`public` ([authorization.md](authorization.md) R-AUTHZ-033; the anonymous subject holds no grant, so only
+that level admits it, and the format dispatcher decides before any handler runs). A NuGet client
+sends every request without its configured credentials first and repeats it with them after the 401
+([formats/nuget.md](formats/nuget.md) R-NUGET-012); that repetition is charged to the token's class, and
+the first attempt is charged to no class. A request the class does not charge carries none of its fields.
+The stage reads the index the replica has installed. A repository the index does not hold is charged,
+because its request asks PostgreSQL whether the repository was just created before it is decided
+(R-ARCH-011 step 2); so are a path that names no repository and a replica without an index ([Q-API-282](#q-api-282--package_anonymous-does-not-charge-a-request-the-decision-point-challenges)).
 
 - **Limiter.** Each class is a limiter of R-ARCH-034 ([architecture.md](architecture.md)) with
   scope `cluster`: a sliding-window counter in Valkey with the window `W = burst ÷ rate`, which
@@ -863,7 +874,7 @@ package request has the error shape of the format (R-ARCH-023).
 - **Answer.** An exhausted bucket answers 429 `rate_limited` with `Retry-After`: the whole seconds
   after which the next request would be admitted if the caller sent nothing more, computed from the
   same counters, at least 1.
-- **Fields.** Every answer on a limited route carries the `RateLimit-Policy` and `RateLimit` fields
+- **Fields.** Every answer on a limited route that a class charged carries the `RateLimit-Policy` and `RateLimit` fields
   of [draft-ietf-httpapi-ratelimit-headers](https://datatracker.ietf.org/doc/draft-ietf-httpapi-ratelimit-headers/)
   (draft-11 of 23 May 2026, checked 2026-10-28; the syntax follows the draft until it is published):
   `RateLimit-Policy: "<class>";q=<burst>;w=<W>` and
@@ -909,6 +920,12 @@ Acceptance criteria:
 - A loop of 1,100 `GET /api/npm/<projectKey>/<repoKey>/<name>` with one token receives 429 answers after the
   burst of 1,000, each with `Retry-After` and `RateLimit-Policy: "package_read";q=1000;w=5`;
   `GET /api/v1/repositories` with the same token is still admitted.
+- With the defaults, 300 `GET <feed>/v3/flatcontainer/<id>/index.json` without a credential from one address on a
+  NuGet repository whose artifacts are `internal` all answer 401 with the challenge and none 429; on a repository whose
+  artifacts are `public` the requests beyond the burst of 100 answer 429 with
+  `RateLimit-Policy: "package_anonymous";q=100;w=5`.
+- Three `dotnet restore` of a solution with at least 100 packages in its restore graph, with the credentials in
+  `nuget.config`, from three addresses at once through a repository that is not `public`, succeed (E3.2).
 
 ### R-API-017 · Request limits, timeouts and response headers
 Priority: **MVP** · Covers: trove-only
@@ -13506,6 +13523,45 @@ Status: **Decided by the development agent** — selected from the options below
 **Choice:** (a). **Rationale:** `metadata` is the format-specific member by design (R-API-029). The adapter's cost is one indexed read of `ansible_version_docs` per version of the page (batched with `ViewDetails`), and the wiki check is asked once per repository of the page, not per version.
 
 **Applied in the spec:** R-ANS-036, R-ANS-037, R-UI-060.
+
+### Q-API-282 · `package_anonymous` does not charge a request the decision point challenges
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: with the visibility levels the authentication stage passes every request without a credential as the anonymous
+subject, and the decision point answers the challenge where no `public` level admits it (R-AUTHZ-033). The challenge thereby
+moved behind the rate limits of step 7: before, with anonymous access off, step 6 refused such a request before any class
+counted it. A NuGet client sends each request without its configured credentials first and repeats it with them after the 401
+(R-NUGET-012). The .NET SDK 10.0.403 (NuGet 7.9.0) of the acceptance suite does so for every resource, not only the service
+index: in `e2e (nuget)` of 2026-11-12 (Test and Release 43282191873) each of the 308 paths the three restore sessions read
+before the refusals began drew a 401 before its 200. Every first attempt was charged to `package_anonymous` of the client's address (20 per second, burst 100 by
+default): each client of the cold restore of the reference solution (E3.2) had its first 100 to 104 attempts answered with the
+challenge within 3 s and the next 344 to 405 with 429, and `dotnet restore` failed with NU1301; the single restore of R-REPO-055
+through a mirror got 100 challenges, then 370 refusals. No request with the token was refused.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Step 7 asks the installed grant index: a request without a credential on a repository the index holds with artifacts that are not `public` is not charged (chosen) | `RateLimitOptions.Challenged`, `ChallengedByLevels` | One map lookup; the decision point still decides; a client with credentials pays only with its token, as before the levels; a `public` repository's anonymous reads keep their class | A request without a credential on such a repository is bounded only by step 4 (`max_in_flight`, the memory guard), as it was when step 6 refused it; it costs the path parse, the route match and one decision on the index, no database read; the stage reads the installed index, so a request whose decision runs on a newer one (a repository raised to `public` a moment ago) can pass once uncharged |
+| (b) Give the charge back when the answer is the challenge | A decrement of the window's counter after the decision | Exact accounting of what was served | A path back into the limiter, in Valkey and in the fallback buckets; attempts in flight at once still count until their answers, so a client with more than `burst` of them is still refused |
+| (c) Answer a request without a credential over its budget with the challenge instead of 429 | The client with credentials sends them | No index read in step 7 | A client without credentials on a `public` repository gets 401 instead of 429 and no `Retry-After`; the first attempts still fill the bucket that the address's anonymous readers share |
+| (d) Raise the budget of `package_anonymous` | Configuration | No code | Any budget is exceeded by a larger solution or by CI jobs behind one address; it also raises what a caller without credentials gets on a `public` repository |
+| (e) Step 6 challenges a request without a credential on a repository whose artifacts are not `public` | The stage reads the index | The challenge is where it was before the levels | A second place that decides what the anonymous subject reads, beside the decision point (R-AUTHZ-003); the refusal audit of the decision point is skipped |
+
+**Choice:** (a). **Rationale:** the class of a request without a credential exists for callers who read without one; a first
+attempt that the protocol repeats with credentials reads nothing, and its repetition is charged to the token. The rule is
+conservative: what the index cannot answer (no repository in the path, a raw-file path, no installed index) is charged, and a
+virtual repository whose own artifacts are `public` is charged even where a member is not. A key the index does not hold is
+charged as well: its request looks the key up in PostgreSQL before the decision (R-ARCH-011 step 2), and without the charge a
+caller without a credential could send one such query per invented key with no bound but step 4. `/files/` keeps charging its
+`anonymous` class: its decisions are made while the service resolves the path, not in one check before any work, and no client
+of the generic format in the e2e sets sends its credentials only after a 401. The development agent would revisit this if
+challenged requests without a credential become a load that step 4 does not bound well enough, or if a raw-file client needs the
+same rule.
+
+**Applied in the spec:** R-API-016 (the class table, the rule below it, the fields, two acceptance criteria);
+[formats/nuget.md](formats/nuget.md) R-NUGET-012. Code: [ratelimit.go](../../internal/api/v1/ratelimit.go) (`Challenged`,
+`ChallengedByLevels`), [wire_api.go](../../internal/app/wire_api.go). Tests: `TestRateLimitStage`,
+`TestR_API_016_ChallengedByLevels`; `e2e (nuget)` `TestNuGetCollapse`, `TestNuGetMirror_R_REPO_055_ClientsFirst`.
 
 ## What this does not cover
 

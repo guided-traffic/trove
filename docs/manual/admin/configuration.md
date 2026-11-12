@@ -261,7 +261,7 @@ Each class allows `requests_per_second` on average and `burst` at once. The limi
 | `api.rate_limits.read`, `.write` | `50`/`200`, `10`/`50` | Reading and changing requests to the management API |
 | `api.rate_limits.anonymous` | `5`/`20` | Management API requests without a credential, per client address |
 | `api.rate_limits.package_read`, `.package_write` | `200`/`1000`, `10`/`50` | Reading and changing requests of the package protocols |
-| `api.rate_limits.package_anonymous` | `20`/`100` | Package requests without a credential, per client address |
+| `api.rate_limits.package_anonymous` | `20`/`100` | Package requests without a credential, per client address. A request on an existing repository whose artifacts are not public is answered with the sign-in challenge and is not counted, so a NuGet client that sends its credentials only after that challenge is limited by its token's class alone |
 | `server.endpoint_rate_limits.external` | `50`/`200`, per principal | The class further endpoints use by default |
 
 </details>

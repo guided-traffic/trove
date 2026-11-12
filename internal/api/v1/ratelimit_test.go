@@ -9,9 +9,11 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 func limitedChain(t *testing.T, cfg config.APIRateLimits, opts ...func(*RateLimitOptions)) (http.Handler, *prometheus.Registry) {
@@ -48,6 +50,72 @@ func tightLimits() config.APIRateLimits {
 
 func asPrincipal(r *http.Request, p httpserver.Principal) *http.Request {
 	return r.WithContext(httpserver.WithPrincipal(r.Context(), p))
+}
+
+// rejectedByClass reads trove_api_rate_limited_total by class; it fails the test when the counter is not registered.
+func rejectedByClass(t *testing.T, reg *prometheus.Registry) map[string]float64 {
+	t.Helper()
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mf := range mfs {
+		if mf.GetName() != "trove_api_rate_limited_total" {
+			continue
+		}
+		got := map[string]float64{}
+		for _, m := range mf.GetMetric() {
+			got[m.GetLabel()[0].GetValue()] = m.GetCounter().GetValue()
+		}
+		return got
+	}
+	t.Fatal("trove_api_rate_limited_total missing")
+	return nil
+}
+
+// fakeLevels is a grant index of artifact levels; a repository it does not hold is unknown.
+type fakeLevels map[qname.Repo]authz.Level
+
+func (f fakeLevels) Levels(key qname.Repo) (artifacts, wiki authz.Level, ok bool) {
+	lv, ok := f[key]
+	return lv, lv, ok
+}
+
+func TestR_API_016_ChallengedByLevels(t *testing.T) {
+	levels := fakeLevels{
+		{Project: "main", Key: "open"}:     authz.LevelPublic,
+		{Project: "main", Key: "staff"}:    authz.LevelInternal,
+		{Project: "main", Key: "team"}:     authz.LevelPrivate,
+		{Project: "main", Key: "upstream"}: authz.LevelInternal,
+	}
+	challenged := ChallengedByLevels(func() LevelReader { return levels })
+	for _, tc := range []struct {
+		name, path string
+		want       bool
+	}{
+		{"a repository with public artifacts is read without a credential", "/api/nuget/main/open/v3/index.json", false},
+		{"internal artifacts answer the challenge", "/api/nuget/main/staff/v3/flatcontainer/acme.widgets/index.json", true},
+		{"private artifacts answer the challenge", "/api/npm/main/team/left-pad", true},
+		{"a repository the index does not hold is charged: its decision may ask PostgreSQL first", "/api/nuget/main/nothing/v3/index.json", false},
+		{"the cache view is decided on its remote repository", "/api/nuget/main/upstream~cache/v3/index.json", true},
+		{"the bare repository address", "/api/nuget/main/staff", true},
+		{"a path that names no repository is charged", "/api/npm/main", false},
+		{"a refused spelling of the repository segment is charged", "/api/npm/main/st%61ff/x", false},
+		{"a raw-file path is charged", "/files/main/staff/a.txt", false},
+		{"the management API is charged", "/api/v1/repositories", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := challenged(httptest.NewRequest("GET", tc.path, nil)); got != tc.want {
+				t.Fatalf("Challenged(%s) = %v, want %v", tc.path, got, tc.want)
+			}
+		})
+	}
+	t.Run("a replica without an installed index charges", func(t *testing.T) {
+		none := ChallengedByLevels(func() LevelReader { return nil })
+		if none(httptest.NewRequest("GET", "/api/nuget/main/staff/v3/index.json", nil)) {
+			t.Fatal("challenged without an index")
+		}
+	})
 }
 
 func TestRateLimitStage(t *testing.T) {
@@ -191,6 +259,36 @@ func TestRateLimitStage(t *testing.T) {
 		}
 	})
 
+	t.Run("R-API-016 R-NUGET-012 a package request without a credential that the decision point challenges is not charged", func(t *testing.T) {
+		levels := fakeLevels{{Project: "main", Key: "open"}: authz.LevelPublic, {Project: "main", Key: "nuget-local"}: authz.LevelInternal}
+		h, reg := limitedChain(t, tightLimits(), func(o *RateLimitOptions) {
+			o.Challenged = ChallengedByLevels(func() LevelReader { return levels })
+		})
+		// A NuGet client's first attempt of every request, far beyond the burst of 3: each reaches the decision point, which
+		// answers the challenge, and carries no field of the class it was not charged to.
+		for i := range 20 {
+			rec := do(h, "GET", "/api/nuget/main/nuget-local/v3/flatcontainer/acme.widgets/index.json", httpserver.AnonymousPrincipal())
+			if rec.Code != 200 || rec.Header().Get("RateLimit-Policy") != "" {
+				t.Fatalf("attempt %d without a credential on an internal repository: %d %v", i, rec.Code, rec.Header())
+			}
+		}
+		// The repetition with the token is charged to the token's class.
+		if pol := do(h, "GET", "/api/nuget/main/nuget-local/v3/flatcontainer/acme.widgets/index.json", token("a")).Header().Get("RateLimit-Policy"); !strings.HasPrefix(pol, `"package_read";`) {
+			t.Fatalf("the repetition with the token: policy %q", pol)
+		}
+		// A public repository's anonymous reads keep the class: the 4th is refused.
+		var last *httptest.ResponseRecorder
+		for range 4 {
+			last = do(h, "GET", "/api/nuget/main/open/v3/flatcontainer/acme.widgets/index.json", httpserver.AnonymousPrincipal())
+		}
+		if last.Code != 429 || !strings.HasPrefix(last.Header().Get("RateLimit-Policy"), `"package_anonymous";q=3;`) {
+			t.Fatalf("4th anonymous read of a public repository: %d %v", last.Code, last.Header())
+		}
+		if got := rejectedByClass(t, reg)["package_anonymous"]; got != 1 {
+			t.Fatalf("trove_api_rate_limited_total{class=package_anonymous} = %v, want 1", got)
+		}
+	})
+
 	t.Run("R-API-016 only /api/v1/, /files/ and the package protocols are limited here", func(t *testing.T) {
 		h, _ := limitedChain(t, tightLimits())
 		for range 10 {
@@ -232,22 +330,8 @@ func TestRateLimitStage(t *testing.T) {
 		for range 5 {
 			do(h, "GET", "/api/v1/x", token("a"))
 		}
-		mfs, _ := reg.Gather()
-		found := false
-		for _, mf := range mfs {
-			if mf.GetName() == "trove_api_rate_limited_total" {
-				found = true
-				got := map[string]float64{}
-				for _, m := range mf.GetMetric() {
-					got[m.GetLabel()[0].GetValue()] = m.GetCounter().GetValue()
-				}
-				if got["read"] != 2 || got["write"] != 0 {
-					t.Fatalf("rejected = %v, want read 2", got)
-				}
-			}
-		}
-		if !found {
-			t.Fatal("trove_api_rate_limited_total missing")
+		if got := rejectedByClass(t, reg); got["read"] != 2 || got["write"] != 0 {
+			t.Fatalf("rejected = %v, want read 2", got)
 		}
 	})
 

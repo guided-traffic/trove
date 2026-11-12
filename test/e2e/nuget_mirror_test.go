@@ -31,6 +31,16 @@ func (e *mirrorEnv) clientsFirstNuGet(t *testing.T) {
 	t.Cleanup(func() { s.nugetMode(t, nugetstub.Mode{}) })
 
 	key := e.create(t, e.nugetBody(t, "nuget-mirror-"+e.run))
+	t.Cleanup(func() {
+		// A test that stops before it hands the mirror over leaves none for the tests after it, and needNuGetMirror builds one
+		// again under the same key: a repository left behind would refuse that with 409 and fail them for this test's cause.
+		e.mu.Lock()
+		handed := e.nugetMirror == key
+		e.mu.Unlock()
+		if !handed {
+			e.drop(t, key)
+		}
+	})
 	e.run_(t, key, false)
 	st := e.awaitPassStarted(t, key, 5)
 	t.Logf("the pass runs (%s, %d names so far, %d packages filled) when dotnet restore starts", st.Pass.Method, st.Pass.NamesDiscovered, st.Pass.PackagesDone)

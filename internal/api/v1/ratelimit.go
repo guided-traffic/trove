@@ -7,10 +7,12 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // The general rate-limit classes of /api/v1/, /files/ and the package protocols
@@ -25,7 +27,9 @@ import (
 // The package protocols have the same three classes with budgets and buckets of
 // their own (package_read, package_write, package_anonymous), so an install that
 // fetches a thousand tarballs does not use up the budget of the same token's
-// management API, and a flood of package requests cannot starve it.
+// management API, and a flood of package requests cannot starve it. package_anonymous leaves out a request on a known
+// repository whose artifacts are not public, which the decision point answers with the challenge (RateLimitOptions.Challenged,
+// Q-API-282).
 //
 // The stage is the chain's stage 7 (R-ARCH-005): it runs after authentication,
 // so the principal is known. The class an endpoint applies on top of these is
@@ -54,6 +58,38 @@ type RateLimitOptions struct {
 	IsAdmin func(r *http.Request) bool
 	// Registry receives trove_api_rate_limited_total{class}; nil registers nothing.
 	Registry prometheus.Registerer
+	// Challenged reports a package request without a credential that the decision point answers with the challenge whatever
+	// its route, at no more cost than a decision in memory: [ChallengedByLevels]. The class package_anonymous does not charge
+	// such a request (Q-API-282). Nil charges every package request without a credential.
+	Challenged func(r *http.Request) bool
+}
+
+// LevelReader is the part of the grant index [ChallengedByLevels] reads; *authz.Index implements it.
+type LevelReader interface {
+	Levels(key qname.Repo) (artifacts, wiki authz.Level, ok bool)
+}
+
+// ChallengedByLevels is [RateLimitOptions.Challenged] on the grant index that index returns. The anonymous subject holds no
+// grant, so only a public level admits it (R-AUTHZ-033), and the format dispatcher decides the route's action on the
+// repository before a handler, a body or a repository lookup runs (R-ARCH-011): a request whose address names a repository
+// the index holds with artifacts that are not public is answered with the challenge, and costs no more than a decision in
+// memory. A NuGet client sends each request without its configured credentials first and repeats it with them after that 401
+// (R-NUGET-012); the class of a request without a credential is meant for callers who read without one, not for that first
+// attempt. A repository the index does not hold is charged: the request asks PostgreSQL whether it was just created before it
+// is decided (R-ARCH-011 step 2). So are a path that names no repository, a raw-file path and a replica without an index.
+func ChallengedByLevels(index func() LevelReader) func(r *http.Request) bool {
+	return func(r *http.Request) bool {
+		a, ok := qname.ParseAddress(r.URL.EscapedPath())
+		if !ok || a.Family != qname.FamilyAPI {
+			return false
+		}
+		idx := index()
+		if idx == nil {
+			return false
+		}
+		artifacts, _, known := idx.Levels(a.Repo)
+		return known && artifacts != authz.LevelPublic
+	}
 }
 
 type classLimiter struct {
@@ -101,6 +137,12 @@ func NewRateLimit(o RateLimitOptions) (func(http.Handler) http.Handler, error) {
 				return
 			}
 			name, bucket := classify(r)
+			if name == LimiterPackageAnonymous && o.Challenged != nil && o.Challenged(r) {
+				// The decision point answers it with the challenge; a client with credentials repeats it with them, and the
+				// repetition is charged to its principal (Q-API-282).
+				next.ServeHTTP(w, r)
+				return
+			}
 			c := classes[name]
 			v := c.l.TakeAt(r.Context(), bucket, httpserver.InfoFrom(r.Context()).Received)
 			setRateLimitFields(w, c, name, v)

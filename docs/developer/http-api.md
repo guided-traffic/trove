@@ -458,8 +458,12 @@ The classes are `api_read`, `api_write` and `api_anonymous` for `/api/v1/` and `
 `api_package_write` and `api_package_anonymous` for the package protocols under `/api/<format>/`
 ([ratelimit.go](../../internal/api/v1/ratelimit.go), `isPackagePath`; Q-API-169). The package classes have budgets and buckets
 of their own (`api.rate_limits.package_read`, `package_write`, `package_anonymous`), so an install does not use up the
-management budget of its token. The class an endpoint applies on top is [endpoints.md](endpoints.md). The mechanism is [the cluster limiter](valkey.md#rate-limit-counters). Every answer on a limited
-route carries `RateLimit-Policy` and `RateLimit`; a refusal is `429 rate_limited` with `Retry-After` and counts in
+management budget of its token. `api_package_anonymous` skips a request that `RateLimitOptions.Challenged` reports: the
+composition root passes `v1.ChallengedByLevels` over the installed grant index, which reports a package request whose
+repository the index holds with artifacts that are not `public` (a key it does not hold is charged: its decision may read
+PostgreSQL first), so the challenge a NuGet client draws before it sends
+its credentials costs no budget (Q-API-282). The class an endpoint applies on top is [endpoints.md](endpoints.md). The mechanism is [the cluster limiter](valkey.md#rate-limit-counters). Every answer on a limited
+route that a class charged carries `RateLimit-Policy` and `RateLimit`; a refusal is `429 rate_limited` with `Retry-After` and counts in
 `trove_api_rate_limited_total{class}`. Enabling `api.rate_limits.exempt_admins` needs the authz area's `content:bypass`
 check (`IsAdmin` in `RateLimitOptions`); without the authorizer nobody is exempt.
 

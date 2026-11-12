@@ -142,7 +142,9 @@ type APIRateLimitPackageWrite struct {
 }
 
 // APIRateLimitPackageAnonymous is the class of package-protocol requests without
-// credentials, keyed by client address (R-API-016, limiter api_package_anonymous).
+// credentials, keyed by client address (R-API-016, limiter api_package_anonymous). A
+// request on a repository whose artifacts are not public, which the decision point
+// challenges, is not charged to it (Q-API-282).
 type APIRateLimitPackageAnonymous struct {
 	RequestsPerSecond float64 `yaml:"requests_per_second" default:"20" validate:"min=0.001"`
 	Burst             int     `yaml:"burst" default:"100" validate:"min=1"`

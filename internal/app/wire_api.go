@@ -70,7 +70,18 @@ func (a *App) wireAPI(_ context.Context, lim limitsArea, az authzArea) (apiArea,
 		ok, err := v1.Holds(r.Context(), access, string(authz.ContentBypass))
 		return err == nil && ok
 	}
-	limit, err := v1.NewRateLimit(v1.RateLimitOptions{Config: cfg.RateLimits, Limiters: lim.set, IsAdmin: isAdmin, Registry: a.tele.metrics.Registry()})
+	// The installed index, as an interface that is nil while there is none.
+	levels := func() v1.LevelReader {
+		idx := az.engine.Index()
+		if idx == nil {
+			return nil // a nil *authz.Index in the interface would not be nil
+		}
+		return idx
+	}
+	limit, err := v1.NewRateLimit(v1.RateLimitOptions{
+		Config: cfg.RateLimits, Limiters: lim.set, IsAdmin: isAdmin, Registry: a.tele.metrics.Registry(),
+		Challenged: v1.ChallengedByLevels(levels),
+	})
 	if err != nil {
 		return apiArea{}, err
 	}
