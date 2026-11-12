@@ -47,7 +47,8 @@ the repository settings; none of them is fixed here.
    other columns did not need and packed project, format and class under the key (Q-UI-300, Q-UI-325, Q-UI-328), because the
    renders were judged by widths and scrolling. Since [Q-UI-330](../spec/api-and-ui.md#q-ui-330--a-list-takes-its-columns-from-the-job-of-its-kind-of-user-the-important-properties-are-columns-and-the-address-takes-no-more-than-its-share) a list takes its columns from the job of its kind of user
    (R-UI-067): the properties its user decides on are columns, the name column gets the most room, nothing but the description
-   stands under the name, and an address field has a share of 46 characters; a render is judged by that first. The admin area's
+   stands under the name, and an address field takes what the properties leave, up to its whole length; a render is judged by
+   that first. The admin area's
    repository list (repository, project, format, class, last activity, the address as a copy button), a project's list (repository,
    format, class, the address field) and the search results (the same and the project) follow it; the other lists are judged by
    it when they are next changed.

@@ -68,19 +68,19 @@
 }
 
 // The column of client addresses (Q-UI-300, Q-UI-330): one width for every field of the list, that of the list's longest address
-// (`--trove-address-chars`, set by the list) but never more than its share of 46 characters, in the field's own face and size,
-// with the field's padding, border and copy button; and at most what the list's other columns leave at their least widths
-// (`--trove-list-others`, which the data table sums from the columns' widths, Q-UI-308), never under 10 rem (the field's input keeps 8 rem, the copy button 2). The other columns
-// keep their least widths and take the rest: the address never takes more than its share. `cqi` is the width of the table's
-// scroll region, which a scrollbar beside the rows narrows: measured against the list instead, the table was a scrollbar wider
-// than its region and scrolled sideways. The field fills the cell and shows the address from its start; a longer address
-// scrolls inside its field.
+// (`--trove-address-chars`, set by the list) in the field's own face and size, with the field's padding, border and copy button;
+// at most its share (`--trove-address-share`, 46 characters unless the list sets it), and at most what the list's other columns
+// leave (`--trove-list-others`, which the data table sums from the columns' widths, a column's `prefer`red width where it has one,
+// Q-UI-308), never under 10 rem (the field's input keeps 8 rem, the copy button 2). A project's repository list and the search
+// results set the share to their longest address: there the address takes what is left after the repository's 20 rem, up to its
+// whole length, and the repository takes what is left over after that. `cqi` is the width of the table's scroll region, which a
+// scrollbar beside the rows narrows: measured against the list instead, the table was a scrollbar wider than its region and
+// scrolled sideways. The field fills the cell and shows the address from its start; a longer address scrolls inside its field.
 td.address-cell {
-  --trove-address-share: 46;
   // Resolved where it is used, so `ch` is the monospace face's at the field's size, and `cqi` the rows' width.
   --trove-address-column: min(
     calc(
-      min(var(--trove-address-chars, 46), var(--trove-address-share)) * 1ch + 2 * var(--trove-space-3) + 2px +
+      min(var(--trove-address-chars, 46), var(--trove-address-share, 46)) * 1ch + 2 * var(--trove-space-3) + 2px +
         var(--trove-control-height)
     ),
     max(10rem, 100cqi - var(--trove-list-others, 34rem))
@@ -107,7 +107,7 @@ td.address-cell {
   .trove-data-table td.address-cell {
     --trove-address-column: min(
       calc(
-        min(var(--trove-address-chars, 46), var(--trove-address-share)) * 1ch + 2 * var(--trove-space-3) + 2px +
+        min(var(--trove-address-chars, 46), var(--trove-address-share, 46)) * 1ch + 2 * var(--trove-space-3) + 2px +
           var(--trove-control-height)
       ),
       max(10rem, 100cqi - var(--trove-list-others, 34rem) + var(--trove-list-narrow, 0px))
@@ -565,7 +565,10 @@ td.class-cell .material-icons {
 
       th {
         position: absolute;
-        inline-size: 1px;
+        // The column's width and least width (inline styles from its budget, Q-UI-308, Q-UI-330) mean nothing here: a hidden
+        // header as wide as the table made a stacked list scroll sideways.
+        inline-size: 1px !important;
+        min-inline-size: 0 !important;
         block-size: 1px;
         overflow: hidden;
         clip-path: inset(50%);
@@ -574,7 +577,7 @@ td.class-cell .material-icons {
 
       th[aria-sort] {
         position: static;
-        inline-size: auto;
+        inline-size: auto !important;
         block-size: auto;
         // The column's least width (an inline style from its budget, Q-UI-308) means nothing in a row of buttons.
         min-inline-size: 0 !important;

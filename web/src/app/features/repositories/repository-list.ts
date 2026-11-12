@@ -189,11 +189,14 @@ export class RepositoryList {
   );
   /**
    * The widths are each column's least (Q-UI-308); the repository takes what they leave, so the most important property gets
-   * the most room (Q-UI-330). Inside a project the address field has its share, 46 characters at most (Q-UI-300); at 48 rem,
-   * where the rows stack, every column still has its least width.
+   * the most room (Q-UI-330). Inside a project the repository prefers 20 rem, the address field takes the rest up to the list's
+   * longest address (one width for every row, Q-UI-300), and the repository what is left over after that; at 48 rem, where the
+   * rows stack, every column still has its least width.
    */
   private readonly allColumns: readonly TableColumn[] = [
-    { id: 'key', label: $localize`:@@repo.col.repository:Repository`, width: this.inProject() ? '13rem' : '14rem' },
+    this.inProject()
+      ? { id: 'key', label: $localize`:@@repo.col.repository:Repository`, width: '13rem', prefer: '20rem' }
+      : { id: 'key', label: $localize`:@@repo.col.repository:Repository`, width: '14rem' },
     { id: 'project', label: $localize`:@@repo.col.project:Project`, width: '6.5rem' },
     { id: 'format', label: $localize`:@@repo.col.format:Format`, width: '8rem' },
     {
@@ -251,7 +254,10 @@ export class RepositoryList {
     return row.addresses[0] ?? '';
   }
 
-  /** The length of the list's longest address: `.address-cell` sizes the column to it, so every field has one width. */
+  /**
+   * The length of the list's longest address: `.address-cell` sizes the column to it, so every field has one width; it is also
+   * the address's share inside a project, where the address may take its whole length if the room is there (Q-UI-330).
+   */
   protected readonly addressChars = computed(() => Math.max(0, ...this.list.items().map((r) => this.address(r).length)));
 
   protected actionsLabel(row: RepositorySummary): string {

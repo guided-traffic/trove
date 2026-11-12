@@ -39,6 +39,7 @@ import { classLabel } from '../repositories/repository-wizard';
       [hasMore]="list.hasMore()"
       [stackWide]="true"
       [style.--trove-address-chars]="addressChars()"
+      [style.--trove-address-share]="addressChars()"
       (more)="list.more()"
       (retry)="list.reload()"
     >
@@ -91,11 +92,11 @@ export class SearchResults {
   );
   protected readonly noMatch = computed(() => $localize`:@@search.none:No repository matches “${this.term()}:term:”.`);
   /**
-   * The project list's columns plus the project (Q-UI-330), each width its column's least (Q-UI-308): the address field has its
-   * share of 46 characters at most (Q-UI-300), the repository takes the rest.
+   * The project list's columns plus the project (Q-UI-330), each width its column's least (Q-UI-308): the repository prefers
+   * 20 rem, the address takes the rest up to the longest address of the list (Q-UI-300), and the repository what is left over.
    */
   protected readonly columns: readonly TableColumn[] = [
-    { id: 'key', label: $localize`:@@repo.col.repository:Repository`, width: '12rem' },
+    { id: 'key', label: $localize`:@@repo.col.repository:Repository`, width: '12rem', prefer: '20rem' },
     { id: 'project', label: $localize`:@@projects.col.project:Project`, width: '6.5rem' },
     { id: 'format', label: $localize`:@@repo.col.format:Format`, width: '8rem' },
     {
@@ -130,7 +131,10 @@ export class SearchResults {
     return row.addresses[0] ?? '';
   }
 
-  /** The length of the longest address: the column is sized to it, so every field of the list has one width (Q-UI-300). */
+  /**
+   * The length of the longest address: the column is sized to it, so every field of the list has one width (Q-UI-300); it is also
+   * the address's share, so the address may take its whole length where the room is there (Q-UI-330).
+   */
   protected readonly addressChars = computed(() => Math.max(0, ...this.list.items().map((r) => this.address(r).length)));
 
   protected addressLabel(row: RepositorySummary): string {

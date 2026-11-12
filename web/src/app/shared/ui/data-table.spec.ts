@@ -180,5 +180,44 @@ describe('Data table', () => {
     expect(cells.map((c) => c.getAttribute('data-label'))).toEqual([null, 'When', null]);
     expect(cells[1]!.hasAttribute('data-empty')).toBe(true);
     expect(cells[0]!.hasAttribute('data-empty')).toBe(false);
+    // Without a column that prefers a width, the headers carry their widths as their least only.
+    expect(heads.map((h) => h.style.inlineSize)).toEqual(['', '', '', '']);
+  });
+
+  it('Q-UI-330 a column that prefers a width counts with it in the room the fill column leaves, and the other columns keep their widths', async () => {
+    @Component({
+      imports: [DataTable],
+      template: `
+        <trove-data-table caption="Things" [columns]="columns">
+          <tr>
+            <th scope="row">one</th>
+            <td>generic</td>
+            <td>https://example.net/one/</td>
+            <td class="actions"><button type="button">x</button></td>
+          </tr>
+        </trove-data-table>
+      `,
+    })
+    class Prefer {
+      readonly columns: readonly TableColumn[] = [
+        { id: 'name', label: 'Name', width: '13rem', prefer: '20rem' },
+        { id: 'format', label: 'Format', width: '8rem' },
+        { id: 'address', label: 'Address', fill: true, stackLabel: false },
+        { id: 'actions', label: 'Actions', hideLabel: true, width: '2rem' },
+      ];
+    }
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({ imports: [Prefer] }).compileComponents();
+    const fixture = TestBed.createComponent(Prefer);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    const table = root.querySelector<HTMLElement>('trove-data-table')!;
+    expect(table.style.getPropertyValue('--trove-list-others')).toBe('calc(20rem + 8rem + 2rem + 4 * 2 * var(--trove-space-4))');
+    const heads = [...root.querySelectorAll<HTMLElement>('thead th')];
+    expect(heads.map((h) => h.style.minInlineSize)).toEqual(['13rem', '8rem', '', '2rem']);
+    // The name column takes what is left over; every other column keeps its width.
+    expect(heads.map((h) => h.style.inlineSize)).toEqual(['100%', '8rem', '', '2rem']);
   });
 });

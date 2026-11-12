@@ -189,12 +189,15 @@ describe('The project is the context of the content (Q-UI-129)', () => {
     expect(heads).not.toContain('Last activity');
   });
 
-  it('R-UI-065 R-UI-066 Q-UI-300 inside a project every address field of the list has one width: the column is sized to the longest address up to its share, no field to its own', async () => {
+  it('R-UI-065 R-UI-066 Q-UI-300 Q-UI-330 inside a project every address field of the list has one width: the column is sized to the longest address up to the room left after the repository, no field to its own', async () => {
     const { root } = await render('/projects/web/repositories', undefined, TWO);
     const inputs = [...root.querySelectorAll<HTMLInputElement>('main trove-address-field input')];
     expect(inputs.length).toBeGreaterThan(0);
     const table = root.querySelector<HTMLElement>('main trove-data-table')!;
-    expect(table.style.getPropertyValue('--trove-address-chars')).toBe(String(Math.max(...inputs.map((i) => i.value.length))));
+    const longest = String(Math.max(...inputs.map((i) => i.value.length)));
+    expect(table.style.getPropertyValue('--trove-address-chars')).toBe(longest);
+    // The address may take its whole length where the room is there: its share is the longest address (Q-UI-330).
+    expect(table.style.getPropertyValue('--trove-address-share')).toBe(longest);
     for (const input of inputs) {
       expect(input.closest('td')?.classList.contains('address-cell')).toBe(true);
       expect(input.style.inlineSize).toBe('');

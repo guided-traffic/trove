@@ -22,7 +22,7 @@ Every repository belongs to exactly one [project](projects.md), and its key is u
 
 The menu at the end of each row (**Actions for** the key) offers **Copy client address**, **Settings**, **Browse**, **Vulnerabilities** where the format is scanned and, with `repositories:write-config` or as the project's Owner, **Delete**. **Create repository** opens the wizard.
 
-A project's **Repositories** shows the same repositories of one project with **Repository**, **Format**, **Class** and **Client address**: every address field of the list has the same width, at most 46 characters; where an address is longer than its field, you scroll inside the field (or press End) to read the rest, and the copy button always copies the whole address.
+A project's **Repositories** shows the same repositories of one project with **Repository**, **Format**, **Class** and **Client address**: every address field of the list has the same width, as much as the other columns leave, up to the longest address of the list; where an address is longer than its field, you scroll inside the field (or press End) to read the rest, and the copy button always copies the whole address.
 
 The page of a repository shows its **Project**. A repository is created in its project (`POST /api/v1/projects/<projectKey>/repositories`), and it changes project only through a move, which changes every address of it ([Move a repository to another project](projects.md#move-a-repository-to-another-project)). The list in the admin area names the project of each repository in a **Project** column, its filter panel limits the list to one project, and the project's own **Repositories** screen (`/projects/<key>/repositories`) lists the repositories of that project.
 

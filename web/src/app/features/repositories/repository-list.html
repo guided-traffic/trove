@@ -101,6 +101,7 @@
       [emptyText]="filtered() || projectKey() ? emptyFilteredText : emptyText"
       [hasMore]="list.hasMore()"
       [style.--trove-address-chars]="addressChars()"
+      [style.--trove-address-share]="addressChars()"
       (more)="list.more()"
       (retry)="list.more()"
     >

@@ -23,6 +23,12 @@ export interface TableColumn {
   readonly width?: string;
   /** The column that takes the room the others leave, up to its own content: the client address (Q-UI-300). */
   readonly fill?: boolean;
+  /**
+   * The width the column takes before the `fill` column gets the rest (the repository's 20 rem, Q-UI-330). It gives way down to
+   * `width` where the list is narrow, and it takes what is left over where the `fill` column's content is shorter. Every other
+   * column of such a list keeps its `width`.
+   */
+  readonly prefer?: string;
   /** When the rows stack (below 48 rem), the cell shows its column's name before its value; false where the value says it. */
   readonly stackLabel?: boolean;
   /**
@@ -76,7 +82,7 @@ let nextTableId = 1;
             <thead>
               <tr>
                 @for (c of columns(); track c.id) {
-                  <th scope="col" [class.num]="c.numeric" [class.narrow-drop]="c.narrow" [attr.aria-sort]="ariaSort(c)" [style.min-inline-size]="c.width">
+                  <th scope="col" [class.num]="c.numeric" [class.narrow-drop]="c.narrow" [attr.aria-sort]="ariaSort(c)" [style.min-inline-size]="c.width" [style.inline-size]="kept(c)">
                     <span class="th-inner">
                       @if (c.sortable) {
                         <button type="button" class="th-sort" (click)="toggle(c)">
@@ -158,14 +164,26 @@ export class DataTable {
 
   protected readonly captionId = `trove-table-${nextTableId++}`;
 
-  /** The room of every column but the `fill` one, with their padding: `td.address-cell` leaves it to them (Q-UI-308). */
+  /**
+   * The room of every column but the `fill` one, with their padding: `td.address-cell` leaves it to them (Q-UI-308). A column
+   * with a `prefer`red width counts with it, so the address gets the rest after it (Q-UI-330).
+   */
   protected readonly others = computed(() => {
     const cols = this.columns();
     if (!cols.some((c) => c.fill)) return null;
     const rest = cols.filter((c) => !c.fill);
-    const widths = rest.map((c) => c.width ?? '0px').join(' + ');
+    const widths = rest.map((c) => c.prefer ?? c.width ?? '0px').join(' + ');
     return `calc(${widths} + ${rest.length + 1} * 2 * var(--trove-space-4))`;
   });
+  /**
+   * In a list with a column that prefers a width, every other column keeps its width (the header cell gets it as its size, not
+   * only as its least) and that column asks for the whole table, so the room left over goes to it alone (Q-UI-330); the `fill`
+   * column keeps the width its cells compute.
+   */
+  protected kept(c: TableColumn): string | null {
+    if (c.fill || !this.columns().some((x) => x.prefer)) return null;
+    return c.prefer ? '100%' : (c.width ?? null);
+  }
   /** The room the columns marked `narrow` give back below 64 rem: their widths and padding. */
   protected readonly narrowRoom = computed(() => {
     const narrow = this.columns().filter((c) => c.narrow && !c.fill);
