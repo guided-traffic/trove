@@ -464,6 +464,20 @@ by `version: "*"`. Red pipelines are worked on even though they no longer hold a
 - A repository search for readers across projects needs an API that readers can read; until then the start page searches packages
   only (Q-UI-311).
 - A Details section does not remember whether it was open (Q-UI-319).
+- T-21 fix wave 2 is on main, from 46ad3022 to 47bab3d4:
+  - one client address and one way to the setup per repository; the version and the install command look like the controls they are;
+  - the client setup asks only for the client, and a read-only project screen names whom to ask;
+  - an empty repository, the browser, the token pages and the documentation show a reader what to do next;
+  - every screen except the vulnerability pages, the repository settings and the creation flow has the shared header.
+
+  The development agent's six render findings of wave 1 are fixed.
+  - Open: UI-A-30. The administrator's repository list shows about 48 characters of an address at 1280 and 1440 px, so a
+    57-character address is still cut. Fixing it needs a narrower first column or no Last activity there.
+  - Open: the profile's sessions page scrolls about 230 px sideways at 390 px. It did before the waves.
+- A full `make ui-renders` run got HTTP 429 on `packages-other-project` and `package-npm` as the power user and the administrator, on
+  main's schema; each screen passes when it is rendered alone. The cause is not verified (trove's rate limiter on the single replica
+  of the UI development profile is the suspect). T-18's e2e set `nuget` showed 429s on cold restores at the same time; on main,
+  `e2e (nuget)` was green in Test and Release 43221171578.
   - The creation and the settings of a repository are planned on T-18's tree: UI-A-31 to 40, the owner's rules in
     [CLAUDE.md](../../CLAUDE.md#product-simple-by-default-details-on-demand).
 - UI-A-41: the project owner's service-accounts page calls `GET /api/v1/service-accounts?project=`, which needs `identities:read`. It
