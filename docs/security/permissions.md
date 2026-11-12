@@ -209,6 +209,7 @@ holds the budget of such a caller's documents.
   `TestR_AUTHZ_026_AMemberSeesItsOwnProjectsOnly`).
 - `authz.hide_existence: false` (R-AUTHZ-017) turns the refusal of a read of an existing repository into 403. It is a
   troubleshooting switch; the endpoint-exposure 404 and the anonymous 401 do not change.
+- The search field's suggestions follow the listing rule; [search.md](search.md) says what they show.
 
 ## How long a removed grant keeps working
 

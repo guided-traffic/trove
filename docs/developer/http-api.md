@@ -182,6 +182,39 @@ order of the sections per class, the target only with `deploy`, an anonymous cal
 no token shape, the endpoint section, the clients of the catalog, a format without clients; `TestR_GENERIC_016_*` for generic and curl) and [guide_test.go](../../test/integration/packages/guide_test.go) against the stack
 (the same through the real chain and the endpoint `partners` with exposure rules).
 
+## The suggestions of the search field (R-API-060 to R-API-064)
+
+The document's block `T-22 search` holds `getSearchSuggestions` (tag `search`) and the schemas `SearchSuggestions` and its five
+`…Suggestions` members with their items. Decisions Q-API-270 to Q-API-281. It is **no list** of R-API-010: one request answers the best
+`limit` matches of each kind, there is no cursor, and the results page of the UI reads the three lists with `q` instead
+([Q-API-270](../spec/api-and-ui.md#q-api-270--one-operation-answers-the-suggestions-and-the-results-page-reads-the-three-lists)), so the
+operation does not use `ParseList` and checks its own three parameters.
+
+[search_api.go](../../internal/api/v1/search_api.go) runs, in this order, so that no status depends on the text:
+
+| Step | What | Answer |
+|---|---|---|
+| Parameters | `parseSuggest`: `q` trimmed, 2 to 100 characters, lower-cased, its terms; `kind` repeated or comma-separated from the five kinds, default `repository,package,project`; `limit` 1 to 10, default 5 | `400 malformed_request` with the parameter as the pointer (`suggestParamError`) |
+| Anonymous gate | `anonymousGate`, as on the lists | `401` while nothing is `public` |
+| Admin kinds | `requireIdentitiesRead` for `user` or `group`, before any lookup, the same body for every text | `403` |
+| Kinds | `suggest`: one holder of the request (`requestHolder`), then `suggestRepositories` (the index's `Repositories()`, decided as `visibleRepositories` decides), `suggestPackages` (`view.Service.Suggest` on the package list's read scope), `suggestProjects` (`SearchProjects`, `projectListed`), `suggestIdentities` (`principal.Manager.SuggestUsers`, `SuggestGroups`) | `200`, `Cache-Control: no-store`; `503` for a kind whose service the replica lacks |
+
+The ranks of R-API-062, the terms, the words, the tsquery text and the prefix bounds are in
+[search_match.go](../../internal/api/v1/search_match.go); `cutRanked` takes the readable matches only, so the filter always runs before
+the cut and `more` counts readable matches (Q-API-276). The repository list's `name` (R-API-063, `repositoryNames`, at most 50, the
+instance-wide list only) is how the UI confirms its stored entries in one request.
+
+A parameter the generated wrapper cannot bind (a required one that is missing, one that cannot be read as its type) answers `400
+malformed_request` with the parameter's name as the pointer (`bindError` in [handlers.go](../../internal/api/v1/handlers.go)), as a
+handler's own check of a parameter does.
+
+Tests: [search_api_test.go](../../internal/api/v1/search_api_test.go) (`TestR_API_060_*`: the parameter errors, the members per kind;
+`TestR_API_061_*`: the 403 before any lookup, the cut after the filter on a fake decider), [search_match_test.go](../../internal/api/v1/search_match_test.go)
+(`TestR_API_062_*`: the ranks, the words and the bounds), and the integration area [search](../../test/integration/search) on the worked rows
+of R-AUTHZ-035 (levels, an external user, a scoped token, a path-scoped grant, hidden existence, an endpoint with exposure rules, the
+administrator's users and groups, the indexes' plans, `name` on the list), with the statement count in
+[querybudget](../../test/integration/querybudget/search_test.go).
+
 ## Conventions every resource inherits (WP1.6)
 
 The helpers live in [internal/api/v1](../../internal/api/v1). A handler calls them; it never re-implements a rule.

@@ -210,6 +210,13 @@ on (the same one when it holds the key). `edge.Access` ([access.go](../../intern
 index and the decider of a request, travels in the request context (`WithAccess`, `AccessFrom`, `Resolve`) and moves its
 index only forward. Losing the holder costs a second index, never a ceiling, because the ceiling is in the subject.
 
+The index also answers what it knows, for a reader that decides on it: `Index.Repositories()` lists every active repository with
+its class and format, sorted by name, and `Index.Levels` the levels of one. The search field's suggestions match the repositories of
+the request's index in memory and decide them on the same index (`suggestRepositories` in
+[search_api.go](../../internal/api/v1/search_api.go), R-API-064, Q-API-273): a repository the index does not know cannot be decided
+readable anyway, so the suggestions need no statement for it, and one created through another replica is suggested within the
+propagation bound of R-API-052.
+
 ## Policies, role bindings and the checks for the caller
 
 `Service` is the domain API behind the operations of wave 2. Its functions return what a handler needs and add no HTTP:

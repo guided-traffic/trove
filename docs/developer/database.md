@@ -520,6 +520,21 @@ Two expand migrations of unit F0 ([ansible.md](ansible.md)), registered in [tabl
 | `ansible_import_tasks` | [00069_ansible_import_tasks](../../internal/meta/postgres/migrations/00069_ansible_import_tasks.sql) | The final import task of every publish, deleted after `ansible.import_task_keep` (R-ANS-009). |
 | `ansible_upstream_versions` | [00070_ansible_upstream_versions](../../internal/meta/postgres/migrations/00070_ansible_upstream_versions.sql) | The SHA-256 and size a remote repository's version documents announce, per version, written in the fill's transaction; the first digest of a version whose archive is cached stays (R-ANS-018, Q-ANS-38). No blob or item column; a restore without remote caches deletes the rows (R-BAK-008) |
 
+## The search indexes and the shortcut default (00076)
+
+[00076_search](../../internal/meta/postgres/migrations/00076_search.sql) is the expand step of T-22's suggestions (R-API-064, Q-API-274,
+Q-API-280), without the extension `pg_trgm` (00017):
+
+| Object | What it holds |
+|---|---|
+| `packages.name_words`, `packages_name_words` | A generated `tsvector` of the words of the lower-cased name (runs of `a` to `z` and `0` to `9`, the `simple` configuration) and its GIN index, which statement B of [search.sql](../../internal/meta/postgres/queries/search.sql) reads with `to_tsquery('simple', 'w1:* & w2:*')`. A backup leaves the generated column out of its column list, as every stored generated column |
+| `packages_name_lower` | A B-tree on `lower(name) COLLATE "C"`, which statement A reads as the range `[low, high)` of the names that start with the text, in byte order, and which orders its rows |
+| `user_preferences.keyboard_shortcuts` | Default `true`; every stored `false` is set to `true` with its revision moved, because no shortcut existed before the step |
+
+The package statements run after `SET LOCAL plan_cache_mode = force_custom_plan` (`SearchCustomPlans`): a prepared statement's generic
+plan walked every package for a rare word. `TestR_API_064_ThePackageStatementsUseTheirIndexes` in the integration area
+[search](../../test/integration/search) explains both statements as the server runs them.
+
 ## Debian tables (00060 to 00065)
 
 Five expand migrations of phase T-17 ([deb.md](deb.md)); the numbers are the next free ones, because the runner needs numbers without a gap.

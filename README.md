@@ -817,6 +817,7 @@ Registrations at start-up, in `internal/app/wire_*.go` and in the packages that 
 | [docs/security/vulnerability-scanning.md](docs/security/vulnerability-scanning.md) | The download block, the client audits and what they reveal, who reads and triages findings, the advisory data as untrusted input, who decides the data in mode `repository`, and the open gaps of the scanning |
 | [docs/spec/import.md](docs/spec/import.md), [docs/manual/admin/import.md](docs/manual/admin/import.md), [docs/developer/import.md](docs/developer/import.md), [docs/security/import.md](docs/security/import.md) | Import tooling: copying the packages of an existing npm registry or NuGet feed into a local repository (R-IMP-001 to R-IMP-009): the command, the road of a publish, what is kept and not, conflicts and resume, the credentials and their scope |
 | [docs/security/mirror.md](docs/security/mirror.md) | The mirror engine: the fence of a pass, what a pass takes from an upstream and what bounds it, what its state and messages show, what a restore leaves, and the gaps H-527 to H-529 |
+| [docs/security/search.md](docs/security/search.md) | The search field's suggestions: what each kind shows across projects and how it is decided, what a request can make the database do, the admin-area rule, what the browser keeps |
 | [docs/security/user-avatars.md](docs/security/user-avatars.md) | The avatar upload: the order of the checks on an untrusted image, the bounds, what is stored (a new PNG made from the pixels), what a request can read, who can set and remove one |
 | [docs/developer/mirror.md](docs/developer/mirror.md) | The mirror mode: the work packages, the engine's files, how a pass runs and ends, what the status reads, the tests |
 | [docs/spec/backup-and-restore.md](docs/spec/backup-and-restore.md) | Target design of the backup lane: R-BAK-001 to R-BAK-029 (the format and target layout, the snapshot, the blob pool and the garbage-collection hold, the job and its exit codes, retention, list and verify, the restore and what it rebuilds, encryption and keys) and the decisions `Q-BAK-<n>`; the revocation journal and the platform restore are R-HA-054 and R-HA-023 to R-HA-026 of [ha-and-helm.md](docs/spec/ha-and-helm.md) |
@@ -2418,7 +2419,7 @@ The operations of GitLab CI federation ([docs/developer/ci-oidc.md](docs/develop
 | Method and path | Operation | Permission |
 |---|---|---|
 | `GET /api/v1/formats` | `listFormats` | public; also carries `baseUrl`, the configured base URL of the endpoint (`null` when none is configured); each format's `upstreamPresets`, the well-known registries of a remote |
-| `GET /api/v1/repositories` | `listRepositories` | public; the repositories of every project the caller may see, each with its `project`; filter `project` |
+| `GET /api/v1/repositories` | `listRepositories` | public; the repositories of every project the caller may see, each with its `project`; filters `project`, `name` (up to 50 qualified names, R-API-063), `q` (the key, `<project>/<key>` or the description) |
 | `GET /api/v1/projects/{projectKey}/repositories` | `listProjectRepositories` | public; the repositories of the project the caller may see |
 | `POST /api/v1/projects/{projectKey}/repositories` | `createProjectRepository` | `repositories:write-config` or Owner of the project |
 | `GET /api/v1/projects/{projectKey}/repositories/{repoKey}` | `getRepository` | public; the full document for `repositories:read-config` or an Owner of the project, otherwise the consumer view |
@@ -2486,6 +2487,12 @@ The operations of GitLab CI federation ([docs/developer/ci-oidc.md](docs/develop
 | `GET /api/v1/packages/{packageId}/versions` | `listPackageVersions` | public; as above |
 | `GET /api/v1/packages/{packageId}/versions/{version}` | `getPackageVersion` | public; as above |
 | `GET /api/v1/packages/{packageId}/versions/{version}/readme` | `getPackageVersionReadme` | public; as above |
+
+**search** (R-API-060 to R-API-064)
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/search/suggestions` | `getSearchSuggestions` | public; the best matches of `q` per `kind` among what the caller may read, decided as the lists decide; `kind` `user` and `group` need `identities:read` ([security](docs/security/search.md)) |
 
 **ownership**
 

@@ -2190,7 +2190,9 @@ How each kind is read ([Q-API-273](#q-api-273--repositories-are-matched-over-the
 
 - The words of a tsquery are runs of `a` to `z` and `0` to `9` taken from `q`, so no operator of the tsquery syntax reaches the
   database; the name prefix is two bound values, not a pattern, so no character of `q` is an operator there either.
-- Each package statement is planned for its text: a prepared statement may otherwise take a generic plan after its fifth run,
+- Each package statement is planned for its text
+  ([Q-API-283](#q-api-283--the-package-statements-take-the-name-prefix-as-two-bounds-and-are-planned-for-their-text)): a
+  prepared statement may otherwise take a generic plan after its fifth run,
   and a generic plan cannot know whether `q` makes the word index or the name order the cheaper read (it chose a walk over every
   package for a rare word).
 - A request costs at most a fixed number of statements, independent of the number of matches and of the rows read: the project
@@ -13196,6 +13198,28 @@ Status: **Decided by the development agent** — selected from the options below
 starve the screens.
 
 **Applied in the spec:** R-API-060.
+
+### Q-API-283 · The package statements take the name prefix as two bounds and are planned for their text
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-API-064 as planned read statement A with `LIKE <escaped q>%` and left the plans to PostgreSQL. trove's connections
+prepare their statements (`QueryExecModeCacheStatement`), and PostgreSQL may switch a prepared statement to a generic plan after
+its fifth run. The `EXPLAIN` of the integration area `search` showed statement B's generic plan walking `packages_name_lower` over
+every package for a rare word, and a generic plan cannot derive index bounds from a `LIKE` parameter at all.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Statement A as the range `low <= lower(name) < high` computed in Go; both statements after `SET LOCAL plan_cache_mode = force_custom_plan` in their transaction (chosen) | Every run planned for its text; the range is a value pair, not a pattern | The planner picks the GIN for a rare word and the ordered B-tree walk for a common one; no escaping; the range serves a generic plan too | One statement more per request (a `SET LOCAL`), and a plan per run |
+| (b) The planned `LIKE` and the default plan cache | As written | Nothing new | A generic plan reads every package for a rare word, after five requests |
+| (c) Statement B as a subquery that takes the first 200 matches unordered, then orders them | No plan setting | Bounded read in any plan | Which 200 matches are read is not defined; the generic plan still chose a walk over the primary key |
+
+**Choice:** (a). **Rationale:** the bound of R-API-064 must hold on the fifth request as on the first, and only a plan for the text
+can choose the cheaper of the two indexes. The development agent revisits it if a request of the suggestions shows up as slow in
+the planner's time.
+
+**Applied in the spec:** R-API-064 (the package row, the bullets on operators and on planning, the statement count);
+[search.sql](../../internal/meta/postgres/queries/search.sql) `SearchCustomPlans`, `SearchPackagesByPrefix`.
 
 ## What this does not cover
 

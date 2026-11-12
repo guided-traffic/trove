@@ -52,6 +52,21 @@ The details (`Service.Version`) read the visible rows of the package, take the o
 visible set of versions, and read the files of the primary version. `ReadmeOf` asks for details and README. The repositories of a version are the physical
 repositories that hold it plus the virtual repositories that contain one of them and that the caller may read, local first.
 
+## The suggestion read (R-API-061, R-API-064)
+
+`Service.Suggest` in [suggest.go](../../internal/packages/view/suggest.go) answers the package suggestions of the search field
+([http-api.md](http-api.md#the-suggestions-of-the-search-field-r-api-060-to-r-api-064)) without the list's aggregation and without
+`PackageViewCandidates`: it classifies the physical repositories of formats with an adapter as the list's `Scope` does (`ReadAll` without
+patterns is read whole, every other shape but `ReadNone` in part), asks the adapters for their withheld versions, and in one transaction
+runs `SearchCustomPlans` (each statement planned for its text), statement A `SearchPackagesByPrefix` (the names in `[low, high)` of
+`packages_name_lower`) and, while A found no more than `limit` readable packages, statement B `SearchPackagesByWords` (the word prefixes
+on `packages_name_words`, without A's rows), each at most `SuggestCandidates` (200) rows with a live, served version
+([search.sql](../../internal/meta/postgres/queries/search.sql)). A row of a repository read in part is decided on the package's
+document, `ReadScope.MayRead(repo, name, "")`, and the repository's patterns, `Topology.Admits` (Q-API-275). A package held by several
+repositories is one `Suggestion`, in the first readable repository by qualified name; its rank is computed on the name
+(`suggestionRank`), and the API builds the query (`SuggestQuery`: the text, the bounds, the tsquery) from
+[search_match.go](../../internal/api/v1/search_match.go).
+
 Two facts that are easy to get wrong: a Go `nil` slice reaches the driver as `NULL`, and `x = ANY(NULL)` under a `NOT` drops every row, so `keys` and `ids` in
 [service.go](../../internal/packages/view/service.go) turn them into empty arrays; and `ReadAll` is only returned when nothing narrows (no pattern in the
 grant, no scope element, an endpoint in mode `all`), because a repository wrongly classified `ReadAll` is a leak, while one classified `ReadRows` costs time.
