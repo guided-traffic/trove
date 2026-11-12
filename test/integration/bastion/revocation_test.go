@@ -93,6 +93,8 @@ func TestR_BAS_015_R_BAS_026_RevocationByEveryFeedKind(t *testing.T) {
 		t.Logf("refused after %v", refused(t, b, tgz, c, http.StatusUnauthorized))
 	})
 	t.Run("grants", func(t *testing.T) {
+		// A reader whose grant is deleted still reads what is public, so the revocation of a grant is shown on private content.
+		w.setAnonymous(false)
 		u := w.newReader(npmAll, npmLocal, npmRemote)
 		c := callOpts{token: u.token, addr: "198.51.100.33"}
 		warm(t, b, c, tgz, doc)
@@ -101,6 +103,7 @@ func TestR_BAS_015_R_BAS_026_RevocationByEveryFeedKind(t *testing.T) {
 		refused(t, b, doc, c, http.StatusNotFound, http.StatusForbidden)
 	})
 	t.Run("settings", func(t *testing.T) {
+		w.setAnonymous(true)
 		c := callOpts{addr: "198.51.100.34"}
 		warm(t, b, c, tgz, doc)
 		made := time.Now()

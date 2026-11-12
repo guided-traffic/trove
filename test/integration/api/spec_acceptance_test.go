@@ -204,9 +204,16 @@ func TestR_API_020_ResourceMapAndRouting(t *testing.T) {
 			if op == nil {
 				continue
 			}
-			concrete := pathParam.ReplaceAllString(p, "x")
+			// Two characters make a valid project, repository and package key; one would be answered at the syntax before the caller is
+			// asked, now that the default endpoint admits a request without a credential (R-EP-010).
+			concrete := pathParam.ReplaceAllString(p, "xx")
 			perm, _ := op["x-trove-permission"].(map[string]any)
 			public := perm["public"] == true
+			// The UI's content routes serve a session only; any other request is the answer of a path the role does not have,
+			// 404 (Q-UI-106).
+			if strings.Contains(p, "/content/") {
+				public = true
+			}
 			a := send(t, c, "GET", concrete, nil)
 			swept++
 			if a.Status >= 500 || !public && a.Status != http.StatusUnauthorized {

@@ -47,10 +47,6 @@ type webEnv struct {
 	t     *testing.T
 	stack *testenv.Stack
 
-	// anonymous is the switch of R-AUTH-037, changed through the management API as
-	// the administrator does.
-	anonymous *anonymousSwitch
-
 	mu     sync.Mutex
 	tokens map[string]string // bearer name -> token
 	reps   []*webReplica
@@ -62,7 +58,6 @@ func newWebEnv(t *testing.T) *webEnv {
 	// scenario is a user named admin with the admin role.
 	s := testenv.NewStack(t, testenv.StackOptions{Name: "files", Env: []string{"TROVE_AUTH_BREAK_GLASS_USERNAME=bg-admin"}})
 	e := &webEnv{t: t, stack: s, tokens: map[string]string{}}
-	e.anonymous = &anonymousSwitch{e: e}
 	return e
 }
 
@@ -286,51 +281,70 @@ func (v auditView) ofType(typ string) []auditEvent {
 	return out
 }
 
-// anonymousSwitch is the runtime switch of anonymous access (R-AUTH-037, R-AUTH-040).
-type anonymousSwitch struct{ e *webEnv }
-
-// Store sets the switch through the management API and waits until every replica
-// of the scenario reports it.
-func (s *anonymousSwitch) Store(on bool) {
-	e := s.e
+// makePublic opens the artifacts of a repository of the project it to every request, the way an administrator does: the project's
+// level through the management API, then the repository's (R-AUTHZ-033, R-API-057), and waits until every replica reports something
+// public to a caller without a credential (R-AUTH-037). The default endpoint admits such a caller (R-EP-010). It returns the function
+// that takes the project back to private, which lowers the repository with it.
+func (e *webEnv) makePublic(repo string) (restore func()) {
 	e.t.Helper()
 	e.mu.Lock()
 	reps := append([]*webReplica(nil), e.reps...)
 	e.mu.Unlock()
 	if len(reps) == 0 {
-		e.t.Fatal("anonymous access is set on a running replica")
+		e.t.Fatal("a level is set on a running replica")
 	}
-	// The switch is changed by an administrator of its own, so a scenario need not have one.
-	const who = "switch-admin"
+	// The level is changed by an administrator of its own, so a scenario need not have one.
+	const who = "level-admin"
 	e.mu.Lock()
 	_, have := e.tokens[who]
 	e.mu.Unlock()
 	if !have {
 		u := e.stack.User(who)
-		// The replicas are running: the binding goes through the policy service, which
-		// notifies them, and the switch waits until the first one holds it.
+		// The replicas are running: the binding goes through the policy service, which notifies them, and the wait is until the
+		// first one holds it.
 		if _, _, err := reps[0].policy.BindRole(context.Background(), e.actor(), authz.RoleAdmin, "user:"+who); err != nil {
 			e.t.Fatalf("bind %s: %v", who, err)
 		}
 		sub := authz.Subject{Kind: principal.KindUser, ID: u.ID, Name: u.Name}
 		testenv.WaitFor(e.t, who+" to hold the admin role", 10*time.Second, func() bool {
-			return reps[0].h.App.Authorizer().Require(context.Background(), sub, "settings:write") == nil
+			return reps[0].h.App.Authorizer().Require(context.Background(), sub, "projects:write") == nil
 		})
 		e.mu.Lock()
 		e.tokens[who] = e.stack.Token(u, scope.Scope{Inherit: true, Admin: true})
 		e.mu.Unlock()
 	}
-	body, _ := json.Marshal(map[string]any{"anonymousAccess": on})
-	res := reps[0].do(who, "PATCH", "/api/v1/settings/auth", bytes.NewReader(body),
-		"Content-Type", "application/merge-patch+json", "If-Match", "*")
-	if res.status != 200 {
-		e.t.Fatalf("set anonymous access: %d %s", res.status, res.body)
+	set := func(level string) {
+		e.t.Helper()
+		body, _ := json.Marshal(map[string]any{"level": level})
+		if res := reps[0].do(who, "PUT", "/api/v1/projects/it/visibility", bytes.NewReader(body), "Content-Type", "application/json", "If-Match", "*"); res.status != 200 {
+			e.t.Fatalf("set the level of the project to %s: %d %s", level, res.status, res.body)
+		}
 	}
+	set("public")
+	// The repository is created when the scenario has none of that name (a repository that exists answers 409).
+	create, _ := json.Marshal(map[string]any{"key": repo, "class": "local", "format": "generic"})
+	if res := reps[0].do(who, "POST", "/api/v1/projects/it/repositories", bytes.NewReader(create), "Content-Type", "application/json"); res.status != 201 && res.status != 409 {
+		e.t.Fatalf("create %s: %d %s", repo, res.status, res.body)
+	}
+	patch, _ := json.Marshal(map[string]any{"visibility": map[string]any{"artifacts": "public", "wiki": "public"}})
+	if res := reps[0].do(who, "PATCH", "/api/v1/projects/it/repositories/"+repo, bytes.NewReader(patch),
+		"Content-Type", "application/merge-patch+json", "If-Match", "*"); res.status != 200 {
+		e.t.Fatalf("open the artifacts of %s: %d %s", repo, res.status, res.body)
+	}
+	// Both levels reach a replica through the grant index (R-AUTHZ-028); the wait is on the property itself.
 	for _, r := range reps {
-		testenv.WaitFor(e.t, r.name+" to report anonymous access "+map[bool]string{true: "on", false: "off"}[on], 10*time.Second, func() bool {
-			got := r.do(who, "GET", "/api/v1/settings/auth", nil)
-			return got.status == 200 && got.json(e.t)["anonymousAccess"] == on
+		testenv.WaitFor(e.t, r.name+" to report something public", 10*time.Second, func() bool {
+			return r.get("", "/api/v1/formats").status == 200
 		})
+	}
+	return func() {
+		e.t.Helper()
+		set("private")
+		for _, r := range reps {
+			testenv.WaitFor(e.t, r.name+" to report nothing public", 10*time.Second, func() bool {
+				return r.get("", "/api/v1/formats").status == 401
+			})
+		}
 	}
 }
 

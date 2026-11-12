@@ -351,7 +351,7 @@ func TestR_AUTHZ_006_OverwriteNeedsItsOwnAction(t *testing.T) {
 	t.Run("R-AUTHZ-006 a caller who only reads cannot deploy", func(t *testing.T) {
 		problemOf(t, a.put("reader", "/files/it/generic-local/r/x", "x"), 403, "forbidden")
 		problemOf(t, a.put("nobody", "/files/it/generic-local/r/x", "x"), 403, "forbidden")
-		problemOf(t, a.put("", "/files/it/generic-local/r/x", "x"), 401, "credentials_required")
+		problemOf(t, a.put("", "/files/it/generic-local/r/x", "x"), 401, "unauthenticated")
 	})
 }
 
@@ -365,9 +365,8 @@ func TestR_GENERIC_002_Paths(t *testing.T) {
 			for _, user := range []string{"ci", "nobody"} { // authorization does not run first
 				problemOf(t, a.put(user, base+p, "x"), 400, "invalid_path")
 			}
-			// An anonymous caller never reaches the handler while anonymous access is off:
-			// the authentication stage of the chain refuses it first (R-AUTH-037).
-			problemOf(t, a.put("", base+p, "x"), 401, "credentials_required")
+			// The default endpoint admits a caller without a credential (R-EP-010), so the path is refused before the caller is asked.
+			problemOf(t, a.put("", base+p, "x"), 400, "invalid_path")
 			problemOf(t, a.get("reader", base+p), 400, "invalid_path")
 			problemOf(t, a.do("maint", "DELETE", base+p, nil), 400, "invalid_path")
 		}

@@ -138,10 +138,9 @@ func TestR_REPO_003_Formats(t *testing.T) {
 			t.Errorf("classes = %s: the descriptor lists only what is implemented (Q-GENERIC-1)", cl)
 		}
 	})
-	t.Run("R-REPO-003 an anonymous caller is answered 401 while anonymous access is off, and 200 when it is on", func(t *testing.T) {
+	t.Run("R-REPO-003 an anonymous caller is answered 401 while nothing is public, and 200 when something is", func(t *testing.T) {
 		problemOf(t, r.get("", "/api/v1/formats"), 401, "unauthenticated")
-		e.anonymous.Store(true)
-		defer e.anonymous.Store(false)
+		defer e.makePublic("generic-local")()
 		if res := r.get("", "/api/v1/formats"); res.status != 200 {
 			t.Fatalf("%d", res.status)
 		}
@@ -399,10 +398,8 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 			t.Errorf("dave sees %v", m["items"])
 		}
 		problemOf(t, a.get("", "/api/v1/repositories"), 401, "unauthenticated")
-		e.grant(a, "gen-two-anon", []string{"gen-two"}, authz.PatternLists{}, map[string][]string{"anonymous": {"read"}})
-		e.anonymous.Store(true)
-		defer e.anonymous.Store(false)
-		waitFor(t, "the anonymous grant", 5*time.Second, func() bool {
+		defer e.makePublic("gen-two")()
+		waitFor(t, "the public level on the other replica", 5*time.Second, func() bool {
 			m := b.get("", "/api/v1/repositories").json(t)
 			items, _ := m["items"].([]any)
 			return len(items) == 1 && items[0].(map[string]any)["key"] == "gen-two"

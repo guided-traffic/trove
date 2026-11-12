@@ -5938,6 +5938,22 @@ for every request of a session or a token; a job that continues a request reads 
 
 **Applied in the spec:** R-AUTH-044, R-AUTH-040.
 
+### Q-AUTH-235 · The 401 that the decision point answers to a caller without a credential takes the challenge of the route's family where the problem is written
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `httpserver.Problem` replaces the generic `Bearer` challenge of an Unauthenticated error by `Basic realm="trove"` on the package and raw-file routes, for a request without Fetch Metadata (chosen) | One place; the stage's own 401 and the decision point's agree | A package client that gets the refusal of a read by the decision point retries with its configured credentials (R-AUTH-002, R-NUGET-012); no handler knows the family | The error is copied when it is written |
+| (b) The decision point gets the request | It builds the challenge | No rewrite | The engine knows routes it was built not to know |
+
+**Choice:** (a). The default endpoint admits a request without a credential (R-EP-010, R-AUTH-037), so the decision point refuses a read of a
+repository that is not `public` as often as the stage refused a request with no credential before; the table of R-AUTH-002 holds for both.
+
+**Rationale:** the challenge belongs to the route, not to the reason of the refusal. The development agent records no revisit condition.
+
+**Applied in the spec:** R-AUTH-002.
+
 ## What this does not cover
 
 ### H-836 · `tokens:read` shows which owners are administrators

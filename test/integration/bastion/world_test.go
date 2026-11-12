@@ -195,7 +195,8 @@ func (w *world) seedRepositories(npmURL, nugetIndex string) {
 	}
 	st.Repository(npmLocal, "local", "npm", `{"local":{"autoClaim":true,"packageOwnership":"enforce"}}`)
 	st.Repository(npmRemote, "remote", "npm", remote(npmURL+"/", []any{}))
-	st.Repository(ngLocal, "local", "nuget", "{}")
+	// A stored document says which ownership is in force (Q-AUTHZ-155), so a later write of the document changes no setting but the one it names.
+	st.Repository(ngLocal, "local", "nuget", `{"local":{"packageOwnership":"enforce"}}`)
 	st.Repository(ngRemote, "remote", "nuget", remote(nugetIndex, []any{map[string]any{"pattern": "localhost", "sendCredentials": false}}))
 	virtual := func(key, format, local, remoteKey string) {
 		st.Repository(key, "virtual", format, `{}`)
@@ -349,32 +350,34 @@ func (w *world) content() {
 	w.publishNuGet("Other.Lib", "1.0.0")
 }
 
-// anonymousPolicy lets the anonymous caller read the virtual repositories and switches anonymous access on
-// or off (the runtime switch of R-AUTH-040).
+// anonymousPolicy opens the artifacts and the wiki of the virtual repositories and their members to every request, through the
+// levels of the project and of each repository (R-AUTHZ-033, R-API-057): the default endpoint admits a request without a credential
+// (R-EP-010), the levels decide what it reads. It is idempotent and waits for nothing; setAnonymous waits.
 func (w *world) anonymousPolicy() {
 	w.t.Helper()
-	w.mustAPI("POST", "/api/v1/permission-policies", 201, map[string]any{
-		"name": "public", "resources": map[string]any{"repositories": []string{npmAll, npmLocal, npmRemote, ngAll, ngLocal, ngRemote}},
-		"entries": []any{map[string]any{"principal": "anonymous", "actions": []string{"read"}}},
-	})
+	w.mustAPI("PUT", "/api/v1/projects/"+testenv.DefaultProject+"/visibility", 200, map[string]any{"level": "public"}, "If-Match", "*")
+	for _, repo := range []string{npmAll, npmLocal, npmRemote, ngAll, ngLocal, ngRemote} {
+		w.mustAPI("PATCH", "/api/v1/projects/"+testenv.DefaultProject+"/repositories/"+repo[len(testenv.DefaultProject)+1:], 200,
+			map[string]any{"visibility": map[string]any{"artifacts": "public", "wiki": "public"}},
+			"If-Match", "*", "Content-Type", "application/merge-patch+json")
+	}
 }
 
+// setAnonymous makes what an anonymous caller reads public (the levels of anonymousPolicy) or takes the project back to private,
+// which lowers every repository of it, and waits until the main installation answers an anonymous request accordingly.
 func (w *world) setAnonymous(on bool) {
 	w.t.Helper()
-	cur := w.mustAPI("GET", "/api/v1/settings/auth", 200, nil)
-	if got, _ := cur.JSON(w.t)["anonymousAccess"].(bool); got == on {
-		return
-	}
-	w.mustAPI("PATCH", "/api/v1/settings/auth", 200, map[string]any{"anonymousAccess": on}, "If-Match", cur.Header.Get("ETag"), "Content-Type", "application/merge-patch+json")
 	if on {
-		testenv.WaitFor(w.t, "anonymous access at the main installation", 20*time.Second, func() bool {
+		w.anonymousPolicy()
+		testenv.WaitFor(w.t, "anonymous reads at the main installation", 20*time.Second, func() bool {
 			return w.api("GET", "/api/npm/"+npmAll+"/plain-lib", "", nil).Status == 200
 		})
-	} else {
-		testenv.WaitFor(w.t, "anonymous access off at the main installation", 20*time.Second, func() bool {
-			return w.api("GET", "/api/npm/"+npmAll+"/plain-lib", "", nil).Status == 401
-		})
+		return
 	}
+	w.mustAPI("PUT", "/api/v1/projects/"+testenv.DefaultProject+"/visibility", 200, map[string]any{"level": "private"}, "If-Match", "*")
+	testenv.WaitFor(w.t, "anonymous reads off at the main installation", 20*time.Second, func() bool {
+		return w.api("GET", "/api/npm/"+npmAll+"/plain-lib", "", nil).Status == 401
+	})
 }
 
 // restartMain replaces the web replica by one with server.endpoints of its own (the default endpoint serving by

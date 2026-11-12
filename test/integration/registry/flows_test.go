@@ -269,15 +269,15 @@ func TestR_OCI_017_TheCatalogListsWhatTheCallerMayRead(t *testing.T) {
 	if got, _, code := list(bearer(e.nobody), ""); code != 200 || len(got) != 0 {
 		t.Fatalf("a caller who may read nothing: %d %v", code, got)
 	}
-	if _, _, code := list("", ""); code != http.StatusUnauthorized {
-		t.Fatalf("no credential: %d", code)
-	}
-	// With anonymous access on and no anonymous grant on any repository, the anonymous caller gets an empty list.
-	e.setAnonymous(true)
+	// The default endpoint admits requests without a credential (R-EP-010) and nothing is public: the anonymous caller gets an empty list.
 	if got, _, code := list("", ""); code != http.StatusOK || len(got) != 0 {
-		t.Fatalf("anonymous without an anonymous grant: %d %v", code, got)
+		t.Fatalf("anonymous with nothing public: %d %v", code, got)
 	}
-	e.setAnonymous(false)
+	// With the door of the default endpoint closed the same request is a 401.
+	closed := newEnv(t, func(_ *env, o *testenv.ReplicaOptions) { o.Endpoints = closedDoor })
+	if a := closed.send("default", req{method: "GET", path: "/v2/_catalog"}); a.Code != http.StatusUnauthorized {
+		t.Fatalf("no credential on an endpoint that admits none: %d", a.Code)
+	}
 	// The scoped token with n=1 pages: the Link names the last name and following it ends without a Link.
 	first, link, _ := list(bearer(e.scoped), "?n=1")
 	if !slices.Equal(first, []string{"web/docker-local/team/app"}) || link != `</v2/_catalog?last=web/docker-local/team/app&n=1>; rel="next"` {

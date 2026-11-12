@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/guided-traffic/trove/internal/api/registry"
 	"github.com/guided-traffic/trove/internal/api/registry/registrytest"
@@ -137,15 +136,10 @@ func TestR_OCI_003_TheVersionCheck(t *testing.T) {
 			t.Fatalf("%d %v %s", a.Code, a.Header(), a.Body.String())
 		}
 	})
-	t.Run("Q-OCI-20 with anonymous access on, the version check itself answers the challenge to a caller without a credential", func(t *testing.T) {
-		const body = `{"anonymousAccess":true}`
-		if a := e.st.Do(e.rep, "PATCH", "/api/v1/settings/auth", e.admin, body, "Content-Type", "application/merge-patch+json", "If-Match", "*"); a.Status != http.StatusOK {
-			t.Fatalf("switch: %d %s", a.Status, a.Body)
+	t.Run("Q-OCI-20 on an endpoint that admits requests without a credential, the version check itself answers the challenge to a caller without one", func(t *testing.T) {
+		if a := e.do("default", "", "GET", "/v2/_token", ""); a.Code != http.StatusOK {
+			t.Fatalf("the anonymous token: %d %s", a.Code, a.Body.String())
 		}
-		testenv.WaitFor(t, "anonymous access on", 10*time.Second, func() bool {
-			a := e.do("default", "", "GET", "/v2/_token", "")
-			return a.Code == http.StatusOK
-		})
 		var a answer
 		label := e.served(func() { a = e.do("default", "", "GET", "/v2/", "") })
 		if a.Code != http.StatusUnauthorized || a.Header().Get("WWW-Authenticate") != challenge || label != "registry.version" {

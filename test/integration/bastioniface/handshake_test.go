@@ -61,6 +61,7 @@ func TestR_BAS_010_TheHandshakeAnswersWhatTheBastionNeeds(t *testing.T) {
 		t.Errorf("feed cursor %q: %v", h.Feed.Cursor, err)
 	}
 
+	e.repository("it/npm-local", "local") // the level is on a repository: a project alone opens nothing
 	s.setPublic(true)
 	waitFor(t, "the level reaches the handshake", 10*time.Second, func() bool { h, _ := handshake(t, s, bst); return h.AnonymousReads })
 	// The endpoint's own rule narrows what is public: anonymous requests of an endpoint that admits none are refused
@@ -233,7 +234,7 @@ func TestR_BAS_010_TheHandshakeNeedsTheBastionToken(t *testing.T) {
 	e := newEnv(t)
 	s := e.newSite(siteOpts{})
 	for name, c := range map[string]call{
-		"no credential":           {method: http.MethodGet, path: iface.PathHandshake, header: http.Header{iface.HeaderInterface: {"1"}}},
+		"no credential":           {method: http.MethodGet, path: iface.PathHandshake, header: http.Header{iface.HeaderInterface: {strconv.Itoa(iface.InterfaceVersion)}}},
 		"a revoked Bastion token": {method: http.MethodGet, path: iface.PathHandshake, header: http.Header{"Authorization": {"Bearer trv_bst_revokedrevokedrevokedrevokedrevokedrevok"}, iface.HeaderInterface: {"1"}}},
 	} {
 		rp := s.do(c)

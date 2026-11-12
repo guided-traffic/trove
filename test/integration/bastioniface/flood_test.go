@@ -59,9 +59,9 @@ func TestR_BAS_008_AFloodOfBastionTokensFromOneAddressIsThrottledBeforeTheTokenS
 	if rp := s.iface(bst, http.MethodGet, iface.PathHandshake, nil); rp.Status != http.StatusOK {
 		t.Errorf("the handshake: %d %s", rp.Status, rp.Body)
 	}
-	// Recognized: the answer is the anonymous caller's (no caller credential, anonymous access off), not the
+	// Recognized: the answer is the anonymous caller's (no caller credential, on an endpoint that admits one), not the
 	// throttle's.
-	if rp := sent("203.0.113.60", bst); rp.Status == http.StatusTooManyRequests || rp.code() != errs.CodeCredentialsRequired {
+	if rp := sent("203.0.113.60", bst); rp.Status != http.StatusOK {
 		t.Errorf("a Bastion token the replica holds, from the throttled address: %d %s", rp.Status, rp.Body)
 	}
 }

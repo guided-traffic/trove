@@ -7,60 +7,24 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/test/integration/testenv"
 )
 
-// setAnonymous switches the runtime switch of anonymous access (R-AUTH-037) through the management API and waits until the replica
-// answers an anonymous token request accordingly.
-func (e *env) setAnonymous(on bool) {
-	e.t.Helper()
-	body := `{"anonymousAccess":false}`
-	if on {
-		body = `{"anonymousAccess":true}`
-	}
-	if a := e.st.Do(e.rep, "PATCH", "/api/v1/settings/auth", e.admin, body, "Content-Type", "application/merge-patch+json", "If-Match", "*"); a.Status != http.StatusOK {
-		e.t.Fatalf("switch: %d %s", a.Status, a.Body)
-	}
-	// The switch reaches a replica within auth.revocation_bound (R-AUTH-037, R-AUTH-023); the wait is on the property itself - the
-	// replica under test answers an anonymous token request as the switch says - within a multiple of the configured bound, and a
-	// failure says what the replica answered last.
-	loaded, err := config.Load(config.Options{Environ: append(e.st.Environ(), "TROVE_POD_NAME="+e.rep.Name, "TROVE_SERVER_OPS_LISTEN="+testenv.FreeAddr(e.t)), Flags: map[string]string{"process.role": "web"}, Command: config.CommandServe})
-	if err != nil {
-		e.t.Fatal(err)
-	}
-	within := 5 * loaded.Config.Auth.RevocationBound
-	start := time.Now()
-	last := 0
-	for {
-		last = e.do("default", "", "GET", "/v2/_token", "").Code
-		if (last == http.StatusOK) == on {
-			break
-		}
-		if time.Since(start) > within {
-			e.t.Fatalf("anonymous access %v did not reach the replica within %s (5 x auth.revocation_bound); its last answer to an anonymous token request was %d", on, within, last)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	e.t.Logf("anonymous access %v observed on the replica after %s (bound %s)", on, time.Since(start), loaded.Config.Auth.RevocationBound)
-}
-
-// R-OCI-004: a repository with an anonymous read grant is pulled without a login, through the token flow of Docker (ping, anonymous
-// token, pull), and a push without a login is refused as unauthorized.
+// R-OCI-004: a repository whose artifacts are public is pulled without a login, through the token flow of Docker (ping, anonymous
+// token, pull), and a push without a login is refused as unauthorized. The default endpoint admits requests without a credential
+// (R-EP-010); the level of the repository is what they read (R-AUTHZ-033).
 func TestR_OCI_004_AnonymousPullThroughV2AndPushWithoutLoginFails(t *testing.T) {
 	e := newEnv(t, func(e *env, _ *testenv.ReplicaOptions) {
 		e.st.RepositoryIn("web", "docker-public", "local", "oci", "{}")
-		anonymous := e.st.Text("SELECT id::text FROM principal WHERE kind = 'anonymous'")
-		e.st.Policy("oci-public-read", []string{"read"}, []string{"web/docker-public"}, testenv.Person{ID: anonymous, Name: "anonymous", Kind: "anonymous"})
+		e.st.Exec("UPDATE project SET visibility = 'public' WHERE key = 'web'")
+		e.st.Exec("UPDATE repositories SET visibility_artifacts = 'public', visibility_wiki = 'public' WHERE key = 'docker-public'")
 	})
 	img := newImage("public")
 	const name = "web/docker-public/app"
 	if a := e.push(bearer(e.admin), name, "1", img); a.Code != http.StatusCreated {
 		t.Fatalf("push: %d %s", a.Code, a.Body.String())
 	}
-	e.setAnonymous(true)
 
 	ping := e.send("default", req{method: "GET", path: "/v2/"})
 	if ping.Code != http.StatusUnauthorized || !strings.HasPrefix(ping.Header().Get("WWW-Authenticate"), `Bearer realm="http://trove.test/v2/_token"`) {

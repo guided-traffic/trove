@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
+	"strings"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/errs"
@@ -136,7 +137,26 @@ func Problem(w http.ResponseWriter, r *http.Request, err error) {
 		sh(w, r, err)
 		return
 	}
-	errs.Write(w, r, err, RequestID(r.Context()), Logger(r.Context()))
+	errs.Write(w, r, packageChallenge(r, err), RequestID(r.Context()), Logger(r.Context()))
+}
+
+// packageChallenge gives the 401 that the decision point answers to a caller without a credential the challenge of the route's
+// family (R-AUTH-002, Q-AUTH-173): Basic on the package and raw-file routes, which package clients answer with their configured
+// credentials, and Bearer everywhere else and for a browser. The decision point does not know the route; the default endpoint admits
+// a request without a credential (R-EP-010), so a refused read on a package route reaches here as often as the stage's own 401 did.
+func packageChallenge(r *http.Request, err error) error {
+	e, ok := errs.As(err)
+	if !ok || e.Kind != errs.Unauthenticated || e.Challenge != "Bearer" {
+		return err
+	}
+	p := r.URL.Path
+	pkg := strings.HasPrefix(p, "/files/") || (strings.HasPrefix(p, "/api/") && !strings.HasPrefix(p, "/api/v1/"))
+	if !pkg || r.Header.Get("Sec-Fetch-Mode") != "" || r.Header.Get("Sec-Fetch-Dest") != "" {
+		return err
+	}
+	c := *e
+	c.Challenge = `Basic realm="trove"`
+	return &c
 }
 
 // shapeFor returns the error shape of the request's path, nil for none.
@@ -151,9 +171,9 @@ func shapeFor(r *http.Request) ShapeFunc {
 // CodeServerBusy is the problem code of the in-flight limit (R-ARCH-005 step 4).
 const CodeServerBusy = errs.CodeServerBusy
 
-// WithBastionForward marks the request as one that reached the main installation through a recognized Bastion forward or
-// the Bastion check (R-BAS-008, Q-BAS-148): its subject never reads by the level internal. Only the Bastion recognition stage
-// and the check call it.
+// WithBastionForward marks the context the caller of a Bastion check is decided in (R-BAS-011, Q-BAS-148): its subject never reads
+// by the level internal. A recognized forward needs no mark of this kind; the edge reads its recognition result (edge.SubjectOf).
+// Only the check calls it.
 func WithBastionForward(ctx context.Context) context.Context {
 	return context.WithValue(ctx, keyBastionForward, true)
 }

@@ -39,7 +39,7 @@ func TestR_BAS_016_AWarmInstallIsTwentyArtifactDownloadedEventsOfTheBastionOrigi
 		events[i] = downloadEvent(i, at)
 	}
 	rp := s.iface(bst, http.MethodPost, iface.PathDownloads, iface.DownloadsRequest{Events: events})
-	if rp.Status != http.StatusNoContent || len(rp.Body) != 0 || rp.Header.Get(iface.HeaderInterface) != "1" {
+	if rp.Status != http.StatusNoContent || len(rp.Body) != 0 || rp.Header.Get(iface.HeaderInterface) != strconv.Itoa(iface.InterfaceVersion) {
 		t.Fatalf("%d %s %v", rp.Status, rp.Body, rp.Header)
 	}
 	waitFor(t, "twenty artifact.downloaded events", 10*time.Second, func() bool {

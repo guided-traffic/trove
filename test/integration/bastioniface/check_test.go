@@ -223,7 +223,7 @@ func TestR_BAS_011_ACheckIsValidatedAndNeedsTheBastionToken(t *testing.T) {
 	if rp.Status != http.StatusUnauthorized || rp.code() != errs.CodeBastionTokenInvalid && rp.code() != errs.CodeInvalidToken {
 		t.Errorf("a service account token on the check: %d %s", rp.Status, rp.Body)
 	}
-	if rp := f.iface(f.bst, http.MethodPost, iface.PathCheck, checkBody{ClientAddress: "203.0.113.7", Repositories: []string{"it/npm-all"}}, iface.HeaderInterface, "2"); rp.Status != http.StatusBadRequest || rp.code() != errs.CodeBastionInterfaceMismatch {
+	if rp := f.iface(f.bst, http.MethodPost, iface.PathCheck, checkBody{ClientAddress: "203.0.113.7", Repositories: []string{"it/npm-all"}}, iface.HeaderInterface, strconv.Itoa(iface.InterfaceVersion+1)); rp.Status != http.StatusBadRequest || rp.code() != errs.CodeBastionInterfaceMismatch {
 		t.Errorf("another interface version: %d %s", rp.Status, rp.Body)
 	}
 }

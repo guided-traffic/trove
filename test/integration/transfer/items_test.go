@@ -82,28 +82,26 @@ func TestR_AUTHZ_016_HiddenExistence(t *testing.T) {
 			problemOf(t, a.do("nobody", "DELETE", p, nil), 403, "forbidden")
 		}
 	})
-	t.Run("R-AUTHZ-016 an anonymous caller is answered 401 for reads and writes alike while anonymous access is off", func(t *testing.T) {
-		problemOf(t, a.get("", "/files/it/private/x.txt"), 401, "credentials_required")
-		problemOf(t, a.get("", "/files/it/private/nothing.txt"), 401, "credentials_required")
-		problemOf(t, a.put("", "/files/it/private/x.txt", "y"), 401, "credentials_required")
-		problemOf(t, a.get("", "/api/v1/projects/it/repositories/private/items?path=x.txt"), 401, "credentials_required")
+	t.Run("R-AUTHZ-016 an anonymous caller is answered 401 for reads and writes alike while nothing is public", func(t *testing.T) {
+		problemOf(t, a.get("", "/files/it/private/x.txt"), 401, "unauthenticated")
+		problemOf(t, a.get("", "/files/it/private/nothing.txt"), 401, "unauthenticated")
+		problemOf(t, a.put("", "/files/it/private/x.txt", "y"), 401, "unauthenticated")
+		problemOf(t, a.get("", "/api/v1/projects/it/repositories/private/items?path=x.txt"), 401, "unauthenticated")
 		if res := a.get("", "/files/it/private/x.txt"); res.hdr("WWW-Authenticate") == "" {
 			t.Error("a 401 carries a challenge")
 		}
 	})
-	t.Run("R-AUTHZ-016 with anonymous access on, an anonymous read is allowed only where anonymous holds read", func(t *testing.T) {
-		te.grant(a, "private-anon", []string{"private"}, authz.PatternLists{}, map[string][]string{"anonymous": {"read"}})
-		te.anonymous.Store(true)
-		defer te.anonymous.Store(false)
-		waitFor(t, "the anonymous grant", 10*time.Second, func() bool {
-			return a.get("", "/files/it/private/x.txt").status == 200 && b.get("", "/files/it/private/x.txt").status == 200
-		})
+	t.Run("R-AUTHZ-016 an anonymous read is allowed only where the artifacts are public", func(t *testing.T) {
+		defer te.makePublic("private")()
 		if res := a.get("", "/files/it/private/x.txt"); res.status != 200 || res.hdr("Cache-Control") != "no-cache" {
 			t.Fatalf("%d %v", res.status, res.header)
 		}
+		if res := b.get("", "/files/it/private/x.txt"); res.status != 200 {
+			t.Fatalf("on the other replica: %d", res.status)
+		}
 		problemOf(t, a.put("", "/files/it/private/y.txt", "y"), 401, "unauthenticated")
 		if res := a.get("", secret); res.status != 401 {
-			t.Errorf("anonymous without a grant on generic-local: %d", res.status)
+			t.Errorf("anonymous on generic-local, which is not public: %d", res.status)
 		}
 	})
 }

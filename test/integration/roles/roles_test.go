@@ -347,8 +347,10 @@ func TestR_EP_010_PackagesIgnoresASessionCookie(t *testing.T) {
 		t.Errorf("the session on web: %d %s, want the 404 of a missing file", got.Status, got.Body)
 	}
 	got := in.get(packages, file, "", "Cookie", cookie)
-	if got.Status != http.StatusUnauthorized || got.Code(t) != "credentials_required" {
-		t.Errorf("the session on packages: %d %s, want 401 credentials_required", got.Status, got.Body)
+	// The default endpoint admits a request without a credential (R-EP-010), so the cookie that packages ignores leaves one that the
+	// decision point refuses for a file that nobody makes public.
+	if got.Status != http.StatusUnauthorized || got.Code(t) != "unauthenticated" {
+		t.Errorf("the session on packages: %d %s, want 401 unauthenticated", got.Status, got.Body)
 	}
 	if without := in.get(packages, file, ""); without.Status != got.Status || without.Problem(t) != got.Problem(t) {
 		t.Errorf("a request with the cookie differs from one without: %s against %s", got.Body, without.Body)

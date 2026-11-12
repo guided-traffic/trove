@@ -43,6 +43,10 @@ var endpointsJSON = fmt.Sprintf(`{"mirror":{"listen":"127.0.0.1:0","base_url":"h
 	`"filesonly":{"listen":"127.0.0.1:0","base_url":"http://%s","surface":["files"],"exposure":"all",`+
 	`"auth":{"token_types":["pat","sat"],"bound_tokens_only":false}}}`, mirrorHost, plainHost, mirrorHost, plainHost, filesHost)
 
+// closedDoor is endpointsJSON with the anonymous door of the default endpoint closed (auth.anonymous: false, R-EP-010): a request
+// without a credential is a 401 there, whatever a level says.
+var closedDoor = `{"default":{"auth":{"anonymous":false}},` + strings.TrimPrefix(endpointsJSON, "{")
+
 // env is one installation with the people and repositories the tests use, and one replica.
 type env struct {
 	t   *testing.T

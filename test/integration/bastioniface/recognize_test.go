@@ -101,15 +101,15 @@ func TestR_BAS_009_AnotherInterfaceVersionAnswersAMismatchOnEveryRoute(t *testin
 	s := e.newSite(siteOpts{})
 	bst := s.registered("partners", e.registration("partners"))
 	for name, c := range map[string]call{
-		"package route, none":      packageRequest("/api/npm/it/npm-all/lodash", iface.HeaderAuthorization, "Bearer "+bst),
-		"package route, version 2": packageRequest("/api/npm/it/npm-all/lodash", iface.HeaderAuthorization, "Bearer "+bst, iface.HeaderInterface, "2"),
-		"handshake, version 0":     {method: http.MethodGet, path: iface.PathHandshake, header: http.Header{"Authorization": {"Bearer " + bst}, iface.HeaderInterface: {"0"}}},
+		"package route, none":             packageRequest("/api/npm/it/npm-all/lodash", iface.HeaderAuthorization, "Bearer "+bst),
+		"package route, the next version": packageRequest("/api/npm/it/npm-all/lodash", iface.HeaderAuthorization, "Bearer "+bst, iface.HeaderInterface, strconv.Itoa(iface.InterfaceVersion+1)),
+		"handshake, version 0":            {method: http.MethodGet, path: iface.PathHandshake, header: http.Header{"Authorization": {"Bearer " + bst}, iface.HeaderInterface: {"0"}}},
 	} {
 		rp := s.do(c)
 		var p map[string]any
 		rp.decode(t, &p)
 		if rp.Status != http.StatusBadRequest || p["code"] != errs.CodeBastionInterfaceMismatch || p[iface.ProblemMemberInterfaceVersion] != float64(iface.InterfaceVersion) ||
-			rp.Header.Get("Content-Type") != errs.ProblemContentType || rp.Header.Get(iface.HeaderInterface) != "1" {
+			rp.Header.Get("Content-Type") != errs.ProblemContentType || rp.Header.Get(iface.HeaderInterface) != strconv.Itoa(iface.InterfaceVersion) {
 			t.Errorf("%s: %d %v %v", name, rp.Status, rp.Header, p)
 		}
 	}
