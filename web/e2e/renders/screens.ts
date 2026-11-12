@@ -199,6 +199,94 @@ function createForm(cls: 'Local' | 'Remote' | 'Virtual'): Screen['walk'] {
   };
 }
 
+/**
+ * The errors of the creation form (R-UI-086, R-UI-083): a key that a repository of the project already holds, named once the server
+ * answered; then a create the server refuses with an error at an include pattern, routed in the browser, which opens the closed
+ * Advanced settings and lists the field in the summary. Nothing is created.
+ */
+async function* createErrors(page: Page): AsyncGenerator<string> {
+  await chooseProject(page);
+  await page.locator('#f-key').fill('npm-internal');
+  await expect(page.locator('#e-key')).toHaveText('A repository with this key already exists in the project.');
+  yield 'key-taken';
+  await page.locator('#f-key').fill('renders-npm-refused');
+  await page.getByRole('button', { name: 'Advanced settings' }).click();
+  await page.locator('#f-includePatterns').fill('@acme/[');
+  await page.getByRole('button', { name: 'Advanced settings' }).click();
+  await page.route('**/api/v1/projects/*/repositories', (route) =>
+    route.request().method() === 'POST'
+      ? route.fulfill({
+          status: 422,
+          contentType: 'application/problem+json',
+          body: JSON.stringify({
+            type: 'about:blank',
+            title: 'Unprocessable Entity',
+            status: 422,
+            code: 'validation_failed',
+            detail: 'The repository document is not valid.',
+            errors: [{ pointer: '/includePatterns/0', code: 'invalid_pattern', detail: "the pattern '@acme/[' has an unclosed bracket" }],
+          }),
+        })
+      : route.fallback(),
+  );
+  await page.getByRole('button', { name: 'Create repository' }).click();
+  await expect(page.locator('main [role="alert"]')).toBeVisible();
+  await expect(page.locator('.advanced-settings .collapse-region.open')).toHaveCount(1);
+  yield 'server-error';
+  await page.unroute('**/api/v1/projects/*/repositories');
+}
+
+/** Eight repositories with long keys a virtual repository can take as members, answered in the browser for the picker (R-UI-081). */
+function eightCandidates(): Record<string, unknown> {
+  const keys = [
+    'release-candidates-for-the-customer-portal-frontend',
+    'shared-design-system-components-and-icons-internal',
+    'payment-service-client-libraries-for-the-checkout',
+    'registry-npmjs-org-cached-for-the-web-frontend-team',
+    'analytics-dashboards-widgets-and-chart-primitives',
+    'internationalisation-message-catalogues-and-tools',
+    'feature-flags-sdk-wrappers-for-the-browser-and-node',
+    'legacy-angularjs-packages-kept-for-the-old-portal',
+  ];
+  return {
+    items: keys.map((key, i) => ({
+      key,
+      project: mainProject,
+      class: i === 3 ? 'remote' : 'local',
+      format: 'npm',
+      description: '',
+      visibility: { artifacts: 'private', wiki: 'private' },
+      addresses: [],
+      disabled: false,
+      lifecycle: 'active',
+      lastActivityAt: null,
+    })),
+    nextCursor: null,
+  };
+}
+
+/** A virtual npm repository with eight members of long keys, Advanced settings closed (R-UI-081, R-UI-085). */
+async function* eightMembers(page: Page): AsyncGenerator<string> {
+  await chooseProject(page);
+  const list = (url: URL): boolean => url.pathname === '/api/v1/repositories';
+  await page.route(list, (route) =>
+    route.request().method() === 'GET'
+      ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(eightCandidates()) })
+      : route.fallback(),
+  );
+  await page.getByRole('radio', { name: /^Virtual/ }).check();
+  const available = page.locator('[data-testid="vm-available"] [role="option"]');
+  const members = page.locator('[data-testid="vm-members"] [role="option"]');
+  await expect(available).toHaveCount(8);
+  for (let i = 0; i < 8; i++) {
+    await available.first().click();
+    await page.getByRole('button', { name: 'Add', exact: true }).click();
+    await expect(members).toHaveCount(i + 1);
+  }
+  yield 'eight-members';
+  await page.unroute(list);
+}
+
 /** The format chooser (R-UI-080): the tiles as they open, then a search that leaves none. */
 async function* chooser(page: Page): AsyncGenerator<string> {
   yield '';
@@ -206,6 +294,21 @@ async function* chooser(page: Page): AsyncGenerator<string> {
   await expect(page.locator('a.tile')).toHaveCount(0);
   yield 'no-match';
 }
+
+/** The answer of a create the walk refuses in the browser, and the key check of a free key. */
+const refused = [
+  { match: /^POST \/api\/v1\/projects\/[^/]+\/repositories answered 422$/, why: 'the create the walk refuses with a field error' },
+  { match: /^GET \/api\/v1\/projects\/[^/]+\/repositories\/renders-[a-z-]+ answered 404$/, why: 'the key check: 404 is a free key' },
+];
+
+/** The states of the creation form the class walks do not reach (R-UI-086, R-UI-081), and a remote Debian form. */
+const createStates: Screen[] = [
+  { id: 'new-npm-errors', path: `/ui/projects/${mainProject}/repositories/new/npm`, kinds: ['power'], walk: createErrors, expected: refused },
+  { id: 'admin-new-npm-errors', path: '/ui/admin/repositories/new/npm', kinds: ['admin'], walk: createErrors, expected: refused },
+  { id: 'new-npm-eight-members', path: `/ui/projects/${mainProject}/repositories/new/npm`, kinds: ['power'], walk: eightMembers },
+  { id: 'new-deb-remote', path: `/ui/projects/${mainProject}/repositories/new/deb`, kinds: ['power'], walk: createForm('Remote') },
+  { id: 'admin-new-deb-remote', path: '/ui/admin/repositories/new/deb', kinds: ['admin'], walk: createForm('Remote') },
+];
 
 const createForms: Screen[] = (['oci', 'npm', 'ansible'] as const).flatMap((name) =>
   (['Local', 'Remote', 'Virtual'] as const).flatMap((cls): Screen[] => {
@@ -425,6 +528,7 @@ export const screens: readonly Screen[] = [
 
   // The creation form of three formats in every class (the owner's rules of 2026-11-12, CLAUDE.md).
   ...createForms,
+  ...createStates,
   // The upstream of a remote where it is entered: the presets, the credentials, Test connection, the details (R-UI-082).
   ...upstreams,
   { id: 'admin-security', path: '/ui/admin/security', kinds: admins },

@@ -82,9 +82,11 @@ trove-visibility-level {
 .advanced-settings {
   margin-block-start: var(--trove-space-4);
 
+  // A group heading stands above the labels of its fields: larger than they are, as heavy.
   h3 {
     margin: var(--trove-space-5) 0 var(--trove-space-2);
-    font: var(--trove-type-title-small);
+    font-size: var(--trove-heading-3);
+    font-weight: 600;
 
     &:first-child {
       margin-block-start: 0;

@@ -113,13 +113,17 @@ export type MemberClass = 'local' | 'remote' | 'unknown';
       border: 1px solid var(--trove-border);
       border-radius: var(--trove-radius-m);
     }
+    /* One row per repository: the position, the key that wraps in its own column, the class; an error under them. */
     .option {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: var(--trove-space-2);
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: baseline;
+      column-gap: var(--trove-space-2);
       padding: var(--trove-space-1) var(--trove-space-3);
       cursor: pointer;
+    }
+    .option > :first-child:not(.position) {
+      grid-column: 1 / 3;
     }
     .option[aria-selected='true'] {
       background: var(--trove-btn-tertiary-bg-hover);
@@ -148,7 +152,7 @@ export type MemberClass = 'local' | 'remote' | 'unknown';
       align-self: center;
     }
     .field-error {
-      flex-basis: 100%;
+      grid-column: 1 / -1;
       color: var(--trove-status-bad);
       font: var(--trove-type-body-small);
     }
