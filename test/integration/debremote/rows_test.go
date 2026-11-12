@@ -241,8 +241,11 @@ func TestR_DEB_023_TheShadowingCheckAsksTheRowsOfTheScopeAndEnqueuesWhatSettlesI
 	if enq, err := st.EnsureParsed(ctx, scope("trove-hello", []string{"stable"}, "main")); err != nil || !enq {
 		t.Fatalf("EnsureParsed: %v %v", enq, err)
 	}
+	// The scope is settled when every index of it that the release lists is parsed (R-DEB-023). A name that an index lists is known
+	// as soon as that one index is parsed, while another index of the scope (the architecture-independent one is always in it) may
+	// still be queued, so the wait asks about a name nobody lists: it is known only when no index is left to parse.
 	eventually(t, 30*time.Second, "the scope to be settled", func() bool {
-		_, known, err := st.ServesName(ctx, scope("trove-hello", []string{"stable"}, "main"))
+		_, known, err := st.ServesName(ctx, scope("no-such-package", []string{"stable"}, "main"))
 		return err == nil && known
 	})
 	if served, known, err := st.ServesName(ctx, scope("trove-hello", []string{"stable"}, "main")); err != nil || !served || !known {
