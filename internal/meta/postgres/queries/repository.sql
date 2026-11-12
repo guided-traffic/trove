@@ -106,3 +106,16 @@ SELECT id::text AS id, key FROM project;
 -- delete of the project (FOR UPDATE, which counts the repositories under that lock)
 -- waits for this transaction, so the new repository is counted or the project is gone.
 SELECT id::text AS id, key, visibility FROM project WHERE key = sqlc.arg(key)::text FOR SHARE;
+
+-- name: RepositoryProjectLevel :many
+-- The project a new repository's defaults are read for (R-REPO-063): its id, key and level, without a lock, because the read
+-- writes nothing.
+SELECT id::text AS id, key, visibility FROM project WHERE key = sqlc.arg(key)::text;
+
+-- name: TakenRepositoryKeys :many
+-- The keys among the candidates that a repository of the project holds, a repository being deleted included: the key stays
+-- taken until its deletion job completes (R-REPO-013), so it is no suggestion (R-REPO-063).
+SELECT r.key
+  FROM repositories r
+  JOIN project p ON p.id = r.project_id
+ WHERE p.key = sqlc.arg(project)::text AND r.key = ANY(sqlc.arg(keys)::text[]);

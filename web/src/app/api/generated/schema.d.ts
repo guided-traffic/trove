@@ -2078,7 +2078,8 @@ export interface paths {
          * Read the defaults of a new repository
          * @description What a create of only `key`, `class` and `format` in the project would store, and a key that is free in the project
          *     (R-REPO-063): the values the creation form shows in its fields. It writes nothing and records no audit event. An unknown
-         *     format answers `422 unknown_format`, a class the format lacks `422 not_applicable`; a project the caller cannot see `404`.
+         *     format and a class the format lacks answer the `422` of a create (`unknown_format` at `/format`, `unsupported_class` at
+         *     `/class`); a project that does not exist answers `404`.
          */
         get: operations["getRepositoryDefaults"];
         put?: never;

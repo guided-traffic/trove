@@ -576,9 +576,12 @@ Priority: **MVP** · Covers: UI-031, REPO-010
     `packageOwnership`), and no format member, whose defaults are the `default`s of `settingsSchema`.
   - `suggestedKey` is `<format>-<class>`, or the first of `<format>-<class>-2` to `<format>-<class>-9` that is free in the project;
     `null` when all are taken.
-- Permission: that of a create (`repositories:write-config`, or Owner of the project); `404` for an unknown project; `422` for an
-  unknown format or a class the format lacks (`not_applicable`). It writes nothing and records no audit event, and it answers during
-  maintenance.
+- Permission: that of a create (`repositories:write-config`, or Owner of the project); `404` for an unknown project; the `422
+  validation_failed` of a create for an unknown format (`unknown_format` at `/format`) or a class the format lacks
+  (`unsupported_class` at `/class`). It writes nothing and records no audit event, and it answers during maintenance.
+- Built by `repository.Service.Defaults` ([defaults.go](../../internal/repository/defaults.go)): the create's validation and
+  level resolution on the bare document, rendered through the read path of a stored row, without the insert, the secrets, the
+  format's creation hook or the audit event.
 
 Acceptance criteria:
 

@@ -457,6 +457,38 @@ func (q *Queries) RepositoryProjectKeys(ctx context.Context) ([]RepositoryProjec
 	return items, nil
 }
 
+const repositoryProjectLevel = `-- name: RepositoryProjectLevel :many
+SELECT id::text AS id, key, visibility FROM project WHERE key = $1::text
+`
+
+type RepositoryProjectLevelRow struct {
+	ID         string
+	Key        string
+	Visibility string
+}
+
+// The project a new repository's defaults are read for (R-REPO-063): its id, key and level, without a lock, because the read
+// writes nothing.
+func (q *Queries) RepositoryProjectLevel(ctx context.Context, key string) ([]RepositoryProjectLevelRow, error) {
+	rows, err := q.db.Query(ctx, repositoryProjectLevel, key)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RepositoryProjectLevelRow{}
+	for rows.Next() {
+		var i RepositoryProjectLevelRow
+		if err := rows.Scan(&i.ID, &i.Key, &i.Visibility); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const repositoryProjectShare = `-- name: RepositoryProjectShare :many
 SELECT id::text AS id, key, visibility FROM project WHERE key = $1::text FOR SHARE
 `
@@ -483,6 +515,40 @@ func (q *Queries) RepositoryProjectShare(ctx context.Context, key string) ([]Rep
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const takenRepositoryKeys = `-- name: TakenRepositoryKeys :many
+SELECT r.key
+  FROM repositories r
+  JOIN project p ON p.id = r.project_id
+ WHERE p.key = $1::text AND r.key = ANY($2::text[])
+`
+
+type TakenRepositoryKeysParams struct {
+	Project string
+	Keys    []string
+}
+
+// The keys among the candidates that a repository of the project holds, a repository being deleted included: the key stays
+// taken until its deletion job completes (R-REPO-013), so it is no suggestion (R-REPO-063).
+func (q *Queries) TakenRepositoryKeys(ctx context.Context, arg TakenRepositoryKeysParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, takenRepositoryKeys, arg.Project, arg.Keys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		items = append(items, key)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
