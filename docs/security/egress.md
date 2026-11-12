@@ -226,8 +226,9 @@ Stage: the upstream tests of [R-REPO-024](../spec/repositories-and-proxy.md#r-re
 
 Subject: the accounts of an upstream registry and of its token service. A holder of `repositories:write-config`, or the Owner of a
 project, can send a typed credential to a registry, or since R-REPO-064 to its token service, and read `authenticated`; the registry
-sees trove's egress address, not the caller's, so its per-address limits and blocks fall on trove. Live today for upstreams that
-answer the probe with Basic; live for token services once R-REPO-064 is built. What bounds it: the management API's rate limits
+sees trove's egress address, not the caller's, so its per-address limits and blocks fall on trove. Live for upstreams that answer
+the probe with Basic and, since R-REPO-064, for the token service of a registry whose host receives the credential
+(`Clients.tokenCheck` in [probe.go](../../internal/proxy/upstream/probe.go)). What bounds it: the management API's rate limits
 ([R-API-016](../spec/api-and-ui.md#r-api-016--rate-limits)), the request log that records the call
 ([R-OPS-010](../spec/operations-and-observability.md#r-ops-010--request-log)), and that the caller must already be able to configure a
 repository; the test is not an audit event. What makes it real: a caller

@@ -86,6 +86,12 @@ func stubRegistry(t *testing.T) (*httptest.Server, *seen) {
 // the servers and allows loopback, as the integration environment does.
 func factoryTrusting(t *testing.T, servers ...*httptest.Server) *outbound.Factory {
 	t.Helper()
+	return factoryWith(t, nil, servers...)
+}
+
+// factoryWith is factoryTrusting whose dialer connects the given host:port names to listeners (outbound.WithDialOverride).
+func factoryWith(t *testing.T, dial map[string]string, servers ...*httptest.Server) *outbound.Factory {
+	t.Helper()
 	cfg := config.Outbound{TLS: config.OutboundTLS{UseSystemRoots: true, MinVersion: "1.2"}}
 	for _, k := range config.MustDescribe().Keys {
 		if k.Path == "proxy.outbound.address_policy.deny_cidrs" {
@@ -103,6 +109,9 @@ func factoryTrusting(t *testing.T, servers ...*httptest.Server) *outbound.Factor
 			t.Fatal(err)
 		}
 		cfg.TLS.CAFiles = append(cfg.TLS.CAFiles, p)
+	}
+	if dial != nil {
+		return outbound.New(cfg, outbound.WithDialOverride(dial))
 	}
 	return outbound.New(cfg)
 }
@@ -184,7 +193,9 @@ type fixture struct {
 }
 
 type fixtureOpts struct {
-	servers    []*httptest.Server
+	servers []*httptest.Server
+	// factory replaces the factory that trusts the servers (a test that reaches a server under another name).
+	factory    *outbound.Factory
 	proxy      config.Proxy
 	interfaces func() ([]netip.Addr, error)
 	now        func() time.Time
@@ -201,8 +212,12 @@ func newFixture(t *testing.T, o fixtureOpts) *fixture {
 	if o.proxy.MaxRedirects == 0 {
 		o.proxy.MaxRedirects = 5
 	}
+	factory := o.factory
+	if factory == nil {
+		factory = factoryTrusting(t, o.servers...)
+	}
 	f.clients, err = New(Options{
-		Factory: factoryTrusting(t, o.servers...), Store: f.store, Ring: f.ring, Caches: f.caches, Catalog: testCatalog(),
+		Factory: factory, Store: f.store, Ring: f.ring, Caches: f.caches, Catalog: testCatalog(),
 		Proxy: o.proxy, SecretsDir: f.dir, SafetyTTL: time.Minute, Interfaces: o.interfaces, Now: o.now,
 		LookupEnv: func(k string) (string, bool) {
 			f.envMu.Lock()
@@ -889,13 +904,18 @@ func TestR_REPO_024_ABearerChallengeOfAHandshakeFormatIsReachable(t *testing.T) 
 	}
 
 	res := f.clients.TestSaved(t.Context(), handshake(101, "reg", "handshakefmt"), settings(srv.URL+"/", repository.AuthNone))
-	if !res.Reachable || res.HTTPStatus == nil || *res.HTTPStatus != http.StatusUnauthorized || res.Authenticated != nil || res.Error != nil {
+	if !res.Reachable || res.HTTPStatus == nil || *res.HTTPStatus != http.StatusUnauthorized || res.Authenticated != nil {
 		t.Fatalf("a Bearer challenge: %+v", res)
+	}
+	// The challenge names a token service the repository does not list (R-REPO-064): the test says so and asks it nothing.
+	if res.Error == nil || res.Error.Code != CodeForeignHostDenied || !strings.Contains(res.Error.Message, "auth.example.com") ||
+		res.TokenService == nil || *res.TokenService != (repository.UpstreamTokenService{Host: "auth.example.com"}) {
+		t.Fatalf("a token service on a foreign host: %+v %+v", res.Error, res.TokenService)
 	}
 	// With a stored bearer token there is no handshake: the same answer says the registry refused the token.
 	f.seal(104, "tok-static")
 	res = f.clients.TestSaved(t.Context(), handshake(104, "static", "handshakefmt"), settings(srv.URL+"/", repository.AuthBearer))
-	if !res.Reachable || res.Authenticated == nil || *res.Authenticated {
+	if !res.Reachable || res.Authenticated == nil || *res.Authenticated || res.TokenService != nil || res.Error != nil {
 		t.Fatalf("a refused static token: %+v", res)
 	}
 	// A format without the fact reads a Basic or Bearer 401 as a refusal.

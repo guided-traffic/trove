@@ -106,8 +106,8 @@ type Facts struct {
 	ProbePath string
 	// ProbeChallengeReachable is true for a format whose upstream authenticates with a token handshake: its probe resource
 	// answers 401 with a Bearer challenge to a client that holds no token, and the upstream test reads that answer as reachable
-	// with no verdict on the credential (authenticated null), because the credential is judged by the realm, which the test does
-	// not ask (R-OCI-021, R-REPO-024).
+	// and takes its verdict on the credential from the challenge's token service, which it names and asks once for a Basic
+	// credential that host receives (R-OCI-021, R-REPO-024, R-REPO-064).
 	ProbeChallengeReachable bool
 	// DefaultMetadataTTLSeconds and DefaultNotFoundTTLSeconds are the format's
 	// cache periods of a remote repository (R-REPO-024). Nil: the period does not

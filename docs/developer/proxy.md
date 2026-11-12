@@ -115,7 +115,12 @@ the result. The probe is one GET of the format's `ProbePath` below the upstream 
 client, with `outbound.Call{Repo, FlightRole: "probe"}` for the upstream log. The local address of the connection (`httptrace.GotConn`) is the
 `sourceAddress`, reported only when the repository has a `sourceNetwork`. `Classify(err)` maps an error to the stable code (`egress_denied`,
 `source_network_unavailable`, `dns_error`, `tls_untrusted`, `connection_refused`, `timeout`, `too_many_redirects`, `insecure_redirect`,
-`upstream_secret_unavailable`, `request_failed`); the engine uses it too. The `401` of a format with `Facts.ProbeChallengeReachable` that carries a Bearer challenge is reachable with `authenticated: null` (Q-REPO-280). The messages are built from the code and the host, never from the
+`upstream_secret_unavailable`, `request_failed`); the engine uses it too. The `401` of a format with `Facts.ProbeChallengeReachable` that carries a Bearer challenge is reachable, and `tokenCheck` runs the login of
+R-REPO-064 (Q-REPO-325): `bearerParams` reads the realm and the service, `Client.Allowed` decides whether the realm's host may be asked at all
+(`foreign_host_denied` naming the host, no request, otherwise), `Client.CredentialHost` whether it receives the credential, and only then, for
+`authMode: basic` with a credential, one `GET` of the realm with the `service` and no `scope` goes out with the hop policy's Basic header;
+`tokenVerdict` reads `200` with a token as accepted, `401` and `403` as refused, anything else as `request_failed`, and keeps no token.
+`tokenService` names the realm's host in every answer with a challenge. The messages are built from the code and the host, never from the
 error text of the request, which repeats the URL. An offline repository and `proxy.global_offline` are not contacted. The test touches no
 circuit state: this package has no handle on it.
 
@@ -129,7 +134,7 @@ is called from the `M2 proxy` marker of the bootstrap, after the repository comp
 
 | Tier | Where | Proves |
 |---|---|---|
-| unit | [upstream_test.go](../../internal/proxy/upstream/upstream_test.go) | Basic and Bearer arrive at a TLS test upstream, references (file, variable, rotation, vanishing, escape attempts), sealed values (copied, moved, damaged, unknown key), the hop policy on a redirect, `Allowed`, the cache and its eviction, the source network with an injected lister, the upstream test (reachable, 401, DNS error, `egress_denied`, untrusted certificate, refused, timeout, offline), `Classify` |
+| unit | [upstream_test.go](../../internal/proxy/upstream/upstream_test.go) | Basic and Bearer arrive at a TLS test upstream, references (file, variable, rotation, vanishing, escape attempts), sealed values (copied, moved, damaged, unknown key), the hop policy on a redirect, `Allowed`, the cache and its eviction, the source network with an injected lister, the upstream test (reachable, 401, DNS error, `egress_denied`, untrusted certificate, refused, timeout, offline), `Classify`; [probe_handshake_test.go](../../internal/proxy/upstream/probe_handshake_test.go) the login at a token service reached under a second name (`factoryWith` dials `example.com:<port>` to it) |
 | integration | [test/integration/repository/remote_test.go](../../test/integration/repository/remote_test.go) | the same against PostgreSQL: nothing of a secret in any table or audit event, a copied sealed value, a rotation and `ResealSecrets`, the upstream test leaving the circuit alone |
 | integration | [test/integration/api/upstream_test.go](../../test/integration/api/upstream_test.go) | both operations over HTTP with the contract validator |
 

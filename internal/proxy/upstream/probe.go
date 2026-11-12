@@ -4,12 +4,14 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -33,6 +35,7 @@ const (
 	CodeEgressDenied      = errs.CodeEgressDenied
 	CodeSourceNetwork     = errs.CodeSourceNetworkUnavailable
 	CodeSecretUnavailable = errs.CodeUpstreamSecretUnavailable
+	CodeForeignHostDenied = errs.CodeForeignHostDenied
 )
 
 const (
@@ -249,11 +252,13 @@ func (c *Clients) probe(ctx context.Context, cl *Client, format string) reposito
 	status := resp.StatusCode
 	authed := status != http.StatusUnauthorized && status != http.StatusForbidden
 	res.Reachable, res.HTTPStatus, res.Authenticated = true, &status, &authed
-	if status == http.StatusUnauthorized && challengeReachable && bearerChallenged(resp.Header) && cl.settings.AuthMode != repository.AuthBearer {
-		// A registry's 401 with a Bearer challenge asks for the token handshake; the credential is judged by the realm, which the
-		// test does not run, so the answer says reachable and gives no verdict on the credential. A repository with authMode
-		// bearer runs no handshake and sends its stored token as it is: the same answer says the registry refused that token.
-		res.Authenticated = nil
+	if status == http.StatusUnauthorized && challengeReachable && cl.settings.AuthMode != repository.AuthBearer {
+		if realm, service, ok := bearerParams(resp.Header); ok {
+			// A registry's 401 with a Bearer challenge asks for the token handshake: the credential is judged by the token service
+			// the challenge names, so the verdict is its answer (R-REPO-064). A repository with authMode bearer runs no handshake
+			// and sends its stored token as it is: the same answer says the registry refused that token.
+			c.tokenCheck(ctx, cl, &res, realm, service)
+		}
 	}
 	if resp.TLS != nil && len(resp.TLS.PeerCertificates) > 0 {
 		leaf := resp.TLS.PeerCertificates[0]
@@ -262,12 +267,137 @@ func (c *Clients) probe(ctx context.Context, cl *Client, format string) reposito
 	return res
 }
 
-// bearerChallenged reports whether a 401 carries a Bearer challenge.
-func bearerChallenged(h http.Header) bool {
+// maxChallengeBytes bounds a WWW-Authenticate value the test reads; a longer one reads as no challenge.
+const maxChallengeBytes = 8 << 10
+
+// tokenCheck is the login of R-REPO-064 for a Bearer challenge: it names the token service in the result, refuses a token service
+// the repository may not reach with foreign_host_denied and asks nothing there, and asks an allowed one once without a scope, as a
+// client's login does, when the repository has a Basic credential and the token service's host receives it. Without that request
+// the verdict on the credential stays nil.
+func (c *Clients) tokenCheck(ctx context.Context, cl *Client, res *repository.UpstreamTestResult, realm, service string) {
+	res.Authenticated = nil
+	u, err := url.Parse(realm)
+	if err != nil || u.Hostname() == "" || (u.Scheme != "https" && u.Scheme != "http") {
+		res.Error = &repository.UpstreamTestError{Code: CodeRequestFailed, Message: "The registry names a token service that is no URL."}
+		return
+	}
+	host := strings.ToLower(u.Hostname())
+	ts := &repository.UpstreamTokenService{Host: host}
+	res.TokenService = ts
+	if err := cl.Allowed(u); err != nil {
+		code := CodeForeignHostDenied
+		if e, ok := errs.As(err); ok && e.Code == CodeInsecureRedirect {
+			code = CodeInsecureRedirect
+		}
+		msg := "The registry's token service is on " + host + ", which is neither the upstream nor one of the repository's further hosts; trove did not ask it."
+		if code == CodeInsecureRedirect {
+			msg = "The registry's token service on " + host + " is reached over plain http, which an https upstream never is."
+		}
+		res.Error = &repository.UpstreamTestError{Code: code, Message: msg}
+		return
+	}
+	ts.Allowed, ts.ReceivesCredential = true, cl.CredentialHost(u)
+	if cl.settings.AuthMode != repository.AuthBasic || !ts.ReceivesCredential || cl.cred.headers().Get("Authorization") == "" {
+		return
+	}
+	q := u.Query()
+	if service != "" {
+		q.Set("service", service)
+	}
+	u.RawQuery, u.Fragment = q.Encode(), ""
+	ctx = outbound.WithCredentialsOnTheFirstHopOnly(outbound.WithCall(ctx, outbound.Call{Repo: cl.key, FlightRole: probeFlightRole}))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		res.Error = &repository.UpstreamTestError{Code: CodeRequestFailed, Message: "The request to the token service cannot be built."}
+		return
+	}
+	resp, err := cl.http.Do(req) //nolint:gosec // G704: the host was checked with Client.Allowed above and every address is checked against the egress policy (R-REPO-038)
+	if err != nil {
+		res.Error = probeError(err, u)
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxProbeBody+1))
+	verdict, why := tokenVerdict(resp.StatusCode, body, err)
+	res.Authenticated = verdict
+	if why != "" {
+		res.Error = &repository.UpstreamTestError{Code: CodeRequestFailed, Message: "The token service on " + host + " " + why}
+	}
+}
+
+// tokenVerdict reads the answer of a token service to a login: 200 with a token accepts the credential, 401 and 403 refuse it,
+// anything else is no verdict and the reason. The token is dropped: the test keeps nothing.
+func tokenVerdict(status int, body []byte, readErr error) (*bool, string) {
+	yes, no := true, false
+	switch {
+	case status == http.StatusUnauthorized || status == http.StatusForbidden:
+		return &no, ""
+	case status != http.StatusOK:
+		return nil, "answered " + http.StatusText(status) + " (" + strconv.Itoa(status) + ")."
+	case readErr != nil:
+		return nil, "did not finish its answer."
+	case len(body) > maxProbeBody:
+		return nil, "answered with more than 64 KiB."
+	}
+	var tok struct {
+		Token       string `json:"token"`
+		AccessToken string `json:"access_token"`
+	}
+	if json.Unmarshal(body, &tok) != nil || (tok.Token == "" && tok.AccessToken == "") {
+		return nil, "answered 200 without a token."
+	}
+	return &yes, ""
+}
+
+// bearerParams finds the Bearer challenge of an answer and returns its realm and service (RFC 9110 11.6.1: a scheme, then
+// comma-separated name=value parameters whose value is a token or a quoted string).
+func bearerParams(h http.Header) (realm, service string, ok bool) {
 	for _, v := range h.Values("Www-Authenticate") {
-		if len(v) >= 6 && strings.EqualFold(v[:6], "bearer") && (len(v) == 6 || v[6] == ' ') {
-			return true
+		if len(v) > maxChallengeBytes {
+			continue
+		}
+		scheme, rest, _ := strings.Cut(strings.TrimSpace(v), " ")
+		if !strings.EqualFold(scheme, "bearer") {
+			continue
+		}
+		params := challengeParams(rest)
+		if params["realm"] != "" {
+			return params["realm"], params["service"], true
 		}
 	}
-	return false
+	return "", "", false
+}
+
+// challengeParams reads the name=value parameters of a challenge; the first value of a name counts.
+func challengeParams(s string) map[string]string {
+	out := map[string]string{}
+	for i := 0; i < len(s); {
+		for i < len(s) && (s[i] == ' ' || s[i] == '\t' || s[i] == ',') {
+			i++
+		}
+		eq := strings.IndexByte(s[i:], '=')
+		if eq <= 0 {
+			break
+		}
+		name := strings.ToLower(strings.TrimSpace(s[i : i+eq]))
+		i += eq + 1
+		var val strings.Builder
+		if i < len(s) && s[i] == '"' {
+			for i++; i < len(s) && s[i] != '"'; i++ {
+				if s[i] == '\\' && i+1 < len(s) {
+					i++
+				}
+				val.WriteByte(s[i])
+			}
+			i++
+		} else {
+			for ; i < len(s) && s[i] != ','; i++ {
+				val.WriteByte(s[i])
+			}
+		}
+		if _, set := out[name]; !set {
+			out[name] = strings.TrimSpace(val.String())
+		}
+	}
+	return out
 }

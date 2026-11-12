@@ -1931,10 +1931,15 @@ challenge's realm ([Q-REPO-325](#q-repo-325--the-upstream-test-runs-a-registrys-
   request of a client's login). `200` with a token is `authenticated: true`, and the token is dropped, not cached; `401` and `403` are
   `false`; another status is `request_failed`. The egress rules, the TLS trust and the 64 KiB read bound of every token request apply.
 - An allowed realm without a credential, or with a host that receives none: no request to the realm; `authenticated: null`.
-- The result gains `tokenService`: `null`, or `{"host", "allowed", "receivesCredential"}`.
-- `authMode: bearer` runs no handshake, as before (R-OCI-021).
+- The result gains `tokenService`: `null`, or `{"host", "allowed", "receivesCredential"}`; the host is the realm's host name,
+  without a port, as an `extraHosts` pattern names it.
+- `reachable` stays `true` in every case above: the registry answered. A realm reached over `http` from an `https` upstream is
+  `insecure_redirect` with `allowed: false`, and a transport failure at the realm is the code of that failure, naming its host.
+- `authMode: bearer` runs no handshake, as before (R-OCI-021), and `tokenService` is `null`.
+- Built in `Clients.tokenCheck` of [probe.go](../../internal/proxy/upstream/probe.go), with the client's `Allowed` and
+  `CredentialHost`, so the host and credential rules are those of a pull.
 
-Verified on 2026-11-12: Docker Hub's token service answers a wrong credential without scope `401`; an anonymous request without
+Verified on 2026-11-12 by the planning agent: Docker Hub's token service answers a wrong credential without scope `401`; an anonymous request without
 scope gets `200` at Docker Hub, `403` at ghcr.io and GitLab and `401` at Quay, which is why the test sends none. Not verified: that
 ghcr.io, Quay and GitLab answer a valid credential without scope with `200` (it is the request `docker login` sends).
 
