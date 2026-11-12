@@ -354,8 +354,8 @@ func TestE1_14Exposure(t *testing.T) {
 		// the one with an enabled rule on customers and all four on the default endpoint. (The configuration list of an
 		// administrator is a capability operation, not content, and is not narrowed.)
 		repos, _ := walkRetry(t, cust, "/api/v1/repositories", 100)
-		if len(repos) != 1 || repos[0] != "generic-local" {
-			t.Errorf("GET /api/v1/repositories on customers with a token that reads four repositories lists %v, want [generic-local]", repos)
+		if want := e2eProject + "/generic-local"; len(repos) != 1 || repos[0] != want {
+			t.Errorf("GET /api/v1/repositories on customers with a token that reads four repositories lists %v, want [%s]", repos, want)
 		}
 		all, _ := walkRetry(t, newAPI(t).withToken(both.Token), "/api/v1/repositories", 100)
 		if len(all) < 4 {

@@ -407,6 +407,10 @@ by `version: "*"`. Red pipelines are worked on even though they no longer hold a
 
 **Integration and e2e legs (no release gate, still to be fixed)**
 
+- F-128 · `Semantic Release` failed once in Test and Release 43316531262 (40d37ac2, 2026-11-12): GitHub answered the push of the tag
+  v0.55.2 with `! [remote rejected] v0.55.2 -> v0.55.2 (Internal Server Error)`; no tag and no release were made, and the next push
+  released the same commits. Read, not reproduced: an error on GitHub's side, nothing in the workflow changed. Done when it does not
+  recur; at a recurrence, re-run the job once before anything else.
 - **H-822, the control connection of a replica stays unusable for 10 s and longer on the runners** (runs 42788335321, 42793751322, 42831867192, in `TestR_CI_001`, `TestR_CI_009`, `TestR_CI_029`, `TestR_CI_030` (again in 42907942036), `TestR_STOR_027`, `TestR_REPO_056`, `TestR_NPM_010`, `TestJobs`, `TestCollapse`; shard b once). What turned this into a red test is fixed (Q-ARCH-460, Q-HA-283, Q-HA-284): the drain step no longer spends the shutdown budget, the draining mark runs on the request pool, and a readiness check no longer cuts the control connection (shown to fail on the old code). Open: why the pool hands out no connection, not reproduced locally. The next overrun logs the three pools' counts and a grouped goroutine dump that shows the holder (Q-ARCH-461). The `Flights` change (732572ba) touches the credential check and not the pools, and run 42774543420 on it was green; the runner limits removed on 2026-11-09 are not separated.
 - H-823: the burst of `TestClusterWideRateLimit` is bound by 2 s of wall-clock time (one process sends it and runs the three replicas; 1.8 s on a loaded runner). Its "with Valkey" subtest gives up on no Valkey command for the host's speed (Q-HA-285); what the limiter does when a command is given up on stays tested by the other subtests.
 - Other integration binaries that take a free port from port 0 can collide as `TestEndpoints` did (`freeAddr` of `test/integration/server` no longer hands out an address twice, Q-HA-285).
