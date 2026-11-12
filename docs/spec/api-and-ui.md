@@ -4331,7 +4331,8 @@ Acceptance criteria:
 ### R-UI-037 · Audit log
 Priority: **MVP** · Covers: OPS-023
 
-- Table from `GET /api/v1/audit/events`: time, actor, action (translated label), target (actor and target wrap in their
+- Table from `GET /api/v1/audit/events`: time, actor, action (a short plain name of its own for every event type of the audit
+  registry, in English and German, with the event name under it; an unknown name is shown as sent), target (actor and target wrap in their
   column and are never cut, UI-A-46), outcome,
   source address; filters time range (presets and custom), actor, action, category, project, repository,
   outcome (filter panel); "Load more". The log is always newest first and has no sort control.
@@ -4343,6 +4344,8 @@ Acceptance criteria:
 
 - Changing a policy and filtering the audit log by it shows the event with the before and after of
   the grants.
+- Every event type the registry holds has a name in the audit log: a unit test walks the registry (the fixture
+  `audit-actions.fixture.ts`, which a Go test writes from `internal/audit` and keeps current) and fails on a type without one.
 
 ### R-UI-038 · System status
 Priority: **MVP** · Covers: OPS-008
@@ -11566,6 +11569,28 @@ row** and **Unevaluable ranges**, the last two with a help button beside them.
 
 **Choice:** (a). **Rationale:** the shared budget already asks for headers as short as their cells. The development agent revisits
 the names if the walkthrough finds them unclear. **Applied in the spec:** R-VULN-022 (Sources);
+[vulnerability-sources.ts](../../web/src/app/features/vulnerabilities/vulnerability-sources.ts).
+
+### Q-UI-394 · The runs of an advisory source that is off stay on the screen, disabled, with the setting that turns it on
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: **Refresh the known-exploited catalog now** was offered while CISA KEV was off (the coordinator's look at the renders,
+2026-11-12). A run of a source that is off starts a job that only records `skipped: the source is off`
+([kev.go](../../internal/vuln/sync/kev.go), [run.go](../../internal/vuln/sync/run.go)). The style guide keeps an unavailable choice
+visible and says why ("A disabled option stays visible, muted, and says why"; a disabled destructive action says why next to it),
+and the app's pattern for a control the user cannot use is a disabled button described by the reason next to it
+(`aria-describedby`, the own account's **Disable** and **Delete**).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Disabled, with a muted sentence under the buttons that names the source as off and the setting that turns it on, tied to each of its buttons by `aria-describedby` (chosen) | `vulnerabilities.sources.kev.mode`, `vulnerabilities.sources.osv.mode` | The style guide's rule for an unavailable choice; the administrator learns where the switch is; a screen reader reads the reason on the button | One sentence more while a source is off |
+| (b) Not offered | The button leaves while the source is off | Nothing on the screen that cannot be used | The way to turn the source on is not on the screen; the table's **Off** is the only trace |
+| (c) Offered, and the job says it skipped | As before | Nothing to build | A button that starts nothing |
+
+**Choice:** (a), for both sources: the two OSV runs are disabled when every OSV ecosystem is off. **Rationale:** the style guide
+keeps an unavailable action visible with its reason, and the reason is the one fact an administrator needs to make it available.
+The development agent revisits the sentence if the setting moves into the UI. **Applied in the spec:** R-VULN-022 (Sources);
 [vulnerability-sources.ts](../../web/src/app/features/vulnerabilities/vulnerability-sources.ts).
 
 ### Q-API-246 · An operation that is allowed while the installation is read-only declares `x-trove-maintenance: allowed`

@@ -2497,6 +2497,782 @@
         <source>Advisory data imported</source>
       </segment>
     </unit>
+    <unit id="audit.action.ansible.hub.exchange_failed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:5</note>
+      </notes>
+      <segment>
+        <source>Ansible Hub token exchange failed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.ansible.import_task.failed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:7</note>
+      </notes>
+      <segment>
+        <source>Ansible collection import failed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.ansible.tombstone.cleared">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:9</note>
+      </notes>
+      <segment>
+        <source>Ansible tombstone cleared</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.ansible.version.deleted">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:11</note>
+      </notes>
+      <segment>
+        <source>Ansible collection version deleted</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.artifact.cached">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:13</note>
+      </notes>
+      <segment>
+        <source>File cached from the upstream</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.artifact.delete_stopped">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:15</note>
+      </notes>
+      <segment>
+        <source>Large delete stopped</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.auth.registry_token.denied">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:41</note>
+      </notes>
+      <segment>
+        <source>Registry token refused</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.authz.ownership.added">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:47</note>
+      </notes>
+      <segment>
+        <source>Package owner added</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.authz.ownership.claimed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:49</note>
+      </notes>
+      <segment>
+        <source>Package name claimed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.authz.ownership.released">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:51</note>
+      </notes>
+      <segment>
+        <source>Package name released</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.authz.ownership.removed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:53</note>
+      </notes>
+      <segment>
+        <source>Package owner removed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.authz.project.created">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:61</note>
+      </notes>
+      <segment>
+        <source>Project created</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.authz.project.deleted">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:63</note>
+      </notes>
+      <segment>
+        <source>Project deleted</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.authz.project.member_added">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:65</note>
+      </notes>
+      <segment>
+        <source>Project member added</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.authz.project.member_changed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:67</note>
+      </notes>
+      <segment>
+        <source>Project member&apos;s role changed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.authz.project.member_removed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:69</note>
+      </notes>
+      <segment>
+        <source>Project member removed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.authz.project.updated">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:71</note>
+      </notes>
+      <segment>
+        <source>Project changed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.bastion.contact">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:83</note>
+      </notes>
+      <segment>
+        <source>Bastion replica reported a change</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.bastion.created">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:85</note>
+      </notes>
+      <segment>
+        <source>Bastion registered</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.bastion.deleted">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:87</note>
+      </notes>
+      <segment>
+        <source>Bastion deleted</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.bastion.disabled">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:89</note>
+      </notes>
+      <segment>
+        <source>Bastion disabled</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.bastion.downloads.dropped">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:91</note>
+      </notes>
+      <segment>
+        <source>Bastion lost download records</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.bastion.enabled">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:93</note>
+      </notes>
+      <segment>
+        <source>Bastion enabled</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.bastion.updated">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:95</note>
+      </notes>
+      <segment>
+        <source>Bastion changed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.ci.exchange.denied">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:97</note>
+      </notes>
+      <segment>
+        <source>CI token exchange refused</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.ci.exchange.repeated">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:99</note>
+      </notes>
+      <segment>
+        <source>CI token exchange repeated</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.ci.exchange.replayed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:101</note>
+      </notes>
+      <segment>
+        <source>Reused CI job token refused</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.ci.exchange.succeeded">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:103</note>
+      </notes>
+      <segment>
+        <source>CI token issued</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.ci.issuer.created">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:105</note>
+      </notes>
+      <segment>
+        <source>CI issuer created</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.ci.issuer.deleted">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:107</note>
+      </notes>
+      <segment>
+        <source>CI issuer deleted</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.ci.issuer.disabled">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:109</note>
+      </notes>
+      <segment>
+        <source>CI issuer disabled</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.ci.issuer.enabled">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:111</note>
+      </notes>
+      <segment>
+        <source>CI issuer enabled</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.ci.issuer.updated">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:113</note>
+      </notes>
+      <segment>
+        <source>CI issuer changed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.ci.job_token.lookup">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:115</note>
+      </notes>
+      <segment>
+        <source>CI job token checked with GitLab</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.ci.keys.refresh_failed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:117</note>
+      </notes>
+      <segment>
+        <source>CI signing keys not refreshed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.ci.keys.refreshed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:119</note>
+      </notes>
+      <segment>
+        <source>CI signing keys refreshed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.ci.mapping.created">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:121</note>
+      </notes>
+      <segment>
+        <source>CI mapping created</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.ci.mapping.deleted">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:123</note>
+      </notes>
+      <segment>
+        <source>CI mapping deleted</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.ci.mapping.disabled">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:125</note>
+      </notes>
+      <segment>
+        <source>CI mapping disabled</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.ci.mapping.enabled">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:127</note>
+      </notes>
+      <segment>
+        <source>CI mapping enabled</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.ci.mapping.updated">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:129</note>
+      </notes>
+      <segment>
+        <source>CI mapping changed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.ci.package_ownership.claimed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:131</note>
+      </notes>
+      <segment>
+        <source>Package name claimed by a CI job</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.ci.package_ownership.conflict">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:133</note>
+      </notes>
+      <segment>
+        <source>CI job refused: the package has another owner</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.ci.token.revoked">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:135</note>
+      </notes>
+      <segment>
+        <source>CI token revoked</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.deb.coordinates.changed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:137</note>
+      </notes>
+      <segment>
+        <source>Debian package coordinates changed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.deb.coordinates.removed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:139</note>
+      </notes>
+      <segment>
+        <source>Debian package coordinates removed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.deb.package.deleted">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:141</note>
+      </notes>
+      <segment>
+        <source>Debian package deleted</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.deb.reinstate">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:143</note>
+      </notes>
+      <segment>
+        <source>Withheld Debian package reinstated</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.deb.signing_key.created">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:145</note>
+      </notes>
+      <segment>
+        <source>Debian signing key created</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.deb.signing_key.promoted">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:147</note>
+      </notes>
+      <segment>
+        <source>Debian signing key promoted to primary</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.deb.signing_key.reinstated">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:149</note>
+      </notes>
+      <segment>
+        <source>Debian signing key reinstated</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.deb.signing_key.retired">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:151</note>
+      </notes>
+      <segment>
+        <source>Debian signing key retired</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.deb.upstream_signature_invalid">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:153</note>
+      </notes>
+      <segment>
+        <source>Invalid signature of a Debian upstream</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.mirror.bound_reached">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:169</note>
+      </notes>
+      <segment>
+        <source>Mirror reached its limit</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.mirror.pass_completed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:171</note>
+      </notes>
+      <segment>
+        <source>Mirror pass ended</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.mirror.pass_failed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:173</note>
+      </notes>
+      <segment>
+        <source>Mirror pass failed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.mirror.pass_requested">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:175</note>
+      </notes>
+      <segment>
+        <source>Mirror pass requested</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.mirror.rate_limited">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:177</note>
+      </notes>
+      <segment>
+        <source>Mirror rate-limited by the upstream</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.npm.deprecate">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:179</note>
+      </notes>
+      <segment>
+        <source>npm deprecation changed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.npm.dist_tag.delete">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:181</note>
+      </notes>
+      <segment>
+        <source>npm dist-tag removed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.npm.dist_tag.set">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:183</note>
+      </notes>
+      <segment>
+        <source>npm dist-tag set</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.npm.publish">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:185</note>
+      </notes>
+      <segment>
+        <source>npm package published</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.npm.publish.manifest_mismatch">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:187</note>
+      </notes>
+      <segment>
+        <source>npm publish refused: the manifest does not match</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.npm.reinstate">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:189</note>
+      </notes>
+      <segment>
+        <source>Withheld npm version reinstated</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.npm.remote.version_removed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:191</note>
+      </notes>
+      <segment>
+        <source>npm version removed upstream</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.npm.trusted_publishing.exchange">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:193</note>
+      </notes>
+      <segment>
+        <source>npm trusted publishing token exchange</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.npm.unpublish">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:195</note>
+      </notes>
+      <segment>
+        <source>npm version unpublished</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.oci.manifest.deleted">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:197</note>
+      </notes>
+      <segment>
+        <source>Image manifest deleted</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.oci.reinstate">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:199</note>
+      </notes>
+      <segment>
+        <source>Withheld image manifest reinstated</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.package.deleted">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:201</note>
+      </notes>
+      <segment>
+        <source>Package version deleted</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.package.metadata_changed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:203</note>
+      </notes>
+      <segment>
+        <source>Package metadata changed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.package.published">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:205</note>
+      </notes>
+      <segment>
+        <source>Package version published</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.proxy.egress_denied">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:207</note>
+      </notes>
+      <segment>
+        <source>Upstream address blocked by the egress rules</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.proxy.integrity_mismatch">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:209</note>
+      </notes>
+      <segment>
+        <source>Upstream file failed its integrity check</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.proxy.tls_untrusted">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:211</note>
+      </notes>
+      <segment>
+        <source>Upstream certificate not trusted</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.proxy.upstream_digest_changed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:213</note>
+      </notes>
+      <segment>
+        <source>Upstream changed a cached file&apos;s digest</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.proxy.upstream_gone">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:215</note>
+      </notes>
+      <segment>
+        <source>Upstream no longer has a file</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.repository.cache_invalidated">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:217</note>
+      </notes>
+      <segment>
+        <source>Repository cache invalidated</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.repository.claims_changed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:219</note>
+      </notes>
+      <segment>
+        <source>Repository&apos;s package claims changed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.repository.disabled">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:225</note>
+      </notes>
+      <segment>
+        <source>Repository disabled</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.repository.moved">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:227</note>
+      </notes>
+      <segment>
+        <source>Repository moved to another project</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.repository.moved_in">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:229</note>
+      </notes>
+      <segment>
+        <source>Repository moved into this project</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.repository.narrowed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:231</note>
+      </notes>
+      <segment>
+        <source>Repository settings narrowed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.repository.remote_package_shadowed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:233</note>
+      </notes>
+      <segment>
+        <source>Local package shadows a remote one</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.system.backup.completed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:247</note>
+      </notes>
+      <segment>
+        <source>Backup completed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.system.backup.deleted">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:249</note>
+      </notes>
+      <segment>
+        <source>Backup deleted</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.system.backup.failed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:251</note>
+      </notes>
+      <segment>
+        <source>Backup failed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.system.backup.target_adopted">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:253</note>
+      </notes>
+      <segment>
+        <source>Backup target taken over</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.system.banner_changed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:255</note>
+      </notes>
+      <segment>
+        <source>Banner changed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.system.deletions_paused">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:257</note>
+      </notes>
+      <segment>
+        <source>Deletions paused</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.system.deletions_resumed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:259</note>
+      </notes>
+      <segment>
+        <source>Deletions resumed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.system.maintenance_mode_changed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:263</note>
+      </notes>
+      <segment>
+        <source>Maintenance mode changed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.system.restore.journal_replayed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:265</note>
+      </notes>
+      <segment>
+        <source>Revocation journal replayed after a restore</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.system.restored">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:267</note>
+      </notes>
+      <segment>
+        <source>Installation restored</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.system.storage.versions_restored">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:269</note>
+      </notes>
+      <segment>
+        <source>Deleted storage objects restored</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.user.avatar.removed">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:283</note>
+      </notes>
+      <segment>
+        <source>Avatar removed</source>
+      </segment>
+    </unit>
+    <unit id="audit.action.user.avatar.set">
+      <notes>
+        <note category="location">src/app/features/audit/audit-labels.ts:285</note>
+      </notes>
+      <segment>
+        <source>Avatar uploaded</source>
+      </segment>
+    </unit>
     <unit id="audit.category.auth">
       <notes>
         <note category="location">src/app/features/audit/audit-labels.ts:134</note>
@@ -25455,6 +26231,22 @@
       </notes>
       <segment>
         <source>Refresh the known-exploited catalog now</source>
+      </segment>
+    </unit>
+    <unit id="vuln.sources.osv-off">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:157,159</note>
+      </notes>
+      <segment>
+        <source>OSV is off, so it cannot run. The setting <pc id="0" equivStart="START_TAG_CODE" equivEnd="CLOSE_TAG_CODE" type="other" dispStart="&lt;code translate=&quot;no&quot;&gt;" dispEnd="&lt;/code&gt;">vulnerabilities.sources.osv.mode</pc> turns it on.</source>
+      </segment>
+    </unit>
+    <unit id="vuln.sources.kev-off">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-sources.ts:160,162</note>
+      </notes>
+      <segment>
+        <source>CISA KEV is off, so its catalog cannot be refreshed. The setting <pc id="0" equivStart="START_TAG_CODE" equivEnd="CLOSE_TAG_CODE" type="other" dispStart="&lt;code translate=&quot;no&quot;&gt;" dispEnd="&lt;/code&gt;">vulnerabilities.sources.kev.mode</pc> turns it on.</source>
       </segment>
     </unit>
     <unit id="vuln.sources.mirror">
