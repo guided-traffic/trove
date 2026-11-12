@@ -131,6 +131,7 @@ let nextTableId = 1;
   host: {
     class: 'trove-data-table',
     '[class.stack]': 'stack()',
+    '[class.stack-wide]': 'stackWide()',
     '[style.--trove-list-others]': 'others()',
     '[style.--trove-list-narrow]': 'narrowRoom()',
   },
@@ -156,6 +157,11 @@ export class DataTable {
 
   /** Below 48 rem of its width the list shows each row as a block (Q-UI-306); a list whose rows cannot be read so turns it off. */
   readonly stack = input(true);
+  /**
+   * A list whose least widths need more than 48 rem stacks below 64 rem of columns instead (the administrator's list of
+   * everyone's tokens, Q-UI-332).
+   */
+  readonly stackWide = input(false);
 
   protected readonly captionId = `trove-table-${nextTableId++}`;
 

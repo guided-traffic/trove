@@ -299,6 +299,22 @@ describe('Personal tokens (R-UI-029)', () => {
     expect(root.querySelector('trove-token-secret')).toBeTruthy();
   });
 
+  it('R-UI-029 Q-UI-332 an owner\'s token list shows token, scope, expiry, last use, created and created via (narrow), and the row\'s actions', async () => {
+    const { root } = await renderScreen(ProfileTokens);
+    const table = root.querySelector('trove-token-table trove-data-table')!;
+    const heads = [...table.querySelectorAll<HTMLElement>('thead th')];
+    expect(heads.map((th) => text(th).replace(/help_outline/g, ''))).toEqual([
+      'Token', 'Scope', 'Expires', 'Last used', 'Created', 'Created via', 'Actions',
+    ]);
+    expect(heads.map((th) => th.classList.contains('narrow-drop'))).toEqual([false, false, false, false, true, true, false]);
+    expect(table.classList.contains('stack-wide')).toBe(false);
+    // Rotate is a quiet icon named for the row, Revoke a quiet button; a date shows the day, its title the time.
+    const row = table.querySelector('tbody tr')!;
+    const rotate = [...row.querySelectorAll('td.actions button')].find((b) => text(b).includes('Rotate'))!;
+    expect(rotate.classList.contains('btn-icon')).toBe(true);
+    expect(row.querySelector('td time')?.getAttribute('title')).toBeTruthy();
+  });
+
   it('R-UI-029 revokes a token after confirmation', async () => {
     const { fixture, root, get } = await renderScreen(ProfileTokens);
     buttonByText(root.querySelector('trove-token-table')!, 'Revoke').click();

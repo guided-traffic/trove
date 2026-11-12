@@ -4158,7 +4158,9 @@ Priority: **MVP** · Covers: UI-053, AUTHN-039, AUTHN-040
   under it; **Create token** and **End all other sessions** are the header's actions (Q-UI-307, UI-A-20). An empty token list
   says what is missing: "No active tokens." while the revoked and expired ones are hidden, "No tokens yet." with them (the
   administrator's filtered list keeps "No tokens match.").
-- Personal tokens: list with description, scope summary, created, expires and last used; tokens
+- Personal tokens: list with the token (description and hint), scope summary, expires and last used, and, from 64 rem of the
+  list, created and created via; the row ends with **Revoke** and a quiet **Rotate**, or the state of a token that is no longer
+  active ([Q-UI-332](#q-ui-332--a-token-list-shows-token-scope-expiry-last-use-and-its-action-created-and-created-via-give-way-first)); tokens
   expiring within 7 days are marked, and a token with `admin: true` whose owner does not hold the administrator role now says that
   its administrator rights are inactive. Create dialog: description (required), expiry (presets and a
   custom date, bounded by R-AUTH-040), scope (three choices, Q-UI-213: administrator rights, only for a caller who holds the
@@ -4184,8 +4186,9 @@ Acceptance criteria:
 ### R-UI-030 · Token administration
 Priority: **MVP** · Covers: UI-041, TOK-026
 
-- All tokens (`tokens:read`): type, owner, description, scope, created, expires, last used, created
-  via, state; filters type, owner, state, expiring before, unused since; revoke single and selected
+- All tokens (`tokens:read`): the token (description and hint, which names its type), owner, scope, expires, last used, and
+  **Revoke** or the state of a token that is no longer active; below 64 rem of the list the rows stack ([Q-UI-332](#q-ui-332--a-token-list-shows-token-scope-expiry-last-use-and-its-action-created-and-created-via-give-way-first)); filters type,
+  owner, state, expiring before, unused since; revoke single and selected
   with confirmation. An active token with `admin: true` whose owner does not hold the administrator role says that its
   administrator rights are inactive (`Token.ownerIsAdmin`, [Q-UI-221](#q-ui-221--the-token-administration-marks-administrator-tokens-whose-owner-no-longer-holds-the-role)).
 - CI tokens come from `/api/v1/ci/issuances` with job context (project, pipeline, job, mapping) and
@@ -11352,6 +11355,32 @@ shows that administrators read the addresses on this page.
 
 **Applied in the spec:** [endpoints.md](endpoints.md) R-EP-017, R-UI-066. Code:
 [endpoint-detail.html](../../web/src/app/features/endpoints/endpoint-detail.html).
+
+### Q-UI-332 · A token list shows token, scope, expiry, last use and its action; created and created via give way first
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the coordinator's look at the renders (2026-11-12): once the render seed gave the plain user a token, the token table on
+an administrator's user page scrolled 107 px sideways at 1440 px: nine columns (description, type, scope, created, expires, last
+used, created via, state, actions) without a column budget inside the 56 rem of the page. The same table is the profile's, a
+service account's and the token administration's. Who reads a token list decides which token to keep or revoke (Q-UI-330).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) **Token** (description and the hint, which names the type: `trv_pat_…`), **Scope**, **Expires**, **Last used** and at the row's end **Revoke** with a quiet **Rotate** icon where the caller may rotate, or the state of a token that is no longer active; **Created** and **Created via** are `narrow` in an owner's list; the token administration adds **Owner** and the selection and stacks below 64 rem (chosen) | Five columns that decide, two that give way first | No column repeats what another says (the type is in the hint, "Active" is the default filter); every list fits its width or stacks; the action is where the eye ends | **Created** and **Created via** are not visible on a page narrower than 64 rem; **Rotate** is an icon with its name and tooltip |
+| (b) The nine columns with least widths | Nothing dropped | Every fact visible | 74 rem of columns: no page shows them without scrolling |
+| (c) Details of a row behind a disclosure | Fewer columns | Room | A second click for the facts of every token, and a pattern no other list has |
+
+**Choice:** (a). Least widths: token 8.5 rem (it takes what the others leave), owner 7, scope 9, expires 6.5, last used 6.5,
+created 6.5 and created via 5 (`narrow`), the actions 7, the selection 2. An owner's list sums to 47.5 rem, with the narrow columns
+to 63 rem; the token administration's to 60.5 rem, so it stacks below 64 rem (`stackWide`). A date shows the day, its `title` the
+time.
+
+**Rationale:** the facts that decide whether a token stays are its scope, its expiry and its last use; when and how it was made
+explain it and can wait for a wider window. The development agent revisits it if the walkthrough shows that administrators sort
+or scan the token administration by creation.
+
+**Applied in the spec:** R-UI-029, R-UI-030. Code: [token-table.ts](../../web/src/app/shared/access/token-table.ts).
 
 ### Q-UI-370 · The grades take cogpit's colours, and S, A and B are the greens of a good grade
 

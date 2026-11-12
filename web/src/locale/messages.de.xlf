@@ -26755,15 +26755,6 @@
         <target>Noch nicht verwendet</target>
       </segment>
     </unit>
-    <unit id="token-table.state.active">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:113,115</note>
-      </notes>
-      <segment>
-        <source>Active</source>
-        <target>Aktiv</target>
-      </segment>
-    </unit>
     <unit id="token-table.state.expired">
       <notes>
         <note category="location">src/app/shared/access/token-table.ts:116,118</note>
@@ -26780,6 +26771,15 @@
       <segment>
         <source>Revoked</source>
         <target>Widerrufen</target>
+      </segment>
+    </unit>
+    <unit id="token-table.rotate-tip">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Rotate: a new value now, the old one ends after the overlap you choose</source>
+        <target>Rotieren: ein neuer Wert sofort, der alte endet nach der Überlappung, die Sie wählen</target>
       </segment>
     </unit>
     <unit id="token-table.rotate">
@@ -26818,33 +26818,6 @@
         <target>Auswählen</target>
       </segment>
     </unit>
-    <unit id="token-table.description">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:165</note>
-      </notes>
-      <segment>
-        <source>Description</source>
-        <target>Beschreibung</target>
-      </segment>
-    </unit>
-    <unit id="token-table.type">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:168</note>
-      </notes>
-      <segment>
-        <source>Type</source>
-        <target>Typ</target>
-      </segment>
-    </unit>
-    <unit id="token-table.help.type">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:169</note>
-      </notes>
-      <segment>
-        <source>pat is a personal token, sat belongs to a service account, cit was issued to a CI pipeline.</source>
-        <target>pat ist ein persönliches Token, sat gehört zu einem Servicekonto, cit wurde an eine CI-Pipeline ausgegeben.</target>
-      </segment>
-    </unit>
     <unit id="token-table.owner">
       <notes>
         <note category="location">src/app/shared/access/token-table.ts:171</note>
@@ -26852,6 +26825,15 @@
       <segment>
         <source>Owner</source>
         <target>Besitzer</target>
+      </segment>
+    </unit>
+    <unit id="token-table.token">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Token</source>
+        <target>Token</target>
       </segment>
     </unit>
     <unit id="token-table.scope">
@@ -26915,15 +26897,6 @@
       <segment>
         <source>Created via</source>
         <target>Erstellt über</target>
-      </segment>
-    </unit>
-    <unit id="token-table.state">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:185</note>
-      </notes>
-      <segment>
-        <source>State</source>
-        <target>Zustand</target>
       </segment>
     </unit>
     <unit id="token-table.actions">

@@ -27043,14 +27043,6 @@
         <source>Not used yet</source>
       </segment>
     </unit>
-    <unit id="token-table.state.active">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:122,124</note>
-      </notes>
-      <segment>
-        <source>Active</source>
-      </segment>
-    </unit>
     <unit id="token-table.state.expired">
       <notes>
         <note category="location">src/app/shared/access/token-table.ts:125,127</note>
@@ -27065,6 +27057,14 @@
       </notes>
       <segment>
         <source>Revoked</source>
+      </segment>
+    </unit>
+    <unit id="token-table.rotate-tip">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Rotate: a new value now, the old one ends after the overlap you choose</source>
       </segment>
     </unit>
     <unit id="token-table.rotate">
@@ -27099,36 +27099,20 @@
         <source>Select</source>
       </segment>
     </unit>
-    <unit id="token-table.description">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:176</note>
-      </notes>
-      <segment>
-        <source>Description</source>
-      </segment>
-    </unit>
-    <unit id="token-table.type">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:179</note>
-      </notes>
-      <segment>
-        <source>Type</source>
-      </segment>
-    </unit>
-    <unit id="token-table.help.type">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:180</note>
-      </notes>
-      <segment>
-        <source>pat is a personal token, sat belongs to a service account, cit was issued to a CI pipeline.</source>
-      </segment>
-    </unit>
     <unit id="token-table.owner">
       <notes>
         <note category="location">src/app/shared/access/token-table.ts:182</note>
       </notes>
       <segment>
         <source>Owner</source>
+      </segment>
+    </unit>
+    <unit id="token-table.token">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Token</source>
       </segment>
     </unit>
     <unit id="token-table.scope">
@@ -27185,14 +27169,6 @@
       </notes>
       <segment>
         <source>Created via</source>
-      </segment>
-    </unit>
-    <unit id="token-table.state">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:196</note>
-      </notes>
-      <segment>
-        <source>State</source>
       </segment>
     </unit>
     <unit id="token-table.actions">

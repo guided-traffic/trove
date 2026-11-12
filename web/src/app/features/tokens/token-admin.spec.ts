@@ -8,13 +8,18 @@ import { TokenAdmin } from './token-admin';
 const overlay = (): HTMLElement => document.querySelector('.cdk-overlay-container') as HTMLElement;
 
 describe('Token administration (R-UI-030)', () => {
-  it('R-UI-030 lists all active tokens with owner, type, scope and state, and passes axe', async () => {
+  it('R-UI-030 Q-UI-332 lists all active tokens with owner, scope, expiry, last use and the revoke action, and passes axe', async () => {
     const { root } = await renderScreen(TokenAdmin);
     const rows = root.querySelectorAll('tbody tr');
     expect(rows).toHaveLength(1);
     expect(text(rows[0]!)).toContain('laptop npm');
     expect(text(rows[0]!)).toContain('alice');
-    expect(text(rows[0]!)).toContain('Active');
+    // The hint names the type (`trv_pat_…`); an active token shows its action, not the word "Active".
+    expect(rows[0]!.querySelector('th code')?.textContent).toMatch(/^trv_/);
+    expect(rows[0]!.querySelector('td.actions button')?.textContent).toContain('Revoke');
+    const heads = [...root.querySelectorAll('thead th')].map((th) => text(th).replace(/help_outline/g, ''));
+    expect(heads).toEqual(['Select', 'Token', 'Owner', 'Scope', 'Expires', 'Last used', 'Actions']);
+    expect(root.querySelector('trove-data-table')?.classList.contains('stack-wide')).toBe(true);
     expect(await seriousViolations(root)).toEqual([]);
   });
 

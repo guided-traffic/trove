@@ -681,3 +681,11 @@ td.class-cell .material-icons {
   }
 }
 
+// A list whose least widths need more than 48 rem stacks below 64 rem of columns and that room (`stackWide`, the administrator's
+// list of everyone's tokens, Q-UI-332), so it never scrolls sideways before it stacks.
+@container table (max-width: 65rem) {
+  .trove-data-table.stack.stack-wide {
+    @include stacked-rows;
+  }
+}
+

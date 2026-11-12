@@ -82,19 +82,18 @@ You can hold 50 active personal tokens unless the administrator set another numb
 
 | Column | Shows |
 |---|---|
-| **Description** | Your description and the hint of the value |
-| **Type** | `pat` |
+| **Token** | Your description and the hint of the value, which starts with the type (`trv_pat_…`) |
 | **Scope** | **All repository permissions of the owner, without administration**, **Administrator: everything on this installation** (with **Administrator rights inactive** while you do not hold the role), or the number of repository grants; a warning when the token is bound to an endpoint that is no longer configured |
-| **Created**, **Expires** | Times; **Expires soon** within seven days of the expiry |
-| **Last used** | When the token last authenticated a request, recorded in batches, so it can be a few minutes behind; **Not used yet** for a token without a recorded use |
-| **Created via** | `ui`, `api` or `rotation` |
-| **State** | **Active**, **Expired** or **Revoked** |
+| **Expires** | The day (point at it for the time); **Expires soon** within seven days of the expiry; **Never** |
+| **Last used** | The day the token last authenticated a request, recorded in batches, so it can be a few minutes behind; **Not used yet** for a token without a recorded use |
+| **Created**, **Created via** | The day, and `ui`, `api` or `rotation`; in a narrower window these two are left out |
+| At the end | **Revoke** and the rotate icon for an active token; **Expired** or **Revoked** for the others |
 
 ## Rotate a token
 
 Rotating replaces a token's value and keeps its description and scope, for example on a schedule or when a value may have been seen.
 
-1. Choose **Rotate** next to the token.
+1. Choose the rotate icon (**Rotate**) next to the token.
 2. Under **The old token stays valid for**, choose **Not at all (revoked now)**, **One hour** or **One day**, and choose **Rotate**.
 3. Copy the new value from **Your new token** and replace the old one everywhere within the overlap.
 

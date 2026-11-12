@@ -14,7 +14,7 @@ A token acts as its owner and its scope can only narrow the owner's permissions.
 
 ## The Tokens screen
 
-**Admin area › Identity › Tokens** opens **Token administration**, the list of every token of the installation. It needs the permission to read tokens (the roles admin, security-admin and auditor); revoking needs the permission to revoke tokens (admin and security-admin).
+**Admin area › Identity › Tokens** opens **Token administration**, the list of every token of the installation: **Token** (the description and the hint, which starts with the type), **Owner**, **Scope**, **Expires**, **Last used**, and **Revoke** for an active token or its state for the others; in a narrower window each token is a block. It needs the permission to read tokens (the roles admin, security-admin and auditor); revoking needs the permission to revoke tokens (admin and security-admin).
 
 The filter panel narrows the list:
 
