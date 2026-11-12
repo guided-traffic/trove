@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -292,13 +293,17 @@ func containsAny(s string, subs ...string) bool {
 }
 
 // nameServers answers the check of a format without a package document: by the pair, never by a probe of a document.
+// The check asks the members of a virtual repository concurrently, so the record of the questions is guarded.
 type nameServers struct {
 	answer func(x virtual.Exposure) virtual.ProbeResult
+	mu     sync.Mutex
 	asked  []string
 }
 
 func (n *nameServers) ServesName(_ context.Context, _ virtual.Caller, x virtual.Exposure, name string) (virtual.ProbeResult, error) {
+	n.mu.Lock()
 	n.asked = append(n.asked, x.Virtual.Name.String()+" "+x.Remote.Name.String()+" "+name)
+	n.mu.Unlock()
 	return n.answer(x), nil
 }
 
