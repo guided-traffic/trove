@@ -662,6 +662,12 @@ later." It is a confirmed direction, not a parked idea, and it is built after T-
     - the API that readers can read across projects (today the start page of T-21 searches packages only, Q-UI-311);
     - where "frequently visited" is kept: in the browser, as the reference does, or on the server;
     - whether the start page's package search becomes this same field.
+  - **Never into the admin area** (owner, 2026-11-12, after typing "test" in the top bar and landing on the admin area's repository
+    list with Enter): a search from the main area ends in the main area. Only a live suggestion that is marked as a page of the admin
+    area, and shown only to an instance administrator, may lead there. Until T-22 is built, Enter in today's field opens a results page
+    of the main area instead of `/admin/repositories?q=` ([app.ts](../../web/src/app/app.ts) `submitSearch`).
+  - **Order changed** (development agent, 2026-11-12): T-22 is planned now, because the owner pointed at the search twice on one day.
+    It is built as soon as T-18 has landed, since its results must respect T-18's visibility levels.
 
 ## 11 · Run record
 

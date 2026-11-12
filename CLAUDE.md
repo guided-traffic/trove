@@ -47,5 +47,7 @@ repository type, but allow detailed settings."
 - **A default is a value in the field**, editable, not a hint beside an empty field.
 - **A field is as wide as its expected input.** A number of seconds needs no room for billions.
 - **A title names the thing:** "New Ansible repository", "New OCI repository", "New NuGet repository", not "New repository".
+- **A search never leads into the admin area** (owner, 2026-11-12): a search from the main area ends in the main area. Only a live
+  suggestion that is marked as a page of the admin area, and shown only to an instance administrator, may lead there.
 - **Every UI change is rendered and looked at before it lands** (rule 11 of [promt.md](docs/projektplan/promt.md)): both schemes, wide and
   narrow, realistic data. The renders are never committed.
