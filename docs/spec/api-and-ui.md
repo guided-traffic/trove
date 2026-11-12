@@ -2912,7 +2912,8 @@ Priority: **MVP** · Covers: UI-001, UI-004
   where the API sorts by it (`sort` of `GET /api/v1/users`, `groups`, `service-accounts`,
   `permission-policies`), or where the whole list is in the browser (endpoints); a filter appears
   only where the API takes it. The panel opens by itself while a filter is applied. The packages
-  list (R-UI-006) uses the same two components.
+  list (R-UI-006) uses the same two components. Below 48 rem of its width a list stacks its rows, and its head is one row of
+  its sort buttons above them, so it sorts at every width ([Q-UI-391](#q-ui-391--a-stacked-list-keeps-its-sort-buttons-in-a-row-above-its-blocks)).
 - User menu: profile and tokens, client setup, quick repository setup (P1; only when repositories
   may be created), language, theme, keyboard shortcuts on or off, sign out.
 - The banner of `GET /api/v1/system/banner` above the content, and a notice when maintenance mode
@@ -11356,6 +11357,47 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Choice:** (a). **Rationale:** one size for an icon in a list. The development agent records no revisit condition. **Applied in the
 spec:** R-UI-090.
+
+### Q-UI-391 · A stacked list keeps its sort buttons in a row above its blocks
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a stacked list (Q-UI-306, Q-UI-308) kept its head for assistive technology only, clipped to one pixel, so its sort
+buttons could not be reached with a pointer. The vulnerability report beside its open filter panel was narrower than 48 rem at
+1280 px, so its rows stacked there, and the journey of R-VULN-022 could not sort by **Detected** after picking a severity (the
+pipeline of `e2e (vuln)`, 2026-11-12). The same held for every sortable list on a phone. Since Q-UI-327's revision the panel sits
+above a list below 91 rem of the content area, so the report keeps its width at 1280 px; a phone still stacks every list.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The head of a stacked list shows its sortable headers as one wrapping row of sort buttons above the blocks, each with its arrow; a header that sorts nothing stays for assistive technology only (chosen) | The headers with `aria-sort` stay visible; the data table and the rows are unchanged | Sorting works at every width, with the same buttons and the same `aria-sort`; one rule in the data table's styles for every list | One row more above a stacked list |
+| (b) A sort select above a stacked list | A second control for the same order | The reference's look on a phone | Two controls for one state, kept in step; a new component |
+| (c) Narrow the report until it fits beside the panel | Fewer or narrower columns | The report stays a table at 1280 px | Every other sortable list still loses sorting when it stacks |
+
+**Choice:** (a). **Rationale:** the defect is the shared rule's, so the fix is the shared rule's; the buttons a reader sorts with
+on a wide screen are the ones on a narrow one. The development agent revisits a select if the owner wants the reference's form
+on a phone. **Applied in the spec:** R-UI-002 (List screens). Code: [_list-screens.scss](../../web/src/styles/_list-screens.scss) (Stacked rows).
+The renders' screen `vulnerabilities-filtered` sorts the report by **Detected** at every width, at 390 px in its stacked rows, and
+fails where the button cannot be clicked.
+
+### Q-UI-392 · The report's identifier column takes 10 rem, so that a triager's list fits at 1280 px
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: measured in the renders of 2026-11-12 at 1280 px, the report's rows are 923 px wide (the list's 938 px less the scrollbar's
+room, Q-UI-327) and a triager's table needed 979 px: it scrolled 41 to 56 px sideways, and the column **Detected**, which the list
+sorts by, was cut. Without the selection column (a reader) it scrolled 8 px with the filter panel open. The widths of the other
+columns are their headers' with the sort arrow, or a name that does not break.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The identifier, the name column (Q-UI-380), takes 10 rem instead of 14 (chosen) | 160 px: a `GHSA-…` or `CVE-…` identifier on one line, the advisory's summary on more lines under it | The table needs about 915 px for a triager and fits at 1280 px; nothing is dropped | The summary takes a line or two more at 1280 px; at 1440 px the column grows into the room the list has |
+| (b) The repository as a second line of the package | One column fewer | About 128 px | The column the security page names its project in (Q-UI-380) moves; the journeys find it as a cell |
+| (c) **Repository** gives way below 64 rem like **Fixed in** | One column fewer at 1280 px | Nothing else changes | The repository of a finding is not on the screen where a triager works |
+
+**Choice:** (a). **Rationale:** the identifier is the one column whose least width was a choice and not its content's. The development
+agent revisits the width if the walkthrough shows identifiers longer than 10 rem, which a column grows to on its own.
+**Applied in the spec:** R-VULN-022 (List); [vulnerability-report.ts](../../web/src/app/features/vulnerabilities/vulnerability-report.ts).
 
 ### Q-API-246 · An operation that is allowed while the installation is read-only declares `x-trove-maintenance: allowed`
 

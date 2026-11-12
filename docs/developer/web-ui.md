@@ -737,7 +737,7 @@ head in the heading colour at weight 600 between two hairlines, a hairline under
 list (Q-UI-308): a column's `width` is its least width, carried by the header cell; a `fill` column (the client address) gets
 `--trove-list-others`, the sum of the other columns' widths and padding, which `td.address-cell` leaves them; every cell is
 aligned to the top with a control centred on the first line; below 48 rem of the list's width the rows stack (class `stack`,
-`[stack]="false"` to keep the table), and after every change of the body the table labels each cell with its column
+`[stack]="false"` to keep the table) and the head shows only the headers with `aria-sort`, as a row of sort buttons (Q-UI-391), and after every change of the body the table labels each cell with its column
 (`data-label`, unless `stackLabel: false`) and marks a cell without a value (`data-empty`). An empty list shows
 `<trove-empty-state>` with the content marked `emptyAction`.
 

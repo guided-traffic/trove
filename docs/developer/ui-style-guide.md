@@ -106,6 +106,8 @@ what would need a second one belongs in the [manual](manual.md).
   its menu, then each cell on a line, named by its column (the table sets `data-label`; `stackLabel: false` where the value says
   it), a cell without a value ("–") left out, the address across the row
   ([Q-UI-306](../spec/api-and-ui.md#q-ui-306--below-48-rem-of-its-width-the-repository-list-stacks-each-row-with-the-address-across-the-row)).
+  The head of a stacked list is one row of its sort buttons above the blocks; a header that sorts nothing is for assistive
+  technology only ([Q-UI-391](../spec/api-and-ui.md#q-ui-391--a-stacked-list-keeps-its-sort-buttons-in-a-row-above-its-blocks)).
   `[stack]="false"` keeps the table for a list that cannot be read as blocks.
 - **An empty list** is `<trove-empty-state text>` with the action that fills it as its content; the data table shows it with its
   `emptyText` and the content marked `emptyAction` ([Q-UI-309](../spec/api-and-ui.md#q-ui-309--an-empty-list-or-region-is-a-sentence-and-the-action-that-fills-it-without-a-frame)).

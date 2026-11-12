@@ -77,6 +77,14 @@ async function* filtersOpen(page: Page): AsyncGenerator<string> {
   yield 'filters';
 }
 
+/** The list as it opens, then sorted by its Detected button: the click fails where the button cannot be reached. */
+async function* sortByDetection(page: Page): AsyncGenerator<string> {
+  yield '';
+  await page.locator('th').getByRole('button', { name: 'Detected' }).click();
+  await expect(page).toHaveURL(/sort=detectedAt/);
+  yield 'sorted';
+}
+
 /** The wizard asks whether the typed key is taken; a 404 means it is free. */
 const keyFree = [{ match: /^GET \/api\/v1\/projects\/[^/]+\/repositories\/renders-[a-z-]+ answered 404$/, why: 'the key check: 404 is a free key' }];
 
@@ -133,6 +141,8 @@ export const screens: readonly Screen[] = [
   { id: 'browse-folder', path: `${P}/browse/assets/releases/design-system/2.5.0`, kinds: all },
   { id: 'browse-file', path: `${P}/browse/assets/README.md`, kinds: all },
   { id: 'vulnerabilities', path: `${P}/vulnerabilities`, kinds: all, walk: filtersOpen },
+  // A filter opens the panel; the list sorts by Detected at every width, at 390 px from the sort row above its stacked rows (Q-UI-391).
+  { id: 'vulnerabilities-filtered', path: `${P}/vulnerabilities?severity=high`, kinds: admins, walk: sortByDetection },
   { id: 'members', path: `${P}/members`, kinds: all },
   { id: 'setup', path: '/ui/setup', kinds: all },
   { id: 'setup-repository', path: `/ui/setup?repository=${mainProject}/npm`, kinds: all },

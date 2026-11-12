@@ -78,7 +78,8 @@ describe('Data table', () => {
     const { root, host, settle } = await render();
     const header = root.querySelector('th[scope="col"]')!;
     expect(header.getAttribute('aria-sort')).toBe('none');
-    // The column that cannot be sorted carries no aria-sort and no sort button.
+    // The column that cannot be sorted carries no aria-sort and no sort button. A stacked list shows exactly the headers with
+    // aria-sort, as a row of sort buttons, and hides the others (Q-UI-391, _list-screens.scss).
     expect(root.querySelectorAll('th[scope="col"]')[1]!.hasAttribute('aria-sort')).toBe(false);
     expect(root.querySelectorAll('th button.th-sort')).toHaveLength(1);
 
