@@ -1,5 +1,6 @@
 import { Component, computed, input, model } from '@angular/core';
 import { FieldProblem } from '../../api/problem';
+import { FieldWidth } from '../../shared/access/fields';
 import { FormatDescriptor } from '../../api/repositories-api';
 import { fieldMessage, problemsAt } from '../../shared/field-errors';
 import { JsonObject } from '../../shared/merge-patch';
@@ -75,6 +76,8 @@ interface NumberMember {
   readonly name: string;
   readonly label: string;
   readonly hint: string;
+  /** The field width of its kind (Q-UI-335): an interval in seconds, a count, a byte count. */
+  readonly width: Extract<FieldWidth, 'number' | 'duration' | 'bytes'>;
 }
 
 /**
@@ -208,6 +211,7 @@ interface NumberMember {
               <label class="field-label" [for]="idOf(n.name)">{{ n.label }}</label>
               <input
                 class="text-input"
+                [class]="'field-w-' + n.width"
                 type="text"
                 inputmode="numeric"
                 autocomplete="off"
@@ -352,26 +356,31 @@ export class MirrorSettings {
     return [
       {
         name: 'intervalSeconds',
+        width: 'duration',
         label: labels['intervalSeconds']!,
         hint: $localize`:@@mirror.interval.hint:From the start of one pass to the start of the next. 300 to 604800. Default: 3600.`,
       },
       {
         name: 'fullPassIntervalSeconds',
+        width: 'duration',
         label: labels['fullPassIntervalSeconds']!,
         hint: $localize`:@@mirror.full-interval.hint:Age of the last full pass after which the next pass is full. 0 means only when an incremental pass cannot run; otherwise 86400 to 7776000. Default: 604800.`,
       },
       {
         name: 'concurrency',
+        width: 'number',
         label: labels['concurrency']!,
         hint: $localize`:@@mirror.concurrency.hint:The most background fetches one pass runs at once. 1 to 64. Default: 4.`,
       },
       {
         name: 'maxVersionsPerPackage',
+        width: 'number',
         label: labels['maxVersionsPerPackage']!,
         hint: $localize`:@@mirror.max-versions.hint:The newest versions of a package that a pass stores. 0 means all. 0 to 10000. Default: 0.`,
       },
       {
         name: 'maxBytes',
+        width: 'bytes',
         label: labels['maxBytes']!,
         hint: $localize`:@@mirror.max-bytes.hint:Bytes of stored content beyond which a pass adds nothing. At least 1048576. Empty means no limit of its own.`,
       },

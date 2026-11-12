@@ -21,6 +21,7 @@
   >
     <trove-filter-category i18n-label="@@tokens-admin.owner" label="Owner" [active]="!!owner().trim()" [expanded]="!!owner().trim()">
       <trove-text-field
+        width="name"
         i18n-label="@@tokens-admin.owner"
         label="Owner"
         name="owner"
@@ -37,6 +38,7 @@
     </trove-filter-category>
     <trove-filter-category i18n-label="@@tokens-admin.expires-before" label="Expires before" [active]="!!expiresBefore()" [expanded]="!!expiresBefore()">
       <trove-text-field
+        width="bytes"
         i18n-label="@@tokens-admin.expires-before"
         label="Expires before"
         name="expiresBefore"
@@ -46,6 +48,7 @@
     </trove-filter-category>
     <trove-filter-category i18n-label="@@tokens-admin.unused" label="Not used for (days)" [active]="!!unusedDays()" [expanded]="!!unusedDays()">
       <trove-text-field
+        width="duration"
         i18n-label="@@tokens-admin.unused"
         label="Not used for (days)"
         name="unusedDays"
@@ -92,6 +95,7 @@
     }
     <form class="form-grid" (submit)="revokeByValue($event)">
       <trove-text-field
+        width="full"
         i18n-label="@@tokens-admin.value"
         label="Token value"
         name="value"

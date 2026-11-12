@@ -2,7 +2,7 @@ import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
 import { text } from '../../testing/screen';
-import { SelectField, SelectOption } from './fields';
+import { FieldWidth, SelectField, SelectOption, TextField } from './fields';
 
 @Component({
   imports: [SelectField],
@@ -53,5 +53,34 @@ describe('The select field (Q-UI-334)', () => {
     expect(held.disabled).toBe(false);
     expect(held.getAttribute('aria-busy')).toBeNull();
     expect([...held.options].map((o) => text(o))).toEqual(['Choose a project', 'web']);
+  });
+});
+
+@Component({
+  imports: [TextField],
+  template: `
+    <trove-text-field label="Priority" name="priority" type="number" [width]="width()" [(value)]="value" />
+    <trove-text-field width="full" label="Description" name="description" type="textarea" [(value)]="value" />
+  `,
+})
+class TextHost {
+  readonly width = signal<FieldWidth>('number');
+  readonly value = signal('');
+}
+
+describe('The text field (Q-UI-335)', () => {
+  it('Q-UI-335 a text field takes the width its place names, a number field the width of its number, an area the column', async () => {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({ imports: [TextHost] }).compileComponents();
+    const fixture = TestBed.createComponent(TextHost);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    const input = root.querySelector('input') as HTMLInputElement;
+    expect([...input.classList]).toEqual(['text-input', 'field-w-number']);
+    fixture.componentInstance.width.set('duration');
+    fixture.detectChanges();
+    expect([...input.classList]).toEqual(['text-input', 'field-w-duration']);
+    expect([...root.querySelector('textarea')!.classList]).toEqual(['area-input', 'field-w-full']);
   });
 });

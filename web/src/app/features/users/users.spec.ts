@@ -1,5 +1,5 @@
 import { IdentityApi } from '../../api/identity-api';
-import { FakeIdentityApi, problem } from '../../api/testing/access-fakes';
+import { FakeIdentityApi, problem, sampleUser } from '../../api/testing/access-fakes';
 import { SessionsApi } from '../../api/sessions-api';
 import { FakeSessionsApi } from '../../api/testing/access-fakes';
 import { seriousViolations } from '../../testing/axe';
@@ -147,6 +147,24 @@ describe('User detail (R-UI-024)', () => {
     expect((get(IdentityApi) as FakeIdentityApi).calls).toContain('removeUserAvatar bob');
     expect(root.textContent).not.toContain('Remove avatar');
     expect(root.querySelector('dd trove-avatar img')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
+  });
+
+  it('R-UI-024 Q-UI-333 the break-glass account, read with tokens:read and no Advanced action, shows its tokens and no section Advanced', async () => {
+    const { root } = await renderScreen(UserDetail, {
+      inputs: { username: 'break-glass' },
+      capabilities: ['identities:read', 'tokens:read'],
+      setup: (g) => {
+        const api = g(IdentityApi) as FakeIdentityApi;
+        api.userList = [
+          ...api.userList,
+          sampleUser({ id: '00000000-0000-7000-8000-0000000000bb', username: 'break-glass', displayName: 'Break-glass', origin: 'system', identities: [] }),
+        ];
+      },
+    });
+    const headings = [...root.querySelectorAll('trove-disclosure .heading')].map((h) => text(h).replace('chevron_right', '').trim());
+    expect(headings).toContain('Tokens');
+    expect(headings).not.toContain('Advanced');
+    expect(root.textContent).not.toContain('Revoke all tokens');
   });
 
   it('R-UI-051 without identities:write the administrator screen offers no removal', async () => {

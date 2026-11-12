@@ -12,12 +12,12 @@
 
   <div class="settings">
     <div class="row">
-      <trove-text-field i18n-label="@@profile.username" label="User name" name="username" [value]="u.username" [readonly]="true" />
-      <trove-text-field i18n-label="@@profile.display-name" label="Display name" name="displayName" [value]="u.displayName ?? ''" [readonly]="true" />
+      <trove-text-field width="name" i18n-label="@@profile.username" label="User name" name="username" [value]="u.username" [readonly]="true" />
+      <trove-text-field width="name" i18n-label="@@profile.display-name" label="Display name" name="displayName" [value]="u.displayName ?? ''" [readonly]="true" />
     </div>
     <div class="row">
-      <trove-text-field i18n-label="@@profile.email" label="Email" name="email" [value]="u.email ?? ''" [readonly]="true" />
-      <trove-text-field i18n-label="@@profile.last-login" label="Last sign-in" name="lastLogin" [value]="(u.lastLoginAt | date: 'medium') ?? ''" [readonly]="true" />
+      <trove-text-field width="name" i18n-label="@@profile.email" label="Email" name="email" [value]="u.email ?? ''" [readonly]="true" />
+      <trove-text-field width="name" i18n-label="@@profile.last-login" label="Last sign-in" name="lastLogin" [value]="(u.lastLoginAt | date: 'medium') ?? ''" [readonly]="true" />
     </div>
     <p class="muted" i18n="@@profile.identity-note">
       Your name and email come from the identity provider and are replaced at every sign-in.

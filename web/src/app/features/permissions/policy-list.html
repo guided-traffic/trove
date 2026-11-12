@@ -21,6 +21,7 @@
   >
     <trove-filter-category i18n-label="@@policies.principal" label="Principal" [active]="!!principalFilter().trim()" [expanded]="!!principalFilter().trim()">
       <trove-text-field
+        width="name"
         i18n-label="@@policies.principal"
         label="Principal"
         name="principal"
@@ -30,10 +31,10 @@
       />
     </trove-filter-category>
     <trove-filter-category i18n-label="@@policies.repository" label="Repository" [active]="!!repositoryFilter().trim()" [expanded]="!!repositoryFilter().trim()">
-      <trove-text-field i18n-label="@@policies.repository" label="Repository" name="repository" [(value)]="repositoryFilter" />
+      <trove-text-field width="name" i18n-label="@@policies.repository" label="Repository" name="repository" [(value)]="repositoryFilter" />
     </trove-filter-category>
     <trove-filter-category i18n-label="@@policies.project" label="Project" [active]="!!projectFilter().trim()" [expanded]="!!projectFilter().trim()">
-      <trove-text-field i18n-label="@@policies.project" label="Project" name="project" [(value)]="projectFilter" />
+      <trove-text-field width="name" i18n-label="@@policies.project" label="Project" name="project" [(value)]="projectFilter" />
     </trove-filter-category>
   </trove-filter-panel>
 

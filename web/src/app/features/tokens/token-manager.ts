@@ -245,8 +245,12 @@ export class TokenManager {
   protected readonly canRevokeAll = computed(() => this.canRevoke());
   /** Whether the list holds a token: a page opens its section Tokens then (Q-UI-333). */
   readonly hasTokens = computed(() => this.list.items().length > 0);
-  /** Whether **Revoke all tokens** is offered: the caller may, and the owner has a token in the list. */
-  readonly offersRevokeAll = computed(() => this.canRevokeAll() && this.list.items().length > 0);
+  /**
+   * Whether **Revoke all tokens** is offered: the owner has a token in the list, and the caller may. The page reads it in its own
+   * template, which can run before `scope` is bound (the section Advanced of a user without other actions, such as the
+   * break-glass account): the list is checked first, and it holds a token only after it was read for a bound `scope`.
+   */
+  readonly offersRevokeAll = computed(() => this.list.items().length > 0 && this.canRevokeAll());
 
   constructor() {
     inject(DestroyRef).onDestroy(() => this.secret.set(null));

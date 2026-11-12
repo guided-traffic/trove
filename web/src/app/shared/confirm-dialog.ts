@@ -46,7 +46,7 @@ export interface ConfirmResult {
           <code translate="no">{{ expected }}</code>
           <input
             id="confirm-name"
-            class="text-input"
+            class="text-input field-w-name"
             autocomplete="off"
             spellcheck="false"
             [value]="typed()"

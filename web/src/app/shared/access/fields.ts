@@ -51,6 +51,7 @@ function revealRule(): { readonly touched: () => void; readonly reveal: Signal<b
       @if (type() === 'textarea') {
         <textarea
           class="area-input"
+          [class]="'field-w-' + width()"
           rows="3"
           [id]="id"
           [name]="name()"
@@ -65,6 +66,7 @@ function revealRule(): { readonly touched: () => void; readonly reveal: Signal<b
       } @else {
         <input
           class="text-input"
+          [class]="'field-w-' + width()"
           [id]="id"
           [type]="type()"
           [name]="name()"
@@ -102,11 +104,7 @@ function revealRule(): { readonly touched: () => void; readonly reveal: Signal<b
       margin-block-end: var(--trove-space-1);
     }
     .area-input {
-      inline-size: 100%;
       resize: vertical;
-    }
-    .text-input {
-      inline-size: 100%;
     }
     .hint {
       margin: 0;
@@ -120,6 +118,12 @@ function revealRule(): { readonly touched: () => void; readonly reveal: Signal<b
 })
 export class TextField {
   readonly label = input.required<string>();
+  /**
+   * The width of the expected input (Q-UI-335): a count `number`, a period `duration`, a byte count, a date or a long ID `bytes`,
+   * a key, a name or a login `name`, a URL, a description, a pattern or a list `full`. Every place names it, so a field is never
+   * as wide as the column by accident.
+   */
+  readonly width = input.required<FieldWidth>();
   readonly value = model('');
   readonly name = input('');
   readonly type = input<'text' | 'email' | 'password' | 'date' | 'number' | 'textarea'>('text');

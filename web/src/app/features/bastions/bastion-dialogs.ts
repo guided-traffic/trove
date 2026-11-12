@@ -26,6 +26,7 @@ import { asApiError } from '../../shared/paged-resource';
           <trove-error-notice [error]="e" />
         }
         <trove-text-field
+          width="name"
           i18n-label="@@bastion-create.name"
           label="Name"
           name="name"
@@ -35,6 +36,7 @@ import { asApiError } from '../../shared/paged-resource';
           [hint]="nameHint"
         />
         <trove-text-field
+          width="full"
           i18n-label="@@bastion-create.description"
           label="Description"
           name="description"
@@ -131,6 +133,7 @@ export interface BastionTokenDialogData {
           <trove-error-notice [error]="e" />
         }
         <trove-text-field
+          width="full"
           i18n-label="@@bastion-token.description"
           label="Description"
           name="description"
@@ -139,6 +142,7 @@ export interface BastionTokenDialogData {
           [hint]="descriptionHint"
         />
         <trove-text-field
+          width="duration"
           i18n-label="@@bastion-token.days"
           label="Lifetime in days"
           name="days"

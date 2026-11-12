@@ -73,6 +73,7 @@
       @if (canWrite()) {
         <form class="toolbar" (submit)="bind($event, r.name)">
           <trove-text-field
+            width="name"
             i18n-label="@@roles.bind-principal"
             label="Bind to"
             [name]="'principal-' + r.name"

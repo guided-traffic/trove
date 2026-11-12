@@ -11542,6 +11542,38 @@ use the same names. The development agent revisits a select whose closed text th
 [exposure-rule-editor.html](../../web/src/app/features/endpoints/exposure-rule-editor.html),
 [_controls.scss](../../web/src/styles/_controls.scss).
 
+### Q-UI-335 · Every text field names the width of its expected input, and a number field is never the column
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the coordinator's look at `admin/project-ci-mapping-new-dark-1440.png` (2026-11-12): **Priority** (a small number) and
+**Maximum token lifetime (seconds)** each spanned about 700 px, against the owner's rule of the day that a field for a period in
+seconds need not offer room for billions. Q-UI-334 had given the selects their width; every text field still took its column.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `<trove-text-field>` must name its `width` (a required input), a raw input of a form carries the class, the schema-driven settings derive it (`widthOf`), and a lint check fails a number field without a number width (chosen) | The five widths of Q-UI-334 on every field, by the kind of its expected input | The compiler refuses a text field without a width, so a new field is decided where it is written; the check keeps raw number inputs honest | Every text area says `full` |
+| (b) A default width (`full` or `name`) with exceptions | Fewer attributes | Short templates | A forgotten field silently takes the default, which is how the finding arose |
+| (c) Width by `type` alone | `number` → number width | Automatic | A period in seconds is not a count, and an ID of nineteen digits is neither |
+
+**Choice:** (a). The kinds: a count, a priority, a port or a limit `number`; seconds, a TTL, a period in days `duration`; a byte
+count, an ID of up to nineteen digits (a GitLab pipeline or job ID) and a date `bytes`, the nearest width that holds a date and
+its picker; a key, a name, a login, an email address or a principal `name`; a URL, a description, a path, a pattern and every list
+or text area `full`. A filter panel and a search row give their fields their own width. Read-only fields that show a record (the
+profile's identity, an issuer's or an endpoint's configuration) take the width of their value the same way. A schema member's
+width comes from its name and schema, since a schema states no unit: `…Seconds`, `…Ttl`, `…Interval`, `…Timeout` a duration,
+`…Bytes`, `…Size` bytes, any other number a count, a URL or a string longer than 128 characters the column, any other string a
+name; a URL (`format: uri`, or a pattern that starts with the scheme) is one line, never a text area. A field and the button that
+acts on it share a row, the button level with the control.
+
+**Rationale:** the finding was a default nobody chose; a required width moves the choice to the place that knows the input. The
+development agent revisits a width whose renders cut a common value, by moving the field to the next width, not by a sixth one.
+
+**Applied in the spec:** ui-style-guide.md (Forms). Code: [fields.ts](../../web/src/app/shared/access/fields.ts),
+[settings-schema.ts](../../web/src/app/features/repositories/settings-schema.ts),
+[mirror-settings.ts](../../web/src/app/features/repositories/mirror-settings.ts),
+[field-width-rule.mjs](../../web/scripts/field-width-rule.mjs).
+
 ### Q-UI-370 · The grades take cogpit's colours, and S, A and B are the greens of a good grade
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.

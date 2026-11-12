@@ -31,11 +31,11 @@
     }
     <form (submit)="save($event)" novalidate>
       <div class="row">
-        <trove-text-field i18n-label="@@group.name" label="Name" name="name" [(value)]="newName" [readonly]="readOnly() || !canWrite()" [error]="fieldError('/name')" />
-        <trove-text-field i18n-label="@@group.origin" label="Origin" name="origin" [value]="originLabel(g.origin)" [readonly]="true" />
+        <trove-text-field width="name" i18n-label="@@group.name" label="Name" name="name" [(value)]="newName" [readonly]="readOnly() || !canWrite()" [error]="fieldError('/name')" />
+        <trove-text-field width="name" i18n-label="@@group.origin" label="Origin" name="origin" [value]="originLabel(g.origin)" [readonly]="true" />
       </div>
-      <trove-text-field i18n-label="@@group.created" label="Created" name="created" [value]="(g.createdAt | date: 'medium') ?? ''" [readonly]="true" />
-      <trove-text-field i18n-label="@@group.description" label="Description" name="description" [(value)]="description" [readonly]="readOnly() || !canWrite()" [error]="fieldError('/description')" />
+      <trove-text-field width="name" i18n-label="@@group.created" label="Created" name="created" [value]="(g.createdAt | date: 'medium') ?? ''" [readonly]="true" />
+      <trove-text-field width="full" i18n-label="@@group.description" label="Description" name="description" [(value)]="description" [readonly]="readOnly() || !canWrite()" [error]="fieldError('/description')" />
       <trove-checkbox [checked]="autoJoin()" [disabled]="readOnly() || !canWrite()" (checkedChange)="autoJoin.set($event)">
         <ng-container i18n="@@group.auto-join">Every user joins this group automatically</ng-container>
       </trove-checkbox>
@@ -104,6 +104,7 @@
     @if (canWrite() && !readOnly()) {
       <form class="toolbar" (submit)="addMember($event)">
         <trove-text-field
+          width="name"
           i18n-label="@@group.add-member"
           label="Add a member"
           name="member"

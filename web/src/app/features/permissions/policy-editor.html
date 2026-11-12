@@ -44,6 +44,7 @@
         <h2 id="h-general" class="visually-hidden" i18n="@@policy.general">General</h2>
         @if (isNew()) {
           <trove-text-field
+            width="name"
             i18n-label="@@policy.name"
             label="Name"
             name="name"
@@ -54,6 +55,7 @@
           />
         }
         <trove-text-field
+          width="full"
           i18n-label="@@policy.description"
           label="Description"
           name="description"
@@ -85,6 +87,7 @@
           <fieldset class="entry">
             <legend i18n="@@policy.entry">Entry {{ i + 1 }}</legend>
             <trove-text-field
+              width="name"
               i18n-label="@@policy.entry-principal"
               label="Principal"
               [name]="'principal-' + i"
@@ -149,6 +152,7 @@
         [(expanded)]="resourcesOpen"
       >
         <trove-text-field
+          width="full"
           i18n-label="@@policy.repositories"
           label="Repository selectors"
           name="repositories"
@@ -198,19 +202,19 @@
           One pattern per line. * is any run of characters except /, ** includes /, ? is one character, \ makes the next character literal. An empty include list is unrestricted; exclude always wins within this policy.
         </p>
         <div class="two">
-          <trove-text-field i18n-label="@@policy.packages-include" label="Include" name="packagesInclude" type="textarea" [(value)]="packagesInclude" [readonly]="!canWrite()" [error]="problems('/resources/packages/include')[0] ?? null" />
-          <trove-text-field i18n-label="@@policy.packages-exclude" label="Exclude" name="packagesExclude" type="textarea" [(value)]="packagesExclude" [readonly]="!canWrite()" [error]="problems('/resources/packages/exclude')[0] ?? null" />
+          <trove-text-field width="full" i18n-label="@@policy.packages-include" label="Include" name="packagesInclude" type="textarea" [(value)]="packagesInclude" [readonly]="!canWrite()" [error]="problems('/resources/packages/include')[0] ?? null" />
+          <trove-text-field width="full" i18n-label="@@policy.packages-exclude" label="Exclude" name="packagesExclude" type="textarea" [(value)]="packagesExclude" [readonly]="!canWrite()" [error]="problems('/resources/packages/exclude')[0] ?? null" />
         </div>
         <h3 i18n="@@policy.paths">Paths</h3>
         <div class="two">
-          <trove-text-field i18n-label="@@policy.paths-include" label="Include" name="pathsInclude" type="textarea" [(value)]="pathsInclude" [readonly]="!canWrite()" [error]="problems('/resources/paths/include')[0] ?? null" />
-          <trove-text-field i18n-label="@@policy.paths-exclude" label="Exclude" name="pathsExclude" type="textarea" [(value)]="pathsExclude" [readonly]="!canWrite()" [error]="problems('/resources/paths/exclude')[0] ?? null" />
+          <trove-text-field width="full" i18n-label="@@policy.paths-include" label="Include" name="pathsInclude" type="textarea" [(value)]="pathsInclude" [readonly]="!canWrite()" [error]="problems('/resources/paths/include')[0] ?? null" />
+          <trove-text-field width="full" i18n-label="@@policy.paths-exclude" label="Exclude" name="pathsExclude" type="textarea" [(value)]="pathsExclude" [readonly]="!canWrite()" [error]="problems('/resources/paths/exclude')[0] ?? null" />
         </div>
 
         <h3 i18n="@@policy.tester">Pattern tester</h3>
         <div class="tester">
           <trove-select-field i18n-label="@@policy.tester-kind" label="Test against" name="testDimension" [options]="dimensionOptions" [(value)]="testDimension" />
-          <trove-text-field i18n-label="@@policy.tester-value" label="Does this match?" name="testValue" [(value)]="testValue" />
+          <trove-text-field width="name" i18n-label="@@policy.tester-value" label="Does this match?" name="testValue" [(value)]="testValue" />
         </div>
         @if (testVerdict(); as v) {
           <p role="status" [class]="verdictOk(v) ? 'ok' : 'bad'">
@@ -283,8 +287,8 @@
         <h3 i18n="@@policy.try">Try it</h3>
         <p class="muted" i18n="@@policy.try-help">Ask why a principal can or cannot do something. Only this draft is evaluated.</p>
         <div class="try">
-          <trove-text-field i18n-label="@@policy.try-principal" label="Principal" name="askPrincipal" [(value)]="askPrincipal" i18n-hint="@@policy.try-principal-hint" hint="for example user:alice" />
-          <trove-text-field i18n-label="@@policy.try-repository" label="Repository" name="askRepository" [(value)]="askRepository" />
+          <trove-text-field width="name" i18n-label="@@policy.try-principal" label="Principal" name="askPrincipal" [(value)]="askPrincipal" i18n-hint="@@policy.try-principal-hint" hint="for example user:alice" />
+          <trove-text-field width="name" i18n-label="@@policy.try-repository" label="Repository" name="askRepository" [(value)]="askRepository" />
           <trove-select-field i18n-label="@@policy.try-action" label="Action" name="askAction" [options]="actionOptions" [(value)]="askAction" />
           <button class="btn btn-default explain" type="button" (click)="explain($event)" i18n="@@policy.try-ask">Explain</button>
         </div>

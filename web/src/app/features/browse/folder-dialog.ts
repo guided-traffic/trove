@@ -22,7 +22,7 @@ export interface FolderDialogData {
         <label class="field-label" for="folder-name" i18n="@@folder.name">Folder name</label>
         <input
           id="folder-name"
-          class="text-input"
+          class="text-input field-w-name"
           autocomplete="off"
           spellcheck="false"
           [value]="name()"

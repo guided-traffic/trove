@@ -28,6 +28,7 @@ import { ErrorNotice } from '../../shared/error-notice';
           <trove-error-notice [error]="e" />
         }
         <trove-text-field
+          width="name"
           i18n-label="@@user-create.username"
           label="User name"
           name="username"
@@ -37,8 +38,8 @@ import { ErrorNotice } from '../../shared/error-notice';
           i18n-hint="@@user-create.username-hint"
           hint="Lower-case letters, digits and . _ @ + -"
         />
-        <trove-text-field i18n-label="@@user-create.display-name" label="Display name" name="displayName" [(value)]="displayName" [error]="fieldError('/displayName')" />
-        <trove-text-field i18n-label="@@user-create.email" label="Email" name="email" type="email" [(value)]="email" [error]="fieldError('/email')" />
+        <trove-text-field width="name" i18n-label="@@user-create.display-name" label="Display name" name="displayName" [(value)]="displayName" [error]="fieldError('/displayName')" />
+        <trove-text-field width="name" i18n-label="@@user-create.email" label="Email" name="email" type="email" [(value)]="email" [error]="fieldError('/email')" />
         <trove-checkbox [checked]="shownExternal()" describedBy="user-create-external-note" (checkedChange)="chosenExternal.set($event)">
           <ng-container i18n="@@user-create.external">External user</ng-container>
         </trove-checkbox>

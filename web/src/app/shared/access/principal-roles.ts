@@ -88,7 +88,7 @@ export const ROLE_NAMES: readonly RoleName[] = [
           }
         }
         @if (canWrite() && free().length > 0) {
-          <div class="bind">
+          <div class="field-action-row">
             <trove-select-field
               i18n-label="@@principal-roles.bind-label"
               label="Role to bind"

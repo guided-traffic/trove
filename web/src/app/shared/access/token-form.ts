@@ -51,6 +51,7 @@ export interface TokenDraft {
   template: `
     <form class="form" (submit)="submit($event)" novalidate>
       <trove-text-field
+        width="full"
         i18n-label="@@token-form.description"
         label="Description"
         name="description"
@@ -75,6 +76,7 @@ export interface TokenDraft {
       }
       @if (lifetime() === 'custom') {
         <trove-text-field
+          width="bytes"
           i18n-label="@@token-form.expires"
           label="Expires on (UTC)"
           name="expires"
@@ -103,6 +105,7 @@ export interface TokenDraft {
         </label>
         @if (restricted()) {
           <trove-text-field
+            width="full"
             i18n-label="@@token-form.repositories"
             label="Repositories"
             name="repositories"
@@ -114,6 +117,7 @@ export interface TokenDraft {
             hint="One project/key or pattern per line, for example web/npm-internal or web/npm-team-*; or a class such as @any-local."
           />
           <trove-text-field
+            width="full"
             i18n-label="@@token-form.packages"
             label="Package patterns (optional)"
             name="packages"

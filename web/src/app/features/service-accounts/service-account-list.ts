@@ -37,6 +37,7 @@ export interface ServiceAccountCreateData {
           <trove-error-notice [error]="e" />
         }
         <trove-text-field
+          width="name"
           i18n-label="@@sa-create.name"
           label="Name"
           name="name"
@@ -45,7 +46,7 @@ export interface ServiceAccountCreateData {
           [error]="fieldError('/name')"
           [hint]="nameHint"
         />
-        <trove-text-field i18n-label="@@sa-create.description" label="Description" name="description" [(value)]="description" [error]="fieldError('/description')" />
+        <trove-text-field width="full" i18n-label="@@sa-create.description" label="Description" name="description" [(value)]="description" [error]="fieldError('/description')" />
       </div>
       <div class="dialog-actions">
         <button class="btn btn-tertiary" type="button" troveDialogClose i18n="@@sa-create.cancel">Cancel</button>
@@ -125,7 +126,7 @@ export class ServiceAccountCreateDialog {
         (clearAll)="clear()"
       >
         <trove-filter-category i18n-label="@@sas.q" label="Name" [active]="!!q().trim()" [expanded]="!!q().trim()">
-          <trove-text-field i18n-label="@@sas.q" label="Name" name="q" [(value)]="q" />
+          <trove-text-field width="name" i18n-label="@@sas.q" label="Name" name="q" [(value)]="q" />
         </trove-filter-category>
       </trove-filter-panel>
 

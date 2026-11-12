@@ -129,6 +129,7 @@ export interface TriageDialogResult {
             />
           }
           <trove-text-field
+            width="full"
             i18n-label="@@vuln.triage.comment"
             label="Comment"
             name="comment"

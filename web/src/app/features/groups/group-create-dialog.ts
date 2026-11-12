@@ -22,6 +22,7 @@ import { ErrorNotice } from '../../shared/error-notice';
           <trove-error-notice [error]="e" />
         }
         <trove-text-field
+          width="name"
           i18n-label="@@group-create.name"
           label="Name"
           name="name"
@@ -31,7 +32,7 @@ import { ErrorNotice } from '../../shared/error-notice';
           i18n-hint="@@group-create.name-hint"
           hint="Lower-case letters, digits and . _ -"
         />
-        <trove-text-field i18n-label="@@group-create.description" label="Description" name="description" [(value)]="description" [error]="fieldError('/description')" />
+        <trove-text-field width="full" i18n-label="@@group-create.description" label="Description" name="description" [(value)]="description" [error]="fieldError('/description')" />
         <trove-checkbox [checked]="autoJoin()" (checkedChange)="autoJoin.set($event)">
           <ng-container i18n="@@group-create.auto-join">Every user joins this group automatically</ng-container>
         </trove-checkbox>

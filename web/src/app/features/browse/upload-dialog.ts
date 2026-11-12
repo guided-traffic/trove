@@ -39,7 +39,7 @@ interface Entry {
         <label class="field-label" for="upload-folder" i18n="@@upload.folder">Target folder</label>
         <input
           id="upload-folder"
-          class="text-input"
+          class="text-input field-w-full"
           autocomplete="off"
           spellcheck="false"
           [value]="folder()"

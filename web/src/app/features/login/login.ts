@@ -59,7 +59,7 @@ import { LogoPreview } from './logo-preview';
                 <label class="field-label" for="login-username" i18n="@@login.local.username">Username</label>
                 <input
                   id="login-username"
-                  class="text-input"
+                  class="text-input field-w-name"
                   name="username"
                   autocomplete="username"
                   [value]="username()"
@@ -70,7 +70,7 @@ import { LogoPreview } from './logo-preview';
                 <label class="field-label" for="login-password" i18n="@@login.local.password">Password</label>
                 <input
                   id="login-password"
-                  class="text-input"
+                  class="text-input field-w-name"
                   type="password"
                   name="password"
                   autocomplete="current-password"

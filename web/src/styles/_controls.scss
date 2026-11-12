@@ -316,6 +316,19 @@ span.bad:has(> .material-icons) {
   inline-size: 100%;
 }
 
+// A field and the button that acts on it, on one line: the button stands level with the control, not with the field's label, and
+// moves under the field where the line is too narrow (Q-UI-335).
+.field-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  column-gap: var(--trove-space-2);
+
+  > .btn {
+    margin-block-end: var(--trove-space-3);
+  }
+}
+
 .text-input[aria-invalid='true'],
 .select-input[aria-invalid='true'],
 .area-input[aria-invalid='true'] {

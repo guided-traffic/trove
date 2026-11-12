@@ -85,7 +85,7 @@ function shown(value: unknown): string {
                   n.label
                 }}</label>
                 <select
-                  class="select-input"
+                  class="select-input field-w-name"
                   [id]="n.id"
                   [attr.aria-invalid]="invalid(n)"
                   [attr.aria-describedby]="describedBy(n)"
@@ -175,6 +175,7 @@ function shown(value: unknown): string {
                 } @else {
                   <input
                     class="text-input"
+                    [class]="'field-w-' + widthOf(n)"
                     [id]="n.id"
                     [type]="isUrl(n) ? 'url' : 'text'"
                     [attr.inputmode]="inputMode(n)"
@@ -295,6 +296,11 @@ export class FormatSettings {
 
   protected choice(n: SettingNode): Of<'choice'> {
     return n as Of<'choice'>;
+  }
+
+  /** The field width of a line (Q-UI-335): the member's, `name` for a construct without one. */
+  protected widthOf(n: SettingNode): string {
+    return n.kind === 'text' || n.kind === 'number' ? n.width : 'name';
   }
 
   protected inputMode(n: SettingNode): string | null {

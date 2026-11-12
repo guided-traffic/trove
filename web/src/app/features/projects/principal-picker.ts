@@ -28,6 +28,7 @@ export const PICKER_MIN_CHARS = 2;
   template: `
     <div class="picker">
       <trove-text-field
+        width="name"
         [label]="label()"
         [name]="name()"
         [(value)]="text"

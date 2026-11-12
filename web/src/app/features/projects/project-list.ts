@@ -61,7 +61,7 @@ import { PageHeader } from '../../shared/ui/page-header';
         (clearAll)="clear()"
       >
         <trove-filter-category i18n-label="@@projects.q" label="Key or name" [active]="!!q().trim()" [expanded]="!!q().trim()">
-          <trove-text-field i18n-label="@@projects.q" label="Key or name" name="q" [(value)]="q" />
+          <trove-text-field width="name" i18n-label="@@projects.q" label="Key or name" name="q" [(value)]="q" />
         </trove-filter-category>
       </trove-filter-panel>
 

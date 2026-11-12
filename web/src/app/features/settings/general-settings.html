@@ -8,6 +8,7 @@
 <div class="settings">
   @if (info(); as i) {
     <trove-text-field
+      width="full"
       i18n-label="@@general.base-url"
       label="Public base URL"
       name="baseUrl"
@@ -106,6 +107,7 @@
             [error]="bannerFieldError('/severity')"
           />
           <trove-text-field
+            width="name"
             i18n-label="@@general.banner.title"
             label="Title (optional)"
             name="title"
@@ -113,6 +115,7 @@
             [error]="bannerFieldError('/title')"
           />
           <trove-text-field
+            width="full"
             i18n-label="@@general.banner.message"
             label="Banner message"
             name="message"
@@ -191,6 +194,7 @@
           </trove-checkbox>
           @if (readOnly()) {
             <trove-text-field
+              width="full"
               i18n-label="@@general.mode.message"
               label="Maintenance message"
               name="maintenanceMessage"
@@ -203,6 +207,7 @@
               <ng-container i18n="@@general.mode.cache-fill">Remote repositories keep filling their cache</ng-container>
             </trove-checkbox>
             <trove-text-field
+              width="duration"
               i18n-label="@@general.mode.retry-after"
               label="Retry after (seconds)"
               name="retryAfterSeconds"

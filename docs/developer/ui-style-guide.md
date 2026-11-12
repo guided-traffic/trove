@@ -179,18 +179,23 @@ The button has `aria-expanded` and `aria-controls`. A closed region is `visibili
   its own; a field outside a form shows its error at once. An error says in words what to type, never the pattern (UI-A-42).
 - A field is as wide as its kind of input, by one of five widths, so the fields of one column line up whatever their content says
   ([Q-UI-334](../spec/api-and-ui.md#q-ui-334--a-picker-is-one-control-from-the-start-held-while-its-list-loads-and-a-field-is-as-wide-as-its-kind-of-input)).
-  The tokens are in [_tokens.scss](../../web/src/styles/_tokens.scss), the classes in [_controls.scss](../../web/src/styles/_controls.scss);
-  `<trove-select-field>` takes `width` (`name` unless its place fills a line):
+  The tokens are in [_tokens.scss](../../web/src/styles/_tokens.scss), the classes in [_controls.scss](../../web/src/styles/_controls.scss).
+  `<trove-text-field>` must name its `width` ([Q-UI-335](../spec/api-and-ui.md#q-ui-335--every-text-field-names-the-width-of-its-expected-input-and-a-number-field-is-never-the-column)); `<trove-select-field>` takes `width`
+  (`name` unless its place fills a line); a raw input of a form carries the class:
 
   | Class | Token | Width | For |
   |---|---|---|---|
-  | `field-w-number` | `--trove-field-width-number` | 6 rem | a count of up to six digits |
-  | `field-w-duration` | `--trove-field-width-duration` | 8 rem | a period in seconds, up to eight digits |
-  | `field-w-bytes` | `--trove-field-width-bytes` | 13 rem | a byte count, up to nineteen digits |
-  | `field-w-name` | `--trove-field-width-name` | 28 rem, half the column | a key, a name, a host, every select and every picker |
-  | `field-w-full` | — | the column | a URL, a description, a list, a key block |
+  | `field-w-number` | `--trove-field-width-number` | 6 rem | a count of up to six digits: a priority, a port, a limit |
+  | `field-w-duration` | `--trove-field-width-duration` | 8 rem | a period, up to eight digits: seconds, a TTL, days |
+  | `field-w-bytes` | `--trove-field-width-bytes` | 13 rem | a byte count or an ID of up to nineteen digits, a date |
+  | `field-w-name` | `--trove-field-width-name` | 28 rem, half the column | a key, a name, a login, a host, every select and every picker |
+  | `field-w-full` | — | the column | a URL, a description, a path, a pattern, a list, a key block; every text area |
 
-  A field is never wider than its column; a narrower column shrinks it. A filter panel's fields take the panel's width.
+  A field is never wider than its column; a narrower column shrinks it. A filter panel's fields and a search row's fields take
+  the panel's or the row's width. A number field never takes the column: `check-rules.mjs` fails the lint for a template's number
+  field (`type="number"`, `inputmode="numeric"` or `"decimal"`, a pattern of digits) without the width number, duration or bytes.
+  A URL is one line however long it may be. A field and the button that acts on it (**Bind role**, **Move repository**) stand in
+  `.field-action-row`: the button level with the control, under it where the line is too narrow.
 - A control that offers a list read from the server is the same control from the start. While the list loads it is disabled,
   `aria-busy`, and says so ("Loading policies…" as a select's one option or a field's placeholder); it never starts as one kind of
   control and turns into another. A list that can be long (policies, groups) is a text field with suggestions (`datalist`) and

@@ -306,16 +306,18 @@
             <p class="hint" i18n="@@repo.move.hint">
               The repository keeps its key and its content; its address changes. You must be Owner of the target project too.
             </p>
-            <trove-select-field
-              i18n-label="@@repo.move.target"
-              label="Target project"
-              name="moveTarget"
-              [options]="moveOptions()"
-              [(value)]="moveTarget"
-            />
-            <button class="btn btn-default" type="button" [disabled]="!moveTarget() || moving()" (click)="move()" i18n="@@repo.move.action">
-              Move repository
-            </button>
+            <div class="field-action-row">
+              <trove-select-field
+                i18n-label="@@repo.move.target"
+                label="Target project"
+                name="moveTarget"
+                [options]="moveOptions()"
+                [(value)]="moveTarget"
+              />
+              <button class="btn btn-default" type="button" [disabled]="!moveTarget() || moving()" (click)="move()" i18n="@@repo.move.action">
+                Move repository
+              </button>
+            </div>
           </section>
         }
         <!-- The destructive action comes last, behind its own closed section (the style guide's settings rule). -->

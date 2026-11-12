@@ -46,6 +46,7 @@ export interface ProjectDialogData {
           <trove-error-notice [error]="e" />
         }
         <trove-text-field
+          width="name"
           i18n-label="@@project-dialog.key"
           label="Key"
           name="key"
@@ -57,6 +58,7 @@ export interface ProjectDialogData {
           hint="Lower-case letters, digits and -, two to 32 characters, starting with a letter and ending with a letter or digit. Cannot be changed later."
         />
         <trove-text-field
+          width="name"
           i18n-label="@@project-dialog.display-name"
           label="Display name"
           name="displayName"
@@ -65,6 +67,7 @@ export interface ProjectDialogData {
           [error]="displayNameError()"
         />
         <trove-text-field
+          width="full"
           i18n-label="@@project-dialog.description"
           label="Description"
           name="description"

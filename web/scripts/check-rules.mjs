@@ -4,9 +4,11 @@
 //  - R-ARCH-007: no string literal that starts with /files/ or /api/<format>/ in src, except the
 //    files client in src/app/api/ and generated code.
 //  - R-UI-050: every manual page that src/app/core/help-topics.ts names is a file of docs/manual/.
+//  - Q-UI-335: every number field of a template names its width (field-width-rule.mjs).
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { numberFieldsWithoutWidth } from './field-width-rule.mjs';
 
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 
@@ -51,6 +53,14 @@ for (const [, section, page] of topics.matchAll(/section: '([a-z]+)', page: '([a
   if (!existsSync(join(root, '..', 'docs', 'manual', section, `${page}.md`))) {
     failed = true;
     console.error(`R-UI-050: src/app/core/help-topics.ts names docs/manual/${section}/${page}.md, which does not exist`);
+  }
+}
+
+// A number field is as wide as its number, never the column (Q-UI-335).
+for (const file of sources.filter((p) => /\.(ts|html)$/.test(p) && !p.endsWith('.spec.ts'))) {
+  for (const { line, tag } of numberFieldsWithoutWidth(readFileSync(file, 'utf8'))) {
+    failed = true;
+    console.error(`Q-UI-335: ${relative(root, file)}:${line}: a number field without the width number, duration or bytes: ${tag.split('\n')[0].trim()}`);
   }
 }
 

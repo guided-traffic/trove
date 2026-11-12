@@ -107,7 +107,7 @@ const RECENT_SHOWN = 5;
 
     <h2 class="projects-heading" i18n="@@projects-home.projects">Projects</h2>
     @if (context.projects().length > 5) {
-      <trove-text-field i18n-label="@@projects.q" label="Key or name" name="q" [(value)]="q" />
+      <trove-text-field width="name" i18n-label="@@projects.q" label="Key or name" name="q" [(value)]="q" />
     }
     @if (session.authenticated() && hasOthers()) {
       <trove-checkbox [checked]="onlyMine()" (checkedChange)="onlyMine.set($event)">

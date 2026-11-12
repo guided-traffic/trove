@@ -205,6 +205,8 @@ export const screens: readonly Screen[] = [
   { id: 'admin-repository-wizard', path: '/ui/admin/repositories/new', kinds: admins },
   { id: 'admin-users', path: '/ui/admin/users', kinds: admins, walk: filtersOpen },
   { id: 'admin-user', path: '/ui/admin/users/sam', kinds: admins },
+  // The break-glass account: no Advanced action, so the page asks the token list whether it offers Revoke all.
+  { id: 'admin-user-break-glass', path: '/ui/admin/users/admin', kinds: admins },
   { id: 'admin-user-advanced', path: '/ui/admin/users/sam', kinds: admins, walk: advancedOpen },
   { id: 'admin-groups', path: '/ui/admin/groups', kinds: admins, walk: filtersOpen },
   { id: 'admin-group', path: `/ui/admin/groups/${group}`, kinds: admins },

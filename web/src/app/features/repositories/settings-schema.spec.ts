@@ -8,12 +8,32 @@ import {
   settingNodes,
   targetOf,
   valueAt,
+  widthOf,
   withValue,
 } from './settings-schema';
 
 const SCHEMA = RICH_SETTINGS_SCHEMA as SettingSchema;
 
 describe('Settings schema model', () => {
+  it('Q-UI-335 a member takes the field width of its kind: a period a duration, a size bytes, a count a number, a URL or a long string the column, any other string a name', () => {
+    expect(widthOf('metadataTtlSeconds', { type: 'integer' }, 'number')).toBe('duration');
+    expect(widthOf('timeout', { type: 'string' }, 'text')).toBe('duration');
+    expect(widthOf('maxBodySize', { type: 'string' }, 'text')).toBe('bytes');
+    expect(widthOf('maxBytes', { type: 'integer' }, 'number')).toBe('bytes');
+    expect(widthOf('concurrency', { type: 'integer' }, 'number')).toBe('number');
+    expect(widthOf('providerURL', { type: 'string', format: 'uri' }, 'text')).toBe('full');
+    expect(widthOf('authUrl', { type: 'string', maxLength: 2048 }, 'text')).toBe('full');
+    expect(widthOf('authUrl', { type: 'string', pattern: '^https?://' }, 'text')).toBe('full');
+    const [url] = settingNodes({ type: 'object', properties: { providerURL: { type: ['string', 'null'], format: 'uri', maxLength: 2048 } } }, 'remote', 'npm');
+    expect(url).toMatchObject({ kind: 'text', url: true, multiline: false, width: 'full' });
+    expect(widthOf('origin', { type: 'string', maxLength: 64 }, 'text')).toBe('name');
+    const nodes = settingNodes(RICH_SETTINGS_SCHEMA, 'remote', 'npm');
+    const lines = nodes.flatMap(function flat(n): { kind: string; width?: string }[] {
+      return n.kind === 'group' ? n.children.flatMap(flat) : [n];
+    });
+    expect(lines.filter((n) => n.kind === 'text' || n.kind === 'number').every((n) => typeof n.width === 'string')).toBe(true);
+  });
+
   it('R-UI-021 R-ARCH-004 only the members whose x-trove-classes contain the class are rendered, each by its type, in schema order', () => {
     expect(settingNodes(SCHEMA, 'local', 'npm').map((n) => [n.kind, n.pointer])).toEqual([
       ['boolean', '/npm/latestGuard'],

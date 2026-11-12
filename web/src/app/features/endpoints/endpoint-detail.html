@@ -36,10 +36,10 @@
 
   @if (e.configuration; as c) {
     <div class="settings">
-      <trove-text-field i18n-label="@@ep.col.base-url" label="Base URL" name="baseUrl" [value]="c.baseUrl" [readonly]="true" />
+      <trove-text-field width="full" i18n-label="@@ep.col.base-url" label="Base URL" name="baseUrl" [value]="c.baseUrl" [readonly]="true" />
       <div class="row">
-        <trove-text-field i18n-label="@@ep.col.mode" label="Exposure" name="exposure" [value]="c.exposure" [readonly]="true" />
-        <trove-text-field i18n-label="@@ep.col.surface" label="Surface" name="surface" [value]="c.surface.join(', ')" [readonly]="true" />
+        <trove-text-field width="name" i18n-label="@@ep.col.mode" label="Exposure" name="exposure" [value]="c.exposure" [readonly]="true" />
+        <trove-text-field width="name" i18n-label="@@ep.col.surface" label="Surface" name="surface" [value]="c.surface.join(', ')" [readonly]="true" />
       </div>
       <trove-disclosure
         i18n-heading="@@ep.config.heading"
@@ -47,13 +47,13 @@
         i18n-hint="@@ep.config.hint"
         hint="Read-only: this comes from the configuration file."
       >
-        <trove-text-field i18n-label="@@ep.col.hosts" label="Hosts" name="hosts" [value]="hostsText(c)" [readonly]="true" />
+        <trove-text-field width="full" i18n-label="@@ep.col.hosts" label="Hosts" name="hosts" [value]="hostsText(c)" [readonly]="true" />
         <div class="row">
-          <trove-text-field i18n-label="@@ep.col.port" label="Port" name="port" [value]="c.port === null || c.port === undefined ? '–' : '' + c.port" [readonly]="true" />
-          <trove-text-field i18n-label="@@ep.col.pool" label="Pool" name="pool" [value]="c.pool ?? '–'" [readonly]="true" />
+          <trove-text-field width="number" i18n-label="@@ep.col.port" label="Port" name="port" [value]="c.port === null || c.port === undefined ? '–' : '' + c.port" [readonly]="true" />
+          <trove-text-field width="name" i18n-label="@@ep.col.pool" label="Pool" name="pool" [value]="c.pool ?? '–'" [readonly]="true" />
         </div>
-        <trove-text-field i18n-label="@@ep.col.credentials" label="Accepted credentials" name="credentials" [value]="credentialsText(c)" [readonly]="true" />
-        <trove-text-field i18n-label="@@ep.col.rate-limit" label="Rate limit" name="rateLimit" [value]="rateLimitText(c)" [readonly]="true" />
+        <trove-text-field width="full" i18n-label="@@ep.col.credentials" label="Accepted credentials" name="credentials" [value]="credentialsText(c)" [readonly]="true" />
+        <trove-text-field width="name" i18n-label="@@ep.col.rate-limit" label="Rate limit" name="rateLimit" [value]="rateLimitText(c)" [readonly]="true" />
       </trove-disclosure>
     </div>
   }

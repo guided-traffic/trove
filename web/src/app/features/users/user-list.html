@@ -16,7 +16,7 @@
     (clearAll)="clear()"
   >
     <trove-filter-category i18n-label="@@users.q" label="Name or email" [active]="!!q().trim()" [expanded]="!!q().trim()">
-      <trove-text-field i18n-label="@@users.q" label="Name or email" name="q" [(value)]="q" />
+      <trove-text-field width="name" i18n-label="@@users.q" label="Name or email" name="q" [(value)]="q" />
     </trove-filter-category>
     <trove-filter-category i18n-label="@@users.status" label="Status" [active]="!!status()" [expanded]="!!status()">
       <trove-select-field i18n-label="@@users.status" label="Status" name="status" [options]="statusOptions" [(value)]="status" />
@@ -25,7 +25,7 @@
       <trove-select-field i18n-label="@@users.origin" label="Origin" name="origin" [options]="originOptions" [(value)]="origin" />
     </trove-filter-category>
     <trove-filter-category i18n-label="@@users.group" label="Group" [active]="!!group().trim()" [expanded]="!!group().trim()">
-      <trove-text-field i18n-label="@@users.group" label="Group" name="group" [(value)]="group" />
+      <trove-text-field width="name" i18n-label="@@users.group" label="Group" name="group" [(value)]="group" />
     </trove-filter-category>
     <trove-filter-category i18n-label="@@users.admin" label="Administrator" [active]="!!admin()" [expanded]="!!admin()">
       <trove-select-field i18n-label="@@users.admin" label="Administrator" name="admin" [options]="adminOptions" [(value)]="admin" />

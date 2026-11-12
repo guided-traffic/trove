@@ -48,6 +48,7 @@ import { PageHeader } from '../../shared/ui/page-header';
         <form (submit)="save($event)" novalidate>
           <div class="row">
             <trove-text-field
+              width="name"
               i18n-label="@@project-dialog.display-name"
               label="Display name"
               name="displayName"
@@ -56,9 +57,10 @@ import { PageHeader } from '../../shared/ui/page-header';
               [readonly]="!canEdit()"
               [error]="displayNameError()"
             />
-            <trove-text-field i18n-label="@@project.key" label="Key" name="key" [value]="p.key" [readonly]="true" />
+            <trove-text-field width="name" i18n-label="@@project.key" label="Key" name="key" [value]="p.key" [readonly]="true" />
           </div>
           <trove-text-field
+            width="full"
             i18n-label="@@project.description-optional"
             label="Description (optional)"
             name="description"

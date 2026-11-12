@@ -50,7 +50,7 @@
           @if (creating()) {
             <input
               id="f-name"
-              class="text-input"
+              class="text-input field-w-name"
               autocomplete="off"
               spellcheck="false"
               aria-describedby="d-name"
@@ -135,7 +135,7 @@
           >
           <input
             id="f-description"
-            class="text-input"
+            class="text-input field-w-full"
             [value]="form().description"
             [attr.aria-invalid]="invalid('/description')"
             (input)="set({ description: $any($event.target).value })"
@@ -230,7 +230,7 @@
             >
             <input
               id="f-versions-range"
-              class="text-input"
+              class="text-input field-w-full"
               autocomplete="off"
               spellcheck="false"
               aria-describedby="d-range"
@@ -437,7 +437,7 @@
             >
             <input
               id="t-package"
-              class="text-input"
+              class="text-input field-w-name"
               autocomplete="off"
               spellcheck="false"
               [value]="testPackage()"

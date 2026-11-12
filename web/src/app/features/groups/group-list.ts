@@ -56,7 +56,7 @@ export function groupOriginLabel(origin: Group['origin']): string {
         (clearAll)="clear()"
       >
         <trove-filter-category i18n-label="@@groups.q" label="Name" [active]="!!q().trim()" [expanded]="!!q().trim()">
-          <trove-text-field i18n-label="@@groups.q" label="Name" name="q" [(value)]="q" />
+          <trove-text-field width="name" i18n-label="@@groups.q" label="Name" name="q" [(value)]="q" />
         </trove-filter-category>
         <trove-filter-category i18n-label="@@groups.origin" label="Origin" [active]="!!origin()" [expanded]="!!origin()">
           <trove-select-field i18n-label="@@groups.origin" label="Origin" name="origin" [options]="originOptions" [(value)]="origin" />

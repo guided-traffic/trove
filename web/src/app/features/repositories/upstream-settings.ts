@@ -84,7 +84,7 @@ export function upstreamPointerLabel(pointer: string): string | null {
           <label class="field-label" for="f-remote-url" i18n="@@upstream.url">Upstream URL</label>
           <input
             id="f-remote-url"
-            class="text-input"
+            class="text-input field-w-full"
             type="text"
             inputmode="url"
             autocomplete="off"
@@ -135,7 +135,7 @@ export function upstreamPointerLabel(pointer: string): string | null {
             <label class="field-label" for="f-remote-username" i18n="@@upstream.username">Username</label>
             <input
               id="f-remote-username"
-              class="text-input"
+              class="text-input field-w-name"
               type="text"
               autocomplete="off"
               spellcheck="false"
@@ -156,7 +156,7 @@ export function upstreamPointerLabel(pointer: string): string | null {
             >
             <input
               id="f-remote-password"
-              class="text-input"
+              class="text-input field-w-name"
               type="password"
               autocomplete="new-password"
               spellcheck="false"
@@ -207,7 +207,7 @@ export function upstreamPointerLabel(pointer: string): string | null {
           >
           <input
             id="f-remote-cache-metadataTtlSeconds"
-            class="text-input"
+            class="text-input field-w-duration"
             type="text"
             inputmode="numeric"
             autocomplete="off"
@@ -229,7 +229,7 @@ export function upstreamPointerLabel(pointer: string): string | null {
           >
           <input
             id="f-remote-cache-notFoundTtlSeconds"
-            class="text-input"
+            class="text-input field-w-duration"
             type="text"
             inputmode="numeric"
             autocomplete="off"

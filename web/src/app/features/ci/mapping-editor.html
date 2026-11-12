@@ -48,6 +48,7 @@
             />
           }
           <trove-text-field
+            width="name"
             i18n-label="@@ci.editor.name"
             label="Name"
             name="name"
@@ -59,6 +60,7 @@
             [hint]="nameHint()"
           />
           <trove-text-field
+            width="full"
             i18n-label="@@ci.editor.description"
             label="Description"
             name="description"
@@ -67,6 +69,7 @@
             [error]="fieldError('/description')"
           />
           <trove-text-field
+            width="number"
             i18n-label="@@ci.editor.priority"
             label="Priority"
             name="priority"
@@ -191,6 +194,7 @@
               <p class="field-error">{{ text }}</p>
             }
             <trove-text-field
+              width="full"
               i18n-label="@@ci.editor.repositories"
               label="Repositories"
               [name]="'repositories-' + i"
@@ -209,6 +213,7 @@
             }
             <trove-select-field i18n-label="@@ci.editor.kind" label="Applies to" [name]="'kind-' + i" [options]="kindOptions" [value]="row.kind" (valueChange)="setRow(row.id, { kind: $any($event) })" />
             <trove-text-field
+              width="full"
               i18n-label="@@ci.editor.include"
               label="Include"
               [name]="'include-' + i"
@@ -217,7 +222,7 @@
               (valueChange)="setRow(row.id, { include: $event })"
               [hint]="includeHint"
             />
-            <trove-text-field i18n-label="@@ci.editor.exclude" label="Exclude" [name]="'exclude-' + i" type="textarea" [value]="row.exclude" (valueChange)="setRow(row.id, { exclude: $event })" />
+            <trove-text-field width="full" i18n-label="@@ci.editor.exclude" label="Exclude" [name]="'exclude-' + i" type="textarea" [value]="row.exclude" (valueChange)="setRow(row.id, { exclude: $event })" />
             <fieldset class="actions-set">
               <legend i18n="@@ci.editor.actions">Actions</legend>
               @for (a of actions; track a) {
@@ -242,6 +247,7 @@
         <h2 id="ci-m-options" tabindex="-1" i18n="@@ci.editor.options">Options and lifetime</h2>
         <div class="form-grid wide">
           <trove-text-field
+            width="duration"
             i18n-label="@@ci.editor.max-ttl"
             label="Maximum token lifetime (seconds)"
             name="maxTtlSeconds"

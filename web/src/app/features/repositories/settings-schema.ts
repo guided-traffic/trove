@@ -1,3 +1,4 @@
+import { FieldWidth } from '../../shared/access/fields';
 import { JsonObject } from '../../shared/merge-patch';
 
 /**
@@ -13,6 +14,7 @@ export interface SettingSchema {
   readonly enum?: readonly unknown[];
   readonly format?: string;
   readonly maxLength?: number;
+  readonly pattern?: string;
   readonly items?: SettingSchema;
   readonly properties?: Readonly<Record<string, SettingSchema>>;
   readonly required?: readonly string[];
@@ -45,9 +47,12 @@ export type SettingNode =
     })
   | (NodeBase & {
       readonly kind: 'text';
+      /** A URL (`format: uri`, or a pattern that starts with the scheme): one line, the column, however long it may be. */
       readonly url: boolean;
-      /** A string that may be long (a pasted key block): edited in an area, not in a line (`maxLength` above 1 KiB). */
+      /** A string that may be long (a pasted key block): edited in an area, not in a line (`maxLength` above 1 KiB, not a URL). */
       readonly multiline: boolean;
+      /** The field width of the member (`widthOf`, Q-UI-335). */
+      readonly width: FieldWidth;
       readonly fallback: unknown;
     })
   /**
@@ -59,12 +64,37 @@ export type SettingNode =
       readonly options: readonly string[] | null;
       readonly fallback: unknown;
     })
-  | (NodeBase & { readonly kind: 'number'; readonly integer: boolean; readonly fallback: unknown })
+  | (NodeBase & {
+      readonly kind: 'number';
+      readonly integer: boolean;
+      /** The field width of the member (`widthOf`, Q-UI-335). */
+      readonly width: FieldWidth;
+      readonly fallback: unknown;
+    })
   /** A construct the form does not render (an array, a composition): shown, not edited. */
   | (NodeBase & { readonly kind: 'other' });
 
 /** A string setting that may be longer than this many characters gets an area to edit in. */
 const MULTILINE_ABOVE = 1024;
+/** A string setting that may be longer than this many characters takes the column (Q-UI-335). */
+const NAME_UP_TO = 128;
+
+/**
+ * The field width of a string or number member (Q-UI-335), by its schema and its name, since a schema states no unit: a period
+ * (`…Seconds`, `…Ttl`, `…Interval`, `…Timeout`) is a duration, a size (`…Bytes`, `…Size`) bytes; any other number a count; a URL or
+ * a string longer than 128 characters the column; any other string a name.
+ */
+function isUrl(s: SettingSchema): boolean {
+  return s.format === 'uri' || (typeof s.pattern === 'string' && /^\^https\??:/.test(s.pattern));
+}
+
+export function widthOf(name: string, s: SettingSchema, kind: 'text' | 'number'): FieldWidth {
+  if (/(Seconds|Ttl|Interval|Timeout)$/i.test(name) || /^(timeout|ttl|interval)$/i.test(name)) return 'duration';
+  if (/(Bytes|Size)$/i.test(name)) return 'bytes';
+  if (kind === 'number') return 'number';
+  if (isUrl(s) || (typeof s.maxLength === 'number' && s.maxLength > NAME_UP_TO)) return 'full';
+  return 'name';
+}
 
 function isObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -136,8 +166,9 @@ function node(
       return {
         ...base,
         kind: 'text',
-        url: s.format === 'uri',
-        multiline: typeof s.maxLength === 'number' && s.maxLength > MULTILINE_ABOVE,
+        url: isUrl(s),
+        multiline: !isUrl(s) && typeof s.maxLength === 'number' && s.maxLength > MULTILINE_ABOVE,
+        width: widthOf(name, s, 'text'),
         fallback,
       };
     case 'array': {
@@ -150,7 +181,7 @@ function node(
     }
     case 'integer':
     case 'number':
-      return { ...base, kind: 'number', integer: typeOf(s) === 'integer', fallback };
+      return { ...base, kind: 'number', integer: typeOf(s) === 'integer', width: widthOf(name, s, 'number'), fallback };
     default:
       return { ...base, kind: 'other' };
   }

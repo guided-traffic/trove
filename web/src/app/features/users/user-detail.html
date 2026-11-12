@@ -17,8 +17,8 @@
       <trove-error-notice [error]="e" />
     }
     <div class="row">
-      <trove-text-field i18n-label="@@user.display-name" label="Display name" name="displayName" [(value)]="displayName" [readonly]="!canEdit()" [error]="fieldError('/displayName')" />
-      <trove-text-field i18n-label="@@user.email" label="Email" name="email" type="email" [(value)]="email" [readonly]="!canEdit()" [error]="fieldError('/email')" />
+      <trove-text-field width="name" i18n-label="@@user.display-name" label="Display name" name="displayName" [(value)]="displayName" [readonly]="!canEdit()" [error]="fieldError('/displayName')" />
+      <trove-text-field width="name" i18n-label="@@user.email" label="Email" name="email" type="email" [(value)]="email" [readonly]="!canEdit()" [error]="fieldError('/email')" />
     </div>
     <p class="muted" i18n="@@user.attributes-note">
       Name and email come from the identity provider and are replaced at the user's next sign-in.
@@ -56,8 +56,8 @@
 
   <form novalidate>
     <div class="row ids">
-      <trove-text-field i18n-label="@@user.id" label="ID" name="id" [value]="u.id" [readonly]="true" />
-      <trove-text-field i18n-label="@@user.origin" label="Origin" name="origin" [value]="originLabel(u.origin)" [readonly]="true" />
+      <trove-text-field width="name" i18n-label="@@user.id" label="ID" name="id" [value]="u.id" [readonly]="true" />
+      <trove-text-field width="name" i18n-label="@@user.origin" label="Origin" name="origin" [value]="originLabel(u.origin)" [readonly]="true" />
     </div>
   </form>
 
@@ -172,7 +172,7 @@
     }
     @if (canWrite() && editable()) {
       <form class="toolbar" (submit)="addGroup($event)">
-        <trove-text-field i18n-label="@@user.add-group" label="Add to group" name="group" [(value)]="newGroup" />
+        <trove-text-field width="name" i18n-label="@@user.add-group" label="Add to group" name="group" [(value)]="newGroup" />
         <button class="btn btn-confirm" type="submit" [disabled]="busy() || newGroup().trim() === ''" i18n="@@user.add-group-submit">Add</button>
       </form>
     }

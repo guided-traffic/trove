@@ -199,7 +199,7 @@ export function keyErrorText(error: ApiError): string | null {
                   <label class="field-label" for="deb-import-pass" i18n="@@deb.keys.import.pass">Passphrase</label>
                   <input
                     id="deb-import-pass"
-                    class="text-input"
+                    class="text-input field-w-name"
                     type="password"
                     autocomplete="off"
                     aria-describedby="deb-import-pass-d"
