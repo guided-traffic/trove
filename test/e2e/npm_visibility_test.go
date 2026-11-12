@@ -136,7 +136,7 @@ func TestNPMExternalUser_R_AUTHZ_030(t *testing.T) {
 	setExternal(t, fx.adm, "bob", true)
 	t.Run("R-AUTHZ-030 R-AUTH-044 an external user gets E404 on an internal repository within the revocation bound and reads the public one", func(t *testing.T) {
 		awaitStatusOnEveryReplica(t, "the external flag on every replica", bob, npmAddr(internalKey)+"/"+url.PathEscape(inName), 404)
-		c := fx.clientOn(t, "npm11", 1, internalKey, "extint")
+		c := fx.clientOn(t, "npm11", 1, internalKey, "extread")
 		c.token = tok
 		d := c.project("view", nil)
 		c.configure(d)
