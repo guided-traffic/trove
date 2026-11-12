@@ -43,6 +43,9 @@ Select the heading **Package** or **Updated** to sort by it; select it again to 
 
 Filters, sort and the open tab are part of the page address, so you can bookmark a filtered list or send it to a colleague. The colleague sees the packages that they may read.
 
+To find a package in any of your projects, type a part of its name into the search field in the top bar: the
+[search](search.md) suggests it with the project and repository that hold it, and Enter lists every match.
+
 ## Recently opened and saved views
 
 When you are signed in, two more tabs appear next to **All packages**:

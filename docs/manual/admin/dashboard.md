@@ -4,6 +4,10 @@ The dashboard is the first screen of the admin area. It shows the state of the i
 
 **Admin** in the top bar opens it for everyone who holds the capability `settings:read` (roles `admin`, `security-admin`, `auditor`). Without `settings:read`, **Admin** opens **Repositories**, or **Projects** for a holder of `projects:read`.
 
+As an administrator of the installation (the role `admin`), you also reach the admin area from the [search field](../user/search.md):
+it offers the pages of the admin area, users and groups, last and apart, each marked **Admin area**. Only choosing such an entry opens
+the admin area; Enter and the results page always stay where you work. The other roles reach their screens through **Admin**.
+
 The screen refreshes every 15 seconds; **Pause automatic refresh** stops that and **Refresh now** loads it once.
 
 ## What it shows

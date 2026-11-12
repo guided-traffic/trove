@@ -52,4 +52,4 @@ client address with the button at its end; a package shows the project and repos
 
 An administrator of the installation also sees, last and apart, the pages of the admin area, users and groups, each marked **Admin
 area**. Only choosing one of those marked entries opens the admin area; Enter and the results page always stay in the area you work
-in. See [the admin area](../admin/overview.md).
+in. See [the admin dashboard](../admin/dashboard.md).

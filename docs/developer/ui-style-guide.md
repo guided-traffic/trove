@@ -159,6 +159,7 @@ existing ones are moved over ([What does not follow this page yet](#what-does-no
 | Element | How |
 |---|---|
 | A region that stays in the page | `<div class="collapse-region" [class.open]="open()"><div>…</div></div>`; the second element is required |
+| A list that drops below its field: the search's suggestions ([search-field.html](../../web/src/app/features/search/search-field.html)) and its sheet below 36 rem | `animate.enter="dropdown-in"` on the list; it closes at once, because the focus stays in the field and the next key must not wait for an animation |
 | A collapsible section of any screen: the details of a content page, the groups of a settings page or an editor | `<trove-disclosure heading hint>` ([disclosure.ts](../../web/src/app/shared/ui/disclosure.ts), [Q-UI-322](../spec/api-and-ui.md#q-ui-322--a-closed-section-of-details-is-one-quiet-disclosure-a-small-heading-with-a-chevron-and-one-hint-line)): the heading at the text's size, weight 600, a chevron before it, one muted hint line, closed at first; `[(expanded)]` binds its state. Never a settings section below a list or a README |
 | Something added and removed with `@if` | A wrapper with `class="collapse-animated" animate.enter="collapse-in" animate.leave="collapse-out"` around one child |
 | A side panel, a drop-down panel, the sidebar | `panel-in`, `panel-out`; `dropdown-in`, `dropdown-out`; `sidebar-in`, `sidebar-out` |

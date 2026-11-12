@@ -106,6 +106,7 @@ Built (M1, access core):
 - 🧾 **Audit.** An event registry, transactional and asynchronous recording, a PostgreSQL journal with partitions and retention, and the query and export API. See [audit](docs/developer/audit.md) and [audit trail](docs/security/audit.md).
 - 🧭 **Management API.** Under `/api/v1/`, described by [api/openapi.yaml](api/openapi.yaml): problem+json errors, cursor paging, ETags with `If-Match`, idempotency keys, and a permission declared on every operation. See [API families](#management-api).
 - 🖥️ **Admin UI.** The Angular application, embedded in the binary: sign-in, the file tree, repositories, users, groups, service accounts, tokens, policies, endpoints, audit and the system status, in a light and a dark scheme. See [web UI](docs/developer/web-ui.md) and [design language](docs/developer/design-language.md).
+- 🔍 **One search for every user.** The top bar's field suggests the repositories, packages and projects you may read while you type, grouped by kind, offers your frequently visited places when it opens, and Enter lists every match; `/` and Ctrl+K reach it, and only an administrator's pick of a suggestion marked **Admin area** leads into the admin area. See [the search](docs/manual/user/search.md) and [web UI](docs/developer/web-ui.md#the-search).
 - ❓ **Manual in the product.** The user and administrator manual is embedded in the binary and opens from **Documentation** in the top bar, on the page of the current screen. See [docs/manual](docs/manual/README.md).
 
 Built (M2, npm registry):
