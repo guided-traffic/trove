@@ -1,11 +1,13 @@
 package authz
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/qname"
+	"github.com/guided-traffic/trove/internal/repository"
 )
 
 // TestR_AUTHZ_033_TheLevelOrder: the levels are ordered from the most restrictive, spelled as the API and the database spell
@@ -287,5 +289,20 @@ func TestR_AUTHZ_035_AReadShapeAllNeverMeetsARefusedRead(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// TestR_API_064_TheIndexListsItsRepositoriesWithClassAndFormat: the suggestions of the search field match the repositories of the
+// request's index in memory; the index lists each with its class and format, sorted by project key and key (Q-API-273).
+func TestR_API_064_TheIndexListsItsRepositoriesWithClassAndFormat(t *testing.T) {
+	f := newFixture().repo("npm-local", "local", "npm", "").repo("web-npm", "virtual", "npm", "").repo("generic-local", "local", "generic", "")
+	got := newTestEngine(t, f, nil).Index().Repositories()
+	want := []RepositoryFacts{
+		{Name: qr("generic-local"), Class: repository.Local, Format: "generic"},
+		{Name: qr("npm-local"), Class: repository.Local, Format: "npm"},
+		{Name: qr("web-npm"), Class: repository.Virtual, Format: "npm"},
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("Repositories() = %v, want %v", got, want)
 	}
 }

@@ -624,6 +624,25 @@ func (x *Index) RepositoryNames() []qname.Repo {
 	return out
 }
 
+// RepositoryFacts are what a listing shows of a repository the index knows: its name, class and format.
+type RepositoryFacts struct {
+	Name   qname.Repo
+	Class  repository.Class
+	Format string
+}
+
+// Repositories lists the repositories the index knows, the active ones, with their class and format, sorted by project key and
+// key. The suggestions of the search field match them in memory and decide them on the same index (R-API-064, Q-API-273); the
+// list is built per call, so a caller may keep it.
+func (x *Index) Repositories() []RepositoryFacts {
+	out := make([]RepositoryFacts, 0, len(x.repos))
+	for _, name := range x.RepositoryNames() {
+		r := x.repos[name]
+		out = append(out, RepositoryFacts{Name: name, Class: r.Class, Format: r.Format})
+	}
+	return out
+}
+
 // principalIDs computes the principal set of a request (R-AUTHZ-002) as
 // principal-table IDs.
 func (x *Index) principalIDs(sub Subject) []string {

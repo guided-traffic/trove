@@ -2115,7 +2115,8 @@ Acceptance criteria, each a test of the integration area `search` on the worked 
 `hideExistence: false`; the virtual `npm-all`, `internal`, over the three; each local repository holds `@web/button`; Erin flagged
 external with `read` on `npm-private`; Frank internal without grants):
 
-- Without a credential, `q=npm` answers the repository `web/npm-public` alone and `@web/button` with `repository: npm-public`.
+- Without a credential, `q=npm` answers the repository `web/npm-public` alone, and `q=button` the package `@web/button` with
+  `repository: npm-public` (a package name is matched by the text, and `npm` is no part of `@web/button`).
 - Frank: `npm-all`, `npm-internal` and `npm-public`, never `npm-private`. Erin: `npm-private` and `npm-public`, never `npm-internal`
   or `npm-all`.
 - Frank with a token scoped to `mobile/*`: `npm-public` alone.
@@ -2136,7 +2137,8 @@ Priority: **MVP** · Covers: trove-only
 | group | every term is part of the name | 0 equal; 1 starts with `q`; 3 any other | name |
 
 - A package matches on its stored name (`packages.name`, the format's normalized name) and shows its display name. A package held by
-  several repositories is one entry, placed in the first of them by qualified name that the caller reads.
+  several repositories is one entry, placed in the first of them by qualified name that the caller reads; these are local and
+  remote repositories, because a virtual repository holds no package rows (R-REPO-018).
 - Descriptions are not matched by the suggestions. The lists that the results page reads match them (R-UI-098), and they match
   every suggestion of their kind: `GET /api/v1/repositories` matches `<project>/<key>` besides the key and the description
   ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-012,

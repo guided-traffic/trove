@@ -5,12 +5,18 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 
+	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/meta/postgres/q"
+	"github.com/guided-traffic/trove/internal/qname"
+	"github.com/guided-traffic/trove/internal/repository"
 )
 
 // denyCapability refuses one capability and allows every other, as a caller without it.
@@ -73,55 +79,64 @@ func TestR_API_060_TheSuggestionsCheckTheirParameters(t *testing.T) {
 			}
 		})
 	}
-	t.Run("R-API-060 a text of 100 characters is accepted", func(t *testing.T) {
-		if w := s.get("/api/v1/search/suggestions?q=" + strings.Repeat("a", 100)); w.Code != http.StatusOK {
-			t.Fatalf("%d %s", w.Code, w.Body.String())
+	t.Run("R-API-060 a text of 100 characters and a limit of 10 are accepted", func(t *testing.T) {
+		sr, err := parseSuggest(gen.GetSearchSuggestionsParams{Q: "  " + strings.Repeat("A", 100) + " ", Limit: ptr(10)})
+		if err != nil || sr.text != strings.Repeat("a", 100) || sr.limit != 10 {
+			t.Fatalf("%+v %v", sr, err)
 		}
 	})
 }
 
-// TestR_API_060_TheAnswerHoldsAMemberPerKindAsked: one member per kind asked and none for a kind not asked, never paged and never
-// stored by a cache.
+// TestR_API_060_TheAnswerHoldsAMemberPerKindAsked: one member per kind asked and none for a kind not asked, each with items and
+// more; over HTTP never paged and never stored by a cache.
 func TestR_API_060_TheAnswerHoldsAMemberPerKindAsked(t *testing.T) {
-	s := newSetup(t, nil, authed)
+	kinds := func(vs ...gen.GetSearchSuggestionsParamsKind) *[]gen.GetSearchSuggestionsParamsKind { return &vs }
 	cases := []struct {
-		query string
-		want  []string
+		name string
+		kind *[]gen.GetSearchSuggestionsParamsKind
+		want []string
 	}{
-		{"q=npm", []string{"packages", "projects", "repositories"}},
-		{"q=npm&kind=repository", []string{"repositories"}},
-		{"q=npm&kind=package&kind=project", []string{"packages", "projects"}},
-		{"q=npm&kind=user,group,repository", []string{"groups", "repositories", "users"}},
+		{"no kind", nil, []string{"packages", "projects", "repositories"}},
+		{"kind=repository", kinds("repository"), []string{"repositories"}},
+		{"kind=package&kind=project", kinds("package", "project"), []string{"packages", "projects"}},
+		{"kind=user,group,repository", kinds("user,group,repository"), []string{"groups", "repositories", "users"}},
 	}
 	for _, c := range cases {
-		t.Run("R-API-060 "+c.query, func(t *testing.T) {
-			w := s.get("/api/v1/search/suggestions?" + c.query)
-			if w.Code != http.StatusOK {
-				t.Fatalf("%d %s", w.Code, w.Body.String())
+		t.Run("R-API-060 "+c.name, func(t *testing.T) {
+			sr, err := parseSuggest(gen.GetSearchSuggestionsParams{Q: "npm", Kind: c.kind})
+			if err != nil {
+				t.Fatal(err)
 			}
-			if cc := w.Header().Get("Cache-Control"); cc != "no-store" {
-				t.Errorf("Cache-Control %q", cc)
-			}
-			if w.Header().Get("Link") != "" {
-				t.Errorf("Link %q", w.Header().Get("Link"))
-			}
+			b, _ := json.Marshal(emptySuggestions(sr))
 			var body map[string]struct {
 				Items []json.RawMessage `json:"items"`
 				More  *bool             `json:"more"`
 			}
-			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			if err := json.Unmarshal(b, &body); err != nil {
 				t.Fatal(err)
 			}
-			if len(body) != len(c.want) {
-				t.Fatalf("members %v, want %v: %s", body, c.want, w.Body.String())
-			}
-			for _, m := range c.want {
-				if got, ok := body[m]; !ok || got.Items == nil || got.More == nil {
-					t.Fatalf("member %s: %s", m, w.Body.String())
+			var got []string
+			for m, v := range body {
+				if v.Items == nil || v.More == nil {
+					t.Fatalf("member %s: %s", m, b)
 				}
+				got = append(got, m)
+			}
+			if sort.Strings(got); !slices.Equal(got, c.want) {
+				t.Fatalf("members %v, want %v", got, c.want)
 			}
 		})
 	}
+	s := newSetup(t, func(o *Options) { o.Repositories.Authz = &indexDecider{} }, authed)
+	t.Run("R-API-060 kind=repository answers only the member repositories, never paged and never stored", func(t *testing.T) {
+		w := s.get("/api/v1/search/suggestions?q=npm&kind=repository")
+		if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != `{"repositories":{"items":[],"more":false}}` {
+			t.Fatalf("%d %s", w.Code, w.Body.String())
+		}
+		if cc := w.Header().Get("Cache-Control"); cc != "no-store" || w.Header().Get("Link") != "" {
+			t.Fatalf("Cache-Control %q Link %q", cc, w.Header().Get("Link"))
+		}
+	})
 }
 
 // TestR_API_061_TheAdminKindsAreRefusedBeforeAnyLookup: kind user or group without identities:read answers 403 before any lookup,
@@ -141,7 +156,7 @@ func TestR_API_061_TheAdminKindsAreRefusedBeforeAnyLookup(t *testing.T) {
 		})
 	}
 	t.Run("R-API-061 the main kinds need no capability", func(t *testing.T) {
-		if w := s.get("/api/v1/search/suggestions?q=fr"); w.Code != http.StatusOK {
+		if w := s.get("/api/v1/search/suggestions?q=fr"); w.Code == http.StatusForbidden {
 			t.Fatalf("%d %s", w.Code, w.Body.String())
 		}
 	})
@@ -151,6 +166,78 @@ func TestR_API_061_TheAdminKindsAreRefusedBeforeAnyLookup(t *testing.T) {
 	t.Run("R-API-060 a caller without a credential gets 401 while nothing is public", func(t *testing.T) {
 		if w := closed.get("/api/v1/search/suggestions?q=npm"); w.Code != http.StatusUnauthorized {
 			t.Fatalf("%d %s", w.Code, w.Body.String())
+		}
+	})
+}
+
+// suggestOf is the request of a text with the limit.
+func suggestOf(t *testing.T, text string, limit int) suggestRequest {
+	t.Helper()
+	sr, err := parseSuggest(gen.GetSearchSuggestionsParams{Q: text, Limit: &limit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sr
+}
+
+// TestR_API_061_TheSuggestionsAreFilteredBeforeTheyAreCut: a repository or project the caller cannot see is decided away before
+// the ranking and the cut, so it neither takes the place of a readable match nor sets `more` (Q-API-276).
+func TestR_API_061_TheSuggestionsAreFilteredBeforeTheyAreCut(t *testing.T) {
+	var facts []authz.RepositoryFacts
+	for _, k := range []string{"button-1", "button-2", "button-3", "button-4", "button-5", "button-6", "button-7"} {
+		facts = append(facts, authz.RepositoryFacts{Name: qname.Repo{Project: "web", Key: k}, Class: repository.Local, Format: "npm"})
+	}
+	facts = append(facts, authz.RepositoryFacts{Name: qname.Repo{Project: "web", Key: "button"}, Class: repository.Virtual, Format: "npm"})
+	// The decider of the test reads every repository whose key does not end in an odd digit; button-1, -3, -5 and -7 are hidden.
+	asked := 0
+	visible := func(names []qname.Repo) ([]qname.Repo, error) {
+		asked += len(names)
+		var out []qname.Repo
+		for _, n := range names {
+			if last := n.Key[len(n.Key)-1]; !strings.ContainsRune("1357", rune(last)) {
+				out = append(out, n)
+			}
+		}
+		return out, nil
+	}
+	keys := func(r *gen.RepositorySuggestions) []string {
+		var out []string
+		for _, i := range r.Items {
+			out = append(out, i.Project+"/"+i.Key)
+		}
+		return out
+	}
+	t.Run("R-API-061 the cut keeps readable matches only, and more counts readable matches only", func(t *testing.T) {
+		got, err := repositorySuggestions(suggestOf(t, "button", 3), facts, visible)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := []string{"web/button", "web/button-2", "web/button-4"}; !slices.Equal(keys(got), want) || !got.More {
+			t.Fatalf("%v more=%v, want %v more=true", keys(got), got.More, want)
+		}
+		if asked != len(facts) {
+			t.Errorf("the decider was asked about %d repositories, want every match (%d) before the cut", asked, len(facts))
+		}
+	})
+	t.Run("R-API-061 more is false when the readable matches fit, however many hidden ones match", func(t *testing.T) {
+		got, err := repositorySuggestions(suggestOf(t, "button", 4), facts, visible)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Items) != 4 || got.More {
+			t.Fatalf("%v more=%v, want the four readable ones and more=false", keys(got), got.More)
+		}
+	})
+	t.Run("R-API-061 a hidden project is neither suggested nor counted", func(t *testing.T) {
+		rows := []q.SearchProjectsRow{
+			{Key: "web", DisplayName: "Web platform", Visibility: "public"},
+			{Key: "webshop", DisplayName: "Shop", Visibility: "private"},
+			{Key: "web-tools", DisplayName: "Tools", Visibility: "internal"},
+		}
+		listed := func(key, visibility string) bool { return visibility != "private" }
+		got := projectSuggestions(suggestOf(t, "web", 2), rows, listed)
+		if len(got.Items) != 2 || got.Items[0].Key != "web" || got.Items[1].Key != "web-tools" || got.More {
+			t.Fatalf("%+v", got)
 		}
 	})
 }
