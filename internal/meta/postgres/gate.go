@@ -93,7 +93,7 @@ func readSchemaState(ctx context.Context, conn q.DBTX) (SchemaState, error) {
 // all its statements; ctx bounds the wait for it, the statements run under
 // probeStatementBound (Q-HA-284).
 func (db *DB) CheckSchema(ctx context.Context, version string) error {
-	conn, err := db.control.Acquire(ctx)
+	conn, err := db.control.Acquire(WithHolder(ctx, "readiness probe: schema"))
 	if err != nil {
 		return err
 	}

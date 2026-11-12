@@ -37,6 +37,10 @@ func TestR_HA_011_CloseContextEndsWithTheClosePhaseWhileAConnectionIsHeld(t *tes
 	if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "main pool (1 connection held)") {
 		t.Fatalf("CloseContext = %v, want the deadline and the held main pool", err)
 	}
+	// The error names the borrower: the function that acquired the connection and how long it has held it.
+	if !strings.Contains(err.Error(), "by ") || !strings.Contains(err.Error(), "TestR_HA_011_CloseContextEndsWithTheClosePhaseWhileAConnectionIsHeld for ") {
+		t.Fatalf("CloseContext = %v, want the borrower named", err)
+	}
 	held.Release()
 }
 

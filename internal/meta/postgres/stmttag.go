@@ -89,6 +89,7 @@ type stmtTracer struct {
 	next    pgx.QueryTracer
 	pool    string   // the db_pool label of the acquire histogram
 	metrics *Metrics // nil records nothing
+	holds   *holders // who has a connection checked out; nil records nobody
 }
 
 // stmtRun is a statement in flight: its text, for the name of a timeout, and its start, for the statement metrics.

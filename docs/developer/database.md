@@ -86,6 +86,12 @@ The connection string carries neither.
   until the ops listener stops, after the pools close, so a probe that is stuck on a lock or a stalled connection would hold the
   control connection for up to 10 s past the close deadline and the stop would fail with "control pool (1 connection held)".
   Test: `TestR_HA_011_CloseContextEndsAProbeStatementThatIsStillRunning`.
+  A close that cannot finish names the borrowers: the error of `CloseContext` reads `control pool (1 connection held) by
+  cluster.(*changeLog).poll for 8.7s`, for every pool. The pool's tracer ([holders.go](../../internal/meta/postgres/holders.go),
+  `AcquireTracer` and `ReleaseTracer` of `stmtTracer`) records each checked-out connection with the program counters of its acquirer
+  (resolved only when the error is built, so an acquire costs one `runtime.Callers`) or the label a borrower gave with
+  `postgres.WithHolder`; the readiness probes label themselves. A connection under construction is named as such.
+  Test: `TestR_HA_011_AHeldConnectionIsNamedByItsBorrower`.
   `Ready` returns `ErrStandby` for a server in recovery and destroys that connection (the control pool holds one, so
   the next check connects again and finds the new primary); `Read` destroys the connection when `fn` panics;
   `classify` treats a failed TLS verification of the server (`x509` and `tls.CertificateVerificationError` inside the

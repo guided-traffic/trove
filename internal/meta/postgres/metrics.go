@@ -154,8 +154,18 @@ func (t stmtTracer) TraceAcquireStart(ctx context.Context, _ *pgxpool.Pool, _ pg
 
 // TraceAcquireEnd implements pgxpool.AcquireTracer. A failed acquisition (the
 // caller's deadline, a closed pool) counts too: it is the longest wait.
-func (t stmtTracer) TraceAcquireEnd(ctx context.Context, _ *pgxpool.Pool, _ pgxpool.TraceAcquireEndData) {
+func (t stmtTracer) TraceAcquireEnd(ctx context.Context, _ *pgxpool.Pool, d pgxpool.TraceAcquireEndData) {
 	if start, ok := ctx.Value(acquireStartKey{}).(time.Time); ok {
 		t.metrics.acquired(t.pool, time.Since(start))
 	}
+	if d.Err == nil {
+		t.holds.acquired(ctx, d.Conn)
+	}
+}
+
+var _ pgxpool.ReleaseTracer = stmtTracer{}
+
+// TraceRelease implements pgxpool.ReleaseTracer: the connection has a borrower no more.
+func (t stmtTracer) TraceRelease(_ *pgxpool.Pool, d pgxpool.TraceReleaseData) {
+	t.holds.released(d.Conn)
 }

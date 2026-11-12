@@ -41,6 +41,9 @@ type DB struct {
 	retry   retrier
 	tls     *dbTLS
 
+	// holds are the tables of who has a connection checked out, by pool name, for the error of a close that cannot finish.
+	holds map[string]*holders
+
 	closeOnce sync.Once
 	// life ends when CloseContext starts: the statements of the readiness probes, which no check deadline cuts, end with it, so a probe
 	// that started before or during the close does not hold the control connection past the close deadline. Nil for a DB built by a
@@ -82,6 +85,7 @@ func Open(ctx context.Context, cfg config.Database, instance, role string, log *
 	}
 	db := &DB{cfg: cfg, log: log, instance: instance, role: role, retry: newRetrier(cfg.Retry)}
 	db.life, db.endingLife = context.WithCancel(context.Background())
+	db.holds = map[string]*holders{poolRequest: {}, poolControl: {}, poolLease: {}}
 	db.retry.metrics = o.metrics
 	var err error
 	if role == meta.RoleBackup {
@@ -105,7 +109,7 @@ func Open(ctx context.Context, cfg config.Database, instance, role string, log *
 		if s.kind.class == classMain {
 			next = o.queryTracer
 		}
-		pc.ConnConfig.Tracer = stmtTracer{next: next, pool: label, metrics: o.metrics}
+		pc.ConnConfig.Tracer = stmtTracer{next: next, pool: label, metrics: o.metrics, holds: db.holds[label]}
 		return pgxpool.NewWithConfig(ctx, pc)
 	}
 	common := poolSpec{
@@ -233,7 +237,7 @@ func (db *DB) probeStatementContext(ctx context.Context) (context.Context, conte
 // ctx bounds the wait for the connection; the statement runs under
 // probeStatementBound (Q-HA-284).
 func (db *DB) Ready(ctx context.Context) error {
-	conn, err := db.control.Acquire(ctx)
+	conn, err := db.control.Acquire(WithHolder(ctx, "readiness probe: database"))
 	if err != nil {
 		return err
 	}
@@ -316,11 +320,15 @@ func (db *DB) CloseContext(ctx context.Context) error {
 		}
 		var pools []closingPool
 		for _, p := range []struct {
-			name string
-			pool *pgxpool.Pool
-		}{{"main", db.main}, {"control", db.control}, {"lease", db.lease}} {
+			name, label string
+			pool        *pgxpool.Pool
+		}{{"main", poolRequest, db.main}, {"control", poolControl, db.control}, {"lease", poolLease, db.lease}} {
 			if p.pool != nil {
-				pools = append(pools, closingPool{name: p.name, close: p.pool.Close, held: func() int32 { st := p.pool.Stat(); return st.AcquiredConns() + st.ConstructingConns() }})
+				pools = append(pools, closingPool{
+					name: p.name, close: p.pool.Close,
+					held:    func() int32 { st := p.pool.Stat(); return st.AcquiredConns() + st.ConstructingConns() },
+					holders: func() []string { return db.holds[p.label].describe(time.Now()) },
+				})
 			}
 		}
 		err = closePools(ctx, pools)
@@ -334,6 +342,8 @@ type closingPool struct {
 	close func()
 	// held is the connections the close waits for: acquired ones and ones still under construction.
 	held func() int32
+	// holders names the borrowers of the connections held, longest first; nil names none.
+	holders func() []string
 }
 
 func closePools(ctx context.Context, pools []closingPool) error {
@@ -360,11 +370,22 @@ func closePools(ctx context.Context, pools []closingPool) error {
 		if !open[i].Load() {
 			continue
 		}
-		if n := p.held(); n == 1 {
-			held = append(held, p.name+" pool (1 connection held)")
-		} else if n > 1 {
-			held = append(held, fmt.Sprintf("%s pool (%d connections held)", p.name, n))
+		n := p.held()
+		if n == 0 {
+			continue
 		}
+		text := p.name + " pool (1 connection held)"
+		if n > 1 {
+			text = fmt.Sprintf("%s pool (%d connections held)", p.name, n)
+		}
+		if p.holders != nil {
+			if who := p.holders(); len(who) > 0 {
+				text += " by " + strings.Join(who, ", ")
+			} else {
+				text += " by a connection under construction"
+			}
+		}
+		held = append(held, text)
 	}
 	if len(held) == 0 { // every pool closed as the deadline passed, or the ones left open hold nothing
 		return nil
