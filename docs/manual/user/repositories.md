@@ -77,14 +77,14 @@ trove shows you only what you may read. A repository you may not read is not lis
 | A role in the repository's project | **Reader** reads every repository of the project, **Developer** also publishes and uploads, **Maintainer** and **Owner** also replace, delete and manage; [Projects](../admin/projects.md#members-and-roles) explains the roles |
 | Read on a repository | It appears in the **Browse** tree and, for npm, NuGet, OCI and Debian, under **Packages**; you can open its content page, download, and install from it |
 | Deploy, overwrite or delete | Upload or publish, replace, and delete, on the paths and packages your permission names |
-| The permission to read repository configuration | Every repository, the settings of every repository, the **Find a repository** search in the top bar, and **Admin area › Repositories** |
+| The permission to read repository configuration | Every repository, the settings of every repository, and **Admin area › Repositories** |
 | Nothing, as an anonymous reader | Only the repositories open to anonymous readers, and nothing you can change |
 
 Permissions can be narrower than a whole repository: a permission may cover only some paths or package names, and you then see only those. Ask an Owner of the repository's project if something you need is missing.
 
 ## The content of a repository
 
-Open a project and you land on its **Repositories**. Select a repository to see what it holds, on the level you think in: images and tags, packages and versions, or files. You get there from the project's **Repositories**, from **Admin area › Repositories** (every project, each row naming its project), and with **Find a repository** in the top bar if you may read repository configuration.
+Open a project and you land on its **Repositories**. Select a repository to see what it holds, on the level you think in: images and tags, packages and versions, or files. You get there from the project's **Repositories**, from **Admin area › Repositories** (every project, each row naming its project), and with **Find a repository** in the top bar: Enter opens **Search results**, a page of the main area that lists the matching repositories of every project you may read.
 
 The page is titled with the repository's key and says what the repository is. Under the title is its **Client address**, the address your package manager needs, with **Copy client address**. At the top right:
 

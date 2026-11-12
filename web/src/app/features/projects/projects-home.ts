@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, resource, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { PackageSummary, PackagesApi } from '../../api/packages-api';
@@ -202,6 +202,8 @@ export class ProjectsHome {
   protected readonly hint = $localize`:@@projects-home.hint-short:Find a package, take up a repository you used before, or open a project.`;
   protected readonly canCreate = computed(() => this.session.has('projects:write'));
 
+  /** The package search's text from the address (`?find=`), as the search results page hands it over (Q-UI-390). */
+  readonly find = input<string | undefined>();
   /** The text of the package search; two characters start it, 300 ms after the last key. */
   protected readonly term = signal('');
   protected readonly found = new PagedResource<PackageSummary>();
@@ -254,6 +256,10 @@ export class ProjectsHome {
   ];
 
   constructor() {
+    effect(() => {
+      const find = this.find();
+      if (find) untracked(() => this.term.set(find));
+    });
     let timer: ReturnType<typeof setTimeout> | undefined;
     effect((onCleanup) => {
       const q = this.term().trim();

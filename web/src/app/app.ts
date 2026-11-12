@@ -121,10 +121,13 @@ export class App {
   protected readonly sidebarOpen = computed(() =>
     this.layout.pinned() ? !this.navState.collapsed() : this.drawerOpen(),
   );
-  /** The text of the repository search; the search opens the repository list filtered by it. */
+  /** The text of the repository search; Enter opens the results page of the main area with it (Q-UI-390). */
   protected readonly searchText = signal('');
-  /** The repository list is the API behind the search (`q` matches key and description, R-UI-020). */
-  protected readonly canSearch = computed(() => this.session.has('repositories:read-config'));
+  /**
+   * Every signed-in user searches: the repository list behind it (`q` matches key and description) answers every caller with the
+   * repositories it may read (R-REPO-012). An anonymous visitor gets the search with T-22.
+   */
+  protected readonly canSearch = computed(() => this.session.authenticated());
   private readonly url = toSignal(
     this.router.events.pipe(
       filter((e): e is NavigationEnd => e instanceof NavigationEnd),
@@ -151,6 +154,14 @@ export class App {
     // Leaving the drawer's width closes it, so it does not reappear open when the window narrows again.
     effect(() => {
       if (this.layout.pinned()) untracked(() => this.drawerOpen.set(false));
+    });
+    // The results page shows its text in the field, also when it is opened from a link or reloaded (Q-UI-390).
+    effect(() => {
+      const url = this.url();
+      if (url === '/search' || url.startsWith('/search?')) {
+        const q = new URLSearchParams(url.slice('/search'.length)).get('q') ?? '';
+        untracked(() => this.searchText.set(q));
+      }
     });
     // Load the preferences (theme) once a session exists.
     effect(() => {
@@ -215,10 +226,14 @@ export class App {
     return group.items.some((i) => url === i.route || url.startsWith(i.route + '/') || url.startsWith(i.route + '?'));
   }
 
+  /**
+   * Enter in the top bar's search opens the results page of the main area (Q-UI-390): a search from the main area ends in the main
+   * area, never in the admin area (the owner's rule, CLAUDE.md). T-22 replaces it with one search with suggestions.
+   */
   protected submitSearch(event: Event): void {
     event.preventDefault();
     const q = this.searchText().trim();
-    void this.router.navigate(['/admin/repositories'], { queryParams: { q: q || null } });
+    void this.router.navigate(['/search'], { queryParams: { q: q || null } });
   }
 
   protected setTheme(theme: UiTheme | null): void {

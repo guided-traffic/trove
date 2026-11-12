@@ -31957,5 +31957,61 @@
         <target>Geprüft</target>
       </segment>
     </unit>
+    <unit id="search.heading">
+      <notes>
+        <note category="location">src/app/app.routes.ts:57</note>
+        <note category="location">src/app/app.routes.ts:58</note>
+        <note category="location">src/app/features/search/search-results.ts:106</note>
+      </notes>
+      <segment>
+        <source>Search results</source>
+        <target>Suchergebnisse</target>
+      </segment>
+    </unit>
+    <unit id="search.packages">
+      <notes>
+        <note category="location">src/app/features/search/search-results.ts:26,28</note>
+      </notes>
+      <segment>
+        <source>Find packages matching “<ph id="0" equiv="INTERPOLATION" disp="{{ term() }}"/>”</source>
+        <target>Pakete zu „<ph id="0" equiv="INTERPOLATION" disp="{{ term() }}"/>“ suchen</target>
+      </segment>
+    </unit>
+    <unit id="search.caption">
+      <notes>
+        <note category="location">src/app/features/search/search-results.ts:107</note>
+      </notes>
+      <segment>
+        <source>Repositories</source>
+        <target>Repositories</target>
+      </segment>
+    </unit>
+    <unit id="search.no-term">
+      <notes>
+        <note category="location">src/app/features/search/search-results.ts:108</note>
+      </notes>
+      <segment>
+        <source>Type a word into the search field to find a repository.</source>
+        <target>Geben Sie ein Wort in das Suchfeld ein, um ein Repository zu finden.</target>
+      </segment>
+    </unit>
+    <unit id="search.description">
+      <notes>
+        <note category="location">src/app/features/search/search-results.ts:110</note>
+      </notes>
+      <segment>
+        <source>Repositories whose key or description matches “<ph id="0" equiv="term" disp="this.term()"/>”.</source>
+        <target>Repositories, deren Schlüssel oder Beschreibung zu „<ph id="0" equiv="term" disp="this.term()"/>“ passt.</target>
+      </segment>
+    </unit>
+    <unit id="search.none">
+      <notes>
+        <note category="location">src/app/features/search/search-results.ts:112</note>
+      </notes>
+      <segment>
+        <source>No repository matches “<ph id="0" equiv="term" disp="this.term()"/>”.</source>
+        <target>Kein Repository passt zu „<ph id="0" equiv="term" disp="this.term()"/>“.</target>
+      </segment>
+    </unit>
   </file>
 </xliff>

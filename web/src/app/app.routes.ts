@@ -51,6 +51,13 @@ export const routes: Routes = [
         path: 'setup',
         loadChildren: () => import('./features/setup/setup.routes').then((m) => m.SETUP_ROUTES),
       },
+      // The results of the top bar's search: a page of the main area, never of the admin area (Q-UI-390), until T-22.
+      {
+        path: 'search',
+        title: $localize`:@@search.heading:Search results`,
+        data: wrapper($localize`:@@search.heading:Search results`),
+        loadComponent: () => import('./features/search/search-results').then((m) => m.SearchResults),
+      },
       {
         path: 'guides',
         data: {

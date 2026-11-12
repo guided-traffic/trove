@@ -40,4 +40,17 @@ describe('Start page', () => {
       vi.useRealTimers();
     }
   });
+
+  it('R-UI-002 the package search takes its text from the address, as the search results page hands it over', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { root, fixture } = await renderScreen(ProjectsHome, { inputs: { find: 'left' } });
+      await vi.advanceTimersByTimeAsync(350);
+      await settle(fixture);
+      expect(root.querySelector<HTMLInputElement>('#find-package')!.value).toBe('left');
+      expect(root.querySelector('.found')).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

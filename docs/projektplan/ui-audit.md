@@ -48,7 +48,7 @@ Ranked: the plain user's main path first, then consistency across screens, then 
 | ID | Screen | Kind | Picture | What is wrong | Rule |
 |---|---|---|---|---|---|
 | UI-A-16 | Vulnerabilities of a project | plain | `plain/vulnerabilities-dark-1440.png` | → B4 (the vulnerability displays become a grade with a shield, a severity bar and a card). Two warnings about the advisory imports (an administrator's task), eight counters of `0`, an empty chart and "0 internal names only, 4 waiting for advisory data, 2 not covered" | R-UI-067 (Details), Q-UI-318 |
-| UI-A-01 | Top bar | plain | `plain/home-light-1440.png` | → T-22. The top bar has no search for the plain user: **Find a repository** needs the permission to read repository configuration. The start page finds packages since fix wave 1 and stays as it is | R-UI-067, [Q-UI-311](../spec/api-and-ui.md#q-ui-311--the-start-page-leads-the-plain-user-to-a-repository-and-its-address-in-two-steps) |
+| UI-A-01 | Top bar | plain | `plain/home-light-1440.png` | → T-22. The top bar had no search for the plain user: **Find a repository** needed the permission to read repository configuration. Since Q-UI-390 it shows for every signed-in user and Enter opens the results page of the main area; its suggestions are T-22. The start page finds packages since fix wave 1 and stays as it is | R-UI-067, [Q-UI-311](../spec/api-and-ui.md#q-ui-311--the-start-page-leads-the-plain-user-to-a-repository-and-its-address-in-two-steps) |
 
 ### Consistency across screens
 

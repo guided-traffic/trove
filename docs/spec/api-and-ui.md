@@ -2845,9 +2845,14 @@ Priority: **MVP** · Covers: UI-001, UI-004
   mark and the product name, a repository search field in the middle, the **Admin** button (shown
   to a caller who has the admin area; it leads into it and looks the same inside it), the **Documentation** link, the
   theme button and the user menu. The search
-  field takes a text and opens the repository list (R-UI-020) filtered by it; it is shown only to a caller who
-  holds `repositories:read-config`, because that list is the API behind it, and not below 36 rem of the window, where it
-  has no room for a word (UI-A-48; one search for every reader is the owner's task T-22). The **Documentation** link (R-UI-050) opens
+  field takes a text, and Enter opens the results page `/search?q=<text>` of the main area: the matching repositories of
+  `GET /api/v1/repositories?q=` with key, description, project, format, class and client address, each key a link to the
+  repository's page in its project, and a link to the start page's package search for the same text. A search never leads
+  into the admin area ([Q-UI-390](#q-ui-390--enter-in-the-top-bars-search-opens-a-results-page-of-the-main-area-no-search-leads-into-the-admin-area),
+  the owner's rule in [CLAUDE.md](../../CLAUDE.md#product-simple-by-default-details-on-demand)). The field is shown to every
+  signed-in user, because the list behind it answers every caller with the repositories it may read (R-REPO-012), and not below
+  36 rem of the window, where it has no room for a word (UI-A-48; suggestions, and the field for an anonymous visitor, are the
+  owner's task T-22). The **Documentation** link (R-UI-050) opens
   the manual page of the current screen, or the overview of the help area, which is titled "Documentation" like the link
   (owner, 2026-11-06; Q-UI-90). The theme button offers
   "Follow the system", "Light" and "Dark" as radio items (R-API-021); the user menu is a round 32 px avatar, the
@@ -2935,7 +2940,11 @@ Acceptance criteria:
 - On `/admin/users/alice` the trail reads "Admin area / Users / alice" and "Users" links to
   the list. On `/projects/web/repositories/npm-local` it reads "Projects / web / Repositories / npm-local", and no step
   links to a route that does not exist.
-- A user whose `authz/me` lacks `repositories:read-config` sees no search field in the top bar.
+- A signed-in user without any capability sees the search field in the top bar, and its results list only repositories the user
+  may read.
+- Typing `test` into the top bar's search field and pressing Enter opens `/search?q=test` in the main shell (no admin side bar,
+  no admin breadcrumb); its rows link to `/projects/<project>/repositories/<key>` and `/projects/<project>`, its package link to
+  `/projects?find=test`, and no link of the page leads into `/admin`.
 - The top bar shows a robot avatar for a signed-in user, the same image after a reload and for the same user on another
   replica or browser, and another image for another user; the image is a data URI, `alt=""` and hidden from assistive
   technology; while the shell renders, no request leaves the origin; the build fails if a script of the bundle names
@@ -10829,7 +10838,10 @@ confirms. Built in fix wave 1: the search finds packages (`GET /api/v1/packages?
 ten results); the last five repositories opened in this browser show their address fields and **Set up client**; the projects are
 named by their display name with the key under it. A search for repositories across projects is not built: it needs a list the
 plain user may read across projects. The top bar's search for the plain user is the owner's task T-22 (one search with
-suggestions); the start page's package search stays as it is until then. Fix wave 2: each recently opened repository shows its
+suggestions); the start page's package search stays as it is until then. Revisited by
+[Q-UI-390](#q-ui-390--enter-in-the-top-bars-search-opens-a-results-page-of-the-main-area-no-search-leads-into-the-admin-area):
+that list exists (`GET /api/v1/repositories` answers every caller with what it may read), and the top bar's field searches it for
+every signed-in user. Fix wave 2: each recently opened repository shows its
 first address only, and its **Set up client** opens `/setup?repository=` (Q-UI-320, Q-UI-321).
 
 ### Q-UI-312 · The repository list shows the plain user the repository, format, class and address; activity and maintenance actions are the power user's
@@ -11357,6 +11369,34 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Choice:** (a). **Rationale:** one size for an icon in a list. The development agent records no revisit condition. **Applied in the
 spec:** R-UI-090.
+
+### Q-UI-390 · Enter in the top bar's search opens a results page of the main area; no search leads into the admin area
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the owner typed "test" into the top bar's field **Find a repository** and pressed Enter, and landed on the admin area's
+repository list (`/admin/repositories?q=test`, `submitSearch` of [app.ts](../../web/src/app/app.ts)). His rule of 2026-11-12
+([CLAUDE.md](../../CLAUDE.md#product-simple-by-default-details-on-demand)): "A search from the main area ends in the main area. Only a
+live suggestion that is marked as a page of the admin area, and shown only to an instance administrator, may lead there." The search
+with live suggestions for every reader is the owner's task T-22 ([promt.md](../projektplan/promt.md#owner-task-of-2026-11-12-for-later-a-search-with-suggestions)),
+planned now and built after T-18; this is the stopgap until then. The field was shown only with `repositories:read-config`, on the
+belief that readers had no list across projects; the list `GET /api/v1/repositories` is open to every caller and filtered by `read`
+([repositories_api.go](../../internal/api/v1/repositories_api.go), `visibleRepositories`; found by the planner of T-22).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Enter opens `/search?q=<text>`, a page of the main shell: the matching repositories from the same API (`GET /api/v1/repositories?q=`), each with its key and description, its project, format and class and its client address, the key a link to the repository's page in its project; and a link to the start page's package search for the same text (chosen) | One results page in the main area | The rule holds: nothing on the page leads into `/admin`; the reader sees the repositories in the shared list layout and goes on in their projects; every signed-in user gets the field, because the list answers each caller with what it may read | A page T-22 will extend |
+| (b) Enter opens the repository list of the caller's project | The project's own list | A page that exists | The search spans every project; one project's list would drop the others' matches |
+| (c) Remove Enter until T-22 | The field does nothing | Nothing leads anywhere wrong | A search field that ignores Enter |
+
+**Choice:** (a). The field is shown to every signed-in user (R-UI-002) instead of only to a holder of `repositories:read-config`;
+an anonymous visitor gets it with T-22. The page's address is `/search?q=<text>`, which T-22's results page
+(R-UI-098 in [its plan](../projektplan/search-work-packages.md)) extends by
+`kind` and tabs. The field offers no suggestions of its own while
+typing (no `datalist`, no list of trove's): what a browser may offer is its own form history, which `autocomplete="off"` asks it to
+leave out. The start page's package search takes its text from the address (`/projects?find=<text>`), so that the results page can
+hand the text over. **Rationale:** the owner's rule, with the least that makes Enter useful until T-22. The development agent revisits
+nothing: T-22 extends the page. **Applied in the spec:** R-UI-002; [search-results.ts](../../web/src/app/features/search/search-results.ts).
 
 ### Q-UI-391 · A stacked list keeps its sort buttons in a row above its blocks
 

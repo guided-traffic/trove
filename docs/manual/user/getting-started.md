@@ -73,7 +73,7 @@ From left to right:
 |---|---|
 | Menu button | Opens the side bar when it is collapsed, or on a narrow screen |
 | **trove** | Returns to the start page: the list of your projects, or your only project |
-| **Find a repository** | Searches repositories by key and description and opens the matching list in the admin area's **Repositories**. Shown only if you may read the configuration of repositories |
+| **Find a repository** | Searches repositories by key and description: Enter opens **Search results**, the matching repositories with their project, format, class and client address, each opening the repository in its project, and a link to find packages with the same text. It finds the repositories you may read, in every project. A search never takes you into the admin area |
 | **Admin** | Opens the admin area. Shown only if you hold an administrative permission |
 | **Documentation** | Opens this manual. On a screen that has a matching manual page, it opens that page |
 | **Theme** | **Follow the system**, **Light** or **Dark** |

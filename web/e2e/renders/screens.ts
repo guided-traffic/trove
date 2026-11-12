@@ -146,6 +146,9 @@ export const screens: readonly Screen[] = [
   { id: 'members', path: `${P}/members`, kinds: all },
   { id: 'setup', path: '/ui/setup', kinds: all },
   { id: 'setup-repository', path: `/ui/setup?repository=${mainProject}/npm`, kinds: all },
+  // The top bar's search ends on a page of the main area, never in the admin area (Q-UI-390); the field shows the text.
+  { id: 'search', path: '/ui/search?q=npm', kinds: all },
+  { id: 'search-none', path: '/ui/search?q=no-such-repository', kinds: ['admin'] },
   { id: 'guides', path: '/ui/guides', kinds: all },
   { id: 'guides-repository', path: `/ui/guides?repository=${mainProject}/npm`, kinds: all },
   { id: 'help', path: '/ui/help', kinds: all },

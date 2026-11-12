@@ -14,6 +14,7 @@ import { NavState } from './core/nav-state';
 import { BrowserStorage } from './core/storage';
 import { SessionStore } from './core/session-store';
 import { seriousViolations } from './testing/axe';
+import { settle, text } from './testing/screen';
 import { robotDataUri } from './shared/ui/robot';
 import { IdentityApi } from './api/identity-api';
 import { FakeIdentityApi, sampleUser } from './api/testing/access-fakes';
@@ -245,21 +246,39 @@ describe('App shell', () => {
     expect(crumbs.querySelector('a')?.getAttribute('href')).toBe('/admin/users');
   });
 
-  it('R-UI-002 the repository search is offered to a caller who may list repositories and opens the list filtered', async () => {
-    const { fixture, root } = await render();
+  it('R-UI-002 the repository search is offered to every signed-in user, also without any capability, and Enter opens the results page of the main area, never the admin area', async () => {
+    const { fixture, root } = await render('/', (api) => (api.meResult = { capabilities: [] }));
     const search = root.querySelector<HTMLFormElement>('header form[role="search"]')!;
     expect(search.querySelector('label')?.textContent).toContain('Find a repository');
     const input = search.querySelector<HTMLInputElement>('input')!;
+    // No suggestion list of trove's own; the browser is asked to keep its form history out.
+    expect(input.getAttribute('autocomplete')).toBe('off');
+    expect(input.getAttribute('list')).toBeNull();
+    expect(root.querySelector('datalist')).toBeNull();
     input.value = 'generic';
     input.dispatchEvent(new Event('input', { bubbles: true }));
     search.dispatchEvent(new Event('submit', { cancelable: true }));
     await fixture.whenStable();
-    expect(TestBed.inject(Router).url).toBe('/admin/repositories?q=generic');
+    expect(TestBed.inject(Router).url).toBe('/search?q=generic');
+    expect(TestBed.inject(Router).url).not.toContain('/admin');
   });
 
-  it('R-UI-005 the repository search is hidden from a caller without the capability behind it', async () => {
-    const { root } = await render('/', (api) => (api.meResult = { capabilities: ['audit:read'] }));
-    expect(root.querySelector('header form[role="search"]')).toBeNull();
+  it('R-UI-002 a search typed in the admin area also ends in the main area, and the results page shows its text in the field', async () => {
+    const { fixture, root } = await render('/admin/users');
+    const search = root.querySelector<HTMLFormElement>('header form[role="search"]')!;
+    const input = search.querySelector<HTMLInputElement>('input')!;
+    input.value = 'test';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    search.dispatchEvent(new Event('submit', { cancelable: true }));
+    await fixture.whenStable();
+    await settle(fixture);
+    expect(TestBed.inject(Router).url).toBe('/search?q=test');
+    // The main shell: no admin side bar, no admin breadcrumb.
+    expect(root.querySelector('aside.sidebar')?.textContent ?? '').not.toContain('Admin area');
+    expect(root.querySelector('aside.sidebar')?.textContent ?? '').not.toContain('System status');
+    expect(text(root.querySelector('main')!)).not.toContain('Admin area');
+    expect(root.querySelector('h1')?.textContent?.trim()).toBe('Search results');
+    expect(root.querySelector('header form[role="search"] input')).toHaveProperty('value', 'test');
   });
 
   it('R-UI-050 the Documentation link opens the manual page of the current screen, or the overview', async () => {
