@@ -90,7 +90,7 @@ Hard rules, also for every subagent (put them into every subagent prompt):
 1. `git status` must be clean; then `git pull --rebase origin main`.
 2. During the alpha (rule 10) a run works on two fronts at once: the first open task of
    [section 10](#10--owner-tasks-of-2026-11-07-the-next-registries), cut into work packages with an agent and a branch each, and
-   every open finding of section 8 with an agent each. Open there now: the owner task of 2026-11-12 **T-21 (a UI that looks right)**, with its part T-21b (creating and configuring a repository), and **T-22 (a search with suggestions)**; both come before the next unit of item 3. T-18 is built (run of 2026-11-12). The open items of BETA.md phase 7 are
+   every open finding of section 8 with an agent each. Open there now: the remaining points of T-21, T-21b and T-22 in section 8 and the owner's questions there; then the next unit of item 3. T-18, T-21b and T-22 are built (run of 2026-11-11/12). The open items of BETA.md phase 7 are
    findings of the same kind. Outside the alpha: open [BETA.md](BETA.md), table
    **Where we are**; the current phase is the first row whose status is not 🟢, and a row at 🟡 is resumed (step 2, item 4).
 3. If every row of BETA.md is 🟢, open [FULL.md](FULL.md) and take the first unit that is not 🟢,
@@ -555,6 +555,18 @@ by `version: "*"`. Red pipelines are worked on even though they no longer hold a
 - `messages.xlf` has drifted from `npm run extract-i18n`: 687 location notes and the unit order differ. No gate checks it.
 - No integration test checks the 401 challenge of Debian or of the `formats.Base` formats without a credential, and no real apt
   client was run against it.
+- The creation form of a local npm repository offers Security audit's "Forward to an advisory service" with Provider URL and Timeout,
+  which a local repository ignores (it behaves as Off); the schema could show them on remote and virtual repositories only.
+- No render walk switches a remote to mirror mode, so the OCI and Debian mirror settings are covered by unit tests only.
+- Journey 23 (search) failed once on the long-lived kind cluster (Down and Enter opened a package page, not the repository) and is
+  green on CI's fresh cluster (Test and Release 43304481590); not read.
+- Open for the owner, not blocking:
+  - should administrators add the installation's own registries as preset buttons (T-21b);
+  - should the vulnerability report's trend chart and the grade bar share one palette (T-21c);
+  - the package read budget question above.
+- The Docker VM of the development machine was full (kind nodes at 238 of 252 GB) and blocked renders and kind runs. With the
+  owner's consent, all unused images and the build cache were removed on 2026-11-12 (71 GB). The `make image` builds of a run leave
+  dangling images behind; nothing cleans them.
 - TestR_DEB_023 failed twice on CI (Test and Release 43022311289 and 43229158954, shard c). The test waited for the first index
   that lists a name, not for the whole scope; fixed in f2cc9a2d.
 - UI development profile: the volumes of `deploy/ui-dev` are shared by the whole machine, but the key ring in `.dev/ui-dev` belongs to
@@ -629,6 +641,10 @@ Set by the owner on 2026-11-12, after the repository list showed an address fiel
 looks really bad and I expect more. A consistent design. Easy access to the product for simple users. Optional details for power users
 and admins." A confirmed feature, not a parked idea; it runs beside T-18 and is planned and built under rule 11.
 
+- **Status (run of 2026-11-11/12):** built and on main. `make ui-renders`; fix waves 1 to 4 and their follow-ups; the lists' columns by
+  their users' jobs (Q-UI-330); field widths with a lint rule (Q-UI-335); the vulnerability grade as cogpit shows it (R-UI-090 to 094);
+  T-21b, the creation of a repository as one form per format and the settings as one column of sections (R-UI-080 to 088,
+  R-REPO-062 to 064), proven by `e2e (access-long)` on CI. What is left is in section 8.
 - **T-21 · A UI that looks right.**
   - **Renders.** A command that brings up the UI development profile with realistic data and renders every screen, in both schemes and
     at three widths, as the three kinds of user below, into `.out/ui-renders/` with a contact sheet.
@@ -689,6 +705,9 @@ and admins." A confirmed feature, not a parked idea; it runs beside T-18 and is 
 The owner showed his GitLab's search on 2026-11-12: "A sensible search, with suggestions and everything. This is how I picture it for us
 later." It is a confirmed direction, not a parked idea, and it is built after T-18 and T-21, each planned by a planning agent first.
 
+- **Status (run of 2026-11-11/12):** built and on main: the suggestions operation, the field with places and live groups, the results page,
+  the per-user store of what was visited, the single exit that leads into the admin area only through a marked admin suggestion
+  (R-API-060 to 064, R-UI-095 to 099), journey 23 green on CI.
 - **T-22 · One search with suggestions.**
   - **The field.** One search field in the top bar for every user who is signed in, not only for those who may list every repository.
     Since the stopgap of 2026-11-12 (Q-UI-390) the field shows for every signed-in user and Enter opens `/search?q=` in the main
@@ -818,3 +837,24 @@ What a run did, in short, so the next run starts where it stopped. The plan item
   sorting the blocks by number), and three rounds on the rotation row's load bound before it fit a closed loop. A gate that a builder's own run
   could not see: a new format changes every test that pins the formats (the guide's client list, the guide journey's first format).
 - Next run: the red legs of section 8 that are not the runner, then FULL.md block B, F1 (generic files: remote and virtual).
+
+**Run of 2026-11-11/12** (ALPHA mode of rule 10; releases v0.45.0 to v0.55.1).
+
+- Owner tasks: T-20 (client addresses), T-19 (the documentation of Ansible collections), T-18 (visibility levels: private, internal,
+  public, the external user flag, the wiki part of a repository), T-21 (a UI that looks right) with T-21b (creating and configuring a
+  repository) and T-21c (vulnerability grades as cogpit shows them), and T-22 (a search with suggestions), which the owner asked for
+  during the run and which was pulled forward.
+- New working rules from the owner, now in CLAUDE.md and rule 11: every UI change is rendered and looked at before it lands; the product
+  is simple by default with details on demand; a search never leads into the admin area. Two lessons on the way: a render is judged by
+  the screen's purpose first (the owner rejected an admin list the development agent had approved), and a passing functional test is
+  no look at the screen.
+- The landing of T-18 turned four CI legs red. Two were product defects that no builder's run could see: the challenge of a request without
+  a credential had moved behind the rate limits (NuGet restores hit `package_anonymous`), and a package route answered with a Bearer
+  challenge instead of Basic. Both were found from CI evidence and fixed at their cause. The assumption that the 429s came from a fast
+  local host was wrong and cost a day's turn; the CI run on a fresh cluster refuted it.
+- Leads that were right: the secrets operator crash loop was its 128 MiB limit against 23 MB of helm release Secrets under emulation
+  (F-127's local cause); TestR_DEB_023 waited for the first index that lists a name, not the scope; the control pool was held by a
+  readiness probe through the close.
+- Where the time went: rebasing T-18 (written on an old base) onto a main whose UI the fix waves had changed, and pushes that cancelled
+  the CI run before them, so its e2e evidence came late. From the middle of the run, a push waited for the run before it.
+- Next run: the open points of section 8, the owner's questions there, then FULL.md block B, F1 (generic files: remote and virtual).
