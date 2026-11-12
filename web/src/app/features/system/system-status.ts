@@ -31,6 +31,7 @@ import {
   valkeySummary,
 } from './system-status-model';
 import { valueOf } from '../../shared/paged-resource';
+import { PageHeader } from '../../shared/ui/page-header';
 
 /** Automatic refresh interval with a pause control (R-UI-038, WCAG 2.2.2). */
 export const REFRESH_INTERVAL_MS = 15_000;
@@ -50,7 +51,7 @@ export const PRIMARY_DISAGREEMENT_GRACE_MS = 30_000;
 /** System status (R-UI-038): installation facts, replicas per role, Valkey, stored-secret keys. */
 @Component({
   selector: 'trove-system-status',
-  imports: [DatePipe, RouterLink, ErrorNotice, JobProgress, JobTable, TasksCard],
+  imports: [PageHeader, DatePipe, RouterLink, ErrorNotice, JobProgress, JobTable, TasksCard],
   templateUrl: './system-status.html',
   styleUrl: './system-status.scss',
 })

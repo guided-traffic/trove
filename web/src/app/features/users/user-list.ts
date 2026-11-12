@@ -12,6 +12,8 @@ import { DataTable, TableColumn, TableSort } from '../../shared/ui/data-table';
 import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filter-panel';
 import { UserCreateDialog } from './user-create-dialog';
 import { originLabel } from './user-labels';
+import { PageHeader } from '../../shared/ui/page-header';
+import { TroveAvatar } from '../../shared/ui/avatar';
 
 /**
  * Users (R-UI-024): username, display name, email, origin, status and last sign-in; filters text,
@@ -22,6 +24,8 @@ import { originLabel } from './user-labels';
 @Component({
   selector: 'trove-user-list',
   imports: [
+    TroveAvatar,
+    PageHeader,
     DatePipe,
     RouterLink,
     DataTable,
@@ -54,8 +58,7 @@ export class UserList {
 
   protected readonly caption = $localize`:@@users.caption:Users`;
   protected readonly columns: readonly TableColumn[] = [
-    { id: 'username', label: $localize`:@@users.col.username:User name`, sortable: true },
-    { id: 'displayName', label: $localize`:@@users.col.display-name:Display name` },
+    { id: 'username', label: $localize`:@@users.col.user:User`, sortable: true, width: '14rem' },
     { id: 'email', label: $localize`:@@users.col.email:Email` },
     {
       id: 'origin',

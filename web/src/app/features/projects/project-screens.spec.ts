@@ -160,7 +160,7 @@ describe('A project service account (R-UI-041, Q-AUTHZ-175, Q-AUTHZ-177)', () =>
     expect(await seriousViolations(root)).toEqual([]);
   });
 
-  it('R-UI-041 an Owner disables, enables, revokes and deletes, and goes back to the project', async () => {
+  it('R-UI-041 an Owner disables, enables, revokes and deletes; the page names the account and its project', async () => {
     const { fixture, root, get } = await renderScreen(ServiceAccountDetail, {
       inputs: { name: 'ci', project: 'web' },
       capabilities: [],
@@ -175,7 +175,9 @@ describe('A project service account (R-UI-041, Q-AUTHZ-175, Q-AUTHZ-177)', () =>
     await sleep(fixture, 300);
     expect((get(IdentityApi) as FakeIdentityApi).calls).toContain('disableServiceAccount ci revokeTokens=false');
     expect((buttonByText(root, 'Enable') as HTMLButtonElement).disabled).toBe(false);
-    expect(root.querySelector('a[href="/projects/web/service-accounts"]')).toBeTruthy();
+    // The way back is the breadcrumb (Q-UI-307); the header names the account, the line under it its project.
+    expect(root.querySelector('h1')?.textContent?.trim()).toBe('ci');
+    expect(root.textContent).toContain('Service account of project');
   });
 
   it('R-UI-041 the token list of a project account asks for its qualified principal', async () => {

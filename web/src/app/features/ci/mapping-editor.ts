@@ -41,6 +41,7 @@ import {
 } from './ci-model';
 import { ConditionBuilder } from './condition-builder';
 import { NamePicker } from './name-picker';
+import { PageHeader } from '../../shared/ui/page-header';
 
 /**
  * The mapping editor (R-UI-035, R-CI-009 to R-CI-014): a mapping of the system tier of an issuer, or, with
@@ -55,6 +56,7 @@ import { NamePicker } from './name-picker';
 @Component({
   selector: 'trove-ci-mapping-editor',
   imports: [
+    PageHeader,
     Checkbox,
     RouterLink,
     CiWarnings,

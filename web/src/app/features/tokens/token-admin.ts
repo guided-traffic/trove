@@ -11,6 +11,7 @@ import { PagedResource, asApiError } from '../../shared/paged-resource';
 import { TokenTable } from '../../shared/access/token-table';
 import { ErrorNotice } from '../../shared/error-notice';
 import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filter-panel';
+import { PageHeader } from '../../shared/ui/page-header';
 
 /**
  * Token administration (R-UI-030): every token with filters (type, owner, state, expiring before,
@@ -22,6 +23,7 @@ import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filte
 @Component({
   selector: 'trove-token-admin',
   imports: [
+    PageHeader,
     Checkbox,
     ErrorNotice,
     FilterCategory,
@@ -51,6 +53,9 @@ export class TokenAdmin {
   protected readonly panelOpen = signal(false);
   /** How many filters the list currently applies; the default state "active" is not one. */
   protected readonly activeCount = signal(0);
+  /** An unfiltered list says that no active token exists; "No tokens match." is for a filter (UI-A-25). */
+  protected readonly noActive = $localize`:@@tokens-admin.empty:No active tokens.`;
+  protected readonly noMatch = $localize`:@@token-table.empty:No tokens match.`;
   protected readonly actionError = signal<ApiError | null>(null);
 
   protected readonly pasted = signal('');

@@ -18,17 +18,6 @@ import { ProjectNeeds, createState } from './project-access';
   selector: 'trove-project-service-accounts',
   imports: [RouterLink, DataTable, ProjectNeeds],
   template: `
-    <div class="toolbar">
-      <button class="btn btn-confirm"
-        type="button"
-        [disabled]="state() !== 'enabled'"
-        aria-describedby="needs-project-sas"
-        (click)="add()"
-        i18n="@@project-sas.create"
-      >
-        Create service account
-      </button>
-    </div>
     <trove-project-needs id="needs-project-sas" [state]="state()" capability="identities:write" />
 
     <trove-data-table
@@ -70,7 +59,8 @@ export class ProjectServiceAccounts {
   private readonly session = inject(SessionStore);
 
   protected readonly list = new PagedResource<ServiceAccount>();
-  protected readonly state = computed(() => createState(this.session, this.project(), 'identities:write'));
+  /** Whether the caller may create an account here; the page's header offers it (Q-UI-307). */
+  readonly state = computed(() => createState(this.session, this.project(), 'identities:write'));
   protected readonly caption = $localize`:@@project-sas.caption:Service accounts of the project`;
   protected readonly columns: readonly TableColumn[] = [
     { id: 'name', label: $localize`:@@project-sas.col.name:Name` },
@@ -85,7 +75,7 @@ export class ProjectServiceAccounts {
     });
   }
 
-  protected async add(): Promise<void> {
+  async add(): Promise<void> {
     const ref = this.dialog.open<ServiceAccountCreateDialog, ServiceAccountCreateData, ServiceAccount>(
       ServiceAccountCreateDialog,
       { data: { project: this.project() }, maxWidth: '36rem' },

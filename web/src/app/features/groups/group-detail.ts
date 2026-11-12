@@ -18,6 +18,7 @@ import { PagedResource, asApiError } from '../../shared/paged-resource';
 import { ErrorNotice } from '../../shared/error-notice';
 import { SettingsSection } from '../../shared/ui/settings-section';
 import { groupOriginLabel } from './group-list';
+import { PageHeader } from '../../shared/ui/page-header';
 
 /**
  * One group (R-UI-025): name, description and auto-join; members with their sources, where only
@@ -28,7 +29,7 @@ import { groupOriginLabel } from './group-list';
  */
 @Component({
   selector: 'trove-group-detail',
-  imports: [DatePipe, Checkbox, RouterLink, ErrorNotice, Needs, SelectField, SettingsSection, TextField],
+  imports: [PageHeader, DatePipe, Checkbox, RouterLink, ErrorNotice, Needs, SelectField, SettingsSection, TextField],
   templateUrl: './group-detail.html',
   styleUrl: '../../shared/access/access.scss',
   styles: `

@@ -8,6 +8,7 @@ import { Needs } from '../../shared/access/needs';
 import { asApiError } from '../../shared/paged-resource';
 import { DataTable, TableColumn } from '../../shared/ui/data-table';
 import { ErrorNotice } from '../../shared/error-notice';
+import { PageHeader } from '../../shared/ui/page-header';
 
 /**
  * The CI issuers (R-UI-035): name, kind, issuer URL, audiences, the number of mappings, the state of the
@@ -17,15 +18,14 @@ import { ErrorNotice } from '../../shared/error-notice';
  */
 @Component({
   selector: 'trove-ci-issuer-list',
-  imports: [DatePipe, RouterLink, ErrorNotice, DataTable, Needs],
+  imports: [PageHeader, DatePipe, RouterLink, ErrorNotice, DataTable, Needs],
   template: `
-    <header class="page-header">
-      <h1 tabindex="-1" i18n="@@ci.issuers.heading">CI identity</h1>
-      <a class="btn btn-default" routerLink="/admin/ci/issuances" i18n="@@ci.issuers.issuances">Issued tokens</a>
+    <trove-page-header heading="CI identity" i18n-heading="@@ci.issuers.heading">
+      <a actions class="btn btn-default" routerLink="/admin/ci/issuances" i18n="@@ci.issuers.issuances">Issued tokens</a>
       @if (session.has('ci:write')) {
-        <a class="btn btn-confirm" routerLink="/admin/ci/new" i18n="@@ci.issuers.add">New issuer</a>
+        <a actions class="btn btn-confirm" routerLink="/admin/ci/new" i18n="@@ci.issuers.add">New issuer</a>
       }
-    </header>
+    </trove-page-header>
     <trove-needs capability="ci:write" />
     <p i18n="@@ci.issuers.hint">
       A CI issuer is a GitLab instance whose jobs may exchange their ID token for a short-lived trove token. Mappings decide what a job receives.

@@ -4667,14 +4667,6 @@
         <source>Claim tester</source>
       </segment>
     </unit>
-    <unit id="ci.test.back">
-      <notes>
-        <note category="location">src/app/features/ci/claim-tester.ts:51,52</note>
-      </notes>
-      <segment>
-        <source>Back</source>
-      </segment>
-    </unit>
     <unit id="ci.test.hint">
       <notes>
         <note category="location">src/app/features/ci/claim-tester.ts:54,57</note>
@@ -5749,14 +5741,6 @@
         <source>Issued CI tokens</source>
       </segment>
     </unit>
-    <unit id="ci.issuances.back">
-      <notes>
-        <note category="location">src/app/features/ci/issuances-page.ts:12,14</note>
-      </notes>
-      <segment>
-        <source>CI identity</source>
-      </segment>
-    </unit>
     <unit id="ci.issuances.hint">
       <notes>
         <note category="location">src/app/features/ci/issuances-page.ts:15,17</note>
@@ -5771,15 +5755,6 @@
       </notes>
       <segment>
         <source>CI issuer</source>
-      </segment>
-    </unit>
-    <unit id="ci.issuer.back">
-      <notes>
-        <note category="location">src/app/features/ci/issuer-detail.ts:33,34</note>
-        <note category="location">src/app/features/ci/issuer-detail.ts:179,181</note>
-      </notes>
-      <segment>
-        <source>All issuers</source>
       </segment>
     </unit>
     <unit id="ci.issuer.test">
@@ -6599,14 +6574,6 @@
       </notes>
       <segment>
         <source>Mapping</source>
-      </segment>
-    </unit>
-    <unit id="ci.editor.back">
-      <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:9,11</note>
-      </notes>
-      <segment>
-        <source>Back to the mappings</source>
       </segment>
     </unit>
     <unit id="ci.editor.legend">
@@ -7545,14 +7512,6 @@
         <source>Endpoint</source>
       </segment>
     </unit>
-    <unit id="ep.detail.back">
-      <notes>
-        <note category="location">src/app/features/endpoints/endpoint-detail.html:3,4</note>
-      </notes>
-      <segment>
-        <source>All endpoints</source>
-      </segment>
-    </unit>
     <unit id="ep.rule.new">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:8,13</note>
@@ -8022,14 +7981,6 @@
       </notes>
       <segment>
         <source>Exposure rule</source>
-      </segment>
-    </unit>
-    <unit id="ep.editor.back">
-      <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:10,14</note>
-      </notes>
-      <segment>
-        <source>Back to the endpoint</source>
       </segment>
     </unit>
     <unit id="ep.editor.on">
@@ -8735,14 +8686,6 @@
       </notes>
       <segment>
         <source>Group</source>
-      </segment>
-    </unit>
-    <unit id="group.back">
-      <notes>
-        <note category="location">src/app/features/groups/group-detail.html:3,5</note>
-      </notes>
-      <segment>
-        <source>All groups</source>
       </segment>
     </unit>
     <unit id="group.scim-note">
@@ -10889,22 +10832,6 @@
         <source>Permission policy</source>
       </segment>
     </unit>
-    <unit id="policy.back-project">
-      <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:8,10</note>
-      </notes>
-      <segment>
-        <source>All policies of the project</source>
-      </segment>
-    </unit>
-    <unit id="policy.back">
-      <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:10,13</note>
-      </notes>
-      <segment>
-        <source>All policies</source>
-      </segment>
-    </unit>
     <unit id="policy.project">
       <notes>
         <note category="location">src/app/features/permissions/policy-editor.html:18,19</note>
@@ -12919,7 +12846,7 @@
         <note category="location">src/app/features/projects/project-members-page.ts:15,17</note>
       </notes>
       <segment>
-        <source> Users and groups with their role in the project. The role decides what a member may do in the project&apos;s repositories. </source>
+        <source>Users and groups with their role in the project. The role decides what a member may do in the project&apos;s repositories.</source>
       </segment>
     </unit>
     <unit id="project-members.last-owner">
@@ -13091,14 +13018,6 @@
         <source>Create policy</source>
       </segment>
     </unit>
-    <unit id="project-policies.create-disabled">
-      <notes>
-        <note category="location">src/app/features/projects/project-policies.ts:28,32</note>
-      </notes>
-      <segment>
-        <source> Create policy </source>
-      </segment>
-    </unit>
     <unit id="project-policies.empty">
       <notes>
         <note category="location">src/app/features/projects/project-policies.ts:42,44</note>
@@ -13224,7 +13143,7 @@
         <note category="location">src/app/features/projects/project-service-accounts.ts:29,31</note>
       </notes>
       <segment>
-        <source> Create service account </source>
+        <source>Create service account</source>
       </segment>
     </unit>
     <unit id="project-sas.empty">
@@ -18117,22 +18036,6 @@
         <source>Service account</source>
       </segment>
     </unit>
-    <unit id="sa.back-project">
-      <notes>
-        <note category="location">src/app/features/service-accounts/service-account-detail.ts:31,33</note>
-      </notes>
-      <segment>
-        <source>All service accounts of the project</source>
-      </segment>
-    </unit>
-    <unit id="sa.back">
-      <notes>
-        <note category="location">src/app/features/service-accounts/service-account-detail.ts:33,35</note>
-      </notes>
-      <segment>
-        <source>All service accounts</source>
-      </segment>
-    </unit>
     <unit id="sa.project">
       <notes>
         <note category="location">src/app/features/service-accounts/service-account-detail.ts:39,40</note>
@@ -19232,6 +19135,22 @@
         <source>No tokens yet.</source>
       </segment>
     </unit>
+    <unit id="tokens-admin.empty">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>No active tokens.</source>
+      </segment>
+    </unit>
+    <unit id="users.col.user">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>User</source>
+      </segment>
+    </unit>
     <unit id="setup.heading">
       <notes>
         <note category="location">src/app/features/setup/client-setup.html:3,5</note>
@@ -20102,15 +20021,6 @@
       </notes>
       <segment>
         <source>Refresh now</source>
-      </segment>
-    </unit>
-    <unit id="jobs.back">
-      <notes>
-        <note category="location">src/app/features/system/backups/backups-page.html:11,14</note>
-        <note category="location">src/app/features/system/jobs-page.ts:48,51</note>
-      </notes>
-      <segment>
-        <source>System status</source>
       </segment>
     </unit>
     <unit id="backups.restored">
@@ -22864,14 +22774,6 @@
         <source>User</source>
       </segment>
     </unit>
-    <unit id="user.back">
-      <notes>
-        <note category="location">src/app/features/users/user-detail.html:3,5</note>
-      </notes>
-      <segment>
-        <source>All users</source>
-      </segment>
-    </unit>
     <unit id="user.id">
       <notes>
         <note category="location">src/app/features/users/user-detail.html:20</note>
@@ -23563,22 +23465,6 @@
       </notes>
       <segment>
         <source>Users</source>
-      </segment>
-    </unit>
-    <unit id="users.col.username">
-      <notes>
-        <note category="location">src/app/features/users/user-list.ts:57</note>
-      </notes>
-      <segment>
-        <source>User name</source>
-      </segment>
-    </unit>
-    <unit id="users.col.display-name">
-      <notes>
-        <note category="location">src/app/features/users/user-list.ts:58</note>
-      </notes>
-      <segment>
-        <source>Display name</source>
       </segment>
     </unit>
     <unit id="users.col.email">

@@ -4945,15 +4945,6 @@
         <target>Claim-Tester</target>
       </segment>
     </unit>
-    <unit id="ci.test.back">
-      <notes>
-        <note category="location">src/app/features/ci/claim-tester.ts:51,52</note>
-      </notes>
-      <segment>
-        <source>Back</source>
-        <target>Zurück</target>
-      </segment>
-    </unit>
     <unit id="ci.test.hint">
       <notes>
         <note category="location">src/app/features/ci/claim-tester.ts:54,57</note>
@@ -6160,15 +6151,6 @@
         <target>Ausgestellte CI-Token</target>
       </segment>
     </unit>
-    <unit id="ci.issuances.back">
-      <notes>
-        <note category="location">src/app/features/ci/issuances-page.ts:12,14</note>
-      </notes>
-      <segment>
-        <source>CI identity</source>
-        <target>CI-Identität</target>
-      </segment>
-    </unit>
     <unit id="ci.issuances.hint">
       <notes>
         <note category="location">src/app/features/ci/issuances-page.ts:15,17</note>
@@ -6185,16 +6167,6 @@
       <segment>
         <source>CI issuer</source>
         <target>CI-Aussteller</target>
-      </segment>
-    </unit>
-    <unit id="ci.issuer.back">
-      <notes>
-        <note category="location">src/app/features/ci/issuer-detail.ts:33,34</note>
-        <note category="location">src/app/features/ci/issuer-detail.ts:179,181</note>
-      </notes>
-      <segment>
-        <source>All issuers</source>
-        <target>Alle Aussteller</target>
       </segment>
     </unit>
     <unit id="ci.issuer.test">
@@ -7115,15 +7087,6 @@
       <segment>
         <source>Mapping</source>
         <target>Zuordnung</target>
-      </segment>
-    </unit>
-    <unit id="ci.editor.back">
-      <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:9,11</note>
-      </notes>
-      <segment>
-        <source>Back to the mappings</source>
-        <target>Zurück zu den Zuordnungen</target>
       </segment>
     </unit>
     <unit id="ci.editor.legend">
@@ -8179,15 +8142,6 @@
         <target>Endpunkt</target>
       </segment>
     </unit>
-    <unit id="ep.detail.back">
-      <notes>
-        <note category="location">src/app/features/endpoints/endpoint-detail.html:3,4</note>
-      </notes>
-      <segment>
-        <source>All endpoints</source>
-        <target>Alle Endpunkte</target>
-      </segment>
-    </unit>
     <unit id="ep.rule.new">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:8,13</note>
@@ -8711,15 +8665,6 @@
       <segment>
         <source>Exposure rule</source>
         <target>Freigaberegel</target>
-      </segment>
-    </unit>
-    <unit id="ep.editor.back">
-      <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.html:10,14</note>
-      </notes>
-      <segment>
-        <source>Back to the endpoint</source>
-        <target>Zurück zum Endpunkt</target>
       </segment>
     </unit>
     <unit id="ep.editor.on">
@@ -9511,15 +9456,6 @@
       <segment>
         <source>Group</source>
         <target>Gruppe</target>
-      </segment>
-    </unit>
-    <unit id="group.back">
-      <notes>
-        <note category="location">src/app/features/groups/group-detail.html:3,5</note>
-      </notes>
-      <segment>
-        <source>All groups</source>
-        <target>Alle Gruppen</target>
       </segment>
     </unit>
     <unit id="group.scim-note">
@@ -11849,24 +11785,6 @@
         <target>Berechtigungsrichtlinie</target>
       </segment>
     </unit>
-    <unit id="policy.back-project">
-      <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:8,10</note>
-      </notes>
-      <segment>
-        <source>All policies of the project</source>
-        <target>Alle Richtlinien des Projekts</target>
-      </segment>
-    </unit>
-    <unit id="policy.back">
-      <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:10,13</note>
-      </notes>
-      <segment>
-        <source>All policies</source>
-        <target>Alle Richtlinien</target>
-      </segment>
-    </unit>
     <unit id="policy.project">
       <notes>
         <note category="location">src/app/features/permissions/policy-editor.html:18,19</note>
@@ -13920,7 +13838,7 @@
         <note category="location">src/app/features/projects/project-members-page.ts:14,16</note>
       </notes>
       <segment>
-        <source> Users and groups with their role in the project. The role decides what a member may do in the project&apos;s repositories. </source>
+        <source>Users and groups with their role in the project. The role decides what a member may do in the project&apos;s repositories.</source>
         <target>Benutzer und Gruppen mit ihrer Rolle im Projekt. Die Rolle bestimmt, was ein Mitglied in den Repositories des Projekts tun darf.</target>
       </segment>
     </unit>
@@ -14159,15 +14077,6 @@
         <target>Richtlinie anlegen</target>
       </segment>
     </unit>
-    <unit id="project-policies.create-disabled">
-      <notes>
-        <note category="location">src/app/features/projects/project-policies.ts:28,32</note>
-      </notes>
-      <segment>
-        <source> Create policy </source>
-        <target> Richtlinie anlegen </target>
-      </segment>
-    </unit>
     <unit id="project-policies.empty">
       <notes>
         <note category="location">src/app/features/projects/project-policies.ts:42,44</note>
@@ -14308,7 +14217,7 @@
         <note category="location">src/app/features/projects/project-service-accounts.ts:29,31</note>
       </notes>
       <segment>
-        <source> Create service account </source>
+        <source>Create service account</source>
         <target> Servicekonto anlegen </target>
       </segment>
     </unit>
@@ -17893,24 +17802,6 @@
         <target>Servicekonto</target>
       </segment>
     </unit>
-    <unit id="sa.back-project">
-      <notes>
-        <note category="location">src/app/features/service-accounts/service-account-detail.ts:31,33</note>
-      </notes>
-      <segment>
-        <source>All service accounts of the project</source>
-        <target>Alle Servicekonten des Projekts</target>
-      </segment>
-    </unit>
-    <unit id="sa.back">
-      <notes>
-        <note category="location">src/app/features/service-accounts/service-account-detail.ts:33,35</note>
-      </notes>
-      <segment>
-        <source>All service accounts</source>
-        <target>Alle Servicekonten</target>
-      </segment>
-    </unit>
     <unit id="sa.project">
       <notes>
         <note category="location">src/app/features/service-accounts/service-account-detail.ts:39,40</note>
@@ -18830,6 +18721,24 @@
       <segment>
         <source>No tokens yet.</source>
         <target>Noch keine Tokens.</target>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.empty">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>No active tokens.</source>
+        <target>Keine aktiven Tokens.</target>
+      </segment>
+    </unit>
+    <unit id="users.col.user">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>User</source>
+        <target>Benutzer</target>
       </segment>
     </unit>
     <unit id="setup.heading">
@@ -20348,15 +20257,6 @@
       <segment>
         <source>Refresh now</source>
         <target>Jetzt aktualisieren</target>
-      </segment>
-    </unit>
-    <unit id="jobs.back">
-      <notes>
-        <note category="location">src/app/features/system/jobs-page.ts:48,51</note>
-      </notes>
-      <segment>
-        <source>System status</source>
-        <target>Systemstatus</target>
       </segment>
     </unit>
     <unit id="jobs.filter.kind">
@@ -22049,15 +21949,6 @@
         <target>Avatar entfernt.</target>
       </segment>
     </unit>
-    <unit id="user.back">
-      <notes>
-        <note category="location">src/app/features/users/user-detail.html:3,5</note>
-      </notes>
-      <segment>
-        <source>All users</source>
-        <target>Alle Benutzer</target>
-      </segment>
-    </unit>
     <unit id="user.id">
       <notes>
         <note category="location">src/app/features/users/user-detail.html:20</note>
@@ -22808,24 +22699,6 @@
       <segment>
         <source>Users</source>
         <target>Benutzer</target>
-      </segment>
-    </unit>
-    <unit id="users.col.username">
-      <notes>
-        <note category="location">src/app/features/users/user-list.ts:57</note>
-      </notes>
-      <segment>
-        <source>User name</source>
-        <target>Benutzername</target>
-      </segment>
-    </unit>
-    <unit id="users.col.display-name">
-      <notes>
-        <note category="location">src/app/features/users/user-list.ts:58</note>
-      </notes>
-      <segment>
-        <source>Display name</source>
-        <target>Anzeigename</target>
       </segment>
     </unit>
     <unit id="users.col.email">

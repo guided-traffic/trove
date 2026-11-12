@@ -31,3 +31,16 @@
   display: flex;
   margin-block-start: var(--trove-space-1);
 }
+
+// A format is its icon and its name (UI-A-24), the icon as in the package list. A long name ("Ansible Galaxy") wraps
+// inside the column's budget, so that the address keeps its room (UI-A-30).
+.kind-cell > .format-name {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--trove-space-2);
+
+  trove-format-icon {
+    font-size: 1.25rem;
+    color: var(--trove-text-muted);
+  }
+}

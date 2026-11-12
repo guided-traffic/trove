@@ -25,6 +25,7 @@ import { JobProgress } from '../../shared/job-progress';
 import { DataTable, TableColumn } from '../../shared/ui/data-table';
 import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filter-panel';
 import { PagedResource, asApiError, valueOf } from '../../shared/paged-resource';
+import { FormatIconView } from '../../shared/format-icon';
 import { RecentRepositories } from './recent-repositories';
 import { classLabel } from './repository-wizard';
 
@@ -40,6 +41,7 @@ import { classLabel } from './repository-wizard';
 @Component({
   selector: 'trove-repository-list',
   imports: [
+    FormatIconView,
     CdkMenu,
     CdkMenuItem,
     CdkMenuTrigger,
@@ -78,6 +80,10 @@ export class RepositoryList {
   readonly project = input<string | undefined>();
 
   protected readonly formats = resource({ loader: () => this.api.formats() });
+  /** A format's name as the catalog spells it for people (`OCI (Docker)`), its key while the catalog loads. */
+  protected formatLabel(name: string): string {
+    return (valueOf(this.formats) ?? []).find((f) => f.name === name)?.displayName ?? name;
+  }
   protected readonly list = new PagedResource<RepositorySummary>();
   /** Repositories whose deletion job is being followed, by qualified name. */
   protected readonly deleting = signal<ReadonlyMap<string, JobReference>>(new Map());
@@ -175,7 +181,7 @@ export class RepositoryList {
   /** No sort control: the repository list is ordered by key and the API takes no sort parameter. */
   protected readonly columns = computed<readonly TableColumn[]>(() =>
     this.allColumns.filter(
-      (c) => !(c.id === 'project' && this.inProject()) && !(c.id === 'activity' && !this.showActivity()),
+      (c) => !(c.id === 'activity' && !this.showActivity()),
     ),
   );
   /**
@@ -191,7 +197,6 @@ export class RepositoryList {
     // The widths are the list's budget (Q-UI-308): the address takes the rest, so at 1440 px a project's list shows an address
     // of 57 characters whole.
     { id: 'key', label: $localize`:@@repo.col.repository:Repository`, width: '16rem' },
-    { id: 'project', label: $localize`:@@repo.col.project:Project`, width: '7rem' },
     {
       id: 'format',
       label: $localize`:@@repo.col.format:Format`,
@@ -211,6 +216,8 @@ export class RepositoryList {
       label: $localize`:@@repo.col.activity:Last activity`,
       help: $localize`:@@repo.help.activity:The last time a client read from or wrote to the repository. A dash means nothing has been recorded yet.`,
       width: '7.5rem',
+      // Below 64 rem of the list's width the address takes this room (UI-A-30): the admin area's list at 1280 px.
+      narrow: true,
     },
     { id: 'actions', label: $localize`:@@repo.col.actions:Actions`, hideLabel: true, width: '2rem' },
   ];

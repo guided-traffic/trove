@@ -1,7 +1,6 @@
-<header class="page-header">
-  <h1 tabindex="-1" i18n="@@users.heading">Users</h1>
-  <button class="btn btn-confirm" type="button" [disabled]="!session.has('identities:write')" aria-describedby="needs-users" (click)="add()" i18n="@@users.add">Add user</button>
-</header>
+<trove-page-header heading="Users" i18n-heading="@@users.heading">
+  <button actions class="btn btn-confirm" type="button" [disabled]="!session.has('identities:write')" aria-describedby="needs-users" (click)="add()" i18n="@@users.add">Add user</button>
+</trove-page-header>
 <trove-needs id="needs-users" capability="identities:write" />
 
 <div class="list-layout" [class.panel-open]="panelOpen()">
@@ -27,10 +26,13 @@
     >
       @for (u of list.items(); track u.id) {
         <tr>
-          <th scope="row">
-            <a [routerLink]="['/admin/users', u.username]" translate="no">{{ u.username }}</a>
+          <th scope="row" class="person">
+            <trove-avatar class="avatar" aria-hidden="true" [seed]="u.id" [imageUrl]="u.avatarUrl" />
+            <span class="who">
+              <a [routerLink]="['/admin/users', u.username]" translate="no">{{ u.displayName || u.username }}</a>
+              <span class="secondary" translate="no">&#64;{{ u.username }}</span>
+            </span>
           </th>
-          <td>{{ u.displayName ?? '' }}</td>
           <td>{{ u.email ?? '' }}</td>
           <td>{{ originLabel(u.origin) }}</td>
           <td>

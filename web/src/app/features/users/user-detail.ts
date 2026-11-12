@@ -19,6 +19,7 @@ import { SettingsSection } from '../../shared/ui/settings-section';
 import { TroveAvatar } from '../../shared/ui/avatar';
 import { TokenManager, TokenOwnerScope } from '../tokens/token-manager';
 import { isLocked, originLabel } from './user-labels';
+import { PageHeader } from '../../shared/ui/page-header';
 
 /**
  * One user (R-UI-024). Attributes from the identity provider are read-only and labelled as such;
@@ -29,7 +30,7 @@ import { isLocked, originLabel } from './user-labels';
  */
 @Component({
   selector: 'trove-user-detail',
-  imports: [DatePipe, RouterLink, ErrorNotice, Needs, PrincipalRoles, SettingsSection, TextField, TokenManager, TroveAvatar],
+  imports: [PageHeader, DatePipe, RouterLink, ErrorNotice, Needs, PrincipalRoles, SettingsSection, TextField, TokenManager, TroveAvatar],
   templateUrl: './user-detail.html',
   styleUrl: '../../shared/access/access.scss',
   styles: `

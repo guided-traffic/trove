@@ -19,6 +19,7 @@ import { Needs } from '../../shared/access/needs';
 import { asApiError } from '../../shared/paged-resource';
 import { ConflictResolver } from '../../shared/conflict-dialog';
 import { ErrorNotice } from '../../shared/error-notice';
+import { PageHeader } from '../../shared/ui/page-header';
 
 /** The editable form content in one object, for the draft and the conflict dialog. */
 interface Form {
@@ -43,7 +44,7 @@ type Part = 'anonymous' | 'tokens';
  */
 @Component({
   selector: 'trove-auth-settings',
-  imports: [Checkbox, RouterLink, ErrorNotice, Needs, SettingsSection, TextField],
+  imports: [PageHeader, Checkbox, RouterLink, ErrorNotice, Needs, SettingsSection, TextField],
   templateUrl: './auth-settings.html',
   styleUrl: '../../shared/access/access.scss',
   styles: `

@@ -3784,12 +3784,13 @@ Acceptance criteria:
 ### R-UI-020 · Repository list
 Priority: **MVP** · Covers: UI-030, REPO-007
 
-- Table: the repository (its key, with its description as the muted second line, [Q-UI-302](#q-ui-302--the-repository-list-names-a-repository-by-key-and-description-in-its-first-column-and-puts-the-rows-actions-in-a-menu)), project, format and class,
+- Table: the repository (its key, with its description as the muted second line, [Q-UI-302](#q-ui-302--the-repository-list-names-a-repository-by-key-and-description-in-its-first-column-and-puts-the-rows-actions-in-a-menu)), format and class (the format's icon and display name),
   client URL with copy button (one width for the column, Q-UI-300), last activity (the date, Q-UI-305), and the row's menu; the
   format and the class share a cell (Q-UI-305), and below 48 rem of the list's width the rows stack (Q-UI-306). Filters in
   the filter panel: project, format, class, text, disabled only. The admin area lists every project's repositories with
-  the project in a column; the project's own list (`/projects/{project}/repositories`, Q-UI-129) is the same screen
-  for one project, without the project column and the project filter. The list is ordered by key; the API takes
+  the project leading the second line of the first column, linked to the project (no column of its own, so that the address
+  keeps its room at 1280 px, UI-A-30); the project's own list (`/projects/{project}/repositories`, Q-UI-129) is the same screen
+  for one project, without the project and the project filter. The list is ordered by key; the API takes
   no `sort` parameter yet, so the table has no sort control (sorting by creation arrives with the
   API, and the creation time with the summary, Q-UI-18). "Recently opened" (browser storage, 20) above the admin area's list; a
   project's list leaves it to the start page and says under its heading what the project is and, to a plain user, whom to ask
@@ -10580,7 +10581,11 @@ action; **Settings** is a default button for who may change.
 frequent actions.
 
 **Applied in the spec:** R-UI-067; the style guide's [Anatomy of a page](../developer/ui-style-guide.md#anatomy-of-a-page) already
-says it, the screens follow in the fix waves of the audit.
+says it, the screens follow in the fix waves of the audit. Built in fix wave 2 on every screen but the repository settings and the
+wizard (planned on T-18's tree) and the vulnerability pages (whose displays another builder replaces): a detail page names its
+object in the `<h1>` and its kind as a badge (the user `alice`, the badge **User**); the quiet links up to a list are gone, the
+breadcrumb is the way up; a quiet action in a header is a default button; the profile's and the project's create actions
+(**Create token**, **Create policy**, **Create service account**) are the header's.
 
 ### Q-UI-308 · Every list takes its layout from the data table: a column budget, a least width for its name, one alignment, stacked rows
 
@@ -10606,7 +10611,9 @@ is the `fill` column. A list whose rows cannot be read as blocks sets `[stack]="
 agent revisits top alignment if a list's controls are taller than one line of text.
 
 **Applied in the spec:** R-UI-020, R-UI-065; Q-UI-306 now holds for every list. Code: [data-table.ts](../../web/src/app/shared/ui/data-table.ts),
-[_list-screens.scss](../../web/src/styles/_list-screens.scss). Style guide: [Lists](../developer/ui-style-guide.md#lists).
+[_list-screens.scss](../../web/src/styles/_list-screens.scss). Style guide: [Lists](../developer/ui-style-guide.md#lists). Fix wave 2: a column marked `narrow` gives its room to the address below 64 rem
+of the list's width (`--trove-list-narrow`); the repository list's Last activity is one, so the admin area's list shows about 48
+characters of an address at 1280 px as at 1440 px (UI-A-30).
 
 ### Q-UI-309 · An empty list or region is a sentence and the action that fills it, without a frame
 

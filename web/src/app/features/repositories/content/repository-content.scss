@@ -4,6 +4,17 @@
   gap: var(--trove-space-2);
 }
 
+// The format badge carries the format's icon before its name (UI-A-24).
+.format-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--trove-space-1);
+
+  trove-format-icon {
+    font-size: 1rem;
+  }
+}
+
 .resolves {
   margin: 0 0 var(--trove-space-2);
   color: var(--trove-text-muted);

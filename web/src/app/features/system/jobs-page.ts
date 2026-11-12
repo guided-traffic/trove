@@ -1,5 +1,5 @@
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { Job, JobState, JobsApi, jobActive } from '../../api/jobs-api';
 import { describeProblem } from '../../core/http/problem-messages';
 import { Notifier } from '../../core/notifier';
@@ -7,6 +7,7 @@ import { ErrorNotice } from '../../shared/error-notice';
 import { jobStateText } from '../../shared/job-progress';
 import { PagedResource, asApiError } from '../../shared/paged-resource';
 import { JobTable } from './job-table';
+import { PageHeader } from '../../shared/ui/page-header';
 
 const STATES: readonly JobState[] = [
   'queued',
@@ -29,11 +30,10 @@ export const JOBS_REFRESH_MS = 5_000;
  */
 @Component({
   selector: 'trove-jobs-page',
-  imports: [RouterLink, ErrorNotice, JobTable],
+  imports: [PageHeader, ErrorNotice, JobTable],
   template: `
-    <header class="page-header">
-      <h1 tabindex="-1" i18n="@@jobs.heading">Jobs</h1>
-      <button class="btn btn-default"
+    <trove-page-header heading="Jobs" i18n-heading="@@jobs.heading">
+      <button actions class="btn btn-default"
         type="button"
         [attr.aria-pressed]="paused()"
         (click)="paused.set(!paused())"
@@ -44,9 +44,8 @@ export const JOBS_REFRESH_MS = 5_000;
           <ng-container i18n="@@system.pause">Pause automatic refresh</ng-container>
         }
       </button>
-      <button class="btn btn-tertiary" type="button" (click)="load()" i18n="@@system.refresh">Refresh now</button>
-      <a class="btn btn-tertiary" routerLink="/admin/system" i18n="@@jobs.back">System status</a>
-    </header>
+      <button actions class="btn btn-default" type="button" (click)="load()" i18n="@@system.refresh">Refresh now</button>
+    </trove-page-header>
 
     <form class="toolbar" role="search" (submit)="apply($event)">
       <div class="field">

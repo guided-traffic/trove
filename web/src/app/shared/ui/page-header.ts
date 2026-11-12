@@ -60,6 +60,11 @@ import { AddressField } from '../address-field';
       color: var(--trove-text-muted);
     }
 
+    /* A badge that names the kind of a detail page's object keeps its own width (Q-UI-307). */
+    trove-page-header .page-header-main > .badge {
+      align-self: flex-start;
+    }
+
     trove-page-header .page-header-actions {
       display: flex;
       flex-wrap: wrap;

@@ -17,6 +17,7 @@ import { DataTable, TableColumn } from '../../shared/ui/data-table';
 import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filter-panel';
 import { PagedResource, asApiError, valueOf } from '../../shared/paged-resource';
 import { KNOWN_ACTIONS, auditActionLabel, categoryLabel, outcomeLabel } from './audit-labels';
+import { PageHeader } from '../../shared/ui/page-header';
 
 /** The page size of the table (the server default and a good fit for one screen). */
 export const AUDIT_PAGE_SIZE = 100;
@@ -39,6 +40,7 @@ const PRESETS: Readonly<Record<string, number>> = {
 @Component({
   selector: 'trove-audit-log',
   imports: [
+    PageHeader,
     DatePipe,
     RouterLink,
     CopyButton,

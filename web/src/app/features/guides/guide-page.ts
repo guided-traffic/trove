@@ -11,6 +11,7 @@ import { ErrorNotice } from '../../shared/error-notice';
 import { asApiError, valueOf } from '../../shared/paged-resource';
 import { reportedBastions } from '../setup/bastion-targets';
 import { GuideView } from './guide-view';
+import { PageHeader } from '../../shared/ui/page-header';
 
 /**
  * The guides area (R-UI-049): package type, client, and a repository or a class, then the guide the
@@ -20,7 +21,7 @@ import { GuideView } from './guide-view';
  */
 @Component({
   selector: 'trove-guide-page',
-  imports: [RouterLink, CopyButton, AddressField, ErrorNotice, GuideView],
+  imports: [PageHeader, RouterLink, CopyButton, AddressField, ErrorNotice, GuideView],
   templateUrl: './guide-page.html',
   styleUrl: './guide-page.scss',
 })

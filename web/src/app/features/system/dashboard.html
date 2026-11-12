@@ -1,6 +1,5 @@
-<div class="page-header">
-  <h1 i18n="@@dashboard.title">Dashboard</h1>
-  <div class="refresh">
+<trove-page-header heading="Dashboard" i18n-heading="@@dashboard.title">
+  <div actions class="refresh">
     <button
       type="button"
       class="btn btn-default btn-sm"
@@ -15,14 +14,14 @@
     </button>
     <button
       type="button"
-      class="btn btn-tertiary btn-sm"
+      class="btn btn-default btn-sm"
       (click)="reload()"
       i18n="@@dashboard.refresh"
     >
       Refresh now
     </button>
   </div>
-</div>
+</trove-page-header>
 
 @if (failure(); as f) {
   <trove-error-notice [error]="f" (retry)="reload()" />

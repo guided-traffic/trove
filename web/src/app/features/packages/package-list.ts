@@ -21,6 +21,7 @@ import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filte
 import { relativeTime } from './format-time';
 import { packageCommands } from './package-links';
 import { PackageMemory, SavedView } from './package-memory';
+import { PageHeader } from '../../shared/ui/page-header';
 
 type Param = string | readonly string[] | undefined;
 type ListTab = 'all' | 'recent' | 'views';
@@ -52,6 +53,7 @@ interface Chip {
 @Component({
   selector: 'trove-package-list',
   imports: [
+    PageHeader,
     DatePipe,
     RouterLink,
     DataTable,

@@ -11,6 +11,7 @@ import { fieldErrorAt } from '../../shared/field-errors';
 import { Needs } from '../../shared/access/needs';
 import { asApiError } from '../../shared/paged-resource';
 import { ErrorNotice } from '../../shared/error-notice';
+import { PageHeader } from '../../shared/ui/page-header';
 
 /**
  * System roles and their bindings (R-UI-024, R-AUTHZ-022). The five roles are fixed (R-AUTHZ-010);
@@ -25,7 +26,7 @@ import { ErrorNotice } from '../../shared/error-notice';
  */
 @Component({
   selector: 'trove-role-bindings',
-  imports: [DatePipe, ErrorNotice, Needs, TextField],
+  imports: [PageHeader, DatePipe, ErrorNotice, Needs, TextField],
   templateUrl: './role-bindings.html',
   styleUrl: '../../shared/access/access.scss',
 })

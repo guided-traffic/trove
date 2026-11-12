@@ -10,6 +10,8 @@ import { ErrorNotice } from '../../shared/error-notice';
 import { asApiError } from '../../shared/paged-resource';
 import { BastionCard } from './bastion-card';
 import { BastionCreateDialog, BastionTokenDraft } from './bastion-dialogs';
+import { PageHeader } from '../../shared/ui/page-header';
+import { EmptyState } from '../../shared/ui/empty-state';
 
 /**
  * Administration → Bastions (R-BAS-007): the registrations of the trove Bastions in front of this
@@ -20,12 +22,11 @@ import { BastionCreateDialog, BastionTokenDraft } from './bastion-dialogs';
  */
 @Component({
   selector: 'trove-bastion-list',
-  imports: [BastionCard, ErrorNotice, Needs],
+  imports: [EmptyState, PageHeader, BastionCard, ErrorNotice, Needs],
   template: `
-    <header class="page-header">
-      <h1 tabindex="-1" i18n="@@bastions.heading">Bastions</h1>
-      <button class="btn btn-confirm" type="button" [disabled]="!canWrite()" aria-describedby="needs-bastions" (click)="add()" i18n="@@bastions.add">New Bastion</button>
-    </header>
+    <trove-page-header heading="Bastions" i18n-heading="@@bastions.heading">
+      <button actions class="btn btn-confirm" type="button" [disabled]="!canWrite()" aria-describedby="needs-bastions" (click)="add()" i18n="@@bastions.add">New Bastion</button>
+    </trove-page-header>
     <trove-needs id="needs-bastions" capability="endpoints:write" />
     <p i18n="@@bastions.hint">
       A Bastion is a read-only cache of this installation for clients outside your network. Register it here, issue the token its chart reads, and check that every replica has made contact.
@@ -39,7 +40,11 @@ import { BastionCreateDialog, BastionTokenDraft } from './bastion-dialogs';
         <p role="status" i18n="@@bastions.loading">Loading Bastions.</p>
       }
     } @else if (items().length === 0) {
-      <p class="muted" i18n="@@bastions.empty">No Bastion is registered.</p>
+      <trove-empty-state text="No Bastion is registered." i18n-text="@@bastions.empty">
+        @if (canWrite()) {
+          <button class="btn btn-default" type="button" (click)="add()" i18n="@@bastions.add">New Bastion</button>
+        }
+      </trove-empty-state>
     } @else {
       @for (b of items(); track b.name) {
         <trove-bastion-card [bastion]="b" [draft]="restored()" (changed)="load()" />

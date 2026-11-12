@@ -1,15 +1,8 @@
-<header class="page-header">
-  <h1 tabindex="-1">
-    @if (creating()) {
-      <ng-container i18n="@@ep.editor.heading.new">New exposure rule</ng-container>
-    } @else {
-      <ng-container i18n="@@ep.editor.heading.edit">Exposure rule</ng-container>
-    }
-  </h1>
-  <a class="btn btn-tertiary" [routerLink]="['/admin/endpoints', endpoint()]" i18n="@@ep.editor.back"
-    >Back to the endpoint</a
-  >
-</header>
+@if (creating()) {
+  <trove-page-header heading="New exposure rule" i18n-heading="@@ep.editor.heading.new" />
+} @else {
+  <trove-page-header heading="Exposure rule" i18n-heading="@@ep.editor.heading.edit" />
+}
 
 @if (loadFailure(); as f) {
   <trove-error-notice [error]="f" (retry)="loaded.reload()" />

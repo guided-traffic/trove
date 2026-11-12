@@ -27,7 +27,8 @@ test('R-UI-039 R-EP-017 an exposure rule with its preview', async ({ page, repli
   await expect(page.getByRole('heading', { name: 'Endpoints', level: 1 })).toBeVisible();
   await expectAccessible(page, 'endpoint list');
   await page.getByRole('link', { name: 'customers' }).click();
-  await expect(page.getByRole('heading', { name: 'Endpoint', level: 1, exact: true })).toBeVisible();
+  // A detail page names its object in the heading (Q-UI-307).
+  await expect(page.getByRole('heading', { name: 'customers', level: 1, exact: true })).toBeVisible();
   await expect(page.getByText('customers').first()).toBeVisible();
   await expectAccessible(page, 'endpoint detail');
 

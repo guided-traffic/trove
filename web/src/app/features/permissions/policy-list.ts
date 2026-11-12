@@ -8,6 +8,7 @@ import { PagedResource } from '../../shared/paged-resource';
 import { DataTable, TableColumn, TableSort } from '../../shared/ui/data-table';
 import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filter-panel';
 import { expandActions } from './policy-model';
+import { PageHeader } from '../../shared/ui/page-header';
 
 /** "Users: 2, groups: 3": the entries of a policy by kind of principal (R-UI-027). */
 export function principalSummary(policy: Pick<PermissionPolicy, 'entries'>): string {
@@ -39,7 +40,7 @@ export function actionSummary(policy: Pick<PermissionPolicy, 'entries'>): string
  */
 @Component({
   selector: 'trove-policy-list',
-  imports: [RouterLink, DataTable, FilterCategory, FilterPanel, FilterToggle, Needs, TextField],
+  imports: [PageHeader, RouterLink, DataTable, FilterCategory, FilterPanel, FilterToggle, Needs, TextField],
   templateUrl: './policy-list.html',
   styleUrl: '../../shared/access/access.scss',
 })

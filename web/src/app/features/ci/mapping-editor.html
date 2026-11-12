@@ -1,17 +1,12 @@
-<header class="page-header">
-  <h1 tabindex="-1">
-    @if (isNew()) {
-      <ng-container i18n="@@ci.editor.heading-new">New mapping</ng-container>
-    } @else {
-      <ng-container i18n="@@ci.editor.heading">Mapping</ng-container>
-    }
-  </h1>
-  <a class="btn btn-tertiary" [routerLink]="back()" i18n="@@ci.editor.back">Back to the mappings</a>
-</header>
-@if (!isNew()) {
-  <p class="subject" translate="no">{{ issuerName() }}/{{ mapping() }}</p>
-} @else if (project()) {
-  <p class="subject" translate="no">{{ project() }}</p>
+@if (isNew()) {
+  <trove-page-header heading="New mapping" i18n-heading="@@ci.editor.heading-new" />
+  @if (project()) {
+    <p class="subject" translate="no">{{ project() }}</p>
+  }
+} @else {
+  <trove-page-header [heading]="issuerName() + '/' + mapping()" [name]="true">
+    <span meta class="badge" i18n="@@ci.editor.heading">Mapping</span>
+  </trove-page-header>
 }
 
 @if (project()) {

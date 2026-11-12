@@ -1,15 +1,13 @@
-<header class="page-header">
-  <h1 tabindex="-1" i18n="@@backups.heading">Backups</h1>
-  <button class="btn btn-default" type="button" [attr.aria-pressed]="paused()" (click)="paused.set(!paused())">
+<trove-page-header heading="Backups" i18n-heading="@@backups.heading">
+  <button actions class="btn btn-default" type="button" [attr.aria-pressed]="paused()" (click)="paused.set(!paused())">
     @if (paused()) {
       <ng-container i18n="@@system.resume">Resume automatic refresh</ng-container>
     } @else {
       <ng-container i18n="@@system.pause">Pause automatic refresh</ng-container>
     }
   </button>
-  <button class="btn btn-tertiary" type="button" (click)="refresh()" i18n="@@system.refresh">Refresh now</button>
-  <a class="btn btn-tertiary" routerLink="/admin/system" i18n="@@jobs.back">System status</a>
-</header>
+  <button actions class="btn btn-default" type="button" (click)="refresh()" i18n="@@system.refresh">Refresh now</button>
+</trove-page-header>
 
 @if (statusFailure(); as f) {
   <trove-error-notice [error]="f" (retry)="refresh()" />

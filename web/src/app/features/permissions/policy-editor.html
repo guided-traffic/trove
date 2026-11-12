@@ -1,17 +1,9 @@
-<header class="page-header">
-  @if (isNew()) {
-    <h1 tabindex="-1" i18n="@@policy.heading-new">New permission policy</h1>
-  } @else {
-    <h1 tabindex="-1" i18n="@@policy.heading">Permission policy</h1>
-  }
-  @if (policyProject(); as key) {
-    <a class="btn btn-tertiary" [routerLink]="backLink()" i18n="@@policy.back-project">All policies of the project</a>
-  } @else {
-    <a class="btn btn-tertiary" routerLink="/admin/permissions" i18n="@@policy.back">All policies</a>
-  }
-</header>
-@if (!isNew()) {
-  <p class="subject" translate="no">{{ name() }}</p>
+@if (isNew()) {
+  <trove-page-header heading="New permission policy" i18n-heading="@@policy.heading-new" />
+} @else {
+  <trove-page-header [heading]="name() ?? ''" [name]="true">
+    <span meta class="badge" i18n="@@policy.heading">Permission policy</span>
+  </trove-page-header>
 }
 @if (policyProject(); as key) {
   <p class="subject">

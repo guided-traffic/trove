@@ -54,6 +54,21 @@ td.address-cell {
   }
 }
 
+// Below 64 rem of the list's width a column marked `narrow` (the data table's `narrow-drop`) gives its room to the address
+// (Q-UI-308, UI-A-30): the admin area's repository list at 1280 px shows the last activity no more, and a usual address whole.
+@container (max-width: 64rem) {
+  .trove-data-table .narrow-drop {
+    display: none;
+  }
+
+  .trove-data-table td.address-cell {
+    --trove-address-column: min(
+      calc(var(--trove-address-chars, 40) * 1ch + 2 * var(--trove-space-3) + 2px + var(--trove-control-height)),
+      max(16rem, 100cqi - var(--trove-list-others, 34rem) + var(--trove-list-narrow, 0px))
+    );
+  }
+}
+
 .list-toolbar {
   display: flex;
   flex-wrap: wrap;

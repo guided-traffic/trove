@@ -3,6 +3,7 @@ import { RouterLink } from '@angular/router';
 import { Endpoint, EndpointsApi } from '../../api/endpoints-api';
 import { DataTable, TableColumn, TableSort } from '../../shared/ui/data-table';
 import { asApiError, valueOf } from '../../shared/paged-resource';
+import { PageHeader } from '../../shared/ui/page-header';
 
 /**
  * The endpoint list (R-EP-017): name, base URL, hosts, surface, exposure mode, rule count and pool.
@@ -12,11 +13,9 @@ import { asApiError, valueOf } from '../../shared/paged-resource';
  */
 @Component({
   selector: 'trove-endpoint-list',
-  imports: [RouterLink, DataTable],
+  imports: [PageHeader, RouterLink, DataTable],
   template: `
-    <header class="page-header">
-      <h1 tabindex="-1" i18n="@@ep.list.heading">Endpoints</h1>
-    </header>
+    <trove-page-header heading="Endpoints" i18n-heading="@@ep.list.heading" />
     <p class="hint" i18n="@@ep.list.hint">
       Endpoints come from the configuration file. Exposure rules decide what an endpoint in mode
       "rules" makes retrievable.

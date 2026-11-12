@@ -1,23 +1,19 @@
-<header class="page-header">
-  <h1 tabindex="-1" i18n="@@ep.detail.heading">Endpoint</h1>
-  <a class="btn btn-tertiary" routerLink="/admin/endpoints" i18n="@@ep.detail.back">All endpoints</a>
+<trove-page-header [heading]="endpoint()" [name]="true">
+  <span meta class="badge" i18n="@@ep.detail.heading">Endpoint</span>
   @if (canWrite() && !inert()) {
-    <a class="btn btn-confirm"
+    <a actions class="btn btn-confirm"
       [routerLink]="['/admin/endpoints', endpoint(), 'rules', 'new']"
       i18n="@@ep.rule.new"
       >New rule</a
     >
   }
-</header>
+</trove-page-header>
 
 @if (failure(); as f) {
   <trove-error-notice [error]="f" (retry)="detail.reload()" />
 } @else if (detail.isLoading() && !valueOf(detail)) {
   <p role="status" i18n="@@repo.loading">Loading.</p>
 } @else if (valueOf(detail); as e) {
-  <p class="subject" translate="no">
-    <strong>{{ e.name }}</strong>
-  </p>
 
   @if (modeAll()) {
     <p class="banner-warning" role="note">
@@ -71,7 +67,11 @@
       <trove-error-notice [error]="f" (retry)="rules.reload()" />
     } @else if (valueOf(rules); as list) {
       @if (list.length === 0) {
-        <p class="empty" i18n="@@ep.rules.empty">This endpoint has no exposure rule.</p>
+        <trove-empty-state text="This endpoint has no exposure rule." i18n-text="@@ep.rules.empty">
+          @if (canWrite() && !inert()) {
+            <a class="btn btn-default" [routerLink]="['/admin/endpoints', endpoint(), 'rules', 'new']" i18n="@@ep.rule.new">New rule</a>
+          }
+        </trove-empty-state>
       } @else {
         <div class="scroll" tabindex="0" role="region" aria-labelledby="rules-caption">
           <table class="data" [style.--trove-address-chars]="addressChars(list)">

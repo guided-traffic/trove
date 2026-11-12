@@ -1,8 +1,6 @@
-<header class="page-header">
-  <h1 tabindex="-1" i18n="@@user.heading">User</h1>
-  <a class="btn btn-tertiary" routerLink="/admin/users" i18n="@@user.back">All users</a>
-</header>
-<p class="subject" translate="no">{{ username() }}</p>
+<trove-page-header [heading]="username()" [name]="true">
+  <span meta class="badge" i18n="@@user.heading">User</span>
+</trove-page-header>
 <trove-needs capability="identities:write" />
 
 @if (loadError(); as e) {

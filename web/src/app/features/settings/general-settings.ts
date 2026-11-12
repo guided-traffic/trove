@@ -18,6 +18,7 @@ import { fieldErrorAt } from '../../shared/field-errors';
 import { asApiError } from '../../shared/paged-resource';
 import { Checkbox } from '../../shared/ui/checkbox';
 import { SettingsSection } from '../../shared/ui/settings-section';
+import { PageHeader } from '../../shared/ui/page-header';
 
 type Severity = 'info' | 'warning' | 'critical';
 
@@ -34,7 +35,7 @@ const MAINTENANCE_MESSAGE_MAX = 500;
  */
 @Component({
   selector: 'trove-general-settings',
-  imports: [Checkbox, ErrorNotice, Needs, SelectField, SettingsSection, TextField],
+  imports: [PageHeader, Checkbox, ErrorNotice, Needs, SelectField, SettingsSection, TextField],
   templateUrl: './general-settings.html',
   styleUrl: '../../shared/access/access.scss',
   styles: `

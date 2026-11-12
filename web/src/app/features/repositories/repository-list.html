@@ -62,19 +62,26 @@
             @if (row.lifecycle === 'deleting') {
               <span class="badge" i18n="@@repo.badge.deleting">being deleted</span>
             }
-            <!-- The first column names the thing; the description is its muted second line (ui-style-guide.md, Lists; Q-UI-302). -->
-            @if (row.description) {
+            <!-- The first column names the thing; the description is its muted second line (ui-style-guide.md, Lists; Q-UI-302).
+                 In the admin area the project leads that line, so that the address keeps the room a column would take (UI-A-30). -->
+            @if (!inProject() && row.project) {
+              <span class="secondary"
+                ><a class="project-link" [routerLink]="['/projects', row.project]" translate="no">{{ row.project }}</a
+                >@if (row.description) {
+                  · {{ row.description }}
+                }</span
+              >
+            } @else if (row.description) {
               <span class="secondary">{{ row.description }}</span>
             }
           </th>
-          @if (!inProject()) {
-            <td>
-              <a [routerLink]="['/projects', row.project]" translate="no">{{ row.project }}</a>
-            </td>
-          }
           <!-- Format and class in one cell, the class under the format (Q-UI-305); one line when the rows stack. -->
           <td class="kind-cell">
-            <span translate="no">{{ row.format }}</span>
+            <!-- A format is its icon and its name (UI-A-24), as in the package list. -->
+            <span class="format-name">
+              <trove-format-icon [format]="row.format" />
+              <span translate="no">{{ formatLabel(row.format) }}</span>
+            </span>
             <span class="type-cell secondary">
               <span class="material-icons" aria-hidden="true">{{ classIcon(row.class) }}</span>
               {{ classText(row.class) }}
@@ -85,7 +92,7 @@
           </td>
           <!-- The date only, the time is its title (Q-UI-305); for who maintains, and while a row has one (Q-UI-312). -->
           @if (showActivity()) {
-            <td>
+            <td class="narrow-drop">
               @if (row.lastActivityAt; as at) {
                 <time [attr.datetime]="at" [title]="at | date: 'medium'">{{ at | date: 'mediumDate' }}</time>
               } @else {

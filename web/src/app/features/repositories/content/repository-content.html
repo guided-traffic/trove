@@ -3,7 +3,7 @@
 } @else if (repository(); as r) {
   <trove-page-header [heading]="r.key" [name]="true" [description]="sentence()" [addresses]="headerAddresses()">
     <div meta class="facts">
-      <span class="badge" translate="no">{{ formatName() }}</span>
+      <span class="badge format-badge" translate="no"><trove-format-icon [format]="r.format" />{{ formatName() }}</span>
       <span class="badge">
         <span class="material-icons" aria-hidden="true">{{ r.class === 'local' ? 'storage' : r.class === 'remote' ? 'cloud_download' : 'layers' }}</span>
         {{ classText() }}

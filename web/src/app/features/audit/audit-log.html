@@ -1,7 +1,6 @@
-<header class="page-header">
-  <h1 tabindex="-1" i18n="@@audit.heading">Audit log</h1>
-  <button class="btn btn-tertiary" type="button" (click)="refresh()" i18n="@@audit.refresh">Refresh</button>
-</header>
+<trove-page-header heading="Audit log" i18n-heading="@@audit.heading">
+  <button actions class="btn btn-default" type="button" (click)="refresh()" i18n="@@audit.refresh">Refresh</button>
+</trove-page-header>
 
 <div class="options">
   <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />

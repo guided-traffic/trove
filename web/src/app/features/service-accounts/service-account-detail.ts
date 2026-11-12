@@ -1,6 +1,6 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { IdentityApi, ServiceAccount } from '../../api/identity-api';
 import { ApiError } from '../../api/problem';
 import { Versioned } from '../../api/repositories-api';
@@ -16,6 +16,7 @@ import { PrincipalRoles } from '../../shared/access/principal-roles';
 import { ErrorNotice } from '../../shared/error-notice';
 import { SettingsSection } from '../../shared/ui/settings-section';
 import { TokenManager, TokenOwnerScope } from '../tokens/token-manager';
+import { PageHeader } from '../../shared/ui/page-header';
 
 /**
  * One service account (R-UI-026): description, status with disable and enable, and the Tokens
@@ -24,17 +25,11 @@ import { TokenManager, TokenOwnerScope } from '../tokens/token-manager';
  */
 @Component({
   selector: 'trove-service-account-detail',
-  imports: [DatePipe, RouterLink, ErrorNotice, Needs, PrincipalRoles, SettingsSection, TextField, TokenManager],
+  imports: [PageHeader, DatePipe, ErrorNotice, Needs, PrincipalRoles, SettingsSection, TextField, TokenManager],
   template: `
-    <header class="page-header">
-      <h1 tabindex="-1" i18n="@@sa.heading">Service account</h1>
-      @if (projectKey(); as key) {
-        <a class="btn btn-tertiary" [routerLink]="['/projects', key, 'service-accounts']" i18n="@@sa.back-project">All service accounts of the project</a>
-      } @else {
-        <a class="btn btn-tertiary" routerLink="/admin/service-accounts" i18n="@@sa.back">All service accounts</a>
-      }
-    </header>
-    <p class="subject" translate="no">{{ name() }}</p>
+    <trove-page-header [heading]="name()" [name]="true">
+      <span meta class="badge" i18n="@@sa.heading">Service account</span>
+    </trove-page-header>
     @if (projectKey(); as key) {
       <p class="subject">
         <ng-container i18n="@@sa.project">Service account of project</ng-container>&ngsp;

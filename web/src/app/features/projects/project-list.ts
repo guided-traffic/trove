@@ -15,6 +15,7 @@ import { DataTable, TableColumn, TableSort } from '../../shared/ui/data-table';
 import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filter-panel';
 import { formatSize } from '../packages/format-size';
 import { ProjectDialog } from './project-dialog';
+import { PageHeader } from '../../shared/ui/page-header';
 
 /**
  * Projects (R-UI-041): key, display name, Owners, members, number of repositories and the caller's own role.
@@ -23,11 +24,10 @@ import { ProjectDialog } from './project-dialog';
  */
 @Component({
   selector: 'trove-project-list',
-  imports: [RouterLink, DataTable, ErrorNotice, FilterCategory, FilterPanel, FilterToggle, Needs, TextField],
+  imports: [PageHeader, RouterLink, DataTable, ErrorNotice, FilterCategory, FilterPanel, FilterToggle, Needs, TextField],
   template: `
-    <header class="page-header">
-      <h1 tabindex="-1" i18n="@@projects.heading">Projects</h1>
-      <button class="btn btn-confirm"
+    <trove-page-header heading="Projects" i18n-heading="@@projects.heading">
+      <button actions class="btn btn-confirm"
         type="button"
         [disabled]="!canWrite()"
         aria-describedby="needs-projects"
@@ -36,7 +36,7 @@ import { ProjectDialog } from './project-dialog';
       >
         New project
       </button>
-    </header>
+    </trove-page-header>
     <trove-needs id="needs-projects" capability="projects:write" />
     <p i18n="@@projects.hint">
       A project holds a team's repositories. Its members have a role in it; its Owners manage the repositories, permission policies and service accounts without a system role.
@@ -146,9 +146,9 @@ export class ProjectList {
     void this.apply();
   }
 
-  /** "group:web-leads, user:alice": the references of the Owners, as the API orders them. */
+  /** "web-leads, alice": the Owners by name, as the API orders them; the `user:` and `group:` of a reference is not shown. */
   protected ownerSummary(p: Project): string {
-    return p.owners.join(', ');
+    return p.owners.map((o) => o.replace(/^(user|group):/, '')).join(', ');
   }
 
   protected roleLabel(role: ProjectRole): string {

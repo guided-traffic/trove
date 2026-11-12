@@ -208,9 +208,10 @@ describe('The administration area (R-UI-041, Q-UI-129)', () => {
     expect(navLabels(root)).not.toContain('Projects');
   });
 
-  it('Q-UI-129 the admin lists name the project in a column and link to the project', async () => {
+  it('Q-UI-129 the admin lists name the project and link to it; the repository list in the line under the key (UI-A-30)', async () => {
     const repositories = await render('/admin/repositories');
-    expect([...repositories.root.querySelectorAll('th[scope="col"]')].map((h) => h.textContent?.trim())).toContain('Project');
+    expect([...repositories.root.querySelectorAll('th[scope="col"]')].map((h) => h.textContent?.trim())).not.toContain('Project');
+    expect(repositories.root.querySelector('tbody th .secondary a.project-link[href="/projects/web"]')).toBeTruthy();
     expect(repositories.root.querySelector('tbody a[href^="/projects/web/repositories/"]')).toBeTruthy();
     expect(repositories.root.querySelector('tbody a[href="/projects/web"]')).toBeTruthy();
     const accounts = await render('/admin/service-accounts');

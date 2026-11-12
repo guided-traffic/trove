@@ -13,6 +13,8 @@ import { TextField } from '../../shared/access/fields';
 import { SettingsSection } from '../../shared/ui/settings-section';
 import { asApiError, valueOf } from '../../shared/paged-resource';
 import { endpointAddress, patternSummary, versionSummary } from './endpoint-model';
+import { PageHeader } from '../../shared/ui/page-header';
+import { EmptyState } from '../../shared/ui/empty-state';
 
 /**
  * One endpoint (R-EP-017): its configuration read-only and marked as coming from the
@@ -22,7 +24,7 @@ import { endpointAddress, patternSummary, versionSummary } from './endpoint-mode
  */
 @Component({
   selector: 'trove-endpoint-detail',
-  imports: [RouterLink, AddressField, ErrorNotice, SettingsSection, TextField],
+  imports: [EmptyState, PageHeader, RouterLink, AddressField, ErrorNotice, SettingsSection, TextField],
   templateUrl: './endpoint-detail.html',
   styleUrl: './endpoint-detail.scss',
 })

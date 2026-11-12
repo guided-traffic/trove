@@ -51,7 +51,8 @@ test('R-UI-025 R-UI-026 a group, a policy with its preview, and the effect for b
     await expectAccessible(page, 'new group dialog');
     await page.getByRole('button', { name: 'Create group' }).click();
     await expect(page).toHaveURL(new RegExp(`/admin/groups/${groupName}$`));
-    await expect(page.getByRole('heading', { name: 'Group', level: 1 })).toBeVisible();
+    // A detail page names its object in the heading (Q-UI-307).
+    await expect(page.getByRole('heading', { name: groupName, level: 1 })).toBeVisible();
     await page.getByLabel('Add a member').fill('bob');
     await page.getByRole('button', { name: 'Add', exact: true }).click();
     await expect(page.getByRole('link', { name: 'bob' })).toBeVisible();

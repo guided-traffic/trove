@@ -16,19 +16,6 @@ import { ProjectNeeds, createState } from './project-access';
   selector: 'trove-project-policies',
   imports: [RouterLink, DataTable, ProjectNeeds],
   template: `
-    <div class="toolbar">
-      @if (state() === 'enabled') {
-        <a class="btn btn-confirm"
-          [routerLink]="['/projects', project(), 'policies', 'new']"
-          i18n="@@project-policies.create"
-          >Create policy</a
-        >
-      } @else {
-        <button class="btn btn-confirm" type="button" disabled aria-describedby="needs-project-policies" i18n="@@project-policies.create-disabled">
-          Create policy
-        </button>
-      }
-    </div>
     <trove-project-needs id="needs-project-policies" [state]="state()" capability="policies:write" />
 
     <trove-data-table
@@ -44,6 +31,11 @@ import { ProjectNeeds, createState } from './project-access';
       (more)="list.more()"
       (retry)="list.reload()"
     >
+      @if (state() === 'enabled') {
+        <a emptyAction class="btn btn-default" [routerLink]="['/projects', project(), 'policies', 'new']" i18n="@@project-policies.create"
+          >Create policy</a
+        >
+      }
       @for (p of list.items(); track p.name) {
         <tr>
           <th scope="row">
@@ -68,7 +60,8 @@ export class ProjectPolicies {
   private readonly session = inject(SessionStore);
 
   protected readonly list = new PagedResource<PermissionPolicy>();
-  protected readonly state = computed(() => createState(this.session, this.project(), 'policies:write'));
+  /** Whether the caller may create a policy here; the page's header offers it (Q-UI-307). */
+  readonly state = computed(() => createState(this.session, this.project(), 'policies:write'));
   protected readonly principalSummary = principalSummary;
   protected readonly actionSummary = actionSummary;
   protected readonly caption = $localize`:@@project-policies.caption:Permission policies of the project`;

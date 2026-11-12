@@ -1,11 +1,10 @@
-<header class="page-header">
-  <h1 tabindex="-1" i18n="@@policies.heading">Permission policies</h1>
+<trove-page-header heading="Permission policies" i18n-heading="@@policies.heading">
   @if (session.has('policies:write')) {
-    <a class="btn btn-confirm" routerLink="/admin/permissions/new" i18n="@@policies.new">New policy</a>
+    <a actions class="btn btn-confirm" routerLink="/admin/permissions/new" i18n="@@policies.new">New policy</a>
   } @else {
-    <button class="btn btn-confirm" type="button" disabled aria-describedby="needs-policies" i18n="@@policies.new-disabled">New policy</button>
+    <button actions class="btn btn-confirm" type="button" disabled aria-describedby="needs-policies" i18n="@@policies.new-disabled">New policy</button>
   }
-</header>
+</trove-page-header>
 <trove-needs id="needs-policies" capability="policies:write" />
 
 <div class="list-layout" [class.panel-open]="panelOpen()">

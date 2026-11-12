@@ -15,13 +15,14 @@ same screen's other pictures are beside it (`-dark-`, `-1024`, `-390`).
 list; what they still lack is UI-A-29 and UI-A-30. Every other line is open. A line is removed when its fix is rendered and
 looked at (rule 11 of the plan). The lines UI-A-31 to UI-A-40 belong to the planner of the creation flow on T-18's tree, not to
 the fix waves of this list. A line marked "→ T-22" belongs to the owner's task T-22 (one search with suggestions), one marked
-"→ B4" to the builder who replaces the vulnerability displays; neither is fixed here.
+"→ B4" to the builder who replaces the vulnerability displays, one marked "→ T-18's planner" to the plan of the creation flow and
+the repository settings; none of them is fixed here.
 
 ## Systemic causes
 
 1. **No shared page header.** Each page builds its own: the primary action at the right of the header, or under the description on
    the left; views of the same thing as quiet text links beside the tabs; the object's name in a subtitle under a heading that names
-   its type. Decided in [Q-UI-307](../spec/api-and-ui.md#q-ui-307--a-pages-own-actions-are-buttons-at-the-right-end-of-its-header-views-of-the-same-thing-are-tabs); no shared component holds it yet.
+   its type. Decided in [Q-UI-307](../spec/api-and-ui.md#q-ui-307--a-pages-own-actions-are-buttons-at-the-right-end-of-its-header-views-of-the-same-thing-are-tabs); since fix wave 2 every screen but those of UI-A-22 has the shared header.
 2. **Lists set their own columns, with no budget and no narrow layout.** The package list has nine columns, the repository page's
    package table, the project table, the browser's contents and the audit log each scroll sideways at 1440 px or cut their last
    column. Since fix wave 1 the data table holds the mechanism
@@ -35,7 +36,8 @@ the fix waves of this list. A line marked "→ T-22" belongs to the owner's task
 5. **Shared pieces missing or bypassed.** Empty states come in three forms (a dashed box, a sentence, a table row) and one text
    ("No tokens match.") is used where nothing was filtered; tabs in three looks; a format spelled as its key, its display name
    or with a product name in brackets. Since fix wave 1 there is one empty-state component and one page header (Q-UI-307,
-   Q-UI-309), which the screens still have to move to.
+   Q-UI-309); since fix wave 2 the screens of this audit use them, the tabs are one strip, and a format is its icon and its
+   display name.
 
 ## Work list
 
@@ -52,14 +54,9 @@ Ranked: the plain user's main path first, then consistency across screens, then 
 
 | ID | Screen | Kind | Picture | What is wrong | Rule |
 |---|---|---|---|---|---|
-| UI-A-22 | Page headers | all | `power/policies-light-1440.png`, `power/repositories-light-1440.png`, `power/repository-settings-npm-remote-light-1440.png`, `admin/admin-user-light-1440.png` | Four forms of page action (systemic cause 1); detail pages put the type in the `<h1>` and the object in a subtitle ("User" / "sam", "Endpoint" / "default", "Repository settings" / "web-frontend/npm-internal") | Anatomy of a page, Q-UI-307 |
-| UI-A-24 | Format names | all | `plain/repositories-light-1440.png`, `plain/repository-empty-light-1440.png`, `plain/packages-light-1440.png` | A format is `npm` (its key) in the repository list without its icon, "Generic" in the repository page's badge, "OCI (Docker)" in the package list | Lists: a format is its icon and its name |
-| UI-A-25 | Empty states | all | `plain/profile-tokens-light-1440.png`, `power/policies-light-1440.png`, `admin/admin-bastions-dark-1440.png`, `admin/admin-endpoint-light-1440.png` | A dashed box, a box with a border, a bare sentence; "No tokens match." where nothing is filtered (also `admin/admin-tokens-light-1440.png`) | Lists: one empty state, with the action that fills it |
-| UI-A-26 | Tabs | all | `plain/profile-tokens-light-1440.png`, `plain/package-npm-light-1440.png`, `power/repository-settings-npm-remote-light-1440.png` | Pill links, the tab strip of links and the tab group; the strip wraps at 390 px on one screen | Controls: tabs |
-| UI-A-27 | Persons in lists | admin | `admin/admin-users-dark-1440.png`, `plain/members-light-1440.png`, `admin/admin-projects-light-1440.png` | A person is avatar, name and `@username` on the members screen, two text columns without avatar in the user list, and `user:priya` (a principal reference) as an Owner in the admin area's project list | Lists: the first column names the thing; Q-UI-318 |
-| UI-A-28 | Settings | power, admin | `power/repository-settings-npm-remote-light-1440.png`, `power/project-settings-light-1440.png` | Repository settings are a tabbed editor below a key-value list; project, general and user settings are one column with sections | Settings pages; known in "What does not follow this page yet" |
-| UI-A-29 | Names in other lists | all | `plain/packages-light-1440.png` | Names stay on one line in every list but the repository list (Q-UI-303); a long package name pushes the package list sideways | [Q-UI-303](../spec/api-and-ui.md#q-ui-303--the-repository-lists-key-breaks-after-a-hyphen-where-it-is-longer-than-its-column) |
-| UI-A-30 | Admin area's repository list | admin | `admin/admin-repositories-dark-1440.png` (and at 1280 px with `UI_RENDERS_WIDTHS=1440,1280`) | With its project column the address field shows 47 characters at 1440 px and 28 at 1280 px: the host and little more | [Q-UI-300](../spec/api-and-ui.md#q-ui-300--in-a-list-every-address-field-has-one-width-the-lists-longest-address-up-to-what-the-other-columns-leave) (revisit) |
+| UI-A-22 | Page headers | all | `power/repository-settings-npm-remote-light-1440.png`, `plain/vulnerabilities-light-1440.png` | → B4 and T-18's planner. Every other screen has the shared header since fix wave 2; the repository settings and the wizard (T-18's tree) and the vulnerability pages (B4) still have the old one, with quiet links in the header | Anatomy of a page, Q-UI-307 |
+| UI-A-28 | Settings | power, admin | `power/repository-settings-npm-remote-light-1440.png`, `power/project-settings-light-1440.png` | → T-18's planner (the repository settings, UI-A-31 to UI-A-40). Repository settings are a tabbed editor below a key-value list; project, general and user settings are one column with sections | Settings pages; known in "What does not follow this page yet" |
+| UI-A-30 | Admin area's repository list | admin | `admin/admin-repositories-dark-1440.png` (and at 1280 px with `UI_RENDERS_WIDTHS=1440,1280`) | Fix wave 2 moved the project under the key and lets the last activity give its room below 64 rem of the list (1280 px): the field shows about 48 characters at 1440 and at 1280 px, against 28 at 1280 px before. An address of 57 characters (`https://trove.k8s-main.wds18.de/api/npm/web-frontend/npm/`) is still cut by about nine at both widths; showing it whole needs the first column narrower than 16 rem or the last activity gone from the admin list | [Q-UI-300](../spec/api-and-ui.md#q-ui-300--in-a-list-every-address-field-has-one-width-the-lists-longest-address-up-to-what-the-other-columns-leave) (revisit) |
 
 ### Creating a repository (the owner's rules of 2026-11-12)
 

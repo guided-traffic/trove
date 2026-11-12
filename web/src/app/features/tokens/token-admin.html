@@ -1,6 +1,4 @@
-<header class="page-header">
-  <h1 tabindex="-1" i18n="@@tokens-admin.heading">Token administration</h1>
-</header>
+<trove-page-header heading="Token administration" i18n-heading="@@tokens-admin.heading" />
 
 <trove-needs capability="tokens:revoke" />
 
@@ -24,6 +22,7 @@
     @if (list.loaded()) {
       <trove-token-table
         [tokens]="list.items()"
+        [emptyText]="activeCount() > 0 ? noMatch : noActive"
         [showOwner]="true"
         [selectable]="session.has('tokens:revoke')"
         [canRevoke]="session.has('tokens:revoke')"

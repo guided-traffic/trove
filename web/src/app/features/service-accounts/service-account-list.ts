@@ -14,6 +14,7 @@ import { PagedResource, asApiError } from '../../shared/paged-resource';
 import { ErrorNotice } from '../../shared/error-notice';
 import { DataTable, TableColumn, TableSort } from '../../shared/ui/data-table';
 import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filter-panel';
+import { PageHeader } from '../../shared/ui/page-header';
 
 /** What the dialog is opened with: the project key to create a project service account, named within it (R-AUTHZ-026). */
 export interface ServiceAccountCreateData {
@@ -100,12 +101,11 @@ export class ServiceAccountCreateDialog {
  */
 @Component({
   selector: 'trove-service-account-list',
-  imports: [RouterLink, DataTable, FilterCategory, FilterPanel, FilterToggle, Needs, TextField],
+  imports: [PageHeader, RouterLink, DataTable, FilterCategory, FilterPanel, FilterToggle, Needs, TextField],
   template: `
-    <header class="page-header">
-      <h1 tabindex="-1" i18n="@@sas.heading">Service accounts</h1>
-      <button class="btn btn-confirm" type="button" [disabled]="!session.has('identities:write')" aria-describedby="needs-sas" (click)="add()" i18n="@@sas.add">New service account</button>
-    </header>
+    <trove-page-header heading="Service accounts" i18n-heading="@@sas.heading">
+      <button actions class="btn btn-confirm" type="button" [disabled]="!session.has('identities:write')" aria-describedby="needs-sas" (click)="add()" i18n="@@sas.add">New service account</button>
+    </trove-page-header>
     <trove-needs id="needs-sas" capability="identities:write" />
     <p i18n="@@sas.hint">
       Use a service account for CI systems that cannot sign in through OpenID Connect and for long-running automation. Its tokens act as the account, not as a person.

@@ -25,6 +25,7 @@ import {
   stateView,
 } from './backups-model';
 import { ManualRunPanel } from './manual-run-panel';
+import { PageHeader } from '../../../shared/ui/page-header';
 
 /** Runs per page of the list; the automatic refresh keeps the first page current and leaves a longer list alone. */
 export const RUNS_PAGE_SIZE = 25;
@@ -36,7 +37,7 @@ export const RUNS_PAGE_SIZE = 25;
  */
 @Component({
   selector: 'trove-backups-page',
-  imports: [DatePipe, RouterLink, ErrorNotice, BackupState, ManualRunPanel],
+  imports: [PageHeader, DatePipe, RouterLink, ErrorNotice, BackupState, ManualRunPanel],
   templateUrl: './backups-page.html',
   styleUrl: './backups-page.scss',
 })

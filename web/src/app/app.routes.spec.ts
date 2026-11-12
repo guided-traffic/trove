@@ -9,7 +9,8 @@ import { TroveTitleStrategy } from './core/title-strategy';
 import { seriousViolations } from './testing/axe';
 
 /** Every screen of the M1 route map (R-UI-003) with a concrete URL and its expected heading. */
-const SCREENS: readonly (readonly [url: string, heading: string])[] = [
+/** The URL, the page title and, where the page names its object (Q-UI-307), the `<h1>` when it is not the title. */
+const SCREENS: readonly (readonly [url: string, heading: string, h1?: string])[] = [
   ['/login', 'Sign in'],
   ['/logged-out', 'Signed out'],
   ['/projects', 'Projects'],
@@ -24,9 +25,9 @@ const SCREENS: readonly (readonly [url: string, heading: string])[] = [
   ['/projects/web/settings', 'Settings'],
   ['/projects/web/policies', 'Permission policies'],
   ['/projects/web/policies/new', 'New permission policy'],
-  ['/projects/web/policies/team-a', 'Permission policy'],
+  ['/projects/web/policies/team-a', 'Permission policy', 'team-a'],
   ['/projects/web/service-accounts', 'Service accounts'],
-  ['/projects/web/service-accounts/ci-bot', 'Service account'],
+  ['/projects/web/service-accounts/ci-bot', 'Service account', 'ci-bot'],
   ['/projects/web/ci', 'CI identity'],
   // >>> M4b vulnerabilities
   ['/projects/web/vulnerabilities', 'Vulnerabilities'],
@@ -44,14 +45,14 @@ const SCREENS: readonly (readonly [url: string, heading: string])[] = [
   ['/admin/repositories', 'Repositories'],
   ['/admin/repositories/new', 'New repository'],
   ['/admin/users', 'Users'],
-  ['/admin/users/alice', 'User'],
+  ['/admin/users/alice', 'User', 'alice'],
   ['/admin/groups', 'Groups'],
-  ['/admin/groups/platform', 'Group'],
+  ['/admin/groups/platform', 'Group', 'platform'],
   ['/admin/service-accounts', 'Service accounts'],
-  ['/admin/service-accounts/ci-bot', 'Service account'],
+  ['/admin/service-accounts/ci-bot', 'Service account', 'ci-bot'],
   ['/admin/permissions', 'Permission policies'],
   ['/admin/permissions/new', 'New permission policy'],
-  ['/admin/permissions/team-a', 'Permission policy'],
+  ['/admin/permissions/team-a', 'Permission policy', 'team-a'],
   ['/admin/roles', 'System roles'],
   ['/admin/tokens', 'Token administration'],
   ['/admin/endpoints', 'Endpoints'],
@@ -59,7 +60,7 @@ const SCREENS: readonly (readonly [url: string, heading: string])[] = [
   // >>> M4b vulnerabilities
   ['/admin/advisory-sources', 'Advisory sources'],
   // <<< M4b vulnerabilities
-  ['/admin/endpoints/main', 'Endpoint'],
+  ['/admin/endpoints/main', 'Endpoint', 'main'],
   ['/admin/endpoints/main/rules/new', 'New exposure rule'],
   ['/admin/endpoints/main/rules/r1', 'Exposure rule'],
   ['/admin/audit', 'Audit log'],
@@ -89,10 +90,10 @@ async function open(url: string) {
 }
 
 describe('route map', () => {
-  for (const [url, heading] of SCREENS) {
-    it(`R-UI-003 ${url} shows "${heading}", sets the page title and has no serious accessibility violation (R-UI-044)`, async () => {
+  for (const [url, heading, h1] of SCREENS) {
+    it(`R-UI-003 ${url} shows "${h1 ?? heading}", sets the page title and has no serious accessibility violation (R-UI-044)`, async () => {
       const root = await open(url);
-      expect(root.querySelector('main h1')?.textContent?.trim()).toBe(heading);
+      expect(root.querySelector('main h1')?.textContent?.trim()).toBe(h1 ?? heading);
       expect(document.title).toBe(`${heading} – trove`);
       expect(await seriousViolations(root)).toEqual([]);
     });

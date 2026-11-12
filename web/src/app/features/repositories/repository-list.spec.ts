@@ -43,7 +43,9 @@ describe('Repository list', () => {
     const row = first.closest('tr')!;
     // Format and class share a cell; the rows stack on a narrow list, where the activity cell names its column.
     const kind = row.querySelector('td.kind-cell')!;
-    expect(kind.querySelector('span[translate="no"]')?.textContent).toBe('generic');
+    // A format is its icon and its name (UI-A-24).
+    expect(kind.querySelector('.format-name trove-format-icon')).toBeTruthy();
+    expect(kind.querySelector('.format-name span[translate="no"]')?.textContent).toBe('Generic');
     expect(kind.querySelector('.type-cell')?.textContent).toContain('Local');
     // No row has a last activity: the column is left out (a column of dashes says nothing); the format names no column.
     expect([...root.querySelectorAll('thead th')].map((th) => th.textContent?.trim())).not.toContain('Last activity');

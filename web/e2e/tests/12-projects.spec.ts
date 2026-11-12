@@ -142,9 +142,10 @@ test('R-UI-041 an administrator creates a project; a member of its Owner group a
     await expectAccessible(bob, 'project policy editor');
     await bob.getByRole('button', { name: 'Create policy' }).click();
     await expect(bob).toHaveURL(new RegExp(`/projects/${key}/policies/${policyName}$`));
-    await expect(bob.getByRole('heading', { name: 'Permission policy', level: 1 })).toBeVisible();
+    // The page names the policy in its heading; the way up to the list is the breadcrumb (Q-UI-307).
+    await expect(bob.getByRole('heading', { name: policyName, level: 1 })).toBeVisible();
 
-    await bob.getByRole('link', { name: 'All policies of the project' }).click();
+    await bob.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: 'Permission policies' }).click();
     await expect(bob.getByRole('link', { name: policyName })).toBeVisible();
   });
 

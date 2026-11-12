@@ -14,6 +14,7 @@ import { IssuerKeys } from './issuer-keys';
 import { MappingList } from './mapping-list';
 import { ErrorNotice } from '../../shared/error-notice';
 import { SettingsSection } from '../../shared/ui/settings-section';
+import { PageHeader } from '../../shared/ui/page-header';
 
 /** The tabs of the issuer page, in this order; the query parameter `tab` names the open one. */
 export const ISSUER_TABS = ['settings', 'keys', 'mappings', 'issuances'] as const;
@@ -27,14 +28,12 @@ export type IssuerTab = (typeof ISSUER_TABS)[number];
  */
 @Component({
   selector: 'trove-ci-issuer-detail',
-  imports: [TabContent, TabGroup, TabPage, RouterLink, ErrorNotice, IssuanceList, IssuerForm, IssuerKeys, MappingList, SettingsSection],
+  imports: [PageHeader, TabContent, TabGroup, TabPage, RouterLink, ErrorNotice, IssuanceList, IssuerForm, IssuerKeys, MappingList, SettingsSection],
   template: `
-    <header class="page-header">
-      <h1 tabindex="-1" i18n="@@ci.issuer.heading">CI issuer</h1>
-      <a class="btn btn-tertiary" routerLink="/admin/ci" i18n="@@ci.issuer.back">All issuers</a>
-      <a class="btn btn-default" [routerLink]="testLink()" i18n="@@ci.issuer.test">Test with claims</a>
-    </header>
-    <p class="subject" translate="no">{{ issuer() }}</p>
+    <trove-page-header [heading]="issuer()" [name]="true">
+      <span meta class="badge" i18n="@@ci.issuer.heading">CI issuer</span>
+      <a actions class="btn btn-default" [routerLink]="testLink()" i18n="@@ci.issuer.test">Test with claims</a>
+    </trove-page-header>
 
     @if (error(); as e) {
       <trove-error-notice [error]="e" (retry)="load()" />
@@ -185,12 +184,9 @@ export class IssuerDetail {
 /** The form of a new issuer (R-UI-035): after the save the issuer's page opens. */
 @Component({
   selector: 'trove-ci-issuer-create',
-  imports: [RouterLink, IssuerForm],
+  imports: [PageHeader, IssuerForm],
   template: `
-    <header class="page-header">
-      <h1 tabindex="-1" i18n="@@ci.create.heading">New CI issuer</h1>
-      <a class="btn btn-tertiary" routerLink="/admin/ci" i18n="@@ci.issuer.back">All issuers</a>
-    </header>
+    <trove-page-header heading="New CI issuer" i18n-heading="@@ci.create.heading" />
     <div class="settings">
       <trove-ci-issuer-form (saved)="created($event.value.name)" />
     </div>

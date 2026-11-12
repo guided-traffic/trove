@@ -8,6 +8,7 @@ import { ciRoutes } from './ci-common';
 import { IssuanceList } from './issuance-list';
 import { MappingList } from './mapping-list';
 import { ErrorNotice } from '../../shared/error-notice';
+import { PageHeader } from '../../shared/ui/page-header';
 
 /**
  * The CI identity of one project (R-UI-035, Q-CI-26): for an Owner of the project, the issuers the project may use (read-only: issuers are the system
@@ -16,12 +17,11 @@ import { ErrorNotice } from '../../shared/error-notice';
  */
 @Component({
   selector: 'trove-project-ci',
-  imports: [RouterLink, ErrorNotice, DataTable, IssuanceList, MappingList],
+  imports: [PageHeader, RouterLink, ErrorNotice, DataTable, IssuanceList, MappingList],
   template: `
-    <header class="page-header">
-      <h1 tabindex="-1" i18n="@@ci.project.heading">CI identity</h1>
-      <a class="btn btn-default" [routerLink]="testLink()" i18n="@@ci.project.test">Test with claims</a>
-    </header>
+    <trove-page-header heading="CI identity" i18n-heading="@@ci.project.heading">
+      <a actions class="btn btn-default" [routerLink]="testLink()" i18n="@@ci.project.test">Test with claims</a>
+    </trove-page-header>
     <p class="subject" translate="no">{{ project() }}</p>
     <p i18n="@@ci.project.hint">
       Jobs of your GitLab projects exchange their ID token for a short-lived token. The mappings below decide what such a job may do in the repositories of this project. They apply next to the administrators' mappings; yours can never take anything away from theirs.

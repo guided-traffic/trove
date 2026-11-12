@@ -46,6 +46,7 @@ import { relativeTime } from '../packages/format-time';
 import { FolderDialog, FolderDialogData } from './folder-dialog';
 import { MORE_PREFIX, NodeMeta, TreeNode, ancestorsOf, nameOf, nodeId, parentOf } from './tree-node';
 import { UploadDialog, UploadDialogData } from './upload-dialog';
+import { PageHeader } from '../../shared/ui/page-header';
 
 /** `ui.browser.page_size` (R-UI-010, default 200). The UI cannot read the configuration, so it is a constant. */
 export const BROWSER_PAGE_SIZE = 200;
@@ -87,6 +88,7 @@ const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")
 @Component({
   selector: 'trove-browse',
   imports: [
+    PageHeader,
     DatePipe,
     NgTemplateOutlet,
     CdkMenu, CdkMenuItemRadio, CdkMenuTrigger,

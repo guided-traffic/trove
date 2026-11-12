@@ -1,5 +1,4 @@
 import { Component, DestroyRef, LOCALE_ID, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { RouterLink } from '@angular/router';
 import { CiApi, CiEvaluateResult, CiIssuerChoice, CiLeafResult, CiMapping } from '../../api/ci-api';
 import { ApiError } from '../../api/problem';
 import { formatDuration } from '../../shared/access/duration';
@@ -8,6 +7,7 @@ import { asApiError } from '../../shared/paged-resource';
 import { CiWarnings, ciRoutes } from './ci-common';
 import { claimsSatisfying, newId, parseClaimsInput, sampleClaims, summarizeGrants, tierLabel } from './ci-model';
 import { ErrorNotice } from '../../shared/error-notice';
+import { PageHeader } from '../../shared/ui/page-header';
 
 const pretty = (v: unknown): string => JSON.stringify(v, null, 2);
 
@@ -43,12 +43,9 @@ function valueFor(previous: unknown, text: string): unknown {
  */
 @Component({
   selector: 'trove-ci-claim-tester',
-  imports: [RouterLink, ErrorNotice, CiWarnings, SelectField],
+  imports: [PageHeader, ErrorNotice, CiWarnings, SelectField],
   template: `
-    <header class="page-header">
-      <h1 tabindex="-1" i18n="@@ci.test.heading">Claim tester</h1>
-      <a class="btn btn-tertiary" [routerLink]="back()" [queryParams]="backQuery()" i18n="@@ci.test.back">Back</a>
-    </header>
+    <trove-page-header heading="Claim tester" i18n-heading="@@ci.test.heading" />
     <p class="subject" translate="no">{{ project() ? project() + ' · ' : '' }}{{ issuerName() }}</p>
     <p i18n="@@ci.test.hint">
       Check which mapping a job would match. This is a dry run: it issues no token and records nothing. Only the claims are sent to the server, never a token.

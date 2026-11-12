@@ -10,6 +10,7 @@ import { PagedResource } from '../../shared/paged-resource';
 import { DataTable, TableColumn, TableSort } from '../../shared/ui/data-table';
 import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filter-panel';
 import { GroupCreateDialog } from './group-create-dialog';
+import { PageHeader } from '../../shared/ui/page-header';
 
 export function groupOriginLabel(origin: Group['origin']): string {
   switch (origin) {
@@ -26,6 +27,7 @@ export function groupOriginLabel(origin: Group['origin']): string {
 @Component({
   selector: 'trove-group-list',
   imports: [
+    PageHeader,
     RouterLink,
     DataTable,
     FilterCategory,
@@ -36,10 +38,9 @@ export function groupOriginLabel(origin: Group['origin']): string {
     TextField,
   ],
   template: `
-    <header class="page-header">
-      <h1 tabindex="-1" i18n="@@groups.heading">Groups</h1>
-      <button class="btn btn-confirm" type="button" [disabled]="!session.has('identities:write')" aria-describedby="needs-groups" (click)="add()" i18n="@@groups.add">New group</button>
-    </header>
+    <trove-page-header heading="Groups" i18n-heading="@@groups.heading">
+      <button actions class="btn btn-confirm" type="button" [disabled]="!session.has('identities:write')" aria-describedby="needs-groups" (click)="add()" i18n="@@groups.add">New group</button>
+    </trove-page-header>
     <trove-needs id="needs-groups" capability="identities:write" />
 
     <div class="list-layout" [class.panel-open]="panelOpen()">

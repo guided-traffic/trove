@@ -249,7 +249,7 @@ An IPv6 address counts per `/64`. The break-glass lockout applies on top of thes
 
 ## The Users screen
 
-**Admin area › Identity › Users** lists every user with **User name**, **Display name**, **Email**, **Origin**, **Status** and **Last sign-in**. Filter by **Name or email**, **Status** (**Active**, **Disabled**, **Locked**), **Origin**, **Group** and **Administrator**. **Origin** is **Identity provider** for users created at first sign-in, **Created by an administrator**, or **Break-glass**. Reading needs `identities:read`, changing needs `identities:write`.
+**Admin area › Identity › Users** lists every user with **User** (the avatar, the display name and the `@username` under it), **Email**, **Origin**, **Status** and **Last sign-in**. Filter by **Name or email**, **Status** (**Active**, **Disabled**, **Locked**), **Origin**, **Group** and **Administrator**. **Origin** is **Identity provider** for users created at first sign-in, **Created by an administrator**, or **Break-glass**. Reading needs `identities:read`, changing needs `identities:write`.
 
 To pre-provision a user, select **Add user** and fill in:
 

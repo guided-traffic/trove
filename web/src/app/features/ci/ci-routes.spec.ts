@@ -54,7 +54,7 @@ describe('The routes of the CI area (R-UI-035, R-UI-036, Q-CI-26)', () => {
       expect(text(await open(h, '/issuances'))).toContain('Every token a job received');
       const detail = await open(h, '/gitlab-com');
       expect(text(detail)).toContain('team-a-release');
-      expect(detail.querySelector('.subject')!.textContent).toContain('gitlab-com');
+      expect(detail.querySelector('h1')!.textContent).toContain('gitlab-com');
     });
 
     it('R-UI-035 the tab of the issuer comes from the query', async () => {
@@ -70,7 +70,7 @@ describe('The routes of the CI area (R-UI-035, R-UI-036, Q-CI-26)', () => {
 
     it('R-UI-035 the mapping editor takes the issuer and the mapping from the path', async () => {
       const editor = await open(h, '/gitlab-com/mappings/team-a-release');
-      expect(editor.querySelector('.subject')!.textContent).toContain('gitlab-com/team-a-release');
+      expect(editor.querySelector('h1')!.textContent).toContain('gitlab-com/team-a-release');
       const created = await open(h, '/gitlab-com/mappings/new');
       expect(text(created)).toContain('New mapping');
       expect(created.querySelector<HTMLInputElement>('input[name="priority"]')!.value).toBe('110');

@@ -9,7 +9,7 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { newIdempotencyKey } from '../../api/client';
 import {
   EndpointsApi,
@@ -40,6 +40,7 @@ import {
   ruleFormOf,
   ruleOf,
 } from './endpoint-model';
+import { PageHeader } from '../../shared/ui/page-header';
 
 /** The preview waits this long after the last change before it asks the server (R-EP-017). */
 export const PREVIEW_DEBOUNCE_MS = 500;
@@ -106,7 +107,7 @@ const FIELD_LABELS: readonly (readonly [prefix: string, label: () => string])[] 
  */
 @Component({
   selector: 'trove-exposure-rule-editor',
-  imports: [RouterLink, CopyButton, ErrorNotice, ErrorSummary],
+  imports: [PageHeader, CopyButton, ErrorNotice, ErrorSummary],
   templateUrl: './exposure-rule-editor.html',
   styleUrl: './exposure-rule-editor.scss',
 })

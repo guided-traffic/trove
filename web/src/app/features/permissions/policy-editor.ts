@@ -2,7 +2,7 @@ import { DestroyRef, Component, computed, effect, inject, input, signal, untrack
 import { SettingsSection } from '../../shared/ui/settings-section';
 import { Checkbox } from '../../shared/ui/checkbox';
 import { TroveDialog } from '../../shared/ui/dialog';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { newIdempotencyKey } from '../../api/client';
 import { LoadedPolicy, PermissionPolicyInput, PolicyApi, PolicyProblem, PolicyValidation } from '../../api/authz-api';
@@ -39,6 +39,7 @@ import {
   newRow,
   warningText,
 } from './policy-model';
+import { PageHeader } from '../../shared/ui/page-header';
 
 /** Debounce of the live validation (R-UI-027). */
 export const PREVIEW_DEBOUNCE_MS = 500;
@@ -56,9 +57,9 @@ export const PREVIEW_DEBOUNCE_MS = 500;
 @Component({
   selector: 'trove-policy-editor',
   imports: [
+    PageHeader,
     Checkbox,
     SettingsSection,
-    RouterLink,
     ErrorNotice,
     Needs,
     PrincipalPicker,

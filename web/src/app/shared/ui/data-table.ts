@@ -25,6 +25,11 @@ export interface TableColumn {
   readonly fill?: boolean;
   /** When the rows stack (below 48 rem), the cell shows its column's name before its value; false where the value says it. */
   readonly stackLabel?: boolean;
+  /**
+   * The column gives its room to the address below 64 rem of the list's width (Q-UI-308, UI-A-30): its header and the list's
+   * cells marked `narrow-drop` are hidden there, and the address column takes their width.
+   */
+  readonly narrow?: boolean;
 }
 
 export type SortDirection = 'asc' | 'desc';
@@ -71,7 +76,7 @@ let nextTableId = 1;
             <thead>
               <tr>
                 @for (c of columns(); track c.id) {
-                  <th scope="col" [class.num]="c.numeric" [attr.aria-sort]="ariaSort(c)" [style.min-inline-size]="c.width">
+                  <th scope="col" [class.num]="c.numeric" [class.narrow-drop]="c.narrow" [attr.aria-sort]="ariaSort(c)" [style.min-inline-size]="c.width">
                     <span class="th-inner">
                       @if (c.sortable) {
                         <button type="button" class="th-sort" (click)="toggle(c)">
@@ -120,6 +125,7 @@ let nextTableId = 1;
     class: 'trove-data-table',
     '[class.stack]': 'stack()',
     '[style.--trove-list-others]': 'others()',
+    '[style.--trove-list-narrow]': 'narrowRoom()',
   },
 })
 export class DataTable {
@@ -153,6 +159,12 @@ export class DataTable {
     const rest = cols.filter((c) => !c.fill);
     const widths = rest.map((c) => c.width ?? '0px').join(' + ');
     return `calc(${widths} + ${rest.length + 1} * 2 * var(--trove-space-4))`;
+  });
+  /** The room the columns marked `narrow` give back below 64 rem: their widths and padding. */
+  protected readonly narrowRoom = computed(() => {
+    const narrow = this.columns().filter((c) => c.narrow && !c.fill);
+    if (narrow.length === 0) return null;
+    return `calc(${narrow.map((c) => c.width ?? '0px').join(' + ')} + ${narrow.length} * 2 * var(--trove-space-4))`;
   });
 
   constructor() {

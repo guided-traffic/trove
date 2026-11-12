@@ -155,7 +155,7 @@ describe('Data table', () => {
       readonly columns: readonly TableColumn[] = [
         { id: 'name', label: 'Name', width: '16rem' },
         { id: 'address', label: 'Address', fill: true, stackLabel: false },
-        { id: 'when', label: 'When', width: '7rem' },
+        { id: 'when', label: 'When', width: '7rem', narrow: true },
         { id: 'actions', label: 'Actions', hideLabel: true, width: '2rem' },
       ];
     }
@@ -171,6 +171,9 @@ describe('Data table', () => {
     expect(table.classList.contains('stack')).toBe(true);
     const heads = [...root.querySelectorAll<HTMLElement>('thead th')];
     expect(heads.map((h) => h.style.minInlineSize)).toEqual(['16rem', '', '7rem', '2rem']);
+    // A narrow column gives its room back to the address below 64 rem of the list (UI-A-30).
+    expect(table.style.getPropertyValue('--trove-list-narrow')).toBe('calc(7rem + 1 * 2 * var(--trove-space-4))');
+    expect(heads.map((h) => h.classList.contains('narrow-drop'))).toEqual([false, false, true, false]);
     // Stacked, a cell names its column unless its column says not to; an empty value leaves its line out.
     const cells = [...root.querySelectorAll<HTMLElement>('tbody td')];
     expect(cells.map((c) => c.getAttribute('data-label'))).toEqual([null, 'When', null]);

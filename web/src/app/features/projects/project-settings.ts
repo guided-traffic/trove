@@ -17,6 +17,7 @@ import { TextField } from '../../shared/access/fields';
 import { SettingsSection } from '../../shared/ui/settings-section';
 import { formatSize } from '../packages/format-size';
 import { projectRoleLabel } from './project-roles';
+import { PageHeader } from '../../shared/ui/page-header';
 
 /**
  * The settings of one project (R-UI-041, Q-UI-129, Q-UI-215): the display name and the description edited in place by
@@ -27,11 +28,9 @@ import { projectRoleLabel } from './project-roles';
  */
 @Component({
   selector: 'trove-project-settings',
-  imports: [DatePipe, ErrorNotice, Needs, SettingsSection, TextField],
+  imports: [PageHeader, DatePipe, ErrorNotice, Needs, SettingsSection, TextField],
   template: `
-    <header class="page-header">
-      <h1 tabindex="-1" i18n="@@project.settings">Settings</h1>
-    </header>
+    <trove-page-header heading="Settings" i18n-heading="@@project.settings" />
 
     @if (loadError(); as e) {
       <trove-error-notice [error]="e" (retry)="load()" />

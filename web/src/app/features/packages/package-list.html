@@ -1,7 +1,6 @@
-<header class="page-header">
-  <h1 tabindex="-1" i18n="@@pkg.list.heading">Packages</h1>
-  <a class="btn btn-tertiary" routerLink="/setup" i18n="@@pkg.list.setup">Set up a client</a>
-</header>
+<trove-page-header heading="Packages" i18n-heading="@@pkg.list.heading">
+  <a actions class="btn btn-default" routerLink="/setup" i18n="@@pkg.list.setup">Set up a client</a>
+</trove-page-header>
 
 @if (memory.available()) {
   <nav class="view-tabs tab-nav" aria-label="Package views" i18n-aria-label="@@pkg.views.label">

@@ -1,6 +1,4 @@
-<header class="page-header">
-  <h1 tabindex="-1">{{ title }}</h1>
-</header>
+<trove-page-header [heading]="title" />
 
 <div class="browse" [class.has-selection]="selected() !== null">
   <!-- The tree pane: a toolbar, the filter chips, the count and the tree (R-UI-010) -->

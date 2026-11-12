@@ -37,7 +37,9 @@ describe('Projects overview (R-UI-041)', () => {
     expect(text(rows[0]!)).toContain('data');
     expect(text(rows[1]!)).toContain('web');
     expect(text(rows[1]!)).toContain('Web platform');
-    expect(text(rows[1]!)).toContain('group:web-leads');
+    // The Owners are named, not referenced (UI-A-27).
+    expect(text(rows[1]!)).toContain('web-leads');
+    expect(text(rows[1]!)).not.toContain('group:web-leads');
     expect(text(rows[1]!)).toContain('Owner');
     expect(text(rows[1]!)).not.toContain('Policies: on');
     expect(await seriousViolations(root)).toEqual([]);

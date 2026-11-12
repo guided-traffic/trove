@@ -23,6 +23,7 @@ import { classLabel } from '../repository-wizard';
 import { contentShapeOf } from './content-shape';
 import { RepositoryFiles } from './repository-files';
 import { RepositoryItems } from './repository-items';
+import { FormatIconView } from '../../../shared/format-icon';
 
 const SORTS: readonly PackageSort[] = ['name', '-name', 'updatedAt', '-updatedAt'];
 
@@ -36,7 +37,7 @@ const SORTS: readonly PackageSort[] = ['name', '-name', 'updatedAt', '-updatedAt
  */
 @Component({
   selector: 'trove-repository-content',
-  imports: [
+  imports: [FormatIconView, 
     CdkMenu,
     CdkMenuItem,
     CdkMenuTrigger,

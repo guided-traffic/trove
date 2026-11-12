@@ -10,6 +10,7 @@ import { formatSize } from '../packages/format-size';
 import { CheckSummary, checkSummary, roleLoad, share } from './dashboard-model';
 import { REFRESH_INTERVAL_MS } from './system-status';
 import { roleGroups, serviceState } from './system-status-model';
+import { PageHeader } from '../../shared/ui/page-header';
 
 /**
  * The admin dashboard (Q-OPS-175): the first screen of the admin area, an overview of the installation in cards.
@@ -19,7 +20,7 @@ import { roleGroups, serviceState } from './system-status-model';
  */
 @Component({
   selector: 'trove-dashboard',
-  imports: [DatePipe, DecimalPipe, NgTemplateOutlet, RouterLink, ErrorNotice],
+  imports: [PageHeader, DatePipe, DecimalPipe, NgTemplateOutlet, RouterLink, ErrorNotice],
   templateUrl: './dashboard.html',
   styleUrl: './dashboard.scss',
 })
