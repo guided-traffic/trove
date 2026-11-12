@@ -31,9 +31,20 @@ func itemKey(t testing.TB, raw json.RawMessage) string {
 			return r + "/" + p
 		}
 	}
+	// A name of a project's object (a repository, a project policy) is unique within its project only (Q-AUTHZ-214),
+	// so two projects may each hold a policy called readers: the project is part of the identity.
+	scope := ""
+	switch p := m["project"].(type) {
+	case string:
+		scope = p + "/"
+	case map[string]any:
+		if k, ok := p["key"].(string); ok {
+			scope = k + "/"
+		}
+	}
 	for _, k := range []string{"id", "key", "name", "username"} {
 		if v, ok := m[k].(string); ok && v != "" {
-			return v
+			return scope + v
 		}
 	}
 	t.Fatalf("list item without an identity: %s", raw)
