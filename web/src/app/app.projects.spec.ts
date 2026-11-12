@@ -175,6 +175,14 @@ describe('The project is the context of the content (Q-UI-129)', () => {
     expect(crumbs).toEqual(['Projects', 'web', 'Repositories']);
     expect([...root.querySelectorAll('nav.breadcrumbs a')].map((a) => a.getAttribute('href'))).toEqual(['/projects', '/projects/web']);
   });
+
+  it('R-UI-020 inside a project the repository list keeps its column of format and class, the format with its icon', async () => {
+    const { root } = await render('/projects/web/repositories', undefined, TWO);
+    const kind = root.querySelector('main tbody td.kind-cell')!;
+    expect(kind.querySelector('.format-name trove-format-icon')).toBeTruthy();
+    expect(root.querySelector('main .admin-kind')).toBeNull();
+    expect([...root.querySelectorAll('main thead th')].some((th) => th.textContent?.trim().startsWith('Format'))).toBe(true);
+  });
 });
 
 describe('The administration area (R-UI-041, Q-UI-129)', () => {

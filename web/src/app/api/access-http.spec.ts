@@ -208,6 +208,20 @@ describe('project resources over HTTP (R-AUTHZ-026)', () => {
     await all;
   });
 
+  it('R-AUTHZ-026 the service accounts of a project are listed under the project, which an Owner may call, not on the instance-wide list', async () => {
+    const { http } = setup();
+    const accounts = TestBed.inject(HttpIdentityApi);
+    const list = accounts.serviceAccounts({ project: 'web', sort: 'name' })(null, 50);
+    const req = http.expectOne((r) => r.url === '/api/v1/projects/web/service-accounts');
+    expect(req.request.params.has('project')).toBe(false);
+    expect(req.request.params.get('sort')).toBe('name');
+    req.flush({ items: [], nextCursor: null });
+    await list;
+    const all = accounts.serviceAccounts({ sort: 'name' })(null, 50);
+    http.expectOne((r) => r.url === '/api/v1/service-accounts').flush({ items: [], nextCursor: null });
+    await all;
+  });
+
   it('Q-AUTHZ-207 a member is written with a plain PUT of the role and no ETag', async () => {
     const { http } = setup();
     const api = TestBed.inject(HttpProjectsApi);

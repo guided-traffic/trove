@@ -12053,14 +12053,6 @@
         <source> End all other sessions </source>
       </segment>
     </unit>
-    <unit id="profile.sessions.region">
-      <notes>
-        <note category="location">src/app/features/profile/profile-sessions.ts:34,36</note>
-      </notes>
-      <segment>
-        <source>Sessions</source>
-      </segment>
-    </unit>
     <unit id="profile.sessions.caption">
       <notes>
         <note category="location">src/app/features/profile/profile-sessions.ts:36,38</note>
@@ -12131,14 +12123,6 @@
       </notes>
       <segment>
         <source>End</source>
-      </segment>
-    </unit>
-    <unit id="profile.sessions.loading">
-      <notes>
-        <note category="location">src/app/features/profile/profile-sessions.ts:74,77</note>
-      </notes>
-      <segment>
-        <source>Loading sessions.</source>
       </segment>
     </unit>
     <unit id="profile.sessions.ended">

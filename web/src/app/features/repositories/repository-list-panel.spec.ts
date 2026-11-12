@@ -53,8 +53,8 @@ describe('Repository list filter panel (R-UI-020)', () => {
   it('R-UI-020 the repository table has no sort control because the API takes no sort parameter, and explains the format and the address', async () => {
     const { root } = await open();
     expect(root.querySelectorAll('th button.th-sort')).toHaveLength(0);
+    // In the admin area format and class are named under the key (Q-UI-325): the address is the one column to explain.
     expect([...root.querySelectorAll('th button.th-help')].map((b) => b.getAttribute('aria-label'))).toEqual([
-      'About the column Format',
       'About the column Client address',
     ]);
   });

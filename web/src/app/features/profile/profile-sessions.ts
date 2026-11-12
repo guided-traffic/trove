@@ -7,6 +7,7 @@ import { Confirm } from '../../shared/confirm-dialog';
 import { asApiError } from '../../shared/paged-resource';
 import { ErrorNotice } from '../../shared/error-notice';
 import { PageHeader } from '../../shared/ui/page-header';
+import { DataTable, TableColumn } from '../../shared/ui/data-table';
 import { ProfileNav } from './profile-nav';
 
 /**
@@ -16,7 +17,7 @@ import { ProfileNav } from './profile-nav';
  */
 @Component({
   selector: 'trove-profile-sessions',
-  imports: [DatePipe, ErrorNotice, PageHeader, ProfileNav],
+  imports: [DatePipe, DataTable, ErrorNotice, PageHeader, ProfileNav],
   template: `
     <trove-page-header [heading]="heading">
       @if (others() > 0) {
@@ -30,53 +31,52 @@ import { ProfileNav } from './profile-nav';
     @if (error(); as e) {
       <trove-error-notice [error]="e" (retry)="load()" />
     }
-    @if (loaded()) {
-      <div class="scroll" tabindex="0" role="region" i18n-aria-label="@@profile.sessions.region" aria-label="Sessions">
-        <table class="data">
-          <caption class="visually-hidden" i18n="@@profile.sessions.caption">Your browser sessions</caption>
-          <thead>
-            <tr>
-              <th scope="col" i18n="@@profile.sessions.created">Created</th>
-              <th scope="col" i18n="@@profile.sessions.last-seen">Last seen</th>
-              <th scope="col" i18n="@@profile.sessions.address">Address</th>
-              <th scope="col" i18n="@@profile.sessions.agent">Browser</th>
-              <th scope="col" i18n="@@profile.sessions.method">Sign-in</th>
-              <th scope="col"><span class="visually-hidden" i18n="@@profile.sessions.actions">Actions</span></th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (s of sessions(); track s.id) {
-              <tr>
-                <th scope="row">
-                  {{ s.createdAt | date: 'medium' }}
-                  @if (s.current) {
-                    <br /><span class="badge"><span class="material-icons" aria-hidden="true">computer</span><ng-container i18n="@@profile.sessions.this">This session</ng-container></span>
-                  }
-                </th>
-                <td>{{ s.lastSeenAt | date: 'medium' }}</td>
-                <td translate="no">{{ s.createdAddr ?? '' }}</td>
-                <td translate="no">{{ s.userAgent ?? '' }}</td>
-                <td translate="no">{{ s.providerId ?? s.authMethod }}</td>
-                <td class="actions">
-                  @if (!s.current) {
-                    <button class="btn btn-tertiary" type="button" (click)="end(s)">
-                      <ng-container i18n="@@profile.sessions.end">End</ng-container>
-                      <span class="visually-hidden"> {{ s.createdAt | date: 'medium' }}</span>
-                    </button>
-                  }
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    } @else if (!error()) {
-      <p role="status" i18n="@@profile.sessions.loading">Loading sessions.</p>
+    <!-- The shared data table: a column budget, the browser's long user agent wrapping in its cell, and stacked rows below
+         48 rem, so the page never scrolls sideways (R-UI-029, at 390 px it did by about 230 px). -->
+    @if (loaded() || !error()) {
+      <trove-data-table [caption]="caption" [columns]="columns" [loaded]="loaded()" [loading]="!loaded()" [empty]="sessions().length === 0">
+        @for (s of sessions(); track s.id) {
+          <tr>
+            <th scope="row">
+              {{ s.createdAt | date: 'medium' }}
+              @if (s.current) {
+                <span class="badge"><span class="material-icons" aria-hidden="true">computer</span><ng-container i18n="@@profile.sessions.this">This session</ng-container></span>
+              }
+            </th>
+            <td>{{ s.lastSeenAt | date: 'medium' }}</td>
+            <td translate="no">{{ s.createdAddr ?? '' }}</td>
+            <td translate="no" class="wrap agent">{{ s.userAgent ?? '' }}</td>
+            <td translate="no">{{ s.providerId ?? s.authMethod }}</td>
+            <td class="actions">
+              @if (!s.current) {
+                <button class="btn btn-tertiary" type="button" (click)="end(s)">
+                  <ng-container i18n="@@profile.sessions.end">End</ng-container>
+                  <span class="visually-hidden"> {{ s.createdAt | date: 'medium' }}</span>
+                </button>
+              }
+            </td>
+          </tr>
+        }
+      </trove-data-table>
     }
   `,
   styleUrl: '../../shared/access/access.scss',
+  styles: `
+    .agent {
+      overflow-wrap: anywhere;
+    }
+  `,
 })
 export class ProfileSessions {
+  protected readonly caption = $localize`:@@profile.sessions.caption:Your browser sessions`;
+  protected readonly columns: readonly TableColumn[] = [
+    { id: 'created', label: $localize`:@@profile.sessions.created:Created`, width: '11rem' },
+    { id: 'lastSeen', label: $localize`:@@profile.sessions.last-seen:Last seen`, width: '11rem' },
+    { id: 'address', label: $localize`:@@profile.sessions.address:Address`, width: '7rem' },
+    { id: 'agent', label: $localize`:@@profile.sessions.agent:Browser` },
+    { id: 'method', label: $localize`:@@profile.sessions.method:Sign-in`, width: '5rem' },
+    { id: 'actions', label: $localize`:@@profile.sessions.actions:Actions`, hideLabel: true, width: '4rem' },
+  ];
   protected readonly heading = $localize`:@@profile.sessions.heading:Sessions`;
   private readonly api = inject(SessionsApi);
   private readonly confirmer = inject(Confirm);

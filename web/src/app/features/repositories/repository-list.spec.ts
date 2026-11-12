@@ -38,18 +38,22 @@ describe('Repository list', () => {
   it('R-UI-020 the description is the second line of the first column, and the row actions are one menu named for the row', async () => {
     const { root, fixture } = await renderScreen(RepositoryList);
     const first = [...root.querySelectorAll('tbody th[scope="row"]')].find((th) => th.textContent?.includes('generic-local'))!;
-    expect(first.querySelector('.secondary')?.textContent).toContain('Installers and build outputs');
-    expect([...root.querySelectorAll('thead th')].map((th) => th.textContent?.trim())).not.toContain('Description');
+    const lines = [...first.querySelectorAll('.secondary')].map((s) => s.textContent?.replace(/\s+/g, ' ').trim());
+    expect(lines.at(-1)).toContain('Installers and build outputs');
+    const heads = [...root.querySelectorAll('thead th')].map((th) => th.textContent?.trim());
+    expect(heads).not.toContain('Description');
     const row = first.closest('tr')!;
-    // Format and class share a cell; the rows stack on a narrow list, where the activity cell names its column.
-    const kind = row.querySelector('td.kind-cell')!;
-    // A format is its icon and its name (UI-A-24).
+    // In the admin area the project, the format (its icon and its name, UI-A-24) and the class lead the line under the key,
+    // so that the address keeps the room of two columns (Q-UI-325, UI-A-30).
+    const kind = first.querySelector('.admin-kind')!;
+    expect(kind.querySelector('a.project-link')?.getAttribute('href')).toBe('/projects/web');
     expect(kind.querySelector('.format-name trove-format-icon')).toBeTruthy();
     expect(kind.querySelector('.format-name span[translate="no"]')?.textContent).toBe('Generic');
-    expect(kind.querySelector('.type-cell')?.textContent).toContain('Local');
-    // No row has a last activity: the column is left out (a column of dashes says nothing); the format names no column.
-    expect([...root.querySelectorAll('thead th')].map((th) => th.textContent?.trim())).not.toContain('Last activity');
-    expect(kind.hasAttribute('data-label')).toBe(false);
+    expect(kind.textContent).toContain('Local');
+    expect(row.querySelector('td.kind-cell')).toBeNull();
+    expect(heads.some((h) => h?.startsWith('Format'))).toBe(false);
+    // No row has a last activity: the column is left out (a column of dashes says nothing).
+    expect(heads).not.toContain('Last activity');
     expect(root.querySelector('trove-data-table')?.classList.contains('stack')).toBe(true);
     expect(row.querySelectorAll('td.actions button')).toHaveLength(1);
     row.querySelector<HTMLButtonElement>('button[aria-label="Actions for generic-local"]')!.click();

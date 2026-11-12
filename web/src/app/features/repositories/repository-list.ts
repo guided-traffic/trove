@@ -181,7 +181,8 @@ export class RepositoryList {
   /** No sort control: the repository list is ordered by key and the API takes no sort parameter. */
   protected readonly columns = computed<readonly TableColumn[]>(() =>
     this.allColumns.filter(
-      (c) => !(c.id === 'activity' && !this.showActivity()),
+      // The admin area names project, format and class under the key (Q-UI-325): the address keeps that room.
+      (c) => !(c.id === 'activity' && !this.showActivity()) && !(c.id === 'format' && !this.inProject()),
     ),
   );
   /**

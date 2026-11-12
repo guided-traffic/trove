@@ -216,8 +216,15 @@ export class HttpIdentityApi extends IdentityApi {
     return r.body.items;
   }
 
+  /**
+   * The accounts of one project are listed under the project, `GET /api/v1/projects/{projectKey}/service-accounts`, which an
+   * Owner of the project may call; the instance-wide list needs `identities:read` (R-AUTHZ-026, UI-A-41). As the policies.
+   */
   override serviceAccounts(filters: ServiceAccountFilters): PageFetcher<ServiceAccount> {
-    return this.client.page<ServiceAccount>('/api/v1/service-accounts', cleanQuery(filters));
+    const { project, ...rest } = filters;
+    return project
+      ? this.client.page<ServiceAccount>(`/api/v1/projects/${seg(project)}/service-accounts`, cleanQuery(rest))
+      : this.client.page<ServiceAccount>('/api/v1/service-accounts', cleanQuery(rest));
   }
 
   override async serviceAccount(name: string, project: string | null): Promise<Versioned<ServiceAccount>> {

@@ -3790,8 +3790,9 @@ Priority: **MVP** · Covers: UI-030, REPO-007
   client URL with copy button (one width for the column, Q-UI-300), last activity (the date, Q-UI-305), and the row's menu; the
   format and the class share a cell (Q-UI-305), and below 48 rem of the list's width the rows stack (Q-UI-306). Filters in
   the filter panel: project, format, class, text, disabled only. The admin area lists every project's repositories with
-  the project leading the second line of the first column, linked to the project (no column of its own, so that the address
-  keeps its room at 1280 px, UI-A-30); the project's own list (`/projects/{project}/repositories`, Q-UI-129) is the same screen
+  the project (linked to it), the format (its icon and display name) and the class as the second line of the first column and
+  no column of format and class, so that a 57-character address shows whole at 1280 and 1440 px (Q-UI-325, UI-A-30); the
+  project's own list (`/projects/{project}/repositories`, Q-UI-129) is the same screen
   for one project, without the project and the project filter. The list is ordered by key; the API takes
   no `sort` parameter yet, so the table has no sort control (sorting by creation arrives with the
   API, and the creation time with the summary, Q-UI-18). "Recently opened" (browser storage, 20) above the admin area's list; a
@@ -4642,8 +4643,9 @@ the model gives the screens:
   for the delegates of Q-AUTHZ-181): its repositories (create in the project, edit, delete and move to another project
   it owns; R-UI-020, R-UI-021), its policies (`/projects/{project}/policies`, named within the project; the editor offers the
   project's repositories as bare keys, key globs and classes, and the principal lookup), its service accounts
-  (`/projects/{project}/service-accounts`, named within the project, shown as `sa:<projectKey>/<name>`; create, enable,
-  disable and delete) and their tokens (issue, with the lifetime cap and without a `system` scope, and revoke), its CI
+  (`/projects/{project}/service-accounts`, named within the project, shown as `sa:<projectKey>/<name>`, listed through the
+  project's route `GET /api/v1/projects/{projectKey}/service-accounts`, which admits the Owner, as the policies are, never
+  through the instance-wide list, which needs `identities:read`; the admin area's filter by project takes the same route; create, enable, disable and delete) and their tokens (issue, with the lifetime cap and without a `system` scope, and revoke), its CI
   mappings (`/projects/{project}/ci`, R-UI-035) and its settings (display name and description, edited in place, Q-UI-215). An Owner without a
   capability has no admin area (Q-UI-129). A member with another role sees the project's settings and members read-only. An
   action the caller's role does not allow is not offered; the policies, service accounts and CI identity are listed in the
@@ -11053,6 +11055,28 @@ the plain user scrolls through the guide of running trove to reach nothing of th
 development agent revisits it if power users without a system role also prefer the guide closed.
 
 **Applied in the spec:** R-UI-050. Built in fix wave 2.
+
+### Q-UI-325 · The admin area's repository list names project, format and class under the key, so a 57-character address shows whole
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: UI-A-30 after fix wave 2. The measure is the owner's own address, `https://trove.k8s-main.wds18.net/api/ansible/test/galaxy/`,
+57 characters: in the field's face (0.875 rem monospace, about 8.4 px a character) with its padding, border and copy button the
+field needs about 537 px. The admin area's list at 1280 px is about 937 px wide (the sidebar open). With the columns repository
+(16 rem), format and class (5.5 rem), Last activity (7.5 rem) and the menu (2 rem), and each column's padding, the other columns took
+656 px, so the field got 281 px; fix wave 2 lets Last activity give its room below 64 rem (`narrow`), which made it 433 px.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A narrower first column there | The key column shrinks to what the address needs | The column of format and class stays | At 1280 px the field needs the others to take at most about 400 px: the key column would be 9.5 rem, and the keys and descriptions of the list wrap to three and four lines |
+| (b) Drop Last activity from that list | One column less | Simple | Already gone at 1280 px since fix wave 2 (`narrow`), and still 104 px short there |
+| (c) Project, format (icon and name) and class lead the line under the key; the list has no column of format and class; Last activity stays and gives its room below 64 rem (chosen) | Two columns become the key's second line | The field gets about 553 px at 1280 px and about 561 px at 1440 px, so the measure shows whole at both; the key column keeps its 16 rem | Format and class are read in the row's second line, not scanned down a column; the project's own list keeps the column |
+
+**Choice:** (c). **Rationale:** in the admin area the address is what a row is copied for, and project, format and class describe the
+repository the way its description does, so they belong under its key. Neither (a) nor (b) alone reaches the measure at 1280 px. The
+development agent revisits it if administrators sort or scan the list by format, which the filter panel already narrows to.
+
+**Applied in the spec:** R-UI-020, Q-UI-300 (revisit). Built in fix wave 3.
 
 ### Q-UI-370 · The grades take cogpit's colours, and S, A and B are the greens of a good grade
 

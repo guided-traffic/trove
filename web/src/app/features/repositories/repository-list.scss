@@ -32,6 +32,22 @@
   margin-block-start: var(--trove-space-1);
 }
 
+// The admin area's line under the key: project · format · class, each with its icon (Q-UI-325).
+.admin-kind {
+  .format-name,
+  .class-name {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--trove-space-1);
+    white-space: nowrap;
+  }
+
+  trove-format-icon,
+  .material-icons {
+    font-size: 1rem;
+  }
+}
+
 // A format is its icon and its name (UI-A-24), the icon as in the package list. A long name ("Ansible Galaxy") wraps
 // inside the column's budget, so that the address keeps its room (UI-A-30).
 .kind-cell > .format-name {
