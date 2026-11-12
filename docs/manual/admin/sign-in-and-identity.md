@@ -13,10 +13,10 @@ trove has no password database. People sign in through an OpenID Connect identit
 | Session lifetimes and the recent sign-in window | Configuration file, `auth.sessions` | When a replica starts |
 | Break-glass account | Configuration file, `auth.break_glass` | When a replica starts; the password file is re-read when it changes |
 | Anonymous access ceiling | Configuration file, `auth.anonymous.allowed` | When a replica starts |
-| Anonymous access switch, token lifetimes | **Admin area › System › Settings** | Within seconds, on every replica |
+| Anonymous access switch, token lifetimes | **Admin area › Settings › Authentication** | Within seconds, on every replica |
 | Users, groups, memberships, service accounts | **Admin area › Identity** | Within seconds, on every replica |
 
-The **Authentication settings** screen under **Admin area › System › Settings** also shows a read-only **Status (read only)** section: each identity provider with **discovery document loaded** or **not available on this replica**, whether the break-glass account is enabled or locked and, when it is enabled but cannot verify a password, an error that says why (see [The break-glass administrator](#the-break-glass-administrator)), the session timeouts and whether HTTP Basic with a token is allowed. Reading the screen needs the `settings:read` capability, saving needs `settings:write` and a recent sign-in. The token lifetimes on the same screen are described in [Managing tokens](tokens.md).
+The **Authentication settings** screen under **Admin area › Settings › Authentication** also shows a read-only **Status (read only)** section: each identity provider with **discovery document loaded** or **not available on this replica**, whether the break-glass account is enabled or locked and, when it is enabled but cannot verify a password, an error that says why (see [The break-glass administrator](#the-break-glass-administrator)), the session timeouts and whether HTTP Basic with a token is allowed. Reading the screen needs the `settings:read` capability, saving needs `settings:write` and a recent sign-in. The token lifetimes on the same screen are described in [Managing tokens](tokens.md).
 
 ## Configure an OpenID Connect provider
 
@@ -90,7 +90,7 @@ The secret is never written into the configuration file. `client_secret_file` is
 
 ### Check the provider
 
-Open **Admin area › System › Settings**. Under **Identity providers**, every provider should show **discovery document loaded**. A provider whose discovery failed shows **not available on this replica**, and its button on the sign-in screen is disabled with **Currently unavailable**.
+Open **Admin area › Settings › Authentication**. Under **Identity providers**, every provider should show **discovery document loaded**. A provider whose discovery failed shows **not available on this replica**, and its button on the sign-in screen is disabled with **Currently unavailable**.
 
 ## Map claims to users and groups
 
@@ -229,7 +229,7 @@ auth:
 Requests without a credential act as the built-in principal `anonymous`. They are admitted only when all of these hold:
 
 1. `auth.anonymous.allowed` is true (the default) in the configuration.
-2. **Allow requests without a credential to read what the anonymous principal may read** is switched on under **Admin area › System › Settings**. It is off on a fresh installation.
+2. **Allow requests without a credential to read what the anonymous principal may read** is switched on under **Admin area › Settings › Authentication**. It is off on a fresh installation.
 3. The endpoint the request arrives on admits anonymous requests; see [Endpoints and exposure rules](endpoints.md).
 4. A permission policy grants `read` to `anonymous` on the repository, which must not have **Require authentication** set; see [Permissions](permissions.md#anonymous-and-all-signed-in-users).
 

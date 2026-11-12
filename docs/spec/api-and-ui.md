@@ -2884,8 +2884,8 @@ Priority: **MVP** · Covers: UI-001, UI-004
   open from the user menu. The sections are the routes of R-UI-003. Inside the admin area, the single entries
   (repositories, endpoints, and *Security*, the auditor's dashboard of Q-UI-130 for `vulnerabilities:triage` or
   `content:metadata-read`) come first and related screens are grouped under folding headings: identity (users, groups,
-  service accounts, tokens, CI identity), access (permission policies, system roles) and system (system status, audit
-  log, settings, advisory sources). Every entry has an icon, which is decoration: the label is the accessible name.
+  service accounts, tokens, CI identity), access (permission policies, system roles), system (system status, audit
+  log, advisory sources) and, last, settings (General, then Authentication; Q-UI-326). Every entry has an icon, which is decoration: the label is the accessible name.
   Entries the caller may not use are hidden (R-UI-005); a group without a visible entry disappears.
 - Layout and density (Q-UI-2, Q-UI-68, Q-UI-127): the navigation is a left side bar below the top bar, on the
   same fill, and the content is a panel set into them; the side bar is visible at viewport widths of 1024 CSS px and
@@ -2905,7 +2905,10 @@ Priority: **MVP** · Covers: UI-001, UI-004
   column headers with `aria-sort`, a "?" help tooltip on a column that needs one, loading, empty
   and error states with retry, "Load more") and, where the screen has filters, one filter panel on
   the right (a toggle button with the number of applied filters above the table, collapsible
-  filter categories, "Clear all", a close button, one apply button). A column is sortable only
+  filter categories, "Clear all", a close button, one apply button). The panel sits beside the list only where the list keeps
+  at least 71 rem there, above it otherwise, its categories side by side; a list never scrolls sideways because the panel is
+  open, and a table's columns share the width of its rows without the scrollbar beside them
+  ([Q-UI-327](#q-ui-327--the-filter-panel-sits-beside-a-list-only-where-the-list-keeps-71-rem-and-a-tables-columns-share-its-rows-width-without-the-scrollbar)). A column is sortable only
   where the API sorts by it (`sort` of `GET /api/v1/users`, `groups`, `service-accounts`,
   `permission-policies`), or where the whole list is in the browser (endpoints); a filter appears
   only where the API takes it. The panel opens by itself while a filter is applied. The packages
@@ -2983,7 +2986,7 @@ selected tab and selected version live in query parameters.
 | `/admin/advisory-sources` | Advisory sources of the vulnerability data | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-022 |
 | `/admin/endpoints`, `/admin/endpoints/{endpoint}`, `/admin/endpoints/{endpoint}/rules/new`, `/admin/endpoints/{endpoint}/rules/{name}` | Endpoints and exposure rules | [endpoints.md](endpoints.md) R-EP-017 |
 | `/admin/system`, `/admin/system/jobs`, `/admin/system/backups` | System status, jobs, backups | R-UI-038, R-UI-048 |
-| `/admin/settings/auth`, `/admin/settings/general`, `/admin/settings/sign-in` (P1), `/admin/settings/storage` (P1) | Settings | R-UI-031 to R-UI-034 |
+| `/admin/settings` (leads to `general`), `/admin/settings/general`, `/admin/settings/auth`, `/admin/settings/sign-in` (P1), `/admin/settings/storage` (P1) | The group Settings: General, Authentication (Q-UI-326) | R-UI-031 to R-UI-034 |
 | `/admin/projects` | Every project, to create and edit them | R-UI-041 |
 | `/login` (`?auto_sign_in=false`), `/logged-out` | Sign-in, signed out | R-UI-004 |
 | `/cli-login/{publicId}` | Command-line login approval of `npm login` (P1; R-AUTH-034) | R-UI-004 |
@@ -3789,13 +3792,13 @@ Acceptance criteria:
 ### R-UI-020 · Repository list
 Priority: **MVP** · Covers: UI-030, REPO-007
 
-- Table: the repository (its key, with its description as the muted second line, [Q-UI-302](#q-ui-302--the-repository-list-names-a-repository-by-key-and-description-in-its-first-column-and-puts-the-rows-actions-in-a-menu)), format and class (the format's icon and display name),
-  client URL with copy button (one width for the column, Q-UI-300), last activity (the date, Q-UI-305), and the row's menu; the
-  format and the class share a cell (Q-UI-305), and below 48 rem of the list's width the rows stack (Q-UI-306). Filters in
+- Table: the repository (its key, with the format (its icon and display name) and the class as the muted line under it and
+  its description as the line after that, [Q-UI-302](#q-ui-302--the-repository-list-names-a-repository-by-key-and-description-in-its-first-column-and-puts-the-rows-actions-in-a-menu), [Q-UI-328](#q-ui-328--the-projects-repository-list-names-format-and-class-under-the-key-as-the-admin-areas-does)),
+  client URL with copy button (one width for the column, Q-UI-300), last activity (the date, Q-UI-305), and the row's menu;
+  below 48 rem of the list's width the rows stack (Q-UI-306). Filters in
   the filter panel: project, format, class, text, disabled only. The admin area lists every project's repositories with
-  the project (linked to it), the format (its icon and display name) and the class as the second line of the first column and
-  no column of format and class, so that a 57-character address shows whole at 1280 and 1440 px (Q-UI-325, UI-A-30); the
-  project's own list (`/projects/{project}/repositories`, Q-UI-129) is the same screen
+  the project (linked to it) leading the line under the key, so that a 57-character address shows whole at 1280 and 1440 px
+  (Q-UI-325, UI-A-30); the project's own list (`/projects/{project}/repositories`, Q-UI-129) is the same screen
   for one project, without the project and the project filter. The list is ordered by key; the API takes
   no `sort` parameter yet, so the table has no sort control (sorting by creation arrives with the
   API, and the creation time with the summary, Q-UI-18). "Recently opened" (browser storage, 20) above the admin area's list; a
@@ -4184,7 +4187,7 @@ Acceptance criteria:
 ### R-UI-031 · Authentication settings
 Priority: **MVP** · Covers: UI-043
 
-`/admin/settings/auth` renders `GET /api/v1/settings/auth`: **New users are external** (`newUsersExternal`, a checkbox with
+`/admin/settings/auth` (the sidebar's **Settings › Authentication**, Q-UI-326) renders `GET /api/v1/settings/auth`: **New users are external** (`newUsersExternal`, a checkbox with
 the sentence "Users created from now on start as external users; existing users keep their flag.", R-AUTH-044), token default
 and maximum lifetimes per token type, expiry notices, and the read-only status block (providers and discovery state, break-glass state, session
 timeouts, client switches including Basic, the command-line login poll binding mode, SCIM state).
@@ -4226,7 +4229,7 @@ Acceptance criteria:
 ### R-UI-033 · General settings
 Priority: **MVP** · Covers: UI-044
 
-`/admin/settings/general` shows the public base URL and its source (`GET /api/v1/system/info`,
+`/admin/settings/general` (the sidebar's **Settings › General**, where `/admin/settings` leads, Q-UI-326) shows the public base URL and its source (`GET /api/v1/system/info`,
 read-only field, R-OPS-005) at the top, then the visibility (R-UI-053), the banner and the maintenance mode as sections with a **Save changes** each
 ([Q-UI-222](#q-ui-222--which-settings-pages-are-one-column-now-and-what-a-sections-save-button-is-called)); the maintenance section opens by
 itself while the mode is on. The banner is `/api/v1/system/banner` (enabled, severity, plain text) and the
@@ -10680,6 +10683,9 @@ row has one, so it is never a column of dashes.
 **Rationale:** both changes free room for the address without dropping a fact. The development agent revisits the header if the
 owner prefers **Type**.
 
+**Revised in fix wave 4 (2026-11-12):** format and class are no column any more, in the project's list either; they are the line
+under the key (Q-UI-328).
+
 **Applied in the spec:** R-UI-020. Code: [repository-list.html](../../web/src/app/features/repositories/repository-list.html).
 
 ### Q-UI-306 · Below 48 rem of its width the repository list stacks each row, with the address across the row
@@ -10758,7 +10764,9 @@ agent revisits top alignment if a list's controls are taller than one line of te
 **Applied in the spec:** R-UI-020, R-UI-065; Q-UI-306 now holds for every list. Code: [data-table.ts](../../web/src/app/shared/ui/data-table.ts),
 [_list-screens.scss](../../web/src/styles/_list-screens.scss). Style guide: [Lists](../developer/ui-style-guide.md#lists). Fix wave 2: a column marked `narrow` gives its room to the address below 64 rem
 of the list's width (`--trove-list-narrow`); the repository list's Last activity is one, so the admin area's list shows about 48
-characters of an address at 1280 px as at 1440 px (UI-A-30).
+characters of an address at 1280 px as at 1440 px (UI-A-30). Fix wave 4: the narrow columns and the stacked rows follow the table's
+own width (the container `table`, its frame), and the address column's share is of the width of the rows without the scrollbar
+beside them (Q-UI-327).
 
 ### Q-UI-309 · An empty list or region is a sentence and the action that fills it, without a frame
 
@@ -11096,7 +11104,76 @@ field needs about 537 px. The admin area's list at 1280 px is about 937 px wide 
 repository the way its description does, so they belong under its key. Neither (a) nor (b) alone reaches the measure at 1280 px. The
 development agent revisits it if administrators sort or scan the list by format, which the filter panel already narrows to.
 
-**Applied in the spec:** R-UI-020, Q-UI-300 (revisit). Built in fix wave 3.
+**Applied in the spec:** R-UI-020, Q-UI-300 (revisit). Built in fix wave 3. Since fix wave 4 the project's own list does the same
+(Q-UI-328).
+
+### Q-UI-326 · The admin area has one group Settings, with a page per topic: General and Authentication
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: fix wave 4 of T-21 (the coordinator, 2026-11-12). The admin area's group System listed **Settings**, which opened the
+authentication settings (anonymous access, new users external, token lifetimes, the read-only status of the providers), beside
+**General settings** (the public base URL, the visibility, the banner, the maintenance mode). Two entries named settings, one of
+them named after the whole: an administrator looking for the banner had to guess which one holds it. The reference's admin area has one
+Settings group with a page per topic.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A group **Settings** at the end of the sidebar with **General** (where `/admin/settings` leads) and **Authentication**; System keeps status, audit log and advisory sources (chosen) | One place for what is configured at runtime, a page per topic | Each entry names its topic; the pages planned for P1 (sign-in, storage) join the same group; status and logs stay apart from configuration | One more group heading |
+| (b) One page **Settings** with tabs General and Authentication | One entry | Shortest sidebar | Tabs over unrelated topics with a save per section, and a tab that is not the URL's first is harder to link |
+| (c) Rename the two entries in System ("Authentication settings", "General settings") | Least change | Nothing moves | Configuration stays mixed with the status and the logs, and two entries still start alike |
+
+**Choice:** (a). **Rationale:** an administrator looks for a setting by its topic, and one group named Settings holds every topic,
+as the reference's admin area does. The development agent revisits the order when a third page joins the group.
+
+**Applied in the spec:** R-UI-002 (the admin sidebar), the route table, R-UI-031, R-UI-033. Built in fix wave 4.
+
+### Q-UI-327 · The filter panel sits beside a list only where the list keeps 71 rem, and a table's columns share its rows' width without the scrollbar
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: fix wave 4 of T-21, the owner's screen (2026-11-12, dark, about 1860 px): the admin area's repository list with the filter
+panel open scrolled sideways, the address was cut and **OCI (Docker)** wrapped. Two causes, measured in Chrome with the scrollbars a
+desktop with a mouse shows. (1) The address column took its share of the list's width, but a table taller than its region has a
+scrollbar beside its rows that takes 15 px of that width: every list with an address scrolled 15 px sideways whenever its rows
+scrolled, and the more so the narrower the list was. (2) The panel takes 20 rem beside the list from 52 rem of content width up; at
+1440 px a list beside it had 49.6 rem, and the audit log (69 rem of columns), the vulnerability report (62 rem) and the admin area's
+project list (54 rem) scrolled sideways, as did each list at any width between 52 rem and its columns' width plus the panel's.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The panel sits beside the list only where the list keeps at least 71 rem there (content of 91 rem and more: from about 1770 px with the sidebar open); narrower, it sits above the list, its categories side by side and its button as wide as its label; the address column's share is of the table's scroll region, which keeps the room of its scrollbar (chosen) | One threshold for every list, the width the lists are checked at | Each list keeps beside the panel at least the 70.5 rem it has at 1440 px without it, the width its columns are made for; above the panel at 1440 px the list keeps its whole width and a usual address shows whole; no list scrolls sideways because the panel is open | At 1440 px the open panel pushes the list down by about two rows of categories |
+| (b) A list whose columns do not fit stacks its rows beside the panel | The panel stays on the right | No threshold | A desktop window shows the audit log and the project list as blocks; the address is cut at 16 rem in the repository lists |
+| (c) The panel over the list, as a drawer | The list keeps its width | Simple layout | The panel hides the rows it filters, and the list cannot be read while the filters are set |
+
+**Choice:** (a). **Rationale:** the lists are built and checked at 1440 px; giving each the same width beside the panel keeps that
+check valid for the open panel too, and where there is not that room the list is worth more than the panel's place beside it. The
+scrollbar's room is a property of the table, so the fix belongs to the data table, not to a list. The development agent revisits
+the threshold when a list needs more than 71 rem at 1440 px.
+
+**Applied in the spec:** R-UI-002 (list screens), Q-UI-308. Code: [_list-screens.scss](../../web/src/styles/_list-screens.scss). Built
+in fix wave 4; the renders open the panel of every list that has one and measure each table at the window's first height, with
+the scrollbars shown.
+
+### Q-UI-328 · The project's repository list names format and class under the key, as the admin area's does
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: fix wave 4 of T-21, the owner's screen (2026-11-12). The project's list kept the column of format and class (5.5 rem,
+Q-UI-305) when the admin area's moved them under the key (Q-UI-325). The column is the address's room: at 1860 px beside the
+filter panel the address field got about 540 px of the rows' width, and wherever a list's longest address is longer than that
+the table stands at its least widths, the column at 5.5 rem, so **OCI (Docker)** and **Ansible Galaxy** broke onto two lines.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Format (icon and name) and class are the line under the key in the project's list as in the admin area's, without the project (chosen) | One structure for both repository lists | The address gets the 120 px of the column: about 660 px at 1860 px beside the panel and about 560 px at 1440 px without it, so the owner's 57-character address (537 px) shows whole at both; a format name never breaks | Format and class are read in the row's second line, not scanned down a column |
+| (b) Keep the column, as wide as its longest name on one line (about 7.5 rem) | Format and class stay a column | Scannable by format | The address loses another 2 rem, and the owner's address stays cut beside the panel |
+
+**Choice:** (a). **Rationale:** the two repository lists are one screen (R-UI-020), and what Q-UI-325 found for the admin area holds
+for a project once the panel is open: the address is what a row is copied for. The filter panel's **Format** and **Class** narrow
+the list where a column was scanned before. The development agent revisits it with Q-UI-325.
+
+**Applied in the spec:** R-UI-020, Q-UI-305, Q-UI-325. Built in fix wave 4.
 
 ### Q-UI-370 · The grades take cogpit's colours, and S, A and B are the greens of a good grade
 

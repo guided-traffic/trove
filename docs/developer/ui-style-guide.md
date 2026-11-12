@@ -96,7 +96,10 @@ what would need a second one belongs in the [manual](manual.md).
   (`width`, which must hold its header); the name column of a list takes 16 rem. A list with a client address marks that
   column `fill`: it takes what the declared widths leave, up to its longest address (Q-UI-300). A column of lower rank is
   `narrow`: below 64 rem of the list's width it is hidden and the address takes its room (the list marks its cells
-  `narrow-drop`; the repository list's Last activity, UI-A-30).
+  `narrow-drop`; the repository list's Last activity, UI-A-30). The list's width is the table's own (the container `table`),
+  and the address's share is of its rows' width without the scrollbar beside them, so a list scrolls sideways neither when
+  its rows scroll nor beside the filter panel, which sits beside a list only where the list keeps 71 rem
+  ([Q-UI-327](../spec/api-and-ui.md#q-ui-327--the-filter-panel-sits-beside-a-list-only-where-the-list-keeps-71-rem-and-a-tables-columns-share-its-rows-width-without-the-scrollbar)).
 - **One alignment.** Every cell starts at the top of its row; a control in a cell (a button, a select, the address field) is
   centred on the first line of text. A list does not set its own vertical alignment.
 - **On a narrow list the rows stack.** Below 48 rem of the list's width every data table shows each row as a block: the name and
@@ -108,6 +111,7 @@ what would need a second one belongs in the [manual](manual.md).
   `emptyText` and the content marked `emptyAction` ([Q-UI-309](../spec/api-and-ui.md#q-ui-309--an-empty-list-or-region-is-a-sentence-and-the-action-that-fills-it-without-a-frame)).
 - **A line of facts** (project, format and class under a key; a source line) separates them with one middle dot, the same space
   on both sides, in the muted colour: `.dot-separated` around its parts, `.dot-before` on one part ([_controls.scss](../../web/src/styles/_controls.scss)).
+  Where such a line wraps, no line starts with a dot.
 - **Names stay on one line**, except the key of the repository list, which wraps after a hyphen where it is longer than its
   column (`th.wrap-name`, [Q-UI-303](../spec/api-and-ui.md#q-ui-303--the-repository-lists-key-breaks-after-a-hyphen-where-it-is-longer-than-its-column)).
 - An inline control in a row (the role select) has no visible label and an `aria-label` that names the row. It shows the current
@@ -294,8 +298,8 @@ Before a screen is committed:
       thing needs to work, expert settings and facts are behind a disclosure, defaults are field values, fields fit their input,
       the title names the thing, no field is red before the user touched it, every step or section names one topic.
 - [ ] Rendered with `make ui-renders` ([web-ui.md](web-ui.md#renders-of-every-screen)) and every changed screen looked at in
-      both schemes and at 390 px, as each kind of user that reaches it; the contact sheet lists no failure, no sideways scroll at
-      1024 px and wider that the change brought, and no list whose address fields differ in width.
+      both schemes and at 390 px, as each kind of user that reaches it; the contact sheet lists no failure, no page that scrolls
+      sideways at any width and no region that does at 1024 px and wider, that the change brought, and no list whose address fields differ in width.
 - [ ] Compared side by side with the reference's screen for the same job, in a real browser, not only in a unit test.
 - [ ] Seen in the dark and the light scheme, and at a narrow window.
 - [ ] Only shared controls, classes of `_controls.scss` and `--trove-*` tokens; no colour literal.

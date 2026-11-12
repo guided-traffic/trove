@@ -28,14 +28,19 @@ export default function sheet(): void {
   entries.sort((a, b) => (order.get(a.screen) ?? 0) - (order.get(b.screen) ?? 0) || kindOrder.indexOf(a.kind) - kindOrder.indexOf(b.kind));
 
   const failed = entries.filter((e) => e.failures.length > 0);
-  const sideways = entries.flatMap((e) => e.shots.filter((s) => s.width >= 1024 && s.scheme === 'light' && (s.overflowX > 1 || s.regions.length > 0)));
+  // Sideways: the panel at any width (a phone included), and from 1024 px also a region that scrolls inside the page.
+  const sideways = entries.flatMap((e) =>
+    e.shots.filter((s) => s.scheme === 'light' && (s.overflowX > 1 || (s.width >= 1024 && s.regions.length > 0))),
+  );
   const uneven = entries.flatMap((e) => e.shots.filter((s) => s.scheme === 'light' && s.addressWidths.some((w) => new Set(w).size > 1)));
   writeFileSync(join(outDir, 'report.json'), JSON.stringify({ entries, failed: failed.length, sideways: sideways.length, uneven: uneven.length }, null, 1));
   writeFileSync(join(outDir, 'failures.txt'), failed.map((e) => `${e.kind} ${e.screen} ${e.path}\n${e.failures.map((f) => `  ${f}`).join('\n')}\n`).join(''));
 
   const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const shotLine = (s: Shot): string =>
-    `<li><a href="${esc(s.file)}">${esc(s.file)}</a>${s.overflowX > 1 ? ` content ${s.overflowX} px wider` : ''}${s.regions
+    `<li><a href="${esc(s.file)}">${esc(s.file)}</a>${s.overflowX > 1 ? ` content ${s.overflowX} px wider` : ''}${
+      s.offender ? ` (widest: ${esc(s.offender.what)}, ${s.offender.overflowX} px)` : ''
+    }${s.regions
       .map((r) => ` ${esc(r.what)} ${r.overflowX} px`)
       .join(';')}${s.addressWidths.length ? ` address widths ${esc(JSON.stringify(s.addressWidths))}` : ''}</li>`;
   const groups = new Map<string, Entry[]>();

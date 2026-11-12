@@ -498,16 +498,24 @@ details {
   background: var(--trove-control-disabled-bg);
 }
 
-// One separator for a line of facts (the admin list's project · format · class, a source line): a middle dot with the same space on
-// both sides, in the muted colour. `.dot-separated` puts it between its children; `.dot-before` before one element.
+// One separator for a line of facts (the repository list's project · format · class, a source line): a middle dot with the same
+// space on both sides, in the muted colour. `.dot-separated` puts it between its children; `.dot-before` before one element.
+// Where the line wraps, no line starts with a dot: every child carries its dot in front, and the box starts that dot's width
+// further left, where the dot of each line's first child is clipped (the clip leaves room for a focus ring around).
 .dot-separated {
+  --trove-dot: calc(2 * var(--trove-space-2) + 0.3em);
+
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
+  margin-inline-start: calc(-1 * var(--trove-dot));
+  clip-path: inset(-0.5rem -0.5rem -0.5rem calc(var(--trove-dot) - 0.25rem));
 
-  > * + *::before {
+  > *::before {
     content: '·';
-    margin-inline: var(--trove-space-2);
+    display: inline-block;
+    inline-size: var(--trove-dot);
+    text-align: center;
     color: var(--trove-text-muted);
   }
 }

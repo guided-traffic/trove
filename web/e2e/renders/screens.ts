@@ -66,6 +66,17 @@ function wizard(format: string, cls: 'Local' | 'Remote' | 'Virtual'): Screen['wa
   };
 }
 
+/**
+ * A list as it opens, then with its filter panel open: beside the panel the list has some 300 px less, and that width is the
+ * one its columns and addresses have to fit (the owner's screen of 2026-11-12, a repository list at 1860 px).
+ */
+async function* filtersOpen(page: Page): AsyncGenerator<string> {
+  yield '';
+  await page.locator('main .filter-toggle').first().click();
+  await expect(page.locator('main trove-filter-panel form')).toBeVisible();
+  yield 'filters';
+}
+
 /** The wizard asks whether the typed key is taken; a 404 means it is free. */
 const keyFree = [{ match: /^GET \/api\/v1\/projects\/[^/]+\/repositories\/renders-[a-z-]+ answered 404$/, why: 'the key check: 404 is a free key' }];
 
@@ -93,8 +104,8 @@ export const screens: readonly Screen[] = [
   // The start and the project's content (Q-UI-129): the plain user's main path.
   { id: 'home', path: '/ui/', kinds: all },
   { id: 'projects', path: '/ui/projects', kinds: all },
-  { id: 'repositories', path: `${P}/repositories`, kinds: all },
-  { id: 'repositories-long-keys', path: `${O}/repositories`, kinds: all },
+  { id: 'repositories', path: `${P}/repositories`, kinds: all, walk: filtersOpen },
+  { id: 'repositories-long-keys', path: `${O}/repositories`, kinds: all, walk: filtersOpen },
   { id: 'repositories-empty-project', path: `/ui/projects/${emptyProject}/repositories`, kinds: admins },
   { id: 'repository-npm-local', path: `${P}/repositories/npm-internal`, kinds: all },
   { id: 'repository-npm-remote', path: `${P}/repositories/npmjs`, kinds: all },
@@ -110,18 +121,18 @@ export const screens: readonly Screen[] = [
   { id: 'repository-deb', path: `${O}/repositories/${longDebKey}`, kinds: all },
   { id: 'repository-nuget-virtual', path: `${O}/repositories/nuget`, kinds: all },
   { id: 'repository-ansible', path: `${O}/repositories/collections`, kinds: all },
-  { id: 'packages', path: `${P}/packages`, kinds: all },
-  { id: 'packages-other-project', path: `${O}/packages`, kinds: all },
+  { id: 'packages', path: `${P}/packages`, kinds: all, walk: filtersOpen },
+  { id: 'packages-other-project', path: `${O}/packages`, kinds: all, walk: filtersOpen },
   { id: 'package-npm', path: `${P}/packages/${npmPackage.format}/${npmPackage.name}`, kinds: all },
   { id: 'package-oci', path: `${P}/packages/${ociPackage.format}/${ociPackage.name}`, kinds: all },
   { id: 'package-npm-graded', path: `${P}/packages/${gradedPackage.format}/${gradedPackage.name}`, kinds: all },
   { id: 'package-npm-fixed', path: `${P}/packages/npm/xml-stream-parser?version=0.9.2`, kinds: ['plain'] },
   // The tab's findings narrowed by a segment of the card's bar (Q-UI-379).
   { id: 'package-npm-graded-critical', path: `${P}/packages/${gradedPackage.format}/${gradedPackage.name}?tab=vulnerabilities&severity=critical`, kinds: ['plain'] },
-  { id: 'browse', path: `${P}/browse`, kinds: all },
+  { id: 'browse', path: `${P}/browse`, kinds: all, walk: filtersOpen },
   { id: 'browse-folder', path: `${P}/browse/assets/releases/design-system/2.5.0`, kinds: all },
   { id: 'browse-file', path: `${P}/browse/assets/README.md`, kinds: all },
-  { id: 'vulnerabilities', path: `${P}/vulnerabilities`, kinds: all },
+  { id: 'vulnerabilities', path: `${P}/vulnerabilities`, kinds: all, walk: filtersOpen },
   { id: 'members', path: `${P}/members`, kinds: all },
   { id: 'setup', path: '/ui/setup', kinds: all },
   { id: 'setup-repository', path: `/ui/setup?repository=${mainProject}/npm`, kinds: all },
@@ -155,22 +166,22 @@ export const screens: readonly Screen[] = [
   { id: 'repository-settings-ansible', path: `${O}/repositories/collections/settings`, kinds: admins },
   { id: 'help-admin-page', path: '/ui/help/admin/repositories', kinds: admins },
   { id: 'admin-dashboard', path: '/ui/admin/dashboard', kinds: admins },
-  { id: 'admin-projects', path: '/ui/admin/projects', kinds: admins },
-  { id: 'admin-repositories', path: '/ui/admin/repositories', kinds: admins },
+  { id: 'admin-projects', path: '/ui/admin/projects', kinds: admins, walk: filtersOpen },
+  { id: 'admin-repositories', path: '/ui/admin/repositories', kinds: admins, walk: filtersOpen },
   { id: 'admin-repository-wizard', path: '/ui/admin/repositories/new', kinds: admins },
-  { id: 'admin-users', path: '/ui/admin/users', kinds: admins },
+  { id: 'admin-users', path: '/ui/admin/users', kinds: admins, walk: filtersOpen },
   { id: 'admin-user', path: '/ui/admin/users/sam', kinds: admins },
-  { id: 'admin-groups', path: '/ui/admin/groups', kinds: admins },
+  { id: 'admin-groups', path: '/ui/admin/groups', kinds: admins, walk: filtersOpen },
   { id: 'admin-group', path: `/ui/admin/groups/${group}`, kinds: admins },
-  { id: 'admin-service-accounts', path: '/ui/admin/service-accounts', kinds: admins },
+  { id: 'admin-service-accounts', path: '/ui/admin/service-accounts', kinds: admins, walk: filtersOpen },
   { id: 'admin-service-account', path: `/ui/admin/service-accounts/${serviceAccount}`, kinds: admins },
-  { id: 'admin-permissions', path: '/ui/admin/permissions', kinds: admins },
+  { id: 'admin-permissions', path: '/ui/admin/permissions', kinds: admins, walk: filtersOpen },
   { id: 'admin-permission-new', path: '/ui/admin/permissions/new', kinds: admins },
   { id: 'admin-roles', path: '/ui/admin/roles', kinds: admins },
-  { id: 'admin-tokens', path: '/ui/admin/tokens', kinds: admins },
+  { id: 'admin-tokens', path: '/ui/admin/tokens', kinds: admins, walk: filtersOpen },
   { id: 'admin-ci', path: '/ui/admin/ci', kinds: admins },
   { id: 'admin-ci-new', path: '/ui/admin/ci/new', kinds: admins },
-  { id: 'admin-ci-issuances', path: '/ui/admin/ci/issuances', kinds: admins },
+  { id: 'admin-ci-issuances', path: '/ui/admin/ci/issuances', kinds: admins, walk: filtersOpen },
   { id: 'admin-bastions', path: '/ui/admin/bastions', kinds: admins },
   { id: 'admin-endpoints', path: '/ui/admin/endpoints', kinds: admins },
   // The endpoint every installation has (R-EP-001).
@@ -180,7 +191,7 @@ export const screens: readonly Screen[] = [
   // The creation flow, step by step, for three formats and every class (the owner's rules of 2026-11-12, CLAUDE.md).
   ...wizards,
   { id: 'admin-security', path: '/ui/admin/security', kinds: admins },
-  { id: 'admin-audit', path: '/ui/admin/audit', kinds: admins },
+  { id: 'admin-audit', path: '/ui/admin/audit', kinds: admins, walk: filtersOpen },
   { id: 'admin-advisory-sources', path: '/ui/admin/advisory-sources', kinds: admins },
   { id: 'admin-system', path: '/ui/admin/system', kinds: admins },
   { id: 'admin-system-jobs', path: '/ui/admin/system/jobs', kinds: admins },

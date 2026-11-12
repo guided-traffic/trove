@@ -154,10 +154,15 @@ describe('App shell', () => {
     expect(await seriousViolations(root)).toEqual([]);
   });
 
-  it('R-UI-002 the navigation groups its entries (identity, access, system) with an icon per entry and folds a group', async () => {
+  it('R-UI-002 the navigation groups its entries (identity, access, system, settings) with an icon per entry and folds a group', async () => {
     const { fixture, root } = await render('/admin/users');
     const toggles = [...root.querySelectorAll<HTMLButtonElement>('nav button.group-toggle')];
-    expect(toggles.map((b) => b.querySelector('.nav-label')?.textContent)).toEqual(['Identity', 'Access', 'System']);
+    expect(toggles.map((b) => b.querySelector('.nav-label')?.textContent)).toEqual(['Identity', 'Access', 'System', 'Settings']);
+    // One group Settings with a page per topic, General first (Q-UI-326); System holds no settings entry.
+    const settings = root.querySelector<HTMLElement>(`#${toggles[3]!.getAttribute('aria-controls')}`)!;
+    expect([...settings.querySelectorAll('.nav-label')].map((l) => l.textContent)).toEqual(['General', 'Authentication']);
+    const system = root.querySelector<HTMLElement>(`#${toggles[2]!.getAttribute('aria-controls')}`)!;
+    expect([...system.querySelectorAll('.nav-label')].map((l) => l.textContent)).not.toContain('General settings');
     expect(root.querySelectorAll('nav .nav-icon').length).toBeGreaterThanOrEqual(10);
     expect(root.querySelector('nav a[aria-current="page"] .nav-label')?.textContent).toBe('Users');
 

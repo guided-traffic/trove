@@ -33,6 +33,8 @@ export default defineConfig({
     navigationTimeout: 60_000,
     trace: 'off',
     screenshot: 'off',
+    // The scrollbars are shown, as on a desktop with a mouse: one beside a table's rows takes the table's width.
+    launchOptions: { ignoreDefaultArgs: ['--hide-scrollbars'] },
   },
   projects: (['anonymous', 'plain', 'power', 'admin'] as const).map((kind) => ({
     name: kind,

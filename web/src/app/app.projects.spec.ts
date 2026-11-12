@@ -176,12 +176,14 @@ describe('The project is the context of the content (Q-UI-129)', () => {
     expect([...root.querySelectorAll('nav.breadcrumbs a')].map((a) => a.getAttribute('href'))).toEqual(['/projects', '/projects/web']);
   });
 
-  it('R-UI-020 inside a project the repository list keeps its column of format and class, the format with its icon', async () => {
+  it('R-UI-020 inside a project the repository list names format and class under the key, without the project and without a column of them', async () => {
     const { root } = await render('/projects/web/repositories', undefined, TWO);
-    const kind = root.querySelector('main tbody td.kind-cell')!;
+    const kind = root.querySelector('main tbody th[scope="row"] .repo-kind')!;
     expect(kind.querySelector('.format-name trove-format-icon')).toBeTruthy();
-    expect(root.querySelector('main .admin-kind')).toBeNull();
-    expect([...root.querySelectorAll('main thead th')].some((th) => th.textContent?.trim().startsWith('Format'))).toBe(true);
+    expect(kind.querySelector('.class-name')).toBeTruthy();
+    expect(kind.querySelector('a.project-link')).toBeNull();
+    expect(root.querySelector('main tbody td.kind-cell')).toBeNull();
+    expect([...root.querySelectorAll('main thead th')].some((th) => th.textContent?.trim().startsWith('Format'))).toBe(false);
   });
 });
 

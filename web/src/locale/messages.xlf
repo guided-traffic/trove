@@ -1951,14 +1951,6 @@
         <source>Audit log</source>
       </segment>
     </unit>
-    <unit id="nav.settings-general">
-      <notes>
-        <note category="location">src/app/core/navigation.ts:98</note>
-      </notes>
-      <segment>
-        <source>General settings</source>
-      </segment>
-    </unit>
     <unit id="nav.advisory-sources">
       <notes>
         <note category="location">src/app/core/navigation.ts:100</note>
@@ -16351,14 +16343,6 @@
         <source>No repository matches the filters.</source>
       </segment>
     </unit>
-    <unit id="repo.help.format-class">
-      <notes>
-        <note category="location">src/app</note>
-      </notes>
-      <segment>
-        <source>The format, and under it the class: local repositories hold what you upload, remote repositories fetch and cache from another registry, virtual repositories combine other repositories behind one address.</source>
-      </segment>
-    </unit>
     <unit id="repo.content.more">
       <notes>
         <note category="location">src/app</note>
@@ -19157,6 +19141,30 @@
       </notes>
       <segment>
         <source>Canary (reported by <ph id="0" equiv="replica" disp="by"/>)</source>
+      </segment>
+    </unit>
+    <unit id="nav.section.settings">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Settings</source>
+      </segment>
+    </unit>
+    <unit id="nav.settings.general">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>General</source>
+      </segment>
+    </unit>
+    <unit id="nav.settings.auth">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Authentication</source>
       </segment>
     </unit>
     <unit id="setup.heading">

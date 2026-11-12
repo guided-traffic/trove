@@ -63,33 +63,19 @@
               <span class="badge" i18n="@@repo.badge.deleting">being deleted</span>
             }
             <!-- The first column names the thing; the description is its muted second line (ui-style-guide.md, Lists; Q-UI-302).
-                 In the admin area the project, the format and the class lead that line instead of two columns, so that a usual
-                 address shows whole at 1280 px (Q-UI-325, UI-A-30). -->
-            @if (!inProject()) {
-              <span class="secondary admin-kind dot-separated">
+                 The project (in the admin area), the format and the class lead the line under the key instead of columns, so that a
+                 usual address shows whole at 1280 px and beside the filter panel (Q-UI-325, Q-UI-328, UI-A-30). -->
+            <span class="secondary repo-kind dot-separated">
+              @if (!inProject()) {
                 <a class="project-link" [routerLink]="['/projects', row.project]" translate="no">{{ row.project }}</a>
-                <span class="format-name"><trove-format-icon [format]="row.format" /><span translate="no">{{ formatLabel(row.format) }}</span></span>
-                <span class="class-name"><span class="material-icons" aria-hidden="true">{{ classIcon(row.class) }}</span>{{ classText(row.class) }}</span>
-              </span>
-            }
+              }
+              <span class="format-name"><trove-format-icon [format]="row.format" /><span translate="no">{{ formatLabel(row.format) }}</span></span>
+              <span class="class-name"><span class="material-icons" aria-hidden="true">{{ classIcon(row.class) }}</span>{{ classText(row.class) }}</span>
+            </span>
             @if (row.description) {
               <span class="secondary">{{ row.description }}</span>
             }
           </th>
-          @if (inProject()) {
-            <!-- Format and class in one cell, the class under the format (Q-UI-305); one line when the rows stack. -->
-            <td class="kind-cell">
-              <!-- A format is its icon and its name (UI-A-24), as in the package list. -->
-              <span class="format-name">
-                <trove-format-icon [format]="row.format" />
-                <span translate="no">{{ formatLabel(row.format) }}</span>
-              </span>
-              <span class="type-cell secondary">
-                <span class="material-icons" aria-hidden="true">{{ classIcon(row.class) }}</span>
-                {{ classText(row.class) }}
-              </span>
-            </td>
-          }
           <td class="address-cell">
             <trove-address-field [value]="address(row)" [label]="addressLabel(row)" [copyLabel]="copyLabel(row)" />
           </td>

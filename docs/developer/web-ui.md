@@ -167,8 +167,8 @@ make ui-dev-down                  # when done (keeps the data)
 | What | Where |
 |---|---|
 | The pictures | `.out/ui-renders/<kind>/<screen>[-<tab>]-<scheme>-<width>.png`; `<kind>` is `plain`, `power`, `admin` or `anonymous`, `<scheme>` `light` or `dark`, `<width>` 1440, 1024 or 390 |
-| The contact sheet | `.out/ui-renders/index.html`: the failures, the screens that scroll sideways at 1024 px and wider, the lists whose address fields differ in width, then every screen with a row per kind and tab |
-| What each picture measured | `.out/ui-renders/report.json` (how far the content and each region scroll sideways, the address widths per table), `failures.txt` |
+| The contact sheet | `.out/ui-renders/index.html`: the failures, the screens whose page scrolls sideways at any width and those with a region that scrolls sideways at 1024 px and wider, each with its widest element, the lists whose address fields differ in width, then every screen with a row per kind and tab |
+| What each picture measured | `.out/ui-renders/report.json` (how far the content and each region scroll sideways, the `offender`: the innermost element that reaches furthest past the panel's edge, hidden ones in closed sections included, the address widths per table), `failures.txt` |
 | The logs of what it started | `.out/ui-renders.backend.log`, `.out/ui-renders.web.log` |
 
 **What it does.** [deploy/ui-dev/renders.sh](../../deploy/ui-dev/renders.sh) runs `up.sh` (idempotent), then starts what is not
@@ -207,7 +207,11 @@ running and stops only what it started: trove with the sign-in provider (`serve.
    stored, the theme button's "Follow the system"). The window grows by what the content panel and its scroll regions hide, so
    a picture shows the whole length. A flow is a screen with a `walk`: the repository wizard is walked for OCI, npm and Ansible,
    local, remote and virtual, as the power user in a project and as the administrator in the admin area, with a picture of every
-   step and of the basic settings before the key is typed (`wizard-<format>-<class>-<step>-…`); nothing is created.
+   step and of the basic settings before the key is typed (`wizard-<format>-<class>-<step>-…`); nothing is created. Every list
+   with a filter panel is taken as it opens and with the panel open (`<screen>-filters-…`, the walk `filtersOpen`). The
+   scrollbars are shown, as on a desktop with a mouse (below 600 px they take no room, as on a phone), and before the window
+   grows each picture's scroll regions are measured
+   once more: a table taller than its region has its scrollbar beside the rows then, which takes their width (Q-UI-327).
 4. **A failure is loud.** A screen fails when it shows an error notice, when a call of the app's own API (`/api/`, `/auth/`)
    answers 4xx or 5xx, or when the console reports an error; the pictures are taken first. Playwright lists the failures and exits
    non-zero; the contact sheet marks the rows. A screen whose normal state includes such an answer lists it in `expected` of
@@ -215,7 +219,7 @@ running and stops only what it started: trove with the sign-in provider (`serve.
 
 **Add a screen.** A new route gets a line in `screens.ts` with the kinds that reach it from the navigation and the seed's
 parameters; data the screen needs goes into `seed.ts`, idempotent and through the API; a flow gets a `walk` that yields the name
-of each state to render. `UI_RENDERS_WIDTHS=1440,1280,1024,390` adds a width, `UI_RENDERS_WORKERS` sets the browsers at a time
+of each state to render (an empty name is the screen as it opens). `UI_RENDERS_WIDTHS=1440,1280,1024,390` adds a width, `UI_RENDERS_WORKERS` sets the browsers at a time
 (3), `UI_RENDERS_DEBUG=1` prints the time of each step. The variables do not start with `TROVE_`: trove refuses an unknown
 `TROVE_` variable, and the backend that `make ui-renders` starts inherits the environment.
 
@@ -784,7 +788,7 @@ aligned to the top with a control centred on the first line; below 48 rem of the
 - A category is a heading button with a chevron (`aria-expanded`); give it `[active]` and `[expanded]` of its filter, so that an applied filter is never hidden. A screen that can be reached with a filter in the URL (policies, audit, repositories) opens the panel itself.
 - Focus moves to the panel heading on opening and back to the opener on closing; Escape closes. The form is a `search` landmark named by its heading.
 - Controls inside a category need their own accessible name (`aria-label` for a native control, the label of `TextField` and `SelectField` otherwise); the category button is not their label.
-- `.list-layout` puts the panel to the right of the table and below `52rem` of content width above it (container query on `.content`). Only add a filter that a request parameter of the API backs.
+- `.list-layout` puts the panel to the right of the table where the content area is at least `91rem` wide, so that the list keeps 71 rem beside it, and above the table otherwise, its categories side by side (container query on `.content`, [Q-UI-327](../spec/api-and-ui.md#q-ui-327--the-filter-panel-sits-beside-a-list-only-where-the-list-keeps-71-rem-and-a-tables-columns-share-its-rows-width-without-the-scrollbar)). Only add a filter that a request parameter of the API backs.
 
 ### Add a list screen
 
@@ -826,7 +830,7 @@ R-UI-024 to R-UI-027, R-UI-029 to R-UI-031, R-UI-042 to R-UI-045; decisions Q-UI
 | `/admin/roles` | `roles/` `RoleBindings`: the five roles, holders, bind and unbind with the last-administrator guard | R-UI-024 | `roles:read` |
 | `/admin/permissions`, `/new`, `/:name`, `/:project/:name` | `permissions/`: `PolicyList`; `PolicyEditor` (one page for create and edit, validation preview, pattern tester, "Try it", diff before save) | R-UI-027 | `policies:read` |
 | `/admin/tokens` | `tokens/` `TokenAdmin`: filters, revoke one or selected, revoke by value | R-UI-030 | `tokens:read` |
-| `/admin/settings/auth` | `settings/` `AuthSettings`: anonymous access open at the top, token lifetimes with their ceilings and the read-only status as sections; one ETag, a `Save changes` per group that sends only its own members, `If-Match` ([Q-UI-222](../spec/api-and-ui.md#q-ui-222--which-settings-pages-are-one-column-now-and-what-a-sections-save-button-is-called)) | R-UI-031 | `settings:read` |
+| `/admin/settings` (leads to `general`), `/admin/settings/auth` | The sidebar's group **Settings** holds **General** and **Authentication** (`navigation.ts`, Q-UI-326). `settings/` `AuthSettings`: anonymous access open at the top, token lifetimes with their ceilings and the read-only status as sections; one ETag, a `Save changes` per group that sends only its own members, `If-Match` ([Q-UI-222](../spec/api-and-ui.md#q-ui-222--which-settings-pages-are-one-column-now-and-what-a-sections-save-button-is-called)) | R-UI-031 | `settings:read` |
 
 Services of `api/` (abstract class, HTTP implementation, fake in [api/testing/access-fakes.ts](../../web/src/app/api/testing/access-fakes.ts)); every shape is a
 `Schema<'…'>` of the generated document:

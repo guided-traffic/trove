@@ -45,7 +45,7 @@ describe('Repository list', () => {
     const row = first.closest('tr')!;
     // In the admin area the project, the format (its icon and its name, UI-A-24) and the class lead the line under the key,
     // so that the address keeps the room of two columns (Q-UI-325, UI-A-30).
-    const kind = first.querySelector('.admin-kind')!;
+    const kind = first.querySelector('.repo-kind')!;
     expect(kind.querySelector('a.project-link')?.getAttribute('href')).toBe('/projects/web');
     expect(kind.querySelector('.format-name trove-format-icon')).toBeTruthy();
     expect(kind.querySelector('.format-name span[translate="no"]')?.textContent).toBe('Generic');

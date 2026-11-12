@@ -16421,15 +16421,6 @@
         <target>Kein Repository passt zu den Filtern.</target>
       </segment>
     </unit>
-    <unit id="repo.help.format-class">
-      <notes>
-        <note category="location">src/app</note>
-      </notes>
-      <segment>
-        <source>The format, and under it the class: local repositories hold what you upload, remote repositories fetch and cache from another registry, virtual repositories combine other repositories behind one address.</source>
-        <target>Das Format und darunter die Klasse: Lokale Repositories enthalten, was Sie hochladen; Remote-Repositories laden aus einer anderen Registry und halten eine Kopie vor; virtuelle Repositories fassen andere Repositories unter einer Adresse zusammen.</target>
-      </segment>
-    </unit>
     <unit id="repo.content.more">
       <notes>
         <note category="location">src/app</note>
@@ -18775,6 +18766,33 @@
       <segment>
         <source>Canary (reported by <ph id="0" equiv="replica" disp="by"/>)</source>
         <target>Canary (gemeldet von <ph id="0" equiv="replica" disp="by"/>)</target>
+      </segment>
+    </unit>
+    <unit id="nav.section.settings">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Settings</source>
+        <target>Einstellungen</target>
+      </segment>
+    </unit>
+    <unit id="nav.settings.general">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>General</source>
+        <target>Allgemein</target>
+      </segment>
+    </unit>
+    <unit id="nav.settings.auth">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Authentication</source>
+        <target>Authentifizierung</target>
       </segment>
     </unit>
     <unit id="setup.heading">
@@ -28657,15 +28675,6 @@
       <segment>
         <source>Uploads a .deb file to the repository that receives uploads, into the suite and component named in the address. An index that lists the package follows within moments.</source>
         <target>Lädt eine .deb-Datei in das Repository hoch, das Uploads annimmt, in die Suite und Komponente aus der Adresse. Ein Index, der das Paket führt, folgt in wenigen Augenblicken.</target>
-      </segment>
-    </unit>
-    <unit id="nav.settings-general">
-      <notes>
-        <note category="location">src/app/core/navigation.ts:98</note>
-      </notes>
-      <segment>
-        <source>General settings</source>
-        <target>Allgemeine Einstellungen</target>
       </segment>
     </unit>
     <unit id="repo.members.saved">

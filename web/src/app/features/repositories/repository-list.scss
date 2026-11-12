@@ -25,20 +25,14 @@
   color: var(--trove-text-muted);
 }
 
-// Format and class in one cell (Q-UI-305): the format on the first line, the class with its icon muted under it; one line
-// when the rows stack (_list-screens.scss).
-.kind-cell > .type-cell {
-  display: flex;
-  margin-block-start: var(--trove-space-1);
-}
-
 // "Recently opened" keeps its distance from the list's toolbar.
 .recent {
   margin-block-end: var(--trove-space-4);
 }
 
-// The admin area's line under the key: project · format · class, each with its icon (Q-UI-325); the dots are `.dot-separated`.
-.admin-kind {
+// The line under the key: the project (in the admin area) · format · class, each with its icon (Q-UI-325, Q-UI-328); the dots
+// are `.dot-separated`.
+.repo-kind {
   .format-name,
   .class-name {
     display: inline-flex;
@@ -50,18 +44,5 @@
   trove-format-icon,
   .material-icons {
     font-size: 1rem;
-  }
-}
-
-// A format is its icon and its name (UI-A-24), the icon as in the package list. A long name ("Ansible Galaxy") wraps
-// inside the column's budget, so that the address keeps its room (UI-A-30).
-.kind-cell > .format-name {
-  display: inline-flex;
-  align-items: flex-start;
-  gap: var(--trove-space-2);
-
-  trove-format-icon {
-    font-size: 1.25rem;
-    color: var(--trove-text-muted);
   }
 }

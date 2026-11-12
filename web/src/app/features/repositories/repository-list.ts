@@ -180,10 +180,7 @@ export class RepositoryList {
   protected readonly applyLabel = $localize`:@@repo.filter.apply:Search`;
   /** No sort control: the repository list is ordered by key and the API takes no sort parameter. */
   protected readonly columns = computed<readonly TableColumn[]>(() =>
-    this.allColumns.filter(
-      // The admin area names project, format and class under the key (Q-UI-325): the address keeps that room.
-      (c) => !(c.id === 'activity' && !this.showActivity()) && !(c.id === 'format' && !this.inProject()),
-    ),
+    this.allColumns.filter((c) => !(c.id === 'activity' && !this.showActivity())),
   );
   /**
    * The last activity is a fact of maintenance: shown to who may change the list's repositories (Q-UI-312), and only while a
@@ -195,16 +192,9 @@ export class RepositoryList {
       this.list.items().some((r) => !!r.lastActivityAt),
   );
   private readonly allColumns: readonly TableColumn[] = [
-    // The widths are the list's budget (Q-UI-308): the address takes the rest, so at 1440 px a project's list shows an address
-    // of 57 characters whole.
+    // The widths are the list's budget (Q-UI-308): the address takes the rest. Format and class are the line under the key
+    // (Q-UI-328), so an address of 57 characters shows whole at 1280 and 1440 px and beside the filter panel.
     { id: 'key', label: $localize`:@@repo.col.repository:Repository`, width: '16rem' },
-    {
-      id: 'format',
-      label: $localize`:@@repo.col.format:Format`,
-      help: $localize`:@@repo.help.format-class:The format, and under it the class: local repositories hold what you upload, remote repositories fetch and cache from another registry, virtual repositories combine other repositories behind one address.`,
-      width: '5.5rem',
-      stackLabel: false,
-    },
     {
       id: 'address',
       label: $localize`:@@repo.col.address:Client address`,

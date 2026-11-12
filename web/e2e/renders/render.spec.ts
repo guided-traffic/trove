@@ -28,10 +28,19 @@ export interface Shot {
   readonly url: string;
   /** How far the content panel (or the page) scrolls sideways, in CSS px. */
   readonly overflowX: number;
-  /** The regions inside it that scroll sideways (a table's scroll region, a code block), with how far. */
+  /**
+   * The regions inside it that scroll sideways (a table's scroll region, a code block), with how far: in the grown window of the
+   * picture, and in the window's first height, where a table taller than its region has a scrollbar beside its rows that takes
+   * its width (the scrollbars are shown, as on a desktop with a mouse).
+   */
   readonly regions: readonly { readonly what: string; readonly overflowX: number }[];
   /** The widths of the address fields of each table, rounded to the pixel: one width per list is the rule (R-UI-065). */
   readonly addressWidths: readonly (readonly number[])[];
+  /**
+   * When the panel scrolls sideways: the innermost element that reaches furthest past its right edge, hidden ones included (a
+   * closed section keeps its box), as a path of tags and classes, and by how far.
+   */
+  readonly offender: { readonly what: string; readonly overflowX: number } | null;
 }
 
 for (const screen of screens) {
@@ -46,18 +55,23 @@ for (const screen of screens) {
         await page.emulateMedia({ colorScheme: 'light' });
         const t0 = Date.now();
         await page.goto(screen.path);
+        // A phone's scrollbars lie over the content and take no room: so they do in the phone's pictures. A page that is not
+        // the app (the dev server's own answer) refuses the style and keeps its scrollbars.
+        if (width < 600 && (await page.locator('trove-root').count()) > 0) {
+          await page.addStyleTag({ content: '* { scrollbar-width: none; }' });
+        }
         if (process.env['UI_RENDERS_DEBUG']) console.log(`goto: ${Date.now() - t0} ms`);
         await settle(page);
         if (screen.walk) {
-          // A flow: one picture of each state it names.
+          // A flow: one picture of each state it names; an empty name is the screen as it opens.
           for await (const state of screen.walk(page)) {
             await settle(page);
             for (const scheme of schemes) {
               await page.emulateMedia({ colorScheme: scheme });
-              shots.push(await shoot(page, kind, screen, state, scheme, width));
+              shots.push(await shoot(page, kind, screen, state || null, scheme, width));
             }
             await page.emulateMedia({ colorScheme: 'light' });
-            failures.notices.push(...(await errorNotices(page, width, state)));
+            failures.notices.push(...(await errorNotices(page, width, state || null)));
           }
           continue;
         }
@@ -145,6 +159,8 @@ async function settle(page: Page): Promise<void> {
  */
 async function shoot(page: Page, kind: Kind, screen: Screen, tab: string | null, scheme: Shot['scheme'], width: number): Promise<Shot> {
   const view = page.viewportSize() ?? { width, height: 900 };
+  // Before the window grows to the page's length: a table that scrolls inside its region has its scrollbar now.
+  const first = view.height <= heightOf(width) ? await page.evaluate(sidewaysRegions) : [];
   let height = view.height;
   for (let round = 0; round < 4; round++) {
     const hidden = await page.evaluate(() => {
@@ -165,21 +181,36 @@ async function shoot(page: Page, kind: Kind, screen: Screen, tab: string | null,
     const main = document.querySelector('main');
     const doc = document.scrollingElement;
     const overflowX = Math.max(main ? main.scrollWidth - main.clientWidth : 0, doc ? doc.scrollWidth - doc.clientWidth : 0);
-    const regions: { what: string; overflowX: number }[] = [];
-    for (const el of Array.from(document.querySelectorAll<HTMLElement>('main *'))) {
-      const style = getComputedStyle(el);
-      if (!['auto', 'scroll'].includes(style.overflowX) || el.clientWidth === 0) continue;
-      const over = el.scrollWidth - el.clientWidth;
-      if (over > 1) {
-        const label = el.getAttribute('aria-label') ?? el.getAttribute('aria-labelledby') ?? '';
-        regions.push({ what: `${el.tagName.toLowerCase()}.${Array.from(el.classList).join('.')}${label ? ` [${label}]` : ''}`, overflowX: over });
-      }
-    }
     const addressWidths = Array.from(document.querySelectorAll('main table'))
       .map((t) => Array.from(t.querySelectorAll('trove-address-field input')).map((i) => Math.round(i.getBoundingClientRect().width)))
       .filter((w) => w.length > 0);
-    return { overflowX, regions, addressWidths };
+    let offender: { what: string; overflowX: number } | null = null;
+    if (overflowX > 1 && main) {
+      const edge = main.getBoundingClientRect().left + main.clientWidth;
+      let best: { el: Element; over: number; depth: number } | null = null;
+      for (const el of Array.from(main.querySelectorAll('*'))) {
+        const over = Math.round(el.getBoundingClientRect().right - edge);
+        if (over <= 1) continue;
+        let depth = 0;
+        for (let e: Element | null = el; e && e !== main; e = e.parentElement) depth++;
+        if (!best || over > best.over || (over === best.over && depth > best.depth)) best = { el, over, depth };
+      }
+      if (best) {
+        const parts: string[] = [];
+        for (let e: Element | null = best.el; e && e !== main && parts.length < 4; e = e.parentElement) {
+          parts.unshift(e.tagName.toLowerCase() + Array.from(e.classList).slice(0, 2).map((c) => '.' + c).join(''));
+        }
+        offender = { what: parts.join(' > '), overflowX: best.over };
+      }
+    }
+    return { overflowX, addressWidths, offender };
   });
+  const regions = await page.evaluate(sidewaysRegions);
+  for (const r of first) {
+    const same = regions.find((g) => g.what === r.what);
+    if (!same) regions.push({ ...r, what: `${r.what} (window's first height)` });
+    else if (r.overflowX > same.overflowX) regions.splice(regions.indexOf(same), 1, r);
+  }
   const name = `${screen.id}${tab ? `-${slug(tab)}` : ''}-${scheme}-${width}.png`;
   const file = join(kind, name);
   mkdirSync(join(outDir, kind), { recursive: true });
@@ -190,7 +221,22 @@ async function shoot(page: Page, kind: Kind, screen: Screen, tab: string | null,
     await page.setViewportSize(view);
     await settle(page);
   }
-  return { kind, screen: screen.id, tab, scheme, width, file, url: new URL(page.url()).pathname + new URL(page.url()).search, ...measured };
+  return { kind, screen: screen.id, tab, scheme, width, file, url: new URL(page.url()).pathname + new URL(page.url()).search, regions, ...measured };
+}
+
+/** The regions inside the content panel that scroll sideways, with how far (run in the page). */
+function sidewaysRegions(): { what: string; overflowX: number }[] {
+  const regions: { what: string; overflowX: number }[] = [];
+  for (const el of Array.from(document.querySelectorAll<HTMLElement>('main *'))) {
+    const style = getComputedStyle(el);
+    if (!['auto', 'scroll'].includes(style.overflowX) || el.clientWidth === 0) continue;
+    const over = el.scrollWidth - el.clientWidth;
+    if (over > 1) {
+      const label = el.getAttribute('aria-label') ?? el.getAttribute('aria-labelledby') ?? '';
+      regions.push({ what: `${el.tagName.toLowerCase()}.${Array.from(el.classList).join('.')}${label ? ` [${label}]` : ''}`, overflowX: over });
+    }
+  }
+  return regions;
 }
 
 function slug(text: string): string {

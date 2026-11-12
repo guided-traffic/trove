@@ -13,8 +13,10 @@
     grid-template-columns: minmax(0, 1fr) 19rem;
   }
 
-  // Below this width of the content area the panel sits above the table instead of beside it.
-  @container content (max-width: 52rem) {
+  // The panel sits beside the list only where the list keeps at least 71 rem there: a little more than the 70.5 rem it has at
+  // 1440 px without the panel, the width every list's columns are made and checked for. Narrower, the panel sits above the
+  // list, which keeps its whole width (Q-UI-327; at 1860 px a list beside the panel scrolled sideways, the owner's screen).
+  @container content (max-width: 91rem) {
     &.panel-open {
       grid-template-columns: minmax(0, 1fr);
 
@@ -25,19 +27,34 @@
   }
 }
 
+// Above the list the panel's categories sit side by side, so that the panel takes a few lines and not the window's height, and its
+// button is as wide as its label where the content area is no phone's.
+@container content (max-width: 91rem) {
+  .list-layout > .list-side .panel-body {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
+    align-items: start;
+  }
+}
+
+@container content (min-width: 40rem) and (max-width: 91rem) {
+  .list-layout > .list-side .panel-foot button {
+    inline-size: auto;
+  }
+}
+
 .list-main {
   min-inline-size: 0;
-  // A list's columns may take a share of the list's own width (`cqi`), beside the filter panel or without it.
-  container-type: inline-size;
 }
 
 // The column of client addresses (Q-UI-300): one width for every field of the list, that of the list's longest address
 // (`--trove-address-chars`, set by the list) in the field's own face and size, with the field's padding, border and copy
 // button, at most what the list's other columns leave (`--trove-list-others`, which the data table sums from the columns'
-// widths, Q-UI-308), never under 16 rem.
+// widths, Q-UI-308), never under 16 rem. `cqi` is the width of the table's scroll region, which a scrollbar beside the rows
+// narrows: measured against the list instead, the table was a scrollbar wider than its region and scrolled sideways.
 // The field fills the cell and shows the address from its start; a longer address scrolls inside its field.
 td.address-cell {
-  // Resolved where it is used, so `ch` is the monospace face's at the field's size, and `cqi` the list's width.
+  // Resolved where it is used, so `ch` is the monospace face's at the field's size, and `cqi` the rows' width.
   --trove-address-column: min(
     calc(var(--trove-address-chars, 40) * 1ch + 2 * var(--trove-space-3) + 2px + var(--trove-control-height)),
     max(16rem, 100cqi - var(--trove-list-others, 34rem))
@@ -56,7 +73,7 @@ td.address-cell {
 
 // Below 64 rem of the list's width a column marked `narrow` (the data table's `narrow-drop`) gives its room to the address
 // (Q-UI-308, UI-A-30): the admin area's repository list at 1280 px shows the last activity no more, and a usual address whole.
-@container (max-width: 64rem) {
+@container table (max-width: 64rem) {
   .trove-data-table .narrow-drop {
     display: none;
   }
@@ -110,10 +127,17 @@ td.address-cell {
   // The reference's table (Q-UI-128): no frame, on the page's fill, hairlines above and below the head and under every row.
   .table-frame {
     background: var(--trove-surface);
+    // The list's width, which its narrow columns and its stacked rows follow (Q-UI-306, Q-UI-308), beside the filter panel or
+    // without it, inside a list screen or a detail page.
+    container: table / inline-size;
   }
 
-  // The inner scroll keeps the header in view: the region scrolls, not the page.
+  // The inner scroll keeps the header in view: the region scrolls, not the page. It is the container of the columns' shares
+  // (`cqi`), and keeps the room of its scrollbar whether the rows scroll or not, so that `cqi` is the rows' width without it
+  // (Chrome counts a scrollbar that only comes with the rows into the container's width).
   .table-scroll {
+    container-type: inline-size;
+    scrollbar-gutter: stable;
     max-block-size: max(22rem, calc(100dvh - 17rem));
     overflow: auto;
 
@@ -467,7 +491,7 @@ td.address-cell {
 // (Q-UI-306): the name with its description and the row's menu on the first line, then each other cell on a line of its own,
 // the address field across the full width. The head stays for assistive technology only; the data table gives every cell its
 // column's name in `data-label`, shown before the value, and marks an empty one (`data-empty`), which leaves its line out.
-@container (max-width: 48rem) {
+@container table (max-width: 48rem) {
   .trove-data-table.stack {
     .table-scroll {
       max-block-size: none;
@@ -551,17 +575,6 @@ td.address-cell {
 
       tbody :is(th, td) > :is(.btn, trove-address-field, select, .select-input, .text-input, trove-copy-button, .row-actions) {
         margin-block: 0;
-      }
-
-      td.kind-cell {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: var(--trove-space-3);
-
-        > .type-cell {
-          margin-block-start: 0;
-        }
       }
     }
   }

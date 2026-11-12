@@ -187,6 +187,17 @@
   align-items: center;
   gap: var(--trove-space-2);
   margin-block-end: var(--trove-space-2);
+
+  // A long repository key wraps inside its button instead of widening the section: at 390 px a key of the project
+  // (release-candidates-for-the-customer-portal-…) pushed the page 39 px sideways.
+  .btn {
+    max-inline-size: 100%;
+    block-size: auto;
+    min-block-size: var(--trove-control-height);
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: start;
+  }
 }
 
 // The icon before a line's text keeps a gap to it (the global policy note, the covered repositories).

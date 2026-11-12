@@ -65,11 +65,11 @@ trove reads the configuration file and the environment once, at start. A change 
 | Break-glass password file | Live: checked every `auth.break_glass.check_interval` (10 s); a rotation refuses the local sign-in for `auth.break_glass.rotation_hold` (2 min) and ends the break-glass sessions |
 | Metrics bearer token file (`metrics.bearer_token_file`) | Live: read on each scrape |
 | Tracing CA file (`tracing.ca_file`) | At the next start; read once |
-| Settings changed in **Admin area › System › Settings** | Live on every replica within `auth.revocation_bound` (2 s) |
+| Settings changed in **Admin area › Settings › Authentication** | Live on every replica within `auth.revocation_bound` (2 s) |
 
 ## Settings in the UI versus the configuration file
 
-**Admin area › System › Settings** opens **Authentication settings**. It holds the runtime settings, which are stored in PostgreSQL, apply to every replica and survive restarts and upgrades:
+**Admin area › Settings › Authentication** opens **Authentication settings**. It holds the runtime settings, which are stored in PostgreSQL, apply to every replica and survive restarts and upgrades:
 
 | Setting in the UI | What it does | Bounded by the file key |
 |---|---|---|

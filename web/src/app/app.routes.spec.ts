@@ -150,9 +150,9 @@ describe('route map', () => {
     expect(TestBed.inject(Breadcrumbs).trail().map((c) => c.label)).toEqual(['Projects', 'web', 'Vulnerabilities', '0193a000-0000-7000-8000-000000000001']);
   });
 
-  it('R-UI-003 /admin/settings opens the authentication settings', async () => {
+  it('R-UI-003 /admin/settings opens the general settings, the first page of the group Settings', async () => {
     await open('/admin/settings');
-    expect(TestBed.inject(Router).url).toBe('/admin/settings/auth');
+    expect(TestBed.inject(Router).url).toBe('/admin/settings/general');
   });
 
   it('R-UI-044 the accessibility check fails on a real violation (the tooling is live)', async () => {
