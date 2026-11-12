@@ -1,4 +1,4 @@
-import { DatePipe, DecimalPipe } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import {
   Component,
   LOCALE_ID,
@@ -53,7 +53,6 @@ interface Chip {
   selector: 'trove-package-list',
   imports: [
     DatePipe,
-    DecimalPipe,
     RouterLink,
     DataTable,
     FilterCategory,
@@ -190,44 +189,22 @@ export class PackageList {
   protected readonly emptyText = $localize`:@@pkg.list.empty:No package has been published yet.`;
   protected readonly emptyFilteredText = $localize`:@@pkg.list.empty-filtered:No package matches the filters.`;
   protected readonly applyLabel = $localize`:@@pkg.filter.apply:Search`;
+  /** The columns a reader chooses by (Q-UI-314), with the list's budget (Q-UI-308). */
   protected readonly columns: readonly TableColumn[] = [
-    { id: 'type', label: $localize`:@@pkg.col.type:Type` },
-    { id: 'name', label: $localize`:@@pkg.col.name:Name`, sortable: true },
+    { id: 'name', label: $localize`:@@pkg.col.package:Package`, sortable: true, width: '16rem' },
+    { id: 'type', label: $localize`:@@pkg.col.format:Format`, width: '7rem', stackLabel: false },
     {
       id: 'latest',
       label: $localize`:@@pkg.col.latest:Latest version`,
       help: $localize`:@@pkg.help.latest:The highest stable version you may see. A pre-release is shown only while no stable version exists.`,
-    },
-    { id: 'description', label: $localize`:@@pkg.col.description:Description` },
-    {
-      id: 'createdAt',
-      label: $localize`:@@pkg.col.created:First created`,
-      sortable: true,
-      help: $localize`:@@pkg.help.created:When the first version you may see was published.`,
+      width: '8rem',
     },
     {
       id: 'updatedAt',
       label: $localize`:@@pkg.col.updated:Updated`,
       sortable: true,
       help: $localize`:@@pkg.help.updated:When the latest version you may see was published.`,
-    },
-    {
-      id: 'versions',
-      label: $localize`:@@pkg.col.versions:Versions`,
-      numeric: true,
-      help: $localize`:@@pkg.help.versions:The number of versions you may see.`,
-    },
-    {
-      id: 'repositories',
-      label: $localize`:@@pkg.col.repositories:Repositories`,
-      numeric: true,
-      help: $localize`:@@pkg.help.repositories:The number of repositories that hold a version of the package.`,
-    },
-    {
-      id: 'downloads',
-      label: $localize`:@@pkg.col.downloads:Downloads`,
-      numeric: true,
-      help: $localize`:@@pkg.help.downloads:All downloads of the versions you may see.`,
+      width: '7rem',
     },
   ];
   protected commands = (format: string, name: string): string[] => packageCommands(this.project(), format, name);

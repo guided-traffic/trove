@@ -1,4 +1,22 @@
+// The version in the main view (Q-UI-315): the label and the picker on one line; the field fits a version, not a URL.
+.version-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--trove-space-3);
+
+  .text-input {
+    inline-size: 12rem;
+  }
+}
+
+.pkg-details {
+  display: block;
+  margin-block-start: var(--trove-space-6);
+}
+
 .type-badge {
+  align-self: flex-start;
   display: inline-flex;
   align-items: center;
   gap: var(--trove-space-1);
@@ -96,4 +114,9 @@
     grid-column: 1;
     grid-row: 1;
   }
+}
+
+// A size keeps its number and unit together.
+.size {
+  white-space: nowrap;
 }

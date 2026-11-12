@@ -9706,14 +9706,6 @@
         <source>Set up your client for this repository</source>
       </segment>
     </unit>
-    <unit id="pkg.detail.back">
-      <notes>
-        <note category="location">src/app/features/packages/package-detail.html:7,10</note>
-      </notes>
-      <segment>
-        <source>All packages</source>
-      </segment>
-    </unit>
     <unit id="pkg.loading">
       <notes>
         <note category="location">src/app/features/packages/package-detail.html:13,14</note>
@@ -10695,22 +10687,6 @@
         <source>Search</source>
       </segment>
     </unit>
-    <unit id="pkg.col.type">
-      <notes>
-        <note category="location">src/app/features/packages/package-list.ts:193</note>
-      </notes>
-      <segment>
-        <source>Type</source>
-      </segment>
-    </unit>
-    <unit id="pkg.col.name">
-      <notes>
-        <note category="location">src/app/features/packages/package-list.ts:194</note>
-      </notes>
-      <segment>
-        <source>Name</source>
-      </segment>
-    </unit>
     <unit id="pkg.col.latest">
       <notes>
         <note category="location">src/app/features/packages/package-list.ts:197</note>
@@ -10727,30 +10703,6 @@
         <source>The highest stable version you may see. A pre-release is shown only while no stable version exists.</source>
       </segment>
     </unit>
-    <unit id="pkg.col.description">
-      <notes>
-        <note category="location">src/app/features/packages/package-list.ts:200</note>
-      </notes>
-      <segment>
-        <source>Description</source>
-      </segment>
-    </unit>
-    <unit id="pkg.col.created">
-      <notes>
-        <note category="location">src/app/features/packages/package-list.ts:203</note>
-      </notes>
-      <segment>
-        <source>First created</source>
-      </segment>
-    </unit>
-    <unit id="pkg.help.created">
-      <notes>
-        <note category="location">src/app/features/packages/package-list.ts:205</note>
-      </notes>
-      <segment>
-        <source>When the first version you may see was published.</source>
-      </segment>
-    </unit>
     <unit id="pkg.col.updated">
       <notes>
         <note category="location">src/app/features/packages/package-list.ts:209</note>
@@ -10765,54 +10717,6 @@
       </notes>
       <segment>
         <source>When the latest version you may see was published.</source>
-      </segment>
-    </unit>
-    <unit id="pkg.col.versions">
-      <notes>
-        <note category="location">src/app/features/packages/package-list.ts:215</note>
-      </notes>
-      <segment>
-        <source>Versions</source>
-      </segment>
-    </unit>
-    <unit id="pkg.help.versions">
-      <notes>
-        <note category="location">src/app/features/packages/package-list.ts:217</note>
-      </notes>
-      <segment>
-        <source>The number of versions you may see.</source>
-      </segment>
-    </unit>
-    <unit id="pkg.col.repositories">
-      <notes>
-        <note category="location">src/app/features/packages/package-list.ts:221</note>
-      </notes>
-      <segment>
-        <source>Repositories</source>
-      </segment>
-    </unit>
-    <unit id="pkg.help.repositories">
-      <notes>
-        <note category="location">src/app/features/packages/package-list.ts:223</note>
-      </notes>
-      <segment>
-        <source>The number of repositories that hold a version of the package.</source>
-      </segment>
-    </unit>
-    <unit id="pkg.col.downloads">
-      <notes>
-        <note category="location">src/app/features/packages/package-list.ts:227</note>
-      </notes>
-      <segment>
-        <source>Downloads</source>
-      </segment>
-    </unit>
-    <unit id="pkg.help.downloads">
-      <notes>
-        <note category="location">src/app/features/packages/package-list.ts:229</note>
-      </notes>
-      <segment>
-        <source>All downloads of the versions you may see.</source>
       </segment>
     </unit>
     <unit id="pkg.period.7">
@@ -16694,6 +16598,38 @@
       </notes>
       <segment>
         <source>Where this repository fetches from, or what it resolves from.</source>
+      </segment>
+    </unit>
+    <unit id="pkg.col.package">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Package</source>
+      </segment>
+    </unit>
+    <unit id="pkg.col.format">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Format</source>
+      </segment>
+    </unit>
+    <unit id="pkg.details">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Details</source>
+      </segment>
+    </unit>
+    <unit id="pkg.details-text">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>When this version was published, its licences, its downloads and the repositories that hold it.</source>
       </segment>
     </unit>
     <unit id="repo.col.repository">

@@ -117,10 +117,18 @@
 // below; the current one at weight 600 over a 2 px line in --trove-tab-indicator; under the pointer a neutral veil and
 // a line in the strong border colour; the strip on a hairline.
 
+// The strip keeps its tabs on one line and scrolls sideways where they do not fit (UI-A-12): a strip of two rows reads as two
+// strips.
 .tab-nav {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: thin;
   border-block-end: 1px solid var(--trove-border);
+
+  > * {
+    flex: none;
+  }
 }
 
 .tab-link {

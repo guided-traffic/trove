@@ -150,31 +150,27 @@
           (retry)="list.more()"
         >
           @for (row of list.items(); track row.id) {
+            <!-- What a reader chooses a package by (Q-UI-314): its name and description, format, latest version, when it
+                 changed. Counts and the first publication are on the package's page. -->
             <tr>
+              <th scope="row" class="wrap-name">
+                <a [routerLink]="commands(row.format, row.name)" translate="no">{{ row.name }}</a>
+                @if (row.description) {
+                  <span class="secondary">{{ row.description }}</span>
+                }
+              </th>
               <td>
                 <span class="type-cell">
                   <trove-format-icon [format]="row.format" />
                   <span translate="no">{{ formatLabel(row.format) }}</span>
                 </span>
               </td>
-              <th scope="row">
-                <a [routerLink]="commands(row.format, row.name)" translate="no">{{ row.name }}</a>
-              </th>
               <td translate="no">{{ row.latestVersion }}</td>
-              <td>
-                <span class="ellipsis" [attr.title]="row.description">{{ row.description || '–' }}</span>
-              </td>
-              <td>
-                <time [attr.datetime]="row.createdAt">{{ row.createdAt | date: 'mediumDate' }}</time>
-              </td>
               <td>
                 <time [attr.datetime]="row.updatedAt" [attr.title]="row.updatedAt | date: 'medium'">{{
                   since(row.updatedAt)
                 }}</time>
               </td>
-              <td class="num">{{ row.versionCount | number }}</td>
-              <td class="num">{{ row.repositories.length | number }}</td>
-              <td class="num">{{ row.downloadCount | number }}</td>
             </tr>
           }
         </trove-data-table>

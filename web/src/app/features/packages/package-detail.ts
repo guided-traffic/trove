@@ -1,5 +1,7 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
+import { PageHeader } from '../../shared/ui/page-header';
+import { SettingsSection } from '../../shared/ui/settings-section';
 import { TabGroup, TabPage } from '../../shared/ui/tabs';
 import { Router, RouterLink } from '@angular/router';
 import { PackageDocTree, PackageVersionDocs, PackageVersionSummary, PackagesApi } from '../../api/packages-api';
@@ -176,6 +178,8 @@ function frameworkGroups(value: unknown): FrameworkGroup[] {
     DatePipe,
     DecimalPipe,
     TabGroup, TabPage,
+    PageHeader,
+    SettingsSection,
     RouterLink,
     CopyButton,
     DataTable,
@@ -593,6 +597,9 @@ export class PackageDetail {
   protected readonly tableCaptionPlatforms = $localize`:@@pkg.image.platforms-caption:Platforms of this image index`;
   protected readonly copyImageDigest = $localize`:@@pkg.image.copy-digest:Copy digest`;
   protected readonly tableCaptionFiles = $localize`:@@pkg.file.caption:Files of this version`;
+  /** The facts of the version are Details at the end of the page (Q-UI-315, Q-UI-319). */
+  protected readonly detailsHeading = $localize`:@@pkg.details:Details`;
+  protected readonly detailsText = $localize`:@@pkg.details-text:When this version was published, its licences, its downloads and the repositories that hold it.`;
   protected readonly tableCaptionVersions = $localize`:@@pkg.ver.caption:All versions`;
   protected readonly tableCaptionRepositories = $localize`:@@pkg.repo.caption:Repositories that hold this version`;
   protected readonly copySha = $localize`:@@pkg.file.copy-sha:Copy SHA-256`;

@@ -3100,11 +3100,12 @@ Priority: **MVP** · Covers: UI-008, ART-048
 - Backed by R-API-029 (the start page of a project is its repositories, R-UI-052, Q-UI-216). Filters, as the categories of the panel: package type (multi-select),
   repository (multi-select), name or description (`q`), keyword, created period (last 7, 30, 90 days,
   custom; a custom end day is included). Applied filters appear as removable chips and live in the URL.
-- Table: type (icon plus text, never icon alone; the icon is the format owner's logo where the owner's terms allow it,
-  else the neutral package glyph, Q-UI-225), name, latest version, one-line description, first
-  created, updated (relative, with the absolute time in a `<time datetime>` element and its title),
-  number of versions, number of repositories, downloads (Q-UI-72). Sortable by name, first created and
-  updated; every other column carries a help text instead. Every sort is the server's (R-API-029).
+- Table (Q-UI-314): the package (its name, with its description as the muted second line, never cut), its format (icon plus
+  text, never icon alone; the icon is the format owner's logo where the owner's terms allow it, else the neutral package
+  glyph, Q-UI-225), the latest version, updated (relative, with the absolute time in a `<time datetime>` element and its
+  title). The number of versions, of repositories, the downloads and the first publication are on the package's page (its
+  Details). Sortable by the package and updated in the headers; the sort by first created stays the API's and a saved view's
+  (`sort=createdAt`). Every sort is the server's (R-API-029).
 - Paging with an explicit "Load more" button; no infinite scroll.
 - Tabs: all packages; recently viewed (last 10 opened, browser storage keyed by user); saved views
   (at most 8, browser storage; rename, delete, make default; a list opened without any query applies the
@@ -10680,7 +10681,7 @@ updated, versions, repositories, downloads) and scrolls 245 px sideways at 1440 
 **Choice:** (a). **Rationale:** a reader picks a package by its name and description and checks the version, so those fill the row.
 The development agent revisits a column if the walkthrough shows a fact is used to choose.
 
-**Applied in the spec:** R-UI-067, R-UI-006.
+**Applied in the spec:** R-UI-067, R-UI-006. Built in fix wave 1.
 
 ### Q-UI-315 · The package page shows the install command first; the facts and the owners are Details
 
@@ -10695,7 +10696,9 @@ Status: **Decided by the development agent** — selected from the options below
 those who maintain or audit the package. The development agent revisits the Repositories tab if readers use it to choose a
 repository.
 
-**Applied in the spec:** R-UI-067, R-UI-007.
+**Applied in the spec:** R-UI-067, R-UI-007. Built in fix wave 1 in part: the shared header, the version line, and the facts
+(published, licences, downloads, repositories) as a closed **Details** at the end; the Metadata and Repositories tabs stay tabs
+for now, and the owners and claims are not on the page yet.
 
 ### Q-UI-316 · The client setup starts from where the user came, and its advanced choices are closed
 

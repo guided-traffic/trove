@@ -10602,15 +10602,6 @@
         <target>Installationsbefehl kopieren</target>
       </segment>
     </unit>
-    <unit id="pkg.detail.back">
-      <notes>
-        <note category="location">src/app/features/packages/package-detail.html:7,10</note>
-      </notes>
-      <segment>
-        <source>All packages</source>
-        <target>Alle Pakete</target>
-      </segment>
-    </unit>
     <unit id="pkg.loading">
       <notes>
         <note category="location">src/app/features/packages/package-detail.html:13,14</note>
@@ -11631,24 +11622,6 @@
         <target>Suchen</target>
       </segment>
     </unit>
-    <unit id="pkg.col.type">
-      <notes>
-        <note category="location">src/app/features/packages/package-list.ts:193</note>
-      </notes>
-      <segment>
-        <source>Type</source>
-        <target>Typ</target>
-      </segment>
-    </unit>
-    <unit id="pkg.col.name">
-      <notes>
-        <note category="location">src/app/features/packages/package-list.ts:194</note>
-      </notes>
-      <segment>
-        <source>Name</source>
-        <target>Name</target>
-      </segment>
-    </unit>
     <unit id="pkg.col.latest">
       <notes>
         <note category="location">src/app/features/packages/package-list.ts:197</note>
@@ -11667,33 +11640,6 @@
         <target>Die höchste stabile Version, die Sie sehen dürfen. Eine Vorabversion erscheint nur, solange es keine stabile gibt.</target>
       </segment>
     </unit>
-    <unit id="pkg.col.description">
-      <notes>
-        <note category="location">src/app/features/packages/package-list.ts:200</note>
-      </notes>
-      <segment>
-        <source>Description</source>
-        <target>Beschreibung</target>
-      </segment>
-    </unit>
-    <unit id="pkg.col.created">
-      <notes>
-        <note category="location">src/app/features/packages/package-list.ts:203</note>
-      </notes>
-      <segment>
-        <source>First created</source>
-        <target>Erstmals erstellt</target>
-      </segment>
-    </unit>
-    <unit id="pkg.help.created">
-      <notes>
-        <note category="location">src/app/features/packages/package-list.ts:205</note>
-      </notes>
-      <segment>
-        <source>When the first version you may see was published.</source>
-        <target>Wann die erste Version veröffentlicht wurde, die Sie sehen dürfen.</target>
-      </segment>
-    </unit>
     <unit id="pkg.col.updated">
       <notes>
         <note category="location">src/app/features/packages/package-list.ts:209</note>
@@ -11710,60 +11656,6 @@
       <segment>
         <source>When the latest version you may see was published.</source>
         <target>Wann die neueste Version veröffentlicht wurde, die Sie sehen dürfen.</target>
-      </segment>
-    </unit>
-    <unit id="pkg.col.versions">
-      <notes>
-        <note category="location">src/app/features/packages/package-list.ts:215</note>
-      </notes>
-      <segment>
-        <source>Versions</source>
-        <target>Versionen</target>
-      </segment>
-    </unit>
-    <unit id="pkg.help.versions">
-      <notes>
-        <note category="location">src/app/features/packages/package-list.ts:217</note>
-      </notes>
-      <segment>
-        <source>The number of versions you may see.</source>
-        <target>Die Anzahl der Versionen, die Sie sehen dürfen.</target>
-      </segment>
-    </unit>
-    <unit id="pkg.col.repositories">
-      <notes>
-        <note category="location">src/app/features/packages/package-list.ts:221</note>
-      </notes>
-      <segment>
-        <source>Repositories</source>
-        <target>Repositories</target>
-      </segment>
-    </unit>
-    <unit id="pkg.help.repositories">
-      <notes>
-        <note category="location">src/app/features/packages/package-list.ts:223</note>
-      </notes>
-      <segment>
-        <source>The number of repositories that hold a version of the package.</source>
-        <target>Die Anzahl der Repositories, die eine Version des Pakets enthalten.</target>
-      </segment>
-    </unit>
-    <unit id="pkg.col.downloads">
-      <notes>
-        <note category="location">src/app/features/packages/package-list.ts:227</note>
-      </notes>
-      <segment>
-        <source>Downloads</source>
-        <target>Downloads</target>
-      </segment>
-    </unit>
-    <unit id="pkg.help.downloads">
-      <notes>
-        <note category="location">src/app/features/packages/package-list.ts:229</note>
-      </notes>
-      <segment>
-        <source>All downloads of the versions you may see.</source>
-        <target>Alle Downloads der Versionen, die Sie sehen dürfen.</target>
       </segment>
     </unit>
     <unit id="pkg.period.7">
@@ -16726,6 +16618,42 @@
       <segment>
         <source>Where this repository fetches from, or what it resolves from.</source>
         <target>Woher dieses Repository lädt oder woraus es auflöst.</target>
+      </segment>
+    </unit>
+    <unit id="pkg.col.package">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Package</source>
+        <target>Paket</target>
+      </segment>
+    </unit>
+    <unit id="pkg.col.format">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Format</source>
+        <target>Format</target>
+      </segment>
+    </unit>
+    <unit id="pkg.details">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Details</source>
+        <target>Details</target>
+      </segment>
+    </unit>
+    <unit id="pkg.details-text">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>When this version was published, its licences, its downloads and the repositories that hold it.</source>
+        <target>Wann diese Version veröffentlicht wurde, ihre Lizenzen, ihre Downloads und die Repositories, die sie enthalten.</target>
       </segment>
     </unit>
     <unit id="repo.col.repository">

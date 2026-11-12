@@ -10,15 +10,13 @@ A package appears once, however many repositories hold it. Everything in its row
 
 | Column | Meaning |
 |---|---|
-| **Type** | The package format |
-| **Name** | The package name; it opens the package |
+| **Package** | The package name, which opens the package, and under it the description of the latest version |
+| **Format** | The package format |
 | **Latest version** | The highest stable version you may see. A pre-release is shown only while no stable version exists |
-| **Description** | The description of the latest version |
-| **First created** | When the first version you may see was published |
 | **Updated** | When the latest version you may see was published, as a relative time; hover for the exact time |
-| **Versions** | The number of versions you may see |
-| **Repositories** | The number of repositories that hold a version of the package |
-| **Downloads** | All downloads of the versions you may see |
+
+When a version was published, its licences, its downloads and the repositories that hold it are in **Details** at the end of the
+package's page.
 
 The **?** next to some column headings explains the column. The list shows one page at a time; **Load more** adds the next page. When nothing is published yet, the list says **No package has been published yet.** and offers **Set up a client to publish the first package**. **Set up a client** at the top of the screen opens the client setup at any time.
 
@@ -41,7 +39,7 @@ Each applied filter appears as a chip above the list; the cross on a chip remove
 
 ## Sort the list
 
-Select the heading **Name**, **First created** or **Updated** to sort by it; select it again to reverse the order. The list is sorted by name unless you choose otherwise. The other columns cannot be sorted.
+Select the heading **Package** or **Updated** to sort by it; select it again to reverse the order. The list is sorted by name unless you choose otherwise. The other columns cannot be sorted.
 
 Filters, sort and the open tab are part of the page address, so you can bookmark a filtered list or send it to a colleague. The colleague sees the packages that they may read.
 

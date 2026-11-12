@@ -43,7 +43,7 @@ async function open(
 }
 
 const rows = (r: Opened) => [...r.root.querySelectorAll('tbody tr')];
-const names = (r: Opened) => rows(r).map((row) => text(row.querySelector('th')!));
+const names = (r: Opened) => rows(r).map((row) => text(row.querySelector('th a')!));
 const navigateSpy = () => vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
 
 function many(n: number): PackageSummary[] {
@@ -63,33 +63,22 @@ function many(n: number): PackageSummary[] {
 }
 
 describe('Packages list', () => {
-  it('R-UI-006 lists the packages with type, name, latest version, description, created, updated, versions, repositories and downloads, and has no serious violation', async () => {
+  it('R-UI-006 lists the packages by name with the description under it, format, latest version and updated, and has no serious violation', async () => {
     const r = await open();
     expect(r.root.querySelector('h1')?.textContent).toBe('Packages');
     const headers = [...r.root.querySelectorAll('thead th')].map((th) => text(th.querySelector('.th-sort, .th-inner > span:first-child') ?? th));
-    expect(headers).toEqual([
-      'Type',
-      expect.stringContaining('Name'),
-      'Latest version',
-      'Description',
-      expect.stringContaining('First created'),
-      expect.stringContaining('Updated'),
-      'Versions',
-      'Repositories',
-      'Downloads',
-    ]);
+    // What a reader chooses by (Q-UI-314); the counts and the first publication are on the package's page.
+    expect(headers).toEqual([expect.stringContaining('Package'), 'Format', 'Latest version', expect.stringContaining('Updated')]);
     expect(names(r)).toHaveLength(3);
     const ui = rows(r).find((row) => text(row).includes('@team-a/ui'))!;
     const cells = [...ui.children].map((c) => text(c));
-    expect(cells[0]).toContain('npm');
+    expect(text(ui.querySelector('th a')!)).toBe('@team-a/ui');
+    expect(text(ui.querySelector('th .secondary')!)).toBe('Shared UI components');
+    expect(cells[1]).toContain('npm');
     expect(cells[2]).toBe('1.4.0');
-    expect(cells[3]).toBe('Shared UI components');
-    expect(cells[6]).toBe('3');
-    expect(cells[7]).toBe('2');
-    expect(cells[8]).toBe('1,832');
-    expect(ui.querySelector('time')?.getAttribute('datetime')).toBe('2026-09-02T08:00:12.201Z');
+    expect(ui.querySelector('.ellipsis')).toBeNull();
     // Updated is relative, with the absolute time in the element's datetime and title (R-UI-006).
-    const updated = ui.querySelectorAll('time')[1]!;
+    const updated = ui.querySelector('time')!;
     expect(updated.getAttribute('datetime')).toBe('2026-10-20T09:12:44.512Z');
     expect(updated.getAttribute('title')).toContain('2026');
     expect(text(updated)).not.toBe('');
@@ -108,7 +97,7 @@ describe('Packages list', () => {
   it('R-UI-006 Q-UI-225 a format is shown as icon and text, never as icon alone: the owner logo or the neutral glyph, and the name said once', async () => {
     const r = await open();
     const typeOf = (name: string) =>
-      rows(r).find((row) => text(row.querySelector('th')!) === name)!.querySelector('.type-cell')!;
+      rows(r).find((row) => text(row.querySelector('th a')!) === name)!.querySelector('.type-cell')!;
     const nuget = typeOf('Contoso.Logging');
     expect(nuget.querySelector('trove-format-icon img')?.getAttribute('src')).toBe('formats/nuget/nuget.svg');
     expect(nuget.querySelector('trove-format-icon img')?.getAttribute('alt')).toBe('');
@@ -119,24 +108,24 @@ describe('Packages list', () => {
     expect(spokenText(npm)).toBe('npm');
   });
 
-  it('R-UI-006 the sort is the one the API offers: name, first created and updated are sortable, the rest carry a help text instead', async () => {
+  it('R-UI-006 the sort is the one the API offers: the package and updated are sortable, the others carry a help text instead', async () => {
     const r = await open();
     const sortable = [...r.root.querySelectorAll('thead th[aria-sort] .th-sort')].map((b) =>
       text(b.querySelector('span:first-child')!),
     );
-    expect(sortable).toEqual(['Name', 'First created', 'Updated']);
-    expect(r.root.querySelectorAll('thead .th-help').length).toBeGreaterThanOrEqual(5);
-    expect(r.root.querySelector('th[aria-sort="ascending"]')?.textContent).toContain('Name');
+    expect(sortable).toEqual(['Package', 'Updated']);
+    expect(r.root.querySelectorAll('thead .th-help').length).toBeGreaterThanOrEqual(2);
+    expect(r.root.querySelector('th[aria-sort="ascending"]')?.textContent).toContain('Package');
     expect(r.fake.listFilters.at(-1)?.sort).toBe('name');
   });
 
-  it('R-UI-006 R-API-029 a column header asks the server for the sort: clicking Name again sorts descending, First created starts ascending', async () => {
+  it('R-UI-006 R-API-029 a column header asks the server for the sort: clicking Package again sorts descending, Updated starts ascending', async () => {
     const r = await open();
     const navigate = navigateSpy();
-    r.root.querySelector<HTMLButtonElement>('thead th:nth-child(2) .th-sort')!.click();
+    r.root.querySelector<HTMLButtonElement>('thead th:nth-child(1) .th-sort')!.click();
     expect(navigate).toHaveBeenLastCalledWith([], { queryParams: { sort: '-name' }, queryParamsHandling: 'merge' });
-    r.root.querySelector<HTMLButtonElement>('thead th:nth-child(5) .th-sort')!.click();
-    expect(navigate).toHaveBeenLastCalledWith([], { queryParams: { sort: 'createdAt' }, queryParamsHandling: 'merge' });
+    r.root.querySelector<HTMLButtonElement>('thead th:nth-child(4) .th-sort')!.click();
+    expect(navigate).toHaveBeenLastCalledWith([], { queryParams: { sort: 'updatedAt' }, queryParamsHandling: 'merge' });
   });
 
   it('R-UI-006 the sort in the URL reaches the API, restarts the list and marks the column', async () => {

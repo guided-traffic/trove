@@ -1,11 +1,9 @@
-<header class="page-header">
-  <h1 tabindex="-1" translate="no">{{ name() }}</h1>
-  <span class="type-badge">
+<trove-page-header [heading]="name()" [name]="true">
+  <span meta class="type-badge">
     <trove-format-icon [format]="format()" />
     <span translate="no">{{ format() }}</span>
   </span>
-  <a class="btn btn-tertiary" [routerLink]="['/projects', project(), 'packages']" i18n="@@pkg.detail.back">All packages</a>
-</header>
+</trove-page-header>
 
 @if (loadFailure(); as f) {
   <trove-error-notice [error]="f" (retry)="summary.reload()" />
@@ -13,9 +11,8 @@
   <p role="status" i18n="@@pkg.loading">Loading.</p>
 } @else if (detail(); as d) {
   <section class="pkg-header" aria-label="Package facts" i18n-aria-label="@@pkg.facts">
-    <dl class="facts">
-      <dt i18n="@@pkg.fact.version">Version</dt>
-      <dd>
+    <div class="version-line">
+      <span class="field-label" i18n="@@pkg.fact.version">Version</span>
         <span class="version-picker">
           <input
             class="text-input"
@@ -40,24 +37,7 @@
             <span i18n="@@pkg.version.prereleases">Include pre-releases</span>
           </label>
         </span>
-      </dd>
-      <dt i18n="@@pkg.fact.published">Published</dt>
-      <dd>
-        <time [attr.datetime]="d.publishedAt">{{ d.publishedAt | date: 'medium' }}</time>
-      </dd>
-      <dt i18n="@@pkg.fact.licenses">Licenses</dt>
-      <dd translate="no">{{ d.licenses.length > 0 ? d.licenses.join(', ') : '–' }}</dd>
-      <dt i18n="@@pkg.fact.downloads">Downloads</dt>
-      <dd>{{ d.downloadCount | number }}</dd>
-      <dt i18n="@@pkg.fact.repositories">Repositories</dt>
-      <dd>
-        <ul class="chips">
-          @for (r of d.repositories; track r.key) {
-            <li translate="no">{{ r.key }}</li>
-          }
-        </ul>
-      </dd>
-    </dl>
+    </div>
     @if (unlisted()) {
       <p class="banner-warning" role="note">
         <span class="material-icons inline warn" aria-hidden="true">visibility_off</span>
@@ -356,10 +336,10 @@
                           }
                         </th>
                         <td>
-                          <time [attr.datetime]="v.publishedAt">{{ v.publishedAt | date: 'medium' }}</time>
+                          <time [attr.datetime]="v.publishedAt" [title]="v.publishedAt | date: 'medium'">{{ v.publishedAt | date: 'mediumDate' }}</time>
                         </td>
-                        <td class="num" [attr.title]="v.sizeBytes + ' B'">{{ size(v.sizeBytes) }}</td>
-                        <td translate="no">{{ v.repositories.join(', ') }}</td>
+                        <td class="num size" [attr.title]="v.sizeBytes + ' B'">{{ size(v.sizeBytes) }}</td>
+                        <td translate="no" class="wrap">{{ v.repositories.join(', ') }}</td>
                         <td class="num">{{ v.downloadCount | number }}</td>
                         <td>
                           @if (worstByVersion().get(v.version); as worst) {
@@ -381,4 +361,26 @@
       </trove-tab-group>
     </div>
   </div>
+
+  <trove-settings-section class="pkg-details" [heading]="detailsHeading" [description]="detailsText">
+    <dl class="facts">
+      <dt i18n="@@pkg.fact.published">Published</dt>
+      <dd>
+        <time [attr.datetime]="d.publishedAt">{{ d.publishedAt | date: 'medium' }}</time>
+      </dd>
+      <dt i18n="@@pkg.fact.licenses">Licenses</dt>
+      <dd translate="no">{{ d.licenses.length > 0 ? d.licenses.join(', ') : '–' }}</dd>
+      <dt i18n="@@pkg.fact.downloads">Downloads</dt>
+      <dd>{{ d.downloadCount | number }}</dd>
+      <dt i18n="@@pkg.fact.repositories">Repositories</dt>
+      <dd>
+        <ul class="chips">
+          @for (r of d.repositories; track r.key) {
+            <li translate="no">{{ r.key }}</li>
+          }
+        </ul>
+      </dd>
+    </dl>
+  </trove-settings-section>
+
 }
